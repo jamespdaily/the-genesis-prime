@@ -137,7 +137,6 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/movement_mode.gleam",
       "src/genesis_prime/message/movement_move_asked.gleam",
       "src/genesis_prime/message/movement_path.gleam",
-      "src/genesis_prime/message/movement_path_point.gleam",
       "src/genesis_prime/message/movement_platform.gleam",
       "src/genesis_prime/message/movement_rotation.gleam",
       "src/genesis_prime/message/movement_send_interval.gleam",
@@ -191,6 +190,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/unit_create_creature.gleam",
       "src/genesis_prime/message/unit_create_ghost.gleam",
       "src/genesis_prime/message/unit_create_player.gleam",
+      "src/genesis_prime/message/unit_create_tail.gleam",
       "src/genesis_prime/message/unit_death_state.gleam",
       "src/genesis_prime/message/unit_destroyed.gleam",
       "src/genesis_prime/message/unit_health.gleam",
@@ -206,7 +206,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/world_message.gleam",
       "src/genesis_prime/message/world_zone_changed.gleam",
     ]
-    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 21 messages and 5 records of character select and entering the world, the network layer's 3 messages (ping, pong and close notice), the auth server's login refusal 0x63d, the 5 modules of the named values (the disconnect reasons, the create results, the play refusals, the delete results and the rename results), the 6 messages of the player moving that the client sends (0x637, 0x63a, 0xd5, 0x63b, 0xfb and 0xfc) with the union of the 30 movement commands, the 29 records its kinds read (kind 2 is the unit position command of 0x262) and the 2 records of their lists of vectors, the union of the two movement commands the server writes in 0x262 (kinds 2 and 14), the account's premium tier 0x97f and entitlements 0x968 with the record of one held entitlement, the 8 chat messages (0x1c3, 0x1d4, 0x1c2, 0x1c8, 0x1d3, 0x1d9, 0x1bc and 0x1da) with the union of the chat formats the client's reader takes (the 12 types, with the 12 records of their data) and the module of the chat results' named values, the 22 messages of combat core (the press 0x9a, the ability item 0x111, the ability tiers 0x1a0, the action set 0x19d, a creature's and a ghost's 0x262, the cast messages 0x7fc, 0x7fd, 0x7ff, 0x7f4, 0x7fe and 0x801, health 0x937 and 0x92f, a stat 0x938, death 0x88c, threat 0x908 and 0x90a, combat 0x89a, the resurrection window 0x1b3 and choice 0x15a, and the combat log 0x247) with the records and unions inside them, the kind 4 path of the unit's move with its point and the modules of the named values (the cast results, the combat results and the damage types), and the client message module that decodes every message the client sends by its number"
+    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 21 messages and 5 records of character select and entering the world, the network layer's 3 messages (ping, pong and close notice), the auth server's login refusal 0x63d, the 5 modules of the named values (the disconnect reasons, the create results, the play refusals, the delete results and the rename results), the 6 messages of the player moving that the client sends (0x637, 0x63a, 0xd5, 0x63b, 0xfb and 0xfc) with the union of the 30 movement commands, the 29 records its kinds read (kind 2 is the unit position command of 0x262) and the 2 records of their lists of vectors, the union of the two movement commands the server writes in 0x262 (kinds 2 and 14), the account's premium tier 0x97f and entitlements 0x968 with the record of one held entitlement, the 8 chat messages (0x1c3, 0x1d4, 0x1c2, 0x1c8, 0x1d3, 0x1d9, 0x1bc and 0x1da) with the union of the chat formats the client's reader takes (the 12 types, with the 12 records of their data) and the module of the chat results' named values, the 22 messages of combat core (the press 0x9a, the ability item 0x111, the ability tiers 0x1a0, the action set 0x19d, a creature's and a ghost's 0x262, the cast messages 0x7fc, 0x7fd, 0x7ff, 0x7f4, 0x7fe and 0x801, health 0x937 and 0x92f, a stat 0x938, death 0x88c, threat 0x908 and 0x90a, combat 0x89a, the resurrection window 0x1b3 and choice 0x15a, and the combat log 0x247) with the records and unions inside them, the kind 4 path of the unit's move, the one record of the tail every unit create ends with, and the modules of the named values (the cast results, the combat results and the damage types), and the client message module that decodes every message the client sends by its number"
 }
 
 pub fn the_committed_codec_is_what_the_schema_generates_test() -> Nil {

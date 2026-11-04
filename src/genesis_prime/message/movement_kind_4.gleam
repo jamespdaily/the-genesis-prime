@@ -3,13 +3,13 @@
 ////
 //// A record inside a message body: a movement command of kind 4, a path: the
 //// points (three floats each), the speed in units a second as a half float,
-//// which the client's reader fails below 0.00001, the path type (0 is straight
+//// which the client's apply fails below 0.00001, the path type (0 is straight
 //// lines through at least one point, 1 a curve through at least three, and the
-//// reader fails 2 and 3), a 4-bit mode, a 32-bit value and one bit. Gap: the
-//// mode, the 32-bit value and the last bit are not read, and the codec does
-//// not check the point count each type needs. Its fields are listed in
-//// `schema.toml` with the client's evidence, and the fact file's `0x140c1f070`
-//// names the record.
+//// client's apply fails 2 and 3), a 4-bit mode, a 32-bit value and one bit.
+//// Gap: the mode, the 32-bit value and the last bit are not read, and the
+//// codec does not check the point count each type needs. Its fields are listed
+//// in `schema.toml` with the client's evidence, and the fact file's
+//// `0x140c1f070` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,

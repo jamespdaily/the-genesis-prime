@@ -2,8 +2,9 @@
 //// never edited by hand.
 ////
 //// A record inside a message body: one vector of a movement command's list:
-//// three 32-bit floats. Its fields are listed in `schema.toml` with the
-//// client's evidence, and the fact file's `0x140c1f070` names the record.
+//// three 32-bit floats, which kind 4 names x, y and z as the points of its
+//// path. Its fields are listed in `schema.toml` with the client's evidence,
+//// and the fact file's `0x140c1f070` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -14,7 +15,7 @@ import gleam/result
 /// record: its own doc names the fact that shows its value is safe, and one
 /// with no such doc has no use the client's code shows.
 pub type MovementFloatVector {
-  MovementFloatVector(field_1: Int, field_2: Int, field_3: Int)
+  MovementFloatVector(x: Int, y: Int, z: Int)
 }
 
 /// Writes the record's fields to the stream.
@@ -23,17 +24,17 @@ pub fn write(
   record record: MovementFloatVector,
 ) -> Writer {
   writer
-  |> bit_stream.write_float32_bits("field_1", record.field_1)
-  |> bit_stream.write_float32_bits("field_2", record.field_2)
-  |> bit_stream.write_float32_bits("field_3", record.field_3)
+  |> bit_stream.write_float32_bits("x", record.x)
+  |> bit_stream.write_float32_bits("y", record.y)
+  |> bit_stream.write_float32_bits("z", record.z)
 }
 
 /// Reads the record from the stream, and the stream after it.
 pub fn read(
   reader: Reader,
 ) -> Result(#(MovementFloatVector, Reader), DecodeError) {
-  use #(field_1, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_2, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_3, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  Ok(#(MovementFloatVector(field_1:, field_2:, field_3:), reader))
+  use #(x, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(y, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(z, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  Ok(#(MovementFloatVector(x:, y:, z:), reader))
 }

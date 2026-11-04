@@ -131,8 +131,8 @@ pub fn a_path_with_a_speed_below_0_00001_is_refused_test() -> Nil {
   let assert [time, relayed_movement.Path(path)] = moved.commands
     as "a kind 0 then a kind 4"
   // 0: zero. 0x00A7: 167 x 2^-24 = 9.954e-6, just below. 0x8000: negative
-  // zero. 0xC900: -10. 0x7E00: not a number.
-  list.each([0, 0x00A7, 0x8000, 0xC900, 0x7E00], fn(speed) {
+  // zero. 0xC900: -10. 0xFC00: the sign bit set.
+  list.each([0, 0x00A7, 0x8000, 0xC900, 0xFC00], fn(speed) {
     assert unit_movement.encode(
         UnitMovement(..moved, commands: [
           time,
@@ -154,18 +154,33 @@ pub fn a_path_with_a_speed_below_0_00001_is_refused_test() -> Nil {
       == Error(bit_stream.UnexpectedValue(field: "speed", value: speed))
       as "the reader refuses it too"
   })
-  list.each([0x00A8, 0x03FF, 0x0400, 0x3C00, 0x4900, 0x7BFF], fn(speed) {
-    let body =
-      message_support.set_bits(
-        body: message_support.hex(straight_path_bytes),
-        at: speed_bit,
-        width: 16,
-        to: speed,
-      )
-    let assert Ok(read) = unit_movement.decode(body)
-      as "a speed of at least 0.00001 is taken: the smallest half above it, a subnormal, a normal, 1.0, 10.0 and the largest"
-    assert unit_movement.encode(read) == Ok(body) as "and written back as read"
-  })
+  list.each(
+    [
+      0x00A8,
+      0x03FF,
+      0x0400,
+      0x3C00,
+      0x4900,
+      0x7BFF,
+      0x7C00,
+      0x7C01,
+      0x7E00,
+      0x7FFF,
+    ],
+    fn(speed) {
+      let body =
+        message_support.set_bits(
+          body: message_support.hex(straight_path_bytes),
+          at: speed_bit,
+          width: 16,
+          to: speed,
+        )
+      let assert Ok(read) = unit_movement.decode(body)
+        as "a speed of at least 0.00001 is taken: the smallest half above it, a subnormal, a normal, 1.0, 10.0, the largest normal and the patterns of exponent 31, which the client's converter reads as the finite 65536.0 to 131008.0"
+      assert unit_movement.encode(read) == Ok(body)
+        as "and written back as read"
+    },
+  )
 }
 
 pub fn a_path_type_of_2_or_3_is_refused_test() -> Nil {

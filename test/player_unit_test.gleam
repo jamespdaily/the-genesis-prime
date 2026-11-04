@@ -23,6 +23,7 @@ import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{Character, CharacterId, NameStands}
@@ -68,8 +69,11 @@ pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
     unit_create_player.encode(
       UnitCreatePlayer(
         ..unit,
-        stats: [UnitStat(stat_id: 0, value: 136)],
-        movement_commands: list.take(unit.movement_commands, 1),
+        tail: UnitCreateTail(
+          ..unit.tail,
+          stats: [UnitStat(stat_id: 0, value: 136)],
+          movement_commands: list.take(unit.tail.movement_commands, 1),
+        ),
       ),
     )
     as "the unit encodes, with the vector's one stat and its one kind 2 command: the vector holds no stat 10 and no kind 14, and the level stat and the rotation are tested apart"
@@ -97,7 +101,7 @@ pub fn the_unit_is_placed_at_its_position_and_turned_the_way_the_place_faces_tes
       ),
       realm_id: 1,
     )
-  assert unit.movement_commands
+  assert unit.tail.movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(4605.65),
@@ -129,7 +133,7 @@ pub fn the_unit_carries_the_visuals_and_bones_it_is_given_and_the_path_never_rea
       ),
       realm_id: 4,
     )
-  assert unit.item_visuals == [visual]
+  assert unit.tail.item_visuals == [visual]
     as "opcode.0x262: the body is the character list's visuals, as given"
   assert unit.bone_values == [0x3F800001, 0x3F800002]
     as "opcode.0x262.player_fields: the stored bone values"
@@ -156,8 +160,8 @@ pub fn the_unit_carries_its_characters_level_as_stat_10_test() -> Nil {
       ),
       realm_id: 1,
     )
-  assert list.contains(unit.stats, UnitStat(stat_id: 10, value: 3))
+  assert list.contains(unit.tail.stats, UnitStat(stat_id: 10, value: 3))
     as "0x140458140: stat 10, in the integer form, is the unit's level; a unit created without it is level 1 (0x1404543c1), so a level 3 character needs it"
-  assert list.contains(unit.stats, UnitStat(stat_id: 0, value: 136))
+  assert list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 136))
     as "stat 0 stays the health that keeps the unit alive (0x140457bc5)"
 }

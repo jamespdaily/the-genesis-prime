@@ -11,10 +11,12 @@
 //// - A value that does not fit its width, or sits at or above the limit the
 ////   schema sets, is refused when written and when read; a fixed value reads
 ////   back only as itself.
-//// - A half float with a minimum keeps its 16 bits and refuses a number below
-////   the minimum, a negative one and one that is not a number, as the
-////   client's reader fails a speed below 0.00001 (`movement_command.kind_4`);
-////   positive infinity passes the client's compare.
+//// - A half float with a minimum keeps its 16 bits and refuses a pattern whose
+////   value is below the minimum or whose sign bit is set, as the client's
+////   apply fails a speed below 0.00001 (`movement_command.kind_4`). The value is
+////   the client's converter's (0x1401c9770): any exponent but 0 is read as a
+////   finite number, exponent 31 included, so 0x7C00 is 65536.0 and 0x7FFF is
+////   131008.0.
 //// - A float32 keeps its bits, so every pattern of 32 bits round-trips
 ////   (ReadFloat 0x14006c1c0).
 //// - A wide text counts its UTF-16 units in 7 bits, or in 15 when it has more
@@ -323,7 +325,7 @@ pub fn a_value_at_or_above_the_limit_is_refused_when_written_and_when_read_test(
     as "the decoder refuses a value at or above the limit"
 }
 
-pub fn a_half_float_below_its_minimum_negative_or_not_a_number_is_refused_when_written_and_when_read_test() -> Nil {
+pub fn a_half_float_below_its_minimum_or_with_its_sign_bit_set_is_refused_when_written_and_when_read_test() -> Nil {
   use <- owned_test.run(60_000)
   use #(minimum, bits) <- qcheck.given({
     use minimum <- qcheck.bind(half_minimum())
@@ -331,14 +333,13 @@ pub fn a_half_float_below_its_minimum_negative_or_not_a_number_is_refused_when_w
     use bits <- qcheck.map(
       qcheck.from_generators(qcheck.bounded_int(from: 0, to: lowest - 1), [
         qcheck.bounded_int(from: 0x8000, to: 0xFFFF),
-        qcheck.bounded_int(from: 0x7C01, to: 0x7FFF),
       ]),
     )
     #(minimum, bits)
   })
   assert written(bit_stream.write_half_float_at_least(_, "value", bits, minimum))
     == Error(bit_stream.ValueBelowMinimum(field: "value", minimum:, value: bits))
-    as "the encoder refuses a number below the minimum, a negative one and a number that is not one"
+    as "the encoder refuses a value below the minimum and any pattern with the sign bit set"
   let assert Ok(body) = written(bit_stream.write_unsigned(_, "value", bits, 16))
     as "the 16 bits are a value of the width"
   assert bit_stream.read_half_float_at_least(
@@ -348,6 +349,46 @@ pub fn a_half_float_below_its_minimum_negative_or_not_a_number_is_refused_when_w
     )
     == Error(bit_stream.UnexpectedValue(field: "value", value: bits))
     as "the decoder refuses it too"
+}
+
+pub fn a_half_float_of_exponent_31_is_the_finite_number_the_clients_converter_makes_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x1401c9770 turns bits b of exponent 31 into the single
+  // ((b & 0x7FFF) + 0x1C000) << 13: 0x7C00 is 65536.0 (0x47800000), 0x7C01 is
+  // 65600.0 and 0x7FFF is 131008.0.
+  assert result.is_ok(
+    written(bit_stream.write_half_float_at_least(_, "f", 0x7C00, 65_536.0)),
+  )
+    as "65536.0 is at least 65536.0"
+  assert written(bit_stream.write_half_float_at_least(_, "f", 0x7BFF, 65_536.0))
+    == Error(bit_stream.ValueBelowMinimum(
+      field: "f",
+      minimum: 65_536.0,
+      value: 0x7BFF,
+    ))
+    as "the largest normal half, 65504.0, is below it"
+  assert written(bit_stream.write_half_float_at_least(_, "f", 0x7C00, 65_600.0))
+    == Error(bit_stream.ValueBelowMinimum(
+      field: "f",
+      minimum: 65_600.0,
+      value: 0x7C00,
+    ))
+    as "65536.0 is below 65600.0"
+  assert result.is_ok(
+    written(bit_stream.write_half_float_at_least(_, "f", 0x7C01, 65_600.0)),
+  )
+    as "0x7C01 is 65600.0"
+  assert result.is_ok(
+    written(bit_stream.write_half_float_at_least(_, "f", 0x7FFF, 131_008.0)),
+  )
+    as "0x7FFF is 131008.0, the largest value of the 16 bits"
+  assert written(bit_stream.write_half_float_at_least(_, "f", 0xFC00, 0.00001))
+    == Error(bit_stream.ValueBelowMinimum(
+      field: "f",
+      minimum: 0.00001,
+      value: 0xFC00,
+    ))
+    as "the sign bit makes it negative"
 }
 
 pub fn a_half_float_of_more_than_16_bits_does_not_fit_test() -> Nil {
@@ -764,27 +805,29 @@ fn half_minimum() -> Generator(Float) {
     qcheck.constant(0.5),
     qcheck.constant(1.0),
     qcheck.constant(1000.0),
+    qcheck.constant(100_000.0),
+    qcheck.constant(131_008.0),
   ])
 }
 
-/// A half float at or above its minimum, or positive infinity, which the
-/// client's compare lets through (`movement_command.kind_4`).
+/// A half float of sign 0 whose value is at or above its minimum, exponent 31
+/// included, as the client's compare takes it (`0x1401c9770`).
 fn half_float_at_least_field() -> Generator(Field) {
   use minimum <- qcheck.bind(half_minimum())
   use bits <- qcheck.map(qcheck.bounded_int(
     from: lowest_half_bits_at_least(minimum),
-    to: 0x7C00,
+    to: 0x7FFF,
   ))
   HalfFloatAtLeast(minimum:, bits:)
 }
 
 /// The least 16 bits of a positive half float that are `minimum` or more, by
-/// the format's definition (a sign bit, 5 bits of exponent and 10 of fraction):
-/// exponent 0 is the fraction times 2^-24 and any other exponent below 31 is
-/// (1024 + fraction) times 2^(exponent - 25). The positive patterns grow with
+/// the client's converter (`0x1401c9770`): exponent 0 is the fraction times
+/// 2^-24 and any other exponent, 31 included, is (1024 + fraction) times
+/// 2^(exponent - 25). The positive patterns grow with
 /// their bits, so a bisection finds it.
 fn lowest_half_bits_at_least(minimum: Float) -> Int {
-  bisect(low: 0, high: 0x7BFF, at_least: minimum)
+  bisect(low: 0, high: 0x7FFF, at_least: minimum)
 }
 
 fn bisect(low low: Int, high high: Int, at_least minimum: Float) -> Int {

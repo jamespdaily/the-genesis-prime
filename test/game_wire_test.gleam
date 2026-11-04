@@ -337,7 +337,7 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
     && entered.position_y == 0xC45577C8
     && entered.position_z == 0xC40C0C08
     as "0xAD carries the position of WorldLocation2 row 51596 as 32-bit floats"
-  assert game_client.unit_create_player_in(frames: burst).movement_commands
+  assert game_client.unit_create_player_in(frames: burst).tail.movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: 0x41E9075F,
@@ -392,7 +392,7 @@ pub fn a_created_dominion_cassian_veteran_is_played_into_the_world_at_row_42148_
     && entered.position_y == 0xC4750DE8
     && entered.position_z == 0xC5BD2A1C
     as "row 359 is a Nexus start of Dominion (166) Cassian (race 1): WorldLocation2 row 42148 (Quest2.10530.links, the retail race split), World 1387 and its position as 32-bit floats"
-  assert game_client.unit_create_player_in(frames: burst).movement_commands
+  assert game_client.unit_create_player_in(frames: burst).tail.movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: 0xC56FBBEC,
@@ -721,7 +721,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
   let first = game_client.read(game:, count: burst_length())
-  assert game_client.unit_create_player_in(frames: first).movement_commands
+  assert game_client.unit_create_player_in(frames: first).tail.movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(1.5),
@@ -763,7 +763,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
     && entered.position_y == float32.to_bits(-20.25)
     && entered.position_z == float32.to_bits(300.125)
     as "0xAD loads the world where the player left"
-  assert game_client.unit_create_player_in(frames: second).movement_commands
+  assert game_client.unit_create_player_in(frames: second).tail.movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(100.5),
@@ -961,7 +961,7 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
   assert second.unit_id == 2
     as "opcode.0x262: the camp took the first unit out of the map, and the map never gives a unit id twice"
   let assert Ok(start_movement.Position(position)) =
-    list.first(second.movement_commands)
+    list.first(second.tail.movement_commands)
     as "0x262 places the unit first"
   assert position
     == UnitPositionCommand(

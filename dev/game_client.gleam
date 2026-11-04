@@ -395,7 +395,7 @@ fn created(others others: Others, body body: BitArray) -> Others {
 /// Where a 0x262 places its unit: the kind 2 command that is the first of its
 /// commands (0x1404586e0).
 pub fn placed_at(unit unit: UnitCreatePlayer) -> #(Float, Float, Float) {
-  let assert [start_movement.Position(placed), ..] = unit.movement_commands
+  let assert [start_movement.Position(placed), ..] = unit.tail.movement_commands
     as "0x0262 places the unit with a kind 2 command first"
   standing(placed)
 }

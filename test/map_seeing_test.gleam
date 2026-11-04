@@ -199,7 +199,7 @@ pub fn a_joined_answer_is_the_players_own_0x262_for_the_connection_to_send_test(
   assert record.realm_id == realm_id
     as "the map's realm, which is not 0 (0x140456960)"
   assert record.name == first.name
-  assert record.item_visuals != []
+  assert record.tail.item_visuals != []
     as "item visuals: without them the body is likely black (opcode.0x262.body)"
 }
 

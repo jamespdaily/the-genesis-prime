@@ -112,6 +112,7 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_movement.{UnitMovement}
@@ -1427,45 +1428,47 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
       pvp_flags: 0,
       premium_tier: 0,
       title_id: 0,
-      create_flags: 0,
-      stats: [
-        UnitStat(stat_id: 0, value: 136),
-        UnitStat(stat_id: 10, value: 1),
-      ],
-      server_time_estimate_start: 0,
-      movement_commands: [
-        start_movement.Position(UnitPositionCommand(
-          x: 0x41E9075F,
-          y: 0xC45577C8,
-          z: 0xC40C0C08,
-          blends: 0,
-        )),
-        start_movement.Rotation(MovementRotation(
-          yaw: 0,
-          pitch: 0,
-          roll: 0,
-          blends: 0,
-        )),
-      ],
-      properties: [
-        UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
-      ],
-      item_visuals: [
-        ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0),
-      ],
-      cast_id: 0,
-      faction_id: 166,
-      base_faction_id: 166,
-      tagged_by_unit_id: 0,
-      tagged_by_group_id: 0,
-      field_31: 0,
-      field_33: 0,
-      world_socket_id: 0,
-      cluster_id: 0,
-      field_37: 0,
-      minimap_marker_id: 0,
-      display_info_id: 0,
-      outfit_info_id: 0,
+      tail: UnitCreateTail(
+        create_flags: 0,
+        stats: [
+          UnitStat(stat_id: 0, value: 136),
+          UnitStat(stat_id: 10, value: 1),
+        ],
+        server_time_estimate_start: 0,
+        movement_commands: [
+          start_movement.Position(UnitPositionCommand(
+            x: 0x41E9075F,
+            y: 0xC45577C8,
+            z: 0xC40C0C08,
+            blends: 0,
+          )),
+          start_movement.Rotation(MovementRotation(
+            yaw: 0,
+            pitch: 0,
+            roll: 0,
+            blends: 0,
+          )),
+        ],
+        properties: [
+          UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
+        ],
+        item_visuals: [
+          ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0),
+        ],
+        cast_id: 0,
+        faction_id: 166,
+        base_faction_id: 166,
+        tagged_by_unit_id: 0,
+        tagged_by_group_id: 0,
+        field_14: 0,
+        field_16: 0,
+        world_socket_id: 0,
+        cluster_id: 0,
+        field_20: 0,
+        minimap_marker_id: 0,
+        display_info_id: 0,
+        outfit_info_id: 0,
+      ),
     )
     as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 136 as the client's creation check needs (vector.opcode.0x262.health, 0x140457bc5), and stat 10 is the character's level 1 (0x140458140); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25) and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
 }
@@ -2096,7 +2099,7 @@ pub fn the_login_places_the_player_at_the_saved_place_and_turns_it_the_saved_way
     && entering.position_y == 0xC45577C8
     && entering.position_z == 0xC40C0C08
     as "opcode.0xad: the world loads at the saved position"
-  assert player_in(taken).movement_commands
+  assert player_in(taken).tail.movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: 0x41E9075F,
@@ -2124,7 +2127,7 @@ pub fn a_saved_position_beyond_the_worlds_box_is_written_as_the_boxs_edge_in_0xa
   assert #(entering.position_x, entering.position_y, entering.position_z)
     == #(0x47000000, 0x45000000, 0xC7000000)
     as "opcode.0xad.position: LoadWorld keeps the position as sent, so the server writes the box the client bounds a unit's position to (0x1405b5070, bounds 32768.0 = 0x47000000 and 2048.0 = 0x45000000): x and z within 32768, y within 2048"
-  assert list.first(player_in(taken).movement_commands)
+  assert list.first(player_in(taken).tail.movement_commands)
     == Ok(
       start_movement.Position(UnitPositionCommand(
         x: 0x47000000,
@@ -2141,7 +2144,7 @@ pub fn a_saved_position_beyond_the_worlds_box_is_written_as_the_boxs_edge_in_0xa
 
 pub fn a_character_never_saved_still_gets_a_position_at_its_start_place_and_faces_0_0_0_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert player_in(entered().1).movement_commands
+  assert player_in(entered().1).tail.movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: 0x41E9075F,
@@ -4320,13 +4323,17 @@ const own_unit_id = 5
 /// `time_ms` on the map's clock.
 fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
   let #(position, rotation) = player_unit.standing(place)
+  let player = player_in(entered().1)
   UnitCreatePlayer(
-    ..player_in(entered().1),
-    movement_commands: [
-      start_movement.Position(position),
-      start_movement.Rotation(rotation),
-    ],
-    server_time_estimate_start: time_ms,
+    ..player,
+    tail: UnitCreateTail(
+      ..player.tail,
+      movement_commands: [
+        start_movement.Position(position),
+        start_movement.Rotation(rotation),
+      ],
+      server_time_estimate_start: time_ms,
+    ),
   )
 }
 
@@ -4359,7 +4366,7 @@ pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_
   let #(_, taken) = feed(state, sent_by_the_map(Watched(by: ConnectionId(2))))
   let assert [#(2, PeerNews(news: Appeared(unit:), ..))] = peer_tells(taken)
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
-    unit.movement_commands
+    unit.tail.movement_commands
   assert at.x == float32.to_bits(1.5)
     && at.y == float32.to_bits(2.5)
     && at.z == float32.to_bits(3.5)
@@ -4518,7 +4525,7 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
   let create_time = fn(monotonic_ms) {
     let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
       peer_tells(at(monotonic_ms, sent_by_the_map(Watched(by: ConnectionId(2)))))
-    unit.server_time_estimate_start
+    unit.tail.server_time_estimate_start
   }
   assert move_time(600 + 250) == 250
     as "the map started at 600 ms on the monotonic clock, so 850 is 250 ms into its life"

@@ -11,7 +11,7 @@
 //// or that error. A reader returns each value with the reader after it, so a
 //// generated decoder stops at the first field the bytes cannot hold.
 
-import genesis_prime/message/half_float.{Finite, Infinite}
+import genesis_prime/message/half_float
 import gleam/bit_array
 import gleam/bool
 import gleam/float
@@ -51,8 +51,8 @@ pub type EncodeError {
   /// such as a sequence number that counts to 19.
   ValueAtOrAboveLimit(field: String, limit: Int, value: Int)
   /// The 16 bits of a half float hold a number below the minimum the schema
-  /// sets, a negative number or one that is not a number, such as a path's
-  /// speed under 0.00001.
+  /// sets, as the client's converter reads them, or have the sign bit set, such
+  /// as a path's speed under 0.00001.
   ValueBelowMinimum(field: String, minimum: Float, value: Int)
 }
 
@@ -122,7 +122,7 @@ pub fn describe_encode(error error: EncodeError) -> String {
       <> int.to_string(value)
       <> ", a number below its minimum of "
       <> float.to_string(minimum)
-      <> ", a negative number or not a number"
+      <> " or with the sign bit set"
   }
 }
 
@@ -359,8 +359,8 @@ pub fn write_unsigned_below(
 }
 
 /// Writes the 16 bits of a half-precision float that the schema limits to
-/// `minimum` or more; bits that hold a number below it, a negative number or a
-/// number that is not one are an error.
+/// `minimum` or more, as the client's converter reads them; bits that hold a
+/// number below it, or have the sign bit set, are an error.
 pub fn write_half_float_at_least(
   writer writer: Writer,
   field field: String,
@@ -378,14 +378,14 @@ pub fn write_half_float_at_least(
   write_unsigned(writer:, field:, value:, bits: 16)
 }
 
-/// Whether 16 bits of a half float hold a number of at least `minimum`: a
-/// finite one that is, or positive infinity.
+/// Whether 16 bits of a half float hold a number of at least `minimum`, by the
+/// client's converter and compare (0x1401c9770, 0x14078131f): a pattern of
+/// exponent 31 is a finite number there, and one with its sign bit set is
+/// negative.
 fn half_float_is_at_least(bits bits: Int, minimum minimum: Float) -> Bool {
-  case half_float.from_bits(bits) {
-    Ok(Finite(number)) -> number >=. minimum
-    Ok(Infinite(negative: False)) -> True
-    Ok(Infinite(negative: True)) | Ok(half_float.NotANumber) | Error(Nil) ->
-      False
+  case half_float.client_value(bits) {
+    Ok(number) -> number >=. minimum
+    Error(Nil) -> False
   }
 }
 
@@ -627,8 +627,8 @@ pub fn read_unsigned_below(
 }
 
 /// Reads the 16 bits of a half-precision float that the schema limits to
-/// `minimum` or more, kept as its bits; bits that hold a number below it, a
-/// negative number or a number that is not one are an error.
+/// `minimum` or more, as the client's converter reads them, kept as its bits;
+/// bits that hold a number below it, or have the sign bit set, are an error.
 pub fn read_half_float_at_least(
   reader reader: Reader,
   field field: String,

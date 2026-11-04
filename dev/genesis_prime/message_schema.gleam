@@ -103,11 +103,12 @@ pub type Kind {
   /// An unsigned value of `bits` bits that is below `limit`: the encoder
   /// refuses a value at or above it and the decoder fails on one.
   UnsignedBelow(bits: Int, limit: Int)
-  /// A half-precision float (IEEE 754 binary16) in 16 bits, kept as its bits
-  /// like an unsigned value, that the encoder refuses and the decoder fails on
-  /// unless the number is at least `minimum`: a negative number and one that is
-  /// not a number are below every minimum, and positive infinity is above. The
-  /// schema file writes the minimum as text, `minimum = "0.00001"`.
+  /// A half-precision float in 16 bits, kept as its bits like an unsigned
+  /// value, that the encoder refuses and the decoder fails on unless the number
+  /// is at least `minimum` by the client's converter (0x1401c9770): any
+  /// exponent but 0 is a finite number there, exponent 31 included, and a
+  /// pattern with the sign bit set is negative. The schema file writes the
+  /// minimum as text, `minimum = "0.00001"`.
   HalfFloatAtLeast(minimum: Float)
   /// A 32-bit float kept as its bits.
   Float32

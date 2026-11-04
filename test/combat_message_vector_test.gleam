@@ -32,8 +32,8 @@ import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/item_added.{ItemAdded}
+import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_path.{MovementPath}
-import genesis_prime/message/movement_path_point.{MovementPathPoint}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/player_health.{PlayerHealth}
@@ -64,6 +64,7 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature.{UnitCreateCreature}
 import genesis_prime/message/unit_create_ghost.{UnitCreateGhost}
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
@@ -238,38 +239,43 @@ pub fn a_creature_is_created_as_type_0_with_its_row_id_and_the_players_tail_test
       unit_id: 0x1001,
       creature_id: 73_464,
       checklist_index: 0,
-      create_flags: 0,
-      stats: [UnitStat(stat_id: 0, value: 52), UnitStat(stat_id: 10, value: 1)],
-      server_time_estimate_start: 0,
-      movement_commands: [
-        start_movement.Position(UnitPositionCommand(
-          x: 0xC3038000,
-          y: 0xC45AD000,
-          z: 0x43A6C000,
-          blends: 0,
-        )),
-        start_movement.Rotation(MovementRotation(
-          yaw: 0x3FC00000,
-          pitch: 0,
-          roll: 0,
-          blends: 0,
-        )),
-      ],
-      properties: [],
-      item_visuals: [],
-      cast_id: 0,
-      faction_id: 1441,
-      base_faction_id: 1441,
-      tagged_by_unit_id: 0,
-      tagged_by_group_id: 0,
-      field_18: 0,
-      field_20: 0,
-      world_socket_id: 0,
-      cluster_id: 0,
-      field_24: 0,
-      minimap_marker_id: 0,
-      display_info_id: 26_565,
-      outfit_info_id: 0,
+      tail: UnitCreateTail(
+        create_flags: 0,
+        stats: [
+          UnitStat(stat_id: 0, value: 52),
+          UnitStat(stat_id: 10, value: 1),
+        ],
+        server_time_estimate_start: 0,
+        movement_commands: [
+          start_movement.Position(UnitPositionCommand(
+            x: 0xC3038000,
+            y: 0xC45AD000,
+            z: 0x43A6C000,
+            blends: 0,
+          )),
+          start_movement.Rotation(MovementRotation(
+            yaw: 0x3FC00000,
+            pitch: 0,
+            roll: 0,
+            blends: 0,
+          )),
+        ],
+        properties: [],
+        item_visuals: [],
+        cast_id: 0,
+        faction_id: 1441,
+        base_faction_id: 1441,
+        tagged_by_unit_id: 0,
+        tagged_by_group_id: 0,
+        field_14: 0,
+        field_16: 0,
+        world_socket_id: 0,
+        cluster_id: 0,
+        field_20: 0,
+        minimap_marker_id: 0,
+        display_info_id: 26_565,
+        outfit_info_id: 0,
+      ),
     ),
     encode: unit_create_creature.encode,
     decode: unit_create_creature.decode,
@@ -297,38 +303,40 @@ pub fn a_ghost_is_created_as_type_23_with_a_players_data_less_three_values_test(
       field_12: [0x2122232425262728],
       field_13: [0x31323334],
       title_id: 0x155,
-      create_flags: 0,
-      stats: [],
-      server_time_estimate_start: 0,
-      movement_commands: [
-        start_movement.Position(UnitPositionCommand(
-          x: 0xC3038000,
-          y: 0xC45AD000,
-          z: 0x43A6C000,
-          blends: 0,
-        )),
-        start_movement.Rotation(MovementRotation(
-          yaw: 0x3FC00000,
-          pitch: 0,
-          roll: 0,
-          blends: 0,
-        )),
-      ],
-      properties: [],
-      item_visuals: [],
-      cast_id: 0,
-      faction_id: 167,
-      base_faction_id: 167,
-      tagged_by_unit_id: 0,
-      tagged_by_group_id: 0,
-      field_28: 0,
-      field_30: 0,
-      world_socket_id: 0,
-      cluster_id: 0,
-      field_34: 0,
-      minimap_marker_id: 0,
-      display_info_id: 0,
-      outfit_info_id: 0,
+      tail: UnitCreateTail(
+        create_flags: 0,
+        stats: [],
+        server_time_estimate_start: 0,
+        movement_commands: [
+          start_movement.Position(UnitPositionCommand(
+            x: 0xC3038000,
+            y: 0xC45AD000,
+            z: 0x43A6C000,
+            blends: 0,
+          )),
+          start_movement.Rotation(MovementRotation(
+            yaw: 0x3FC00000,
+            pitch: 0,
+            roll: 0,
+            blends: 0,
+          )),
+        ],
+        properties: [],
+        item_visuals: [],
+        cast_id: 0,
+        faction_id: 167,
+        base_faction_id: 167,
+        tagged_by_unit_id: 0,
+        tagged_by_group_id: 0,
+        field_14: 0,
+        field_16: 0,
+        world_socket_id: 0,
+        cluster_id: 0,
+        field_20: 0,
+        minimap_marker_id: 0,
+        display_info_id: 0,
+        outfit_info_id: 0,
+      ),
     ),
     encode: unit_create_ghost.encode,
     decode: unit_create_ghost.decode,
@@ -604,8 +612,8 @@ pub fn a_creatures_move_is_a_time_command_then_a_path_command_test() -> Nil {
         relayed_movement.Time(MovementTime(time: 0xFF00)),
         relayed_movement.Path(MovementPath(
           points: [
-            MovementPathPoint(x: 0x3F800000, y: 0x40000000, z: 0x40400000),
-            MovementPathPoint(x: 0x40800000, y: 0x40A00000, z: 0x40C00000),
+            MovementFloatVector(x: 0x3F800000, y: 0x40000000, z: 0x40400000),
+            MovementFloatVector(x: 0x40800000, y: 0x40A00000, z: 0x40C00000),
           ],
           speed: 0x4900,
           path_type: 0,
@@ -629,9 +637,9 @@ pub fn a_creatures_move_is_a_time_command_then_a_path_command_test() -> Nil {
       commands: [
         relayed_movement.Path(MovementPath(
           points: [
-            MovementPathPoint(x: 0x3F800000, y: 0x3F800000, z: 0x3F800000),
-            MovementPathPoint(x: 0x40000000, y: 0x40000000, z: 0x40000000),
-            MovementPathPoint(x: 0x40400000, y: 0x40400000, z: 0x40400000),
+            MovementFloatVector(x: 0x3F800000, y: 0x3F800000, z: 0x3F800000),
+            MovementFloatVector(x: 0x40000000, y: 0x40000000, z: 0x40000000),
+            MovementFloatVector(x: 0x40400000, y: 0x40400000, z: 0x40400000),
           ],
           speed: 0x00A8,
           path_type: 1,

@@ -149,8 +149,8 @@ type Kind {
 
 fn float_vectors() -> List(movement_float_vector.MovementFloatVector) {
   [
-    MovementFloatVector(field_1: 0x3F800001, field_2: 0x40000002, field_3: 3),
-    MovementFloatVector(field_1: 4, field_2: 0xC0400005, field_3: 6),
+    MovementFloatVector(x: 0x3F800001, y: 0x40000002, z: 3),
+    MovementFloatVector(x: 4, y: 0xC0400005, z: 6),
   ]
 }
 

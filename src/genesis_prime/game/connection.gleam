@@ -333,6 +333,7 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/world_message
@@ -2016,13 +2017,16 @@ fn appearance(
     player_unit.standing(place: movement.place(entered.movement))
   UnitCreatePlayer(
     ..entered.unit,
-    movement_commands: [
-      start_movement.Position(position),
-      start_movement.Rotation(rotation),
-    ],
-    server_time_estimate_start: map.server_time(
-      origin_ms: entered.clock_origin_ms,
-      monotonic_ms: now.monotonic_ms,
+    tail: UnitCreateTail(
+      ..entered.unit.tail,
+      movement_commands: [
+        start_movement.Position(position),
+        start_movement.Rotation(rotation),
+      ],
+      server_time_estimate_start: map.server_time(
+        origin_ms: entered.clock_origin_ms,
+        monotonic_ms: now.monotonic_ms,
+      ),
     ),
   )
 }

@@ -113,18 +113,18 @@ fn refusals() -> Nil {
       }
     }
   })
-  list.each([0x00A7, 0x8000, 0x7C01], fn(speed) {
+  list.each([0x00A7, 0x8000, 0xFC00], fn(speed) {
     assert planted_message.encode(PlantedMessage(..base, speed:))
       == Error(bit_stream.ValueBelowMinimum(
         field: "speed",
         minimum: 0.00001,
         value: speed,
       ))
-      as "a half float below its minimum, negative or not a number is refused"
+      as "a half float below its minimum or with its sign bit set is refused"
   })
   assert planted_message.encode(PlantedMessage(..base, speed: 0x7C00))
     |> result.is_ok
-    as "positive infinity is at least any minimum"
+    as "exponent 31 is a finite number above the minimum"
   assert planted_message.encode(PlantedMessage(..base, inner: PlantedRecord(number: 32, label: "")))
     == Error(bit_stream.ValueDoesNotFit(field: "number", bits: 5, value: 32))
     as "a record in place is written by its module, so its own field's width refuses"
