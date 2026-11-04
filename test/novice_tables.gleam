@@ -10,6 +10,9 @@
 ////   shield and the weapon.
 //// - The 44 Item2 rows those columns name, with their Item2Type, Item2Family,
 ////   Item2Category and ItemSlot rows.
+//// - The 42 ItemDisplaySourceEntry rows of the sources 75 (faction 167) and 76
+////   (faction 166) for the item types the sets use, and the ItemDisplay rows
+////   their displays name (`Item2.novice_visuals`).
 //// - GameFormula rows 67, 547, 548, 549, 1260, 1261, 1265, 1266, 1286 and 1288, which
 ////   the item formulas and the sheet's power read, with the client's values.
 //// - CreatureLevel rows 1 to 50, the levels a character can have, with their Base
@@ -25,11 +28,15 @@ import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
+import genesis_prime/table/item_display
+import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
+import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import planted_table.{type Cell, Boolean, Float, Integer}
 
 /// A Novice set the planted CharacterCreation rows hold: the row, its class and
@@ -189,8 +196,9 @@ pub fn creation_rows() -> List(List(Cell)) {
 }
 
 /// One planted Item2: its id, family, category, type and support power
-/// percentage, the rest of a Novice item: power level 2, flags 1, no budget, no
-/// stat and no equipped slot flags of its own.
+/// percentage, the rest of a Novice item: power level 2, no budget, no
+/// stat, no item display and no equipped slot flags of its own, and the item
+/// source of its faction's sets (`source_of`) except a shield's, which has none.
 type Item {
   Item(
     id: Int,
@@ -251,21 +259,196 @@ fn items() -> List(Item) {
   ]
 }
 
+/// The Item2Type of a shield, the one type the Novice sets hold that no
+/// ItemDisplaySourceEntry row names.
+const shield_type = 53
+
+/// The itemSourceId of a Novice item: 75 for the sets of faction 167, 76 for
+/// those of faction 166, and none for a shield.
+fn source_of(item item: Item) -> Int {
+  use <- bool.guard(item.type_id == shield_type, 0)
+  let assert Ok(set) =
+    list.find(sets(), fn(set) { list.contains(set.items, item.id) })
+    as "every planted item is in a set"
+  case set.faction_id {
+    167 -> 75
+    _ -> 76
+  }
+}
+
 /// The planted Item2 rows, in id order.
 pub fn item2_rows() -> List(List(Cell)) {
   items()
   |> list.sort(fn(a, b) { int.compare(a.id, b.id) })
+  |> list.map(item2_row(item: _, display: 0, flags: None))
+}
+
+/// The planted Item2 rows with the item `id` holding the item display and the
+/// flags given, the rest as they are planted.
+pub fn item2_rows_with(
+  id id: Int,
+  display display: Int,
+  flags flags: Int,
+) -> List(List(Cell)) {
+  items()
+  |> list.sort(fn(a, b) { int.compare(a.id, b.id) })
   |> list.map(fn(item) {
-    planted_table.row(item2.schema, [
-      #("ID", Integer(item.id)),
-      #("item2FamilyId", Integer(item.family)),
-      #("item2CategoryId", Integer(item.category)),
-      #("item2TypeId", Integer(item.type_id)),
-      #("powerLevel", Integer(2)),
-      #("flags", Integer(item.flags)),
-      #("supportPowerPercentage", Float(item.support)),
-    ])
+    case item.id == id {
+      True -> item2_row(item:, display:, flags: Some(flags))
+      False -> item2_row(item:, display: 0, flags: None)
+    }
   })
+}
+
+fn item2_row(
+  item item: Item,
+  display display: Int,
+  flags flags: Option(Int),
+) -> List(Cell) {
+  planted_table.row(item2.schema, [
+    #("ID", Integer(item.id)),
+    #("item2FamilyId", Integer(item.family)),
+    #("item2CategoryId", Integer(item.category)),
+    #("item2TypeId", Integer(item.type_id)),
+    #("itemDisplayId", Integer(display)),
+    #("itemSourceId", Integer(source_of(item:))),
+    #("powerLevel", Integer(2)),
+    #("flags", Integer(option.unwrap(flags, item.flags))),
+    #("supportPowerPercentage", Float(item.support)),
+  ])
+}
+
+/// The bag index a Novice item of the Item2Type is equipped at: the lowest bit
+/// of the equipped slot flags of its ItemSlot (`ItemSlot.equippedSlotFlags`,
+/// GetSlot 0x140418a50), which the client's own map from a bag index back to its
+/// ItemSlot agrees with (0x140c39050). Chest types 15, 8 and 1 are 0; legs 16,
+/// 9 and 2 are 1; shoulder 18, 11 and 4 are 3; feet 19, 12 and 5 are 4; hands
+/// 20, 13 and 6 are 5; the shield type 53 is 15 and the weapon types are 16.
+pub fn bag_index_of(type_id type_id: Int) -> Int {
+  case type_id {
+    15 | 8 | 1 -> 0
+    16 | 9 | 2 -> 1
+    18 | 11 | 4 -> 3
+    19 | 12 | 5 -> 4
+    20 | 13 | 6 -> 5
+    53 -> 15
+    45 | 46 | 48 | 51 | 79 | 204 -> 16
+    _ -> panic as "the Novice sets hold no other item type"
+  }
+}
+
+/// The set's items equipped at location 0, each with its bag index, in bag
+/// order: the five armor pieces, the shield and the weapon.
+pub fn equipped_of(set set: Set) -> List(#(Int, Int)) {
+  list.map(set.items, fn(item_id) {
+    let assert Ok(item) = list.find(items(), fn(item) { item.id == item_id })
+      as "every item of a set is planted"
+    #(item_id, bag_index_of(type_id: item.type_id))
+  })
+  |> list.sort(fn(a, b) { int.compare(a.1, b.1) })
+}
+
+/// One planted ItemDisplaySourceEntry: its id, item source, item type, the
+/// levels it holds for and the display it gives.
+pub type SourceEntry {
+  SourceEntry(
+    id: Int,
+    source: Int,
+    type_id: Int,
+    min_level: Int,
+    max_level: Int,
+    display: Int,
+  )
+}
+
+/// The client's entries of the Novice sources for the item types the sets use,
+/// each for levels 1 to 3 (`Item2.novice_visuals`).
+pub fn source_entries() -> List(SourceEntry) {
+  [
+    #(4527, 75, 51, 119),
+    #(4528, 75, 204, 3407),
+    #(4529, 75, 46, 1354),
+    #(4530, 75, 48, 3380),
+    #(4531, 75, 79, 3279),
+    #(4532, 75, 45, 22),
+    #(4534, 75, 18, 530),
+    #(4535, 75, 15, 3838),
+    #(4536, 75, 16, 3840),
+    #(4537, 75, 19, 3841),
+    #(4538, 75, 20, 3839),
+    #(4540, 75, 11, 4148),
+    #(4541, 75, 8, 48),
+    #(4542, 75, 9, 50),
+    #(4543, 75, 12, 47),
+    #(4544, 75, 13, 46),
+    #(4546, 75, 4, 3885),
+    #(4547, 75, 1, 3233),
+    #(4548, 75, 2, 3234),
+    #(4549, 75, 5, 3235),
+    #(4550, 75, 6, 84),
+    #(4551, 76, 51, 120),
+    #(4552, 76, 204, 3409),
+    #(4553, 76, 46, 1355),
+    #(4554, 76, 48, 1063),
+    #(4555, 76, 79, 3280),
+    #(4556, 76, 45, 38),
+    #(4558, 76, 18, 4179),
+    #(4559, 76, 15, 3842),
+    #(4560, 76, 16, 3844),
+    #(4561, 76, 19, 3845),
+    #(4562, 76, 20, 3843),
+    #(4564, 76, 11, 4158),
+    #(4565, 76, 8, 4106),
+    #(4566, 76, 9, 4107),
+    #(4567, 76, 12, 4105),
+    #(4568, 76, 13, 4104),
+    #(4570, 76, 4, 3884),
+    #(4571, 76, 1, 3239),
+    #(4572, 76, 2, 3240),
+    #(4573, 76, 5, 3241),
+    #(4574, 76, 6, 84),
+  ]
+  |> list.map(fn(entry) {
+    SourceEntry(
+      id: entry.0,
+      source: entry.1,
+      type_id: entry.2,
+      min_level: 1,
+      max_level: 3,
+      display: entry.3,
+    )
+  })
+}
+
+/// The planted ItemDisplaySourceEntry row of an entry.
+pub fn source_entry_row(entry: SourceEntry) -> List(Cell) {
+  planted_table.row(item_display_source_entry.schema, [
+    #("ID", Integer(entry.id)),
+    #("itemSourceId", Integer(entry.source)),
+    #("item2TypeId", Integer(entry.type_id)),
+    #("itemMinLevel", Integer(entry.min_level)),
+    #("itemMaxLevel", Integer(entry.max_level)),
+    #("itemDisplayId", Integer(entry.display)),
+  ])
+}
+
+/// The planted ItemDisplaySourceEntry rows, in id order.
+pub fn source_entry_rows() -> List(List(Cell)) {
+  list.map(source_entries(), source_entry_row)
+}
+
+/// The planted ItemDisplay rows of the displays the entries name, in id order:
+/// the id alone, which is all the server reads of a display.
+pub fn item_display_rows() -> List(List(Cell)) {
+  list.map(source_entries(), fn(entry) { entry.display })
+  |> list.unique
+  |> list.sort(int.compare)
+  |> list.map(item_display_row)
+}
+
+/// The planted ItemDisplay row of a display.
+pub fn item_display_row(display: Int) -> List(Cell) {
+  planted_table.row(item_display.schema, [#("ID", Integer(display))])
 }
 
 /// The planted Item2Type rows: id and the ItemSlot the type names.
@@ -334,8 +517,48 @@ pub fn item2_category_rows() -> List(List(Cell)) {
   })
 }
 
-/// The planted ItemSlot rows: id, equippedSlotFlags and armorModifier.
-pub fn item_slot_rows() -> List(List(Cell)) {
+/// The ItemSlot ids of a Novice set's visuals in the order the loadout lists
+/// them: chest, legs, shoulder, feet, hands and the weapon
+/// (`opcode.0x262.worn_visuals`).
+pub const worn_slots = [1, 2, 4, 5, 6, 20]
+
+/// The displays of a class's set of a faction, in the order of `worn_slots`
+/// (`Item2.novice_visuals`, from the ItemDisplaySourceEntry rows of itemSourceId
+/// 75 for faction 167 and 76 for faction 166): Warrior and Engineer wear heavy
+/// armor, Medic and Stalker medium, Esper and Spellslinger light, and each class
+/// its own weapon.
+pub fn worn_displays(
+  class_id class_id: Int,
+  faction_id faction_id: Int,
+) -> List(Int) {
+  case class_id, faction_id {
+    1, 167 -> [3838, 3840, 530, 3841, 3839, 119]
+    1, _ -> [3842, 3844, 4179, 3845, 3843, 120]
+    2, 167 -> [3838, 3840, 530, 3841, 3839, 3407]
+    2, _ -> [3842, 3844, 4179, 3845, 3843, 3409]
+    3, 167 -> [3233, 3234, 3885, 3235, 84, 1354]
+    3, _ -> [3239, 3240, 3884, 3241, 84, 1355]
+    4, 167 -> [48, 50, 4148, 47, 46, 3279]
+    4, _ -> [4106, 4107, 4158, 4105, 4104, 3280]
+    5, 167 -> [48, 50, 4148, 47, 46, 3380]
+    5, _ -> [4106, 4107, 4158, 4105, 4104, 1063]
+    7, 167 -> [3233, 3234, 3885, 3235, 84, 22]
+    7, _ -> [3239, 3240, 3884, 3241, 84, 38]
+    _, _ -> panic as "the Novice sets are of the six classes"
+  }
+}
+
+/// The slot and display of each visual a class's set of a faction wears, as the
+/// Novice set draws them (`opcode.0x262.worn_visuals`).
+pub fn worn_visuals(
+  class_id class_id: Int,
+  faction_id faction_id: Int,
+) -> List(#(Int, Int)) {
+  list.zip(worn_slots, worn_displays(class_id:, faction_id:))
+}
+
+/// The planted ItemSlot rows' values: id, equippedSlotFlags and armorModifier.
+pub fn item_slots() -> List(#(Int, Int, Float)) {
   [
     #(1, 1, 1.25),
     #(2, 2, 1.25),
@@ -345,13 +568,20 @@ pub fn item_slot_rows() -> List(List(Cell)) {
     #(20, 65_536, 0.75),
     #(43, 32_768, 1.0),
   ]
-  |> list.map(fn(row) {
-    planted_table.row(item_slot.schema, [
-      #("ID", Integer(row.0)),
-      #("equippedSlotFlags", Integer(row.1)),
-      #("armorModifier", Float(row.2)),
-    ])
-  })
+}
+
+/// The planted ItemSlot row of a slot's values.
+pub fn item_slot_row(slot: #(Int, Int, Float)) -> List(Cell) {
+  planted_table.row(item_slot.schema, [
+    #("ID", Integer(slot.0)),
+    #("equippedSlotFlags", Integer(slot.1)),
+    #("armorModifier", Float(slot.2)),
+  ])
+}
+
+/// The planted ItemSlot rows.
+pub fn item_slot_rows() -> List(List(Cell)) {
+  list.map(item_slots(), item_slot_row)
 }
 
 /// One GameFormula row the item formulas read: its id, dataint0, dataint01, and
@@ -539,6 +769,8 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(item2_family.schema, item2_family_rows()),
     planted_table.file(item2_category.schema, item2_category_rows()),
     planted_table.file(item_slot.schema, item_slot_rows()),
+    planted_table.file(item_display_source_entry.schema, source_entry_rows()),
+    planted_table.file(item_display.schema, item_display_rows()),
     planted_table.file(creature_level.schema, creature_level_rows()),
     planted_table.file(spell4.schema, spell4_rows()),
     planted_table.file(spell_level.schema, spell_level_rows()),

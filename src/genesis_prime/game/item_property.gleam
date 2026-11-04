@@ -33,8 +33,9 @@
 ////   armor curve is GameFormula 547's below the power level GameFormula 1286
 ////   names (0x14041deb0).
 //// - **What the code does not read:** an item with a budget or a stat, a
-////   level-scaled item (Item2.flags bit 3), a PvP item (flags 0x8000), a
-////   supportPowerPercentage beyond -1 to 1 and an armor curve from power level
+////   level-scaled item (Item2.flags bit 3), a PvP item (flags 0x8000), a proxy
+////   item (flags 0x4000, whose fields FillItemInfo 0x1404445d0 takes from
+////   GameFormula 1214's item), a supportPowerPercentage beyond -1 to 1 and an armor curve from power level
 ////   50 up are items whose properties the client's code gives by branches this
 ////   code does not follow, so such an item is an `Unread` error, which fails the
 ////   load.
@@ -174,6 +175,10 @@ const level_scaled_flag = 8
 /// Item2.flags 0x8000: a PvP item.
 const pvp_flag = 0x8000
 
+/// Item2.flags 0x4000: an item whose fields the client takes from the proxy item
+/// of GameFormula 1214 (FillItemInfo 0x1404445d0).
+const proxy_flag = 0x4000
+
 /// The Item2Family of an item the slot is never looked up for (0x14040c610).
 const family_without_slot = 33
 
@@ -231,6 +236,13 @@ fn builder(
     int.bitwise_and(item.flags, pvp_flag) != 0,
     Error(Unread(item2_id:, why: "it is a PvP item")),
   )
+  use <- bool.guard(
+    int.bitwise_and(item.flags, proxy_flag) != 0,
+    Error(Unread(
+      item2_id:,
+      why: "its flags hold 0x4000, so the client takes its fields from a proxy item",
+    )),
+  )
   let joined_flags =
     int.bitwise_or(int.bitwise_or(type_row.flags, category.flags), family.flags)
   let slotted = int.bitwise_and(joined_flags, slotted_flag) != 0
@@ -277,6 +289,32 @@ pub fn equipped_slot_flags(
   builder(tables:, item2_id:)
   |> result.map(fn(builder) { builder.equipped_slot_flags })
 }
+
+/// The bag index an item is equipped at: the index of the lowest bit set in its
+/// equipped slot flags, below bit 31 (GetSlot 0x140418a50, `ItemSlot.
+/// equippedSlotFlags`). `Error(Nil)` for flags with no such bit.
+pub fn equipped_slot_index(slot_flags slot_flags: Int) -> Result(Int, Nil) {
+  lowest_slot_bit(slot_flags:, index: 0)
+}
+
+fn lowest_slot_bit(
+  slot_flags slot_flags: Int,
+  index index: Int,
+) -> Result(Int, Nil) {
+  use <- bool.guard(index >= slot_bits, Error(Nil))
+  case int.bitwise_and(slot_flags, 1) {
+    1 -> Ok(index)
+    _ ->
+      lowest_slot_bit(
+        slot_flags: int.bitwise_shift_right(slot_flags, 1),
+        index: index + 1,
+      )
+  }
+}
+
+/// How many bits of the equipped slot flags name a bag index: the client takes
+/// an index below 31 (GetSlot 0x140418a50, `opcode.0x111.shared_item_unnamed`).
+const slot_bits = 31
 
 /// Whether the equipped slot flags are a weapon's, WeaponPrimary.
 pub fn is_weapon(slot_flags slot_flags: Int) -> Bool {

@@ -4,7 +4,9 @@
 //// - An item at location 4 is an ability, its item id the Spell4Base id and its
 ////   bag index the slot a press names; the weapon is the item equipped at
 ////   location 0, index 16 (`opcode.0x111.ability_bag`,
-////   `lua.ActionBarFrame.InitializeBars`).
+////   `lua.ActionBarFrame.InitializeBars`); any other item at location 0 is an
+////   equipped armor piece or shield at its bag index
+////   (`opcode.0x111.equipped_set`).
 //// - The bar shows a type 4 shortcut's ability only while the ability's item is
 ////   held and a tier is set for action set 0 (`opcode.0x19d`, `opcode.0x1a0`,
 ////   `0x1403c1bf0`).
@@ -110,9 +112,12 @@ fn bar(objects objects: List(Int)) -> Frame {
   Frame(message_id: action_set.message_id, body:)
 }
 
-pub fn the_bot_reads_the_weapon_the_abilities_and_the_bar_from_an_entry_test() -> Nil {
+pub fn the_bot_reads_the_weapon_the_armor_the_abilities_and_the_bar_from_an_entry_test() -> Nil {
   use <- owned_test.run(5000)
   let frames = [
+    added(item: item(location: 0, index: 0, id: 81_359)),
+    added(item: item(location: 0, index: 3, id: 81_381)),
+    added(item: item(location: 0, index: 15, id: 8534)),
     added(item: item(location: 0, index: 16, id: 81_346)),
     added(item: item(location: 4, index: 0, id: 100)),
     added(item: item(location: 4, index: 1, id: 200)),
@@ -120,11 +125,13 @@ pub fn the_bot_reads_the_weapon_the_abilities_and_the_bar_from_an_entry_test() -
     bar(objects: [100, 200]),
   ]
   assert game_client.loadout_in(frames:)
-    == Loadout(weapon: Some(81_346), abilities: [#(0, 100), #(1, 200)], bar: [
-      #(0, 100),
-      #(1, 200),
-    ])
-    as "the weapon at location 0, index 16, the abilities at location 4 and a bar of the abilities held with a tier in set 0"
+    == Loadout(
+      weapon: Some(81_346),
+      armor: [#(0, 81_359), #(3, 81_381), #(15, 8534)],
+      abilities: [#(0, 100), #(1, 200)],
+      bar: [#(0, 100), #(1, 200)],
+    )
+    as "the weapon at location 0, index 16, the armor and shield at location 0 in their bag indexes, the abilities at location 4 and a bar of the abilities held with a tier in set 0"
 }
 
 pub fn the_bar_leaves_out_an_ability_that_is_not_held_or_has_no_tier_in_set_0_and_a_bag_with_no_weapon_has_none_test() -> Nil {
@@ -137,7 +144,7 @@ pub fn the_bar_leaves_out_an_ability_that_is_not_held_or_has_no_tier_in_set_0_an
     bar(objects: [100, 200, 300]),
   ]
   assert game_client.loadout_in(frames:)
-    == Loadout(weapon: None, abilities: [#(0, 100), #(1, 200)], bar: [
+    == Loadout(weapon: None, armor: [], abilities: [#(0, 100), #(1, 200)], bar: [
       #(0, 100),
     ])
     as "ability 200 has a tier only in set 1 and 300 is not held: neither shows on the bar; no item at location 0, index 16 is no weapon"

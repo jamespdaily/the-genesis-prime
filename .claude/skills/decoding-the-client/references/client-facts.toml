@@ -7194,3 +7194,114 @@ proof = "Saved C 0x1403c1bf0.c (hash 8eb22adb6de47956): param_3 0 -> null; case 
 grade = "fairly sure"
 gap = "Read from the decompile; not run. When 0x1405b3270 rebuilds the static shortcuts, and what the server sends reason 27 for, are not read."
 name = "MakeShortcut"
+
+["ItemSlot.equippedSlotFlags"]
+statement = "The equipped slot an item takes, the bag index of a held item at location 0: the lowest set bit of the item's equipped slot flags, which are its ItemSlot's equippedSlotFlags (the ItemSlot of its Item2Type's itemSlotId) joined with its own Item2 equippedSlotFlags, for an item whose type, category and family flags hold 0x400. Every Novice item's own flags are 0, so its slot's give it: ArmorChest 0x1 -> 0, ArmorLegs 0x2 -> 1, ArmorHead 0x4 -> 2, ArmorShoulder 0x8 -> 3, ArmorFeet 0x10 -> 4, ArmorHands 0x20 -> 5, ArmorShields 0x8000 -> 15, WeaponPrimary 0x10000 -> 16. So each Novice set is held at location 0 as chest 0, legs 1, shoulder 3, feet 4, hands 5, shield 15 and weapon 16, for every class and both factions. The client's own map from an equipped slot back to its ItemSlot (bytes at 0x140c39050) agrees: 0 -> 1, 1 -> 2, 2 -> 3, 3 -> 4, 4 -> 5, 5 -> 6, 15 -> 43, 16 -> 20."
+proof = "GetSlot 0x140418a50 (saved C, hash 8eb22adb6de47956): the lowest set bit below 31 of the item info's 0x180 when 0x154 holds 0x400, else the lowest bit of the ItemSlot (0x14020e7a0) of 0x17c's word 0x10 (equippedSlotFlags). FillItemInfo 0x1404445d0 sets 0x180 = ItemSlot word 4 | Item2 word 0x13 and 0x154 = Item2Type word 5 | Item2Category word 3 | Item2Family word 2 (LuaSetItemsByCreationId's record). Rows: `gleam run -m genesis_prime/table_rows -- CharacterCreation characterCreationStartEnum=4` (the 30 armor items, shields 8534/8535, weapons 81346 to 81357); `Item2 81344 81359 81345 81380 81381 81360 81358 81361 81374 81378 81363 81362 81364 81375 81376 81366 81365 81367 81389 81390 81369 81368 81370 81383 81387 81372 81371 81373 81384 81385 8534 8535 81346 81352 81347 81351 81348 81349 81350` (equippedSlotFlags 0 for all); `Item2Type 1 2 4 5 6 8 9 11 12 13 15 16 18 19 20 53 51 204 46 79 48 45` (itemSlotId: 15, 8, 1 -> 1; 16, 9, 2 -> 2; 18, 11, 4 -> 4; 19, 12, 5 -> 5; 20, 13, 6 -> 6; 53 -> 43; the weapon types -> 20); `ItemSlot` (all rows); `Item2Family 1 2 15` (flags 0x4e0, 0x400 set), `Item2Category 1 2 3 7 8` (flags 0). Bytes at 0x140c39050 (31 words, read through client_pe.ClientPE): 1, 2, 3, 4, 5, 6, 7, 47, 47, 47, 47, 46, 47, 47, 47, 43, 20, then 0. Character.lua MapEquipment (lines 676-690) files each equipped item under ktItemSlotToEquippedItems[item:GetSlot()]."
+grade = "fairly sure"
+gap = "The tables and GetSlot are read; the client never checks that a held armor piece's bag index equals its GetSlot (only that it is below 31, opcode.0x111.shared_item_unnamed), so the index is the one the client's own lookups key by, not one it enforces. The Lua enum GameLib.CodeEnumEquippedItems' values are not read (its name is at 0x140b44300, no reference found); Character.lua keys it by GetSlot, so they are the bit indexes. A live character window showing each piece in its own slot settles it."
+
+["0x140c39050"]
+statement = "The client's map from an equipped slot (a location 0 bag index, 0 to 30) to its ItemSlot id: 0 ArmorChest (1), 1 ArmorLegs (2), 2 ArmorHead (3), 3 ArmorShoulder (4), 4 ArmorFeet (5), 5 ArmorHands (6), 6 WeaponTool (7), 7 to 10 and 12 to 14 Bag (47), 11 ArmorGadget (46), 15 ArmorShields (43), 16 WeaponPrimary (20); 17 to 30 have 0. The item visual swap effect (0x1405d9be0, 0x1405d9b60) uses it to turn its equipped slot into the model slot it changes."
+proof = "Bytes at 0x140c39050 (31 32-bit words, read through client_pe.ClientPE from WildStar64.exe): 01 02 03 04 05 06 07 2f 2f 2f 2f 2e 2f 2f 2f 2b 14, then zeros. Users: 0x1405d9be0 and 0x1405d9b60 (saved C, hash 8eb22adb6de47956) index it by their record's 0x150 (an equipped slot below 0x1f) and pass the result as the slot to SetUnitItemVisual 0x140466d20 and to 0x140466ca0. ItemSlot names from `gleam run -m genesis_prime/table_rows -- ItemSlot`."
+grade = "sure"
+
+["0x140466d20"]
+statement = "Sets one model slot of a unit: the slot (an ItemSlot id), the display (an ItemDisplay id) and the colour, on the unit's costume object; a unit with no costume object is left alone. A change to slot 20 (WeaponPrimary) also refreshes the weapon's attachment, a change to slot 1 the chest's, and slot 56 a guild standard's. The client changes a unit's worn or weapon look only through it, and its callers are: 0x262's item visual list (SetUnitItemVisualsFromCreate 0x140458db0), message 0x933 (HandleMessage0933 0x1403da490), message 0x905 (HandleMessage0905 0x1403dbb70), the creature model build 0x1404674c0 (a creature's Creature2 item displays), and the item visual swap effect 0x1405d9be0. Holding an item (message 0x111, AddHeldItem 0x1403b77d0) never calls it."
+proof = "Saved C 0x140466d20 (hash 8eb22adb6de47956): unit 0xcc0 null -> return 0; else the costume's vtable slot 0x50 with the arguments, unit 0xf4 = 1; slot 0x14 -> 0x1404718e0 and 0x140472d80; slot 1 -> 0x140472e10; slot 0x38 -> the slot-0x38 attachment. Callers by a grep of the saved C for its name: 0x140458db0, 0x1403da490, 0x1403dbb70, 0x1404674c0, 0x1405d9be0 (and its own file). Other direct writers of the costume's slot 0x50 (a grep for 0xcc0 with vtable 0x50): 0x14045de60 (slot 0x14 cleared for a non-player creature, unit type not 0x14 or 0x17), 0x1404739b0 and 0x14046c8e0 (slot 0x50 calls on the 0x15e0/0x15e8 objects, not the costume). AddHeldItem 0x1403b77d0 (saved C, 8eb22adb6de47956) calls none of them."
+grade = "fairly sure"
+gap = "Read from the decompile; a call to the costume through a register the grep does not match, or through another object holding the costume, would be missed. Not read: what the costume does with colour 0 beyond what the create screen shows (LuaSetItemsByCreationId passes 0 for every Novice piece), and what draws the Bringer's Blade Jim saw on a Warrior's model on main e7edee0, when the server sent no weapon visual; a live entry with the visuals of opcode.0x262.worn_visuals settles both."
+name = "SetUnitItemVisual"
+
+["opcode.0x262.worn_visuals"]
+statement = "What makes a player's worn armor and weapon show on its model, to itself and to every other player: item visuals in its 0x262 (and later 0x933), never the items it holds. For each worn item the visual is: slot = the ItemSlot id of the item's Item2Type itemSlotId; display = the item's Item2 itemDisplayId, or when that is 0 the itemDisplayId of the ItemDisplaySourceEntry row with the item's itemSourceId and item2TypeId whose itemMinLevel to itemMaxLevel holds the item's powerLevel; colour set = 0 and dye = 0, which the client turns into colour 0, what the create screen dresses the same items with. An item whose flags hold 0x4000, or whose type, category and family flags lack 0x400, or whose equipped slot flags are 0, is not dressed. For the Novice sets this gives slots 1 (chest), 2 (legs), 4 (shoulder), 5 (feet), 6 (hands) and 20 (weapon), with the displays in Item2.novice_visuals; the shield (slot 43) has display 0, which is the same as sending nothing for it. The armor slots do not overlap the body slots the character list sends (24 to 39), so the list is the body visuals plus these six, at most 16 entries (the 7-bit count allows 127). Another player's client is sent the same 0x262 (opcode.0x262.other_player) and so draws the same pieces."
+proof = "SetUnitItemVisualsFromCreate 0x140458db0 (saved C, hash 8eb22adb6de47956): for each entry, ItemColorSet (0x140a6ad70) by the colour set, ItemColorSetColour 0x1401dc0d0 of it (0 for no row); a dye with the top bit clear is replaced by that colour, so set 0 and dye 0 give 0; then SetUnitItemVisual 0x140466d20(unit, slot, display, colour). The only other paths to a unit's model slots are in the 0x140466d20 record; AddHeldItem 0x1403b77d0 reaches none. The slot and display rule is the create screen's (LuaSetItemsByCreationId 0x14004adb0: info 0x17c, 0x184 and colour 0, from FillItemInfo 0x1404445d0); the display lookup is FindItemDisplaySourceEntry 0x140444130. Widths: ReadItemVisual 0x1400ab890 (slot 7 bits, display 15, colour set 14, dye 32; every Novice display is below 4300). Rows as in Item2.novice_visuals."
+grade = "fairly sure"
+gap = "Read from the decompile; not seen live. A player model with armor visuals is not yet seen in the world, nor how a hand visual (6) and the BodyHand body visual (31) combine. A live entry of a Warrior with these six visuals, seen by itself and by a second character, settles it."
+
+["Item2.novice_visuals"]
+statement = "The item visuals of the Novice sets (CharacterCreation characterCreationStartEnum 4), as {slot, display}. Item2.itemDisplayId is 0 for every Novice item, so each display comes from ItemDisplaySourceEntry (source 75 for factionId 167 sets, 76 for 166 sets; itemMinLevel 1 to itemMaxLevel 3 holds powerLevel 2). Heavy (Warrior, Engineer), 167: chest 3838, legs 3840, shoulder 530, feet 3841, hands 3839; 166: chest 3842, legs 3844, shoulder 4179, feet 3845, hands 3843. Medium (Medic, Stalker), 167: chest 48, legs 50, shoulder 4148, feet 47, hands 46; 166: chest 4106, legs 4107, shoulder 4158, feet 4105, hands 4104. Light (Esper, Spellslinger), 167: chest 3233, legs 3234, shoulder 3885, feet 3235, hands 84; 166: chest 3239, legs 3240, shoulder 3884, feet 3241, hands 84. Weapons (slot 20), 167 / 166: Warrior 81346 / 81352 (type 51) 119 / 120; Engineer 81347 / 81353 (type 204) 3407 / 3409; Esper 81351 / 81357 (type 46) 1354 / 1355; Medic 81348 / 81354 (type 79) 3279 / 3280; Stalker 81349 / 81355 (type 48) 3380 / 1063; Spellslinger 81350 / 81356 (type 45) 22 / 38. Shields 8534 and 8535: itemSourceId 0 and itemDisplayId 0, so display 0 (none). Every display named has an ItemDisplay row, and every Novice item has colour set 0."
+proof = "`gleam run -m genesis_prime/table_rows -- CharacterCreation characterCreationStartEnum=4`; `Item2 <the 44 ids>` (item2TypeId, itemDisplayId 0, itemSourceId 75 or 76, shields 0, powerLevel 2, itemColorSetId 0, flags 0 or 1); `ItemDisplaySourceEntry itemSourceId=75` (rows 4527 to 4550) and `itemSourceId=76` (4551 to 4574), one row per item2TypeId, each itemMinLevel 1, itemMaxLevel 3; `Item2Type <ids>` for itemSlotId; `ItemDisplay 3840 3838 3841 3839 530 119 3844 3842 3845 3843 4179 120 50 48 47 46 4148 3234 3233 3235 84 3885` (rows present, itemColorSetId 0). The lookup: FindItemDisplaySourceEntry 0x140444130."
+grade = "fairly sure"
+gap = "The proof is table rows and the lookup read from the decompile; no instruction is cited. The order of entries within one source and type is not read; every Novice source and type has a single entry, so it does not matter here."
+
+["0x140444130"]
+statement = "Finds an item's ItemDisplaySourceEntry: none when the Item2 row's itemSourceId is 0 or its flags hold 0x4000; otherwise, among the entries filed under that itemSourceId and then the row's item2TypeId, the first whose itemMinLevel <= powerLevel <= itemMaxLevel. FillItemInfo takes that entry's itemDisplayId as the item's display when Item2.itemDisplayId is 0."
+proof = "Saved C 0x140444130 (hash 8eb22adb6de47956): Item2 row words 0x2c (itemSourceId), 0x7c (flags, & 0x4000), 0x24 (item2TypeId) and 0x3c (powerLevel) against the entry's 0xc and 0x10 (itemMinLevel, itemMaxLevel) in two ordered maps; returns the entry or 0. Column offsets from `gleam run -m genesis_prime/table_rows -- Item2 --columns` and `ItemDisplaySourceEntry --columns`. Caller FillItemInfo 0x1404445d0 (LuaSetItemsByCreationId's record)."
+grade = "fairly sure"
+gap = "The order of entries within one source and type is the maps' fill order, not read; every Novice source and type has a single entry, so it does not matter here."
+name = "FindItemDisplaySourceEntry"
+
+["0x1401dc0d0"]
+statement = "The colour of an ItemColorSet row: its three DyeColorRamp ids, each ramp's word 0xc packed 10 bits apiece; no row gives 0."
+proof = "Saved C 0x1401dc0d0 (hash 8eb22adb6de47956): a null row returns 0; else three words from the row through DyeColorRamp (0x140a6a168), a missing ramp giving 0."
+grade = "fairly sure"
+gap = "The packing's bit order is read from the 0x117 item visual record (opcode.0x117.item_visuals), not re-read here."
+name = "ItemColorSetColour"
+
+["opcode.0x933"]
+statement = "Message 0x933 (2355), game server to client: change a unit's item visuals. Body: the unit id (32 bits), a count (32 bits) and that many item visuals (ReadItemVisual). The client ignores an unknown unit; for each visual it makes the colour as 0x262 does (colour set and dye) and sets the slot (SetUnitItemVisual), stopping at the first failure. It is how a worn look changes after the unit exists (equipping is out of step B2's scope); the entry needs only 0x262's list."
+proof = "Registered in 0x14006c290 (saved C, hash 737aa5af0120fae9, line 706): id 0x933, record 0x10, reader 0x1400978c0, no writer. ReadMessage0933Body 0x1400978c0 (8eb22adb6de47956): ReadBits32 0x20 at 0, ReadBits32 0x20 at 4, then that many ReadItemVisual 0x1400ab890 into 16-byte entries at 8. HandleWorldMessage 0x1403ec6a0's switch (jump_tables.read_function: case 2258, id 97 + 2258 = 0x933, block 0x1403ed662) calls HandleMessage0933 0x1403da490 (8eb22adb6de47956): FindUnit on word 0, 0 when absent; per entry the colour from ItemColorSet and 0x1401dc0d0 as in 0x140458db0, then 0x140466d20, returning its error."
+grade = "fairly sure"
+gap = "Read from the decompile; not run, and the server's schema has no 0x933."
+
+["0x1403da490"]
+statement = "Handles message 0x933: sets each of the message's item visuals on the unit it names (see opcode.0x933)."
+proof = "As opcode.0x933."
+grade = "fairly sure"
+gap = "As opcode.0x933."
+name = "HandleMessage0933"
+
+["0x1400978c0"]
+statement = "Reads message 0x933's body: a unit id (32 bits), a count (32 bits) and that many item visuals."
+proof = "As opcode.0x933."
+grade = "fairly sure"
+gap = "Not emulated."
+name = "ReadMessage0933Body"
+
+["opcode.0x905"]
+statement = "Message 0x905 (2309), game server to client: rebuild an existing unit's look. Body: the unit id (32 bits), a 5-bit value, a 2-bit value, an 18-bit value (a creature id the handler looks up), a 17-bit value (a Creature2DisplayInfo id, SetUnitDisplayInfo), a 15-bit value (a Creature2OutfitInfo id, SetUnitOutfitInfo), a float, one bit, a count (32 bits) and that many item visuals. The handler ignores an unknown unit or one with no costume, sets those values, rebuilds the model (0x1404674c0), then sets each item visual as 0x933 does. Not needed for step B2."
+proof = "Registered in 0x14006c290 (line 746): id 0x905, record 0x30, reader 0x1400982d0. ReadMessage0905Body 0x1400982d0 (8eb22adb6de47956): ReadBits32 widths 0x20, 5, 2, 0x12, 0x11, 0xf, ReadFloat, ReadBits32 1, ReadBits32 0x20 and the ReadItemVisual loop at 0x28. Switch case 2212 (id 0x905, block 0x1403eda19) calls HandleMessage0905 0x1403dbb70 (49fd5a78aaad3411): FindUnit, unit 0xcc0 null -> 0; words 1 and 2 to 0x14045a840 and 0x14045a8f0 (with word 7 == 0), word 4 to SetUnitDisplayInfo 0x14047c210, word 5 to SetUnitOutfitInfo 0x14047c320, word 3 to FindCreatureInfo and unit 0x20, word 7 to unit 0xf0, 0x1404674c0, then the visuals through 0x140466d20."
+grade = "fairly sure"
+gap = "What 0x14045a840 and 0x14045a8f0 set (likely race and sex, from the widths) and what the float is are not read."
+
+["0x1403dbb70"]
+statement = "Handles message 0x905: rebuilds a unit's look and sets its item visuals (see opcode.0x905)."
+proof = "As opcode.0x905."
+grade = "fairly sure"
+gap = "As opcode.0x905."
+name = "HandleMessage0905"
+
+["0x1400982d0"]
+statement = "Reads message 0x905's body (see opcode.0x905)."
+proof = "As opcode.0x905."
+grade = "fairly sure"
+gap = "Not emulated."
+name = "ReadMessage0905Body"
+
+["0x1403b77d0"]
+statement = "Adds a held item from message 0x111. For an ability (location 4) see opcode.0x111.ability_bag. For any other location it builds the item from the record (refusing it as opcode.0x111.shared_item_unnamed says), files it by location and bag index, marks the item level stale (game state 0x6f98) and raises the item's events and tutorials: tutorial 56 through the salvage check unless the item's flags hold bit 4, tutorial 0x157 when its type, category and family flags hold 0x100, tutorial 0x160 when they hold 0x200 and its info 0x1b0 is set, tutorial 0x74 for Item2Type 220, and more for family 37. It never changes the unit's properties or its model. For the Novice armor and shield (flags 0x4e0, types 1 to 20 and 53, families 1 and 15) only the salvage check applies, as for the weapon."
+proof = "Saved C 0x1403b77d0 (hash 8eb22adb6de47956) lines 84-200: 0x140569a60, 0x140569c90, 0x1403d2e10 (game state 0xa0), 0x6f98 = 1, the rune and imbuement lookups 0x1403acd90, 0x1403d67d0 and tutorial 0x38 when +0x80 bit 4 is clear, 0x154 & 0x100 -> 0x157, 0x154 & 0x200 and 0x1b0 -> 0x160, 0x144 == 0xdc -> 0x74, 0x140 == 0x25 -> 0x14f; no call to 0x140466d20 or to a unit property setter. Flags: `gleam run -m genesis_prime/table_rows -- Item2Family 1 2 15` (0x4e0), `Item2Category 1 2 3 7 8` (0), `Item2Type <ids>` (0)."
+grade = "fairly sure"
+gap = "Read from the decompile; 0x1403d67d0's salvage test and the level gate of tutorial 56 are not read."
+name = "AddHeldItem"
+
+["opcode.0x111.equipped_set"]
+statement = "The Novice armor and shield held as the weapon is: each piece a 0x111 at location 0 with its equipped slot as bag index (chest 0, legs 1, shoulder 3, feet 4, hands 5, shield 15; ItemSlot.equippedSlotFlags), its Item2 id, a unique non-zero guid, stack count 1, durability 1.0 and every unnamed value 0 with the lists empty, passes the client's checks (location below 300, bag index below 31, the Item2 row present) and gives an unbound, undyed item at full durability with its row's properties, as opcode.0x111.shared_item_unnamed says for any location but 4. The client lists them in GetEquippedItems, files them in the character window by GetSlot, and recomputes the character's item level from them (0x1403a7c50); it changes no unit property and draws none of them (0x140466d20)."
+proof = "opcode.0x111.shared_item_unnamed (the checks in 0x140569d30 and the readers, for every non-ability location); AddHeldItem 0x1403b77d0; GetEquippedItems 0x14065c780; GetSlot 0x140418a50; Character.lua MapEquipment lines 676-690; ComputeEffectiveItemLevel 0x1403a7c50."
+grade = "fairly sure"
+gap = "Not run. A live character window showing the six pieces settles it."
+
+["0x1403a7c50"]
+statement = "Computes the player's effective item level (Unit:GetEffectiveItemLevel, the character window's CurrentItemScore and the matchmaker's item level check) from the items it holds equipped, when marked stale: over the slots ArmorChest, ArmorLegs, ArmorHead, ArmorShoulder, ArmorFeet, ArmorHands, WeaponPrimary, ArmorShields, ArmorWeaponAttachment, ArmorSystem, ArmorImplant and ArmorGadget, each equipped item adds its effective power level x w to the sum and w to the weight, w = ItemSlot.itemLevelModifier x ItemSlot.armorModifier of the item's slot; each of those slots with no item adds only its w, and only when its ItemSlot.minLevel is at most the player's level. The level is the sum over the weight (0 when the weight is 0). For the Novice sets (power level 2): with only the weapon held, as on main, 4.5 / 6.5 = 0.69 at levels 1 and 2 and 4.5 / 7.25 = 0.62 at levels 3 and 4 (the window shows 1); with the whole set held, 16.5 / 8.25 = 2.0 at levels 1 to 4 and 16.5 / 11.25 = 1.47 from level 5 (the window shows 2, then 1). It is the only figure the client works out from equipped items; health, shield, ratings and armor stay the properties 0x262 sends."
+proof = "Saved C 0x1403a7c50 (hash 8eb22adb6de47956): returns the unit's 0xd4c unless game state 0x558 is set; a set of the 12 ItemSlot ids at 0x140af5a28 (bytes: 20, 43, 3, 4, 1, 6, 2, 5, 57, 58, 60, 46); for the 12 equipped slots at 0x140af5268 (bytes: 16, 15, 0, 3, 5, 1, 2, 4, 7, 8, 10, 11) present in the location-0 vector (game state 0xb0, count 0xa4): the item info's 0x17c ItemSlot (0x140a6afd8) removed from the set, weight += word 6 x word 5, sum += built item 0xc (the effective power level, PrepareItemPropertyBuilder's record) x the same; then each remaining slot whose word 9 (0x24, minLevel) <= the player unit's 0x3c (else 0x38) adds word 6 x word 5 to the weight; the quotient only when the weight is not within 84 ulps of 0: 0x1403a7efe movss dword ptr [rsp+0xb0], xmm6 / 0x1403a7f07 mov r8d, dword ptr [rsp+0xb0] (the weight's bits) against r15d (0), 0x1403a7f34 cmp eax, 0x54 / 0x1403a7f37 jle, 0x1403a7f3d divss xmm7, xmm6; stored at unit 0xd4c. ItemSlot columns (armorModifier offset 20, itemLevelModifier 24, minLevel 36) and rows from `gleam run -m genesis_prime/table_rows -- ItemSlot` (w: 20 -> 2.25, 43 -> 1, 1 and 2 -> 1.25, 4 -> 1, 5 and 6 -> 0.75, 3 -> 1 (minLevel 25), 57, 58, 60 -> 1 (minLevel 5), 46 -> 0; hands minLevel 3, shoulder 12). Lua: LuaUnitGetEffectiveItemLevel 0x14065c700 (name pair at 0x140c5b4d0) calls it for the player; Character.lua line 1112; MatchMaker.lua line 2274."
+grade = "fairly sure"
+gap = "Read from the decompile, not emulated; that the unit's 0x3c and 0x38 are the level is from the UnitProperty2 default's record, and which messages set game state 0x558 is not read (AddHeldItem sets 0x6f98, and 0x14056a430 among others set 0x558). Emulating it with the Novice set planted would settle the values."
+name = "ComputeEffectiveItemLevel"
+
+["0x14065c700"]
+statement = "The Lua method Unit:GetEffectiveItemLevel(): the unit's effective item level, recomputed first when the unit is the player (ComputeEffectiveItemLevel); another unit gives its stored value; no unit gives nil."
+proof = "Name pair at 0x140c5b4d0 ('GetEffectiveItemLevel' at 0x140b2b278, read through client_pe.ClientPE). Saved C 0x14065c700 (hash 8eb22adb6de47956): FindUnit, 0x1403a7c50 when it is game state 0x78, returns the unit's float 0xd4c."
+grade = "fairly sure"
+gap = "Read from the decompile; what sets 0xd4c for another unit is not read."
+name = "LuaUnitGetEffectiveItemLevel"

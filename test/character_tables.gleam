@@ -8,8 +8,9 @@
 ////   the twelve Novice rows of `novice_tables` (466 and eleven more), with their
 ////   items.
 //// - The Novice gear's tables (`novice_tables`): Item2, Item2Type, Item2Family,
-////   Item2Category, ItemSlot, CreatureLevel, Spell4 and SpellLevel, and the
-////   GameFormula rows the item formulas read.
+////   Item2Category, ItemSlot, ItemDisplaySourceEntry, ItemDisplay,
+////   CreatureLevel, Spell4 and SpellLevel, and the GameFormula rows the item
+////   formulas read.
 //// - GameFormula row 145 (its dataint0, the highest level) and XpPerLevel
 ////   records 1 to 51 with their minXpForLevel, which GetLevelForExperience
 ////   0x140029820 reads.

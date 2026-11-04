@@ -1470,6 +1470,12 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
         ],
         item_visuals: [
           ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0),
+          ItemVisual(slot: 1, display_id: 3842, item_color_set_id: 0, dye: 0),
+          ItemVisual(slot: 2, display_id: 3844, item_color_set_id: 0, dye: 0),
+          ItemVisual(slot: 4, display_id: 4179, item_color_set_id: 0, dye: 0),
+          ItemVisual(slot: 5, display_id: 3845, item_color_set_id: 0, dye: 0),
+          ItemVisual(slot: 6, display_id: 3843, item_color_set_id: 0, dye: 0),
+          ItemVisual(slot: 20, display_id: 3409, item_color_set_id: 0, dye: 0),
         ],
         cast_id: 0,
         faction_id: 166,
@@ -1486,7 +1492,7 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
         outfit_info_id: 0,
       ),
     )
-    as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 736, CreatureLevel row 1's 135.97 and the Novice armor's 600 (player.level1_base_health; above 0 as the client's creation check needs, 0x140457bc5), stat 10 is the character's level 1 (0x140458140), and the Engineer's Novice set gives properties 35 and 36 (203.0625, 55.6875), 42 (250), 41 (450), 175, 176 and 178 (0.625, 0.15, 5125) and stat 20, a full shield (Item2.novice_set, player.level1_gear_properties); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25) and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
+    as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 736, CreatureLevel row 1's 135.97 and the Novice armor's 600 (player.level1_base_health; above 0 as the client's creation check needs, 0x140457bc5), stat 10 is the character's level 1 (0x140458140), and the Engineer's Novice set gives properties 35 and 36 (203.0625, 55.6875), 42 (250), 41 (450), 175, 176 and 178 (0.625, 0.15, 5125) and stat 20, a full shield (Item2.novice_set, player.level1_gear_properties); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25), then the Engineer of faction 166's Novice set worn: chest 3842 in slot 1, legs 3844 in 2, shoulder 4179 in 4, feet 3845 in 5, hands 3843 in 6 and the weapon 3409 in 20, with colour set 0 and dye 0 (opcode.0x262.worn_visuals, Item2.novice_visuals), and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
 }
 
 pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_it_0xf1_keeps_the_clients_interval_and_0x61_is_empty_test() -> Nil {
@@ -1495,6 +1501,12 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
     _,
     _,
     Frame(message_id: 0x019B, body: is_player),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),

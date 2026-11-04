@@ -97,6 +97,7 @@ import log_capture
 import login_client
 import login_support
 import mailbox_support
+import novice_tables
 import owned_test
 import pog
 import unitest
@@ -401,6 +402,56 @@ pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_
       max_shield: 450,
     )
     as "player.level1_gear_properties: the sheet shows Assault Power 51 (203.0625 x 0.25), Support Power 14 (55.6875 x 0.25), Max Health 736 and Max Shields 450"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The slot and display of each worn visual a 0x262 carries: the item visuals
+/// of the armor slots, which are below the body's (slots 24 to 39).
+fn worn_in(
+  player player: unit_create_player.UnitCreatePlayer,
+) -> List(#(Int, Int)) {
+  list.filter(player.tail.item_visuals, fn(visual) { visual.slot < 24 })
+  |> list.map(fn(visual) {
+    assert visual.item_color_set_id == 0 && visual.dye == 0
+      as "opcode.0x262.worn_visuals: colour set 0 and dye 0"
+    #(visual.slot, visual.display_id)
+  })
+}
+
+pub fn a_created_warriors_entry_holds_its_six_armor_pieces_draws_its_set_and_leaves_the_sheet_as_it_was_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let game = in_select(started:, port:, account:)
+  game_client.send_create(game:, body: create_request("Ab Cd"))
+  let created = created_result(game)
+  let _list = listed_entries(game)
+  send_play(game:, character_id: created.character_id)
+  let burst = game_client.read(game:, count: burst_length())
+  let loadout = game_client.loadout_in(frames: burst)
+  assert loadout.armor
+    == [
+      #(0, 81_359),
+      #(1, 81_344),
+      #(3, 81_381),
+      #(4, 81_345),
+      #(5, 81_380),
+      #(15, 8534),
+    ]
+    as "CharacterCreation row 466's chest 81359, legs 81344, shoulder 81381, feet 81345, hands 81380 and shield 8534, each held at the bag index of its slot (opcode.0x111.equipped_set)"
+  assert loadout.weapon == Some(81_346) as "the weapon stays in slot 16"
+  let player = game_client.unit_create_player_in(frames: burst)
+  assert worn_in(player:)
+    == novice_tables.worn_visuals(class_id: 1, faction_id: 167)
+    as "opcode.0x262.worn_visuals: the Warrior of faction 167 is drawn in its chest 3838, legs 3840, shoulder 530, feet 3841, hands 3839 and weapon 119 (Item2.novice_visuals), and the shield is not drawn"
+  assert game_client.sheet(unit: player, tables: character_tables.shared())
+    == game_client.Sheet(
+      assault_power: 51,
+      support_power: 14,
+      max_health: 736,
+      max_shield: 450,
+    )
+    as "0x1403b77d0: holding the armor changes no figure the sheet shows: Assault Power 51, Support Power 14, Max Health 736 and Max Shields 450, as before"
   game_client.close(game:)
   login_support.stop(started)
 }
@@ -1170,6 +1221,36 @@ pub fn a_player_entering_is_written_its_whole_burst_before_the_0x262_of_a_player
     as "the first player's unit is created for the second player"
   assert unit_of(entered.seen_second) == 2
     as "the second player's unit is created for the first player"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+pub fn a_player_in_sight_is_sent_the_worn_visuals_the_player_wears_itself_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let TwoEntered(
+    started:,
+    first:,
+    second:,
+    first_burst:,
+    second_burst:,
+    seen_second:,
+    ..,
+  ) = two_players_enter_one_map()
+  let worn = novice_tables.worn_visuals(class_id: 4, faction_id: 166)
+  let decoded = fn(frame: Frame) {
+    let assert Ok(player) = unit_create_player.decode(frame.body)
+      as "0x262 decodes"
+    player
+  }
+  assert worn_in(player: game_client.unit_create_player_in(frames: first_burst))
+    == worn
+    as "opcode.0x262.worn_visuals: the Exile Medic is drawn in its own set: chest 4106, legs 4107, shoulder 4158, feet 4105, hands 4104 and weapon 3280 (Item2.novice_visuals)"
+  let assert [seen_first] = list.drop(second_burst, burst_length())
+  assert worn_in(player: decoded(seen_first)) == worn
+    as "opcode.0x262.other_player: the second player's client is sent the first's 0x262 with the same worn visuals"
+  assert worn_in(player: decoded(seen_second)) == worn
+    as "opcode.0x262.other_player: the first player's client is sent the second's 0x262 with its worn visuals"
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)

@@ -10,6 +10,9 @@
 ////   connection's player with its unit, drops its watch and is answered `Left`,
 ////   and a leave of a connection that is not in the map is an error and the
 ////   same answer.
+//// - The worn set: a character wears its whole Novice set, so its 0x262 holds an
+////   item visual for each armor piece and the weapon after its body's, and none
+////   for the shield (`opcode.0x262.worn_visuals`, `Item2.novice_visuals`).
 //// - The body: CharacterCustomization row 10 of the planted tables (race 1,
 ////   sex 0; labels 21 = 2 and 2 = 1) shows display 137 on slot 25
 ////   (`character_tables`), and the tables hold no row of race 3, so a look of
@@ -28,7 +31,7 @@ import genesis_prime/step.{
   Started, Stop, Stopping, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, Character}
-import genesis_prime/table/id.{RaceId}
+import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/map.{type State, Join, Joined, Leave, Left}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/player_unit
@@ -36,6 +39,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import map_support
+import novice_tables
 import owned_test
 import place_support
 
@@ -50,6 +54,30 @@ fn started() -> State {
 /// The body of that look: display 137 on slot 25.
 fn row_10_body() -> List(ItemVisual) {
   [ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0)]
+}
+
+/// The visuals of the Novice set of an Exile Warrior, which is the class and
+/// faction of the tests' characters (`character_support.character`): chest
+/// 3842, legs 3844, shoulder 4179, feet 3845, hands 3843 and the weapon 120
+/// (`Item2.novice_visuals`), with colour set 0 and dye 0.
+fn exile_warrior_worn() -> List(ItemVisual) {
+  novice_worn(class_id: 1, faction_id: 166)
+}
+
+/// The visuals of a class's Novice set of a faction, with colour set 0 and dye
+/// 0 (`opcode.0x262.worn_visuals`).
+fn novice_worn(
+  class_id class_id: Int,
+  faction_id faction_id: Int,
+) -> List(ItemVisual) {
+  list.map(novice_tables.worn_visuals(class_id:, faction_id:), fn(visual) {
+    ItemVisual(
+      slot: visual.0,
+      display_id: visual.1,
+      item_color_set_id: 0,
+      dye: 0,
+    )
+  })
 }
 
 /// What the map answers a join of `character` as unit `unit_id`: the record of
@@ -159,7 +187,7 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
         answer_of(
           character: map_support.character(107),
           unit_id: 1,
-          visuals: row_10_body(),
+          visuals: list.append(row_10_body(), exile_warrior_worn()),
         ),
       )),
     ]
@@ -195,7 +223,7 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
         answer_of(
           character: map_support.character(108),
           unit_id: 2,
-          visuals: row_10_body(),
+          visuals: list.append(row_10_body(), exile_warrior_worn()),
         ),
       )),
     ]
@@ -260,7 +288,7 @@ pub fn a_second_join_from_a_connection_in_the_map_answers_the_unit_it_keeps_and_
         answer_of(
           character: map_support.character(107),
           unit_id: 1,
-          visuals: row_10_body(),
+          visuals: list.append(row_10_body(), exile_warrior_worn()),
         ),
       ),
     ]
@@ -293,12 +321,35 @@ pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_tes
     join_as(state: started(), connection: 7, caller: 1, character: unknown)
   assert support.replies(taken)
     == [
-      #(CallerId(1), answer_of(character: unknown, unit_id: 1, visuals: [])),
+      #(
+        CallerId(1),
+        answer_of(character: unknown, unit_id: 1, visuals: exile_warrior_worn()),
+      ),
     ]
-    as "the tables hold no CharacterCustomization row of race 3, so the body is empty and the join is still answered with the unit, as for any character"
+    as "the tables hold no CharacterCustomization row of race 3, so the body is empty, the Novice set is still worn and the join is still answered with the unit, as for any character"
   assert support.logs_of(step: taken, level: LogError) == []
   assert list.length(support.watches(taken)) == 1
     as "the player is in the map, and its connection watched"
+}
+
+pub fn a_character_whose_class_and_faction_have_no_novice_set_is_answered_with_its_body_alone_test() -> Nil {
+  use <- owned_test.run(5000)
+  let setless = Character(..map_support.character(107), class_id: ClassId(99))
+  let #(state, taken) =
+    join_as(state: started(), connection: 7, caller: 1, character: setless)
+  assert support.replies(taken)
+    == [
+      #(
+        CallerId(1),
+        answer_of(character: setless, unit_id: 1, visuals: row_10_body()),
+      ),
+    ]
+    as "no Novice set holds class 99, so nothing is worn and the unit has its body alone: the map does not crash on one character's data, which would end every player's connection, and the player's own connection refuses it"
+  assert support.logs_of(step: taken, level: LogError) == []
+  assert list.length(support.watches(taken)) == 1
+    as "the player is in the map, and its connection watched"
+  let #(_, second) = join(state:, connection: 8, caller: 2)
+  assert unit_of(second, 2) == 2 as "the map goes on and takes the next player"
 }
 
 pub fn a_watch_that_names_no_player_is_an_error_and_changes_nothing_test() -> Nil {
@@ -382,4 +433,33 @@ pub fn a_leave_from_a_connection_not_in_the_map_logs_an_error_changes_nothing_an
   let #(_, rejoin) = join(state:, connection: 8, caller: 5)
   assert unit_of(first, 1) == 1 && unit_of(rejoin, 5) == 2
     as "the stray leave spent no unit id"
+}
+
+pub fn a_joined_unit_wears_the_novice_set_of_its_class_and_faction_after_its_body_for_every_set_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(novice_tables.sets(), fn(set) {
+    let character =
+      Character(
+        ..map_support.character(107),
+        class_id: ClassId(set.class_id),
+        faction_id: set.faction_id,
+      )
+    let #(_, taken) =
+      join_as(state: started(), connection: 7, caller: 1, character:)
+    let assert [#(_, Joined(unit:, ..))] = support.replies(taken)
+      as "one reply answers the join"
+    let #(body, worn) =
+      list.partition(unit.tail.item_visuals, fn(visual) { visual.slot >= 24 })
+    assert body != [] && unit.tail.item_visuals == list.append(body, worn)
+      as "the body of the look comes first (body slots are 24 to 39), then the worn set"
+    assert worn
+      == novice_worn(class_id: set.class_id, faction_id: set.faction_id)
+      as {
+        "opcode.0x262.worn_visuals: one visual for each of the five pieces and the weapon of CharacterCreation row "
+        <> int.to_string(set.creation_id)
+        <> "'s set, none for the shield"
+      }
+    assert !list.any(unit.tail.item_visuals, fn(visual) { visual.slot == 43 })
+      as "opcode.0x262.worn_visuals: the shield (slot 43) has display 0, which is no visual"
+  })
 }

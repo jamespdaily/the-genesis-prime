@@ -1,6 +1,6 @@
 //// One map: a world of the client's World table and one instance of it, with
 //// the players and the creatures in it. It builds the unit of each player that
-//// joins, with the next unit id and the body of the character's look, keeps it,
+//// joins, with the next unit id, the body of the character's look and the Novice set it wears, keeps it,
 //// and forgets the player and its unit when the player's connection ends. It has
 //// a creature started at a spawn of its world when a player first sees the spawn
 //// and stopped after no player has seen it for the idle stop, and watches it. It
@@ -26,7 +26,8 @@
 //// connection c1                      map                                      shell
 ////   Join(c1, character, place) ─▶ Asked ─▶ unit id u = next unit id; next + 1
 ////                                          unit = the character at place as unit u,
-////                                                 with the body visuals of its look
+////                                                 with the body visuals of its look and
+////                                                 the worn visuals of its Novice set
 ////                                          player = (c1, unit, watch w1, sees)
 ////                                          Watch(w1, Connection(c1))           ─▶ monitors c1
 ////   ◀─ Joined(0x262's record of unit, run, the map's clock origin)
@@ -248,12 +249,14 @@
 //// | the respawn timer fires with no one in sight | the spawn is dormant |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
 //// | the respawn timer fires after the map ended | not possible: the timer lives in the process |
+//// | a joining character's class and faction have no Novice set | the unit has its body alone and the join goes on: the player's connection refuses that one player, and the map does not crash on one character's data |
 //// | the map has given every unit id | the map crashes, which ends its run and its players' connections; the next run starts from 1 |
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run |
 //// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) |
 //// | the sweep timer fires after a restart of the map | not possible: the timer lives in the process, and a restarted map starts its own |
 
 import genesis_prime/game/appearance
+import genesis_prime/game/loadout
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
@@ -1091,7 +1094,8 @@ fn left(
 }
 
 /// A connection's join: its player's unit is built with the next unit id and
-/// the body of the character's look, kept, and answered as 0x262's record, and
+/// the body of the character's look and the worn visuals of its Novice set
+/// (genesis_prime/game/loadout), kept, and answered as 0x262's record, and
 /// the connection is watched. The joiner is then sent a `Watched` for each player
 /// in sight, and each of them a `Watched` of the joiner. A connection already in
 /// the map is answered with the record built from the unit the map keeps for
@@ -1189,14 +1193,26 @@ fn joined_new(
   let #(state, unit_id) = take_unit_id(state)
   let watch = WatchId(state.next_watch)
   let state = State(..state, next_watch: state.next_watch + 1)
+  let tables = state.settings.tables
+  let worn =
+    loadout.of(
+      tables:,
+      class_id: character.class_id,
+      faction_id: character.faction_id,
+    )
+    |> result.map(loadout.item_visuals)
+    |> result.unwrap([])
   let unit =
     player_unit.new(
       character:,
       place:,
       unit_id:,
-      visuals: appearance.character_body_visuals(
-        index: appearance.index(tables: state.settings.tables),
-        character:,
+      visuals: list.append(
+        appearance.character_body_visuals(
+          index: appearance.index(tables:),
+          character:,
+        ),
+        worn,
       ),
     )
   let in_sight =

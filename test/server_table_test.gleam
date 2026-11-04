@@ -12,7 +12,9 @@
 ////   starting level and the item formulas), ChatChannel and WorldZone (chat),
 ////   and Item2, Item2Category, Item2Family, Item2Type, ItemSlot, Spell4,
 ////   SpellLevel and CreatureLevel (the Novice loadout,
-////   `genesis_prime/game/loadout`) are the ones a rule reads today.
+////   `genesis_prime/game/loadout`), with ItemDisplay and ItemDisplaySourceEntry
+////   (what a worn item is drawn with, `genesis_prime/game/worn_visual`) are the
+////   ones a rule reads today.
 //// - The load: one file for each table of the list and no other is read, the
 ////   rows the rules follow are required, and a missing row fails the load. The
 ////   load runs in a fresh node, since it is under the server's own key, which
@@ -31,7 +33,7 @@ import gleam/string
 import owned_test
 import planted_table
 
-pub fn the_servers_tables_are_the_twenty_nine_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_thirty_one_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -60,6 +62,8 @@ pub fn the_servers_tables_are_the_twenty_nine_its_rules_read_test() -> Nil {
       "Item2Category",
       "Item2Family",
       "Item2Type",
+      "ItemDisplay",
+      "ItemDisplaySourceEntry",
       "ItemSlot",
       "PathMission",
       "Spell4",
@@ -68,7 +72,7 @@ pub fn the_servers_tables_are_the_twenty_nine_its_rules_read_test() -> Nil {
       "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, abilities and health, and the training creatures' rows"
+    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, and the training creatures' rows"
 }
 
 /// Runs a function of this module in a fresh node, which must return.

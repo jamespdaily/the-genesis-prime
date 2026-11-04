@@ -716,6 +716,31 @@ pub fn a_unit_create_names_the_items_a_player_wears_test() -> Nil {
     as "opcode.0x262: a count of 7 bits and that many item visuals (ReadItemVisual 0x1400AB890)"
 }
 
+pub fn an_item_visual_of_the_widest_values_of_its_fields_round_trips_in_a_unit_create_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(player) =
+    unit_create_player.decode(message_support.hex(
+      "0110000014c2814101c180404026a010042006000230044006104418171615141312110121000000044700640015706e6c6a686664628220000080458501800012000000000000400300005003d800370000003838383838383838d3d2d2d2d2d2d2d2ca046208000080088022c008c01100",
+    ))
+    as "vector.opcode.0x262.player decodes"
+  let widest =
+    ItemVisual(
+      slot: 127,
+      display_id: 0x7FFF,
+      item_color_set_id: 0x3FFF,
+      dye: 0xFFFFFFFF,
+    )
+  let worn =
+    UnitCreatePlayer(
+      ..player,
+      tail: UnitCreateTail(..player.tail, item_visuals: [widest]),
+    )
+  let assert Ok(bytes) = unit_create_player.encode(worn)
+    as "a unit whose item visual holds the widest value of each field encodes"
+  assert unit_create_player.decode(bytes) == Ok(worn)
+    as "ReadItemVisual 0x1400AB890: slot 7 bits, display 15, colour set 14 and dye 32 hold 127, 32767, 16383 and 4294967295 and read back as written"
+}
+
 pub fn a_body_with_a_whole_byte_after_its_last_field_is_a_decode_error_test() -> Nil {
   use <- owned_test.run(5000)
   assert delete_character_result.decode(message_support.hex("008d040000 00"))

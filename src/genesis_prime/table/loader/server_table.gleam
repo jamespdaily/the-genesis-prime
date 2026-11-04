@@ -30,6 +30,8 @@ import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
+import genesis_prime/table/item_display
+import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
@@ -59,6 +61,8 @@ import gleam/erlang/reference.{type Reference}
 /// - CreatureLevel: a player's Base Health by level (genesis_prime/game/loadout).
 /// - Item2, Item2Category, Item2Family, Item2Type and ItemSlot, with GameFormula:
 ///   the Novice gear's properties (genesis_prime/game/item_property).
+/// - ItemDisplay and ItemDisplaySourceEntry: what a worn item is drawn with
+///   (genesis_prime/game/worn_visual).
 /// - Spell4 and SpellLevel: a class's level-1 abilities (genesis_prime/game/loadout).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
@@ -86,6 +90,8 @@ pub fn entries() -> List(store.Entry) {
     item2_category.entry(),
     item2_family.entry(),
     item2_type.entry(),
+    item_display.entry(),
+    item_display_source_entry.entry(),
     item_slot.entry(),
     path_mission.entry(),
     spell4.entry(),

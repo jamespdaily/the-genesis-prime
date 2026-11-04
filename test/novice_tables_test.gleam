@@ -10,12 +10,15 @@ import genesis_prime/table/creature_level
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   CharacterCreationId, CreatureLevelId, GameFormulaId, Item2CategoryId,
-  Item2FamilyId, Item2Id, Item2TypeId, ItemSlotId, Spell4Id, SpellLevelId,
+  Item2FamilyId, Item2Id, Item2TypeId, ItemDisplayId, ItemDisplaySourceEntryId,
+  ItemSlotId, Spell4Id, SpellLevelId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
+import genesis_prime/table/item_display
+import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
@@ -89,6 +92,8 @@ pub fn the_planted_items_types_families_categories_and_slots_are_the_clients_tes
         row.item2_category_id,
         row.item2_type_id,
         row.power_level,
+        row.item_display_id,
+        row.item_source_id,
         row.flags,
         row.equipped_slot_flags,
         row.item_budget_id,
@@ -97,7 +102,7 @@ pub fn the_planted_items_types_families_categories_and_slots_are_the_clients_tes
       )
     }
     assert get(planted) == get(real)
-      as "Item2: the planted row has the real row's columns the item formulas read"
+      as "Item2: the planted row has the real row's columns the item formulas and the worn visuals read"
   })
   let types =
     list.map(item_ids, fn(id) {
@@ -192,4 +197,38 @@ pub fn the_planted_formulas_levels_and_spells_are_the_clients_test() -> Nil {
     assert get(planted) == get(real)
       as "SpellLevel: the planted row has the real row's class, level, prerequisite and Spell4"
   })
+}
+
+pub fn the_planted_item_display_source_entries_and_displays_are_the_clients_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let real = client_tables.shared()
+  let planted = character_tables.shared()
+  assert list.length(item_display_source_entry.all(planted)) == 42
+    as "the planted ItemDisplaySourceEntry table holds the 21 item types of the sets for each of the sources 75 and 76"
+  list.each(item_display_source_entry.all(planted), fn(entry) {
+    let assert Ok(row) =
+      item_display_source_entry.get(
+        tables: real,
+        id: ItemDisplaySourceEntryId(entry.id),
+      )
+      as "the real table holds the planted entry's id"
+    assert entry
+      == item_display_source_entry.ItemDisplaySourceEntry(..row, icon: "")
+      as "ItemDisplaySourceEntry: the planted row has the real row's source, type, levels and display"
+  })
+  list.each(item_display.all(planted), fn(display) {
+    let assert Ok(row) =
+      item_display.get(tables: real, id: ItemDisplayId(display.id))
+      as "the real ItemDisplay table holds the planted display"
+    assert row.id == display.id
+  })
+  let displays =
+    list.map(item_display_source_entry.all(planted), fn(entry) {
+      entry.item_display_id
+    })
+  assert list.all(displays, fn(display) {
+    list.any(item_display.all(planted), fn(row) { row.id == display })
+  })
+    as "every display a planted entry names has a planted ItemDisplay row"
 }

@@ -9,7 +9,7 @@
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place)
 ////                                                 (or Refused: the rule hands back to select)
-//// Joined(unit record, run)   ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 4, 0x1A0, 0x19D,
+//// Joined(unit record, run)   ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 10, 0x1A0, 0x19D,
 ////                                                 0x6BC, 0x636, 0xF1, 0x61, WatchMap(map, run)
 //// ```
 ////
@@ -22,15 +22,18 @@
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
 ////   player). 0xF1 sets the flag loading's last stage waits on (0x1403b67e0).
 //// - **The loadout** (genesis_prime/game/loadout) is sent after 0x19B, which sets
-////   the player, and before 0x61: the Novice weapon as an item equipped in slot
-////   16 (0x111 at location 0), then one ability item per level-1 spell (0x111 at
+////   the player, and before 0x61: the Novice armor pieces and shield, each held
+////   at the bag index of its slot, then the weapon in slot 16 (0x111 at location
+////   0, in bag order), then one ability item per level-1 spell (0x111 at
 ////   location 4, bag index from 0), then the tier 1 of each ability in action
 ////   sets 0 to 3 (0x1A0) and action set 0 with the abilities in bar slots 0 to 2
 ////   (0x19D) (`opcode.0x111.ability_bag`, `opcode.0x1a0`, `opcode.0x19d`). Without
 ////   the weapon the client hides the bar and refuses the abilities that need
-////   one (`lua.ActionBarFrame.InitializeBars`, `0x1403afb10`). The unit's 0x262
-////   carries the gear's health, shield and properties
-////   (genesis_prime/world_map/player_unit `with_gear`).
+////   one (`lua.ActionBarFrame.InitializeBars`, `0x1403afb10`). Holding an item
+////   draws nothing: the worn set is drawn by the item visuals the map's unit
+////   carries in its 0x262 (genesis_prime/world_map/player_unit,
+////   `opcode.0x262.worn_visuals`). The unit's 0x262 also carries the gear's
+////   health, shield and properties (`with_gear`).
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
 ////   floats, which neither entry path reads (opcode.0xad.last_floats). The
 ////   position, here and in 0x262, is bounded to the box the client bounds a
@@ -471,8 +474,9 @@ fn entered_world() -> Effect {
   Send(Frame(message_id: player_entered_world.message_id, body:))
 }
 
-/// The location of the held items that are equipped: the weapon, in the slot
-/// the loadout names (`0x1403afb10`).
+/// The location of the held items that are equipped: the armor pieces and the
+/// shield, each at the bag index of its slot, and the weapon, in the slot the
+/// loadout names (`0x1403afb10`, `ItemSlot.equippedSlotFlags`).
 const equipped_location = 0
 
 /// The location of the held items that are abilities (`opcode.0x111.ability_bag`).
@@ -505,12 +509,21 @@ const ability_shortcut = 4
 /// unlocked.
 const set_unlocked = 1
 
-/// The loadout's messages, in order: the weapon, each ability, the tiers and
-/// action set 0.
+/// The loadout's messages, in order: each armor piece and the shield, the
+/// weapon, each ability, the tiers and action set 0.
 fn loadout_sent(
   character_number character_number: Int,
   loadout loadout: Loadout,
 ) -> List(Effect) {
+  let armor =
+    list.map(loadout.armor, fn(piece) {
+      held_item(
+        character_number:,
+        item_id: piece.item.value,
+        location: equipped_location,
+        bag_index: piece.bag_index,
+      )
+    })
   let weapon =
     held_item(
       character_number:,
@@ -528,6 +541,7 @@ fn loadout_sent(
       )
     })
   list.flatten([
+    armor,
     [weapon],
     abilities,
     [

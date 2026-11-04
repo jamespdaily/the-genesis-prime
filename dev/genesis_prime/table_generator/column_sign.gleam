@@ -121,7 +121,13 @@ pub fn all() -> List(ColumnSign) {
       table: "Item2",
       column: "powerLevel",
       sign: Unread,
-      evidence: "the server reads the power level of the 44 Novice items only (genesis_prime/game/item_property), all 2 (Item2.novice_set); one Item2 row holds -1, which no rule reads",
+      evidence: "the server reads the power level of the 44 Novice items only (genesis_prime/game/item_property, genesis_prime/game/worn_visual), all 2 (Item2.novice_set); one Item2 row holds -1, which no rule reads",
+    ),
+    ColumnSign(
+      table: "ItemDisplay",
+      column: "componentRegionFlags",
+      sign: Unread,
+      evidence: "the server reads only the ID of ItemDisplay, to check that a worn item's display has a row (genesis_prime/game/worn_visual); no rule reads componentRegionFlags, which holds a value with bit 31 set in some rows",
     ),
     ColumnSign(
       table: "Item2",

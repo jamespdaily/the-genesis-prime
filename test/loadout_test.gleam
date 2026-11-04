@@ -17,6 +17,16 @@
 ////   Stalker 81349 / 81355, Spellslinger 81350 / 81356. The weapon's equipped
 ////   slot is 16: its ItemSlot (WeaponPrimary, 20) holds the flags 0x10000, bit
 ////   16 (`0x14040df10`, `lua.ActionBarFrame.InitializeBars`).
+//// - The armor and the shield: each is held at location 0 at the bag index of
+////   the lowest bit of its ItemSlot's equipped slot flags (`ItemSlot.
+////   equippedSlotFlags`, GetSlot `0x140418a50`): chest 0, legs 1, shoulder 3,
+////   feet 4, hands 5, shield 15 (`novice_tables.bag_index_of`).
+//// - The worn visuals (`opcode.0x262.worn_visuals`, `Item2.novice_visuals`,
+////   FindItemDisplaySourceEntry `0x140444130`): one per armor piece and the
+////   weapon, in the ItemSlot id of its type (1 chest, 2 legs, 4 shoulder, 5
+////   feet, 6 hands, 20 weapon), with the display of the ItemDisplaySourceEntry
+////   row of its item source, item type and power level, and none for the
+////   shield or for an item whose Item2 flags hold 0x4000.
 //// - The starting abilities (`SpellLevel.spell4Id`, `opcode.0x111.ability_bag`):
 ////   the level-1 rows of the class with no prerequisite, in the order of their
 ////   ids, each as the Spell4Base id of its Spell4 row: Warrior 18309, 37968,
@@ -35,15 +45,20 @@
 import character_tables
 import client_tables
 import genesis_prime/game/item_property.{Shield}
-import genesis_prime/game/loadout.{type Loadout}
+import genesis_prime/game/loadout.{type Loadout, Equipped}
+import genesis_prime/game/worn_visual
 import genesis_prime/table/character_creation
 import genesis_prime/table/creature_level
 import genesis_prime/table/game_formula
-import genesis_prime/table/id.{ClassId, Item2Id, Spell4BaseId}
+import genesis_prime/table/id.{
+  ClassId, Item2Id, ItemDisplayId, ItemSlotId, Spell4BaseId,
+}
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
+import genesis_prime/table/item_display
+import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
@@ -54,7 +69,7 @@ import gleam/erlang/reference
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/string
 import novice_tables
 import owned_test
@@ -437,10 +452,17 @@ fn files_replacing(
   schema schema: tbl_file.Schema,
   rows rows: List(List(planted_table.Cell)),
 ) -> List(#(String, BitArray)) {
+  files_replacing_all(changes: [#(schema, rows)])
+}
+
+/// The planted files with the rows of each changed table replaced.
+fn files_replacing_all(
+  changes changes: List(#(tbl_file.Schema, List(List(planted_table.Cell)))),
+) -> List(#(String, BitArray)) {
   list.map(character_tables.files(), fn(file) {
-    case file.0 == schema.file {
-      True -> planted_table.file(schema, rows)
-      False -> file
+    case list.find(changes, fn(change) { { change.0 }.file == file.0 }) {
+      Ok(#(schema, rows)) -> planted_table.file(schema, rows)
+      Error(Nil) -> file
     }
   })
 }
@@ -619,4 +641,356 @@ pub fn an_items_guid_differs_for_each_character_location_and_bag_index_test() ->
   assert loadout.item_guid(character_number: 42, location: 4, bag_index: 0)
     != loadout.item_guid(character_number: 43, location: 4, bag_index: 0)
     as "another character's item has another guid"
+}
+
+// ---- the armor held, and what is worn ----
+
+/// The set's armor pieces and shield held at location 0: the item and the bag
+/// index of the lowest bit of its ItemSlot's flags, in bag order.
+fn equipped_armor(
+  class class: Class,
+  faction faction: Int,
+) -> List(loadout.Equipped) {
+  let assert Ok(set) =
+    list.find(novice_tables.sets(), fn(set) {
+      set.class_id == class.id && set.faction_id == faction
+    })
+    as "the planted sets hold every class and faction"
+  novice_tables.equipped_of(set:)
+  |> list.filter(fn(pair) { pair.0 != weapon_of(class:, faction:) })
+  |> list.map(fn(pair) { Equipped(item: Item2Id(pair.0), bag_index: pair.1) })
+}
+
+fn armor_bag_indexes(tables tables: table_store.Tables) -> Nil {
+  every_set(tables:, check: fn(class, faction, loadout) {
+    assert loadout.armor == equipped_armor(class:, faction:)
+      as {
+        "ItemSlot.equippedSlotFlags: the "
+        <> class.name
+        <> " of faction "
+        <> int.to_string(faction)
+        <> " holds its chest at 0, legs at 1, shoulder at 3, feet at 4, hands at 5 and shield at 15"
+      }
+    assert list.length(loadout.armor) == 6
+      as "CharacterCreation: a Novice set holds five armor pieces and a shield besides its weapon"
+  })
+}
+
+pub fn a_loadouts_armor_is_its_five_pieces_and_shield_at_the_bag_index_of_their_slot_on_planted_tables_test() -> Nil {
+  use <- owned_test.run(60_000)
+  armor_bag_indexes(tables: character_tables.shared())
+}
+
+pub fn a_loadouts_armor_is_its_five_pieces_and_shield_at_the_bag_index_of_their_slot_in_the_clients_tables_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  armor_bag_indexes(tables: client_tables.shared())
+}
+
+/// The planted ItemSlot rows with the slot `id` holding these equipped slot
+/// flags.
+fn item_slot_rows_with(
+  id id: Int,
+  flags flags: Int,
+) -> List(List(planted_table.Cell)) {
+  list.map(novice_tables.item_slots(), fn(slot) {
+    case slot.0 == id {
+      True -> #(id, flags, slot.2)
+      False -> slot
+    }
+  })
+  |> list.map(novice_tables.item_slot_row)
+}
+
+pub fn a_changed_item_slot_row_changes_the_bag_index_of_the_pieces_of_its_slot_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(tables) =
+    loaded(files: files_replacing(
+      schema: item_slot.schema,
+      rows: item_slot_rows_with(id: 1, flags: 4096),
+    ))
+    as "the planted tables with a changed ItemSlot row load"
+  let assert Ok(loadout) =
+    loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
+    as "class 1 faction 166 has a set"
+  table_store.unload(tables)
+  assert loadout.armor
+    == [
+      Equipped(Item2Id(81_366), 1),
+      Equipped(Item2Id(81_390), 3),
+      Equipped(Item2Id(81_367), 4),
+      Equipped(Item2Id(81_389), 5),
+      Equipped(Item2Id(81_365), 12),
+      Equipped(Item2Id(8535), 15),
+    ]
+    as "GetSlot 0x140418a50: ArmorChest's flags 0x1000 put the chest 81365 at the lowest bit, 12, and leave the other pieces where their slots' flags put them"
+}
+
+pub fn an_item_whose_slot_has_no_equipped_slot_flag_fails_the_load_naming_the_item_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let reason =
+    why_the_load_fails(files: files_replacing(
+      schema: item_slot.schema,
+      rows: item_slot_rows_with(id: 2, flags: 0),
+    ))
+  assert string.contains(reason, "item 81344")
+    && string.contains(reason, "equipped slot")
+    as {
+      "GetSlot 0x140418a50 gives no slot to an item with no flag below bit 31, so the held item has no bag index: "
+      <> reason
+    }
+}
+
+/// What a loadout's worn visuals are, as slot and display.
+fn worn_of(loadout loadout: Loadout) -> List(#(Int, Int)) {
+  list.map(loadout.visuals, fn(visual) {
+    #(visual.slot.value, visual.display.value)
+  })
+}
+
+fn worn_visuals(tables tables: table_store.Tables) -> Nil {
+  every_set(tables:, check: fn(class, faction, loadout) {
+    assert worn_of(loadout:)
+      == novice_tables.worn_visuals(class_id: class.id, faction_id: faction)
+      as {
+        "opcode.0x262.worn_visuals: the "
+        <> class.name
+        <> " of faction "
+        <> int.to_string(faction)
+        <> " wears its five pieces and its weapon, and nothing for the shield (slot 43, display 0)"
+      }
+  })
+}
+
+pub fn a_loadouts_worn_visuals_are_its_five_pieces_and_weapon_in_the_slot_and_display_of_each_set_on_planted_tables_test() -> Nil {
+  use <- owned_test.run(60_000)
+  worn_visuals(tables: character_tables.shared())
+}
+
+pub fn a_loadouts_worn_visuals_are_its_five_pieces_and_weapon_in_the_slot_and_display_of_each_set_in_the_clients_tables_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  worn_visuals(tables: client_tables.shared())
+}
+
+/// The rows of tables to plant in place of the planted ones.
+type Changes =
+  List(#(tbl_file.Schema, List(List(planted_table.Cell))))
+
+/// The Warrior of faction 167's loadout in tables loaded from the planted files
+/// with these tables replaced.
+fn warrior_167_in(changes changes: Changes) -> Loadout {
+  let assert Ok(tables) = loaded(files: files_replacing_all(changes:))
+    as "the planted tables with the changed rows load"
+  let assert Ok(loadout) =
+    loadout.of(tables:, class_id: ClassId(1), faction_id: 167)
+    as "class 1 faction 167 has a set"
+  table_store.unload(tables)
+  loadout
+}
+
+/// The planted entries with the one of id `id` replaced by `entry` and the
+/// entries `added` appended, as rows.
+fn entries_with(
+  replacing id: Int,
+  by entry: novice_tables.SourceEntry,
+  added added: List(novice_tables.SourceEntry),
+) -> List(List(planted_table.Cell)) {
+  list.map(novice_tables.source_entries(), fn(planted) {
+    case planted.id == id {
+      True -> entry
+      False -> planted
+    }
+  })
+  |> list.append(added)
+  |> list.map(novice_tables.source_entry_row)
+}
+
+/// The planted ItemDisplay rows and one for each of these displays.
+fn displays_with(
+  displays displays: List(Int),
+) -> List(List(planted_table.Cell)) {
+  list.append(
+    novice_tables.item_display_rows(),
+    list.map(displays, novice_tables.item_display_row),
+  )
+}
+
+pub fn a_changed_item_display_source_entry_changes_the_visual_of_its_item_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let chest = novice_tables.SourceEntry(4535, 75, 15, 1, 3, 3999)
+  let loadout =
+    warrior_167_in(changes: [
+      #(
+        item_display_source_entry.schema,
+        entries_with(replacing: 4535, by: chest, added: []),
+      ),
+      #(item_display.schema, displays_with(displays: [3999])),
+    ])
+  assert worn_of(loadout:)
+    == [#(1, 3999), #(2, 3840), #(4, 530), #(5, 3841), #(6, 3839), #(20, 119)]
+    as "0x140444130: the chest 81359 (source 75, type 15) takes the display of the entry's row, here 3999, and no other piece changes"
+}
+
+pub fn the_entry_whose_levels_hold_the_items_power_level_gives_its_display_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let displays = displays_with(displays: [3998])
+  let low = novice_tables.SourceEntry(4535, 75, 15, 1, 3, 3998)
+  let high = novice_tables.SourceEntry(9001, 75, 15, 3, 5, 3838)
+  let first_holds =
+    warrior_167_in(changes: [
+      #(
+        item_display_source_entry.schema,
+        entries_with(replacing: 4535, by: low, added: [high]),
+      ),
+      #(item_display.schema, displays),
+    ])
+  assert list.first(worn_of(loadout: first_holds)) == Ok(#(1, 3998))
+    as "0x140444130: the item's power level is 2, which levels 1 to 3 hold and 3 to 5 do not"
+  let second_holds =
+    warrior_167_in(changes: [
+      #(
+        item_display_source_entry.schema,
+        entries_with(
+          replacing: 4535,
+          by: novice_tables.SourceEntry(..low, min_level: 3, max_level: 5),
+          added: [novice_tables.SourceEntry(..high, min_level: 1, max_level: 3)],
+        ),
+      ),
+      #(item_display.schema, displays),
+    ])
+  assert list.first(worn_of(loadout: second_holds)) == Ok(#(1, 3838))
+    as "0x140444130: the entry whose levels hold the power level is the one found, whichever comes first"
+}
+
+pub fn an_item_with_a_display_of_its_own_is_drawn_with_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let loadout =
+    warrior_167_in(changes: [
+      #(
+        item2.schema,
+        novice_tables.item2_rows_with(id: 81_359, display: 3996, flags: 1),
+      ),
+      #(item_display.schema, displays_with(displays: [3996])),
+    ])
+  assert worn_of(loadout:)
+    == [#(1, 3996), #(2, 3840), #(4, 530), #(5, 3841), #(6, 3839), #(20, 119)]
+    as "opcode.0x262.worn_visuals: an Item2 itemDisplayId that is not 0 is the display, and the source's entries are not looked at"
+}
+
+/// The planted Item2 rows and one more, item 99001, of the heavy chest type 15
+/// and the source 75, which no set holds, with these flags.
+fn item2_rows_and_a_chest_with(
+  flags flags: Int,
+) -> List(List(planted_table.Cell)) {
+  list.append(novice_tables.item2_rows(), [
+    planted_table.row(item2.schema, [
+      #("ID", planted_table.Integer(99_001)),
+      #("item2FamilyId", planted_table.Integer(1)),
+      #("item2CategoryId", planted_table.Integer(3)),
+      #("item2TypeId", planted_table.Integer(15)),
+      #("itemSourceId", planted_table.Integer(75)),
+      #("powerLevel", planted_table.Integer(2)),
+      #("flags", planted_table.Integer(flags)),
+      #("supportPowerPercentage", planted_table.Float(-1.0)),
+    ]),
+  ])
+}
+
+/// The visual of item 99001 with these flags, in tables loaded from the planted
+/// files and that item.
+fn visual_of_a_chest_with(
+  flags flags: Int,
+) -> Result(option.Option(worn_visual.WornVisual), worn_visual.WornVisualError) {
+  let assert Ok(tables) =
+    loaded(files: files_replacing(
+      schema: item2.schema,
+      rows: item2_rows_and_a_chest_with(flags:),
+    ))
+    as "the planted tables with an item no set holds load"
+  let visual = worn_visual.of_item(tables:, item2_id: 99_001)
+  table_store.unload(tables)
+  visual
+}
+
+pub fn an_item_whose_flags_hold_0x4000_is_never_dressed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert visual_of_a_chest_with(flags: 0x4001) == Ok(None)
+    as "0x140444130: an item whose flags hold 0x4000 has no display entry, so no visual, though its source and type have an entry"
+  assert visual_of_a_chest_with(flags: 1)
+    == Ok(
+      Some(worn_visual.WornVisual(
+        slot: ItemSlotId(1),
+        display: ItemDisplayId(3838),
+      )),
+    )
+    as "the same item without the flag is dressed: ItemSlot 1 and the display of the entry of source 75 and type 15, 3838"
+}
+
+pub fn a_novice_item_whose_flags_hold_0x4000_is_not_read_and_fails_the_load_naming_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let reason =
+    why_the_load_fails_with(changes: [
+      #(
+        item2.schema,
+        novice_tables.item2_rows_with(id: 81_359, display: 0, flags: 0x4001),
+      ),
+    ])
+  assert string.contains(reason, "item 81359")
+    && string.contains(reason, "0x4000")
+    as {
+      "FillItemInfo 0x1404445d0 takes most of the item's fields from GameFormula 1214's proxy item when its flags hold 0x4000, a path the properties do not follow, so the load refuses the item: "
+      <> reason
+    }
+}
+
+/// Why the load of the planted files with these tables replaced fails.
+fn why_the_load_fails_with(changes changes: Changes) -> String {
+  why_the_load_fails(files: files_replacing_all(changes:))
+}
+
+pub fn a_novice_item_with_no_item_display_source_entry_for_its_source_type_and_level_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let reason =
+    why_the_load_fails_with(changes: [
+      #(
+        item_display_source_entry.schema,
+        list.filter(novice_tables.source_entries(), fn(entry) {
+          entry.id != 4535
+        })
+          |> list.map(novice_tables.source_entry_row),
+      ),
+    ])
+  assert string.contains(reason, "ItemDisplaySourceEntry")
+    && string.contains(reason, "item source 75")
+    && string.contains(reason, "item type 15")
+    && string.contains(reason, "power level 2")
+    as {
+      "0x140444130: the heavy chest of source 75 has no entry, so the item has no display: "
+      <> reason
+    }
+  let out_of_range = novice_tables.SourceEntry(4535, 75, 15, 3, 5, 3838)
+  let reason =
+    why_the_load_fails_with(changes: [
+      #(
+        item_display_source_entry.schema,
+        entries_with(replacing: 4535, by: out_of_range, added: []),
+      ),
+    ])
+  assert string.contains(reason, "item source 75")
+    && string.contains(reason, "power level 2")
+    as {
+      "0x140444130: an entry whose levels do not hold the power level is none: "
+      <> reason
+    }
+}
+
+pub fn a_display_with_no_item_display_row_fails_the_load_naming_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  a_load_without_the_row_fails(
+    schema: item_display.schema,
+    rows: novice_tables.item_display_rows(),
+    id: 3838,
+    table: "ItemDisplay",
+  )
 }

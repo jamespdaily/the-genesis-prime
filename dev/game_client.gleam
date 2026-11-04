@@ -514,13 +514,20 @@ fn standing(
 /// The ids of the messages that put a player in the world, in the order the
 /// client needs (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc,
 /// opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD first; 0x262 before 0x19B; 0x19B
-/// before the weapon and the three abilities (0x111, opcode.0x111.ability_bag),
+/// before the six armor items, the weapon and the three abilities (0x111,
+/// opcode.0x111.ability_bag, opcode.0x111.equipped_set),
 /// their tiers (0x1A0, opcode.0x1a0), the action set (0x19D, opcode.0x19d), 0x6BC,
 /// 0x636 and 0x61; then the zone channel (opcode.0x1da, opcode.0x1bc).
 pub const world_entry_ids = [
   0x00AD,
   0x0262,
   0x019B,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
   0x0111,
   0x0111,
   0x0111,
@@ -808,12 +815,14 @@ pub fn whisper_next(
 }
 
 /// What the entry's items, tiers and action set give the player's action bar, as
-/// the client keeps them: the weapon equipped in slot 16, the abilities in the
-/// bag by bag index, and the bar slots of action set 0 whose ability the client
-/// can show (the ability's item is held, and its tier is set for action set 0).
+/// the client keeps them: the weapon equipped in slot 16, the other equipped
+/// items (armor pieces and the shield) by bag index, the abilities in the bag by
+/// bag index, and the bar slots of action set 0 whose ability the client can
+/// show (the ability's item is held, and its tier is set for action set 0).
 pub type Loadout {
   Loadout(
     weapon: Option(Int),
+    armor: List(#(Int, Int)),
     abilities: List(#(Int, Int)),
     bar: List(#(Int, Int)),
   )
@@ -822,7 +831,8 @@ pub type Loadout {
 /// The loadout the messages of an entry give (opcode.0x111.ability_bag: an item
 /// at location 4 is an ability, its item id the Spell4Base id and its bag index
 /// the slot a press names; lua.ActionBarFrame.InitializeBars: the weapon is the
-/// item equipped in slot 16, location 0; opcode.0x1a0: a tier per base and set;
+/// item equipped in slot 16, location 0, and any other item at location 0 is an
+/// equipped piece at its bag index (opcode.0x111.equipped_set); opcode.0x1a0: a tier per base and set;
 /// opcode.0x19d: a type 4 shortcut is an ability by its Spell4Base id, in the bar
 /// slot its bag index names, and the client shows it when it holds the ability,
 /// 0x1403c1bf0).
@@ -837,6 +847,9 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
     list.find(items, fn(item) { item.location == 0 && item.bag_index == 16 })
     |> result.map(fn(item) { item.item_id })
     |> option.from_result
+  let armor =
+    list.filter(items, fn(item) { item.location == 0 && item.bag_index != 16 })
+    |> list.map(fn(item) { #(item.bag_index, item.item_id) })
   let abilities =
     list.filter(items, fn(item) { item.location == 4 })
     |> list.map(fn(item) { #(item.bag_index, item.item_id) })
@@ -872,7 +885,7 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
       && list.contains(held_with_tier, shortcut.object_id)
     })
     |> list.map(fn(shortcut) { #(shortcut.bag_index, shortcut.object_id) })
-  Loadout(weapon:, abilities:, bar:)
+  Loadout(weapon:, armor:, abilities:, bar:)
 }
 
 /// The figures the character sheet shows (lua.Character.UpdateAttributes), whole
