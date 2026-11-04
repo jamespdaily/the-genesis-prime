@@ -5,8 +5,10 @@
 //// truncated to 52), so a test of the rule reads what the real spawn would carry
 //// without the client's tables.
 
+import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/start_place
 import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/spawn.{
   type Row, type Spawn, type WorldSpawns, Row, Spawn,
 }
@@ -77,4 +79,20 @@ pub fn beast_row(number number: Int) -> Row {
     health: option.None,
     level: option.None,
   )
+}
+
+/// The worlds the tests' maps may run in: every World row a test uses.
+const worlds = [22, 51, 426, 870, 990, 1061, 1387, 3460, 3461, 6009]
+
+/// A key whose terms hold these spawns for World 3460 and no spawn for every
+/// other world a test's map may run in, as the content load leaves them.
+pub fn key_with(spawns spawns: List(Spawn)) -> table_store.Key {
+  let key = table_store.new_key()
+  list.each(worlds, fn(world_id) {
+    content_spawn.put_world(key:, world_id:, spawns: case world_id {
+      3460 -> world_spawns(spawns:)
+      _ -> spawn.no_spawns()
+    })
+  })
+  key
 }

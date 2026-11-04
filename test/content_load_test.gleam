@@ -18,9 +18,9 @@ import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/content/term
 import genesis_prime/migration
 import genesis_prime/readiness
+import genesis_prime/table/loader/store as table_store
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
@@ -41,8 +41,8 @@ fn asking() -> readiness.Settings {
 /// database, under a key of its own.
 fn load(
   database database: String,
-) -> #(Result(Nil, content.LoadError), term.Key) {
-  let key = term.new_key()
+) -> #(Result(Nil, content.LoadError), table_store.Key) {
+  let key = table_store.new_key()
   let pool =
     database_support.config(
       database_support.settings(),
@@ -52,7 +52,7 @@ fn load(
     )
   #(
     content.load(
-      tables: character_tables.shared(),
+      tables: character_tables.content_tables(),
       migrations: genesis_prime.load_migrations(),
       pool:,
       ask: asking(),
@@ -93,7 +93,7 @@ pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> 
   assert dict.size(world.by_id) == 27
     as "migration 0008's 27 Virtual Defense Daguns, the only spawns the template holds"
   assert dict.size(content_spawn.world(key:, world_id: 22).by_id) == 0
-    as "a world with no spawn that starts has no term, and no spawns"
+    as "a World row with no spawn that starts has an empty term"
 }
 
 pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil {
@@ -119,30 +119,28 @@ pub fn a_database_whose_migrations_differ_stops_the_load_with_the_difference_tes
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   change(database, "delete from schema_migration where name = '0008_spawn'")
-  let #(loaded, key) = load(database:)
+  let #(loaded, _key) = load(database:)
   assert loaded
     == Error(content.MigrationsDiffer(migration.NotApplied(name: "0008_spawn")))
     as "the database has not run the migration 0008_spawn"
-  assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 0
-    as "no term was put"
 }
 
 pub fn two_refused_rows_are_both_logged_with_table_id_and_rule_and_stop_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.tag("serial")
   let database = database_support.new_database(on: database_support.shared())
-  change(database, bad_row(row: 1, creature: 999_998))
-  change(database, bad_row(row: 2, creature: 999_999))
+  change(database, bad_row(row: 1, creature: 200_001))
+  change(database, bad_row(row: 2, creature: 200_002))
   let lines = process.new_subject()
   let capture = log_capture.start_all(into: lines)
-  let #(loaded, key) = load(database:)
+  let #(loaded, _key) = load(database:)
   log_capture.stop(capture)
   let assert Error(content.Refused(refusals:)) = loaded
     as "bad rows stop the load"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.rule) })
     == [
-      #("spawn", "Creature2 999998 has no row"),
-      #("spawn", "Creature2 999999 has no row"),
+      #("spawn", "Creature2 200001 has no row"),
+      #("spawn", "Creature2 200002 has no row"),
     ]
     as "both rows are refused, each naming the table and the rule: one bad row shows its neighbours"
   assert list.all(refusals, fn(refused) { refused.id > 0 })
@@ -155,8 +153,6 @@ pub fn two_refused_rows_are_both_logged_with_table_id_and_rule_and_stop_the_load
       list.contains(logged, refusal.describe(refused))
     })
     as "every refusal is logged before the start stops"
-  assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 0
-    as "no term was put for a load that failed"
   assert refusal.describe(Refusal(table: "spawn", id: 5, rule: "a rule"))
     == "the table spawn row 5 is refused: a rule"
 }

@@ -25,6 +25,7 @@
 
 import character_tables
 import genesis_prime/content/refusal.{Refusal}
+import genesis_prime/table/creature2_outfit_group_entry
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/server_table
@@ -35,7 +36,6 @@ import genesis_prime/world_map/spawn.{
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -46,7 +46,7 @@ import spawn_support
 
 /// The selection of the rows against the planted tables.
 fn selected(rows rows: List(Row)) -> Selection {
-  spawn.select(rows:, tables: character_tables.shared())
+  spawn.select(rows:, tables: character_tables.content_tables())
 }
 
 /// The selection of the rows against the tables of these planted files.
@@ -54,10 +54,12 @@ fn selected_with(
   files files: List(#(String, BitArray)),
   rows rows: List(Row),
 ) -> Selection {
-  use folder <- planted_table.in_folder(files)
-  let assert Ok(tables) =
-    server_table.load_under(under: reference.new(), from: folder)
-    as "the planted files load as the server's tables"
+  use folder <- planted_table.in_folder(list.append(
+    files,
+    character_tables.content_files(),
+  ))
+  let assert Ok(tables) = server_table.load_for_content(from: folder)
+    as "the planted files load as the content load's tables"
   spawn.select(rows:, tables:)
 }
 
@@ -112,12 +114,12 @@ pub fn a_row_whose_creature_has_no_row_or_whose_display_is_not_its_creatures_is_
   // row's own display must be one of the creature's display group's.
   let selection =
     selected(rows: [
-      spawn.Row(..spawn_support.beast_row(number: 7), creature_id: 999_999),
+      spawn.Row(..spawn_support.beast_row(number: 7), creature_id: 200_002),
       spawn.Row(..spawn_support.beast_row(number: 8), display_info_id: 12_345),
     ])
   assert selection.refusals
     == [
-      Refusal(table: "spawn", id: 7, rule: "Creature2 999999 has no row"),
+      Refusal(table: "spawn", id: 7, rule: "Creature2 200002 has no row"),
       Refusal(
         table: "spawn",
         id: 8,
@@ -301,7 +303,7 @@ pub fn a_row_with_health_0_is_left_out_and_a_row_with_no_stats_starts_with_the_c
     ])
   assert started(selection) == [2, 3] as "dead is left out, no stats is kept"
   assert left_out(selection:, reason: Dead) == 1
-  let assert [world] = dict.values(selection.worlds) as "one world"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(no_stats) = dict.get(world.by_id, SpawnId(2))
   assert #(no_stats.level, no_stats.health) == #(1, 52)
     as "the creature's minLevel and Base Health 52.6205 truncated"
@@ -331,7 +333,7 @@ pub fn a_level_outside_its_rows_range_is_kept_and_listed_test() -> Nil {
 pub fn the_planted_beast_has_the_creature_traces_numbers_test() -> Nil {
   use <- owned_test.run(60_000)
   let selection = selected(rows: [spawn_support.beast_row(number: 1)])
-  let assert [world] = dict.values(selection.worlds) as "one world"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(beast) = dict.get(world.by_id, SpawnId(1))
   assert #(beast.level, beast.health, beast.faction_id, beast.display_info_id)
     == #(1, 52, 1441, 26_565)
@@ -360,7 +362,7 @@ pub fn a_creatures_override_of_property_7_is_its_base_health_test() -> Nil {
     )
   let selection =
     selected_with(files:, rows: [spawn_support.beast_row(number: 1)])
-  let assert [world] = dict.values(selection.worlds) as "one world"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(beast) = dict.get(world.by_id, SpawnId(1))
   assert beast.health == 77
     as "the override's 77.9 truncated, in place of the formula's 52"
@@ -376,13 +378,13 @@ pub fn a_difficulty_and_a_resist_of_0_need_no_row_and_the_difficulty_multiplies_
       ]),
       rows: [spawn_support.beast_row(number: 1)],
     )
-  let assert [world] = dict.values(selection.worlds) as "one world"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(beast) = dict.get(world.by_id, SpawnId(1))
   assert beast.health == 135
     as "CreatureLevel 1's 135.97028 x 1.0 x 1.0 x 1.0, truncated"
 }
 
-pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_load_test() -> Nil {
+pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_are_loaded_by_the_client_test() -> Nil {
   use <- owned_test.run(60_000)
   let id = fn(schema, number) {
     planted_table.row(schema, [#("ID", planted_table.Integer(number))])
@@ -396,6 +398,12 @@ pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_load_t
     |> replacing(schema: path_mission.schema, rows: [id(path_mission.schema, 5)])
     |> replacing(schema: instance_portal.schema, rows: [
       id(instance_portal.schema, 6),
+    ])
+    |> replacing(schema: creature2_outfit_group_entry.schema, rows: [
+      planted_table.row(creature2_outfit_group_entry.schema, [
+        #("ID", planted_table.Integer(1)),
+        #("creature2OutfitGroupId", planted_table.Integer(7)),
+      ]),
     ])
   let selection =
     selected_with(files:, rows: [spawn_support.beast_row(number: 1)])

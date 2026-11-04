@@ -7,8 +7,6 @@ import ask_support
 import character_tables
 import genesis_prime/client_connection.{type Message, SentByMap, SentByPeer}
 import genesis_prime/connection/registry.{type Registry}
-import genesis_prime/content/spawn as content_spawn
-import genesis_prime/content/term
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
@@ -45,12 +43,7 @@ pub fn start(
   let maps = process.new_name("maps")
   let connections = registry.new()
   let creatures = creature_registry.new()
-  let key = term.new_key()
-  content_spawn.put_world(
-    key:,
-    world_id: 3460,
-    spawns: spawn_support.world_spawns(spawns),
-  )
+  let key = spawn_support.key_with(spawns:)
   let world =
     server.World(
       maps:,

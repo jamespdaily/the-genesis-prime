@@ -8,13 +8,15 @@
 //// a map's start ─▶ world(key, its world id) ─▶ WorldSpawns: no copy, no query
 //// ```
 ////
-//// - **The term** of a world is `WorldSpawns(by_id, cells)`, put once. A world
-////   with no spawn that starts has no term, and `world` gives it no spawns.
+//// - **The term** of a world is `WorldSpawns(by_id, cells)`, put once for every
+////   row of the client's World table, empty for a world with no spawn that
+////   starts.
 //// - **The query** is `sql/load_spawns.sql`, run by the load's own pool before
 ////   the tree starts; nothing queries the table during play.
 
 import genesis_prime/content/sql
-import genesis_prime/content/term.{type Key}
+import genesis_prime/content/term
+import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, type WorldSpawns, Row,
 }
@@ -25,7 +27,7 @@ import gleam/result
 import pog
 
 /// The table's name in the log and in a term.
-const table = "spawn"
+pub const table = "spawn"
 
 /// Every row of the spawn table, in world and id order, or why the query failed.
 pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
@@ -71,8 +73,9 @@ pub fn put_world(
   term.put(key:, table:, id: world_id, value: spawns)
 }
 
-/// The spawns that start in the world, as the load put them under the key: none
-/// for a world that has none.
+/// The spawns that start in the world, as the load put them under the key. The
+/// load puts a term for every row of the client's World table, empty for a world
+/// with no spawn, so a world with no term is a bug and crashes the reader.
 pub fn world(key key: Key, world_id world_id: Int) -> WorldSpawns {
-  term.get(key:, table:, id: world_id, fallback: spawn.no_spawns())
+  term.get(key:, table:, id: world_id)
 }

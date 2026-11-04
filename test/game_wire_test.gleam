@@ -32,13 +32,17 @@ import ask_support
 import character_support
 import character_tables
 import connection_rule_support as support
+import content_support
 import event_wait
 import game_client
+import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
+import genesis_prime/content
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
+import genesis_prime/import_world_data
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
@@ -73,10 +77,12 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/whisper_failed
+import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import gleam/bool
@@ -2013,7 +2019,34 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
 /// and the 27 Virtual Battle Beasts of the planted world-database file, loaded
 /// through the content load into a key of the test's own.
 fn start_with_creatures() -> login_support.Started {
-  panic as "the planted spawns are loaded into the test's world after the shape's review"
+  login_support.start_with(change: fn(settings) {
+    let pool =
+      pog.Config(
+        ..settings.pool,
+        pool_name: process.new_name("content_pool"),
+        pool_size: 1,
+      )
+    let assert Ok(_) =
+      import_world_data.import_spawns(
+        db: content_support.connect_with(config: pool),
+        folder: content_support.fixture_folder,
+      )
+      as "the planted world-database file imports"
+    let key = table_store.new_key()
+    let assert Ok(Nil) =
+      content.load(
+        tables: character_tables.content_tables(),
+        migrations: genesis_prime.load_migrations(),
+        pool: pog.Config(..pool, pool_name: process.new_name("load_pool")),
+        ask: readiness.Settings(within_ms: 5000, attempt_ms: 2000, pause_ms: 50),
+        key:,
+      )
+      as "the content load puts the seeded spawns in the world's term"
+    server.Settings(
+      ..settings,
+      world: server.World(..settings.world, spawns: key),
+    )
+  })
 }
 
 pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_and_a_second_bot_sees_the_same_unit_ids_test() -> Nil {

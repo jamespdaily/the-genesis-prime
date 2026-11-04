@@ -17,8 +17,8 @@ import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
 import genesis_prime/step.{
-  type Event, type ServiceEvent, type ServiceStep, Connection, ConnectionId,
-  CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
+  type ConnectionId, type Event, type ServiceEvent, type ServiceStep, Connection,
+  ConnectionId, CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
   StartServiceTimer, Started, Stop, Told, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/creature.{
@@ -37,6 +37,11 @@ const clock_origin_ms = 5000
 
 /// A creature standing at a Battle Beast spawn as unit 7 of the first run.
 fn creature() -> State {
+  creature_for(viewers: [])
+}
+
+/// The same creature, started for these players, who see the spawn.
+fn creature_for(viewers viewers: List(ConnectionId)) -> State {
   creature.new(Settings(
     creature: CreatureStart(
       map: ship,
@@ -45,6 +50,7 @@ fn creature() -> State {
       life: 3,
       spawn_id: SpawnId(1),
       clock_origin_ms:,
+      viewers:,
     ),
     spawn: spawn_support.battle_beast(number: 1, x: 0.0),
   ))
@@ -155,4 +161,33 @@ pub fn a_creature_told_to_retire_stops_with_nothing_to_send_test() -> Nil {
     as "the map's Retire ends the creature: no player has seen it for the idle stop"
   assert sent(taken) == []
     as "its viewers went with their Unwatched, so there is no 0x355 left to send"
+}
+
+pub fn a_creature_started_for_players_sends_each_its_0x262_as_it_starts_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The map's start of a creature names its first viewers (CreatureStart), so a
+  // burst of starts is not followed by a burst of Watched sends.
+  let #(state, taken) =
+    feed(
+      state: creature_for(viewers: [ConnectionId(2), ConnectionId(5)]),
+      at_ms: 6500,
+      event: OwnEvent(Started),
+    )
+  let assert [
+    #(2, PeerNews(unit_id: 7, news: CreatureAppeared(first), ..)),
+    #(5, PeerNews(unit_id: 7, news: CreatureAppeared(second), ..)),
+  ] = sent(taken)
+    as "one 0x262 for each first viewer, in the order the map gave them"
+  assert first.tail.server_time_estimate_start == 1500
+    && second.tail.server_time_estimate_start == 1500
+    as "stamped from the map's clock at the creature's start"
+  let #(_, taken) =
+    feed(
+      state:,
+      at_ms: 7000,
+      event: OwnEvent(Told(Unwatched(by: ConnectionId(2)))),
+    )
+  let assert [#(2, PeerNews(news: Removed, ..))] = sent(taken)
+    as "a first viewer is a viewer: it is sent the 0x355 when it stops seeing the creature"
+  Nil
 }

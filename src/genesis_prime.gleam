@@ -21,7 +21,6 @@ import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
 import genesis_prime/content
-import genesis_prime/content/term
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game_settings
@@ -52,7 +51,7 @@ import simplifile
 
 pub fn main() -> Nil {
   let #(tables, count) = load_tables()
-  let spawns = load_content(tables:)
+  let spawns = load_content()
   start(settings: settings(tables:, spawns:), tables: count)
 }
 
@@ -60,9 +59,15 @@ pub fn main() -> Nil {
 /// persistent terms, after the client's tables and before the tree, so the
 /// listeners open once the world's spawns are in place: waits for the database
 /// as the readiness ask does, and stops the program with the reasons when the
-/// migrations differ or any row is refused. Gives the key the terms are under.
-pub fn load_content(tables tables: store.Tables) -> term.Key {
-  let key = term.server_key()
+/// migrations differ or any row is refused. The tables the selection reads are
+/// loaded for it from the same folder, and unloaded after. Gives the key the
+/// terms are under.
+pub fn load_content() -> store.Key {
+  let key = store.server_key()
+  let tables = case server_table.load_for_content(from: table_folder()) {
+    Ok(tables) -> tables
+    Error(error) -> panic as store.describe(error)
+  }
   case
     content.load(
       tables:,
@@ -85,14 +90,19 @@ pub fn load_content(tables tables: store.Tables) -> term.Key {
 /// Gives the loaded tables, which the game connections read, and how many
 /// tables there are.
 pub fn load_tables() -> #(store.Tables, Int) {
-  let folder = case envoy.get("GENESIS_TABLE_DIR") {
+  case server_table.load(from: table_folder()) {
+    Ok(tables) -> #(tables, list.length(server_table.entries()))
+    Error(error) -> panic as store.describe(error)
+  }
+}
+
+/// The folder GENESIS_TABLE_DIR names, which holds the client's extracted tables;
+/// a missing variable stops the program with the reason.
+fn table_folder() -> String {
+  case envoy.get("GENESIS_TABLE_DIR") {
     Ok(folder) -> folder
     Error(Nil) ->
       panic as "GENESIS_TABLE_DIR is not set; the server loads the client's game tables from the folder it names"
-  }
-  case server_table.load(from: folder) {
-    Ok(tables) -> #(tables, list.length(server_table.entries()))
-    Error(error) -> panic as store.describe(error)
   }
 }
 
@@ -167,7 +177,7 @@ pub fn serve(
   let outcome =
     readiness.await(
       probe:,
-      tree: tree.monitor,
+      tree: Some(tree.monitor),
       settings: ready,
       files: migrations,
     )
@@ -210,7 +220,7 @@ fn settle(
           settle(
             outcome: readiness.await(
               probe:,
-              tree: tree.monitor,
+              tree: Some(tree.monitor),
               settings: ready,
               files: migrations,
             ),
@@ -259,7 +269,7 @@ fn ready_line(
 /// kept under (`load_content`).
 pub fn settings(
   tables tables: store.Tables,
-  spawns spawns: term.Key,
+  spawns spawns: store.Key,
 ) -> server.Settings {
   server.Settings(
     pool: pool(),
@@ -286,7 +296,7 @@ pub fn settings(
 /// and the delay only bounds how often a spawn starts and stops as a player
 /// walks by. The world stands the creatures of the spawns the content load put
 /// under `spawns`. Recording is off; the dev start changes it.
-fn world(spawns: term.Key) -> server.World {
+fn world(spawns: store.Key) -> server.World {
   server.World(
     maps: process.new_name("maps"),
     map_supervisor: process.new_name("map_supervisor"),

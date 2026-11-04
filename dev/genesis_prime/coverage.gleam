@@ -6,14 +6,26 @@
 //// `~/.genesis-prime/tables`) and prints a Markdown checklist per engine. It
 //// exits with 1 when the tables do not load or an engine declares a type no
 //// row uses.
+////
+//// It then prints the coverage of the world's spawns, a line for each world: how
+//// many start as fight creatures, how many NonPlayer rows are left out and why,
+//// and how many rows each other entity type has (genesis_prime/world_map/spawn,
+//// the same function the server's load logs). The spawns are those of the play
+//// database (PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE); when it cannot be
+//// read the tool says so and goes on.
 
+import genesis_prime/content/spawn as content_spawn
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
+import genesis_prime/dev_database
 import genesis_prime/dev_exit
+import genesis_prime/store/worker
 import genesis_prime/table
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table_folder
+import genesis_prime/world_map/spawn
 import gleam/erlang/reference
 import gleam/int
 import gleam/io
@@ -44,6 +56,8 @@ pub fn main() -> Nil {
       io.println(checklist.totals(measurements))
       io.println("")
       io.println(checklist.render(measurements))
+      io.println("")
+      io.println(spawn_coverage(folder:))
       case breaches(measurements) {
         [] -> Nil
         found -> {
@@ -51,6 +65,41 @@ pub fn main() -> Nil {
           dev_exit.halt(1)
         }
       }
+    }
+  }
+}
+
+/// The coverage of the play database's spawns, a line for each world, or why it
+/// cannot be measured.
+fn spawn_coverage(folder folder: String) -> String {
+  case server_table.load_for_content(from: folder), dev_database.connect() {
+    Ok(tables), Ok(db) ->
+      case content_spawn.rows(db) {
+        Ok(rows) -> {
+          let selection = spawn.select(rows:, tables:)
+          store.unload(tables)
+          string.join(
+            [
+              "Spawns that start, by world:",
+              ..list.map(selection.coverage, fn(coverage) {
+                "- " <> spawn.describe_coverage(coverage:)
+              })
+            ],
+            "\n",
+          )
+        }
+        Error(error) -> {
+          store.unload(tables)
+          "The spawn coverage needs the spawn table (run the migrations and the import on the play database): "
+          <> worker.describe_query_error(error)
+        }
+      }
+    Error(error), _ ->
+      "The spawn coverage needs the client's tables: " <> describe(error)
+    Ok(tables), Error(failure) -> {
+      store.unload(tables)
+      "The spawn coverage needs the play database: "
+      <> dev_database.describe(failure, "read the spawns")
     }
   }
 }

@@ -11,7 +11,7 @@
 
 import database_support
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/content/term
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/spawn.{Selection}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
@@ -78,9 +78,9 @@ pub fn the_one_query_reads_every_row_of_a_migrated_database_the_27_daguns_test()
     as "in id order, which the identity column gave from 1"
 }
 
-pub fn a_selections_worlds_are_put_once_and_read_back_by_world_and_a_world_with_none_has_none_test() -> Nil {
+pub fn a_selections_worlds_are_put_once_and_read_back_by_world_test() -> Nil {
   use <- owned_test.run(5000)
-  let key = term.new_key()
+  let key = table_store.new_key()
   let beasts =
     spawn_support.world_spawns([
       spawn_support.battle_beast(number: 1, x: 0.0),
@@ -89,7 +89,7 @@ pub fn a_selections_worlds_are_put_once_and_read_back_by_world_and_a_world_with_
   content_spawn.put(
     key:,
     selection: Selection(
-      worlds: dict.from_list([#(3460, beasts)]),
+      worlds: dict.from_list([#(3460, beasts), #(22, spawn.no_spawns())]),
       refusals: [],
       out_of_range_levels: [],
       coverage: [],
@@ -98,8 +98,5 @@ pub fn a_selections_worlds_are_put_once_and_read_back_by_world_and_a_world_with_
   assert content_spawn.world(key:, world_id: 3460) == beasts
     as "the world's term is what was put"
   assert content_spawn.world(key:, world_id: 22) == spawn.no_spawns()
-    as "a world with no spawn has no term and no spawns"
-  assert content_spawn.world(key: term.new_key(), world_id: 3460)
-    == spawn.no_spawns()
-    as "a load's terms are its key's own"
+    as "a world of the World table with no spawn that starts has an empty term"
 }

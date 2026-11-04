@@ -68,7 +68,7 @@ import genesis_prime/login/guid
 import genesis_prime/migration.{
   type Recorded, Migration, NoRecord, Recorded, Unreadable,
 }
-import genesis_prime/service.{type Sent}
+import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
   type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type MoveAnswer,
@@ -155,6 +155,17 @@ pub fn probe(
 ) -> Result(Sent, Nil) {
   service.start_child(supervisor: store, argument: Probe(reply:))
   |> service.sent_to_worker
+}
+
+/// Runs the probe on a pool that no store serves, as the content load's wait for
+/// the database does before the tree exists: a process of its own, not linked to
+/// the asker, runs the same two queries and answers `Reached` or `Unreached`;
+/// the asker monitors it and ends it at its deadline (`ToWorker`).
+pub fn probe_pool(
+  pool pool: pog.Connection,
+  reply reply: fn(Probed) -> Nil,
+) -> Result(Sent, Nil) {
+  Ok(ToWorker(pid: process.spawn_unlinked(fn() { reply(probed(pool)) })))
 }
 
 /// Spawns the worker and returns at once, so the supervisor's start call

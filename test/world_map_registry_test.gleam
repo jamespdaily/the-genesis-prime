@@ -23,7 +23,6 @@ import character_support
 import character_tables
 import event_wait
 import genesis_prime/connection/registry.{type Registry}
-import genesis_prime/content/term
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
@@ -37,6 +36,7 @@ import gleam/list
 import gleam/otp/static_supervisor as supervisor
 import owned_test
 import place_support
+import spawn_support
 
 /// The world supervisor as the server builds it, with the names it was built
 /// with, a registry the maps find their players' connections in, and, when the
@@ -66,7 +66,7 @@ fn start_world() -> World {
       creature_restart_ms: 60_000,
       idle_stop_ms: 60_000,
       sweep_ms: 10_000,
-      spawns: term.new_key(),
+      spawns: spawn_support.key_with(spawns: []),
     )
   let tree =
     supervisor.new(supervisor.RestForOne)

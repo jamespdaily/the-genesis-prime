@@ -315,9 +315,12 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
 
 /// The most a Join may take with this many spawns in sight, from the ask to the
 /// last creature found at its address, in milliseconds. The densest point of the
-/// world database holds 2,386 spawns within sight (design 375, section 3); the
-/// bound is the design's 100 ms, which this test states with the time it took
-/// and the margin once it has been measured.
+/// world database holds 2,386 spawns within sight (design 375, section 3). The map
+/// is one process: the moves of the players already in the map queue behind the
+/// burst, and a player sends a move every 125 ms (8 a second), so a burst under 100
+/// ms delays a move by less than one move interval. Measured on the development
+/// machine, an Apple M2 Max, in three runs: 41, 43 and 43 ms for the 2,400 starts of
+/// this test (about 17 microseconds each), so the bound has a margin of 2.3.
 const join_bound_ms = 100
 
 /// How many spawns stand in sight of the joining player.

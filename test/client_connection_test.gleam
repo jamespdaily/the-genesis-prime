@@ -15,7 +15,6 @@ import genesis_prime
 import genesis_prime/client_connection.{
   AskStore, BurstBelowOne, BurstBelowWait, Continue, Done, PerSecondBelowOne,
 }
-import genesis_prime/content/term
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, Ask, AskId, Effects, EffectsThenAsk, Log,
   LogInfo, LogLine, Stop,
@@ -23,6 +22,7 @@ import genesis_prime/step.{
 import genesis_prime/store
 import gleam/option.{None, Some}
 import owned_test
+import spawn_support
 
 pub fn a_bucket_that_holds_less_than_one_or_never_fills_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
@@ -74,7 +74,7 @@ pub fn each_rules_bucket_in_the_servers_settings_holds_what_a_client_sends_at_th
   let settings =
     genesis_prime.settings(
       tables: character_tables.shared(),
-      spawns: term.new_key(),
+      spawns: spawn_support.key_with(spawns: []),
     )
   let sts = settings.login.sts.settings
   let auth = settings.login.auth.settings

@@ -33,6 +33,7 @@ fn a_creature() -> step.CreatureStart {
     life: 3,
     spawn_id: SpawnId(1),
     clock_origin_ms: 0,
+    viewers: [],
   )
 }
 

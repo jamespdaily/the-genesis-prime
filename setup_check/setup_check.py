@@ -211,6 +211,48 @@ def check_postgres(machine: Machine) -> list[Missing]:
     return missing
 
 
+IMPORT_COMMAND = "gleam run -m genesis_prime/import_world_data"
+
+
+def check_world_data(machine: Machine) -> list[Missing]:
+    """Where GENESIS_WORLD_DATA is set: every file the play database's content_import
+    lists is in that folder with the SHA-256 recorded when it was imported, so a
+    changed or missing file of the world database is named with the import command
+    that brings the database level with it, one line for each file. The play
+    database is PGDATABASE at PGHOST, PGPORT and PGUSER (default postgres); one that
+    cannot be read, or has no content_import (the migrations have not run), lists no
+    file, and the Postgres check and the server's migration check say why."""
+    folder = machine.env.get("GENESIS_WORLD_DATA")
+    if not folder:
+        return []
+    host = machine.env.get("PGHOST") or "/tmp"
+    port = machine.env.get("PGPORT") or "5433"
+    user = machine.env.get("PGUSER") or "postgres"
+    database = machine.env.get("PGDATABASE") or "postgres"
+    code, output = machine.run(
+        ["psql", "-X", "-At", "-h", host, "-p", port, "-U", user, "-d", database, "-c",
+         "select file, sha256 from content_import order by file"]
+    )
+    if code != 0:
+        return []
+    missing = []
+    for line in output.splitlines():
+        file, _, recorded = line.strip().partition("|")
+        if not file:
+            continue
+        path = Path(folder) / file
+        part = "the world database's %s as the play database imported it" % file
+        if not path.is_file():
+            missing.append(Missing(part, "no file at %s" % path,
+                                   "put %s in the folder GENESIS_WORLD_DATA names, or set it in env.sh" % file))
+            continue
+        found = hashlib.sha256(path.read_bytes()).hexdigest()
+        if found != recorded:
+            missing.append(Missing(part, "the file's SHA-256 is %s, the database recorded %s" % (found[:12], recorded[:12]),
+                                   "import it again: %s" % IMPORT_COMMAND))
+    return missing
+
+
 def check_client(machine: Machine) -> list[Missing]:
     """WildStar64.exe with the pinned SHA-256, and every Patch/*.index on the
     target build."""
@@ -417,8 +459,9 @@ def check_distribution(machine: Machine) -> list[Missing]:
 
 def check_all(machine: Machine) -> list[Missing]:
     """Every part's check, in order, skipping the client's parts where
-    GENESIS_NO_CLIENT=1."""
-    checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres, check_distribution]
+    GENESIS_NO_CLIENT=1. The world data's runs only where GENESIS_WORLD_DATA is set."""
+    checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres, check_distribution,
+              check_world_data]
     if not _no_client(machine):
         checks += [check_client, check_table_folder, check_query_process]
     return [missing for check in checks for missing in check(machine)]

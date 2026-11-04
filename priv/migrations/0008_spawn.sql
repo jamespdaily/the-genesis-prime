@@ -3,7 +3,7 @@
 -- the first of them, `spawn`: every place a unit stands in a world.
 --
 -- Every content table has the same two columns for where a row comes from,
--- `source` (the content_source type) and `source_row` (the row's id in its
+-- `source` (the content_source table) and `source_row` (the row's id in its
 -- source file), and the same two checks: a row of the world database names its
 -- row in the file, and any other row states its reason. So a server choice says
 -- why, and a retail record names the record it came from.
@@ -15,15 +15,20 @@
 --
 -- Every number that is a 32-bit float in message 0x262 is a `real` here, and
 -- refuses NaN and the infinities as `character` does for its place (0007).
+-- Each bound is the width of the field in message 0x262 (creature_id 18 bits,
+-- display 17, outfit 15, world socket 14, checklist index 8, faction 14).
 -- Values seen in the file: stat ids 0 to 22, `active_prop_id` up to 6.0e13
 -- (so `bigint`), some stat values with fractions.
-create type content_source as enum (
-  'world_database', 'retail_record', 'server_choice', 'game_master'
-);
+--
+-- `content_source` is a table, not a type, so a new source is one insert in the
+-- migration that needs it, and every content table refers to it.
+create table content_source (name text primary key);
+insert into content_source (name) values
+  ('world_database'), ('retail_record'), ('server_choice'), ('game_master');
 
 create table spawn (
   id integer primary key generated always as identity,
-  source content_source not null,
+  source text not null,
   source_row integer,
   reason text,
   -- Message 0x262's unit type, 6 bits; 37 and above fail the client's read
@@ -47,10 +52,15 @@ create table spawn (
   quest_checklist_index integer not null,
   active_prop_id bigint not null,
   world_socket_id integer not null,
+  constraint spawn_source_is_a_content_source
+    foreign key (source) references content_source (name),
+  constraint spawn_id_is_positive check (id > 0),
   constraint spawn_source_row_is_unique unique (source_row),
+  constraint spawn_source_row_is_positive check (source_row > 0),
   constraint spawn_entity_type_is_a_unit_type
     check (entity_type between 0 and 36),
-  constraint spawn_creature_id_is_positive check (creature_id > 0),
+  constraint spawn_creature_id_is_in_18_bits
+    check (creature_id between 1 and 262143),
   constraint spawn_world_id_is_positive check (world_id > 0),
   constraint spawn_area_id_is_not_negative check (area_id >= 0),
   constraint spawn_position_is_finite
@@ -65,8 +75,15 @@ create table spawn (
       and rotation_y between -3.4028235e38 and 3.4028235e38
       and rotation_z between -3.4028235e38 and 3.4028235e38
     ),
-  constraint spawn_display_info_id_is_positive check (display_info_id > 0),
-  constraint spawn_outfit_info_id_is_not_negative check (outfit_info_id >= 0),
+  constraint spawn_display_info_id_is_in_17_bits
+    check (display_info_id between 1 and 131071),
+  constraint spawn_outfit_info_id_is_in_15_bits
+    check (outfit_info_id between 0 and 32767),
+  constraint spawn_quest_checklist_index_is_in_8_bits
+    check (quest_checklist_index between 0 and 255),
+  constraint spawn_active_prop_id_is_not_negative check (active_prop_id >= 0),
+  constraint spawn_world_socket_id_is_in_14_bits
+    check (world_socket_id between 0 and 16383),
   constraint spawn_faction_id_is_14_bits
     check (faction_id between 0 and 16383),
   constraint spawn_base_faction_id_is_14_bits
@@ -78,8 +95,6 @@ create table spawn (
   constraint spawn_reason_says_something
     check (reason is null or length(trim(reason)) > 0)
 );
-
-create index spawn_world_id on spawn (world_id);
 
 -- The stats the world database recorded for a spawn, by their client index
 -- (5 bits, opcode.0x262). Only health (0) and level (10) are read.
@@ -122,7 +137,7 @@ insert into spawn (
   world_socket_id
 )
 select
-  'server_choice'::content_source,
+  'server_choice',
   'the offset of world-database row ' || beast.row_id
     || ' from WorldLocation2 51739''s centre, applied to WorldLocation2 52898''s centre',
   0, 73465, 3460, 0, beast.x, beast.y, beast.z,

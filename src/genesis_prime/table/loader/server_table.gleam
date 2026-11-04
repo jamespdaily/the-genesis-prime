@@ -15,12 +15,15 @@ import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/creature2_display_group_entry
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/creature2_outfit_group_entry
+import genesis_prime/table/creature2_outfit_info
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
+import genesis_prime/table/faction2
+import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
 import genesis_prime/table/instance_portal
 import genesis_prime/table/item2
@@ -34,10 +37,12 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
+import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
 import gleam/erlang/reference.{type Reference}
+import gleam/list
 
 /// The entry of each table the server loads, in file-name order.
 /// - CharacterCreation: the row a create request names
@@ -90,6 +95,39 @@ pub fn entries() -> List(store.Entry) {
     world_zone.entry(),
     xp_per_level.entry(),
   ]
+}
+
+/// The entries only the content load reads (genesis_prime/content), listed apart
+/// from `entries` so the tables digest of a recording does not change with them:
+/// - Creature2OutfitInfo: the outfit of a spawn (genesis_prime/world_map/spawn).
+/// - Faction2 and Faction2Relationship: which creatures a player can attack
+///   (genesis_prime/world_map/spawn).
+/// - World: the worlds a map can run in, each of which gets a term of its spawns
+///   (genesis_prime/world_map/spawn).
+fn content_entries() -> List(store.Entry) {
+  [
+    creature2_outfit_info.entry(),
+    faction2.entry(),
+    faction2_relationship.entry(),
+    world.entry(),
+  ]
+}
+
+/// The tables the content load reads: the server's own and the content-only
+/// ones, under a key made for the load, with the derived values left out. The
+/// caller unloads them once the content is loaded, so nothing of them stays in
+/// memory; the server's own tables, which the game reads, are loaded apart with
+/// `load`.
+pub fn load_for_content(
+  from folder: String,
+) -> Result(store.Tables, store.LoadError) {
+  store.load(
+    under: reference.new(),
+    from: folder,
+    entries: list.append(entries(), content_entries()),
+    requirements: requirement.all(),
+    derivations: [],
+  )
 }
 
 /// Loads the server's tables under the server's own key, the same in every

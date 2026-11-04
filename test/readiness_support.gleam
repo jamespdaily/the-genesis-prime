@@ -6,6 +6,7 @@ import genesis_prime
 import genesis_prime/readiness
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/process.{type Name, type Pid}
+import gleam/option
 import gleam/otp/factory_supervisor
 
 /// The ask's times in a test: 30 s in all, as the server's, a 2 s attempt and
@@ -24,7 +25,7 @@ pub fn await(
   let outcome =
     readiness.await(
       probe: fn(reply) { worker.probe(store:, reply:) },
-      tree: process.monitor(tree),
+      tree: option.Some(process.monitor(tree)),
       settings: settings(),
       files: genesis_prime.load_migrations(),
     )

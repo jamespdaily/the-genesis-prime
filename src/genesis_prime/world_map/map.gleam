@@ -257,9 +257,10 @@ import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
-  Connection, CreatureNotStarted, Effects, Log, LogError, LogLine, OwnEffect,
-  OwnEvent, Reply, Send, ServiceTimerFired, StartServiceTimer, Started, Stop,
-  Stopping, TimerId, Told, Unwatch, Watch, WatchEnded, WatchId,
+  Connection, ConnectionId, CreatureNotStarted, CreatureStart, Effects, Log,
+  LogError, LogLine, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired,
+  StartCreature, StartServiceTimer, Started, Stop, Stopping, TimerId, Told,
+  Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/loader/store as table_store
@@ -274,6 +275,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
+import gleam/order
 import gleam/result
 import gleam/set.{type Set}
 
@@ -397,9 +399,9 @@ pub type SpawnState {
     viewers: Set(ConnectionId),
     idle_since_ms: Option(Int),
   )
-  /// The creature was told `Retire` and has not ended. `held` are the players
-  /// who see the spawn meanwhile, told to the creature that starts at its end.
-  Retiring(unit_id: Int, life: Int, held: Set(ConnectionId))
+  /// The creature was told `Retire` and has not ended. The players who see the
+  /// spawn meanwhile are the players whose `seen` holds it, found when it ends.
+  Retiring(unit_id: Int, life: Int)
   /// The creature crashed: the unit was sent `Gone`, and the spawn's restart
   /// timer runs.
   WaitingForRestart
@@ -502,20 +504,26 @@ pub fn step(
         }
       }
     OwnEvent(Asked(caller:, message: Join(connection:, character:, place:))) ->
-      joined(state:, caller:, connection:, character:, place:)
+      joined(
+        state:,
+        caller:,
+        connection:,
+        character:,
+        place:,
+        now_ms: input.now.monotonic_ms,
+      )
     OwnEvent(Asked(caller:, message: Leave(connection:))) ->
-      left(state:, caller:, connection:)
+      left(state:, caller:, connection:, now_ms: input.now.monotonic_ms)
     OwnEvent(Told(message: Moved(connection:, place:))) ->
-      moved(state:, connection:, place:)
+      moved(state:, connection:, place:, now_ms: input.now.monotonic_ms)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..))) ->
       panic as "a map is asked Join and Leave and told Moved only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
-        Ok(spawn) ->
-          creature_ended(state:, spawn:, now_ms: input.now.monotonic_ms)
-        Error(Nil) -> ended(state:, watch:)
+        Ok(spawn) -> creature_ended(state:, spawn:, watch:)
+        Error(Nil) -> ended(state:, watch:, now_ms: input.now.monotonic_ms)
       }
   }
 }
@@ -582,35 +590,214 @@ fn creature_not_started(
 }
 
 /// The sweep: every live spawn idle for `idle_stop_ms` or more is sent `Retire`
-/// and becomes retiring, and the sweep timer starts again.
+/// and becomes retiring, in the order of the spawns, and the sweep timer starts
+/// again.
 fn swept(
-  state _state: State,
-  now_ms _now_ms: Int,
+  state state: State,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "the sweep is built after the shape's review"
+  let idle =
+    dict.to_list(state.spawns)
+    |> list.filter_map(fn(entry) {
+      case entry.1 {
+        Live(unit_id:, life:, idle_since_ms: Some(since_ms), ..)
+          if now_ms - since_ms >= state.settings.idle_stop_ms
+        -> Ok(#(entry.0, unit_id, life))
+        Live(..) | Retiring(..) | WaitingForRestart | Failed -> Error(Nil)
+      }
+    })
+    |> list.sort(fn(first, second) { compare_spawns(first.0, second.0) })
+  let spawns =
+    list.fold(idle, state.spawns, fn(spawns, retired) {
+      dict.insert(
+        spawns,
+        retired.0,
+        Retiring(unit_id: retired.1, life: retired.2),
+      )
+    })
+  #(
+    State(..state, spawns:),
+    Effects(
+      list.append(
+        list.map(idle, fn(retired) {
+          tell_creature(
+            state:,
+            unit_id: retired.1,
+            life: retired.2,
+            message: Retire,
+          )
+        }),
+        [
+          OwnEffect(StartServiceTimer(
+            timer: sweep_timer,
+            after_ms: state.settings.sweep_ms,
+          )),
+        ],
+      ),
+    ),
+  )
 }
 
 /// A creature's watch ended. A live creature crashed: every player is sent
 /// `Gone` of its unit, the unit id is given up, and the spawn's restart timer
 /// starts. A retiring one ended cleanly, whatever the reason: the spawn is
-/// dormant with its unit id kept, or a creature starts at once for the players
-/// held, under the same unit id and a new life.
+/// dormant with its unit id kept, or, when a player sees it now, a creature
+/// starts at once under the same unit id and a new life, with those players as
+/// its first viewers.
 fn creature_ended(
-  state _state: State,
-  spawn _spawn: SpawnId,
-  now_ms _now_ms: Int,
+  state state: State,
+  spawn spawn: SpawnId,
+  watch watch: WatchId,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "a creature's end is built after the shape's review"
+  let state =
+    State(..state, creature_watches: dict.delete(state.creature_watches, watch))
+  case dict.get(state.spawns, spawn) {
+    Ok(Live(unit_id:, ..)) -> {
+      let SpawnId(number) = spawn
+      let gone =
+        list.map(players_in_order(state), fn(player) {
+          send(to: player.0, message: Gone(unit_id:))
+        })
+      #(
+        State(
+          ..state,
+          spawns: dict.insert(state.spawns, spawn, WaitingForRestart),
+          unit_of_spawn: dict.delete(state.unit_of_spawn, spawn),
+        ),
+        Effects(
+          list.append(gone, [
+            OwnEffect(StartServiceTimer(
+              timer: TimerId(number),
+              after_ms: state.settings.creature_restart_ms,
+            )),
+          ]),
+        ),
+      )
+    }
+    Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:)
+    Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
+      panic as "a watch ended for a creature the map holds no live or retiring spawn for"
+  }
 }
 
 /// A spawn's restart timer fired: when a player sees the spawn from where it
-/// stands, a creature starts there under the next unit id and each of them is
-/// told `Watched`; when none does, the spawn is dormant.
+/// stands, a creature starts there under the next unit id with those players as
+/// its first viewers; when none does, the spawn is dormant.
 fn restart_due(
-  state _state: State,
-  spawn _spawn: SpawnId,
+  state state: State,
+  spawn spawn: SpawnId,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "the restart is built after the shape's review"
+  case dict.get(state.spawns, spawn) {
+    Ok(WaitingForRestart) -> started_for_those_who_see(state:, spawn:)
+    Ok(Live(..)) | Ok(Retiring(..)) | Ok(Failed) | Error(Nil) ->
+      panic as "a restart timer fired for a spawn that does not wait for one"
+  }
+}
+
+/// The spawn is dormant when no player sees it from where it stands, and
+/// otherwise a creature starts there with those players as its first viewers.
+fn started_for_those_who_see(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> #(State, ServiceStep(Outgoing)) {
+  case players_seeing(state:, spawn:) {
+    [] -> #(
+      State(..state, spawns: dict.delete(state.spawns, spawn)),
+      Effects([]),
+    )
+    viewers -> {
+      let #(state, start) = start_creature(state:, spawn:, viewers:)
+      #(state, Effects([start]))
+    }
+  }
+}
+
+/// The connections of the players who see the spawn from where they stand, in
+/// the order of their numbers.
+fn players_seeing(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> List(ConnectionId) {
+  players_in_order(state)
+  |> list.filter(fn(player) { set.contains({ player.1 }.seen, spawn) })
+  |> list.map(fn(player) { player.0 })
+}
+
+/// The players by their connection's number.
+fn players_in_order(state: State) -> List(#(ConnectionId, Player)) {
+  dict.to_list(state.players)
+  |> list.sort(fn(first, second) { compare_connections(first.0, second.0) })
+}
+
+fn compare_connections(
+  first: ConnectionId,
+  second: ConnectionId,
+) -> order.Order {
+  let ConnectionId(first) = first
+  let ConnectionId(second) = second
+  int.compare(first, second)
+}
+
+fn compare_spawns(first: SpawnId, second: SpawnId) -> order.Order {
+  let SpawnId(first) = first
+  let SpawnId(second) = second
+  int.compare(first, second)
+}
+
+/// Starts a creature at the spawn with these players as its first viewers: under
+/// the spawn's unit id for the run, taken from the counter when the spawn has had
+/// none (the first creature there, or the first after a crash gave its id up),
+/// and a new life, the number of the watch it is started under. The spawn is
+/// then live with those viewers.
+fn start_creature(
+  state state: State,
+  spawn spawn: SpawnId,
+  viewers viewers: List(ConnectionId),
+) -> #(State, Effect(ServiceEffect(Outgoing))) {
+  let #(state, unit_id) = case dict.get(state.unit_of_spawn, spawn) {
+    Ok(unit_id) -> #(state, unit_id)
+    Error(Nil) -> {
+      let #(state, unit_id) = take_unit_id(state)
+      #(
+        State(
+          ..state,
+          unit_of_spawn: dict.insert(state.unit_of_spawn, spawn, unit_id),
+        ),
+        unit_id,
+      )
+    }
+  }
+  let watch = WatchId(state.next_watch)
+  let WatchId(life) = watch
+  #(
+    State(
+      ..state,
+      spawns: dict.insert(
+        state.spawns,
+        spawn,
+        Live(
+          unit_id:,
+          life:,
+          viewers: set.from_list(viewers),
+          idle_since_ms: option.None,
+        ),
+      ),
+      creature_watches: dict.insert(state.creature_watches, watch, spawn),
+      next_watch: state.next_watch + 1,
+    ),
+    OwnEffect(StartCreature(
+      watch:,
+      creature: CreatureStart(
+        map: state.settings.map,
+        incarnation: state.settings.incarnation,
+        unit_id:,
+        life:,
+        spawn_id: spawn,
+        clock_origin_ms: state.started_ms,
+        viewers:,
+      ),
+    )),
+  )
 }
 
 /// The spawns of the map's world the player at `place` sees: those the cell
@@ -631,30 +818,110 @@ fn spawns_in_sight(state state: State, place place: Place) -> Set(SpawnId) {
   |> set.from_list
 }
 
-/// The state and sends of the player of `connection` coming to see the spawns
-/// `now` after it saw `was`: for each spawn it now sees and did not, a dormant
-/// spawn starts its creature and every live one is told `Watched`; for each it
-/// no longer sees, the creature is told `Unwatched`, and the spawn is idle when
-/// the player was its last viewer. A spawn the player saw and sees is not told.
+/// The state and effects of the player of `connection` coming to see the spawns
+/// `now` after it saw `was`, at monotonic time `now_ms`: a dormant spawn it now
+/// sees starts a creature with the player as its first viewer (the creature
+/// sends the 0x262 as it starts), a live one is told `Watched`, and a retiring,
+/// waiting or failed one is not told, for the player is found among its viewers
+/// when it needs them; for each spawn it no longer sees, a live creature is told
+/// `Unwatched` and the spawn is idle from `now_ms` when the player was its last
+/// viewer. The starts come first, in the order of the spawns, then the sends. A
+/// spawn the player saw and sees is not told.
 fn spawns_decided(
   state state: State,
-  connection _connection: ConnectionId,
+  connection connection: ConnectionId,
   was was: Set(SpawnId),
   now now: Set(SpawnId),
+  now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   use <- bool.guard(when: was == now, return: #(state, []))
-  panic as "starting and stopping on sight are built after the shape's review"
+  let entered = in_order(set.difference(now, was))
+  let left = in_order(set.difference(was, now))
+  let #(state, starts, sends) =
+    list.fold(entered, #(state, [], []), fn(held, spawn) {
+      let #(state, starts, sends) = held
+      case dict.get(state.spawns, spawn) {
+        Error(Nil) -> {
+          let #(state, start) =
+            start_creature(state:, spawn:, viewers: [connection])
+          #(state, [start, ..starts], sends)
+        }
+        Ok(Live(unit_id:, life:, viewers:, ..)) -> #(
+          State(
+            ..state,
+            spawns: dict.insert(
+              state.spawns,
+              spawn,
+              Live(
+                unit_id:,
+                life:,
+                viewers: set.insert(viewers, connection),
+                idle_since_ms: option.None,
+              ),
+            ),
+          ),
+          starts,
+          [
+            tell_creature(
+              state:,
+              unit_id:,
+              life:,
+              message: Watched(by: connection),
+            ),
+            ..sends
+          ],
+        )
+        Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) -> held
+      }
+    })
+  let #(state, sends) =
+    list.fold(left, #(state, sends), fn(held, spawn) {
+      let #(state, sends) = held
+      case dict.get(state.spawns, spawn) {
+        Ok(Live(unit_id:, life:, viewers:, idle_since_ms:)) -> {
+          let viewers = set.delete(viewers, connection)
+          let idle_since_ms = case set.is_empty(viewers) {
+            True -> Some(now_ms)
+            False -> idle_since_ms
+          }
+          #(
+            State(
+              ..state,
+              spawns: dict.insert(
+                state.spawns,
+                spawn,
+                Live(unit_id:, life:, viewers:, idle_since_ms:),
+              ),
+            ),
+            [
+              tell_creature(
+                state:,
+                unit_id:,
+                life:,
+                message: Unwatched(by: connection),
+              ),
+              ..sends
+            ],
+          )
+        }
+        Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> #(
+          state,
+          sends,
+        )
+      }
+    })
+  #(state, list.append(list.reverse(starts), list.reverse(sends)))
+}
+
+/// The spawns of a set in the order of their numbers.
+fn in_order(spawns: Set(SpawnId)) -> List(SpawnId) {
+  set.to_list(spawns) |> list.sort(compare_spawns)
 }
 
 /// The spawns the player sees by their number, so the sends about them are in
 /// one order.
 fn seen_in_order(player: Player) -> List(SpawnId) {
-  set.to_list(player.seen)
-  |> list.sort(fn(first, second) {
-    let SpawnId(first) = first
-    let SpawnId(second) = second
-    int.compare(first, second)
-  })
+  in_order(player.seen)
 }
 
 /// The send that tells the creature `unit_id` under `life` that the player of
@@ -705,6 +972,7 @@ fn moved(
   state state: State,
   connection connection: ConnectionId,
   place place: Place,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Error(Nil) -> #(
@@ -765,7 +1033,7 @@ fn moved(
         )
       let seen = spawns_in_sight(state:, place:)
       let #(state, spawn_effects) =
-        spawns_decided(state:, connection:, was: mover.seen, now: seen)
+        spawns_decided(state:, connection:, was: mover.seen, now: seen, now_ms:)
       #(
         State(
           ..state,
@@ -789,10 +1057,12 @@ fn left(
   state state: State,
   caller caller: CallerId,
   connection connection: ConnectionId,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Ok(player) -> {
-      let #(state, told) = without(state:, connection:, player:, why: Camped)
+      let #(state, told) =
+        without(state:, connection:, player:, why: Camped, now_ms:)
       #(
         state,
         Effects(
@@ -830,11 +1100,13 @@ fn joined(
   connection connection: ConnectionId,
   character character: Character,
   place place: Place,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Ok(player) ->
       joined_again(state:, caller:, connection:, character:, player:)
-    Error(Nil) -> joined_new(state:, caller:, connection:, character:, place:)
+    Error(Nil) ->
+      joined_new(state:, caller:, connection:, character:, place:, now_ms:)
   }
 }
 
@@ -910,9 +1182,11 @@ fn joined_new(
   connection connection: ConnectionId,
   character character: Character,
   place place: Place,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let #(state, unit_id) = take_unit_id(state)
   let watch = WatchId(state.next_watch)
+  let state = State(..state, next_watch: state.next_watch + 1)
   let unit =
     player_unit.new(
       character:,
@@ -942,7 +1216,7 @@ fn joined_new(
     })
   let seen = spawns_in_sight(state:, place:)
   let #(state, spawn_effects) =
-    spawns_decided(state:, connection:, was: set.new(), now: seen)
+    spawns_decided(state:, connection:, was: set.new(), now: seen, now_ms:)
   #(
     State(
       ..state,
@@ -952,7 +1226,6 @@ fn joined_new(
         Player(unit:, watch:, sees:, seen:),
       ),
       watches: dict.insert(state.watches, watch, connection),
-      next_watch: state.next_watch + 1,
     ),
     Effects(
       list.flatten([
@@ -1020,12 +1293,14 @@ fn answer(state state: State, unit unit: PlayerUnit) -> Outgoing {
 fn ended(
   state state: State,
   watch watch: WatchId,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.watches, watch) {
     Ok(connection) ->
       case dict.get(state.players, connection) {
         Ok(player) -> {
-          let #(state, told) = without(state:, connection:, player:, why: Ended)
+          let #(state, told) =
+            without(state:, connection:, player:, why: Ended, now_ms:)
           #(state, Effects(told))
         }
         Error(Nil) -> no_player_for_watch(state)
@@ -1060,6 +1335,7 @@ fn without(
   connection connection: ConnectionId,
   player player: Player,
   why why: Removal,
+  now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   let others = others_of(state:, connection:)
   let viewers =
@@ -1073,7 +1349,13 @@ fn without(
       )
     })
   let #(state, spawn_effects) =
-    spawns_decided(state:, connection:, was: player.seen, now: set.new())
+    spawns_decided(
+      state:,
+      connection:,
+      was: player.seen,
+      now: set.new(),
+      now_ms:,
+    )
   #(
     State(..state, players:, watches: dict.delete(state.watches, player.watch)),
     list.append(

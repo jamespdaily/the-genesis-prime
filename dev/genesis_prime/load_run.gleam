@@ -385,7 +385,7 @@ pub fn start_server() -> Settings {
   runtime.keep_mailboxes_out_of_crash_reports()
   load_sample.start()
   let #(tables, _count) = genesis_prime.load_tables()
-  let spawns = genesis_prime.load_content(tables:)
+  let spawns = genesis_prime.load_content()
   let settings = genesis_prime.settings(tables:, spawns:)
   let login = settings.login
   let settings =
@@ -402,7 +402,7 @@ pub fn start_server() -> Settings {
   let assert readiness.Ready =
     readiness.await(
       probe: fn(reply) { worker.probe(store: settings.store, reply:) },
-      tree: tree.monitor,
+      tree: option.Some(tree.monitor),
       settings: readiness.Settings(
         within_ms: 30_000,
         attempt_ms: 2000,

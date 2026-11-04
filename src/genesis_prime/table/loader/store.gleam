@@ -36,6 +36,17 @@ pub opaque type Key {
   LoadKey(Reference)
 }
 
+/// The server's own key, under which the server's tables and the content tables
+/// (genesis_prime/content/term) are stored.
+pub fn server_key() -> Key {
+  ServerKey
+}
+
+/// A key no other load has, for a load of a test or of the content tables.
+pub fn new_key() -> Key {
+  LoadKey(reference.new())
+}
+
 /// The name of a table's term in a load, and the type of the table's rows:
 /// `entry` writes the term from a decoder of that type, and a read by the key
 /// gives that type back.

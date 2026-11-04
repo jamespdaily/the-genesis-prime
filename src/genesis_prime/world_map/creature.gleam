@@ -12,8 +12,8 @@
 //// `Creature` address in the registry (genesis_prime/world_map/creature_registry).
 //// Its state, the players who see it, lives only in the process: a crash loses
 //// it, and the map, which watches the creature, tells every player the unit is
-//// `Gone`, starts the spawn again as another unit after the respawn time, and
-//// tells the new creature who sees it.
+//// `Gone`, starts the spawn again as another unit after the respawn time if a
+//// player sees it then, with those players as its first viewers.
 ////
 //// From the start to the end of a creature, and what the players in sight are
 //// sent:
@@ -21,6 +21,8 @@
 //// ```
 //// map                     creature                                    player's connection
 ////                         Started ─▶ Watch(map run)                   (the shell monitors the run)
+////                                    for each first viewer c (CreatureStart.viewers):
+////                                      Send(c, CreatureAppeared) ───▶ writes 0x262 once
 //// Watched(by: c) ───────▶ viewers + c; Send(c, CreatureAppeared) ───▶ writes 0x262 once
 //// Unwatched(by: c) ─────▶ viewers - c, if c was a viewer:
 ////                                    Send(c, Removed) ──────────────▶ writes 0x355 if shown
@@ -68,6 +70,7 @@ import genesis_prime/step.{
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn}
+import gleam/list
 import gleam/set.{type Set}
 
 /// The rule's name: its module path.
@@ -106,9 +109,9 @@ pub fn rule(
   step.Rule(name: rule_name, settings: Settings(creature:, spawn:), new:, step:)
 }
 
-/// A creature's first state: no viewers.
+/// A creature's first state: the players the map started it for are its viewers.
 pub fn new(settings: Settings) -> State {
-  State(settings:, viewers: set.new())
+  State(settings:, viewers: set.from_list(settings.creature.viewers))
 }
 
 /// One input in, the new state and what the shell must do out, as the sequence
@@ -128,23 +131,15 @@ pub fn step(
           watch: run_watch,
           target: step.Map(map: creature.map, incarnation: creature.incarnation),
         ),
+        ..list.map(creature.viewers, fn(viewer) {
+          appeared(state:, viewer:, now: input.now)
+        })
       ]),
     )
-    OwnEvent(Told(message: Watched(by:))) -> {
-      let unit =
-        creature_unit.create(
-          spawn: state.settings.spawn,
-          unit_id: creature.unit_id,
-          server_time_estimate_start: map.server_time(
-            origin_ms: creature.clock_origin_ms,
-            monotonic_ms: input.now.monotonic_ms,
-          ),
-        )
-      #(
-        State(..state, viewers: set.insert(state.viewers, by)),
-        Effects([news_to(creature:, viewer: by, news: CreatureAppeared(unit:))]),
-      )
-    }
+    OwnEvent(Told(message: Watched(by:))) -> #(
+      State(..state, viewers: set.insert(state.viewers, by)),
+      Effects([appeared(state:, viewer: by, now: input.now)]),
+    )
     OwnEvent(Told(message: Unwatched(by:))) ->
       case set.contains(state.viewers, by) {
         True -> #(
@@ -160,6 +155,27 @@ pub fn step(
     | OwnEvent(CreatureNotStarted(..)) ->
       panic as "a creature is told, and starts no timer and no creature"
   }
+}
+
+/// The send of the creature's 0x262 to a viewer, stamped with the map's time.
+fn appeared(
+  state state: State,
+  viewer viewer: ConnectionId,
+  now now: step.Now,
+) -> Effect(ServiceEffect(PeerNews)) {
+  let creature = state.settings.creature
+  news_to(
+    creature:,
+    viewer:,
+    news: CreatureAppeared(unit: creature_unit.create(
+      spawn: state.settings.spawn,
+      unit_id: creature.unit_id,
+      server_time_estimate_start: map.server_time(
+        origin_ms: creature.clock_origin_ms,
+        monotonic_ms: now.monotonic_ms,
+      ),
+    )),
+  )
 }
 
 /// The send of news about the creature's own unit to a viewer's connection.

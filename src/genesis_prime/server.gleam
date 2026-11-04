@@ -112,7 +112,6 @@ import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell as connection_shell
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/content/term
 import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off
 import genesis_prime/login/auth_connection
@@ -202,7 +201,7 @@ pub type World {
     /// The key the content load put each world's spawns under
     /// (genesis_prime/content/spawn): a map reads its world's term when it
     /// starts, and a creature reads its spawn from it, with no query during play.
-    spawns: term.Key,
+    spawns: table_store.Key,
   )
 }
 

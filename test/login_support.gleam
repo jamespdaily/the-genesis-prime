@@ -16,7 +16,6 @@ import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/listener
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
-import genesis_prime/content/term
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
@@ -32,6 +31,7 @@ import login_client.{type Ports, Ports}
 import login_vectors as vector
 import pog
 import readiness_support
+import spawn_support
 
 /// The most connections each test listener holds, a different number for each
 /// so a listener given another's setting shows.
@@ -107,7 +107,7 @@ pub fn world() -> server.World {
     creature_restart_ms: 60_000,
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
-    spawns: term.new_key(),
+    spawns: spawn_support.key_with(spawns: []),
   )
 }
 
@@ -163,7 +163,7 @@ pub fn servers_settings() -> server.Settings {
   envoy.set("GENESIS_REALM_NAME", "Test")
   genesis_prime.settings(
     tables: character_tables.shared(),
-    spawns: term.new_key(),
+    spawns: spawn_support.key_with(spawns: []),
   )
 }
 
