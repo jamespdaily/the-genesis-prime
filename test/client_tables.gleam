@@ -7,7 +7,6 @@ import envoy
 import genesis_prime/table
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
-import gleam/erlang/reference
 import gleam/list
 import gleam/string
 import simplifile
@@ -83,12 +82,20 @@ pub fn shared() -> store.Tables {
   })
 }
 
-/// Every one of the client's 384 tables, loaded once per test run under a key
-/// of their own, for the tests that read a table no rule of the server reads,
-/// such as the measure of the client's tables. Never unload them.
+/// Every one of the client's 384 tables, for the tests that read a table no rule
+/// of the server reads, such as the measure of the client's tables: the server's
+/// own (`shared`) and the other tables loaded beside them under the same key, so
+/// no table is held twice in the literal area (the server's 36 take 306 MiB, and
+/// a second copy of them filled the area). The first caller loads, every later
+/// caller in any test process gets the same `Tables`. Never unload them.
 pub fn every_table() -> store.Tables {
   database_support.once("client_every_table", fn() {
-    case table.load(under: reference.new(), from: folder()) {
+    let server_files = list.map(server_table.entries(), store.file)
+    let others =
+      list.filter(table.entries(), fn(entry) {
+        !list.contains(server_files, store.file(entry))
+      })
+    case store.load_more(over: shared(), from: folder(), entries: others) {
       Ok(tables) -> tables
       Error(error) ->
         panic as {

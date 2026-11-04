@@ -9,6 +9,7 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import gleam/erlang/process
 import gleam/list
+import literal_area
 import owned_test
 import unitest
 
@@ -56,4 +57,14 @@ pub fn the_shared_load_holds_rows_of_every_table_the_servers_list_names_test() -
     assert store.ids(entry, tables) != []
       as { store.file(entry) <> ".tbl: the client's table has rows" }
   })
+}
+
+pub fn no_table_of_the_client_is_held_by_two_loads_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  // Both loads are made before the count, so a second copy would be there.
+  let _server = client_tables.shared()
+  let _every = client_tables.every_table()
+  assert literal_area.tables_held_twice() == []
+    as "each real table is held by one persistent term: the literal area holds the client's 384 tables once, and a second copy of the server's 36 filled it"
 }

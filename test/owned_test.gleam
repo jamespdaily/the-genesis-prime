@@ -2,6 +2,8 @@
 //// what a test started stops with it. Every test body runs inside `run`.
 
 import gleam/erlang/process
+import gleam/int
+import owned_key
 import unitest
 
 pub type Outcome(a) {
@@ -14,6 +16,10 @@ pub type Outcome(a) {
 /// returns, crashes or runs past the deadline, that process is killed, so
 /// every process linked to it stops too. A body that skips through
 /// `unitest.guard` is skipped in the caller, so the runner reports a skip.
+///
+/// A body that returns with persistent terms still stored under the keys it made
+/// (`owned_key`) fails, and the terms are erased so the tests after it do not
+/// pay for them.
 pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
   let reply = process.new_subject()
   let worker =
@@ -30,9 +36,20 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
     |> process.select(reply)
     |> process.select_specific_monitor(monitor, fn(_down) { Crashed })
     |> process.selector_receive(within: timeout_ms)
+  let left_behind = owned_key.left_behind(worker)
+  owned_key.erase_left(worker)
   process.kill(worker)
   case outcome {
-    Ok(Returned(value)) -> value
+    Ok(Returned(value)) ->
+      case left_behind {
+        0 -> value
+        count ->
+          panic as {
+            "the test left "
+            <> int.to_string(count)
+            <> " persistent terms behind under the keys it made, which stay in the literal area for the rest of the run: erase them"
+          }
+      }
     Ok(Skipped) ->
       unitest.guard(False, fn() { panic as "a skipped body does not run" })
     Ok(Crashed) -> panic as "the test body crashed"

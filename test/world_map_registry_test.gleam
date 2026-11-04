@@ -66,7 +66,7 @@ fn start_world() -> World {
       creature_restart_ms: 60_000,
       idle_stop_ms: 60_000,
       sweep_ms: 10_000,
-      spawns: spawn_support.key_with(spawns: []),
+      spawns: spawn_support.key_without_spawns(),
     )
   let tree =
     supervisor.new(supervisor.RestForOne)

@@ -36,10 +36,10 @@ import genesis_prime/table/path_level
 import genesis_prime/table_rows
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/string
+import owned_key
 import owned_test
 import planted_table.{Boolean, Float, Integer, Text}
 import unitest
@@ -427,7 +427,7 @@ fn read_both_ways(
   use folder <- planted_table.in_folder([#(schema.file, bytes)])
   let assert Ok(tables) =
     store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: [entry],
       requirements: [],
