@@ -15,7 +15,7 @@ Copy this onto the step's issue. Each phase posts its progress line on the issue
 - [ ] Trace (once per milestone, up front): decoders trace every message the milestone's goals need, in parallel; each trace lands on its step's issue before that step's design starts. Line: "trace posted".
 - [ ] Design and test list posted; the step is ready (below). The coordinator approves them once. Line: "design posted".
 - [ ] Shape and its review, when the step changes processes (below). Line: "shape pushed".
-- [ ] Brief and build: one fresh implementer, from the brief (below). Line: "build pushed".
+- [ ] Brief and build: one fresh implementer, or two after a shape that splits the build (below), from the brief. Line: "build pushed".
 - [ ] Reviews (below). Line: "reviews in".
 - [ ] Fix round (below). Line: "fix round pushed".
 - [ ] Green: the full check and CI pass with no rerun. Line: "green".
@@ -45,7 +45,7 @@ The shape commit holds the types, signatures and supervision, and a sequence of 
 
 ## The brief
 
-One fresh implementer per step, in its own worktree (the Agent tool's worktree isolation). Its brief holds:
+One fresh implementer per step, in its own worktree (the Agent tool's worktree isolation). After a shape commit, the build may go to two implementers at once when the shape splits it into parts that share no files: each builds its part on its own branch from the shape, with this brief for its part, and the second to finish merges the other's branch into the step's branch before the reviews. Step G's single builder took 51 minutes over 32 files (2026-11-04). Its brief holds:
 - **Outcome:** what a player or the client sees when it is done.
 - **Evidence:** each value with its source, read before it is written: a client fact, or "server choice" with its reason.
 - **Acceptance:** the test list, and the scenario a live sitting runs.
