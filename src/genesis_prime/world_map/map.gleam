@@ -307,6 +307,7 @@ import genesis_prime/step.{
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds}
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
@@ -816,9 +817,49 @@ fn started_for_those_who_see(
     )
     viewers -> {
       let #(state, start) = start_creature(state:, spawn:, viewers:)
-      #(state, Effects([start]))
+      #(state, Effects([start, ..approaches_at_start(state:, spawn:)]))
     }
   }
+}
+
+/// `Approached` to the creature just started at the spawn from each ready player
+/// that stands in its ring, in the order of their connections: the ring was kept
+/// while no creature stood there to tell.
+fn approaches_at_start(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  case dict.get(state.spawns, spawn) {
+    Ok(Live(unit_id:, life:, ..)) ->
+      players_in_order(state)
+      |> list.filter(fn(player) {
+        { player.1 }.readiness == Loaded
+        && set.contains({ player.1 }.inside, spawn)
+      })
+      |> list.map(fn(player) {
+        tell_creature(
+          state:,
+          unit_id:,
+          life:,
+          message: approached(connection: player.0, player: player.1),
+        )
+      })
+    Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
+  }
+}
+
+/// The `Approached` of a player: its unit, its place and its move's sequence
+/// number.
+fn approached(
+  connection connection: ConnectionId,
+  player player: Player,
+) -> Outgoing {
+  Approached(
+    by: connection,
+    unit_id: player_unit.unit_id(player.unit),
+    place: player_unit.place(player.unit),
+    seq: player.seq,
+  )
 }
 
 /// The connections of the players who see the spawn from where they stand, in
@@ -1178,7 +1219,21 @@ fn ready(
   state state: State,
   connection connection: ConnectionId,
 ) -> #(State, ServiceStep(Outgoing)) {
-  todo as "ready: the build fills it in"
+  case dict.get(state.players, connection) {
+    Ok(Player(readiness: StillLoading, ..) as player) -> {
+      let #(player, effects) =
+        rings_decided(
+          state:,
+          connection:,
+          player: Player(..player, readiness: Loaded),
+        )
+      #(
+        State(..state, players: dict.insert(state.players, connection, player)),
+        Effects(effects),
+      )
+    }
+    Ok(Player(readiness: Loaded, ..)) | Error(Nil) -> #(state, Effects([]))
+  }
 }
 
 /// The rings the ready `player` of `connection` stands in at its place, against
@@ -1190,7 +1245,61 @@ fn rings_decided(
   connection connection: ConnectionId,
   player player: Player,
 ) -> #(Player, List(Effect(ServiceEffect(Outgoing)))) {
-  todo as "rings_decided: the build fills it in"
+  let now = rings_holding(state:, player:)
+  let entered = in_order(set.difference(now, player.inside))
+  let left = in_order(set.difference(player.inside, now))
+  let player = Player(..player, inside: now)
+  let tell = fn(spawn, message) {
+    case dict.get(state.spawns, spawn) {
+      Ok(Live(unit_id:, life:, ..)) -> [
+        tell_creature(state:, unit_id:, life:, message:),
+      ]
+      Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
+    }
+  }
+  #(
+    player,
+    list.append(
+      list.flat_map(entered, fn(spawn) {
+        tell(spawn, approached(connection:, player:))
+      }),
+      list.flat_map(left, fn(spawn) { tell(spawn, Withdrew(by: connection)) }),
+    ),
+  )
+}
+
+/// The spawns hostile to the player's faction whose ring holds its place: within
+/// the aggro range of the spawn's place, in three dimensions, found through the cell
+/// index.
+fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
+  let spawns = state.settings.spawns
+  let place = player_unit.place(player.unit)
+  let range = state.settings.numbers.aggro_range
+  let faction_id = player_unit.faction_id(player.unit)
+  spawn_cell.near(
+    cells: spawns.cells,
+    x: start_place.x(place),
+    z: start_place.z(place),
+    range:,
+  )
+  |> list.filter(fn(id) {
+    case dict.get(spawns.by_id, id) {
+      Ok(found) ->
+        hostile(spawn: found, faction_id:)
+        && creature_path.distance(place, found.place) <=. range
+      Error(Nil) -> False
+    }
+  })
+  |> set.from_list
+}
+
+/// Whether the spawn's creature fights a player of the faction on sight.
+fn hostile(spawn spawn: spawn.Spawn, faction_id faction_id: Int) -> Bool {
+  case faction_id == spawn.exile_faction, faction_id == spawn.dominion_faction {
+    True, _ -> spawn.combat.hostile_to.exile
+    _, True -> spawn.combat.hostile_to.dominion
+    False, False -> False
+  }
 }
 
 /// A connection's leave: its player is removed with its unit and its watch,

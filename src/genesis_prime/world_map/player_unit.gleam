@@ -145,6 +145,11 @@ pub fn standing(
   )
 }
 
+/// The Faction2 id of the unit's character: Exile 167 or Dominion 166.
+pub fn faction_id(unit unit: PlayerUnit) -> Int {
+  unit.character.faction_id
+}
+
 /// The id of the unit's character, for a log line.
 pub fn character_id(unit unit: PlayerUnit) -> Int {
   let CharacterId(character_id) = unit.character.character_id

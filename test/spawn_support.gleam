@@ -63,6 +63,29 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
   )
 }
 
+/// The spawn numbered `number` of a Virtual Defense Dagun, the Dominion Novice's
+/// first enemy, `x` units along the world's x axis: Creature2 73465, faction 1442,
+/// display 26578 of hit radius 2.0, hostile to the Dominion (1442-166 level 0) and
+/// friendly to Exiles (1442-167 level 10) (`Creature2.73465`), with the Beast's
+/// level, health, defence and attack but its own reach, 5.0 + 2.0.
+pub fn dagun(number number: Int, x x: Float) -> Spawn {
+  let beast = battle_beast(number:, x:)
+  Spawn(
+    ..beast,
+    creature_id: Creature2Id(73_465),
+    faction_id: 1442,
+    base_faction_id: 1442,
+    display_info_id: 26_578,
+    combat: Combat(
+      ..beast.combat,
+      hit_radius: 2.0,
+      attackable: Attackable(exile: False, dominion: True),
+      hostile_to: Hostile(exile: False, dominion: True),
+      attack: Attack(..beast_attack(), reach: 7.0),
+    ),
+  )
+}
+
 /// The spawn numbered `number` of a Virtual Battle Beast standing at `place`.
 pub fn beast_at(number number: Int, place place: Place) -> Spawn {
   Spawn(..battle_beast(number:, x: 0.0), place:)
