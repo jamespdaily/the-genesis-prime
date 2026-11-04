@@ -8,11 +8,12 @@
 import code_rule/planted
 import code_rule/repository
 import code_rule/shared_tables
+import code_rule/source.{type SourceFile}
 import gleam/list
 import owned_test
 import unitest
 
-fn test_module(lines: List(String)) {
+fn test_module(lines: List(String)) -> SourceFile {
   planted.file(path: "test/some_test.gleam", lines: [
     "//// A planted test module.",
     ..lines

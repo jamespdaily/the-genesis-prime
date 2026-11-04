@@ -48,8 +48,8 @@ pub fn breaches(files: List(SourceFile)) -> List(Breach) {
 
 fn file_breaches(file: SourceFile) -> List(Breach) {
   let module = syntax.parse(file)
-  let folder = names_in(module, [folder_module], [folder_function])
-  let loads = names_in(module, loading_modules, loading_functions)
+  let folder = names_in(module:, of: [folder_module], named: [folder_function])
+  let loads = names_in(module:, of: loading_modules, named: loading_functions)
   list.flat_map(module.functions, fn(definition) {
     let references =
       syntax.references(glance.Module(..module, functions: [definition]))
@@ -81,9 +81,9 @@ type Names {
 }
 
 fn names_in(
-  module: glance.Module,
-  modules: List(String),
-  functions: List(String),
+  module module: glance.Module,
+  of modules: List(String),
+  named functions: List(String),
 ) -> Names {
   let imports =
     list.filter_map(module.imports, fn(definition) {
