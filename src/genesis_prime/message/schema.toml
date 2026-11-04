@@ -1673,7 +1673,7 @@ summary = "refuses the player's cast: the client's own id for the cast, the Spel
 fields = [
   { name = "client_cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fc", named_by = "opcode.0x7fc" },
   { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7fc", named_by = "opcode.0x7fc" },
-  { name = "result", kind = "unsigned", bits = 9, evidence = "opcode.0x7fc", named_by = "opcode.0x7fc", values_type = "CastResult", values = [ { value = 1, name = "unable_to_create_spell", evidence = "Spell.CodeEnumCastResult" }, { value = 4, name = "spell_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 5, name = "spell_bad", evidence = "Spell.CodeEnumCastResult" }, { value = 6, name = "spell_cancelled", evidence = "opcode.0x801" }, { value = 13, name = "spell_already_casting", evidence = "Spell.CodeEnumCastResult" }, { value = 14, name = "spell_global_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 15, name = "spell_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 16, name = "spell_group_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 17, name = "spell_pre_requisites", evidence = "Spell.CodeEnumCastResult" }, { value = 30, name = "caster_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 31, name = "caster_must_have_target", evidence = "Spell.CodeEnumCastResult" }, { value = 33, name = "caster_not_incontrol_of_self", evidence = "Spell.CodeEnumCastResult" }, { value = 34, name = "caster_movement", evidence = "Spell.CodeEnumCastResult" }, { value = 57, name = "caster_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 90, name = "target_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 91, name = "no_target", evidence = "Spell.CodeEnumCastResult" }, { value = 99, name = "target_faction", evidence = "Spell.CodeEnumCastResult" }, { value = 101, name = "target_orientation", evidence = "Spell.CodeEnumCastResult" }, { value = 104, name = "target_range_min", evidence = "Spell.CodeEnumCastResult" }, { value = 105, name = "target_range_max", evidence = "Spell.CodeEnumCastResult" }, { value = 106, name = "target_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 166, name = "caster_needs_los", evidence = "Spell.CodeEnumCastResult" }, { value = 169, name = "weapon_slot", evidence = "Spell.CodeEnumCastResult" }, { value = 182, name = "spell_no_charges", evidence = "Spell.CodeEnumCastResult" }, { value = 183, name = "target_range_vertical", evidence = "Spell.CodeEnumCastResult" }, { value = 285, name = "illegal_spell_cast", evidence = "Spell.CodeEnumCastResult" }, { value = 317, name = "queued", evidence = "Spell.CodeEnumCastResult" } ] },
+  { name = "result", kind = "unsigned", bits = 9, evidence = "opcode.0x7fc", named_by = "opcode.0x7fc", values_type = "CastResult", values = [ { value = 1, name = "unable_to_create_spell", evidence = "Spell.CodeEnumCastResult" }, { value = 4, name = "spell_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 5, name = "spell_bad", evidence = "Spell.CodeEnumCastResult" }, { value = 6, name = "spell_cancelled", evidence = "opcode.0x801" }, { value = 11, name = "spell_interrupted", evidence = "opcode.0x801" }, { value = 13, name = "spell_already_casting", evidence = "Spell.CodeEnumCastResult" }, { value = 14, name = "spell_global_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 15, name = "spell_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 16, name = "spell_group_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 17, name = "spell_pre_requisites", evidence = "Spell.CodeEnumCastResult" }, { value = 30, name = "caster_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 31, name = "caster_must_have_target", evidence = "Spell.CodeEnumCastResult" }, { value = 33, name = "caster_not_incontrol_of_self", evidence = "Spell.CodeEnumCastResult" }, { value = 34, name = "caster_movement", evidence = "Spell.CodeEnumCastResult" }, { value = 51, name = "caster_vital_cost_resource1", evidence = "Spell4CastResult.vital_cost" }, { value = 55, name = "caster_vital_cost_resource5", evidence = "Spell4CastResult.vital_cost" }, { value = 57, name = "caster_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 90, name = "target_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 91, name = "no_target", evidence = "Spell.CodeEnumCastResult" }, { value = 99, name = "target_faction", evidence = "Spell.CodeEnumCastResult" }, { value = 101, name = "target_orientation", evidence = "Spell.CodeEnumCastResult" }, { value = 104, name = "target_range_min", evidence = "Spell.CodeEnumCastResult" }, { value = 105, name = "target_range_max", evidence = "Spell.CodeEnumCastResult" }, { value = 106, name = "target_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 166, name = "caster_needs_los", evidence = "Spell.CodeEnumCastResult" }, { value = 169, name = "weapon_slot", evidence = "Spell.CodeEnumCastResult" }, { value = 182, name = "spell_no_charges", evidence = "Spell.CodeEnumCastResult" }, { value = 183, name = "target_range_vertical", evidence = "Spell.CodeEnumCastResult" }, { value = 285, name = "illegal_spell_cast", evidence = "Spell.CodeEnumCastResult" }, { value = 317, name = "queued", evidence = "Spell.CodeEnumCastResult" } ] },
 ]
 
 [[message]]
@@ -1704,14 +1704,14 @@ fields = [
   { name = "root_spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "parent_spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "caster_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_6", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff" },
+  { name = "field_6", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff", safe_by = "opcode.0x7ff.caster_item_level" },
   { name = "primary_target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "yaw", kind = "float32", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "initial_positions", kind = "array", count_bits = 8, element = "spell_initial_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "telegraph_positions", kind = "array", count_bits = 8, element = "spell_telegraph_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_12", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff" },
-  { name = "field_13", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff" },
+  { name = "field_12", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff", safe_by = "opcode.0x7ff.own_cast" },
+  { name = "field_13", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff", safe_by = "opcode.0x7ff.activate" },
 ]
 
 [[record]]
@@ -1730,10 +1730,10 @@ evidence = "opcode.0x7ff"
 summary = "one initial position of a cast message: a unit id, 8 bits, a position, a float and 32 bits; their meanings are not read"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_2", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff" },
+  { name = "field_2", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
   { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_4", kind = "float32", evidence = "opcode.0x7ff" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff" },
+  { name = "field_4", kind = "float32", evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
 ]
 
 [[record]]
@@ -1741,12 +1741,12 @@ name = "spell_telegraph_position"
 evidence = "opcode.0x7ff"
 summary = "one telegraph position of a cast message: 16 bits, a unit id, 8 bits, a position, a float and 32 bits; their meanings are not read"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff" },
+  { name = "field_1", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_3", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff" },
+  { name = "field_3", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
   { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_5", kind = "float32", evidence = "opcode.0x7ff" },
-  { name = "field_6", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff" },
+  { name = "field_5", kind = "float32", evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
+  { name = "field_6", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
 ]
 
 [[message]]
@@ -1771,11 +1771,11 @@ name = "spell_missile_info"
 evidence = "opcode.0x7f4"
 summary = "one missile of a go: a position, two 32-bit values, a position and one bit; their meanings are not read"
 fields = [
-  { name = "field_1", kind = "record", record = "spell_position", evidence = "opcode.0x7f4" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4" },
-  { name = "field_4", kind = "record", record = "spell_position", evidence = "opcode.0x7f4" },
-  { name = "field_5", kind = "unsigned", bits = 1, evidence = "opcode.0x7f4" },
+  { name = "field_1", kind = "record", record = "spell_position", evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
+  { name = "field_4", kind = "record", record = "spell_position", evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
+  { name = "field_5", kind = "unsigned", bits = 1, evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
 ]
 
 [[record]]
@@ -1799,7 +1799,7 @@ fields = [
   { name = "spell4_effects_id", kind = "unsigned", bits = 19, evidence = "0x140094890", named_by = "0x140094890" },
   { name = "instance_id", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
   { name = "delay_ms", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140094890" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140094890", safe_by = "opcode.0x7f4.effect_time" },
   { name = "result", kind = "record", record = "spell_effect_result", evidence = "0x140094890", named_by = "0x140094890" },
 ]
 
@@ -1819,7 +1819,7 @@ evidence = "0x140094890"
 summary = "an effect result of tag 0: one bit, which the client does not read"
 fields = [
   { name = "kind", kind = "constant", bits = 2, value = 0, evidence = "0x140094890", named_by = "0x140094890" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140094890" },
+  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140094890", safe_by = "opcode.0x7f4.effect_bit" },
 ]
 
 [[record]]
@@ -1854,13 +1854,13 @@ name = "spell_hit_entry"
 evidence = "0x1400945e0"
 summary = "one hit entry of a damage description: seven 32-bit values and a 3-bit kind, of which 2 and 3 make a multi-hit line and any other a deflect line; the values' meanings are not read"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
-  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
-  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
+  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
+  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
   { name = "kind", kind = "unsigned", bits = 3, evidence = "0x1400945e0", named_by = "0x1400946c0" },
 ]
 
@@ -1882,7 +1882,7 @@ evidence = "opcode.0x801"
 summary = "the client cancels one of its player's casts: the cast id, the reason (6 when the cast's target died) and one bit, which the client's sender always sets; the other senders of the message and whether the id is the server's or the client's are not read"
 fields = [
   { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x801", named_by = "opcode.0x801" },
-  { name = "reason", kind = "unsigned", bits = 9, evidence = "opcode.0x801", named_by = "opcode.0x801", values_type = "CastResult", values = [ { value = 1, name = "unable_to_create_spell", evidence = "Spell.CodeEnumCastResult" }, { value = 4, name = "spell_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 5, name = "spell_bad", evidence = "Spell.CodeEnumCastResult" }, { value = 6, name = "spell_cancelled", evidence = "opcode.0x801" }, { value = 13, name = "spell_already_casting", evidence = "Spell.CodeEnumCastResult" }, { value = 14, name = "spell_global_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 15, name = "spell_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 16, name = "spell_group_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 17, name = "spell_pre_requisites", evidence = "Spell.CodeEnumCastResult" }, { value = 30, name = "caster_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 31, name = "caster_must_have_target", evidence = "Spell.CodeEnumCastResult" }, { value = 33, name = "caster_not_incontrol_of_self", evidence = "Spell.CodeEnumCastResult" }, { value = 34, name = "caster_movement", evidence = "Spell.CodeEnumCastResult" }, { value = 57, name = "caster_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 90, name = "target_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 91, name = "no_target", evidence = "Spell.CodeEnumCastResult" }, { value = 99, name = "target_faction", evidence = "Spell.CodeEnumCastResult" }, { value = 101, name = "target_orientation", evidence = "Spell.CodeEnumCastResult" }, { value = 104, name = "target_range_min", evidence = "Spell.CodeEnumCastResult" }, { value = 105, name = "target_range_max", evidence = "Spell.CodeEnumCastResult" }, { value = 106, name = "target_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 166, name = "caster_needs_los", evidence = "Spell.CodeEnumCastResult" }, { value = 169, name = "weapon_slot", evidence = "Spell.CodeEnumCastResult" }, { value = 182, name = "spell_no_charges", evidence = "Spell.CodeEnumCastResult" }, { value = 183, name = "target_range_vertical", evidence = "Spell.CodeEnumCastResult" }, { value = 285, name = "illegal_spell_cast", evidence = "Spell.CodeEnumCastResult" }, { value = 317, name = "queued", evidence = "Spell.CodeEnumCastResult" } ] },
+  { name = "reason", kind = "unsigned", bits = 9, evidence = "opcode.0x801", named_by = "opcode.0x801", values_type = "CastResult", values = [ { value = 1, name = "unable_to_create_spell", evidence = "Spell.CodeEnumCastResult" }, { value = 4, name = "spell_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 5, name = "spell_bad", evidence = "Spell.CodeEnumCastResult" }, { value = 6, name = "spell_cancelled", evidence = "opcode.0x801" }, { value = 11, name = "spell_interrupted", evidence = "opcode.0x801" }, { value = 13, name = "spell_already_casting", evidence = "Spell.CodeEnumCastResult" }, { value = 14, name = "spell_global_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 15, name = "spell_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 16, name = "spell_group_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 17, name = "spell_pre_requisites", evidence = "Spell.CodeEnumCastResult" }, { value = 30, name = "caster_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 31, name = "caster_must_have_target", evidence = "Spell.CodeEnumCastResult" }, { value = 33, name = "caster_not_incontrol_of_self", evidence = "Spell.CodeEnumCastResult" }, { value = 34, name = "caster_movement", evidence = "Spell.CodeEnumCastResult" }, { value = 51, name = "caster_vital_cost_resource1", evidence = "Spell4CastResult.vital_cost" }, { value = 55, name = "caster_vital_cost_resource5", evidence = "Spell4CastResult.vital_cost" }, { value = 57, name = "caster_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 90, name = "target_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 91, name = "no_target", evidence = "Spell.CodeEnumCastResult" }, { value = 99, name = "target_faction", evidence = "Spell.CodeEnumCastResult" }, { value = 101, name = "target_orientation", evidence = "Spell.CodeEnumCastResult" }, { value = 104, name = "target_range_min", evidence = "Spell.CodeEnumCastResult" }, { value = 105, name = "target_range_max", evidence = "Spell.CodeEnumCastResult" }, { value = 106, name = "target_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 166, name = "caster_needs_los", evidence = "Spell.CodeEnumCastResult" }, { value = 169, name = "weapon_slot", evidence = "Spell.CodeEnumCastResult" }, { value = 182, name = "spell_no_charges", evidence = "Spell.CodeEnumCastResult" }, { value = 183, name = "target_range_vertical", evidence = "Spell.CodeEnumCastResult" }, { value = 285, name = "illegal_spell_cast", evidence = "Spell.CodeEnumCastResult" }, { value = 317, name = "queued", evidence = "Spell.CodeEnumCastResult" } ] },
   { name = "field_3", kind = "unsigned", bits = 1, evidence = "opcode.0x801" },
 ]
 

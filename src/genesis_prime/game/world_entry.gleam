@@ -74,6 +74,7 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/camp
+import genesis_prime/game/cast
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/loadout.{type Loadout}
@@ -102,6 +103,7 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -166,12 +168,12 @@ pub type Joined {
 /// origin of the map's clock (`Joined` carries it), its loadout and maximum
 /// health (typed, from the tables: the weapon, the abilities and the gear's
 /// properties, which the 0x262 carries as bits), its own 0x262 record
-/// (`Joined`'s unit with the gear applied, which the connection sends the players
-/// who see it), who
-/// sees it, the units its own client shows, where it stands
+/// (`Joined`'s unit, which the connection sends the players who see it), who
+/// sees it, the units its own client shows, the casts of other units its client
+/// has been sent the start of, where it stands
 /// (genesis_prime/game/movement) and whether it is camping
-/// (genesis_prime/game/camp), and its chat (genesis_prime/game/chat), which the
-/// rule keeps up to date. A player that has
+/// (genesis_prime/game/camp), its casts (genesis_prime/game/cast) and its chat
+/// (genesis_prime/game/chat), which the rule keeps up to date. A player that has
 /// just entered is not camping, has no viewers and shows no unit: the map's
 /// `Watched` and `Unwatched` keep `viewers`, the connections whose players see
 /// this one, the connection sends everything about the player's own unit to them,
@@ -188,10 +190,12 @@ pub type Entered {
     max_health: Int,
     clock_origin_ms: Int,
     viewers: Set(ConnectionId),
-    shown: Set(Int),
+    shown: Dict(Int, cast.Shown),
+    casts_written: Dict(Int, Int),
     gone: Set(Int),
     movement: movement.State,
     camp: camp.Camp,
+    cast: cast.State,
     chat: chat.Chat,
   )
 }
@@ -339,10 +343,12 @@ pub fn joined(
               max_health:,
               clock_origin_ms:,
               viewers: set.new(),
-              shown: set.new(),
+              shown: dict.new(),
+              casts_written: dict.new(),
               gone: set.new(),
               movement: movement.entered(place:, session_epoch:),
               camp: camp.none(),
+              cast: cast.new(),
               chat: chat.new(
                 speaker: chat_tell.Speaker(
                   realm_id:,

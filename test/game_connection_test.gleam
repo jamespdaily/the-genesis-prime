@@ -35,6 +35,7 @@
 ////   opcode.0x36), the new character selected by the client's own rule
 ////   (lua.CharacterSelection.OnLoadFromCharacter.preselect).
 
+import cast_support
 import character_support
 import character_tables
 import connection_rule_support as support
@@ -42,9 +43,10 @@ import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type News, type PeerNews, type Request, Appeared,
-  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CreatureAppeared,
-  FromHandOff, FromMap, FromSessions, FromStore, Moving, PeerNews, Removed,
-  SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved, TellPeer,
+  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CastFinished,
+  CastStarted, CastWent, CreatureAppeared, FromHandOff, FromMap, FromSessions,
+  FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer, SentBySessions,
+  TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -61,6 +63,7 @@ import genesis_prime/login/guid
 import genesis_prime/message/account_entitlements.{AccountEntitlements}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
+import genesis_prime/message/cast_result
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/chat_line
@@ -107,6 +110,10 @@ import genesis_prime/message/rename_result
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello.{ServerHello}
+import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_go
+import genesis_prime/message/spell_position
+import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_creature
@@ -3427,17 +3434,17 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   let named = list.sort(game_connection.taken_message_ids(), int.compare)
   assert named
     == [
-      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4, 0x025B,
-      0x025C, 0x0352, 0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD,
-      0x07E0,
+      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4,
+      0x025B, 0x025C, 0x0352, 0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786,
+      0x07DD, 0x07E0, 0x0801,
     ]
-    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4"
+    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, and the cast messages 0x009A and 0x0801 (opcode.0x9a, opcode.0x801)"
   assert list.sort(game_connection.carried_message_ids(), int.compare)
     == [
-      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4, 0x0637,
-      0x063A, 0x063B,
+      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4,
+      0x0637, 0x063A, 0x063B, 0x0801,
     ]
-    as "the movement, camp and chat messages are taken only with the player in the world"
+    as "the movement, camp, chat and cast messages are taken only with the player in the world"
 }
 
 pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
@@ -5312,4 +5319,147 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     as "opcode.0x355: the creature is removed when its process says so"
   assert unit_destroyed.decode(body)
     == Ok(UnitDestroyed(unit_id: 40, field_2: 0))
+}
+
+/// 0x7ff for the cast `cast_id` of `caster`, as a caster's rule tells it:
+/// `opcode.0x7ff`'s fields with the safe values of the decode (0, 1 and 0).
+fn spell_started_of(
+  cast_id cast_id: Int,
+  caster caster: Int,
+) -> spell_started.SpellStarted {
+  let position = spell_position.SpellPosition(x: 0, y: 0, z: 0)
+  spell_started.SpellStarted(
+    cast_id:,
+    spell4_id: 32_893,
+    root_spell4_id: 32_893,
+    parent_spell4_id: 0,
+    caster_unit_id: caster,
+    field_6: 0,
+    primary_target_unit_id: caster,
+    position:,
+    yaw: 0,
+    initial_positions: [],
+    telegraph_positions: [],
+    field_12: 1,
+    field_13: 0,
+  )
+}
+
+fn spell_go_of(cast_id cast_id: Int) -> spell_go.SpellGo {
+  spell_go.SpellGo(
+    cast_id:,
+    ignore_cooldown: 0,
+    destination: spell_position.SpellPosition(x: 0, y: 0, z: 0),
+    targets: [],
+    initial_positions: [],
+    telegraph_positions: [],
+    missiles: [],
+    phase: 0,
+  )
+}
+
+pub fn a_viewer_writes_a_cast_start_only_for_a_caster_its_client_shows_and_a_go_or_finish_only_for_a_start_it_wrote_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let start = spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let #(state, taken) =
+    feed(
+      in_world(),
+      sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start:))),
+    )
+  assert support.writes(taken) == []
+    as "unit 9 is not shown, so its client could not take the cast bar (opcode.0x7ff)"
+  let #(state, _) =
+    feed(
+      state,
+      sent_by_a_peer(news_of(unit_id: 9, news: Appeared(another_unit()))),
+    )
+  let go =
+    news_of(unit_id: 9, news: CastWent(go: spell_go_of(cast_id: start.cast_id)))
+  let #(state, taken) = feed(state, sent_by_a_peer(go))
+  assert written_ids(taken) == []
+    as "a go for a start the viewer did not write is dropped (0x140561c30: the client drops a go with an unknown cast id)"
+  let #(state, taken) =
+    feed(state, sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start:))))
+  assert written_ids(taken) == [0x07FF]
+  let #(state, taken) = feed(state, sent_by_a_peer(go))
+  assert written_ids(taken) == [0x07F4]
+  let finish = news_of(unit_id: 9, news: CastFinished(cast_id: start.cast_id))
+  let #(state, taken) = feed(state, sent_by_a_peer(finish))
+  assert written_ids(taken) == [0x07FE]
+  let #(_, taken) = feed(state, sent_by_a_peer(go))
+  assert written_ids(taken) == []
+    as "the finish ends the cast for the viewer: a later go is dropped"
+}
+
+pub fn a_viewer_forgets_the_casts_of_a_unit_its_client_no_longer_shows_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let start = spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let #(state, _) =
+    feed(
+      in_world(),
+      sent_by_a_peer(news_of(unit_id: 9, news: Appeared(another_unit()))),
+    )
+  let #(state, _) =
+    feed(state, sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start:))))
+  let #(state, _) =
+    feed(state, sent_by_a_peer(news_of(unit_id: 9, news: Removed)))
+  let #(_, taken) =
+    feed(
+      state,
+      sent_by_a_peer(news_of(
+        unit_id: 9,
+        news: CastFinished(cast_id: start.cast_id),
+      )),
+    )
+  assert written_ids(taken) == []
+    as "the client removed unit 9 with its 0x355, and a cast of a removed unit never gets its finish, so the viewer keeps no id of it"
+}
+
+pub fn a_0x9a_in_the_world_is_taken_by_the_cast_rule_and_a_bag_index_not_held_is_answered_0x7fc_4_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let press =
+    cast_support.press_body(
+      client_cast_id: 9,
+      bag_index: 99,
+      target: 0,
+      press: 1,
+    )
+  let #(_, taken) = read(in_world(), world_message(0x009A, press))
+  let assert [Frame(message_id: 0x07FC, body:)] = heard(taken, keyed())
+    as "opcode.0x7fc: the refusal of a press"
+  assert spell_cast_refused.decode(body)
+    == Ok(spell_cast_refused.SpellCastRefused(
+      client_cast_id: 9,
+      spell4_id: 0,
+      result: cast_result.SpellUnknown,
+    ))
+    as "0x14039a040: 4 for a bag index the player does not hold"
+  assert support.unhandled_ids(taken) == []
+}
+
+pub fn a_0x801_for_a_cast_that_is_not_live_changes_nothing_and_writes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cancel =
+    cast_support.cancel_body(
+      cast_id: 2_147_497_985,
+      reason: cast_result.SpellCancelled,
+      bit: 1,
+    )
+  let #(_, taken) = read(in_world(), world_message(0x0801, cancel))
+  assert written_ids(taken) == [] && support.unhandled_ids(taken) == []
+    as "opcode.0x801: an unknown or finished id is nothing, not an unhandled message"
+}
+
+pub fn a_0x9a_outside_the_world_is_logged_as_unhandled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let press =
+    cast_support.press_body(
+      client_cast_id: 9,
+      bag_index: 0,
+      target: 0,
+      press: 1,
+    )
+  let #(_, taken) = read(in_select(), world_message(0x009A, press))
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x009A))]
+    as "the cast rows are taken with the player in the world only (genesis_prime/game/routing)"
 }

@@ -276,6 +276,16 @@
 ////   and leaves them in the step that starts the camp's leave, so a new entry
 ////   joins again (genesis_prime/game/chat has the sequences, the refusals and
 ////   the failure table).
+//// - **Casts** are a feature of their own (genesis_prime/game/cast): the player's
+////   `Entered` keeps its cast state, the routing table sends 0x9a and 0x801 to it
+////   from inside 0x038C with the player in the world, and the timers from
+////   `cast.first_timer` up are its (`other_timer_fired`). The rule turns its
+////   effects into writes to the caster, tells of news to the viewers
+////   (`CastStarted`, `CastWent`, `CastFinished`, in the run of the player's map),
+////   timers and log lines. A viewer writes a 0x7ff only for a caster it shows, and
+////   a go or finish only for a start it wrote (`casts_written`, by cast id, kept
+////   with the caster's unit id so a removed unit's casts are forgotten); `shown`
+////   holds each unit with what a cast needs of it (genesis_prime/game/cast `Shown`).
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
@@ -312,12 +322,14 @@ import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
 import genesis_prime/game/camp
+import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/movement
 import genesis_prime/game/routing
+import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
@@ -330,6 +342,7 @@ import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
 }
+import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
@@ -356,6 +369,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit
 import gleam/bool
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -601,7 +615,7 @@ fn connected(
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
       settled(handled: save_due(session:, now:), now:)
     OwnEvent(TimerFired(timer:)) ->
-      settled(handled: claim_wait_over(session:, now:, timer:), now:)
+      settled(handled: other_timer_fired(session:, now:, timer:), now:)
     OwnEvent(step.PeerClosed)
     | OwnEvent(step.ReadFailed(failure: step.Closed))
     | OwnEvent(step.WriteFailed(failure: step.Closed)) ->
@@ -882,8 +896,10 @@ fn routed(
       select_message(session:, now:, inner:, message:)
     Ok(routing.WorldEntry) -> play_requested(session:, now:, inner:)
     Ok(routing.WorldMessage) -> world_carried(session:, now:, inner:)
-    Ok(routing.Movement(..)) | Ok(routing.Camp(..)) | Ok(routing.Chat(..)) ->
-      misrouted(session:, now:, inner:)
+    Ok(routing.Movement(..))
+    | Ok(routing.Camp(..))
+    | Ok(routing.Chat(..))
+    | Ok(routing.Cast(..)) -> misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
         routing.BeforeHelloReply ->
@@ -1155,6 +1171,117 @@ fn chat_message(
   }
 }
 
+/// What the cast messages do, taken from inside 0x038C, in the world
+/// (genesis_prime/game/cast): the press is refused or accepted and its writes,
+/// tells and timers are carried out, the cancel ends a cast, and a refusal ends
+/// the connection.
+fn cast_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: cast.Message,
+) -> client_connection.Handled(Session) {
+  case
+    cast.take(
+      cast: entered.cast,
+      message:,
+      body: inner.body,
+      caster: caster_of(entered:),
+      plans: spell_plan.plans(session.settings.tables),
+      now:,
+    )
+  {
+    Ok(#(updated, effects)) ->
+      carry_cast(session: with_cast(session:, cast: updated), effects:)
+    Error(refusal) -> end_for(session:, now:, text: cast.describe(refusal))
+  }
+}
+
+/// A timer fired that is not the save timer's: a cast's, or the claim's.
+fn other_timer_fired(
+  session session: Session,
+  now now: Now,
+  timer timer: TimerId,
+) -> client_connection.Handled(Session) {
+  case cast.owns(timer) {
+    True -> cast_due(session:, now:, timer:)
+    False -> claim_wait_over(session:, now:, timer:)
+  }
+}
+
+/// A timer of the player's cast rule fired: its go, child cast or held press.
+/// With no player in the world to take it, it is dropped.
+fn cast_due(
+  session session: Session,
+  now now: Now,
+  timer timer: TimerId,
+) -> client_connection.Handled(Session) {
+  case held_in_the_world(session.status) {
+    None -> Continue(session, [])
+    Some(entered) -> {
+      let #(updated, effects) =
+        cast.timer_fired(
+          cast: entered.cast,
+          timer:,
+          caster: caster_of(entered:),
+          now:,
+        )
+      carry_cast(session: with_cast(session:, cast: updated), effects:)
+    }
+  }
+}
+
+/// The player as its cast rule takes it: who it is, where it stands, what it
+/// holds, who sees it and the units its client shows.
+fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
+  cast.Caster(
+    unit_id: entered.unit_id,
+    place: movement.place(entered.movement),
+    abilities: entered.loadout.abilities,
+    weapon: Some(entered.loadout.weapon),
+    audience: entered.viewers,
+    shown: entered.shown,
+  )
+}
+
+/// The session with the player's cast state replaced.
+fn with_cast(session session: Session, cast cast: cast.State) -> Session {
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(..entered, cast:)
+  })
+}
+
+/// What the cast rule decided, carried out in order.
+fn carry_cast(
+  session session: Session,
+  effects effects: List(cast.Effect),
+) -> client_connection.Handled(Session) {
+  Continue(session, cast_effects(session:, effects:))
+}
+
+/// The connection's effects for what the cast rule decided: a write, a tell of
+/// news to a viewer in the run of the player's map, a timer or a log line. A
+/// tell with no player in the world is dropped.
+fn cast_effects(
+  session session: Session,
+  effects effects: List(cast.Effect),
+) -> List(Effect(ConnectionEffect(Request))) {
+  let entered = entered_of(session.status)
+  list.filter_map(effects, fn(effect) {
+    case effect, entered {
+      cast.Send(frame:), _ -> Ok(to_client(session, frame))
+      cast.Tell(to:, news:), Some(entered) ->
+        Ok(news_to(entered:, viewer: to, news:))
+      cast.Tell(..), None -> Error(Nil)
+      cast.StartTimer(timer:, after_ms:), _ ->
+        Ok(OwnEffect(StartTimer(timer:, after_ms:)))
+      cast.CancelTimer(timer:), _ -> Ok(OwnEffect(CancelTimer(timer:)))
+      cast.Log(level:, text:), _ -> Ok(log(session:, level:, text:))
+    }
+  })
+}
+
 /// 0x0594 with the bit set and reason 0: the client leaves the world and
 /// starts character select on the same connection (opcode.0x594).
 fn leave_world_frame() -> Frame {
@@ -1247,6 +1374,8 @@ fn world_carried(
                   )
                 Ok(routing.Chat(message:)) ->
                   chat_message(session:, now:, entered:, inner: whole, message:)
+                Ok(routing.Cast(message:)) ->
+                  cast_message(session:, now:, entered:, inner: whole, message:)
                 Ok(routing.Hello)
                 | Ok(routing.CharacterSelect(..))
                 | Ok(routing.WorldEntry)
@@ -1484,6 +1613,7 @@ fn carry_out(
             before: list.flatten([
               list.reverse(written),
               chat_effects(session:, effects: chat.left(entered.chat)).1,
+              cast_effects(session:, effects: cast.left(cast: entered.cast).1),
               [OwnEffect(CancelTimer(timer: save_timer))],
             ]),
             within_ms: session.settings.ask_deadline_ms,
@@ -1786,7 +1916,7 @@ fn map_sent(
     map.Gone(unit_id:), Some(entered) -> {
       let session = marked_gone(session:, unit_id:)
       use <- bool.guard(
-        when: !set.contains(entered.shown, unit_id),
+        when: !dict.has_key(entered.shown, unit_id),
         return: Continue(session, []),
       )
       Continue(session, [to_client(session, unit_removed_frame(unit_id:))])
@@ -1962,12 +2092,15 @@ fn viewer_takes(
   news news: client_connection.PeerNews,
 ) -> client_connection.Handled(Session) {
   let unit_id = news.unit_id
-  let shown = set.contains(entered.shown, unit_id)
+  let shown = dict.has_key(entered.shown, unit_id)
   let creates_or_removes = case news.news {
     client_connection.Appeared(..)
     | client_connection.CreatureAppeared(..)
     | client_connection.Removed -> True
-    client_connection.Moving(..) -> False
+    client_connection.Moving(..)
+    | client_connection.CastStarted(..)
+    | client_connection.CastWent(..)
+    | client_connection.CastFinished(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && { unit_id == 0 || unit_id == entered.unit_id },
@@ -1987,18 +2120,28 @@ fn viewer_takes(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
-        to_client(session, world_entry.unit_created_frame(unit:)),
-      ])
+      Continue(
+        shown_changed(session:, change: dict.insert(
+          _,
+          unit_id,
+          cast.ShownPlayer,
+        )),
+        [to_client(session, world_entry.unit_created_frame(unit:))],
+      )
     }
     client_connection.CreatureAppeared(unit:) -> {
       use <- bool.guard(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
-        to_client(session, creature_created_frame(unit:)),
-      ])
+      Continue(
+        shown_changed(session:, change: dict.insert(
+          _,
+          unit_id,
+          creature_shown(unit:),
+        )),
+        [to_client(session, creature_created_frame(unit:))],
+      )
     }
     client_connection.Moving(server_time_ms:, commands:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
@@ -2011,10 +2154,79 @@ fn viewer_takes(
     }
     client_connection.Removed -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
-      Continue(shown_changed(session:, change: set.delete(_, unit_id)), [
+      Continue(unit_forgotten(session:, unit_id:), [
         to_client(session, unit_removed_frame(unit_id:)),
       ])
     }
+    client_connection.CastStarted(start:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(
+        with_entered(session:, change: fn(entered) {
+          world_entry.Entered(
+            ..entered,
+            casts_written: dict.insert(
+              entered.casts_written,
+              start.cast_id,
+              unit_id,
+            ),
+          )
+        }),
+        [to_client(session, cast.started_frame(start:))],
+      )
+    }
+    client_connection.CastWent(go:) -> {
+      use <- bool.guard(
+        when: !dict.has_key(entered.casts_written, go.cast_id),
+        return: Continue(session, []),
+      )
+      Continue(session, [to_client(session, cast.went_frame(go:))])
+    }
+    client_connection.CastFinished(cast_id:) -> {
+      use <- bool.guard(
+        when: !dict.has_key(entered.casts_written, cast_id),
+        return: Continue(session, []),
+      )
+      Continue(
+        with_entered(session:, change: fn(entered) {
+          world_entry.Entered(
+            ..entered,
+            casts_written: dict.delete(entered.casts_written, cast_id),
+          )
+        }),
+        [to_client(session, cast.finished_frame(cast_id:))],
+      )
+    }
+  }
+}
+
+/// A creature as the viewer's cast rule knows it: where its 0x262 puts it, which
+/// is the first movement command, a position, or the origin for a unit the
+/// record places nowhere.
+fn creature_shown(unit unit: UnitCreateCreature) -> cast.Shown {
+  let position =
+    list.find_map(unit.tail.movement_commands, fn(command) {
+      case command {
+        start_movement.Position(position) -> Ok(position)
+        start_movement.Rotation(..) -> Error(Nil)
+      }
+    })
+  case position {
+    Ok(position) ->
+      cast.ShownCreature(
+        x: bits_float(bits: position.x),
+        y: bits_float(bits: position.y),
+        z: bits_float(bits: position.z),
+      )
+    Error(Nil) -> cast.ShownCreature(x: 0.0, y: 0.0, z: 0.0)
+  }
+}
+
+/// The value of the 32 bits of a float the record holds, as the client reads it;
+/// 0.0 for bits that are no finite float, which the spawn's own checks rule out.
+fn bits_float(bits bits: Int) -> Float {
+  case float32.bits(number: bits) {
+    Ok(bits) -> result.unwrap(float32.value(bits:), 0.0)
+    Error(Nil) -> 0.0
   }
 }
 
@@ -2093,22 +2305,34 @@ fn viewers_changed(
 /// The session with the units its client shows changed by `change`.
 fn shown_changed(
   session session: Session,
-  change change: fn(Set(Int)) -> Set(Int),
+  change change: fn(dict.Dict(Int, cast.Shown)) -> dict.Dict(Int, cast.Shown),
 ) -> Session {
   with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, shown: change(entered.shown))
   })
 }
 
-/// The session with the unit marked gone, so it is shown no more, and no longer
-/// shown.
-fn marked_gone(session session: Session, unit_id unit_id: Int) -> Session {
+/// The session with the unit no longer shown, and the casts of it that the
+/// client holds forgotten: a cast of a unit the client removed never gets its
+/// finish.
+fn unit_forgotten(session session: Session, unit_id unit_id: Int) -> Session {
   with_entered(session:, change: fn(entered) {
     world_entry.Entered(
       ..entered,
-      shown: set.delete(entered.shown, unit_id),
-      gone: set.insert(entered.gone, unit_id),
+      shown: dict.delete(entered.shown, unit_id),
+      casts_written: dict.filter(entered.casts_written, fn(_, caster) {
+        caster != unit_id
+      }),
     )
+  })
+}
+
+/// The session with the unit marked gone, so it is shown no more, and no longer
+/// shown.
+fn marked_gone(session session: Session, unit_id unit_id: Int) -> Session {
+  let session = unit_forgotten(session:, unit_id:)
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(..entered, gone: set.insert(entered.gone, unit_id))
   })
 }
 
