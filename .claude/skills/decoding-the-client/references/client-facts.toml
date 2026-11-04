@@ -7509,3 +7509,105 @@ proof = "Name pair at 0x140c5b4d0 ('GetEffectiveItemLevel' at 0x140b2b278, read 
 grade = "fairly sure"
 gap = "Read from the decompile; what sets 0xd4c for another unit is not read."
 name = "LuaUnitGetEffectiveItemLevel"
+
+["opcode.0x7f4.phase"]
+statement = "What the client does with a go's phase byte. It stores it as the cast's current phase and uses it in three places only: (1) a client missile (Spell4ClientMissile) of the spell plays only when its phaseFlags is -1 or has bit <phase> set, for any cast method; (2) a TelegraphDamage visual of the cast is gated the same way by its phaseFlags; (3) when the phase before had flag 0x40, effects not named in it are removed. (2) and (3) apply only to a Multiphase cast, or a Channeled or ChanneledField cast whose spellChannelFlags has bit 1, and there the phase is compared with the cast's expected go count: for such a channel the phase is the pulse index, 0 to count - 1. Electrocute 41276 and Discharge 58832 have spellChannelFlags 0 and no client missile, so for them the client shows the same thing whatever the byte holds. The pulse index is the reading that fits the client's own model of a channel's phases."
+proof = "ApplySpellGo 0x14053e5a0 (737aa5af0120fae9) line 71: cast 0x1b0 = go byte 0x50. Lines 46-52: previous phase < cast 0x1a0 (expected gos) and phase list present and (castMethod 8, or castMethod 1 or 3 with channel record word 0xc & 1) and the phase's flag 0x40 -> remove. 0x1405450f0 (8eb22adb6de47956) line 69 and 0x1405458e0 (8eb22adb6de47956) line 30: row word 0xd8 (Spell4ClientMissile.phaseFlags, offset 216 by `table_rows -- Spell4ClientMissile --columns`) == -1 or bit (phase & 0x1f) set. 0x1405458e0 lines 128-133: 0x140241c40 row (TelegraphDamage) word 0x4c (TelegraphDamage.phaseFlags, offset 76) tested against the phase only when castMethod 8, or castMethod 1/3 with channel record 0xc & 1. Channel record word 0xc is spellChannelFlags (BuildSpellTables 0x14055e180, Spell4 offset 212). The only other readers of cast 0x1b0 found by grepping the saved C cast functions for '0x1b0)' are these. Rows: `table_rows -- Spell4 41276 58832`: spellChannelFlags 0, every spell4ClientMissileId 0."
+grade = "fairly sure"
+gap = "Read from the decompile; a reader of the phase through another base register would be missed by the grep. Which phase retail sent for a pulse is not in the client. Discharge's damage effect 141368 has phaseFlags 1 and its Proxy 173926 -1 (`table_rows -- Spell4Effects spellId=58832`); with the pulse index, the damage effect fires on pulse 0 only and the Proxy on every pulse; that the server's effect rule reads phaseFlags bit <phase> follows the client's gate, not an effect reader in the client."
+
+["0x1405458e0"]
+statement = "Starts one client missile of a cast at a go. It acts only for a missile type 1 to 3, and only when the missile's phaseFlags is -1 or holds the cast's current phase. It aims from the caster (origin 0) or the primary target (origin 1), or from each telegraph position of the cast; a telegraph-based missile is skipped when the TelegraphDamage row's phaseFlags lacks the current phase, for a Multiphase cast or a channel whose spellChannelFlags has bit 1."
+proof = "Saved C 0x1405458e0.c (8eb22adb6de47956): line 27 row word 4 - 1 > 2 -> return; line 30 phase gate on row 0xd8; row 0xc: 0 -> FindUnit of cast 0x154 (caster), 1 -> cast 0x158 (target); lines 120-133 telegraph loop over cast 0x378 with 0x140241c40 (the TelegraphDamage lookup) and its word 0x4c. Called from 0x140546060 for each of the spell's client missiles."
+grade = "fairly sure"
+gap = "Read from the decompile; the missile's flight and visuals (0x140545d40, 0x140545760) are not read."
+name = "StartClientMissile"
+
+["0x140546060"]
+statement = "At a go, starts the spell's client missiles (its spell4ClientMissileId columns) through StartClientMissile. A channel's client missiles start at every go but the last."
+proof = "Saved C 0x140546060.c (8eb22adb6de47956) lines 21-37: runs when (no channel record and castMethod != 3) or cast 0x1a0 < 2 or record 0x10c & 0x20 or go count (cast 400) < cast 0x1a0; loop over record words 0x54..0x6c, each a 'Spell4ClientMissile' lookup; line 100 calls 0x1405458e0. Called from ApplySpellGo 0x14053e5a0 line 312."
+grade = "fairly sure"
+gap = "Read from the decompile; lines 38-99 (which missiles are kept) are not read."
+name = "StartSpellClientMissiles"
+
+["0x140241c40"]
+statement = "Looks up a TelegraphDamage row by id."
+proof = "Saved C 0x140241c40.c (8eb22adb6de47956): lookup through the table-name pointer PTR_u_TelegraphDamage_140a6da10."
+grade = "fairly sure"
+gap = "Read from the decompile; the lookup's miss path is not read."
+name = "GetTelegraphDamageRow"
+
+["0x14053e1b0"]
+statement = "Ends a cast with a result (0x7fe passes 8). It starts a Channeled or PressHold cast's cooldowns (for PressHold, when it had exactly one go) and a Multiphase cast's when marked for its last phase, ends visuals, and moves the cast to its finished state. For the player's own PressHold, RapidTap or ChargeRelease cast ended with a result other than 6 or 8 (RapidTap: only when the end names another unit), it releases the threshold of the cast's parent, or of its spell when the parent is 0 (0x1403bef30 with 1). It clears the caster's current cast for any method but PressHold and ChargeRelease. A 0x7fe (result 8) never touches a threshold."
+proof = "Saved C 0x14053e1b0.c (49fd5a78aaad3411): lines 30-37 cooldowns; line 40 state 5; lines 52-63: (result - 6) & ~2 != 0, castMethod in {2, 6, 7}, caster is the player (game 0x6490), method 6 needs param_3 non-zero and not the caster -> 0x1403bef30(game, cast 0x70 or cast 0x130, 1) and 0x1403bdac0; lines 111-115 ClearUnitCast 0x1404698a0 unless method 2 or 7. Callers: the 0x7fe case in 0x1403ec6a0 line 1321 (result 8), 0x1405a5550 (case 0x1403ee181, the message's result), 0x1404550d0 line 271 (result 0x1e)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run. The opcode of case 0x1403ee181 is not read (see cast.current_cast)."
+name = "FinishCast"
+
+["0x1403bf2c0"]
+statement = "Runs when a threshold's thresholdTime runs out (the timer 0x816 starts), and when a threshold is released without a cast. It sets the threshold's done mark. PressHold: starts the spell's cooldowns and closes the threshold. RapidTap: starts the cooldowns of the threshold's third spell (or the spell) and closes it. ChargeRelease: nothing more; the threshold stays open with its index, and no message, cast, cooldown or Lua event follows."
+proof = "Saved C 0x1403bf2c0.c (49fd5a78aaad3411): entry (map game 0x1588) word 8 = 1; record 0x18 == 2 -> StartSpellCooldowns 0x14046b1e0, 0x1403bdac0, 0x1403bdb30; == 6 -> StartSpellCooldowns of entry 0x14's spell; == 7 -> return; else falls to 0x1403bf4e0(game, spell, 0) (close). Timer set in 0x1403be620 (8eb22adb6de47956): FUN_140195960(entry + 0x20, record 0x184, callback 0x1403bf2c0)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run."
+name = "ExpireSpellThreshold"
+
+["0x1403bef30"]
+statement = "Releases the player's threshold for a spell: sets its ended mark. For a ChargeRelease threshold with the send flag, it finds the player's live cast of that spell, releases the action button's hold, and sends 0x801 with the 0x816's 32-bit value as the cast id and reason 0; the threshold stays in the table. Otherwise it runs ExpireSpellThreshold."
+proof = "Saved C 0x1403bef30.c (8eb22adb6de47956): entry word 0xc = 1; record 0x18 == 7 and param_3 != 0 -> 0x140469b00(unit, spell, unit id) non-null -> 0x1403bf070 (copy of the cast info at cast 0x68), 0x1403bdac0, 0x1403bdb30, 0x14039cc30(game, entry 0x18, 0); else 0x1403bf2c0. 0x14039cc30 (8eb22adb6de47956): ClearUnitCast 0x1404698a0 of the player, then SendWorldMessage 0x801 with (cast id = its second argument, reason = its third). Callers with 1: FinishCast 0x14053e1b0, 0x14055afc0; with 0: 0x1403be120 line 113, 0x1403be620 (key released before the threshold opened)."
+grade = "fairly sure"
+gap = "Read from the decompile; 0x140469b00 is taken to find the unit's live cast of a spell by its name in use, not read."
+name = "ReleaseSpellThreshold"
+
+["0x14039cc30"]
+statement = "Sends 0x801 for the player: clears the player's current cast, then sends 0x801 with the given cast id and reason."
+proof = "Saved C 0x14039cc30.c (8eb22adb6de47956): no player (game 0x78) -> return; ClearUnitCast 0x1404698a0(game 0x78); local_18 = (reason << 32 | cast id), local_10 = 0; SendWorldMessage(game, 0x801, &local_18)."
+grade = "fairly sure"
+gap = "Read from the decompile; the 0x801 layout is in the opcode.0x801 record."
+name = "SendCastCancel"
+
+["0x1403bf400"]
+statement = "Stops an open threshold's two timers and raises Lua ClearSpellThreshold(spell), keeping the threshold in the table. The ChargeRelease release press runs it before it casts the stage."
+proof = "Saved C 0x1403bf400.c (8eb22adb6de47956): entry 0x20 and 0x68 timers stopped (0x140195d70); 'ClearSpellThreshold' unless record 0x10c & 0x40; no removal from map game 0x1588. Called from 0x1403be120 (49fd5a78aaad3411) in its castMethod 7 branch before CastAbilityBagSpell 0x14039a040 (line 155)."
+grade = "fairly sure"
+gap = "Read from the decompile; the hold-to-cast branches of 0x1403be120 (setting at 0x140c45e90) are not read."
+name = "StopSpellThreshold"
+
+["0x1403c0340"]
+statement = "The share of a threshold's current time that has passed (0 to 1), for the cast bar. A threshold with its done mark reads 1 (full). ChargeRelease reads the charge timer, PressHold and RapidTap the thresholdTime timer."
+proof = "Saved C 0x1403c0340.c (8eb22adb6de47956): entry word 8 != 0 -> the float at 0x140b79ed0 (bytes 0000803f, 1.0); else (span - elapsed) / span with span from 0x1403c0210 and elapsed from entry 0x68 (method 7) or 0x20 (2, 6). Callers: 0x14054b1b0 line 324 (the cast bar), 0x1406fad90."
+grade = "fairly sure"
+gap = "The cast bar function 0x14054b1b0 and the binding 0x1406fad90 are not named or read."
+name = "GetSpellThresholdProgress"
+
+["0x1403bfbf0"]
+statement = "The spell an open threshold's current index casts: the spell itself when the index is -1, else spell4IdToCast of the threshold row at that index (rows of that parent in orderIndex order), passed through the player's spell override; 0 when there is no such row."
+proof = "Saved C 0x1403bfbf0.c (8eb22adb6de47956): entry word 0 == -1 -> the spell; else 0x140564f40(spell, index) row word 4; then the override object at game 0x6d90, vtable + 0x10."
+grade = "fairly sure"
+gap = "Read from the decompile; 0x140564f40's ordering is from the Spell4Thresholds record, not re-read here."
+name = "GetThresholdStageSpell"
+
+["0x1403c0190"]
+statement = "Finds the open threshold whose second spell (0x816's second field) is the given spell, and returns the spell it is keyed by; 0 when none."
+proof = "Saved C 0x1403c0190.c (8eb22adb6de47956): walks the map at game 0x1588, entry word 0x10 == the spell -> node key (0x20)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run."
+name = "FindThresholdBySecondSpell"
+
+["0x1403bfb60"]
+statement = "Tests whether the player's open threshold keyed by a spell is at an index the given mask allows: a mask of -1 always passes; no open threshold fails; index -1 passes; else bit <index> of the mask. A threshold cast's visuals use it with the cast's root, so a tier-masked visual shows only while the player's own threshold for the root is open."
+proof = "Saved C 0x1403bfb60.c (8eb22adb6de47956). Call site 0x140546e60: 0x14054706e mov r8d, dword ptr [r15 + 0x54]; 0x140547072 mov edx, dword ptr [r13 + 0x6c]; 0x140547076 call 0x1403bfb60; 0x14054707d jz 0x1405484f6 (the visual skipped), only when castMethod is 2, 6 or 7."
+grade = "fairly sure"
+gap = "Which table row r15 is (its word 0x54 is the mask) is not read; for a viewer, the lookup is in the viewer's own threshold table, so a masked visual of another player's threshold cast fails unless the mask is -1."
+name = "ThresholdIndexInMask"
+
+["cast.stage_root_parent"]
+statement = "The spell, root and parent the caster's client gives a cast it makes from a press of a PressHold, RapidTap or ChargeRelease ability. The press sets spell = root = the ability's spell (after the player's spell override), parent = 0. With a threshold open for that spell, the press casts the stage the index names: spell = the stage (spell4IdToCast), root unchanged, parent = the threshold's spell; with index -1, the spell itself and parent 0. With no threshold open, the spell itself, parent 0; except under the hold-to-cast setting for ChargeRelease: spell = row 0's spell4IdToCast, parent = the spell. So: Shred's first press 38765 (root 38765, parent 0), its stage 38766 (root 38765, parent 38765); Charged Shot's press 34718 (34718, 0), its release 34720, 34722 or 36691 (root 34718, parent 34718). These stay with the cast: 0x7fd carries no root or parent, so the caster's client keeps its own. The server's 0x7ff to viewers should carry the same: root = the ability's spell, parent = the threshold's spell for a stage, 0 for the base cast."
+proof = "CastAbilityBagSpell 0x14039a040 (737aa5af0120fae9): line 71 the 200-byte info cleared (word 2, parent, is 0); lines 151-152 local_108 (word 0) and local_104 (word 1, root) = the override's spell id; line 156 ResolveThresholdSpell 0x1403bfd60(game, &info). ResolveThresholdSpell (737aa5af0120fae9): line 36 word 0 = 0x1403d3520(root) (the root itself unless a thresholdTime-0 spell with a Proxy) or 0x1403c0190(root); open threshold (lines 150-157): stage = 0x1403bfbf0(game, word 0); if stage != word 0 then word 2 = word 0; word 0 = stage; hold-to-cast with no threshold (lines 133-140): word 2 = word 0, word 0 = row 0's word 4. StartLocalCast 0x1403988d0 passes the info; InitCast 0x14053d1f0 copies it to cast 0x68 (spell, root 0x6c, parent 0x70). HandleSpellConfirmCast 0x1405a4e60 does not rewrite them (opcode.0x7fd). Rows: `table_rows -- Spell4Thresholds spell4IdParent=34718` (ids 125, 123, 124: 34720, 34722, 36691, orderIndex 0, 1, 2) and `spell4IdParent=38765` (238: 38766)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run. The override object (game 0x6d90) is taken to return the spell unchanged for a starting character with no AMP. What retail sent in a viewer's 0x7ff is not in the client; the values above match the caster's own, which no client path contradicts."
+
+["cast.charge_release_base"]
+statement = "Charged Shot's base cast 34718 (ChargeRelease, castTime 0, thresholdTime 8200) and its 8.2 s mark. The base cast shows a cast bar, so it is the player's current cast from its 0x7fd until its 0x7fe; a go does not clear it. The client needs no go before the base cast's 0x7fe: a go of 34718 starts no cooldown (it has a thresholdTime) and changes no threshold, and 0x7fe of a ChargeRelease cast with no go starts no cooldown, leaves the threshold open and only removes the cast; the release press is sent whether or not the base cast is still live. A go would only play the spell's go-time visuals. At 8.2 s after the 0x816 the client sets the threshold's done mark and nothing else: no cast, no message, no cooldown, no Lua event; the cast bar reads the charge as full; the threshold stays open at its index. A release after the mark still casts the row at the current index (the mark is not read when the press is resolved). With no release, the threshold stays open until the server's 0x814; the client never fires or cancels the charge itself."
+proof = "SpellShowsCastBar 0x1407a1820 case 7: record 0x184 non-zero (cast.current_cast). ApplySpellGo 0x14053e5a0 (737aa5af0120fae9) line 233: castMethod 7 with record 0x184 != 0 -> no StartSpellCooldowns; lines 154-174: method 7 never clears unit 0x1600. FinishCast 0x14053e1b0 (49fd5a78aaad3411) lines 30-37 (cooldowns only for methods 1, 2 and 8) and 52 (result 8 skips the threshold); 0x7fe case 0x1403ee468 passes 8. Timer: 0x1403be620 sets the thresholdTime timer to ExpireSpellThreshold 0x1403bf2c0, which for method 7 sets entry word 8 and returns; the charge timer's callback (entry 0x68) is the empty function SizeEmptyBody. Readers of entry word 8: GetSpellThresholdProgress 0x1403c0340 (1.0) and 0x1403c04c0 (0 left); 0x1403bea90 (0x817) clears it. ResolveThresholdSpell 0x1403bfd60 and GetThresholdStageSpell 0x1403bfbf0 do not read it. Release press: 0x1403be120 (49fd5a78aaad3411) method 7 branch: StopSpellThreshold 0x1403bf400, then CastAbilityBagSpell; cast.press_queue: a bag press is never refused with 13. Rows: `table_rows -- Spell4 34718` (thresholdTime 8200, castTime 0), `Spell4Base 20684` (castMethod 7)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run. The visuals a go of 34718 plays (Spell4VisualGroup 5836) are not read. The hold-to-cast branches (setting at 0x140c45e90, the released-key table at game 0x15c8 read by 0x1403c0760) are not read. A live hold of Charged Shot past 8.2 s against the server settles what the player sees."
