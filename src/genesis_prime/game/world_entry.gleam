@@ -102,8 +102,7 @@ import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId}
 import genesis_prime/store.{
-  type AccountId, type Character, type CharacterId, type SessionEpoch,
-  CharacterId,
+  type AccountId, type Character, type CharacterId, CharacterId,
 }
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map
@@ -172,8 +171,9 @@ pub type Joined {
 }
 
 /// A player in the world: its character as the store loaded it (which a join at
-/// the Holocrypt asks the map with again), its map, the run of the map that took
-/// it, which the rule watches as `Map(map, incarnation)`, its unit id, the
+/// the Holocrypt asks the map with again), the place it entered this stay at, its
+/// map, the run of the map that took it, which the rule watches as
+/// `Map(map, incarnation)`, its unit id, the
 /// origin of the map's clock (`Joined` carries it), its loadout and maximum
 /// health (typed, from the tables: the weapon, the abilities and the gear's
 /// properties, which the 0x262 carries as bits), its own 0x262 record
@@ -188,12 +188,14 @@ pub type Joined {
 /// (genesis_prime/game/chat), which the rule keeps up to date. A player that has
 /// just entered is not camping, has no viewers and shows no unit: the map's
 /// `Watched` and `Unwatched` keep `viewers`, the connections whose players see
-/// this one, the connection sends everything about the player's own unit to them,
-/// and `shown` and `gone` are the units its client holds and the ones the map
-/// reported gone (genesis_prime/game/connection).
+/// this one, each with its player's unit of the stay the map named it for, the
+/// connection sends everything about the player's own unit to them, and `shown`
+/// and `gone` are the units its client holds and the ones the map reported gone
+/// (genesis_prime/game/connection).
 pub type Entered {
   Entered(
     character: Character,
+    entered_at: Place,
     character_id: CharacterId,
     map: MapId,
     incarnation: Int,
@@ -202,7 +204,7 @@ pub type Entered {
     loadout: Loadout,
     max_health: Int,
     clock_origin_ms: Int,
-    viewers: Set(ConnectionId),
+    viewers: Dict(ConnectionId, Int),
     shown: shown.Picture,
     casts_written: Dict(Int, Int),
     gone: Set(Int),
@@ -324,26 +326,14 @@ pub fn loaded(
                   <> ", which has no saved place",
               )
             Some(place) -> {
-              let sent = start_place.within_the_worlds_box(place)
-              let map =
-                MapId(
-                  world_id: start_place.world_id(place),
-                  instance: open_world_instance,
-                )
-              Join(
-                state: Joining(
+              let #(state, effects) =
+                joining(
                   character:,
                   place:,
                   movement: movement.entered(place:, session_epoch:),
-                  map:,
-                ),
-                effects: [
-                  AskMap(
-                    map:,
-                    message: map.Join(connection:, character:, place: sent),
-                  ),
-                ],
-              )
+                  connection:,
+                )
+              Join(state:, effects:)
             }
           }
       })
@@ -371,6 +361,7 @@ pub fn joined(
           Ok(InTheWorld(
             entered: Entered(
               character:,
+              entered_at: place,
               character_id: character.character_id,
               map:,
               incarnation:,
@@ -379,7 +370,7 @@ pub fn joined(
               loadout:,
               max_health:,
               clock_origin_ms:,
-              viewers: set.new(),
+              viewers: dict.new(),
               shown: dict.new(),
               casts_written: dict.new(),
               gone: set.new(),
@@ -453,7 +444,35 @@ pub fn rejoining(
   place place: Place,
   connection connection: ConnectionId,
 ) -> #(State, List(Effect)) {
-  todo as "the join at the Holocrypt"
+  joining(
+    character: entered.character,
+    place:,
+    movement: movement.placed(state: entered.movement, place:),
+    connection:,
+  )
+}
+
+/// The ask of the map of `place`'s world to take the character there, with the
+/// movement it enters with: the place the map is given is the bounded one the
+/// client is told.
+fn joining(
+  character character: Character,
+  place place: Place,
+  movement movement: movement.State,
+  connection connection: ConnectionId,
+) -> #(State, List(Effect)) {
+  let map =
+    MapId(world_id: start_place.world_id(place), instance: open_world_instance)
+  #(Joining(character:, place:, movement:, map:), [
+    AskMap(
+      map:,
+      message: map.Join(
+        connection:,
+        character:,
+        place: start_place.within_the_worlds_box(place),
+      ),
+    ),
+  ])
 }
 
 /// 0xAD with the saved world and position, and 0.0 in the last two floats.

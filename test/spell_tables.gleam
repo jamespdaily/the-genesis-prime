@@ -49,6 +49,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
@@ -105,6 +106,7 @@ fn spell4_row(
     #("spellCoolDownIdGlobal", Integer(global)),
     #("propertyFlags", Integer(property_flags(id))),
     #("spell4AoeTargetConstraintsId", Integer(area_id(id))),
+    #("spell4ConditionsIdCaster", Integer(caster_conditions(id))),
   ])
 }
 
@@ -191,6 +193,53 @@ fn property_flags(id: Int) -> Int {
     70_033 | 70_045 | 70_054 | 70_135 | 71_392 | 71_393 | 71_394 -> 0x4000002
     _ -> 0
   }
+}
+
+/// Spell4.spell4ConditionsIdCaster of the planted rows and of the novice tables'
+/// spells, as `table_rows -- Spell4 <id>` prints it
+/// (`Spell4.spell4ConditionsIdCaster`): 43 for the abilities and most stages, 1
+/// for 34355, the creature attack 5649 and most children, 4 for 30900 and 42297.
+pub fn caster_conditions(id: Int) -> Int {
+  case id {
+    30_900 | 42_297 -> 4
+    25_190
+    | 30_436
+    | 34_355
+    | 34_775
+    | 35_886
+    | 37_302
+    | 38_766
+    | 38_767
+    | 38_780
+    | 38_781
+    | 39_467
+    | 43_498
+    | 43_499
+    | 43_500
+    | 5649
+    | 70_033
+    | 70_045
+    | 70_054
+    | 70_135
+    | 71_392
+    | 71_393
+    | 71_394
+    | 80_382 -> 1
+    _ -> 43
+  }
+}
+
+/// The planted Spell4Conditions rows the planted spells name, each the client's
+/// (`table_rows -- Spell4Conditions`): 1 (mask 225, value 0) and 43 (mask 1249,
+/// value 0), each with the dead bit, and 4 (mask 0), with none.
+pub fn spell4_conditions_rows() -> List(List(Cell)) {
+  list.map([#(1, 225), #(4, 0), #(43, 1249)], fn(row) {
+    planted_table.row(spell4_conditions.schema, [
+      #("ID", Integer(row.0)),
+      #("conditionMask", Integer(row.1)),
+      #("conditionValue", Integer(0)),
+    ])
+  })
 }
 
 /// A Spell4Base row: its cast method, weapon slot, cast bar type and class.
@@ -362,6 +411,7 @@ pub fn method_spell_row(
     #("globalCooldownEnum", Integer(kind)),
     #("spellCoolDownIdGlobal", Integer(global)),
     #("propertyFlags", Integer(property_flags(id))),
+    #("spell4ConditionsIdCaster", Integer(caster_conditions(id))),
     ..list.map(more, fn(column) { #(column.0, Integer(column.1)) })
   ])
 }
@@ -1509,6 +1559,7 @@ fn entries() -> List(table_store.Entry) {
     spell_level.entry(),
     spell4.entry(),
     spell4_base.entry(),
+    spell4_conditions.entry(),
     spell4_effects.entry(),
     spell4_thresholds.entry(),
     spell4_aoe_target_constraints.entry(),
@@ -1526,6 +1577,7 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell_level.schema, rows.spell_levels),
     planted_table.file(spell4.schema, rows.spell4),
     planted_table.file(spell4_base.schema, rows.spell4_base),
+    planted_table.file(spell4_conditions.schema, spell4_conditions_rows()),
     planted_table.file(spell4_effects.schema, rows.spell4_effects),
     planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
     planted_table.file(

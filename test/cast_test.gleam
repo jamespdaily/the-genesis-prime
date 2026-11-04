@@ -17,10 +17,11 @@ import cast_support as support
 import genesis_prime/client_connection.{CastFinished, CastStarted, CastWent}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result.{
-  CasterVitalCostResource1, CasterVitalCostResource5, IllegalSpellCast, Other,
-  SpellAlreadyCasting, SpellCancelled, SpellCooldown, SpellGlobalCooldown,
-  SpellUnknown, WeaponSlot,
+  CasterCannotBeDead, CasterVitalCostResource1, CasterVitalCostResource5,
+  IllegalSpellCast, Other, SpellAlreadyCasting, SpellCancelled, SpellCooldown,
+  SpellGlobalCooldown, SpellUnknown, WeaponSlot,
 }
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
@@ -767,4 +768,129 @@ pub fn the_player_leaving_the_world_cancels_every_timer_and_writes_nothing_test(
   assert support.cancelled_timers(effects:) == [go_timer]
   assert support.writes(effects:) == [] && support.tells(effects:) == []
     as "the viewers' connections write each cast's 0x7fe before the unit's 0x355 (genesis_prime/game/connection)"
+}
+
+// ------------------------------------------- a dead caster
+//
+// Expected values come from the design of step G and its shape review: the
+// client checks a press against the spell's caster condition row
+// (`Spell4.spell4ConditionsIdCaster`, Spell4Conditions bit 0) and refuses a dead
+// caster's press of a spell whose row has the dead bit with 57
+// Caster_CannotBeDead; a living caster's press of one that must be cast dead is
+// refused 58 Caster_MustBeDead; any other press is cast as for the living
+// (`cast.dead_player`). Telekinetic Strike's row is caster condition 43 (mask
+// 1249, value 0: the dead bit). A player that dies ends its own casts with 0x7fe
+// to every player told their start (the Design's sequence, "A player dies" 3).
+
+/// The tests' caster, dead.
+fn dead_caster() -> cast.Caster {
+  cast.Caster(..support.caster(), dead: True)
+}
+
+pub fn a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Telekinetic Strike goes 1250 ms after the accept, so its go waits on a timer.
+  let #(state, pressed) =
+    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+  let assert [#(go_timer, _)] = support.started_timers(effects: pressed)
+  let assert [frame, ..] = support.writes(effects: pressed)
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
+  let id = confirmed.server_cast_id
+  let #(after, effects) = cast.died(cast: state, now: support.at(ms: 1500))
+  assert support.cancelled_timers(effects:) == [go_timer]
+    as "the waiting go is cancelled: no go and no strike"
+  assert ids_of(effects:) == [0x07FE] as "0x7fe to the caster's own client"
+  assert support.tells(effects:)
+    == [
+      #(ConnectionId(2), CastFinished(cast_id: id)),
+      #(ConnectionId(3), CastFinished(cast_id: id)),
+    ]
+    as "and to every viewer told the cast's start"
+  let #(_, again) =
+    support.pressed(state: after, bag_index: 3, target: 0, at: 1600)
+  assert accepted(effects: again) as "no cast is live after the death"
+}
+
+pub fn a_dead_casters_press_of_a_spell_that_cannot_be_cast_dead_is_refused_57_and_changes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(#(after, effects)) =
+    cast.take(
+      cast: cast.new(),
+      message: cast.Pressed,
+      body: support.press_body(
+        client_cast_id: 9,
+        bag_index: 0,
+        target: 0,
+        press: 1,
+      ),
+      caster: dead_caster(),
+      plans: support.plans(),
+      now: support.at(ms: 1000),
+    )
+  let assert [frame] = support.writes(effects:)
+    as "a refused press writes one 0x7fc and nothing else"
+  assert refusal(frame).result == CasterCannotBeDead
+    as "57 Caster_CannotBeDead: Telekinetic Strike's caster row has the dead bit"
+  assert support.tells(effects:) == []
+    && support.started_timers(effects:) == []
+    && after == cast.new()
+    as "the state is unchanged"
+}
+
+pub fn a_dead_casters_press_of_a_spell_without_the_dead_bit_is_cast_as_for_the_living_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Caster condition 4 (mask 0) has no dead bit: the client sends such a press
+  // while dead, and the server judges it as for the living.
+  let plans =
+    support.with_spells(plans: support.plans(), spells: [
+      spell_plan.Spell(
+        ..support.ability(base: 19_102),
+        caster_death: spell_plan.AliveOrDead,
+      ),
+    ])
+  let dead =
+    support.pressed_in(
+      plans:,
+      state: cast.new(),
+      caster: dead_caster(),
+      bag_index: 0,
+      target: 0,
+      at: 1000,
+    )
+  let living =
+    support.pressed_in(
+      plans:,
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: 0,
+      target: 0,
+      at: 1000,
+    )
+  assert accepted(effects: dead.1) && dead == living
+    as "the press is cast, step for step as the living's"
+}
+
+pub fn a_living_casters_press_of_a_spell_that_must_be_cast_dead_is_refused_58_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The value bit 1 of the dead bit asks the caster to be dead, as for Spell4
+  // 2643 and 39624 (`Spell4.spell4ConditionsIdCaster`).
+  let plans =
+    support.with_spells(plans: support.plans(), spells: [
+      spell_plan.Spell(
+        ..support.ability(base: 19_102),
+        caster_death: spell_plan.MustBeDead,
+      ),
+    ])
+  let #(after, effects) =
+    support.pressed_in(
+      plans:,
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: 0,
+      target: 0,
+      at: 1000,
+    )
+  let assert [frame] = support.writes(effects:)
+  assert refusal(frame).result == Other(58) as "58 Caster_MustBeDead"
+  assert after == cast.new()
 }

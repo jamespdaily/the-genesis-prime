@@ -24,17 +24,22 @@ import genesis_prime/client_connection
 import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
-  Answer, OwnCombatState, OwnHealth, OwnShield, StreamTo, ToClient, ToViewers,
+  Answer, ControlBody, ControlGhost, ControlGiven, EndCasts, GhostCreated,
+  GhostRemoved, GoToHolocrypt, OwnCameBackLogged, OwnCombatState, OwnDeathLogged,
+  OwnDeathState, OwnHealth, OwnResurrectionWindow, OwnShield, StreamTo, ToClient,
+  ToViewers,
 }
 import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   Answered, CreatureStriker, Key, Landed, Refused, Strike,
 }
+import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/step
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/float
+import gleam/list
 import gleam/set
 import owned_test
 import spawn_support
@@ -151,8 +156,9 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
       answered: Answered(outcome: Landed(descriptions: [description]), ..),
       ..,
     ),
+    ..
   ] = effects
-    as "no shield to change: 0x92f and 0x937 at 0, then the answer"
+    as "no shield to change: 0x92f and 0x937 at 0, then the answer, then the death"
   assert description.damage.killed == 1 && description.damage.overkill == 2
     as "the killed bit, and 2 beyond the 1 health"
   let #(_, later) =
@@ -216,6 +222,245 @@ pub fn a_threat_from_a_unit_the_map_reported_gone_is_dropped_test() -> Nil {
     )
   assert effects == [] && player_life.fighters(life:) == []
     as "the creature ended after it sent its threat"
+}
+
+// ------------------------------------------- death and coming back
+//
+// Expected values come from the design of step G (the Design artifact of issue
+// 368 and its shape review) and these places: 0x88c sets the unit dead and leaves
+// its combat flag, so 0x89a (P, 0) follows (`opcode.0x88c`, `death.combat_flag`);
+// the death and the coming back are logged as 0x247 types 22 and 23
+// (`opcode.0x247.death`); the ghost is a unit of type 23 for the player's own
+// client at the body's place (`0x140096970`), handed control by 0x1b3 and 0x636
+// (`opcode.0x1b3`, `opcode.0x636`); 0x15a names the player's own unit, a choice
+// of GameLib.RezType and 0 (`opcode.0x15a`, `lua.GameLib.RezType`); the window
+// offers Wake Here (1) and Holocrypt (2), and the player comes back at full health
+// and full shield (the server's choices, `death.server_choices`).
+
+/// The player's unit in these rules: the unit the Beast's strikes name.
+const own_unit = 20
+
+/// The life struck by the Beast, strike after strike, until it dies: the life
+/// and the effects of the strike that killed it.
+fn struck_until_dead(
+  life: player_life.Life,
+  cast_id: Int,
+) -> #(player_life.Life, List(player_life.Effect)) {
+  let #(life, effects) =
+    player_life.struck(
+      life:,
+      defence: defence_of(1),
+      strike: attack(cast_id),
+      rolls:,
+      place: test_place(),
+    )
+  case player_life.state(life:) {
+    player_life.Dead -> #(life, effects)
+    player_life.Alive -> struck_until_dead(life, cast_id + 1)
+  }
+}
+
+/// A level-1 Warrior with the Beast on its threat list, struck until it dies,
+/// and the effects of the killing strike after its answer.
+fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
+  let #(life, _) =
+    player_life.threatened(
+      life: player_life.new(health: 736, shield: 450),
+      unit_id: 7,
+      creature_life: 3,
+      gone: set.new(),
+    )
+  let #(life, effects) = struck_until_dead(life, 1)
+  #(
+    life,
+    list.drop_while(effects, fn(effect) {
+      case effect {
+        Answer(..) -> False
+        ToClient(..)
+        | ToViewers(..)
+        | StreamTo(..)
+        | EndCasts
+        | GoToHolocrypt -> True
+      }
+    })
+      |> list.drop(1),
+  )
+}
+
+/// 0x15a's body: the unit, the choice and the third value.
+fn choice_body(
+  unit_id unit_id: Int,
+  choice choice: Int,
+  value value: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    choose_resurrection.encode(ChooseResurrection(
+      unit_id:,
+      choice:,
+      field_3: value,
+    ))
+    as "a unit id, a 7-bit choice and a 32-bit value fit the message"
+  body
+}
+
+fn chosen(
+  life: player_life.Life,
+  body: BitArray,
+) -> Result(#(player_life.Life, List(player_life.Effect)), player_life.Refusal) {
+  player_life.take(
+    life:,
+    message: player_life.ResurrectionChosen,
+    body:,
+    unit_id: own_unit,
+  )
+}
+
+/// What coming back writes and tells, as Wake Here and the Holocrypt share it,
+/// for a level-1 Warrior: 736 health (`player.level1_base_health`) and 450 shield
+/// (`player.level1_gear_properties`), both full.
+fn came_back_effects() -> List(player_life.Effect) {
+  [
+    ToClient(OwnHealth(health: 736)),
+    ToViewers(client_connection.Health(health: 736, dead: False)),
+    ToClient(OwnShield(shield: 450)),
+    ToViewers(client_connection.Shield(shield: 450)),
+    ToClient(OwnDeathState(dead: False)),
+    ToViewers(client_connection.CameBack),
+    ToClient(OwnResurrectionWindow(dead: False)),
+    ToClient(GhostRemoved),
+    ToClient(ControlGiven(to: ControlBody)),
+    ToClient(OwnCameBackLogged),
+    ToViewers(client_connection.CameBackLogged),
+  ]
+}
+
+pub fn a_player_at_0_dies_ends_its_casts_and_sees_its_ghost_and_the_window_in_the_clients_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(life, death) = a_dead_warrior()
+  assert death
+    == [
+      ToClient(OwnDeathState(dead: True)),
+      ToViewers(client_connection.Died),
+      ToClient(OwnCombatState(in_combat: False)),
+      ToViewers(client_connection.CombatState(in_combat: False)),
+      EndCasts,
+      ToClient(OwnDeathLogged),
+      ToViewers(client_connection.DeathLogged),
+      ToClient(GhostCreated(place: test_place())),
+      ToClient(OwnResurrectionWindow(dead: True)),
+      ToClient(ControlGiven(to: ControlGhost)),
+    ]
+    as "0x88c (P, 1) and 0x89a (P, 0) to the player and its viewers, its casts ended, 0x247 type 22 to both, then for its own client alone the ghost's 0x262 at the body's place, 0x1b3 and 0x636 for the ghost"
+  assert player_life.state(life:) == player_life.Dead
+    && player_life.fighters(life:) == []
+    as "dead, and fighting no one: its fighters stream nothing more"
+}
+
+pub fn a_strike_on_a_dead_player_is_refused_dead_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(life, _) = a_dead_warrior()
+  let #(after, refused) =
+    player_life.struck(
+      life:,
+      defence: defence_of(1),
+      strike: attack(9999),
+      rolls:,
+      place: test_place(),
+    )
+  assert refused
+    == [
+      Answer(
+        to: beast(),
+        answered: Answered(
+          key: Key(cast_id: 9999, phase: 0, unit_id: own_unit),
+          outcome: Refused(why: strike_tell.Dead),
+        ),
+      ),
+    ]
+    && after == life
+    as "a strike that reaches the player after its death is refused Dead, and the creature's go leaves it out"
+  let #(after, threatened) =
+    player_life.threatened(life:, unit_id: 9, creature_life: 4, gone: set.new())
+  assert threatened == [] && after == life
+    as "a threat that reaches the dead is dropped"
+}
+
+pub fn a_choice_for_another_unit_one_not_offered_a_nonzero_value_or_one_while_alive_is_refused_unchanged_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(dead, _) = a_dead_warrior()
+  assert chosen(dead, choice_body(unit_id: 21, choice: 1, value: 0))
+    == Error(player_life.NotThePlayer(unit_id: 21))
+    as "another unit"
+  assert chosen(dead, choice_body(unit_id: 1_048_596, choice: 1, value: 0))
+    == Error(player_life.NotThePlayer(unit_id: 1_048_596))
+    as "the ghost's own id, 2^20 + 20 (the server's choice of a ghost id): the Death addon names the player's unit"
+  assert chosen(dead, choice_body(unit_id: own_unit, choice: 4, value: 0))
+    == Error(player_life.NotOffered(choice: player_life.OtherChoice(value: 4)))
+    && chosen(dead, choice_body(unit_id: own_unit, choice: 32, value: 0))
+    == Error(player_life.NotOffered(choice: player_life.OtherChoice(value: 32)))
+    && chosen(dead, choice_body(unit_id: own_unit, choice: 0, value: 0))
+    == Error(player_life.NotOffered(choice: player_life.OtherChoice(value: 0)))
+    as "a caster's resurrection (4), Exit Instance (32) and 0: the window offered only 1 and 2"
+  assert chosen(dead, choice_body(unit_id: own_unit, choice: 1, value: 5))
+    == Error(player_life.NonzeroValue(value: 5))
+    as "the Death addon always sends 0"
+  assert chosen(
+      player_life.new(health: 736, shield: 450),
+      choice_body(unit_id: own_unit, choice: 1, value: 0),
+    )
+    == Error(player_life.NotDead)
+    as "the living come back from nothing"
+  let assert Error(player_life.NotDecoded(..)) = chosen(dead, <<1, 2>>)
+    as "a body the client's reader would refuse"
+  Nil
+}
+
+pub fn a_second_choice_is_refused_unchanged_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(dead, _) = a_dead_warrior()
+  let assert Ok(#(alive, _)) =
+    chosen(dead, choice_body(unit_id: own_unit, choice: 1, value: 0))
+  assert chosen(alive, choice_body(unit_id: own_unit, choice: 2, value: 0))
+    == Error(player_life.NotDead)
+    as "the first choice brought the player back: the second finds it alive"
+}
+
+pub fn wake_here_brings_the_player_back_at_full_health_and_full_shield_where_its_body_lies_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(dead, _) = a_dead_warrior()
+  let assert Ok(#(life, effects)) =
+    chosen(dead, choice_body(unit_id: own_unit, choice: 1, value: 0))
+  assert effects == came_back_effects()
+    as "0x92f full and the full shield, 0x88c (P, 0) to the player and its viewers, 0x1b3 dead 0, the ghost's 0x355, 0x636 for the body, 0x247 type 23 to both, in that order"
+  assert player_life.state(life:) == player_life.Alive
+    && player_life.health(life:) == 736
+    && player_life.shield(life:) == 450
+  let #(after, later) =
+    player_life.struck(
+      life:,
+      defence: defence_of(1),
+      strike: attack(9999),
+      rolls:,
+      place: test_place(),
+    )
+  let assert [
+    ToClient(OwnShield(shield: 448)),
+    ToViewers(client_connection.Shield(shield: 448)),
+    ToClient(OwnHealth(health: 735)),
+    ..
+  ] = later
+    as "a later strike lands: Armor 250 takes 3, the shield 2 and the health 1"
+  assert player_life.health(life: after) == 735
+}
+
+pub fn the_holocrypt_comes_back_as_wake_here_does_then_asks_to_go_to_the_holocrypt_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(dead, _) = a_dead_warrior()
+  let assert Ok(#(life, effects)) =
+    chosen(dead, choice_body(unit_id: own_unit, choice: 2, value: 0))
+  assert effects == list.append(came_back_effects(), [GoToHolocrypt])
+    as "the coming back's messages where the body lies, then the move to the Holocrypt place, last"
+  assert player_life.state(life:) == player_life.Alive
 }
 
 /// Where the struck player stands in these rules: any place in a world serves,

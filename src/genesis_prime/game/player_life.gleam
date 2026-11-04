@@ -28,7 +28,7 @@
 ////
 //// ```
 //// creature C                 this rule (P's connection)                  P's client                P's viewers
-//// Attacks(..) health 0  ─▶  Dead(ghost: the body's place); fighters emptied
+//// Attacks(..) health 0  ─▶  Dead, the body where it fell; fighters emptied
 ////                            Answer(C, Landed killed) ─▶ C releases P
 ////                                                    ─▶ 0x92f(P, 0)               0x937(P, 0, dead)
 ////                                                    ─▶ 0x88c(P, 1)               0x88c(P, 1)
@@ -38,9 +38,11 @@
 ////                                                    ─▶ 0x262 ghost (type 23)
 ////                                                    ─▶ 0x1b3 {ghost, 0, 0, 1, 3, 0, 0, 0}
 ////                                                    ─▶ 0x636 ghost
-//// 0x637 while dead      ─▶  the ghost's place kept; the body, the map, viewers and fighters untouched
-//// 0x15a {P, 1, 0}       ─▶  Alive at the body's place, full health
+//// 0x637 while dead      ─▶  decoded and dropped (genesis_prime/game/connection): the body, the map,
+////                            viewers and fighters untouched
+//// 0x15a {P, 1, 0}       ─▶  Alive at the body's place, full health and shield
 ////                                                    ─▶ 0x92f(P, max)             0x937(P, max)
+////                                                    ─▶ 0x938(P, 20, max)         0x938(P, 20, max)
 ////                                                    ─▶ 0x88c(P, 0)               0x88c(P, 0)
 ////                                                    ─▶ 0x1b3 {ghost, .., dead 0, ..}
 ////                                                    ─▶ 0x355 ghost
@@ -80,7 +82,14 @@
 ////   Holocrypt, flags 1 and 2 (`lua.GameLib.RezType`).
 //// - **0x15a** names P's own unit, a choice offered and 0 (`opcode.0x15a`); any
 ////   other, or one while alive, is refused with no change. P comes back at full
-////   health (the server's choice, `death.server_choices`) where the body lies.
+////   health and full shield (the server's choice, `death.server_choices`) where
+////   the body lies.
+//// - **The ghost's moves** come as 0x637 for the player while the ghost is the
+////   controlled unit, and the client expects no answer (`ghost.movement`): the
+////   connection decodes and drops each, so no check of the body's moves applies.
+//// - **The stay.** A threat or a release names P's unit, as the creature holds it,
+////   and the connection drops one of another unit: one sent before a Holocrypt or
+////   a camp that reaches the next stay (genesis_prime/game/connection).
 ////
 //// What happens at each deadline and process death on P's side:
 ////
@@ -96,7 +105,9 @@
 //// | the Holocrypt's leave has no answer by its deadline | the connection ends, as the camp's leave does | `a_holocrypt_leave_with_no_answer_ends_the_connection_test` |
 //// | the Holocrypt's join is refused or has no answer | refused: 0x0594 and character select; no answer: the connection ends, as entry's join does | `a_refused_holocrypt_join_returns_to_character_select_test`, `a_holocrypt_join_with_no_answer_ends_the_connection_test` |
 //// | P's connection ends while dead | the map's `Leave` as for any end; the ghost was P's client's alone; the next entry is alive and full | `a_player_dead_at_camp_enters_again_alive_and_full_test` |
-//// | the map crashes while P is dead | the connection ends, as for any player in the world | existing |
+//// | the map crashes while P is dead | the connection ends, as for any player in the world | `the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test` |
+//// | C's killing strike reaches P mid-cast | each live cast ends with 0x7fe to P and the viewers told its start, its timers cancelled; a round that closes later has no go | `a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test`, `a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test` |
+//// | a threat, a release or a peer's news sent for P's earlier stay arrives after the Holocrypt's join or a camp and a new entry | dropped: it names P's earlier unit | `an_appeared_and_a_threatened_of_the_stay_before_the_holocrypt_delivered_after_its_join_are_dropped_test`, `an_appeared_and_a_threatened_of_the_stay_before_a_camp_delivered_after_the_next_entry_are_dropped_test` |
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/hit.{type Defence, type Rolls}
@@ -115,13 +126,15 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/set.{type Set}
 
-/// A player's health, its full health and shield, the creatures that hold it on
-/// their threat lists, by unit id, with each one's life, and whether it is alive.
+/// A player's health and shield, each with its full value, the creatures that
+/// hold it on their threat lists, by unit id, with each one's life, and whether
+/// it is alive.
 pub opaque type Life {
   Life(
     health: Int,
     max_health: Int,
     shield: Int,
+    max_shield: Int,
     fighters: Dict(Int, Int),
     state: State,
   )
@@ -129,10 +142,10 @@ pub opaque type Life {
 
 /// Whether the player is alive. A dead player's body lies where it fell, which
 /// the movement keeps (genesis_prime/game/movement); its client moves its ghost,
-/// whose place is kept here.
+/// whose moves the server drops (`ghost.movement`).
 pub type State {
   Alive
-  Dead(ghost: Place)
+  Dead
 }
 
 /// The messages of a player's death, which the client sends inside 0x038C
@@ -237,7 +250,14 @@ pub const window_zero = 0
 /// A player entering the world at full `health` with a full `shield`, alive and
 /// fighting no one.
 pub fn new(health health: Int, shield shield: Int) -> Life {
-  Life(health:, max_health: health, shield:, fighters: dict.new(), state: Alive)
+  Life(
+    health:,
+    max_health: health,
+    shield:,
+    max_shield: shield,
+    fighters: dict.new(),
+    state: Alive,
+  )
 }
 
 /// A level-1 player's defence from its loadout: its deflect, critical deflect and
@@ -288,7 +308,7 @@ pub fn struck(
   place place: Place,
 ) -> #(Life, List(Effect)) {
   case life.state {
-    Dead(..) -> #(life, [
+    Dead -> #(life, [
       Answer(
         to: strike.from,
         answered: Answered(
@@ -356,7 +376,18 @@ pub fn struck(
 /// 0x88c and 0x89a to it and its viewers, its casts ended, 0x247 type 22, then
 /// for its own client the ghost's 0x262, 0x1b3 and 0x636.
 fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
-  todo as "the death of a player"
+  #(Life(..life, fighters: dict.new(), state: Dead), [
+    ToClient(OwnDeathState(dead: True)),
+    ToViewers(client_connection.Died),
+    ToClient(OwnCombatState(in_combat: False)),
+    ToViewers(client_connection.CombatState(in_combat: False)),
+    EndCasts,
+    ToClient(OwnDeathLogged),
+    ToViewers(client_connection.DeathLogged),
+    ToClient(GhostCreated(place:)),
+    ToClient(OwnResurrectionWindow(dead: True)),
+    ToClient(ControlGiven(to: ControlGhost)),
+  ])
 }
 
 /// What the client's 0x15a does, decoded at the edge: a choice offered, for the
@@ -375,11 +406,27 @@ pub fn take(
     |> client_connection.decoded(message_id: choose_resurrection.message_id)
     |> result.map_error(NotDecoded),
   )
-  todo as "the choice of how to come back"
+  use <- bool.guard(when: life.state == Alive, return: Error(NotDead))
+  use <- bool.guard(
+    when: chosen.unit_id != unit_id,
+    return: Error(NotThePlayer(unit_id: chosen.unit_id)),
+  )
+  use <- bool.guard(
+    when: chosen.field_3 != 0,
+    return: Error(NonzeroValue(value: chosen.field_3)),
+  )
+  case choice(value: chosen.choice) {
+    WakeHere -> Ok(came_back(life:))
+    Holocrypt -> {
+      let #(life, effects) = came_back(life:)
+      Ok(#(life, list.append(effects, [GoToHolocrypt])))
+    }
+    OtherChoice(..) as other -> Error(NotOffered(choice: other))
+  }
 }
 
 /// The choice 0x15a's 7 bits name.
-pub fn choice(value value: Int) -> Choice {
+fn choice(value value: Int) -> Choice {
   case value {
     1 -> WakeHere
     2 -> Holocrypt
@@ -387,28 +434,60 @@ pub fn choice(value value: Int) -> Choice {
   }
 }
 
-/// The player comes back alive at full health where its body lies: the health
+/// The player comes back alive at full health and full shield (the server's
+/// choice, `death.server_choices`) where its body lies: the health and the shield
 /// to it and its viewers, 0x88c (P, 0) to both, 0x1b3 with dead 0, the ghost's
 /// 0x355, 0x636 for the body, and 0x247 type 23 to both.
 fn came_back(life life: Life) -> #(Life, List(Effect)) {
-  todo as "the coming back of a player"
+  let health = life.max_health
+  let shield = life.max_shield
+  #(Life(..life, health:, shield:, state: Alive), [
+    ToClient(OwnHealth(health:)),
+    ToViewers(client_connection.Health(health:, dead: False)),
+    ToClient(OwnShield(shield:)),
+    ToViewers(client_connection.Shield(shield:)),
+    ToClient(OwnDeathState(dead: False)),
+    ToViewers(client_connection.CameBack),
+    ToClient(OwnResurrectionWindow(dead: False)),
+    ToClient(GhostRemoved),
+    ToClient(ControlGiven(to: ControlBody)),
+    ToClient(OwnCameBackLogged),
+    ToViewers(client_connection.CameBackLogged),
+  ])
 }
 
-/// A move the client sent while the player is dead: its controlled unit is the
-/// ghost (`opcode.0x1b3`), so the place is the ghost's, kept here and told to no
-/// one. Alive, the life is as it was.
-pub fn ghost_moved(life life: Life, place place: Place) -> Life {
-  todo as "a move of the ghost"
-}
-
-/// Whether the player is alive, and where its ghost stands when it is not.
+/// Whether the player is alive.
 pub fn state(life life: Life) -> State {
   life.state
 }
 
 /// A sentence that says why a 0x15a was refused, for the log.
 pub fn describe(refusal refusal: Refusal) -> String {
-  todo as "the sentence of a refused 0x015A"
+  case refusal {
+    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
+    NotThePlayer(unit_id:) ->
+      "a 0x015A names unit "
+      <> int.to_string(unit_id)
+      <> ", which is not the player's own"
+    NotOffered(choice:) ->
+      "a 0x015A chooses "
+      <> int.to_string(choice_value(choice:))
+      <> ", which the window did not offer"
+    NotDead -> "a 0x015A came while the player is alive"
+    NonzeroValue(value:) ->
+      "a 0x015A carries the value "
+      <> int.to_string(value)
+      <> " where the Death addon sends 0"
+  }
+}
+
+/// The value 0x15a carries for a choice.
+fn choice_value(choice choice: Choice) -> Int {
+  case choice {
+    WakeHere -> 1
+    Holocrypt -> 2
+    OtherChoice(value:) -> value
+  }
 }
 
 /// The creature `unit_id` of life `creature_life` threatens the player: it joins
@@ -423,7 +502,7 @@ pub fn threatened(
   use <- bool.guard(
     when: set.contains(gone, unit_id)
       || dict.has_key(life.fighters, unit_id)
-      || life.state != Alive,
+      || life.state == Dead,
     return: #(life, []),
   )
   let flag = case dict.is_empty(life.fighters) {

@@ -65,7 +65,11 @@
 ////   wait for the first ability that needs one. Who a spell strikes is the area its
 ////   effects name, which a later step reads.
 //// - **The refusals** are the client's own checks, answered 0x7fc with the
-////   client's result and clearing the client's global cooldown: 13 while the
+////   client's result and clearing the client's global cooldown: 57 for a dead
+////   caster's press of a spell whose caster condition row has the dead bit, and
+////   58 for a living caster's press of one whose row asks for a dead caster
+////   (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`; the row's other
+////   conditions are not checked); 13 while the
 ////   caster's current cast is live (below); 14 while the global cooldown has more
 ////   than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
 ////   more than 500 ms left (`0x1403b14c0`); 169 for a spell that needs the weapon
@@ -183,6 +187,7 @@
 //// | a threshold's window ends with taps left | the threshold closes, nothing is written, the cooldown starts |
 //// | the player camps with casts, children or a threshold pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
 //// | the caster's connection ends, a key held | its timers and the hold end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
+//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end (`died`) |
 //// | a timer fires after its cast ended | a go finds no live cast and does nothing; the cast's end cancels its go timers |
 //// | a timer fires in a status that holds no player in the world | dropped; the world is left already |
 //// | the answer of a store ask comes after a timer's due time | the timer is taken after the answer: the go and finish are late by the ask, never lost |
@@ -257,6 +262,9 @@ pub type Caster {
     weapon: Option(Item2Id),
     /// The connections whose players see this one.
     audience: Set(ConnectionId),
+    /// Whether the player is dead (genesis_prime/game/player_life), which the
+    /// client checks a press against (`cast.dead_player`).
+    dead: Bool,
   )
 }
 
@@ -1068,8 +1076,13 @@ fn is_release(resolution resolution: Resolution) -> Bool {
   }
 }
 
-/// What the client's checks make of a press, in its order: the caster's (a press
-/// held already, the weapon, the current cast), the cost, then the cooldowns.
+/// Spell4CastResult 58, Caster_MustBeDead: a living caster's press of a spell
+/// whose caster row asks for a dead one (`Spell4.spell4ConditionsIdCaster`).
+const caster_must_be_dead = 58
+
+/// What the client's checks make of a press, in its order: the caster's (its death,
+/// a press held already, the weapon, the current cast), the cost, then the
+/// cooldowns.
 type Verdict {
   Accept
   Refuse(result: cast_result.CastResult)
@@ -1090,6 +1103,14 @@ fn verdict(
   now_ms now_ms: Int,
   is_release is_release: Bool,
 ) -> Verdict {
+  use <- bool.guard(
+    when: caster.dead && spell.caster_death == spell_plan.CannotBeDead,
+    return: Refuse(result: cast_result.CasterCannotBeDead),
+  )
+  use <- bool.guard(
+    when: !caster.dead && spell.caster_death == spell_plan.MustBeDead,
+    return: Refuse(result: cast_result.from_value(caster_must_be_dead)),
+  )
   use <- bool.guard(
     when: option.is_some(cast.held) && !is_release,
     return: Refuse(result: cast_result.SpellAlreadyCasting),
@@ -1475,25 +1496,28 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 }
 
 /// The caster died: each live cast ends with its timers cancelled and 0x7fe to
-/// the caster and the audience that was told its start, in cast id order; the
-/// held press, the hold and every open threshold end with it, and every other
-/// timer is cancelled. The client does not end its own casts when it dies (not
-/// read, `0x14045e740`), so the server's 0x7fe is the end its viewers see.
-pub fn died(cast cast: State) -> #(State, List(Effect)) {
-  todo as "the end of a dead caster's casts"
-}
-
-/// A cast message while the caster is dead, decoded as `take` decodes it: a press
-/// or a held 1 is refused with the 0x7fc the client's own check of a dead caster
-/// gives, and nothing changes; a 0x801 is taken as `take` takes it, which finds no
-/// live cast after `died`.
-pub fn take_while_dead(
-  cast cast: State,
-  message message: Message,
-  body body: BitArray,
-  now now: Now,
-) -> Result(#(State, List(Effect)), Refusal) {
-  todo as "a cast message of a dead caster"
+/// the caster and the audience that was told its start, in cast id order (as a
+/// 0x801 ends one, `end_live_cast`); then the held press, the hold and every open
+/// threshold end, and every other timer is cancelled, as when the player leaves
+/// (`left`). The client does not end its own casts when it dies (not read,
+/// `0x14045e740`), so the server's 0x7fe is the end its viewers see.
+pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
+  let #(cast, ended) =
+    dict.to_list(cast.casts)
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    |> list.fold(#(cast, []), fn(so_far, entry) {
+      let #(cast, effects) = so_far
+      let #(cast, more) =
+        end_live_cast(
+          cast:,
+          cast_id: entry.0,
+          live: entry.1,
+          now_ms: now.monotonic_ms,
+        )
+      #(cast, list.append(effects, more))
+    })
+  let #(cast, cancelled) = left(cast:)
+  #(cast, list.append(ended, cancelled))
 }
 
 /// The id the caster's next cast takes: the id of its next press that no live cast

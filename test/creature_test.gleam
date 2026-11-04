@@ -54,6 +54,12 @@ fn creature_for(viewers viewers: List(ConnectionId)) -> State {
   creature_at(spawn: spawn_support.battle_beast(number: 1, x: 0.0), viewers:)
 }
 
+/// The unit of the player of connection `number`, as the map names it: ten times
+/// the number.
+fn unit_of(number: Int) -> Int {
+  number * 10
+}
+
 /// A creature standing at this spawn as unit 7 of the first run, started for these
 /// players.
 fn creature_at(
@@ -68,7 +74,10 @@ fn creature_at(
       life: 3,
       spawn_id: SpawnId(1),
       clock_origin_ms:,
-      viewers:,
+      viewers: list.map(viewers, fn(viewer) {
+        let ConnectionId(number) = viewer
+        #(viewer, unit_of(number))
+      }),
     ),
     spawn:,
     kind: Kind(
@@ -119,17 +128,25 @@ pub fn a_creature_watches_its_run_and_sends_its_0x262_to_each_player_who_sees_it
     feed(
       state:,
       at_ms: 6500,
-      event: OwnEvent(Told(Watched(by: ConnectionId(5)))),
+      event: OwnEvent(Told(Watched(by: ConnectionId(5), unit_id: unit_of(5)))),
     )
   let assert [
     #(
       5,
-      PeerNews(map:, incarnation:, unit_id:, news: CreatureAppeared(unit:, ..)),
+      PeerNews(
+        map:,
+        incarnation:,
+        unit_id:,
+        viewer_unit_id:,
+        news: CreatureAppeared(unit:, ..),
+      ),
     ),
   ] = sent(taken)
     as "one 0x262, to the connection of the player who sees the creature"
   assert map == ship && incarnation == 1 && unit_id == 7
     as "the news names the creature's unit in this run of the map"
+  assert viewer_unit_id == unit_of(5)
+    as "and the viewer's unit the map's Watched named, so a news of an earlier stay is dropped"
   assert unit.unit_id == 7 && unit.creature_id == 73_464
   assert unit.tail.server_time_estimate_start == 1500
     as "stamped from the map's clock: 6500 ms on the monotonic clock, 1500 after the map started"
@@ -143,7 +160,7 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
     feed(
       state:,
       at_ms: 6000,
-      event: OwnEvent(Told(Watched(by: ConnectionId(5)))),
+      event: OwnEvent(Told(Watched(by: ConnectionId(5), unit_id: unit_of(5)))),
     )
   let #(state, taken) =
     feed(
@@ -371,7 +388,7 @@ pub fn a_viewer_that_arrives_mid_fight_is_sent_the_creature_at_its_current_healt
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
+      event: OwnEvent(Told(Watched(by: ConnectionId(9), unit_id: unit_of(9)))),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)
@@ -391,7 +408,7 @@ pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dea
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
+      event: OwnEvent(Told(Watched(by: ConnectionId(9), unit_id: unit_of(9)))),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, life: 3, ..), ..))] =
     sent(taken)
@@ -503,7 +520,7 @@ pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_curre
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
+      event: OwnEvent(Told(Watched(by: ConnectionId(9), unit_id: unit_of(9)))),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)

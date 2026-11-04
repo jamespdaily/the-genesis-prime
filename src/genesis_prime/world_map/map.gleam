@@ -421,10 +421,11 @@ pub type Outgoing {
   /// The connection's player is not in the map any more, whether it was there
   /// or not.
   Left
-  /// A send, never an answer: the player of connection `by` sees the unit of the
-  /// process it is sent to, a player's connection or a creature, so that process
-  /// sends `by` its 0x262 at its place and then, for a player's, its moves.
-  Watched(by: ConnectionId)
+  /// A send, never an answer: the player of connection `by`, its unit `unit_id`,
+  /// sees the unit of the process it is sent to, a player's connection or a
+  /// creature, so that process sends `by` its 0x262 at its place and then, for a
+  /// player's, its moves, each naming `unit_id` as the viewer's unit of this stay.
+  Watched(by: ConnectionId, unit_id: Int)
   /// A send: the player of connection `by` no longer sees the unit of the
   /// process it is sent to, by distance, by leaving the map or by its connection
   /// ending, so that process sends `by` its 0x355 and no more moves.
@@ -661,8 +662,9 @@ fn take_unit_id(state: State) -> #(State, Int) {
 /// The unit id of the ghost of the player whose unit is `unit_id`: `unit_id_limit`
 /// plus the player's id, so it is never an id a map gives (all are below the
 /// limit), each player has one, and no map is asked for it. The server's choice:
-/// the client takes any 32-bit id for a ghost's 0x262 (`0x140096970`), and a
-/// ghost never casts, so its id need not fit the cast id's 2^20 (`0x140561c30`).
+/// the client takes any 32-bit id for a ghost's 0x262
+/// (`0x140096970`), and a ghost never casts, so its id need not fit the cast id's
+/// 2^20 (`0x140561c30`).
 pub fn ghost_unit_id(unit_id unit_id: Int) -> Int {
   unit_id_limit + unit_id
 }
@@ -876,15 +878,15 @@ fn approached(
   )
 }
 
-/// The connections of the players who see the spawn from where they stand, in
-/// the order of their numbers.
+/// The connections of the players who see the spawn from where they stand, each
+/// with its player's unit id, in the order of their numbers.
 fn players_seeing(
   state state: State,
   spawn spawn: SpawnId,
-) -> List(ConnectionId) {
+) -> List(#(ConnectionId, Int)) {
   players_in_order(state)
   |> list.filter(fn(player) { set.contains({ player.1 }.seen, spawn) })
-  |> list.map(fn(player) { player.0 })
+  |> list.map(fn(player) { #(player.0, player_unit.unit_id({ player.1 }.unit)) })
 }
 
 /// The connections of a set in the order of their numbers, so what is sent to each is
@@ -921,15 +923,15 @@ fn compare_spawns(first: SpawnId, second: SpawnId) -> order.Order {
   int.compare(first, second)
 }
 
-/// Starts a creature at the spawn with these players as its first viewers: under
-/// the spawn's unit id for the run, taken from the counter when the spawn has had
-/// none (the first creature there, or the first after a crash gave its id up),
-/// and a new life, the number of the watch it is started under. The spawn is
-/// then live with those viewers.
+/// Starts a creature at the spawn with these players as its first viewers, each
+/// by its connection and its unit: under the spawn's unit id for the run, taken
+/// from the counter when the spawn has had none (the first creature there, or the
+/// first after a crash gave its id up), and a new life, the number of the watch it
+/// is started under. The spawn is then live with those viewers.
 fn start_creature(
   state state: State,
   spawn spawn: SpawnId,
-  viewers viewers: List(ConnectionId),
+  viewers viewers: List(#(ConnectionId, Int)),
 ) -> #(State, Effect(ServiceEffect(Outgoing))) {
   let #(state, unit_id) = case dict.get(state.unit_of_spawn, spawn) {
     Ok(unit_id) -> #(state, unit_id)
@@ -955,7 +957,7 @@ fn start_creature(
         Live(
           unit_id:,
           life:,
-          viewers: set.from_list(viewers),
+          viewers: set.from_list(list.map(viewers, fn(viewer) { viewer.0 })),
           idle_since_ms: option.None,
         ),
       ),
@@ -1003,10 +1005,12 @@ fn spawns_in_sight(state state: State, place place: Place) -> Set(SpawnId) {
 /// when it needs them; for each spawn it no longer sees, a live creature is told
 /// `Unwatched` and the spawn is idle from `now_ms` when the player was its last
 /// viewer. The starts come first, in the order of the spawns, then the sends. A
-/// spawn the player saw and sees is not told.
+/// spawn the player saw and sees is not told. `unit_id` is the player's unit,
+/// which a creature names in the news it sends the player.
 fn spawns_decided(
   state state: State,
   connection connection: ConnectionId,
+  unit_id player_unit_id: Int,
   was was: Set(SpawnId),
   now now: Set(SpawnId),
   now_ms now_ms: Int,
@@ -1020,7 +1024,9 @@ fn spawns_decided(
       case dict.get(state.spawns, spawn) {
         Error(Nil) -> {
           let #(state, start) =
-            start_creature(state:, spawn:, viewers: [connection])
+            start_creature(state:, spawn:, viewers: [
+              #(connection, player_unit_id),
+            ])
           #(state, [start, ..starts], sends)
         }
         Ok(Live(unit_id:, life:, viewers:, ..)) -> #(
@@ -1043,7 +1049,7 @@ fn spawns_decided(
               state:,
               unit_id:,
               life:,
-              message: Watched(by: connection),
+              message: Watched(by: connection, unit_id: player_unit_id),
             ),
             ..sends
           ],
@@ -1187,10 +1193,10 @@ fn moved(
                 ),
                 list.append(
                   effects,
-                  comes_into_sight(
-                    newcomer: connection,
-                    other: other_connection,
-                  ),
+                  comes_into_sight(newcomer: #(connection, unit), other: #(
+                    other_connection,
+                    player.unit,
+                  )),
                 ),
               )
               True, False -> #(
@@ -1211,7 +1217,14 @@ fn moved(
         )
       let seen = spawns_in_sight(state:, place:)
       let #(state, spawn_effects) =
-        spawns_decided(state:, connection:, was: mover.seen, now: seen, now_ms:)
+        spawns_decided(
+          state:,
+          connection:,
+          unit_id: player_unit.unit_id(mover.unit),
+          was: mover.seen,
+          now: seen,
+          now_ms:,
+        )
       let mover = Player(..mover, unit:, sees: mover_sees, seen:, seq:)
       let #(mover, ring_effects) = case mover.readiness {
         StillLoading -> #(mover, [])
@@ -1400,8 +1413,16 @@ fn joined_again(
     |> list.filter(fn(other) { set.contains(player.sees, other.0) })
     |> list.flat_map(fn(other) {
       [
-        watched(to: connection, by: other.0),
-        watched(to: other.0, by: connection),
+        watched(
+          to: connection,
+          by: other.0,
+          unit_id: player_unit.unit_id({ other.1 }.unit),
+        ),
+        watched(
+          to: other.0,
+          by: connection,
+          unit_id: player_unit.unit_id(player.unit),
+        ),
       ]
     })
     |> list.append(
@@ -1413,7 +1434,10 @@ fn joined_again(
               state:,
               unit_id:,
               life:,
-              message: Watched(by: connection),
+              message: Watched(
+                by: connection,
+                unit_id: player_unit.unit_id(player.unit),
+              ),
             ))
           Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
             Error(Nil)
@@ -1572,11 +1596,21 @@ fn joined_with(
   let sees = set.from_list(list.map(in_sight, fn(other) { other.0 }))
   let pairs =
     list.flat_map(in_sight, fn(other) {
-      comes_into_sight(newcomer: connection, other: other.0)
+      comes_into_sight(newcomer: #(connection, unit), other: #(
+        other.0,
+        { other.1 }.unit,
+      ))
     })
   let seen = spawns_in_sight(state:, place:)
   let #(state, spawn_effects) =
-    spawns_decided(state:, connection:, was: set.new(), now: seen, now_ms:)
+    spawns_decided(
+      state:,
+      connection:,
+      unit_id: player_unit.unit_id(unit),
+      was: set.new(),
+      now: seen,
+      now_ms:,
+    )
   #(
     State(
       ..state,
@@ -1608,13 +1642,14 @@ fn joined_with(
   )
 }
 
-/// The send that tells the connection `to` that the player of connection `by`
-/// sees its player.
+/// The send that tells the connection `to` that the player of connection `by`,
+/// its unit `unit_id`, sees its player.
 fn watched(
   to to: ConnectionId,
   by by: ConnectionId,
+  unit_id unit_id: Int,
 ) -> Effect(ServiceEffect(Outgoing)) {
-  send(to:, message: Watched(by:))
+  send(to:, message: Watched(by:, unit_id:))
 }
 
 /// The send that tells the connection `to` that the player of connection `by`
@@ -1627,12 +1662,20 @@ fn unwatched(
 }
 
 /// The sends of a pair that comes into sight, in one step: each of the two is
-/// told the other sees it. A joiner and a mover are the newcomer.
+/// told the other sees it, with the other's unit. A joiner and a mover are the
+/// newcomer.
 fn comes_into_sight(
-  newcomer newcomer: ConnectionId,
-  other other: ConnectionId,
+  newcomer newcomer: #(ConnectionId, PlayerUnit),
+  other other: #(ConnectionId, PlayerUnit),
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  [watched(to: other, by: newcomer), watched(to: newcomer, by: other)]
+  [
+    watched(
+      to: other.0,
+      by: newcomer.0,
+      unit_id: player_unit.unit_id(newcomer.1),
+    ),
+    watched(to: newcomer.0, by: other.0, unit_id: player_unit.unit_id(other.1)),
+  ]
 }
 
 /// The sends of a pair that leaves sight, in one step: each of the two is told
@@ -1722,6 +1765,7 @@ fn without(
     spawns_decided(
       state:,
       connection:,
+      unit_id: player_unit.unit_id(player.unit),
       was: player.seen,
       now: set.new(),
       now_ms:,

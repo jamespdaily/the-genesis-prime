@@ -76,7 +76,9 @@ fn beast(viewers viewers: List(Int)) -> State {
         life:,
         spawn_id: SpawnId(1),
         clock_origin_ms: 5000,
-        viewers: list.map(viewers, ConnectionId),
+        viewers: list.map(viewers, fn(viewer) {
+          #(ConnectionId(viewer), unit_of(viewer))
+        }),
       ),
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       kind: Kind(
@@ -202,14 +204,14 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
     let to = " to " <> int.to_string(sent.0)
     case sent.1 {
       creature.News(news: PeerNews(news:, ..)) -> name_of(news) <> to
-      creature.FightTold(told: Threatened(unit_id:, life:)) ->
+      creature.FightTold(told: Threatened(unit_id:, life:, ..)) ->
         "Threatened("
         <> int.to_string(unit_id)
         <> ", "
         <> int.to_string(life)
         <> ")"
         <> to
-      creature.FightTold(told: Released(unit_id:)) ->
+      creature.FightTold(told: Released(unit_id:, ..)) ->
         "Released(" <> int.to_string(unit_id) <> ")" <> to
       creature.FightTold(told: Attacks(..)) -> "Attacks" <> to
       creature.Struck(answered: Answered(outcome: Landed(..), ..)) ->
@@ -385,6 +387,9 @@ pub fn a_viewer_entering_the_ring_is_targeted_the_creature_enters_combat_and_the
       "Threatened(7, 3) to 2",
     ]
     as "0x908 (C, P, aggro threat 1) and 0x89a (C, 1) to every viewer, then Threatened to P, and no 0x7ff before the first tick"
+  assert fights_told(aggro)
+    == [#(2, Threatened(unit_id: unit, life:, player_unit_id: unit_of(2)))]
+    as "the threat names the player's unit as the creature holds it, so the connection drops one of an earlier stay"
   assert list.map(timers(aggro), fn(timer) { timer.1 }) == [1500]
     as "the attack tick starts at the kind's interval"
 }
@@ -471,7 +476,11 @@ pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planne
   assert said(near) == []
     as "31 is 5 from the path's end 26, within reach 8: no new path"
   let #(_, watched) =
-    tell(state:, at_ms: 1000, message: creature.Watched(by: ConnectionId(9)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature.Watched(by: ConnectionId(9), unit_id: unit_of(9)),
+    )
   let assert [CreatureAppeared(place:, ..), ..] = news_to(watched, 9)
   assert x_of(place) == 10.0
     as "a viewer arriving 1 s into the chase is sent the 0x262 where the creature runs: 10 units along"
@@ -632,6 +641,9 @@ pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and
       "Released(7) to 2",
     ]
     as "0x90a 0 for each entry, 0x89a (C, 0), a full 0x937, the path home, and Released"
+  assert fights_told(leashed)
+    == [#(2, Released(unit_id: unit, player_unit_id: unit_of(2)))]
+    as "the release names the player's unit"
   let assert Running(to:, ..) = path_sent(leashed)
   assert x_of(to) == 0.0 as "the path runs home"
   let #(_, refused) =
@@ -777,7 +789,11 @@ pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_
     )
   let corpse = timer_for(killed, 60_000)
   let #(state, watched) =
-    tell(state:, at_ms: 2000, message: creature.Watched(by: ConnectionId(9)))
+    tell(
+      state:,
+      at_ms: 2000,
+      message: creature.Watched(by: ConnectionId(9), unit_id: unit_of(9)),
+    )
   let assert [CreatureAppeared(place:, ..)] = news_to(watched, 9)
   assert x_of(place) == 10.0
     as "it fell 1 s into its run, 10 units along: the corpse lies there, not where the run would end"
@@ -830,7 +846,14 @@ fn breaches(
       let #(state, taken_timers) = case op {
         See(n) -> {
           let #(state, taken) =
-            tell(state:, at_ms:, message: creature.Watched(by: ConnectionId(n)))
+            tell(
+              state:,
+              at_ms:,
+              message: creature.Watched(
+                by: ConnectionId(n),
+                unit_id: unit_of(n),
+              ),
+            )
           #(state, timers(taken))
         }
         Unsee(n) -> {
@@ -941,7 +964,11 @@ pub fn a_viewer_arriving_mid_chase_gets_the_fight_and_the_rest_of_the_path_test(
       message: approached(number: 2, x: 30.0, seq: 1),
     )
   let #(state, watched) =
-    tell(state:, at_ms: 1000, message: creature.Watched(by: ConnectionId(9)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature.Watched(by: ConnectionId(9), unit_id: unit_of(9)),
+    )
   assert list.map(news_to(watched, 9), name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x638"]
     as "the viewer's client shows what the others' do: the creature in combat, its target, and its run"
@@ -975,7 +1002,11 @@ pub fn a_viewer_arriving_mid_return_gets_the_path_home_and_no_fight_test() -> Ni
   let #(state, _) =
     tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
   let #(_, watched) =
-    tell(state:, at_ms: 1500, message: creature.Watched(by: ConnectionId(9)))
+    tell(
+      state:,
+      at_ms: 1500,
+      message: creature.Watched(by: ConnectionId(9), unit_id: unit_of(9)),
+    )
   assert list.map(news_to(watched, 9), name_of) == ["0x262", "0x638"]
     as "out of combat: no 0x89a or 0x908, only the rest of the walk home"
   let assert [_, CreatureMoved(path: Running(from:, to:, ..))] =
@@ -1133,7 +1164,11 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
     tell(state:, at_ms: 100, message: creature.Unwatched(by: ConnectionId(2)))
   let #(state, _) = fire(state:, at_ms: 200, timer: timer_for(leashed, 100))
   let #(state, _) =
-    tell(state:, at_ms: 5000, message: creature.Watched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature.Watched(by: ConnectionId(2), unit_id: unit_of(2)),
+    )
   let #(_, again) =
     tell(
       state:,

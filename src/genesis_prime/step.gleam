@@ -308,10 +308,11 @@ pub type CreatureStart {
     /// The monotonic time the map's clock started at, from which the creature
     /// stamps its 0x262 (genesis_prime/world_map/map `server_time`).
     clock_origin_ms: Int,
-    /// The players who see the spawn as it starts, by their connection, in the
-    /// order of their numbers: the creature sends each its 0x262 as it starts, so
-    /// a burst of starts is not followed by a burst of `Watched` sends.
-    viewers: List(ConnectionId),
+    /// The players who see the spawn as it starts, by their connection and their
+    /// unit, in the order of their numbers: the creature sends each its 0x262 as
+    /// it starts, so a burst of starts is not followed by a burst of `Watched`
+    /// sends, and names the unit in each news it sends.
+    viewers: List(#(ConnectionId, Int)),
   )
 }
 

@@ -310,9 +310,18 @@ pub fn of(
       && list.contains(candidate.race_ids, race_id)
     }),
   )
+  place_of_row(tables:, location_id: found.location_id)
+}
+
+/// The place of a WorldLocation2 row: its world, zone, position and facing.
+/// `Error(Nil)` for a row the tables lack or one in world 0.
+fn place_of_row(
+  tables tables: table_store.Tables,
+  location_id location_id: Int,
+) -> Result(Place, Nil) {
   use row <- result.try(world_location2.get(
     tables:,
-    id: WorldLocation2Id(found.location_id),
+    id: WorldLocation2Id(location_id),
   ))
   place(
     world_id: row.world_id,
@@ -340,7 +349,15 @@ pub fn holocrypt(
   race_id race_id: RaceId,
   world_id world_id: Int,
 ) -> Result(Place, Nil) {
-  todo as "the Holocrypt place"
+  starts
+  |> list.filter(fn(candidate) {
+    candidate.faction_id == faction_id
+    && list.contains(candidate.race_ids, race_id)
+  })
+  |> list.filter_map(fn(candidate) {
+    place_of_row(tables:, location_id: candidate.location_id)
+  })
+  |> list.find(fn(found) { found.world_id == world_id })
 }
 
 /// The load's check that every row above is a WorldLocation2 row, so a client

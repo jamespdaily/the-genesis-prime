@@ -165,6 +165,7 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
       map: MapId(world_id: 3460, instance: 0),
       incarnation: 1,
       unit_id: 9,
+      viewer_unit_id: 7,
       news: Removed,
     )),
   )

@@ -54,6 +54,7 @@ import genesis_prime/coverage/sent_message
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection.{Settings} as game_connection
+import genesis_prime/game/hit
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/strike_tell
 import genesis_prime/game_settings.{GameSettings}
@@ -68,7 +69,12 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/chat_line
+import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
+import genesis_prime/message/combat_log.{CombatLog}
+import genesis_prime/message/combat_log_death.{CombatLogDeath}
+import genesis_prime/message/combat_log_entry
+import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/create_result
@@ -110,6 +116,7 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/resurrection_window.{ResurrectionWindow}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello.{ServerHello}
@@ -123,10 +130,12 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature
+import genesis_prime/message/unit_create_ghost
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
@@ -160,6 +169,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
+import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, Unwatched, Watched}
@@ -3459,17 +3469,17 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   let named = list.sort(game_connection.taken_message_ids(), int.compare)
   assert named
     == [
-      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4,
-      0x025B, 0x025C, 0x0352, 0x038C, 0x04DB, 0x058F, 0x0637, 0x063A, 0x063B,
-      0x0786, 0x07DD, 0x07E0, 0x0801,
+      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x015A, 0x01C3,
+      0x01D4, 0x025B, 0x025C, 0x0352, 0x038C, 0x04DB, 0x058F, 0x0637, 0x063A,
+      0x063B, 0x0786, 0x07DD, 0x07E0, 0x0801,
     ]
-    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, and the cast messages 0x009A, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x4db, opcode.0x801)"
+    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x4db, opcode.0x801), and the choice of how to come back, 0x015A (opcode.0x15a)"
   assert list.sort(game_connection.carried_message_ids(), int.compare)
     == [
-      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4,
-      0x04DB, 0x0637, 0x063A, 0x063B, 0x0801,
+      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x015A, 0x01C3,
+      0x01D4, 0x04DB, 0x0637, 0x063A, 0x063B, 0x0801,
     ]
-    as "the movement, camp, chat and cast messages are taken only with the player in the world"
+    as "the movement, camp, chat, cast and death messages are taken only with the player in the world"
 }
 
 pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
@@ -4106,9 +4116,33 @@ fn sent_by_the_map(
 }
 
 /// News of the unit `unit_id` as its owner's connection in the tests' run of the
-/// tests' map sends it.
+/// tests' map sends it to the tests' player, naming the player's unit.
 fn news_of(unit_id unit_id: Int, news news: News) -> PeerNews {
-  PeerNews(map: camp_map(), incarnation:, unit_id:, news:)
+  PeerNews(
+    map: camp_map(),
+    incarnation:,
+    unit_id:,
+    viewer_unit_id: own_unit_id,
+    news:,
+  )
+}
+
+/// News of the tests' player's unit as its connection sends it to the viewer of
+/// connection `viewer`, naming the viewer's unit.
+fn told(viewer viewer: Int, news news: News) -> PeerNews {
+  PeerNews(
+    map: camp_map(),
+    incarnation:,
+    unit_id: own_unit_id,
+    viewer_unit_id: viewer_unit(viewer),
+    news:,
+  )
+}
+
+/// The unit of the player of connection `viewer`, as the map's `Watched` names
+/// it: ten times the number.
+fn viewer_unit(viewer: Int) -> Int {
+  viewer * 10
 }
 
 /// A move of the unit `unit_id`, stamped `server_time_ms`.
@@ -4291,7 +4325,13 @@ pub fn a_0x262_or_0x355_naming_the_viewers_own_unit_or_unit_0_is_refused_with_an
 pub fn news_for_another_run_of_the_map_or_another_map_is_dropped_for_each_kind_and_this_runs_is_written_test() -> Nil {
   use <- owned_test.run(10_000)
   let in_run = fn(map, incarnation, news) {
-    sent_by_a_peer(PeerNews(map:, incarnation:, unit_id: 9, news:))
+    sent_by_a_peer(PeerNews(
+      map:,
+      incarnation:,
+      unit_id: 9,
+      viewer_unit_id: own_unit_id,
+      news:,
+    ))
   }
   let kinds = [
     Appeared(unit: another_unit()),
@@ -4334,7 +4374,7 @@ pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test(
   )
   list.each(
     [
-      sent_by_the_map(Watched(by: ConnectionId(2))),
+      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
       sent_by_the_map(Unwatched(by: ConnectionId(2))),
     ],
     fn(event) {
@@ -4406,7 +4446,13 @@ fn watched_by(
   viewers: List(Int),
 ) -> game_connection.State {
   list.fold(viewers, state, fn(state, viewer) {
-    feed(state, sent_by_the_map(Watched(by: ConnectionId(viewer)))).0
+    feed(
+      state,
+      sent_by_the_map(Watched(
+        by: ConnectionId(viewer),
+        unit_id: viewer_unit(viewer),
+      )),
+    ).0
   })
 }
 
@@ -4435,13 +4481,16 @@ fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
 pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_stamped_from_the_maps_clock_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) =
-    feed(in_world(), sent_by_the_map(Watched(by: ConnectionId(2))))
+    feed(
+      in_world(),
+      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+    )
   assert peer_tells(taken)
     == [
       #(
         2,
-        news_of(
-          unit_id: own_unit_id,
+        told(
+          viewer: 2,
           news: Appeared(unit: appearance_at(entry_place(), 1000)),
         ),
       ),
@@ -4458,7 +4507,11 @@ pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_
       in_world(),
       moves_message([game_client.position_command(x: 1.5, y: 2.5, z: 3.5)]),
     )
-  let #(_, taken) = feed(state, sent_by_the_map(Watched(by: ConnectionId(2))))
+  let #(_, taken) =
+    feed(
+      state,
+      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+    )
   let assert [#(2, PeerNews(news: Appeared(unit:), ..))] = peer_tells(taken)
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
     unit.tail.movement_commands
@@ -4475,8 +4528,7 @@ pub fn an_unwatched_makes_the_owner_send_that_viewer_its_0x355_and_no_more_moves
   let state = watched_by(in_world(), [2, 3])
   let #(state, taken) =
     feed(state, sent_by_the_map(Unwatched(by: ConnectionId(2))))
-  assert peer_tells(taken)
-    == [#(2, news_of(unit_id: own_unit_id, news: Removed))]
+  assert peer_tells(taken) == [#(2, told(viewer: 2, news: Removed))]
     as "the viewer that stops seeing the unit is sent its removal, and only that one"
   assert list.map(peer_tells(read(state, moves).1), fn(sent) { sent.0 }) == [3]
     as "a viewer the map took back is sent no more moves"
@@ -4502,8 +4554,8 @@ pub fn the_owners_camp_sends_each_viewer_its_0x355_before_the_leave_is_asked_tes
   let #(_, taken) = answer(state:, taken:, outcome: place_saved())
   assert peer_tells(taken)
     == [
-      #(2, news_of(unit_id: own_unit_id, news: Removed)),
-      #(3, news_of(unit_id: own_unit_id, news: Removed)),
+      #(2, told(viewer: 2, news: Removed)),
+      #(3, told(viewer: 3, news: Removed)),
     ]
     as "its 0x355 to every viewer: the map's Unwatched after the leave would be a second sender"
   assert ask_request(taken) == leave_asked()
@@ -4554,11 +4606,11 @@ pub fn an_accepted_0x637_sends_one_0x638_to_each_viewer_with_the_relayed_command
     == [
       #(
         2,
-        moving(unit_id: own_unit_id, server_time_ms: 1000, commands: relayed),
+        told(viewer: 2, news: Moving(server_time_ms: 1000, commands: relayed)),
       ),
       #(
         3,
-        moving(unit_id: own_unit_id, server_time_ms: 1000, commands: relayed),
+        told(viewer: 3, news: Moving(server_time_ms: 1000, commands: relayed)),
       ),
     ]
     as "one 0x638 per viewer, never to the mover itself, the commands in the order sent without kind 0, the sender's own clock (movement_command.kind_0); the time is the input's 1000 ms from the map's origin 0"
@@ -4627,7 +4679,10 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
   }
   let create_time = fn(monotonic_ms) {
     let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
-      peer_tells(at(monotonic_ms, sent_by_the_map(Watched(by: ConnectionId(2)))))
+      peer_tells(at(
+        monotonic_ms,
+        sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+      ))
     unit.tail.server_time_estimate_start
   }
   assert move_time(600 + 250) == 250
@@ -4776,7 +4831,11 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
   use <- owned_test.run(10_000)
   // The line first: the player 2 is no viewer yet, so it gets no line.
   let #(state, line_first) = read(in_world(), chat_line_message(4, "Hello"))
-  let #(_, appears) = feed(state, sent_by_the_map(Watched(by: ConnectionId(2))))
+  let #(_, appears) =
+    feed(
+      state,
+      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+    )
   assert peer_tell_kinds(line_first) == []
     as "a player that does not see the speaker yet is told nothing"
   assert peer_tell_kinds(appears) == ["unit news"]
@@ -4784,7 +4843,10 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
   // Watched first: the 0x262 is told in the step before the line, by the same
   // sender, so the viewer's connection takes them in that order.
   let #(state, appears) =
-    feed(in_world(), sent_by_the_map(Watched(by: ConnectionId(2))))
+    feed(
+      in_world(),
+      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+    )
   let #(_, line) = read(state, chat_line_message(4, "Hello"))
   assert list.append(peer_tell_kinds(appears), peer_tell_kinds(line))
     == ["unit news", "chat"]
@@ -5798,7 +5860,14 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
   let #(state, moved) = read(state, a_move(1.5))
   assert told_creatures(moved) == [] as "no fighter: no stream"
   let #(state, threatened) =
-    feed(state, foe(strike_tell.Threatened(unit_id: 7, life: 3)))
+    feed(
+      state,
+      foe(strike_tell.Threatened(
+        unit_id: 7,
+        life: 3,
+        player_unit_id: own_unit_id,
+      )),
+    )
   assert combat_states(threatened) == [#(5, 1)]
     as "0x89a (P, 1) to the player's own client: its unit 5, in combat"
   assert list.map(peer_tells(threatened), fn(tell) {
@@ -5831,7 +5900,11 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
       ),
     ]
     as "each accepted 0x637 goes to the fighter"
-  let #(state, released) = feed(state, foe(strike_tell.Released(unit_id: 7)))
+  let #(state, released) =
+    feed(
+      state,
+      foe(strike_tell.Released(unit_id: 7, player_unit_id: own_unit_id)),
+    )
   assert combat_states(released) == [#(5, 0)]
     as "0x89a (P, 0): the last fighter released it"
   let #(_, after) = read(state, a_move(3.5))
@@ -5841,7 +5914,14 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
 pub fn the_map_reporting_a_fighter_gone_clears_the_combat_flag_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) =
-    feed(in_world(), foe(strike_tell.Threatened(unit_id: 7, life: 3)))
+    feed(
+      in_world(),
+      foe(strike_tell.Threatened(
+        unit_id: 7,
+        life: 3,
+        player_unit_id: own_unit_id,
+      )),
+    )
   let #(_, gone) = feed(state, sent_by_the_map(map.Gone(unit_id: 7)))
   assert combat_states(gone) == [#(5, 0)]
     as "the creature crashed mid-fight: its Gone is its release, and 0x89a (P, 0) follows with no fighter left"
@@ -6131,6 +6211,15 @@ fn a_beast_for_the_medic() -> #(
   creature.State,
   step.ServiceStep(creature.Outgoing),
 ) {
+  a_beast_of(spawn_support.beast_at(number: 1, place: beast_spawn_place()))
+}
+
+/// The creature of `spawn` as unit 7 of life 3 of the tests' run of the map,
+/// started for connection 1, whose player is unit 5, at 1000 ms on the monotonic
+/// clock.
+fn a_beast_of(
+  spawn: spawn.Spawn,
+) -> #(creature.State, step.ServiceStep(creature.Outgoing)) {
   let state =
     creature.new(creature.Settings(
       creature: step.CreatureStart(
@@ -6140,9 +6229,9 @@ fn a_beast_for_the_medic() -> #(
         life: 3,
         spawn_id: spawn_id.SpawnId(1),
         clock_origin_ms: 0,
-        viewers: [ConnectionId(1)],
+        viewers: [#(ConnectionId(1), medic_unit)],
       ),
-      spawn: spawn_support.beast_at(number: 1, place: beast_spawn_place()),
+      spawn:,
       kind: Kind(
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
@@ -6429,4 +6518,845 @@ pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_ans
     )
   assert gos == [[7], [medic_unit]]
     as "each strike is a tell answered in its owner's own step: the Medic's go names the Beast, the Beast's names the Medic, and no deadline timer fired"
+}
+
+// ------------------------------------------- a player's death and coming back
+//
+// Expected values come from the design of step G (the Design artifact of issue
+// 368, its test list and failure table, and its shape review) and these places:
+// 0x88c (unit, dead, 0, 0) (`opcode.0x88c`); death leaves the combat flag, so 0x89a
+// (P, 0) follows (`death.combat_flag`); 0x247 of type 22 or 23 with the unit
+// (`opcode.0x247.death`); the ghost's 0x262 of type 23 with the character's id,
+// realm, name, race, class and gender, at the body's place, carrying no stat
+// (`0x140096970`, `opcode.0x262.ghost`); 0x1b3's fields in wire order: the ghost,
+// cost, penalty, dead, the choices, the caster bit, the cooldown and the forced
+// release (`opcode.0x1b3`), with the server's choices 0 and Wake Here and Holocrypt
+// (`death.server_choices`, `death.window`, `lua.GameLib.RezType`); 0x636 (0, reset
+// 1, unit) (`opcode.0x636`); 0x15a (unit, choice, value) (`opcode.0x15a`); 57
+// Caster_CannotBeDead for a press of a spell whose caster row has the dead bit,
+// Paralytic Surge's row 43 among them (`cast.dead_player`,
+// `Spell4.spell4ConditionsIdCaster`); the ghost's 0x637 needs no answer
+// (`ghost.movement`); a player created with health 0 is created dead
+// (`0x140457bc5`); 0xAD starts a move to another place and the entry burst follows
+// (`0x1403b6de0`). The ghost's id is the map's unit id limit, 2^20, plus the
+// player's unit id, and the Holocrypt place is the start of the character's race
+// and faction in its world (the server's choices). A level-1 Engineer has 736
+// health and a shield of 450 (`player.level1_base_health`,
+// `player.level1_gear_properties`).
+
+/// The tests' player's ghost: 2^20 + 5.
+const ghost_unit_id = 1_048_581
+
+/// A creature's strike on the tests' player that kills it at once: the Beast's
+/// strike with its blow raised to 100000, a blow no creature of the client strikes,
+/// so a test reaches the death in one step. What the death writes does not read
+/// the blow.
+fn a_killing_strike() -> Event(ConnectionEvent(Message, Answer)) {
+  let offence = spawn_support.beast_attack().offence
+  foe(
+    strike_tell.Attacks(tell: strike_tell.Strike(
+      key: strike_tell.Key(
+        cast_id: 2_147_500_001,
+        phase: 0,
+        unit_id: own_unit_id,
+      ),
+      from: fighter(),
+      striker: strike_tell.CreatureStriker,
+      offence: hit.Offence(
+        ..offence,
+        blows: list.map(offence.blows, fn(blow) {
+          hit.Blow(..blow, damage: 100_000)
+        }),
+      ),
+    )),
+  )
+}
+
+/// `state`, fought by the Beast 7 and struck dead: the state, and the step of the
+/// killing strike.
+fn killed(
+  state: game_connection.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, _) =
+    feed(
+      state,
+      foe(strike_tell.Threatened(
+        unit_id: 7,
+        life: 3,
+        player_unit_id: own_unit_id,
+      )),
+    )
+  feed(state, a_killing_strike())
+}
+
+/// The tests' player in the world, seen by connection 2, struck dead.
+fn dead_in_world() -> #(game_connection.State, ConnectionStep(Request)) {
+  killed(watched_by(in_world(), [2]))
+}
+
+/// 0x15a for the unit, the choice and the value, inside 0x038C.
+fn choice_message(
+  unit_id unit_id: Int,
+  choice choice: Int,
+  value value: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    choose_resurrection.encode(ChooseResurrection(
+      unit_id:,
+      choice:,
+      field_3: value,
+    ))
+    as "a unit id, a 7-bit choice and a 32-bit value fit the message"
+  world_message(0x015A, body)
+}
+
+/// Wake Here, as the Death addon sends it: the player's own unit, 1 and 0.
+fn wake_here() -> BitArray {
+  choice_message(unit_id: own_unit_id, choice: 1, value: 0)
+}
+
+/// The Holocrypt, as the Death addon sends it: the player's own unit, 2 and 0.
+fn holocrypt() -> BitArray {
+  choice_message(unit_id: own_unit_id, choice: 2, value: 0)
+}
+
+/// The news a step tells viewer `viewer`, in order.
+fn news_told(taken: ConnectionStep(Request), viewer: Int) -> List(News) {
+  list.filter_map(peer_tells(taken), fn(tell) {
+    case tell.0 == viewer {
+      True -> Ok({ tell.1 }.news)
+      False -> Error(Nil)
+    }
+  })
+}
+
+pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_sees_its_ghost_the_window_and_control_of_the_ghost_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = dead_in_world()
+  let frames = heard(taken, keyed())
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x0938, 0x092F, 0x088C, 0x089A, 0x0247, 0x0262, 0x01B3, 0x0636]
+    as "the shield and the health at 0, then 0x88c, 0x89a, 0x247, the ghost's 0x262, 0x1b3 and 0x636, in that order"
+  assert decoded(frames, 0x088C, unit_death_state.decode)
+    == [UnitDeathState(unit_id: own_unit_id, dead: 1, field_3: 0, field_4: 0)]
+    as "0x88c: the player's unit is dead; the 5-bit and the 32-bit values 0"
+  assert decoded(frames, 0x089A, unit_combat_state.decode)
+    == [UnitCombatState(unit_id: own_unit_id, in_combat: 0)]
+    as "0x89a (P, 0): death does not take a unit out of combat in the client"
+  assert decoded(frames, 0x0247, combat_log.decode)
+    == [CombatLog(entry: combat_log_entry.Death(CombatLogDeath(own_unit_id)))]
+    as "0x247 of type 22 for the player"
+  let assert [ghost] = decoded(frames, 0x0262, unit_create_ghost.decode)
+    as "the ghost's 0x262 is of type 23"
+  let player = player_in(entered().1)
+  assert ghost.unit_id == ghost_unit_id
+    && ghost.character_id == 42
+    && ghost.realm_id == 5
+    && ghost.name == "Ab Cd"
+    && ghost.race_id == 1
+    && ghost.class_id == 2
+    && ghost.gender == 0
+    && ghost.title_id == player.title_id
+    as "the character's id, the realm's id 5, its name, race, class, gender and title"
+  assert ghost.tail.stats == [] as "the client reads no stat of a ghost"
+  assert ghost.tail.movement_commands
+    == appearance_at(entry_place(), 0).tail.movement_commands
+    as "at the body's place: where the player stood when it fell"
+  assert decoded(frames, 0x01B3, resurrection_window.decode)
+    == [
+      ResurrectionWindow(
+        ghost_unit_id:,
+        wake_here_cost: 0,
+        death_penalty_ms: 0,
+        dead: 1,
+        choices: 3,
+        caster_asked: 0,
+        wake_here_cooldown_ms: 0,
+        forced_release_ms: 0,
+      ),
+    ]
+    as "the window: the ghost, no cost, penalty, cooldown or forced release, dead, Wake Here and Holocrypt"
+  assert decoded(frames, 0x0636, client_control_granted.decode)
+    == [
+      ClientControlGranted(
+        echo_value: 0,
+        reset_movement: 1,
+        unit_id: ghost_unit_id,
+      ),
+    ]
+    as "the ghost's movement to the client"
+  let assert [
+    client_connection.Shield(..),
+    client_connection.Health(health: 0, dead: True),
+    client_connection.Died,
+    client_connection.CombatState(in_combat: False),
+    client_connection.DeathLogged,
+  ] = news_told(taken, 2)
+    as "the viewer is told the body's death, 0x89a off and the log line, and no ghost"
+  Nil
+}
+
+pub fn a_viewer_writes_a_players_death_and_coming_back_for_a_unit_it_shows_and_nothing_for_one_it_does_not_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(shown, _) = feed(in_world(), event_of(Appears))
+  let written = fn(news) {
+    heard(feed(shown, sent_by_a_peer(news_of(unit_id: 9, news:))).1, keyed())
+  }
+  assert decoded(
+      written(client_connection.Died),
+      0x088C,
+      unit_death_state.decode,
+    )
+    == [UnitDeathState(unit_id: 9, dead: 1, field_3: 0, field_4: 0)]
+  assert decoded(
+      written(client_connection.CameBack),
+      0x088C,
+      unit_death_state.decode,
+    )
+    == [UnitDeathState(unit_id: 9, dead: 0, field_3: 0, field_4: 0)]
+    as "0x88c dead 0: the unit stands again"
+  assert decoded(
+      written(client_connection.DeathLogged),
+      0x0247,
+      combat_log.decode,
+    )
+    == [CombatLog(entry: combat_log_entry.Death(CombatLogDeath(9)))]
+  assert decoded(
+      written(client_connection.CameBackLogged),
+      0x0247,
+      combat_log.decode,
+    )
+    == [CombatLog(entry: combat_log_entry.Resurrect(CombatLogResurrect(9)))]
+  list.each(
+    [
+      client_connection.Died,
+      client_connection.CameBack,
+      client_connection.DeathLogged,
+      client_connection.CameBackLogged,
+    ],
+    fn(news) {
+      let #(_, taken) =
+        feed(in_world(), sent_by_a_peer(news_of(unit_id: 9, news:)))
+      assert support.writes(taken) == []
+        as "a unit the client does not show is written nothing"
+    },
+  )
+}
+
+pub fn a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state = watched_by(medic_in_world(), [2])
+  let #(state, _) = feed(state, beast_appears(unit_id: 40))
+  let #(state, pressed) = press_paralytic_surge(state:, client_cast_id: 1)
+  let assert [client_connection.CastStarted(start:)] = news_told(pressed, 2)
+    as "the viewer is told the cast's start; its round waits on the Beast's answer"
+  let assert [#(40, key)] = strikes_told(pressed)
+  let #(state, taken) = killed(state)
+  assert list.contains(
+    decoded(heard(taken, keyed()), 0x07FE, spell_finished.decode),
+    spell_finished.SpellFinished(cast_id: start.cast_id),
+  )
+    as "the client does not end its own casts when it dies: the server's 0x7fe ends the live cast"
+  assert list.contains(
+    news_told(taken, 2),
+    client_connection.CastFinished(cast_id: start.cast_id),
+  )
+    as "and the viewer told its start is told its finish"
+  let #(_, late) = feed(state, landed(key:))
+  assert !list.contains(written_ids(late), 0x07F4)
+    as "the round that closes after the death has no go: the cast is over"
+}
+
+pub fn a_dead_players_press_of_an_ability_with_the_dead_bit_is_refused_57_and_strikes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(medic_in_world(), beast_appears(unit_id: 40))
+  let #(state, _) = killed(state)
+  let #(_, taken) = press_paralytic_surge(state:, client_cast_id: 2)
+  let assert [Frame(message_id: 0x07FC, body:)] = heard(taken, keyed())
+    as "one 0x7fc"
+  let assert Ok(refused) = spell_cast_refused.decode(body)
+  assert refused.result == cast_result.CasterCannotBeDead
+    as "57 Caster_CannotBeDead: Paralytic Surge's caster row 43 has the dead bit"
+  assert strikes_told(taken) == [] && !support.stops(taken)
+}
+
+pub fn a_strike_on_a_dead_player_is_refused_dead_and_writes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = dead_in_world()
+  let #(_, taken) = feed(state, a_beast_strike(own_unit_id))
+  assert support.writes(taken) == [] && peer_tells(taken) == []
+  let assert [
+    #(
+      7,
+      client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
+        outcome: strike_tell.Refused(why: strike_tell.Dead),
+        ..,
+      )),
+    ),
+  ] = told_creatures(taken)
+    as "the creature's strike that reaches the player after its death is refused Dead"
+  Nil
+}
+
+pub fn while_dead_every_0x637_is_dropped_and_after_coming_back_a_move_moves_the_body_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = dead_in_world()
+  // The ghost runs far from the body, and below the world's floor, which the
+  // body's movement would refuse (y below -2048).
+  let #(state, taken) =
+    read(
+      state,
+      moves_message([
+        game_client.position_command(x: 500.0, y: -3000.0, z: 500.0),
+      ]),
+    )
+  assert support.effects_of(taken) == []
+    as "nothing to the map, the viewers or the fighters, nothing written, nothing refused: the client expects no answer to the ghost's moves"
+  let #(_, malformed) = read(state, world_message(0x0637, <<>>))
+  let assert [line] = support.logs_of(step: malformed, level: LogError)
+    as "a body the client's reader would refuse ends the connection, as for the living"
+  assert support.says(line:, words: "does not decode")
+    && ask_request(malformed) == save_asked(1, entry_place())
+    as "the body's place is saved before the end: where it fell"
+  let #(state, _) = read(state, wake_here())
+  let #(_, moved) = read(state, a_move(1.5))
+  assert moves_told(moved) == [1]
+    && told_the_map(moved)
+    == [
+      OwnEffect(step.Tell(
+        to: Map(camp_map(), incarnation),
+        request: TellMoved(
+          connection: ConnectionId(1),
+          place: standing_at(x: 1.5, y: 2.5, z: 3.5),
+          seq: 1,
+        ),
+      )),
+    ]
+    as "the body moves again, and the dropped moves took no sequence number"
+}
+
+pub fn a_0x15a_the_rule_refuses_writes_nothing_and_logs_a_warning_and_one_the_clients_reader_refuses_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(dead, _) = dead_in_world()
+  list.each(
+    [
+      #(dead, choice_message(unit_id: 9, choice: 1, value: 0)),
+      #(dead, choice_message(unit_id: ghost_unit_id, choice: 1, value: 0)),
+      #(dead, choice_message(unit_id: own_unit_id, choice: 4, value: 0)),
+      #(dead, choice_message(unit_id: own_unit_id, choice: 32, value: 0)),
+      #(dead, choice_message(unit_id: own_unit_id, choice: 1, value: 5)),
+      #(in_world(), wake_here()),
+    ],
+    fn(case_) {
+      let #(_, taken) = read(case_.0, case_.1)
+      assert support.effects_of(taken)
+        |> list.filter(fn(effect) {
+          case effect {
+            step.Log(..) -> False
+            OwnEffect(_) | Watch(..) | Unwatch(..) | step.Stop -> True
+          }
+        })
+        == []
+        as "another unit, the ghost, a choice not offered, a nonzero value, the living: nothing changes"
+      assert list.length(support.logs_of(step: taken, level: LogWarning)) == 1
+        as "a warning names the refusal"
+    },
+  )
+  let #(_, malformed) = read(dead, world_message(0x015A, <<>>))
+  let assert [line] = support.logs_of(step: malformed, level: LogError)
+    as "a body the client's reader would refuse ends the connection"
+  assert support.says(line:, words: "does not decode")
+    && ask_request(malformed) == save_asked(1, entry_place())
+    as "after the save of the place, as any end in the world"
+}
+
+pub fn a_second_choice_is_refused_unchanged_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = dead_in_world()
+  let #(state, _) = read(state, wake_here())
+  let #(_, second) = read(state, holocrypt())
+  assert support.writes(second) == []
+    && support.asked(second) == None
+    && list.length(support.logs_of(step: second, level: LogWarning)) == 1
+    as "the first choice brought the player back: the second finds it alive and is refused with a warning"
+}
+
+pub fn wake_here_writes_the_coming_back_in_the_clients_order_where_the_body_lies_and_a_later_strike_lands_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = dead_in_world()
+  let #(state, taken) = read(state, wake_here())
+  let frames = heard(taken, keyed())
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
+    as "0x92f full, the shield, 0x88c (P, 0), 0x1b3 dead 0, the ghost's 0x355, 0x636 for the body, 0x247 type 23, in that order"
+  assert decoded(frames, 0x092F, player_health.decode)
+    == [PlayerHealth(unit_id: own_unit_id, health: 736, reason_mask: 0)]
+    as "full health"
+  assert decoded(frames, 0x0938, unit_stat_changed.decode)
+    == [UnitStatChanged(unit_id: own_unit_id, stat_id: 20, value: 450)]
+    as "the full shield"
+  assert decoded(frames, 0x088C, unit_death_state.decode)
+    == [UnitDeathState(unit_id: own_unit_id, dead: 0, field_3: 0, field_4: 0)]
+  assert decoded(frames, 0x01B3, resurrection_window.decode)
+    == [
+      ResurrectionWindow(
+        ghost_unit_id:,
+        wake_here_cost: 0,
+        death_penalty_ms: 0,
+        dead: 0,
+        choices: 3,
+        caster_asked: 0,
+        wake_here_cooldown_ms: 0,
+        forced_release_ms: 0,
+      ),
+    ]
+  assert decoded(frames, 0x0355, unit_destroyed.decode)
+    == [UnitDestroyed(unit_id: ghost_unit_id, field_2: 0)]
+  assert decoded(frames, 0x0636, client_control_granted.decode)
+    == [
+      ClientControlGranted(
+        echo_value: 0,
+        reset_movement: 1,
+        unit_id: own_unit_id,
+      ),
+    ]
+  assert decoded(frames, 0x0247, combat_log.decode)
+    == [
+      CombatLog(
+        entry: combat_log_entry.Resurrect(CombatLogResurrect(own_unit_id)),
+      ),
+    ]
+  assert news_told(taken, 2)
+    == [
+      client_connection.Health(health: 736, dead: False),
+      client_connection.Shield(shield: 450),
+      client_connection.CameBack,
+      client_connection.CameBackLogged,
+    ]
+    as "the viewer is told the body's full health and shield, its coming back and the log line"
+  let #(_, struck) = feed(state, a_beast_strike(own_unit_id))
+  assert decoded(heard(struck, keyed()), 0x092F, player_health.decode)
+    == [PlayerHealth(unit_id: own_unit_id, health: 735, reason_mask: 0)]
+    as "a later strike lands: the Beast's 12 mitigated to 3, 1 of it to health"
+}
+
+/// A map of the tests' realm that took the tests' player once and let it leave,
+/// so its next join is unit 6, as the real map gives a new id to each join.
+fn map_after_a_stay() -> map.State {
+  let #(map_state, _) =
+    mapped(map_state: map_with_four_players(), taken: joining().1)
+  let #(map_state, left) = mapped(map_state:, taken: leaving_the_map().1)
+  assert left == Left
+  map_state
+}
+
+/// The tests' player dead, after choosing the Holocrypt: the leave asked.
+fn holocrypt_chosen() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, _) = dead_in_world()
+  read(state, holocrypt())
+}
+
+/// The Holocrypt's leave answered `Left`: the join at the Holocrypt place asked.
+fn holocrypt_joining() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = holocrypt_chosen()
+  answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+}
+
+/// The Holocrypt's join answered by a map that gave the player's first unit
+/// before: the player is in the world as unit 6.
+fn at_the_holocrypt() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = holocrypt_joining()
+  let #(_, joined) = mapped(map_state: map_after_a_stay(), taken:)
+  answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+}
+
+pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_the_start_of_the_race_and_faction_in_its_world_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, chosen) = holocrypt_chosen()
+  assert written_ids(chosen)
+    == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
+    as "the coming back as Wake Here writes it, where the body lies"
+  assert news_told(chosen, 2)
+    == [
+      client_connection.Health(health: 736, dead: False),
+      client_connection.Shield(shield: 450),
+      client_connection.CameBack,
+      client_connection.CameBackLogged,
+      client_connection.Removed,
+    ]
+    as "the old viewers are told the coming back, then the unit's 0x355"
+  assert ask_request(chosen) == leave_asked()
+    as "the run of the map is asked to take the player out"
+  let #(_, joining) = holocrypt_joining()
+  assert list.contains(support.effects_of(joining), Unwatch(watch: WatchId(2)))
+    as "the old map's watch is dropped"
+  let start = character_tables.novice_start_place()
+  assert ask_request(joining)
+    == AskMap(
+      map: MapId(world_id: 3460, instance: 0),
+      message: Join(
+        connection: ConnectionId(1),
+        character: world_character(),
+        place: start,
+      ),
+    )
+    as "a Dominion Cassian in World 3460: the Novice start's row 51596 is that world's start of its race and faction"
+  let #(state, taken) = at_the_holocrypt()
+  assert written_ids(taken) == game_client.world_entry_ids
+    as "the entry burst, 0xAD first: the client removes every unit and loads again (0x1403b6de0)"
+  let assert [entered] =
+    decoded(heard(taken, keyed()), 0x00AD, enter_world.decode)
+  assert entered.world_id == 3460
+    && entered.position_x == float32.to_bits(start_place.x(start))
+    && entered.position_y == float32.to_bits(start_place.y(start))
+    && entered.position_z == float32.to_bits(start_place.z(start))
+    as "0xAD at the Holocrypt place"
+  assert player_in(taken).unit_id == 6 as "a new unit of the map's"
+  assert support.watches(taken) == [#(WatchId(2), Map(camp_map(), incarnation))]
+    as "the map that took it is watched"
+  let #(_, watched) =
+    feed(
+      state,
+      sent_by_the_map(Watched(by: ConnectionId(3), unit_id: viewer_unit(3))),
+    )
+  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id: 6, ..))] =
+    peer_tells(watched)
+  let assert [start_movement.Position(at), _] = unit.tail.movement_commands
+  assert at.x == float32.to_bits(start_place.x(start))
+    && at.z == float32.to_bits(start_place.z(start))
+    as "a viewer at the start place is sent the player's 0x262 there"
+}
+
+pub fn a_holocrypt_leave_with_no_answer_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = holocrypt_chosen()
+  let #(_, ended) = answer(state:, taken:, outcome: NoAnswerInTime)
+  assert disconnect(ended, keyed()) == LostUserServer
+    as "as the camp's leave: 0x036A reason 8 and the end"
+}
+
+pub fn a_refused_holocrypt_join_returns_to_character_select_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = holocrypt_joining()
+  let #(state, refused) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromMap(map.NotJoined(reason: map.NoBaseHealth(level: 1))),
+      ),
+    )
+  assert written_ids(refused) == [0x0594]
+    as "the player is in no map: 0x0594 puts the client in character select, as the camp's leave does"
+  assert list.length(support.logs_of(step: refused, level: LogWarning)) == 1
+  let #(_, listing) = read(state, select_start())
+  assert ask_request(listing) == AskStore(Select(ListCharacters(AccountId(7))))
+    as "a new character select takes the client's 0x07E0"
+}
+
+pub fn a_holocrypt_join_with_no_answer_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = holocrypt_joining()
+  let #(_, ended) = answer(state:, taken:, outcome: NoAnswerInTime)
+  assert disconnect(ended, keyed()) == LostUserServer
+    as "as a play's join: 0x036A reason 8 and the end"
+}
+
+pub fn a_viewer_that_arrives_while_the_player_is_dead_gets_its_0x262_with_health_0_and_no_ghost_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = dead_in_world()
+  let #(_, taken) =
+    feed(
+      state,
+      sent_by_the_map(Watched(by: ConnectionId(3), unit_id: viewer_unit(3))),
+    )
+  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:, ..))] =
+    peer_tells(taken)
+  assert unit_id == own_unit_id as "the body, not the ghost"
+  assert list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 0))
+    as "stat 0, the health, is 0: the client creates the body dead"
+}
+
+pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = dead_in_world()
+  let #(again, entry) = entered_from(camp_from(state), world_character())
+  assert list.contains(
+    player_in(entry).tail.stats,
+    UnitStat(stat_id: 0, value: 736),
+  )
+    as "the new entry's 0x262 carries full health"
+  let #(_, struck) = feed(again, a_beast_strike(own_unit_id))
+  assert decoded(heard(struck, keyed()), 0x0938, unit_stat_changed.decode)
+    == [UnitStatChanged(unit_id: own_unit_id, stat_id: 20, value: 448)]
+    && decoded(heard(struck, keyed()), 0x092F, player_health.decode)
+    == [PlayerHealth(unit_id: own_unit_id, health: 735, reason_mask: 0)]
+    as "alive and full: a strike lands on the full shield and health"
+}
+
+pub fn an_appeared_and_a_threatened_of_the_stay_before_the_holocrypt_delivered_after_its_join_are_dropped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = at_the_holocrypt()
+  let appeared = fn(viewer_unit_id) {
+    sent_by_a_peer(PeerNews(
+      map: camp_map(),
+      incarnation:,
+      unit_id: 9,
+      viewer_unit_id:,
+      news: Appeared(unit: another_unit()),
+    ))
+  }
+  let threatened = fn(player_unit_id) {
+    foe(strike_tell.Threatened(unit_id: 7, life: 3, player_unit_id:))
+  }
+  assert support.effects_of(feed(state, appeared(own_unit_id)).1) == []
+    as "a 0x262 sent to the player's unit 5, before the Holocrypt, would show a unit no one removes"
+  assert support.effects_of(feed(state, threatened(own_unit_id)).1) == []
+    as "a threat of unit 5 would put the player of unit 6 in a fight"
+  assert written_ids(feed(state, appeared(6)).1) == [0x0262]
+    && written_ids(feed(state, threatened(6)).1) == [0x089A]
+    as "the same news for this stay's unit 6 is taken"
+}
+
+pub fn an_appeared_and_a_threatened_of_the_stay_before_a_camp_delivered_after_the_next_entry_are_dropped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(camped, _) = camped_out()
+  let #(state, taken) = read(camped, select_start())
+  let #(state, _) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForSelect(Listed([])))),
+    )
+  let #(state, taken) = joining_from(state, world_character())
+  let #(_, joined) = mapped(map_state: map_after_a_stay(), taken:)
+  let #(state, _) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+  let old =
+    sent_by_a_peer(PeerNews(
+      map: camp_map(),
+      incarnation:,
+      unit_id: 9,
+      viewer_unit_id: own_unit_id,
+      news: Appeared(unit: another_unit()),
+    ))
+  assert support.effects_of(feed(state, old).1) == []
+  assert support.effects_of(
+      feed(
+        state,
+        foe(strike_tell.Threatened(
+          unit_id: 7,
+          life: 3,
+          player_unit_id: own_unit_id,
+        )),
+      ).1,
+    )
+    == []
+    as "news of the first stay, unit 5, reaching the second, unit 6, is dropped"
+}
+
+// ---- the done-when fight: each class against a planted creature, both rules
+//
+// The creature's rule and the player's connection rule driven together, as in
+// `a_beasts_aggro_strike_and_leash_...`, with the creature's timers fired at the
+// times the test chooses. Of the planted abilities only the Medic's Paralytic
+// Surge strikes a creature (`novice_tables`: the one damage effect), so the Medic
+// kills the Beast and the Beast kills each other class's player.
+
+/// The Battle Beast with its blow raised to 2000: a planted creature, since the
+/// Beast's own 12 takes some 400 ticks to kill a level-1 player and the fight is
+/// about the death, not the number.
+fn a_lethal_beast() -> spawn.Spawn {
+  let beast = spawn_support.beast_at(number: 1, place: beast_spawn_place())
+  let attack = beast.combat.attack
+  spawn.Spawn(
+    ..beast,
+    combat: creature_life.Combat(
+      ..beast.combat,
+      attack: creature_life.Attack(
+        ..attack,
+        offence: hit.Offence(
+          ..attack.offence,
+          blows: list.map(attack.offence.blows, fn(blow) {
+            hit.Blow(..blow, damage: 2000)
+          }),
+        ),
+      ),
+    ),
+  )
+}
+
+/// The player of `player` and the creature of `spawn` after the player stands in
+/// its ring, aggroed: the connection, the creature, the step that started the
+/// attack tick, and the frames the player's client was written.
+fn aggroed(
+  player player: game_connection.State,
+  spawn spawn: spawn.Spawn,
+) -> #(
+  game_connection.State,
+  creature.State,
+  step.ServiceStep(creature.Outgoing),
+  List(Frame),
+) {
+  let #(beast, started) = a_beast_of(spawn)
+  let #(player, shown, _) = medic_takes(player, to_the_medic(started))
+  let #(beast, aggro) =
+    creature.step(
+      beast,
+      support.input_at_ms(
+        ms: 1000,
+        event: OwnEvent(
+          step.Told(creature.Approached(
+            by: ConnectionId(1),
+            unit_id: medic_unit,
+            place: medic_place(0.0),
+            seq: 1,
+          )),
+        ),
+      ),
+    )
+  let #(player, frames, _) = medic_takes(player, to_the_medic(aggro))
+  #(player, beast, aggro, list.append(shown, frames))
+}
+
+/// The creature's attack ticks from `timer` at `at_ms`, then every 1500 ms, each
+/// strike delivered to the player, its answer to the creature and the creature's go
+/// back, until the player's client is written its own 0x88c: the connection after.
+fn ticks_until_the_player_dies(
+  player player: game_connection.State,
+  beast beast: creature.State,
+  timer timer: step.TimerId,
+  at_ms at_ms: Int,
+  ticks_left ticks_left: Int,
+) -> game_connection.State {
+  assert ticks_left > 0
+    as "the lethal Beast kills a level-1 player in a few ticks"
+  let #(beast, ticked) = fire_beast(state: beast, at_ms:, timer:)
+  let #(player, struck, answers) = medic_takes(player, to_the_medic(ticked))
+  let #(beast, answered) =
+    beast_takes(state: beast, at_ms: at_ms + 10, messages: answers)
+  let #(player, _, _) =
+    medic_takes(player, list.flat_map(answered, to_the_medic))
+  case
+    list.contains(
+      decoded(struck, 0x088C, unit_death_state.decode),
+      UnitDeathState(unit_id: medic_unit, dead: 1, field_3: 0, field_4: 0),
+    )
+  {
+    True -> player
+    False ->
+      ticks_until_the_player_dies(
+        player:,
+        beast:,
+        timer: tick_of(ticked),
+        at_ms: at_ms + 1500,
+        ticks_left: ticks_left - 1,
+      )
+  }
+}
+
+/// Paralytic Surge pressed, cast after cast, each strike delivered to the creature
+/// and its answer and news back, until the client is written the creature's 0x88c:
+/// the connection and the creature after.
+fn presses_until_the_beast_dies(
+  player player: game_connection.State,
+  beast beast: creature.State,
+  client_cast_id client_cast_id: Int,
+) -> #(game_connection.State, creature.State) {
+  assert client_cast_id < 40
+    as "Paralytic Surge kills the Beast's 52 health in a few casts"
+  let #(player, pressed) = press_paralytic_surge(state: player, client_cast_id:)
+  let #(beast, steps) =
+    beast_takes(state: beast, at_ms: 1100, messages: to_the_beast(pressed))
+  let #(player, frames, _) =
+    medic_takes(player, list.flat_map(steps, to_the_medic))
+  case
+    list.contains(
+      decoded(frames, 0x088C, unit_death_state.decode),
+      UnitDeathState(unit_id: 7, dead: 1, field_3: 0, field_4: 0),
+    )
+  {
+    True -> #(player, beast)
+    False ->
+      presses_until_the_beast_dies(
+        player:,
+        beast:,
+        client_cast_id: client_cast_id + 1,
+      )
+  }
+}
+
+/// The player of `class_id` in the world: the tests' character of that class.
+fn a_player_of(class_id: Int) -> game_connection.State {
+  entered_as(Character(..world_character(), class_id: ClassId(class_id))).0
+}
+
+pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_come_back_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The Medic kills the Beast, which stands again at its respawn: its corpse
+  // timer of the kind's 60 s fires, and the client is written its 0x355 and its
+  // 0x262 at full health (`death.creature_respawn`).
+  let #(medic, beast, _, _) =
+    aggroed(
+      player: a_player_of(4),
+      spawn: spawn_support.beast_at(number: 1, place: beast_spawn_place()),
+    )
+  let #(medic, beast) =
+    presses_until_the_beast_dies(player: medic, beast:, client_cast_id: 1)
+  let #(_, respawned) =
+    fire_beast(state: beast, at_ms: 61_100, timer: TimerId(1))
+  let #(_, frames, _) = medic_takes(medic, to_the_medic(respawned))
+  assert list.take(written_ids_of(frames), 2) == [0x0355, 0x0262]
+    && decoded(frames, 0x0355, unit_destroyed.decode)
+    == [UnitDestroyed(unit_id: 7, field_2: 0)]
+    && list.map(decoded(frames, 0x0262, unit_create_creature.decode), fn(unit) {
+      creature_unit.health_of(unit:)
+    })
+    == [52]
+    as "the Beast's corpse is removed and the Beast stands again at its full 52"
+  // Each other class is killed by the Beast and comes back by Wake Here; the
+  // Spellslinger by the Holocrypt.
+  list.each([1, 2, 3, 5], fn(class_id) {
+    let #(player, beast, aggro, _) =
+      aggroed(player: a_player_of(class_id), spawn: a_lethal_beast())
+    let dead =
+      ticks_until_the_player_dies(
+        player:,
+        beast:,
+        timer: tick_of(aggro),
+        at_ms: 2500,
+        ticks_left: 20,
+      )
+    let #(alive, woke) = read(dead, wake_here())
+    assert written_ids(woke)
+      == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
+      as { "class " <> int.to_string(class_id) <> " comes back by Wake Here" }
+    let #(_, struck) = feed(alive, a_beast_strike(own_unit_id))
+    assert decoded(heard(struck, keyed()), 0x092F, player_health.decode) != []
+      as { "class " <> int.to_string(class_id) <> " is struck again: alive" }
+  })
+  let #(player, beast, aggro, _) =
+    aggroed(player: a_player_of(7), spawn: a_lethal_beast())
+  let dead =
+    ticks_until_the_player_dies(
+      player:,
+      beast:,
+      timer: tick_of(aggro),
+      at_ms: 2500,
+      ticks_left: 20,
+    )
+  let #(state, chosen) = read(dead, holocrypt())
+  assert ask_request(chosen) == leave_asked()
+  let #(state, taken) =
+    answer(state:, taken: chosen, outcome: step.Answer(FromMap(Left)))
+  let #(_, joined) = mapped(map_state: map_after_a_stay(), taken:)
+  let #(_, burst) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+  assert written_ids(burst) == game_client.world_entry_ids
+    as "the Spellslinger comes back at the Holocrypt: the entry burst"
+}
+
+/// The ids of the frames, in order.
+fn written_ids_of(frames: List(Frame)) -> List(Int) {
+  list.map(frames, fn(frame) { frame.message_id })
 }

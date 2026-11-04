@@ -390,7 +390,7 @@ fn hear(
 ) -> #(Dict(Int, Int), Counts) {
   case process.selector_receive(selector, int.max(0, until_ms - now())) {
     Error(Nil) -> #(fighters, counts)
-    Ok(SentByFoe(fight: strike_tell.Threatened(unit_id:, life:))) ->
+    Ok(SentByFoe(fight: strike_tell.Threatened(unit_id:, life:, ..))) ->
       hear(
         settings:,
         selector:,
@@ -398,7 +398,7 @@ fn hear(
         fighters: dict.insert(fighters, unit_id, life),
         counts:,
       )
-    Ok(SentByFoe(fight: strike_tell.Released(unit_id:))) ->
+    Ok(SentByFoe(fight: strike_tell.Released(unit_id:, ..))) ->
       hear(
         settings:,
         selector:,

@@ -83,9 +83,9 @@ pub fn a_join_starts_exactly_the_spawns_within_1024_with_the_player_as_first_vie
   })
     as "a creature's life is the number of the watch it is started under"
   assert list.all(creatures, fn(start) {
-    { start.1 }.viewers == [ConnectionId(1)]
+    { start.1 }.viewers == [#(ConnectionId(1), 1)]
   })
-    as "each starts with the player as its first viewer, and sends the 0x262 as it starts"
+    as "each starts with the player as its first viewer, its unit 1, the map's first id, taken before the starts', and sends the 0x262 as it starts"
   assert list.all(creatures, fn(start) { start.0 != WatchId(1) })
     && list.all(creatures, fn(start) { { start.1 }.life != 1 })
     as "no creature's life is the player's watch, 1: the player's watch is taken before the starts"
@@ -120,7 +120,7 @@ pub fn a_move_into_sight_starts_the_creature_with_the_player_as_first_viewer_tes
   let #(_, taken) = spawns.move(state:, at_ms: 7000, connection: 1, x: 0.0)
   let #(_, creature) = the_start(taken)
   assert creature.spawn_id == SpawnId(1)
-  assert creature.viewers == [ConnectionId(1)]
+  assert creature.viewers == [#(ConnectionId(1), 1)]
     as "the creature starts for the player and sends its one 0x262 as it starts"
   assert spawns.creature_sends(taken) == []
 }
@@ -195,7 +195,7 @@ pub fn a_spawn_stopped_and_seen_again_keeps_its_unit_id_under_a_new_life_test() 
     as "a spawn has one unit id for the run, reused after a clean stop (death.creature_respawn)"
   assert second_watch != first_watch && second.life != first.life
     as "under a new life, so its address is not the stopped creature's"
-  assert second.viewers == [ConnectionId(1)]
+  assert second.viewers == [#(ConnectionId(1), 1)]
   assert spawns.creature_sends(taken) == []
 }
 
@@ -216,7 +216,7 @@ pub fn a_spawn_seen_while_its_creature_retires_restarts_only_after_the_creatures
   let #(second_watch, second) = the_start(taken)
   assert second.unit_id == first.unit_id && second_watch != first_watch
     as "at its end a creature starts under the same unit id and a new life"
-  assert second.viewers == [ConnectionId(1)]
+  assert second.viewers == [#(ConnectionId(1), 1)]
     as "with the player who sees the spawn now as its first viewer"
 }
 
@@ -345,7 +345,7 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
   let #(_, second) = the_start(taken)
   assert second.unit_id != first.unit_id && second.unit_id > 0
     as "the unit id was given up with the Gone, so the new creature has another"
-  assert second.viewers == [ConnectionId(1)]
+  assert second.viewers == [#(ConnectionId(1), 1)]
     as "the player in sight is the new creature's first viewer"
 }
 
@@ -374,8 +374,8 @@ pub fn a_creature_that_does_not_start_leaves_its_spawn_empty_for_the_run_and_the
   let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let assert [#(first_watch, first), #(_, second)] = spawns.starts(taken)
     as "two creatures start in the burst"
-  assert first.viewers == [ConnectionId(1)]
-    && second.viewers == [ConnectionId(1)]
+  assert first.viewers == [#(ConnectionId(1), 1)]
+    && second.viewers == [#(ConnectionId(1), 1)]
     as "both start for the player, whatever the first's start does"
   let #(state, taken) =
     spawns.feed(

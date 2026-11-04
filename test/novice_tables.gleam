@@ -35,6 +35,7 @@ import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
@@ -805,6 +806,10 @@ pub fn creature_attack_spell4_rows() -> List(List(Cell)) {
     planted_table.row(spell4.schema, [
       #("ID", Integer(5649)),
       #("targetMaxRange", Float(5.0)),
+      #(
+        "spell4ConditionsIdCaster",
+        Integer(spell_tables.caster_conditions(5649)),
+      ),
     ]),
   ]
 }
@@ -958,6 +963,10 @@ pub fn spell4_rows() -> List(List(Cell)) {
           _ -> 0
         }),
       ),
+      #(
+        "spell4ConditionsIdCaster",
+        Integer(spell_tables.caster_conditions(pair.0)),
+      ),
     ])
   })
 }
@@ -1004,6 +1013,10 @@ pub fn spell_tree_files() -> List(#(String, BitArray)) {
         planted_table.row(spell4.schema, [
           #("ID", Integer(42_352)),
           #("spell4BaseIdBaseSpell", Integer(26_543)),
+          #(
+            "spell4ConditionsIdCaster",
+            Integer(spell_tables.caster_conditions(42_352)),
+          ),
         ]),
       ])
         |> list.sort(by_id),
@@ -1043,6 +1056,10 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(creature_level.schema, creature_level_rows()),
     planted_table.file(spell4.schema, spell4_rows()),
     planted_table.file(spell4_base.schema, spell4_base_rows()),
+    planted_table.file(
+      spell4_conditions.schema,
+      spell_tables.spell4_conditions_rows(),
+    ),
     planted_table.file(spell4_effects.schema, spell4_effects_rows()),
     planted_table.file(
       spell4_aoe_target_constraints.schema,

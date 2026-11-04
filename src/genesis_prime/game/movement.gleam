@@ -439,6 +439,16 @@ pub fn take(
   }
 }
 
+/// A 0x637 of a dead player's client, whose controlled unit is its ghost: decoded
+/// as `take` decodes it, so a body the client's reader would refuse is the
+/// refusal, and dropped. The client expects no answer to the ghost's moves
+/// (`ghost.movement`), and the body stays where it fell.
+pub fn ghost_moved(body body: BitArray) -> Result(Nil, Refusal) {
+  player_movement.decode(body)
+  |> undecoded(player_movement.message_id)
+  |> result.replace(Nil)
+}
+
 /// A decode that failed, as the refusal for the message it was read for.
 fn undecoded(
   decoded: Result(message, bit_stream.DecodeError),

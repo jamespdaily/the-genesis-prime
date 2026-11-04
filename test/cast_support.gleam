@@ -34,7 +34,8 @@ import spell_tables
 
 /// A child spell the client's row gives these ids: no cast time, no cooldown, no
 /// range, kind 3 (`opcode.0x7ff.root_parent`: the global cooldown kind of every
-/// child of the nine abilities).
+/// child of the nine abilities), and the dead bit of caster condition row 1, which
+/// most of those children name (`Spell4.spell4ConditionsIdCaster`).
 pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
   Spell(
     spell4_id: Spell4Id(spell4_id),
@@ -46,6 +47,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     free_while_live: False,
     ignores_casting: False,
     weapon: NoWeaponNeeded,
+    caster_death: spell_plan.CannotBeDead,
     global_cooldown: GlobalCooldown(
       refused_while_running: False,
       starts_for_ms: None,
@@ -165,6 +167,7 @@ pub fn caster() -> Caster {
     abilities: abilities(),
     weapon: Some(Item2Id(81_351)),
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
+    dead: False,
   )
 }
 

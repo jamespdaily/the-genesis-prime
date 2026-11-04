@@ -112,10 +112,19 @@ pub type Request {
 /// News of one unit from its owner, a player's connection or a creature's
 /// process, to the connection of a player who sees it: the run of the map the
 /// owner is in (`map` and `incarnation`, as its connection watches it), the
-/// owner's unit in that run, and what happened to it. A viewer that is in another run of the map, or another map, drops it:
-/// the unit id there may name another unit.
+/// owner's unit in that run, the viewer's own unit of the stay it was sent for
+/// (the map's `Watched` names it), and what happened to it. A viewer that is in
+/// another run of the map, or another map, drops it: the unit id there may name
+/// another unit. So does a viewer whose unit is another: the news was sent for an
+/// earlier stay of its player, which each join of the map gives a new unit id.
 pub type PeerNews {
-  PeerNews(map: MapId, incarnation: Int, unit_id: Int, news: News)
+  PeerNews(
+    map: MapId,
+    incarnation: Int,
+    unit_id: Int,
+    viewer_unit_id: Int,
+    news: News,
+  )
 }
 
 /// What a unit's owner tells the connections that see its unit, which they write
@@ -198,6 +207,7 @@ pub fn peer_moves(
   map map: MapId,
   incarnation incarnation: Int,
   unit_id unit_id: Int,
+  viewer_unit_id viewer_unit_id: Int,
   server_time_ms server_time_ms: Int,
   commands commands: List(RelayedMovement),
 ) -> List(PeerNews) {
@@ -207,6 +217,7 @@ pub fn peer_moves(
       map:,
       incarnation:,
       unit_id:,
+      viewer_unit_id:,
       news: Moving(server_time_ms:, commands: chunk),
     )
   })

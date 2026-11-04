@@ -42,6 +42,7 @@ import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
@@ -76,9 +77,10 @@ import gleam/erlang/reference.{type Reference}
 /// - ItemDisplay and ItemDisplaySourceEntry: what a worn item is drawn with
 ///   (genesis_prime/game/worn_visual).
 /// - Spell4 and SpellLevel: a class's level-1 abilities (genesis_prime/game/loadout).
-/// - Spell4, Spell4Base, Spell4Effects, Spell4Thresholds, SpellPhase,
-///   SpellCoolDown and Class: the tree of casts each of those abilities starts,
-///   and the stages of a RapidTap or ChargeRelease one (genesis_prime/game/spell_plan).
+/// - Spell4, Spell4Base, Spell4Conditions, Spell4Effects, Spell4Thresholds,
+///   SpellPhase, SpellCoolDown and Class: the tree of casts each of those abilities
+///   starts, the stages of a RapidTap or ChargeRelease one, and whether its caster
+///   may be dead (genesis_prime/game/spell_plan).
 /// - Spell4, Spell4AoeTargetConstraints, Spell4Telegraph, TelegraphDamage,
 ///   Spell4ValidTargets and Spell4Effects: what each spell strikes, its area, hit
 ///   shapes and damage effects (genesis_prime/game/spell_area).
@@ -119,6 +121,7 @@ pub fn entries() -> List(store.Entry) {
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),
+    spell4_conditions.entry(),
     spell4_effects.entry(),
     spell4_telegraph.entry(),
     spell4_thresholds.entry(),

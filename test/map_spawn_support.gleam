@@ -240,7 +240,8 @@ pub fn player_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
 
 pub fn said(message: map.Outgoing) -> String {
   case message {
-    Watched(by: ConnectionId(number)) -> "Watched by " <> int.to_string(number)
+    Watched(by: ConnectionId(number), ..) ->
+      "Watched by " <> int.to_string(number)
     Gone(unit_id:) -> "Gone " <> int.to_string(unit_id)
     map.Unwatched(by: ConnectionId(number)) ->
       "Unwatched by " <> int.to_string(number)

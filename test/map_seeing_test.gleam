@@ -125,7 +125,7 @@ fn leave(
 fn shape(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
   list.map(support.sends(taken), fn(sent) {
     #(sent.0, case sent.1 {
-      Watched(by: ConnectionId(number)) ->
+      Watched(by: ConnectionId(number), ..) ->
         "Watched by " <> int.to_string(number)
       Unwatched(by: ConnectionId(number)) ->
         "Unwatched by " <> int.to_string(number)
@@ -145,6 +145,29 @@ fn two_players(x: Float) -> #(State, ServiceStep(map.Outgoing)) {
   let #(state, _) =
     join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
   join(state: state, connection: 2, place: at(x), elapsed_ms: 200)
+}
+
+pub fn a_watched_names_the_unit_of_the_player_who_sees_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Unit ids start at 1 and go to the joins in order (the map's doc), so
+  // connection 1's player is unit 1 and connection 2's unit 2.
+  let #(_, taken) = two_players(10.0)
+  let watched =
+    list.filter_map(support.sends(taken), fn(sent) {
+      case sent.1 {
+        Watched(by:, unit_id:) -> Ok(#(sent.0, by, unit_id))
+        Unwatched(..)
+        | Gone(..)
+        | Joined(..)
+        | map.NotJoined(..)
+        | map.Left
+        | map.Retire
+        | map.Approached(..)
+        | map.Withdrew(..) -> Error(Nil)
+      }
+    })
+  assert watched == [#(1, ConnectionId(2), 2), #(2, ConnectionId(1), 1)]
+    as "each is told the other's unit, which every news it sends that player names"
 }
 
 /// The end of the connection `connection`'s watch: the watch the join opened as
