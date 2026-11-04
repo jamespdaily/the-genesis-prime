@@ -92,7 +92,7 @@ pub fn a_function_that_reads_the_folder_without_loading_is_not_a_breach_test() -
     as "the folder goes to a tool that reads bytes, and a planted folder goes to the load: no real table enters persistent terms"
 }
 
-pub fn a_load_in_a_function_that_never_names_the_folder_is_not_a_breach_test() -> Nil {
+pub fn functions_that_do_not_call_each_other_share_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let file =
@@ -103,7 +103,79 @@ pub fn a_load_in_a_function_that_never_names_the_folder_is_not_a_breach_test() -
       "fn planted_load(folder) { store.load(from: folder) }",
     ])
   assert shared_tables.breaches([file]) == []
-    as "each function is read alone: naming the folder in one and loading in another is not a real load of its own"
+    as "the folder is named in one function and a load is made in another that never receives it"
+}
+
+pub fn a_function_that_gets_the_folder_from_a_helper_and_loads_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module([
+      "import client_tables",
+      "import genesis_prime/table/loader/store",
+      "fn real() { client_tables.folder() }",
+      "fn load_real(entry) {",
+      "  store.load(from: real(), entries: [entry])",
+      "}",
+    ])
+  assert planted.lines(shared_tables.breaches([file])) == [6]
+    as "the folder reaches the load through a helper of the module, on line 6"
+}
+
+pub fn a_helper_that_loads_from_its_parameter_given_the_clients_folder_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module([
+      "import client_tables",
+      "import genesis_prime/table/loader/store",
+      "fn load_from(folder) {",
+      "  store.load(from: folder)",
+      "}",
+      "fn real_tables() {",
+      "  load_from(client_tables.folder())",
+      "}",
+    ])
+  assert planted.lines(shared_tables.breaches([file])) == [8]
+    as "the call that gives the helper the client's folder is on line 8"
+}
+
+pub fn a_helper_that_loads_from_its_parameter_given_a_planted_folder_is_not_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module([
+      "import genesis_prime/table/loader/store",
+      "fn load_from(folder) { store.load(from: folder) }",
+      "fn planted(folder) { load_from(folder) }",
+    ])
+  assert shared_tables.breaches([file]) == []
+}
+
+pub fn only_the_lowest_function_that_names_the_folder_and_loads_is_reported_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module([
+      "import client_tables",
+      "import genesis_prime/table/loader/store",
+      "fn load_real() { store.load(from: client_tables.folder()) }",
+      "fn a_test() { load_real() }",
+    ])
+  assert planted.lines(shared_tables.breaches([file])) == [4]
+    as "the test that calls the breaching helper is not a second breach"
+}
+
+pub fn the_servers_own_table_load_from_the_table_folder_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module([
+      "import genesis_prime",
+      "fn tables() { genesis_prime.load_tables() }",
+    ])
+  assert planted.lines(shared_tables.breaches([file])) == [3]
+    as "genesis_prime.load_tables loads the server's tables from GENESIS_TABLE_DIR, the folder of the client's real tables"
 }
 
 pub fn no_test_loads_the_clients_tables_outside_the_shared_load_test() -> Nil {
