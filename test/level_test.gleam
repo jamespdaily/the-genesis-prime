@@ -18,9 +18,9 @@ import genesis_prime/game/level
 import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import owned_key
 import owned_test
 import planted_table
 import unitest
@@ -100,7 +100,7 @@ fn load(
     ),
   ])
   table_store.load(
-    under: reference.new(),
+    under: owned_key.new(),
     from: folder,
     entries: [game_formula.entry(), xp_per_level.entry()],
     requirements: level.requirements(),

@@ -30,9 +30,9 @@ import genesis_prime/table/id.{
   CharacterCustomizationId, CharacterCustomizationLabelId, RaceId,
 }
 import genesis_prime/table/loader/store as table_store
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import owned_key
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -540,7 +540,7 @@ fn load_appearance_tables(
     )
   use folder <- planted_table.in_folder(files)
   table_store.load(
-    under: reference.new(),
+    under: owned_key.new(),
     from: folder,
     entries: [
       character_customization.entry(),

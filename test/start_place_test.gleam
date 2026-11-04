@@ -34,10 +34,10 @@ import genesis_prime/table/character_creation as creation_table
 import genesis_prime/table/id.{RaceId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/world_location2
-import gleam/erlang/reference
 import gleam/float
 import gleam/int
 import gleam/list
+import owned_key
 import owned_test
 import place_support
 import planted_table.{Float, Integer}
@@ -319,7 +319,7 @@ fn load_with_rows(
 ) -> Result(table_store.Tables, table_store.LoadError) {
   use folder <- planted_table.in_folder([world_location2_file(ids)])
   table_store.load(
-    under: reference.new(),
+    under: owned_key.new(),
     from: folder,
     entries: [world_location2.entry()],
     requirements: [start_place.requirement()],

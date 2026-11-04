@@ -34,13 +34,13 @@ const folder_module = "client_tables"
 
 const folder_function = "folder"
 
-const loading_modules = [
+pub const loading_modules = [
   "genesis_prime/table",
   "genesis_prime/table/loader/store",
   "genesis_prime/table/loader/server_table",
 ]
 
-const loading_functions = [
+pub const loading_functions = [
   "load", "load_under", "load_for_server", "load_more", "load_content_tables",
 ]
 
