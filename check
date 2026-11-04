@@ -139,14 +139,14 @@ test_workers=${GENESIS_TEST_WORKERS:-1}
 # client's 384 tables 587 MiB, the server's 36 of them again 306 MiB, leaked
 # planted loads 70 MiB and growing). With each table held once and no test
 # leaving terms, the live terms are flat at 637 MiB (59%), and the highest
-# carriers of six runs were 65.2%, 66.7%, 67.0%, 67.2%, 72.8% and 75.4% of the
-# region: the rest comes and goes within a run (erased terms waiting for a purge,
-# loads in flight) and differs from run to run by up to 105 MiB. The limit is
-# 85%: it fails at 870 MiB, 9.6 points above the worst run measured, so a good
-# run does not fail, and it leaves 154 MiB free, 1.4 times the largest table the
-# suite puts (Spline2Node, 115.7 MB), and 123 MiB before the 97% where the VM
-# dies. A run over it fails the check, so the margin cannot vanish unnoticed
-# again. The limit is not set from outside: +MIscs is refused, and a higher
+# carriers of nine runs were 65.2%, 66.7%, 67.0%, 67.2%, 67.9%, 68.7%, 72.8%,
+# 75.4% and 76.9% of the region: the rest comes and goes within a run (erased
+# terms waiting for a purge, loads in flight) and differs from run to run by up
+# to 120 MiB. The limit is 85%: it fails at 870 MiB, 8.1 points above the worst
+# run measured, so a good run does not fail, and it leaves 154 MiB free, 1.4
+# times the largest table the suite puts (Spline2Node, 115.7 MB), and 123 MiB
+# before the 97% where the VM dies. A run over it fails the check, so the margin
+# cannot vanish unnoticed again. The limit is not set from outside: +MIscs is refused, and a higher
 # limit is a change to this line with the measurement that justifies it.
 literal_region_bytes=1073741824
 literal_limit_percent=85
