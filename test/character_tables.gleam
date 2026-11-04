@@ -94,6 +94,20 @@ pub fn shared() -> store.Tables {
   database_support.once("character_tables", load)
 }
 
+/// The planted tables with the trees of the starting abilities of every cast
+/// method in place of the plain Normal casts (`novice_tables.spell_tree_files`).
+/// Loaded once under a key of its own.
+pub fn shared_with_spell_trees() -> store.Tables {
+  database_support.once("character_tables_spell_trees", fn() {
+    let trees = novice_tables.spell_tree_files()
+    let names = list.map(trees, fn(file) { file.0 })
+    load_files(list.append(
+      list.filter(files(), fn(file) { !list.contains(names, file.0) }),
+      trees,
+    ))
+  })
+}
+
 /// The planted tables with the Novice start's WorldLocation2 row (51596) in
 /// World 0, which is no World row, in place of World 3460. Loaded once under a
 /// key of its own.

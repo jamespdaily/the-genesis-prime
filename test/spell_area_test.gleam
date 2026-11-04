@@ -82,11 +82,12 @@ pub fn an_area_row_that_selects_in_another_order_than_closest_fails_the_load_tes
 
 pub fn a_spell_whose_valid_targets_hold_a_bit_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert area_tables.built(
+  let assert Error(ValidTargetsNotAlive(target_bitmask: 0x8, ..)) =
+    area_tables.built(
       kick: area_tables.Kick(..area_tables.kick(), target_bitmask: 0x8),
     )
-    == Error(ValidTargetsNotAlive(spell4_id: 58_591, target_bitmask: 0x8))
-    as "Spell4ValidTargets.targetBitmask: 0x8 would strike the dead; only 0 is built"
+    as "Spell4ValidTargets.targetBitmask: 0x8 would strike the dead; only 0 is built, and every planted base names row 1, so the first spell with an area row to be read is the one refused"
+  Nil
 }
 
 pub fn a_hit_row_placed_on_another_unit_than_the_caster_fails_the_load_test() -> Nil {

@@ -201,8 +201,8 @@ pub fn the_replay_logs_the_unhandled_messages_the_live_session_logged_and_nothin
   assert lines_of(logged, "game.connection")
     == list.map(
       [
-        "0x082D", "0x0635", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC",
-        "0x018F", "0x023C", "0x07EA", "0x023D", "0x0570",
+        "0x082D", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC", "0x018F",
+        "0x0635", "0x023C", "0x07EA", "0x023D", "0x0570",
       ],
       fn(id) { "unhandled game message " <> id },
     )

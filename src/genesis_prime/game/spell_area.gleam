@@ -115,6 +115,8 @@ pub type SpellArea {
 pub type AreaError {
   /// A table row the tree names is missing: the table, and the id.
   NoRow(table: String, id: Int)
+  /// A spell strikes an area in one of its phases but names no area row.
+  NoAreaRow(spell4_id: Int)
   /// An area row selects in an order but Closest (`targetSelection` is not 1).
   SelectionNotClosest(spell4_id: Int, target_selection: Int)
   /// A spell's valid targets hold a bit: it would strike the dead or more.
@@ -146,6 +148,10 @@ fn describe(error error: AreaError) -> String {
       <> " has no row "
       <> int.to_string(id)
       <> ", which a spell's area names"
+    NoAreaRow(spell4_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " strikes an area in one of its phases and has no Spell4AoeTargetConstraints row"
     SelectionNotClosest(spell4_id:, target_selection:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -303,7 +309,7 @@ fn area_of(
     |> list.map(fn(phase) { phase_of(spell:, effects:, phase:) })
   use Nil <- result.try(
     case area_row, list.any(phases, fn(phase) { phase.selects_area }) {
-      None, True -> Error(NoRow(table: "Spell4AoeTargetConstraints", id: 0))
+      None, True -> Error(NoAreaRow(spell4_id: id))
       _, _ -> Ok(Nil)
     },
   )

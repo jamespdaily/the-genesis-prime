@@ -168,9 +168,9 @@ pub fn a_press_during_staggers_child_with_no_cast_bar_is_accepted_and_one_during
   assert refused_with(state:, bag_index: 3, target: 0, at: 1100).result
     == SpellAlreadyCasting
     as "a press during Telekinetic Strike's cast bar is refused 13"
-  assert refused_with(state:, bag_index: 3, target: 0, at: 2000).result
+  assert refused_with(state:, bag_index: 3, target: 0, at: 1700).result
     == SpellAlreadyCasting
-    as "also with 250 ms of the cast left, within the queue window: the client never queues a press behind its current cast (cast.press_queue: the casting test needs a request word a press leaves 0), so 13 is the server's choice and the press is not held"
+    as "with 550 ms of the cast left, more than the queue window of 500: refused 13, the server's choice (cast.press_queue: the client never refuses an ability press with 13)"
 }
 
 pub fn a_0x801_clears_the_current_cast_whatever_cast_it_names_test() -> Nil {
@@ -569,13 +569,21 @@ pub fn gate_casts_starts_its_cooldown_and_sends_no_target_in_any_go_test() -> Ni
     })
   assert gos != [] && list.all(gos, fn(targets) { targets == [] })
     as "Spell4.34355: Gate deals no damage and this step strikes nothing: every go names no target"
-  assert list.length(
-      list.filter(support.writes(effects:), fn(frame) {
-        frame.message_id == 0x07FF
-      }),
-    )
-    == 2
-    as "Spell4.34355: Proxies to 25190 and 30436"
+  assert list.map(support.started_timers(effects:), fn(started) { started.1 })
+    == [200, 140]
+    as "Spell4Effects 67778 and 67779: the Proxies to 25190 and 30436 start 200 and 140 ms after the go"
+  let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
+  let children =
+    list.flat_map(fired, fn(step) {
+      list.filter_map(support.writes(effects: step.1), fn(frame) {
+        case frame.message_id == 0x07FF {
+          True -> Ok(started_of(frame).spell4_id)
+          False -> Error(Nil)
+        }
+      })
+    })
+  assert children == [30_436, 25_190]
+    as "the 140 ms Proxy (30436) starts before the 200 ms one (25190)"
   assert refused_with(state:, bag_index: 5, target: 0, at: 10_000).result
     == SpellCooldown
     as "Spell4.34355: a cooldown of 30 s from the go"
@@ -614,10 +622,15 @@ pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_
     )
     as "Spell4CastResult.vital_cost: 2 Actuators of a Medic that holds none gives 55"
   let #(state, first) =
-    support.pressed(state: cast.new(), bag_index: 7, target: 0, at: 1000)
+    support.pressed(
+      state: cast.new(),
+      bag_index: support.unbuilt_bag_index,
+      target: 0,
+      at: 1000,
+    )
   assert list.map(support.writes(effects: first), refusal_result)
     == [IllegalSpellCast]
-    as "Spell.CodeEnumCastMethod: Electrocute is Channeled, which a later step casts; 285 is what the design gives it"
+    as "Spell.CodeEnumCastMethod: a PressHold spell is not cast by a method the rule builds, and 285 is what the design gives it"
   let logs = fn(effects) {
     list.filter(effects, fn(effect) {
       case effect {
@@ -631,7 +644,13 @@ pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_
     })
   }
   assert list.length(logs(first)) == 1 as "logged for the coverage measure"
-  let #(_, second) = support.pressed(state:, bag_index: 7, target: 0, at: 2000)
+  let #(_, second) =
+    support.pressed(
+      state:,
+      bag_index: support.unbuilt_bag_index,
+      target: 0,
+      at: 2000,
+    )
   assert logs(second) == [] as "once on the connection, not for each press"
 }
 
@@ -690,7 +709,7 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
   assert support.writes(effects: threshold) == []
     && support.cancelled_timers(effects: threshold) == []
   assert is_one_debug_line(threshold)
-    as "ChargeRelease is built in a later step, so the cancel is no change and a debug line: nothing evidences a 0x7fe for it"
+    as "(0, 0) names a threshold that is not open (the cast is Telekinetic Strike's), so the cancel is no change and a debug line"
   assert cancel(state, Other(11), 1) |> result.is_ok
     as "reason 11 (SpellInterrupted) with the bit 1 is sent by the input mode change"
   assert cancel(state, SpellAlreadyCasting, 1)

@@ -24,17 +24,37 @@
 ////   phaseFlags 1, 2, 4 and 8 (`Spell4.38791`).
 //// The child spells' bases are the client's (`table_rows -- Spell4 30900 34775 35886 38781`),
 //// each of cast method 0 but 38780's.
+////
+//// The abilities of the cast methods, each row as `table_rows` prints it for the
+//// Spell4, Spell4Base, Spell4Thresholds, SpellPhase and Spell4Effects rows of the
+//// trees (Proxy effects only):
+//// - Pulse Blast 42276 and Quick Draw 43468: Multiphase, SpellPhase rows 5390,
+////   5391 and 5882 to 5886; Quick Draw's Proxies sit behind prerequisites 17301
+////   and 17302.
+//// - Impale 38779: Multiphase, SpellPhase 3715 and 3716, an innate cost of type 8.
+//// - Electrocute 41276 and Discharge 58832: Channeled, the channel columns of
+////   their Spell4 rows; Discharge proxies 80382 in every phase.
+//// - Shred 38765, Relentless Strikes 32078 and Rampage 58524: RapidTap with a
+////   thresholdTime of 4000 and the stages of Spell4Thresholds 238, 9 and 10,
+////   1073 to 1075.
+//// - Charged Shot 34718: ChargeRelease with a thresholdTime of 8200 and the stages
+////   of Spell4Thresholds 125, 123 and 124.
 
 import database_support
 import genesis_prime/game/spell_plan
 import genesis_prime/table/class
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_telegraph
+import genesis_prime/table/spell4_thresholds
+import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
+import genesis_prime/table/telegraph_damage
 import gleam/int
 import gleam/list
 import gleam/order
@@ -48,6 +68,11 @@ pub type Rows {
     spell4: List(List(Cell)),
     spell4_base: List(List(Cell)),
     spell4_effects: List(List(Cell)),
+    spell4_thresholds: List(List(Cell)),
+    spell4_aoe_target_constraints: List(List(Cell)),
+    spell4_valid_targets: List(List(Cell)),
+    spell4_telegraph: List(List(Cell)),
+    telegraph_damage: List(List(Cell)),
     spell_phases: List(List(Cell)),
     spell_cool_downs: List(List(Cell)),
     classes: List(List(Cell)),
@@ -77,7 +102,64 @@ fn spell4_row(
     #("globalCooldownEnum", Integer(kind)),
     #("spellCoolDownIdGlobal", Integer(global)),
     #("propertyFlags", Integer(property_flags(id))),
+    #("spell4AoeTargetConstraintsId", Integer(area_id(id))),
   ])
+}
+
+/// Spell4.spell4AoeTargetConstraintsId of the planted rows, as `table_rows -- Spell4
+/// <id>` prints it (`Spell4.58591.area`): 0 for a spell with no area row.
+fn area_id(id: Int) -> Int {
+  case id {
+    29_874 | 34_775 | 35_886 -> 701
+    30_436 | 41_276 | 41_438 -> 411
+    32_809 | 32_893 | 37_302 -> 345
+    32_812 | 42_276 -> 404
+    34_720 | 34_722 | 36_691 -> 407
+    38_767 | 39_467 -> 694
+    38_779 -> 699
+    38_780 -> 299
+    42_297 -> 704
+    43_498 | 43_499 -> 405
+    58_591 | 70_033 | 70_045 | 70_054 -> 640
+    58_832 -> 173
+    70_135 | 71_392 | 71_393 | 71_394 -> 342
+    _ -> 0
+  }
+}
+
+/// A Spell4AoeTargetConstraints row: the arc, the count of targets and the range, with
+/// the order Closest (1) and no minimum range, as the client's rows of the planted
+/// spells hold them.
+pub fn aoe_row(
+  id id: Int,
+  angle angle: Float,
+  count count: Int,
+  max_range max_range: Float,
+) -> List(Cell) {
+  aoe_row_selecting(id:, angle:, count:, max_range:, selection: 1)
+}
+
+/// The same with the order the area picks its targets in (`targetSelection`).
+pub fn aoe_row_selecting(
+  id id: Int,
+  angle angle: Float,
+  count count: Int,
+  max_range max_range: Float,
+  selection selection: Int,
+) -> List(Cell) {
+  planted_table.row(spell4_aoe_target_constraints.schema, [
+    #("ID", Integer(id)),
+    #("angle", Float(angle)),
+    #("targetCount", Integer(count)),
+    #("minRange", Float(0.0)),
+    #("maxRange", Float(max_range)),
+    #("targetSelection", Integer(selection)),
+  ])
+}
+
+/// The rows in the order of their ids, which the tables' files hold them in.
+pub fn sorted_by_id(rows: List(List(Cell))) -> List(List(Cell)) {
+  list.sort(rows, by_id)
 }
 
 /// Spell4.propertyFlags of the planted rows, as `table_rows -- Spell4 <id>` prints
@@ -92,6 +174,19 @@ fn property_flags(id: Int) -> Int {
     32_812 -> 0x4100003
     38_791 -> 0x4000003
     38_780 -> 0x103
+    42_276 -> 0x4000002
+    43_468 | 32_078 | 32_079 | 32_080 | 66_987 | 71_125 | 71_126 -> 0x4100002
+    58_832 | 41_276 -> 0x4000042
+    38_765 -> 0x4040003
+    38_766 | 38_767 | 39_467 -> 0x40003
+    58_524 -> 0x4100006
+    34_718 -> 0x4100402
+    34_720 | 38_779 -> 0x4000003
+    34_722 | 36_691 -> 0x3
+    37_302 -> 0x4220002
+    80_382 -> 0x100000
+    43_498 | 43_499 -> 0x4000000
+    70_033 | 70_045 | 70_054 | 70_135 | 71_392 | 71_393 | 71_394 -> 0x4000002
     _ -> 0
   }
 }
@@ -110,6 +205,50 @@ fn base_row(
     #("weaponSlot", Integer(weapon)),
     #("castBarType", Integer(bar)),
     #("classIdPlayer", Integer(class)),
+    #("spell4ValidTargetId", Integer(1)),
+  ])
+}
+
+/// A Spell4ValidTargets row 1, which every planted base names: the targets a spell
+/// may strike (`Spell4ValidTargets.targetBitmask`; the client's row 1 holds 0, the
+/// alive).
+pub fn valid_targets_row(bitmask bitmask: Int) -> List(Cell) {
+  planted_table.row(spell4_valid_targets.schema, [
+    #("ID", Integer(1)),
+    #("targetBitmask", Integer(bitmask)),
+  ])
+}
+
+/// A Spell4Effects row of a damage effect (type 8): its damage type, the unit it aims
+/// at, its delay, its multiplier as 32 float bits and the formula's parameters as
+/// type and value pairs, in every phase.
+pub fn damage_effect_row(
+  id id: Int,
+  spell spell: Int,
+  damage_type damage_type: Int,
+  target_flags target_flags: Int,
+  delay delay: Int,
+  multiplier_bits multiplier_bits: Int,
+  parameters parameters: List(#(Int, Float)),
+) -> List(Cell) {
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(spell)),
+    #("targetFlags", Integer(target_flags)),
+    #("effectType", Integer(8)),
+    #("damageType", Integer(damage_type)),
+    #("delayTime", Integer(delay)),
+    #("phaseFlags", Integer(-1)),
+    #("dataBits00", Integer(multiplier_bits)),
+    ..list.flatten(
+      list.index_map(parameters, fn(parameter, index) {
+        let number = int.to_string(index)
+        [
+          #("parameterType0" <> number, Integer(parameter.0)),
+          #("parameterValue0" <> number, Float(parameter.1)),
+        ]
+      }),
+    )
   ])
 }
 
@@ -124,6 +263,7 @@ pub fn effect_row(
   delay delay: Int,
   phases phases: Int,
   data data: Int,
+  order order: Int,
 ) -> List(Cell) {
   planted_table.row(spell4_effects.schema, [
     #("ID", Integer(id)),
@@ -133,15 +273,94 @@ pub fn effect_row(
     #("delayTime", Integer(delay)),
     #("phaseFlags", Integer(phases)),
     #("dataBits00", Integer(data)),
+    #("orderIndex", Integer(order)),
   ])
 }
 
-fn phase_row(id id: Int, delay delay: Int, order order: Int) -> List(Cell) {
+/// A Proxy effect that applies only behind a caster prerequisite
+/// (`Spell4Effects.prerequisiteIdCasterApply`).
+pub fn proxy_behind_prerequisite(
+  id id: Int,
+  spell spell: Int,
+  phases phases: Int,
+  data data: Int,
+  prerequisite prerequisite: Int,
+  order order: Int,
+) -> List(Cell) {
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(spell)),
+    #("targetFlags", Integer(1)),
+    #("effectType", Integer(26)),
+    #("phaseFlags", Integer(phases)),
+    #("dataBits00", Integer(data)),
+    #("prerequisiteIdCasterApply", Integer(prerequisite)),
+    #("orderIndex", Integer(order)),
+  ])
+}
+
+/// A SpellPhase row of an owner: its delay, flags and place in the owner's order.
+pub fn phase_row(
+  id id: Int,
+  owner owner: Int,
+  order order: Int,
+  delay delay: Int,
+  flags flags: Int,
+) -> List(Cell) {
   planted_table.row(spell_phase.schema, [
     #("ID", Integer(id)),
     #("phaseDelay", Integer(delay)),
+    #("phaseFlags", Integer(flags)),
     #("orderIndex", Integer(order)),
-    #("spell4IdOwner", Integer(38_780)),
+    #("spell4IdOwner", Integer(owner)),
+  ])
+}
+
+/// A Spell4Thresholds row: the spell it belongs to, the stage it casts, its place
+/// and thresholdDuration, and its first cost.
+pub fn threshold_row(
+  id id: Int,
+  parent parent: Int,
+  to_cast to_cast: Int,
+  order order: Int,
+  duration duration: Int,
+  cost cost: #(Int, Int),
+) -> List(Cell) {
+  planted_table.row(spell4_thresholds.schema, [
+    #("ID", Integer(id)),
+    #("spell4IdParent", Integer(parent)),
+    #("spell4IdToCast", Integer(to_cast)),
+    #("orderIndex", Integer(order)),
+    #("thresholdDuration", Integer(duration)),
+    #("vitalEnumCostType00", Integer(cost.0)),
+    #("vitalCostValue00", Integer(cost.1)),
+  ])
+}
+
+/// A Spell4 row of a spell of the cast methods: the columns of the client's row
+/// that the plan reads, and the more of them (`thresholdTime`, the channel times)
+/// that this row sets.
+pub fn method_spell_row(
+  id id: Int,
+  base base: Int,
+  cast_time cast_time: Int,
+  cooldown cooldown: Int,
+  kind kind: Int,
+  global global: Int,
+  cost cost: #(Int, Int),
+  more more: List(#(String, Int)),
+) -> List(Cell) {
+  planted_table.row(spell4.schema, [
+    #("ID", Integer(id)),
+    #("spell4BaseIdBaseSpell", Integer(base)),
+    #("castTime", Integer(cast_time)),
+    #("spellCoolDown", Integer(cooldown)),
+    #("innateCostType0", Integer(cost.0)),
+    #("innateCost0", Integer(cost.1)),
+    #("globalCooldownEnum", Integer(kind)),
+    #("spellCoolDownIdGlobal", Integer(global)),
+    #("propertyFlags", Integer(property_flags(id))),
+    ..list.map(more, fn(column) { #(column.0, Integer(column.1)) })
   ])
 }
 
@@ -168,6 +387,14 @@ pub fn rows() -> Rows {
         #(1188, 2, 41_438),
         #(1185, 2, 41_276),
         #(1236, 7, 34_355),
+        #(1111, 2, 42_276),
+        #(1011, 7, 43_468),
+        #(631, 4, 58_832),
+        #(780, 5, 38_765),
+        #(919, 1, 32_078),
+        #(920, 1, 58_524),
+        #(1036, 7, 34_718),
+        #(807, 5, 38_779),
       ],
       fn(row) {
         planted_table.row(spell_level.schema, [
@@ -201,16 +428,6 @@ pub fn rows() -> Rows {
         global: 0,
       ),
       spell4_row(
-        id: 41_276,
-        base: 25_473,
-        cast_time: 0,
-        cooldown: 0,
-        range: 25.0,
-        cost: #(0, 0),
-        kind: 3,
-        global: 0,
-      ),
-      spell4_row(
         id: 34_355,
         base: 20_325,
         cast_time: 0,
@@ -228,7 +445,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 30_436,
@@ -238,7 +455,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 32_893,
@@ -258,7 +475,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 32_809,
@@ -308,7 +525,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 35_886,
@@ -318,7 +535,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 38_791,
@@ -338,7 +555,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 115,
       ),
       spell4_row(
         id: 38_781,
@@ -348,75 +565,403 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
+      ),
+      method_spell_row(
+        id: 42_276,
+        base: 26_468,
+        cast_time: 1250,
+        cooldown: 0,
+        kind: 0,
+        global: 125,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 43_468,
+        base: 27_638,
+        cast_time: 1000,
+        cooldown: 0,
+        kind: 0,
+        global: 82,
+        cost: #(0, 0),
+        more: [
+          #("channelInitialDelay", 366),
+          #("channelMaxTime", 1000),
+          #("channelPulseTime", 634),
+        ],
+      ),
+      method_spell_row(
+        id: 58_832,
+        base: 38_201,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 159,
+        cost: #(0, 0),
+        more: [
+          #("channelInitialDelay", 410),
+          #("channelMaxTime", 1250),
+          #("channelPulseTime", 410),
+        ],
+      ),
+      method_spell_row(
+        id: 41_276,
+        base: 25_473,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 125,
+        cost: #(6, 8),
+        more: [
+          #("channelInitialDelay", 500),
+          #("channelMaxTime", 3000),
+          #("channelPulseTime", 500),
+        ],
+      ),
+      method_spell_row(
+        id: 38_779,
+        base: 23_161,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 146,
+        cost: #(8, 35),
+        more: [],
+      ),
+      method_spell_row(
+        id: 38_765,
+        base: 23_148,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 115,
+        cost: #(0, 0),
+        more: [#("thresholdTime", 4000)],
+      ),
+      method_spell_row(
+        id: 38_766,
+        base: 23_149,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 115,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 32_078,
+        base: 18_309,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 121,
+        cost: #(0, 0),
+        more: [#("thresholdTime", 4000)],
+      ),
+      method_spell_row(
+        id: 32_079,
+        base: 18_310,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 32_080,
+        base: 18_311,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 58_524,
+        base: 37_968,
+        cast_time: 0,
+        cooldown: 8000,
+        kind: 0,
+        global: 103,
+        cost: #(0, 0),
+        more: [#("thresholdTime", 4000)],
+      ),
+      method_spell_row(
+        id: 66_987,
+        base: 44_605,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 107,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 71_125,
+        base: 47_921,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 107,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 71_126,
+        base: 47_922,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 103,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 34_718,
+        base: 20_684,
+        cast_time: 0,
+        cooldown: 10_000,
+        kind: 0,
+        global: 82,
+        cost: #(0, 0),
+        more: [#("thresholdTime", 8200)],
+      ),
+      method_spell_row(
+        id: 34_720,
+        base: 20_686,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 82,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 34_722,
+        base: 20_688,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 82,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 36_691,
+        base: 22_175,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 82,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 37_302,
+        base: 22_522,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 125,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 43_498,
+        base: 27_668,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 145,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 43_499,
+        base: 27_669,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 145,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 43_500,
+        base: 27_670,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 100,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 80_382,
+        base: 26_759,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 100,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 38_767,
+        base: 23_150,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 100,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 39_467,
+        base: 23_799,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 100,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 70_033,
+        base: 47_099,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 70_045,
+        base: 47_103,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 70_054,
+        base: 47_104,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 70_135,
+        base: 47_164,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 71_392,
+        base: 48_101,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 71_393,
+        base: 48_102,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 71_394,
+        base: 48_103,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 121,
+        cost: #(0, 0),
+        more: [],
       ),
     ]
       |> list.sort(by_id),
     spell4_base: [
       base_row(id: 38_017, method: 0, weapon: 0, bar: 0, class: 1),
       base_row(id: 25_635, method: 0, weapon: 1, bar: 0, class: 2),
-      base_row(id: 25_473, method: 1, weapon: 1, bar: 0, class: 2),
+      base_row(id: 25_473, method: 1, weapon: 1, bar: 1, class: 2),
       base_row(id: 20_325, method: 0, weapon: 0, bar: 0, class: 7),
-      base_row(id: 11_781, method: 0, weapon: 0, bar: 1, class: 0),
-      base_row(id: 16_838, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 11_781, method: 0, weapon: 0, bar: 1, class: 7),
+      base_row(id: 16_838, method: 0, weapon: 0, bar: 0, class: 7),
       base_row(id: 19_102, method: 0, weapon: 0, bar: 1, class: 3),
-      base_row(id: 17_288, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 17_288, method: 0, weapon: 0, bar: 0, class: 3),
       base_row(id: 19_019, method: 0, weapon: 0, bar: 0, class: 3),
       base_row(id: 19_022, method: 0, weapon: 0, bar: 0, class: 3),
-      base_row(id: 26_488, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 26_488, method: 0, weapon: 0, bar: 0, class: 3),
       base_row(id: 16_322, method: 0, weapon: 1, bar: 1, class: 4),
-      base_row(id: 20_737, method: 0, weapon: 0, bar: 0, class: 0),
-      base_row(id: 21_506, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 20_737, method: 0, weapon: 1, bar: 0, class: 4),
+      base_row(id: 21_506, method: 0, weapon: 1, bar: 0, class: 4),
       base_row(id: 23_173, method: 0, weapon: 1, bar: 0, class: 5),
-      base_row(id: 23_162, method: 8, weapon: 0, bar: 0, class: 0),
-      base_row(id: 23_163, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 23_162, method: 8, weapon: 0, bar: 0, class: 5),
+      base_row(id: 23_163, method: 0, weapon: 1, bar: 0, class: 5),
+      base_row(id: 26_468, method: 8, weapon: 1, bar: 1, class: 2),
+      base_row(id: 27_638, method: 8, weapon: 1, bar: 1, class: 7),
+      base_row(id: 20_684, method: 7, weapon: 1, bar: 0, class: 7),
+      base_row(id: 38_201, method: 1, weapon: 1, bar: 1, class: 4),
+      base_row(id: 23_148, method: 6, weapon: 1, bar: 0, class: 5),
+      base_row(id: 23_161, method: 8, weapon: 1, bar: 0, class: 5),
+      base_row(id: 37_968, method: 6, weapon: 1, bar: 0, class: 1),
+      base_row(id: 18_309, method: 6, weapon: 1, bar: 0, class: 1),
+      base_row(id: 22_522, method: 8, weapon: 1, bar: 1, class: 2),
+      base_row(id: 27_668, method: 0, weapon: 0, bar: 0, class: 7),
+      base_row(id: 27_669, method: 0, weapon: 0, bar: 0, class: 7),
+      base_row(id: 27_670, method: 0, weapon: 0, bar: 0, class: 7),
+      base_row(id: 26_759, method: 0, weapon: 0, bar: 0, class: 4),
+      base_row(id: 23_150, method: 8, weapon: 1, bar: 0, class: 5),
+      base_row(id: 23_799, method: 8, weapon: 1, bar: 0, class: 5),
+      base_row(id: 47_099, method: 0, weapon: 1, bar: 0, class: 1),
+      base_row(id: 47_103, method: 0, weapon: 1, bar: 0, class: 1),
+      base_row(id: 47_104, method: 0, weapon: 1, bar: 0, class: 1),
+      base_row(id: 47_164, method: 0, weapon: 1, bar: 0, class: 1),
+      base_row(id: 48_101, method: 0, weapon: 1, bar: 0, class: 1),
+      base_row(id: 48_102, method: 0, weapon: 1, bar: 0, class: 1),
+      base_row(id: 48_103, method: 0, weapon: 1, bar: 0, class: 1),
+      base_row(id: 23_149, method: 6, weapon: 1, bar: 0, class: 5),
+      base_row(id: 18_310, method: 6, weapon: 0, bar: 0, class: 1),
+      base_row(id: 18_311, method: 6, weapon: 0, bar: 0, class: 1),
+      base_row(id: 44_605, method: 6, weapon: 1, bar: 0, class: 1),
+      base_row(id: 47_921, method: 6, weapon: 1, bar: 0, class: 1),
+      base_row(id: 47_922, method: 6, weapon: 1, bar: 0, class: 1),
+      base_row(id: 20_686, method: 7, weapon: 1, bar: 0, class: 7),
+      base_row(id: 20_688, method: 7, weapon: 0, bar: 0, class: 7),
+      base_row(id: 22_175, method: 7, weapon: 0, bar: 0, class: 7),
     ]
       |> list.sort(by_id),
     spell4_effects: [
-      effect_row(
-        id: 67_778,
-        spell: 34_355,
-        type_: 26,
-        target_flags: 1,
-        delay: 0,
-        phases: -1,
-        data: 25_190,
-      ),
-      effect_row(
-        id: 67_779,
-        spell: 34_355,
-        type_: 26,
-        target_flags: 1,
-        delay: 0,
-        phases: -1,
-        data: 30_436,
-      ),
-      effect_row(
-        id: 62_159,
-        spell: 32_893,
-        type_: 8,
-        target_flags: 4,
-        delay: 0,
-        phases: -1,
-        data: 1_065_353_216,
-      ),
-      effect_row(
-        id: 62_204,
-        spell: 32_893,
-        type_: 26,
-        target_flags: 4,
-        delay: 0,
-        phases: -1,
-        data: 30_900,
-      ),
       effect_row(
         id: 56_858,
         spell: 30_900,
         type_: 1,
         target_flags: 1,
-        delay: 0,
-        phases: -1,
+        delay: 10,
+        phases: 1,
         data: 6,
+        order: 0,
       ),
       effect_row(
         id: 62_007,
@@ -426,42 +971,67 @@ pub fn rows() -> Rows {
         delay: 100,
         phases: 1,
         data: 42_297,
+        order: 0,
       ),
       effect_row(
-        id: 95_950,
-        spell: 42_297,
+        id: 62_159,
+        spell: 32_893,
         type_: 8,
-        target_flags: 6,
+        target_flags: 4,
         delay: 0,
-        phases: 1,
+        phases: -1,
         data: 1_065_353_216,
+        order: 0,
       ),
       effect_row(
-        id: 70_001,
-        spell: 29_874,
+        id: 62_204,
+        spell: 32_893,
         type_: 26,
         target_flags: 4,
         delay: 0,
         phases: -1,
-        data: 34_775,
+        data: 30_900,
+        order: 1,
       ),
       effect_row(
-        id: 70_002,
-        spell: 29_874,
+        id: 67_778,
+        spell: 34_355,
         type_: 26,
-        target_flags: 4,
-        delay: 0,
-        phases: -1,
-        data: 35_886,
+        target_flags: 1,
+        delay: 200,
+        phases: 1,
+        data: 25_190,
+        order: 2,
       ),
       effect_row(
-        id: 83_853,
-        spell: 38_791,
+        id: 67_779,
+        spell: 34_355,
+        type_: 26,
+        target_flags: 1,
+        delay: 140,
+        phases: 1,
+        data: 30_436,
+        order: 3,
+      ),
+      effect_row(
+        id: 69_881,
+        spell: 29_874,
         type_: 26,
         target_flags: 1,
         delay: 0,
-        phases: 1,
-        data: 38_780,
+        phases: -1,
+        data: 34_775,
+        order: 1,
+      ),
+      effect_row(
+        id: 73_230,
+        spell: 29_874,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 35_886,
+        order: 2,
       ),
       effect_row(
         id: 83_823,
@@ -471,6 +1041,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 1,
         data: 38_781,
+        order: 0,
       ),
       effect_row(
         id: 83_824,
@@ -480,6 +1051,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 2,
         data: 38_781,
+        order: 1,
       ),
       effect_row(
         id: 83_825,
@@ -489,6 +1061,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 4,
         data: 38_781,
+        order: 2,
       ),
       effect_row(
         id: 83_826,
@@ -498,6 +1071,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 8,
         data: 38_781,
+        order: 3,
       ),
       effect_row(
         id: 83_829,
@@ -507,14 +1081,321 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 1,
         data: 1_065_353_216,
+        order: 0,
+      ),
+      effect_row(
+        id: 83_853,
+        spell: 38_791,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: 1,
+        data: 38_780,
+        order: 0,
+      ),
+      effect_row(
+        id: 95_950,
+        spell: 42_297,
+        type_: 8,
+        target_flags: 6,
+        delay: 0,
+        phases: 1,
+        data: 1_065_353_216,
+        order: 1,
+      ),
+      effect_row(
+        id: 95_881,
+        spell: 42_276,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: 2,
+        data: 37_302,
+        order: 0,
+      ),
+      proxy_behind_prerequisite(
+        id: 196_513,
+        spell: 43_468,
+        phases: 2,
+        data: 43_498,
+        prerequisite: 17_301,
+        order: 0,
+      ),
+      proxy_behind_prerequisite(
+        id: 196_514,
+        spell: 43_468,
+        phases: 4,
+        data: 43_499,
+        prerequisite: 17_301,
+        order: 1,
+      ),
+      proxy_behind_prerequisite(
+        id: 196_515,
+        spell: 43_468,
+        phases: 8,
+        data: 43_498,
+        prerequisite: 17_301,
+        order: 2,
+      ),
+      proxy_behind_prerequisite(
+        id: 196_516,
+        spell: 43_468,
+        phases: 8,
+        data: 43_500,
+        prerequisite: 17_301,
+        order: 3,
+      ),
+      proxy_behind_prerequisite(
+        id: 196_517,
+        spell: 43_468,
+        phases: 2,
+        data: 43_499,
+        prerequisite: 17_302,
+        order: 4,
+      ),
+      proxy_behind_prerequisite(
+        id: 196_518,
+        spell: 43_468,
+        phases: 4,
+        data: 43_498,
+        prerequisite: 17_302,
+        order: 5,
+      ),
+      proxy_behind_prerequisite(
+        id: 196_519,
+        spell: 43_468,
+        phases: 8,
+        data: 43_499,
+        prerequisite: 17_302,
+        order: 6,
+      ),
+      proxy_behind_prerequisite(
+        id: 196_522,
+        spell: 43_468,
+        phases: 1,
+        data: 43_500,
+        prerequisite: 17_302,
+        order: 8,
+      ),
+      effect_row(
+        id: 173_926,
+        spell: 58_832,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 80_382,
+        order: 1,
+      ),
+      effect_row(
+        id: 83_776,
+        spell: 38_765,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: 1,
+        data: 38_767,
+        order: 0,
+      ),
+      effect_row(
+        id: 83_782,
+        spell: 38_766,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: 1,
+        data: 39_467,
+        order: 0,
+      ),
+      effect_row(
+        id: 177_146,
+        spell: 32_078,
+        type_: 26,
+        target_flags: 1,
+        delay: 266,
+        phases: -1,
+        data: 70_033,
+        order: 0,
+      ),
+      effect_row(
+        id: 177_158,
+        spell: 32_079,
+        type_: 26,
+        target_flags: 1,
+        delay: 400,
+        phases: -1,
+        data: 70_045,
+        order: 0,
+      ),
+      effect_row(
+        id: 177_171,
+        spell: 32_080,
+        type_: 26,
+        target_flags: 1,
+        delay: 400,
+        phases: -1,
+        data: 70_054,
+        order: 0,
+      ),
+      effect_row(
+        id: 177_439,
+        spell: 58_524,
+        type_: 26,
+        target_flags: 1,
+        delay: 333,
+        phases: -1,
+        data: 70_135,
+        order: 0,
+      ),
+      effect_row(
+        id: 177_498,
+        spell: 66_987,
+        type_: 26,
+        target_flags: 1,
+        delay: 100,
+        phases: -1,
+        data: 71_392,
+        order: 0,
+      ),
+      effect_row(
+        id: 182_203,
+        spell: 71_125,
+        type_: 26,
+        target_flags: 1,
+        delay: 166,
+        phases: -1,
+        data: 71_393,
+        order: 0,
+      ),
+      effect_row(
+        id: 182_204,
+        spell: 71_126,
+        type_: 26,
+        target_flags: 1,
+        delay: 400,
+        phases: -1,
+        data: 71_394,
+        order: 0,
       ),
     ]
       |> list.sort(by_id),
+    spell4_thresholds: [
+      threshold_row(
+        id: 238,
+        parent: 38_765,
+        to_cast: 38_766,
+        order: 0,
+        duration: 0,
+        cost: #(0, 0),
+      ),
+      threshold_row(
+        id: 9,
+        parent: 32_078,
+        to_cast: 32_079,
+        order: 0,
+        duration: 0,
+        cost: #(0, 0),
+      ),
+      threshold_row(
+        id: 10,
+        parent: 32_078,
+        to_cast: 32_080,
+        order: 1,
+        duration: 0,
+        cost: #(0, 0),
+      ),
+      threshold_row(
+        id: 1073,
+        parent: 58_524,
+        to_cast: 66_987,
+        order: 0,
+        duration: 0,
+        cost: #(0, 0),
+      ),
+      threshold_row(
+        id: 1074,
+        parent: 58_524,
+        to_cast: 71_125,
+        order: 1,
+        duration: 0,
+        cost: #(0, 0),
+      ),
+      threshold_row(
+        id: 1075,
+        parent: 58_524,
+        to_cast: 71_126,
+        order: 2,
+        duration: 0,
+        cost: #(0, 0),
+      ),
+      threshold_row(
+        id: 125,
+        parent: 34_718,
+        to_cast: 34_720,
+        order: 0,
+        duration: 0,
+        cost: #(0, 0),
+      ),
+      threshold_row(
+        id: 123,
+        parent: 34_718,
+        to_cast: 34_722,
+        order: 1,
+        duration: 1000,
+        cost: #(0, 0),
+      ),
+      threshold_row(
+        id: 124,
+        parent: 34_718,
+        to_cast: 36_691,
+        order: 2,
+        duration: 1400,
+        cost: #(15, 0),
+      ),
+    ]
+      |> list.sort(by_id),
+    spell4_aoe_target_constraints: [
+      aoe_row(id: 173, angle: 180.0, count: 5, max_range: 15.0),
+      aoe_row(id: 299, angle: 360.0, count: 5, max_range: 8.0),
+      aoe_row(id: 342, angle: 180.0, count: 3, max_range: 8.0),
+      aoe_row(id: 345, angle: 360.0, count: 5, max_range: 30.0),
+      aoe_row(id: 404, angle: 360.0, count: 1, max_range: 25.0),
+      aoe_row(id: 405, angle: 360.0, count: 3, max_range: 25.0),
+      aoe_row(id: 407, angle: 360.0, count: 5, max_range: 35.0),
+      aoe_row(id: 411, angle: 360.0, count: 5, max_range: 25.0),
+      aoe_row(id: 640, angle: 180.0, count: 5, max_range: 8.0),
+      aoe_row(id: 694, angle: 360.0, count: 5, max_range: 6.5),
+      aoe_row(id: 699, angle: 360.0, count: 2, max_range: 7.0),
+      aoe_row(id: 701, angle: 180.0, count: 2, max_range: 25.0),
+      aoe_row(id: 704, angle: 360.0, count: 4, max_range: 4.0),
+    ],
+    spell4_valid_targets: [valid_targets_row(bitmask: 0)],
+    spell4_telegraph: [],
+    telegraph_damage: [],
     spell_phases: [
-      phase_row(id: 3717, delay: 166, order: 0),
-      phase_row(id: 3718, delay: 200, order: 1),
-      phase_row(id: 3719, delay: 167, order: 2),
-      phase_row(id: 3720, delay: 167, order: 3),
+      phase_row(id: 3717, owner: 38_780, order: 0, delay: 166, flags: 0),
+      phase_row(id: 3718, owner: 38_780, order: 1, delay: 200, flags: 0),
+      phase_row(id: 3719, owner: 38_780, order: 2, delay: 167, flags: 0),
+      phase_row(id: 3720, owner: 38_780, order: 3, delay: 167, flags: 0),
+      phase_row(id: 5390, owner: 42_276, order: 0, delay: 0, flags: 0),
+      phase_row(id: 5391, owner: 42_276, order: 1, delay: 1250, flags: 512),
+      phase_row(id: 5882, owner: 43_468, order: 0, delay: 0, flags: 0),
+      phase_row(id: 5883, owner: 43_468, order: 1, delay: 366, flags: 512),
+      phase_row(id: 5884, owner: 43_468, order: 2, delay: 200, flags: 0),
+      phase_row(id: 5885, owner: 43_468, order: 3, delay: 200, flags: 4),
+      phase_row(id: 5886, owner: 43_468, order: 4, delay: 234, flags: 0),
+      phase_row(id: 3715, owner: 38_779, order: 0, delay: 0, flags: 0),
+      phase_row(id: 3716, owner: 38_779, order: 1, delay: 300, flags: 384),
+      phase_row(id: 2820, owner: 37_302, order: 0, delay: 0, flags: 0),
+      phase_row(id: 2821, owner: 37_302, order: 1, delay: 1, flags: 0),
+      phase_row(id: 2822, owner: 37_302, order: 2, delay: 1, flags: 0),
+      phase_row(id: 2823, owner: 37_302, order: 3, delay: 1, flags: 0),
+      phase_row(id: 3712, owner: 38_767, order: 0, delay: 133, flags: 0),
+      phase_row(id: 3713, owner: 38_767, order: 1, delay: 300, flags: 0),
+      phase_row(id: 3714, owner: 38_767, order: 2, delay: 333, flags: 0),
+      phase_row(id: 4032, owner: 39_467, order: 0, delay: 133, flags: 0),
+      phase_row(id: 4033, owner: 39_467, order: 1, delay: 367, flags: 0),
+      phase_row(id: 4034, owner: 39_467, order: 2, delay: 266, flags: 0),
     ],
     spell_cool_downs: list.map(
       [
@@ -524,6 +1405,13 @@ pub fn rows() -> Rows {
         #(159, 1250),
         #(180, 750),
         #(213, 1000),
+        #(82, 1000),
+        #(103, 500),
+        #(107, 333),
+        #(115, 1000),
+        #(121, 750),
+        #(125, 1250),
+        #(146, 500),
       ],
       fn(row) {
         planted_table.row(spell_cool_down.schema, [
@@ -535,7 +1423,7 @@ pub fn rows() -> Rows {
     classes: [
       class_row(id: 3, slots: [5, 0, 0, 0, 0, 0, 0, 16]),
       class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16]),
-      class_row(id: 5, slots: [5, 0, 0, 0, 0, 0, 0, 16]),
+      class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16]),
     ],
   )
 }
@@ -579,6 +1467,11 @@ fn entries() -> List(table_store.Entry) {
     spell4.entry(),
     spell4_base.entry(),
     spell4_effects.entry(),
+    spell4_thresholds.entry(),
+    spell4_aoe_target_constraints.entry(),
+    spell4_valid_targets.entry(),
+    spell4_telegraph.entry(),
+    telegraph_damage.entry(),
     spell_phase.entry(),
     spell_cool_down.entry(),
     class.entry(),
@@ -591,6 +1484,14 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell4.schema, rows.spell4),
     planted_table.file(spell4_base.schema, rows.spell4_base),
     planted_table.file(spell4_effects.schema, rows.spell4_effects),
+    planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
+    planted_table.file(
+      spell4_aoe_target_constraints.schema,
+      rows.spell4_aoe_target_constraints,
+    ),
+    planted_table.file(spell4_valid_targets.schema, rows.spell4_valid_targets),
+    planted_table.file(spell4_telegraph.schema, rows.spell4_telegraph),
+    planted_table.file(telegraph_damage.schema, rows.telegraph_damage),
     planted_table.file(spell_phase.schema, rows.spell_phases),
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),
@@ -603,6 +1504,15 @@ pub fn with_loaded(
   rows rows: Rows,
   body body: fn(table_store.Tables) -> a,
 ) -> a {
+  with_loaded_deriving(rows:, derivations: [], body:)
+}
+
+/// The same with these derivations run on the load, which fails when one does.
+pub fn with_loaded_deriving(
+  rows rows: Rows,
+  derivations derivations: List(table_store.Derivation),
+  body body: fn(table_store.Tables) -> a,
+) -> a {
   let files = files_of(rows:)
   use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
@@ -611,7 +1521,7 @@ pub fn with_loaded(
       from: folder,
       entries: entries(),
       requirements: [],
-      derivations: [],
+      derivations:,
     )
     as "the planted spell tables load"
   let result = body(tables)

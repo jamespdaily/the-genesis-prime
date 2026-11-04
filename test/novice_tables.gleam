@@ -37,6 +37,7 @@ import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_telegraph
+import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
@@ -46,7 +47,9 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import planted_table.{type Cell, Boolean, Float, Integer}
+import spell_tables
 
 /// A Novice set the planted CharacterCreation rows hold: the row, its class and
 /// faction, the five armor pieces, the shield and the weapon.
@@ -774,22 +777,19 @@ const paralytic_surge_area = 173
 /// loadout's tests strike with, so a bot can kill a planted creature.
 pub fn spell4_effects_rows() -> List(List(Cell)) {
   [
-    planted_table.row(spell4_effects.schema, [
-      #("ID", Integer(96_125)),
-      #("spellId", Integer(42_352)),
-      #("targetFlags", Integer(4)),
-      #("effectType", Integer(8)),
-      #("damageType", Integer(2)),
-      #("delayTime", Integer(0)),
-      #("phaseFlags", Integer(-1)),
-      #("dataBits00", Integer(1_065_353_216)),
-      #("parameterType00", Integer(12)),
-      #("parameterType01", Integer(13)),
-      #("parameterType02", Integer(10)),
-      #("parameterValue00", Float(0.09350000321865082)),
-      #("parameterValue01", Float(0.09350000321865082)),
-      #("parameterValue02", Float(8.140000343322754)),
-    ]),
+    spell_tables.damage_effect_row(
+      id: 96_125,
+      spell: 42_352,
+      damage_type: 2,
+      target_flags: 4,
+      delay: 0,
+      multiplier_bits: 1_065_353_216,
+      parameters: [
+        #(12, 0.09350000321865082),
+        #(13, 0.09350000321865082),
+        #(10, 8.140000343322754),
+      ],
+    ),
   ]
 }
 
@@ -797,25 +797,18 @@ pub fn spell4_effects_rows() -> List(List(Cell)) {
 /// 15 m, 180 degrees, Closest.
 pub fn spell4_aoe_target_constraints_rows() -> List(List(Cell)) {
   [
-    planted_table.row(spell4_aoe_target_constraints.schema, [
-      #("ID", Integer(paralytic_surge_area)),
-      #("angle", Float(180.0)),
-      #("targetCount", Integer(5)),
-      #("minRange", Float(0.0)),
-      #("maxRange", Float(15.0)),
-      #("targetSelection", Integer(1)),
-    ]),
+    spell_tables.aoe_row(
+      id: paralytic_surge_area,
+      angle: 180.0,
+      count: 5,
+      max_range: 15.0,
+    ),
   ]
 }
 
 /// The planted Spell4ValidTargets row 1: bitmask 0, the alive (`Spell4ValidTargets.targetBitmask`).
 pub fn spell4_valid_targets_rows() -> List(List(Cell)) {
-  [
-    planted_table.row(spell4_valid_targets.schema, [
-      #("ID", Integer(1)),
-      #("targetBitmask", Integer(0)),
-    ]),
-  ]
+  [spell_tables.valid_targets_row(bitmask: 0)]
 }
 
 /// The planted Spell4 rows.
@@ -853,6 +846,53 @@ pub fn spell4_base_rows() -> List(List(Cell)) {
   })
 }
 
+/// Every planted row holds its ID in its first cell.
+fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
+  let assert [Integer(first_id), ..] = first
+    as "a planted row holds its ID first"
+  let assert [Integer(second_id), ..] = second
+    as "a planted row holds its ID first"
+  int.compare(first_id, second_id)
+}
+
+/// The planted files of the spell tables with the trees of `spell_tables` (each
+/// the client's own rows) in place of the plain Normal casts; Paralytic Surge,
+/// 42352, stays one instant Normal cast. A table keeps a slot for each id up to
+/// its highest, so the Spell4Effects file, whose rows have ids up to 196522, is
+/// about 1.5 MB: only the tests that cast an ability of another method load these
+/// (`character_tables.shared_with_spell_trees`), and the plain `files` stay small.
+pub fn spell_tree_files() -> List(#(String, BitArray)) {
+  let rows = spell_tables.rows()
+  [
+    planted_table.file(
+      spell4.schema,
+      list.append(rows.spell4, [
+        planted_table.row(spell4.schema, [
+          #("ID", Integer(42_352)),
+          #("spell4BaseIdBaseSpell", Integer(26_543)),
+        ]),
+      ])
+        |> list.sort(by_id),
+    ),
+    planted_table.file(
+      spell4_base.schema,
+      list.append(rows.spell4_base, [
+        planted_table.row(spell4_base.schema, [#("ID", Integer(26_543))]),
+      ])
+        |> list.sort(by_id),
+    ),
+    planted_table.file(spell4_effects.schema, rows.spell4_effects),
+    planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
+    planted_table.file(
+      spell4_aoe_target_constraints.schema,
+      rows.spell4_aoe_target_constraints,
+    ),
+    planted_table.file(spell_phase.schema, rows.spell_phases),
+    planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
+    planted_table.file(class.schema, rows.classes),
+  ]
+}
+
 /// The planted files of the tables only the loadout and the spell plans read,
 /// each by its file name.
 pub fn files() -> List(#(String, BitArray)) {
@@ -875,6 +915,7 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(spell4_telegraph.schema, []),
     planted_table.file(telegraph_damage.schema, []),
     planted_table.file(spell4_valid_targets.schema, spell4_valid_targets_rows()),
+    planted_table.file(spell4_thresholds.schema, []),
     planted_table.file(spell_phase.schema, []),
     planted_table.file(spell_cool_down.schema, []),
     planted_table.file(class.schema, []),
