@@ -52,6 +52,7 @@
 
 import argv
 import genesis_prime/dev_exit
+import genesis_prime/message/float32
 import genesis_prime/table/loader/tbl_file.{type Strings, Column, Field}
 import genesis_prime/table_folder
 import gleam/bit_array
@@ -381,10 +382,13 @@ fn read_cell(
 /// The float held in 32 bits, which is not a number when its exponent is all
 /// ones.
 fn float_of_bits(bits: Int) -> Result(Value, tbl_file.RecordError) {
-  case <<bits:size(32)>> {
-    <<value:size(32)-float, _:bits>> -> Ok(Float32(value:, bits:))
-    _ -> Error(tbl_file.NotARecord)
-  }
+  use held <- result.try(
+    float32.bits(number: bits) |> result.replace_error(tbl_file.NotARecord),
+  )
+  use value <- result.map(
+    float32.value(bits: held) |> result.replace_error(tbl_file.NotARecord),
+  )
+  Float32(value:, bits:)
 }
 
 fn render_row(row: Row) -> String {
