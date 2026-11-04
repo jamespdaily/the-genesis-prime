@@ -6957,6 +6957,162 @@ grade = "fairly sure"
 gap = "Read from the decompile."
 name = "RaiseAttackMissed"
 
+# The cast flow: what the client does with the unnamed fields of 0x7ff, 0x7f4 and 0x7fb, and a
+# short vital
+
+# 1. safe_by facts
+
+["opcode.0x7ff.caster_item_level"]
+statement = "Message 0x7ff's 16-bit value is the caster's item level. The client keeps it with the cast and reads it in one place: when it builds a buff's tooltip, it takes the last cast that applied the buff and, when the value is not 0, passes it to the tooltip text as the named argument CasterItemLevel. No client text uses that argument, so the value changes nothing on screen. 0 is the client's own 'none': the argument is left out. Safe value: 0."
+proof = "HandleSpellStart 0x1405a51a0 (saved C, hash 49fd5a78aaad3411) copies the message's word at 0x14 into the cast info at 0x20 (local_c8); InitCast 0x14053d1f0 (737aa5af0120fae9) copies the info to cast offset 0x68 with 0x14053d550 (8eb22adb6de47956), so the value sits at cast offset 0x88. Every 16-bit access at offset 0x88 in the client (llvm-objdump of .text, grep of word ptr [reg + 0x88], 18 sites): only 0x1405ba43e/0x1405ba47b in 0x1405ba2f0 and 0x1405bc94e/0x1405bc973 in 0x1405bc680 read a cast (FindCast of the last id in the buff's cast list at 0x40/0x48); the rest are in 0x1401a8xxx/0x1401adxxx and 0x14084xxxx, outside the spell code. 0x1405ba2f0 (49fd5a78aaad3411) and 0x1405bc680 (49fd5a78aaad3411): when the short is not 0, FUN_1404dda70 (a number argument) is added with the key L\"CasterItemLevel\" (wide string at 0x140b21360). 0x1405ba2f0 is the Lua Window method GetBuffTooltip: the pair at 0x140c5a460 holds the name pointer 0x140b21348 ('GetBuffTooltip') and 0x1405ba2f0. `client_files.py text --search CasterItemLevel`: 0 texts."
+grade = "fairly sure"
+gap = "That the value is an item level rests on the argument's name only. Reads of the cast's 32-bit word at 0x88 were not ruled out (the 16-bit value fills its low half; the high half is the info's 0x22, zeroed by the handler's memset)."
+
+["opcode.0x7ff.own_cast"]
+statement = "Message 0x7ff's first closing bit marks a cast the client would make itself. Every cast the client makes for its own player sets it (eight callers of StartLocalCast and the 0xc2 cast). The client reads it in two places, both when it shows a visual whose unit is the caster: with the bit set, or with the caster moved by the server, the visual takes placement 4; otherwise placement 5. Every unit the server creates or moves is server-moved, so the bit matters only for the player's own unit while the client controls it. Safe value: 1, which matches the client's own casts and changes nothing for any other caster."
+proof = "HandleSpellStart 0x1405a51a0 (49fd5a78aaad3411): the message's word at 0x48 to info 0x58 (local_90), so cast offset 0xc0. Readers of cast offset 0xc0 (grep of the saved C for '+ 0xc0)' in functions that also read the cast's caster at 0x154): ShowSpellMiss 0x140542a30 (737aa5af0120fae9) line 28 and 0x140543630 (737aa5af0120fae9) line 172: target == caster (0x154) and (cast 0xc0 != 0 or caster unit 0xd58 != 0) -> visual word 0x2c = 4, else 5. Unit 0xd58: set to 1 for every created unit by ApplyCreateMovementCommands 0x1404586e0 (line 22), to 0x638's second bit by HandleMessage0638 0x14057a830 (line 24), cleared by EnableClientMovementControl 0x14057a450 (line 23), set by HandleMessage0639 0x14057a790. The client's own casts zero a 200-byte info and set info 0x58 to 1: 0x14053bcc0 (local_b0), 0x140399780 (local_90), 0x140399630 (local_80), 0x14039bf20 (local_b0), 0x14039c1e0 (local_a0), CastAbilityBagSpell 0x14039a040 (local_b0), 0x14039c430 (local_90), 0x1403993c0 (local_90), 0x14039b340 (local_b0), 0x1403994f0 (local_90); each base minus 0x58."
+grade = "fairly sure"
+gap = "What placements 4 and 5 look like is not read (0x140578460 and the visual classes). Readers of cast offset 0xc0 through a base other than the cast's own pointer would be missed by the grep."
+
+["opcode.0x7ff.activate"]
+statement = "Message 0x7ff's second closing bit marks a creature activate cast (the cast the client makes when the player activates a creature or object, as with 0x14039c430). When it is set and the cast's primary target is a creature whose activate spells hold this spell, the cast takes the creature's activate cast time and its displayed name from the creature, and the caster's cast bar is shown whenever the cast has a cast time. With it clear, the spell's own cast time, name and cast bar rule apply (a Normal cast shows a cast bar when the spell has a cast time and its cast bar flag). Safe value for ability casts: 0."
+proof = "HandleSpellStart 0x1405a51a0 (49fd5a78aaad3411): the message's word at 0x4c to info 0x54 (local_94), so cast offset 0xbc. InitCast 0x14053d1f0 (737aa5af0120fae9): FindUnit of info 0x24 (primary target); when the unit has creature info (unit 0x18) and info 0x54 != 0, cast duration 0x50 = 0x14054e340 (8eb22adb6de47956: the entry's word 5 from 0x1407a1680, else the spell's own), cast name 0x198 = creature info 0x138, cast 0x348 from the entry's word 10. 0x1407a1680 (8eb22adb6de47956) looks the creature id up in the map at cast system 0x598, whose entries hold four spell ids at words 1 to 4; the map is built from creature info records by 0x140560f80 (49fd5a78aaad3411). StartCast 0x14053dd00 (49fd5a78aaad3411) line 44: SetUnitCast when 0x1407a1820(spell, info) != 0 or (cast 0x50 != 0 and cast 0xbc != 0). 0x1407a1820 (8eb22adb6de47956): cast method 0 or 10 -> spell 0x1c (cast time) != 0 and spell 0x2c != 0. The client sets info 0x54 = 1 only in 0x14039c430 (49fd5a78aaad3411: target from player 0x108, needs creature info, sends 0x97); the other nine cast starters leave it 0. Other cast offset 0xbc readers in the saved C (0x14056a260, 0x1405aa950, 0x1405d8c60, 0x140718120) read other objects."
+grade = "fairly sure"
+gap = "That the map's four spells and cast time are Creature2's spell4IdActivate00 to 03 and activateSpellCastTime is matched by meaning (the entry is built from the creature info record, not from named columns)."
+
+["opcode.0x7f4.effect_time"]
+statement = "The fourth 32-bit value of a go's effect info is the effect's lifetime in milliseconds from the go. The client gives each effect a timer that ends it: by default the effect's delay plus its Spell4Effects durationTime (the larger of the two for spells with flag 0x10000000); a non-zero value replaces that, and an effect whose Spell4Effects flags have bit 2 never ends. Safe value: 0, the client's own lifetime."
+proof = "ReadEffectInfo 0x140094890 (49fd5a78aaad3411) stores it at record 0xc. 0x14053d680 (8eb22adb6de47956) passes each 0x50-byte effect info to 0x140718120 (49fd5a78aaad3411), which makes the effect object and calls its init; every init reaches 0x1405d6880 (8eb22adb6de47956): object 0xb8 = delay (info 8); object 0xbc = delay + slot 9 (or the larger for spell flag 0x10000000 at spell 0x108); then iVar5 = info 0xc; if 0, object 0xbc; object 0xbc = that, or -1 when the effect row's 0x3c has bit 2; FUN_140195960(timer, object 0xbc, callback) arms the timer. Slot 9 of the damage effect class (bytes at 0x140b73e28: 0x1405da950) returns effect row 0x38: the in-memory Spell4Effects row is the file row shifted by 0x1c (durationTime at file offset 28, flags at 32; `gleam run -m genesis_prime/table_rows -- Spell4Effects --columns`)."
+grade = "fairly sure"
+gap = "That the timer's callback ends the effect is read from its use, not from 0x140252318. Only the damage effect's slot 9 was read; other effect classes may compute their own lifetime."
+
+["opcode.0x7f4.effect_bit"]
+statement = "The one bit after a go's effect result tag 0 is read and kept with the effect, and nothing in the client reads it. Safe value: 0."
+proof = "0x1400853f0 (8eb22adb6de47956): ReadBits8 1 into the effect info at 0x18. 0x1405d6880 (8eb22adb6de47956) and InitDamageEffect 0x1405d77a0 (49fd5a78aaad3411) copy info 0x18 to effect object 0x78. InitDamageEffect reads the payload only for tag 1 (slot 8 with info + 0x18). No byte read at offset 0x78 in llvm-objdump of 0x140530000 to 0x140600000 (the cast, effect and visual code); the other inits in 0x140718120's switch (0x1405d86a0, 0x1405d8bd0, 0x1405d91f0, 0x1405d9850, 0x1405d9db0, 0x1405d9f80, 0x1405da180, 0x1405da280, 0x1405da3f0) do not read info 0x18."
+grade = "fairly sure"
+gap = "A read through a 32-bit or wider load at 0x78, or outside the scanned range, would be missed."
+
+["opcode.0x7fb.time"]
+statement = "Message 0x7fb's 32-bit value per missed target is a time in milliseconds for the miss's visual and its AttackMissed event: the client adds it to an offset the caster's model gives for the spell's visual, and the sum stamps both. The client never tests it. Safe value: 0 (no time added)."
+proof = "0x14053f090 (llvm-objdump via the query process): 0x14053f1fc mov eax, dword ptr [rsi + 0x8] (the entry's value); 0x14053f205 mov dword ptr [rsp + local_110], eax; 0x14053f209 call ShowSpellMiss. Frame: four pushes and sub rsp, 0x118 (0x14053f090 to 0x14053f098), so local_110 is rsp + 0x28, the sixth argument. ShowSpellMiss 0x140542a30 (737aa5af0120fae9): 0x140542afc mov edx, dword ptr [rsp + Stack[0x30]] (the sixth argument), 0x140542b06 xor r9d, r9d, 0x140542b10 lea r8d, [r9 + 0x5], 0x140542b2d call 0x140542e70; the result is the first word of the miss visual and is copied to the first word of the AttackMissed event. 0x140542e70 (8eb22adb6de47956): returns value + extra, plus, when the caster unit's model (unit 0x16e8) has the spell's visual, its slot 0x1b0 answer for kind 5 (0 when -1). The fifth argument is not used."
+grade = "fairly sure"
+gap = "Whether the stamped word is a delay or a clock time is not read (0x140578460, 0x140577250); either way 0 adds nothing."
+
+["spell.empty_lists"]
+statement = "The cast messages' lists may be empty: a count of 0 is read without error for the initial positions and telegraph positions (0x7ff, 0x7fd, 0x7f4), the missiles (0x7f4) and the hit entries of a damage description. With none, the client stores no positions, launches no missiles and writes no extra combat log lines. Effects on screen: the client draws a spell's client missiles only for missiles the server names, so Zap, Telekinetic Strike, Mind Burst and Gamma Rays (each with Spell4 client missiles) show no missile; a telegraph placed from the server's positions is not drawn."
+proof = "Each reader takes the list's space with AllocateMessageSpace 0x1403374e0 (8eb22adb6de47956) of count x size: for size 0 it passes both size tests and returns the current position, which is not null, then skips the loop: 0x140095110 (0x7ff), 0x140094e10 (0x7fd, 8eb22adb6de47956), 0x1400953f0 (0x7f4, 8eb22adb6de47956), ReadDamageDescription 0x1400946c0 (49fd5a78aaad3411). Users: 0x14053d890 (8eb22adb6de47956) and ApplySpellGo 0x14053e5a0 (737aa5af0120fae9) insert each position into the cast's maps at 0x350 and 0x370 inside 'if count != 0'; readers walk the maps (0x14053f710, 0x140541130, 0x1405428d0, 0x1405458e0) or look a key up and take the not-found branch (0x140543630 line 563). Missiles: 0x1405450f0 (8eb22adb6de47956) does all its work inside 'if (go 0x40 != 0)', one Spell4ClientMissile lookup per server missile. Rows: `gleam run -m genesis_prime/table_rows -- Spell4 41438 32893 32809 29874` (spell4ClientMissileId00 7183; 3998 to 4004; 3966 to 3968; 5092, 7444), `-- Spell4Telegraph spell4Id=<id>` for the nine (all but Crush's 42297 and Stagger's 38781 have telegraphs)."
+grade = "fairly sure"
+gap = "Which of the nine abilities' telegraphs need server positions (the branch on the built telegraph record's flag bit 12 in 0x1405458e0) is not tied to a TelegraphDamage column; what a missile entry holds (its third value is compared with the cast's target) is not read. A live cast of Zap watched by a second client settles both."
+
+# 2. The result for a short vital
+
+["Spell4CastResult.vital_cost"]
+statement = "When a cast's vital cost cannot be paid the client gives 50 + n, CasterVitalCostResource0 to 6, for the caster's resource slot n, and shows the caster's class alert for that slot as a floater over the player (the SpellCastFailed event): Mind Burst (Psi Point, Esper slot 1) gives 51, 'Not enough Psi Points'; Gamma Rays (Actuator, Medic slots 1 to 5, the last failing slot) gives 55, 'Not enough Actuators'. A class with no alert for the slot shows 'Not enough Resources'. A 0x7fc with that result shows the same text. Because a new unit holds 0 of every resource, the client itself refuses both presses with these results until the server sends a resource value at least the cost."
+proof = "CheckInnateCost 0x1403b3320 and CheckClassResourceCost 0x1405e7980 (their records) give 51 for Mind Burst and 50 + the last matching slot for Gamma Rays (Medic slots 1 to 5 hold vital 18: Class.vitalEnumResource00). HandleSpellCastResult 0x1405a5010 (8eb22adb6de47956) calls 0x1403a12a0 (8eb22adb6de47956) with the result, which builds the text with 0x1405648a0 (8eb22adb6de47956) and raises 'SpellCastFailed' (iiUUSS) with the Spell4CastResult row's combatMessageTypeEnum and id; FloatText.lua 131 shows strMessage over unitSource. 0x1405648a0: the row from 0x140237240 (table 'Spell4CastResult'), text id row 0x14 (localizedTextIdDisplayText); cases 0x32 to 0x38 replace it with the caster's Class row (0x1401f31e0 of unit 0xdc) word 0x84 + 4 x (result - 50), falling back when 0. `gleam run -m genesis_prime/table_rows -- Spell4CastResult 50 51 55 285` (51 CasterVitalCostResource1 text 119721, 55 text 119725, both 'Not enough Resources'; 285 'Illegal spell cast'); `-- Class --columns` (localizedTextIdResourceAlert00 at offset 132); `-- Class 3 4` (Esper alert01 154947; Medic alert05 404745); `client_files.py text 154947 404745`: 'Not enough Psi Points', 'Not enough Actuators'. ConstructUnit 0x140454380 (its record) zeroes the slots."
+grade = "fairly sure"
+gap = "FloatText shows the floater only with its spell error option on; the option's default is not read. A live press of Mind Burst on a new Esper settles what the client shows."
+
+# 3. The Battle Beast's crit, deflect and glance
+
+["Creature2.73464.crit_deflect_glance"]
+statement = "The Virtual Battle Beast (and the Virtual Defense Dagun, 73465) at level 1 has base deflect chance (property 101) 0.016, base crit chance (102) 0.016, base crit deflect chance (105) 0 and base glance chance (164) 0, and ratings 0 for deflect (33), crit (34), crit deflect (43) and glance (58). By the client's rating-to-percent at rating 0 each chance is its base: crit 1.6%, deflect 1.6%, crit deflect 0%, glance 0%."
+proof = "GetCreatureProperty 0x1404585c0 (8eb22adb6de47956): no override (Creature2OverrideProperties has only 40 and 42 for both), UnitProperty2 flags bit 0 clear (68 for 101, 102, 105, 164; 596 for 58), value = CreatureLevel row (level, or row 101 at column property - 100 for properties above 99) x Creature2ArcheType multiplier x Creature2Difficulty x Creature2Tier. Rows: `gleam run -m genesis_prime/table_rows -- CreatureLevel 1 101` (row 101 unitPropertyValue01 0.05, 02 0.05, 05 0, 64 0; row 1 unitPropertyValue33, 34, 43, 58 all 0), `-- Creature2ArcheType 1 10` (multipliers 033, 034, 043, 058, 101, 102, 105, 164 all 1.0), `-- Creature2Difficulty 1` (101, 102, 105: 0.32; the others 1.0), `-- Creature2Tier 1` (all 1.0), `-- UnitProperty2 33 34 43 58 101 102 105 164`. 0.05 x 1.0 x 0.32 x 1.0 in float32 = 0.016 (bits 0x3c83126f, scratch Python struct line). RatingToPercent 0x140453b60 (sure): rating 0 is below the knee, so p = int0 = 0 and the result is min(0 + base, int01 / 100); `-- GameFormula 1231 1235 1236 1245`: int0 0 and int01 100 in each (crit 1231, deflect 1235, crit deflect 1236, glance 1245, as 0x140453b60.callers maps them)."
+grade = "fairly sure"
+gap = "How the server combines the target's deflect with the attacker's strikethrough, and the crit deflect with a crit, is the server's rule; the client's combat code that would combine them is not read. The base and rating roles of rows 1235, 1236 and 1245 are from 0x140453b60.callers, whose argument order is read only for crit."
+
+# Functions named by this decode
+
+["0x1405a51a0"]
+statement = "Handles message 0x7ff: copies its fields into a cast info record (spell, root, parent, cast id, caster, the item level, primary target, the two closing bits), creates and starts the cast, and starts the player's global cooldown when the player is the caster."
+proof = "Saved C 0x1405a51a0.c (hash 49fd5a78aaad3411): memset of a 200-byte info, the copies at 0, 4, 8, 0x18, 0x1c, 0x20, 0x24, 0x54, 0x58; CreateCast, FindCast, 0x14053d890, StartCast 0x14053dd00, StartGlobalCooldown."
+grade = "fairly sure"
+gap = "Read from the decompile; the tail that clears action bar shortcuts (0x1407a0390) is not read."
+name = "HandleSpellStart"
+
+["0x14053dd00"]
+statement = "Starts a cast: marks it started, shows it as the caster's current cast when the spell has a cast bar or the cast is an activate cast with a cast time, turns the caster to the target for spells that face it, and starts its visuals."
+proof = "Saved C 0x14053dd00.c (hash 49fd5a78aaad3411): cast 0x150 = 2; FindUnit of the caster; SetUnitCast when 0x1407a1820 != 0 or (cast 0x50 and cast 0xbc); spell flags 0x108 bit 1 -> facing; 0x140540c10."
+grade = "fairly sure"
+gap = "The tail for the player's own spells (0x1403982a0 comparisons) is not read."
+name = "StartCast"
+
+["0x1407a1820"]
+statement = "Says whether a cast shows a cast bar, by the spell's cast method: Normal and method 10 when the spell has a cast time and its cast bar flag; method 1 when root equals the spell or with the flag and a cast time record; method 2 always; methods 3 and 9 never; method 8 with a cast time or the flag; method 7 with its own flag or a cast time."
+proof = "Saved C 0x1407a1820.c (hash 8eb22adb6de47956): switch on spell 0x18 (cast method), reads spell 0x1c, 0x2c, 0x184 and spell record 0x50."
+grade = "fairly sure"
+gap = "That spell 0x2c is the cast bar flag is inferred from this use."
+name = "SpellShowsCastBar"
+
+["0x14054e340"]
+statement = "Gives an activate cast's cast time: the target creature's activate entry's cast time when the creature lists the spell and the time is not 0, else the spell's own cast time."
+proof = "Saved C 0x14054e340.c (hash 8eb22adb6de47956): 0x1407a1680 with creature info 0x18 and the spell id; entry word 5, else spell 0x1c."
+grade = "fairly sure"
+gap = "As opcode.0x7ff.activate."
+name = "GetActivateCastTime"
+
+["0x1407a1680"]
+statement = "Finds a creature's activate entry for a spell: looks the creature id up in the cast system's map of creatures with activate spells and returns the entry when one of its four spells is the given spell."
+proof = "Saved C 0x1407a1680.c (hash 8eb22adb6de47956): tree search of cast system 0x598 by key 0x20, then words 1 to 4 of the entry at node 0x28 compared with the spell."
+grade = "fairly sure"
+gap = "As opcode.0x7ff.activate."
+name = "FindCreatureActivateEntry"
+
+["0x14039c430"]
+statement = "Casts a creature's activate spell at the player's target (the spell given, or the client's default activate spell): refuses with 31 without a target unit, 91 when the target is not a creature, 100 when the target's activate state is missing, 4 for an unknown spell; otherwise starts a local cast marked as an activate cast and sends message 0x97."
+proof = "Saved C 0x14039c430.c (hash 49fd5a78aaad3411): codes 0x1f, 0x5b, 100, 4, 0x106; info 0x54 = 1 and 0x58 = 1; StartLocalCast; SendWorldMessage 0x97 with the cast's target and client id."
+grade = "fairly sure"
+gap = "The default spell (GameFormula 0x19e) and 0x97's layout are not read."
+name = "CastActivateSpell"
+
+["0x1405d6880"]
+statement = "Starts a spell effect on a target: copies the go's effect info, links the effect to its caster and target, and arms its end timer at the delay plus the effect's duration, or at the server's lifetime when the go gives one; an effect that does not end gets no timer."
+proof = "Saved C 0x1405d6880.c (hash 8eb22adb6de47956); see opcode.0x7f4.effect_time."
+grade = "fairly sure"
+gap = "As opcode.0x7f4.effect_time."
+name = "InitSpellEffect"
+
+["0x140542e70"]
+statement = "Gives a spell visual's time: a base plus an extra, plus the offset the caster's model gives for the spell's visual and the visual kind."
+proof = "Saved C 0x140542e70.c (hash 8eb22adb6de47956): param_2 + param_4, plus the caster unit's 0x16e8 object's answers at slots 0x198 and 0x1b0 (0 when -1), when the kind is not 0."
+grade = "fairly sure"
+gap = "Whether the result is a delay or a clock time is not read."
+name = "SpellVisualTime"
+
+["0x1405ba2f0"]
+statement = "The Lua Window method GetBuffTooltip: builds the tooltip text of the buff the window shows, with the buff's number and, when the cast that applied it carries an item level, the argument CasterItemLevel."
+proof = "Name pair at 0x140c5a460 (bytes 4813b24001000000f0a25b4001000000: 0x140b21348 'GetBuffTooltip', 0x1405ba2f0). Saved C 0x1405ba2f0.c (hash 49fd5a78aaad3411)."
+grade = "fairly sure"
+gap = "The window class it belongs to is not read."
+name = "WindowGetBuffTooltip"
+
+["0x1405648a0"]
+statement = "Builds the text a cast result shows: the Spell4CastResult row's display text, or for the vital cost results 50 to 56 (and 151, 177, 281 to 283) the caster's class alert for that resource when the class has one."
+proof = "Saved C 0x1405648a0.c (hash 8eb22adb6de47956): results above 0x14b give none; row from 0x140237240; text id row 0x14; switch cases 0x32 to 0x38 (Class row words 0x84 to 0x9c), 0x97, 0xb1 (Class 0xa0), 0x119 to 0x11b; GetLocalizedText."
+grade = "fairly sure"
+gap = "Cases 0x97 and 0x119 to 0x11b are not read."
+name = "BuildCastResultText"
+
+["0x1403a12a0"]
+statement = "Reports a failed cast to the player: logs it and raises the Lua event SpellCastFailed with the result's message type, the result, the player and its text and the spell's name; results 0 and 317 (Queued) report nothing."
+proof = "Saved C 0x1403a12a0.c (hash 8eb22adb6de47956): returns for result 0 or 0x13d; FUN_1400ea3e0(..., 'SpellCastFailed', 'iiUUSS', row word 4, row word 0, player, player, text, spell name)."
+grade = "fairly sure"
+gap = "The branches for results 2, 3, 67, 69 and the service token event are not read."
+name = "ReportCastFailure"
+
+["0x140237240"]
+statement = "Looks a row of the Spell4CastResult table up by its id."
+proof = "Saved C 0x140237240.c (hash 8eb22adb6de47956): the table name 'Spell4CastResult' (0x140a6d150) passed to the table lookup."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "GetSpell4CastResultRow"
+
+["0x1405450f0"]
+statement = "Launches a go's missiles: for each missile the server names, it looks up the spell's client missiles (Spell4ClientMissile rows) and starts their visuals; with no missiles it does nothing."
+proof = "Saved C 0x1405450f0.c (hash 8eb22adb6de47956): the whole body inside 'if (go 0x40 != 0)', loop over the go's 0x24-byte missiles; 'Spell4ClientMissile' (0x140a6d188) lookups for the spell's missile ids."
+grade = "fairly sure"
+gap = "The missile entry's fields are not read beyond the target compared with the cast's target."
+name = "LaunchSpellMissiles"
+
 # World spawns: what the world database's entity types mean, which creatures a player can
 # attack, which spawns the client would refuse and what limits the client's units
 
