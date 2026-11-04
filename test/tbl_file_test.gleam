@@ -245,6 +245,36 @@ pub fn a_file_is_placed_only_when_its_record_size_is_the_one_the_placement_rule_
     as "a header that says 32 is not the 24 the rule gives"
 }
 
+pub fn a_files_fields_are_given_only_with_an_id_first_and_the_record_size_the_rule_gives_test() -> Nil {
+  use <- owned_test.run(5000)
+  let described = fn(columns, record_size) {
+    Description(table: "Planted", record_size:, record_count: 0, columns:)
+  }
+  let with_id = [
+    column("ID", tbl_file.Integer32),
+    column("b", tbl_file.Utf16Text),
+    column("c", tbl_file.Integer32),
+  ]
+  assert tbl_file.fields(described(with_id, 24))
+    == Ok([
+      Field(column("ID", tbl_file.Integer32), offset: 0),
+      Field(column("b", tbl_file.Utf16Text), offset: 8),
+      Field(column("c", tbl_file.Integer32), offset: 16),
+    ])
+    as "game_table.schema: the string offset at 8, the last field at 16, the end 20 rounded up to 24"
+  assert tbl_file.fields(described(with_id, 32))
+    == Error(
+      tbl_file.NotPlaced(tbl_file.RecordSizeNotPlaced(placed: 24, header: 32)),
+    )
+    as "a header that says 32 is not the 24 the rule gives"
+  assert tbl_file.fields(described(
+      [column("a", tbl_file.Integer32), column("b", tbl_file.Utf16Text)],
+      16,
+    ))
+    == Error(tbl_file.NoIdColumn)
+    as "a first column not named id has no id, whatever the record size; a record size of 16 is the right one for these two columns, so only the id is wrong"
+}
+
 pub fn a_column_type_has_the_clients_type_code_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(

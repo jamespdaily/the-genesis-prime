@@ -375,6 +375,25 @@ pub fn place(description: Description) -> Result(List(Field), PlacementError) {
   }
 }
 
+/// Why a file's columns cannot be placed as the fields of a table with an id.
+pub type FieldsError {
+  /// The first column is not a 32-bit integer named `id`.
+  NoIdColumn
+  /// The record size is not the one the placement rule gives.
+  NotPlaced(error: PlacementError)
+}
+
+/// The fields of a table file: its columns placed in the record by `place`,
+/// when the first column is the id (`has_id_column`) and the record size is the
+/// one the rule gives.
+pub fn fields(description: Description) -> Result(List(Field), FieldsError) {
+  use <- bool.guard(
+    when: !has_id_column(description.columns),
+    return: Error(NoIdColumn),
+  )
+  place(description) |> result.map_error(NotPlaced)
+}
+
 /// The first difference between what the file says and the schema: the table's
 /// name and each column's name ignoring case (`MatchGameTableSchema`
 /// 0x1407c19f0), the column count, each column's type and the record size.

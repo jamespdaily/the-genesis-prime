@@ -69,15 +69,14 @@ pub fn render(
     when: list.contains(prelude_types, type_name),
     return: Error(ReservedTypeName(table)),
   )
-  use <- bool.guard(
-    when: !tbl_file.has_id_column(description.columns),
-    return: Error(NoIdColumn(table)),
-  )
   use placed <- result.try(
-    tbl_file.place(description)
+    tbl_file.fields(description)
     |> result.map_error(fn(error) {
-      let tbl_file.RecordSizeNotPlaced(placed:, header:) = error
-      LayoutDiffers(table:, placed:, header:)
+      case error {
+        tbl_file.NoIdColumn -> NoIdColumn(table)
+        tbl_file.NotPlaced(tbl_file.RecordSizeNotPlaced(placed:, header:)) ->
+          LayoutDiffers(table:, placed:, header:)
+      }
     }),
   )
   use fields <- result.try(name_fields(table, placed))

@@ -6,7 +6,6 @@
 //// set and is not listed, because only then does the sign change a value.
 
 import genesis_prime/table/loader/tbl_file
-import gleam/bool
 import gleam/list
 import gleam/result
 
@@ -202,12 +201,8 @@ pub fn unlisted(
   use tbl_file.Records(description:, bytes: records) <- result.try(
     tbl_file.records(bytes) |> result.replace_error(Nil),
   )
-  use <- bool.guard(
-    when: !tbl_file.has_id_column(description.columns),
-    return: Error(Nil),
-  )
   use fields <- result.map(
-    tbl_file.place(description) |> result.replace_error(Nil),
+    tbl_file.fields(description) |> result.replace_error(Nil),
   )
   let table = description.table
   let candidates =
@@ -256,7 +251,8 @@ fn holds_top_bit(record: BitArray, offset: Int) -> Bool {
   let last_byte = offset + 3
   case record {
     <<_:bytes-size(last_byte), top:size(1), _:bits>> -> top == 1
-    _ -> False
+    _ ->
+      panic as "a placed 32-bit field ends inside its record, because the record size is the placed fields' end rounded up (tbl_file.layout), and a record is read whole"
   }
 }
 
