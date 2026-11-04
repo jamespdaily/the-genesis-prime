@@ -510,7 +510,6 @@ fn files_with_looks(
       list.flatten([
         game_formula_rows(ids: [highest_level_formula], highest: 50),
         list.map(novice_tables.formulas(), novice_tables.game_formula_row),
-        combat_formula_rows(),
       ]),
     ),
     planted_table.file(
@@ -1058,35 +1057,6 @@ pub fn min_xp_for_level() -> List(Int) {
     12_562_350, 14_060_140, 15_698_220, 17_487_670, 19_437_010, 21_558_320,
     23_862_010, 26_360_090, 2_147_483_647,
   ]
-}
-
-/// The GameFormula rows of the hit rule's ratings, the client's own: 1230 strikethrough,
-/// 1231 crit chance, 1232 crit severity, 1234 mitigation, 1235 deflect, 1236 critical
-/// deflect, 1245 glance chance and 1271 glance amount (`genesis_prime/game/rating`).
-pub fn combat_formula_rows() -> List(List(Cell)) {
-  list.map(
-    [
-      #(1230, 0.003, 30.0, 5000.0, 100),
-      #(1231, 0.0025, 30.0, 7000.0, 100),
-      #(1232, 0.01, 250.0, 5500.0, 300),
-      #(1234, 0.008, 0.0, 7250.0, 75),
-      #(1235, 0.0015, 30.0, 7000.0, 100),
-      #(1236, 0.0025, 100.0, 778.0, 100),
-      #(1245, 0.005792, 60.0, 4000.0, 100),
-      #(1271, 0.0055, 75.0, 4000.0, 100),
-    ],
-    fn(formula) {
-      planted_table.row(game_formula.schema, [
-        #("ID", Integer(formula.0)),
-        #("dataint0", Integer(0)),
-        #("dataint01", Integer(formula.4)),
-        #("datafloat0", Float(50.0)),
-        #("datafloat01", Float(formula.1)),
-        #("datafloat02", Float(formula.2)),
-        #("datafloat03", Float(formula.3)),
-      ])
-    },
-  )
 }
 
 /// GameFormula rows of these ids, each with `highest` as its dataint0.

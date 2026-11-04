@@ -9,7 +9,9 @@
 
 import area_tables
 import client_tables
-import genesis_prime/game/area.{Cone, InsideRow, InsideShapes, Placement, Row}
+import genesis_prime/game/area.{
+  Box, Cone, InsideRow, InsideShapes, Placement, Row,
+}
 import genesis_prime/game/spell_area.{
   AimNotRead, MultiplierNotFinite, SelectionNotClosest, ShapeNotBuilt,
   TelegraphNotOnCaster, ValidTargetsNotAlive,
@@ -185,4 +187,25 @@ pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and
   assert list.length(stagger.phases) == 4
     && list.all(stagger.phases, fn(phase) { phase.selects_area })
     as "Stagger's 38780 selects at each of its four phases (Spell4.38791.area)"
+  let assert Ok(surge) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(42_352))
+    as "Paralytic Surge is in the areas"
+  assert surge.shapes
+    == [
+      Placement(
+        shape: Box(width: 8.0, length: 8.0),
+        ahead: 9.300000190734863,
+        aside: 0.0,
+        turn_degrees: 45.0,
+        grows_by_hit_radius: False,
+      ),
+      Placement(
+        shape: Cone(inner: 1.0, outer: 10.75, degrees: 62.5),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+        grows_by_hit_radius: False,
+      ),
+    ]
+    as "Spell4.42352.area: telegraph 2888, a box 8 wide and 8 long centred 9.3 m ahead and turned 45 degrees, and 2889, a cone from 1 to 10.75 m over 62.5 degrees, both with flag 0x200; it has no never-drawn twin, so both drawn shapes are its hit shapes"
 }

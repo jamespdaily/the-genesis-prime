@@ -21,7 +21,7 @@
 //// - Crush's 42297 has no telegraph row, so its area row alone decides (`Spell4.32812.area`).
 
 import genesis_prime/game/area.{
-  type Candidate, type Inside, type Point, Candidate, Cone, InsideRow,
+  type Candidate, type Inside, type Point, Box, Candidate, Cone, InsideRow,
   InsideShapes, Placement, Point, Pose, Rectangle, Row,
 }
 import gleam/float
@@ -155,6 +155,44 @@ pub fn a_unit_inside_the_telegraph_but_beyond_the_area_rows_range_is_not_struck_
     as "Crush's long cone runs 1 to 26 m (Spell4.32812.area)"
   assert by(25.1) == []
     as "inside the cone but past the area row's 25 m: the row caps the shape"
+}
+
+pub fn paralytic_surge_strikes_a_unit_in_its_box_only_in_its_cone_only_or_in_both_and_a_unit_in_neither_is_not_struck_test() -> Nil {
+  use <- owned_test.run(5000)
+  let box =
+    Placement(
+      shape: Box(width: 8.0, length: 8.0),
+      ahead: 9.3,
+      aside: 0.0,
+      turn_degrees: 45.0,
+      grows_by_hit_radius: False,
+    )
+  let cone =
+    Placement(
+      shape: Cone(inner: 1.0, outer: 10.75, degrees: 62.5),
+      ahead: 0.0,
+      aside: 0.0,
+      turn_degrees: 0.0,
+      grows_by_hit_radius: False,
+    )
+  let row =
+    Row(min_range: 0.0, max_range: 15.0, degrees: 180.0, target_count: 5)
+  // The box is a square turned 45 degrees about its centre, 9.3 m ahead: its corner
+  // nearest the caster is 9.3 - 5.66 = 3.64 m ahead and its farthest 14.96 m; the
+  // cone reaches 10.75 m within 31.25 degrees of the facing.
+  let candidates = [
+    beast(1, at(distance: 2.0, degrees: 0.0, yaw: 0.0)),
+    beast(2, at(distance: 9.3, degrees: 0.0, yaw: 0.0)),
+    beast(3, at(distance: 14.0, degrees: 0.0, yaw: 0.0)),
+    beast(4, at(distance: 12.0, degrees: 40.0, yaw: 0.0)),
+  ]
+  assert struck(candidates:, row:, inside: InsideShapes([box])) == [2, 3]
+    as "the box alone holds the unit in both and the unit 14 m ahead, past the cone's 10.75 m: Spell4.42352.area, telegraph 2888"
+  assert struck(candidates:, row:, inside: InsideShapes([cone])) == [1, 2]
+    as "the cone alone holds the unit 2 m ahead, short of the box's near corner, and the unit in both: telegraph 2889"
+  assert struck(candidates:, row:, inside: InsideShapes([box, cone]))
+    == [1, 2, 3]
+    as "inside either drawn shape (it has no never-drawn twin), and the unit at 40 degrees, 12 m is in neither and within the row's 15 m and 180 degrees: it is not struck"
 }
 
 pub fn a_unit_behind_telekinetic_strike_is_struck_by_the_area_row_and_not_by_its_rectangle_test() -> Nil {

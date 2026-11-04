@@ -12,8 +12,15 @@
 
 import cast_support as support
 import genesis_prime/game/cast.{Deflected, GoAsked, Hit}
+import genesis_prime/game/hit.{type Description, Description}
 import genesis_prime/message/cast_result
+import genesis_prime/message/combat_result
+import genesis_prime/message/damage_type
 import genesis_prime/message/miss_reason
+import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
+import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
+import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
+import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_miss.{SpellMiss}
 import genesis_prime/message/spell_missed
@@ -84,6 +91,116 @@ pub fn a_closed_round_writes_the_go_with_a_target_info_for_each_hit_unit_and_a_0
       SpellMiss(unit_id: 11, reason: miss_reason.Dodge, time_ms: 0),
     ])
     as "a deflect is an entry with reason 0 (Dodge), which the client shows as Deflect (opcode.0x7fb)"
+}
+
+/// What a landed blow of 14 Tech damage leaves in a description, the fields the
+/// client's number and combat log read (`opcode.0x7f4.target_info`).
+fn tech_hit(
+  combat_result combat_result: combat_result.CombatResult,
+) -> Description {
+  Description(
+    spell4_effects_id: 96_125,
+    delay_ms: 166,
+    damage: SpellDamageDescription(
+      raw_damage: 14,
+      scaled_raw_damage: 14,
+      absorbed: 0,
+      shield_absorbed: 0,
+      health_damage_with_overkill: 14,
+      overkill: 0,
+      glance: 0,
+      killed: 0,
+      combat_result:,
+      damage_type: damage_type.Tech,
+      hits: [],
+    ),
+  )
+}
+
+pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a_result_of_1_and_no_0x247_is_sent_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) = gone()
+  let #(_, effects) =
+    cast.went(
+      cast: state,
+      caster: support.caster(),
+      now: support.at(ms: 2260),
+      cast_id: first_cast,
+      phase: 0,
+      struck: [
+        Hit(unit_id: 10, descriptions: [
+          tech_hit(combat_result: combat_result.Hit),
+        ]),
+        Hit(unit_id: 11, descriptions: [
+          tech_hit(combat_result: combat_result.Critical),
+        ]),
+      ],
+    )
+  let assert [go, ..] = support.writes(effects:)
+  let assert Ok(go) = spell_go.decode(go.body)
+  let assert [first, second] = go.targets as "one target info for each Hit unit"
+  assert first.combat_result == combat_result.Hit
+    && second.combat_result == combat_result.Critical
+    as "GameLib.CodeEnumCombatResult: 2 is Hit and 1 is Critical, which the target info carries"
+  assert first.effects
+    == [
+      SpellEffectInfo(
+        spell4_effects_id: 96_125,
+        instance_id: 1,
+        delay_ms: 166,
+        field_4: 0,
+        result: spell_effect_result.Damage(SpellEffectDamage(
+          description: tech_hit(combat_result: combat_result.Hit).damage,
+        )),
+      ),
+    ]
+    as "the answer's description rides in the target info with the effect row and its delay (opcode.0x7f4.target_info)"
+  assert !list.contains(support.ids(frames: support.writes(effects:)), 0x0247)
+    as "the damage is shown by the 0x7f4 alone: no 0x247 type 3 is sent (0x140429630, 0x140563dc0)"
+}
+
+pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_casters_round_still_writes_its_go_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(first_state, _) = gone()
+  let #(second_state, _) = gone()
+  let assert Ok(#(second_state, ended)) =
+    cast.take(
+      cast: second_state,
+      message: cast.Cancelled,
+      body: support.cancel_body(
+        cast_id: first_cast,
+        reason: cast_result.SpellCancelled,
+        bit: 1,
+      ),
+      caster: support.caster(),
+      plans: support.plans(),
+      now: support.at(ms: 2300),
+    )
+    as "the other player's client ends its cast with reason 6 (opcode.0x801)"
+  assert support.ids(frames: support.writes(effects: ended)) == [0x07FE]
+    as "its cast ends with its 0x7fe"
+  let #(_, closed) =
+    cast.went(
+      cast: second_state,
+      caster: support.caster(),
+      now: support.at(ms: 2400),
+      cast_id: first_cast,
+      phase: 0,
+      struck: [Hit(unit_id: 10, descriptions: [])],
+    )
+  assert closed == [] as "its round closes with nothing to write"
+  let #(_, going) =
+    cast.went(
+      cast: first_state,
+      caster: support.caster(),
+      now: support.at(ms: 2400),
+      cast_id: first_cast,
+      phase: 0,
+      struck: [Hit(unit_id: 10, descriptions: [])],
+    )
+  assert list.take(support.ids(frames: support.writes(effects: going)), 1)
+    == [0x07F4]
+    as "the first caster's cast is its own state: its go is still written"
 }
 
 pub fn a_struck_unit_the_client_no_longer_shows_is_still_named_in_the_go_test() -> Nil {

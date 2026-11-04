@@ -610,17 +610,29 @@ pub type Formula {
   )
 }
 
-/// The client's GameFormula rows the item formulas and the health rule read.
+/// The client's GameFormula rows the item formulas, the health rule and the hit rule's
+/// ratings read: 1230 strikethrough, 1231 crit chance, 1232 crit severity, 1234
+/// mitigation, 1235 deflect, 1236 critical deflect, 1245 glance chance and 1271 glance
+/// amount are the hit rule's (`genesis_prime/game/rating`; `rating_support` builds the
+/// rule's formulas from them).
 pub fn formulas() -> List(Formula) {
   [
     Formula(67, 0, 0, 0.0, 0.0, 60.0, 1.0),
     Formula(547, 0, 0, 0.0, 0.0, 20.0, 1.0),
     Formula(548, 0, 0, 0.0, 0.0, 225.0, 1.0),
     Formula(549, 0, 0, 0.0, 0.0, 3.5999999046325684, 1.0),
+    Formula(1230, 0, 100, 50.0, 0.003, 30.0, 5000.0),
+    Formula(1231, 0, 100, 50.0, 0.0025, 30.0, 7000.0),
+    Formula(1232, 0, 300, 50.0, 0.01, 250.0, 5500.0),
+    Formula(1234, 0, 75, 50.0, 0.008, 0.0, 7250.0),
+    Formula(1235, 0, 100, 50.0, 0.0015, 30.0, 7000.0),
+    Formula(1236, 0, 100, 50.0, 0.0025, 100.0, 778.0),
+    Formula(1245, 0, 100, 50.0, 0.005792, 60.0, 4000.0),
     Formula(1260, 0, 0, 0.75, 1.25, 0.05000000074505806, 0.25),
     Formula(1261, 10_000, 250, 0.25, 1.0, 0.0, 0.0),
     Formula(1265, 0, 0, 0.25, 0.009999999776482582, 25.0, 25.0),
     Formula(1266, 0, 0, 0.25, 0.25, 0.0, 0.0),
+    Formula(1271, 0, 100, 50.0, 0.0055, 75.0, 4000.0),
     Formula(1286, 50, 0, 1000.0, 0.0, 6.800000190734863, 1.0),
     Formula(1288, 0, 0, 0.0, 0.0, 132.0, 1.0),
   ]
@@ -636,7 +648,17 @@ pub fn game_formula_row(formula: Formula) -> List(Cell) {
     #("datafloat01", Float(formula.float01)),
     #("datafloat02", Float(formula.float02)),
     #("datafloat03", Float(formula.float03)),
+    #("datafloat04", Float(fifth_float(formula.id))),
   ])
+}
+
+/// GameFormula's datafloat04, which no planted formula reads: 0 in every row the planted
+/// tables hold but the crit severity's, 1232, whose row holds 105.0.
+fn fifth_float(id: Int) -> Float {
+  case id {
+    1232 -> 105.0
+    _ -> 0.0
+  }
 }
 
 /// The planted CreatureLevel rows 1 to 50: id and Base Health (property 7).

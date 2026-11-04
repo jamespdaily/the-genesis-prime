@@ -231,7 +231,6 @@ pub fn the_sheets_power_factors_are_game_formula_1266s_two_values_test() -> Nil 
                 highest: 50,
               ),
               list.map(formulas, novice_tables.game_formula_row),
-              character_tables.combat_formula_rows(),
             ]),
           )
         False -> file

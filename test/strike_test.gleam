@@ -23,7 +23,7 @@ import genesis_prime/client_connection
 import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast.{type GoAsked, GoAsked}
 import genesis_prime/game/damage
-import genesis_prime/game/hit.{Rolls}
+import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/shown.{Exile, ShownCreature, ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
@@ -230,6 +230,64 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
     == [strike.StartTimer(timer: strike.strike_timer, after_ms: 1000)]
     as "one strike timer for the round's deadline, 1 s after the go"
   assert went(effects:) == [] as "the go is written when its round closes"
+}
+
+pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_and_the_players_base_chances_test() -> Nil {
+  use <- owned_test.run(5000)
+  let novice =
+    damage.Attacker(level: 1, assault_rating: 203.0625, support_rating: 55.6875)
+  let paralytic_surge =
+    DamageEffect(
+      effect_id: Spell4EffectsId(96_125),
+      damage_type: 2,
+      delay_ms: 0,
+      phase_flags: -1,
+      aim: AimsAtArea,
+      formula: damage.Formula(multiplier: 1.0, base: 0, parameters: [
+        damage.Parameter(kind: 12, value: 0.0935),
+        damage.Parameter(kind: 13, value: 0.0935),
+        damage.Parameter(kind: 10, value: 8.14),
+      ]),
+    )
+  let telekinetic_strike =
+    DamageEffect(
+      effect_id: Spell4EffectsId(62_159),
+      damage_type: 3,
+      delay_ms: 0,
+      phase_flags: -1,
+      aim: AimsAtArea,
+      formula: damage.Formula(multiplier: 1.0, base: 0, parameters: [
+        damage.Parameter(kind: 12, value: 0.336),
+        damage.Parameter(kind: 10, value: 18.0),
+      ]),
+    )
+  let #(_, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection: Selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [strike.Aimed(unit_id: 10, life: 3)],
+        blows: [paralytic_surge, telekinetic_strike],
+      ),
+      attacker: Attacker(..attacker(), stats: novice),
+      formulas: rating_support.formulas(),
+      entropy: entropy(rolls: [#(0, 0, 0)]),
+      now: at(ms: 1000),
+    )
+  let assert [strike.TellStrike(tell: strike_tell.Strike(offence:, ..), ..)] =
+    tells(effects:)
+    as "one strike for the one selected unit"
+  assert offence
+    == Offence(
+      blows: [
+        Blow(spell4_effects_id: 96_125, damage_type: 2, damage: 14, delay_ms: 0),
+        Blow(spell4_effects_id: 62_159, damage_type: 3, damage: 35, delay_ms: 0),
+      ],
+      crit_chance: 0.0,
+      crit_severity: 1.5,
+      strikethrough: 0.0,
+    )
+    as "a level-1 Novice's gear gives Assault Rating 203.0625 and Support Rating 55.6875, so Assault Power 50.77 and Support Power 13.92 (0x14064c960): Paralytic Surge is 0.0935 x 50.77 + 0.0935 x 13.92 = 6.05, rounded to 6, plus 8.14 for the level, 14.14, rounded to 14; Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0, 35 (0x140565600, Spell4Effects 96125 and 62159); the gear gives no critical hit, severity or strikethrough rating, so the player's base chances stand: 0, a severity of 1.5 and 0 (UnitProperty2 102, 127 and 104)"
 }
 
 pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_test() -> Nil {

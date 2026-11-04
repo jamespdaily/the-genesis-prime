@@ -324,6 +324,26 @@ pub fn a_creature_struck_while_it_lies_dead_refuses_without_news_test() -> Nil {
     as "a second strike finds the corpse: refused as dead, no 0x937"
 }
 
+pub fn a_viewer_that_arrives_mid_fight_is_sent_the_creature_at_its_current_health_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    feed(
+      state: watched_by_two(),
+      at_ms: 6000,
+      event: OwnEvent(Told(strike_of(damage: 14, cast_id: 1))),
+    )
+  let #(_, taken) =
+    feed(
+      state:,
+      at_ms: 7000,
+      event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
+    )
+  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
+    sent(taken)
+  assert creature_unit.health_of(unit:) == 38
+    as "the Beast has 52 health and the strike took 14: opcode.0x262.creature carries the current health in stat 0, so the bar a viewer sees is the one the others see"
+}
+
 pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dead_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =

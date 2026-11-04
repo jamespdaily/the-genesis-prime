@@ -46,7 +46,7 @@ import genesis_prime/client_connection.{
   AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CastFinished,
   CastStarted, CastWent, CreatureAppeared, FromHandOff, FromMap, FromSessions,
   FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer, SentBySessions,
-  TellChat, TellMoved, TellPeer,
+  SentByTarget, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -55,6 +55,7 @@ import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection.{Settings} as game_connection
 import genesis_prime/game/start_place.{type Place, Facing}
+import genesis_prime/game/strike_tell
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{
   AlreadyHeld, Holder, Kept, NoHolder, SessionKey, Take, Taken,
@@ -5499,4 +5500,179 @@ pub fn a_0x9a_outside_the_world_is_logged_as_unhandled_test() -> Nil {
   let #(_, taken) = read(in_select(), world_message(0x009A, press))
   assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x009A))]
     as "the cast rows are taken with the player in the world only (genesis_prime/game/routing)"
+}
+
+// ------------------------------------------- a creature's news and the caster's strike
+
+/// The Medic of level 1 in the world, who presses Paralytic Surge at bag index 2.
+fn medic_in_world() -> game_connection.State {
+  entered_as(Character(..world_character(), class_id: ClassId(4))).0
+}
+
+/// The 0x262 news of a Beast, as its process sends it, standing 3 m ahead of the
+/// Medic, who stands at the place the tests' character is saved at and faces -z.
+fn beast_appears(
+  unit_id unit_id: Int,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z: -563.18798828125,
+    )
+  let beast = spawn_support.beast_at(number: 1, place:)
+  sent_by_a_peer(news_of(
+    unit_id:,
+    news: CreatureAppeared(
+      unit: creature_unit.create(
+        spawn: beast,
+        unit_id:,
+        health: 52,
+        server_time_estimate_start: 0,
+      ),
+      life: 4,
+      place:,
+      hit_radius: beast.combat.hit_radius,
+      attackable: beast.combat.attackable,
+    ),
+  ))
+}
+
+/// A creature's news that is not its first.
+fn beast_news(
+  unit_id unit_id: Int,
+  news news: News,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  sent_by_a_peer(news_of(unit_id:, news:))
+}
+
+/// A press of Paralytic Surge.
+fn press_paralytic_surge(
+  state state: game_connection.State,
+  client_cast_id client_cast_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  read(
+    state,
+    world_message(
+      0x009A,
+      cast_support.press_body(
+        client_cast_id:,
+        bag_index: 2,
+        target: 0,
+        press: 1,
+      ),
+    ),
+  )
+}
+
+/// The strikes a step tells the creatures, as the creature's unit and the strike's key.
+fn strikes_told(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, strike_tell.Key)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Creature(unit_id:, ..),
+        request: client_connection.TellStrike(tell:),
+      )) -> Ok(#(unit_id, tell.key))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The creature's answer that a strike landed, as the connection is sent it.
+fn landed(key key: strike_tell.Key) -> Event(ConnectionEvent(Message, Answer)) {
+  OwnEvent(
+    Woken(
+      SentByTarget(answered: strike_tell.Answered(
+        key:,
+        outcome: strike_tell.Landed(descriptions: []),
+      )),
+    ),
+  )
+}
+
+/// The Beast units a press strikes, and the round closed with each one's answer.
+fn press_and_close(
+  state state: game_connection.State,
+  client_cast_id client_cast_id: Int,
+) -> #(game_connection.State, List(Int)) {
+  let #(state, taken) = press_paralytic_surge(state:, client_cast_id:)
+  let told = strikes_told(taken)
+  let state =
+    list.fold(told, state, fn(state, strike) {
+      feed(state, landed(key: strike.1)).0
+    })
+  #(state, list.map(told, fn(strike) { strike.0 }))
+}
+
+pub fn the_clients_picture_of_a_creature_follows_its_news_and_only_a_creature_it_shows_alive_is_struck_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(medic_in_world(), beast_appears(unit_id: 40))
+  let #(state, struck) = press_and_close(state:, client_cast_id: 1)
+  assert struck == [40]
+    as "Paralytic Surge's area (row 173: 15 m, 180 degrees) holds the Beast 3 m ahead that the client shows"
+  let #(state, taken) = feed(state, beast_news(unit_id: 40, news: Removed))
+  assert written_ids(taken) == [0x0355]
+  let #(state, struck) = press_and_close(state:, client_cast_id: 2)
+  assert struck == []
+    as "the 0x355 cleared the creature's entry: nothing is shown to strike"
+  let #(state, _) = feed(state, beast_appears(unit_id: 40))
+  let #(state, struck) = press_and_close(state:, client_cast_id: 3)
+  assert struck == [40] as "the respawn's 0x262 restores the entry, alive"
+  let #(state, taken) =
+    feed(state, beast_news(unit_id: 40, news: client_connection.Died))
+  assert written_ids(taken) == [0x088C]
+  let #(_, struck) = press_and_close(state:, client_cast_id: 4)
+  assert struck == []
+    as "a 0x88c marks the creature dead in the picture: a dead creature is never selected (Spell4ValidTargets.targetBitmask)"
+}
+
+pub fn a_creatures_health_or_death_is_not_written_for_a_unit_the_client_does_not_show_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state = medic_in_world()
+  let #(state, taken) =
+    feed(
+      state,
+      beast_news(
+        unit_id: 41,
+        news: client_connection.Health(health: 5, dead: False),
+      ),
+    )
+  assert written_ids(taken) == []
+    as "opcode.0x937: the client has no unit 41, so it is not sent a health for it"
+  let #(_, taken) =
+    feed(state, beast_news(unit_id: 41, news: client_connection.Died))
+  assert written_ids(taken) == [] as "opcode.0x88c: nor a death"
+}
+
+pub fn the_news_held_for_a_creature_that_is_removed_and_stands_again_before_the_round_closes_is_not_written_onto_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(medic_in_world(), beast_appears(unit_id: 40))
+  let #(state, taken) = press_paralytic_surge(state:, client_cast_id: 1)
+  let assert [#(40, key)] = strikes_told(taken)
+    as "the press strikes the Beast and its round is open"
+  let #(state, taken) =
+    feed(
+      state,
+      beast_news(
+        unit_id: 40,
+        news: client_connection.Health(health: 0, dead: True),
+      ),
+    )
+  assert written_ids(taken) == []
+    as "the health of a unit of an open round waits for the round's go"
+  let #(state, taken) = feed(state, beast_news(unit_id: 40, news: Removed))
+  assert written_ids(taken) == [0x0355]
+  let #(state, taken) = feed(state, beast_appears(unit_id: 40))
+  assert written_ids(taken) == [0x0262]
+  let #(_, taken) = feed(state, landed(key:))
+  let ids = written_ids(taken)
+  assert list.contains(ids, 0x07F4)
+    && !list.contains(ids, 0x0937)
+    && !list.contains(ids, 0x088C)
+    as "the round closes with its go, and the death meant for the unit that was removed is not written onto the one that stands again under its id (opcode.0x355)"
 }

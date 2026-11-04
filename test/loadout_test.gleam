@@ -318,7 +318,6 @@ fn files_with_formulas(
               highest: 50,
             ),
             list.map(formulas, novice_tables.game_formula_row),
-            character_tables.combat_formula_rows(),
           ]),
         )
       False -> file

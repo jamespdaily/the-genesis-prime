@@ -2790,6 +2790,26 @@ fn holds_a_finish(frames frames: List(Frame)) -> Bool {
   })
 }
 
+/// How many times the frames start Telekinetic Strike's Psi Point child, 30900, under
+/// the spell (0x7ff).
+fn psi_children(frames frames: List(Frame)) -> Int {
+  list.count(game_client.casts_in(frames:), fn(event) {
+    case event {
+      game_client.CastStarted(spell4_id: 30_900, parent_spell4_id: 32_893, ..) ->
+        True
+      game_client.CastStarted(..)
+      | game_client.CastRefused(..)
+      | game_client.CastConfirmed(..)
+      | game_client.CastWent(..)
+      | game_client.ThresholdOpened(..)
+      | game_client.ThresholdIndex(..)
+      | game_client.ThresholdClosed(..)
+      | game_client.ThresholdEnded(..)
+      | game_client.CastFinished(..) -> False
+    }
+  })
+}
+
 pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_telegraph_and_a_watcher_reads_the_same_fight_test() -> Nil {
   use <- owned_test.run(120_000)
   let started =
@@ -2892,6 +2912,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
           go.1 == [ahead]
         })
         == 2
+        && psi_children(frames:) == 2
       },
     )
   let goes = game_client.go_targets_in(frames: watched)
@@ -2914,23 +2935,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     })
     == healths
     as "the watcher reads the same 0x937 the caster did, then 0x88c"
-  let children =
-    list.count(game_client.casts_in(frames: watched), fn(event) {
-      case event {
-        game_client.CastStarted(spell4_id: 30_900, parent_spell4_id: 32_893, ..) ->
-          True
-        game_client.CastStarted(..)
-        | game_client.CastRefused(..)
-        | game_client.CastConfirmed(..)
-        | game_client.CastWent(..)
-        | game_client.ThresholdOpened(..)
-        | game_client.ThresholdIndex(..)
-        | game_client.ThresholdClosed(..)
-        | game_client.ThresholdEnded(..)
-        | game_client.CastFinished(..) -> False
-      }
-    })
-  assert children == 2
+  assert psi_children(frames: watched) == 2
     as "Proxy 62204 starts the Psi Point child 30900 on each struck unit (Spell4Effects.targetFlags 4): two hits, two children"
   // The Beast stands again after its respawn time: 0x355, then a full 0x262.
   let #(after_first, _) =

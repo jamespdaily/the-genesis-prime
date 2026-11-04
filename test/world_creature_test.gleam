@@ -451,7 +451,7 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
 
 pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn_seen_again_stands_full_with_its_unit_id_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = one_beast(respawn_ms: 400)
+  let world = one_beast(respawn_ms: 1000)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   let _player = join(run:, connection: 1)
@@ -466,6 +466,22 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
     cast_id: 1,
   )
   move_to(run:, connection: 1, x: far)
+  next(
+    received:,
+    what: "the corpse's 0x355 when the player left sight",
+    wanted: fn(message) {
+      case message {
+        SentByPeer(PeerNews(news: client_connection.Removed, ..)) -> Ok(Nil)
+        SentByPeer(..)
+        | SentByMap(..)
+        | client_connection.SentBySessions(..)
+        | client_connection.SentByTarget(..)
+        | client_connection.SentByChat(..) -> Error(Nil)
+      }
+    },
+  )
+  assert process.is_alive(pid)
+    as "a dead creature told to retire keeps its corpse and its respawn: the creature process lives until the respawn time (genesis_prime/world_map/creature), well after the player's 0x355 and the idle stop of 100 ms"
   event_wait.until("the dead creature stopped at its respawn", fn() {
     !process.is_alive(pid)
   })
