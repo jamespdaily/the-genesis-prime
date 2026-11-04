@@ -16,6 +16,7 @@
 import argv
 import envoy
 import filepath
+import genesis_prime/dev_exit
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
@@ -389,7 +390,7 @@ pub fn main() -> Nil {
       io.println(
         "usage: gleam run -m genesis_prime/table_generator write | check",
       )
-      halt_with(2)
+      dev_exit.halt(2)
     }
   }
 }
@@ -408,7 +409,7 @@ fn finish(
     Ok(value) -> report_success(value)
     Error(error) -> {
       io.println("the tables could not be generated: " <> describe(error))
-      halt_with(1)
+      dev_exit.halt(1)
     }
   }
 }
@@ -438,7 +439,7 @@ fn report_check(checked: Checked) -> Nil {
       io.println(
         "regenerate with: gleam run -m genesis_prime/table_generator write",
       )
-      halt_with(1)
+      dev_exit.halt(1)
     }
   }
 }
@@ -491,6 +492,3 @@ fn temporary_folder() -> String {
 
 @external(erlang, "table_generator_ffi", "scratch_folder")
 fn scratch_folder(base: String) -> String
-
-@external(erlang, "table_generator_ffi", "halt_with")
-fn halt_with(status: Int) -> Nil
