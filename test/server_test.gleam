@@ -75,19 +75,26 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_tw
   let world_children = supervisor_children.in_start_order(world)
   let assert Ok(maps) = process.named(settings.world.maps)
     as "Maps is registered"
+  let assert Ok(creature_supervisor) =
+    process.named(settings.world.creature_supervisor)
+    as "the creature supervisor is registered"
   let assert Ok(map_supervisor) = process.named(settings.world.map_supervisor)
     as "the map supervisor is registered"
-  assert world_children == [maps, map_supervisor]
-    as "the world subtree holds Maps, then the map supervisor: Maps starts first, so it stops last"
+  let assert [_creature_registry, ..after_the_registry] = world_children
+    as "the world subtree starts with the creatures' registry"
+  assert after_the_registry == [maps, creature_supervisor, map_supervisor]
+    as "the world subtree holds the creature registry, Maps, the creature supervisor, then the map supervisor: the registry starts first, so it stops last"
   assert supervisor_flags.read(world)
     == Flags(static_supervisor.RestForOne, 3, 10)
-    as "rest for one, so a restarted Maps, which knows no map, restarts the map supervisor after it, and every map ends with it"
+    as "rest for one, so a restarted registry or Maps, which knows no creature or map, restarts the supervisors after it, and every creature and map ends with it"
   assert supervisor_children.settings_in_start_order(world)
     == [
       ChildSettings(restart: Permanent, shutdown_ms: Some(1000)),
+      ChildSettings(restart: Permanent, shutdown_ms: Some(1000)),
+      ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: None),
     ]
-    as "Maps stops within a second; the map supervisor is a supervisor"
+    as "the creature registry and Maps stop within a second; the creature supervisor and the map supervisor are supervisors"
   let game_children = supervisor_children.in_start_order(game)
   assert list.length(game_children) == 2
     as "the game subtree holds the registry and the game listener"

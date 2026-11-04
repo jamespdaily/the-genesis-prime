@@ -89,6 +89,36 @@ pub fn all() -> List(ColumnSign) {
       evidence: "each GameFormula row has its own reader; no rule reads row 1026, which holds -2",
     ),
     ColumnSign(
+      table: "Creature2",
+      column: "tradeSkillIdTrainer",
+      sign: Unread,
+      evidence: "the spawns read only a creature's level, faction, display group and the ids and multipliers of its Base Health (genesis_prime/world_map/spawn); no rule reads tradeSkillIdTrainer, which holds a value with bit 31 set in some rows",
+    ),
+    ColumnSign(
+      table: "Creature2",
+      column: "tradeSkillIdStation",
+      sign: Unread,
+      evidence: "the spawns read only a creature's level, faction, display group and the ids and multipliers of its Base Health (genesis_prime/world_map/spawn); no rule reads tradeSkillIdStation, which holds a value with bit 31 set in some rows",
+    ),
+    ColumnSign(
+      table: "Creature2",
+      column: "questAnimObjectiveIndex",
+      sign: Unread,
+      evidence: "the spawns read only a creature's level, faction, display group and the ids and multipliers of its Base Health (genesis_prime/world_map/spawn); no rule reads questAnimObjectiveIndex, which holds a value with bit 31 set in some rows",
+    ),
+    ColumnSign(
+      table: "Creature2",
+      column: "activationFlags",
+      sign: Unread,
+      evidence: "the spawns read only a creature's level, faction, display group and the ids and multipliers of its Base Health (genesis_prime/world_map/spawn); no rule reads activationFlags, which holds a value with bit 31 set in some rows",
+    ),
+    ColumnSign(
+      table: "Creature2Difficulty",
+      column: "rankValue",
+      sign: Unread,
+      evidence: "the spawns read only a creature's level, faction, display group and the ids and multipliers of its Base Health (genesis_prime/world_map/spawn); no rule reads rankValue, which holds a value with bit 31 set in some rows",
+    ),
+    ColumnSign(
       table: "WorldLocation2",
       column: "phases",
       sign: Unread,
