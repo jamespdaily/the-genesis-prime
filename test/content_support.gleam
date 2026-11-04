@@ -2,8 +2,10 @@
 //// test's own, and the fixture of the world database.
 
 import database_support
+import event_wait
 import gleam/erlang/process
 import gleam/int
+import gleam/result
 import gleam/string
 import pog
 
@@ -27,21 +29,10 @@ pub fn connect(database database: String) -> pog.Connection {
 /// A pool of this configuration, ready for its first query.
 pub fn connect_with(config config: pog.Config) -> pog.Connection {
   let assert Ok(started) = pog.start(config) as "the pool started"
-  wait_for_a_connection(db: started.data, attempts: 200)
+  event_wait.until("the pool has a connection", fn() {
+    result.is_ok(pog.query("select 1") |> pog.execute(started.data))
+  })
   started.data
-}
-
-fn wait_for_a_connection(db db: pog.Connection, attempts attempts: Int) -> Nil {
-  case pog.query("select 1") |> pog.execute(db) {
-    Error(pog.ConnectionUnavailable) if attempts > 1 -> {
-      process.sleep(20)
-      wait_for_a_connection(db:, attempts: attempts - 1)
-    }
-    result -> {
-      let assert Ok(_) = result as "the first query on the pool ran"
-      Nil
-    }
-  }
 }
 
 /// The result of one query of the test's own on the database, as text rows of

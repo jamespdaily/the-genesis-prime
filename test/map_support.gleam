@@ -7,7 +7,6 @@ import genesis_prime/store.{type Character, Character}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
-import spawn_support
 
 /// The map's realm: not 1, so a unit built with a fixed realm fails.
 pub const realm_id = 7
@@ -39,7 +38,7 @@ pub fn standing(
     incarnation:,
     realm_id:,
     tables: character_tables.shared(),
-    spawns: spawn_support.world_spawns(spawns),
+    spawns: spawn.world_spawns(spawns:),
     creature_restart_ms:,
     idle_stop_ms:,
     sweep_ms:,

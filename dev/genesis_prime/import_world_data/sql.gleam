@@ -5,6 +5,7 @@
 ////
 
 import gleam/dynamic/decode
+import gleam/option.{type Option}
 import pog
 
 /// A row you get from running the `delete_removed_spawns` query
@@ -79,6 +80,43 @@ on conflict (file) do update set
   |> pog.parameter(pog.text(arg_1))
   |> pog.parameter(pog.text(arg_2))
   |> pog.parameter(pog.int(arg_3))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `source_row_of_spawn` query
+/// defined in `./dev/genesis_prime/import_world_data/sql/source_row_of_spawn.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type SourceRowOfSpawnRow {
+  SourceRowOfSpawnRow(source_row: Option(Int))
+}
+
+/// The row id in the file of a spawn, by the spawn's own id: a refused stat names
+/// its spawn by that id, and the importer reports the row of the file.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn source_row_of_spawn(
+  db: pog.Connection,
+  arg_1: Int,
+) -> Result(pog.Returned(SourceRowOfSpawnRow), pog.QueryError) {
+  let decoder = {
+    use source_row <- decode.field(0, decode.optional(decode.int))
+    decode.success(SourceRowOfSpawnRow(source_row:))
+  }
+
+  "-- The row id in the file of a spawn, by the spawn's own id: a refused stat names
+-- its spawn by that id, and the importer reports the row of the file.
+select source_row
+from spawn
+where id = $1;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(arg_1))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -244,7 +282,7 @@ written as (
     display_info_id, outfit_info_id, faction_id, base_faction_id,
     quest_checklist_index, active_prop_id, world_socket_id
   from incoming
-  on conflict (source_row) do update set
+  on conflict (source, source_row) do update set
     entity_type = excluded.entity_type,
     creature_id = excluded.creature_id,
     world_id = excluded.world_id,

@@ -55,7 +55,7 @@ create table spawn (
   constraint spawn_source_is_a_content_source
     foreign key (source) references content_source (name),
   constraint spawn_id_is_positive check (id > 0),
-  constraint spawn_source_row_is_unique unique (source_row),
+  constraint spawn_source_row_is_unique unique (source, source_row),
   constraint spawn_source_row_is_positive check (source_row > 0),
   constraint spawn_entity_type_is_a_unit_type
     check (entity_type between 0 and 36),

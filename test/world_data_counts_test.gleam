@@ -63,6 +63,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       migrations: genesis_prime.load_migrations(),
       pool:,
       ask: asking(),
+      probe: content.pool_probe,
       key:,
     )
   let took = runtime.now().monotonic_ms - before

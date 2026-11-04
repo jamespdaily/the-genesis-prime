@@ -313,21 +313,15 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
   })
 }
 
-/// The most a Join may take with this many spawns in sight, from the ask to the
-/// last creature found at its address, in milliseconds. The densest point of the
-/// world database holds 2,386 spawns within sight (design 375, section 3). The map
-/// is one process: the moves of the players already in the map queue behind the
-/// burst, and a player sends a move every 125 ms (8 a second), so a burst under 100
-/// ms delays a move by less than one move interval. Measured on the development
-/// machine, an Apple M2 Max, in three runs: 41, 43 and 43 ms for the 2,400 starts of
-/// this test (about 17 microseconds each), so the bound has a margin of 2.3.
-const join_bound_ms = 100
-
-/// How many spawns stand in sight of the joining player.
+/// How many spawns stand in sight of the joining player: the densest point of the
+/// world database holds 2,386 within sight (design 375, section 3). How long a Join
+/// with this many takes is measured in the load run (`genesis_prime/load_walk`),
+/// not asserted here, where the suite's parallel tests share the machine.
 const spawns_in_sight = 2400
 
-pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_within_the_bound_test() -> Nil {
-  use <- owned_test.run(30_000)
+/// A world whose one map has `spawns_in_sight` spawns around x 0 in sight of a
+/// player standing at x 100.
+fn crowded_world() -> World {
   let spawns =
     list.repeat(Nil, spawns_in_sight)
     |> list.index_map(fn(_, index) {
@@ -336,15 +330,18 @@ pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_w
         x: int.to_float(index + 1) *. 0.4,
       )
     })
-  let world =
-    world_support.start(
-      spawns:,
-      creature_restart_ms: 60_000,
-      idle_stop_ms:,
-      sweep_ms:,
-    )
+  world_support.start(
+    spawns:,
+    creature_restart_ms: 60_000,
+    idle_stop_ms:,
+    sweep_ms:,
+  )
+}
+
+pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_and_found_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = crowded_world()
   let run = started(world)
-  let before = ask_support.monotonic_ms()
   let _player = join(run:, connection: 1)
   let _last =
     creature_pid(
@@ -353,13 +350,25 @@ pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_w
       unit_id: spawns_in_sight + 1,
       life: spawns_in_sight + 1,
     )
-  let took = ask_support.monotonic_ms() - before
-  assert took < join_bound_ms
-    as {
-      "the join with "
-      <> int.to_string(spawns_in_sight)
-      <> " spawns in sight took "
-      <> int.to_string(took)
-      <> " ms"
-    }
+  assert list.length(world_support.creature_pids(world)) == spawns_in_sight
+    as "a creature runs for each spawn in sight, each found at its address"
+}
+
+pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_started_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Test 16: the Join is answered before its creatures start, so the map is killed
+  // as soon as the first creature runs, with the burst of 2,400 starts under way;
+  // every creature it did start watches the run and ends with it.
+  let world = crowded_world()
+  let run = started(world)
+  let _player = join(run:, connection: 1)
+  event_wait.until("the first creature of the burst runs", fn() {
+    world_support.creature_pids(world) != []
+  })
+  let ended = process.monitor(run.pid)
+  process.kill(run.pid)
+  let _reason = ask_support.ended(ended)
+  event_wait.until("every creature the map started has ended", fn() {
+    world_support.creature_pids(world) == []
+  })
 }

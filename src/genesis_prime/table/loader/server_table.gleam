@@ -42,7 +42,6 @@ import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
 import gleam/erlang/reference.{type Reference}
-import gleam/list
 
 /// The entry of each table the server loads, in file-name order.
 /// - CharacterCreation: the row a create request names
@@ -113,21 +112,15 @@ fn content_entries() -> List(store.Entry) {
   ]
 }
 
-/// The tables the content load reads: the server's own and the content-only
-/// ones, under a key made for the load, with the derived values left out. The
-/// caller unloads them once the content is loaded, so nothing of them stays in
-/// memory; the server's own tables, which the game reads, are loaded apart with
-/// `load`.
-pub fn load_for_content(
+/// The content-only tables, loaded beside the server's own `tables` under the
+/// key they were loaded under, so the content load reads the creature tables
+/// already loaded and loads nothing twice. Gives only the content-only ones: the
+/// caller unloads them once the content is loaded, and the server's own stay.
+pub fn load_content_tables(
+  over tables: store.Tables,
   from folder: String,
 ) -> Result(store.Tables, store.LoadError) {
-  store.load(
-    under: reference.new(),
-    from: folder,
-    entries: list.append(entries(), content_entries()),
-    requirements: requirement.all(),
-    derivations: [],
-  )
+  store.load_more(over: tables, from: folder, entries: content_entries())
 }
 
 /// Loads the server's tables under the server's own key, the same in every

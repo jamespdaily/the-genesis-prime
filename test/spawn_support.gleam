@@ -6,15 +6,10 @@
 //// without the client's tables.
 
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/game/start_place
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/spawn.{
-  type Row, type Spawn, type WorldSpawns, Row, Spawn,
-}
-import genesis_prime/world_map/spawn_cell
+import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
-import gleam/dict
 import gleam/list
 import gleam/option
 import place_support
@@ -41,18 +36,6 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     base_faction_id: 1441,
     display_info_id: 26_565,
     outfit_info_id: 0,
-  )
-}
-
-/// The spawns as a world's term holds them: by id and by cell.
-pub fn world_spawns(spawns spawns: List(Spawn)) -> WorldSpawns {
-  spawn.WorldSpawns(
-    by_id: dict.from_list(list.map(spawns, fn(spawn) { #(spawn.id, spawn) })),
-    cells: spawn_cell.index(
-      list.map(spawns, fn(spawn) {
-        #(spawn.id, start_place.x(spawn.place), start_place.z(spawn.place))
-      }),
-    ),
   )
 }
 
@@ -90,7 +73,7 @@ pub fn key_with(spawns spawns: List(Spawn)) -> table_store.Key {
   let key = table_store.new_key()
   list.each(worlds, fn(world_id) {
     content_spawn.put_world(key:, world_id:, spawns: case world_id {
-      3460 -> world_spawns(spawns:)
+      3460 -> spawn.world_spawns(spawns:)
       _ -> spawn.no_spawns()
     })
   })

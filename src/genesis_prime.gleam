@@ -53,7 +53,7 @@ import simplifile
 
 pub fn main() -> Nil {
   let #(tables, count) = load_tables()
-  let spawns = load_content()
+  let spawns = load_content(tables:)
   start(settings: settings(tables:, spawns:), tables: count)
 }
 
@@ -61,24 +61,27 @@ pub fn main() -> Nil {
 /// persistent terms, after the client's tables and before the tree, so the
 /// listeners open once the world's spawns are in place: waits for the database
 /// as the readiness ask does, and stops the program with the reasons when the
-/// migrations differ or any row is refused. The tables the selection reads are
-/// loaded for it from the same folder, and unloaded after. Gives the key the
-/// terms are under.
-pub fn load_content() -> store.Key {
+/// migrations differ or any row is refused. `tables` are the server's own, which
+/// the selection reads the creature tables from; the tables only it reads are
+/// loaded beside them and unloaded after. Gives the key the terms are under.
+pub fn load_content(tables tables: store.Tables) -> store.Key {
   let key = store.server_key()
-  let tables = case server_table.load_for_content(from: table_folder()) {
-    Ok(tables) -> tables
+  let more = case
+    server_table.load_content_tables(over: tables, from: table_folder())
+  {
+    Ok(more) -> more
     Error(error) -> panic as store.describe(error)
   }
   let loaded =
     content.load(
-      tables:,
+      tables: more,
       migrations: load_migrations(),
       pool: pool(),
       ask: ready_ask(),
+      probe: content.pool_probe,
       key:,
     )
-  store.unload(tables)
+  store.unload(more)
   case loaded {
     Ok(Nil) -> key
     Error(error) -> panic as content.describe(error)

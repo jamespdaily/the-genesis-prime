@@ -566,14 +566,17 @@ pub fn content_files() -> List(#(String, BitArray)) {
   ]
 }
 
-/// The tables the content load reads, loaded from the planted files and the
-/// content ones under a key of their own. A content load unloads them, so each
-/// load of a test takes its own.
+/// The tables only the content load reads, loaded once from the planted files
+/// beside the planted tables (`shared`), under their key: the content load reads
+/// the creature tables where they are. Never unloaded, as `shared` is not.
 pub fn content_tables() -> store.Tables {
-  use folder <- planted_table.in_folder(list.append(files(), content_files()))
-  let assert Ok(tables) = server_table.load_for_content(from: folder)
-    as "the planted files load as the content load's tables"
-  tables
+  database_support.once("character_content_tables", fn() {
+    use folder <- planted_table.in_folder(content_files())
+    let assert Ok(tables) =
+      server_table.load_content_tables(over: shared(), from: folder)
+      as "the planted files load as the content load's tables"
+    tables
+  })
 }
 
 fn load_files(files: List(#(String, BitArray))) -> store.Tables {

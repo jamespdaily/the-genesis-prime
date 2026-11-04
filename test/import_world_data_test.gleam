@@ -191,6 +191,15 @@ fn fixture_with_line(line line: Int, text text: String) -> String {
 /// The fixture's line `line` with its tab-separated field `field` (0 is the id)
 /// replaced by `value`.
 fn with_field(line line: Int, field field: Int, value value: String) -> String {
+  with_fields(line:, changes: [#(field, value)])
+}
+
+/// The fixture's line `line` with each tab-separated field of `changes` (0 is the
+/// id) replaced by its value.
+fn with_fields(
+  line line: Int,
+  changes changes: List(#(Int, String)),
+) -> String {
   let assert Ok(existing) =
     list.first(list.drop(string.split(fixture(), "\n"), line - 1))
     as "the fixture has the line"
@@ -198,9 +207,9 @@ fn with_field(line line: Int, field field: Int, value value: String) -> String {
     line:,
     text: string.split(existing, "\t")
       |> list.index_map(fn(held, index) {
-        case index == field {
-          True -> value
-          False -> held
+        case list.key_find(changes, index) {
+          Ok(value) -> value
+          Error(Nil) -> held
         }
       })
       |> string.join("\t"),
@@ -305,4 +314,60 @@ pub fn a_refusal_in_a_later_batch_rolls_back_the_earlier_batches_test() -> Nil {
     ))
   assert written == 0
     as "the one transaction rolled back the first batch of 5,000 rows too"
+}
+
+pub fn numbers_as_postgres_writes_them_import_as_the_numbers_they_are_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // A whole number, a number with a positive exponent and one with a negative
+  // exponent, as positions and as stat values, and a stat list of two.
+  let text =
+    with_fields(line: 2, changes: [
+      #(5, "0"),
+      #(6, "3.43e+06"),
+      #(7, "1e-05"),
+      #(18, "{0,10}"),
+      #(19, "{3.43e+06,1e-05}"),
+    ])
+  use folder <- recording_support.in_folder
+  let assert Ok(Nil) = simplifile.write(folder <> "/spawn.tsv", text)
+    as "the test's file was written"
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(counts) = import_into(database:, folder:)
+    as "the numbers import"
+  assert counts.inserted == 27 && counts.stats_written == 2
+  assert content_support.psql(
+      database:,
+      sql: "select x || ' ' || y || ' ' || z from spawn where source_row = 29113",
+    )
+    == "0 3.43e+06 1e-05"
+    as "0, 3.43e+06 and 1e-05 as the real numbers they are"
+  assert content_support.psql(
+      database:,
+      sql: "select string_agg(stat || ':' || value, ' ' order by stat) from spawn_stat",
+    )
+    == "0:3.43e+06 10:1e-05"
+    as "the stats {0,10} with the values {3.43e+06,1e-05}"
+  assert import_world_data.number("3.43e+06") == Ok(3_430_000.0)
+    && import_world_data.number("1e-05") == Ok(0.00001)
+    && import_world_data.number("0") == Ok(0.0)
+    && import_world_data.number("-1.5") == Ok(-1.5)
+    && import_world_data.number("NaN") == Error(Nil)
+    && import_world_data.number("inf") == Error(Nil)
+    as "the parser's forms, and no NaN or infinity"
+}
+
+pub fn a_stat_the_schema_refuses_is_reported_under_its_constraint_with_the_row_of_its_spawn_and_nothing_is_written_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Stat 40 is outside the 5 bits of a stat index (opcode.0x262).
+  let #(result, written) =
+    import_text(
+      text: with_fields(line: 2, changes: [#(18, "{40}"), #(19, "{1}")]),
+    )
+  assert result
+    == Error(RowRefused(
+      constraint: "spawn_stat_is_a_stat_index",
+      source_row: Some(29_113),
+    ))
+    as "the stat's constraint, and the row of the file its spawn came from, not a question mark"
+  assert written == 0 as "nothing is written"
 }

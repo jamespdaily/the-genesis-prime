@@ -2039,6 +2039,7 @@ fn start_with_creatures() -> login_support.Started {
         migrations: genesis_prime.load_migrations(),
         pool: pog.Config(..pool, pool_name: process.new_name("load_pool")),
         ask: readiness.Settings(within_ms: 5000, attempt_ms: 2000, pause_ms: 50),
+        probe: content.pool_probe,
         key:,
       )
       as "the content load puts the seeded spawns in the world's term"
@@ -2077,10 +2078,18 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
     && list.count(seen, fn(creature) { creature.creature_id == 73_465 }) == 27
     as "opcode.0x262.creature: the Creature2 id of each spawn's creature"
   assert list.all(seen, fn(creature) {
-    creature.tail.base_faction_id == creature.tail.faction_id
-    && creature.tail.display_info_id != 0
+    let values = #(
+      creature.tail.display_info_id,
+      creature.tail.outfit_info_id,
+      creature.tail.faction_id,
+      creature.tail.base_faction_id,
+    )
+    case creature.creature_id {
+      73_464 -> values == #(26_565, 0, 1441, 1441)
+      _ -> values == #(26_578, 0, 1442, 1442)
+    }
   })
-    as "both faction fields hold the creature's faction, and a display is sent"
+    as "each spawn's own values: the Battle Beast's display 26565, faction 1441 and base faction 1441, the Dagun's 26578, 1442 and 1442, and no outfit (the world database's rows and migration 0008's)"
   let #(second, second_character) =
     new_player(started:, number: 2, character_name: "Ann Qu")
   character_support.move_to(

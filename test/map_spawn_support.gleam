@@ -205,19 +205,8 @@ pub fn creature_sends(
 /// What the step sends to players' connections, by the connection's number and
 /// what it says, in connection order.
 pub fn player_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
-  list.filter_map(sends(taken), fn(sent) {
-    case sent.0 {
-      Connection(ConnectionId(number)) -> Ok(#(number, said(sent.1)))
-      Creature(..)
-      | step.Sessions
-      | step.HandOff
-      | step.Store
-      | step.Maps
-      | step.Map(..)
-      | step.CharacterNamed(..)
-      | step.ZoneChannel(..) -> Error(Nil)
-    }
-  })
+  support.sends(taken)
+  |> list.map(fn(sent) { #(sent.0, said(sent.1)) })
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 

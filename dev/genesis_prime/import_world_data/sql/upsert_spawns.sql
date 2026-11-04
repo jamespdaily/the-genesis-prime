@@ -31,7 +31,7 @@ written as (
     display_info_id, outfit_info_id, faction_id, base_faction_id,
     quest_checklist_index, active_prop_id, world_socket_id
   from incoming
-  on conflict (source_row) do update set
+  on conflict (source, source_row) do update set
     entity_type = excluded.entity_type,
     creature_id = excluded.creature_id,
     world_id = excluded.world_id,

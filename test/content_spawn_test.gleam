@@ -9,46 +9,26 @@
 ////   a selection's spawns are put once, one term for each world, and read by the
 ////   world's id; a world with none has no term and no spawns.
 
+import content_support
 import database_support
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/spawn.{Selection}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
-import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{None}
 import owned_test
-import pog
 import spawn_support
 
-/// The rows of the spawn table of a migrated database of the test's own, asked
-/// until the pool has a connection (it opens them after it starts).
+/// The rows of the spawn table of a migrated database of the test's own.
 fn rows_of_a_migrated_database() -> List(spawn.Row) {
   let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(started) =
-    pog.start(database_support.config(
-      database_support.settings(),
-      database:,
-      pool_name: process.new_name("content_spawn_pool"),
-      pool_size: 1,
-    ))
-    as "the pool started"
-  ask(db: started.data, attempts: 100)
-}
-
-fn ask(db db: pog.Connection, attempts attempts: Int) -> List(spawn.Row) {
-  case content_spawn.rows(db:) {
-    Error(pog.ConnectionUnavailable) if attempts > 1 -> {
-      process.sleep(20)
-      ask(db:, attempts: attempts - 1)
-    }
-    result -> {
-      let assert Ok(rows) = result as "the query ran"
-      rows
-    }
-  }
+  let assert Ok(rows) =
+    content_spawn.rows(db: content_support.connect(database:))
+    as "the query ran"
+  rows
 }
 
 pub fn the_one_query_reads_every_row_of_a_migrated_database_the_27_daguns_test() -> Nil {
@@ -82,7 +62,7 @@ pub fn a_selections_worlds_are_put_once_and_read_back_by_world_test() -> Nil {
   use <- owned_test.run(5000)
   let key = table_store.new_key()
   let beasts =
-    spawn_support.world_spawns([
+    spawn.world_spawns(spawns: [
       spawn_support.battle_beast(number: 1, x: 0.0),
       spawn_support.battle_beast(number: 2, x: 100.0),
     ])

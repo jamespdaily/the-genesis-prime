@@ -2,22 +2,21 @@
 %% (genesis_prime/load_walk): one sample of the world's processes, and the size of
 %% a term. Nothing is traced: a sample reads the counters the runtime keeps.
 -module(load_walk_ffi).
--export([sample/2, term_bytes/1]).
+-export([sample/1, term_bytes/1, literal_bytes/0]).
 
-%% One sample: the longest message queue of any map, whether any map's process was
-%% found running (1) or not (0), how many creatures the creature supervisor runs,
-%% the memory of those creatures' processes in bytes, and the node's total memory
-%% in bytes. `MapSupervisor` and `CreatureSupervisor` are the supervisors' names.
-sample(MapSupervisor, CreatureSupervisor) ->
-    Maps = pids(MapSupervisor),
+%% One sample of the creatures: how many the creature supervisor
+%% (`CreatureSupervisor`, its name) runs, the memory of their processes in bytes,
+%% and the node's total memory in bytes. The map's queue and busy share are
+%% sampled every 10 ms by load_moves_ffi, not here.
+sample(CreatureSupervisor) ->
     Creatures = pids(CreatureSupervisor),
-    Queue = lists:max([0 | [queue(Pid) || Pid <- Maps]]),
-    Running = case lists:any(fun running/1, Maps) of
-                  true -> 1;
-                  false -> 0
-              end,
-    Memory = lists:sum([memory(Pid) || Pid <- Creatures]),
-    {Queue, Running, length(Creatures), Memory, erlang:memory(total)}.
+    {length(Creatures), lists:sum([memory(Pid) || Pid <- Creatures]), erlang:memory(total)}.
+
+%% The bytes the VM holds for its literal area, where persistent terms live: the
+%% size of every carrier of the literal allocator.
+literal_bytes() ->
+    {ok, {_, Carriers}} = instrument:carriers(#{allocator_types => [literal_alloc]}),
+    lists:sum([Size || {literal_alloc, _InPool, Size, _Unused, _Blocks, _Stats} <- Carriers]).
 
 %% The size of a term on a process heap, in bytes (`erts_debug:flat_size/1` words).
 term_bytes(Term) ->
@@ -30,22 +29,8 @@ pids(Supervisor) ->
         exit:_ -> []
     end.
 
-queue(Pid) ->
-    case process_info(Pid, message_queue_len) of
-        {message_queue_len, Length} -> Length;
-        undefined -> 0
-    end.
-
 memory(Pid) ->
     case process_info(Pid, memory) of
         {memory, Bytes} -> Bytes;
         undefined -> 0
-    end.
-
-running(Pid) ->
-    case process_info(Pid, status) of
-        {status, running} -> true;
-        {status, runnable} -> true;
-        {status, garbage_collecting} -> true;
-        _ -> false
     end.

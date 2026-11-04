@@ -15,7 +15,6 @@
 ////   the tree starts; nothing queries the table during play.
 
 import genesis_prime/content/sql
-import genesis_prime/content/term
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, type WorldSpawns, Row,
@@ -70,12 +69,12 @@ pub fn put_world(
   world_id world_id: Int,
   spawns spawns: WorldSpawns,
 ) -> Nil {
-  term.put(key:, table:, id: world_id, value: spawns)
+  store.put_content(key:, table:, id: world_id, value: spawns)
 }
 
 /// The spawns that start in the world, as the load put them under the key. The
 /// load puts a term for every row of the client's World table, empty for a world
 /// with no spawn, so a world with no term is a bug and crashes the reader.
 pub fn world(key key: Key, world_id world_id: Int) -> WorldSpawns {
-  term.get(key:, table:, id: world_id)
+  store.content(key:, table:, id: world_id)
 }

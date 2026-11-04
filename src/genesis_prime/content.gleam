@@ -21,7 +21,7 @@
 ////
 //// ```
 //// main ─▶ load_content ─▶ content.load(tables, migrations, pool, ask settings, key)
-////           tables: the server's and the content-only ones, loaded for this load
+////           tables: the content-only ones, loaded beside the server's own (which hold the creatures)
 ////           starts a pool of its own: one connection, not the tree's
 ////           waits for the database as readiness does (readiness.await with no tree):
 ////             attempts of attempt_ms, pause_ms between them, a warning each within_ms
@@ -52,9 +52,10 @@
 ////   (genesis_prime/content/term); a world of the client's World table with no
 ////   spawn gets an empty one, so a missing term is a bug and crashes its reader.
 //// - **Content-only tables.** The faction, outfit and world tables the selection
-////   reads load with the creature tables for the load alone
-////   (`server_table.load_for_content`), and the caller unloads them after it: they
-////   are not in the server's tables, whose digest a recording's header holds.
+////   reads load beside the server's own tables (`server_table.load_content_tables`:
+////   the creature tables are read where they already are, so nothing loads twice),
+////   and the caller unloads them after it: they are not in the server's tables,
+////   whose digest a recording's header holds.
 ////
 //// What happens at each failure point of the load:
 ////
@@ -94,23 +95,32 @@ pub type LoadError {
   Refused(refusals: List(Refusal))
 }
 
+/// How the load asks its pool whether the database answers: the probe of the
+/// store's worker, run on the pool (`worker.probe_pool`). A test passes a probe of
+/// its own to script a database that answers late.
+pub fn pool_probe(db db: pog.Connection) -> readiness.Probe {
+  fn(reply) { worker.probe_pool(pool: db, reply:) }
+}
+
 /// Loads every content table into persistent terms under `key`, as the
 /// sequence above gives: waits for the database as `ask` says, compares the
 /// migrations with `migrations`, checks every row against the client's `tables`,
 /// logs every refusal and puts the terms only when there is none. `pool` is the
-/// configuration of the load's own pool. `tables` stay loaded: the caller unloads
+/// configuration of the load's own pool, which it makes one connection. `probe`
+/// asks that pool whether the database answers (`pool_probe`). `tables` stay loaded: the caller unloads
 /// them, or keeps them for another load.
 pub fn load(
   tables tables: store.Tables,
   migrations migrations: List(Migration),
   pool pool: pog.Config,
   ask ask: readiness.Settings,
+  probe probe: fn(pog.Connection) -> readiness.Probe,
   key key: Key,
 ) -> Result(Nil, LoadError) {
-  let assert Ok(started) = pog.start(pool)
+  let assert Ok(started) = pog.start(pog.pool_size(pool, 1))
     as "the content load's database pool started"
   process.unlink(started.pid)
-  let loaded = read(tables:, migrations:, db: started.data, ask:, key:)
+  let loaded = read(tables:, migrations:, db: started.data, ask:, probe:, key:)
   process.send_abnormal_exit(started.pid, runtime.Shutdown)
   loaded
 }
@@ -122,10 +132,11 @@ fn read(
   migrations migrations: List(Migration),
   db db: pog.Connection,
   ask ask: readiness.Settings,
+  probe probe: fn(pog.Connection) -> readiness.Probe,
   key key: Key,
 ) -> Result(Nil, LoadError) {
   use _ready <- result.try(
-    wait(db:, migrations:, ask:) |> result.map_error(MigrationsDiffer),
+    wait(db:, migrations:, ask:, probe:) |> result.map_error(MigrationsDiffer),
   )
   use rows <- result.try(
     content_spawn.rows(db)
@@ -185,10 +196,11 @@ fn wait(
   db db: pog.Connection,
   migrations migrations: List(Migration),
   ask ask: readiness.Settings,
+  probe probe: fn(pog.Connection) -> readiness.Probe,
 ) -> Result(Nil, migration.Refusal) {
   case
     readiness.await(
-      probe: fn(reply) { worker.probe_pool(pool: db, reply:) },
+      probe: probe(db),
       tree: None,
       settings: ask,
       files: migrations,
@@ -198,7 +210,7 @@ fn wait(
     readiness.MigrationsRefused(refusal:) -> Error(refusal)
     readiness.DatabaseUnreachable -> {
       runtime.log(step.LogWarning, "the database is unreachable", step.no_one)
-      wait(db:, migrations:, ask:)
+      wait(db:, migrations:, ask:, probe:)
     }
     readiness.TreeEnded(..) ->
       panic as "the content load watches no tree, so none ended"

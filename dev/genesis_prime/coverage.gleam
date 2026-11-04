@@ -22,7 +22,6 @@ import genesis_prime/dev_database
 import genesis_prime/dev_exit
 import genesis_prime/store/worker
 import genesis_prime/table
-import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table_folder
 import genesis_prime/world_map/spawn
@@ -52,12 +51,13 @@ pub fn main() -> Nil {
         list.map(engine.all(), fn(declared) {
           measurement.measure(declared, tables)
         })
+      let spawns = spawn_coverage(tables:)
       store.unload(tables)
       io.println(checklist.totals(measurements))
       io.println("")
       io.println(checklist.render(measurements))
       io.println("")
-      io.println(spawn_coverage(folder:))
+      io.println(spawns)
       case breaches(measurements) {
         [] -> Nil
         found -> {
@@ -70,37 +70,29 @@ pub fn main() -> Nil {
 }
 
 /// The coverage of the play database's spawns, a line for each world, or why it
-/// cannot be measured.
-fn spawn_coverage(folder folder: String) -> String {
-  case server_table.load_for_content(from: folder), dev_database.connect() {
-    Ok(tables), Ok(db) ->
+/// cannot be measured, from the client's tables, which hold every table the
+/// selection reads.
+fn spawn_coverage(tables tables: store.Tables) -> String {
+  case dev_database.connect() {
+    Error(failure) ->
+      "The spawn coverage needs the play database: "
+      <> dev_database.describe(failure, "read the spawns")
+    Ok(db) ->
       case content_spawn.rows(db) {
-        Ok(rows) -> {
-          let selection = spawn.select(rows:, tables:)
-          store.unload(tables)
+        Error(error) ->
+          "The spawn coverage needs the spawn table (run the migrations and the import on the play database): "
+          <> worker.describe_query_error(error)
+        Ok(rows) ->
           string.join(
             [
               "Spawns that start, by world:",
-              ..list.map(selection.coverage, fn(coverage) {
+              ..list.map(spawn.select(rows:, tables:).coverage, fn(coverage) {
                 "- " <> spawn.describe_coverage(coverage:)
               })
             ],
             "\n",
           )
-        }
-        Error(error) -> {
-          store.unload(tables)
-          "The spawn coverage needs the spawn table (run the migrations and the import on the play database): "
-          <> worker.describe_query_error(error)
-        }
       }
-    Error(error), _ ->
-      "The spawn coverage needs the client's tables: " <> describe(error)
-    Ok(tables), Error(failure) -> {
-      store.unload(tables)
-      "The spawn coverage needs the play database: "
-      <> dev_database.describe(failure, "read the spawns")
-    }
   }
 }
 

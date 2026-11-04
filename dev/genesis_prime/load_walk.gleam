@@ -27,19 +27,24 @@
 //// - **The crowd** walks about the densest place of the world (the spawn with the
 ////   most spawns within 1024 units) for two minutes, each player at 7 units a
 ////   second, turning every 5 s, within 300 units of the place.
-//// - **What it prints:** the start-up (the content load's terms), and a line for
-////   each 30 s: the creatures running, the longest message queue of any map, the
-////   memory of the creatures and of the node; then the peak creatures, the longest
-////   and the mean queue, the share of the samples that found the map running, the
-////   most creatures started in any second, and the time the creatures took to end.
+//// - **What it prints:** the start-up (the content load's terms and the literal
+////   area the tables and terms take), and a line for each 30 s: the creatures
+////   running and the memory of the creatures and of the node; then the peak
+////   creatures; the map's longest and mean message queue and the share of its
+////   samples that found it running, sampled every 10 ms by the movement load run's
+////   probe (genesis_prime/load_moves); the time a creature takes to start (from the
+////   `Moved` or the Join that starts them to the last of their 0x262s reaching the
+////   player, divided by how many), for the Join and for the walk's moves; the most
+////   creatures started in any second; and the time the creatures took to end.
 
 import argv
 import genesis_prime/client_connection.{
-  type Message, CreatureAppeared, PeerNews, Removed, SentByPeer,
+  type Message, CreatureAppeared, PeerNews, SentByPeer,
 }
 import genesis_prime/connection/registry
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/start_place
+import genesis_prime/load_moves
 import genesis_prime/load_run
 import genesis_prime/server
 import genesis_prime/service
@@ -77,23 +82,42 @@ const crowd_ms = 120_000
 
 const crowd_radius = 300.0
 
-/// One sample of the world's processes.
+/// One sample of the creatures, once a second.
 type Sample {
-  Sample(
-    at_ms: Int,
-    queue: Int,
-    running: Int,
-    creatures: Int,
-    creature_bytes: Int,
-    node_bytes: Int,
-  )
+  Sample(at_ms: Int, creatures: Int, creature_bytes: Int, node_bytes: Int)
+}
+
+/// What one player saw: when each creature's 0x262 reached it, and how long each
+/// burst of starts took.
+type Seen {
+  Seen(join: Burst, appeared_us: List(Int), bursts: List(Burst))
+}
+
+/// The creatures one Join or one `Moved` started, as the player saw them: how many
+/// of their 0x262s arrived, and the microseconds from the ask to the last of them.
+type Burst {
+  Burst(count: Int, span_us: Int)
 }
 
 @external(erlang, "load_walk_ffi", "sample")
-fn take_sample(maps: Name(a), creatures: Name(b)) -> #(Int, Int, Int, Int, Int)
+fn take_sample(creatures: Name(a)) -> #(Int, Int, Int)
 
 @external(erlang, "load_walk_ffi", "term_bytes")
 fn term_bytes(term: a) -> Int
+
+@external(erlang, "load_walk_ffi", "literal_bytes")
+fn literal_bytes() -> Int
+
+@external(erlang, "erlang", "monotonic_time")
+fn monotonic_time(unit: MicroSecond) -> Int
+
+type MicroSecond {
+  Microsecond
+}
+
+fn now_us() -> Int {
+  monotonic_time(Microsecond)
+}
 
 pub fn main() -> Nil {
   let started_at = now()
@@ -125,12 +149,15 @@ pub fn main() -> Nil {
   io.println(
     "the content terms of the worlds that have spawns: "
     <> int.to_string(terms / 1_000_000)
+    <> " MB; the literal area after the start, where the client's tables and these terms sit: "
+    <> int.to_string(literal_bytes() / 1_000_000)
     <> " MB",
   )
   let spawns =
     dict.values(
       content_spawn.world(key: settings.world.spawns, world_id:).by_id,
     )
+  load_moves.start_probe(settings.world.map_supervisor)
   let samples = process.new_subject()
   let _sampler = start_sampler(settings:, into: samples)
   case argv.load().arguments {
@@ -158,21 +185,11 @@ fn start_sampler(
 }
 
 fn sample_forever(settings: server.Settings, samples: Subject(Sample)) -> Nil {
-  let #(queue, running, creatures, creature_bytes, node_bytes) =
-    take_sample(
-      settings.world.map_supervisor,
-      settings.world.creature_supervisor,
-    )
+  let #(creatures, creature_bytes, node_bytes) =
+    take_sample(settings.world.creature_supervisor)
   process.send(
     samples,
-    Sample(
-      at_ms: now(),
-      queue:,
-      running:,
-      creatures:,
-      creature_bytes:,
-      node_bytes:,
-    ),
+    Sample(at_ms: now(), creatures:, creature_bytes:, node_bytes:),
   )
   process.sleep(1000)
   sample_forever(settings, samples)
@@ -180,14 +197,15 @@ fn sample_forever(settings: server.Settings, samples: Subject(Sample)) -> Nil {
 
 /// A player standing where the walk says, a connection in the server's
 /// registry that joins the map of the world, sends it a `Moved` every
-/// `move_every_ms`, counts the 0x262s the creatures send it, and leaves at the end.
-/// What it saw is sent to `done`: the times each creature appeared.
+/// `move_every_ms`, hears the 0x262s the creatures send it, and leaves at the end.
+/// What it saw is sent to `done`: when each creature appeared and how long each
+/// burst of starts took.
 fn player(
   settings settings: server.Settings,
   id id: Int,
   steps steps: Int,
   position position: fn(Int) -> #(Float, Float, Float),
-  done done: Subject(List(Int)),
+  done done: Subject(Seen),
 ) -> Nil {
   let _pid =
     process.spawn_unlinked(fn() {
@@ -207,6 +225,7 @@ fn player(
         as "the map of the world started"
       let replies = process.new_subject()
       let #(x, y, z) = position(0)
+      let joined_us = now_us()
       let _sent =
         service.call_subject(
           run.subject,
@@ -219,7 +238,8 @@ fn player(
         )
       let assert Ok(_joined) = process.receive(replies, within: 60_000)
         as "the map answered the join"
-      let appeared =
+      let at_join = collect(selector:, wait: fn() { join_quiet_ms }, found: [])
+      let seen =
         walk_steps(
           run:,
           selector:,
@@ -227,7 +247,11 @@ fn player(
           step: 1,
           steps:,
           position:,
-          appeared: appeared_in(selector:, found: []),
+          seen: Seen(
+            join: burst(at_join, from: joined_us),
+            appeared_us: at_join,
+            bursts: [],
+          ),
         )
       let _sent =
         service.call_subject(
@@ -236,10 +260,14 @@ fn player(
           fn(answer) { process.send(replies, answer) },
         )
       let _left = process.receive(replies, within: 60_000)
-      process.send(done, appeared)
+      process.send(done, seen)
     })
   Nil
 }
+
+/// How long after the Join's answer the player waits for the creatures of the
+/// Join to stop arriving.
+const join_quiet_ms = 500
 
 fn walk_steps(
   run run: world_map_registry.MapProcess,
@@ -248,15 +276,22 @@ fn walk_steps(
   step step: Int,
   steps steps: Int,
   position position: fn(Int) -> #(Float, Float, Float),
-  appeared appeared: List(Int),
-) -> List(Int) {
-  use <- bool.guard(when: step > steps, return: appeared)
-  process.sleep(move_every_ms)
+  seen seen: Seen,
+) -> Seen {
+  use <- bool.guard(when: step > steps, return: seen)
   let #(x, y, z) = position(step)
+  let sent_us = now_us()
   let _sent =
     service.tell_subject(
       run.subject,
       map.Moved(connection: ConnectionId(id), place: place(x:, y:, z:)),
+    )
+  let deadline_us = sent_us + move_every_ms * 1000
+  let arrived =
+    collect(
+      selector:,
+      wait: fn() { int.max(0, { deadline_us - now_us() } / 1000) },
+      found: [],
     )
   walk_steps(
     run:,
@@ -265,26 +300,40 @@ fn walk_steps(
     step: step + 1,
     steps:,
     position:,
-    appeared: appeared_in(selector:, found: appeared),
+    seen: Seen(
+      ..seen,
+      appeared_us: list.append(arrived, seen.appeared_us),
+      bursts: case arrived {
+        [] -> seen.bursts
+        _ -> [burst(arrived, from: sent_us), ..seen.bursts]
+      },
+    ),
   )
 }
 
-/// The messages waiting for the player, taken without waiting: the times of
-/// the 0x262s of creatures added to `found`.
-fn appeared_in(
+/// The creatures that appeared to the player, as the microsecond each arrived
+/// (newest first) added to `found`: it listens for `wait()` milliseconds after each
+/// message and stops when that passes with none.
+fn collect(
   selector selector: process.Selector(Message),
+  wait wait: fn() -> Int,
   found found: List(Int),
 ) -> List(Int) {
-  case process.selector_receive(selector, within: 0) {
+  case process.selector_receive(selector, within: wait()) {
     Error(Nil) -> found
     Ok(SentByPeer(PeerNews(news: CreatureAppeared(..), ..))) ->
-      appeared_in(selector:, found: [now(), ..found])
-    Ok(SentByPeer(PeerNews(news: Removed, ..)))
-    | Ok(SentByPeer(..))
-    | Ok(client_connection.SentByMap(..))
-    | Ok(client_connection.SentBySessions(..))
-    | Ok(client_connection.SentByChat(..)) -> appeared_in(selector:, found:)
+      collect(selector:, wait:, found: [now_us(), ..found])
+    Ok(_other) -> collect(selector:, wait:, found:)
   }
+}
+
+/// The burst of starts whose creatures appeared at `appeared` (newest first),
+/// asked for at `from_us`.
+fn burst(appeared: List(Int), from from_us: Int) -> Burst {
+  Burst(count: list.length(appeared), span_us: case appeared {
+    [] -> 0
+    [last, ..] -> last - from_us
+  })
 }
 
 fn character(id: Int) -> store.Character {
@@ -372,15 +421,10 @@ fn walk(settings settings: server.Settings, spawns spawns: List(Spawn)) -> Nil {
     },
     done:,
   )
-  let assert Ok(appeared) =
+  let assert Ok(seen) =
     process.receive(done, within: steps * move_every_ms + 120_000)
     as "the player finished its walk"
-  io.println(
-    "the player left; "
-    <> int.to_string(list.length(appeared))
-    <> " creature appearances were sent to it, the most in any second: "
-    <> int.to_string(most_in_a_second(appeared)),
-  )
+  io.println("the player left; " <> describe_starts([seen]))
   let left_at = now()
   wait_for_no_creatures(settings:, left_at:)
 }
@@ -447,11 +491,13 @@ fn crowd(
       done:,
     )
   })
-  list.each(ids, fn(_id) {
-    let assert Ok(_appeared) = process.receive(done, within: crowd_ms + 120_000)
-      as "a player finished"
-    Nil
-  })
+  let seen =
+    list.map(ids, fn(_id) {
+      let assert Ok(seen) = process.receive(done, within: crowd_ms + 120_000)
+        as "a player finished"
+      seen
+    })
+  io.println("the players left; " <> describe_starts(seen))
   wait_for_no_creatures(settings:, left_at: now())
 }
 
@@ -488,11 +534,8 @@ fn wait_for_no_creatures(
   settings settings: server.Settings,
   left_at left_at: Int,
 ) -> Nil {
-  let #(_queue, _running, creatures, _bytes, _node) =
-    take_sample(
-      settings.world.map_supervisor,
-      settings.world.creature_supervisor,
-    )
+  let #(creatures, _bytes, _node) =
+    take_sample(settings.world.creature_supervisor)
   case creatures, now() - left_at > 120_000 {
     0, _ ->
       io.println(
@@ -512,9 +555,54 @@ fn wait_for_no_creatures(
   }
 }
 
+/// What the players saw of the starts: how many appearances were sent to them,
+/// the most in any one second, and how long a creature took to start, as the time
+/// from the ask (the Join, or the `Moved`) to the last of the burst's 0x262s,
+/// divided by the creatures in the burst: for the Joins, and for the walks' moves.
+fn describe_starts(seen: List(Seen)) -> String {
+  let appeared = list.flat_map(seen, fn(one) { one.appeared_us })
+  int.to_string(list.length(appeared))
+  <> " creature appearances were sent to them, the most in any second: "
+  <> int.to_string(most_in_a_second(appeared))
+  <> "; time to start a creature, from the ask to the last 0x262 of its burst: "
+  <> "at the Join "
+  <> per_start(list.map(seen, fn(one) { one.join }))
+  <> "; at the walk's moves "
+  <> per_start(list.flat_map(seen, fn(one) { one.bursts }))
+}
+
+/// A set of bursts as the mean microseconds a creature took to start, the bursts'
+/// count and the slowest of them.
+fn per_start(bursts: List(Burst)) -> String {
+  let counted = list.filter(bursts, fn(one) { one.count > 0 })
+  let creatures = list.fold(counted, 0, fn(sum, one) { sum + one.count })
+  let span = list.fold(counted, 0, fn(sum, one) { sum + one.span_us })
+  case counted {
+    [] -> "no creatures started"
+    _ -> {
+      let slowest =
+        list.fold(counted, Burst(count: 0, span_us: 0), fn(worst, one) {
+          case one.span_us > worst.span_us {
+            True -> one
+            False -> worst
+          }
+        })
+      int.to_string(span / int.max(creatures, 1))
+      <> " us each over "
+      <> int.to_string(creatures)
+      <> " creatures in "
+      <> int.to_string(list.length(counted))
+      <> " bursts, the slowest "
+      <> int.to_string(slowest.span_us / 1000)
+      <> " ms for "
+      <> int.to_string(slowest.count)
+    }
+  }
+}
+
 /// The most appearances in any one second of the run.
 fn most_in_a_second(times: List(Int)) -> Int {
-  list.group(times, fn(at_ms) { at_ms / 1000 })
+  list.group(times, fn(at_us) { at_us / 1_000_000 })
   |> dict.values
   |> list.map(list.length)
   |> list.fold(0, int.max)
@@ -526,6 +614,7 @@ fn report(
   samples samples: Subject(Sample),
 ) -> Nil {
   let _settings = settings
+  let #(longest, queued, probed, running) = load_moves.stop_probe()
   let by_time = list.reverse(drain(samples, []))
   case by_time {
     [] -> io.println("no sample was taken")
@@ -534,6 +623,17 @@ fn report(
       io.println(totals(by_time:, first:))
     }
   }
+  io.println(
+    "the map's message queue: longest "
+    <> int.to_string(longest)
+    <> ", mean "
+    <> load_moves.per(total: queued, count: probed)
+    <> " over "
+    <> int.to_string(probed)
+    <> " samples, one every 10 ms; its process was found running in "
+    <> load_moves.percent(part: running, whole: probed)
+    <> " of them",
+  )
 }
 
 /// The line of a sample taken a whole 30 s after the first, and none for another.
@@ -545,9 +645,7 @@ fn print_each_30_s(sample sample: Sample, first first: Sample) -> Nil {
     <> int.to_string(seconds)
     <> " s: "
     <> int.to_string(sample.creatures)
-    <> " creatures, map queue "
-    <> int.to_string(sample.queue)
-    <> ", creatures "
+    <> " creatures, creatures "
     <> int.to_string(sample.creature_bytes / 1_000_000)
     <> " MB, node "
     <> int.to_string(sample.node_bytes / 1_000_000)
@@ -555,7 +653,7 @@ fn print_each_30_s(sample sample: Sample, first first: Sample) -> Nil {
   )
 }
 
-/// The peak of creatures, and the map's queue and busy share over all samples.
+/// The peak of creatures, with the memory each took.
 fn totals(by_time by_time: List(Sample), first first: Sample) -> String {
   let peak =
     list.fold(by_time, first, fn(best, sample) {
@@ -564,33 +662,13 @@ fn totals(by_time by_time: List(Sample), first first: Sample) -> String {
         False -> best
       }
     })
-  let count = int.to_float(list.length(by_time))
-  let sum = fn(read: fn(Sample) -> Int) {
-    int.to_float(
-      list.fold(by_time, 0, fn(total, sample) { total + read(sample) }),
-    )
-  }
   "peak "
   <> int.to_string(peak.creatures)
   <> " creatures running, using "
   <> int.to_string(peak.creature_bytes / 1_000_000)
   <> " MB ("
   <> int.to_string(peak.creature_bytes / int.max(peak.creatures, 1) / 1000)
-  <> " KB each); the map's longest queue "
-  <> int.to_string(
-    list.fold(by_time, 0, fn(most, sample) { int.max(most, sample.queue) }),
-  )
-  <> ", mean "
-  <> float.to_string(float.to_precision(
-    sum(fn(sample) { sample.queue }) /. count,
-    2,
-  ))
-  <> ", the map was found running in "
-  <> float.to_string(float.to_precision(
-    100.0 *. sum(fn(sample) { sample.running }) /. count,
-    1,
-  ))
-  <> "% of "
+  <> " KB each), over "
   <> int.to_string(list.length(by_time))
   <> " samples, one a second"
 }

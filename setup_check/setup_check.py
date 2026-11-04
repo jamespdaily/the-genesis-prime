@@ -174,13 +174,21 @@ def check_manifest(machine: Machine) -> list[Missing]:
     return [Missing("manifest.toml tracked by git", _first_line(output), "git add manifest.toml, and commit it")]
 
 
+def _postgres_address(machine: Machine) -> tuple[str, str, str]:
+    """The Postgres the machine's environment names: PGHOST, PGPORT and PGUSER, with the
+    defaults the full check uses (the socket directory /tmp, port 5433, user postgres)."""
+    return (
+        machine.env.get("PGHOST") or "/tmp",
+        machine.env.get("PGPORT") or "5433",
+        machine.env.get("PGUSER") or "postgres",
+    )
+
+
 def check_postgres(machine: Machine) -> list[Missing]:
     """Reachable at PGHOST, PGPORT and PGUSER; major version 18; its clock
     within 1 second of this machine's; built with ICU, whose collation
     "und-x-icu" the character name index folds case with."""
-    host = machine.env.get("PGHOST") or "/tmp"
-    port = machine.env.get("PGPORT") or "5433"
-    user = machine.env.get("PGUSER") or "postgres"
+    host, port, user = _postgres_address(machine)
     part = "Postgres %d" % POSTGRES_MAJOR
     query = (
         "select current_setting('server_version_num'), extract(epoch from clock_timestamp()), "
@@ -225,9 +233,7 @@ def check_world_data(machine: Machine) -> list[Missing]:
     folder = machine.env.get("GENESIS_WORLD_DATA")
     if not folder:
         return []
-    host = machine.env.get("PGHOST") or "/tmp"
-    port = machine.env.get("PGPORT") or "5433"
-    user = machine.env.get("PGUSER") or "postgres"
+    host, port, user = _postgres_address(machine)
     database = machine.env.get("PGDATABASE") or "postgres"
     code, output = machine.run(
         ["psql", "-X", "-At", "-h", host, "-p", port, "-U", user, "-d", database, "-c",

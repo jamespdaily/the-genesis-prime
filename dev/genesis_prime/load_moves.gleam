@@ -53,14 +53,14 @@ const hold_ms = 20_000
 /// What the map showed, as the server's node sampled it: the longest message
 /// queue, the sum of the queue of each sample, how many samples there were and
 /// how many of them found the map's process running.
-type Probe =
+pub type Probe =
   #(Int, Int, Int, Int)
 
 @external(erlang, "load_moves_ffi", "start_probe")
-fn start_probe(supervisor: process_name) -> Nil
+pub fn start_probe(supervisor: process_name) -> Nil
 
 @external(erlang, "load_moves_ffi", "stop_probe")
-fn stop_probe() -> Probe
+pub fn stop_probe() -> Probe
 
 pub fn main() -> Nil {
   let players = case argv.load().arguments {
@@ -102,20 +102,20 @@ pub fn main() -> Nil {
     "the map's message queue: longest "
     <> int.to_string(longest)
     <> ", mean "
-    <> per(queued, samples)
+    <> per(total: queued, count: samples)
     <> " over "
     <> int.to_string(samples)
     <> " samples, one every 10 ms",
   )
   io.println(
     "the map's process was found running in "
-    <> percent(running, samples)
+    <> percent(part: running, whole: samples)
     <> " of the samples",
   )
 }
 
 /// A mean of `total` over `count`, to one decimal, or a dash for none.
-fn per(total: Int, count: Int) -> String {
+pub fn per(total total: Int, count count: Int) -> String {
   case count {
     0 -> "-"
     _ ->
@@ -127,7 +127,7 @@ fn per(total: Int, count: Int) -> String {
 }
 
 /// `part` of `whole` as a percentage to one decimal, or a dash for no whole.
-fn percent(part: Int, whole: Int) -> String {
+pub fn percent(part part: Int, whole whole: Int) -> String {
   case whole {
     0 -> "-"
     _ ->

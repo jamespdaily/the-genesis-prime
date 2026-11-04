@@ -128,6 +128,18 @@ pub type WorldSpawns {
   WorldSpawns(by_id: Dict(SpawnId, Spawn), cells: Cells)
 }
 
+/// The spawns as a world's term holds them: by id and by cell.
+pub fn world_spawns(spawns spawns: List(Spawn)) -> WorldSpawns {
+  WorldSpawns(
+    by_id: dict.from_list(list.map(spawns, fn(spawn) { #(spawn.id, spawn) })),
+    cells: spawn_cell.index(
+      list.map(spawns, fn(spawn) {
+        #(spawn.id, start_place.x(spawn.place), start_place.z(spawn.place))
+      }),
+    ),
+  )
+}
+
 /// A world with no spawn.
 pub fn no_spawns() -> WorldSpawns {
   WorldSpawns(by_id: dict.new(), cells: spawn_cell.empty())
@@ -416,6 +428,20 @@ fn faction_level(
   }
 }
 
+/// A faction's level toward the Exile player faction and toward the Dominion one,
+/// as the client gives them (`faction_level`): 0 to 2 Hostile, 3 to 7 Neutral, 8 to
+/// 10 Friendly. The levels a row's selection and the planted-rows guard assert.
+pub fn faction_levels(
+  tables tables: table_store.Tables,
+  faction faction: Int,
+) -> #(Int, Int) {
+  let catalog = catalog(tables:)
+  #(
+    faction_level(catalog:, from: exile_faction, to: faction),
+    faction_level(catalog:, from: dominion_faction, to: faction),
+  )
+}
+
 /// Whether a player of the faction may attack a unit of the other: the unit is
 /// not Friendly to it (`0x1403ad540`: a Friendly target is refused, a Hostile or a
 /// Neutral one is not).
@@ -529,20 +555,7 @@ fn worlds_of(
       start_place.world_id(checked.spawn.place)
     })
     |> dict.map_values(fn(_world, checked) {
-      WorldSpawns(
-        by_id: dict.from_list(
-          list.map(checked, fn(one) { #(one.spawn.id, one.spawn) }),
-        ),
-        cells: spawn_cell.index(
-          list.map(checked, fn(one) {
-            #(
-              one.spawn.id,
-              start_place.x(one.spawn.place),
-              start_place.z(one.spawn.place),
-            )
-          }),
-        ),
-      )
+      world_spawns(spawns: list.map(checked, fn(one) { one.spawn }))
     })
   set.fold(worlds, dict.new(), fn(found, world_id) {
     dict.insert(found, world_id, no_spawns())

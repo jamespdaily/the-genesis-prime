@@ -11,12 +11,14 @@ import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
 import genesis_prime/world_map/creature_registry.{type CreatureRegistry}
+import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/static_supervisor as supervisor
 import spawn_support
+import supervisor_children
 
 /// A running world: its supervisor, Maps, the creatures' registry and the
 /// registry the players' connections are found in.
@@ -25,8 +27,16 @@ pub type World {
     tree: Pid,
     maps: process.Name(world_map_registry.Message),
     creatures: CreatureRegistry,
+    creature_supervisor: process.Name(creature_supervisor.CreatureSupervisor),
     connections: Registry(Message),
   )
+}
+
+/// The creature processes the creature supervisor runs now.
+pub fn creature_pids(world world: World) -> List(Pid) {
+  let assert Ok(supervisor) = process.named(world.creature_supervisor)
+    as "the creature supervisor runs"
+  supervisor_children.in_start_order(supervisor)
 }
 
 /// A world whose maps stand a creature at each of the spawns a player sees: the
@@ -43,6 +53,7 @@ pub fn start(
   let maps = process.new_name("maps")
   let connections = registry.new()
   let creatures = creature_registry.new()
+  let creature_supervisor = process.new_name("creature_supervisor")
   let key = spawn_support.key_with(spawns:)
   let world =
     server.World(
@@ -51,7 +62,7 @@ pub fn start(
       maps_call_ms: 1000,
       map_shutdown_ms: 1000,
       creatures:,
-      creature_supervisor: process.new_name("creature_supervisor"),
+      creature_supervisor:,
       creature_shutdown_ms: 1000,
       creature_restart_ms:,
       idle_stop_ms:,
@@ -81,7 +92,13 @@ pub fn start(
     as "the world tree started"
   process.unlink(started.pid)
   ask_support.guard(started.pid)
-  World(tree: started.pid, maps:, creatures:, connections:)
+  World(
+    tree: started.pid,
+    maps:,
+    creatures:,
+    creature_supervisor:,
+    connections:,
+  )
 }
 
 fn locate(

@@ -36,6 +36,7 @@ import genesis_prime/world_map/spawn.{
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
+import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -58,9 +59,13 @@ fn selected_with(
     files,
     character_tables.content_files(),
   ))
-  let assert Ok(tables) = server_table.load_for_content(from: folder)
-    as "the planted files load as the content load's tables"
-  spawn.select(rows:, tables:)
+  let assert Ok(server) =
+    server_table.load_under(under: reference.new(), from: folder)
+    as "the planted files load as the server's tables"
+  let assert Ok(more) =
+    server_table.load_content_tables(over: server, from: folder)
+    as "the planted files load as the content-only tables"
+  spawn.select(rows:, tables: more)
 }
 
 /// The ids of the spawns that start, in id order.
@@ -227,6 +232,12 @@ pub fn a_row_friendly_to_both_player_factions_is_left_out_test() -> Nil {
         base_faction_id: 219,
       ),
     ])
+  assert spawn.faction_levels(
+      tables: character_tables.content_tables(),
+      faction: 219,
+    )
+    == #(10, 10)
+    as "Faction2Relationship 726 (165, 219): level 10 to the parent of both, Friendly"
   assert started(selection) == [] as "Friendly to both does not start"
   assert left_out(selection:, reason: FriendlyToBoth) == 1
 }
@@ -237,6 +248,12 @@ pub fn a_row_hostile_to_one_faction_and_friendly_to_the_other_starts_test() -> N
   // to 167 (Exile) and 10 to 166 (Dominion), so a player of one faction can
   // attack it (`0x1403ad540`): spawn 73464 of world 3460.
   let selection = selected(rows: [spawn_support.beast_row(number: 73_464)])
+  assert spawn.faction_levels(
+      tables: character_tables.content_tables(),
+      faction: 1441,
+    )
+    == #(0, 10)
+    as "Faction2Relationship 2943 and 2944: level 0 to Exile 167, 10 to Dominion 166"
   assert started(selection) == [73_464]
 }
 
@@ -252,6 +269,12 @@ pub fn a_row_whose_faction_relates_only_to_the_players_parent_faction_is_hostile
         base_faction_id: 189,
       ),
     ])
+  assert spawn.faction_levels(
+      tables: character_tables.content_tables(),
+      faction: 189,
+    )
+    == #(0, 0)
+    as "Faction2Relationship 691 (189, 165) is level 0, Hostile, to the parent both player factions have"
   assert started(selection) == [14]
 }
 
@@ -267,6 +290,12 @@ pub fn a_row_whose_faction_has_no_relationship_is_neutral_and_starts_test() -> N
         base_faction_id: 174,
       ),
     ])
+  assert spawn.faction_levels(
+      tables: character_tables.content_tables(),
+      faction: 174,
+    )
+    == #(5, 5)
+    as "no relationship at all: level 5, Neutral, to both"
   assert started(selection) == [556]
 }
 

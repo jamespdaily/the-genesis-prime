@@ -68,7 +68,7 @@ fn start() -> Result(Nil, Failure) {
   )
   use account <- result.try(play_account())
   let #(tables, loaded) = genesis_prime.load_tables()
-  let spawns = genesis_prime.load_content()
+  let spawns = genesis_prime.load_content(tables:)
   let settings = genesis_prime.settings(tables:, spawns:)
   use Nil <- result.try(save_fixture(folder:, account:))
   let auth =

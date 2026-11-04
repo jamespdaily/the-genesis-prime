@@ -78,6 +78,8 @@ pub type DerivedKey(value) {
 type TermName {
   TableTerm(name: String)
   DerivedTerm(name: String)
+  /// A content table's value for one id (genesis_prime/content/spawn).
+  ContentTerm(table: String, id: Int)
 }
 
 /// The tables of one load. It holds the key their terms are stored under, so a
@@ -242,6 +244,25 @@ pub fn load(
   derivations derivations: List(Derivation),
 ) -> Result(Tables, LoadError) {
   load_under(load: LoadKey(key), folder:, entries:, requirements:, derivations:)
+}
+
+/// Loads more tables under the key `tables` were loaded under, each entry's file
+/// from `folder`, and gives only the tables it wrote, so unloading them erases
+/// those and leaves `tables` as they are. The tables a load reads that the rest of
+/// the server does not (genesis_prime/content) are loaded this way, beside the
+/// ones already loaded, and a read of any of them by the key finds each.
+pub fn load_more(
+  over tables: Tables,
+  from folder: String,
+  entries entries: List(Entry),
+) -> Result(Tables, LoadError) {
+  load_under(
+    load: tables.key,
+    folder:,
+    entries:,
+    requirements: [],
+    derivations: [],
+  )
 }
 
 /// `load` under the server's own key. The server loads once at start, and a
@@ -418,6 +439,25 @@ pub fn rows(tables tables: Tables, key key: TableKey(row)) -> List(row) {
 /// the key's type.
 fn table_of(load: Key, key: TableKey(row)) -> tbl_file.Table(row) {
   get_term(load, TableTerm(key.name))
+}
+
+/// Writes a content table's value for one id (a world) under the key, once; a
+/// content table keeps one value for each id, read by the maps and creatures of
+/// the world and never queried during play (genesis_prime/content). Its module
+/// gives `value` the type its reads expect.
+pub fn put_content(
+  key key: Key,
+  table table: String,
+  id id: Int,
+  value value: value,
+) -> Nil {
+  put_term(load: key, name: ContentTerm(table:, id:), term: value)
+}
+
+/// The value written under the key for the table's id. A reader of an id the
+/// load wrote no value for crashes, never gets an empty one.
+pub fn content(key key: Key, table table: String, id id: Int) -> value {
+  get_term(key, ContentTerm(table:, id:))
 }
 
 /// Writes a term, a table or a derived value, under the load and a name.

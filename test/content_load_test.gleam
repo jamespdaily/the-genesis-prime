@@ -29,6 +29,7 @@ import gleam/string
 import log_capture
 import mailbox_support
 import owned_test
+import pog
 import unitest
 
 /// How the load asks in these tests: attempts of 500 ms, 50 ms between them, and
@@ -41,6 +42,15 @@ fn asking() -> readiness.Settings {
 /// database, under a key of its own.
 fn load(
   database database: String,
+) -> #(Result(Nil, content.LoadError), table_store.Key) {
+  load_asking(database:, ask: asking(), probe: content.pool_probe)
+}
+
+/// The load with the way it asks the pool chosen by the test.
+fn load_asking(
+  database database: String,
+  ask ask: readiness.Settings,
+  probe probe: fn(pog.Connection) -> readiness.Probe,
 ) -> #(Result(Nil, content.LoadError), table_store.Key) {
   let key = table_store.new_key()
   let pool =
@@ -55,7 +65,8 @@ fn load(
       tables: character_tables.content_tables(),
       migrations: genesis_prime.load_migrations(),
       pool:,
-      ask: asking(),
+      ask:,
+      probe:,
       key:,
     ),
     key,
@@ -98,20 +109,30 @@ pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> 
 
 pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil {
   use <- owned_test.run(60_000)
-  let shared = database_support.shared()
-  let database = database_support.unused_name(on: shared)
-  let _maker =
-    process.spawn(fn() {
-      process.sleep(1500)
-      database_support.create_database(
-        on: shared,
-        name: database,
-        options: "template \"" <> shared.template <> "\"",
-      )
-    })
-  let #(loaded, key) = load(database:)
+  // The probe finds the database away for its first five asks, as a database that
+  // is still starting is, and then asks the pool: no wall-clock wait, and a
+  // window of 100 ms that passes with no answer, which the load warns about and
+  // asks again after.
+  let database = database_support.new_database(on: database_support.shared())
+  let away = process.new_subject()
+  list.each(list.repeat(Nil, 5), fn(_) { process.send(away, Nil) })
+  let #(loaded, key) =
+    load_asking(
+      database:,
+      ask: readiness.Settings(within_ms: 100, attempt_ms: 500, pause_ms: 50),
+      probe: fn(db) {
+        fn(reply) {
+          case process.receive(away, within: 0) {
+            Ok(Nil) -> Error(Nil)
+            Error(Nil) -> content.pool_probe(db)(reply)
+          }
+        }
+      },
+    )
   assert loaded == Ok(Nil)
     as "the load asked again until the database answered, and then loaded it"
+  assert process.receive(away, within: 0) == Error(Nil)
+    as "it was told five times that the database was away"
   assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 27
 }
 

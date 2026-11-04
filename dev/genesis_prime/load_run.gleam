@@ -391,7 +391,7 @@ pub fn start_server_with(change change: fn(Settings) -> Settings) -> Settings {
   runtime.keep_mailboxes_out_of_crash_reports()
   load_sample.start()
   let #(tables, _count) = genesis_prime.load_tables()
-  let spawns = genesis_prime.load_content()
+  let spawns = genesis_prime.load_content(tables:)
   let settings = genesis_prime.settings(tables:, spawns:)
   let login = settings.login
   let settings =

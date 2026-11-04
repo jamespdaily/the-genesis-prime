@@ -8,8 +8,10 @@
 //// A function of a test module is a breach when it gets the client's table
 //// folder (`client_tables.folder()`, or `genesis_prime.load_tables()`, which
 //// reads the same folder) and reaches a table load (`load` of
-//// `genesis_prime/table` or of the loader's store, `load_under` or
-//// `load_for_server`, or `genesis_prime.load_tables()`). Both may be one call
+//// `genesis_prime/table` or of the loader's store, `load_under`, `load_for_server`
+//// or `load_more`, `load_content_tables`, or `genesis_prime.load_tables()` or
+//// `genesis_prime.load_content()`, which loads the content-only tables from the
+//// same folder). Both may be one call
 //// away: a function of the same module that returns the folder, or that loads
 //// from its parameter, counts as the folder or the load. Only the lowest such
 //// function is reported, not the functions that call it. Modules are read one
@@ -38,11 +40,13 @@ const loading_modules = [
   "genesis_prime/table/loader/server_table",
 ]
 
-const loading_functions = ["load", "load_under", "load_for_server"]
+const loading_functions = [
+  "load", "load_under", "load_for_server", "load_more", "load_content_tables",
+]
 
 const real_load_module = "genesis_prime"
 
-const real_load_function = "load_tables"
+const real_load_functions = ["load_tables", "load_content"]
 
 /// Each function in the files, outside `test/client_tables.gleam`, that gets
 /// the client's table folder and calls a table load, reported at the first
@@ -145,9 +149,11 @@ fn describe(
   let function = definition.definition
   let alone = glance.Module(..module, functions: [definition])
   let real_loads =
-    syntax.references_to(alone, from: [real_load_module], named: [
-      real_load_function,
-    ])
+    syntax.references_to(
+      alone,
+      from: [real_load_module],
+      named: real_load_functions,
+    )
   let folder =
     syntax.references_to(alone, from: [folder_module], named: [folder_function])
   let loads =

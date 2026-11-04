@@ -41,7 +41,8 @@ fn points(
 }
 
 fn number(text: String) -> Float {
-  let assert Ok(value) = float.parse(text) as { "a decimal number: " <> text }
+  let assert Ok(value) = import_world_data.number(text)
+    as { "a number as Postgres writes it: " <> text }
   value
 }
 

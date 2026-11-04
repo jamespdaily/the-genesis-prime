@@ -315,7 +315,7 @@ fn finite(
 /// A number as Postgres writes it: a whole number (`0`), a decimal (`-1.5`) or one
 /// with an exponent (`3.43e+06`, `1e-05`); Gleam's float parser wants a point
 /// before an exponent and refuses a whole number.
-fn number(text: String) -> Result(Float, Nil) {
+pub fn number(text: String) -> Result(Float, Nil) {
   case int.parse(text) {
     Ok(whole) -> Ok(int.to_float(whole))
     Error(Nil) ->
@@ -381,60 +381,82 @@ fn write_spawns(
       }),
     )
     let ids = list.map(records, fn(record) { record.source_row })
-    use removed <- result.try(sql.delete_removed_spawns(tx, ids))
-    use _recorded <- result.map(sql.record_import(
-      tx,
-      "spawn.tsv",
-      sha256,
-      list.length(records),
-    ))
+    use removed <- result.try(
+      sql.delete_removed_spawns(tx, ids) |> result.map_error(database_failure),
+    )
+    use _recorded <- result.map(
+      sql.record_import(tx, "spawn.tsv", sha256, list.length(records))
+      |> result.map_error(database_failure),
+    )
     Counts(
       ..batches,
       removed: first_of(removed.rows, fn(row) { row.removed }),
       unchanged: list.length(records) - batches.inserted - batches.changed,
     )
   })
-  |> result.map_error(failure_of)
+  |> result.map_error(fn(error) {
+    case error {
+      pog.TransactionRolledBack(failure) -> failure
+      pog.TransactionQueryError(error) -> database_failure(error)
+    }
+  })
+}
+
+/// A failed query that is not a refused row.
+fn database_failure(error: pog.QueryError) -> Failure {
+  Database(dev_database.failure_of(error:))
+}
+
+/// A failed write of spawn rows: a refused row is named by its constraint and its
+/// row in the file, read from the detail's `source_row`.
+fn spawn_failure(error: pog.QueryError) -> Failure {
+  case error {
+    pog.ConstraintViolated(constraint:, detail:, ..) ->
+      RowRefused(constraint:, source_row: source_row_of(detail))
+    pog.PostgresqlError(..)
+    | pog.UnexpectedArgumentCount(..)
+    | pog.UnexpectedArgumentType(..)
+    | pog.UnexpectedResultType(..)
+    | pog.QueryTimeout
+    | pog.ConnectionUnavailable -> database_failure(error)
+  }
 }
 
 fn write_batch(
   tx tx: pog.Connection,
   batch batch: List(SpawnRecord),
   counts counts: Counts,
-) -> Result(Counts, pog.QueryError) {
+) -> Result(Counts, Failure) {
   let column = fn(read: fn(SpawnRecord) -> a) { list.map(batch, read) }
-  use written <- result.try(sql.upsert_spawns(
-    tx,
-    column(fn(r) { r.source_row }),
-    column(fn(r) { r.entity_type }),
-    column(fn(r) { r.creature_id }),
-    column(fn(r) { r.world_id }),
-    column(fn(r) { r.area_id }),
-    column(fn(r) { r.x }),
-    column(fn(r) { r.y }),
-    column(fn(r) { r.z }),
-    column(fn(r) { r.rotation_x }),
-    column(fn(r) { r.rotation_y }),
-    column(fn(r) { r.rotation_z }),
-    column(fn(r) { r.display_info_id }),
-    column(fn(r) { r.outfit_info_id }),
-    column(fn(r) { r.faction_id }),
-    column(fn(r) { r.base_faction_id }),
-    column(fn(r) { r.quest_checklist_index }),
-    column(fn(r) { r.active_prop_id }),
-    column(fn(r) { r.world_socket_id }),
-  ))
+  use written <- result.try(
+    sql.upsert_spawns(
+      tx,
+      column(fn(r) { r.source_row }),
+      column(fn(r) { r.entity_type }),
+      column(fn(r) { r.creature_id }),
+      column(fn(r) { r.world_id }),
+      column(fn(r) { r.area_id }),
+      column(fn(r) { r.x }),
+      column(fn(r) { r.y }),
+      column(fn(r) { r.z }),
+      column(fn(r) { r.rotation_x }),
+      column(fn(r) { r.rotation_y }),
+      column(fn(r) { r.rotation_z }),
+      column(fn(r) { r.display_info_id }),
+      column(fn(r) { r.outfit_info_id }),
+      column(fn(r) { r.faction_id }),
+      column(fn(r) { r.base_faction_id }),
+      column(fn(r) { r.quest_checklist_index }),
+      column(fn(r) { r.active_prop_id }),
+      column(fn(r) { r.world_socket_id }),
+    )
+    |> result.map_error(spawn_failure),
+  )
   let triples =
     list.flat_map(batch, fn(record) {
       list.map(record.stats, fn(stat) { #(record.source_row, stat.0, stat.1) })
     })
-  use stats <- result.map(sql.upsert_spawn_stats(
-    tx,
-    list.map(triples, fn(triple) { triple.0 }),
-    list.map(triples, fn(triple) { triple.1 }),
-    list.map(triples, fn(triple) { triple.2 }),
-    column(fn(r) { r.source_row }),
-  ))
+  use stats <- result.map(write_stats(tx:, triples:, batch:))
   Counts(
     ..counts,
     inserted: counts.inserted + first_of(written.rows, fn(row) { row.inserted }),
@@ -446,20 +468,74 @@ fn write_batch(
   )
 }
 
+/// Writes the stats of a batch behind a savepoint: a stat the schema refuses rolls
+/// back to it, which leaves the transaction able to look up the refused stat's
+/// spawn by its id and name its row in the file. (pog's own nested transaction
+/// begins no savepoint and would roll the whole import back.)
+fn write_stats(
+  tx tx: pog.Connection,
+  triples triples: List(#(Int, Int, Float)),
+  batch batch: List(SpawnRecord),
+) -> Result(pog.Returned(sql.UpsertSpawnStatsRow), Failure) {
+  use _saved <- result.try(execute(tx, "savepoint stats"))
+  let attempt =
+    sql.upsert_spawn_stats(
+      tx,
+      list.map(triples, fn(triple) { triple.0 }),
+      list.map(triples, fn(triple) { triple.1 }),
+      list.map(triples, fn(triple) { triple.2 }),
+      list.map(batch, fn(record) { record.source_row }),
+    )
+  case attempt {
+    Ok(stats) -> {
+      use _released <- result.map(execute(tx, "release savepoint stats"))
+      stats
+    }
+    Error(pog.ConstraintViolated(constraint:, detail:, ..)) -> {
+      use _rolled_back <- result.try(execute(tx, "rollback to savepoint stats"))
+      use source_row <- result.try(row_of_stat(tx:, detail:))
+      Error(RowRefused(constraint:, source_row:))
+    }
+    Error(error) -> Error(database_failure(error))
+  }
+}
+
+/// One statement with no rows and no parameters.
+fn execute(tx: pog.Connection, statement: String) -> Result(Nil, Failure) {
+  pog.query(statement)
+  |> pog.execute(tx)
+  |> result.replace(Nil)
+  |> result.map_error(database_failure)
+}
+
+/// The row in the file of the spawn a refused stat belongs to, from the detail
+/// `Failing row contains (spawn_id, stat, value)`: the first value is the spawn's
+/// id in the table, which the table maps to its row in the file. A detail that does
+/// not read gives no row; a lookup the database fails is that failure.
+fn row_of_stat(
+  tx tx: pog.Connection,
+  detail detail: String,
+) -> Result(Option(Int), Failure) {
+  let spawn_id =
+    string.split_once(detail, "Failing row contains (")
+    |> result.try(fn(split) { string.split(split.1, ", ") |> list.first })
+    |> result.try(int.parse)
+  case spawn_id {
+    Error(Nil) -> Ok(None)
+    Ok(spawn_id) ->
+      case sql.source_row_of_spawn(tx, spawn_id) {
+        Ok(pog.Returned(rows: [row, ..], ..)) -> Ok(row.source_row)
+        Ok(pog.Returned(rows: [], ..)) -> Ok(None)
+        Error(error) -> Error(database_failure(error))
+      }
+  }
+}
+
 /// The one row an aggregate query gives, read by `read`; 0 when it gave none.
 fn first_of(rows: List(row), read: fn(row) -> Int) -> Int {
   case rows {
     [row, ..] -> read(row)
     [] -> 0
-  }
-}
-
-fn failure_of(error: pog.TransactionError(pog.QueryError)) -> Failure {
-  case error {
-    pog.TransactionRolledBack(pog.ConstraintViolated(constraint:, detail:, ..)) ->
-      RowRefused(constraint:, source_row: source_row_of(detail))
-    pog.TransactionQueryError(error) | pog.TransactionRolledBack(error) ->
-      Database(dev_database.failure_of(error:))
   }
 }
 
