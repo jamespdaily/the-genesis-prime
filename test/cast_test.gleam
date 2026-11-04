@@ -20,7 +20,7 @@ import genesis_prime/game/cast
 import genesis_prime/message/cast_result.{
   CasterVitalCostResource1, CasterVitalCostResource5, IllegalSpellCast, Other,
   SpellAlreadyCasting, SpellCancelled, SpellCooldown, SpellGlobalCooldown,
-  SpellUnknown, TargetRangeMax, TargetUnknown, WeaponSlot,
+  SpellUnknown, WeaponSlot,
 }
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
@@ -29,7 +29,6 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/step.{ConnectionId, LogDebug}
 import gleam/bool
-import gleam/dict
 import gleam/list
 import gleam/option.{None}
 import gleam/result
@@ -138,7 +137,7 @@ pub fn a_press_with_more_than_500_ms_of_the_global_cooldown_left_is_refused_14_f
     support.pressed(state: cast.new(), bag_index: 3, target: 0, at: 1000)
   let #(_, effects) =
     support.pressed(state:, bag_index: 10, target: 0, at: 1100)
-  assert ids_of(effects:) == [0x07FD]
+  assert accepted(effects:)
     as "Kick has kind 3, which starts no global cooldown (0x14046afc0)"
 }
 
@@ -155,55 +154,30 @@ pub fn a_press_with_more_than_500_ms_of_its_own_cooldown_left_is_refused_15_test
     as "Spell4.58591: a cooldown of 20 s, started by the go at 1000, has 11 s left at 10000"
 }
 
-pub fn a_spell_that_needs_a_target_is_refused_91_with_none_90_for_a_unit_that_is_no_creature_and_105_beyond_range_plus_1_25_test() -> Nil {
+pub fn a_press_during_staggers_child_with_no_cast_bar_is_accepted_and_one_during_a_cast_bar_is_refused_13_test() -> Nil {
   use <- owned_test.run(5000)
-  assert refused_with(state: cast.new(), bag_index: 8, target: 0, at: 1000).result
-    == cast_result.NoTarget
-    as "0x14039a040: 91 with no target for a spell that needs one"
-  assert refused_with(state: cast.new(), bag_index: 8, target: 99, at: 1000).result
-    == TargetUnknown
-    as "the design's choice: this step strikes creatures the client shows only; unit 99 is shown to no one"
-  assert refused_with(state: cast.new(), bag_index: 8, target: 41, at: 1000).result
-    == TargetUnknown
-    as "a shown player is no creature"
-  let #(_, effects) =
-    support.pressed(state: cast.new(), bag_index: 8, target: 40, at: 1000)
-  assert ids_of(effects:) == [0x07FD]
-    as "the creature 40 stands 10 m away, within the range of 10"
-  let far =
-    cast.Caster(
-      ..support.caster(),
-      shown: dict.from_list([
-        #(40, cast.ShownCreature(x: 4616.9, y: -7.571, z: 494.996)),
-      ]),
-    )
-  let #(_, effects) =
-    support.pressed_by(
-      state: cast.new(),
-      caster: far,
-      bag_index: 8,
-      target: 40,
-      at: 1000,
-    )
-  assert ids_of(effects:) == [0x07FD]
-    as "11.25 m is range 10 + 1.25: the margin is the design's (0x1403b0880: how the client measures range is not read)"
-  let farther =
-    cast.Caster(
-      ..support.caster(),
-      shown: dict.from_list([
-        #(40, cast.ShownCreature(x: 4616.95, y: -7.571, z: 494.996)),
-      ]),
-    )
-  let #(_, effects) =
-    support.pressed_by(
-      state: cast.new(),
-      caster: farther,
-      bag_index: 8,
-      target: 40,
-      at: 1000,
-    )
-  assert list.map(support.writes(effects:), refusal_result) == [TargetRangeMax]
-    as "0x1403b0880: 105 beyond the range plus the margin"
+  let #(state, effects) =
+    support.pressed(state: cast.new(), bag_index: 4, target: 0, at: 1000)
+  let assert [_, ..] = support.started_timers(effects:)
+    as "Stagger's child 38780 is a Multiphase spell with phases to come, so it is live for 700 ms"
+  let #(_, effects) = support.pressed(state:, bag_index: 3, target: 0, at: 1100)
+  assert accepted(effects:)
+    as "0x14053dd00: only a spell with a cast bar is the unit's current cast, and Spell4Base 23162 has castBarType 0, so 13 is not given while it is live (0x1403afb10)"
+}
+
+pub fn a_live_cast_whose_spell_lets_a_press_through_does_not_block_it_and_the_go_of_a_normal_cast_frees_the_caster_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    support.pressed(state: cast.new(), bag_index: 8, target: 0, at: 1000)
+  let #(_, effects) = support.pressed(state:, bag_index: 3, target: 0, at: 1100)
+  assert accepted(effects:)
+    as "0x1403afb10: a live cast with the spell flags 0x20, 8 or 4 gives no 13 (a planted spell with a cast bar and the flag)"
+  let #(state, effects) =
+    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+  let #(state, _) = support.run_timers(state:, effects:, from_ms: 1000)
+  let #(_, effects) = support.pressed(state:, bag_index: 3, target: 0, at: 2300)
+  assert accepted(effects:)
+    as "0x14053e5a0: the go of a Normal cast clears the current cast, and its finish follows at once"
 }
 
 fn refusal_result(frame: Frame) -> cast_result.CastResult {
@@ -231,7 +205,7 @@ pub fn a_spell_that_needs_the_weapon_is_refused_169_when_slot_16_holds_none_test
       target: 0,
       at: 1000,
     )
-  assert ids_of(effects:) == [0x07FD]
+  assert accepted(effects:)
     as "Kick needs no weapon (Spell4Base 38017: weaponSlot 0)"
 }
 
@@ -250,8 +224,7 @@ pub fn with_500_ms_or_less_of_a_cooldown_left_the_press_is_held_and_starts_when_
     == SpellAlreadyCasting
     as "a second press while one is held is refused 13 (the design's choice)"
   let #(_, effects) = support.fired(state:, timer:, at: 1750)
-  assert ids_of(effects:) == [0x07FD]
-    as "the held press is accepted when its timer fires"
+  assert accepted(effects:) as "the held press is accepted when its timer fires"
 }
 
 pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_own_id_and_parent_0_to_each_viewer_test() -> Nil {
@@ -264,7 +237,8 @@ pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_o
     as "0x7fd decodes"
   assert confirmed.client_cast_id == 9
     as "opcode.0x7fd: the client's id comes back"
-  assert confirmed.primary_target_unit_id == 40
+  assert confirmed.primary_target_unit_id == 7
+    as "Spell4TargetMechanics.targetType: the caster is the target of a spell that needs none, whatever the press names (target 40)"
   assert confirmed.initial_positions == []
     && confirmed.telegraph_positions == []
     as "spell.empty_lists"
@@ -282,17 +256,10 @@ pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_o
     && first.root_spell4_id == 1
     && first.parent_spell4_id == 0
     as "opcode.0x7ff.root_parent: the pressed spell is its own root and has no parent"
-  assert first.caster_unit_id == 7 && first.primary_target_unit_id == 40
+  assert first.caster_unit_id == 7 && first.primary_target_unit_id == 7
   assert first.field_6 == 0 && first.field_12 == 1 && first.field_13 == 0
     as "opcode.0x7ff.caster_item_level, opcode.0x7ff.own_cast and opcode.0x7ff.activate: 0, 1 and 0"
   assert first.initial_positions == [] && first.telegraph_positions == []
-  let #(_, effects) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 40, at: 1000)
-  let assert [_, ..] = support.tells(effects:)
-  let assert [#(_, CastStarted(start: strike))] =
-    list.take(support.tells(effects:), 1)
-  assert strike.primary_target_unit_id == 7
-    as "Spell4TargetMechanics.targetType 2 makes the caster the target of a spell that needs none, whatever the press names"
 }
 
 /// What the client is sent and each viewer told of each cast, by the cast's id:
@@ -378,10 +345,32 @@ pub fn cast_ids_are_above_2_pow_31_hold_the_unit_and_never_repeat_among_one_unit
     as "2^31 + 7 x 2^11 + 0 (the design's mint)"
   assert cast.cast_id(unit_id: 7, number: 2049) == 2_147_497_985
     as "the number counts mod 2^11"
-  use #(unit_id, number) <- qcheck.given(qcheck.tuple2(
+  assert cast.mint(unit_id: 7, number: 0, live: [
+      cast.cast_id(unit_id: 7, number: 0),
+    ])
+    == 2_147_497_985
+    as "a live id is skipped: the next number's"
+  assert cast.mint(unit_id: 7, number: 2048, live: [
+      cast.cast_id(unit_id: 7, number: 0),
+    ])
+    == 2_147_497_985
+    as "number 2048 is 0 mod 2^11, which a live cast holds, so the mint skips to 1"
+  use #(unit_id, number, live_numbers) <- qcheck.given(qcheck.tuple3(
     qcheck.bounded_int(from: 1, to: 1_048_575),
     qcheck.bounded_int(from: 0, to: 100_000),
+    qcheck.generic_list(
+      qcheck.bounded_int(from: 0, to: 4096),
+      qcheck.bounded_int(from: 0, to: 6),
+    ),
   ))
+  let live =
+    list.map(live_numbers, fn(live_number) {
+      cast.cast_id(unit_id:, number: live_number)
+    })
+  let minted = cast.mint(unit_id:, number:, live:)
+  assert !list.contains(live, minted)
+    as "the id of a new cast is none a live cast of the caster holds (0x140561c30: the client's table of casts keys by id)"
+  assert cast.caster_of(cast_id: minted) == unit_id
   let id = cast.cast_id(unit_id:, number:)
   assert id >= first_server_id && id < 4_294_967_296
     as "never 0 and 32 bits (opcode.0x7ff: the cast id is 32 bits, 0 makes only a stray pending cast)"
@@ -441,7 +430,11 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
   use <- owned_test.run(5000)
   let #(state, effects) =
     support.pressed(state: cast.new(), bag_index: 4, target: 0, at: 1000)
-  let assert [_, multiphase_frame, ..] = support.writes(effects:)
+  let assert [multiphase_frame] =
+    list.filter(support.writes(effects:), fn(frame) {
+      frame.message_id == 0x07FF
+    })
+    as "Stagger's go is followed by one start, of its Proxy 38780"
   let multiphase = started_of(multiphase_frame)
   assert multiphase.spell4_id == 38_780
     && multiphase.root_spell4_id == 38_791
@@ -559,6 +552,19 @@ pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_
   assert logs(second) == [] as "once on the connection, not for each press"
 }
 
+pub fn a_press_at_a_negative_monotonic_time_meets_no_cooldown_that_never_started_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: -5000)
+  assert accepted(effects:)
+    as "the monotonic clock can be negative (step.Now), so no cooldown is running for a spell never cast"
+  let #(state, _) =
+    support.pressed(state: cast.new(), bag_index: 5, target: 0, at: -5000)
+  assert refused_with(state:, bag_index: 10, target: 0, at: -4900).result
+    == SpellGlobalCooldown
+    as "and one that started is still counted from its start: 650 ms of Gate's 750 ms are left"
+}
+
 pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_go_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, pressed) =
@@ -589,7 +595,7 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
     as "the audience is told the finish; no go and no strike"
   let #(_, again) =
     support.pressed(state: after, bag_index: 3, target: 0, at: 1600)
-  assert ids_of(effects: again) == [0x07FD]
+  assert accepted(effects: again)
     as "the cast is over, so the caster no longer counts as casting"
   let assert Ok(#(_, same)) = cancel(after, SpellCancelled, 1)
     as "a cast that is not live is no change"
@@ -607,6 +613,11 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
   assert cancel(state, SpellCancelled, 0)
     == Error(cast.UnknownCancel(reason: 6, bit: 0))
     as "reason 6 is sent with the bit 1 only"
+}
+
+/// Whether the press was taken: its first write is the 0x7fd.
+fn accepted(effects effects: List(cast.Effect)) -> Bool {
+  list.first(ids_of(effects:)) == Ok(0x07FD)
 }
 
 fn is_one_debug_line(effects: List(cast.Effect)) -> Bool {
@@ -642,5 +653,5 @@ pub fn the_player_leaving_the_world_cancels_every_timer_and_writes_nothing_test(
   let #(_, effects) = cast.left(cast: state)
   assert support.cancelled_timers(effects:) == [go_timer]
   assert support.writes(effects:) == [] && support.tells(effects:) == []
-    as "the viewers' clients drop the cast with the unit when it is removed"
+    as "the viewers' connections write each cast's 0x7fe before the unit's 0x355 (genesis_prime/game/connection)"
 }

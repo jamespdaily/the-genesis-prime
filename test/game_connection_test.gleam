@@ -111,6 +111,7 @@ import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
@@ -5391,28 +5392,50 @@ pub fn a_viewer_writes_a_cast_start_only_for_a_caster_its_client_shows_and_a_go_
     as "the finish ends the cast for the viewer: a later go is dropped"
 }
 
-pub fn a_viewer_forgets_the_casts_of_a_unit_its_client_no_longer_shows_test() -> Nil {
+pub fn a_viewer_writes_the_finish_of_each_cast_of_a_unit_before_the_unit_is_removed_and_none_after_test() -> Nil {
   use <- owned_test.run(10_000)
-  let start = spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let first = spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let second = spell_started_of(cast_id: 2_147_497_986, caster: 9)
   let #(state, _) =
     feed(
       in_world(),
       sent_by_a_peer(news_of(unit_id: 9, news: Appeared(another_unit()))),
     )
   let #(state, _) =
-    feed(state, sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start:))))
+    feed(
+      state,
+      sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start: second))),
+    )
   let #(state, _) =
+    feed(
+      state,
+      sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start: first))),
+    )
+  let #(state, taken) =
     feed(state, sent_by_a_peer(news_of(unit_id: 9, news: Removed)))
+  let finishes =
+    list.filter_map(heard(taken, keyed()), fn(frame) {
+      case frame.message_id == 0x07FE {
+        True -> {
+          let assert Ok(finished) = spell_finished.decode(frame.body)
+          Ok(finished.cast_id)
+        }
+        False -> Error(Nil)
+      }
+    })
+  assert written_ids(taken) == [0x07FE, 0x07FE, 0x0355]
+    as "the client keeps a cast that never gets its 0x7fe live (cast.no_answer), and a cast id used again restarts it (opcode.0x7ff), so each cast is finished before the unit goes"
+  assert finishes == [2_147_497_985, 2_147_497_986] as "in cast id order"
   let #(_, taken) =
     feed(
       state,
       sent_by_a_peer(news_of(
         unit_id: 9,
-        news: CastFinished(cast_id: start.cast_id),
+        news: CastFinished(cast_id: first.cast_id),
       )),
     )
   assert written_ids(taken) == []
-    as "the client removed unit 9 with its 0x355, and a cast of a removed unit never gets its finish, so the viewer keeps no id of it"
+    as "the viewer keeps no id of the removed unit's casts"
 }
 
 pub fn a_0x9a_in_the_world_is_taken_by_the_cast_rule_and_a_bag_index_not_held_is_answered_0x7fc_4_test() -> Nil {

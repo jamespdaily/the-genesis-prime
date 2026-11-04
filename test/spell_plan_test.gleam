@@ -12,8 +12,7 @@
 import client_tables
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_plan.{
-  type Spell, Always, GlobalCooldown, Normal, OnCaster, OnPrimaryTarget,
-  PrimaryWeapon,
+  type Spell, Always, GlobalCooldown, Normal, PrimaryWeapon,
 }
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
@@ -42,9 +41,10 @@ pub fn telekinetic_strike_takes_1250_ms_has_a_global_cooldown_of_1000_ms_that_bl
     as "Spell.CodeEnumCastMethod 0, Spell4Base 19102"
   assert spell.cast_time_ms == 1250 as "Spell4.32893: castTime 1250"
   assert spell.cooldown_ms == 0 as "Spell4.32893: no cooldown of its own"
-  assert spell.max_range == 30.0 as "Spell4.32893: targetMaxRange 30"
-  assert !spell.needs_target
-    as "Spell4TargetMechanics.targetType: mechanic 6 is targetType 2, which makes the caster the target, so no press is refused 91"
+  assert spell.cast_bar
+    as "Spell4Base 19102: castBarType 1 with a cast time, so the client shows the bar and keeps it as the current cast (cast.current_cast)"
+  assert !spell.ignores_casting && !spell.free_while_live
+    as "Spell4.32893: propertyFlags 0x4000002 has neither 0x1, 0x10 nor 0x40"
   assert spell.global_cooldown
     == GlobalCooldown(refused_while_running: True, starts_for_ms: Some(1000))
     as "kind 0 is refused while the global cooldown runs and starts it (0x1403b14c0, 0x14046afc0); SpellCoolDown row 213 is 1000 ms"
@@ -55,8 +55,6 @@ pub fn telekinetic_strike_takes_1250_ms_has_a_global_cooldown_of_1000_ms_that_bl
   assert proxy.spell.spell4_id == Spell4Id(30_900)
     as "Spell4Effects.effectType.26: dataBits00 is the Spell4 it starts"
   assert proxy.delay_ms == 0
-  assert proxy.on == OnCaster
-    as "Spell4.32893: the proxy's targetFlags 1 name the caster, whose Psi Point 30900 adds"
   assert proxy.condition == Always
   assert spell_plan.go_times_ms(spell:) == [1250]
     as "a spell that is not Multiphase has the one go, at the end of its cast time"
@@ -73,14 +71,14 @@ pub fn crush_starts_its_child_100_ms_after_its_go_and_blocks_and_starts_no_globa
   assert proxy.spell.spell4_id == Spell4Id(42_297)
     as "Spell4.32812: the Proxy starts 42297"
   assert proxy.delay_ms == 100 as "Spell4.32812: delayTime 100"
-  assert proxy.on == OnPrimaryTarget
   assert proxy.spell.global_cooldown.starts_for_ms == None
 }
 
 pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_each_start_the_damage_spell_test() -> Nil {
   use <- owned_test.run(60_000)
   let spell = planted(base: 23_173)
-  assert !spell.needs_target as "Spell4.38791: a mechanic that names no target"
+  assert spell.ignores_casting
+    as "Spell4.38791: propertyFlags 0x4000003 has 0x1, so a press of Stagger is never refused 13"
   assert spell.weapon == PrimaryWeapon
     as "Spell4Base 23173: weaponSlot 1 (0x1403afb10)"
   assert spell.global_cooldown
@@ -88,6 +86,8 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
     as "kind 1 starts the global cooldown and is not refused by it; row 180 is 750 ms"
   let assert [staggering] = spell.proxies
   assert staggering.spell.spell4_id == Spell4Id(38_780)
+  assert !staggering.spell.cast_bar
+    as "Spell4Base 23162: castBarType 0, so the client never makes 38780 the current cast (Spell4Base.castBarType)"
   assert staggering.spell.method == spell_plan.Multiphase
     as "Spell.CodeEnumCastMethod 8; Spell4.38791"
   assert staggering.spell.phase_delays_ms == [166, 200, 167, 167]
@@ -247,24 +247,9 @@ pub fn every_class_ability_of_the_clients_tables_builds_a_tree_and_the_nine_norm
     as "Spell4.32893 kind 0, SpellCoolDown 213 (table_rows)"
   let assert Ok(kick) = spell_plan.in_plans(plans:, base: Spell4BaseId(38_017))
   assert kick.cooldown_ms == 20_000 as "Spell4.58591: spellCoolDown 20000"
-  assert kick.max_range == 7.0 as "Spell4.58591: targetMaxRange 7"
   assert kick.global_cooldown.starts_for_ms == None
     as "Spell4.58591: global cooldown kind 3"
   let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
-  assert !gate.needs_target as "Spell4.34355: Gate's mechanic names no target"
-  list.each(
-    [
-      18_309, 37_968, 38_017, 26_468, 25_473, 25_635, 19_102, 19_019, 19_022,
-      38_201, 16_322, 26_543, 23_148, 23_161, 23_173, 27_638, 20_684, 20_325,
-    ],
-    fn(base) {
-      let assert Ok(spell) =
-        spell_plan.in_plans(plans:, base: Spell4BaseId(base))
-        as "the plan holds the ability"
-      assert !spell.needs_target
-        as "Spell4TargetMechanics.targetType: each of the 18 level-1 bases has mechanic 1 or 6, whose kinds 0 and 2 make the caster the target"
-    },
-  )
   assert list.length(gate.proxies) == 2
     as "Spell4.34355: Proxies to 25190 and 30436"
 }

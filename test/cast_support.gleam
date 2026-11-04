@@ -3,16 +3,16 @@
 //// set), a caster, the bytes of the client's presses and cancels, and helpers
 //// that find the writes, the tells and the timers in a step's effects.
 ////
-//// Two spells are planted, not client rows, because none of the 18 level-1
-//// abilities needs a target or has global cooldown kind 2: `targeted` (a spell
-//// that needs a target, range 10) and `blocked_only` (kind 2).
+//// Three spells are planted, not client rows, because no level-1 ability has
+//// global cooldown kind 2, a cast bar that lets a press through, or a cast time
+//// with a cooldown of its own: `blocked_only` (kind 2), `exempt` and `slow`.
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/spell_plan.{
   type Plans, type Proxy, type Spell, Always, GlobalCooldown, NoWeaponNeeded,
-  Normal, OnCaster, OnPrimaryTarget, PrimaryWeapon, Proxy, Spell,
+  Normal, PrimaryWeapon, Proxy, Spell,
 }
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_ability.{CastAbility}
@@ -38,8 +38,9 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     method: Normal,
     cast_time_ms: 0,
     cooldown_ms: 0,
-    max_range: 0.0,
-    needs_target: False,
+    cast_bar: False,
+    free_while_live: False,
+    ignores_casting: False,
     weapon: NoWeaponNeeded,
     global_cooldown: GlobalCooldown(
       refused_while_running: False,
@@ -55,26 +56,24 @@ fn proxy(
   effect effect: Int,
   delay delay: Int,
   phases phases: Int,
-  on on: spell_plan.ProxyTarget,
   spell spell: Spell,
 ) -> Proxy {
   Proxy(
     effect_id: Spell4EffectsId(effect),
     delay_ms: delay,
     phase_flags: phases,
-    on:,
     condition: Always,
     spell:,
   )
 }
 
-/// Telegraph-less Telekinetic Strike, `Spell4.32893`: 1250 ms, range 30, kind 0
+/// Telekinetic Strike, `Spell4.32893`: 1250 ms with a cast bar, kind 0
 /// with SpellCoolDown 213 (1000 ms), and the Proxy to 30900 on the caster.
 pub fn telekinetic_strike() -> Spell {
   Spell(
     ..child(spell4_id: 32_893, base: 19_102),
     cast_time_ms: 1250,
-    max_range: 30.0,
+    cast_bar: True,
     global_cooldown: GlobalCooldown(
       refused_while_running: True,
       starts_for_ms: Some(1000),
@@ -84,7 +83,6 @@ pub fn telekinetic_strike() -> Spell {
         effect: 62_204,
         delay: 0,
         phases: -1,
-        on: OnCaster,
         spell: child(spell4_id: 30_900, base: 17_288),
       ),
     ],
@@ -93,11 +91,7 @@ pub fn telekinetic_strike() -> Spell {
 
 /// Kick, `Spell4.58591`: instant, cooldown 20 s, range 7, kind 3.
 pub fn kick() -> Spell {
-  Spell(
-    ..child(spell4_id: 58_591, base: 38_017),
-    cooldown_ms: 20_000,
-    max_range: 7.0,
-  )
+  Spell(..child(spell4_id: 58_591, base: 38_017), cooldown_ms: 20_000)
 }
 
 /// Crush, `Spell4.32812`: cooldown 35 s, kind 3, a Proxy 100 ms after the go to 42297.
@@ -105,20 +99,19 @@ pub fn crush() -> Spell {
   Spell(
     ..child(spell4_id: 32_812, base: 19_022),
     cooldown_ms: 35_000,
-    max_range: 25.0,
+    ignores_casting: True,
     proxies: [
       proxy(
         effect: 62_007,
         delay: 100,
         phases: 1,
-        on: OnPrimaryTarget,
         spell: child(spell4_id: 42_297, base: 26_488),
       ),
     ],
   )
 }
 
-/// Stagger, `Spell4.38791`: cooldown 25 s, range 8, weapon slot 1, kind 1 with
+/// Stagger, `Spell4.38791`: cooldown 25 s, weapon slot 1, kind 1 with
 /// SpellCoolDown 180 (750 ms), a Proxy to 38780, a Multiphase spell of phases of
 /// 166, 200, 167 and 167 ms that proxies 38781 in each phase.
 pub fn stagger() -> Spell {
@@ -132,43 +125,39 @@ pub fn stagger() -> Spell {
           effect: 83_823,
           delay: 0,
           phases: 1,
-          on: OnPrimaryTarget,
           spell: child(spell4_id: 38_781, base: 23_163),
         ),
         proxy(
           effect: 83_824,
           delay: 0,
           phases: 2,
-          on: OnPrimaryTarget,
           spell: child(spell4_id: 38_781, base: 23_163),
         ),
         proxy(
           effect: 83_825,
           delay: 0,
           phases: 4,
-          on: OnPrimaryTarget,
           spell: child(spell4_id: 38_781, base: 23_163),
         ),
         proxy(
           effect: 83_826,
           delay: 0,
           phases: 8,
-          on: OnPrimaryTarget,
           spell: child(spell4_id: 38_781, base: 23_163),
         ),
       ],
     )
   Spell(
     ..child(spell4_id: 38_791, base: 23_173),
+    ignores_casting: True,
     cooldown_ms: 25_000,
-    max_range: 8.0,
     weapon: PrimaryWeapon,
     global_cooldown: GlobalCooldown(
       refused_while_running: False,
       starts_for_ms: Some(750),
     ),
     proxies: [
-      proxy(effect: 83_853, delay: 0, phases: 1, on: OnCaster, spell: phases),
+      proxy(effect: 83_853, delay: 0, phases: 1, spell: phases),
     ],
   )
 }
@@ -178,8 +167,8 @@ pub fn stagger() -> Spell {
 pub fn gate() -> Spell {
   Spell(
     ..child(spell4_id: 34_355, base: 20_325),
+    ignores_casting: True,
     cooldown_ms: 30_000,
-    max_range: 17.0,
     global_cooldown: GlobalCooldown(
       refused_while_running: False,
       starts_for_ms: Some(750),
@@ -189,14 +178,12 @@ pub fn gate() -> Spell {
         effect: 67_778,
         delay: 0,
         phases: -1,
-        on: OnPrimaryTarget,
         spell: child(spell4_id: 25_190, base: 11_781),
       ),
       proxy(
         effect: 67_779,
         delay: 0,
         phases: -1,
-        on: OnPrimaryTarget,
         spell: child(spell4_id: 30_436, base: 16_838),
       ),
     ],
@@ -208,7 +195,6 @@ pub fn gate() -> Spell {
 pub fn mind_burst() -> Spell {
   Spell(
     ..child(spell4_id: 32_809, base: 19_019),
-    max_range: 25.0,
     global_cooldown: GlobalCooldown(
       refused_while_running: True,
       starts_for_ms: Some(1250),
@@ -221,8 +207,8 @@ pub fn mind_burst() -> Spell {
 pub fn gamma_rays() -> Spell {
   Spell(
     ..child(spell4_id: 29_874, base: 16_322),
+    cast_bar: True,
     cast_time_ms: 1250,
-    max_range: 20.0,
     weapon: PrimaryWeapon,
     global_cooldown: GlobalCooldown(
       refused_while_running: True,
@@ -234,26 +220,28 @@ pub fn gamma_rays() -> Spell {
 
 /// Electrocute, `Spell4.41276`: a Channeled spell (`0x14053d1f0`), not Normal.
 pub fn electrocute() -> Spell {
-  Spell(
-    ..child(spell4_id: 41_276, base: 25_473),
-    method: spell_plan.Channeled,
-    max_range: 25.0,
-  )
+  Spell(..child(spell4_id: 41_276, base: 25_473), method: spell_plan.Channeled)
 }
 
 /// Zap, `Spell4.41438`: weapon slot 1, kind 1 with no global row, cooldown 30 s.
 pub fn zap() -> Spell {
   Spell(
     ..child(spell4_id: 41_438, base: 25_635),
+    ignores_casting: True,
     cooldown_ms: 30_000,
-    max_range: 25.0,
     weapon: PrimaryWeapon,
   )
 }
 
-/// A planted spell that needs a target, range 10, kind 3.
-pub fn targeted() -> Spell {
-  Spell(..child(spell4_id: 1, base: 1), max_range: 10.0, needs_target: True)
+/// A planted spell with a cast time of 1000 ms and a cast bar whose live cast
+/// leaves the caster free to press another (`0x1403afb10`).
+pub fn exempt() -> Spell {
+  Spell(
+    ..child(spell4_id: 1, base: 1),
+    cast_time_ms: 1000,
+    cast_bar: True,
+    free_while_live: True,
+  )
 }
 
 /// A planted spell of global cooldown kind 2: refused while it runs, starting none.
@@ -274,7 +262,7 @@ pub fn slow() -> Spell {
 }
 
 /// The abilities by bag index: 0 Telekinetic Strike, 1 Crush, 2 Mind Burst, 3 Kick,
-/// 4 Stagger, 5 Gate, 6 Gamma Rays, 7 Electrocute, 8 the targeted spell, 9 Zap,
+/// 4 Stagger, 5 Gate, 6 Gamma Rays, 7 Electrocute, 8 the exempt spell, 9 Zap,
 /// 10 the kind 2 spell and 11 the slow spell.
 pub fn spells() -> List(Spell) {
   [
@@ -286,7 +274,7 @@ pub fn spells() -> List(Spell) {
     gate(),
     gamma_rays(),
     electrocute(),
-    targeted(),
+    exempt(),
     zap(),
     blocked_only(),
     slow(),
@@ -300,8 +288,7 @@ pub fn plans() -> Plans {
 }
 
 /// The player 7 with the abilities above and its weapon, seen by the connections
-/// 2 and 3, standing at the live character's place; the creature 40 stands 10 m
-/// away on x, and the other player 41 is shown.
+/// 2 and 3, standing at the live character's place.
 pub fn caster() -> Caster {
   let place = place_support.live_character_place()
   cast.Caster(
@@ -310,10 +297,6 @@ pub fn caster() -> Caster {
     abilities: list.map(spells(), fn(spell) { spell.spell4_base_id }),
     weapon: Some(Item2Id(81_351)),
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
-    shown: dict.from_list([
-      #(40, cast.ShownCreature(x: 4615.65, y: -7.571, z: 494.996)),
-      #(41, cast.ShownPlayer),
-    ]),
   )
 }
 

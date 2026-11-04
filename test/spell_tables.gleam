@@ -6,7 +6,7 @@
 ////
 //// The abilities and what the real rows hold, which the plan's tests assert:
 //// - Telekinetic Strike, Spell4 32893 (class 3, base 19102): castTime 1250,
-////   range 30, no cooldown of its own, global cooldown kind 0 with SpellCoolDown
+////   castBarType 1, no cooldown of its own, global cooldown kind 0 with SpellCoolDown
 ////   row 213 (1000 ms), a Magic damage effect and a Proxy to 30900 on the caster
 ////   (`Spell4.32893`).
 //// - Mind Burst, 32809 (class 3, base 19019): an innate cost of type 6 (Resource1,
@@ -17,13 +17,11 @@
 ////   weapon slot 1, castTime 1250, kind 0, row 159 (1250 ms), and Proxies to
 ////   34775 and 35886; Class 4's slots 1 to 5 hold vital 18
 ////   (`Spell4CastResult.vital_cost`).
-//// - Stagger, 38791 (class 5, base 23173): cooldown 25000, range 8, kind 1, row
-////   180 (750 ms), a mechanic that needs no target, and a Proxy to 38780, a
+//// - Stagger, 38791 (class 5, base 23173): cooldown 25000, kind 1, row
+////   180 (750 ms), and a Proxy to 38780, a
 ////   Multiphase spell (base 23162, castMethod 8) of four phases of 166, 200, 167
 ////   and 167 ms (SpellPhase 3717 to 3720), each phase proxying 38781 by its
 ////   phaseFlags 1, 2, 4 and 8 (`Spell4.38791`).
-//// - Spell4TargetMechanics rows 1 (targetType 0) and 6 (targetType 2): neither needs a
-////   target (`Spell4TargetMechanics.targetType`).
 //// The child spells' bases are the client's (`table_rows -- Spell4 30900 34775 35886 38781`),
 //// each of cast method 0 but 38780's.
 
@@ -33,7 +31,6 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
-import genesis_prime/table/spell4_target_mechanics
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
@@ -53,7 +50,6 @@ pub type Rows {
     spell_phases: List(List(Cell)),
     spell_cool_downs: List(List(Cell)),
     classes: List(List(Cell)),
-    target_mechanics: List(List(Cell)),
   )
 }
 
@@ -79,22 +75,35 @@ fn spell4_row(
     #("innateCost0", Integer(cost.1)),
     #("globalCooldownEnum", Integer(kind)),
     #("spellCoolDownIdGlobal", Integer(global)),
+    #("propertyFlags", Integer(property_flags(id))),
   ])
 }
 
-/// A Spell4Base row: its cast method, weapon slot, target mechanic and class.
+/// Spell4.propertyFlags of the planted rows, as `table_rows -- Spell4 <id>` prints
+/// them (`Spell4.propertyFlags`): 0x1 makes a press ignore a live cast.
+fn property_flags(id: Int) -> Int {
+  case id {
+    32_893 | 29_874 | 32_809 -> 0x4000002
+    32_812 -> 0x4100003
+    38_791 -> 0x4000003
+    38_780 -> 0x103
+    _ -> 0
+  }
+}
+
+/// A Spell4Base row: its cast method, weapon slot, cast bar type and class.
 fn base_row(
   id id: Int,
   method method: Int,
   weapon weapon: Int,
-  mechanic mechanic: Int,
+  bar bar: Int,
   class class: Int,
 ) -> List(Cell) {
   planted_table.row(spell4_base.schema, [
     #("ID", Integer(id)),
     #("castMethod", Integer(method)),
     #("weaponSlot", Integer(weapon)),
-    #("spell4TargetMechanicId", Integer(mechanic)),
+    #("castBarType", Integer(bar)),
     #("classIdPlayer", Integer(class)),
   ])
 }
@@ -275,17 +284,17 @@ pub fn rows() -> Rows {
     ]
       |> list.sort(by_id),
     spell4_base: [
-      base_row(id: 19_102, method: 0, weapon: 0, mechanic: 6, class: 3),
-      base_row(id: 17_288, method: 0, weapon: 0, mechanic: 1, class: 0),
-      base_row(id: 19_019, method: 0, weapon: 0, mechanic: 6, class: 3),
-      base_row(id: 19_022, method: 0, weapon: 0, mechanic: 6, class: 3),
-      base_row(id: 26_488, method: 0, weapon: 0, mechanic: 6, class: 0),
-      base_row(id: 16_322, method: 0, weapon: 1, mechanic: 6, class: 4),
-      base_row(id: 20_737, method: 0, weapon: 0, mechanic: 6, class: 0),
-      base_row(id: 21_506, method: 0, weapon: 0, mechanic: 6, class: 0),
-      base_row(id: 23_173, method: 0, weapon: 1, mechanic: 1, class: 5),
-      base_row(id: 23_162, method: 8, weapon: 0, mechanic: 1, class: 0),
-      base_row(id: 23_163, method: 0, weapon: 0, mechanic: 6, class: 0),
+      base_row(id: 19_102, method: 0, weapon: 0, bar: 1, class: 3),
+      base_row(id: 17_288, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 19_019, method: 0, weapon: 0, bar: 0, class: 3),
+      base_row(id: 19_022, method: 0, weapon: 0, bar: 0, class: 3),
+      base_row(id: 26_488, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 16_322, method: 0, weapon: 1, bar: 1, class: 4),
+      base_row(id: 20_737, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 21_506, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 23_173, method: 0, weapon: 1, bar: 0, class: 5),
+      base_row(id: 23_162, method: 8, weapon: 0, bar: 0, class: 0),
+      base_row(id: 23_163, method: 0, weapon: 0, bar: 0, class: 0),
     ]
       |> list.sort(by_id),
     spell4_effects: [
@@ -428,12 +437,6 @@ pub fn rows() -> Rows {
       class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16]),
       class_row(id: 5, slots: [5, 0, 0, 0, 0, 0, 0, 16]),
     ],
-    target_mechanics: list.map([#(1, 0), #(6, 2)], fn(row) {
-      planted_table.row(spell4_target_mechanics.schema, [
-        #("ID", Integer(row.0)),
-        #("targetType", Integer(row.1)),
-      ])
-    }),
   )
 }
 
@@ -490,7 +493,6 @@ fn entries() -> List(table_store.Entry) {
     spell_phase.entry(),
     spell_cool_down.entry(),
     class.entry(),
-    spell4_target_mechanics.entry(),
   ]
 }
 
@@ -503,7 +505,6 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell_phase.schema, rows.spell_phases),
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),
-    planted_table.file(spell4_target_mechanics.schema, rows.target_mechanics),
   ]
 }
 

@@ -342,7 +342,6 @@ import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
 }
-import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
@@ -1241,7 +1240,6 @@ fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
     abilities: entered.loadout.abilities,
     weapon: Some(entered.loadout.weapon),
     audience: entered.viewers,
-    shown: entered.shown,
   )
 }
 
@@ -1916,10 +1914,15 @@ fn map_sent(
     map.Gone(unit_id:), Some(entered) -> {
       let session = marked_gone(session:, unit_id:)
       use <- bool.guard(
-        when: !dict.has_key(entered.shown, unit_id),
+        when: !set.contains(entered.shown, unit_id),
         return: Continue(session, []),
       )
-      Continue(session, [to_client(session, unit_removed_frame(unit_id:))])
+      Continue(
+        session,
+        list.append(finishes_of_forgotten_casts(session:, entered:, unit_id:), [
+          to_client(session, unit_removed_frame(unit_id:)),
+        ]),
+      )
     }
   }
 }
@@ -2092,7 +2095,7 @@ fn viewer_takes(
   news news: client_connection.PeerNews,
 ) -> client_connection.Handled(Session) {
   let unit_id = news.unit_id
-  let shown = dict.has_key(entered.shown, unit_id)
+  let shown = set.contains(entered.shown, unit_id)
   let creates_or_removes = case news.news {
     client_connection.Appeared(..)
     | client_connection.CreatureAppeared(..)
@@ -2120,28 +2123,18 @@ fn viewer_takes(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      Continue(
-        shown_changed(session:, change: dict.insert(
-          _,
-          unit_id,
-          cast.ShownPlayer,
-        )),
-        [to_client(session, world_entry.unit_created_frame(unit:))],
-      )
+      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
+        to_client(session, world_entry.unit_created_frame(unit:)),
+      ])
     }
     client_connection.CreatureAppeared(unit:) -> {
       use <- bool.guard(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      Continue(
-        shown_changed(session:, change: dict.insert(
-          _,
-          unit_id,
-          creature_shown(unit:),
-        )),
-        [to_client(session, creature_created_frame(unit:))],
-      )
+      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
+        to_client(session, creature_created_frame(unit:)),
+      ])
     }
     client_connection.Moving(server_time_ms:, commands:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
@@ -2154,9 +2147,12 @@ fn viewer_takes(
     }
     client_connection.Removed -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
-      Continue(unit_forgotten(session:, unit_id:), [
-        to_client(session, unit_removed_frame(unit_id:)),
-      ])
+      Continue(
+        unit_forgotten(session:, unit_id:),
+        list.append(finishes_of_forgotten_casts(session:, entered:, unit_id:), [
+          to_client(session, unit_removed_frame(unit_id:)),
+        ]),
+      )
     }
     client_connection.CastStarted(start:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
@@ -2199,35 +2195,20 @@ fn viewer_takes(
   }
 }
 
-/// A creature as the viewer's cast rule knows it: where its 0x262 puts it, which
-/// is the first movement command, a position, or the origin for a unit the
-/// record places nowhere.
-fn creature_shown(unit unit: UnitCreateCreature) -> cast.Shown {
-  let position =
-    list.find_map(unit.tail.movement_commands, fn(command) {
-      case command {
-        start_movement.Position(position) -> Ok(position)
-        start_movement.Rotation(..) -> Error(Nil)
-      }
-    })
-  case position {
-    Ok(position) ->
-      cast.ShownCreature(
-        x: bits_float(bits: position.x),
-        y: bits_float(bits: position.y),
-        z: bits_float(bits: position.z),
-      )
-    Error(Nil) -> cast.ShownCreature(x: 0.0, y: 0.0, z: 0.0)
-  }
-}
-
-/// The value of the 32 bits of a float the record holds, as the client reads it;
-/// 0.0 for bits that are no finite float, which the spawn's own checks rule out.
-fn bits_float(bits bits: Int) -> Float {
-  case float32.bits(number: bits) {
-    Ok(bits) -> result.unwrap(float32.value(bits:), 0.0)
-    Error(Nil) -> 0.0
-  }
+/// 0x7fe for each cast of the unit that this client was sent the start of and no
+/// finish, in cast id order, written before the unit's 0x355: the client keeps a
+/// cast that never gets its 0x7fe live (`cast.no_answer`), and a cast id used
+/// again restarts it (`opcode.0x7ff`).
+fn finishes_of_forgotten_casts(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+) -> List(Effect(ConnectionEffect(Request))) {
+  dict.to_list(entered.casts_written)
+  |> list.filter(fn(written) { written.1 == unit_id })
+  |> list.map(fn(written) { written.0 })
+  |> list.sort(int.compare)
+  |> list.map(fn(cast_id) { to_client(session, cast.finished_frame(cast_id:)) })
 }
 
 /// The player the client holds in this connection's world, while it holds one:
@@ -2305,21 +2286,21 @@ fn viewers_changed(
 /// The session with the units its client shows changed by `change`.
 fn shown_changed(
   session session: Session,
-  change change: fn(dict.Dict(Int, cast.Shown)) -> dict.Dict(Int, cast.Shown),
+  change change: fn(Set(Int)) -> Set(Int),
 ) -> Session {
   with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, shown: change(entered.shown))
   })
 }
 
-/// The session with the unit no longer shown, and the casts of it that the
-/// client holds forgotten: a cast of a unit the client removed never gets its
-/// finish.
+/// The session with the unit no longer shown, and the casts of it forgotten: the
+/// client is written their finish before the unit's 0x355
+/// (`finishes_of_forgotten_casts`).
 fn unit_forgotten(session session: Session, unit_id unit_id: Int) -> Session {
   with_entered(session:, change: fn(entered) {
     world_entry.Entered(
       ..entered,
-      shown: dict.delete(entered.shown, unit_id),
+      shown: set.delete(entered.shown, unit_id),
       casts_written: dict.filter(entered.casts_written, fn(_, caster) {
         caster != unit_id
       }),

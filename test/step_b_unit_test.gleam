@@ -18,6 +18,7 @@ import genesis_prime/game/item_property.{Shield}
 import genesis_prime/game/loadout
 import genesis_prime/game/start_place
 import genesis_prime/message/float32
+import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
@@ -42,7 +43,7 @@ import unitest
 /// The Novice start enum of CharacterCreation (`Item2.novice_set`).
 const novice_start = 4
 
-/// Step B's unit: the map's record with the stand-in health 136, then the gear
+/// Step B's unit, with the body's visuals before the worn set's: the map's record with the stand-in health 136, then the gear
 /// applied to it by stats 0 (maximum health), 10 (the level), 20 (the full
 /// shield) and the properties 7, 35, 36, 42 and the shield's 41, 175, 176, 178
 /// in the order of their ids, each as base and value alike.
@@ -52,6 +53,7 @@ fn step_b(
   unit_id unit_id: Int,
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
+  body body: List(ItemVisual),
 ) -> UnitCreatePlayer {
   let assert Ok(set) =
     loadout.of(
@@ -99,7 +101,7 @@ fn step_b(
         properties: [
           UnitProperty(property_id: 7, field_2: health, value: health),
         ],
-        item_visuals: loadout.item_visuals(loadout: set),
+        item_visuals: list.append(body, loadout.item_visuals(loadout: set)),
         cast_id: 0,
         faction_id: character.faction_id,
         base_faction_id: character.faction_id,
@@ -162,6 +164,11 @@ fn step_b(
   )
 }
 
+/// A look's item visual, which the body holds before the worn set's.
+const look = [
+  ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0),
+]
+
 /// Every Novice class and faction of the tables, once each, at levels 1 and 3,
 /// through the old unit and the new one.
 fn every_row_is_unchanged(tables tables: table_store.Tables) -> Int {
@@ -185,7 +192,8 @@ fn every_row_is_unchanged(tables tables: table_store.Tables) -> Int {
           level:,
         )
       let place = place_support.live_character_place()
-      let old = step_b(character:, place:, unit_id: 9, realm_id: 4, tables:)
+      let old =
+        step_b(character:, place:, unit_id: 9, realm_id: 4, tables:, body: look)
       let assert Ok(set) =
         loadout.of(tables:, class_id: character.class_id, faction_id: pair.1)
         as "the Novice set of a row a player can make"
@@ -198,7 +206,7 @@ fn every_row_is_unchanged(tables tables: table_store.Tables) -> Int {
             character:,
             place:,
             unit_id: 9,
-            body: [],
+            body: look,
             loadout: set,
             max_health:,
           ),
@@ -238,7 +246,8 @@ pub fn the_oracle_differs_from_a_unit_with_another_health_test() -> Nil {
   let tables = character_tables.shared()
   let character = character_support.character(number: 5)
   let place = place_support.live_character_place()
-  let old = step_b(character:, place:, unit_id: 9, realm_id: 4, tables:)
+  let old =
+    step_b(character:, place:, unit_id: 9, realm_id: 4, tables:, body: look)
   let assert Ok(set) =
     loadout.of(
       tables:,
@@ -252,7 +261,7 @@ pub fn the_oracle_differs_from_a_unit_with_another_health_test() -> Nil {
         character:,
         place:,
         unit_id: 9,
-        body: [],
+        body: look,
         loadout: set,
         max_health: 1,
       ),

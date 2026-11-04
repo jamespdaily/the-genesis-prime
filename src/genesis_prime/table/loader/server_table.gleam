@@ -9,6 +9,7 @@ import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/chat_channel
+import genesis_prime/table/class
 import genesis_prime/table/creature2
 import genesis_prime/table/creature2_arche_type
 import genesis_prime/table/creature2_difficulty
@@ -38,7 +39,11 @@ import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
+import genesis_prime/table/spell_phase
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
@@ -64,12 +69,15 @@ import gleam/erlang/reference.{type Reference}
 /// - ItemDisplay and ItemDisplaySourceEntry: what a worn item is drawn with
 ///   (genesis_prime/game/worn_visual).
 /// - Spell4 and SpellLevel: a class's level-1 abilities (genesis_prime/game/loadout).
+/// - Spell4, Spell4Base, Spell4Effects, SpellPhase, SpellCoolDown and Class: the
+///   tree of casts each of those abilities starts (genesis_prime/game/spell_plan).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
   [
     character_creation.entry(),
     chat_channel.entry(),
+    class.entry(),
     character_customization.entry(),
     character_customization_label.entry(),
     creature2.entry(),
@@ -95,7 +103,11 @@ pub fn entries() -> List(store.Entry) {
     item_slot.entry(),
     path_mission.entry(),
     spell4.entry(),
+    spell4_base.entry(),
+    spell4_effects.entry(),
+    spell_cool_down.entry(),
     spell_level.entry(),
+    spell_phase.entry(),
     world_location2.entry(),
     world_zone.entry(),
     xp_per_level.entry(),
