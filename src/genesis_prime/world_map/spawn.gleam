@@ -27,14 +27,16 @@
 ////   row, or whose outfit has no Creature2OutfitInfo row: the client would drop the
 ////   0x262 or show no model.
 //// - **The creature's values.** Level is the row's stat 10, or the creature's
-////   `minLevel` for a row with none. Health, stat 0 and the maximum, is Base Health
-////   at that level by the client's formula (`0x1404585c0`, which reads the message's
-////   stat 10: `opcode.0x262.creature_level`), not the row's recorded
-////   stat 0: the client computes its own maximum and a 0x262 sends none, so a
-////   recorded health above it would show current above maximum, and the world
-////   database's retail values are not read where the client has the number
-////   (`world_data.spawn_health`). The recorded stat 0 is read only to leave out a
-////   row it makes dead. Faction, base faction, display and outfit are
+////   `minLevel` for a row with none. Health, stat 0 and the maximum, is the row's
+////   recorded stat 0 truncated, sent as stat 0 and as property 7, Base Health, so
+////   the client's bar agrees (`opcode.0x262.creature`: the property list sets
+////   property 7, the client's own number being only the default). The recorded value
+////   is a retail record, used where the client lacks the number of each spawn's
+////   health (`world_data.spawn_health`: it differs from the client's formula for
+////   nearly every spawn). A row with no recorded health has the client's Base Health
+////   at that level (`0x1404585c0`, which reads the message's stat 10:
+////   `opcode.0x262.creature_level`), which a 0x262 leaves to the client. A creature
+////   stands, and comes back, at that value. Faction, base faction, display and outfit are
 ////   the row's own (`opcode.0x262.creature`): the client's weighted display pick
 ////   runs only for the spawns it makes itself (`0x1404846c0`).
 //// - **A level outside its row's range** is kept and listed in an info line.
@@ -113,6 +115,15 @@ pub type Row {
   )
 }
 
+/// Where a spawn's health comes from. `Recorded` is the world database's stat 0,
+/// which the 0x262 sends as property 7 too, since the client's own number for the
+/// creature is another; `ClientDefault` is the client's Base Health at the
+/// spawn's level, which a 0x262 leaves out for the client to compute.
+pub type HealthSource {
+  Recorded
+  ClientDefault
+}
+
 /// One creature's place and values, as its 0x262 carries them, so the 0x262
 /// needs no table at run time.
 pub type Spawn {
@@ -125,9 +136,12 @@ pub type Spawn {
     place: Place,
     /// Stat 10: the row's recorded level, or the creature's `minLevel`.
     level: Int,
-    /// Stat 0, and the creature's maximum health: its Base Health at `level`
-    /// (`base_health`). A creature stands, and comes back, at full health.
+    /// Stat 0, and the creature's maximum health: the row's recorded health, or
+    /// else its Base Health at `level` (`base_health`). A creature stands, and
+    /// comes back, at full health.
     health: Int,
+    /// Where `health` comes from, and so whether the 0x262 sends it as property 7.
+    health_source: HealthSource,
     /// The faction the 0x262 sends (the row's `faction_id`).
     faction_id: Int,
     /// The base faction the 0x262 sends.
@@ -822,7 +836,7 @@ fn left_out_of(
     attackable_by(catalog:, player: exile_faction, unit: row.faction_id)
     || attackable_by(catalog:, player: dominion_faction, unit: row.faction_id),
     has_npc_link(checked.creature),
-    is_dead(checked)
+    checked.spawn.health == 0
   {
     True, _, _, _ -> Ok(NoFaction)
     False, False, _, _ -> Ok(FriendlyToBoth)
@@ -830,17 +844,6 @@ fn left_out_of(
     False, True, False, True -> Ok(Dead)
     False, True, False, False -> Error(Nil)
   }
-}
-
-/// Whether the client would create the unit dead: its recorded health stat 0
-/// truncates to 0, or its Base Health does (`opcode.0x262.creature`). No other
-/// recorded health is read (`base_health`).
-fn is_dead(checked: Checked) -> Bool {
-  let recorded_dead = case checked.row.health {
-    Some(stat) -> float.truncate(stat) == 0
-    None -> False
-  }
-  recorded_dead || checked.spawn.health == 0
 }
 
 /// Whether the creature gives or receives a quest, trains a class or a
@@ -981,8 +984,8 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
 }
 
 /// The checks the client makes of one row: its creature loads and its display
-/// is one of the creature's, and its level is the stat's or the creature's own and
-/// its health the Base Health at that level.
+/// is one of the creature's, and its health and level are the stats' or the
+/// creature's own, the Base Health at its level for a row with no health.
 fn load_checks(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
@@ -1014,7 +1017,12 @@ fn load_checks(
     Some(stat) -> float.truncate(stat)
     None -> creature.min_level
   }
-  use health <- result.try(base_health(catalog:, row: creature, level:))
+  use #(health, health_source) <- result.try(case row.health {
+    Some(stat) -> Ok(#(float.truncate(stat), Recorded))
+    None ->
+      base_health(catalog:, row: creature, level:)
+      |> result.map(fn(health) { #(health, ClientDefault) })
+  })
   use _in_group <- result.try(display_in_group(
     catalog:,
     creature:,
@@ -1048,6 +1056,7 @@ fn load_checks(
         place:,
         level:,
         health:,
+        health_source:,
         faction_id: row.faction_id,
         base_faction_id: row.base_faction_id,
         display_info_id: row.display_info_id,

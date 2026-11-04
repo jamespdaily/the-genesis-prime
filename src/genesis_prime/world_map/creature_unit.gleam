@@ -17,20 +17,25 @@
 ////   in place of the row's (opcode.0x262.creature).
 //// - **Display and outfit:** the spawn's display info, since with 0 the creature
 ////   has no model, and its outfit info (opcode.0x262.creature).
-//// - **Properties:** none; the client computes each from its tables
-////   (`0x1404585c0`).
+//// - **Properties:** Base Health (property 7) at the spawn's health when that is a
+////   recorded value, so the client's maximum is the spawn's, not its own formula's
+////   (`opcode.0x262.creature`); otherwise none, and the client computes each from
+////   its tables (`0x1404585c0`).
 //// - Every other field 0 or empty, each by its record
 ////   (opcode.0x262.unit_fields).
 
+import genesis_prime/message/float32
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{
   type UnitCreateCreature, UnitCreateCreature,
 }
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/spawn.{type Spawn, ClientDefault, Recorded}
 import genesis_prime/world_map/unit_fields
+import gleam/int
 import gleam/result
 
 /// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health`,
@@ -57,7 +62,7 @@ pub fn create(
         start_movement.Position(position),
         start_movement.Rotation(rotation),
       ],
-      properties: [],
+      properties: base_health_properties(spawn:),
       item_visuals: [],
       faction_id: spawn.faction_id,
       base_faction_id: spawn.base_faction_id,
@@ -72,4 +77,25 @@ pub fn create(
 pub fn health_of(unit unit: UnitCreateCreature) -> Int {
   unit_fields.stat(tail: unit.tail, stat_id: unit_fields.health_stat)
   |> result.unwrap(0)
+}
+
+/// The properties the 0x262 sends: Base Health at the spawn's health, both words
+/// the same as the player's (`opcode.0x262.health`), for a recorded health; none
+/// for the client's own default.
+fn base_health_properties(
+  spawn spawn: Spawn,
+) -> List(unit_property.UnitProperty) {
+  case spawn.health_source {
+    Recorded -> {
+      let bits = float32.to_bits(int.to_float(spawn.health))
+      [
+        UnitProperty(
+          property_id: unit_fields.base_health_property,
+          field_2: bits,
+          value: bits,
+        ),
+      ]
+    }
+    ClientDefault -> []
+  }
 }
