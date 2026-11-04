@@ -34,6 +34,7 @@ import genesis_prime/step/runtime
 import genesis_prime/store/worker
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
+import genesis_prime/world_map/creature_registry
 import gleam/erlang/application as erlang_application
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/charlist.{type Charlist}
@@ -249,14 +250,22 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
 }
 
 /// The world subtree's names, and its times: a watch's call to Maps may take
-/// 5 s, the same as an ask, and a map has 5 s to stop. Recording is off; the
-/// dev start changes it.
+/// 5 s, the same as an ask, a map and a creature have 5 s to stop, and a spawn
+/// whose creature ended stays empty for 60 s, the respawn time the server
+/// chooses since no client table holds one (death.creature_respawn). It stands
+/// no creature until the spawns are given. Recording is off; the dev start
+/// changes it.
 fn world() -> server.World {
   server.World(
     maps: process.new_name("maps"),
     map_supervisor: process.new_name("map_supervisor"),
     maps_call_ms: 5000,
     map_shutdown_ms: 5000,
+    creatures: creature_registry.new(),
+    creature_supervisor: process.new_name("creature_supervisor"),
+    creature_shutdown_ms: 5000,
+    creature_restart_ms: 60_000,
+    spawns: [],
   )
 }
 

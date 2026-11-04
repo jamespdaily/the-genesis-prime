@@ -36,6 +36,7 @@
 //// chooses.
 
 import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/option.{type Option, None}
 
 /// A rule as its shell runs it. `name` is the rule's module path, which a
@@ -125,6 +126,13 @@ pub type Event(own) {
 pub type ServiceEvent(message) {
   /// A service started. It is the first input of a service.
   Started
+  /// A timer the rule started with `StartServiceTimer` fired. A timer that was
+  /// cancelled gives none.
+  ServiceTimerFired(timer: TimerId)
+  /// The creature a `StartCreature` named under `watch` was not started: the
+  /// reason as the creature supervisor reported it, for the rule's log line. The
+  /// watch was never opened, so no `WatchEnded` follows for it.
+  CreatureNotStarted(watch: WatchId, reason: String)
   /// Another process asked the process something; the rule answers it once,
   /// with `Reply`.
   Asked(caller: CallerId, message: message)
@@ -261,10 +269,44 @@ pub type ServiceEffect(outgoing) {
   /// is dropped.
   Reply(caller: CallerId, answer: outgoing)
   /// Send the process at `to` a message without waiting. The shell finds the
-  /// process from the address (a connection through OTP's `pg`, by its id);
-  /// a receiver that is not running drops the message, and a rule that must
-  /// know watches the receiver.
+  /// process from the address (a connection or a creature through OTP's `pg`,
+  /// by its id); a receiver that is not running drops the message, and a rule
+  /// that must know watches the receiver.
   Send(to: Address, message: outgoing)
+  /// Start the creature the value describes under the creature supervisor, wait
+  /// for it to be running, then watch it under `watch`, so the step's later
+  /// effects (a `Send` to its `Creature` address) find it and its end comes back
+  /// as `WatchEnded`. A creature that does not start comes back as
+  /// `CreatureNotStarted`, with no watch opened.
+  StartCreature(watch: WatchId, creature: CreatureStart)
+  /// Start a timer. Its firing comes back as `ServiceTimerFired`, once.
+  StartServiceTimer(timer: TimerId, after_ms: Int)
+  /// Cancel a timer. A `ServiceTimerFired` for it already waiting is dropped.
+  CancelServiceTimer(timer: TimerId)
+}
+
+/// A creature a map has its supervisor start: which creature of the map's
+/// run it is, where it comes from, how long it stays out of sight and the
+/// clock it stamps its 0x262 from. The creature's rule and its process are
+/// `genesis_prime/world_map/creature`; this is the rule's start settings, with
+/// no process in it.
+pub type CreatureStart {
+  CreatureStart(
+    /// The map the creature stands in.
+    map: MapId,
+    /// The run of that map the creature belongs to: it ends with the run.
+    incarnation: Int,
+    /// The creature's unit id in its run, from the map's counter.
+    unit_id: Int,
+    /// The spawn it stands at (genesis_prime/world_map/spawn).
+    spawn: SpawnId,
+    /// How long the creature waits, from its start, before it shows itself to
+    /// the players who see it: 0 for a creature that stands from the start.
+    appear_after_ms: Int,
+    /// The monotonic time the map's clock started at, from which the creature
+    /// stamps its 0x262 (genesis_prime/world_map/map `server_time`).
+    clock_origin_ms: Int,
+  )
 }
 
 /// An ask of another process, answered once.
@@ -312,6 +354,11 @@ pub type Address {
   Map(map: MapId, incarnation: Int)
   /// One connection.
   Connection(connection: ConnectionId)
+  /// One creature, in one run of one map: its unit id there. A creature that
+  /// ends and is replaced is another unit, so another address, and a watch or a
+  /// send never lands on a replacement
+  /// (genesis_prime/world_map/creature_registry).
+  Creature(map: MapId, incarnation: Int, unit_id: Int)
   /// The one connection whose player is in the world under this name, folded
   /// to lower case (genesis_prime/game/chat): a group of the connections'
   /// registry (genesis_prime/connection/registry) that the connection joins as

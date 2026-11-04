@@ -2,7 +2,7 @@
 %% into an error, where an answer of "not running" is wanted. Any other exit,
 %% including a noproc from elsewhere, passes.
 -module(genesis_prime_service_ffi).
--export([unless_supervisor_not_running/1]).
+-export([unless_supervisor_not_running/1, send_told/2, told_call/1]).
 
 %% OTP's supervisor:start_child/2 is gen_server:call(Supervisor, _, infinity).
 %% It exits with {noproc, {gen_server, call, _}} when no process holds the
@@ -15,3 +15,12 @@ unless_supervisor_not_running(Run) ->
         exit:{noproc, {gen_server, call, _}} -> {error, nil};
         exit:{shutdown, {gen_server, call, _}} -> {error, nil}
     end.
+
+%% Sends a service's process the call as `{telling, Call}`, which its shell's
+%% selector takes (genesis_prime/service `select_told`).
+send_told(Pid, Call) ->
+    Pid ! {telling, Call},
+    nil.
+
+%% The call inside what send_told sent.
+told_call({telling, Call}) -> Call.

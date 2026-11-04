@@ -6,7 +6,9 @@
 ////
 //// ```
 //// world supervisor (rest_for_one, 3 restarts in 10 s)       permanent
+////  ├─ creature registry: OTP's pg scope, named               permanent
 ////  ├─ Maps: this actor, named                               permanent
+////  ├─ creature supervisor: factory supervisor, named         permanent
 ////  └─ map supervisor: factory supervisor, named              permanent
 ////       └─ one map per MapId: service shell + map rule, unnamed  temporary
 //// ```
@@ -51,10 +53,15 @@
 ////   so does `ask_run`.
 //// - **A map ends.** Maps' monitor drops it, so the next find starts it
 ////   again, empty. Its players' connections watch it and end.
-//// - **Maps restarts.** It is the first child under `rest_for_one`, so the
-////   map supervisor restarts with it and every map ends: a registry that
-////   lost its list must not start a second copy of a running map. Every
-////   player's connection ends, and its client logs in again.
+//// - **Maps restarts.** It is the second child under `rest_for_one`, so the
+////   creature supervisor and the map supervisor restart with it and every
+////   creature and map ends: a registry that lost its list must not start a
+////   second copy of a running map. Every player's connection ends, and its client
+////   logs in again.
+//// - **A map starts its creatures while Maps waits.** Maps holds the call that
+////   starts a map until the map has started, and the map starts its creatures as
+////   it starts (genesis_prime/world_map/creature_supervisor), so a creature
+////   cannot find its run through Maps: it is given the run's pid.
 //// - **The map supervisor restarts alone.** Every map ends; Maps' monitors
 ////   drop each, and the next finds start them again.
 //// - **The server stopping.** The world subtree starts before the login and

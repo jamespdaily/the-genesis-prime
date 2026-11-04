@@ -12,9 +12,10 @@
 //// the names it started its processes with, and its shells use them, so no
 //// rule holds a process id.
 
-import genesis_prime/step.{type Address}
+import genesis_prime/step.{type Address, type CreatureStart}
 import genesis_prime/step/runtime
-import gleam/erlang/process.{type Name, type Pid, type Subject}
+import gleam/dynamic.{type Dynamic}
+import gleam/erlang/process.{type Name, type Pid, type Selector, type Subject}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/result
@@ -72,13 +73,21 @@ pub type Reach(outgoing) {
     /// `Error(Nil)` when no process is running there; the message is
     /// dropped.
     send: fn(Address, outgoing) -> Result(Nil, Nil),
+    /// Starts the creature a rule's `StartCreature` names and returns once it
+    /// is running and found by its `Creature` address, or says why it did not
+    /// start, as the creature supervisor reported it.
+    start_creature: fn(CreatureStart) -> Result(Nil, StartChildError),
   )
 }
 
 /// A reach for a service that only watches: every send finds no process, so
-/// the message is dropped.
+/// the message is dropped, and no creature starts.
 pub fn watch_only(locate locate: Locate) -> Reach(outgoing) {
-  Reach(locate:, send: fn(_to, _message) { Error(Nil) })
+  Reach(
+    locate:,
+    send: fn(_to, _message) { Error(Nil) },
+    start_creature: fn(_creature) { Error(SupervisorNotRunning) },
+  )
 }
 
 /// Sends a service the message, for an asker's directory: `Error(Nil)` when
@@ -118,6 +127,37 @@ pub fn tell_subject(
   process.send(subject, TellCall(message:))
   ToService(pid:)
 }
+
+/// Tells a service by its pid, for the registry that finds a creature by its
+/// address (genesis_prime/world_map/creature_registry): the service's shell
+/// takes it as a `TellCall`, with no reply. A process that has ended drops it.
+pub fn tell_pid(pid pid: Pid, message message: message) -> Nil {
+  send_told(pid, TellCall(message:))
+}
+
+/// Adds to a selector what `tell_pid` sends, each taken as `mapping(call)`,
+/// in the order it arrived among the others the selector takes. The service's
+/// shell uses it.
+pub fn select_told(
+  selector selector: Selector(payload),
+  mapping mapping: fn(Call(message, answer)) -> payload,
+) -> Selector(payload) {
+  process.select_record(selector, tag: Telling, fields: 1, mapping: fn(sent) {
+    mapping(told_call(sent))
+  })
+}
+
+/// The first element of what `tell_pid` sends: the atom `telling`, which
+/// `genesis_prime_service_ffi:send_told` writes the same way.
+type DeliveryTag {
+  Telling
+}
+
+@external(erlang, "genesis_prime_service_ffi", "send_told")
+fn send_told(pid: Pid, call: Call(message, answer)) -> Nil
+
+@external(erlang, "genesis_prime_service_ffi", "told_call")
+fn told_call(sent: Dynamic) -> Call(message, answer)
 
 /// Sends the process registered under the name the message, in the form a
 /// subject of that name receives it, and gives its pid: `Error(Nil)` when no
@@ -174,6 +214,15 @@ pub fn warn_unless_not_running(error: StartChildError) -> Nil {
         "the child " <> runtime.describe_start_error(reason),
         step.no_one,
       )
+  }
+}
+
+/// A sentence that says why a child was not started, for the log line of a rule
+/// that is told its creature did not start.
+pub fn describe_start_child_error(error: StartChildError) -> String {
+  case error {
+    SupervisorNotRunning -> "the supervisor is not running"
+    ChildNotStarted(reason:) -> runtime.describe_start_error(reason)
   }
 }
 

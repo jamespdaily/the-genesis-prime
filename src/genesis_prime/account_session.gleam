@@ -86,9 +86,9 @@
 
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type ServiceInput, type ServiceRule,
-  type ServiceStep, type WatchId, Asked, Connection, ConnectionId, Effects,
-  OwnEffect, OwnEvent, Reply, Rule, Send, Started, Stop, Stopping, Told, Watch,
-  WatchEnded, WatchId,
+  type ServiceStep, type WatchId, Asked, Connection, ConnectionId,
+  CreatureNotStarted, Effects, OwnEffect, OwnEvent, Reply, Rule, Send,
+  ServiceTimerFired, Started, Stop, Stopping, Told, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
@@ -160,6 +160,8 @@ pub fn step(
       claimed(state:, caller:, account:, connection:)
     OwnEvent(Told(..)) ->
       panic as "Sessions takes Started, Asked and Stopping only; nothing tells it"
+    OwnEvent(ServiceTimerFired(..)) | OwnEvent(CreatureNotStarted(..)) ->
+      panic as "Sessions starts no timer and no creature"
     WatchEnded(watch:) -> ended(state:, watch:)
   }
 }

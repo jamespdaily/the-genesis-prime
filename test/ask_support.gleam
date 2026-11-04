@@ -381,9 +381,7 @@ fn gate_settings(
 
 /// A reach that finds no process and sends to none.
 fn reaching_nothing() -> service.Reach(gate_rule.Answer) {
-  service.Reach(locate: fn(_address) { Error(Nil) }, send: fn(_to, _message) {
-    Error(Nil)
-  })
+  service.watch_only(locate: fn(_address) { Error(Nil) })
 }
 
 /// The gate's rule as its shell runs it.

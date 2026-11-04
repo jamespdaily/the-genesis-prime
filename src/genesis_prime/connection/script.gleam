@@ -132,7 +132,10 @@ pub fn operating_system() -> Result(Issued, Nil) {
   ))
 }
 
-fn operating_system_timer(
+/// The operating system's timer: after `after_ms`, `Elapsed(timer, reference)`
+/// is sent to the subject; the returned function cancels it. The server's
+/// scheduler for a connection, and every service shell's.
+pub fn operating_system_timer(
   subject subject: Subject(Elapsed),
   timer timer: TimerId,
   reference reference: Reference,

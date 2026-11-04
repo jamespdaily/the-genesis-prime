@@ -1190,6 +1190,7 @@ fn tell(
     | step.Store
     | step.Maps
     | step.Map(..)
+    | step.Creature(..)
     | step.CharacterNamed(..) ->
       case watch.sender_at(watches: running.watches, address: to) {
         Ok(sender) -> sender(request)

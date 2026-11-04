@@ -42,9 +42,9 @@ import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type News, type PeerNews, type Request, Appeared,
-  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, FromHandOff, FromMap,
-  FromSessions, FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer,
-  SentBySessions, TellChat, TellMoved, TellPeer,
+  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CreatureAppeared,
+  FromHandOff, FromMap, FromSessions, FromStore, Moving, PeerNews, Removed,
+  SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -109,6 +109,7 @@ import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -138,6 +139,7 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, Unwatched, Watched}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
@@ -149,6 +151,7 @@ import gleam/result
 import message_support
 import owned_test
 import place_support
+import spawn_support
 
 /// What the tests' game connections are made with: a realm id and a
 /// character limit the hello and the list must carry, the number of character
@@ -1260,6 +1263,8 @@ fn map_with_four_players() -> map.State {
       incarnation:,
       realm_id: settings().realm_id,
       tables: settings().tables,
+      spawns: [],
+      creature_restart_ms: 60_000,
     ))
   list.fold([2, 3, 4, 5], state, fn(state, other) {
     let assert Some(place) = world_character().place
@@ -5221,4 +5226,29 @@ pub fn a_0x597_name_lookup_is_logged_as_unhandled_and_no_player_info_is_written_
   assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x0597))]
     as "chat.name_lookup: no chat line makes the client ask for a name, so the player info of the mail step is not built and 0x597 stays unhandled"
   assert written_ids(taken) == [] as "no 0x598 or 0x599 is written"
+}
+
+pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let creature =
+    creature_unit.create(
+      spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+      unit_id: 40,
+      server_time_estimate_start: 0,
+    )
+  let appears =
+    sent_by_a_peer(news_of(unit_id: 40, news: CreatureAppeared(creature)))
+  let #(state, taken) = feed(in_world(), appears)
+  let assert [Frame(message_id: 0x0262, body:)] = heard(taken, keyed())
+    as "a creature's 0x262 is written as the creature's process sent it"
+  assert unit_create_creature.decode(body) == Ok(creature)
+  let #(state, taken) = feed(state, appears)
+  assert support.writes(taken) == []
+    as "a unit the client already shows is not created again, whoever owns it"
+  let #(_, taken) =
+    feed(state, sent_by_a_peer(news_of(unit_id: 40, news: Removed)))
+  let assert [Frame(message_id: 0x0355, body:)] = heard(taken, keyed())
+    as "opcode.0x355: the creature is removed when its process says so"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 40, field_2: 0))
 }

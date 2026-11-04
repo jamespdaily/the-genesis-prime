@@ -29,6 +29,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
@@ -80,21 +81,26 @@ pub type Request {
   TellChat(tell: ChatTell)
 }
 
-/// News of one unit from its owner's connection to the connection of a player
-/// who sees it: the run of the map the owner is in (`map` and `incarnation`, as
-/// its connection watches it), the owner's unit in that run, and what happened
-/// to it. A viewer that is in another run of the map, or another map, drops it:
+/// News of one unit from its owner, a player's connection or a creature's
+/// process, to the connection of a player who sees it: the run of the map the
+/// owner is in (`map` and `incarnation`, as its connection watches it), the
+/// owner's unit in that run, and what happened to it. A viewer that is in another run of the map, or another map, drops it:
 /// the unit id there may name another unit.
 pub type PeerNews {
   PeerNews(map: MapId, incarnation: Int, unit_id: Int, news: News)
 }
 
-/// What an owner's connection tells the connections that see its unit, which
-/// they write as the message the client creates, moves and removes a unit with.
+/// What a unit's owner tells the connections that see its unit, which they write
+/// as the message the client creates, moves and removes a unit with.
 pub type News {
   /// The unit as the client creates it, at the owner's current place and stamped
   /// from the map's clock: 0x262 (opcode.0x262).
   Appeared(unit: UnitCreatePlayer)
+  /// A creature as the client creates it, at its spawn and stamped from the
+  /// map's clock: 0x262 of type 0 (opcode.0x262.creature). Sent by the
+  /// creature's own process (genesis_prime/world_map/creature), which owns the
+  /// unit.
+  CreatureAppeared(unit: UnitCreateCreature)
   /// The unit moved: the map's server time at the move (the map's clock,
   /// `world_map/map.server_time`) and at most 31 of its relayed commands in the
   /// order sent, since 0x638's count is 5 bits (opcode.0x638).
