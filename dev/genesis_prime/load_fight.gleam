@@ -338,7 +338,12 @@ fn walk(
         incarnation: run.incarnation,
         unit_id: fighter.0,
         life: fighter.1,
-        message: creature.TargetMoved(by: connection, place:, seq: step),
+        message: creature.TargetMoved(
+          by: connection,
+          place:,
+          seq: step,
+          stay: stay.next(stay.none_yet()),
+        ),
       )
     })
     let now_inside =

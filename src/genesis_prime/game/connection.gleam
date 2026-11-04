@@ -363,8 +363,7 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, ForStay, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentByChat, SentBySessions, SentByTarget, Settled, TellChat,
-  TellMoved, TellPeer,
+  Otherwise, SentByChat, SentBySessions, Settled, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -720,8 +719,6 @@ fn connected(
       settled(handled: stay_sent(session:, now:, stay:, sent:), now:)
     OwnEvent(Woken(message: SentByChat(tell:))) ->
       settled(handled: chat_sent(session:, tell:), now:)
-    OwnEvent(Woken(message: SentByTarget(answered:))) ->
-      settled(handled: target_sent(session:, now:, answered:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -1279,7 +1276,12 @@ fn tells_a_fighter_the_place(
       unit_id: fighter.0,
       life: fighter.1,
     ),
-    request: client_connection.TellTargetMoved(connection:, place:, seq:),
+    request: client_connection.TellTargetMoved(
+      connection:,
+      place:,
+      seq:,
+      stay: entered.stay,
+    ),
   ))
 }
 
@@ -1327,6 +1329,8 @@ fn stay_sent(
           viewer_takes(session:, entered:, news:)
         client_connection.SentByFoe(fight:) ->
           foe_taken(session:, now:, holder:, entered:, fight:)
+        client_connection.SentByTarget(answered:) ->
+          target_taken(session:, now:, entered:, answered:)
       }
     Some(_) | None -> Continue(session, [])
   }
@@ -1860,29 +1864,25 @@ fn other_timer_fired(
   }
 }
 
-/// A creature's answer to a strike this player told: the strike rule files it in
-/// the round it belongs to, and a round that closes is the cast rule's `went`; an
-/// answer with no player in the world, or for a round that is closed, is dropped
+/// A creature's answer to a strike this player told in this stay (`stay_sent`):
+/// the strike rule files it in the round it belongs to, and a round that closes is
+/// the cast rule's `went`; an answer for a round that is closed is dropped
 /// (genesis_prime/game/strike).
-fn target_sent(
+fn target_taken(
   session session: Session,
   now now: Now,
+  entered entered: world_entry.Entered,
   answered answered: Answered,
 ) -> client_connection.Handled(Session) {
-  case held_in_the_world(session.status) {
-    None -> Continue(session, [])
-    Some(#(_, entered)) -> {
-      let #(updated, effects) =
-        strike.answered(strike: entered.strike, answer: answered, now:)
-      let #(session, written) =
-        carry_strike(
-          session: with_strike(session:, strike: updated),
-          now:,
-          effects:,
-        )
-      Continue(session, written)
-    }
-  }
+  let #(updated, effects) =
+    strike.answered(strike: entered.strike, answer: answered, now:)
+  let #(session, written) =
+    carry_strike(
+      session: with_strike(session:, strike: updated),
+      now:,
+      effects:,
+    )
+  Continue(session, written)
 }
 
 /// The strike timer fired: the rounds whose deadline has passed close with the
@@ -2051,6 +2051,7 @@ fn attacker_of(
     pose: Pose(at: area.point_of(place), yaw: start_place.facing(place).yaw),
     place:,
     move_seq: session.move_seq,
+    stay: entered.stay,
     faction:,
     stats: damage.Attacker(
       level: level_of(entered:),

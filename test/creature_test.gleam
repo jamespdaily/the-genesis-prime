@@ -288,6 +288,7 @@ fn strike_of(damage damage: Int, cast_id cast_id: Int) -> creature.Message {
         z: 0.0,
       ),
       seq: 1,
+      stay: stay_of(2),
       rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
     ),
   ))
@@ -307,7 +308,7 @@ fn watched_by_two() -> State {
 fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
   list.map(sent, fn(one) {
     case one.1 {
-      creature.Struck(answered: Answered(outcome: Landed(..), ..)) ->
+      creature.Struck(answered: Answered(outcome: Landed(..), ..), ..) ->
         "answer to " <> int.to_string(one.0)
       creature.Struck(..) -> "refusal to " <> int.to_string(one.0)
       creature.News(
@@ -368,10 +369,13 @@ pub fn a_creature_struck_while_it_lies_dead_refuses_without_news_test() -> Nil {
     == [
       #(
         2,
-        creature.Struck(answered: Answered(
-          key: Key(cast_id: 2, phase: 0, unit_id: 7),
-          outcome: Refused(why: strike_tell.Dead),
-        )),
+        creature.Struck(
+          stay: stay_of(2),
+          answered: Answered(
+            key: Key(cast_id: 2, phase: 0, unit_id: 7),
+            outcome: Refused(why: strike_tell.Dead),
+          ),
+        ),
       ),
     ]
     as "a second strike finds the corpse: refused as dead, no 0x937"

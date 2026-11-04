@@ -76,10 +76,12 @@
 ////   viewer's connection writes it once, as it does for a player's unit. The
 ////   second `Watched` names the stay the creature tells that player by from then
 ////   on (genesis_prime/world_map/stay).
-//// - **A tell to a player of the fight** goes for the stay the player's
-////   `Watched` named: every player on the threat list sees the creature, and an
-////   `Unwatched` takes the player off the list in the same step, with its
-////   release told for the stay it had.
+//// - **A stay travels from the message that caused the work.** A strike's answer
+////   goes for the stay the strike was told for; the fight holds each player in
+////   the stay of the message that put it in the fight (the map's `Approached`, the
+////   player's strike) and tells it for that stay; a player's strike or move of a
+////   stay other than the one its `Watched` named starts and moves nothing
+////   (genesis_prime/world_map/creature_fight).
 //// - **The map run's end** ends the creature: it watches the run by the pid the
 ////   run gave when it started the creature, not through Maps, which is waiting
 ////   on the run's start while the run starts its creatures.
@@ -106,8 +108,8 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
-  type Answered, type Fight, type Tell as StrikeTell, Answered, PlayerStriker,
-  Refused,
+  type Answered, type Fight, type Tell as StrikeTell, Answered, CreatureStriker,
+  PlayerStriker, Refused,
 }
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
@@ -166,14 +168,14 @@ pub type Message {
   Retire
   /// A caster's connection strikes the creature (genesis_prime/game/strike_tell).
   Strike(tell: StrikeTell)
-  /// The map: the ready player of connection `by`, unit `unit_id`, entered the
-  /// creature's ring at `place`, its connection's move `seq`.
-  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int)
+  /// The map: the ready player of connection `by`, unit `unit_id`, in its stay
+  /// `stay`, entered the creature's ring at `place`, its connection's move `seq`.
+  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int, stay: Stay)
   /// The map: the player of connection `by` left the creature's ring.
   Withdrew(by: ConnectionId)
-  /// The connection of a player on the creature's threat list: its player
-  /// stands at `place`, its move `seq`.
-  TargetMoved(by: ConnectionId, place: Place, seq: Int)
+  /// The connection of a player on the creature's threat list: its player, in its
+  /// stay `stay`, stands at `place`, its move `seq`.
+  TargetMoved(by: ConnectionId, place: Place, seq: Int, stay: Stay)
   /// The connection of a player the creature struck answers the strike.
   StrikeAnswered(answered: Answered)
 }
@@ -184,8 +186,9 @@ pub type Outgoing {
   /// its 0x262, 0x355, 0x937, 0x88c and the fight's 0x908, 0x90a, 0x89a, 0x638,
   /// 0x7ff, 0x7f4, 0x7fb and 0x7fe.
   News(stay: Stay, news: PeerNews)
-  /// The answer to a strike, for the connection that told it.
-  Struck(answered: Answered)
+  /// The answer to a strike, for the connection that told it, in the stay the
+  /// strike was told for.
+  Struck(stay: Stay, answered: Answered)
   /// A tell to the connection of a player in the creature's fight, in the
   /// player's stay `stay`: it threatens or releases the player, or strikes it.
   FightTold(stay: Stay, told: Fight)
@@ -285,15 +288,9 @@ pub fn step(
     OwnEvent(Told(message: Unwatched(by:))) ->
       case dict.get(state.viewers, by) {
         Ok(stay) -> {
-          let told_by = state.viewers
           let state = State(..state, viewers: dict.delete(state.viewers, by))
           let #(state, fought) =
-            fought_telling(
-              state:,
-              input: creature_fight.Unwatched(by:),
-              now_ms:,
-              stays: told_by,
-            )
+            fought(state:, input: creature_fight.Unwatched(by:), now_ms:)
           #(
             state,
             Effects([
@@ -310,18 +307,18 @@ pub fn step(
         StopAtRespawn -> #(State(..state, retiring: True), Effects([]))
       }
     OwnEvent(Told(message: Strike(tell:))) -> struck(state:, tell:, now_ms:)
-    OwnEvent(Told(message: Approached(by:, unit_id:, place:, seq:))) ->
+    OwnEvent(Told(message: Approached(by:, unit_id:, place:, seq:, stay:))) ->
       fought_alone(
         state:,
-        input: creature_fight.Approached(by:, unit_id:, place:, seq:),
+        input: creature_fight.Approached(by:, unit_id:, place:, seq:, stay:),
         now_ms:,
       )
     OwnEvent(Told(message: Withdrew(by:))) ->
       fought_alone(state:, input: creature_fight.Withdrew(by:), now_ms:)
-    OwnEvent(Told(message: TargetMoved(by:, place:, seq:))) ->
+    OwnEvent(Told(message: TargetMoved(by:, place:, seq:, stay:))) ->
       fought_alone(
         state:,
-        input: creature_fight.TargetMoved(by:, place:, seq:),
+        input: creature_fight.TargetMoved(by:, place:, seq:, stay:),
         now_ms:,
       )
     OwnEvent(Told(message: StrikeAnswered(answered:))) ->
@@ -385,26 +382,17 @@ fn struck(
   case creature_fight.refusal(state: state.fight) {
     Error(why) -> #(
       state,
-      Effects([
-        OwnEffect(Send(
-          to: tell.from,
-          message: Struck(answered: Answered(
-            key: tell.key,
-            outcome: Refused(why:),
-          )),
-        )),
-      ]),
+      Effects(answer_to(
+        tell:,
+        answered: Answered(key: tell.key, outcome: Refused(why:)),
+      )),
     )
     Ok(Nil) -> {
       let reaction =
         creature_life.struck(life: state.life, body: state.body, strike: tell)
       // The answer goes first: the caster's connection then knows the strike
       // before it is told the health it left, one sender in one order.
-      let answer =
-        OwnEffect(Send(
-          to: tell.from,
-          message: Struck(answered: reaction.answer),
-        ))
+      let answer = answer_to(tell:, answered: reaction.answer)
       let news =
         list.flat_map(reaction.news, fn(news) {
           to_viewers(state:, news: viewer_news(news))
@@ -424,7 +412,7 @@ fn struck(
       {
         _, _, _, Some(..) -> Some(creature_fight.Killed)
         strike_tell.Landed(descriptions:),
-          PlayerStriker(unit_id:, place:, seq:, ..),
+          PlayerStriker(unit_id:, place:, seq:, stay:, ..),
           Connection(by),
           None
         ->
@@ -433,6 +421,7 @@ fn struck(
             unit_id:,
             place:,
             seq:,
+            stay:,
             threat: creature_fight.threat_of(
               offence: tell.offence,
               descriptions:,
@@ -444,8 +433,24 @@ fn struck(
         Some(input) -> fought(state:, input:, now_ms:)
         None -> #(state, [])
       }
-      #(state, Effects(list.flatten([[answer], news, corpse, fought])))
+      #(state, Effects(list.flatten([answer, news, corpse, fought])))
     }
+  }
+}
+
+/// The answer to a strike, sent to the caster's connection for the stay the
+/// strike was told for: the caster's connection takes it only in that stay. A
+/// strike with no player striker has no stay to answer for, and no answer: no
+/// creature strikes a creature.
+fn answer_to(
+  tell tell: StrikeTell,
+  answered answered: Answered,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  case tell.striker {
+    PlayerStriker(stay:, ..) -> [
+      OwnEffect(Send(to: tell.from, message: Struck(stay:, answered:))),
+    ]
+    CreatureStriker -> []
   }
 }
 
@@ -460,30 +465,18 @@ fn fought_alone(
 }
 
 /// The fight's step and its effects carried out: news to every viewer, a tell to a
-/// player, the health restored with its 0x937, and the fight's timers.
+/// player for the stay the fight holds it in, the health restored with its 0x937,
+/// and the fight's timers.
 fn fought(
   state state: State,
   input input: creature_fight.Input,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
-  fought_telling(state:, input:, now_ms:, stays: state.viewers)
-}
-
-/// `fought`, telling each player of the fight for its stay in `stays`: the
-/// viewers, or, for an `Unwatched`, the viewers before it, so the player that
-/// stopped seeing the creature is told its release for the stay it had. A tell to
-/// a player with no stay there is dropped: the fight tells only its viewers.
-fn fought_telling(
-  state state: State,
-  input input: creature_fight.Input,
-  now_ms now_ms: Int,
-  stays stays: Dict(ConnectionId, Stay),
-) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   let #(fight, effects) =
     creature_fight.step(
       state: state.fight,
       fighter: fighter_of(state:),
-      viewers: viewers(state:),
+      viewers: state.viewers,
       alive: !creature_life.is_dead(life: state.life),
       input:,
       now_ms:,
@@ -493,12 +486,9 @@ fn fought_telling(
     let #(state, done) = so_far
     let #(state, more) = case effect {
       creature_fight.ToViewers(news:) -> #(state, to_viewers(state:, news:))
-      creature_fight.ToPlayer(to:, told:) -> #(state, case dict.get(stays, to) {
-        Ok(stay) -> [
-          OwnEffect(Send(to: Connection(to), message: FightTold(stay:, told:))),
-        ]
-        Error(Nil) -> []
-      })
+      creature_fight.ToPlayer(to:, stay:, told:) -> #(state, [
+        OwnEffect(Send(to: Connection(to), message: FightTold(stay:, told:))),
+      ])
       creature_fight.RestoreHealth -> {
         let life = creature_life.new(body: state.body)
         #(
@@ -643,8 +633,8 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Watched(by:, stay:) -> Ok(Watched(by:, stay:))
     map.Unwatched(by:) -> Ok(Unwatched(by:))
-    map.Approached(by:, unit_id:, place:, seq:) ->
-      Ok(Approached(by:, unit_id:, place:, seq:))
+    map.Approached(by:, unit_id:, place:, seq:, stay:) ->
+      Ok(Approached(by:, unit_id:, place:, seq:, stay:))
     map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.Retire -> Ok(Retire)
     map.Joined(..) | map.NotJoined(..) | map.Left | map.Noticed(..) ->

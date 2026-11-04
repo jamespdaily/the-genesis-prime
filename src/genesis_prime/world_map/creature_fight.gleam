@@ -111,6 +111,7 @@ import genesis_prime/world_map/creature_path.{
 }
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -154,9 +155,10 @@ pub type Status {
   Returning(home: Int)
 }
 
-/// One entry of the threat list: the player's unit and its threat.
+/// One entry of the threat list: the player's unit, the stay of the message that
+/// put it on the list, which every tell to it names, and its threat.
 pub type Threat {
-  Threat(unit_id: Int, amount: Float)
+  Threat(unit_id: Int, stay: Stay, amount: Float)
 }
 
 /// The strike round the creature waits on: its key, the player struck, and the
@@ -166,9 +168,9 @@ pub type Round {
 }
 
 /// The newest place the creature knows a connection's player at, with the move
-/// sequence number it came with.
+/// sequence number and the stay it came with.
 pub type Sighting {
-  Sighting(unit_id: Int, place: Place, seq: Int)
+  Sighting(unit_id: Int, place: Place, seq: Int, stay: Stay)
 }
 
 /// A creature's fight: its status, where it stands or runs (kept apart from the
@@ -188,13 +190,14 @@ pub opaque type State {
 
 /// What the creature's rule turns its messages and timers into for the fight.
 pub type Input {
-  /// The map: the player of `by` entered the creature's ring, at `place` of move
-  /// `seq`.
-  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int)
+  /// The map: the player of `by`, in its stay `stay`, entered the creature's ring,
+  /// at `place` of move `seq`.
+  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int, stay: Stay)
   /// The map: the player of `by` left the creature's ring.
   Withdrew(by: ConnectionId)
-  /// The player of `by`, on the threat list, moved to `place` of move `seq`.
-  TargetMoved(by: ConnectionId, place: Place, seq: Int)
+  /// The player of `by`, on the threat list, in its stay `stay`, moved to `place`
+  /// of move `seq`.
+  TargetMoved(by: ConnectionId, place: Place, seq: Int, stay: Stay)
   /// A player's strike landed on the creature for `threat`
   /// (`threat_of`), from `place` of move `seq`.
   StruckBy(
@@ -202,6 +205,7 @@ pub type Input {
     unit_id: Int,
     place: Place,
     seq: Int,
+    stay: Stay,
     threat: Float,
   )
   /// The map: the player of `by` no longer sees the creature.
@@ -233,8 +237,9 @@ pub type Timer {
 pub type Effect {
   /// News of the creature's own unit for each viewer.
   ToViewers(news: News)
-  /// A tell to the connection of a player in the fight.
-  ToPlayer(to: ConnectionId, told: Told)
+  /// A tell to the connection of a player in the fight, for the stay the fight
+  /// holds it in.
+  ToPlayer(to: ConnectionId, stay: Stay, told: Told)
   /// The creature stands at full health again: creature_life's health is restored
   /// and each viewer is sent its 0x937.
   RestoreHealth
@@ -255,43 +260,54 @@ pub fn new(home home: Place) -> State {
 }
 
 /// One input of the fight in, the new state and the effects out. `viewers` are the
-/// creature's viewers now, `alive` whether creature_life holds it standing, and
-/// `now_ms` the monotonic time of the input.
+/// creature's viewers now, each in the stay its `Watched` named, `alive` whether
+/// creature_life holds it standing, and `now_ms` the monotonic time of the input.
+/// A player's strike or move of another stay than its viewer's is of an earlier
+/// stay, delayed past the player's leave and new join: it starts and moves nothing.
 pub fn step(
   state state: State,
   fighter fighter: Fighter,
-  viewers viewers: Set(ConnectionId),
+  viewers viewers: Dict(ConnectionId, Stay),
   alive alive: Bool,
   input input: Input,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   case input {
-    Approached(by:, unit_id:, place:, seq:) -> {
+    Approached(by:, unit_id:, place:, seq:, stay:) -> {
       let state =
         State(
-          ..sighted(state:, by:, unit_id:, place:, seq:),
+          ..sighted(state:, by:, unit_id:, place:, seq:, stay:),
           near: set.insert(state.near, by),
         )
-      case state.status, alive && set.contains(viewers, by) {
-        Resting, True -> aggro(state:, fighter:, players: [by], now_ms:)
+      case state.status, alive && in_stay(viewers:, by:, stay:) {
+        Resting, True ->
+          aggro(state:, fighter:, viewers:, players: [by], now_ms:)
         Resting, False | Fighting(..), _ | Returning(..), _ -> #(state, [])
       }
     }
     Withdrew(by:) -> #(State(..state, near: set.delete(state.near, by)), [])
-    TargetMoved(by:, place:, seq:) -> {
+    TargetMoved(by:, place:, seq:, stay:) -> {
+      use <- bool.guard(
+        when: !in_stay(viewers:, by:, stay:),
+        return: #(state, []),
+      )
       let state =
-        sighted(state:, by:, unit_id: unit_of(state:, by:), place:, seq:)
+        sighted(state:, by:, unit_id: unit_of(state:, by:), place:, seq:, stay:)
       case state.status, alive {
         Fighting(target:, ..), True if target == by ->
           chase(state:, fighter:, now_ms:)
         Fighting(..), _ | Resting, _ | Returning(..), _ -> #(state, [])
       }
     }
-    StruckBy(by:, unit_id:, place:, seq:, threat:) -> {
-      let state = sighted(state:, by:, unit_id:, place:, seq:)
-      case alive && set.contains(viewers, by) {
+    StruckBy(by:, unit_id:, place:, seq:, stay:, threat:) -> {
+      use <- bool.guard(
+        when: !in_stay(viewers:, by:, stay:),
+        return: #(state, []),
+      )
+      let state = sighted(state:, by:, unit_id:, place:, seq:, stay:)
+      case alive {
         False -> #(state, [])
-        True -> threatened_by(state:, fighter:, by:, threat:, now_ms:)
+        True -> threatened_by(state:, fighter:, by:, stay:, threat:, now_ms:)
       }
     }
     Unwatched(by:) -> unwatched(state:, fighter:, by:, now_ms:)
@@ -317,6 +333,7 @@ pub fn step(
           aggro(
             state:,
             fighter:,
+            viewers:,
             players: near_viewers(state:, viewers:),
             now_ms:,
           )
@@ -327,7 +344,13 @@ pub fn step(
     StoodAgain -> {
       let state =
         State(..state, status: Resting, path: Standing(at: fighter.home))
-      aggro(state:, fighter:, players: near_viewers(state:, viewers:), now_ms:)
+      aggro(
+        state:,
+        fighter:,
+        viewers:,
+        players: near_viewers(state:, viewers:),
+        now_ms:,
+      )
     }
   }
 }
@@ -414,24 +437,35 @@ pub fn threat_of(
   })
 }
 
-/// The state with the player's newest place: a move of a lower sequence number
-/// than the one held is older and dropped; an equal one is the same move.
+/// Whether the player of `by` is a viewer in the stay `stay`.
+fn in_stay(
+  viewers viewers: Dict(ConnectionId, Stay),
+  by by: ConnectionId,
+  stay stay: Stay,
+) -> Bool {
+  dict.get(viewers, by) == Ok(stay)
+}
+
+/// The state with the player's newest place: in the same stay, a move of a lower
+/// sequence number than the one held is older and dropped, and an equal one is the
+/// same move; a sighting of another stay gives way to the newer stay's.
 fn sighted(
   state state: State,
   by by: ConnectionId,
   unit_id unit_id: Int,
   place place: Place,
   seq seq: Int,
+  stay stay: Stay,
 ) -> State {
   case dict.get(state.sightings, by) {
-    Ok(held) if held.seq > seq -> state
+    Ok(held) if held.stay == stay && held.seq > seq -> state
     Ok(..) | Error(Nil) ->
       State(
         ..state,
         sightings: dict.insert(
           state.sightings,
           by,
-          Sighting(unit_id:, place:, seq:),
+          Sighting(unit_id:, place:, seq:, stay:),
         ),
       )
   }
@@ -448,31 +482,42 @@ fn unit_of(state state: State, by by: ConnectionId) -> Int {
 /// The near players the creature sees now, in the order of their connections.
 fn near_viewers(
   state state: State,
-  viewers viewers: Set(ConnectionId),
+  viewers viewers: Dict(ConnectionId, Stay),
 ) -> List(ConnectionId) {
-  map.sorted_connections(set.intersection(state.near, viewers))
+  map.sorted_connections(set.intersection(
+    state.near,
+    set.from_list(dict.keys(viewers)),
+  ))
 }
 
-/// A resting creature aggroes these players, each with the aggro threat
-/// (`start_fight`). No player it has a place for, no fight.
+/// A resting creature aggroes these players, each with the aggro threat, in the
+/// stay its sighting came with (`start_fight`). No player it has a place for in
+/// the stay it is a viewer in, no fight.
 fn aggro(
   state state: State,
   fighter fighter: Fighter,
+  viewers viewers: Dict(ConnectionId, Stay),
   players players: List(ConnectionId),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let entries =
     list.filter_map(players, fn(player) {
-      dict.get(state.sightings, player)
-      |> result.map(fn(sighting) {
-        #(
-          player,
-          Threat(
-            unit_id: sighting.unit_id,
-            amount: fighter.numbers.aggro_threat,
-          ),
-        )
-      })
+      case dict.get(state.sightings, player) {
+        Ok(sighting) ->
+          case in_stay(viewers:, by: player, stay: sighting.stay) {
+            True ->
+              Ok(#(
+                player,
+                Threat(
+                  unit_id: sighting.unit_id,
+                  stay: sighting.stay,
+                  amount: fighter.numbers.aggro_threat,
+                ),
+              ))
+            False -> Error(Nil)
+          }
+        Error(Nil) -> Error(Nil)
+      }
     })
   start_fight(state:, fighter:, entries:, now_ms:)
 }
@@ -507,7 +552,11 @@ fn start_fight(
       ]
       let told =
         list.map(entries, fn(entry) {
-          ToPlayer(to: entry.0, told: threatened_told(fighter:))
+          ToPlayer(
+            to: entry.0,
+            stay: { entry.1 }.stay,
+            told: threatened_told(fighter:),
+          )
         })
       let #(state, chased) = chase(state:, fighter:, now_ms:)
       #(
@@ -539,13 +588,14 @@ fn threatened_told(fighter fighter: Fighter) -> Told {
   }
 }
 
-/// A viewer's strike adds its threat: a resting creature starts a fight with it; a
-/// fighting one adds to its entry, naming a new top entry as its target (0x908), and
-/// any other entry's new threat in 0x90a.
+/// A viewer's strike, in its stay `stay`, adds its threat: a resting creature
+/// starts a fight with it; a fighting one adds to its entry, naming a new top entry
+/// as its target (0x908), and any other entry's new threat in 0x90a.
 fn threatened_by(
   state state: State,
   fighter fighter: Fighter,
   by by: ConnectionId,
+  stay stay: Stay,
   threat threat: Float,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
@@ -555,7 +605,9 @@ fn threatened_by(
       start_fight(
         state:,
         fighter:,
-        entries: [#(by, Threat(unit_id: unit_of(state:, by:), amount: threat))],
+        entries: [
+          #(by, Threat(unit_id: unit_of(state:, by:), stay:, amount: threat)),
+        ],
         now_ms:,
       )
     Fighting(threat: entries, target:, ..) as fighting -> {
@@ -565,7 +617,7 @@ fn threatened_by(
         dict.upsert(entries, by, fn(found) {
           case found {
             Some(entry) -> Threat(..entry, amount: entry.amount +. threat)
-            None -> Threat(unit_id:, amount: threat)
+            None -> Threat(unit_id:, stay:, amount: threat)
           }
         })
       let #(top, top_entry) = top_of(entries)
@@ -575,7 +627,7 @@ fn threatened_by(
           status: Fighting(..fighting, threat: entries, target: top),
         )
       let told = case is_new {
-        True -> [ToPlayer(to: by, told: threatened_told(fighter:))]
+        True -> [ToPlayer(to: by, stay:, told: threatened_told(fighter:))]
         False -> []
       }
       let named = case top != target || top == by {
@@ -671,7 +723,12 @@ fn released(
       case dict.is_empty(entries) {
         True -> leash(state:, fighter:, now_ms:)
         False -> {
-          let told = ToPlayer(to: by, told: Released(unit_id: fighter.unit_id))
+          let told =
+            ToPlayer(
+              to: by,
+              stay: entry.stay,
+              told: Released(unit_id: fighter.unit_id),
+            )
           let #(state, named, chased) =
             retargeted(state:, fighter:, entries:, now_ms:)
           #(state, list.flatten([[erased], named, [told], chased]))
@@ -792,6 +849,7 @@ fn strikes(
       ),
       ToPlayer(
         to: target,
+        stay: sighting.stay,
         told: Attacks(tell: strike_tell.Strike(
           key:,
           from: fighter.address,
@@ -979,7 +1037,11 @@ fn leash(
       ],
       moved,
       list.map(entries, fn(entry) {
-        ToPlayer(to: entry.0, told: Released(unit_id: fighter.unit_id))
+        ToPlayer(
+          to: entry.0,
+          stay: { entry.1 }.stay,
+          told: Released(unit_id: fighter.unit_id),
+        )
       }),
       [
         StartTimer(
@@ -1015,7 +1077,11 @@ fn killed(
           finished,
           [ToViewers(client_connection.CombatState(in_combat: False))],
           list.map(map.sorted_by_connection(threat), fn(entry) {
-            ToPlayer(to: entry.0, told: Released(unit_id: fighter.unit_id))
+            ToPlayer(
+              to: entry.0,
+              stay: { entry.1 }.stay,
+              told: Released(unit_id: fighter.unit_id),
+            )
           }),
         ]),
       )

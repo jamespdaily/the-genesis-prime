@@ -153,11 +153,17 @@ fn approached(
     unit_id: unit_of(number),
     place: at(x),
     seq:,
+    stay: stay_of(number),
   )
 }
 
 fn moved(number number: Int, x x: Float, seq seq: Int) -> creature.Message {
-  creature.TargetMoved(by: ConnectionId(number), place: at(x), seq:)
+  creature.TargetMoved(
+    by: ConnectionId(number),
+    place: at(x),
+    seq:,
+    stay: stay_of(number),
+  )
 }
 
 /// A strike of the player of connection `number` at x = 2 with these blows (effect,
@@ -174,6 +180,7 @@ fn strike_of(
       unit_id: unit_of(number),
       place: at(2.0),
       seq: 1,
+      stay: stay_of(number),
       rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
     ),
     offence: Offence(
@@ -229,9 +236,9 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
       creature.FightTold(told: Released(unit_id:), ..) ->
         "Released(" <> int.to_string(unit_id) <> ")" <> to
       creature.FightTold(told: Attacks(..), ..) -> "Attacks" <> to
-      creature.Struck(answered: Answered(outcome: Landed(..), ..)) ->
+      creature.Struck(answered: Answered(outcome: Landed(..), ..), ..) ->
         "Landed" <> to
-      creature.Struck(answered: Answered(outcome: Refused(why:), ..)) ->
+      creature.Struck(answered: Answered(outcome: Refused(why:), ..), ..) ->
         case why {
           strike_tell.Dead -> "Refused(Dead)" <> to
           strike_tell.Returning -> "Refused(Returning)" <> to
@@ -1193,6 +1200,7 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
         unit_id: 21,
         place: at(5.0),
         seq: 7,
+        stay: stay.next(stay_of(2)),
       ),
     )
   assert list.contains(said(again), "0x908(21, 1) to 2")
@@ -1200,6 +1208,36 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
   assert fights_told_for(again)
     == [#(2, stay.next(stay_of(2)), Threatened(unit_id: unit, life:))]
     as "the threat goes for the stay the newest Watched named"
+}
+
+pub fn a_strike_of_a_players_earlier_stay_that_reaches_the_creature_after_its_rejoin_threatens_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The player struck the Beast, then left the map and joined it again: the map
+  // sent the Beast Unwatched and the new stay's Watched. The strike, delayed, lands
+  // after both.
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: creature.Unwatched(by: ConnectionId(2)),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: creature.Watched(
+        by: ConnectionId(2),
+        stay: stay.next(stay_of(2)),
+      ),
+    )
+  let #(_, struck) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 10, 1.0)]),
+    )
+  assert fights_told_for(struck) == []
+    as "a strike of the earlier stay starts no fight with the player's new stay"
 }
 
 pub fn a_player_that_stops_seeing_the_creature_is_told_its_release_for_the_stay_it_had_test() -> Nil {

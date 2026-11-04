@@ -104,7 +104,7 @@ pub type Request {
   /// on its threat list: the player stands at `place`, the connection's move
   /// `seq` (genesis_prime/world_map/creature `TargetMoved`). Told through the
   /// creature registry with no watch, and never asked.
-  TellTargetMoved(connection: ConnectionId, place: Place, seq: Int)
+  TellTargetMoved(connection: ConnectionId, place: Place, seq: Int, stay: Stay)
   /// What a `Tell` effect sends a creature whose strike this connection's player
   /// took: the answer (genesis_prime/world_map/creature `StrikeAnswered`). Told
   /// through the creature registry with no watch, and never asked.
@@ -226,10 +226,6 @@ pub type Message {
   /// or a whisper's reply, written while this player is in the world
   /// (genesis_prime/game/chat).
   SentByChat(tell: ChatTell)
-  /// What a creature this connection struck answers, without waiting: the
-  /// answer to a strike its caster told, which the strike rule takes into the round
-  /// it belongs to (genesis_prime/game/strike).
-  SentByTarget(answered: Answered)
 }
 
 /// What another process sends a connection for its player's stay, inside
@@ -247,6 +243,10 @@ pub type StaySent {
   /// threatens or releases the player, or its strike
   /// (genesis_prime/game/player_life).
   SentByFoe(fight: Fight)
+  /// What a creature this connection's player struck answers: the answer to a
+  /// strike its caster told in this stay, which the strike rule takes into the
+  /// round it belongs to (genesis_prime/game/strike).
+  SentByTarget(answered: Answered)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

@@ -525,7 +525,7 @@ fn connection_deliver(
           life:,
           message: creature.Strike(tell:),
         )
-      TellTargetMoved(connection:, place:, seq:),
+      TellTargetMoved(connection:, place:, seq:, stay:),
         step.Creature(map:, incarnation:, unit_id:, life:)
       ->
         creature_registry.tell(
@@ -534,7 +534,7 @@ fn connection_deliver(
           incarnation:,
           unit_id:,
           life:,
-          message: creature.TargetMoved(by: connection, place:, seq:),
+          message: creature.TargetMoved(by: connection, place:, seq:, stay:),
         )
       TellStrikeAnswered(answered:),
         step.Creature(map:, incarnation:, unit_id:, life:)
@@ -870,12 +870,14 @@ fn creature_reach(
 }
 
 /// The message a connection takes what a creature sends it as: the news of a unit
-/// as `SentByPeer` and the creature's threat, release or strike as `SentByFoe`,
-/// each for the viewer's stay, and the answer to its strike as `SentByTarget`.
+/// as `SentByPeer`, the creature's threat, release or strike as `SentByFoe`, each
+/// for the viewer's stay, and the answer to its strike as `SentByTarget`, for the
+/// stay the strike was told for.
 pub fn creature_message(outgoing outgoing: creature.Outgoing) -> Message {
   case outgoing {
     creature.News(stay:, news:) -> ForStay(stay:, sent: SentByPeer(news:))
-    creature.Struck(answered:) -> SentByTarget(answered)
+    creature.Struck(stay:, answered:) ->
+      ForStay(stay:, sent: SentByTarget(answered))
     creature.FightTold(stay:, told:) -> ForStay(stay:, sent: SentByFoe(told))
   }
 }

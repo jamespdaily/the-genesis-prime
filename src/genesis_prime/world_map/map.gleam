@@ -448,7 +448,7 @@ pub type Outgoing {
   /// A send to a creature: the ready player of connection `by`, its unit
   /// `unit_id`, entered the creature's ring at `place`, its move `seq`; or stood
   /// in it when it became ready or when the creature started.
-  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int)
+  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int, stay: Stay)
   /// A send to a creature: the player of connection `by` left its ring.
   Withdrew(by: ConnectionId)
 }
@@ -895,8 +895,8 @@ fn approaches_at_start(
   }
 }
 
-/// The `Approached` of a player: its unit, its place and its move's sequence
-/// number.
+/// The `Approached` of a player: its unit, its place, its move's sequence
+/// number and its stay.
 fn approached(
   connection connection: ConnectionId,
   player player: Player,
@@ -906,6 +906,7 @@ fn approached(
     unit_id: player_unit.unit_id(player.unit),
     place: player_unit.place(player.unit),
     seq: player.seq,
+    stay: player.stay,
   )
 }
 

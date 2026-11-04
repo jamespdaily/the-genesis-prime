@@ -72,6 +72,7 @@ import genesis_prime/game/strike_tell.{type Answered, type Tell}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
 }
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
 import gleam/float
@@ -89,7 +90,8 @@ pub const strike_timer = TimerId(3)
 const bytes_per_unit = hit.roll_bytes
 
 /// The caster as a selection and a strike take it: who it is, where it stands and
-/// faces, the place it stands at with the move sequence number of that place
+/// faces, the place it stands at with the move sequence number of that place and
+/// the stay its strikes are told for, which their answers come back in
 /// (genesis_prime/game/strike_tell `PlayerStriker`), its player faction and what
 /// its formulas read.
 pub type Attacker {
@@ -99,6 +101,7 @@ pub type Attacker {
     pose: Pose,
     place: start_place.Place,
     move_seq: Int,
+    stay: Stay,
     faction: PlayerFaction,
     stats: damage.Attacker,
   )
@@ -294,6 +297,7 @@ pub fn begin(
                     unit_id: attacker.unit_id,
                     place: attacker.place,
                     seq: attacker.move_seq,
+                    stay: attacker.stay,
                     rolls:,
                   ),
                   offence:,

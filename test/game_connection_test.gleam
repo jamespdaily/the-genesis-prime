@@ -46,7 +46,7 @@ import genesis_prime/client_connection.{
   AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CastFinished,
   CastStarted, CastWent, CreatureAppeared, ForStay, FromHandOff, FromMap,
   FromSessions, FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer,
-  SentBySessions, SentByTarget, TellChat, TellMoved, TellPeer,
+  SentBySessions, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -5688,14 +5688,15 @@ fn strikes_told(
 }
 
 /// The creature's answer that a strike landed, as the connection is sent it.
+/// A creature's answer that the strike of `key` landed, for the tests' player's
+/// first stay.
 fn landed(key key: strike_tell.Key) -> Event(ConnectionEvent(Message, Answer)) {
-  OwnEvent(
-    Woken(
-      SentByTarget(answered: strike_tell.Answered(
-        key:,
-        outcome: strike_tell.Landed(descriptions: []),
-      )),
-    ),
+  for_stay(
+    own_stay(),
+    client_connection.SentByTarget(answered: strike_tell.Answered(
+      key:,
+      outcome: strike_tell.Landed(descriptions: []),
+    )),
   )
 }
 
@@ -5894,6 +5895,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
           connection: ConnectionId(1),
           place: standing_at(x: 1.5, y: 2.5, z: 3.5),
           seq: 1,
+          stay: own_stay(),
         ),
       ),
     ]
@@ -5907,6 +5909,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
           connection: ConnectionId(1),
           place: standing_at(x: 2.5, y: 2.5, z: 3.5),
           seq: 2,
+          stay: own_stay(),
         ),
       ),
     ]
@@ -6239,8 +6242,8 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
       OwnEffect(step.Tell(to: step.Creature(unit_id: 7, ..), request:)) ->
         case request {
           client_connection.TellStrike(tell:) -> Ok(creature.Strike(tell:))
-          client_connection.TellTargetMoved(connection:, place:, seq:) ->
-            Ok(creature.TargetMoved(by: connection, place:, seq:))
+          client_connection.TellTargetMoved(connection:, place:, seq:, stay:) ->
+            Ok(creature.TargetMoved(by: connection, place:, seq:, stay:))
           client_connection.TellStrikeAnswered(answered:) ->
             Ok(creature.StrikeAnswered(answered:))
           AskStore(..)
@@ -6343,6 +6346,7 @@ fn an_aggroed_medic() -> #(
             unit_id: medic_unit,
             place: medic_place(0.0),
             seq: 1,
+            stay: own_stay(),
           )),
         ),
       ),
@@ -6458,10 +6462,8 @@ pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_ans
     list.partition(to_the_medic(ticked), fn(message) {
       case message {
         ForStay(sent: client_connection.SentByFoe(..), ..) -> False
-        ForStay(..)
-        | SentBySessions(..)
-        | client_connection.SentByChat(..)
-        | SentByTarget(..) -> True
+        ForStay(..) | SentBySessions(..) | client_connection.SentByChat(..) ->
+          True
       }
     })
   let #(medic, _, _) = medic_takes(medic, started)
@@ -7311,6 +7313,29 @@ fn takes_only_its_own_stay(
   Nil
 }
 
+pub fn a_strike_answer_of_the_stay_before_a_camp_is_dropped_though_the_next_stays_strike_has_its_key_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The cast rule counts its casts from 1 in each stay and the Beast is unit 40 in
+  // both, so the next stay's strike has the key of the earlier one: an answer of
+  // the earlier strike, delayed past the camp and the entry, would close the new
+  // round with what the old strike did.
+  let medic = Character(..world_character(), class_id: ClassId(4))
+  let #(first, _) = feed(medic_in_world(), beast_appears(unit_id: 40))
+  let #(_, pressed) = press_paralytic_surge(state: first, client_cast_id: 1)
+  let assert [#(40, old_key)] = strikes_told(pressed)
+  let #(again, _) = entered_from(camp_from(first), medic)
+  let #(again, _) = feed(again, in_second_stay(beast_appears(unit_id: 40)))
+  let #(again, pressed) = press_paralytic_surge(state: again, client_cast_id: 1)
+  let assert [#(40, key)] = strikes_told(pressed)
+  assert key == old_key as "the same key in both stays"
+  let #(_, late) = feed(again, landed(key:))
+  assert !list.contains(written_ids(late), 0x07F4)
+    as "the earlier stay's answer closes no round of this stay: no go is written"
+  let #(_, own) = feed(again, in_second_stay(landed(key:)))
+  assert list.contains(written_ids(own), 0x07F4)
+    as "this stay's answer closes the round: its go is written"
+}
+
 pub fn messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = at_the_holocrypt()
@@ -7394,6 +7419,7 @@ fn aggroed(
             unit_id: medic_unit,
             place: medic_place(0.0),
             seq: 1,
+            stay: own_stay(),
           )),
         ),
       ),
