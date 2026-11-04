@@ -14,8 +14,6 @@ import genesis_prime/table/id.{
   CharacterCreationId, CharacterCustomizationId, CharacterCustomizationLabelId,
   GameFormulaId, WorldLocation2Id,
 }
-import genesis_prime/table/loader/server_table
-import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/spawn
@@ -202,16 +200,8 @@ pub fn the_planted_creature_and_faction_rows_select_the_spawns_the_clients_rows_
       })
     })
     |> list.flatten
-  let select = fn(tables) {
-    let selection = spawn.select(rows:, tables:)
-    store.unload(tables)
-    selection
-  }
-  let planted = select(character_tables.content_tables())
-  let assert Ok(real_tables) =
-    server_table.load_for_content(from: client_tables.folder())
-    as "the client's tables load"
-  let real = select(real_tables)
+  let planted = spawn.select(rows:, tables: character_tables.content_tables())
+  let real = spawn.select(rows:, tables: client_tables.every_table())
   assert planted.refusals == [] && real.refusals == []
     as "no row is refused by either"
   assert planted.coverage == real.coverage

@@ -21,9 +21,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
-import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
-import genesis_prime/table_folder
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
@@ -49,9 +47,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       folder:,
     )
     as "the world database imports"
-  let assert Ok(tables) =
-    server_table.load_for_content(from: table_folder.path())
-    as "the client's tables load"
+  let tables = client_tables.every_table()
   let key = store.new_key()
   let pool =
     database_support.config(

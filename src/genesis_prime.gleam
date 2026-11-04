@@ -70,7 +70,7 @@ pub fn load_content() -> store.Key {
     Ok(tables) -> tables
     Error(error) -> panic as store.describe(error)
   }
-  case
+  let loaded =
     content.load(
       tables:,
       migrations: load_migrations(),
@@ -78,7 +78,8 @@ pub fn load_content() -> store.Key {
       ask: ready_ask(),
       key:,
     )
-  {
+  store.unload(tables)
+  case loaded {
     Ok(Nil) -> key
     Error(error) -> panic as content.describe(error)
   }

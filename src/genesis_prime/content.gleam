@@ -30,7 +30,7 @@
 ////             its one query ─▶ rows ─▶ its pure check ─▶ typed records and refusals
 ////           every refusal of every table logged; any ─▶ Error(Refused(all of them))
 ////           else each table's terms put under key; the coverage logged
-////           ends its pool and unloads its tables
+////           ends its pool
 ////        ─▶ Ok: starts the tree (pool, store, ..., listeners) ─▶ readiness ask ─▶ ready line
 ////        ─▶ Error: main stops with the sentences; no tree, no listener, status 1
 //// ```
@@ -52,9 +52,9 @@
 ////   (genesis_prime/content/term); a world of the client's World table with no
 ////   spawn gets an empty one, so a missing term is a bug and crashes its reader.
 //// - **Content-only tables.** The faction, outfit and world tables the selection
-////   reads load with the load's own tables and are unloaded after it
-////   (`server_table.load_for_content`): they are not in the server's tables, whose
-////   digest a recording's header holds.
+////   reads load with the creature tables for the load alone
+////   (`server_table.load_for_content`), and the caller unloads them after it: they
+////   are not in the server's tables, whose digest a recording's header holds.
 ////
 //// What happens at each failure point of the load:
 ////
@@ -98,8 +98,8 @@ pub type LoadError {
 /// sequence above gives: waits for the database as `ask` says, compares the
 /// migrations with `migrations`, checks every row against the client's `tables`,
 /// logs every refusal and puts the terms only when there is none. `pool` is the
-/// configuration of the load's own pool. `tables` are unloaded at the end,
-/// whatever the result.
+/// configuration of the load's own pool. `tables` stay loaded: the caller unloads
+/// them, or keeps them for another load.
 pub fn load(
   tables tables: store.Tables,
   migrations migrations: List(Migration),
@@ -112,7 +112,6 @@ pub fn load(
   process.unlink(started.pid)
   let loaded = read(tables:, migrations:, db: started.data, ask:, key:)
   process.send_abnormal_exit(started.pid, runtime.Shutdown)
-  store.unload(tables)
   loaded
 }
 
