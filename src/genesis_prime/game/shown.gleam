@@ -19,7 +19,7 @@
 //// - **A creature's life** is the number of the map's watch it was started under,
 ////   which is part of its address (genesis_prime/step `Creature`).
 
-import genesis_prime/game/area.{type Candidate, Candidate, Point}
+import genesis_prime/game/area.{type Candidate, Candidate}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/world_map/creature_life.{type Attackable}
 import genesis_prime/world_map/spawn
@@ -85,12 +85,7 @@ pub fn candidates(
           && unit_id != caster_unit_id
           && may_attack(faction:, attackable:)
         {
-          True ->
-            Ok(Candidate(
-              unit_id:,
-              at: Point(x: start_place.x(place), z: start_place.z(place)),
-              hit_radius:,
-            ))
+          True -> Ok(Candidate(unit_id:, at: area.point_of(place), hit_radius:))
           False -> Error(Nil)
         }
     }

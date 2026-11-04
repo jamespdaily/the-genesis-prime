@@ -113,13 +113,6 @@ pub fn the_gear_ratings_add_a_rounded_stat_part_test() -> Nil {
     as "Kick: 0.0656 x 50.77 + 0.0656 x 13.92 = 4.24 rounds to 4, plus 4.16"
 }
 
-pub fn a_value_is_rounded_half_away_from_zero_test() -> Nil {
-  use <- owned_test.run(5000)
-  assert damage.rounded(value: 4.16) == 4
-  assert damage.rounded(value: 8.94) == 9
-  assert damage.rounded(value: 2.5) == 3
-}
-
 pub fn a_parameter_type_the_rule_does_not_read_is_named_test() -> Nil {
   use <- owned_test.run(5000)
   assert damage.unread(formula: row(

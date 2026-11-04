@@ -36,6 +36,7 @@
 ////   the rows name (`Spell4AoeTargetConstraints.targetSelection`); what "closest"
 ////   measures is the server's choice.
 
+import genesis_prime/game/start_place.{type Place}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -45,6 +46,11 @@ import gleam_community/maths
 /// A place on the ground: x and z, the axes the client's yaw turns about.
 pub type Point {
   Point(x: Float, z: Float)
+}
+
+/// The point on the ground a place stands at.
+pub fn point_of(place place: Place) -> Point {
+  Point(x: start_place.x(place), z: start_place.z(place))
 }
 
 /// A centre and the way it faces: the place of a caster, or of the unit a child

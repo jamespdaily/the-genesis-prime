@@ -16,6 +16,7 @@ import frame_reader
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/area.{Point}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
@@ -60,7 +61,6 @@ import gleam/float
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
-import gleam_community/maths
 import login_client
 import mug
 
@@ -406,9 +406,10 @@ pub fn yaw_toward(
   from from: #(Float, Float),
   target target: #(Float, Float),
 ) -> Float {
-  maths.atan2(
-    float.negate(target.0 -. from.0),
-    float.negate(target.1 -. from.1),
+  area.bearing(
+    from: Point(x: from.0, z: from.1),
+    target: Point(x: target.0, z: target.1),
+    yaw: 0.0,
   )
 }
 

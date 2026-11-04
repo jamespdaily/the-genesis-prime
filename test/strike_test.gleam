@@ -25,7 +25,8 @@ import genesis_prime/game/cast.{type GoAsked, GoAsked}
 import genesis_prime/game/damage
 import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/shown.{Exile, ShownCreature, ShownPlayer}
-import genesis_prime/game/spell_area.{AimsAtArea, DamageEffect}
+import genesis_prime/game/spell_area.{DamageEffect}
+import genesis_prime/game/spell_plan.{AimsAtArea}
 import genesis_prime/game/strike.{
   type Attacker, type Effect, type Selection, type State, Aimed, Attacker,
   Selection,
@@ -567,9 +568,111 @@ pub fn health_news_of_a_unit_of_an_open_round_is_held_until_the_rounds_go_test()
           "other"
       }
     })
-    == ["went", "released ten", "cancel"]
-    as "the go is written first, then the death the held news carries: the client shows the number before the death"
+    == ["cancel", "went", "released ten"]
+    as "the go is written first, then the death the held news carries: the client shows the number before the death; the timer moves before either, since the go may begin a round of its own"
   assert !strike.holds(strike: state, unit_id: 10)
+}
+
+pub fn a_closing_rounds_timer_effects_come_before_its_go_so_the_rounds_the_go_begins_keep_their_deadline_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    begun(
+      state: strike.new(),
+      selection: selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10],
+        damaging: True,
+      ),
+      now_ms: 1000,
+    )
+  let #(state, closing) =
+    answer(
+      state:,
+      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      outcome: landed(),
+      now_ms: 1100,
+    )
+  assert list.map(closing, effect_label) == ["cancel", "went"]
+    as "the only waiting round closed: the timer is cancelled before the go, which a damage child's round follows in the connection's order of effects"
+  let #(state, child) =
+    begun(
+      state:,
+      selection: selection(
+        asked: asked(cast_id: 5, phase: 1),
+        units: [10],
+        damaging: True,
+      ),
+      now_ms: 1100,
+    )
+  assert timers(effects: child)
+    == [strike.StartTimer(timer: strike.strike_timer, after_ms: 1000)]
+    as "the child's round, begun while the go is carried out, starts the timer once, after the cancel, and it is not cancelled again"
+  let #(_, fired) = strike.timer_fired(strike: state, now: at(ms: 2100))
+  assert went(effects: fired) == [#(5, 1, [])]
+    as "the child's round keeps its 1 s deadline and closes there with nobody answered"
+}
+
+/// A short name of an effect, in the order the connection carries them out.
+fn effect_label(effect: Effect) -> String {
+  case effect {
+    strike.Went(..) -> "went"
+    strike.Released(..) -> "released"
+    strike.CancelTimer(..) -> "cancel"
+    strike.StartTimer(..) -> "start"
+    strike.TellStrike(..) -> "tell"
+    strike.Log(..) -> "log"
+  }
+}
+
+pub fn the_news_held_for_a_unit_is_dropped_when_the_unit_is_forgotten_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    begun(
+      state: strike.new(),
+      selection: selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10, 11],
+        damaging: True,
+      ),
+      now_ms: 1000,
+    )
+  let state =
+    strike.hold(
+      strike: strike.hold(
+        strike: state,
+        unit_id: 10,
+        news: client_connection.Died,
+      ),
+      unit_id: 11,
+      news: client_connection.Health(health: 5, dead: False),
+    )
+  let state = strike.forget(strike: state, unit_id: 10)
+  let #(state, _) =
+    answer(
+      state:,
+      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      outcome: landed(),
+      now_ms: 1100,
+    )
+  let #(_, closing) =
+    answer(
+      state:,
+      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      outcome: landed(),
+      now_ms: 1200,
+    )
+  assert list.filter_map(closing, fn(effect) {
+      case effect {
+        strike.Released(unit_id:, ..) -> Ok(unit_id)
+        strike.TellStrike(..)
+        | strike.StartTimer(..)
+        | strike.CancelTimer(..)
+        | strike.Went(..)
+        | strike.Log(..) -> Error(Nil)
+      }
+    })
+    == [11]
+    as "unit 10 was removed from the client's picture (0x355), so its death is not written onto a unit that may stand again; unit 11's health is"
 }
 
 fn unit_label(unit_id: Int) -> String {

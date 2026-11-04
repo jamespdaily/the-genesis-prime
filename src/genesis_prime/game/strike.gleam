@@ -56,20 +56,20 @@
 ////   senders, which no order holds (a gap, which the live sitting checks).
 
 import genesis_prime/client_connection.{type News}
-import genesis_prime/game/area.{type Pose, Point, Pose}
+import genesis_prime/game/area.{type Pose, Pose}
 import genesis_prime/game/cast.{type GoAsked, type Struck}
 import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
 import genesis_prime/game/spell_area.{type Areas}
-import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{type Answered, type Tell}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
 }
 import gleam/bit_array
 import gleam/bool
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -78,9 +78,6 @@ import gleam/result
 /// The one strike timer of a connection: the connection's own timers are below the
 /// cast rule's, which start at 1000 (genesis_prime/game/cast `first_timer`).
 pub const strike_timer = TimerId(3)
-
-/// How long a round waits for its answers, in milliseconds.
-const deadline_ms = 1000
 
 /// The seed bytes a strike takes for each selected unit: 4 for each of the three
 /// rolls (genesis_prime/game/hit `rolls_of`).
@@ -190,12 +187,7 @@ pub fn select(
         True -> Ok(attacker.pose)
         False ->
           shown.place_of(picture:, unit_id: asked.primary_target)
-          |> result.map(fn(place) {
-            Pose(
-              at: Point(x: start_place.x(place), z: start_place.z(place)),
-              yaw: 0.0,
-            )
-          })
+          |> result.map(fn(place) { Pose(at: area.point_of(place), yaw: 0.0) })
       }
       let from_area = case phase.selects_area, area.row, centre {
         True, Some(row), Ok(centre) ->
@@ -306,7 +298,7 @@ pub fn begin(
     Round(
       asked: selection.asked,
       places: list.reverse(places),
-      deadline_ms: now.monotonic_ms + deadline_ms,
+      deadline_ms: now.monotonic_ms + strike_tell.deadline_ms,
     )
   let state = State(..strike, rounds: list.append(strike.rounds, [round]))
   let #(state, settled) = settle(state:, now:)
@@ -324,7 +316,7 @@ fn offence_of(
       hit.Blow(
         spell4_effects_id: effect.effect_id.value,
         damage_type: effect.damage_type,
-        damage: damage.rounded(value: damage.value(
+        damage: float.round(damage.value(
           formula: effect.formula,
           attacker: attacker.stats,
         )),
@@ -466,6 +458,16 @@ fn unit_of(struck: Struck) -> Int {
   }
 }
 
+/// Drops the news held for a unit the client no longer shows (its 0x355): the unit may
+/// stand again under the same id, and a death or health meant for the unit that was
+/// removed is not its news.
+pub fn forget(strike strike: State, unit_id unit_id: Int) -> State {
+  State(
+    ..strike,
+    held: list.filter(strike.held, fn(held) { held.0 != unit_id }),
+  )
+}
+
 /// Holds a news of a unit of an open round until the round's go is written.
 pub fn hold(
   strike strike: State,
@@ -478,7 +480,9 @@ pub fn hold(
 /// Closes every round that is complete and has no earlier round of its cast open,
 /// in the order they began, releases the news held for the units of a closed round
 /// that no open round holds, and sets the strike timer to the earliest deadline of
-/// a round still waiting for an answer.
+/// a round still waiting for an answer. The timer's effects come first: a closed
+/// round's go may begin a round of its own, whose timer would otherwise be set before
+/// the cancel that follows it.
 fn settle(state state: State, now now: Now) -> #(State, List(Effect)) {
   let #(open, closed) = close_ready(rounds: state.rounds, open: [], closed: [])
   let state = State(..state, rounds: open)
@@ -512,9 +516,9 @@ fn settle(state state: State, now now: Now) -> #(State, List(Effect)) {
   #(
     state,
     list.flatten([
+      timers,
       went,
       list.map(released, fn(held) { Released(unit_id: held.0, news: held.1) }),
-      timers,
     ]),
   )
 }

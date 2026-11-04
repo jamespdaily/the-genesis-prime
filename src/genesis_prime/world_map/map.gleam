@@ -768,8 +768,18 @@ fn players_seeing(
   |> list.map(fn(player) { player.0 })
 }
 
+/// The connections of a set in the order of their numbers, so what is sent to each is
+/// the same on every run.
+pub fn sorted_connections(
+  connections: Set(ConnectionId),
+) -> List(ConnectionId) {
+  list.sort(set.to_list(connections), fn(first, second) {
+    compare_connections(first:, second:)
+  })
+}
+
 /// The order of two connections by their numbers.
-pub fn compare_connections(
+fn compare_connections(
   first first: ConnectionId,
   second second: ConnectionId,
 ) -> order.Order {

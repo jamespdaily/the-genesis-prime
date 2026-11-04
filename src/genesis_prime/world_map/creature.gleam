@@ -239,7 +239,7 @@ pub fn step(
         ))
       let news =
         list.flat_map(reaction.news, fn(news) {
-          list.map(sorted(state.viewers), fn(viewer) {
+          list.map(map.sorted_connections(state.viewers), fn(viewer) {
             news_to(creature:, viewer:, news: viewer_news(news))
           })
         })
@@ -268,7 +268,7 @@ pub fn step(
           #(
             state,
             Effects(
-              list.flat_map(sorted(state.viewers), fn(viewer) {
+              list.flat_map(map.sorted_connections(state.viewers), fn(viewer) {
                 [
                   news_to(creature:, viewer:, news: Removed),
                   appeared(state:, viewer:, now: input.now),
@@ -284,14 +284,6 @@ pub fn step(
     | OwnEvent(CreatureNotStarted(..)) ->
       panic as "a creature is told, and starts no timer but its corpse's and no creature"
   }
-}
-
-/// The viewers in connection number order, so what a creature sends is the same on
-/// every run.
-fn sorted(viewers: Set(ConnectionId)) -> List(ConnectionId) {
-  list.sort(set.to_list(viewers), fn(first, second) {
-    map.compare_connections(first:, second:)
-  })
 }
 
 /// What a viewer's connection writes of a news of the creature's health.

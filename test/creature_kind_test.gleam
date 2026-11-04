@@ -5,6 +5,9 @@
 ////   takes, a table without it stops the start, a row for a Creature2 id the
 ////   client does not hold or a respawn time below 1 is refused, and every refusal
 ////   is collected and named by its table, its id and its rule.
+//// - A respawn time below the strike deadline (1000 ms) is refused: a creature that
+////   stood again before the round it was struck in closed could take that round's
+////   held news (`genesis_prime/game/strike_tell.deadline_ms`).
 //// - The default is 60 000 ms, a server choice: the client holds no respawn time
 ////   (`death.creature_respawn`).
 //// - The Virtual Battle Beast is Creature2 73464 (`Creature2.73464`).
@@ -13,6 +16,7 @@ import content_support
 import database_support
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal}
+import genesis_prime/game/strike_tell
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{Kind, Kinds, Row}
@@ -99,6 +103,25 @@ pub fn a_respawn_time_below_one_is_refused_by_name_test() -> Nil {
       Row(creature_id: 73_464, respawn_ms: 0),
     ])
     as "a creature that respawns in no time has no corpse: migration 0009 refuses it too"
+  Nil
+}
+
+pub fn a_respawn_time_below_the_strike_deadline_is_refused_by_name_and_the_deadline_itself_is_taken_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Error([Refusal(table: "creature_kind", id: 73_464, rule:)]) =
+    selected(rows: [
+      Row(creature_id: 0, respawn_ms: 60_000),
+      Row(creature_id: 73_464, respawn_ms: strike_tell.deadline_ms - 1),
+    ])
+    as "a creature that stands again before the round it was struck in has closed would take the held news of its earlier unit"
+  assert string.contains(rule, "1000")
+    as "the refusal names the strike deadline, 1000 ms"
+  let assert Ok(_) =
+    selected(rows: [
+      Row(creature_id: 0, respawn_ms: 60_000),
+      Row(creature_id: 73_464, respawn_ms: strike_tell.deadline_ms),
+    ])
+    as "a respawn time of the deadline itself is taken"
   Nil
 }
 

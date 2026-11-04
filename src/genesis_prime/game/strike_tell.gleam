@@ -21,6 +21,11 @@
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/step.{type ConnectionId}
 
+/// How long a round waits for its answers, in milliseconds. A creature's respawn time
+/// is never below it (genesis_prime/world_map/creature_kind), so a unit does not stand
+/// again while a round it was struck in is open.
+pub const deadline_ms = 1000
+
 /// One strike: the cast, the go's phase and the struck unit.
 pub type Key {
   Key(cast_id: Int, phase: Int, unit_id: Int)

@@ -11,12 +11,14 @@ import area_tables
 import client_tables
 import genesis_prime/game/area.{Cone, InsideRow, InsideShapes, Placement, Row}
 import genesis_prime/game/spell_area.{
-  AimNotRead, SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster,
-  ValidTargetsNotAlive,
+  AimNotRead, MultiplierNotFinite, SelectionNotClosest, ShapeNotBuilt,
+  TelegraphNotOnCaster, ValidTargetsNotAlive,
 }
+import genesis_prime/game/spell_plan
 import genesis_prime/table/id.{Spell4Id}
 import gleam/list
 import gleam/option.{Some}
+import gleam/result
 import owned_test
 import unitest
 
@@ -49,7 +51,7 @@ pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() ->
   let assert Ok(phase) = spell_area.phase(spell: kicked, phase: 0)
   assert phase.selects_area as "Spell4Effects.targetFlags 4 aims at the area"
   let assert [effect] = phase.damage
-  assert effect.aim == spell_area.AimsAtArea
+  assert effect.aim == spell_plan.AimsAtArea
 }
 
 pub fn a_spell_with_a_telegraph_is_struck_by_its_hit_shapes_test() -> Nil {
@@ -112,6 +114,40 @@ pub fn a_shape_the_rule_does_not_build_fails_the_load_naming_it_test() -> Nil {
       == Error(ShapeNotBuilt(spell4_id: 58_591, telegraph_id: 168, shape:))
       as "TelegraphDamage.damageShapeEnum: 1 ring, 3, 5 pie and 6 are not built"
   })
+}
+
+pub fn a_damage_multiplier_that_is_not_a_finite_float_fails_the_load_naming_the_effect_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(0x7FC00000, 0x7FC00000),
+      #(0x7F800000, 0x7F800000),
+      #(0xFF800000, 0xFF800000 - 0x100000000),
+      #(0xFFC00000, 0xFFC00000 - 0x100000000),
+    ],
+    fn(planted) {
+      assert area_tables.built(
+          kick: area_tables.Kick(
+            ..area_tables.kick(),
+            multiplier_bits: planted.0,
+          ),
+        )
+        == Error(MultiplierNotFinite(
+          spell4_id: 58_591,
+          effect_id: 1,
+          bits: planted.1,
+        ))
+        as "a quiet NaN, an infinity and the negative of each (the column reads as a signed 32-bit number) cannot be a float of the VM: the load names the effect instead of crashing"
+    },
+  )
+  assert area_tables.built(
+      kick: area_tables.Kick(
+        ..area_tables.kick(),
+        multiplier_bits: 0x80000000 + 0x3F800000,
+      ),
+    )
+    |> result.is_ok
+    as "the sign bit of a column that reads as a negative number is a float's own: -1.0 is finite (Spell4Effects columns are read as 32 bits)"
 }
 
 pub fn a_damage_effect_aimed_by_a_flag_value_not_read_fails_the_load_test() -> Nil {

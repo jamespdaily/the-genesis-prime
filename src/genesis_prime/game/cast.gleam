@@ -806,7 +806,7 @@ fn start(
     None -> started_frame(start: start_message)
   }
   let told =
-    list.map(sorted(audience), fn(viewer) {
+    list.map(map.sorted_connections(audience), fn(viewer) {
       Tell(
         to: viewer,
         news: client_connection.CastStarted(start: start_message),
@@ -845,13 +845,13 @@ fn go(
       let going =
         list.flatten([
           [Send(frame: went_frame(go: go_message))],
-          list.map(sorted(live.audience), fn(viewer) {
+          list.map(map.sorted_connections(live.audience), fn(viewer) {
             Tell(to: viewer, news: client_connection.CastWent(go: go_message))
           }),
           case missed {
             Some(missed) -> [
               Send(frame: missed_frame(missed:)),
-              ..list.map(sorted(live.audience), fn(viewer) {
+              ..list.map(map.sorted_connections(live.audience), fn(viewer) {
                 Tell(to: viewer, news: client_connection.CastMissed(missed:))
               })
             ]
@@ -1016,7 +1016,7 @@ fn finish(
     ),
     [
       Send(frame: finished_frame(cast_id:)),
-      ..list.map(sorted(live.audience), fn(viewer) {
+      ..list.map(map.sorted_connections(live.audience), fn(viewer) {
         Tell(to: viewer, news: client_connection.CastFinished(cast_id:))
       })
     ],
@@ -1040,12 +1040,6 @@ fn go_timers_of(cast cast: State, cast_id cast_id: Int) -> List(TimerId) {
     }
   })
   |> dict.keys
-}
-
-fn sorted(audience: Set(ConnectionId)) -> List(ConnectionId) {
-  list.sort(set.to_list(audience), fn(first, second) {
-    map.compare_connections(first:, second:)
-  })
 }
 
 fn position_of(place place: Place) -> SpellPosition {

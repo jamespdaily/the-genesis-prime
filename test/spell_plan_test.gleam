@@ -158,6 +158,28 @@ pub fn a_cycle_of_proxies_fails_the_load_naming_the_spells_on_the_way_test() -> 
     as "the load names the chain from the pressed ability to the spell that repeats"
 }
 
+pub fn a_proxy_aimed_by_flags_that_are_not_read_fails_the_load_naming_the_effect_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Error(error) =
+    spell_tables.derivation_result(
+      rows: with_effect(effect: spell_tables.effect_row(
+        id: 99_003,
+        spell: 32_893,
+        type_: 26,
+        target_flags: 3,
+        delay: 0,
+        phases: -1,
+        data: 30_900,
+      )),
+    )
+    as "Spell4Effects.targetFlags 3 is neither the caster, the primary target nor the area: the plan and the areas read one aim, so the load fails rather than guess where the child starts"
+  let reason = table_store.describe(error)
+  assert string.contains(reason, "32893")
+    && string.contains(reason, "99003")
+    && string.contains(reason, "flags 3")
+    as "the load names the spell, the effect and the flags"
+}
+
 pub fn a_multiphase_spell_with_no_kept_phase_row_fails_the_load_naming_the_table_and_owner_test() -> Nil {
   use <- owned_test.run(60_000)
   let rows = spell_tables.rows()

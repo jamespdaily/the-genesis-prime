@@ -44,6 +44,8 @@ pub type Kick {
     effect_target_flags: Int,
     /// Whether the Spell4Telegraph row exists.
     has_telegraph: Bool,
+    /// Spell4Effects.dataBits00 of the damage effect: its multiplier as 32 float bits.
+    multiplier_bits: Int,
   )
 }
 
@@ -56,6 +58,7 @@ pub fn kick() -> Kick {
     shape: 4,
     effect_target_flags: 4,
     has_telegraph: True,
+    multiplier_bits: float32.to_bits(1.0),
   )
 }
 
@@ -96,7 +99,7 @@ fn files_of(kick kick: Kick) -> List(#(String, BitArray)) {
         #("damageType", Integer(1)),
         #("delayTime", Integer(166)),
         #("phaseFlags", Integer(-1)),
-        #("dataBits00", Integer(float32.to_bits(1.0))),
+        #("dataBits00", Integer(kick.multiplier_bits)),
       ]),
     ]),
     planted_table.file(spell_phase.schema, []),

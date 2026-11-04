@@ -31,7 +31,6 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/unit_fields
-import gleam/list
 import gleam/result
 
 /// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health`,
@@ -71,9 +70,6 @@ pub fn create(
 
 /// The health stat of a creature's 0x262: 0 for a creature that lies dead.
 pub fn health_of(unit unit: UnitCreateCreature) -> Int {
-  list.find(unit.tail.stats, fn(stat) {
-    stat.stat_id == unit_fields.health_stat
-  })
-  |> result.map(fn(stat) { stat.value })
+  unit_fields.stat(tail: unit.tail, stat_id: unit_fields.health_stat)
   |> result.unwrap(0)
 }

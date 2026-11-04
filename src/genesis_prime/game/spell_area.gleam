@@ -45,7 +45,10 @@ import genesis_prime/game/area.{
   InsideShapes, Placement, Rectangle, Row,
 }
 import genesis_prime/game/damage.{type Formula, Formula, Parameter}
-import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/spell_plan.{
+  type Aim, type Spell, AimsAtArea, AimsAtBoth, AimsAtPrimaryTarget,
+}
+import genesis_prime/message/float32
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
   Spell4EffectsId, Spell4ValidTargetsId, TelegraphDamageId,
@@ -63,18 +66,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/order
 import gleam/result
-
-/// Who an effect aims at (`Spell4Effects.targetFlags`).
-pub type Aim {
-  AimsAtCaster
-  AimsAtPrimaryTarget
-  AimsAtArea
-  AimsAtBoth
-  /// A flag value no level-1 ability holds: the load refuses an effect with it.
-  OtherAim(flags: Int)
-}
 
 /// A damage effect of a spell: its row, damage type and delay, the phases it fires
 /// in, who it aims at and the formula its value is worked out by.
@@ -139,6 +131,9 @@ pub type AreaError {
   AimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A damage effect's formula reads a parameter a player's value does not.
   FormulaNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
+  /// A damage effect's multiplier (`dataBits00`, read as 32 bits) is an infinity or a
+  /// number that is not one.
+  MultiplierNotFinite(spell4_id: Int, effect_id: Int, bits: Int)
 }
 
 /// A sentence that says why the areas cannot be built, naming the table, the
@@ -195,6 +190,14 @@ fn describe(error error: AreaError) -> String {
       <> " whose formula reads parameter type "
       <> int.to_string(parameter_kind)
       <> ", which a player's value does not"
+    MultiplierNotFinite(spell4_id:, effect_id:, bits:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a damage effect "
+      <> int.to_string(effect_id)
+      <> " whose multiplier, dataBits00 "
+      <> int.to_string(bits)
+      <> ", is not a finite 32-bit float"
   }
 }
 
@@ -223,12 +226,14 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   let spells =
     dict.values(spell_plan.plans(tables:))
     |> list.flat_map(spells_of_tree)
+  let effects = spell_plan.effects_by_spell(tables:)
+  let links = telegraph_links_by_spell(tables:)
   list.try_fold(spells, dict.new(), fn(areas, spell) {
     let id = spell.spell4_id.value
     case dict.has_key(areas, id) {
       True -> Ok(areas)
       False -> {
-        use area <- result.try(area_of(tables:, spell:))
+        use area <- result.try(area_of(tables:, effects:, links:, spell:))
         Ok(dict.insert(areas, id, area))
       }
     }
@@ -250,8 +255,22 @@ fn spells_of_tree(spell: Spell) -> List(Spell) {
   ]
 }
 
+/// The Spell4Telegraph rows of each spell, in table order, grouped once.
+fn telegraph_links_by_spell(
+  tables tables: table_store.Tables,
+) -> Dict(Int, List(spell4_telegraph.Spell4Telegraph)) {
+  list.reverse(spell4_telegraph.all(tables))
+  |> list.fold(dict.new(), fn(links, link) {
+    dict.upsert(links, link.spell4_id, fn(found) {
+      [link, ..option.unwrap(found, [])]
+    })
+  })
+}
+
 fn area_of(
   tables tables: table_store.Tables,
+  effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
+  links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   spell spell: Spell,
 ) -> Result(SpellArea, AreaError) {
   let id = spell.spell4_id.value
@@ -271,8 +290,8 @@ fn area_of(
     Some(..) -> valid_targets_checked(tables:, id:, base:)
     None -> Ok(Nil)
   })
-  use shapes <- result.try(hit_shapes_of(tables:, id:))
-  use effects <- result.try(damage_effects_of(tables:, id:))
+  use shapes <- result.try(hit_shapes_of(tables:, links:, id:))
+  use effects <- result.try(damage_effects_of(effects:, id:))
   let phases =
     int.range(
       from: 0,
@@ -354,11 +373,12 @@ fn area_row_of(
 /// read, so a spell's shapes hold for each of its gos.
 fn hit_shapes_of(
   tables tables: table_store.Tables,
+  links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
 ) -> Result(List(Placement), AreaError) {
   use rows <- result.try(
-    spell4_telegraph.all(tables)
-    |> list.filter(fn(link) { link.spell4_id == id })
+    dict.get(links, id)
+    |> result.unwrap([])
     |> list.try_map(fn(link) {
       telegraph_damage.get(
         tables:,
@@ -371,17 +391,17 @@ fn hit_shapes_of(
     }),
   )
   let twins =
-    list.filter(rows, fn(row) { has_flag(row.telegraph_damage_flags, 0x40) })
+    list.filter(rows, fn(row) {
+      spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
+    })
   let chosen = case twins {
     [] ->
-      list.filter(rows, fn(row) { !has_flag(row.telegraph_damage_flags, 0x100) })
+      list.filter(rows, fn(row) {
+        !spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x100)
+      })
     twins -> twins
   }
   list.try_map(chosen, fn(row) { placement_of(id:, row:) })
-}
-
-fn has_flag(flags: Int, bit: Int) -> Bool {
-  int.bitwise_and(flags, bit) != 0
 }
 
 fn placement_of(
@@ -420,58 +440,62 @@ fn placement_of(
     ahead: row.z_position_offset,
     aside: row.x_position_offset,
     turn_degrees: row.rotation_degrees,
-    grows_by_hit_radius: !has_flag(row.telegraph_damage_flags, 0x200),
+    grows_by_hit_radius: !spell_plan.has_flag(
+      flags: row.telegraph_damage_flags,
+      bit: 0x200,
+    ),
   ))
 }
 
 /// The damage effects of the spell (effect type 8), each with the unit it aims at and
 /// its formula.
 fn damage_effects_of(
-  tables tables: table_store.Tables,
+  effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
   id id: Int,
 ) -> Result(List(DamageEffect), AreaError) {
-  spell4_effects.all(tables)
-  |> list.filter(fn(effect) { effect.spell_id == id && effect.effect_type == 8 })
-  |> list.sort(fn(first, second) {
-    int.compare(first.order_index, second.order_index)
-    |> order.break_tie(int.compare(first.id, second.id))
-  })
+  dict.get(effects, id)
+  |> result.unwrap([])
+  |> list.filter(fn(effect) { effect.effect_type == 8 })
   |> list.try_map(fn(effect) {
+    use multiplier <- result.try(
+      float32.bits(int.bitwise_and(effect.data_bits00, 0xFFFFFFFF))
+      |> result.try(float32.value)
+      |> result.replace_error(MultiplierNotFinite(
+        spell4_id: id,
+        effect_id: effect.id,
+        bits: effect.data_bits00,
+      )),
+    )
     let formula =
-      Formula(
-        multiplier: float_of_bits(effect.data_bits00),
-        base: effect.data_bits01,
-        parameters: [
-          Parameter(
-            kind: effect.parameter_type00,
-            value: effect.parameter_value00,
-          ),
-          Parameter(
-            kind: effect.parameter_type01,
-            value: effect.parameter_value01,
-          ),
-          Parameter(
-            kind: effect.parameter_type02,
-            value: effect.parameter_value02,
-          ),
-          Parameter(
-            kind: effect.parameter_type03,
-            value: effect.parameter_value03,
-          ),
-        ],
-      )
-    use aim <- result.try(case effect.target_flags {
-      1 -> Ok(AimsAtCaster)
-      2 -> Ok(AimsAtPrimaryTarget)
-      4 -> Ok(AimsAtArea)
-      6 -> Ok(AimsAtBoth)
-      flags ->
-        Error(AimNotRead(
-          spell4_id: id,
-          effect_id: effect.id,
-          target_flags: flags,
-        ))
-    })
+      Formula(multiplier:, base: effect.data_bits01, parameters: [
+        Parameter(
+          kind: effect.parameter_type00,
+          value: effect.parameter_value00,
+        ),
+        Parameter(
+          kind: effect.parameter_type01,
+          value: effect.parameter_value01,
+        ),
+        Parameter(
+          kind: effect.parameter_type02,
+          value: effect.parameter_value02,
+        ),
+        Parameter(
+          kind: effect.parameter_type03,
+          value: effect.parameter_value03,
+        ),
+      ])
+    use aim <- result.try(
+      case spell_plan.aim_of(target_flags: effect.target_flags) {
+        spell_plan.OtherAim(flags:) ->
+          Error(AimNotRead(
+            spell4_id: id,
+            effect_id: effect.id,
+            target_flags: flags,
+          ))
+        aim -> Ok(aim)
+      },
+    )
     use Nil <- result.try(case damage.unread(formula:) {
       Some(damage.Unread(parameter_kind:)) ->
         Error(FormulaNotRead(
@@ -492,16 +516,6 @@ fn damage_effects_of(
   })
 }
 
-/// The 32 bits of a column as the float they hold (dataBits00 of a damage effect is
-/// its multiplier as a float).
-fn float_of_bits(bits: Int) -> Float {
-  let assert <<value:float-size(32)>> = <<
-    int.bitwise_and(bits, 0xFFFFFFFF):size(32),
-  >>
-    as "32 bits are a 32-bit float"
-  value
-}
-
 fn phase_of(
   spell spell: Spell,
   effects effects: List(DamageEffect),
@@ -509,7 +523,9 @@ fn phase_of(
 ) -> PhaseStrike {
   let bit = int.bitwise_shift_left(1, phase)
   let firing =
-    list.filter(effects, fn(effect) { has_flag(effect.phase_flags, bit) })
+    list.filter(effects, fn(effect) {
+      spell_plan.has_flag(flags: effect.phase_flags, bit:)
+    })
   let strikes = fn(aims) {
     list.any(firing, fn(effect) { list.contains(aims, effect.aim) })
   }

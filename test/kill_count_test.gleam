@@ -17,6 +17,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/hit.{type Blow, Blow, Offence, Rolls}
 import genesis_prime/game/spell_area
 import genesis_prime/table/id.{Spell4Id}
+import gleam/float
 import gleam/list
 import owned_test
 import unitest
@@ -50,7 +51,7 @@ fn casts_to_kill(
           Blow(
             spell4_effects_id: effect.effect_id.value,
             damage_type: effect.damage_type,
-            damage: damage.rounded(value: damage.value(
+            damage: float.round(damage.value(
               formula: effect.formula,
               attacker: damage.Attacker(
                 level: 1,

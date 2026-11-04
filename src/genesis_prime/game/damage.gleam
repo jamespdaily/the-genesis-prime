@@ -98,9 +98,3 @@ pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
     { int.to_float(formula.base) +. flat_part } *. formula.multiplier
   int.to_float(float.round(stat_part)) +. row_part
 }
-
-/// The value as a whole number, rounded half away from zero (the server's choice,
-/// since the client's tooltip shows a fraction).
-pub fn rounded(value value: Float) -> Int {
-  float.round(value)
-}

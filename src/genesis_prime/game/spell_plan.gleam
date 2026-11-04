@@ -129,6 +129,30 @@ pub type Condition {
   NeedsPrerequisite(prerequisite_id: PrerequisiteId)
 }
 
+/// Who an effect aims at (`Spell4Effects.targetFlags`), read once for the effects a
+/// spell holds: the Proxies of the plan and the damage of the areas.
+pub type Aim {
+  AimsAtCaster
+  AimsAtPrimaryTarget
+  AimsAtArea
+  AimsAtBoth
+  /// A flag value no effect of a level-1 ability's tree holds: the load refuses an
+  /// effect with it.
+  OtherAim(flags: Int)
+}
+
+/// The aim of an effect's `targetFlags`: 1 the caster, 2 the primary target, 4 the area,
+/// 6 the primary target and the area.
+pub fn aim_of(target_flags target_flags: Int) -> Aim {
+  case target_flags {
+    1 -> AimsAtCaster
+    2 -> AimsAtPrimaryTarget
+    4 -> AimsAtArea
+    6 -> AimsAtBoth
+    flags -> OtherAim(flags:)
+  }
+}
+
 /// Which unit a Proxy's child cast is made on.
 pub type ProxyTarget {
   /// The caster of the spell whose Proxy fired.
@@ -191,6 +215,8 @@ pub type Proxy {
 pub type PlanError {
   /// A table row the tree names is missing: the table, and the id.
   NoRow(table: String, id: Int)
+  /// A Proxy effect of a tree is aimed by a flag value that is not read.
+  ProxyAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// The Proxy effects of a spell lead back to a spell on the way to it: the
   /// Spell4 ids from the pressed ability to the one that repeats.
   ProxyCycle(chain: List(Int))
@@ -216,6 +242,15 @@ pub fn describe(error error: PlanError) -> String {
     ProxyCycle(chain:) ->
       "the Proxy effects of an ability lead round a cycle of spells: "
       <> string_of(chain)
+    ProxyAimNotRead(spell4_id:, effect_id:, target_flags:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proxy effect "
+      <> int.to_string(effect_id)
+      <> " aimed by flags "
+      <> int.to_string(target_flags)
+      <> ", which are not read"
+
     UnbuiltCastBar(spell4_id:, cast_method:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -317,11 +352,13 @@ fn method_number(method method: CastMethod) -> Int {
   }
 }
 
-fn effects_by_spell(
+/// The effects of each spell, of every type, in the order they take effect
+/// (`Spell4Effects.orderIndex`, then the row id): the plans read the Proxies among
+/// them and the areas the damage, so the table is grouped once.
+pub fn effects_by_spell(
   tables tables: table_store.Tables,
 ) -> Dict(Int, List(spell4_effects.Spell4Effects)) {
   spell4_effects.all(tables)
-  |> list.filter(fn(effect) { effect.effect_type == proxy_effect_type })
   |> list.group(fn(effect) { effect.spell_id })
   |> dict.map_values(fn(_, effects) {
     list.sort(effects, fn(first, second) {
@@ -377,8 +414,11 @@ fn spell_of(
   use proxies <- result.try(
     dict.get(effects, spell4_id)
     |> result.unwrap([])
-    |> list.filter(fn(effect) { effect.data_bits00 != 0 })
+    |> list.filter(fn(effect) {
+      effect.effect_type == proxy_effect_type && effect.data_bits00 != 0
+    })
     |> list.try_map(fn(effect) {
+      use target <- result.try(target_of(spell4_id:, effect:))
       use child <- result.try(spell_of(
         tables:,
         effects:,
@@ -391,7 +431,7 @@ fn spell_of(
         delay_ms: effect.delay_time,
         phase_flags: effect.phase_flags,
         condition: condition_of(effect:),
-        target: target_of(effect:),
+        target:,
         spell: child,
       ))
     }),
@@ -494,14 +534,23 @@ fn weapon_of(weapon_slot: Int) -> WeaponSlot {
   }
 }
 
-/// A Proxy aimed at the area (`targetFlags` bit 4) starts its child on each struck
-/// unit, any other on the caster (`Spell4Effects.targetFlags`).
-fn target_of(effect effect: spell4_effects.Spell4Effects) -> ProxyTarget {
-  use <- bool.guard(
-    when: !has_flag(flags: effect.target_flags, bit: 4),
-    return: OnCaster,
-  )
-  OnEachStruck
+/// A Proxy aimed at the area (`aim_of`: 4 or 6) starts its child on each struck unit,
+/// one aimed at the caster or the primary target on the caster
+/// (`Spell4Effects.targetFlags`); another value is refused.
+fn target_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(ProxyTarget, PlanError) {
+  case aim_of(target_flags: effect.target_flags) {
+    AimsAtArea | AimsAtBoth -> Ok(OnEachStruck)
+    AimsAtCaster | AimsAtPrimaryTarget -> Ok(OnCaster)
+    OtherAim(flags:) ->
+      Error(ProxyAimNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        target_flags: flags,
+      ))
+  }
 }
 
 fn condition_of(effect effect: spell4_effects.Spell4Effects) -> Condition {
@@ -622,7 +671,8 @@ fn class_cost_result(
   }
 }
 
-fn has_flag(flags flags: Int, bit bit: Int) -> Bool {
+/// Whether the flags hold the bit.
+pub fn has_flag(flags flags: Int, bit bit: Int) -> Bool {
   int.bitwise_and(flags, bit) != 0
 }
 

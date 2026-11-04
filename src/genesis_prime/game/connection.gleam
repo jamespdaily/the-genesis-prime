@@ -329,7 +329,7 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
-import genesis_prime/game/area.{Point, Pose}
+import genesis_prime/game/area.{Pose}
 import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/character_select
@@ -1407,18 +1407,12 @@ fn attacker_of(
   let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
     as "a character's faction is Exile or Dominion (start_place)"
   let level =
-    list.find(entered.unit.tail.stats, fn(stat) {
-      stat.stat_id == unit_fields.level_stat
-    })
-    |> result.map(fn(stat) { stat.value })
+    unit_fields.stat(tail: entered.unit.tail, stat_id: unit_fields.level_stat)
     |> result.unwrap(1)
   strike.Attacker(
     unit_id: entered.unit_id,
     connection: client_connection.connection(session.link),
-    pose: Pose(
-      at: Point(x: start_place.x(place), z: start_place.z(place)),
-      yaw: start_place.facing(place).yaw,
-    ),
+    pose: Pose(at: area.point_of(place), yaw: start_place.facing(place).yaw),
     faction:,
     stats: damage.Attacker(
       level:,
@@ -2653,9 +2647,9 @@ fn shown_changed(
   })
 }
 
-/// The session with the unit no longer shown, and the casts of it forgotten: the
-/// client is written their finish before the unit's 0x355
-/// (`finishes_of_forgotten_casts`).
+/// The session with the unit no longer shown, the casts of it forgotten (the client is
+/// written their finish before the unit's 0x355, `finishes_of_forgotten_casts`) and the
+/// news held for it dropped.
 fn unit_forgotten(session session: Session, unit_id unit_id: Int) -> Session {
   with_entered(session:, change: fn(entered) {
     world_entry.Entered(
@@ -2664,6 +2658,7 @@ fn unit_forgotten(session session: Session, unit_id unit_id: Int) -> Session {
       casts_written: dict.filter(entered.casts_written, fn(_, caster) {
         caster != unit_id
       }),
+      strike: strike.forget(strike: entered.strike, unit_id:),
     )
   })
 }

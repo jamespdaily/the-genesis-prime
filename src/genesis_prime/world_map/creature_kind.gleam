@@ -6,7 +6,7 @@
 //// ```
 //// creature_kind rows (genesis_prime/content/creature_kind) ─▶ select(rows, tables)
 ////   a row of a Creature2 id the client does not hold      ─▶ Refusal
-////   a respawn time that is not positive                   ─▶ Refusal
+////   a respawn time below the strike deadline              ─▶ Refusal
 ////   no row 0                                              ─▶ Refusal
 ////   otherwise ─▶ Kinds ─▶ kind_of(kinds, creature2 id)    a map's and a creature's reading
 //// ```
@@ -25,6 +25,7 @@
 ////   other content tables' are (genesis_prime/content).
 
 import genesis_prime/content/refusal.{type Refusal, Refusal}
+import genesis_prime/game/strike_tell
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
@@ -54,7 +55,7 @@ pub type Kinds {
 }
 
 /// The kinds of the rows, or every row the load refuses: a Creature2 id that has no
-/// row in the client's table, a respawn time below 1, and a table with no default
+/// row in the client's table, a respawn time below the strike deadline (1000 ms), and a table with no default
 /// row.
 pub fn select(
   rows rows: List(Row),
@@ -87,14 +88,16 @@ pub fn select(
             rule: "the client's Creature2 table has no such creature",
           ))
         False ->
-          case row.respawn_ms < 1 {
+          case row.respawn_ms < strike_tell.deadline_ms {
             True ->
               Ok(Refusal(
                 table: table,
                 id: row.creature_id,
                 rule: "a respawn time of "
                   <> int.to_string(row.respawn_ms)
-                  <> " ms is below 1",
+                  <> " ms is below the strike deadline of "
+                  <> int.to_string(strike_tell.deadline_ms)
+                  <> " ms",
               ))
             False -> Error(Nil)
           }
