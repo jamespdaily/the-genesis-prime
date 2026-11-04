@@ -155,6 +155,7 @@ pub fn a_cycle_of_proxies_fails_the_load_naming_the_spells_on_the_way_test() -> 
         delay: 0,
         phases: -1,
         data: 32_893,
+        order: 0,
       )),
     )
     as "Telekinetic Strike proxies 30900, which proxies Telekinetic Strike: the tables' load fails, so the server does not start"
@@ -609,4 +610,32 @@ pub fn every_ability_of_the_clients_tables_builds_and_each_spell_shows_the_cast_
   assert stage_child.spell.spell4_id == Spell4Id(39_467)
     && !spell_plan.shows_cast_bar(spell: stage_child.spell, pressed: False)
     as "Spell4Base 23799: Multiphase, castBarType 0, cast time 0"
+}
+
+pub fn a_tap_or_charge_ability_with_no_threshold_time_fails_the_load_naming_the_spell_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = spell_tables.rows()
+  let without_time =
+    list.map(rows.spell4, fn(row) {
+      case row {
+        [planted_table.Integer(38_765), ..] ->
+          spell_tables.method_spell_row(
+            id: 38_765,
+            base: 23_148,
+            cast_time: 0,
+            cooldown: 0,
+            kind: 0,
+            global: 115,
+            cost: #(0, 0),
+            more: [],
+          )
+        _ -> row
+      }
+    })
+  let assert Error(error) =
+    spell_tables.derivation_result(
+      rows: spell_tables.Rows(..rows, spell4: without_time),
+    )
+    as "0x1403bfd60: a press of a RapidTap or ChargeRelease spell with a thresholdTime of 0 is refused 285 by the client, so the load fails"
+  assert string.contains(table_store.describe(error), "38765")
 }

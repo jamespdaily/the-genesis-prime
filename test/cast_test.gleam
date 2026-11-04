@@ -542,13 +542,21 @@ pub fn gate_casts_starts_its_cooldown_and_sends_no_target_in_any_go_test() -> Ni
     })
   assert gos != [] && list.all(gos, fn(targets) { targets == [] })
     as "Spell4.34355: Gate deals no damage and this step strikes nothing: every go names no target"
-  assert list.length(
-      list.filter(support.writes(effects:), fn(frame) {
-        frame.message_id == 0x07FF
-      }),
-    )
-    == 2
-    as "Spell4.34355: Proxies to 25190 and 30436"
+  assert list.map(support.started_timers(effects:), fn(started) { started.1 })
+    == [200, 140]
+    as "Spell4Effects 67778 and 67779: the Proxies to 25190 and 30436 start 200 and 140 ms after the go"
+  let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
+  let children =
+    list.flat_map(fired, fn(step) {
+      list.filter_map(support.writes(effects: step.1), fn(frame) {
+        case frame.message_id == 0x07FF {
+          True -> Ok(started_of(frame).spell4_id)
+          False -> Error(Nil)
+        }
+      })
+    })
+  assert children == [30_436, 25_190]
+    as "the 140 ms Proxy (30436) starts before the 200 ms one (25190)"
   assert refused_with(state:, bag_index: 5, target: 0, at: 10_000).result
     == SpellCooldown
     as "Spell4.34355: a cooldown of 30 s from the go"

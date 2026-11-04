@@ -76,7 +76,9 @@
 ////   (317) and sends it (`0x1403b14c0`), so the server starts it when the
 ////   cooldown ends, from a timer, and answers nothing before. A second press
 ////   while one is held is refused 13 (the server's choice). The held press keeps
-////   the stage it resolved to when it came, as the client does.
+////   the stage it resolved to when it came, as the client does. The release of a
+////   ChargeRelease threshold is resolved before any caster check, so a held press
+////   neither refuses it nor is changed by it (`0x1403bfd60`).
 //// - **The cast id** is 2^31 + unit id x 2^11 + n mod 2^11, skipping an id a live
 ////   cast of the caster holds: unique among the live casts of every unit, since
 ////   the client keeps one table of casts (`0x140561c30`) and unit ids are below
@@ -568,7 +570,9 @@ fn press_of(
   resolution resolution: Resolution,
 ) -> #(State, List(Effect)) {
   let spell = resolution.spell
-  case verdict(cast:, caster:, spell:, now_ms:) {
+  let is_release = is_release(resolution:)
+  let held = option.is_some(cast.held)
+  case verdict(cast:, caster:, spell:, now_ms:, is_release:) {
     Accept ->
       case resolution.stage {
         None ->
@@ -618,6 +622,13 @@ fn press_of(
           ],
         )
       }
+    Hold(..) | HoldForCast if is_release && held -> #(cast, [
+      refused(
+        client_cast_id:,
+        spell4_id: spell.spell4_id.value,
+        result: cast_result.SpellAlreadyCasting,
+      ),
+    ])
     Hold(wait_ms:) -> {
       let #(cast, timer) = new_timer(cast:)
       #(
@@ -636,6 +647,16 @@ fn press_of(
       ),
       [],
     )
+  }
+}
+
+/// Whether the press is the release of a ChargeRelease threshold: the client has
+/// resolved it through the open threshold before any caster check, so a held press
+/// does not refuse it (`0x1403bfd60`).
+fn is_release(resolution resolution: Resolution) -> Bool {
+  case resolution.stage {
+    Some(_) -> resolution.ability.method == spell_plan.ChargeRelease
+    None -> False
   }
 }
 
@@ -659,9 +680,10 @@ fn verdict(
   caster caster: Caster,
   spell spell: Spell,
   now_ms now_ms: Int,
+  is_release is_release: Bool,
 ) -> Verdict {
   use <- bool.guard(
-    when: option.is_some(cast.held),
+    when: option.is_some(cast.held) && !is_release,
     return: Refuse(result: cast_result.SpellAlreadyCasting),
   )
   use <- bool.guard(
@@ -793,7 +815,7 @@ fn cancelled(
   case reason == 0, open_charge_of(cast:, cast_id: cancel.cast_id) {
     True, None ->
       Ok(
-        #(cast, [
+        #(State(..cast, current: None), [
           Log(
             level: LogDebug,
             text: "the client ended the threshold of the cast "
@@ -840,18 +862,27 @@ fn end_live_cast(
   live live: Live,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let waiting = timers_of(cast:, cast_id:)
-  let cast =
-    State(
-      ..cast,
-      timers: list.fold(waiting, cast.timers, fn(timers, timer) {
-        dict.delete(timers, timer)
-      }),
-    )
+  let #(cast, cancels) =
+    cancel_timers(cast:, matching: fn(due) {
+      case due {
+        Go(cast_id: waiting, ..) | Finish(cast_id: waiting) ->
+          waiting == cast_id
+        StartChild(..) | StartHeld | WindowEnd(..) | ChargeLevel(..) -> False
+      }
+    })
   let #(cast, finished) = finish(cast:, cast_id:, live:, now_ms:)
+  #(cast, list.append(cancels, finished))
+}
+
+/// Every timer whose purpose `matching` accepts is forgotten and cancelled.
+fn cancel_timers(
+  cast cast: State,
+  matching matching: fn(Due) -> Bool,
+) -> #(State, List(Effect)) {
+  let waiting = dict.filter(cast.timers, fn(_, due) { matching(due) })
   #(
-    cast,
-    list.append(list.map(waiting, fn(timer) { CancelTimer(timer:) }), finished),
+    State(..cast, timers: dict.drop(cast.timers, dict.keys(waiting))),
+    list.map(dict.keys(waiting), fn(timer) { CancelTimer(timer:) }),
   )
 }
 
@@ -1255,24 +1286,15 @@ fn close_threshold(
   case dict.get(cast.thresholds, key) {
     Error(Nil) -> #(cast, [])
     Ok(threshold) -> {
-      let waiting =
-        dict.filter(cast.timers, fn(_, due) {
+      let #(cast, cancels) =
+        cancel_timers(cast:, matching: fn(due) {
           case due {
             WindowEnd(spell4_id:) | ChargeLevel(spell4_id:, ..) ->
               spell4_id == key
             Go(..) | Finish(..) | StartChild(..) | StartHeld -> False
           }
         })
-        |> dict.keys
-      let cast =
-        State(
-          ..cast,
-          thresholds: dict.delete(cast.thresholds, key),
-          timers: list.fold(waiting, cast.timers, fn(timers, timer) {
-            dict.delete(timers, timer)
-          }),
-        )
-      let cancels = list.map(waiting, fn(timer) { CancelTimer(timer:) })
+      let cast = State(..cast, thresholds: dict.delete(cast.thresholds, key))
       case ability.method {
         spell_plan.RapidTap -> #(
           start_cooldown(cast:, spell: ability, now_ms:),
@@ -1525,17 +1547,20 @@ fn finish(
         False -> cast.current
       },
     )
-  let cast = case live.spell.method {
-    spell_plan.Channeled -> start_cooldown(cast:, spell: live.spell, now_ms:)
-    spell_plan.Normal
-    | spell_plan.PressHold
-    | spell_plan.ChanneledField
-    | spell_plan.ClientSideInteraction
-    | spell_plan.RapidTap
-    | spell_plan.ChargeRelease
-    | spell_plan.Multiphase
-    | spell_plan.Transactional
-    | spell_plan.OtherMethod(..) -> cast
+  let cast = case live.spell.method, live.spell.cooldown_phase {
+    spell_plan.Channeled, _ -> start_cooldown(cast:, spell: live.spell, now_ms:)
+    spell_plan.Multiphase, Some(phase) if live.gone > phase ->
+      start_cooldown(cast:, spell: live.spell, now_ms:)
+    spell_plan.Multiphase, _ -> cast
+    spell_plan.Normal, _
+    | spell_plan.PressHold, _
+    | spell_plan.ChanneledField, _
+    | spell_plan.ClientSideInteraction, _
+    | spell_plan.RapidTap, _
+    | spell_plan.ChargeRelease, _
+    | spell_plan.Transactional, _
+    | spell_plan.OtherMethod(..), _
+    -> cast
   }
   let ended = [
     Send(frame: finished_frame(cast_id:)),
@@ -1558,17 +1583,6 @@ fn new_timer(cast cast: State) -> #(State, TimerId) {
     State(..cast, timers_started: cast.timers_started + 1),
     TimerId(first_timer + cast.timers_started),
   )
-}
-
-/// The timers of a live cast's gos and finish that still wait.
-fn timers_of(cast cast: State, cast_id cast_id: Int) -> List(TimerId) {
-  dict.filter(cast.timers, fn(_, due) {
-    case due {
-      Go(cast_id: waiting, ..) | Finish(cast_id: waiting) -> waiting == cast_id
-      StartChild(..) | StartHeld | WindowEnd(..) | ChargeLevel(..) -> False
-    }
-  })
-  |> dict.keys
 }
 
 fn sorted(audience: Set(ConnectionId)) -> List(ConnectionId) {

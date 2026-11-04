@@ -57,6 +57,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     channel: None,
     proxies: [],
     cooldown_start: AtFirstGo,
+    cooldown_phase: None,
   )
 }
 

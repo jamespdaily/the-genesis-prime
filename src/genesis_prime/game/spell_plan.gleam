@@ -188,6 +188,10 @@ pub type Spell {
     /// `cooldown_start` says.
     cooldown_ms: Int,
     cooldown_start: CooldownStart,
+    /// The index of the first phase with the flag 0x200 of a Multiphase spell: a
+    /// cast that has gone past it starts the cooldown at its 0x7fe even when it
+    /// ends before its last phase (`0x14053e1b0`).
+    cooldown_phase: Option(Int),
     /// Whether the client shows a cast bar for the spell, and so makes it the
     /// unit's current cast (`cast.current_cast`).
     cast_bar: CastBar,
@@ -243,6 +247,9 @@ pub type PlanError {
   /// A Channeled spell's channelPulseTime is 0, which gives no count of gos
   /// (`0x14053d1f0`).
   ChannelWithoutPulse(spell4_id: Int)
+  /// A RapidTap or ChargeRelease ability's thresholdTime is 0, which the client
+  /// refuses a press of with 285 (`0x1403bfd60`).
+  NoThresholdTime(spell4_id: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -268,6 +275,10 @@ pub fn describe(error error: PlanError) -> String {
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " is Channeled with a channelPulseTime of 0, which gives no count of pulses"
+    NoThresholdTime(spell4_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " is a RapidTap or ChargeRelease ability with a thresholdTime of 0, which the client refuses"
   }
 }
 
@@ -330,8 +341,28 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
         threshold_costs: [],
       ),
     )
+    use Nil <- result.try(has_threshold_time(spell:))
     Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
   })
+}
+
+/// A RapidTap or ChargeRelease ability opens a threshold of its thresholdTime, so
+/// a press of one with none is refused by the client (`0x1403bfd60`).
+fn has_threshold_time(spell spell: Spell) -> Result(Nil, PlanError) {
+  case spell.method {
+    RapidTap | ChargeRelease if spell.threshold_ms == 0 ->
+      Error(NoThresholdTime(spell4_id: spell.spell4_id.value))
+    RapidTap
+    | ChargeRelease
+    | Normal
+    | Channeled
+    | PressHold
+    | ChanneledField
+    | ClientSideInteraction
+    | Multiphase
+    | Transactional
+    | OtherMethod(..) -> Ok(Nil)
+  }
 }
 
 fn effects_by_spell(
@@ -475,6 +506,7 @@ fn spell_of(
     cast_time_ms: row.cast_time,
     cooldown_ms: row.spell_cool_down,
     cooldown_start: cooldown_start_of(method:, phases:),
+    cooldown_phase: cooldown_phase_of(method:, phases:),
     cast_bar: cast_bar_of(method:, row:, base:),
     free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
     ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
@@ -555,6 +587,32 @@ fn cooldown_start_of(
     | ClientSideInteraction
     | Transactional
     | OtherMethod(..) -> AtFirstGo
+  }
+}
+
+/// The first phase of a Multiphase spell that moves its cooldown to the end
+/// (`0x14053e5a0`).
+fn cooldown_phase_of(
+  method method: CastMethod,
+  phases phases: List(Phase),
+) -> Option(Int) {
+  case method {
+    Multiphase ->
+      list.index_map(phases, fn(phase, index) { #(index, phase) })
+      |> list.find(fn(pair) {
+        has_flag(flags: { pair.1 }.flags, bit: cooldown_at_last_phase_flag)
+      })
+      |> result.map(fn(pair) { pair.0 })
+      |> option.from_result
+    Normal
+    | Channeled
+    | PressHold
+    | ChanneledField
+    | ClientSideInteraction
+    | RapidTap
+    | ChargeRelease
+    | Transactional
+    | OtherMethod(..) -> None
   }
 }
 

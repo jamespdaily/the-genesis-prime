@@ -355,7 +355,7 @@ pub fn discharge_pulses_3_times_each_starting_80382_and_finishes_at_1250_ms_test
       #(2230, "7fe k4"),
       #(2250, "7fe k1"),
     ]
-    as "opcode.0x7f4.phase: the pulse index is the go's phase byte; Spell4Effects 173926 (phaseFlags -1) proxies 80382 in every phase; the cast ends at channelMaxTime"
+    as "opcode.0x7f4.phase: the pulse index is the go's phase byte; Spell4Effects 173926 (phaseFlags -1) proxies 80382 in every phase; the cast ends at channelMaxTime. Gap: the effect 141368 (damage, phaseFlags 1: pulse 0 only) is not in any go, since no go of this step names an effect; it lands with the damage step"
   let #(state, _) =
     press(state: cast.new(), bag_index: support.discharge, at: 1000)
   let #(_, quick_draw) = press(state:, bag_index: support.quick_draw, at: 1100)
@@ -597,11 +597,10 @@ pub fn rampage_taps_four_times_with_its_gcds_of_500_333_and_333_ms_and_its_coold
   let #(state, second) = support.fired(state:, timer:, at: 1500)
   assert lines(trace: trace(steps: [#(1500, second)]))
     == ["7fd k1", "817 58524 1", "7f4 k1 p0", "7fe k1"]
-  assert started_by_viewer(effects: second)
-    == [#(66_987, 58_524, 58_524), #(71_392, 58_524, 66_987)]
-    || list.first(started_by_viewer(effects: second))
-    == Ok(#(66_987, 58_524, 58_524))
+  assert started_by_viewer(effects: second) == [#(66_987, 58_524, 58_524)]
     as "Spell4Thresholds 1073: the second tap casts 66987"
+  assert delays_of(effects: second) == [100]
+    as "Spell4Effects 177498: 66987's Proxy to 71392 starts 100 ms after its go, from a timer"
   let #(state, held) = press(state:, bag_index: support.rampage, at: 1500)
   let assert [#(timer, 333)] = support.started_timers(effects: held)
     as "Spell4.66987: SpellCoolDown 107 (333 ms)"
@@ -952,4 +951,90 @@ pub fn a_held_press_behind_a_cast_the_client_cancels_starts_after_its_finish_tes
     )
   assert ids_of(effects: cancelled) |> list.take(2) == [0x07FE, 0x07FD]
     as "opcode.0x801: the cancel clears the current cast; the 0x7fe comes first and the held press is taken after it"
+}
+
+// ------------------------------------------------ the fix round of the review
+
+pub fn a_held_press_does_not_refuse_the_charged_shot_release_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
+  let #(state, held) = press(state:, bag_index: support.shred, at: 1600)
+  assert is_held(effects: held) && delays_of(effects: held) == [400]
+    as "Charged Shot's gcd (SpellCoolDown 82, 1000 ms) has 400 ms left: Shred is held"
+  let #(state, release) =
+    press(state:, bag_index: support.charged_shot, at: 1700)
+  assert list.first(lines(trace: trace(steps: [#(1700, release)])))
+    == Ok("7fd k1")
+    as "0x1403bfd60: the release is resolved through the open threshold whatever the caster holds, so it is accepted"
+  assert started_by_viewer(effects: release) == [#(34_720, 34_718, 34_718)]
+  let assert [#(held_timer, 400)] = support.started_timers(effects: held)
+  let #(_, shred) = support.fired(state:, timer: held_timer, at: 2000)
+  assert is_accepted(effects: shred)
+    as "the held press is left alone and starts when its cooldown ends"
+}
+
+pub fn a_0x801_for_no_open_threshold_still_clears_the_current_cast_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = press(state: cast.new(), bag_index: 0, at: 1000)
+  let assert Ok(#(state, effects)) =
+    support.cancelled(
+      state:,
+      cast_id: 12_345,
+      reason: Other(0),
+      bit: 0,
+      at: 1100,
+    )
+  assert support.writes(effects:) == []
+  let #(_, kick) = press(state:, bag_index: 3, at: 1200)
+  assert is_accepted(effects: kick)
+    as "0x14039cc30: the client clears the player's current cast before every 0x801 it sends, so Telekinetic Strike (1250 ms) no longer counts as casting"
+}
+
+pub fn a_multiphase_cast_cancelled_after_its_0x200_phase_starts_its_cooldown_at_the_finish_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let quick_draw =
+    Spell(
+      ..support.ability(base: 27_638),
+      cooldown_ms: 20_000,
+      ignores_casting: True,
+    )
+  let plans = support.with_spells(plans: support.plans(), spells: [quick_draw])
+  let press_in = fn(state, at) {
+    support.pressed_in(
+      plans:,
+      state:,
+      caster: support.caster(),
+      bag_index: support.quick_draw,
+      target: 0,
+      at:,
+    )
+  }
+  let cancel_after = fn(fired_phases, cancel_at) {
+    let #(state, pressed) = press_in(cast.new(), 1000)
+    let id = pressed_id_of(effects: pressed)
+    let state =
+      list.fold(
+        list.take(support.started_timers(effects: pressed), fired_phases),
+        state,
+        fn(state, started) {
+          support.fired(state:, timer: started.0, at: 1000 + started.1).0
+        },
+      )
+    let assert Ok(#(state, _)) =
+      support.cancelled(
+        state:,
+        cast_id: id,
+        reason: SpellCancelled,
+        bit: 1,
+        at: cancel_at,
+      )
+    state
+  }
+  let #(_, after) = press_in(cancel_after(1, 1400), 2500)
+  assert refusal_line(effects: after) == "7fc 43468 15"
+    as "0x14053e1b0: SpellPhase 5883 (phase 1, flag 0x200) was reached at 1366, so the 0x7fe of a cancel at 1400 starts the cooldown"
+  let #(_, before) = press_in(cancel_after(0, 1100), 2500)
+  assert is_accepted(effects: before)
+    as "a cancel before the phase with the flag starts none"
 }

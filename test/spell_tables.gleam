@@ -153,6 +153,7 @@ pub fn effect_row(
   delay delay: Int,
   phases phases: Int,
   data data: Int,
+  order order: Int,
 ) -> List(Cell) {
   planted_table.row(spell4_effects.schema, [
     #("ID", Integer(id)),
@@ -162,6 +163,7 @@ pub fn effect_row(
     #("delayTime", Integer(delay)),
     #("phaseFlags", Integer(phases)),
     #("dataBits00", Integer(data)),
+    #("orderIndex", Integer(order)),
   ])
 }
 
@@ -173,6 +175,7 @@ pub fn proxy_behind_prerequisite(
   phases phases: Int,
   data data: Int,
   prerequisite prerequisite: Int,
+  order order: Int,
 ) -> List(Cell) {
   planted_table.row(spell4_effects.schema, [
     #("ID", Integer(id)),
@@ -182,6 +185,7 @@ pub fn proxy_behind_prerequisite(
     #("phaseFlags", Integer(phases)),
     #("dataBits00", Integer(data)),
     #("prerequisiteIdCasterApply", Integer(prerequisite)),
+    #("orderIndex", Integer(order)),
   ])
 }
 
@@ -331,7 +335,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 30_436,
@@ -341,7 +345,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 32_893,
@@ -361,7 +365,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 32_809,
@@ -411,7 +415,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 35_886,
@@ -421,7 +425,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       spell4_row(
         id: 38_791,
@@ -441,7 +445,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 115,
       ),
       spell4_row(
         id: 38_781,
@@ -451,7 +455,7 @@ pub fn rows() -> Rows {
         range: 0.0,
         cost: #(0, 0),
         kind: 3,
-        global: 0,
+        global: 100,
       ),
       method_spell_row(
         id: 42_276,
@@ -792,19 +796,19 @@ pub fn rows() -> Rows {
       base_row(id: 25_635, method: 0, weapon: 1, bar: 0, class: 2),
       base_row(id: 25_473, method: 1, weapon: 1, bar: 1, class: 2),
       base_row(id: 20_325, method: 0, weapon: 0, bar: 0, class: 7),
-      base_row(id: 11_781, method: 0, weapon: 0, bar: 1, class: 0),
-      base_row(id: 16_838, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 11_781, method: 0, weapon: 0, bar: 1, class: 7),
+      base_row(id: 16_838, method: 0, weapon: 0, bar: 0, class: 7),
       base_row(id: 19_102, method: 0, weapon: 0, bar: 1, class: 3),
-      base_row(id: 17_288, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 17_288, method: 0, weapon: 0, bar: 0, class: 3),
       base_row(id: 19_019, method: 0, weapon: 0, bar: 0, class: 3),
       base_row(id: 19_022, method: 0, weapon: 0, bar: 0, class: 3),
-      base_row(id: 26_488, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 26_488, method: 0, weapon: 0, bar: 0, class: 3),
       base_row(id: 16_322, method: 0, weapon: 1, bar: 1, class: 4),
-      base_row(id: 20_737, method: 0, weapon: 0, bar: 0, class: 0),
-      base_row(id: 21_506, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 20_737, method: 0, weapon: 1, bar: 0, class: 4),
+      base_row(id: 21_506, method: 0, weapon: 1, bar: 0, class: 4),
       base_row(id: 23_173, method: 0, weapon: 1, bar: 0, class: 5),
-      base_row(id: 23_162, method: 8, weapon: 0, bar: 0, class: 0),
-      base_row(id: 23_163, method: 0, weapon: 0, bar: 0, class: 0),
+      base_row(id: 23_162, method: 8, weapon: 0, bar: 0, class: 5),
+      base_row(id: 23_163, method: 0, weapon: 1, bar: 0, class: 5),
       base_row(id: 26_468, method: 8, weapon: 1, bar: 1, class: 2),
       base_row(id: 27_638, method: 8, weapon: 1, bar: 1, class: 7),
       base_row(id: 20_684, method: 7, weapon: 1, bar: 0, class: 7),
@@ -840,49 +844,14 @@ pub fn rows() -> Rows {
       |> list.sort(by_id),
     spell4_effects: [
       effect_row(
-        id: 67_778,
-        spell: 34_355,
-        type_: 26,
-        target_flags: 1,
-        delay: 0,
-        phases: -1,
-        data: 25_190,
-      ),
-      effect_row(
-        id: 67_779,
-        spell: 34_355,
-        type_: 26,
-        target_flags: 1,
-        delay: 0,
-        phases: -1,
-        data: 30_436,
-      ),
-      effect_row(
-        id: 62_159,
-        spell: 32_893,
-        type_: 8,
-        target_flags: 4,
-        delay: 0,
-        phases: -1,
-        data: 1_065_353_216,
-      ),
-      effect_row(
-        id: 62_204,
-        spell: 32_893,
-        type_: 26,
-        target_flags: 1,
-        delay: 0,
-        phases: -1,
-        data: 30_900,
-      ),
-      effect_row(
         id: 56_858,
         spell: 30_900,
         type_: 1,
         target_flags: 1,
-        delay: 0,
-        phases: -1,
+        delay: 10,
+        phases: 1,
         data: 6,
+        order: 0,
       ),
       effect_row(
         id: 62_007,
@@ -892,42 +861,67 @@ pub fn rows() -> Rows {
         delay: 100,
         phases: 1,
         data: 42_297,
+        order: 0,
       ),
       effect_row(
-        id: 95_950,
-        spell: 42_297,
+        id: 62_159,
+        spell: 32_893,
         type_: 8,
-        target_flags: 6,
+        target_flags: 4,
         delay: 0,
-        phases: 1,
+        phases: -1,
         data: 1_065_353_216,
+        order: 0,
       ),
       effect_row(
-        id: 70_001,
-        spell: 29_874,
+        id: 62_204,
+        spell: 32_893,
         type_: 26,
         target_flags: 4,
         delay: 0,
         phases: -1,
-        data: 34_775,
+        data: 30_900,
+        order: 1,
       ),
       effect_row(
-        id: 70_002,
-        spell: 29_874,
+        id: 67_778,
+        spell: 34_355,
         type_: 26,
-        target_flags: 4,
-        delay: 0,
-        phases: -1,
-        data: 35_886,
+        target_flags: 1,
+        delay: 200,
+        phases: 1,
+        data: 25_190,
+        order: 2,
       ),
       effect_row(
-        id: 83_853,
-        spell: 38_791,
+        id: 67_779,
+        spell: 34_355,
+        type_: 26,
+        target_flags: 1,
+        delay: 140,
+        phases: 1,
+        data: 30_436,
+        order: 3,
+      ),
+      effect_row(
+        id: 69_881,
+        spell: 29_874,
         type_: 26,
         target_flags: 1,
         delay: 0,
-        phases: 1,
-        data: 38_780,
+        phases: -1,
+        data: 34_775,
+        order: 1,
+      ),
+      effect_row(
+        id: 73_230,
+        spell: 29_874,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 35_886,
+        order: 2,
       ),
       effect_row(
         id: 83_823,
@@ -937,6 +931,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 1,
         data: 38_781,
+        order: 0,
       ),
       effect_row(
         id: 83_824,
@@ -946,6 +941,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 2,
         data: 38_781,
+        order: 1,
       ),
       effect_row(
         id: 83_825,
@@ -955,6 +951,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 4,
         data: 38_781,
+        order: 2,
       ),
       effect_row(
         id: 83_826,
@@ -964,6 +961,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 8,
         data: 38_781,
+        order: 3,
       ),
       effect_row(
         id: 83_829,
@@ -973,6 +971,27 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 1,
         data: 1_065_353_216,
+        order: 0,
+      ),
+      effect_row(
+        id: 83_853,
+        spell: 38_791,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: 1,
+        data: 38_780,
+        order: 0,
+      ),
+      effect_row(
+        id: 95_950,
+        spell: 42_297,
+        type_: 8,
+        target_flags: 6,
+        delay: 0,
+        phases: 1,
+        data: 1_065_353_216,
+        order: 1,
       ),
       effect_row(
         id: 95_881,
@@ -982,6 +1001,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 2,
         data: 37_302,
+        order: 0,
       ),
       proxy_behind_prerequisite(
         id: 196_513,
@@ -989,6 +1009,7 @@ pub fn rows() -> Rows {
         phases: 2,
         data: 43_498,
         prerequisite: 17_301,
+        order: 0,
       ),
       proxy_behind_prerequisite(
         id: 196_514,
@@ -996,6 +1017,7 @@ pub fn rows() -> Rows {
         phases: 4,
         data: 43_499,
         prerequisite: 17_301,
+        order: 1,
       ),
       proxy_behind_prerequisite(
         id: 196_515,
@@ -1003,6 +1025,7 @@ pub fn rows() -> Rows {
         phases: 8,
         data: 43_498,
         prerequisite: 17_301,
+        order: 2,
       ),
       proxy_behind_prerequisite(
         id: 196_516,
@@ -1010,6 +1033,7 @@ pub fn rows() -> Rows {
         phases: 8,
         data: 43_500,
         prerequisite: 17_301,
+        order: 3,
       ),
       proxy_behind_prerequisite(
         id: 196_517,
@@ -1017,6 +1041,7 @@ pub fn rows() -> Rows {
         phases: 2,
         data: 43_499,
         prerequisite: 17_302,
+        order: 4,
       ),
       proxy_behind_prerequisite(
         id: 196_518,
@@ -1024,6 +1049,7 @@ pub fn rows() -> Rows {
         phases: 4,
         data: 43_498,
         prerequisite: 17_302,
+        order: 5,
       ),
       proxy_behind_prerequisite(
         id: 196_519,
@@ -1031,6 +1057,7 @@ pub fn rows() -> Rows {
         phases: 8,
         data: 43_499,
         prerequisite: 17_302,
+        order: 6,
       ),
       proxy_behind_prerequisite(
         id: 196_522,
@@ -1038,6 +1065,7 @@ pub fn rows() -> Rows {
         phases: 1,
         data: 43_500,
         prerequisite: 17_302,
+        order: 8,
       ),
       effect_row(
         id: 173_926,
@@ -1047,6 +1075,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: -1,
         data: 80_382,
+        order: 1,
       ),
       effect_row(
         id: 83_776,
@@ -1056,6 +1085,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 1,
         data: 38_767,
+        order: 0,
       ),
       effect_row(
         id: 83_782,
@@ -1065,6 +1095,7 @@ pub fn rows() -> Rows {
         delay: 0,
         phases: 1,
         data: 39_467,
+        order: 0,
       ),
       effect_row(
         id: 177_146,
@@ -1074,6 +1105,7 @@ pub fn rows() -> Rows {
         delay: 266,
         phases: -1,
         data: 70_033,
+        order: 0,
       ),
       effect_row(
         id: 177_158,
@@ -1083,6 +1115,7 @@ pub fn rows() -> Rows {
         delay: 400,
         phases: -1,
         data: 70_045,
+        order: 0,
       ),
       effect_row(
         id: 177_171,
@@ -1092,6 +1125,7 @@ pub fn rows() -> Rows {
         delay: 400,
         phases: -1,
         data: 70_054,
+        order: 0,
       ),
       effect_row(
         id: 177_439,
@@ -1101,6 +1135,7 @@ pub fn rows() -> Rows {
         delay: 333,
         phases: -1,
         data: 70_135,
+        order: 0,
       ),
       effect_row(
         id: 177_498,
@@ -1110,6 +1145,7 @@ pub fn rows() -> Rows {
         delay: 100,
         phases: -1,
         data: 71_392,
+        order: 0,
       ),
       effect_row(
         id: 182_203,
@@ -1119,6 +1155,7 @@ pub fn rows() -> Rows {
         delay: 166,
         phases: -1,
         data: 71_393,
+        order: 0,
       ),
       effect_row(
         id: 182_204,
@@ -1128,6 +1165,7 @@ pub fn rows() -> Rows {
         delay: 400,
         phases: -1,
         data: 71_394,
+        order: 0,
       ),
     ]
       |> list.sort(by_id),
@@ -1257,7 +1295,7 @@ pub fn rows() -> Rows {
     classes: [
       class_row(id: 3, slots: [5, 0, 0, 0, 0, 0, 0, 16]),
       class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16]),
-      class_row(id: 5, slots: [5, 0, 0, 0, 0, 0, 0, 16]),
+      class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16]),
     ],
   )
 }
