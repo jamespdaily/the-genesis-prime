@@ -467,8 +467,8 @@ pub fn tell_the_run(
         service.tell_subject(subject, map.Moved(connection:, place:, seq:))
       Nil
     }
-    TellReady(connection:) -> {
-      let _sent = service.tell_subject(subject, map.Ready(connection:))
+    TellReady(connection:, seq:) -> {
+      let _sent = service.tell_subject(subject, map.Ready(connection:, seq:))
       Nil
     }
     TellPeer(..)

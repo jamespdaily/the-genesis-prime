@@ -382,8 +382,11 @@ pub type Message {
   /// place to a creature whose ring the player enters.
   Moved(connection: ConnectionId, place: Place, seq: Int)
   /// The connection's player is ready: its client sent the stay's first 0xF2
-  /// (`opcode.0xf2`), so a creature may fight it. A tell.
-  Ready(connection: ConnectionId)
+  /// (`opcode.0xf2`), so a creature may fight it. `seq` is the connection's move
+  /// sequence number then, which counts for the connection's life: a player that
+  /// entered again and has not moved is told to creatures with it, not with an
+  /// earlier stay's lower one. A tell.
+  Ready(connection: ConnectionId, seq: Int)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -611,7 +614,8 @@ pub fn step(
       left(state:, caller:, connection:, now_ms: input.now.monotonic_ms)
     OwnEvent(Told(message: Moved(connection:, place:, seq:))) ->
       moved(state:, connection:, place:, seq:, now_ms: input.now.monotonic_ms)
-    OwnEvent(Told(message: Ready(connection:))) -> ready(state:, connection:)
+    OwnEvent(Told(message: Ready(connection:, seq:))) ->
+      ready(state:, connection:, seq:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Told(message: Join(..)))
@@ -885,7 +889,7 @@ pub fn sorted_connections(
 }
 
 /// The order of two connections by their numbers.
-fn compare_connections(
+pub fn compare_connections(
   first first: ConnectionId,
   second second: ConnectionId,
 ) -> order.Order {
@@ -1219,6 +1223,7 @@ fn moved(
 fn ready(
   state state: State,
   connection connection: ConnectionId,
+  seq seq: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Ok(Player(readiness: StillLoading, ..) as player) -> {
@@ -1226,7 +1231,11 @@ fn ready(
         rings_decided(
           state:,
           connection:,
-          player: Player(..player, readiness: Loaded),
+          player: Player(
+            ..player,
+            readiness: Loaded,
+            seq: int.max(player.seq, seq),
+          ),
         )
       #(
         State(..state, players: dict.insert(state.players, connection, player)),

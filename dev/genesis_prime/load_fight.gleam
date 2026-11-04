@@ -252,7 +252,8 @@ fn walker(
         )
       let assert Ok(_joined) = process.receive(replies, within: 60_000)
         as "the map answered the join"
-      let _sent = service.tell_subject(run.subject, map.Ready(connection:))
+      let _sent =
+        service.tell_subject(run.subject, map.Ready(connection:, seq: 0))
       let start_walking = process.new_subject()
       process.send(joined, start_walking)
       let assert Ok(Nil) = process.receive(start_walking, within: 120_000)

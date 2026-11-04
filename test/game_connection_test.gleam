@@ -88,6 +88,7 @@ import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
+import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_platform.{MovementPlatform}
@@ -102,6 +103,7 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world
+import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/player_path.{PlayerPath}
 import genesis_prime/message/premium_tier.{PremiumTier}
 import genesis_prime/message/relayed_movement
@@ -118,6 +120,7 @@ import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_combat_state
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
@@ -129,6 +132,7 @@ import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
+import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/whisper_failed
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
@@ -5748,7 +5752,10 @@ pub fn the_stays_first_0xf2_tells_the_map_the_player_is_ready_and_a_second_does_
     == [
       OwnEffect(step.Tell(
         to: Map(camp_map(), incarnation),
-        request: client_connection.TellReady(connection: ConnectionId(1)),
+        request: client_connection.TellReady(
+          connection: ConnectionId(1),
+          seq: 0,
+        ),
       )),
     ]
     as "opcode.0xf2: the client's terrain is loaded; a creature may fight the player from now on"
@@ -5786,8 +5793,8 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
   assert told_creatures(moved) == [] as "no fighter: no stream"
   let #(state, threatened) =
     feed(state, foe(strike_tell.Threatened(unit_id: 7, life: 3)))
-  assert written_ids(threatened) == [0x089A]
-    as "0x89a (P, 1) to the player's own client"
+  assert combat_states(threatened) == [#(5, 1)]
+    as "0x89a (P, 1) to the player's own client: its unit 5, in combat"
   assert list.map(peer_tells(threatened), fn(tell) {
       #(tell.0, { tell.1 }.news)
     })
@@ -5819,7 +5826,8 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
     ]
     as "each accepted 0x637 goes to the fighter"
   let #(state, released) = feed(state, foe(strike_tell.Released(unit_id: 7)))
-  assert written_ids(released) == [0x089A] as "0x89a (P, 0): the last fighter"
+  assert combat_states(released) == [#(5, 0)]
+    as "0x89a (P, 0): the last fighter released it"
   let #(_, after) = read(state, a_move(3.5))
   assert told_creatures(after) == [] as "nothing after the release"
 }
@@ -5829,30 +5837,101 @@ pub fn the_map_reporting_a_fighter_gone_clears_the_combat_flag_test() -> Nil {
   let #(state, _) =
     feed(in_world(), foe(strike_tell.Threatened(unit_id: 7, life: 3)))
   let #(_, gone) = feed(state, sent_by_the_map(map.Gone(unit_id: 7)))
-  assert written_ids(gone) == [0x089A]
+  assert combat_states(gone) == [#(5, 0)]
     as "the creature crashed mid-fight: its Gone is its release, and 0x89a (P, 0) follows with no fighter left"
+}
+
+/// The 0x89a the step writes, as the unit and its in-combat bit.
+fn combat_states(taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
+  list.map(heard(taken, keyed()), fn(frame) {
+    let assert Frame(message_id: 0x089A, body:) = frame as "only 0x89a written"
+    let assert Ok(state) = unit_combat_state.decode(body) as "0x89a decodes"
+    #(state.unit_id, state.in_combat)
+  })
+}
+
+/// A creature's strike, of the Beast's offence (12 Physical), on `unit_id`.
+fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
+  foe(
+    strike_tell.Attacks(tell: strike_tell.Strike(
+      key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id:),
+      from: fighter(),
+      striker: strike_tell.CreatureStriker,
+      offence: spawn_support.beast_attack().offence,
+    )),
+  )
+}
+
+pub fn a_strike_on_a_unit_of_another_stay_is_dropped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A strike of an earlier stay, delayed past the camp and this entry, names that
+  // stay's unit; the player of this stay is unit 5.
+  let #(_, old_unit) = feed(in_world(), a_beast_strike(4))
+  assert support.effects_of(old_unit) == []
+    as "nothing is written and nothing answered: the creature's deadline leaves the old unit out"
+  let other_run =
+    foe(
+      strike_tell.Attacks(tell: strike_tell.Strike(
+        key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id: 5),
+        from: step.Creature(
+          map: camp_map(),
+          incarnation: incarnation + 1,
+          unit_id: 7,
+          life: 3,
+        ),
+        striker: strike_tell.CreatureStriker,
+        offence: spawn_support.beast_attack().offence,
+      )),
+    )
+  let #(_, old_run) = feed(in_world(), other_run)
+  assert support.effects_of(old_run) == []
+    as "a creature of another run of the map is no creature of this stay"
+}
+
+pub fn a_stay_entered_again_before_any_move_tells_the_map_ready_with_the_connections_sequence_number_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = read(in_world(), a_move(1.5))
+  let #(state, _) = read(state, a_move(2.5))
+  let #(again, _) = entered_from(camp_from(state), world_character())
+  let #(_, ready) = read(again, terrain_loaded_message(6009))
+  assert told_the_map(ready)
+    == [
+      OwnEffect(step.Tell(
+        to: Map(camp_map(), incarnation),
+        request: client_connection.TellReady(
+          connection: ConnectionId(1),
+          seq: 2,
+        ),
+      )),
+    ]
+    as "no move yet in this stay: Ready carries move 2, the connection's last, so a creature holding move 2 of the earlier stay takes this one"
 }
 
 pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_the_creature_test() -> Nil {
   use <- owned_test.run(10_000)
+  // The tests' character is an Engineer (class 2) of level 1: Armor 250, the 0.75
+  // cap of mitigation, and a shield of 450 taking up to 0.625 of a blow
+  // (`player.level1_defence`, `player.level1_gear_properties`). The Beast's 12 is
+  // mitigated to 3; the shield takes round(1.875) = 2, the health 1 of 736.
   let state = watched_by(in_world(), [5])
-  let key = strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id: 1)
-  let #(_, struck) =
-    feed(
-      state,
-      foe(
-        strike_tell.Attacks(tell: strike_tell.Strike(
-          key:,
-          from: fighter(),
-          striker: strike_tell.CreatureStriker,
-          offence: spawn_support.beast_attack().offence,
-        )),
-      ),
-    )
-  assert written_ids(struck) == [0x0938, 0x092F]
-    as "0x938 of stat 20, the shield, then 0x92f, the player's own health"
-  assert list.map(peer_tells(struck), fn(tell) { name_of_news({ tell.1 }.news) })
-    == ["0x938", "0x937"]
+  let key = strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id: 5)
+  let #(_, struck) = feed(state, a_beast_strike(5))
+  let assert [
+    Frame(message_id: 0x0938, body: shield),
+    Frame(message_id: 0x092F, body: health),
+  ] = heard(struck, keyed())
+    as "0x938, then 0x92f, to the player's own client"
+  assert unit_stat_changed.decode(shield)
+    == Ok(UnitStatChanged(unit_id: 5, stat_id: 20, value: 448))
+    as "stat 20, the shield: 450 less 2"
+  assert player_health.decode(health)
+    == Ok(PlayerHealth(unit_id: 5, health: 735, reason_mask: 0))
+    as "the player's own health: 736 less 1, with no fall or breath bit"
+  assert list.map(peer_tells(struck), fn(tell) { { tell.1 }.news })
+    == [
+      client_connection.Shield(shield: 448),
+      client_connection.Health(health: 735, dead: False),
+    ]
     as "its viewers are sent the shield and the health"
   let assert [
     #(
@@ -5864,26 +5943,6 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
     ),
   ] = told_creatures(struck)
   assert answered == key as "the answer names the creature's strike"
-}
-
-fn name_of_news(news: News) -> String {
-  case news {
-    client_connection.Shield(..) -> "0x938"
-    client_connection.Health(..) -> "0x937"
-    client_connection.Appeared(..)
-    | client_connection.CreatureAppeared(..)
-    | client_connection.Moving(..)
-    | client_connection.Removed
-    | client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastFinished(..)
-    | client_connection.Died
-    | client_connection.CreatureMoved(..)
-    | client_connection.Targeting(..)
-    | client_connection.Threat(..)
-    | client_connection.CombatState(..) -> "other"
-  }
 }
 
 pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_speed_test() -> Nil {
@@ -5926,11 +5985,18 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
     relayed_movement.Path(path),
   ] = commands
     as "kind 0, the time the path starts at, then kind 4, the path"
-  assert path.speed == 0x4900
-    && path.path_type == 0
-    && path.mode == 0
-    && list.length(path.points) == 2
-    as "two points, straight lines, mode 0, at 10.0 as a half float (sign 0, exponent 18, fraction 256)"
+  assert path.speed == 0x4900 && path.path_type == 0 && path.mode == 0
+    as "straight lines, mode 0, at 10.0 as a half float (sign 0, exponent 18, fraction 256)"
+  assert path.points
+    == [
+      MovementFloatVector(x: 0, y: 0, z: 0),
+      MovementFloatVector(x: float32.to_bits(26.0), y: 0, z: 0),
+    ]
+    as "the two points of the path, as 32-bit floats: 0, 0, 0 and 26, 0, 0"
+  let assert [relayed_movement.Time(movement_time.MovementTime(time:)), _] =
+    commands
+  assert time == support.now_ms
+    as "kind 0's time is the map's time the path starts at: its monotonic start, 1000, less the origin the tests' map took, 0 (map.server_time)"
 }
 
 pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -> Nil {
@@ -5971,6 +6037,38 @@ pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -
   let #(_, struck) = press_and_close(state:, client_cast_id: 1)
   assert struck == []
     as "the selection reads the creature at place_at(path, now), 23 m away, not 3 m ahead where its 0x262 put it"
+}
+
+pub fn a_press_finds_a_creature_whose_path_brought_it_within_the_area_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The positive control: the Beast's path starts 23 m ahead and, at 100 a second
+  // from 180 ms before, is run by now, ending 5 m ahead, inside Paralytic Surge's
+  // 15 m.
+  let #(state, _) = feed(medic_in_world(), beast_appears(unit_id: 40))
+  let at_z = fn(z) {
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z:,
+    )
+  }
+  let #(state, _) =
+    feed(
+      state,
+      beast_news(
+        unit_id: 40,
+        news: client_connection.CreatureMoved(path: creature_path.Running(
+          from: at_z(-583.18798828125),
+          to: at_z(-565.18798828125),
+          started_ms: support.now_ms - 180,
+          speed: 100.0,
+        )),
+      ),
+    )
+  let #(_, struck) = press_and_close(state:, client_cast_id: 1)
+  assert struck == [40] as "the path's end, 5 m ahead, is inside the area"
 }
 
 /// The connection camped out of the world from `state`: the camp, its save and the

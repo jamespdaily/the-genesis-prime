@@ -104,12 +104,13 @@ import genesis_prime/game/strike_tell.{
   type Answered, type Fight as Told, type Key, Attacks, CreatureStriker,
   Released, Threatened,
 }
-import genesis_prime/step.{type Address, type ConnectionId, ConnectionId}
+import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/world_map/creature_life.{type Attack}
 import genesis_prime/world_map/creature_path.{
   type Path, Circle, Running, Standing,
 }
 import genesis_prime/world_map/game_number.{type GameNumbers}
+import genesis_prime/world_map/map
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -278,11 +279,8 @@ pub fn step(
     }
     Withdrew(by:) -> #(State(..state, near: set.delete(state.near, by)), [])
     TargetMoved(by:, place:, seq:) -> {
-      let unit_id = case dict.get(state.sightings, by) {
-        Ok(sighting) -> sighting.unit_id
-        Error(Nil) -> 0
-      }
-      let state = sighted(state:, by:, unit_id:, place:, seq:)
+      let state =
+        sighted(state:, by:, unit_id: unit_of(state:, by:), place:, seq:)
       case state.status, alive {
         Fighting(target:, ..), True if target == by ->
           chase(state:, fighter:, now_ms:)
@@ -356,6 +354,47 @@ pub fn place_at(state state: State, now_ms now_ms: Int) -> Place {
   creature_path.place_at(path: state.path, now_ms:)
 }
 
+/// What a viewer that arrives at monotonic time `now_ms` is sent after the
+/// creature's 0x262, so its client shows what the others' do: in a fight, the
+/// combat flag (0x89a), the target (0x908) and each other entry (0x90a); and on a
+/// path not yet run, the rest of it from where the creature is now (0x638).
+pub fn arrival_news(state state: State, now_ms now_ms: Int) -> List(News) {
+  let fight = case state.status {
+    Fighting(threat:, target:, ..) -> {
+      let others =
+        sorted_entries(threat)
+        |> list.filter(fn(entry) { entry.0 != target })
+        |> list.map(fn(entry) { threat_news(entry.1) })
+      let assert Ok(top) = dict.get(threat, target)
+        as "the target is on the threat list"
+      [
+        client_connection.CombatState(in_combat: True),
+        targeting_news(top),
+        ..others
+      ]
+    }
+    Resting | Returning(..) -> []
+  }
+  let path = case state.path {
+    Running(to:, speed:, ..) -> {
+      let here = creature_path.place_at(path: state.path, now_ms:)
+      case here == to {
+        True -> []
+        False -> [
+          client_connection.CreatureMoved(path: Running(
+            from: here,
+            to:,
+            started_ms: now_ms,
+            speed:,
+          )),
+        ]
+      }
+    }
+    Standing(..) -> []
+  }
+  list.append(fight, path)
+}
+
 /// The threat a landed strike adds: each blow's damage taken (to health) times its
 /// effect's threatMultiplier (`Spell4Effects.threatMultiplier`), matched by effect.
 pub fn threat_of(
@@ -398,14 +437,20 @@ fn sighted(
   }
 }
 
+/// The unit the creature last knew the connection's player as, 0 for none.
+fn unit_of(state state: State, by by: ConnectionId) -> Int {
+  case dict.get(state.sightings, by) {
+    Ok(sighting) -> sighting.unit_id
+    Error(Nil) -> 0
+  }
+}
+
 /// The near players the creature sees now, in the order of their connections.
 fn near_viewers(
   state state: State,
   viewers viewers: Set(ConnectionId),
 ) -> List(ConnectionId) {
-  set.intersection(state.near, viewers)
-  |> set.to_list
-  |> list.sort(compare_connections)
+  map.sorted_connections(set.intersection(state.near, viewers))
 }
 
 /// A resting creature aggroes these players, each with the aggro threat
@@ -457,16 +502,8 @@ fn start_fight(
           ),
         )
       let named = [
-        ToViewers(client_connection.Targeting(
-          target_unit_id: { first.1 }.unit_id,
-          threat: whole({ first.1 }.amount),
-        )),
-        ..list.map(others, fn(other) {
-          ToViewers(client_connection.Threat(
-            other_unit_id: { other.1 }.unit_id,
-            threat: whole({ other.1 }.amount),
-          ))
-        })
+        targeting(first.1),
+        ..list.map(others, fn(other) { ToViewers(threat_news(other.1)) })
       ]
       let told =
         list.map(entries, fn(entry) {
@@ -514,23 +551,15 @@ fn threatened_by(
 ) -> #(State, List(Effect)) {
   case state.status {
     Returning(..) -> #(state, [])
-    Resting -> {
-      let unit_id = case dict.get(state.sightings, by) {
-        Ok(sighting) -> sighting.unit_id
-        Error(Nil) -> 0
-      }
+    Resting ->
       start_fight(
         state:,
         fighter:,
-        entries: [#(by, Threat(unit_id:, amount: threat))],
+        entries: [#(by, Threat(unit_id: unit_of(state:, by:), amount: threat))],
         now_ms:,
       )
-    }
     Fighting(threat: entries, target:, ..) as fighting -> {
-      let unit_id = case dict.get(state.sightings, by) {
-        Ok(sighting) -> sighting.unit_id
-        Error(Nil) -> 0
-      }
+      let unit_id = unit_of(state:, by:)
       let is_new = !dict.has_key(entries, by)
       let entries =
         dict.upsert(entries, by, fn(found) {
@@ -550,21 +579,11 @@ fn threatened_by(
         False -> []
       }
       let named = case top != target || top == by {
-        True -> [
-          ToViewers(client_connection.Targeting(
-            target_unit_id: top_entry.unit_id,
-            threat: whole(top_entry.amount),
-          )),
-        ]
+        True -> [targeting(top_entry)]
         False -> {
           let assert Ok(entry) = dict.get(entries, by)
             as "the striker is on the list"
-          [
-            ToViewers(client_connection.Threat(
-              other_unit_id: entry.unit_id,
-              threat: whole(entry.amount),
-            )),
-          ]
+          [ToViewers(threat_news(entry))]
         }
       }
       #(state, list.append(named, told))
@@ -572,12 +591,25 @@ fn threatened_by(
   }
 }
 
-/// 0x908 naming the entry as the target, with its threat.
+/// 0x908 naming the entry as the target, with its threat, to the viewers.
 fn targeting(entry: Threat) -> Effect {
-  ToViewers(client_connection.Targeting(
+  ToViewers(targeting_news(entry))
+}
+
+/// The news of 0x908 naming the entry as the target, with its threat.
+fn targeting_news(entry: Threat) -> News {
+  client_connection.Targeting(
     target_unit_id: entry.unit_id,
     threat: whole(entry.amount),
-  ))
+  )
+}
+
+/// The news of 0x90a giving another entry's threat.
+fn threat_news(entry: Threat) -> News {
+  client_connection.Threat(
+    other_unit_id: entry.unit_id,
+    threat: whole(entry.amount),
+  )
 }
 
 /// The top entry of a threat list: the most threat, the lowest connection on a tie.
@@ -586,7 +618,10 @@ fn top_of(entries: Dict(ConnectionId, Threat)) -> #(ConnectionId, Threat) {
     dict.to_list(entries)
     |> list.sort(fn(first, second) {
       float.compare({ second.1 }.amount, { first.1 }.amount)
-      |> order.break_tie(compare_connections(first.0, second.0))
+      |> order.break_tie(map.compare_connections(
+        first: first.0,
+        second: second.0,
+      ))
     })
     as "a fight's threat list is never empty"
   top
@@ -613,7 +648,8 @@ fn unwatched(
 }
 
 /// The player of `by` leaves the threat list and is told `Released`; with no one
-/// left the creature leashes, else a new top entry is named its target (0x908).
+/// left the creature leashes, else its entry is erased (0x90a 0) and a new top
+/// entry is named its target (0x908).
 fn released(
   state state: State,
   fighter fighter: Fighter,
@@ -622,6 +658,10 @@ fn released(
 ) -> #(State, List(Effect)) {
   case state.status {
     Fighting(threat: entries, ..) -> {
+      let erased = case dict.get(entries, by) {
+        Ok(entry) -> [ToViewers(threat_news(Threat(..entry, amount: 0.0)))]
+        Error(Nil) -> []
+      }
       let entries = dict.delete(entries, by)
       let told = ToPlayer(to: by, told: Released(unit_id: fighter.unit_id))
       case dict.is_empty(entries) {
@@ -632,7 +672,7 @@ fn released(
         False -> {
           let #(state, named, chased) =
             retargeted(state:, fighter:, entries:, now_ms:)
-          #(state, list.flatten([named, [told], chased]))
+          #(state, list.flatten([erased, named, [told], chased]))
         }
       }
     }
@@ -987,7 +1027,9 @@ fn sorted_entries(
   threat: Dict(ConnectionId, Threat),
 ) -> List(#(ConnectionId, Threat)) {
   dict.to_list(threat)
-  |> list.sort(fn(first, second) { compare_connections(first.0, second.0) })
+  |> list.sort(fn(first, second) {
+    map.compare_connections(first: first.0, second: second.0)
+  })
 }
 
 fn generation(state: State) -> #(State, Int) {
@@ -995,15 +1037,6 @@ fn generation(state: State) -> #(State, Int) {
     State(..state, next_generation: state.next_generation + 1),
     state.next_generation,
   )
-}
-
-fn compare_connections(
-  first: ConnectionId,
-  second: ConnectionId,
-) -> order.Order {
-  let ConnectionId(first) = first
-  let ConnectionId(second) = second
-  int.compare(first, second)
 }
 
 /// A threat as the client's 32-bit field holds it: rounded half away from zero.

@@ -373,7 +373,7 @@ pub fn a_viewer_that_arrives_mid_fight_is_sent_the_creature_at_its_current_healt
       at_ms: 7000,
       event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
     )
-  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
+  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)
   assert creature_unit.health_of(unit:) == 38
     as "the Beast has 52 health and the strike took 14: opcode.0x262.creature carries the current health in stat 0, so the bar a viewer sees is the one the others see"
@@ -505,7 +505,7 @@ pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_curre
       at_ms: 7000,
       event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
     )
-  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
+  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)
   assert creature_unit.health_of(unit:) == 428
     as "the recorded 442 less the strike's 14: stat 0 is the current health"

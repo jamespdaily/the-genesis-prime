@@ -49,6 +49,7 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/int
 import gleam/list
 import gleam/set
+import gleam/string
 import owned_test
 import place_support
 import qcheck
@@ -468,7 +469,7 @@ pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planne
     as "31 is 5 from the path's end 26, within reach 8: no new path"
   let #(_, watched) =
     tell(state:, at_ms: 1000, message: creature.Watched(by: ConnectionId(9)))
-  let assert [CreatureAppeared(place:, ..)] = news_to(watched, 9)
+  let assert [CreatureAppeared(place:, ..), ..] = news_to(watched, 9)
   assert x_of(place) == 10.0
     as "a viewer arriving 1 s into the chase is sent the 0x262 where the creature runs: 10 units along"
 }
@@ -719,8 +720,13 @@ pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the
   let #(_, unwatched) =
     tell(state:, at_ms: 200, message: creature.Unwatched(by: ConnectionId(5)))
   assert said(unwatched)
-    == ["0x355 to 5", "0x908(20, 1) to 2", "Released(7) to 5"]
-    as "player 5 (threat 3, the target) leaves the list; player 2 is the target again"
+    == [
+      "0x355 to 5",
+      "0x90a(50, 0) to 2",
+      "0x908(20, 1) to 2",
+      "Released(7) to 5",
+    ]
+    as "player 5 (threat 3, the target) leaves the list, its entry erased (0x90a 0); player 2 is the target again"
 }
 
 pub fn death_takes_the_creature_out_of_combat_and_releases_everyone_on_its_list_test() -> Nil {
@@ -917,4 +923,225 @@ pub fn a_strike_from_a_non_viewer_adds_no_threat_test() -> Nil {
     as "the damage applies: 52 - 10, shown to the viewer"
   assert creature_fight.threatened(state: creature.fight(state:)) == set.new()
     as "no threat for a connection that does not see the creature, so no fight starts"
+}
+
+// The review of 0929cb9: what a viewer arriving mid-fight is sent, the erasure of
+// one entry among several, the release of a target that died, stale timers and a
+// sighting's new unit.
+
+pub fn a_viewer_arriving_mid_chase_gets_the_fight_and_the_rest_of_the_path_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(state, watched) =
+    tell(state:, at_ms: 1000, message: creature.Watched(by: ConnectionId(9)))
+  assert list.map(news_to(watched, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x638"]
+    as "the viewer's client shows what the others' do: the creature in combat, its target, and its run"
+  let assert [
+    _,
+    _,
+    _,
+    CreatureMoved(path: Running(from:, to:, started_ms:, ..)),
+  ] = news_to(watched, 9)
+  assert x_of(from) == 10.0 && x_of(to) == 26.0 && started_ms == start_ms + 1000
+    as "the rest of the path: from where it is 1 s into its run to where the run ends, from now"
+  assert said(watched)
+    |> list.filter(fn(line) { line != "0x262 to 9" })
+    |> list.all(fn(line) { string.ends_with(line, " to 9") })
+    as "only the arriving viewer is sent anything: no new path is planned"
+  let #(_, after) =
+    tell(state:, at_ms: 1100, message: moved(number: 2, x: 31.0, seq: 2))
+  assert said(after) == []
+    as "the creature's own path is the one it had: 31 is within reach of its end"
+}
+
+pub fn a_viewer_arriving_mid_return_gets_the_path_home_and_no_fight_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  // The fighter leaves sight 1 s into the chase: the creature leashes and walks home.
+  let #(state, _) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(_, watched) =
+    tell(state:, at_ms: 1500, message: creature.Watched(by: ConnectionId(9)))
+  assert list.map(news_to(watched, 9), name_of) == ["0x262", "0x638"]
+    as "out of combat: no 0x89a or 0x908, only the rest of the walk home"
+  let assert [_, CreatureMoved(path: Running(from:, to:, ..))] =
+    news_to(watched, 9)
+  assert x_of(from) == 5.0 && x_of(to) == 0.0
+    as "it fell back from 10 at 10 a second for half a second: 5 left to the spawn"
+}
+
+pub fn dropping_a_secondary_entry_erases_it_and_dropping_the_top_one_erases_it_and_names_the_next_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5, 6]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 3, 1.0)]),
+    )
+  // Player 5 (threat 3) is the target, player 2 (threat 1) the other entry.
+  let #(_, secondary) =
+    tell(state:, at_ms: 200, message: creature.Unwatched(by: ConnectionId(2)))
+  assert said(secondary)
+    == [
+      "0x355 to 2",
+      "0x90a(20, 0) to 5",
+      "0x90a(20, 0) to 6",
+      "Released(7) to 2",
+    ]
+    as "opcode.0x90a: a threat of 0 erases player 2's entry for the viewers; the target stays"
+  let #(_, top) =
+    tell(state:, at_ms: 200, message: creature.Unwatched(by: ConnectionId(5)))
+  assert said(top)
+    == [
+      "0x355 to 5", "0x90a(50, 0) to 2", "0x90a(50, 0) to 6",
+      "0x908(20, 1) to 2", "0x908(20, 1) to 6", "Released(7) to 5",
+    ]
+    as "the top entry is erased too, and the next is named the target"
+}
+
+/// The creature's strike on player 2, standing in reach, at the first tick: the
+/// state and the strike's key.
+fn struck_once() -> #(State, strike_tell.Key) {
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, ticked) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let assert [#(_, Attacks(tell: Strike(key:, ..)))] = fights_told(ticked)
+  #(state, key)
+}
+
+pub fn a_target_the_strike_killed_is_released_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, key) = struck_once()
+  let killing =
+    SpellDamageDescription(
+      raw_damage: 12,
+      scaled_raw_damage: 12,
+      absorbed: 9,
+      shield_absorbed: 0,
+      health_damage_with_overkill: 3,
+      overkill: 2,
+      glance: 0,
+      killed: 1,
+      combat_result: combat_result.Hit,
+      damage_type: damage_type.Physical,
+      hits: [],
+    )
+  let #(_, answered) =
+    tell(
+      state:,
+      at_ms: 1600,
+      message: creature.StrikeAnswered(answered: Answered(
+        key:,
+        outcome: Landed(descriptions: [
+          hit.Description(
+            spell4_effects_id: 184_741,
+            delay_ms: 0,
+            damage: killing,
+          ),
+        ]),
+      )),
+    )
+  assert list.contains(said(answered), "Released(7) to 2")
+    as "the player's answer is Landed with the killed bit: the creature releases it"
+}
+
+pub fn a_target_found_dead_is_released_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, key) = struck_once()
+  let #(_, answered) =
+    tell(
+      state:,
+      at_ms: 1600,
+      message: creature.StrikeAnswered(answered: Answered(
+        key:,
+        outcome: Refused(why: strike_tell.Dead),
+      )),
+    )
+  assert list.contains(said(answered), "Released(7) to 2")
+    as "a player at 0 refuses the strike Dead: the creature releases it"
+}
+
+pub fn an_attack_tick_of_a_fight_that_ended_does_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  // The fight ends by its last viewer's Unwatched before the tick fires.
+  let #(state, _) =
+    tell(state:, at_ms: 500, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(_, stale) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert said(stale) == [] && timers(stale) == []
+    as "the tick is of the fight that leashed: an old generation"
+}
+
+pub fn a_home_timer_that_fires_again_does_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(state, leashed) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let home = timer_for(leashed, 1000)
+  let #(state, _) = fire(state:, at_ms: 2000, timer: home)
+  let #(_, again) = fire(state:, at_ms: 2100, timer: home)
+  assert said(again) == [] && timers(again) == []
+    as "the creature is home: a firing of that walk's timer is of an old generation"
+}
+
+pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_is_aggroed_as_the_new_unit_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The player camped and entered again with no move since: its connection's
+  // sequence number is the same, its unit is new (the map gives no id twice).
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 7),
+    )
+  let #(state, leashed) =
+    tell(state:, at_ms: 100, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(state, _) = fire(state:, at_ms: 200, timer: timer_for(leashed, 100))
+  let #(state, _) =
+    tell(state:, at_ms: 5000, message: creature.Watched(by: ConnectionId(2)))
+  let #(_, again) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature.Approached(
+        by: ConnectionId(2),
+        unit_id: 21,
+        place: at(5.0),
+        seq: 7,
+      ),
+    )
+  assert list.contains(said(again), "0x908(21, 1) to 2")
+    as "the equal sequence number is taken, with the new unit 21"
 }

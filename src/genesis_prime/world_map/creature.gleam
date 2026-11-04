@@ -263,7 +263,13 @@ pub fn step(
     )
     OwnEvent(Told(message: Watched(by:))) -> #(
       State(..state, viewers: set.insert(state.viewers, by)),
-      Effects([appeared(state:, viewer: by, now_ms:)]),
+      Effects([
+        appeared(state:, viewer: by, now_ms:),
+        ..list.map(
+          creature_fight.arrival_news(state: state.fight, now_ms:),
+          fn(news) { news_to(creature:, viewer: by, news:) },
+        )
+      ]),
     )
     OwnEvent(Told(message: Unwatched(by:))) ->
       case set.contains(state.viewers, by) {
@@ -356,7 +362,6 @@ fn struck(
   tell tell: StrikeTell,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let creature = state.settings.creature
   case creature_fight.refusal(state: state.fight) {
     Error(why) -> #(
       state,
@@ -382,9 +387,7 @@ fn struck(
         ))
       let news =
         list.flat_map(reaction.news, fn(news) {
-          list.map(map.sorted_connections(state.viewers), fn(viewer) {
-            news_to(creature:, viewer:, news: viewer_news(news))
-          })
+          to_viewers(state:, news: viewer_news(news))
         })
       let corpse = case reaction.corpse_for_ms {
         Some(after_ms) -> [
@@ -443,7 +446,6 @@ fn fought(
   input input: creature_fight.Input,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
-  let creature = state.settings.creature
   let #(fight, effects) =
     creature_fight.step(
       state: state.fight,
@@ -457,12 +459,7 @@ fn fought(
   list.fold(effects, #(state, []), fn(so_far, effect) {
     let #(state, done) = so_far
     let #(state, more) = case effect {
-      creature_fight.ToViewers(news:) -> #(
-        state,
-        list.map(map.sorted_connections(state.viewers), fn(viewer) {
-          news_to(creature:, viewer:, news:)
-        }),
-      )
+      creature_fight.ToViewers(news:) -> #(state, to_viewers(state:, news:))
       creature_fight.ToPlayer(to:, told:) -> #(state, [
         OwnEffect(Send(to: Connection(to), message: FightTold(told:))),
       ])
@@ -470,16 +467,13 @@ fn fought(
         let life = creature_life.new(body: state.body)
         #(
           State(..state, life:),
-          list.map(map.sorted_connections(state.viewers), fn(viewer) {
-            news_to(
-              creature:,
-              viewer:,
-              news: client_connection.Health(
-                health: creature_life.health(life:),
-                dead: False,
-              ),
-            )
-          }),
+          to_viewers(
+            state:,
+            news: client_connection.Health(
+              health: creature_life.health(life:),
+              dead: False,
+            ),
+          ),
         )
       }
       creature_fight.StartTimer(timer:, after_ms:) -> #(state, [
@@ -571,6 +565,17 @@ fn appeared(
       attackable: state.body.combat.attackable,
     ),
   )
+}
+
+/// The sends of news about the creature's own unit to every viewer, in the order
+/// of their connections.
+fn to_viewers(
+  state state: State,
+  news news: client_connection.News,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  list.map(map.sorted_connections(state.viewers), fn(viewer) {
+    news_to(creature: state.settings.creature, viewer:, news:)
+  })
 }
 
 /// The send of news about the creature's own unit to a viewer's connection.

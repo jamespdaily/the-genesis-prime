@@ -79,8 +79,9 @@ pub type Request {
   TellMoved(connection: ConnectionId, place: Place, seq: Int)
   /// What a `Tell` effect sends the run of a map: the player of `connection` is
   /// ready, its client's first 0xF2 of the stay (genesis_prime/world_map/map
-  /// `Ready`), so a creature may fight it. Never asked.
-  TellReady(connection: ConnectionId)
+  /// `Ready`) with the connection's move sequence number, so a creature may fight
+  /// it. Never asked.
+  TellReady(connection: ConnectionId, seq: Int)
   /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): news of this player's unit, which that
   /// connection writes as 0x262, 0x638 or 0x355 when its client can take it.

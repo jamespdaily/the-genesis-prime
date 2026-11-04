@@ -1192,6 +1192,7 @@ fn tells_the_map_ready(
         to: step.Map(map: entered.map, incarnation: entered.incarnation),
         request: client_connection.TellReady(
           connection: client_connection.connection(session.link),
+          seq: session.move_seq,
         ),
       )),
     ],
@@ -1200,58 +1201,95 @@ fn tells_the_map_ready(
 
 /// What a creature fighting the player sent (genesis_prime/game/player_life): its
 /// threat, its release or its strike, taken with the player in the world. With no
-/// player in the world it is dropped: a strike then finds no answer, and the
-/// creature's deadline leaves the player out.
+/// player in the world it is dropped, and so is a strike on another unit or from a
+/// creature of another run: a strike of an earlier stay delayed past a camp and a
+/// new entry. A dropped strike finds no answer, and the creature's deadline leaves
+/// the player out.
 fn foe_sent(
   session session: Session,
   fight fight: strike_tell.Fight,
 ) -> client_connection.Handled(Session) {
   case held_in_the_world(session.status) {
     None -> Continue(session, [])
-    Some(entered) -> {
-      let #(session, life, effects) = case fight {
-        strike_tell.Threatened(unit_id:, life: creature_life) -> {
-          let #(life, effects) =
-            player_life.threatened(
-              life: entered.life,
-              unit_id:,
-              creature_life:,
-              gone: entered.gone,
-            )
-          #(session, life, effects)
-        }
-        strike_tell.Released(unit_id:) -> {
-          let #(life, effects) =
-            player_life.released(life: entered.life, unit_id:)
-          #(session, life, effects)
-        }
-        strike_tell.Attacks(tell:) -> {
-          let #(link, entropy) =
-            client_connection.draw(session.link, hit.roll_bytes)
-          let assert Ok(rolls) = hit.rolls_of(bytes: entropy)
-            as "the seed gives 12 bytes for a strike's rolls"
-          let tables = session.settings.tables
-          let #(life, effects) =
-            player_life.struck(
-              life: entered.life,
-              defence: player_life.defence(
-                loadout: entered.loadout,
-                level: level_of(entered:),
-                formulas: rating.formulas(tables:),
-              ),
-              strike: tell,
-              rolls:,
-            )
-          #(Session(..session, link:), life, effects)
-        }
+    Some(entered) ->
+      case is_of_this_stay(entered:, fight:) {
+        False -> Continue(session, [])
+        True -> foe_taken(session:, entered:, fight:)
       }
-      let session =
-        with_entered(session:, change: fn(entered) {
-          world_entry.Entered(..entered, life:)
-        })
-      Continue(session, life_effects(session:, entered:, effects:))
+  }
+}
+
+/// Whether a strike is on the player's unit of this stay, from a creature of the
+/// run of the map it is in; a threat or a release always is.
+fn is_of_this_stay(
+  entered entered: world_entry.Entered,
+  fight fight: strike_tell.Fight,
+) -> Bool {
+  case fight {
+    strike_tell.Attacks(tell:) ->
+      tell.key.unit_id == entered.unit_id
+      && case tell.from {
+        step.Creature(map:, incarnation:, ..) ->
+          map == entered.map && incarnation == entered.incarnation
+        step.Sessions
+        | step.HandOff
+        | step.Store
+        | step.Maps
+        | step.Map(..)
+        | step.Connection(..)
+        | step.CharacterNamed(..)
+        | step.ZoneChannel(..) -> False
+      }
+    strike_tell.Threatened(..) | strike_tell.Released(..) -> True
+  }
+}
+
+/// A creature's threat, release or strike on the player in the world.
+fn foe_taken(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  fight fight: strike_tell.Fight,
+) -> client_connection.Handled(Session) {
+  let #(session, life, effects) = case fight {
+    strike_tell.Threatened(unit_id:, life: creature_life) -> {
+      let #(life, effects) =
+        player_life.threatened(
+          life: entered.life,
+          unit_id:,
+          creature_life:,
+          gone: entered.gone,
+        )
+      #(session, life, effects)
+    }
+    strike_tell.Released(unit_id:) -> {
+      let #(life, effects) = player_life.released(life: entered.life, unit_id:)
+      #(session, life, effects)
+    }
+    strike_tell.Attacks(tell:) -> {
+      let #(link, entropy) =
+        client_connection.draw(session.link, hit.roll_bytes)
+      let assert Ok(rolls) = hit.rolls_of(bytes: entropy)
+        as "the seed gives 12 bytes for a strike's rolls"
+      let tables = session.settings.tables
+      let #(life, effects) =
+        player_life.struck(
+          life: entered.life,
+          defence: player_life.defence(
+            loadout: entered.loadout,
+            level: level_of(entered:),
+            formulas: rating.formulas(tables:),
+          ),
+          strike: tell,
+          rolls:,
+        )
+      #(Session(..session, link:), life, effects)
     }
   }
+  let session =
+    with_entered(session:, change: fn(entered) {
+      world_entry.Entered(..entered, life:)
+    })
+  Continue(session, life_effects(session:, entered:, effects:))
 }
 
 /// What player_life decided, as the connection's effects: its own unit's messages

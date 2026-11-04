@@ -51,7 +51,7 @@ fn ready(
     state:,
     at_ms: map_spawn_support.started_at_ms + 10,
     event: OwnEvent(
-      Told(message: map.Ready(connection: ConnectionId(connection))),
+      Told(message: map.Ready(connection: ConnectionId(connection), seq: 0)),
     ),
   )
 }
@@ -232,4 +232,28 @@ pub fn a_creature_starting_where_a_ready_player_stands_in_its_ring_is_sent_one_a
       }
     })
   assert kinds == ["start", "approached"] as "after the start, in the same step"
+}
+
+pub fn a_player_ready_before_any_move_of_its_stay_is_approached_with_the_connections_sequence_number_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The player camped and entered again; its connection's last move was 5, before
+  // the camp, and it has not moved in this stay (the review of 0929cb9).
+  let state = map_with(spawns: [spawn_support.dagun(number: 1, x: 100.0)])
+  let #(state, _) =
+    map_spawn_support.join(
+      state:,
+      at_ms: map_spawn_support.started_at_ms + 1,
+      connection: 1,
+      x: 95.0,
+    )
+  let #(_, readied) =
+    map_spawn_support.feed(
+      state:,
+      at_ms: map_spawn_support.started_at_ms + 10,
+      event: OwnEvent(
+        Told(message: map.Ready(connection: ConnectionId(1), seq: 5)),
+      ),
+    )
+  assert approaches(readied) == [#(95.0, 5)]
+    as "the Approached carries move 5, not 0: a creature holding move 5 of the earlier stay takes it"
 }
