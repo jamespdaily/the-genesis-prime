@@ -155,6 +155,7 @@ pub opaque type State {
     movement: movement.State,
     map: MapId,
     stay: Stay,
+    readiness: Readiness,
   )
 }
 
@@ -230,6 +231,13 @@ pub type Entered {
 /// creature fights a loading player.
 pub type Readiness {
   ClientLoading
+  /// Loading after the Holocrypt's join. The client moved its ghost until the
+  /// join's 0xAD reached it, which removes every unit and its control
+  /// (`opcode.0x637`, 0x1403b6de0): a ghost's 0x637 sent before it arrives is
+  /// taken in this stay, and is dropped as the ghost's until the stay's first
+  /// 0xF2. A body's 0x637 before that 0xF2 is dropped too; the body stands at
+  /// the Holocrypt place the join gave, and its next move is taken.
+  GhostLoading
   ClientReady
 }
 
@@ -341,6 +349,7 @@ pub fn loaded(
                   movement: movement.entered(place:, session_epoch:),
                   connection:,
                   stay:,
+                  readiness: ClientLoading,
                 )
               Join(state:, effects:)
             }
@@ -361,7 +370,7 @@ pub fn joined(
   next_whisper next_whisper: Int,
 ) -> Result(Joined, Nil) {
   case state {
-    Joining(character:, place:, movement:, map:, stay:) -> {
+    Joining(character:, place:, movement:, map:, stay:, readiness:) -> {
       case answer {
         map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
@@ -385,7 +394,7 @@ pub fn joined(
               casts_written: dict.new(),
               gone: set.new(),
               movement:,
-              readiness: ClientLoading,
+              readiness:,
               life: player_life.new(
                 health: max_health,
                 shield: full_shield(unit:),
@@ -462,22 +471,24 @@ pub fn rejoining(
     movement: movement.placed(state: entered.movement, place:),
     connection:,
     stay:,
+    readiness: GhostLoading,
   )
 }
 
 /// The ask of the map of `place`'s world to take the character there, with the
-/// movement it enters with: the place the map is given is the bounded one the
-/// client is told.
+/// movement it enters with and the readiness its client starts the stay in: the
+/// place the map is given is the bounded one the client is told.
 fn joining(
   character character: Character,
   place place: Place,
   movement movement: movement.State,
   connection connection: ConnectionId,
   stay stay: Stay,
+  readiness readiness: Readiness,
 ) -> #(State, List(Effect)) {
   let map =
     MapId(world_id: start_place.world_id(place), instance: open_world_instance)
-  #(Joining(character:, place:, movement:, map:, stay:), [
+  #(Joining(character:, place:, movement:, map:, stay:, readiness:), [
     AskMap(
       map:,
       message: map.Join(

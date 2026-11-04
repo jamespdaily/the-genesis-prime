@@ -2018,6 +2018,15 @@ pub fn a_position_beyond_the_worlds_box_is_kept_as_the_client_sent_it_test() -> 
 
 /// A message the client's code never sends, with what makes it so.
 fn refused_messages() -> List(#(BitArray, String)) {
+  [
+    #(world_message(0x063B, <<3, 0, 0, 0>>), "a move speed setting above 2"),
+    ..refused_moves()
+  ]
+}
+
+/// A 0x637 the client's code never sends, with what makes it so
+/// (`movement_command.position_bound` and the commands' records).
+fn refused_moves() -> List(#(BitArray, String)) {
   let not_a_number = 0x7FC00000
   let infinity = 0x7F800000
   let position_of = fn(x, y, z) {
@@ -2057,7 +2066,6 @@ fn refused_messages() -> List(#(BitArray, String)) {
       moves_message([movement_command.Mode(MovementMode(mode: 2))]),
       "a mode other than 0, 1 and 3",
     ),
-    #(world_message(0x063B, <<3, 0, 0, 0>>), "a move speed setting above 2"),
     #(
       moves_message([
         game_client.position_command(x: 99.0, y: 99.0, z: 99.0),
@@ -6757,13 +6765,12 @@ pub fn a_strike_on_a_dead_player_is_refused_dead_and_writes_nothing_test() -> Ni
 pub fn while_dead_every_0x637_is_dropped_and_after_coming_back_a_move_moves_the_body_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) = dead_in_world()
-  // The ghost runs far from the body, and below the world's floor, which the
-  // body's movement would refuse (y below -2048).
+  // The ghost runs far from the body.
   let #(state, taken) =
     read(
       state,
       moves_message([
-        game_client.position_command(x: 500.0, y: -3000.0, z: 500.0),
+        game_client.position_command(x: 500.0, y: 300.0, z: 500.0),
       ]),
     )
   assert support.effects_of(taken) == []
@@ -6789,6 +6796,23 @@ pub fn while_dead_every_0x637_is_dropped_and_after_coming_back_a_move_moves_the_
       )),
     ]
     as "the body moves again, and the dropped moves took no sequence number"
+}
+
+pub fn a_ghosts_0x637_the_clients_code_never_sends_ends_the_connection_after_saving_where_the_body_lies_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client writes the ghost's moves as it writes the body's
+  // (`ghost.movement`, `opcode.0x637`), so it never sends one the body's
+  // movement refuses.
+  let #(dead, _) = dead_in_world()
+  list.each(refused_moves(), fn(refused) {
+    let #(bytes, what) = refused
+    let #(_, taken) = read(dead, bytes)
+    let assert [_] = support.logs_of(step: taken, level: LogError)
+      as { what <> ": one error line says what the client sent" }
+    assert ask_request(taken) == save_asked(1, entry_place())
+      && support.writes(taken) == []
+      as { what <> ": the place the body lies at is saved, nothing written" }
+  })
 }
 
 pub fn a_0x15a_the_rule_refuses_writes_nothing_and_logs_a_warning_and_one_the_clients_reader_refuses_ends_the_connection_test() -> Nil {
@@ -6992,6 +7016,41 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
   assert at.x == float32.to_bits(start_place.x(start))
     && at.z == float32.to_bits(start_place.z(start))
     as "a viewer at the start place is sent the player's 0x262 there"
+}
+
+pub fn what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_as_from_the_dead_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client is in the world as a ghost until the join's 0xAD: it moves its
+  // ghost and may choose again. Those frames wait in the bytes read while the
+  // leave and the join are asked, and are taken after the join's answer. The
+  // ghost has run far from the body and from the Holocrypt.
+  let #(state, _) = dead_in_world()
+  let ghost_move =
+    moves_message([game_client.position_command(x: 500.0, y: 2.5, z: 500.0)])
+  let #(state, chosen) =
+    read(state, <<holocrypt():bits, ghost_move:bits, holocrypt():bits>>)
+  assert ask_request(chosen) == leave_asked()
+  let #(state, joining) =
+    answer(state:, taken: chosen, outcome: step.Answer(FromMap(Left)))
+  let #(_, joined) = mapped(map_state: map_after_a_stay(), taken: joining)
+  let #(state, burst) =
+    answer(state:, taken: joining, outcome: step.Answer(FromMap(joined)))
+  assert !support.stops(burst)
+    && support.asked(burst) == None
+    && support.logs_of(step: burst, level: LogError) == []
+    as "nothing the client may send while dead ends the connection"
+  assert written_ids(burst) == game_client.world_entry_ids
+    && moves_told(burst) == []
+    as "the ghost's move is dropped, as every 0x637 while dead: the body stands at the Holocrypt"
+  assert list.length(support.logs_of(step: burst, level: LogWarning)) == 1
+    as "the second choice is refused unchanged, with a warning"
+  let #(state, late) = read(state, ghost_move)
+  assert moves_told(late) == [] && support.logs(late) == []
+    as "a ghost's move that reaches the server after the burst is dropped too, until the client has loaded the world"
+  let #(state, _) = read(state, terrain_loaded_message(6009))
+  let #(_, moved) = read(state, a_move(1.5))
+  assert moves_told(moved) == [1]
+    as "after the stay's first 0xF2 a move moves the body, the first numbered since the dead dropped none"
 }
 
 pub fn a_holocrypt_leave_with_no_answer_ends_the_connection_test() -> Nil {

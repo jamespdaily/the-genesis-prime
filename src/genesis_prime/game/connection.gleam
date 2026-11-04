@@ -315,7 +315,8 @@
 ////   and the failure table): a strike that leaves the player at 0 kills it; the
 ////   connection writes the death's frames, ends the player's casts
 ////   (`cast.died`), and while the player is dead decodes and drops each 0x637, its
-////   ghost's (`ghost.movement`), checks its presses as the client checks a dead
+////   ghost's (`ghost.movement`), as it does after the Holocrypt's join until the
+////   stay's first 0xF2 (`world_entry.GhostLoading`), checks its presses as the client checks a dead
 ////   caster (`caster_of`, `cast.dead_player`) and takes 0x15a from inside
 ////   0x038C. Wake Here writes the coming back where the body lies. The Holocrypt
 ////   writes the same, then leaves the map and joins again at the Holocrypt place
@@ -1096,16 +1097,18 @@ fn movement_message(
   inner inner: Frame,
   message message: movement.Message,
 ) -> client_connection.Handled(Session) {
-  case message, player_life.state(life: entered.life) {
-    movement.PlayerMoved, player_life.Dead ->
-      ghost_moving(session:, now:, body: inner.body)
-    movement.PlayerMoved, player_life.Alive
-    | movement.ZoneChanged, _
-    | movement.IntervalAnswered, _
-    | movement.SpeedChosen, _
-    | movement.TerrainReady, _
-    | movement.Fell, _
-    | movement.FellBelowFloor, _
+  case message, player_life.state(life: entered.life), entered.readiness {
+    movement.PlayerMoved, player_life.Dead, _
+    | movement.PlayerMoved, player_life.Alive, world_entry.GhostLoading
+    -> ghost_moving(session:, now:, entered:, body: inner.body)
+    movement.PlayerMoved, player_life.Alive, world_entry.ClientLoading
+    | movement.PlayerMoved, player_life.Alive, world_entry.ClientReady
+    | movement.ZoneChanged, _, _
+    | movement.IntervalAnswered, _, _
+    | movement.SpeedChosen, _, _
+    | movement.TerrainReady, _, _
+    | movement.Fell, _, _
+    | movement.FellBelowFloor, _, _
     -> body_moving(session:, now:, holder:, entered:, inner:, message:)
   }
 }
@@ -1126,8 +1129,9 @@ fn body_moving(
       let session = moving(session:, holder:, entered:, state:)
       let top_zones = top_zone.top_zones(session.settings.tables)
       let #(session, ready) = case by, entered.readiness {
-        movement.ReportedByTerrainReady, world_entry.ClientLoading ->
-          tells_the_map_ready(session:, entered:)
+        movement.ReportedByTerrainReady, world_entry.ClientLoading
+        | movement.ReportedByTerrainReady, world_entry.GhostLoading
+        -> tells_the_map_ready(session:, entered:)
         movement.ReportedByTerrainReady, world_entry.ClientReady
         | movement.ReportedByZoneChanged, _
         -> #(session, [])
@@ -1210,15 +1214,17 @@ fn body_moving(
 }
 
 /// A 0x637 while the player is dead moves its ghost, the client's controlled
-/// unit: it is decoded and dropped (`movement.ghost_moved`), so the body's place,
-/// the map, the viewers and the fighters are told nothing and the move sequence
-/// number does not grow. A body the client's reader refuses ends the connection.
+/// unit: it is decoded, checked as the body's and dropped (`movement.ghost_moved`),
+/// so the body's place, the map, the viewers and the fighters are told nothing and
+/// the move sequence number does not grow. A body the client's reader refuses, or
+/// a command its code never sends, ends the connection.
 fn ghost_moving(
   session session: Session,
   now now: Now,
+  entered entered: world_entry.Entered,
   body body: BitArray,
 ) -> client_connection.Handled(Session) {
-  case movement.ghost_moved(body:) {
+  case movement.ghost_moved(state: entered.movement, body:) {
     Ok(Nil) -> Continue(session, [])
     Error(refusal) -> end_for(session:, now:, text: movement.describe(refusal))
   }

@@ -86,10 +86,13 @@
 ////   the body lies.
 //// - **The ghost's moves** come as 0x637 for the player while the ghost is the
 ////   controlled unit, and the client expects no answer (`ghost.movement`): the
-////   connection decodes and drops each, so no check of the body's moves applies.
-//// - **The stay.** A threat or a release names P's unit, as the creature holds it,
-////   and the connection drops one of another unit: one sent before a Holocrypt or
-////   a camp that reaches the next stay (genesis_prime/game/connection).
+////   connection decodes each with the checks of the body's moves, and drops it.
+////   After the Holocrypt's join, a ghost's move sent before the join's 0xAD
+////   reached the client is dropped the same way, until the stay's first 0xF2
+////   (`world_entry.GhostLoading`).
+//// - **The stay.** A threat, a release and a strike travel for P's stay, and the
+////   connection drops one of an earlier stay: one sent before a Holocrypt or a
+////   camp that reaches the next stay (genesis_prime/world_map/stay).
 ////
 //// What happens at each deadline and process death on P's side:
 ////
@@ -100,14 +103,15 @@
 //// | C's strike reaches P after P's connection ended | dropped by the registry; C's deadline leaves P out | `a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test` |
 //// | P and C strike each other at one instant | each strike is a tell, each answered in its owner's own step | `a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test` |
 //// | P camps and enters again while a move of its first stay is in flight | the move sequence number counts for the connection's life, so the old move is lower and the creature drops it | `the_move_sequence_number_counts_through_a_camp_and_the_next_entry_test` |
-//// | C's strike reaches P after P died | refused `Dead`; C's go leaves P out | `a_strike_on_a_dead_player_is_refused_dead_test` |
-//// | 0x15a comes twice | the second finds P alive (or leaving for the Holocrypt) and is refused unchanged | `a_second_choice_is_refused_unchanged_test` |
+//// | C's strike reaches P after P died | refused `Dead`; C's go leaves P out | `a_strike_on_a_dead_player_is_refused_dead_and_writes_nothing_test` |
+//// | 0x15a comes twice | the second finds P alive (also when it was sent while the Holocrypt's leave and join ran) and is refused unchanged | `a_second_choice_is_refused_unchanged_test`, `what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_as_from_the_dead_test` |
+//// | the dead client's frames wait while the Holocrypt's leave and join are asked | taken after the join: a ghost's 0x637 is dropped, until the stay's first 0xF2; nothing the dead client may send ends the connection | `what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_as_from_the_dead_test` |
 //// | the Holocrypt's leave has no answer by its deadline | the connection ends, as the camp's leave does | `a_holocrypt_leave_with_no_answer_ends_the_connection_test` |
 //// | the Holocrypt's join is refused or has no answer | refused: 0x0594 and character select; no answer: the connection ends, as entry's join does | `a_refused_holocrypt_join_returns_to_character_select_test`, `a_holocrypt_join_with_no_answer_ends_the_connection_test` |
 //// | P's connection ends while dead | the map's `Leave` as for any end; the ghost was P's client's alone; the next entry is alive and full | `a_player_dead_at_camp_enters_again_alive_and_full_test` |
-//// | the map crashes while P is dead | the connection ends, as for any player in the world | `the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test` |
+//// | the map crashes while P is dead | the connection ends, as for any player in the world, after the save of the place the body lies at | `the_map_ending_while_the_player_is_dead_saves_where_the_body_lies_and_ends_the_connection_test` |
 //// | C's killing strike reaches P mid-cast | each live cast ends with 0x7fe to P and the viewers told its start, its timers cancelled; a round that closes later has no go | `a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test`, `a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test` |
-//// | a threat, a release or a peer's news sent for P's earlier stay arrives after the Holocrypt's join or a camp and a new entry | dropped: it names P's earlier unit | `an_appeared_and_a_threatened_of_the_stay_before_the_holocrypt_delivered_after_its_join_are_dropped_test`, `an_appeared_and_a_threatened_of_the_stay_before_a_camp_delivered_after_the_next_entry_are_dropped_test` |
+//// | the map's notice, a peer's news or a creature's threat, release or strike sent for P's earlier stay arrives after the Holocrypt's join, a camp and a new entry, or a join to a restarted run that gives the same unit id | dropped: it names the earlier stay | `messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`, `messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test` |
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/hit.{type Defence, type Rolls}
