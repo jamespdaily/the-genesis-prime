@@ -30,6 +30,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/movement
+import genesis_prime/message/ability_hold
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
 import genesis_prime/message/cancel_cast
@@ -68,7 +69,8 @@ pub type Feature {
   Camp(message: camp.Message)
   /// A chat line or a whisper (genesis_prime/game/chat).
   Chat(message: chat.Message)
-  /// The press of an ability or the cancel of a cast (genesis_prime/game/cast).
+  /// The press or hold of an ability or the cancel of a cast
+  /// (genesis_prime/game/cast).
   Cast(message: cast.Message)
 }
 
@@ -199,6 +201,12 @@ const table = [
     cast_ability.message_id,
     InsideWorldMessage,
     Cast(cast.Pressed),
+    [AtWorld],
+  ),
+  Row(
+    ability_hold.message_id,
+    InsideWorldMessage,
+    Cast(cast.KeyHeld),
     [AtWorld],
   ),
   Row(

@@ -429,6 +429,7 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.SendChatLine(..)
     | client_message.SendWhisper(..)
     | client_message.CastAbility(..)
+    | client_message.AbilityHold(..)
     | client_message.CancelCast(..)
     | client_message.ChooseResurrection(..) -> Plain
   }

@@ -433,17 +433,24 @@ fn client_message_module(messages: List(Message)) -> String {
       "////",
       "Every message the client sends, by its number: a variant for each message of the schema that travels client to server or either way, `decode` to read a body by its message's number, `encode` to write it back and `message_id` to name it. A number no such message has is reported as unknown.",
     )
+  // `gleam format` sorts imports by module, so bit_stream sits among the messages'.
   let module_imports =
-    list.sort(sent, fn(left, right) { string.compare(left.name, right.name) })
-    |> list.flat_map(fn(message) {
-      type_import(module: message.name, type_name: camel(message.name))
-    })
+    [
+      #("bit_stream", [
+        "import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}",
+      ]),
+      ..list.map(sent, fn(message) {
+        #(
+          message.name,
+          type_import(module: message.name, type_name: camel(message.name)),
+        )
+      })
+    ]
+    |> list.sort(fn(left, right) { string.compare(left.0, right.0) })
+    |> list.flat_map(fn(import_) { import_.1 })
   lines_to_text(
     list.flatten([
       header(head),
-      [
-        "import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}",
-      ],
       module_imports,
       [""],
       ["/// A message the client sends, decoded: one variant for each message."],
