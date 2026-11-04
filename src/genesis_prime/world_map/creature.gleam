@@ -99,7 +99,8 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
-  type Answered, type Fight, type Tell as StrikeTell,
+  type Answered, type Fight, type Tell as StrikeTell, Answered, PlayerStriker,
+  Refused,
 }
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
@@ -107,7 +108,9 @@ import genesis_prime/step.{
   CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send, ServiceTimerFired,
   Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded, WatchId,
 }
-import genesis_prime/world_map/creature_fight
+import genesis_prime/world_map/creature_fight.{
+  type Fighter, AttackTick, Fighter, HomeArrival, StrikeDeadline,
+}
 import genesis_prime/world_map/creature_kind.{type Kind}
 import genesis_prime/world_map/creature_life.{
   type Body, type Life, Body, Died, Ends, Health, StandsAgain, StopAtRespawn,
@@ -116,7 +119,7 @@ import genesis_prime/world_map/creature_life.{
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set.{type Set}
@@ -127,17 +130,9 @@ const rule_name = "genesis_prime/world_map/creature"
 /// The watch on the map run that started the creature.
 const run_watch = WatchId(1)
 
-/// The corpse timer.
+/// The corpse timer. The fight's timers are numbered from it by kind and
+/// generation (`timer_id`), so none is 1.
 const corpse_timer = TimerId(1)
-
-/// The fight's attack tick (genesis_prime/world_map/creature_fight).
-const attack_timer = TimerId(2)
-
-/// The fight's strike deadline.
-const strike_deadline_timer = TimerId(3)
-
-/// The fight's walk home.
-const home_timer = TimerId(4)
 
 /// What a creature is started with: which creature of which run it is and the
 /// map's clock (`CreatureStart`), the spawn it stands at, found by the id the start
@@ -176,8 +171,8 @@ pub type Message {
 
 /// What a creature sends a connection without waiting.
 pub type Outgoing {
-  /// News of the creature's own unit for a viewer: its 0x262, 0x355, 0x937 and
-  /// 0x88c.
+  /// News of the creature's own unit for a viewer: its 0x262, 0x355, 0x937, 0x88c
+  /// and the fight's 0x908, 0x90a, 0x89a, 0x638, 0x7ff, 0x7f4, 0x7fb and 0x7fe.
   News(news: PeerNews)
   /// The answer to a strike, for the connection that told it.
   Struck(answered: Answered)
@@ -215,7 +210,7 @@ pub fn rule(
 }
 
 /// A creature's first state: the players the map started it for are its viewers,
-/// and it stands at full health.
+/// and it stands at full health at its spawn, resting.
 pub fn new(settings: Settings) -> State {
   let body =
     Body(
@@ -227,10 +222,20 @@ pub fn new(settings: Settings) -> State {
     settings:,
     body:,
     life: creature_life.new(body:),
-    fight: creature_fight.new(),
+    fight: creature_fight.new(home: settings.spawn.place),
     retiring: False,
     viewers: set.from_list(settings.creature.viewers),
   )
+}
+
+/// The creature's fight: whether it rests, fights or walks home, for a test.
+pub fn fight(state state: State) -> creature_fight.State {
+  state.fight
+}
+
+/// The connections whose players see the creature.
+pub fn viewers(state state: State) -> Set(ConnectionId) {
+  state.viewers
 }
 
 /// One input in, the new state and what the shell must do out, as the sequence
@@ -241,6 +246,7 @@ pub fn step(
   input input: ServiceInput(Message),
 ) -> #(State, ServiceStep(Outgoing)) {
   let creature = state.settings.creature
+  let now_ms = input.now.monotonic_ms
   case input.event {
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Started) -> #(
@@ -251,20 +257,25 @@ pub fn step(
           target: step.Map(map: creature.map, incarnation: creature.incarnation),
         ),
         ..list.map(creature.viewers, fn(viewer) {
-          appeared(state:, viewer:, now: input.now)
+          appeared(state:, viewer:, now_ms:)
         })
       ]),
     )
     OwnEvent(Told(message: Watched(by:))) -> #(
       State(..state, viewers: set.insert(state.viewers, by)),
-      Effects([appeared(state:, viewer: by, now: input.now)]),
+      Effects([appeared(state:, viewer: by, now_ms:)]),
     )
     OwnEvent(Told(message: Unwatched(by:))) ->
       case set.contains(state.viewers, by) {
-        True -> #(
-          State(..state, viewers: set.delete(state.viewers, by)),
-          Effects([news_to(creature:, viewer: by, news: Removed)]),
-        )
+        True -> {
+          let state = State(..state, viewers: set.delete(state.viewers, by))
+          let #(state, fought) =
+            fought(state:, input: creature_fight.Unwatched(by:), now_ms:)
+          #(
+            state,
+            Effects([news_to(creature:, viewer: by, news: Removed), ..fought]),
+          )
+        }
         False -> #(state, Effects([]))
       }
     OwnEvent(Told(message: Retire)) ->
@@ -272,7 +283,94 @@ pub fn step(
         StopNow -> #(state, Effects([Stop]))
         StopAtRespawn -> #(State(..state, retiring: True), Effects([]))
       }
-    OwnEvent(Told(message: Strike(tell:))) -> {
+    OwnEvent(Told(message: Strike(tell:))) -> struck(state:, tell:, now_ms:)
+    OwnEvent(Told(message: Approached(by:, unit_id:, place:, seq:))) ->
+      fought_alone(
+        state:,
+        input: creature_fight.Approached(by:, unit_id:, place:, seq:),
+        now_ms:,
+      )
+    OwnEvent(Told(message: Withdrew(by:))) ->
+      fought_alone(state:, input: creature_fight.Withdrew(by:), now_ms:)
+    OwnEvent(Told(message: TargetMoved(by:, place:, seq:))) ->
+      fought_alone(
+        state:,
+        input: creature_fight.TargetMoved(by:, place:, seq:),
+        now_ms:,
+      )
+    OwnEvent(Told(message: StrikeAnswered(answered:))) ->
+      fought_alone(
+        state:,
+        input: creature_fight.StrikeAnswered(answered:),
+        now_ms:,
+      )
+    OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer ->
+      case
+        creature_life.corpse_timer_fired(
+          life: state.life,
+          body: state.body,
+          retiring: state.retiring,
+        )
+      {
+        Ends -> #(state, Effects([Stop]))
+        StandsAgain(life:) -> {
+          let state = State(..state, life:)
+          let #(state, fought) =
+            fought(state:, input: creature_fight.StoodAgain, now_ms:)
+          #(
+            state,
+            Effects(list.append(
+              list.flat_map(map.sorted_connections(state.viewers), fn(viewer) {
+                [
+                  news_to(creature:, viewer:, news: Removed),
+                  appeared(state:, viewer:, now_ms:),
+                ]
+              }),
+              fought,
+            )),
+          )
+        }
+      }
+    OwnEvent(ServiceTimerFired(timer:)) ->
+      case fight_timer(timer:) {
+        Ok(timer) ->
+          fought_alone(
+            state:,
+            input: creature_fight.TimerFired(timer:),
+            now_ms:,
+          )
+        Error(Nil) ->
+          panic as "a creature starts no timer but its corpse's and its fight's"
+      }
+    WatchEnded(..) -> #(state, Effects([Stop]))
+    OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
+      panic as "a creature is told, and starts no creature"
+  }
+}
+
+/// A strike on the creature: refused while it walks home; else the hit rule on its
+/// health, the answer first, then the health news, the corpse timer, and the fight's
+/// part: a landed player's strike adds its threat, a kill ends the fight.
+fn struck(
+  state state: State,
+  tell tell: StrikeTell,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let creature = state.settings.creature
+  case creature_fight.refusal(state: state.fight) {
+    Error(why) -> #(
+      state,
+      Effects([
+        OwnEffect(Send(
+          to: tell.from,
+          message: Struck(answered: Answered(
+            key: tell.key,
+            outcome: Refused(why:),
+          )),
+        )),
+      ]),
+    )
+    Ok(Nil) -> {
       let reaction =
         creature_life.struck(life: state.life, body: state.body, strike: tell)
       // The answer goes first: the caster's connection then knows the strike
@@ -294,50 +392,145 @@ pub fn step(
         ]
         None -> []
       }
-      #(
-        State(..state, life: reaction.life),
-        Effects(list.flatten([[answer], news, corpse])),
-      )
-    }
-    OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer ->
-      case
-        creature_life.corpse_timer_fired(
-          life: state.life,
-          body: state.body,
-          retiring: state.retiring,
-        )
+      let state = State(..state, life: reaction.life)
+      let input = case
+        reaction.answer.outcome,
+        tell.striker,
+        tell.from,
+        reaction.corpse_for_ms
       {
-        Ends -> #(state, Effects([Stop]))
-        StandsAgain(life:) -> {
-          let state = State(..state, life:)
-          #(
-            state,
-            Effects(
-              list.flat_map(map.sorted_connections(state.viewers), fn(viewer) {
-                [
-                  news_to(creature:, viewer:, news: Removed),
-                  appeared(state:, viewer:, now: input.now),
-                ]
-              }),
+        _, _, _, Some(..) -> Some(creature_fight.Killed)
+        strike_tell.Landed(descriptions:),
+          PlayerStriker(unit_id:, place:, seq:, ..),
+          Connection(by),
+          None
+        ->
+          Some(creature_fight.StruckBy(
+            by:,
+            unit_id:,
+            place:,
+            seq:,
+            threat: creature_fight.threat_of(
+              offence: tell.offence,
+              descriptions:,
             ),
-          )
-        }
+          ))
+        _, _, _, None -> None
       }
-    OwnEvent(Told(message: Approached(..)))
-    | OwnEvent(Told(message: Withdrew(..)))
-    | OwnEvent(Told(message: TargetMoved(..)))
-    | OwnEvent(Told(message: StrikeAnswered(..))) ->
-      todo as "the fight's messages: the build carries them to creature_fight"
-    OwnEvent(ServiceTimerFired(timer:))
-      if timer == attack_timer
-      || timer == strike_deadline_timer
-      || timer == home_timer
-    -> todo as "the fight's timers: the build carries them to creature_fight"
-    WatchEnded(..) -> #(state, Effects([Stop]))
-    OwnEvent(Asked(..))
-    | OwnEvent(ServiceTimerFired(..))
-    | OwnEvent(CreatureNotStarted(..)) ->
-      panic as "a creature is told, and starts no timer but its corpse's and its fight's, and no creature"
+      let #(state, fought) = case input {
+        Some(input) -> fought(state:, input:, now_ms:)
+        None -> #(state, [])
+      }
+      #(state, Effects(list.flatten([[answer], news, corpse, fought])))
+    }
+  }
+}
+
+/// The creature's fight takes the input, and its effects are the creature's.
+fn fought_alone(
+  state state: State,
+  input input: creature_fight.Input,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let #(state, effects) = fought(state:, input:, now_ms:)
+  #(state, Effects(effects))
+}
+
+/// The fight's step and its effects carried out: news to every viewer, a tell to a
+/// player, the health restored with its 0x937, and the fight's timers.
+fn fought(
+  state state: State,
+  input input: creature_fight.Input,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let creature = state.settings.creature
+  let #(fight, effects) =
+    creature_fight.step(
+      state: state.fight,
+      fighter: fighter_of(state:),
+      viewers: state.viewers,
+      alive: !creature_life.is_dead(life: state.life),
+      input:,
+      now_ms:,
+    )
+  let state = State(..state, fight:)
+  list.fold(effects, #(state, []), fn(so_far, effect) {
+    let #(state, done) = so_far
+    let #(state, more) = case effect {
+      creature_fight.ToViewers(news:) -> #(
+        state,
+        list.map(map.sorted_connections(state.viewers), fn(viewer) {
+          news_to(creature:, viewer:, news:)
+        }),
+      )
+      creature_fight.ToPlayer(to:, told:) -> #(state, [
+        OwnEffect(Send(to: Connection(to), message: FightTold(told:))),
+      ])
+      creature_fight.RestoreHealth -> {
+        let life = creature_life.new(body: state.body)
+        #(
+          State(..state, life:),
+          list.map(map.sorted_connections(state.viewers), fn(viewer) {
+            news_to(
+              creature:,
+              viewer:,
+              news: client_connection.Health(
+                health: creature_life.health(life:),
+                dead: False,
+              ),
+            )
+          }),
+        )
+      }
+      creature_fight.StartTimer(timer:, after_ms:) -> #(state, [
+        OwnEffect(step.StartServiceTimer(timer: timer_id(timer:), after_ms:)),
+      ])
+      creature_fight.CancelTimer(timer:) -> #(state, [
+        OwnEffect(step.CancelServiceTimer(timer: timer_id(timer:))),
+      ])
+    }
+    #(state, list.append(done, more))
+  })
+}
+
+/// What the creature fights with: its unit and address, its spawn as home, its
+/// attack, its kind's interval and the run's numbers.
+fn fighter_of(state state: State) -> Fighter {
+  let creature = state.settings.creature
+  Fighter(
+    unit_id: creature.unit_id,
+    address: step.Creature(
+      map: creature.map,
+      incarnation: creature.incarnation,
+      unit_id: creature.unit_id,
+      life: creature.life,
+    ),
+    home: state.settings.spawn.place,
+    attack: state.body.combat.attack,
+    interval_ms: state.settings.kind.attack_interval_ms,
+    numbers: state.settings.numbers,
+  )
+}
+
+/// The timer id of a fight timer: 2, 3 and 4 above a multiple of 4 for the attack
+/// tick, the strike deadline and the walk home, by generation, so none is the
+/// corpse timer's 1 and a timer of an old generation is never the new one's.
+fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
+  case timer {
+    AttackTick(generation:) -> TimerId(4 * generation + 2)
+    StrikeDeadline(generation:) -> TimerId(4 * generation + 3)
+    HomeArrival(generation:) -> TimerId(4 * generation + 4)
+  }
+}
+
+/// The fight timer of a timer id, or `Error(Nil)` for one the fight never starts.
+fn fight_timer(timer timer: step.TimerId) -> Result(creature_fight.Timer, Nil) {
+  let TimerId(number) = timer
+  case number > 4, number % 4 {
+    True, 2 -> Ok(AttackTick(generation: { number - 2 } / 4))
+    True, 3 -> Ok(StrikeDeadline(generation: { number - 3 } / 4))
+    True, 0 -> Ok(HomeArrival(generation: { number - 4 } / 4))
+    _, _ -> Error(Nil)
   }
 }
 
@@ -350,28 +543,30 @@ fn viewer_news(news: creature_life.News) -> client_connection.News {
 }
 
 /// The send of the creature's 0x262 to a viewer, stamped with the map's time, at
-/// its current health.
+/// its current health and where it stands now: at its spawn, on its path, or where
+/// it fell.
 fn appeared(
   state state: State,
   viewer viewer: ConnectionId,
-  now now: step.Now,
+  now_ms now_ms: Int,
 ) -> Effect(ServiceEffect(Outgoing)) {
   let creature = state.settings.creature
+  let place = creature_fight.place_at(state: state.fight, now_ms:)
   news_to(
     creature:,
     viewer:,
     news: CreatureAppeared(
       unit: creature_unit.create(
-        spawn: state.settings.spawn,
+        spawn: Spawn(..state.settings.spawn, place:),
         unit_id: creature.unit_id,
         health: creature_life.health(life: state.life),
         server_time_estimate_start: map.server_time(
           origin_ms: creature.clock_origin_ms,
-          monotonic_ms: now.monotonic_ms,
+          monotonic_ms: now_ms,
         ),
       ),
       life: creature.life,
-      place: state.settings.spawn.place,
+      place:,
       hit_radius: state.body.combat.hit_radius,
       attackable: state.body.combat.attackable,
     ),

@@ -86,14 +86,16 @@ pub fn beast_without_deflect_at(
 
 /// What the Virtual Battle Beast brings to a fight: the hit radius of its display, 3.0
 /// (`Spell4.32812.area`); whom it may be attacked by (hostile to Exiles, `Creature2.73464`;
-/// the Dominion's level is not read, and no test asserts it); a deflect chance of 0.016,
-/// and no critical deflect, glance or mitigation (`Creature2.73464.crit_deflect_glance`,
-/// `Creature2.73464.mitigation`).
+/// the Dominion's level is not read, and no test asserts it); whom it fights on sight:
+/// Exiles, at level 0 to faction 167, and not the Dominion, at level 10 to 166
+/// (Faction2Relationship 2943 and 2944, `Creature2.73464`); a deflect chance of 0.016,
+/// no critical deflect, glance or mitigation (`Creature2.73464.crit_deflect_glance`,
+/// `Creature2.73464.mitigation`); and its attack (`beast_attack`).
 pub fn beast_combat() -> creature_life.Combat {
   Combat(
     hit_radius: 3.0,
     attackable: Attackable(exile: True, dominion: True),
-    hostile_to: Hostile(exile: True, dominion: True),
+    hostile_to: Hostile(exile: True, dominion: False),
     defence: Defence(
       deflect_chance: 0.016,
       crit_deflect_chance: 0.0,

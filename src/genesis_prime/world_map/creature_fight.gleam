@@ -87,14 +87,26 @@
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
 
 import genesis_prime/client_connection.{type News}
+import genesis_prime/game/cast
+import genesis_prime/game/hit.{type Offence}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{type Answered, type Fight as Told}
-import genesis_prime/step.{type Address, type ConnectionId}
+import genesis_prime/game/strike_tell.{
+  type Answered, type Fight as Told, type Key, Attacks, CreatureStriker,
+  Released, Threatened,
+}
+import genesis_prime/step.{type Address, type ConnectionId, ConnectionId}
 import genesis_prime/world_map/creature_life.{type Attack}
-import genesis_prime/world_map/creature_path.{type Path}
+import genesis_prime/world_map/creature_path.{
+  type Path, Circle, Running, Standing,
+}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/dict.{type Dict}
-import gleam/option.{type Option}
+import gleam/float
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/order
+import gleam/result
 import gleam/set.{type Set}
 
 /// What the creature fights with, fixed for its life: its unit and address, the
@@ -111,22 +123,23 @@ pub type Fighter {
   )
 }
 
-/// Where the creature is in a fight.
+/// Where a standing creature is in a fight. Whether it is alive is creature_life's
+/// (genesis_prime/world_map/creature_life): a creature that dies leaves its fight
+/// and rests where it fell until its respawn.
 pub type Status {
-  /// At its spawn, fighting no one: a viewer's `Approached` aggroes it.
+  /// Fighting no one: a viewer's `Approached` or a strike starts a fight.
   Resting
-  /// On a fight: its threat list, its path and its open strike round.
-  Fighting(fight: Fight)
-  /// Walking home after a leash, along `home`, taking no strike.
-  Returning(home: Path)
-  /// Lying dead, until creature_life's corpse timer stands it again.
-  Dead
-}
-
-/// A fight the creature is on: the threat of each connection whose player is on its
-/// list, never empty, the path it runs, and the strike round it waits on.
-pub type Fight {
-  Fight(threat: Dict(ConnectionId, Threat), path: Path, round: Option(Round))
+  /// On a fight: its threat list, never empty, the target it last named, the
+  /// strike round it waits on, and the generation of its attack tick.
+  Fighting(
+    threat: Dict(ConnectionId, Threat),
+    target: ConnectionId,
+    round: Option(Round),
+    tick: Int,
+  )
+  /// Walking home after a leash, taking no strike, until its home timer of this
+  /// generation fires.
+  Returning(home: Int)
 }
 
 /// One entry of the threat list: the player's unit and its threat.
@@ -134,9 +147,10 @@ pub type Threat {
   Threat(unit_id: Int, amount: Float)
 }
 
-/// The strike round the creature waits on: its key and the player struck.
+/// The strike round the creature waits on: its key, the player struck, and the
+/// generation of its deadline timer.
 pub type Round {
-  Round(key: strike_tell.Key, target: ConnectionId)
+  Round(key: Key, target: ConnectionId, deadline: Int)
 }
 
 /// The newest place the creature knows a connection's player at, with the move
@@ -145,15 +159,18 @@ pub type Sighting {
   Sighting(unit_id: Int, place: Place, seq: Int)
 }
 
-/// A creature's fight: its status, the players inside its ring (from `Approached`
-/// and `Withdrew`), the newest place of each player it heard of, and the number of
-/// its next cast.
+/// A creature's fight: its status, where it stands or runs (kept apart from the
+/// status, and still where it fell while it lies dead), the players inside its
+/// ring (from `Approached` and `Withdrew`), the newest place of each player it
+/// heard of, the number of its next cast and the next timer generation.
 pub opaque type State {
   State(
     status: Status,
+    path: Path,
     near: Set(ConnectionId),
     sightings: Dict(ConnectionId, Sighting),
     next_cast: Int,
+    next_generation: Int,
   )
 }
 
@@ -166,8 +183,8 @@ pub type Input {
   Withdrew(by: ConnectionId)
   /// The player of `by`, on the threat list, moved to `place` of move `seq`.
   TargetMoved(by: ConnectionId, place: Place, seq: Int)
-  /// A player's strike landed on the creature for `threat` (the damage taken times
-  /// each effect's threatMultiplier), from `place` of move `seq`.
+  /// A player's strike landed on the creature for `threat`
+  /// (`threat_of`), from `place` of move `seq`.
   StruckBy(
     by: ConnectionId,
     unit_id: Int,
@@ -187,15 +204,17 @@ pub type Input {
   StoodAgain
 }
 
-/// The fight's timers: the creature's rule gives each a timer id of its own.
+/// The fight's timers, each of the generation it was started with: a timer of a
+/// generation the fight no longer waits on (a round that closed, a tick of a fight
+/// that ended) does nothing when it fires.
 pub type Timer {
   /// Every `interval_ms` while Fighting: strike when the target is in reach, else
   /// chase or leash.
-  AttackTick
+  AttackTick(generation: Int)
   /// The strike round's deadline (genesis_prime/game/strike_tell `deadline_ms`).
-  StrikeDeadline
+  StrikeDeadline(generation: Int)
   /// The walk home is run.
-  HomeArrival
+  HomeArrival(generation: Int)
 }
 
 /// What the fight asks the creature's rule to do, in order.
@@ -204,25 +223,104 @@ pub type Effect {
   ToViewers(news: News)
   /// A tell to the connection of a player in the fight.
   ToPlayer(to: ConnectionId, told: Told)
+  /// The creature stands at full health again: creature_life's health is restored
+  /// and each viewer is sent its 0x937.
+  RestoreHealth
   StartTimer(timer: Timer, after_ms: Int)
   CancelTimer(timer: Timer)
 }
 
 /// A creature resting at its spawn, with no one near.
-pub fn new() -> State {
-  todo as "new: the build fills it in"
+pub fn new(home home: Place) -> State {
+  State(
+    status: Resting,
+    path: Standing(at: home),
+    near: set.new(),
+    sightings: dict.new(),
+    next_cast: 1,
+    next_generation: 1,
+  )
 }
 
 /// One input of the fight in, the new state and the effects out. `viewers` are the
-/// creature's viewers now; `now_ms` the monotonic time of the input.
+/// creature's viewers now, `alive` whether creature_life holds it standing, and
+/// `now_ms` the monotonic time of the input.
 pub fn step(
   state state: State,
   fighter fighter: Fighter,
   viewers viewers: Set(ConnectionId),
+  alive alive: Bool,
   input input: Input,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  todo as "step: the build fills it in"
+  case input {
+    Approached(by:, unit_id:, place:, seq:) -> {
+      let state =
+        State(
+          ..sighted(state:, by:, unit_id:, place:, seq:),
+          near: set.insert(state.near, by),
+        )
+      case state.status, alive && set.contains(viewers, by) {
+        Resting, True -> aggro(state:, fighter:, players: [by], now_ms:)
+        Resting, False | Fighting(..), _ | Returning(..), _ -> #(state, [])
+      }
+    }
+    Withdrew(by:) -> #(State(..state, near: set.delete(state.near, by)), [])
+    TargetMoved(by:, place:, seq:) -> {
+      let unit_id = case dict.get(state.sightings, by) {
+        Ok(sighting) -> sighting.unit_id
+        Error(Nil) -> 0
+      }
+      let state = sighted(state:, by:, unit_id:, place:, seq:)
+      case state.status, alive {
+        Fighting(target:, ..), True if target == by ->
+          chase(state:, fighter:, now_ms:)
+        Fighting(..), _ | Resting, _ | Returning(..), _ -> #(state, [])
+      }
+    }
+    StruckBy(by:, unit_id:, place:, seq:, threat:) -> {
+      let state = sighted(state:, by:, unit_id:, place:, seq:)
+      case alive && set.contains(viewers, by) {
+        False -> #(state, [])
+        True -> threatened_by(state:, fighter:, by:, threat:, now_ms:)
+      }
+    }
+    Unwatched(by:) -> unwatched(state:, fighter:, by:, now_ms:)
+    StrikeAnswered(answered:) ->
+      answered_strike(state:, fighter:, answered:, now_ms:)
+    TimerFired(timer: AttackTick(generation:)) ->
+      case state.status, alive {
+        Fighting(tick:, ..), True if tick == generation ->
+          ticked(state:, fighter:, now_ms:)
+        Fighting(..), _ | Resting, _ | Returning(..), _ -> #(state, [])
+      }
+    TimerFired(timer: StrikeDeadline(generation:)) ->
+      case state.status {
+        Fighting(round: Some(round), ..) if round.deadline == generation ->
+          round_closed(state:, round:, struck: [], now_ms:)
+        Fighting(..) | Resting | Returning(..) -> #(state, [])
+      }
+    TimerFired(timer: HomeArrival(generation:)) ->
+      case state.status {
+        Returning(home:) if home == generation -> {
+          let state =
+            State(..state, status: Resting, path: Standing(at: fighter.home))
+          aggro(
+            state:,
+            fighter:,
+            players: near_viewers(state:, viewers:),
+            now_ms:,
+          )
+        }
+        Returning(..) | Resting | Fighting(..) -> #(state, [])
+      }
+    Killed -> killed(state:, fighter:, now_ms:)
+    StoodAgain -> {
+      let state =
+        State(..state, status: Resting, path: Standing(at: fighter.home))
+      aggro(state:, fighter:, players: near_viewers(state:, viewers:), now_ms:)
+    }
+  }
 }
 
 /// The fight's status.
@@ -232,20 +330,658 @@ pub fn status(state state: State) -> Status {
 
 /// Whether the creature takes a strike: a creature walking home refuses it.
 pub fn refusal(state state: State) -> Result(Nil, strike_tell.Refusal) {
-  todo as "refusal: the build fills it in"
+  case state.status {
+    Returning(..) -> Error(strike_tell.Returning)
+    Resting | Fighting(..) -> Ok(Nil)
+  }
 }
 
 /// The connections on the threat list: none unless Fighting.
 pub fn threatened(state state: State) -> Set(ConnectionId) {
-  todo as "threatened: the build fills it in"
+  case state.status {
+    Fighting(threat:, ..) -> set.from_list(dict.keys(threat))
+    Resting | Returning(..) -> set.new()
+  }
 }
 
 /// Where the creature stands at monotonic time `now_ms`, for the 0x262 of a viewer
 /// that arrives while it runs.
-pub fn place_at(
+pub fn place_at(state state: State, now_ms now_ms: Int) -> Place {
+  creature_path.place_at(path: state.path, now_ms:)
+}
+
+/// The path the creature runs, for a viewer that arrives while it runs.
+pub fn path(state state: State) -> Path {
+  state.path
+}
+
+/// The threat a landed strike adds: each blow's damage taken (to health) times its
+/// effect's threatMultiplier (`Spell4Effects.threatMultiplier`), matched by effect.
+pub fn threat_of(
+  offence offence: Offence,
+  descriptions descriptions: List(hit.Description),
+) -> Float {
+  list.fold(descriptions, 0.0, fn(sum, description) {
+    let multiplier =
+      list.find(offence.blows, fn(blow) {
+        blow.spell4_effects_id == description.spell4_effects_id
+      })
+      |> result.map(fn(blow) { blow.threat_multiplier })
+      |> result.unwrap(1.0)
+    sum
+    +. int.to_float(description.damage.health_damage_with_overkill)
+    *. multiplier
+  })
+}
+
+/// The state with the player's newest place: a move of a lower sequence number
+/// than the one held is older and dropped; an equal one is the same move.
+fn sighted(
+  state state: State,
+  by by: ConnectionId,
+  unit_id unit_id: Int,
+  place place: Place,
+  seq seq: Int,
+) -> State {
+  case dict.get(state.sightings, by) {
+    Ok(held) if held.seq > seq -> state
+    Ok(..) | Error(Nil) ->
+      State(
+        ..state,
+        sightings: dict.insert(
+          state.sightings,
+          by,
+          Sighting(unit_id:, place:, seq:),
+        ),
+      )
+  }
+}
+
+/// The near players the creature sees now, in the order of their connections.
+fn near_viewers(
+  state state: State,
+  viewers viewers: Set(ConnectionId),
+) -> List(ConnectionId) {
+  set.intersection(state.near, viewers)
+  |> set.to_list
+  |> list.sort(compare_connections)
+}
+
+/// A resting creature aggroes these players, each with the aggro threat
+/// (`start_fight`). No player it has a place for, no fight.
+fn aggro(
+  state state: State,
+  fighter fighter: Fighter,
+  players players: List(ConnectionId),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let entries =
+    list.filter_map(players, fn(player) {
+      dict.get(state.sightings, player)
+      |> result.map(fn(sighting) {
+        #(
+          player,
+          Threat(
+            unit_id: sighting.unit_id,
+            amount: fighter.numbers.aggro_threat,
+          ),
+        )
+      })
+    })
+  start_fight(state:, fighter:, entries:, now_ms:)
+}
+
+/// A resting creature starts a fight with these entries: the first is the target
+/// (0x908), each other is named in 0x90a, the creature is in combat (0x89a), each
+/// player is told `Threatened`, the creature chases its target when it is out of
+/// reach, and the attack tick starts.
+fn start_fight(
+  state state: State,
+  fighter fighter: Fighter,
+  entries entries: List(#(ConnectionId, Threat)),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case entries {
+    [] -> #(state, [])
+    [first, ..others] -> {
+      let #(state, tick) = generation(state)
+      let state =
+        State(
+          ..state,
+          status: Fighting(
+            threat: dict.from_list(entries),
+            target: first.0,
+            round: None,
+            tick:,
+          ),
+        )
+      let named = [
+        ToViewers(client_connection.Targeting(
+          target_unit_id: { first.1 }.unit_id,
+          threat: whole({ first.1 }.amount),
+        )),
+        ..list.map(others, fn(other) {
+          ToViewers(client_connection.Threat(
+            other_unit_id: { other.1 }.unit_id,
+            threat: whole({ other.1 }.amount),
+          ))
+        })
+      ]
+      let told =
+        list.map(entries, fn(entry) {
+          ToPlayer(to: entry.0, told: threatened_told(fighter:))
+        })
+      let #(state, chased) = chase(state:, fighter:, now_ms:)
+      #(
+        state,
+        list.flatten([
+          named,
+          [ToViewers(client_connection.CombatState(in_combat: True))],
+          told,
+          chased,
+          [StartTimer(timer: AttackTick(tick), after_ms: fighter.interval_ms)],
+        ]),
+      )
+    }
+  }
+}
+
+fn threatened_told(fighter fighter: Fighter) -> Told {
+  case fighter.address {
+    step.Creature(life:, ..) -> Threatened(unit_id: fighter.unit_id, life:)
+    step.Sessions
+    | step.HandOff
+    | step.Store
+    | step.Maps
+    | step.Map(..)
+    | step.Connection(..)
+    | step.CharacterNamed(..)
+    | step.ZoneChannel(..) ->
+      panic as "a creature's address is a Creature address"
+  }
+}
+
+/// A viewer's strike adds its threat: a resting creature starts a fight with it; a
+/// fighting one adds to its entry, naming a new top entry as its target (0x908), and
+/// any other entry's new threat in 0x90a.
+fn threatened_by(
+  state state: State,
+  fighter fighter: Fighter,
+  by by: ConnectionId,
+  threat threat: Float,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case state.status {
+    Returning(..) -> #(state, [])
+    Resting -> {
+      let unit_id = case dict.get(state.sightings, by) {
+        Ok(sighting) -> sighting.unit_id
+        Error(Nil) -> 0
+      }
+      start_fight(
+        state:,
+        fighter:,
+        entries: [#(by, Threat(unit_id:, amount: threat))],
+        now_ms:,
+      )
+    }
+    Fighting(threat: entries, target:, ..) as fighting -> {
+      let unit_id = case dict.get(state.sightings, by) {
+        Ok(sighting) -> sighting.unit_id
+        Error(Nil) -> 0
+      }
+      let is_new = !dict.has_key(entries, by)
+      let entries =
+        dict.upsert(entries, by, fn(found) {
+          case found {
+            Some(entry) -> Threat(..entry, amount: entry.amount +. threat)
+            None -> Threat(unit_id:, amount: threat)
+          }
+        })
+      let #(top, top_entry) = top_of(entries)
+      let state =
+        State(
+          ..state,
+          status: Fighting(..fighting, threat: entries, target: top),
+        )
+      let told = case is_new {
+        True -> [ToPlayer(to: by, told: threatened_told(fighter:))]
+        False -> []
+      }
+      let named = case top != target || top == by {
+        True -> [
+          ToViewers(client_connection.Targeting(
+            target_unit_id: top_entry.unit_id,
+            threat: whole(top_entry.amount),
+          )),
+        ]
+        False -> {
+          let assert Ok(entry) = dict.get(entries, by)
+            as "the striker is on the list"
+          [
+            ToViewers(client_connection.Threat(
+              other_unit_id: entry.unit_id,
+              threat: whole(entry.amount),
+            )),
+          ]
+        }
+      }
+      #(state, list.append(named, told))
+    }
+  }
+}
+
+/// The top entry of a threat list: the most threat, the lowest connection on a tie.
+fn top_of(entries: Dict(ConnectionId, Threat)) -> #(ConnectionId, Threat) {
+  let assert [top, ..] =
+    dict.to_list(entries)
+    |> list.sort(fn(first, second) {
+      float.compare({ second.1 }.amount, { first.1 }.amount)
+      |> order.break_tie(compare_connections(first.0, second.0))
+    })
+    as "a fight's threat list is never empty"
+  top
+}
+
+/// A viewer that no longer sees the creature leaves the near players and the threat
+/// list, and is told `Released`; the last one leashes the creature, and a new top
+/// entry is named its target.
+fn unwatched(
+  state state: State,
+  fighter fighter: Fighter,
+  by by: ConnectionId,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let state = State(..state, near: set.delete(state.near, by))
+  case state.status {
+    Fighting(threat: entries, ..) ->
+      case dict.has_key(entries, by) {
+        False -> #(state, [])
+        True -> released(state:, fighter:, by:, now_ms:)
+      }
+    Resting | Returning(..) -> #(state, [])
+  }
+}
+
+/// The player of `by` leaves the threat list and is told `Released`; with no one
+/// left the creature leashes, else a new top entry is named its target (0x908).
+fn released(
+  state state: State,
+  fighter fighter: Fighter,
+  by by: ConnectionId,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case state.status {
+    Fighting(threat: entries, target:, ..) as fighting -> {
+      let entries = dict.delete(entries, by)
+      let told = ToPlayer(to: by, told: Released(unit_id: fighter.unit_id))
+      case dict.is_empty(entries) {
+        True -> {
+          let #(state, effects) = leash(state:, fighter:, now_ms:)
+          #(state, list.append(effects, [told]))
+        }
+        False -> {
+          let #(top, top_entry) = top_of(entries)
+          let state =
+            State(
+              ..state,
+              status: Fighting(..fighting, threat: entries, target: top),
+            )
+          let named = case top == target {
+            True -> []
+            False -> [
+              ToViewers(client_connection.Targeting(
+                target_unit_id: top_entry.unit_id,
+                threat: whole(top_entry.amount),
+              )),
+            ]
+          }
+          let #(state, chased) = chase(state:, fighter:, now_ms:)
+          #(state, list.flatten([named, [told], chased]))
+        }
+      }
+    }
+    Resting | Returning(..) -> #(state, [])
+  }
+}
+
+/// The attack tick: with the target in reach and no round open the creature
+/// strikes; out of reach at the leash circle it leashes; else it chases. The next
+/// tick starts unless it leashed.
+fn ticked(
   state state: State,
   fighter fighter: Fighter,
   now_ms now_ms: Int,
-) -> Place {
-  todo as "place_at: the build fills it in"
+) -> #(State, List(Effect)) {
+  let assert Fighting(target:, round:, ..) = state.status
+    as "a tick is taken only while Fighting"
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  case dict.get(state.sightings, target) {
+    Error(Nil) -> next_tick(state:, fighter:, effects: [])
+    Ok(sighting) -> {
+      let in_reach =
+        creature_path.distance(here, sighting.place) <=. fighter.attack.reach
+      let at_circle =
+        creature_path.distance(here, fighter.home)
+        >=. fighter.numbers.leash_range -. circle_tolerance
+      case in_reach, round, at_circle {
+        True, None, _ -> {
+          let #(state, struck) =
+            strikes(state:, fighter:, target:, sighting:, here:)
+          next_tick(state:, fighter:, effects: struck)
+        }
+        True, Some(..), _ -> next_tick(state:, fighter:, effects: [])
+        False, _, True -> leash(state:, fighter:, now_ms:)
+        False, _, False -> {
+          let #(state, chased) = chase(state:, fighter:, now_ms:)
+          next_tick(state:, fighter:, effects: chased)
+        }
+      }
+    }
+  }
+}
+
+/// How near the leash circle a creature counts as at it: a path clipped at the
+/// circle ends on it, give or take a float's rounding.
+const circle_tolerance = 0.01
+
+fn next_tick(
+  state state: State,
+  fighter fighter: Fighter,
+  effects effects: List(Effect),
+) -> #(State, List(Effect)) {
+  let assert Fighting(..) as fighting = state.status
+    as "a tick is started only while Fighting"
+  let #(state, tick) = generation(state)
+  #(
+    State(..state, status: Fighting(..fighting, tick:)),
+    list.append(effects, [
+      StartTimer(timer: AttackTick(tick), after_ms: fighter.interval_ms),
+    ]),
+  )
+}
+
+/// The creature casts its attack on its target: 0x7ff to its viewers, the strike to
+/// the target's connection, and the round's deadline.
+fn strikes(
+  state state: State,
+  fighter fighter: Fighter,
+  target target: ConnectionId,
+  sighting sighting: Sighting,
+  here here: Place,
+) -> #(State, List(Effect)) {
+  let cast_id = cast.cast_id(unit_id: fighter.unit_id, number: state.next_cast)
+  let key = strike_tell.Key(cast_id:, phase: 0, unit_id: sighting.unit_id)
+  let #(state, deadline) = generation(state)
+  let assert Fighting(..) as fighting = state.status
+    as "a creature strikes only while Fighting"
+  #(
+    State(
+      ..state,
+      next_cast: state.next_cast + 1,
+      status: Fighting(..fighting, round: Some(Round(key:, target:, deadline:))),
+    ),
+    [
+      ToViewers(
+        client_connection.CastStarted(start: cast.creature_started(
+          cast_id:,
+          spell4_id: fighter.attack.spell4_id.value,
+          caster_unit_id: fighter.unit_id,
+          target_unit_id: sighting.unit_id,
+          place: here,
+        )),
+      ),
+      ToPlayer(
+        to: target,
+        told: Attacks(tell: strike_tell.Strike(
+          key:,
+          from: fighter.address,
+          striker: CreatureStriker,
+          offence: fighter.attack.offence,
+        )),
+      ),
+      StartTimer(
+        timer: StrikeDeadline(deadline),
+        after_ms: strike_tell.deadline_ms,
+      ),
+    ],
+  )
+}
+
+/// The target's answer to the open round: its go names what landed, and a target
+/// the strike killed, or found dead, is released.
+fn answered_strike(
+  state state: State,
+  fighter fighter: Fighter,
+  answered answered: Answered,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case state.status {
+    Fighting(round: Some(round), ..) if round.key == answered.key -> {
+      let unit_id = answered.key.unit_id
+      let #(struck, ends_target) = case answered.outcome {
+        strike_tell.Landed(descriptions:) -> #(
+          [cast.Hit(unit_id:, descriptions:)],
+          list.any(descriptions, fn(description) {
+            description.damage.killed == 1
+          }),
+        )
+        strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False)
+        strike_tell.Refused(..) -> #([], True)
+      }
+      let #(state, closed) = round_closed(state:, round:, struck:, now_ms:)
+      let cancel = CancelTimer(timer: StrikeDeadline(round.deadline))
+      case ends_target {
+        False -> #(state, [cancel, ..closed])
+        True -> {
+          let #(state, released) =
+            released(state:, fighter:, by: round.target, now_ms:)
+          #(state, list.flatten([[cancel], closed, released]))
+        }
+      }
+    }
+    Fighting(..) | Resting | Returning(..) -> #(state, [])
+  }
+}
+
+/// The round closes: its go (0x7f4) names the units struck, the 0x7fb any deflect,
+/// and the cast finishes (0x7fe).
+fn round_closed(
+  state state: State,
+  round round: Round,
+  struck struck: List(cast.Struck),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let assert Fighting(..) as fighting = state.status
+    as "a round closes only while Fighting"
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  let cast_id = round.key.cast_id
+  let missed = case cast.creature_missed(cast_id:, struck:) {
+    Some(missed) -> [ToViewers(client_connection.CastMissed(missed:))]
+    None -> []
+  }
+  #(
+    State(..state, status: Fighting(..fighting, round: None)),
+    list.flatten([
+      [
+        ToViewers(
+          client_connection.CastWent(go: cast.creature_went(
+            cast_id:,
+            place: here,
+            struck:,
+          )),
+        ),
+      ],
+      missed,
+      [ToViewers(client_connection.CastFinished(cast_id:))],
+    ]),
+  )
+}
+
+/// The creature runs toward its target when the target is beyond reach of where its
+/// path ends: a new path from where it is, stopping short of the target and clipped
+/// at the leash circle, sent as 0x638.
+fn chase(
+  state state: State,
+  fighter fighter: Fighter,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case state.status {
+    Fighting(target:, ..) ->
+      case dict.get(state.sightings, target) {
+        Error(Nil) -> #(state, [])
+        Ok(sighting) -> {
+          let end = creature_path.end(path: state.path)
+          case
+            creature_path.distance(end, sighting.place) <=. fighter.attack.reach
+          {
+            True -> #(state, [])
+            False -> {
+              let path =
+                creature_path.toward(
+                  from: creature_path.place_at(path: state.path, now_ms:),
+                  target: sighting.place,
+                  stop_short: fighter.numbers.chase_stop_fraction
+                    *. fighter.attack.reach,
+                  circle: Circle(
+                    centre: fighter.home,
+                    radius: fighter.numbers.leash_range,
+                  ),
+                  speed: fighter.attack.run_speed,
+                  now_ms:,
+                )
+              case path {
+                Running(..) -> #(State(..state, path:), [
+                  ToViewers(client_connection.CreatureMoved(path:)),
+                ])
+                Standing(..) -> #(State(..state, path:), [])
+              }
+            }
+          }
+        }
+      }
+    Resting | Returning(..) -> #(state, [])
+  }
+}
+
+/// The leash: every threat entry erased (0x90a 0), out of combat (0x89a 0), full
+/// health (0x937), the path home (0x638), each threatened player told `Released`,
+/// an open round closed, and the home timer started. The creature takes no strike
+/// until it is home.
+fn leash(
+  state state: State,
+  fighter fighter: Fighter,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(entries, round) = case state.status {
+    Fighting(threat:, round:, ..) -> #(sorted_entries(threat), round)
+    Resting | Returning(..) -> #([], None)
+  }
+  let #(state, closed) = case round {
+    Some(round) -> {
+      let #(state, closed) = round_closed(state:, round:, struck: [], now_ms:)
+      #(state, [CancelTimer(timer: StrikeDeadline(round.deadline)), ..closed])
+    }
+    None -> #(state, [])
+  }
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  let path =
+    creature_path.straight(
+      from: here,
+      to: fighter.home,
+      speed: fighter.attack.run_speed,
+      now_ms:,
+    )
+  let #(state, home) = generation(state)
+  let moved = case path {
+    Running(..) -> [ToViewers(client_connection.CreatureMoved(path:))]
+    Standing(..) -> []
+  }
+  #(
+    State(..state, status: Returning(home:), path:),
+    list.flatten([
+      closed,
+      list.map(entries, fn(entry) {
+        ToViewers(client_connection.Threat(
+          other_unit_id: { entry.1 }.unit_id,
+          threat: 0,
+        ))
+      }),
+      [
+        ToViewers(client_connection.CombatState(in_combat: False)),
+        RestoreHealth,
+      ],
+      moved,
+      list.map(entries, fn(entry) {
+        ToPlayer(to: entry.0, told: Released(unit_id: fighter.unit_id))
+      }),
+      [
+        StartTimer(
+          timer: HomeArrival(home),
+          after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
+        ),
+      ],
+    ]),
+  )
+}
+
+/// The creature died: out of combat (0x89a 0), each threatened player told
+/// `Released`, an open round's cast finished, and its path frozen where it fell.
+fn killed(
+  state state: State,
+  fighter fighter: Fighter,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  let state = State(..state, path: Standing(at: here))
+  case state.status {
+    Fighting(threat:, round:, ..) -> {
+      let finished = case round {
+        Some(round) -> [
+          CancelTimer(timer: StrikeDeadline(round.deadline)),
+          ToViewers(client_connection.CastFinished(cast_id: round.key.cast_id)),
+        ]
+        None -> []
+      }
+      #(
+        State(..state, status: Resting),
+        list.flatten([
+          finished,
+          [ToViewers(client_connection.CombatState(in_combat: False))],
+          list.map(sorted_entries(threat), fn(entry) {
+            ToPlayer(to: entry.0, told: Released(unit_id: fighter.unit_id))
+          }),
+        ]),
+      )
+    }
+    Resting | Returning(..) -> #(State(..state, status: Resting), [])
+  }
+}
+
+fn sorted_entries(
+  threat: Dict(ConnectionId, Threat),
+) -> List(#(ConnectionId, Threat)) {
+  dict.to_list(threat)
+  |> list.sort(fn(first, second) { compare_connections(first.0, second.0) })
+}
+
+fn generation(state: State) -> #(State, Int) {
+  #(
+    State(..state, next_generation: state.next_generation + 1),
+    state.next_generation,
+  )
+}
+
+fn compare_connections(
+  first: ConnectionId,
+  second: ConnectionId,
+) -> order.Order {
+  let ConnectionId(first) = first
+  let ConnectionId(second) = second
+  int.compare(first, second)
+}
+
+/// A threat as the client's 32-bit field holds it: rounded half away from zero.
+fn whole(threat: Float) -> Int {
+  float.round(threat)
 }

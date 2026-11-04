@@ -1889,7 +1889,8 @@ fn go(
     Error(Nil) -> #(cast, [])
     Ok(live) -> {
       let spell = live.spell
-      let go_message = go_message(cast_id:, phase:, caster:, struck:)
+      let go_message =
+        go_message(cast_id:, phase:, place: caster.place, struck:)
       let missed = missed_message(cast_id:, struck:)
       let going =
         list.flatten([
@@ -2188,13 +2189,13 @@ fn started_message(
 fn go_message(
   cast_id cast_id: Int,
   phase phase: Int,
-  caster caster: Caster,
+  place place: Place,
   struck struck: List(Struck),
 ) -> SpellGo {
   SpellGo(
     cast_id:,
     ignore_cooldown: 0,
-    destination: position_of(place: caster.place),
+    destination: position_of(place:),
     targets: list.filter_map(struck, fn(one) {
       case one {
         Hit(unit_id:, descriptions:) -> Ok(#(unit_id, descriptions))
@@ -2296,6 +2297,51 @@ fn closed_frame(
     ))
     as "a Spell4 id of 18 bits and a bit fit the message"
   Frame(message_id: spell_threshold_closed.message_id, body:)
+}
+
+/// 0x7ff for a creature's cast of its attack spell on its target, from where it
+/// stands: the target is the cast's primary target, the spell its own root, and the
+/// lists and the safe values are a player's cast's (`started_message`).
+pub fn creature_started(
+  cast_id cast_id: Int,
+  spell4_id spell4_id: Int,
+  caster_unit_id caster_unit_id: Int,
+  target_unit_id target_unit_id: Int,
+  place place: Place,
+) -> SpellStarted {
+  SpellStarted(
+    cast_id:,
+    spell4_id:,
+    root_spell4_id: spell4_id,
+    parent_spell4_id: 0,
+    caster_unit_id:,
+    field_6: 0,
+    primary_target_unit_id: target_unit_id,
+    position: position_of(place:),
+    yaw: yaw_of(place:),
+    initial_positions: [],
+    telegraph_positions: [],
+    field_12: 1,
+    field_13: 0,
+  )
+}
+
+/// 0x7f4 for the one go, phase 0, of a creature's cast, with the units its round
+/// struck, as a player's go is written (`go_message`).
+pub fn creature_went(
+  cast_id cast_id: Int,
+  place place: Place,
+  struck struck: List(Struck),
+) -> SpellGo {
+  go_message(cast_id:, phase: 0, place:, struck:)
+}
+
+/// 0x7fb for the units a creature's go missed, or none (`missed_message`).
+pub fn creature_missed(
+  cast_id cast_id: Int,
+  struck struck: List(Struck),
+) -> Option(SpellMissed) {
+  missed_message(cast_id:, struck:)
 }
 
 /// 0x07FF for a cast that starts, which the caster's rule tells each viewer as
