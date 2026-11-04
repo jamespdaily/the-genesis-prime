@@ -1757,7 +1757,7 @@ fn map_sent(
   message message: map.Outgoing,
 ) -> client_connection.Handled(Session) {
   case message, held_in_the_world(session.status) {
-    map.Joined(..), _ | map.Left, _ | map.Retire, _ ->
+    map.Joined(..), _ | map.NotJoined(..), _ | map.Left, _ | map.Retire, _ ->
       end_for(
         session:,
         now:,
@@ -2512,6 +2512,7 @@ fn leave_answered(
       )
     step.StoppedWaiting -> stopped(session, now)
     step.Answer(FromMap(map.Joined(..)))
+    | step.Answer(FromMap(map.NotJoined(..)))
     | step.Answer(FromMap(map.Watched(..)))
     | step.Answer(FromMap(map.Unwatched(..)))
     | step.Answer(FromMap(map.Gone(..)))
@@ -2716,11 +2717,17 @@ fn entry_answered(
           answer:,
           realm_id: session.settings.realm_id,
           next_whisper: session.next_whisper,
-          tables: session.settings.tables,
         )
       {
-        Ok(#(entered, effects)) ->
+        Ok(world_entry.InTheWorld(entered:, effects:)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)
+        Ok(world_entry.NotInTheWorld(character_id:, warning:)) ->
+          select_step(
+            session:,
+            now:,
+            holder:,
+            step: refused_play(holder:, character_id:, warning:),
+          )
         Error(Nil) -> entry_unasked(session, now)
       }
     step.Answer(FromStore(store.ForLogin(..)))

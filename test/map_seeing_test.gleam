@@ -126,7 +126,7 @@ fn shape(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
       Unwatched(by: ConnectionId(number)) ->
         "Unwatched by " <> int.to_string(number)
       Gone(unit_id:) -> "Gone " <> int.to_string(unit_id)
-      Joined(..) | map.Left -> "an answer"
+      Joined(..) | map.NotJoined(..) | map.Left -> "an answer"
       map.Retire -> "Retire"
     })
   })

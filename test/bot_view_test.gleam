@@ -24,17 +24,18 @@ import genesis_prime/world_map/player_unit
 import gleam/dict
 import owned_test
 import place_support
+import unit_support
 
 fn created(unit_id unit_id: Int, x x: Float) -> Frame {
   let place =
     place_support.at(world_id: 3460, world_zone_id: 6009, x:, y: 2.0, z: 3.0)
   let record =
     player_unit.create(
-      unit: player_unit.new(
+      unit: unit_support.bare_unit(
         character: character_support.character(number: unit_id),
         place:,
         unit_id:,
-        visuals: [],
+        body: [],
       ),
       realm_id: 1,
     )

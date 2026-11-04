@@ -1125,6 +1125,31 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
   assert support.says(line, "no saved place")
 }
 
+pub fn a_join_the_map_refuses_hands_the_client_back_to_character_select_with_no_watch_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = joining()
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromMap(
+          map.NotJoined(reason: map.NoLoadout(class_id: 2, faction_id: 166)),
+        ),
+      ),
+    )
+  let assert [Frame(message_id: 0x0162, body:)] = heard(taken, keyed())
+    as "the play is refused as one with no saved place is (opcode.0x162.after_create): the player is in no map"
+  assert play_character_refused.decode(body)
+    == Ok(PlayCharacterRefused(result: play_refusal.Failed))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
+    as "the list again, and the client is in character select"
+  assert support.watches(taken) == []
+    as "no watch is opened on a map that holds no player of this connection"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert support.says(line, "the map refused the join of character 42")
+}
+
 pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) =
@@ -4531,13 +4556,20 @@ pub fn a_move_of_40_commands_is_sent_to_each_viewer_as_31_and_9_in_order_and_the
 pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x638_and_its_0x262_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = joining()
-  let assert map.Joined(unit:, incarnation:, ..) = map_answer(taken)
+  let assert map.Joined(unit:, loadout:, max_health:, incarnation:, ..) =
+    map_answer(taken)
   let #(state, _) =
     answer(
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(map.Joined(unit:, incarnation:, clock_origin_ms: 600)),
+        FromMap(map.Joined(
+          unit:,
+          loadout:,
+          max_health:,
+          incarnation:,
+          clock_origin_ms: 600,
+        )),
       ),
     )
   let moves =

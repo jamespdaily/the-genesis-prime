@@ -23,7 +23,9 @@
 ////   (opcode.0x262), so no unit id is given twice in a map's life, whoever
 ////   leaves.
 
+import character_tables
 import connection_rule_support as support
+import genesis_prime/game/loadout
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
@@ -56,14 +58,6 @@ fn row_10_body() -> List(ItemVisual) {
   [ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0)]
 }
 
-/// The visuals of the Novice set of an Exile Warrior, which is the class and
-/// faction of the tests' characters (`character_support.character`): chest
-/// 3842, legs 3844, shoulder 4179, feet 3845, hands 3843 and the weapon 120
-/// (`Item2.novice_visuals`), with colour set 0 and dye 0.
-fn exile_warrior_worn() -> List(ItemVisual) {
-  novice_worn(class_id: 1, faction_id: 166)
-}
-
 /// The visuals of a class's Novice set of a faction, with colour set 0 and dye
 /// 0 (`opcode.0x262.worn_visuals`).
 fn novice_worn(
@@ -81,22 +75,39 @@ fn novice_worn(
 }
 
 /// What the map answers a join of `character` as unit `unit_id`: the record of
-/// the unit at the Join's place, in the map's realm, with the body `visuals`.
+/// the unit at the Join's place, in the map's realm, with the `body` of its look,
+/// the loadout of its class and faction and the health that loadout gives at its
+/// level, which the answer carries beside the record.
 fn answer_of(
   character character: Character,
   unit_id unit_id: Int,
-  visuals visuals: List(ItemVisual),
+  body body: List(ItemVisual),
 ) -> map.Outgoing {
+  let tables = character_tables.shared()
+  let assert Ok(loadout) =
+    loadout.of(
+      tables:,
+      class_id: character.class_id,
+      faction_id: character.faction_id,
+    )
+    as "the planted tables hold a Novice set for the class and faction"
+  let assert Ok(max_health) =
+    loadout.max_health(tables:, loadout:, level: character.level)
+    as "the planted tables hold a CreatureLevel row for the character's level"
   Joined(
     unit: player_unit.create(
       unit: player_unit.new(
         character:,
         place: place_support.live_character_place(),
         unit_id:,
-        visuals:,
+        body:,
+        loadout:,
+        max_health:,
       ),
       realm_id:,
     ),
+    loadout:,
+    max_health:,
     incarnation:,
     clock_origin_ms: 0,
   )
@@ -187,7 +198,7 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
         answer_of(
           character: map_support.character(107),
           unit_id: 1,
-          visuals: list.append(row_10_body(), exile_warrior_worn()),
+          body: row_10_body(),
         ),
       )),
     ]
@@ -223,7 +234,7 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
         answer_of(
           character: map_support.character(108),
           unit_id: 2,
-          visuals: list.append(row_10_body(), exile_warrior_worn()),
+          body: row_10_body(),
         ),
       )),
     ]
@@ -288,7 +299,7 @@ pub fn a_second_join_from_a_connection_in_the_map_answers_the_unit_it_keeps_and_
         answer_of(
           character: map_support.character(107),
           unit_id: 1,
-          visuals: list.append(row_10_body(), exile_warrior_worn()),
+          body: row_10_body(),
         ),
       ),
     ]
@@ -321,10 +332,7 @@ pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_tes
     join_as(state: started(), connection: 7, caller: 1, character: unknown)
   assert support.replies(taken)
     == [
-      #(
-        CallerId(1),
-        answer_of(character: unknown, unit_id: 1, visuals: exile_warrior_worn()),
-      ),
+      #(CallerId(1), answer_of(character: unknown, unit_id: 1, body: [])),
     ]
     as "the tables hold no CharacterCustomization row of race 3, so the body is empty, the Novice set is still worn and the join is still answered with the unit, as for any character"
   assert support.logs_of(step: taken, level: LogError) == []
@@ -332,7 +340,7 @@ pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_tes
     as "the player is in the map, and its connection watched"
 }
 
-pub fn a_character_whose_class_and_faction_have_no_novice_set_is_answered_with_its_body_alone_test() -> Nil {
+pub fn a_character_whose_class_and_faction_have_no_novice_set_is_refused_and_takes_no_unit_id_test() -> Nil {
   use <- owned_test.run(5000)
   let setless = Character(..map_support.character(107), class_id: ClassId(99))
   let #(state, taken) =
@@ -341,15 +349,28 @@ pub fn a_character_whose_class_and_faction_have_no_novice_set_is_answered_with_i
     == [
       #(
         CallerId(1),
-        answer_of(character: setless, unit_id: 1, visuals: row_10_body()),
+        map.NotJoined(reason: map.NoLoadout(class_id: 99, faction_id: 166)),
       ),
     ]
-    as "no Novice set holds class 99, so nothing is worn and the unit has its body alone: the map does not crash on one character's data, which would end every player's connection, and the player's own connection refuses it"
-  assert support.logs_of(step: taken, level: LogError) == []
-  assert list.length(support.watches(taken)) == 1
-    as "the player is in the map, and its connection watched"
+    as "no Novice set holds class 99, so the join is refused: the map does not crash on one character's data, which would end every player's connection"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    as "the refusal is an error line"
+  assert support.watches(taken) == []
+    as "the refused player is not in the map, so no watch is opened on its connection"
   let #(_, second) = join(state:, connection: 8, caller: 2)
-  assert unit_of(second, 2) == 2 as "the map goes on and takes the next player"
+  assert unit_of(second, 2) == 1
+    as "the refused join took no unit id, so the next player is unit 1"
+}
+
+pub fn a_character_whose_level_has_no_base_health_row_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let tall = Character(..map_support.character(107), level: 99)
+  let #(_, taken) =
+    join_as(state: started(), connection: 7, caller: 1, character: tall)
+  assert support.replies(taken)
+    == [#(CallerId(1), map.NotJoined(reason: map.NoBaseHealth(level: 99)))]
+    as "CreatureLevel holds no row for level 99, so the character's health is unknown (loadout.max_health)"
+  assert support.watches(taken) == []
 }
 
 pub fn a_watch_that_names_no_player_is_an_error_and_changes_nothing_test() -> Nil {

@@ -31,7 +31,6 @@
 ////   choice, the client holding no shield rule (`regen.client`).
 
 import character_support
-import character_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -57,6 +56,7 @@ import gleam/option.{Some}
 import novice_tables
 import owned_test
 import place_support
+import unit_support
 
 /// A class's id, its armor and its three Spell4Base ids (the SpellLevel rows of
 /// level 1, in id order), and the weapon of each faction.
@@ -136,18 +136,19 @@ fn entering(
       connection: ConnectionId(1),
     )
     as "the store holds the character and its place"
-  let unit =
-    player_unit.create(
-      unit: player_unit.new(character:, place:, unit_id: 1, visuals: []),
-      realm_id: 1,
-    )
-  let assert Ok(#(entered, effects)) =
+  let unit = unit_support.novice_unit(character:, place:, unit_id: 1, body: [])
+  let assert Ok(world_entry.InTheWorld(entered:, effects:)) =
     world_entry.joined(
       state:,
-      answer: map.Joined(unit:, incarnation: 1, clock_origin_ms: 0),
+      answer: map.Joined(
+        unit: player_unit.create(unit:, realm_id: 1),
+        loadout: player_unit.loadout(unit:),
+        max_health: player_unit.max_health(unit:),
+        incarnation: 1,
+        clock_origin_ms: 0,
+      ),
       realm_id: 1,
       next_whisper: 1,
-      tables: character_tables.shared(),
     )
     as "the map's answer to the join is the one world entry asked for"
   let frames =

@@ -7,12 +7,11 @@
 ////
 //// - **Alive:** stat 0 (health) above 0, or the client creates the player
 ////   dead (0x140457bc5). No client table or retail record gives a player's
-////   health by class and level (0x1404585c0), so `create` gives health and
-////   property 7 (Base Health) as `stand_in_health`, 136, the client's level-1
-////   creature Base Health (CreatureLevel row 1), and `with_gear` replaces it
-////   with the health the loadout's gear gives (genesis_prime/game/loadout),
-////   which world entry applies to the map's unit.
-//// - **Gear:** `with_gear` sets stat 0 to the maximum health and stat 20 (the
+////   health by class and level (0x1404585c0), so the unit holds the maximum
+////   health the loadout gives (`genesis_prime/game/loadout.max_health`: the
+////   level's Base Health plus the gear's, Jim's decision on goal 274), which the
+////   map works out at the join.
+//// - **Gear:** `create` sets stat 0 to the maximum health and stat 20 (the
 ////   current shield) to the shield's capacity, a full shield on entry (a server
 ////   choice: the client holds no shield rule, `regen.client`), and the
 ////   properties 7 (Base Health), 35 and 36 (Assault Rating and Support Rating),
@@ -20,7 +19,8 @@
 ////   (ShieldRegenPct) and 178 (ShieldRebootTime), each as base and value alike
 ////   (0x1404584b0, 0x140458140). The shield's regeneration and reboot values
 ////   replace the unit property defaults (0.25, 2500) rather than add to them (a
-////   server choice: the client sums nothing, `player.level1_gear_properties`).
+////   server choice: the client sums nothing, `player.level1_gear_properties`). A
+////   unit whose gear holds no shield has no stat 20 and no shield properties.
 //// - **Level:** stat 10 is the character's level (0x140458140).
 //// - **Place:** the unit's own place, which the map is given with the join
 ////   (the saved place, bounded to the box the client bounds a unit's position
@@ -33,7 +33,7 @@
 //// - **Body:** the item visuals the character list sends
 ////   (genesis_prime/game/appearance), and the stored bone values
 ////   (opcode.0x262.player_fields).
-//// - **Worn:** the item visuals of the Novice set the player wears, after the
+//// - **Worn:** the item visuals of the Novice set the loadout holds, after the
 ////   body's (genesis_prime/game/worn_visual): the client draws armor and a
 ////   weapon only from them, on the player's own client and every other's, which
 ////   are sent the same 0x262 (`opcode.0x262.worn_visuals`).
@@ -42,7 +42,8 @@
 //// - Every other field 0 or empty, each by its record
 ////   (opcode.0x262.player_fields, opcode.0x262.unit_fields).
 
-import genesis_prime/game/item_property.{type ItemProperties, Shield}
+import genesis_prime/game/item_property.{Shield}
+import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual}
@@ -53,12 +54,11 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
-import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
+import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/world_map/unit_fields
 import gleam/float
@@ -66,31 +66,42 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 
-/// Every player's health: the client's level-1 creature Base Health
-/// (0x1404585c0), which stands in for a health no table gives.
-pub const stand_in_health = 136
-
 /// A player's unit in a map: the character as the unit `unit_id`, placed at
-/// `place` with the item `visuals`, its body's and its worn set's. Only `new` builds one, so a unit always
-/// holds all four.
+/// `place` with the item visuals of its `body`, holding its `loadout` and the
+/// `max_health` the loadout gives at its level. Only `new` builds one, so a unit
+/// always holds all of them.
 pub opaque type PlayerUnit {
   PlayerUnit(
     character: Character,
     place: Place,
     unit_id: Int,
-    visuals: List(ItemVisual),
+    body: List(ItemVisual),
+    loadout: Loadout,
+    max_health: Int,
   )
 }
 
-/// The unit of the character as the unit `unit_id`, at `place` with the item
-/// `visuals`.
+/// The unit of the character as the unit `unit_id`, at `place`, with the item
+/// visuals of its `body` (the worn set's come from the loadout).
 pub fn new(
   character character: Character,
   place place: Place,
   unit_id unit_id: Int,
-  visuals visuals: List(ItemVisual),
+  body body: List(ItemVisual),
+  loadout loadout: Loadout,
+  max_health max_health: Int,
 ) -> PlayerUnit {
-  PlayerUnit(character:, place:, unit_id:, visuals:)
+  PlayerUnit(character:, place:, unit_id:, body:, loadout:, max_health:)
+}
+
+/// What the unit holds: the weapon, the abilities and the gear.
+pub fn loadout(unit unit: PlayerUnit) -> Loadout {
+  unit.loadout
+}
+
+/// The unit's maximum health.
+pub fn max_health(unit unit: PlayerUnit) -> Int {
+  unit.max_health
 }
 
 /// The unit's id in its map.
@@ -145,68 +156,10 @@ pub fn create(
   unit unit: PlayerUnit,
   realm_id realm_id: Int,
 ) -> UnitCreatePlayer {
-  let PlayerUnit(character:, place:, unit_id:, visuals:) = unit
+  let PlayerUnit(character:, place:, unit_id:, body:, loadout:, max_health:) =
+    unit
   let CharacterId(character_id) = character.character_id
-  let health = float32.to_bits(int.to_float(stand_in_health))
-  UnitCreatePlayer(
-    unit_id:,
-    character_id:,
-    realm_id:,
-    name: character.name,
-    race_id: character.race_id.value,
-    class_id: character.class_id.value,
-    gender: character.gender,
-    group_id: 0,
-    owned_unit_ids: [],
-    guild_name: "",
-    guild_type: 0,
-    guild_ids: [],
-    bone_values: character.bones,
-    pvp_flags: 0,
-    premium_tier: 0,
-    title_id: 0,
-    tail: unit_fields.tail(
-      stats: [
-        UnitStat(stat_id: unit_fields.health_stat, value: stand_in_health),
-        UnitStat(stat_id: unit_fields.level_stat, value: character.level),
-      ],
-      movement_commands: {
-        let #(position, rotation) = standing(place:)
-        [start_movement.Position(position), start_movement.Rotation(rotation)]
-      },
-      properties: [
-        UnitProperty(
-          property_id: unit_fields.base_health_property,
-          field_2: health,
-          value: health,
-        ),
-      ],
-      item_visuals: visuals,
-      faction_id: character.faction_id,
-      base_faction_id: character.faction_id,
-      display_info_id: 0,
-      outfit_info_id: 0,
-      server_time_estimate_start: 0,
-    ),
-  )
-}
-
-/// A bridge: the map builds the unit from the character alone, without the
-/// tables, so world entry applies the gear to the map's record, and the typed
-/// loadout and maximum health live in world entry's `Entered`. A map whose unit
-/// takes the loadout at its join makes this function, `stand_in_health` and the
-/// rebuild of the stats unnecessary.
-///
-/// The unit's 0x262 with the gear's values: stat 0 the maximum health, stat 20
-/// the shield, full, and the properties the gear gives, in the order of their
-/// ids. A unit whose gear holds no shield has no stat 20 and no shield
-/// properties.
-pub fn with_gear(
-  record record: UnitCreatePlayer,
-  max_health max_health: Int,
-  gear gear: ItemProperties,
-) -> UnitCreatePlayer {
-  let tail = record.tail
+  let gear = loadout.properties
   let shield_stats = case gear.shield {
     Some(Shield(capacity_max:, ..)) -> [
       UnitStat(
@@ -241,25 +194,41 @@ pub fn with_gear(
       UnitProperty(property_id: pair.0, field_2: bits, value: bits)
     })
   UnitCreatePlayer(
-    ..record,
-    tail: UnitCreateTail(
-      ..tail,
+    unit_id:,
+    character_id:,
+    realm_id:,
+    name: character.name,
+    race_id: character.race_id.value,
+    class_id: character.class_id.value,
+    gender: character.gender,
+    group_id: 0,
+    owned_unit_ids: [],
+    guild_name: "",
+    guild_type: 0,
+    guild_ids: [],
+    bone_values: character.bones,
+    pvp_flags: 0,
+    premium_tier: 0,
+    title_id: 0,
+    tail: unit_fields.tail(
       stats: list.flatten([
         [
           UnitStat(stat_id: unit_fields.health_stat, value: max_health),
-          UnitStat(stat_id: unit_fields.level_stat, value: level_of(tail.stats)),
+          UnitStat(stat_id: unit_fields.level_stat, value: character.level),
         ],
         shield_stats,
       ]),
+      movement_commands: {
+        let #(position, rotation) = standing(place:)
+        [start_movement.Position(position), start_movement.Rotation(rotation)]
+      },
       properties:,
+      item_visuals: list.append(body, loadout.item_visuals(loadout:)),
+      faction_id: character.faction_id,
+      base_faction_id: character.faction_id,
+      display_info_id: 0,
+      outfit_info_id: 0,
+      server_time_estimate_start: 0,
     ),
   )
-}
-
-/// The level among a unit's stats; a unit with none is level 1 (0x1404543c1).
-fn level_of(stats: List(UnitStat)) -> Int {
-  case list.find(stats, fn(stat) { stat.stat_id == unit_fields.level_stat }) {
-    Ok(stat) -> stat.value
-    Error(Nil) -> 1
-  }
 }

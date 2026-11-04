@@ -41,6 +41,7 @@ import novice_tables
 import owned_test
 import place_support
 import planted_table
+import unit_support
 
 fn item(location location: Int, index index: Int, id id: Int) -> SharedItem {
   SharedItem(
@@ -157,7 +158,7 @@ fn unit_with(
 ) -> unit_create_player.UnitCreatePlayer {
   let record =
     player_unit.create(
-      unit: player_unit.new(
+      unit: unit_support.bare_unit(
         character: character_support.character(number: 1),
         place: place_support.at(
           world_id: 3460,
@@ -167,7 +168,7 @@ fn unit_with(
           z: 3.0,
         ),
         unit_id: 1,
-        visuals: [],
+        body: [],
       ),
       realm_id: 1,
     )
