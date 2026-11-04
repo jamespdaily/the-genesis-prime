@@ -1,5 +1,6 @@
 //// The file the check reads the literal area's peak from.
 
+import character_tables
 import event_wait
 import gleam/int
 import gleam/list
@@ -69,4 +70,12 @@ pub fn the_same_table_under_two_loads_is_held_twice_test() -> Nil {
   let second = #(#(2, TableTerm("Creature2")), megabyte_term(70_000))
   assert literal_area.names_held_twice(in: [first, second]) == ["Creature2"]
     as "two loads of one file hold terms of the same name and size"
+}
+
+pub fn the_held_twice_pattern_matches_the_keys_the_store_writes_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The shared planted load is held for the whole run (database_support.once).
+  let _tables = character_tables.shared()
+  assert list.contains(literal_area.table_names(), "WorldLocation2")
+    as "the store writes a table's term under {Load, {table_term, Name}}, the pattern tables_held_twice reads: a change to the store's key would make the held-twice count match nothing and pass"
 }

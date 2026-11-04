@@ -41,3 +41,7 @@ pub fn tables_held_twice() -> List(String)
 /// `tables_held_twice` over the given keys and terms instead of the VM's.
 @external(erlang, "literal_area_ffi", "names_held_twice")
 pub fn names_held_twice(in terms: List(#(key, term))) -> List(String)
+
+/// The names of every table term the VM holds, of any size, in order.
+@external(erlang, "literal_area_ffi", "table_names")
+pub fn table_names() -> List(String)
