@@ -3,6 +3,8 @@
 -- (genesis_prime/content/creature_kind). The checks run on these rows, not in SQL.
 select
   creature_id,
-  respawn_ms
+  respawn_ms,
+  attack_spell4_id,
+  attack_interval_ms
 from creature_kind
 order by creature_id;

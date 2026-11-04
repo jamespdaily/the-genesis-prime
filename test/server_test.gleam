@@ -143,9 +143,9 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
   let run = process.new_subject()
   let connection = ConnectionId(7)
   let place = place_support.live_character_place()
-  server.tell_the_run(run, TellMoved(connection:, place:))
+  server.tell_the_run(run, TellMoved(connection:, place:, seq: 4))
   assert process.receive(run, 0)
-    == Ok(service.TellCall(map.Moved(connection:, place:)))
+    == Ok(service.TellCall(map.Moved(connection:, place:, seq: 4)))
     as "a move reaches the run as the map's own Moved, told with no reply"
   let logged = process.new_subject()
   let capture = log_capture.start(from: process.self(), into: logged)

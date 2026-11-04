@@ -25,22 +25,28 @@
 
 import character_tables
 import genesis_prime/content/refusal.{Refusal}
+import genesis_prime/game/hit.{Blow}
+import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/creature2_outfit_group_entry
 import genesis_prime/table/creature2_override_properties
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
+import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth, NoFaction, NpcLink,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
+import novice_tables
 import owned_key
 import owned_test
 import planted_table
@@ -53,6 +59,7 @@ fn selected(rows rows: List(Row)) -> Selection {
     rows:,
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
+    kinds: spawn_support.kinds(),
   )
 }
 
@@ -62,7 +69,7 @@ fn selected_with(
   rows rows: List(Row),
 ) -> Selection {
   use folder <- planted_table.in_folder(list.append(
-    files,
+    novice_tables.with_creature_attack(files:, padding: True),
     character_tables.content_files(),
   ))
   let assert Ok(server) =
@@ -72,7 +79,12 @@ fn selected_with(
     server_table.load_content_tables(over: server, from: folder)
     as "the planted files load as the content-only tables"
   let selection =
-    spawn.select(rows:, tables: more, formulas: rating_support.formulas())
+    spawn.select(
+      rows:,
+      tables: more,
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+    )
   table_store.unload(more)
   table_store.unload(server)
   selection
@@ -134,10 +146,14 @@ pub fn a_row_whose_creature_has_no_row_or_whose_display_is_not_its_creatures_is_
     ])
   assert selection.refusals
     == [
-      Refusal(table: "spawn", id: 7, rule: "Creature2 200002 has no row"),
       Refusal(
         table: "spawn",
-        id: 8,
+        row: refusal.RowId(7),
+        rule: "Creature2 200002 has no row",
+      ),
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(8),
         rule: "display 12345 is not in the display group of Creature2 73464",
       ),
     ]
@@ -152,7 +168,8 @@ fn refused_by(changes changes: List(#(String, planted_table.Cell))) -> String {
       files: character_tables.files_with_beast_changed(changes:),
       rows: [spawn_support.beast_row(number: 1)],
     )
-  let assert [Refusal(table: "spawn", id: 1, rule:)] = selection.refusals
+  let assert [Refusal(table: "spawn", row: refusal.RowId(1), rule:)] =
+    selection.refusals
     as "a creature row the client would not load refuses the spawn"
   rule
 }
@@ -265,6 +282,35 @@ pub fn a_row_hostile_to_one_faction_and_friendly_to_the_other_starts_test() -> N
     == #(0, 10)
     as "Faction2Relationship 2943 and 2944: level 0 to Exile 167, 10 to Dominion 166"
   assert started(selection) == [73_464]
+}
+
+pub fn whom_a_creature_fights_on_sight_is_its_factions_hostile_level_to_each_player_faction_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Faction2Relationship 2943 and 2944: the Beast's faction 1441 is level 0,
+  // Hostile, to Exile 167 and 10, Friendly, to Dominion 166; 2946 and 2947: the
+  // Dagun's faction 1442 is level 0 to Dominion 166 and 10 to Exile 167
+  // (`world_data.creature_disposition`: Hostile is 0 to 2).
+  let selection =
+    selected(rows: [
+      spawn_support.beast_row(number: 1),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 2),
+        creature_id: 73_465,
+        display_info_id: 26_578,
+        faction_id: 1442,
+        base_faction_id: 1442,
+      ),
+    ])
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let hostility = fn(number) {
+    let assert Ok(found) = dict.get(world.by_id, SpawnId(number))
+      as "the spawn starts"
+    found.combat.hostile_to
+  }
+  assert hostility(1) == Hostile(exile: True, dominion: False)
+    as "the Beast (Creature2 73464, faction 1441) fights Exiles on sight, not the Dominion"
+  assert hostility(2) == Hostile(exile: False, dominion: True)
+    as "the Dagun (Creature2 73465, faction 1442) fights the Dominion on sight, not Exiles"
 }
 
 pub fn a_row_whose_faction_relates_only_to_the_players_parent_faction_is_hostile_to_both_and_starts_test() -> Nil {
@@ -510,6 +556,167 @@ fn replacing(
   list.map(files, fn(file) {
     case file.0 == schema.file {
       True -> planted_table.file(schema, rows)
+      False -> file
+    }
+  })
+}
+
+// ------------------------------------------- a creature's own attack
+//
+// A creature's own attack as the content load works it out
+// (`genesis_prime/world_map/creature_attack`, `genesis_prime/world_map/spawn`
+// `Attack`), on the planted tables, which hold the client's rows of the Virtual
+// Battle Beast and of Spell4 5649. Expected values come from these places.
+// - `Spell4Effects.184741`: spell 5649's two Physical damage effects, 184741
+//   (Strength 0.55, Assault Power 0.55) for a caster of difficulty at most 6 and
+//   184777 (0.8 each) for difficulty at least 7, each threatMultiplier 1.0; the
+//   prerequisite type 179 is the caster's difficulty (`0x14049eeb0`).
+// - The creature formula (`0x140565600`, GameFormula 712: 70, 100, 1, 1): the stat
+//   part S rounded, held under c = (level x 70 + 100) x the mean of the stat
+//   parameters. A level-1 Beast of difficulty 1 has Strength 15.392292 x 0.68 =
+//   10.4668 and AssaultRating 61.569168 x 0.68 = 41.867, Assault Power 10.4668
+//   (CreatureLevel 1, Creature2Difficulty 1, GameFormula 1266): 0.55 x 10.4668 x 2
+//   = 11.51, rounded to 12, under c = 93.5. At difficulty 7 (multipliers 0.7)
+//   both are 10.7746: 0.8 x 10.7746 x 2 = 17.24, rounded to 17, under c = 136.
+// - Its run speed is runLand 10.0 times MoveSpeedMultiplier 1.0 (`0x1405b45e0`,
+//   `Creature2.73464`), its reach the spell's targetMaxRange 5.0 (`Spell4.5649`)
+//   plus its hit radius 3.0, a server choice.
+// - Its critical hit chance is BaseCritChance (CreatureLevel 101's 0.05 x
+//   difficulty 1's 0.32 = 0.016), its severity CriticalHitSeverityMultiplier (1.5
+//   x tier 1's 0.85 = 1.275), its strikethrough 0 (CreatureLevel 101's 0.0), each
+//   with no rating (274's damage trace, `0x140453b60`).
+
+/// The Beast of spawn 1 as the planted files select it.
+fn attack_beast_of(files files: List(#(String, BitArray))) -> spawn.Spawn {
+  let selection =
+    beast_selection(files: novice_tables.with_creature_attack(
+      files:,
+      padding: True,
+    ))
+  let assert [] = selection.refusals as "the Beast's row is taken"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
+  beast
+}
+
+/// The selection of the Beast's row, spawn 1, over these files and the content files.
+fn beast_selection(files files: List(#(String, BitArray))) -> spawn.Selection {
+  use folder <- planted_table.in_folder(list.append(
+    files,
+    character_tables.content_files(),
+  ))
+  let assert Ok(server) =
+    server_table.load_under(under: owned_key.new(), from: folder)
+    as "the planted files load as the server's tables"
+  let assert Ok(more) =
+    server_table.load_content_tables(over: server, from: folder)
+    as "the planted files load as the content-only tables"
+  let selection =
+    spawn.select(
+      rows: [spawn_support.beast_row(number: 1)],
+      tables: more,
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+    )
+  table_store.unload(more)
+  table_store.unload(server)
+  selection
+}
+
+pub fn an_attack_effect_whose_multiplier_is_not_a_finite_float_refuses_the_spawn_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Synthetic: the client's effect 184741 has dataBits00 1.0; 0x7F800000 is the
+  // 32-bit float's infinity, which the VM cannot hold.
+  let selection =
+    beast_selection(files: novice_tables.with_creature_attack_multiplier(
+      files: character_tables.files(),
+      padding: True,
+      multiplier_bits: 0x7F800000,
+    ))
+  assert selection.refusals
+    == [
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(1),
+        rule: "Creature2 73464's attack effect 184741 has a multiplier, dataBits00 2139095040, that is not a finite 32-bit float",
+      ),
+    ]
+    as "the load names the effect, where a multiplier read as 0 would strike for the stat part alone"
+}
+
+fn nearly(first: Float, second: Float) -> Bool {
+  float.absolute_value(first -. second) <. 0.000001
+}
+
+pub fn a_creature_of_difficulty_1_strikes_with_effect_184741_for_12_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let attack =
+    { attack_beast_of(files: character_tables.files()) }.combat.attack
+  assert attack.spell4_id == Spell4Id(5649)
+    as "the kind's spell (migration 0010)"
+  assert attack.offence.blows
+    == [
+      Blow(
+        spell4_effects_id: 184_741,
+        damage_type: 1,
+        damage: 12,
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ]
+    as "difficulty 1 passes prerequisite 30526 (at most 6) and fails 30527 (at least 7): effect 184741 alone, Physical, 12 by the creature formula"
+  assert attack.run_speed == 10.0 && attack.reach == 8.0
+    as "runLand 10.0 x 1.0; targetMaxRange 5.0 plus hit radius 3.0"
+  assert nearly(attack.offence.crit_chance, 0.016)
+    && nearly(attack.offence.crit_severity, 1.275)
+    && attack.offence.strikethrough == 0.0
+    as "BaseCritChance 0.05 x 0.32, severity 1.5 x 0.85, no strikethrough"
+}
+
+pub fn a_creature_of_difficulty_7_strikes_with_effect_184777_for_17_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let difficulty_7 =
+    planted_table.row(creature2_difficulty.schema, [
+      #("ID", planted_table.Integer(7)),
+      #("unitPropertyMultiplier000", planted_table.Float(0.699999988079071)),
+      #("unitPropertyMultiplier007", planted_table.Float(1.0)),
+      #("unitPropertyMultiplier035", planted_table.Float(0.699999988079071)),
+      #("unitPropertyMultiplier100", planted_table.Float(1.0)),
+      #("unitPropertyMultiplier101", planted_table.Float(0.3199999928474426)),
+      #("unitPropertyMultiplier102", planted_table.Float(2.0)),
+      #("unitPropertyMultiplier104", planted_table.Float(2.0)),
+      #("unitPropertyMultiplier127", planted_table.Float(1.0)),
+    ])
+  let files =
+    character_tables.files_with_beast_changed(changes: [
+      #("creature2DifficultyId", planted_table.Integer(7)),
+    ])
+    |> replacing_file(
+      file: creature2_difficulty.schema.file,
+      with: planted_table.file(creature2_difficulty.schema, [difficulty_7]),
+    )
+  let attack = { attack_beast_of(files:) }.combat.attack
+  assert attack.offence.blows
+    == [
+      Blow(
+        spell4_effects_id: 184_777,
+        damage_type: 1,
+        damage: 17,
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ]
+    as "difficulty 7 (Creature2Difficulty 7, multipliers 0.7) fails 30526 and passes 30527: effect 184777 alone, 17"
+}
+
+fn replacing_file(
+  files files: List(#(String, BitArray)),
+  file name: String,
+  with replacement: #(String, BitArray),
+) -> List(#(String, BitArray)) {
+  list.map(files, fn(file) {
+    case file.0 == name {
+      True -> replacement
       False -> file
     }
   })

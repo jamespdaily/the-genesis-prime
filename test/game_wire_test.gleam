@@ -40,6 +40,7 @@ import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
 import genesis_prime/content
+import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game_settings.{GameSettings}
@@ -85,8 +86,10 @@ import genesis_prime/service
 import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
+import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
@@ -1430,23 +1433,36 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
   login_support.stop(started)
 }
 
-/// Presses the ability and reads until `gos` gos have arrived and the server has
-/// written all it held for this connection (a ping and its pong), giving the frames
-/// of the press.
+/// Presses the ability and reads until `gos` gos of the player's own casts have
+/// arrived and the server has written all it held for this connection (a ping and
+/// its pong), giving the frames of the press.
 fn press_and_read_gos(
   game game: game_client.Game,
   have have: BitArray,
   client_cast_id client_cast_id: Int,
   gos gos: Int,
   pong pong: Int,
+  beast beast: Int,
 ) -> #(List(Frame), BitArray) {
   game_client.press_ability(game:, client_cast_id:, bag_index: 0, target: 0)
   let #(frames, have) =
     game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
-      list.length(game_client.go_targets_in(frames:)) >= gos
+      list.length(own_go_targets(frames:, beast:)) >= gos
     })
   let #(rest, have) = game_client.read_until_pong(game:, have:, number: pong)
   #(list.append(frames, rest), have)
+}
+
+/// The targets of each go of a cast that is not the Beast's, in order: a Beast a
+/// player strikes fights back, and its own gos name the player (the design of step
+/// F: a strike puts its striker on the creature's threat list).
+fn own_go_targets(
+  frames frames: List(Frame),
+  beast beast: Int,
+) -> List(List(Int)) {
+  game_client.go_targets_in(frames:)
+  |> list.filter(fn(go) { cast.caster_of(cast_id: go.0) != beast })
+  |> list.map(fn(go) { go.1 })
 }
 
 pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on_the_whole_server_test() -> Nil {
@@ -1467,8 +1483,15 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
   let assert [beast, ..] = game_client.creatures_created_in(frames:)
   let beast_unit = beast.unit_id
   let #(first_tap, have) =
-    press_and_read_gos(game:, have:, client_cast_id: 1, gos: 4, pong: 1)
-  assert list.map(game_client.go_targets_in(frames: first_tap), fn(go) { go.1 })
+    press_and_read_gos(
+      game:,
+      have:,
+      client_cast_id: 1,
+      gos: 4,
+      pong: 1,
+      beast: beast_unit,
+    )
+  assert own_go_targets(frames: first_tap, beast: beast_unit)
     == [[], [beast_unit], [beast_unit], [beast_unit]]
     as "Spell4.38765, Shred: its own go names nobody (it has no damage) and its Proxy 38767, aimed at the area (Spell4Effects 83788, targetFlags 4), goes in three phases (SpellPhase 3712 to 3714), each naming the Beast 3 m away inside Spell4AoeTargetConstraints 694 (360 degrees, 6.5 m)"
   assert list.map(game_client.health_in(frames: first_tap), fn(health) {
@@ -1477,8 +1500,15 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
     == [43, 34, 25]
     as "a Stalker of level 1 with the Novice gear (Assault Power 50.77): a hit of Shred's Proxy is 0.0967 x 50.77 = 4.91 plus 4.22 for the level, 9.13, rounded to 9 (Spell4Effects 83788, 0x140565600); the Beast has 52 health and never deflects, so each of the three hits takes 9"
   let #(second_tap, _) =
-    press_and_read_gos(game:, have:, client_cast_id: 2, gos: 4, pong: 2)
-  assert list.map(game_client.go_targets_in(frames: second_tap), fn(go) { go.1 })
+    press_and_read_gos(
+      game:,
+      have:,
+      client_cast_id: 2,
+      gos: 4,
+      pong: 2,
+      beast: beast_unit,
+    )
+  assert own_go_targets(frames: second_tap, beast: beast_unit)
     == [[], [beast_unit], [beast_unit], [beast_unit]]
     as "Spell4Thresholds 238: the second tap casts the stage 38766, which strikes nobody itself, and the stage's Proxy 39467 (Spell4Effects 83782), aimed at the area by Spell4Effects 86439 on Spell4 39467's area row 694, goes in three phases (SpellPhase 4032 to 4034), each naming the Beast"
   assert list.map(game_client.health_in(frames: second_tap), fn(health) {
@@ -3210,4 +3240,216 @@ fn press_loop(
         healths:,
       )
   }
+}
+
+// ------------------------------------------- a creature fights back, on the whole server
+//
+// Expected values come from the design of step F (the Design artifact of issue
+// 367: its CI bot and its process tests 20, 21 and 22) and these places. The
+// tests' characters are of the Dominion (faction 166), so the planted creature is
+// a Virtual Defense Dagun, hostile to the Dominion (Faction2Relationship 1442-166
+// level 0, `Creature2.73465`), with the Battle Beast's 52 health and attack: spell
+// 5649's effect 184741 for 12 every 1500 ms (`Spell4Effects.184741`, migration
+// 0010), its own reach 5.0 + 2.0, run speed 10.0 (`0x1405b45e0`). The aggro range
+// is 10 and the leash range 55 (migration 0010). A Medic of level 1 has 736 health
+// and a shield of 450 (`player.level1_gear_properties`). The 0x908, 0x90a, 0x89a,
+// 0x938, 0x92f and 0x638 are read as the client reads them (`opcode.0x908`,
+// `opcode.0x90a`, `opcode.0x89a`, `opcode.0x938`, `opcode.0x92f`,
+// `movement_command.kind_4`).
+
+/// Where the Dagun stands: 23.5 units along -z from where a new test character
+/// stands in World 1387, zone 1100, at 1.5, 2.5, 3.5.
+const dagun_z = -20.0
+
+/// A world with one Dagun at x 1.5, z -20.
+fn world_with_a_dagun() -> login_support.Started {
+  login_support.start_with(change: fn(settings) {
+    server.Settings(
+      ..settings,
+      world: server.World(
+        ..settings.world,
+        spawns: spawn_support.key_in(
+          world_id: 1387,
+          spawns: [
+            spawn.Spawn(
+              ..spawn_support.dagun(number: 1, x: 0.0),
+              place: beast_place(x: 1.5, z: dagun_z),
+            ),
+          ],
+          respawn_ms: 60_000,
+        ),
+      ),
+    )
+  })
+}
+
+/// A Medic of level 1 played in, its 0x262 and the Dagun's read, and ready: its
+/// client's first 0xF2 sent.
+fn a_ready_medic(
+  started started: login_support.Started,
+  number number: Int,
+  character_name character_name: String,
+) -> #(game_client.Game, Int, Int, BitArray) {
+  let #(game, frames, have) =
+    enters_and_sees_the_beasts(
+      started:,
+      number:,
+      character_name:,
+      class_id: 4,
+      beasts: 1,
+    )
+  let own = game_client.unit_create_player_in(frames:).unit_id
+  let assert [dagun] = game_client.creatures_created_in(frames:)
+  let assert Ok(body) =
+    terrain_loaded.encode(TerrainLoaded(world_zone_id: 1100))
+  game_client.send_world(game:, message_id: terrain_loaded.message_id, body:)
+  #(game, own, dagun.unit_id, have)
+}
+
+fn walk_to(game game: game_client.Game, z z: Float, clock clock: Int) -> Nil {
+  game_client.send_world(
+    game:,
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: clock, commands: [
+      game_client.position_command(x: 1.5, y: 2.5, z:),
+    ]),
+  )
+}
+
+/// Reads until the fight's frames hold what `found` looks for.
+fn read_fight(
+  game game: game_client.Game,
+  have have: BitArray,
+  found found: fn(List(game_client.FightEvent)) -> Bool,
+) -> #(List(game_client.FightEvent), BitArray) {
+  let #(frames, have) =
+    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+      found(game_client.fight_in(frames:))
+    })
+  #(game_client.fight_in(frames:), have)
+}
+
+/// Whether a path of `unit` among the events ends at z.
+fn a_path_ends_at(
+  events events: List(game_client.FightEvent),
+  unit unit: Int,
+  z z: Float,
+) -> Bool {
+  list.any(game_client.moves_of(events:, unit:), fn(move) {
+    move.1 == Some(#(1.5, 2.5, z))
+  })
+}
+
+pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // The smoke test of the whole server: the aggro and the chase come at the
+  // move, with no tick to wait for. The strike, the shield and the leash are driven
+  // with the creature's timers in the test of both rules together
+  // (game_connection_test, `a_beasts_aggro_strike_and_leash_...`).
+  let started = world_with_a_dagun()
+  let #(game, own, dagun, have) =
+    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+  // Into the ring: 9 units from the Dagun, beyond its reach of 7.
+  walk_to(game:, z: dagun_z +. 9.0, clock: 100)
+  let #(fight, _) =
+    read_fight(game:, have:, found: fn(events) {
+      game_client.moves_of(events:, unit: dagun) != []
+      && list.contains(
+        events,
+        game_client.InCombat(unit_id: own, in_combat: True),
+      )
+    })
+  assert list.contains(
+    fight,
+    game_client.Targeted(unit_id: dagun, target_unit_id: own, threat: 1),
+  )
+    as "0x908: the Dagun targets the bot with the aggro threat 1"
+  assert list.contains(
+      fight,
+      game_client.InCombat(unit_id: dagun, in_combat: True),
+    )
+    && list.contains(fight, game_client.InCombat(unit_id: own, in_combat: True))
+    as "both 0x89a: the Dagun's and the bot's own"
+  let assert [#(kinds, path_end), ..] =
+    game_client.moves_of(events: fight, unit: dagun)
+    as "the Dagun runs"
+  assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
+  assert path_end == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
+    as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let started = world_with_a_dagun()
+  let #(game, own, dagun, have) =
+    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+  walk_to(game:, z: dagun_z +. 9.0, clock: 100)
+  let #(_, have) =
+    read_fight(game:, have:, found: fn(events) {
+      list.contains(events, game_client.InCombat(unit_id: own, in_combat: True))
+    })
+  let assert Ok(run) =
+    world_map_registry.find_or_start(
+      started.settings.world.maps,
+      MapId(world_id: 1387, instance: 0),
+      deadline_ms: ask_support.monotonic_ms() + ask_support.event_wait_ms,
+    )
+  // The first player's connection takes the map's watch 1, so the first creature
+  // has life 2 (genesis_prime/world_map/map `joined_new`).
+  let assert Ok(pid) =
+    creature_registry.find(
+      started.settings.world.creatures,
+      map: MapId(world_id: 1387, instance: 0),
+      incarnation: run.incarnation,
+      unit_id: dagun,
+      life: 2,
+    )
+    as "the Dagun runs under its address"
+  process.kill(pid)
+  let #(frames, _) =
+    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+      list.contains(
+        game_client.fight_in(frames:),
+        game_client.InCombat(unit_id: own, in_combat: False),
+      )
+    })
+  assert list.contains(game_client.removals_in(frames:), dagun)
+    as "the map's Gone: the bot's client removes the Dagun"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let started = world_with_a_dagun()
+  let #(watcher, _, dagun, watcher_have) =
+    a_ready_medic(started:, number: 2, character_name: "Ann Qu")
+  let #(fighter, own, _, have) =
+    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+  walk_to(game: fighter, z: dagun_z +. 9.5, clock: 100)
+  // The fighter ends once the Dagun runs toward it: mid-chase.
+  let #(_, _) =
+    read_fight(game: fighter, have:, found: fn(events) {
+      list.contains(events, game_client.InCombat(unit_id: own, in_combat: True))
+      && game_client.moves_of(events:, unit: dagun) != []
+    })
+  game_client.close(game: fighter)
+  let #(seen, _) =
+    read_fight(game: watcher, have: watcher_have, found: fn(events) {
+      a_path_ends_at(events:, unit: dagun, z: dagun_z)
+    })
+  assert list.contains(
+      seen,
+      game_client.Threatens(unit_id: dagun, other_unit_id: own, threat: 0),
+    )
+    && list.contains(
+      seen,
+      game_client.InCombat(unit_id: dagun, in_combat: False),
+    )
+    && list.contains(game_client.health_of(events: seen, unit: dagun), 52)
+    as "the fighter's end is its Unwatched: no threat is left, so the Dagun leashes (0x90a 0, 0x89a (C, 0), a full 0x937) and runs home, which the watcher sees"
+  game_client.close(game: watcher)
+  login_support.stop(started)
 }

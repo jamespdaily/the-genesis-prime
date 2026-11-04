@@ -38,6 +38,7 @@ import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
+import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -140,11 +141,14 @@ pub fn entries() -> List(store.Entry) {
 ///   (genesis_prime/world_map/spawn).
 /// - World: the worlds a map can run in, each of which gets a term of its spawns
 ///   (genesis_prime/world_map/spawn).
+/// - Prerequisite: the caster prerequisite of a creature attack's damage effects
+///   (genesis_prime/world_map/creature_attack).
 fn content_entries() -> List(store.Entry) {
   [
     creature2_outfit_info.entry(),
     faction2.entry(),
     faction2_relationship.entry(),
+    prerequisite.entry(),
     world.entry(),
   ]
 }

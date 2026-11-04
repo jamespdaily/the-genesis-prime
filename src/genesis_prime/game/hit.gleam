@@ -1,7 +1,9 @@
-//// What a strike does to a unit's health: the one rule of a hit. It runs in
-//// the process that owns the struck unit (genesis_prime/world_map/creature_life),
-//// on the caster's offence and the caster's rolls, so the health, the overkill and
-//// the killed bit stay exact when two strikes cross.
+//// What a strike does to a unit's health and shield: the one rule of a hit. It
+//// runs in the process that owns the struck unit (a creature's,
+//// genesis_prime/world_map/creature_life, or a player's connection,
+//// genesis_prime/game/player_life), on the striker's offence and the rolls of the
+//// striker or, for a creature's strike, of the struck player, so the health, the
+//// shield, the overkill and the killed bit stay exact when two strikes cross.
 ////
 //// ```
 //// caster (genesis_prime/game/strike)                  struck unit's owner
@@ -12,6 +14,7 @@
 ////                                                      each blow: crit roll < crit chance - crit deflect ─▶ x severity
 ////                                                                 glance roll < glance chance ─▶ less the glance amount
 ////                                                                 x (1 - mitigation of its damage type)
+////                                                                 the shield takes up to its share, limited by what it holds
 ////                                                      health' = max(0, health - damage); killed at 0
 //// ```
 ////
@@ -37,6 +40,12 @@
 ////   read for (a gap; the Virtual Battle Beast has none of the three,
 ////   `Creature2.73464.mitigation`). That it multiplies the damage is the server's
 ////   choice (`Creature2.73464.mitigation`). The damage absorbed is the amount taken.
+//// - **The shield** takes up to the target's ShieldMitigationMax of each blow after
+////   mitigation (property 175, 0.625 for a Novice, `player.level1_gear_properties`),
+////   limited by what it holds, and the description's shield absorbed is the amount
+////   it took; the rest is the health's. Its share is rounded half away from zero, a
+////   server choice as every step's rounding is. A creature has no shield (0), so its
+////   hits are as before. The order is the server's choice (274 section 3).
 //// - **The damage** of a blow is a whole number, rounded half away from zero (the
 ////   server's choice: the client rounds only the stat part, `0x140566d40`), and each
 ////   step rounds again.
@@ -55,10 +64,17 @@ import gleam/int
 import gleam/list
 
 /// One damage effect as the caster worked it out: the Spell4Effects row, the
-/// damage type, the damage before any critical hit as a whole number, and the
-/// effect's delay (the client applies the description after it).
+/// damage type, the damage before any critical hit as a whole number, the
+/// effect's delay (the client applies the description after it), and the
+/// effect's `threatMultiplier`, which the struck creature's threat reads.
 pub type Blow {
-  Blow(spell4_effects_id: Int, damage_type: Int, damage: Int, delay_ms: Int)
+  Blow(
+    spell4_effects_id: Int,
+    damage_type: Int,
+    damage: Int,
+    delay_ms: Int,
+    threat_multiplier: Float,
+  )
 }
 
 /// What the caster brings to a strike: its blows, its critical hit chance and
@@ -84,10 +100,13 @@ pub type Defence {
     physical_mitigation: Float,
     tech_mitigation: Float,
     magic_mitigation: Float,
+    /// The most of each blow the shield takes, as a fraction (ShieldMitigationMax,
+    /// property 175): 0 for a unit with no shield.
+    shield_mitigation_max: Float,
   )
 }
 
-/// A defence that stops nothing: every chance and mitigation 0.
+/// A defence that stops nothing: every chance and mitigation 0, and no shield.
 pub const unprotected =
   Defence(
     deflect_chance: 0.0,
@@ -97,6 +116,7 @@ pub const unprotected =
     physical_mitigation: 0.0,
     tech_mitigation: 0.0,
     magic_mitigation: 0.0,
+    shield_mitigation_max: 0.0,
   )
 
 /// The caster's rolls for a strike, each in [0, 1): the critical hit roll, the
@@ -117,11 +137,16 @@ pub type Description {
   )
 }
 
-/// What a strike did to a unit with `health` before it.
+/// What a strike did to a unit with `health` and `shield` before it.
 pub type Outcome {
-  /// The blows landed: a description for each, the health after them and
-  /// whether a blow took it to 0.
-  Landed(descriptions: List(Description), health: Int, killed: Bool)
+  /// The blows landed: a description for each, the health and the shield after
+  /// them and whether a blow took the health to 0.
+  Landed(
+    descriptions: List(Description),
+    health: Int,
+    shield: Int,
+    killed: Bool,
+  )
   /// The target deflected the whole strike.
   Deflected
 }
@@ -147,11 +172,13 @@ fn fraction(number: Int) -> Float {
   int.to_float(number) /. 4_294_967_296.0
 }
 
-/// The hit rule: what `offence` does to a unit with `health` and `defence`, on
-/// `rolls`. A health of 0 is a dead unit, which no strike reaches
-/// (genesis_prime/world_map/creature_life refuses it first).
+/// The hit rule: what `offence` does to a unit with `health`, `shield` and
+/// `defence`, on `rolls`. A health of 0 is a dead unit, which no strike reaches
+/// (genesis_prime/world_map/creature_life and genesis_prime/game/player_life refuse
+/// it first).
 pub fn apply(
   health health: Int,
+  shield shield: Int,
   offence offence: Offence,
   defence defence: Defence,
   rolls rolls: Rolls,
@@ -165,9 +192,9 @@ pub fn apply(
         float.max(0.0, offence.crit_chance -. defence.crit_deflect_chance)
       let critical = rolls.crit <. crit_chance
       let glancing = rolls.glance <. defence.glance_chance
-      let #(descriptions, left, killed) =
-        list.fold(offence.blows, #([], health, False), fn(so_far, blow) {
-          let #(done, left, killed) = so_far
+      let #(descriptions, left, shield_left, killed) =
+        list.fold(offence.blows, #([], health, shield, False), fn(so_far, blow) {
+          let #(done, left, shield_left, killed) = so_far
           let raw = case critical {
             True ->
               float.round(int.to_float(blow.damage) *. offence.crit_severity)
@@ -184,8 +211,14 @@ pub fn apply(
               *. { 1.0 -. mitigation_of(defence:, blow:) },
             )
           let mitigated = after_glance - taken
-          let overkill = int.max(0, taken - left)
-          let kills = left > 0 && taken >= left
+          let shielded =
+            int.min(
+              shield_left,
+              float.round(int.to_float(taken) *. defence.shield_mitigation_max),
+            )
+          let to_health = taken - shielded
+          let overkill = int.max(0, to_health - left)
+          let kills = left > 0 && to_health >= left
           let description =
             Description(
               spell4_effects_id: blow.spell4_effects_id,
@@ -194,16 +227,27 @@ pub fn apply(
                 blow:,
                 raw:,
                 mitigated:,
-                taken:,
+                shielded:,
+                to_health:,
                 overkill:,
                 glanced:,
                 kills:,
                 critical:,
               ),
             )
-          #([description, ..done], int.max(0, left - taken), killed || kills)
+          #(
+            [description, ..done],
+            int.max(0, left - to_health),
+            shield_left - shielded,
+            killed || kills,
+          )
         })
-      Landed(descriptions: list.reverse(descriptions), health: left, killed:)
+      Landed(
+        descriptions: list.reverse(descriptions),
+        health: left,
+        shield: shield_left,
+        killed:,
+      )
     }
   }
 }
@@ -225,7 +269,8 @@ fn described(
   blow blow: Blow,
   raw raw: Int,
   mitigated mitigated: Int,
-  taken taken: Int,
+  shielded shielded: Int,
+  to_health to_health: Int,
   overkill overkill: Int,
   glanced glanced: Int,
   kills kills: Bool,
@@ -235,8 +280,8 @@ fn described(
     raw_damage: raw,
     scaled_raw_damage: raw,
     absorbed: mitigated,
-    shield_absorbed: 0,
-    health_damage_with_overkill: taken,
+    shield_absorbed: shielded,
+    health_damage_with_overkill: to_health,
     overkill:,
     glance: glanced,
     killed: case kills {

@@ -253,6 +253,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
               step.Told(message: map.Moved(
                 connection: ConnectionId(connection),
                 place: map_spawn_support.at(x_of(stop)),
+                seq: stop,
               )),
             ),
             connection:,

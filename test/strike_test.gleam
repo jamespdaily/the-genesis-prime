@@ -37,6 +37,7 @@ import genesis_prime/game/strike_tell.{
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
+import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/list
 import owned_test
@@ -53,6 +54,14 @@ fn attacker() -> Attacker {
     unit_id: 7,
     connection: ConnectionId(2),
     pose: Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0),
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: 5967,
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    ),
+    move_seq: 1,
     faction: Exile,
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
   )
@@ -66,6 +75,7 @@ fn damage_effect() -> spell_area.DamageEffect {
     phase_flags: -1,
     aim: AimsAtArea,
     formula: damage.Formula(multiplier: 1.0, base: 0, parameters: []),
+    threat_multiplier: 1.0,
   )
 }
 
@@ -192,8 +202,20 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
   let told =
     list.filter_map(tells(effects:), fn(effect) {
       case effect {
-        strike.TellStrike(unit_id:, life:, tell:) ->
-          Ok(#(unit_id, life, tell.key, tell.from, tell.rolls))
+        strike.TellStrike(
+          unit_id:,
+          life:,
+          tell: strike_tell.Strike(
+            key:,
+            from:,
+            striker: strike_tell.PlayerStriker(rolls:, ..),
+            ..,
+          ),
+        ) -> Ok(#(unit_id, life, key, from, rolls))
+        strike.TellStrike(
+          tell: strike_tell.Strike(striker: strike_tell.CreatureStriker, ..),
+          ..,
+        ) -> panic as "a player's strike carries a player striker"
         strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
@@ -207,21 +229,21 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
         10,
         3,
         Key(cast_id: 5, phase: 0, unit_id: 10),
-        ConnectionId(2),
+        step.Connection(ConnectionId(2)),
         Rolls(crit: 0.0, deflect: 0.5, glance: 0.0),
       ),
       #(
         11,
         3,
         Key(cast_id: 5, phase: 0, unit_id: 11),
-        ConnectionId(2),
+        step.Connection(ConnectionId(2)),
         Rolls(crit: 0.25, deflect: 0.75, glance: 0.5),
       ),
       #(
         12,
         3,
         Key(cast_id: 5, phase: 0, unit_id: 12),
-        ConnectionId(2),
+        step.Connection(ConnectionId(2)),
         Rolls(crit: 0.0, deflect: 0.0, glance: 0.0),
       ),
     ]
@@ -248,6 +270,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         damage.Parameter(kind: 13, value: 0.0935),
         damage.Parameter(kind: 10, value: 8.14),
       ]),
+      threat_multiplier: 1.0,
     )
   let telekinetic_strike =
     DamageEffect(
@@ -260,6 +283,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         damage.Parameter(kind: 12, value: 0.336),
         damage.Parameter(kind: 10, value: 18.0),
       ]),
+      threat_multiplier: 2.0,
     )
   let #(_, effects) =
     strike.begin(
@@ -280,8 +304,20 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
   assert offence
     == Offence(
       blows: [
-        Blow(spell4_effects_id: 96_125, damage_type: 2, damage: 14, delay_ms: 0),
-        Blow(spell4_effects_id: 62_159, damage_type: 3, damage: 35, delay_ms: 0),
+        Blow(
+          spell4_effects_id: 96_125,
+          damage_type: 2,
+          damage: 14,
+          delay_ms: 0,
+          threat_multiplier: 1.0,
+        ),
+        Blow(
+          spell4_effects_id: 62_159,
+          damage_type: 3,
+          damage: 35,
+          delay_ms: 0,
+          threat_multiplier: 2.0,
+        ),
       ],
       crit_chance: 0.0,
       crit_severity: 1.5,
@@ -747,7 +783,13 @@ fn creature_at(
   attackable attackable: Attackable,
 ) -> shown.Shown {
   ShownCreature(
-    place: place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z:),
+    path: creature_path.Standing(at: place_support.at(
+      world_id: 3460,
+      world_zone_id: 5967,
+      x:,
+      y: 0.0,
+      z:,
+    )),
     life: 4,
     alive:,
     hit_radius: 3.0,
@@ -788,6 +830,7 @@ pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil
       attacker: attacker(),
       picture: picture(),
       areas:,
+      now_ms: 0,
     )
   assert list.map(chosen.units, fn(aimed) { aimed.unit_id }) == [21, 22, 23]
     as "Kick's cone is 1 to 7 m over 100 degrees ahead: units 21, 22 and 23; 24 is behind, 25 past 7 m, 26 is dead, 27 is Friendly to Exiles and 28 is a player (Spell4.58591.area)"
@@ -813,6 +856,7 @@ pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test()
       attacker: attacker(),
       picture: picture(),
       areas:,
+      now_ms: 0,
     )
   assert chosen.units == [Aimed(unit_id: 20, life: 4)]
     as "Spell4Effects.targetFlags 2 strikes the cast's own target (38781 on each struck unit), with that creature's life"
@@ -833,6 +877,7 @@ pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
       attacker: attacker(),
       picture: picture(),
       areas:,
+      now_ms: 0,
     )
   assert chosen.units == [] && chosen.blows == []
 }
@@ -871,6 +916,7 @@ pub fn crushs_second_spell_strikes_up_to_four_within_4_m_of_the_struck_foe_and_t
       attacker: attacker(),
       picture: around_the_foe,
       areas:,
+      now_ms: 0,
     )
   assert list.map(chosen.units, fn(aimed) { aimed.unit_id }) == [21, 22, 23, 26]
     as "Spell4.32812.area: row 704 takes 4 within 4 m of the foe it is cast on, nearest first: the foe (0 m), 22 (2 m), 23 (3 m) and 26 (3.5 m); 24 is 4 m away and fifth, 25 is 5 m away; the foe is selected by the area and added once"
@@ -904,6 +950,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
         attacker: attacker(),
         picture: close_by,
         areas:,
+        now_ms: 0,
       )
     assert list.map(chosen.units, fn(aimed) { aimed.unit_id })
       == [21, 22, 23, 24, 25]
@@ -921,6 +968,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
       attacker: attacker(),
       picture: close_by,
       areas:,
+      now_ms: 0,
     )
   assert child.units == [Aimed(unit_id: 22, life: 4)]
     && list.length(child.blows) == 1

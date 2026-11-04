@@ -1,12 +1,17 @@
 //// What the server chooses for each kind of creature, as the content load checks
-//// it: today how long a creature that died stays dead, and how long a spawn whose
-//// creature crashed waits for its next one. A creature has the kind of its
-//// Creature2 row when the table has one, and the default row 0 otherwise.
+//// it: how long a creature that died stays dead, how long a spawn whose creature
+//// crashed waits for its next one, and the creature's own attack: the Spell4 it
+//// casts and how often. A creature has the kind of its Creature2 row when the
+//// table has one, and the default row 0 otherwise.
 ////
 //// ```
 //// creature_kind rows (genesis_prime/content/creature_kind) ─▶ select(rows, tables)
 ////   a row of a Creature2 id the client does not hold      ─▶ Refusal
 ////   a respawn time below the strike deadline              ─▶ Refusal
+////   an attack spell the client's Spell4 does not hold     ─▶ Refusal
+////   an attack interval below the strike deadline          ─▶ Refusal
+////   a damage effect of the attack spell whose caster
+////     prerequisite is of a type the server does not evaluate ─▶ Refusal
 ////   no row 0                                              ─▶ Refusal
 ////   otherwise ─▶ Kinds ─▶ kind_of(kinds, creature2 id)    a map's and a creature's reading
 //// ```
@@ -21,14 +26,23 @@
 //// - **The respawn time** is a server choice: the client holds none
 ////   (`death.creature_respawn`). A time longer than the idle stop is allowed: a dead
 ////   creature told to retire stops at its respawn (genesis_prime/world_map/creature).
+//// - **The attack spell** has no link in the client to the creature that casts it
+////   (`Spell4.5649`), so it is a server choice. Its damage effects are chosen by
+////   their caster prerequisite, which the server evaluates only for type 179, the
+////   unit's difficulty (`0x14049eeb0`); a spell with any other type would apply both
+////   effects or neither, so the load refuses it.
+//// - **The attack interval** is a server choice, never below the strike deadline,
+////   so a creature has at most one strike round open (genesis_prime/world_map/creature_fight).
 //// - **Every refusal is collected**, one bad row beside its neighbours, as the
 ////   other content tables' are (genesis_prime/content).
 
-import genesis_prime/content/refusal.{type Refusal, Refusal}
+import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
 import genesis_prime/game/strike_tell
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{type Spell4Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4
+import genesis_prime/world_map/creature_attack
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -38,14 +52,21 @@ import gleam/result
 const table = "creature_kind"
 
 /// One row of the creature_kind table as the load reads it: the Creature2 id the
-/// row is for (0 for the default) and the respawn time in milliseconds.
+/// row is for (0 for the default), the respawn time in milliseconds, and the
+/// creature's attack: its Spell4 and the time between two of its casts in
+/// milliseconds.
 pub type Row {
-  Row(creature_id: Int, respawn_ms: Int)
+  Row(
+    creature_id: Int,
+    respawn_ms: Int,
+    attack_spell4_id: Int,
+    attack_interval_ms: Int,
+  )
 }
 
 /// What the server chose for a kind of creature.
 pub type Kind {
-  Kind(respawn_ms: Int)
+  Kind(respawn_ms: Int, attack_spell4_id: Spell4Id, attack_interval_ms: Int)
 }
 
 /// The kinds the load put in its term: the default and each creature that has a
@@ -55,8 +76,10 @@ pub type Kinds {
 }
 
 /// The kinds of the rows, or every row the load refuses: a Creature2 id that has no
-/// row in the client's table, a respawn time below the strike deadline (1000 ms), and a table with no default
-/// row.
+/// row in the client's table, a respawn time or an attack interval below the strike
+/// deadline (1000 ms), an attack spell the client's Spell4 does not hold or whose
+/// damage effects carry a caster prerequisite of a type other than 179, and a table
+/// with no default row.
 pub fn select(
   rows rows: List(Row),
   tables tables: table_store.Tables,
@@ -67,13 +90,59 @@ pub fn select(
     Error(Nil) -> [
       Refusal(
         table: table,
-        id: 0,
+        row: RowId(0),
         rule: "the table has no default row 0, which every creature without a row of its own takes",
       ),
     ]
   }
   let refused =
     list.filter_map(rows, fn(row) {
+      refusal_of(row:, tables:)
+      |> result.map(fn(rule) {
+        Refusal(table:, row: RowId(row.creature_id), rule:)
+      })
+    })
+  case list.append(missing_default, refused), kinds_of(rows:) {
+    [], Ok(kinds) -> Ok(kinds)
+    refusals, _ -> Error(refusals)
+  }
+}
+
+/// The kinds of the rows `select` takes, leaving out the ones it refuses, or
+/// `Error(Nil)` when the default row is missing or refused. The content load checks
+/// the spawns with these when it refuses a kind row, so the one start names a bad
+/// spawn too (genesis_prime/content).
+pub fn taken(
+  rows rows: List(Row),
+  tables tables: table_store.Tables,
+) -> Result(Kinds, Nil) {
+  kinds_of(
+    rows: list.filter(rows, fn(row) {
+      result.is_error(refusal_of(row:, tables:))
+    }),
+  )
+}
+
+/// The kinds of the rows, or `Error(Nil)` with no default row among them.
+fn kinds_of(rows rows: List(Row)) -> Result(Kinds, Nil) {
+  use default <- result.map(list.find(rows, fn(row) { row.creature_id == 0 }))
+  Kinds(
+    default: kind_of_row(default),
+    by_creature: list.filter(rows, fn(row) { row.creature_id != 0 })
+      |> list.map(fn(row) { #(row.creature_id, kind_of_row(row)) })
+      |> dict.from_list,
+  )
+}
+
+/// The first rule the row breaks, in the order of `select`'s doc, or `Error(Nil)`
+/// for a row the load takes.
+fn refusal_of(
+  row row: Row,
+  tables tables: table_store.Tables,
+) -> Result(String, Nil) {
+  let deadline = int.to_string(strike_tell.deadline_ms)
+  let checks = [
+    fn() {
       case
         row.creature_id != 0
         && result.is_error(creature2.get(
@@ -81,40 +150,63 @@ pub fn select(
           id: Creature2Id(row.creature_id),
         ))
       {
-        True ->
-          Ok(Refusal(
-            table: table,
-            id: row.creature_id,
-            rule: "the client's Creature2 table has no such creature",
-          ))
-        False ->
-          case row.respawn_ms < strike_tell.deadline_ms {
-            True ->
-              Ok(Refusal(
-                table: table,
-                id: row.creature_id,
-                rule: "a respawn time of "
-                  <> int.to_string(row.respawn_ms)
-                  <> " ms is below the strike deadline of "
-                  <> int.to_string(strike_tell.deadline_ms)
-                  <> " ms",
-              ))
-            False -> Error(Nil)
-          }
+        True -> Ok("the client's Creature2 table has no such creature")
+        False -> Error(Nil)
       }
-    })
-  case list.append(missing_default, refused), default {
-    [], Ok(default) ->
-      Ok(Kinds(
-        default: Kind(respawn_ms: default.respawn_ms),
-        by_creature: list.filter(rows, fn(row) { row.creature_id != 0 })
-          |> list.map(fn(row) {
-            #(row.creature_id, Kind(respawn_ms: row.respawn_ms))
-          })
-          |> dict.from_list,
-      ))
-    refusals, _ -> Error(refusals)
-  }
+    },
+    fn() {
+      case row.respawn_ms < strike_tell.deadline_ms {
+        True ->
+          Ok(
+            "a respawn time of "
+            <> int.to_string(row.respawn_ms)
+            <> " ms is below the strike deadline of "
+            <> deadline
+            <> " ms",
+          )
+        False -> Error(Nil)
+      }
+    },
+    fn() {
+      case spell4.get(tables:, id: Spell4Id(row.attack_spell4_id)) {
+        Error(Nil) ->
+          Ok(
+            "the attack spell "
+            <> int.to_string(row.attack_spell4_id)
+            <> " has no row in the client's Spell4 table",
+          )
+        Ok(..) -> Error(Nil)
+      }
+    },
+    fn() {
+      case row.attack_interval_ms < strike_tell.deadline_ms {
+        True ->
+          Ok(
+            "an attack interval of "
+            <> int.to_string(row.attack_interval_ms)
+            <> " ms is below the strike deadline of "
+            <> deadline
+            <> " ms, so two of the creature's strike rounds would be open at once",
+          )
+        False -> Error(Nil)
+      }
+    },
+    fn() {
+      case creature_attack.evaluated(tables:, spell4_id: row.attack_spell4_id) {
+        Error(unevaluated) -> Ok(creature_attack.describe(unevaluated:))
+        Ok(Nil) -> Error(Nil)
+      }
+    },
+  ]
+  list.find_map(checks, fn(check) { check() })
+}
+
+fn kind_of_row(row: Row) -> Kind {
+  Kind(
+    respawn_ms: row.respawn_ms,
+    attack_spell4_id: Spell4Id(row.attack_spell4_id),
+    attack_interval_ms: row.attack_interval_ms,
+  )
 }
 
 /// The kind of a creature: its own row's when it has one, else the default.

@@ -107,3 +107,27 @@ pub fn a_number_outside_16_bits_is_no_half_float_test() -> Nil {
   assert half_float.from_bits(0xFFFF) == Ok(NotANumber)
     as "binary16: 0xFFFF is the last 16-bit pattern, an exponent of 31 with a fraction other than 0"
 }
+
+pub fn to_bits_packs_as_the_clients_packing_does_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert half_float.to_bits(value: 1.0) == Ok(0x3C00)
+    as "0x1401c9800: 1.0 packs to 0x3c00"
+  assert half_float.to_bits(value: -2.0) == Ok(0xC000)
+    as "0x1401c9800: -2.0 packs to 0xc000"
+  assert half_float.to_bits(value: 0.5) == Ok(0x3800)
+    as "0x1401c9800: 0.5 packs to 0x3800"
+  assert half_float.to_bits(value: 0.1) == Ok(0x2E66)
+    as "0x1401c9800: 0.1, between two halves, packs to the nearer, 0x2e66"
+  assert half_float.to_bits(value: 10.0) == Ok(0x4900)
+    as "binary16: 10.0 is 2^3 x (1 + 256/1024), exponent 18, fraction 256"
+}
+
+pub fn to_bits_takes_the_largest_half_and_refuses_beyond_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert half_float.to_bits(value: 65_504.0) == Ok(0x7BFF)
+    as "binary16: the largest finite value, (2 - 2^-10) x 2^15"
+  assert half_float.to_bits(value: -65_504.0) == Ok(0xFBFF)
+    as "binary16: its negative, with the sign bit"
+  assert half_float.to_bits(value: 65_504.5) == Error(Nil)
+    as "beyond the largest half: the client would pack infinity (0x1401c9800), which no path speed is, so it has no bits"
+}

@@ -284,7 +284,11 @@ fn walk_steps(
   let _sent =
     service.tell_subject(
       run.subject,
-      map.Moved(connection: ConnectionId(id), place: place(x:, y:, z:)),
+      map.Moved(
+        connection: ConnectionId(id),
+        place: place(x:, y:, z:),
+        seq: step,
+      ),
     )
   let deadline_us = sent_us + move_every_ms * 1000
   let arrived =

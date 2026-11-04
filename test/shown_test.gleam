@@ -12,6 +12,7 @@
 import genesis_prime/game/area.{Candidate, Point}
 import genesis_prime/game/shown.{Dominion, Exile, ShownCreature, ShownPlayer}
 import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
+import genesis_prime/world_map/creature_path
 import gleam/dict
 import owned_test
 import place_support
@@ -26,13 +27,13 @@ fn creature(
   alive alive: Bool,
 ) -> shown.Shown {
   ShownCreature(
-    place: place_support.at(
+    path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,
       x:,
       y: 0.0,
       z: -3.0,
-    ),
+    )),
     life: 4,
     alive:,
     hit_radius: 3.0,
@@ -53,7 +54,12 @@ fn picture() -> shown.Picture {
 
 pub fn only_alive_hostile_or_neutral_creatures_other_than_the_caster_are_candidates_test() -> Nil {
   use <- owned_test.run(5000)
-  assert shown.candidates(picture: picture(), faction: Exile, caster_unit_id: 7)
+  assert shown.candidates(
+      picture: picture(),
+      faction: Exile,
+      caster_unit_id: 7,
+      now_ms: 0,
+    )
     == [
       Candidate(unit_id: 1, at: Point(x: 1.0, z: -3.0), hit_radius: 3.0),
       Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0),
@@ -64,7 +70,12 @@ pub fn only_alive_hostile_or_neutral_creatures_other_than_the_caster_are_candida
 pub fn the_faction_level_read_is_the_casters_own_test() -> Nil {
   use <- owned_test.run(5000)
   let for_dominion =
-    shown.candidates(picture: picture(), faction: Dominion, caster_unit_id: 7)
+    shown.candidates(
+      picture: picture(),
+      faction: Dominion,
+      caster_unit_id: 7,
+      now_ms: 0,
+    )
   assert for_dominion
     == [
       Candidate(unit_id: 1, at: Point(x: 1.0, z: -3.0), hit_radius: 3.0),
@@ -77,7 +88,12 @@ pub fn the_faction_level_read_is_the_casters_own_test() -> Nil {
 pub fn a_creature_marked_dead_by_its_news_is_no_longer_a_candidate_test() -> Nil {
   use <- owned_test.run(5000)
   let after = shown.with_alive(picture: picture(), unit_id: 1, alive: False)
-  assert shown.candidates(picture: after, faction: Exile, caster_unit_id: 7)
+  assert shown.candidates(
+      picture: after,
+      faction: Exile,
+      caster_unit_id: 7,
+      now_ms: 0,
+    )
     == [Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0)]
     as "a Died news sets alive false (opcode.0x88c)"
 }

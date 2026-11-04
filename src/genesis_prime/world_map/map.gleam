@@ -99,6 +99,36 @@
 //// CreatureNotStarted(w)        ─▶ error line; the spawn stays empty for the run
 //// ```
 ////
+//// The rings: which ready players stand within a hostile creature's aggro range, so
+//// the creature can fight them (genesis_prime/world_map/creature_fight). Decided on
+//// each `Moved` beside the spawns in sight:
+////
+//// ```
+//// connection c                  map                                          creature
+////   Ready(c) (its first 0xF2) ─▶ c ready; for each Live spawn whose ring holds c,
+////                                hostile to c's faction:
+////                                  Approached(c, unit, place, seq) ─────────▶ may aggro
+////   Moved(c, place, seq)      ─▶ c's seq kept; c ready: the rings it stands in now
+////                                (spawn_cell.near, aggro_range, then exact 3D
+////                                distance to the spawn's place), hostile spawns only
+////                                  entered, Live: Approached(c, unit, place, seq) ─▶
+////                                  left, Live:    Withdrew(c) ──────────────────▶
+////                                  inside before and after, or outside: nothing
+//// a creature starts             each ready player in its ring: Approached, after the start effects
+//// ```
+////
+//// - **A player is not ready until its client's first 0xF2 of the stay**
+////   (`opcode.0xf2`), so no creature fights a loading player.
+//// - **A ring** is a circle of `aggro_range` about the spawn's place, not the
+////   creature's: a creature that runs keeps its spawn's ring and its spawn's sight.
+////   The aggro range lies inside sight (genesis_prime/world_map/game_number), so a
+////   player in a ring sees the creature, and its creature is Live or about to start.
+//// - **Hostile** is a faction level of 0 to 2 toward the player's faction, worked out
+////   at load (genesis_prime/world_map/creature_life `Hostile`); a Neutral or Friendly
+////   creature has no ring.
+//// - **Only Live creatures are told.** A retiring, waiting or failed spawn's ring is
+////   kept in `inside` and told when its creature starts.
+////
 //// What a connection does with them is its own (genesis_prime/game/connection):
 //// told `Watched(by: v)`, it sends v its 0x262 at its current place, then its
 //// 0x638s as it moves; told `Unwatched(by: v)`, its 0x355; on its camp, its 0x355
@@ -186,9 +216,10 @@
 ////   the map keeps, for each spawn that is not dormant, whether its creature is
 ////   live, retiring, waiting for its restart or failed (`SpawnState`), and sends it
 ////   `Watched`, `Unwatched` and `Retire`, so the creature sends the 0x262 and the
-////   0x355 of its own unit itself and decides nothing about its own life. A
-////   creature never moves, so a move of a player is the only change of sight with
-////   it.
+////   0x355 of its own unit itself and decides nothing about its own life. Sight of
+////   a creature is decided at its spawn's place, also while it runs (at most the
+////   leash range plus its reach off), so a move of a player is the only change of
+////   sight with it.
 //// - **A creature starts** when its spawn gets its first viewer, with the spawn's
 ////   unit id, a new life (its watch id) and its first viewers in `CreatureStart`, so
 ////   it sends their 0x262s as it starts and a burst of starts is followed by no burst
@@ -258,9 +289,13 @@
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run |
 //// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) |
 //// | the sweep timer fires after a restart of the map | not possible: the timer lives in the process, and a restarted map starts its own |
+//// | a `Moved` comes before the player's `Ready` | sight is decided; no ring is, and no creature is told |
+//// | a `Ready` comes twice in one stay | the second changes nothing (the connection sends one a stay) |
+//// | a player in a ring leaves, camps or its connection ends | its creatures are told `Unwatched`, which drops it from their threat lists; no `Withdrew` follows |
 
 import genesis_prime/game/appearance
 import genesis_prime/game/loadout.{type Loadout}
+import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
@@ -274,6 +309,7 @@ import genesis_prime/step.{
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds}
+import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import genesis_prime/world_map/sight
@@ -323,6 +359,7 @@ pub type Settings {
     tables: table_store.Tables,
     spawns: WorldSpawns,
     kinds: Kinds,
+    numbers: GameNumbers,
     idle_stop_ms: Int,
     sweep_ms: Int,
   )
@@ -340,8 +377,16 @@ pub type Message {
   /// one, so a connection's rule goes on at once (8 moves a second per player).
   /// The map decides sight from it and sends no move: the connection sends its
   /// own player's moves to the players who see it. Taken only from a connection
-  /// that is in the map.
-  Moved(connection: ConnectionId, place: Place)
+  /// that is in the map. `seq` is the connection's move sequence number, which
+  /// grows by one with each accepted 0x637, and which the map passes on with the
+  /// place to a creature whose ring the player enters.
+  Moved(connection: ConnectionId, place: Place, seq: Int)
+  /// The connection's player is ready: its client sent the stay's first 0xF2
+  /// (`opcode.0xf2`), so a creature may fight it. `seq` is the connection's move
+  /// sequence number then, which counts for the connection's life: a player that
+  /// entered again and has not moved is told to creatures with it, not with an
+  /// earlier stay's lower one. A tell.
+  Ready(connection: ConnectionId, seq: Int)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -393,6 +438,12 @@ pub type Outgoing {
   /// A send to a creature, never to a connection: no player has seen it for the
   /// idle stop, so it ends (genesis_prime/world_map/creature).
   Retire
+  /// A send to a creature: the ready player of connection `by`, its unit
+  /// `unit_id`, entered the creature's ring at `place`, its move `seq`; or stood
+  /// in it when it became ready or when the creature started.
+  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int)
+  /// A send to a creature: the player of connection `by` left its ring.
+  Withdrew(by: ConnectionId)
 }
 
 /// A map's players, its spawns that have a creature or a failure, the spawns'
@@ -442,16 +493,30 @@ pub type SpawnState {
 
 /// One player in the map: its unit, the watch on its connection, the players
 /// it sees, who see it (the relation is symmetric, so a pair is in one
-/// player's `sees` exactly when it is in the other's), and the spawns of the
+/// player's `sees` exactly when it is in the other's), the spawns of the
 /// map's world it sees, whatever their creature's state (a spawn is in `seen`
-/// exactly when it is within sight of the player's place).
+/// exactly when it is within sight of the player's place), whether it is ready,
+/// the move sequence number of its place, and the hostile spawns whose ring it
+/// stands in, empty until it is ready.
 type Player {
   Player(
     unit: PlayerUnit,
     watch: WatchId,
     sees: Set(ConnectionId),
     seen: Set(SpawnId),
+    readiness: Readiness,
+    seq: Int,
+    inside: Set(SpawnId),
   )
+}
+
+/// Whether a player's client has finished loading the world: a creature fights
+/// only a ready player.
+type Readiness {
+  /// Its client has sent no 0xF2 in this stay.
+  StillLoading
+  /// Its client sent the stay's first 0xF2.
+  Loaded
 }
 
 /// Why a player is removed: it left, and its connection said so itself, or its
@@ -477,6 +542,7 @@ pub fn rule(
   tables tables: table_store.Tables,
   spawns spawns: WorldSpawns,
   kinds kinds: Kinds,
+  numbers numbers: GameNumbers,
   idle_stop_ms idle_stop_ms: Int,
   sweep_ms sweep_ms: Int,
 ) -> ServiceRule(Settings, State, Message, Outgoing) {
@@ -489,6 +555,7 @@ pub fn rule(
       tables:,
       spawns:,
       kinds:,
+      numbers:,
       idle_stop_ms:,
       sweep_ms:,
     ),
@@ -545,12 +612,15 @@ pub fn step(
       )
     OwnEvent(Asked(caller:, message: Leave(connection:))) ->
       left(state:, caller:, connection:, now_ms: input.now.monotonic_ms)
-    OwnEvent(Told(message: Moved(connection:, place:))) ->
-      moved(state:, connection:, place:, now_ms: input.now.monotonic_ms)
+    OwnEvent(Told(message: Moved(connection:, place:, seq:))) ->
+      moved(state:, connection:, place:, seq:, now_ms: input.now.monotonic_ms)
+    OwnEvent(Told(message: Ready(connection:, seq:))) ->
+      ready(state:, connection:, seq:)
     OwnEvent(Asked(message: Moved(..), ..))
+    | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..))) ->
-      panic as "a map is asked Join and Leave and told Moved only"
+      panic as "a map is asked Join and Leave and told Moved and Ready only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
@@ -752,9 +822,49 @@ fn started_for_those_who_see(
     )
     viewers -> {
       let #(state, start) = start_creature(state:, spawn:, viewers:)
-      #(state, Effects([start]))
+      #(state, Effects([start, ..approaches_at_start(state:, spawn:)]))
     }
   }
+}
+
+/// `Approached` to the creature just started at the spawn from each ready player
+/// that stands in its ring, in the order of their connections: the ring was kept
+/// while no creature stood there to tell.
+fn approaches_at_start(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  case dict.get(state.spawns, spawn) {
+    Ok(Live(unit_id:, life:, ..)) ->
+      players_in_order(state)
+      |> list.filter(fn(player) {
+        { player.1 }.readiness == Loaded
+        && set.contains({ player.1 }.inside, spawn)
+      })
+      |> list.map(fn(player) {
+        tell_creature(
+          state:,
+          unit_id:,
+          life:,
+          message: approached(connection: player.0, player: player.1),
+        )
+      })
+    Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
+  }
+}
+
+/// The `Approached` of a player: its unit, its place and its move's sequence
+/// number.
+fn approached(
+  connection connection: ConnectionId,
+  player player: Player,
+) -> Outgoing {
+  Approached(
+    by: connection,
+    unit_id: player_unit.unit_id(player.unit),
+    place: player_unit.place(player.unit),
+    seq: player.seq,
+  )
 }
 
 /// The connections of the players who see the spawn from where they stand, in
@@ -779,7 +889,7 @@ pub fn sorted_connections(
 }
 
 /// The order of two connections by their numbers.
-fn compare_connections(
+pub fn compare_connections(
   first first: ConnectionId,
   second second: ConnectionId,
 ) -> order.Order {
@@ -1030,6 +1140,7 @@ fn moved(
   state state: State,
   connection connection: ConnectionId,
   place place: Place,
+  seq seq: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
@@ -1092,18 +1203,113 @@ fn moved(
       let seen = spawns_in_sight(state:, place:)
       let #(state, spawn_effects) =
         spawns_decided(state:, connection:, was: mover.seen, now: seen, now_ms:)
+      let mover = Player(..mover, unit:, sees: mover_sees, seen:, seq:)
+      let #(mover, ring_effects) = case mover.readiness {
+        StillLoading -> #(mover, [])
+        Loaded -> rings_decided(state:, connection:, player: mover)
+      }
       #(
-        State(
-          ..state,
-          players: dict.insert(
-            others,
-            connection,
-            Player(..mover, unit:, sees: mover_sees, seen:),
-          ),
-        ),
-        Effects(list.append(effects, spawn_effects)),
+        State(..state, players: dict.insert(others, connection, mover)),
+        Effects(list.flatten([effects, spawn_effects, ring_effects])),
       )
     }
+  }
+}
+
+/// The player of `connection` is ready: each Live hostile creature whose ring it
+/// stands in is sent `Approached`, and its later moves are checked against the
+/// rings. A second `Ready` in one stay, or one from a connection not in the map,
+/// changes nothing.
+fn ready(
+  state state: State,
+  connection connection: ConnectionId,
+  seq seq: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  case dict.get(state.players, connection) {
+    Ok(Player(readiness: StillLoading, ..) as player) -> {
+      let #(player, effects) =
+        rings_decided(
+          state:,
+          connection:,
+          player: Player(
+            ..player,
+            readiness: Loaded,
+            seq: int.max(player.seq, seq),
+          ),
+        )
+      #(
+        State(..state, players: dict.insert(state.players, connection, player)),
+        Effects(effects),
+      )
+    }
+    Ok(Player(readiness: Loaded, ..)) | Error(Nil) -> #(state, Effects([]))
+  }
+}
+
+/// The rings the ready `player` of `connection` stands in at its place, against
+/// the ones it stood in (`inside`): `Approached` to each Live creature whose ring it
+/// entered and `Withdrew` to each whose ring it left, in the order of the spawns,
+/// and the player with its new `inside`.
+fn rings_decided(
+  state state: State,
+  connection connection: ConnectionId,
+  player player: Player,
+) -> #(Player, List(Effect(ServiceEffect(Outgoing)))) {
+  let now = rings_holding(state:, player:)
+  let entered = in_order(set.difference(now, player.inside))
+  let left = in_order(set.difference(player.inside, now))
+  let player = Player(..player, inside: now)
+  let tell = fn(spawn, message) {
+    case dict.get(state.spawns, spawn) {
+      Ok(Live(unit_id:, life:, ..)) -> [
+        tell_creature(state:, unit_id:, life:, message:),
+      ]
+      Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
+    }
+  }
+  #(
+    player,
+    list.append(
+      list.flat_map(entered, fn(spawn) {
+        tell(spawn, approached(connection:, player:))
+      }),
+      list.flat_map(left, fn(spawn) { tell(spawn, Withdrew(by: connection)) }),
+    ),
+  )
+}
+
+/// The spawns hostile to the player's faction whose ring holds its place: within
+/// the aggro range of the spawn's place, in three dimensions, found through the cell
+/// index.
+fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
+  let spawns = state.settings.spawns
+  let place = player_unit.place(player.unit)
+  let range = state.settings.numbers.aggro_range
+  let faction_id = player_unit.faction_id(player.unit)
+  spawn_cell.near(
+    cells: spawns.cells,
+    x: start_place.x(place),
+    z: start_place.z(place),
+    range:,
+  )
+  |> list.filter(fn(id) {
+    case dict.get(spawns.by_id, id) {
+      Ok(found) ->
+        hostile(spawn: found, faction_id:)
+        && sight.squared_distance(first: place, second: found.place)
+        <=. range *. range
+      Error(Nil) -> False
+    }
+  })
+  |> set.from_list
+}
+
+/// Whether the spawn's creature fights a player of the faction on sight.
+fn hostile(spawn spawn: spawn.Spawn, faction_id faction_id: Int) -> Bool {
+  case shown.faction_of(faction_id:) {
+    Ok(shown.Exile) -> spawn.combat.hostile_to.exile
+    Ok(shown.Dominion) -> spawn.combat.hostile_to.dominion
+    Error(Nil) -> False
   }
 }
 
@@ -1368,7 +1574,15 @@ fn joined_with(
       players: dict.insert(
         players,
         connection,
-        Player(unit:, watch:, sees:, seen:),
+        Player(
+          unit:,
+          watch:,
+          sees:,
+          seen:,
+          readiness: StillLoading,
+          seq: 0,
+          inside: set.new(),
+        ),
       ),
       watches: dict.insert(state.watches, watch, connection),
     ),

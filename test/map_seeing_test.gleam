@@ -95,7 +95,11 @@ fn move(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
     event: OwnEvent(
-      Told(message: Moved(connection: ConnectionId(connection), place: at(x))),
+      Told(message: Moved(
+        connection: ConnectionId(connection),
+        place: at(x),
+        seq: elapsed_ms,
+      )),
     ),
   )
 }
@@ -128,6 +132,10 @@ fn shape(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
       Gone(unit_id:) -> "Gone " <> int.to_string(unit_id)
       Joined(..) | map.NotJoined(..) | map.Left -> "an answer"
       map.Retire -> "Retire"
+      map.Approached(by: ConnectionId(number), ..) ->
+        "Approached by " <> int.to_string(number)
+      map.Withdrew(by: ConnectionId(number)) ->
+        "Withdrew by " <> int.to_string(number)
     })
   })
 }

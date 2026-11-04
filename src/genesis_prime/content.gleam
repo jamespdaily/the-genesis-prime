@@ -2,7 +2,10 @@
 //// start into persistent terms. Behaviour stays in code (rules, the client's
 //// formulas, message layouts, client facts); `spawn` is the first content table
 //// (genesis_prime/content/spawn), `creature_kind` the second
-//// (genesis_prime/content/creature_kind), and every later one follows the same pattern.
+//// (genesis_prime/content/creature_kind), `game_number` the third
+//// (genesis_prime/content/game_number), and every later one follows the same pattern.
+//// The kinds are selected before the spawns, since a spawn's attack is its kind's
+//// spell.
 ////
 //// - **Where a row comes from.** Every content table has `source` (a row of the
 ////   `content_source` table: `world_database`, `retail_record`, `server_choice`,
@@ -69,6 +72,7 @@
 //// | a query fails | the start stops with the database's reason |
 
 import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/rating
@@ -79,8 +83,11 @@ import genesis_prime/step/runtime
 import genesis_prime/store/worker
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/creature_kind
+import genesis_prime/world_map/game_number
+import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
+import gleam/dict
 import gleam/erlang/process
 import gleam/int
 import gleam/list
@@ -160,14 +167,44 @@ fn read(
       )
     }),
   )
-  let selection =
-    spawn.select(rows:, tables:, formulas: rating.formulas(tables:))
+  use number_rows <- result.try(
+    content_game_number.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_game_number.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
+  let numbers = game_number.select(rows: number_rows, sight_range: sight.range)
+  let number_refusals = case numbers {
+    Ok(..) -> []
+    Error(refusals) -> refusals
+  }
   let kinds = creature_kind.select(rows: kind_rows, tables:)
   let kind_refusals = case kinds {
     Ok(..) -> []
     Error(refusals) -> refusals
   }
-  case list.append(selection.refusals, kind_refusals) {
+  // With a kind row refused, the spawns are checked with the kinds the load took,
+  // so the start names a bad spawn too; with the default row missing or refused no
+  // spawn has a kind, and that refusal alone stops the start.
+  let kinds_for_spawns = case kinds {
+    Ok(kinds) -> Ok(kinds)
+    Error(..) -> creature_kind.taken(rows: kind_rows, tables:)
+  }
+  let selection = case kinds_for_spawns {
+    Ok(kinds) ->
+      spawn.select(rows:, tables:, formulas: rating.formulas(tables:), kinds:)
+    Error(Nil) ->
+      spawn.Selection(
+        worlds: dict.new(),
+        refusals: [],
+        out_of_range_levels: [],
+        coverage: [],
+      )
+  }
+  case list.flatten([selection.refusals, kind_refusals, number_refusals]) {
     [] -> {
       list.each(selection.coverage, fn(coverage) {
         runtime.log(
@@ -180,6 +217,10 @@ fn read(
       content_spawn.put(key:, selection:)
       case kinds {
         Ok(kinds) -> content_creature_kind.put(key:, kinds:)
+        Error(..) -> Nil
+      }
+      case numbers {
+        Ok(numbers) -> content_game_number.put(key:, numbers:)
         Error(..) -> Nil
       }
       Ok(Nil)

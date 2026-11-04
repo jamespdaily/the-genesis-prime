@@ -103,8 +103,9 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentByChat, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat,
-  TellMoved, TellPeer, TellStrike,
+  SentByChat, SentByFoe, SentByMap, SentByPeer, SentBySessions, SentByTarget,
+  TellChat, TellMoved, TellPeer, TellReady, TellStrike, TellStrikeAnswered,
+  TellTargetMoved,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -112,6 +113,7 @@ import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell as connection_shell
 import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off
@@ -329,7 +331,13 @@ fn directory(settings: Settings) -> Directory {
           deadline_ms:,
           reply: fn(answer) { reply(FromMap(answer)) },
         )
-      TellMoved(..) | TellPeer(..) | TellChat(..) | TellStrike(..) -> Error(Nil)
+      TellMoved(..)
+      | TellReady(..)
+      | TellPeer(..)
+      | TellChat(..)
+      | TellStrike(..)
+      | TellTargetMoved(..)
+      | TellStrikeAnswered(..) -> Error(Nil)
     }
   }
 }
@@ -428,8 +436,11 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
   case request {
     TellChat(tell:) -> registry.deliver_to(pid, SentByChat(tell:))
     TellMoved(..)
+    | TellReady(..)
     | TellPeer(..)
     | TellStrike(..)
+    | TellTargetMoved(..)
+    | TellStrikeAnswered(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -443,21 +454,28 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
   }
 }
 
-/// Tells the run of a map what the request says: that a player moved. Any
-/// other request is an ask, which a tell never carries: a rule that tells one
-/// has a bug, logged as an error, and nothing is sent.
+/// Tells the run of a map what the request says: that a player moved, or is
+/// ready. Any other request is an ask, which a tell never carries: a rule that
+/// tells one has a bug, logged as an error, and nothing is sent.
 pub fn tell_the_run(
   subject subject: Subject(Call(map.Message, map.Outgoing)),
   request request: Request,
 ) -> Nil {
   case request {
-    TellMoved(connection:, place:) -> {
-      let _sent = service.tell_subject(subject, map.Moved(connection:, place:))
+    TellMoved(connection:, place:, seq:) -> {
+      let _sent =
+        service.tell_subject(subject, map.Moved(connection:, place:, seq:))
+      Nil
+    }
+    TellReady(connection:, seq:) -> {
+      let _sent = service.tell_subject(subject, map.Ready(connection:, seq:))
       Nil
     }
     TellPeer(..)
     | TellChat(..)
     | TellStrike(..)
+    | TellTargetMoved(..)
+    | TellStrikeAnswered(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -476,8 +494,10 @@ pub fn tell_the_run(
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
 /// registry as `SentByPeer`, and a chat tell (`TellChat`) as `SentByChat`, by the
 /// same reach the services' sends take (`connection_reach`). A strike
-/// (`TellStrike`) told to a `Creature` goes through the creature registry with no
-/// watch, as the creature's `Strike` message. Any other request is no tell to a
+/// (`TellStrike`), a fighter's move (`TellTargetMoved`) and the answer to a
+/// creature's strike (`TellStrikeAnswered`) told to a `Creature` go through the
+/// creature registry with no watch, as the creature's `Strike`, `TargetMoved` and
+/// `StrikeAnswered` messages. Any other request is no tell to a
 /// connection or a creature: a rule that sends one has a bug, logged as an error,
 /// and nothing is sent.
 fn connection_deliver(
@@ -498,8 +518,33 @@ fn connection_deliver(
           life:,
           message: creature.Strike(tell:),
         )
+      TellTargetMoved(connection:, place:, seq:),
+        step.Creature(map:, incarnation:, unit_id:, life:)
+      ->
+        creature_registry.tell(
+          settings.world.creatures,
+          map:,
+          incarnation:,
+          unit_id:,
+          life:,
+          message: creature.TargetMoved(by: connection, place:, seq:),
+        )
+      TellStrikeAnswered(answered:),
+        step.Creature(map:, incarnation:, unit_id:, life:)
+      ->
+        creature_registry.tell(
+          settings.world.creatures,
+          map:,
+          incarnation:,
+          unit_id:,
+          life:,
+          message: creature.StrikeAnswered(answered:),
+        )
       TellStrike(..), _
+      | TellTargetMoved(..), _
+      | TellStrikeAnswered(..), _
       | TellMoved(..), _
+      | TellReady(..), _
       | AskStore(..), _
       | AskHandOff(..), _
       | AskSessions(..), _
@@ -617,6 +662,7 @@ pub fn add_world(
             tables:,
             spawns: content_spawn.world(world.spawns, start.map.world_id),
             kinds: content_creature_kind.kinds(world.spawns),
+            numbers: content_game_number.numbers(world.spawns),
             idle_stop_ms: world.idle_stop_ms,
             sweep_ms: world.sweep_ms,
           ),
@@ -715,6 +761,7 @@ fn start_creature_process(
             kinds: content_creature_kind.kinds(world.spawns),
             creature2_id: { found.creature_id }.value,
           ),
+          numbers: content_game_number.numbers(world.spawns),
         ),
         reach: creature_reach(world:, reach:, to_connection:, start:),
         shutdown_ms: world.creature_shutdown_ms,
@@ -788,11 +835,13 @@ fn creature_reach(
 }
 
 /// The message a connection takes what a creature sends it as: the news of a unit
-/// as `SentByPeer`, the answer to its strike as `SentByTarget`.
+/// as `SentByPeer`, the answer to its strike as `SentByTarget`, and the creature's
+/// threat, release or strike as `SentByFoe`.
 pub fn creature_message(outgoing outgoing: creature.Outgoing) -> Message {
   case outgoing {
     creature.News(news:) -> SentByPeer(news)
     creature.Struck(answered:) -> SentByTarget(answered)
+    creature.FightTold(told:) -> SentByFoe(told)
   }
 }
 

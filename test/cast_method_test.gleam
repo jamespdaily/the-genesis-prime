@@ -701,7 +701,12 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.CastMissed(..)
         | client_connection.Health(..)
         | client_connection.Died
-        | client_connection.Removed -> False
+        | client_connection.Removed
+        | client_connection.CreatureMoved(..)
+        | client_connection.Targeting(..)
+        | client_connection.Threat(..)
+        | client_connection.CombatState(..)
+        | client_connection.Shield(..) -> False
       }
     })
     |> list.length

@@ -47,9 +47,13 @@
 ////   from its CreatureLevel rows and its archetype, difficulty and tier multipliers
 ////   (`0x1404585c0`, `Creature2.73464.crit_deflect_glance`,
 ////   `Creature2.73464.mitigation`) through the rating formulas
-////   (genesis_prime/game/rating).
+////   (genesis_prime/game/rating). It also holds whom the creature fights on sight (a
+////   faction level of 0 to 2 toward each player faction) and its own attack, from its
+////   kind's spell (genesis_prime/world_map/creature_kind,
+////   genesis_prime/world_map/creature_life `Attack`).
 
 import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
@@ -67,6 +71,7 @@ import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
 import genesis_prime/table/faction2
 import genesis_prime/table/faction2_relationship
+import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   type Creature2Id, Creature2ArcheTypeId, Creature2DifficultyId,
   Creature2DisplayInfoId, Creature2Id, Creature2OutfitInfoId, Creature2ResistId,
@@ -75,8 +80,13 @@ import genesis_prime/table/id.{
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
+import genesis_prime/table/spell4
 import genesis_prime/table/world
-import genesis_prime/world_map/creature_life.{type Combat, Attackable, Combat}
+import genesis_prime/world_map/creature_attack
+import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
+import genesis_prime/world_map/creature_life.{
+  type Attack, type Combat, Attackable, Combat, Hostile,
+}
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/unit_fields
@@ -235,6 +245,26 @@ type SpawnError {
   NoOutfitRow(outfit_info_id: Int)
   /// The row's world has no row in the client's World table (world 0 has none).
   InNoWorld(world_id: Int)
+  /// A damage effect of the creature's attack spell has a caster prerequisite the
+  /// server does not evaluate (genesis_prime/world_map/creature_attack).
+  AttackNotEvaluated(
+    creature_id: Creature2Id,
+    unevaluated: creature_attack.Unevaluated,
+  )
+  /// A damage effect of the creature's attack names a parameter the creature formula
+  /// does not read (genesis_prime/game/damage `creature_unread`).
+  AttackFormulaNotRead(
+    creature_id: Creature2Id,
+    spell4_effects_id: Int,
+    parameter_kind: Int,
+  )
+  /// A damage effect of the creature's attack has a multiplier, dataBits00 read as a
+  /// 32-bit float, that is not finite (genesis_prime/game/damage `formula_of`).
+  AttackMultiplierNotFinite(
+    creature_id: Creature2Id,
+    spell4_effects_id: Int,
+    bits: Int,
+  )
 }
 
 /// The client's rule a creature's row fails (`0x140485790`).
@@ -284,6 +314,10 @@ pub const dominion_faction = 166
 /// Friendly, `world_data.creature_disposition`).
 const highest_neutral_level = 7
 
+/// The highest level the client calls Hostile (FactionDispositionFromLevel,
+/// `world_data.creature_disposition`).
+const highest_hostile_level = 2
+
 /// The rows of the spawn table in, the selection out: every NonPlayer row is
 /// checked (a row that fails is a refusal, and fails the load), then the rows that
 /// start are chosen by the rule above and the rest counted, for each world; every
@@ -293,6 +327,7 @@ pub fn select(
   rows rows: List(Row),
   tables tables: table_store.Tables,
   formulas formulas: Formulas,
+  kinds kinds: Kinds,
 ) -> Selection {
   let catalog = catalog(tables:)
   let #(_shared, judged) =
@@ -300,14 +335,14 @@ pub fn select(
       case row.entity_type == non_player {
         False -> #(shared, Other(row:))
         True ->
-          case load_checks(catalog:, formulas:, shared:, row:) {
+          case load_checks(catalog:, formulas:, kinds:, shared:, row:) {
             Error(error) -> {
               let SpawnId(number) = row.id
               #(
                 shared,
                 Refused(refusal.Refusal(
                   table: "spawn",
-                  id: number,
+                  row: refusal.RowId(number),
                   rule: describe(error:),
                 )),
               )
@@ -498,6 +533,7 @@ const last_creature_level = 101
 fn combat_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
+  kind kind: Kind,
   creature creature: Creature2,
   level level: Int,
   display_info_id display_info_id: Int,
@@ -531,6 +567,14 @@ fn combat_of(
   use physical_resist <- result.try(property(26))
   use tech_resist <- result.try(property(27))
   use magic_resist <- result.try(property(28))
+  use attack <- result.try(attack_of(
+    catalog:,
+    formulas:,
+    kind:,
+    creature:,
+    level:,
+    display:,
+  ))
   let mitigation = fn(offset_of_type, resist) {
     rating.mitigation_fraction(
       formulas:,
@@ -548,6 +592,10 @@ fn combat_of(
         player: dominion_faction,
         unit: faction_id,
       ),
+    ),
+    hostile_to: Hostile(
+      exile: hostile_to(catalog:, player: exile_faction, unit: faction_id),
+      dominion: hostile_to(catalog:, player: dominion_faction, unit: faction_id),
     ),
     defence: hit.Defence(
       deflect_chance: rating.to_fraction(
@@ -577,9 +625,137 @@ fn combat_of(
       physical_mitigation: mitigation(physical_offset, physical_resist),
       tech_mitigation: mitigation(tech_offset, tech_resist),
       magic_mitigation: mitigation(magic_offset, magic_resist),
+      shield_mitigation_max: 0.0,
     ),
+    attack:,
   ))
 }
+
+/// The creature's own attack (genesis_prime/world_map/creature_life `Attack`): its
+/// kind's spell, the damage effect its difficulty chooses by the effect's caster
+/// prerequisite (type 179, `0x14049eeb0`), its blow by the creature formula
+/// (`0x140565600`, GameFormula 712), its critical hit chance, severity and
+/// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
+/// times property 100, `0x1405b45e0`) and its reach (the spell's `targetMaxRange`
+/// plus `hit_radius`).
+fn attack_of(
+  catalog catalog: Catalog,
+  formulas formulas: Formulas,
+  kind kind: Kind,
+  creature creature: Creature2,
+  level level: Int,
+  display display: creature2_display_info.Creature2DisplayInfo,
+) -> Result(Attack, SpawnError) {
+  let creature_id = Creature2Id(creature.id)
+  let property = fn(number) {
+    creature_property(catalog:, row: creature, level:, property: number)
+  }
+  use spell <- result.try(
+    spell4.get(catalog.tables, kind.attack_spell4_id)
+    |> result.replace_error(NoPropertyRow(
+      creature_id:,
+      table: "Spell4",
+      id: kind.attack_spell4_id.value,
+    )),
+  )
+  use scaling <- result.try(
+    game_formula.get(catalog.tables, id.GameFormulaId(creature_scaling_formula))
+    |> result.replace_error(NoPropertyRow(
+      creature_id:,
+      table: "GameFormula",
+      id: creature_scaling_formula,
+    )),
+  )
+  use effects <- result.try(
+    creature_attack.applying(
+      tables: catalog.tables,
+      spell4_id: kind.attack_spell4_id.value,
+      difficulty: creature.creature2_difficulty_id,
+    )
+    |> result.map_error(fn(unevaluated) {
+      AttackNotEvaluated(creature_id:, unevaluated:)
+    }),
+  )
+  use strength <- result.try(property(0))
+  use assault_rating <- result.try(property(35))
+  use move_speed <- result.try(property(100))
+  use crit_chance_base <- result.try(property(102))
+  use strikethrough_base <- result.try(property(104))
+  use crit_severity_base <- result.try(property(127))
+  let caster =
+    damage.Creature(
+      level:,
+      strength:,
+      assault_power: damage.power_of(rating: assault_rating),
+    )
+  use blows <- result.try(
+    list.try_map(effects, fn(effect) {
+      use formula <- result.try(
+        damage.formula_of(effect:)
+        |> result.replace_error(AttackMultiplierNotFinite(
+          creature_id:,
+          spell4_effects_id: effect.id,
+          bits: effect.data_bits00,
+        )),
+      )
+      case damage.creature_unread(formula:) {
+        Some(damage.Unread(parameter_kind:)) ->
+          Error(AttackFormulaNotRead(
+            creature_id:,
+            spell4_effects_id: effect.id,
+            parameter_kind:,
+          ))
+        None ->
+          Ok(hit.Blow(
+            spell4_effects_id: effect.id,
+            damage_type: effect.damage_type,
+            damage: float.round(damage.creature_value(
+              formula:,
+              creature: caster,
+              scaling: damage.CreatureScaling(
+                per_level: scaling.datafloat0,
+                base: scaling.datafloat01,
+                overflow: scaling.datafloat02,
+                divisor: scaling.datafloat03,
+              ),
+            )),
+            delay_ms: effect.delay_time,
+            threat_multiplier: effect.threat_multiplier,
+          ))
+      }
+    }),
+  )
+  Ok(creature_life.Attack(
+    spell4_id: kind.attack_spell4_id,
+    offence: hit.Offence(
+      blows:,
+      crit_chance: rating.to_fraction(
+        formula: formulas.crit_chance,
+        level:,
+        base: crit_chance_base,
+        rating: 0.0,
+      ),
+      crit_severity: rating.to_fraction(
+        formula: formulas.crit_severity,
+        level:,
+        base: crit_severity_base,
+        rating: 0.0,
+      ),
+      strikethrough: rating.to_fraction(
+        formula: formulas.strikethrough,
+        level:,
+        base: strikethrough_base,
+        rating: 0.0,
+      ),
+    ),
+    run_speed: display.run_land *. move_speed,
+    reach: spell.target_max_range +. display.hit_radius,
+  ))
+}
+
+/// The GameFormula row whose values scale a creature caster's damage
+/// (`0x140565600`).
+const creature_scaling_formula = 712
 
 /// A creature's property: the CreatureLevel value times the archetype, difficulty and
 /// tier multipliers, each product held as a 32-bit float, or the creature's own
@@ -631,6 +807,60 @@ fn creature_property(
           Creature2DifficultyId(row.creature2_difficulty_id),
         )
       case property {
+        0 ->
+          scaled(
+            value: level.unit_property_value00,
+            archetype: arche.unit_property_multiplier000,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier000
+            }),
+            tier: tier.unit_property_multiplier000,
+          )
+        35 ->
+          scaled(
+            value: level.unit_property_value35,
+            archetype: arche.unit_property_multiplier035,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier035
+            }),
+            tier: tier.unit_property_multiplier035,
+          )
+        100 ->
+          scaled(
+            value: level.unit_property_value00,
+            archetype: arche.unit_property_multiplier100,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier100
+            }),
+            tier: tier.unit_property_multiplier100,
+          )
+        102 ->
+          scaled(
+            value: level.unit_property_value02,
+            archetype: arche.unit_property_multiplier102,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier102
+            }),
+            tier: tier.unit_property_multiplier102,
+          )
+        104 ->
+          scaled(
+            value: level.unit_property_value04,
+            archetype: arche.unit_property_multiplier104,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier104
+            }),
+            tier: tier.unit_property_multiplier104,
+          )
+        127 ->
+          scaled(
+            value: level.unit_property_value27,
+            archetype: arche.unit_property_multiplier127,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier127
+            }),
+            tier: tier.unit_property_multiplier127,
+          )
         7 ->
           scaled(
             value: level.unit_property_value07,
@@ -823,6 +1053,16 @@ fn attackable_by(
   faction_level(catalog:, from: player, to: unit) <= highest_neutral_level
 }
 
+/// Whether a unit of the faction fights a player of the other on sight: its level
+/// toward the player's faction is Hostile, 0 to 2 (`world_data.creature_disposition`).
+fn hostile_to(
+  catalog catalog: Catalog,
+  player player: Int,
+  unit unit: Int,
+) -> Bool {
+  faction_level(catalog:, from: player, to: unit) <= highest_hostile_level
+}
+
 /// The reason a row that passed the load checks does not start, or `Error(Nil)`
 /// for a row that does, in the order of the decode: no faction, Friendly to both
 /// player factions, an NPC link, health 0.
@@ -989,6 +1229,7 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
 fn load_checks(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
+  kinds kinds: Kinds,
   shared shared: SharedCombats,
   row row: Row,
 ) -> Result(#(Checked, SharedCombats), SpawnError) {
@@ -1039,6 +1280,7 @@ fn load_checks(
       combat_of(
         catalog:,
         formulas:,
+        kind: creature_kind.kind_of(kinds:, creature2_id: row.creature_id),
         creature:,
         level:,
         display_info_id: row.display_info_id,
@@ -1280,6 +1522,35 @@ fn describe(error error: SpawnError) -> String {
     NoOutfitRow(outfit_info_id:) ->
       "Creature2OutfitInfo " <> int.to_string(outfit_info_id) <> " has no row"
     InNoWorld(world_id:) -> "World " <> int.to_string(world_id) <> " has no row"
+    AttackNotEvaluated(creature_id: Creature2Id(creature_id), unevaluated:) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s attack: "
+      <> creature_attack.describe(unevaluated:)
+    AttackFormulaNotRead(
+      creature_id: Creature2Id(creature_id),
+      spell4_effects_id:,
+      parameter_kind:,
+    ) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s attack effect "
+      <> int.to_string(spell4_effects_id)
+      <> " reads parameter type "
+      <> int.to_string(parameter_kind)
+      <> ", which the creature formula does not read"
+    AttackMultiplierNotFinite(
+      creature_id: Creature2Id(creature_id),
+      spell4_effects_id:,
+      bits:,
+    ) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s attack effect "
+      <> int.to_string(spell4_effects_id)
+      <> " has a multiplier, dataBits00 "
+      <> int.to_string(bits)
+      <> ", that is not a finite 32-bit float"
   }
 }
 

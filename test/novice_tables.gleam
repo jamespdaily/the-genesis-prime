@@ -621,6 +621,7 @@ pub fn formulas() -> List(Formula) {
     Formula(547, 0, 0, 0.0, 0.0, 20.0, 1.0),
     Formula(548, 0, 0, 0.0, 0.0, 225.0, 1.0),
     Formula(549, 0, 0, 0.0, 0.0, 3.5999999046325684, 1.0),
+    Formula(712, 0, 0, 70.0, 100.0, 1.0, 1.0),
     Formula(1230, 0, 100, 50.0, 0.003, 30.0, 5000.0),
     Formula(1231, 0, 100, 50.0, 0.0025, 30.0, 7000.0),
     Formula(1232, 0, 300, 50.0, 0.01, 250.0, 5500.0),
@@ -721,12 +722,123 @@ pub fn creature_level_rows() -> List(List(Cell)) {
       #("unitPropertyValue07", Float(pair.1)),
     ])
   })
+  |> list.map(fn(row) {
+    case row {
+      [Integer(1), ..] ->
+        planted_table.row(creature_level.schema, [
+          #("ID", Integer(1)),
+          #("unitPropertyValue00", Float(15.392292022705078)),
+          #("unitPropertyValue07", Float(135.97027587890625)),
+          #("unitPropertyValue35", Float(61.56916809082031)),
+        ])
+      _ -> row
+    }
+  })
   |> list.append([
     planted_table.row(creature_level.schema, [
       #("ID", Integer(101)),
+      #("unitPropertyValue00", Float(1.0)),
       #("unitPropertyValue01", Float(0.05)),
+      #("unitPropertyValue02", Float(0.05)),
+      #("unitPropertyValue27", Float(1.5)),
     ]),
   ])
+}
+
+/// The files with the creature auto-attack's Spell4 and Spell4Effects rows added
+/// (`creature_attack_spell4_rows`, `creature_attack_effect_rows`), for a load that
+/// selects spawns, whose attack is their kind's spell. The attack's effect ids make
+/// a Spell4Effects table of over a megabyte (a slot for each id up to 184777): the
+/// shared planted load holds it, and a test's own load that selects spawns passes
+/// `padding` True for one more empty row, so its table is never the same size as the
+/// shared one, which the literal-area check would take for one table loaded twice
+/// (`literal_area.tables_held_twice`).
+pub fn with_creature_attack(
+  files files: List(#(String, BitArray)),
+  padding padding: Bool,
+) -> List(#(String, BitArray)) {
+  with_creature_attack_multiplier(
+    files:,
+    padding:,
+    multiplier_bits: 1_065_353_216,
+  )
+}
+
+/// `with_creature_attack`, with the attack effects' dataBits00 set to
+/// `multiplier_bits` in place of the float 1.0's: a synthetic row, for a test of a
+/// multiplier the load refuses.
+pub fn with_creature_attack_multiplier(
+  files files: List(#(String, BitArray)),
+  padding padding: Bool,
+  multiplier_bits multiplier_bits: Int,
+) -> List(#(String, BitArray)) {
+  let effects =
+    list.flatten([
+      spell4_effects_rows(),
+      creature_attack_effect_rows_of(multiplier_bits:),
+      case padding {
+        True -> [
+          planted_table.row(spell4_effects.schema, [#("ID", Integer(184_778))]),
+        ]
+        False -> []
+      },
+    ])
+  list.map(files, fn(file) {
+    case file.0 {
+      name if name == spell4.schema.file ->
+        planted_table.file(
+          spell4.schema,
+          list.append(creature_attack_spell4_rows(), spell4_rows())
+            |> list.sort(by_id),
+        )
+      name if name == spell4_effects.schema.file ->
+        planted_table.file(spell4_effects.schema, list.sort(effects, by_id))
+      _ -> file
+    }
+  })
+}
+
+/// The creature auto-attack the creature kinds name, Spell4 5649 (`Spell4.5649`):
+/// range 5.0, no base spell planted (no player casts it).
+pub fn creature_attack_spell4_rows() -> List(List(Cell)) {
+  [
+    planted_table.row(spell4.schema, [
+      #("ID", Integer(5649)),
+      #("targetMaxRange", Float(5.0)),
+    ]),
+  ]
+}
+
+/// Spell 5649's two Physical damage effects on its target, the client's rows
+/// (`Spell4Effects.184741`): 184741, Strength 0.55 and Assault Power 0.55, for a
+/// caster of difficulty at most 6 (prerequisite 30526), and 184777, 0.8 each, for
+/// difficulty at least 7 (30527); dataBits00 the float 1.0, threatMultiplier 1.0.
+pub fn creature_attack_effect_rows() -> List(List(Cell)) {
+  creature_attack_effect_rows_of(multiplier_bits: 1_065_353_216)
+}
+
+fn creature_attack_effect_rows_of(
+  multiplier_bits multiplier_bits: Int,
+) -> List(List(Cell)) {
+  [#(184_741, 30_526, 0.550000011920929), #(184_777, 30_527, 0.800000011920929)]
+  |> list.map(fn(effect) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", Integer(effect.0)),
+      #("spellId", Integer(5649)),
+      #("targetFlags", Integer(2)),
+      #("effectType", Integer(8)),
+      #("damageType", Integer(1)),
+      #("flags", Integer(128)),
+      #("dataBits00", Integer(multiplier_bits)),
+      #("threatMultiplier", Float(1.0)),
+      #("prerequisiteIdCasterApply", Integer(effect.1)),
+      #("parameterType00", Integer(1)),
+      #("parameterType01", Integer(12)),
+      #("parameterValue00", Float(effect.2)),
+      #("parameterValue01", Float(effect.2)),
+      #("phaseFlags", Integer(-1)),
+    ])
+  })
 }
 
 /// The planted SpellLevel rows: id, class, level, prerequisite and Spell4 id.

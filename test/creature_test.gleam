@@ -24,6 +24,7 @@ import genesis_prime/step.{
   ConnectionId, CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
   StartServiceTimer, Started, Stop, TimerId, Told, WatchEnded, WatchId,
 }
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature.{
   type State, Retire, Settings, Unwatched, Watched,
 }
@@ -35,6 +36,7 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/int
 import gleam/list
 import owned_test
+import place_support
 import spawn_support
 
 const ship = MapId(world_id: 3460, instance: 0)
@@ -69,7 +71,12 @@ fn creature_at(
       viewers:,
     ),
     spawn:,
-    kind: Kind(respawn_ms: 60_000),
+    kind: Kind(
+      respawn_ms: 60_000,
+      attack_spell4_id: Spell4Id(5649),
+      attack_interval_ms: 1500,
+    ),
+    numbers: spawn_support.numbers,
   ))
 }
 
@@ -240,16 +247,33 @@ fn outgoing(
 fn strike_of(damage damage: Int, cast_id cast_id: Int) -> creature.Message {
   creature.Strike(tell: Strike(
     key: Key(cast_id:, phase: 0, unit_id: 7),
-    from: ConnectionId(2),
+    from: step.Connection(ConnectionId(2)),
     offence: Offence(
       blows: [
-        Blow(spell4_effects_id: 1, damage_type: 3, damage:, delay_ms: 0),
+        Blow(
+          spell4_effects_id: 1,
+          damage_type: 3,
+          damage:,
+          delay_ms: 0,
+          threat_multiplier: 1.0,
+        ),
       ],
       crit_chance: 0.0,
       crit_severity: 1.5,
       strikethrough: 0.0,
     ),
-    rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+    striker: strike_tell.PlayerStriker(
+      unit_id: 1,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+      seq: 1,
+      rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+    ),
   ))
 }
 
@@ -278,7 +302,7 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
         "removal to " <> int.to_string(one.0)
       creature.News(news: PeerNews(news: CreatureAppeared(..), ..)) ->
         "creation to " <> int.to_string(one.0)
-      creature.News(..) -> "other"
+      creature.News(..) | creature.FightTold(..) -> "other"
     }
   })
 }
@@ -349,7 +373,7 @@ pub fn a_viewer_that_arrives_mid_fight_is_sent_the_creature_at_its_current_healt
       at_ms: 7000,
       event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
     )
-  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
+  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)
   assert creature_unit.health_of(unit:) == 38
     as "the Beast has 52 health and the strike took 14: opcode.0x262.creature carries the current health in stat 0, so the bar a viewer sees is the one the others see"
@@ -481,7 +505,7 @@ pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_curre
       at_ms: 7000,
       event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
     )
-  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
+  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)
   assert creature_unit.health_of(unit:) == 428
     as "the recorded 442 less the strike's 14: stat 0 is the current health"
