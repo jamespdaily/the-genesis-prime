@@ -3,6 +3,10 @@
 //// values come from these places.
 //// - Kick's rows: `Spell4.58591.area` (area row 640: 5 units, 0 to 8 m, 180 degrees;
 ////   telegraph 168: a cone 1 to 7 m over 100 degrees on the caster, flag 0x200).
+//// - The threshold stages: Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124
+////   name the stage spells of Shred, Relentless Strikes, Rampage and Charged Shot,
+////   and the Proxy rows 83782, 177158, 177171, 177498, 182203 and 182204 name the
+////   spells their stages start (`table_rows`, read on the client's tables).
 //// - The load's refusals: the module's doc comment, which states each gap where it is
 ////   enforced (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`, `0x14054d170`).
@@ -22,6 +26,7 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/result
 import owned_test
+import spell_tables
 import unitest
 
 fn kick_area(plant plant: area_tables.Kick) -> spell_area.SpellArea {
@@ -208,4 +213,99 @@ pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and
       ),
     ]
     as "Spell4.42352.area: telegraph 2888, a box 8 wide and 8 long centred 9.3 m ahead and turned 45 degrees, and 2889, a cone from 1 to 10.75 m over 62.5 degrees, both with flag 0x200; it has no never-drawn twin, so both drawn shapes are its hit shapes"
+}
+
+/// The stage spells of the level-1 RapidTap and ChargeRelease abilities and the spells
+/// their Proxies start, which hold a damage effect aimed at the area on the client's
+/// tables: Spell4Thresholds 238 (Shred 38765 casts 38766, whose Proxy 83782 starts
+/// 39467), 9 and 10 (Relentless Strikes 32078 casts 32079 and 32080, Proxies 177158 and
+/// 177171 start 70045 and 70054), 1073 to 1075 (Rampage 58524 casts 66987, 71125 and
+/// 71126, Proxies 177498, 182203 and 182204 start 71392 to 71394) and 125, 123 and 124
+/// (Charged Shot 34718 casts 34720, 34722 and 36691, which hold their own damage).
+/// `table_rows -- Spell4Effects spellId=<id>` gives each one's effect (effectType 8,
+/// targetFlags 4).
+const stage_spells_that_strike = [
+  34_720, 34_722, 36_691, 70_045, 70_054, 71_392, 71_393, 71_394, 39_467,
+]
+
+/// The stage spells of the same abilities that hold no damage effect and whose Proxy
+/// is not aimed at the area (Spell4Effects 83782, 177158, 177171, 177498, 182203 and
+/// 182204: effectType 26, targetFlags 1, on the caster): the spell is cast and has no
+/// area row.
+const stage_spells_that_only_start_others = [
+  32_079, 32_080, 38_766, 66_987, 71_125, 71_126,
+]
+
+/// Whether each spell's area holds an area row, or `Error(Nil)` for a spell with no
+/// area at all.
+fn area_rows_held(
+  areas areas: spell_area.Areas,
+  spells spells: List(Int),
+) -> List(#(Int, Result(Bool, Nil))) {
+  list.map(spells, fn(spell4_id) {
+    #(
+      spell4_id,
+      spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+        |> result.map(fn(area) { option.is_some(area.row) }),
+    )
+  })
+}
+
+/// What `area_rows_held` gives for these spells when each has an area, with an area
+/// row or without one.
+fn all_held(
+  spells spells: List(Int),
+  row row: Bool,
+) -> List(#(Int, Result(Bool, Nil))) {
+  list.map(spells, fn(spell4_id) { #(spell4_id, Ok(row)) })
+}
+
+pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_planted_trees_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(areas) =
+    spell_tables.with_loaded_deriving(
+      rows: spell_tables.rows(),
+      derivations: [spell_plan.derivation()],
+      body: fn(tables) { spell_area.build(tables:) },
+    )
+    as "the planted trees build their areas"
+  assert area_rows_held(areas:, spells: [39_467])
+    == all_held(spells: [39_467], row: True)
+    as "Spell4Effects 86439: the stage's Proxy 39467 strikes, aimed at the area (targetFlags 4), so it holds Spell4 39467's area row 694"
+  let without_row =
+    list.append(
+      stage_spells_that_only_start_others,
+      list.filter(stage_spells_that_strike, fn(spell4_id) {
+        spell4_id != 39_467
+      }),
+    )
+  assert area_rows_held(areas:, spells: without_row)
+    == all_held(spells: without_row, row: False)
+    as "Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124 name the stage spells and Spell4Effects 83782, 177158, 177171, 177498, 182203 and 182204 start their Proxies: each is cast, so each is in the areas; the planted rows hold no damage effect or area row for any but 39467"
+  let assert Ok(proxy) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(39_467))
+  let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0)
+  assert phase.selects_area
+    && list.map(phase.damage, fn(effect) { effect.aim })
+    == [spell_plan.AimsAtArea]
+    as "Spell4Effects 86439: the stage's Proxy 39467 holds one damage effect aimed at the area (targetFlags 4)"
+}
+
+pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_clients_tables_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  assert area_rows_held(areas:, spells: stage_spells_that_strike)
+    == all_held(spells: stage_spells_that_strike, row: True)
+    as "each stage spell or Proxy that holds a damage effect aimed at the area (Spell4Effects 80977 to 86439, targetFlags 4) is in the areas with its area row"
+  assert area_rows_held(areas:, spells: stage_spells_that_only_start_others)
+    == all_held(spells: stage_spells_that_only_start_others, row: False)
+    as "a stage spell with no damage and no Proxy aimed at the area is cast, so it is in the areas, with no area row"
+  let assert Ok(proxy) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(39_467))
+  let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0)
+  assert phase.selects_area
+    && list.map(phase.damage, fn(effect) { effect.aim })
+    == [spell_plan.AimsAtArea]
+    as "Spell4Effects 86439: the stage's Proxy 39467 holds one damage effect aimed at the area (targetFlags 4)"
 }

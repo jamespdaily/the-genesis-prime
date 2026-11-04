@@ -1430,6 +1430,66 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
   login_support.stop(started)
 }
 
+/// Presses the ability and reads until `gos` gos have arrived and the server has
+/// written all it held for this connection (a ping and its pong), giving the frames
+/// of the press.
+fn press_and_read_gos(
+  game game: game_client.Game,
+  have have: BitArray,
+  client_cast_id client_cast_id: Int,
+  gos gos: Int,
+  pong pong: Int,
+) -> #(List(Frame), BitArray) {
+  game_client.press_ability(game:, client_cast_id:, bag_index: 0, target: 0)
+  let #(frames, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.length(game_client.go_targets_in(frames:)) >= gos
+    })
+  let #(rest, have) = game_client.read_until_pong(game:, have:, number: pong)
+  #(list.append(frames, rest), have)
+}
+
+pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let started =
+    world_with_beasts(
+      places: [beast_place(x: 1.5, z: 0.5)],
+      tables: character_tables.shared_with_spell_trees(),
+    )
+  let #(game, frames, have) =
+    enters_and_sees_the_beasts(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 5,
+      beasts: 1,
+    )
+  let assert [beast, ..] = game_client.creatures_created_in(frames:)
+  let beast_unit = beast.unit_id
+  let #(first_tap, have) =
+    press_and_read_gos(game:, have:, client_cast_id: 1, gos: 4, pong: 1)
+  assert list.map(game_client.go_targets_in(frames: first_tap), fn(go) { go.1 })
+    == [[], [beast_unit], [beast_unit], [beast_unit]]
+    as "Spell4.38765, Shred: its own go names nobody (it has no damage) and its Proxy 38767, aimed at the area (Spell4Effects 83788, targetFlags 4), goes in three phases (SpellPhase 3712 to 3714), each naming the Beast 3 m away inside Spell4AoeTargetConstraints 694 (360 degrees, 6.5 m)"
+  assert list.map(game_client.health_in(frames: first_tap), fn(health) {
+      health.1
+    })
+    == [43, 34, 25]
+    as "a Stalker of level 1 with the Novice gear (Assault Power 50.77): a hit of Shred's Proxy is 0.0967 x 50.77 = 4.91 plus 4.22 for the level, 9.13, rounded to 9 (Spell4Effects 83788, 0x140565600); the Beast has 52 health and never deflects, so each of the three hits takes 9"
+  let #(second_tap, _) =
+    press_and_read_gos(game:, have:, client_cast_id: 2, gos: 4, pong: 2)
+  assert list.map(game_client.go_targets_in(frames: second_tap), fn(go) { go.1 })
+    == [[], [beast_unit], [beast_unit], [beast_unit]]
+    as "Spell4Thresholds 238: the second tap casts the stage 38766, which strikes nobody itself, and the stage's Proxy 39467 (Spell4Effects 83782), aimed at the area by Spell4Effects 86439 on Spell4 39467's area row 694, goes in three phases (SpellPhase 4032 to 4034), each naming the Beast"
+  assert list.map(game_client.health_in(frames: second_tap), fn(health) {
+      health.1
+    })
+    == [16, 7, 0]
+    as "each go of the stage's Proxy hits for 9 as the base's does (Spell4Effects 86439 holds the parameters of 83788): 25 less 9 is 16, 7 and then the Beast's last 7 health"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
 pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_the_same_casts_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
