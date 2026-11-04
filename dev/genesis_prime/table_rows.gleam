@@ -195,18 +195,17 @@ fn place(
   use description <- result.try(
     tbl_file.describe(bytes) |> result.map_error(NotATable(table, _)),
   )
-  use <- bool.guard(
-    when: !tbl_file.has_id_column(description.columns),
-    return: Error(NoIdColumn(table)),
-  )
-  tbl_file.place(description)
+  tbl_file.fields(description)
   |> result.map(fn(fields) { #(description, fields) })
   |> result.map_error(fn(error) {
-    let tbl_file.RecordSizeNotPlaced(placed:, header:) = error
-    NotATable(
-      table,
-      tbl_file.RecordSizeDiffers(expected: placed, found: header),
-    )
+    case error {
+      tbl_file.NoIdColumn -> NoIdColumn(table)
+      tbl_file.NotPlaced(tbl_file.RecordSizeNotPlaced(placed:, header:)) ->
+        NotATable(
+          table,
+          tbl_file.RecordSizeDiffers(expected: placed, found: header),
+        )
+    }
   })
 }
 
