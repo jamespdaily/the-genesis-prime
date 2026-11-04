@@ -2,10 +2,13 @@
 //// weapon, the abilities, their tiers and the action set, and what the unit's
 //// 0x262 carries of the gear (`genesis_prime/game/world_entry`). Expected values
 //// come from these places.
-//// - The messages and their order: 0x111 with location 0 and index 16 for the
-////   weapon (`0x1403afb10`: the cast check looks up key location 0, index 16;
-////   `lua.ActionBarFrame.InitializeBars`: the bar shows once an item is
-////   equipped in slot 16), then 0x111 with location 4 for each ability, the
+//// - The messages and their order: 0x111 with location 0 for each armor piece
+////   and the shield at the bag index of its slot (`ItemSlot.equippedSlotFlags`:
+////   chest 0, legs 1, shoulder 3, feet 4, hands 5, shield 15), then 0x111 with
+////   location 0 and index 16 for the weapon (`0x1403afb10`: the cast check
+////   looks up key location 0, index 16; `lua.ActionBarFrame.InitializeBars`:
+////   the bar shows once an item is equipped in slot 16), then 0x111 with
+////   location 4 for each ability, the
 ////   item id the ability's Spell4Base id and the bag index the ability's place
 ////   in its class's list (`opcode.0x111.ability_bag`); 0x1a0 with tier 1 in
 ////   action sets 0 to 3 (`opcode.0x1a0`: an entry has four sets); 0x19d for set
@@ -51,6 +54,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
+import novice_tables
 import owned_test
 import place_support
 
@@ -158,6 +162,14 @@ fn entering(
   #(frames, entered)
 }
 
+/// The 0x111 of the entry at location 0, as the bag index and the item id, in
+/// the order sent.
+fn equipped(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  items_added(frames:)
+  |> list.filter(fn(added) { added.item.location == 0 })
+  |> list.map(fn(added) { #(added.item.bag_index, added.item.item_id) })
+}
+
 fn ids(frames frames: List(Frame)) -> List(Int) {
   list.map(frames, fn(frame) { frame.message_id })
 }
@@ -189,8 +201,16 @@ pub fn the_novice_weapon_is_sent_as_an_item_at_location_0_index_16_before_the_ab
   use <- owned_test.run(10_000)
   let #(frames, _) =
     entering(character: character(class: 2, faction: 166, level: 1))
-  let assert [weapon, ..abilities] = items_added(frames:)
-    as "the entry sends an item for the weapon and one for each ability"
+  let items = items_added(frames:)
+  assert list.map(items, fn(added) { added.item.location })
+    == [0, 0, 0, 0, 0, 0, 0, 4, 4, 4]
+    as "the equipped items come before the abilities: seven at location 0, then three at location 4"
+  let assert [weapon] =
+    list.filter(items, fn(added) {
+      added.item.location == 0 && added.item.bag_index == 16
+    })
+    as "one item is equipped in slot 16"
+  let abilities = list.filter(items, fn(added) { added.item.location == 4 })
   assert weapon.item.location == 0 && weapon.item.bag_index == 16
     as "0x1403afb10: the cast check looks up location 0, index 16; lua.ActionBarFrame.InitializeBars: slot 16 holds the weapon"
   assert weapon.item.item_id == 81_353
@@ -228,8 +248,12 @@ pub fn the_weapon_is_the_classes_and_factions_item_04_for_every_class_and_factio
     list.each([167, 166], fn(faction) {
       let #(frames, _) =
         entering(character: character(class: class.id, faction:, level: 1))
-      let assert [weapon, ..] = items_added(frames:)
-        as "the entry sends the weapon first"
+      let assert [weapon] =
+        items_added(frames:)
+        |> list.filter(fn(added) {
+          added.item.location == 0 && added.item.bag_index == 16
+        })
+        as "the entry sends the weapon in slot 16"
       assert weapon.item.item_id
         == case faction {
           167 -> class.weapon_167
@@ -284,7 +308,7 @@ pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_
   })
 }
 
-pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_weapon_first_and_the_set_last_test() -> Nil {
+pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_equipped_items_first_and_the_set_last_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(frames, _) =
     entering(character: character(class: 4, faction: 166, level: 1))
@@ -297,6 +321,12 @@ pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_weapon_first_and_t
       0x0111,
       0x0111,
       0x0111,
+      0x0111,
+      0x0111,
+      0x0111,
+      0x0111,
+      0x0111,
+      0x0111,
       0x01A0,
       0x019D,
       0x06BC,
@@ -304,7 +334,7 @@ pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_weapon_first_and_t
       0x00F1,
       0x0061,
     ]
-    as "opcode.0xad, opcode.0x262, opcode.0x19b first as before; then the weapon, the three abilities, their tiers and the action set, which all follow 0x19b (it sets the player) and come before 0x61 (it ends the entry); the rest as before"
+    as "opcode.0xad, opcode.0x262, opcode.0x19b first as before; then the five armor pieces, the shield and the weapon, the three abilities, their tiers and the action set, which all follow 0x19b (it sets the player) and come before 0x61 (it ends the entry); the rest as before"
 }
 
 /// The value a property holds, as the 32-bit float the client reads.
@@ -440,4 +470,44 @@ pub fn the_player_the_connection_keeps_holds_its_loadout_and_its_max_health_test
     as "player.level1_base_health: the typed maximum health the 0x262 carries"
   assert entered.loadout.properties.armor == 250.0
     as "the typed gear: the Engineer's heavy armor, 250"
+}
+
+pub fn the_whole_novice_set_is_held_at_location_0_in_the_bag_index_of_each_slot_for_every_class_and_faction_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(novice_tables.sets(), fn(set) {
+    let #(frames, _) =
+      entering(character: character(
+        class: set.class_id,
+        faction: set.faction_id,
+        level: 1,
+      ))
+    assert equipped(frames:)
+      == list.map(novice_tables.equipped_of(set:), fn(pair) {
+        #(pair.1, pair.0)
+      })
+      as {
+        "ItemSlot.equippedSlotFlags, CharacterCreation row "
+        <> int.to_string(set.creation_id)
+        <> ": the row's seven items are held at location 0, chest 0, legs 1, shoulder 3, feet 4, hands 5, shield 15 and weapon 16"
+      }
+    assert list.map(equipped(frames:), fn(pair) { pair.0 })
+      == [0, 1, 3, 4, 5, 15, 16]
+      as "every class and faction holds one item in each of these slots"
+  })
+}
+
+pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(classes(), fn(class) {
+    let #(frames, _) =
+      entering(character: character(class: class.id, faction: 167, level: 1))
+    let guids =
+      list.map(items_added(frames:), fn(added) { added.item.item_guid })
+    assert list.length(guids) == 10
+      as "seven equipped items and three abilities"
+    assert list.length(list.unique(guids)) == 10
+      as "opcode.0x111.equipped_set: each piece has a unique guid (0x140569d30 keeps it, and a later message finds the item by it)"
+    assert !list.contains(guids, 0)
+      as "opcode.0x111.equipped_set: each piece has a non-zero guid"
+  })
 }

@@ -33,6 +33,10 @@
 //// - **Body:** the item visuals the character list sends
 ////   (genesis_prime/game/appearance), and the stored bone values
 ////   (opcode.0x262.player_fields).
+//// - **Worn:** the item visuals of the Novice set the player wears, after the
+////   body's (genesis_prime/game/worn_visual): the client draws armor and a
+////   weapon only from them, on the player's own client and every other's, which
+////   are sent the same 0x262 (`opcode.0x262.worn_visuals`).
 //// - **PvP flags** 0: the 3 bits are the unit's PvP flags, not the path
 ////   (0x1403b48b0).
 //// - Every other field 0 or empty, each by its record
@@ -67,7 +71,7 @@ import gleam/option.{None, Some}
 pub const stand_in_health = 136
 
 /// A player's unit in a map: the character as the unit `unit_id`, placed at
-/// `place` with the body `visuals`. Only `new` builds one, so a unit always
+/// `place` with the item `visuals`, its body's and its worn set's. Only `new` builds one, so a unit always
 /// holds all four.
 pub opaque type PlayerUnit {
   PlayerUnit(
@@ -78,7 +82,7 @@ pub opaque type PlayerUnit {
   )
 }
 
-/// The unit of the character as the unit `unit_id`, at `place` with the body
+/// The unit of the character as the unit `unit_id`, at `place` with the item
 /// `visuals`.
 pub fn new(
   character character: Character,

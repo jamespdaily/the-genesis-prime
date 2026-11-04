@@ -1,11 +1,12 @@
 //// What a character holds on entering the world, from the client's tables: the
-//// Novice weapon, one ability per level-1 spell of its class, and the gear's
-//// properties. The client grants none of it (the server sends it), so the
-//// server reads the rows the client keeps for it.
+//// whole Novice set worn at once, the weapon, one ability per level-1 spell of
+//// its class, and the gear's properties. The client grants none of it (the
+//// server sends it), so the server reads the rows the client keeps for it.
 ////
 //// ```
 //// CharacterCreation (start 4, enabled) ─▶ a set per class and faction:
-////      its items ─▶ item_property ─▶ the gear's properties, the weapon and its slot
+////      its items ─▶ item_property ─▶ the gear's properties, each piece's bag index
+////      its items ─▶ worn_visual ─▶ what is drawn on the wearer
 //// SpellLevel (class, level 1, no prerequisite) ─▶ Spell4 ─▶ Spell4Base ids
 //// both, once, when the tables load ─▶ Loadouts ─▶ of(class, faction)
 //// ```
@@ -14,10 +15,17 @@
 ////   4) of the character's class and faction: the first row of the pair, in id
 ////   order, since its other rows differ only in race and sex
 ////   (`Item2.novice_set`). Every class and faction a player can make has one,
-////   or the load fails.
+////   or the load fails. A character with a Novice set wears all of it at entry:
+////   a server choice (Jim's decision on goal 274).
 //// - **The weapon** is the set's item whose equipped slot flags hold WeaponPrimary,
 ////   bit 16 (0x10000), and it is equipped in slot 16: the item's slot index is
 ////   the bit's (`0x1403afb10`, `lua.ActionBarFrame.InitializeBars`).
+//// - **The armor** is the set's other items, each held at the bag index of the
+////   lowest bit of its equipped slot flags (`ItemSlot.equippedSlotFlags`,
+////   GetSlot 0x140418a50): the chest 0, legs 1, shoulder 3, feet 4, hands 5 and
+////   the shield 15.
+//// - **The visuals** are the items drawn on the wearer, by slot: one per armor
+////   piece and the weapon (genesis_prime/game/worn_visual); the shield has none.
 //// - **The abilities** are the class's SpellLevel rows of level 1 with no
 ////   prerequisite, in id order, each as the Spell4Base id of its Spell4 row
 ////   (`SpellLevel.spell4Id`).
@@ -30,6 +38,8 @@ import genesis_prime/game/item_property.{
   type ItemProperties, type ItemPropertyError,
 }
 import genesis_prime/game/level
+import genesis_prime/game/worn_visual.{type WornVisual, type WornVisualError}
+import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/creature_level
 import genesis_prime/table/id.{
@@ -44,17 +54,26 @@ import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/result
 
-/// A character's loadout: the weapon and the slot it is equipped in, the
-/// abilities as Spell4Base ids in bar order, and what the gear gives.
+/// A character's loadout: the weapon and the slot it is equipped in, the armor
+/// pieces and shield with their slots, what is drawn of them and the weapon,
+/// the abilities as Spell4Base ids in bar order, and what the gear gives.
 pub type Loadout {
   Loadout(
     weapon: Item2Id,
     weapon_slot: Int,
+    armor: List(Equipped),
+    visuals: List(WornVisual),
     abilities: List(Spell4BaseId),
     properties: ItemProperties,
   )
+}
+
+/// An item held equipped, at location 0, and the bag index it is held at.
+pub type Equipped {
+  Equipped(item: Item2Id, bag_index: Int)
 }
 
 /// The loadout of each class and faction, built once when the tables load.
@@ -105,6 +124,10 @@ pub fn derivation() -> table_store.Derivation {
 type LoadoutError {
   /// An item's properties cannot be given.
   ItemFailed(error: ItemPropertyError)
+  /// An item's visual cannot be given.
+  VisualFailed(error: WornVisualError)
+  /// An item has no equipped slot flag below bit 31, so no bag index.
+  NoEquippedSlot(item2_id: Int)
   /// GameFormula row 145, the highest level, is missing.
   NoHighestLevel
   /// CreatureLevel has no row for a level a character can have.
@@ -124,6 +147,11 @@ type LoadoutError {
 fn describe(error error: LoadoutError) -> String {
   case error {
     ItemFailed(error:) -> item_property.describe(error:)
+    VisualFailed(error:) -> worn_visual.describe(error:)
+    NoEquippedSlot(item2_id:) ->
+      "the item "
+      <> int.to_string(item2_id)
+      <> " has no equipped slot flag below bit 31, so no bag index"
     NoHighestLevel -> "the table GameFormula has no row 145"
     NoCreatureLevel(level:) ->
       "the table CreatureLevel has no row " <> int.to_string(level)
@@ -218,13 +246,56 @@ fn build_set(
     |> result.map_error(ItemFailed),
   )
   use weapon <- result.try(weapon_of(tables:, row:, items:))
+  use armor <- result.try(armor_of(tables:, items:, weapon: weapon.0))
+  use visuals <- result.try(visuals_of(tables:, items:))
   use abilities <- result.try(abilities_of(tables:, class_id: row.class_id))
   Ok(Loadout(
     weapon: Item2Id(weapon.0),
     weapon_slot: weapon.1,
+    armor:,
+    visuals:,
     abilities:,
     properties:,
   ))
+}
+
+/// The set's items that are not its weapon, each with the bag index of its
+/// equipped slot flags' lowest bit, in bag order.
+fn armor_of(
+  tables tables: table_store.Tables,
+  items items: List(Int),
+  weapon weapon: Int,
+) -> Result(List(Equipped), LoadoutError) {
+  list.filter(items, fn(item) { item != weapon })
+  |> list.try_map(fn(item) {
+    use flags <- result.try(
+      item_property.equipped_slot_flags(tables:, item2_id: item)
+      |> result.map_error(ItemFailed),
+    )
+    item_property.equipped_slot_index(slot_flags: flags)
+    |> result.replace_error(NoEquippedSlot(item2_id: item))
+    |> result.map(fn(bag_index) { Equipped(item: Item2Id(item), bag_index:) })
+  })
+  |> result.map(
+    list.sort(_, fn(first, second) {
+      int.compare(first.bag_index, second.bag_index)
+    }),
+  )
+}
+
+/// The visual of each of the set's items that is drawn, by slot.
+fn visuals_of(
+  tables tables: table_store.Tables,
+  items items: List(Int),
+) -> Result(List(WornVisual), LoadoutError) {
+  list.try_map(items, worn_visual.of_item(tables:, item2_id: _))
+  |> result.map_error(VisualFailed)
+  |> result.map(fn(visuals) {
+    list.filter_map(visuals, option.to_result(_, Nil))
+    |> list.sort(fn(first, second) {
+      int.compare(first.slot.value, second.slot.value)
+    })
+  })
 }
 
 /// The set's weapon and the slot it is equipped in: the item whose equipped slot
@@ -242,17 +313,11 @@ fn weapon_of(
     |> result.map_error(ItemFailed),
   )
   case list.find(flagged, fn(pair) { item_property.is_weapon(pair.1) }) {
-    Ok(#(item, flags)) -> Ok(#(item, lowest_bit(flags)))
+    Ok(#(item, flags)) ->
+      item_property.equipped_slot_index(slot_flags: flags)
+      |> result.replace_error(NoEquippedSlot(item2_id: item))
+      |> result.map(fn(slot) { #(item, slot) })
     Error(Nil) -> Error(NoWeapon(creation_id: row.id))
-  }
-}
-
-/// The index of the lowest bit set in a number above 0: the slot a flag stands
-/// for.
-fn lowest_bit(flags: Int) -> Int {
-  case int.bitwise_and(flags, 1) {
-    1 -> 0
-    _ -> 1 + lowest_bit(int.bitwise_shift_right(flags, 1))
   }
 }
 
@@ -289,6 +354,12 @@ pub fn of(
   let Loadouts(by_set:) = table_store.derived(tables:, key: loadouts_key)
   let ClassId(class_id) = class_id
   dict.get(by_set, #(class_id, faction_id))
+}
+
+/// The item visuals of what the loadout's character wears, as 0x262 carries
+/// them after its body's: one for each armor piece and the weapon.
+pub fn item_visuals(loadout loadout: Loadout) -> List(ItemVisual) {
+  list.map(loadout.visuals, worn_visual.item_visual)
 }
 
 /// A player's maximum health: the Base Health of CreatureLevel's row of its

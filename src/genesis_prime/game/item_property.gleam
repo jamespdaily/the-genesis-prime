@@ -278,6 +278,32 @@ pub fn equipped_slot_flags(
   |> result.map(fn(builder) { builder.equipped_slot_flags })
 }
 
+/// The bag index an item is equipped at: the index of the lowest bit set in its
+/// equipped slot flags, below bit 31 (GetSlot 0x140418a50, `ItemSlot.
+/// equippedSlotFlags`). `Error(Nil)` for flags with no such bit.
+pub fn equipped_slot_index(slot_flags slot_flags: Int) -> Result(Int, Nil) {
+  lowest_slot_bit(slot_flags:, index: 0)
+}
+
+fn lowest_slot_bit(
+  slot_flags slot_flags: Int,
+  index index: Int,
+) -> Result(Int, Nil) {
+  use <- bool.guard(index >= slot_bits, Error(Nil))
+  case int.bitwise_and(slot_flags, 1) {
+    1 -> Ok(index)
+    _ ->
+      lowest_slot_bit(
+        slot_flags: int.bitwise_shift_right(slot_flags, 1),
+        index: index + 1,
+      )
+  }
+}
+
+/// How many bits of the equipped slot flags name a bag index: the client takes
+/// an index below 31 (GetSlot 0x140418a50, `opcode.0x111.shared_item_unnamed`).
+const slot_bits = 31
+
 /// Whether the equipped slot flags are a weapon's, WeaponPrimary.
 pub fn is_weapon(slot_flags slot_flags: Int) -> Bool {
   int.bitwise_and(slot_flags, weapon_slot_flags) != 0
