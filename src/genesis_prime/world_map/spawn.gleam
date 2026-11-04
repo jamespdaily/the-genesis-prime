@@ -26,9 +26,15 @@
 ////   display is not in its creature's display group or has no Creature2DisplayInfo
 ////   row, or whose outfit has no Creature2OutfitInfo row: the client would drop the
 ////   0x262 or show no model.
-//// - **The creature's values.** Health is stat 0, truncated, and level is stat 10;
-////   a row with no stats takes the creature's `minLevel` and Base Health by the
-////   client's formula (`0x1404585c0`). Faction, base faction, display and outfit are
+//// - **The creature's values.** Level is the row's stat 10, or the creature's
+////   `minLevel` for a row with none. Health, stat 0 and the maximum, is Base Health
+////   at that level by the client's formula (`0x1404585c0`, which reads the message's
+////   stat 10: `opcode.0x262.creature_level`), not the row's recorded
+////   stat 0: the client computes its own maximum and a 0x262 sends none, so a
+////   recorded health above it would show current above maximum, and the world
+////   database's retail values are not read where the client has the number
+////   (`world_data.spawn_health`). The recorded stat 0 is read only to leave out a
+////   row it makes dead. Faction, base faction, display and outfit are
 ////   the row's own (`opcode.0x262.creature`): the client's weighted display pick
 ////   runs only for the spawns it makes itself (`0x1404846c0`).
 //// - **A level outside its row's range** is kept and listed in an info line.
@@ -117,9 +123,10 @@ pub type Spawn {
     creature_id: Creature2Id,
     /// Where the creature stands and faces, in the row's world and area.
     place: Place,
-    /// Stat 10.
+    /// Stat 10: the row's recorded level, or the creature's `minLevel`.
     level: Int,
-    /// Stat 0, truncated.
+    /// Stat 0, and the creature's maximum health: its Base Health at `level`
+    /// (`base_health`). A creature stands, and comes back, at full health.
     health: Int,
     /// The faction the 0x262 sends (the row's `faction_id`).
     faction_id: Int,
@@ -815,7 +822,7 @@ fn left_out_of(
     attackable_by(catalog:, player: exile_faction, unit: row.faction_id)
     || attackable_by(catalog:, player: dominion_faction, unit: row.faction_id),
     has_npc_link(checked.creature),
-    checked.spawn.health == 0
+    is_dead(checked)
   {
     True, _, _, _ -> Ok(NoFaction)
     False, False, _, _ -> Ok(FriendlyToBoth)
@@ -823,6 +830,17 @@ fn left_out_of(
     False, True, False, True -> Ok(Dead)
     False, True, False, False -> Error(Nil)
   }
+}
+
+/// Whether the client would create the unit dead: its recorded health stat 0
+/// truncates to 0, or its Base Health does (`opcode.0x262.creature`). No other
+/// recorded health is read (`base_health`).
+fn is_dead(checked: Checked) -> Bool {
+  let recorded_dead = case checked.row.health {
+    Some(stat) -> float.truncate(stat) == 0
+    None -> False
+  }
+  recorded_dead || checked.spawn.health == 0
 }
 
 /// Whether the creature gives or receives a quest, trains a class or a
@@ -963,8 +981,8 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
 }
 
 /// The checks the client makes of one row: its creature loads and its display
-/// is one of the creature's, and its health and level are the stats' or the
-/// creature's own.
+/// is one of the creature's, and its level is the stat's or the creature's own and
+/// its health the Base Health at that level.
 fn load_checks(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
@@ -992,14 +1010,11 @@ fn load_checks(
     )
     |> result.replace_error(InNoWorld(world_id: row.world_id)),
   )
-  use health <- result.try(case row.health {
-    Some(stat) -> Ok(float.truncate(stat))
-    None -> base_health(catalog:, row: creature)
-  })
   let level = case row.level {
     Some(stat) -> float.truncate(stat)
     None -> creature.min_level
   }
+  use health <- result.try(base_health(catalog:, row: creature, level:))
   use _in_group <- result.try(display_in_group(
     catalog:,
     creature:,
@@ -1153,7 +1168,7 @@ fn valid_creature(
   }
 }
 
-/// Base Health: property 7 at the creature's minimum level, truncated: its own
+/// Base Health: property 7 at `level`, truncated: its own
 /// override when it has one, else CreatureLevel[level] times the archetype, difficulty
 /// and tier multipliers (`creature_property`). The client looks the three multipliers
 /// up by the creature's words 4, 5 and 6, which are the archetype, difficulty and
@@ -1168,11 +1183,12 @@ fn valid_creature(
 fn base_health(
   catalog catalog: Catalog,
   row row: Creature2,
+  level level: Int,
 ) -> Result(Int, SpawnError) {
   creature_property(
     catalog:,
     row:,
-    level: row.min_level,
+    level:,
     property: unit_fields.base_health_property,
   )
   |> result.map(float.truncate)
