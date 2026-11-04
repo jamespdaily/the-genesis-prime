@@ -280,23 +280,24 @@ pub fn quick_draw_goes_in_5_phases_and_starts_no_proxy_behind_a_prerequisite_tes
 
 // ------------------------------------------------------------ the current cast
 
-pub fn a_press_during_pulse_blast_is_refused_13_until_the_casts_finish_test() -> Nil {
+pub fn a_press_during_pulse_blast_is_refused_13_while_more_than_500_ms_of_its_casts_are_left_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.pulse_blast, at: 1000)
   let assert [#(go_timer, 1250)] = support.started_timers(effects: pressed)
   let #(_, during) = press(state:, bag_index: support.pulse_blast, at: 1500)
   assert refusal_line(effects: during) == "7fc 42276 13"
-    as "cast.current_cast: Pulse Blast (Multiphase, cast time 1250) is the current cast from its start and its go does not clear it; Spell4.42276 propertyFlags 0x4000002 has neither 0x1, 0x10 nor 0x40"
+    as "cast.current_cast: Pulse Blast (Multiphase, cast time 1250) is the current cast from its start and its go does not clear it; Spell4.42276 propertyFlags 0x4000002 has neither 0x1, 0x10 nor 0x40; 750 ms of its bar are left, more than the queue window"
   let #(state, step) = support.fired(state:, timer: go_timer, at: 2250)
-  let #(_, after_its_finish) =
-    press(state:, bag_index: support.pulse_blast, at: 2251)
-  assert refusal_line(effects: after_its_finish) == "7fc 42276 13"
-    as "cast.current_cast: Pulse Blast's finish at 2250 leaves its child 37302, which shows a cast bar, as the current cast"
-  let #(state, _) = support.run_timers(state:, effects: step, from_ms: 2250)
-  let #(_, free) = press(state:, bag_index: support.pulse_blast, at: 2500)
-  assert is_accepted(effects: free)
-    as "cast.current_cast: the finish of the child at 2253 clears the current cast"
+  let #(state, held) = press(state:, bag_index: support.pulse_blast, at: 2251)
+  assert support.writes(effects: held) == []
+    as "cast.current_cast: Pulse Blast's finish at 2250 leaves its child 37302, which shows a cast bar of 3 ms (SpellPhase 2820 to 2823), as the current cast: 2 ms are left, so the press is held"
+  let #(_, steps) = support.run_timers(state:, effects: step, from_ms: 2250)
+  let assert Ok(#(_, last)) = list.find(steps, fn(step) { step.0 == 2253 })
+    as "the child's last phase is at 2253"
+  assert list.take(ids_of(effects: last), 2) == [0x07F4, 0x07FE]
+  assert list.drop(ids_of(effects: last), 2) |> list.first == Ok(0x07FD)
+    as "cast.current_cast: the finish of the child clears the current cast, and the held press is taken then"
 }
 
 pub fn quick_draw_is_refused_13_during_a_charge_while_gate_and_shred_pass_a_live_cast_test() -> Nil {
@@ -877,4 +878,78 @@ pub fn leaving_the_world_with_a_threshold_open_cancels_every_timer_and_writes_no
   assert support.cancelled_timers(effects: left) == timers_of(effects: charged)
     && support.writes(effects: left) == []
     as "a charge's timer is cancelled and nothing is written"
+}
+
+// ------------------------------------------------- a press queued behind a cast
+
+/// The write ids of a step, in order.
+fn ids_of(effects effects: List(cast.Effect)) -> List(Int) {
+  support.ids(frames: support.writes(effects:))
+}
+
+pub fn a_press_with_500_ms_or_less_of_the_current_cast_left_is_held_and_starts_at_the_go_that_clears_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) = press(state: cast.new(), bag_index: 0, at: 1000)
+  let assert [#(go_timer, 1250)] = support.started_timers(effects: pressed)
+    as "Spell4.32893: Telekinetic Strike's bar is 1250 ms and its go is the one timer"
+  let #(_, early) = press(state:, bag_index: support.pulse_blast, at: 1700)
+  assert refusal_line(effects: early) == "7fc 42276 13"
+    as "550 ms of the cast are left, more than the queue window of 500 (player.abilityQueueMax): refused 13, the server's choice"
+  let #(state, queued) = press(state:, bag_index: support.pulse_blast, at: 1800)
+  assert support.writes(effects: queued) == []
+    && support.started_timers(effects: queued) == []
+    as "450 ms are left: the press is held with no timer, since it starts at the go that clears the current cast, not at a time"
+  let #(_, second) = press(state:, bag_index: support.quick_draw, at: 1850)
+  assert refusal_line(effects: second) == "7fc 43468 13"
+    as "a second press while one is held is refused 13"
+  let #(state, go) = support.fired(state:, timer: go_timer, at: 2250)
+  assert list.take(ids_of(effects: go), 5)
+    == [0x07F4, 0x07FF, 0x07F4, 0x07FE, 0x07FE]
+    as "cast.current_cast: the go of a Normal cast clears the current cast; Telekinetic Strike's go, its child and its finish come first (Spell4Effects.effectType.26)"
+  assert list.drop(ids_of(effects: go), 5) |> list.take(2) == [0x07FD, 0x07F4]
+    as "then the held press is taken at the same go: Pulse Blast's 0x7fd and its first go"
+  assert support.started_timers(effects: go) |> list.map(fn(timer) { timer.1 })
+    == [1250]
+    as "the only timer is Pulse Blast's own phase 1 (SpellPhase 5391): none starts the held press"
+  let #(_, after) = press(state:, bag_index: support.pulse_blast, at: 2300)
+  assert refusal_line(effects: after) == "7fc 42276 13"
+    as "the held press is Pulse Blast, now the current cast"
+}
+
+pub fn a_held_press_behind_a_multiphase_cast_starts_when_the_last_cast_that_is_current_finishes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    press(state: cast.new(), bag_index: support.pulse_blast, at: 1000)
+  let assert [#(phase_1, 1250)] = support.started_timers(effects: pressed)
+  let #(state, queued) = press(state:, bag_index: 3, at: 1800)
+  assert support.writes(effects: queued) == []
+    && support.started_timers(effects: queued) == []
+    as "Pulse Blast's bar is 1250 ms: 450 ms are left at 1800, so Kick is held"
+  let #(state, at_phase_1) = support.fired(state:, timer: phase_1, at: 2250)
+  assert !list.contains(ids_of(effects: at_phase_1), 0x07FD)
+    as "cast.current_cast: Pulse Blast's finish leaves its child 37302, which shows a bar, as the current cast, so the held press waits"
+  let assert [#(second, 1), #(third, 2), #(fourth, 3)] =
+    support.started_timers(effects: at_phase_1)
+  let #(state, _) = support.fired(state:, timer: second, at: 2251)
+  let #(state, _) = support.fired(state:, timer: third, at: 2252)
+  let #(_, last) = support.fired(state:, timer: fourth, at: 2253)
+  assert ids_of(effects: last) == [0x07F4, 0x07FE, 0x07FD, 0x07F4, 0x07FE]
+    as "the finish of 37302 clears the current cast, and Kick (Spell4.58591: instant) is taken right after"
+}
+
+pub fn a_held_press_behind_a_cast_the_client_cancels_starts_after_its_finish_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) = press(state: cast.new(), bag_index: 0, at: 1000)
+  let id = pressed_id_of(effects: pressed)
+  let #(state, _) = press(state:, bag_index: 3, at: 1800)
+  let assert Ok(#(_, cancelled)) =
+    support.cancelled(
+      state:,
+      cast_id: id,
+      reason: SpellCancelled,
+      bit: 1,
+      at: 1900,
+    )
+  assert ids_of(effects: cancelled) |> list.take(2) == [0x07FE, 0x07FD]
+    as "opcode.0x801: the cancel clears the current cast; the 0x7fe comes first and the held press is taken after it"
 }

@@ -62,12 +62,16 @@
 ////   a press with 13 only against it, and not when its spell is free while live or
 ////   the pressed spell ignores casting (`cast.current_cast`, `Spell4.propertyFlags`,
 ////   `0x1403afb10`). The server keeps the same in `current`.
-//// - **13 is the server's choice.** The client itself never refuses an ability
-////   press with 13, and never queues one behind its current cast: its casting
-////   test runs only for a request whose word 0x14 is non-zero, which a press
-////   leaves 0 (`cast.press_queue`). The server models the refusal on that unused
-////   test, so a press while the current cast is live is refused 13 whatever time
-////   the cast has left, and the cast bar is not touched.
+//// - **A press during the current cast is the server's choice.** The client itself
+////   never refuses an ability press with 13 and never queues one behind its current
+////   cast: its casting test runs only for a request whose word 0x14 is non-zero,
+////   which a press leaves 0 (`cast.press_queue`). The server models that unused test
+////   with the same window as the cooldown queue: a press with more than 500 ms of
+////   the current cast left (its start plus its duration, `spell_plan.duration_ms`,
+////   less the time now) is refused 13, and one with 500 ms or less left is held and
+////   starts at the go or finish that clears the current cast, not from a timer. A
+////   cast that has no end of its own, a charge held until its release, always
+////   refuses.
 //// - **A press within 500 ms of a cooldown's end** is held: the client queues it
 ////   (317) and sends it (`0x1403b14c0`), so the server starts it when the
 ////   cooldown ends, from a timer, and answers nothing before. A second press
@@ -142,6 +146,7 @@
 //// | a press past the last stage of an open threshold | 0x7fc {client id, the ability, 4} |
 //// | a refusal of the client's own checks | 0x7fc with the result; nothing else changes |
 //// | a press while one is held | 0x7fc 13 |
+//// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
 //// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
 //// | a 0x801 (0, 0) naming no open threshold | no change, a debug line |
 //// | a 0x801 with a reason and bit the client never sends | the connection ends |
@@ -289,6 +294,8 @@ pub type Live {
     audience: Set(ConnectionId),
     /// How many of its gos have been sent.
     gone: Int,
+    /// The monotonic time the cast started at, which its time left is counted from.
+    started_ms: Int,
     /// The ability whose open threshold this cast is a stage of.
     stage_of: Option(Spell),
     /// Whether this cast's finish closes the ability's threshold: a release, and the
@@ -304,9 +311,18 @@ pub type Threshold {
   Threshold(ability: Spell, index: Int, cast_id: Int)
 }
 
-/// A press the client queued within 500 ms of a cooldown's end.
+/// A press the client queued within 500 ms of a cooldown's end, or the server
+/// queues within 500 ms of the end of the current cast.
 pub type Held {
-  Held(client_cast_id: Int, resolution: Resolution)
+  Held(client_cast_id: Int, resolution: Resolution, until: HeldUntil)
+}
+
+/// What a held press waits for.
+pub type HeldUntil {
+  /// The cooldown's end, from a timer.
+  CooldownEnds
+  /// The go or finish that clears the caster's current cast.
+  CastClears
 }
 
 /// What the rule keeps for one player: its cooldowns, its live casts, its open
@@ -420,7 +436,39 @@ pub fn take(
 ) -> Result(#(State, List(Effect)), Refusal) {
   case message {
     Pressed -> pressed(cast:, body:, caster:, plans:, now:)
-    Cancelled -> cancelled(cast:, body:, now:)
+    Cancelled ->
+      cancelled(cast:, body:, now:)
+      |> result.map(fn(taken) {
+        released(taken:, caster:, now_ms: now.monotonic_ms)
+      })
+  }
+}
+
+/// A step's result with the held press started when the step cleared the current
+/// cast it waited for.
+fn released(
+  taken taken: #(State, List(Effect)),
+  caster caster: Caster,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, effects) = taken
+  case cast.held {
+    Some(Held(client_cast_id:, resolution:, until: CastClears)) ->
+      case cast.current {
+        None -> {
+          let #(cast, started) =
+            press_of(
+              cast: State(..cast, held: None),
+              caster:,
+              now_ms:,
+              client_cast_id:,
+              resolution:,
+            )
+          #(cast, list.append(effects, started))
+        }
+        Some(_) -> taken
+      }
+    Some(Held(until: CooldownEnds, ..)) | None -> taken
   }
 }
 
@@ -576,11 +624,18 @@ fn press_of(
         State(
           ..cast,
           timers: dict.insert(cast.timers, timer, StartHeld),
-          held: Some(Held(client_cast_id:, resolution:)),
+          held: Some(Held(client_cast_id:, resolution:, until: CooldownEnds)),
         ),
         [StartTimer(timer:, after_ms: wait_ms)],
       )
     }
+    HoldForCast -> #(
+      State(
+        ..cast,
+        held: Some(Held(client_cast_id:, resolution:, until: CastClears)),
+      ),
+      [],
+    )
   }
 }
 
@@ -591,6 +646,9 @@ type Verdict {
   Refuse(result: cast_result.CastResult)
   /// The press is within the queue window of a cooldown's end.
   Hold(wait_ms: Int)
+  /// The caster's current cast has 500 ms or less left: the press waits for the go
+  /// or finish that clears it, which is the server's choice (`cast.press_queue`).
+  HoldForCast
   /// The spell waits for a later step: its method is not built, or its cost needs
   /// a resource the server does not hold. It is refused, and logged once.
   NotBuilt(result: cast_result.CastResult, why: String)
@@ -619,7 +677,10 @@ fn verdict(
   )
   use <- bool.guard(
     when: casting(cast) && !spell.ignores_casting,
-    return: Refuse(result: cast_result.SpellAlreadyCasting),
+    return: case time_left_of_current_cast(cast:, now_ms:) {
+      Some(left_ms) if left_ms <= queue_window_ms -> HoldForCast
+      Some(_) | None -> Refuse(result: cast_result.SpellAlreadyCasting)
+    },
   )
   use <- bool.guard(
     when: option.is_some(spell.unpayable_cost),
@@ -688,6 +749,24 @@ fn casting(cast: State) -> Bool {
         Error(Nil) -> False
       }
   }
+}
+
+/// The time the caster's current cast has left, in milliseconds, from its start
+/// and its duration (`cast.press_queue`); none when it has no end of its own,
+/// such as a charge held until its release.
+fn time_left_of_current_cast(
+  cast cast: State,
+  now_ms now_ms: Int,
+) -> Option(Int) {
+  option.then(cast.current, fn(cast_id) {
+    dict.get(cast.casts, cast_id) |> option.from_result
+  })
+  |> option.then(fn(live) {
+    spell_plan.duration_ms(spell: live.spell)
+    |> option.map(fn(duration_ms) {
+      int.max(0, live.started_ms + duration_ms - now_ms)
+    })
+  })
 }
 
 fn cancelled(
@@ -795,6 +874,19 @@ pub fn timer_fired(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
+  released(
+    taken: fire(cast:, timer:, caster:, now:),
+    caster:,
+    now_ms: now.monotonic_ms,
+  )
+}
+
+fn fire(
+  cast cast: State,
+  timer timer: TimerId,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
   case dict.get(cast.timers, timer) {
     Error(Nil) -> #(cast, [])
     Ok(due) -> {
@@ -821,7 +913,7 @@ pub fn timer_fired(
         StartHeld ->
           case cast.held {
             None -> #(cast, [])
-            Some(Held(client_cast_id:, resolution:)) ->
+            Some(Held(client_cast_id:, resolution:, ..)) ->
               press_of(
                 cast: State(..cast, held: None),
                 caster:,
@@ -904,6 +996,7 @@ fn start(
       primary_target: caster.unit_id,
       audience:,
       gone: 0,
+      started_ms: now_ms,
       stage_of: case role {
         Stage(ability:, ..) -> Some(ability)
         Child | Base(..) -> None

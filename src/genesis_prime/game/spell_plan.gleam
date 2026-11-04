@@ -807,6 +807,26 @@ pub fn finish_after_ms(spell spell: Spell) -> Option(Int) {
   }
 }
 
+/// How long a cast of the spell lasts, in milliseconds, which is what the client
+/// counts the current cast's time left from (`cast.press_queue`): a channel's
+/// channelMaxTime, else the cast time, else the sum of a Multiphase spell's phase
+/// delays; none for a ChargeRelease ability that holds its cast until the release.
+pub fn duration_ms(spell spell: Spell) -> Option(Int) {
+  case spell.channel, spell.phase_delays_ms {
+    Some(channel), _ -> Some(channel.max_time_ms)
+    None, [] ->
+      case go_times_ms(spell:) {
+        [] -> None
+        [_, ..] -> Some(spell.cast_time_ms)
+      }
+    None, delays ->
+      case spell.cast_time_ms {
+        0 -> Some(int.sum(delays))
+        cast_time -> Some(cast_time)
+      }
+  }
+}
+
 /// Whether a press of the ability opens a threshold: a RapidTap or ChargeRelease
 /// spell with stages.
 pub fn opens_threshold(spell spell: Spell) -> Bool {

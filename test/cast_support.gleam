@@ -131,12 +131,7 @@ pub fn unbuilt() -> Spell {
 /// makes them from the planted rows (`spell_tables`, each value the client's own
 /// row), and the three planted spells by hand.
 pub fn plans() -> Plans {
-  let assert Ok(built) =
-    spell_tables.with_loaded(rows: spell_tables.rows(), body: fn(tables) {
-      spell_plan.build(tables:)
-    })
-    as "the planted spell rows build"
-  with_spells(plans: built, spells: [
+  with_spells(plans: spell_tables.plans(), spells: [
     exempt(),
     blocked_only(),
     slow(),

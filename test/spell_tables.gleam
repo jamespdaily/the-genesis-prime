@@ -1321,6 +1321,31 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
   ]
 }
 
+/// The plans the planted rows build, built once for the whole run: each build
+/// loads the tables, which costs memory that a test pressing many times in a
+/// parallel run cannot spare.
+pub fn plans() -> spell_plan.Plans {
+  case remembered(key: "spell_tables_plans", default: Error(Nil)) {
+    Ok(plans) -> plans
+    Error(Nil) -> {
+      let assert Ok(built) =
+        with_loaded(rows: rows(), body: fn(tables) { spell_plan.build(tables:) })
+        as "the planted spell rows build"
+      remember(key: "spell_tables_plans", plans: Ok(built))
+      built
+    }
+  }
+}
+
+@external(erlang, "persistent_term", "get")
+fn remembered(
+  key key: String,
+  default default: Result(spell_plan.Plans, Nil),
+) -> Result(spell_plan.Plans, Nil)
+
+@external(erlang, "persistent_term", "put")
+fn remember(key key: String, plans plans: Result(spell_plan.Plans, Nil)) -> Nil
+
 /// The planted tables the plan reads, loaded from these rows under a key of
 /// their own, for the body to run on; unloaded afterwards.
 pub fn with_loaded(

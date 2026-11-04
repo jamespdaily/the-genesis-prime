@@ -33,12 +33,10 @@ import spell_tables
 import unitest
 
 fn planted(base base: Int) -> Spell {
-  spell_tables.with_loaded(rows: spell_tables.rows(), body: fn(tables) {
-    let assert Ok(plans) = spell_plan.build(tables:) as "the planted rows build"
-    let assert Ok(spell) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
-      as "the planted class holds the ability"
-    spell
-  })
+  let assert Ok(spell) =
+    spell_plan.in_plans(plans: spell_tables.plans(), base: Spell4BaseId(base))
+    as "the planted class holds the ability"
+  spell
 }
 
 pub fn telekinetic_strike_takes_1250_ms_has_a_global_cooldown_of_1000_ms_that_blocks_and_one_child_on_the_caster_test() -> Nil {
