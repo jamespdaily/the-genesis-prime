@@ -1561,6 +1561,12 @@ fn leaving_for_the_holocrypt(
   )
 }
 
+/// A yes or no as the 1-bit value a message holds it in: 1 for yes.
+fn bit(yes: Bool) -> Int {
+  use <- bool.guard(when: yes, return: 1)
+  0
+}
+
 /// 0x88c {unit, dead, 0, 0}: the unit died or came back (`opcode.0x88c`); the
 /// 5-bit value is not read and the 32-bit one is used only for a unit under
 /// client control that comes back, so both are 0.
@@ -1568,10 +1574,7 @@ fn death_state_frame(unit_id unit_id: Int, dead dead: Bool) -> Frame {
   let assert Ok(body) =
     unit_death_state.encode(UnitDeathState(
       unit_id:,
-      dead: case dead {
-        True -> 1
-        False -> 0
-      },
+      dead: bit(dead),
       field_3: 0,
       field_4: 0,
     ))
@@ -1636,10 +1639,7 @@ fn resurrection_window_frame(
       ghost_unit_id:,
       wake_here_cost: player_life.window_zero,
       death_penalty_ms: player_life.window_zero,
-      dead: case dead {
-        True -> 1
-        False -> 0
-      },
+      dead: bit(dead),
       choices: player_life.offered_choices,
       caster_asked: 0,
       wake_here_cooldown_ms: player_life.window_zero,
@@ -1705,12 +1705,10 @@ fn combat_state_frame(
   in_combat in_combat: Bool,
 ) -> Frame {
   let assert Ok(body) =
-    unit_combat_state.encode(
-      UnitCombatState(unit_id:, in_combat: case in_combat {
-        True -> 1
-        False -> 0
-      }),
-    )
+    unit_combat_state.encode(UnitCombatState(
+      unit_id:,
+      in_combat: bit(in_combat),
+    ))
     as "a unit id of 32 bits and a bit fit the message"
   Frame(message_id: unit_combat_state.message_id, body:)
 }
@@ -3260,12 +3258,7 @@ fn creature_news_frames(
   case news {
     client_connection.Health(health:, dead:) -> {
       let assert Ok(body) =
-        unit_health.encode(
-          UnitHealth(unit_id:, health:, dead: case dead {
-            True -> 1
-            False -> 0
-          }),
-        )
+        unit_health.encode(UnitHealth(unit_id:, health:, dead: bit(dead)))
         as "a unit id of 32 bits, a health of 32 and a bit fit the message"
       [
         to_client(session, Frame(message_id: unit_health.message_id, body:)),

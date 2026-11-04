@@ -306,11 +306,20 @@ pub fn of(
   use found <- result.try(
     list.find(starts, fn(candidate) {
       candidate.start == start
-      && candidate.faction_id == faction_id
-      && list.contains(candidate.race_ids, race_id)
+      && of_race_and_faction(candidate:, faction_id:, race_id:)
     }),
   )
   place_of_row(tables:, location_id: found.location_id)
+}
+
+/// Whether the start above is one of characters of this faction and race.
+fn of_race_and_faction(
+  candidate candidate: StartGroup,
+  faction_id faction_id: Int,
+  race_id race_id: RaceId,
+) -> Bool {
+  candidate.faction_id == faction_id
+  && list.contains(candidate.race_ids, race_id)
 }
 
 /// The place of a WorldLocation2 row: its world, zone, position and facing.
@@ -351,8 +360,7 @@ pub fn holocrypt(
 ) -> Result(Place, Nil) {
   starts
   |> list.filter(fn(candidate) {
-    candidate.faction_id == faction_id
-    && list.contains(candidate.race_ids, race_id)
+    of_race_and_faction(candidate:, faction_id:, race_id:)
   })
   |> list.filter_map(fn(candidate) {
     place_of_row(tables:, location_id: candidate.location_id)

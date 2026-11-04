@@ -362,7 +362,7 @@ pub fn arrival_news(state state: State, now_ms now_ms: Int) -> List(News) {
   let fight = case state.status {
     Fighting(threat:, target:, ..) -> {
       let others =
-        sorted_entries(threat)
+        map.sorted_by_connection(threat)
         |> list.filter(fn(entry) { entry.0 != target })
         |> list.map(fn(entry) { threat_news(entry.1) })
       let assert Ok(top) = dict.get(threat, target)
@@ -940,7 +940,7 @@ fn leash(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(entries, round) = case state.status {
-    Fighting(threat:, round:, ..) -> #(sorted_entries(threat), round)
+    Fighting(threat:, round:, ..) -> #(map.sorted_by_connection(threat), round)
     Resting | Returning(..) -> #([], None)
   }
   let #(state, closed) = case round {
@@ -1014,7 +1014,7 @@ fn killed(
         list.flatten([
           finished,
           [ToViewers(client_connection.CombatState(in_combat: False))],
-          list.map(sorted_entries(threat), fn(entry) {
+          list.map(map.sorted_by_connection(threat), fn(entry) {
             ToPlayer(to: entry.0, told: Released(unit_id: fighter.unit_id))
           }),
         ]),
@@ -1022,15 +1022,6 @@ fn killed(
     }
     Resting | Returning(..) -> #(State(..state, status: Resting), [])
   }
-}
-
-fn sorted_entries(
-  threat: Dict(ConnectionId, Threat),
-) -> List(#(ConnectionId, Threat)) {
-  dict.to_list(threat)
-  |> list.sort(fn(first, second) {
-    map.compare_connections(first: first.0, second: second.0)
-  })
 }
 
 fn generation(state: State) -> #(State, Int) {

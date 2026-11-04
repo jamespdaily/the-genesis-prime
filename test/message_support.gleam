@@ -4,6 +4,7 @@
 import connection_vectors
 import fact_file
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
+import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import gleam/bit_array
 import gleam/int
 import gleam/string
@@ -87,4 +88,21 @@ pub fn set_bits(
   let cleared = int.bitwise_and(number, int.bitwise_not(mask))
   let changed = int.bitwise_or(cleared, int.bitwise_shift_left(value, at))
   <<changed:size(size)-little>>
+}
+
+/// The body of 0x15a for the unit, the choice and the value
+/// (`opcode.0x15a`).
+pub fn choice_body(
+  unit_id unit_id: Int,
+  choice choice: Int,
+  value value: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    choose_resurrection.encode(ChooseResurrection(
+      unit_id:,
+      choice:,
+      field_3: value,
+    ))
+    as "a unit id, a 7-bit choice and a 32-bit value fit the message"
+  body
 }

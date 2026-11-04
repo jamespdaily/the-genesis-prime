@@ -34,13 +34,13 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   Answered, CreatureStriker, Key, Landed, Refused, Strike,
 }
-import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/step
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/float
 import gleam/list
 import gleam/set
+import message_support
 import owned_test
 import spawn_support
 
@@ -288,21 +288,6 @@ fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
 }
 
 /// 0x15a's body: the unit, the choice and the third value.
-fn choice_body(
-  unit_id unit_id: Int,
-  choice choice: Int,
-  value value: Int,
-) -> BitArray {
-  let assert Ok(body) =
-    choose_resurrection.encode(ChooseResurrection(
-      unit_id:,
-      choice:,
-      field_3: value,
-    ))
-    as "a unit id, a 7-bit choice and a 32-bit value fit the message"
-  body
-}
-
 fn chosen(
   life: player_life.Life,
   body: BitArray,
@@ -388,25 +373,43 @@ pub fn a_strike_on_a_dead_player_is_refused_dead_test() -> Nil {
 pub fn a_choice_for_another_unit_one_not_offered_a_nonzero_value_or_one_while_alive_is_refused_unchanged_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(dead, _) = a_dead_warrior()
-  assert chosen(dead, choice_body(unit_id: 21, choice: 1, value: 0))
+  assert chosen(
+      dead,
+      message_support.choice_body(unit_id: 21, choice: 1, value: 0),
+    )
     == Error(player_life.NotThePlayer(unit_id: 21))
     as "another unit"
-  assert chosen(dead, choice_body(unit_id: 1_048_596, choice: 1, value: 0))
+  assert chosen(
+      dead,
+      message_support.choice_body(unit_id: 1_048_596, choice: 1, value: 0),
+    )
     == Error(player_life.NotThePlayer(unit_id: 1_048_596))
     as "the ghost's own id, 2^20 + 20 (the server's choice of a ghost id): the Death addon names the player's unit"
-  assert chosen(dead, choice_body(unit_id: own_unit, choice: 4, value: 0))
+  assert chosen(
+      dead,
+      message_support.choice_body(unit_id: own_unit, choice: 4, value: 0),
+    )
     == Error(player_life.NotOffered(choice: player_life.OtherChoice(value: 4)))
-    && chosen(dead, choice_body(unit_id: own_unit, choice: 32, value: 0))
+    && chosen(
+      dead,
+      message_support.choice_body(unit_id: own_unit, choice: 32, value: 0),
+    )
     == Error(player_life.NotOffered(choice: player_life.OtherChoice(value: 32)))
-    && chosen(dead, choice_body(unit_id: own_unit, choice: 0, value: 0))
+    && chosen(
+      dead,
+      message_support.choice_body(unit_id: own_unit, choice: 0, value: 0),
+    )
     == Error(player_life.NotOffered(choice: player_life.OtherChoice(value: 0)))
     as "a caster's resurrection (4), Exit Instance (32) and 0: the window offered only 1 and 2"
-  assert chosen(dead, choice_body(unit_id: own_unit, choice: 1, value: 5))
+  assert chosen(
+      dead,
+      message_support.choice_body(unit_id: own_unit, choice: 1, value: 5),
+    )
     == Error(player_life.NonzeroValue(value: 5))
     as "the Death addon always sends 0"
   assert chosen(
       player_life.new(health: 736, shield: 450),
-      choice_body(unit_id: own_unit, choice: 1, value: 0),
+      message_support.choice_body(unit_id: own_unit, choice: 1, value: 0),
     )
     == Error(player_life.NotDead)
     as "the living come back from nothing"
@@ -419,8 +422,14 @@ pub fn a_second_choice_is_refused_unchanged_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(dead, _) = a_dead_warrior()
   let assert Ok(#(alive, _)) =
-    chosen(dead, choice_body(unit_id: own_unit, choice: 1, value: 0))
-  assert chosen(alive, choice_body(unit_id: own_unit, choice: 2, value: 0))
+    chosen(
+      dead,
+      message_support.choice_body(unit_id: own_unit, choice: 1, value: 0),
+    )
+  assert chosen(
+      alive,
+      message_support.choice_body(unit_id: own_unit, choice: 2, value: 0),
+    )
     == Error(player_life.NotDead)
     as "the first choice brought the player back: the second finds it alive"
 }
@@ -429,7 +438,10 @@ pub fn wake_here_brings_the_player_back_at_full_health_and_full_shield_where_its
   use <- owned_test.run(60_000)
   let #(dead, _) = a_dead_warrior()
   let assert Ok(#(life, effects)) =
-    chosen(dead, choice_body(unit_id: own_unit, choice: 1, value: 0))
+    chosen(
+      dead,
+      message_support.choice_body(unit_id: own_unit, choice: 1, value: 0),
+    )
   assert effects == came_back_effects()
     as "0x92f full and the full shield, 0x88c (P, 0) to the player and its viewers, 0x1b3 dead 0, the ghost's 0x355, 0x636 for the body, 0x247 type 23 to both, in that order"
   assert player_life.state(life:) == player_life.Alive
@@ -457,7 +469,10 @@ pub fn the_holocrypt_comes_back_as_wake_here_does_then_asks_to_go_to_the_holocry
   use <- owned_test.run(60_000)
   let #(dead, _) = a_dead_warrior()
   let assert Ok(#(life, effects)) =
-    chosen(dead, choice_body(unit_id: own_unit, choice: 2, value: 0))
+    chosen(
+      dead,
+      message_support.choice_body(unit_id: own_unit, choice: 2, value: 0),
+    )
   assert effects == list.append(came_back_effects(), [GoToHolocrypt])
     as "the coming back's messages where the body lies, then the move to the Holocrypt place, last"
   assert player_life.state(life:) == player_life.Alive

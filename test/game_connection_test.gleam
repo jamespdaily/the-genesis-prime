@@ -54,7 +54,6 @@ import genesis_prime/coverage/sent_message
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection.{Settings} as game_connection
-import genesis_prime/game/hit
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/strike_tell
 import genesis_prime/game_settings.{GameSettings}
@@ -69,7 +68,6 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/chat_line
-import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
@@ -171,7 +169,6 @@ import genesis_prime/table/id.{
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
-import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, UnseenBy}
@@ -6534,12 +6531,7 @@ fn a_killing_strike() -> Event(ConnectionEvent(Message, Answer)) {
       ),
       from: fighter(),
       striker: strike_tell.CreatureStriker,
-      offence: hit.Offence(
-        ..offence,
-        blows: list.map(offence.blows, fn(blow) {
-          hit.Blow(..blow, damage: 100_000)
-        }),
-      ),
+      offence: spawn_support.dealing(offence:, damage: 100_000),
     )),
   )
 }
@@ -6565,14 +6557,7 @@ fn choice_message(
   choice choice: Int,
   value value: Int,
 ) -> BitArray {
-  let assert Ok(body) =
-    choose_resurrection.encode(ChooseResurrection(
-      unit_id:,
-      choice:,
-      field_3: value,
-    ))
-    as "a unit id, a 7-bit choice and a 32-bit value fit the message"
-  world_message(0x015A, body)
+  world_message(0x015A, message_support.choice_body(unit_id:, choice:, value:))
 }
 
 /// Wake Here, as the Death addon sends it: the player's own unit, 1 and 0.
@@ -6599,7 +6584,7 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
   use <- owned_test.run(10_000)
   let #(_, taken) = dead_in_world()
   let frames = heard(taken, keyed())
-  assert list.map(frames, fn(frame) { frame.message_id })
+  assert cast_support.ids(frames:)
     == [0x0938, 0x092F, 0x088C, 0x089A, 0x0247, 0x0262, 0x01B3, 0x0636]
     as "the shield and the health at 0, then 0x88c, 0x89a, 0x247, the ghost's 0x262, 0x1b3 and 0x636, in that order"
   assert decoded(frames, 0x088C, unit_death_state.decode)
@@ -6730,7 +6715,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
     frames
   }
   let death = written(news_told(died, 2))
-  assert list.map(death, fn(frame) { frame.message_id })
+  assert cast_support.ids(frames: death)
     == [0x0938, 0x0937, 0x088C, 0x089A, 0x0247]
     as "the shield and the health, then 0x88c, 0x89a and 0x247, in the order told"
   assert decoded(death, 0x088C, unit_death_state.decode)
@@ -6743,8 +6728,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
     == [CombatLog(entry: combat_log_entry.Death(CombatLogDeath(9)))]
     as "opcode.0x247.death: type 22"
   let back = written(news_told(woke, 2))
-  assert list.map(back, fn(frame) { frame.message_id })
-    == [0x0937, 0x0938, 0x088C, 0x0247]
+  assert cast_support.ids(frames: back) == [0x0937, 0x0938, 0x088C, 0x0247]
   assert decoded(back, 0x0937, unit_health.decode)
     == [UnitHealth(unit_id: 9, health: 736, dead: 0)]
     as "full health, 736 (player.level1_base_health)"
@@ -7375,22 +7359,9 @@ pub fn messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the
 /// Beast's own 12 takes some 400 ticks to kill a level-1 player and the fight is
 /// about the death, not the number.
 fn a_lethal_beast() -> spawn.Spawn {
-  let beast = spawn_support.beast_at(number: 1, place: beast_spawn_place())
-  let attack = beast.combat.attack
-  spawn.Spawn(
-    ..beast,
-    combat: creature_life.Combat(
-      ..beast.combat,
-      attack: creature_life.Attack(
-        ..attack,
-        offence: hit.Offence(
-          ..attack.offence,
-          blows: list.map(attack.offence.blows, fn(blow) {
-            hit.Blow(..blow, damage: 2000)
-          }),
-        ),
-      ),
-    ),
+  spawn_support.spawn_dealing(
+    spawn: spawn_support.beast_at(number: 1, place: beast_spawn_place()),
+    damage: 2000,
   )
 }
 
@@ -7514,7 +7485,7 @@ pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_
   let #(_, respawned) =
     fire_beast(state: beast, at_ms: 61_100, timer: TimerId(1))
   let #(_, frames, _) = medic_takes(medic, to_the_medic(respawned))
-  assert list.take(written_ids_of(frames), 2) == [0x0355, 0x0262]
+  assert list.take(cast_support.ids(frames:), 2) == [0x0355, 0x0262]
     && decoded(frames, 0x0355, unit_destroyed.decode)
     == [UnitDestroyed(unit_id: 7, field_2: 0)]
     && list.map(decoded(frames, 0x0262, unit_create_creature.decode), fn(unit) {
@@ -7562,9 +7533,4 @@ pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_
     answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
   assert written_ids(burst) == game_client.world_entry_ids
     as "the Spellslinger comes back at the Holocrypt: the entry burst"
-}
-
-/// The ids of the frames, in order.
-fn written_ids_of(frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
 }

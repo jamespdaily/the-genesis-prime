@@ -42,7 +42,6 @@ import genesis_prime/connection/registry
 import genesis_prime/content
 import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/hit
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
@@ -53,7 +52,6 @@ import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/chat_line_accepted
-import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
@@ -90,7 +88,6 @@ import genesis_prime/service
 import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
@@ -107,6 +104,7 @@ import log_capture
 import login_client
 import login_support
 import mailbox_support
+import message_support
 import novice_tables
 import owned_key
 import owned_test
@@ -346,8 +344,7 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
     as "row 466 is a PreTutorial start, WorldLocation2 row 51596: World 3460, zone 6009, and its position as 32-bit floats; the database kept them"
   send_play(game:, character_id: created.character_id)
   let burst = game_client.read(game:, count: burst_length())
-  assert list.map(burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
+  assert cast_support.ids(frames: burst) == game_client.world_entry_ids
     as "the player enters the world: the messages in the client's order (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61)"
   let assert [Frame(body: world, ..), Frame(body: unit, ..), ..] = burst
   let assert Ok(entered) = enter_world.decode(world)
@@ -394,8 +391,7 @@ pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_
   let _list = listed_entries(game)
   send_play(game:, character_id: created.character_id)
   let burst = game_client.read(game:, count: burst_length())
-  assert list.map(burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
+  assert cast_support.ids(frames: burst) == game_client.world_entry_ids
     as "the loadout comes after 0x19b and before 0x61 (opcode.0x19b, opcode.0x61)"
   let loadout = game_client.loadout_in(frames: burst)
   assert loadout.weapon == Some(81_346)
@@ -3459,8 +3455,11 @@ pub fn a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_te
 /// number. The fight's sequence is the client's as on the Dagun of
 /// `world_with_a_dagun`.
 fn world_with_a_lethal_dagun() -> login_support.Started {
-  let dagun = spawn_support.dagun(number: 1, x: 0.0)
-  let attack = dagun.combat.attack
+  let dagun =
+    spawn_support.spawn_dealing(
+      spawn: spawn_support.dagun(number: 1, x: 0.0),
+      damage: 100_000,
+    )
   login_support.start_with(change: fn(settings) {
     server.Settings(
       ..settings,
@@ -3469,22 +3468,7 @@ fn world_with_a_lethal_dagun() -> login_support.Started {
         spawns: spawn_support.key_in(
           world_id: 1387,
           spawns: [
-            spawn.Spawn(
-              ..dagun,
-              place: beast_place(x: 1.5, z: dagun_z),
-              combat: creature_life.Combat(
-                ..dagun.combat,
-                attack: creature_life.Attack(
-                  ..attack,
-                  offence: hit.Offence(
-                    ..attack.offence,
-                    blows: list.map(attack.offence.blows, fn(blow) {
-                      hit.Blow(..blow, damage: 100_000)
-                    }),
-                  ),
-                ),
-              ),
-            ),
+            spawn.Spawn(..dagun, place: beast_place(x: 1.5, z: dagun_z)),
           ],
           respawn_ms: 60_000,
         ),
@@ -3516,17 +3500,10 @@ fn choose(
   own own: Int,
   choice choice: Int,
 ) -> Nil {
-  let assert Ok(body) =
-    choose_resurrection.encode(ChooseResurrection(
-      unit_id: own,
-      choice:,
-      field_3: 0,
-    ))
-    as "a unit id, a 7-bit choice and a 32-bit value fit the message"
   game_client.send_world(
     game:,
-    message_id: choose_resurrection.message_id,
-    body:,
+    message_id: 0x015A,
+    body: message_support.choice_body(unit_id: own, choice:, value: 0),
   )
 }
 
@@ -3583,7 +3560,7 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
           },
         )
       let back = coming_back_in(frames:)
-      assert list.map(back, fn(frame) { frame.message_id })
+      assert cast_support.ids(frames: back)
         == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
         as { class <> " comes back by Wake Here in the client's order" }
       assert list.contains(game_client.deaths_in(frames: back), #(own, False))
@@ -3619,8 +3596,7 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
       list.drop_while(frames, fn(frame) { frame.message_id != 0x00AD }),
       burst_length(),
     )
-  assert list.map(burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
+  assert cast_support.ids(frames: burst) == game_client.world_entry_ids
     as "the Spellslinger comes back by the Holocrypt: the entry burst, 0xAD first"
   let assert [Frame(body:, ..), ..] = burst
   let assert Ok(entered) = enter_world.decode(body)
