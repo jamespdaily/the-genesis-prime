@@ -2,15 +2,16 @@
 //// server_table`). Expected values are these.
 //// - The list: the tables the server's rules read. Of the client's 384,
 ////   the Creature2 table with its ArcheType, Difficulty, DisplayGroupEntry,
-////   DisplayInfo, OverrideProperties, Resist and Tier and CreatureLevel
+////   DisplayInfo, OverrideProperties, Resist and Tier
 ////   (`genesis_prime/world_map/spawn`),
-////   CharacterCreation (the create request's row), CharacterCustomization,
+////   CharacterCreation (the create request's row, the Novice set), CharacterCustomization,
 ////   CharacterCustomizationLabel (the look's rows and labels),
 ////   CustomizationParameter and CustomizationParameterMap (the bone counts),
-////   WorldLocation2 (the start places) and GameFormula and XpPerLevel (the
-////   starting level) are the ones a rule reads today; the issue of this step
-////   names the first six and the level's two follow from
-////   `genesis_prime/game/level`.
+////   WorldLocation2 (the start places), GameFormula and XpPerLevel (the
+////   starting level and the item formulas), ChatChannel and WorldZone (chat),
+////   and Item2, Item2Category, Item2Family, Item2Type, ItemSlot, Spell4,
+////   SpellLevel and CreatureLevel (the Novice loadout,
+////   `genesis_prime/game/loadout`) are the ones a rule reads today.
 //// - The load: one file for each table of the list and no other is read, the
 ////   rows the rules follow are required, and a missing row fails the load. The
 ////   load runs in a fresh node, since it is under the server's own key, which
@@ -29,7 +30,7 @@ import gleam/string
 import owned_test
 import planted_table
 
-pub fn the_servers_tables_are_the_nineteen_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_twenty_six_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -52,11 +53,18 @@ pub fn the_servers_tables_are_the_nineteen_its_rules_read_test() -> Nil {
       "CustomizationParameter",
       "CustomizationParameterMap",
       "GameFormula",
+      "Item2",
+      "Item2Category",
+      "Item2Family",
+      "Item2Type",
+      "ItemSlot",
+      "Spell4",
+      "SpellLevel",
       "WorldLocation2",
       "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level and the training creatures' rows"
+    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, abilities and health, and the training creatures' rows"
 }
 
 /// Runs a function of this module in a fresh node, which must return.

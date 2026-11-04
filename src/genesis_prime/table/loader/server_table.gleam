@@ -21,9 +21,16 @@ import genesis_prime/table/creature_level
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
+import genesis_prime/table/item2
+import genesis_prime/table/item2_category
+import genesis_prime/table/item2_family
+import genesis_prime/table/item2_type
+import genesis_prime/table/item_slot
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
+import genesis_prime/table/spell4
+import genesis_prime/table/spell_level
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
@@ -41,6 +48,10 @@ import gleam/erlang/reference.{type Reference}
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
 ///   create request carries (genesis_prime/game/appearance).
 /// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
+/// - CreatureLevel: a player's Base Health by level (genesis_prime/game/loadout).
+/// - Item2, Item2Category, Item2Family, Item2Type and ItemSlot, with GameFormula:
+///   the Novice gear's properties (genesis_prime/game/item_property).
+/// - Spell4 and SpellLevel: a class's level-1 abilities (genesis_prime/game/loadout).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -61,6 +72,13 @@ pub fn entries() -> List(store.Entry) {
     customization_parameter.entry(),
     customization_parameter_map.entry(),
     game_formula.entry(),
+    item2.entry(),
+    item2_category.entry(),
+    item2_family.entry(),
+    item2_type.entry(),
+    item_slot.entry(),
+    spell4.entry(),
+    spell_level.entry(),
     world_location2.entry(),
     world_zone.entry(),
     xp_per_level.entry(),

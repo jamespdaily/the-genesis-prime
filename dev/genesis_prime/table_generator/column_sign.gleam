@@ -119,6 +119,42 @@ pub fn all() -> List(ColumnSign) {
       evidence: "the spawns read only a creature's level, faction, display group and the ids and multipliers of its Base Health (genesis_prime/world_map/spawn); no rule reads rankValue, which holds a value with bit 31 set in some rows",
     ),
     ColumnSign(
+      table: "Item2",
+      column: "powerLevel",
+      sign: Unread,
+      evidence: "the server reads the power level of the 44 Novice items only (genesis_prime/game/item_property), all 2 (Item2.novice_set); one Item2 row holds -1, which no rule reads",
+    ),
+    ColumnSign(
+      table: "Item2",
+      column: "maxCharges",
+      sign: Unread,
+      evidence: "no rule reads maxCharges, which holds -1 in one row",
+    ),
+    ColumnSign(
+      table: "Item2",
+      column: "questObjectiveActivationRequired",
+      sign: Unread,
+      evidence: "no rule reads questObjectiveActivationRequired, which holds -1 in 316 rows",
+    ),
+    ColumnSign(
+      table: "Spell4",
+      column: "spellDuration",
+      sign: Unread,
+      evidence: "the server reads only spell4BaseIdBaseSpell of Spell4 (genesis_prime/game/loadout); spellDuration holds -1 in 858 rows",
+    ),
+    ColumnSign(
+      table: "Spell4",
+      column: "channelMaxTime",
+      sign: Unread,
+      evidence: "the server reads only spell4BaseIdBaseSpell of Spell4 (genesis_prime/game/loadout); channelMaxTime holds -1 in 6 rows",
+    ),
+    ColumnSign(
+      table: "Spell4",
+      column: "propertyFlags",
+      sign: Unread,
+      evidence: "the server reads only spell4BaseIdBaseSpell of Spell4 (genesis_prime/game/loadout); propertyFlags holds a value with bit 31 set in 6 rows",
+    ),
+    ColumnSign(
       table: "WorldLocation2",
       column: "phases",
       sign: Unread,

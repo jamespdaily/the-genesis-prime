@@ -20,30 +20,68 @@ import gleam/result
 pub type SharedItem {
   SharedItem(
     item_guid: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_2: Int,
     item_id: Int,
     location: Int,
     bag_index: Int,
     stack_count: Int,
     charges: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_8: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_9: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_10: Int,
     durability: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_12: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_13: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_14: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_15: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_16: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_17: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_18: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_19: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_20: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_21: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_22: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_23: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     list_a: List(Int),
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     list_b: List(Int),
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_27: Int,
   )
 }

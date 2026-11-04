@@ -1436,8 +1436,9 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
       tail: UnitCreateTail(
         create_flags: 0,
         stats: [
-          UnitStat(stat_id: 0, value: 136),
+          UnitStat(stat_id: 0, value: 736),
           UnitStat(stat_id: 10, value: 1),
+          UnitStat(stat_id: 20, value: 450),
         ],
         server_time_estimate_start: 0,
         movement_commands: [
@@ -1455,7 +1456,14 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
           )),
         ],
         properties: [
-          UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
+          UnitProperty(property_id: 7, field_2: 0x44380000, value: 0x44380000),
+          UnitProperty(property_id: 35, field_2: 0x434B1000, value: 0x434B1000),
+          UnitProperty(property_id: 36, field_2: 0x425EC000, value: 0x425EC000),
+          UnitProperty(property_id: 41, field_2: 0x43E10000, value: 0x43E10000),
+          UnitProperty(property_id: 42, field_2: 0x437A0000, value: 0x437A0000),
+          UnitProperty(property_id: 175, field_2: 0x3F200000, value: 0x3F200000),
+          UnitProperty(property_id: 176, field_2: 0x3E19999A, value: 0x3E19999A),
+          UnitProperty(property_id: 178, field_2: 0x45A02800, value: 0x45A02800),
         ],
         item_visuals: [
           ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0),
@@ -1475,7 +1483,7 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
         outfit_info_id: 0,
       ),
     )
-    as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 136 as the client's creation check needs (vector.opcode.0x262.health, 0x140457bc5), and stat 10 is the character's level 1 (0x140458140); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25) and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
+    as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 736, CreatureLevel row 1's 135.97 and the Novice armor's 600 (player.level1_base_health; above 0 as the client's creation check needs, 0x140457bc5), stat 10 is the character's level 1 (0x140458140), and the Engineer's Novice set gives properties 35 and 36 (203.0625, 55.6875), 42 (250), 41 (450), 175, 176 and 178 (0.625, 0.15, 5125) and stat 20, a full shield (Item2.novice_set, player.level1_gear_properties); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25) and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
 }
 
 pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_it_0xf1_keeps_the_clients_interval_and_0x61_is_empty_test() -> Nil {
@@ -1484,6 +1492,12 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
     _,
     _,
     Frame(message_id: 0x019B, body: is_player),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x01A0, ..),
+    Frame(message_id: 0x019D, ..),
     Frame(message_id: 0x06BC, body: path_body),
     Frame(message_id: 0x0636, body: control),
     Frame(message_id: 0x00F1, body: interval),

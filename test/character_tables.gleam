@@ -4,7 +4,12 @@
 //// columns the server reads (`character_tables_test` compares each with the
 //// real row where the client is present); every other column is 0.
 ////
-//// - CharacterCreation rows 21, 338, 339, 359, 466, 530, 536 and 539, with their xp.
+//// - CharacterCreation rows 21, 338, 339, 359, 530, 536 and 539, with their xp, and
+////   the twelve Novice rows of `novice_tables` (466 and eleven more), with their
+////   items.
+//// - The Novice gear's tables (`novice_tables`): Item2, Item2Type, Item2Family,
+////   Item2Category, ItemSlot, CreatureLevel, Spell4 and SpellLevel, and the
+////   GameFormula rows the item formulas read.
 //// - GameFormula row 145 (its dataint0, the highest level) and XpPerLevel
 ////   records 1 to 51 with their minXpForLevel, which GetLevelForExperience
 ////   0x140029820 reads.
@@ -43,7 +48,6 @@ import genesis_prime/table/creature2_display_info
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
-import genesis_prime/table/creature_level
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
@@ -57,6 +61,7 @@ import genesis_prime/table/xp_per_level
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import novice_tables
 import place_support
 import planted_table.{type Cell, Boolean, Float, Integer}
 
@@ -177,12 +182,6 @@ fn creature_files() -> List(#(String, BitArray)) {
     ]),
     planted_table.file(creature2_tier.schema, [
       multiplier_row(schema: creature2_tier.schema, id: 1, value: 1.0),
-    ]),
-    planted_table.file(creature_level.schema, [
-      planted_table.row(creature_level.schema, [
-        #("ID", Integer(1)),
-        #("unitPropertyValue07", Float(135.97027587890625)),
-      ]),
     ]),
     planted_table.file(creature2_resist.schema, [
       planted_table.row(creature2_resist.schema, [#("ID", Integer(1))]),
@@ -443,12 +442,16 @@ fn files_with_looks(
     chat_channel_file(),
     planted_table.file(
       game_formula.schema,
-      game_formula_rows(ids: [highest_level_formula], highest: 50),
+      list.append(
+        game_formula_rows(ids: [highest_level_formula], highest: 50),
+        list.map(novice_tables.formulas(), novice_tables.game_formula_row),
+      ),
     ),
     planted_table.file(
       xp_per_level.schema,
       xp_per_level_rows(min_xp_for_level()),
     ),
+    ..novice_tables.files()
   ])
 }
 
@@ -503,7 +506,8 @@ fn creation(
   ])
 }
 
-fn creation_rows() -> List(List(Cell)) {
+/// The planted CharacterCreation rows, each with its ID cell first.
+pub fn creation_rows() -> List(List(Cell)) {
   [
     // 21: a disabled Arkship row (start 0).
     creation(
@@ -564,21 +568,6 @@ fn creation_rows() -> List(List(Cell)) {
       currency_amount: 0,
       entitlement: 0,
     ),
-    // 466: a PreTutorial row, class 1, race 1, sex 1, faction 167, no entitlement and no cost.
-    creation(
-      id: 466,
-      class_id: 1,
-      race_id: 1,
-      sex: 1,
-      faction_id: 167,
-      costume_only: False,
-      enabled: True,
-      start: 4,
-      xp: 0,
-      currency_type: 0,
-      currency_amount: 0,
-      entitlement: 0,
-    ),
     // 530: costume only, class 0.
     creation(
       id: 530,
@@ -624,6 +613,7 @@ fn creation_rows() -> List(List(Cell)) {
       currency_amount: 1,
       entitlement: 0,
     ),
+    ..novice_tables.creation_rows()
   ]
 }
 
