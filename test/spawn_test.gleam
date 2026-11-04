@@ -399,6 +399,7 @@ pub fn a_recorded_health_is_the_spawns_health_and_maximum_whatever_the_clients_f
     as "recorded 442.9 is the health, truncated as the client truncates"
   let assert Ok(below) = dict.get(world.by_id, SpawnId(2))
   assert #(below.health, below.health_source) == #(50, spawn.Recorded)
+    as "world_data.spawn_health: a recorded health below the formula's 132 is the health too"
 }
 
 pub fn a_level_outside_its_rows_range_is_kept_and_listed_test() -> Nil {
