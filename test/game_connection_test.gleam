@@ -147,7 +147,9 @@ import genesis_prime/store.{
   SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/table/character_customization
-import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/table/id.{
+  CharacterCustomizationLabelId, ClassId, RaceId, Spell4Id,
+}
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, Unwatched, Watched}
@@ -1301,7 +1303,15 @@ fn map_with_four_players() -> map.State {
       realm_id: settings().realm_id,
       tables: settings().tables,
       spawns: spawn.no_spawns(),
-      kinds: Kinds(default: Kind(respawn_ms: 60_000), by_creature: dict.new()),
+      kinds: Kinds(
+        default: Kind(
+          respawn_ms: 60_000,
+          attack_spell4_id: Spell4Id(5649),
+          attack_interval_ms: 1500,
+        ),
+        by_creature: dict.new(),
+      ),
+      numbers: spawn_support.numbers,
       idle_stop_ms: 60_000,
       sweep_ms: 10_000,
     ))
@@ -3752,8 +3762,11 @@ fn mapped(
     | AskHandOff(..)
     | AskSessions(..)
     | TellMoved(..)
+    | client_connection.TellReady(..)
     | TellPeer(..)
     | client_connection.TellStrike(..)
+    | client_connection.TellTargetMoved(..)
+    | client_connection.TellStrikeAnswered(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -4501,10 +4514,11 @@ pub fn an_accepted_0x637_tells_the_map_the_place_the_movement_keeps_and_nothing_
         request: TellMoved(
           connection: ConnectionId(1),
           place: standing_at(x: 1.5, y: 2.5, z: 3.5),
+          seq: 1,
         ),
       )),
     ]
-    as "the place is the movement's (the last position of the world's frame); the map decides sight and carries no move; the map is the run the connection watches"
+    as "the place is the movement's (the last position of the world's frame); the map decides sight and carries no move; the map is the run the connection watches; the first accepted 0x637 of the connection is its move 1"
   assert peer_tells(taken) == [] as "no viewer: no 0x638 is sent"
 }
 

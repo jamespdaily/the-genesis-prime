@@ -11,6 +11,7 @@ import genesis_prime/step.{
   Reply, Send, ServiceTimerFired, StartCreature, StartServiceTimer, Started,
   Told,
 }
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{
   type State, Gone, Join, Leave, Moved, Watched,
@@ -58,7 +59,11 @@ pub fn started(at xs: List(Float)) -> #(State, ServiceStep(map.Outgoing)) {
 /// The kinds of the tests' maps: the server's 60 s default for every creature.
 pub fn default_kinds() -> Kinds {
   Kinds(
-    default: Kind(respawn_ms: map_support.respawn_ms),
+    default: Kind(
+      respawn_ms: map_support.respawn_ms,
+      attack_spell4_id: Spell4Id(5649),
+      attack_interval_ms: 1500,
+    ),
     by_creature: dict.new(),
   )
 }
@@ -111,7 +116,11 @@ pub fn move(
     state:,
     at_ms:,
     event: OwnEvent(
-      Told(message: Moved(connection: ConnectionId(connection), place: at(x))),
+      Told(message: Moved(
+        connection: ConnectionId(connection),
+        place: at(x),
+        seq: at_ms,
+      )),
     ),
   )
 }
@@ -236,6 +245,10 @@ pub fn said(message: map.Outgoing) -> String {
     map.Unwatched(by: ConnectionId(number)) ->
       "Unwatched by " <> int.to_string(number)
     map.Retire -> "Retire"
+    map.Approached(by: ConnectionId(number), ..) ->
+      "Approached by " <> int.to_string(number)
+    map.Withdrew(by: ConnectionId(number)) ->
+      "Withdrew by " <> int.to_string(number)
     map.Joined(..) | map.NotJoined(..) | map.Left -> "an answer"
   }
 }

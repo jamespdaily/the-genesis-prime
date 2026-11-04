@@ -14,6 +14,8 @@
 //// database (PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE); when it cannot be
 //// read the tool says so and goes on.
 
+import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/refusal
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
@@ -25,11 +27,13 @@ import genesis_prime/store/worker
 import genesis_prime/table
 import genesis_prime/table/loader/store
 import genesis_prime/table_folder
+import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
 import gleam/erlang/reference
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/result
 import gleam/string
 import simplifile
 
@@ -84,14 +88,26 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
           "The spawn coverage needs the spawn table (run the migrations and the import on the play database): "
           <> worker.describe_query_error(error)
         Ok(rows) ->
-          case rating.build(tables:) {
-            Error(error) -> rating.describe(error:)
-            Ok(formulas) ->
+          case
+            rating.build(tables:),
+            content_creature_kind.rows(db)
+            |> result.map(fn(kind_rows) {
+              creature_kind.select(rows: kind_rows, tables:)
+            })
+          {
+            Error(error), _ -> rating.describe(error:)
+            Ok(_), Error(error) ->
+              "The spawn coverage needs the creature_kind table: "
+              <> worker.describe_query_error(error)
+            Ok(_), Ok(Error(refusals)) ->
+              "The spawn coverage needs creature kinds the load takes: "
+              <> string.join(list.map(refusals, refusal.describe), "; ")
+            Ok(formulas), Ok(Ok(kinds)) ->
               string.join(
                 [
                   "Spawns that start, by world:",
                   ..list.map(
-                    spawn.select(rows:, tables:, formulas:).coverage,
+                    spawn.select(rows:, tables:, formulas:, kinds:).coverage,
                     fn(coverage) { "- " <> spawn.describe_coverage(coverage:) },
                   )
                 ],

@@ -3,9 +3,11 @@
 //// each unit and nothing the unit's owner decides.
 ////
 //// ```
-//// the creature's 0x262 news ─▶ shown(unit, ShownCreature(place, life, alive, hit radius, attackable))
+//// the creature's 0x262 news ─▶ shown(unit, ShownCreature(Standing(place), life, alive, hit radius, attackable))
+//// its CreatureMoved news   ─▶ path changed
 //// its Health and Died news ─▶ alive changed        its 0x355 ─▶ the unit is no longer shown
-//// candidates(picture, faction, caster) ─▶ the alive foes, as geometry's candidates (genesis_prime/game/area)
+//// candidates(picture, faction, caster, now) ─▶ the alive foes at place_at(path, now), as geometry's
+////                                              candidates (genesis_prime/game/area)
 //// ```
 ////
 //// - **The picture is one news message stale at worst.** A creature that died in
@@ -16,12 +18,16 @@
 ////   player faction (worked out when the content loads, since Faction2 is a content-only
 ////   table, by genesis_prime/world_map/spawn). A Friendly creature, another player and the
 ////   caster are never struck.
+//// - **A running creature** is where its last path puts it at the time of the go
+////   (genesis_prime/world_map/creature_path `place_at`), by the same function the
+////   creature reads its own place with.
 //// - **A creature's life** is the number of the map's watch it was started under,
 ////   which is part of its address (genesis_prime/step `Creature`).
 
 import genesis_prime/game/area.{type Candidate, Candidate}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/world_map/creature_life.{type Attackable}
+import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/spawn
 import gleam/dict.{type Dict}
 import gleam/int
@@ -38,9 +44,11 @@ pub type PlayerFaction {
 pub type Shown {
   /// Another player's unit, which no area strikes.
   ShownPlayer
-  /// A creature, as its 0x262 news gave it.
+  /// A creature, as its 0x262 news gave it and its 0x638 news moved it.
   ShownCreature(
-    place: Place,
+    /// Where it stands or runs: standing at the place of its 0x262 until a
+    /// CreatureMoved news.
+    path: Path,
     /// The creature's life, which its address needs to be told a strike.
     life: Int,
     /// False once the creature's Died news arrived, or when it was created dead.
@@ -67,11 +75,13 @@ pub fn faction_of(faction_id faction_id: Int) -> Result(PlayerFaction, Nil) {
 }
 
 /// The alive foes of a player of `faction` in the picture, as candidates for an
-/// area, in unit id order, never the caster `caster_unit_id`.
+/// area at monotonic time `now_ms`, in unit id order, never the caster
+/// `caster_unit_id`.
 pub fn candidates(
   picture picture: Picture,
   faction faction: PlayerFaction,
   caster_unit_id caster_unit_id: Int,
+  now_ms now_ms: Int,
 ) -> List(Candidate) {
   dict.to_list(picture)
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
@@ -79,13 +89,18 @@ pub fn candidates(
     let #(unit_id, shown) = entry
     case shown {
       ShownPlayer -> Error(Nil)
-      ShownCreature(place:, alive:, hit_radius:, attackable:, ..) ->
+      ShownCreature(path:, alive:, hit_radius:, attackable:, ..) ->
         case
           alive
           && unit_id != caster_unit_id
           && may_attack(faction:, attackable:)
         {
-          True -> Ok(Candidate(unit_id:, at: area.point_of(place), hit_radius:))
+          True ->
+            Ok(Candidate(
+              unit_id:,
+              at: area.point_of(creature_path.place_at(path:, now_ms:)),
+              hit_radius:,
+            ))
           False -> Error(Nil)
         }
     }
@@ -102,14 +117,16 @@ fn may_attack(
   }
 }
 
-/// The place of a shown creature, for the centre of a child cast made on it, or
-/// `Error(Nil)` for a unit that is not shown or not a creature.
+/// The place of a shown creature at monotonic time `now_ms`, for the centre of a
+/// child cast made on it, or `Error(Nil)` for a unit that is not shown or not a
+/// creature.
 pub fn place_of(
   picture picture: Picture,
   unit_id unit_id: Int,
+  now_ms now_ms: Int,
 ) -> Result(Place, Nil) {
   case dict.get(picture, unit_id) {
-    Ok(ShownCreature(place:, ..)) -> Ok(place)
+    Ok(ShownCreature(path:, ..)) -> Ok(creature_path.place_at(path:, now_ms:))
     Ok(ShownPlayer) | Error(Nil) -> Error(Nil)
   }
 }
@@ -124,6 +141,16 @@ pub fn life_of(
     Ok(ShownCreature(life:, ..)) -> Ok(life)
     Ok(ShownPlayer) | Error(Nil) -> Error(Nil)
   }
+}
+
+/// The picture with the creature running `path` by its owner's news; a unit that
+/// is not a shown creature is as it was.
+pub fn with_path(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  path path: Path,
+) -> Picture {
+  todo as "with_path: the build fills it in"
 }
 
 /// The picture with the creature marked alive or dead by its owner's news; a unit

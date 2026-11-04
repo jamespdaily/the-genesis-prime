@@ -4,11 +4,13 @@
 import character_support
 import character_tables
 import genesis_prime/store.{type Character, Character}
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/dict
+import spawn_support
 
 /// The map's realm: not 1, so a unit built with a fixed realm fails.
 pub const realm_id = 7
@@ -38,7 +40,14 @@ pub fn standing(
   standing_with(
     incarnation:,
     spawns:,
-    kinds: Kinds(default: Kind(respawn_ms:), by_creature: dict.new()),
+    kinds: Kinds(
+      default: Kind(
+        respawn_ms:,
+        attack_spell4_id: Spell4Id(5649),
+        attack_interval_ms: 1500,
+      ),
+      by_creature: dict.new(),
+    ),
   )
 }
 
@@ -55,6 +64,7 @@ pub fn standing_with(
     tables: character_tables.shared(),
     spawns: spawn.world_spawns(spawns:),
     kinds:,
+    numbers: spawn_support.numbers,
     idle_stop_ms:,
     sweep_ms:,
   ))

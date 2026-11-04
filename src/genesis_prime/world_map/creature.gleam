@@ -34,10 +34,15 @@
 //// the run's end (WatchEnded) ─▶ Stop                                  (the map is gone: so are its players)
 ////
 //// caster's connection c0
-//// Strike(key, c0, offence, rolls) ─▶ the hit rule on its health (genesis_prime/world_map/creature_life)
+//// Strike(key, c0, striker, offence) ─▶ the hit rule on its health (genesis_prime/world_map/creature_life)
 ////                                    alive: Send(c0, Struck(Landed | Deflected))   Send(each viewer, Health(h', dead))
-////                                    killed: Send(each viewer, Died); StartServiceTimer(corpse, respawn_ms)
+////                                    landed: the fight takes StruckBy (genesis_prime/world_map/creature_fight)
+////                                    killed: Send(each viewer, Died); StartServiceTimer(corpse, respawn_ms); the fight takes Killed
 ////                                    dead:  Send(c0, Struck(Refused(Dead)))
+////                                    walking home: Send(c0, Struck(Refused(Returning)))
+//// Approached(c, unit, place, seq), Withdrew(c) from the map,
+//// TargetMoved(c, place, seq), StrikeAnswered(answered) from a connection,
+//// the attack tick, the strike deadline, the home timer ─▶ the fight (genesis_prime/world_map/creature_fight)
 //// the corpse timer ─────▶ alive again at full health      Send(each viewer, Removed), then CreatureAppeared
 ////                         told Retire while dead: Stop (no viewer: the spawn's next creature starts full)
 //// ```
@@ -60,6 +65,10 @@
 //// - **The corpse timer** is the creature's own, whatever its viewers: it starts at the
 ////   kill for the kind's respawn time and fires with no viewer too
 ////   (genesis_prime/world_map/creature_kind).
+//// - **The fight** is creature_fight's, whose module holds its sequence from aggro
+////   to home and what happens at each of its deadlines; the creature carries out its
+////   effects: news to its viewers, tells to the players in the fight
+////   (`FightTold`), and its three timers.
 //// - **A viewer that is not a connection any more** is dropped by the send (the
 ////   registry finds no process); the map's `Unwatched` follows from its end.
 //// - **A `Watched` twice from one connection** sends the 0x262 twice; the
@@ -88,19 +97,24 @@
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
-import genesis_prime/game/strike_tell.{type Answered, type Tell as StrikeTell}
+import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike_tell.{
+  type Answered, type Fight, type Tell as StrikeTell,
+}
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, Asked, Connection,
   CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send, ServiceTimerFired,
   Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded, WatchId,
 }
+import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_kind.{type Kind}
 import genesis_prime/world_map/creature_life.{
   type Body, type Life, Body, Died, Ends, Health, StandsAgain, StopAtRespawn,
   StopNow,
 }
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/list
@@ -113,14 +127,29 @@ const rule_name = "genesis_prime/world_map/creature"
 /// The watch on the map run that started the creature.
 const run_watch = WatchId(1)
 
-/// The corpse timer: the creature's one timer.
+/// The corpse timer.
 const corpse_timer = TimerId(1)
+
+/// The fight's attack tick (genesis_prime/world_map/creature_fight).
+const attack_timer = TimerId(2)
+
+/// The fight's strike deadline.
+const strike_deadline_timer = TimerId(3)
+
+/// The fight's walk home.
+const home_timer = TimerId(4)
 
 /// What a creature is started with: which creature of which run it is and the
 /// map's clock (`CreatureStart`), the spawn it stands at, found by the id the start
-/// names, and the kind the server chose for its Creature2 row.
+/// names, the kind the server chose for its Creature2 row, and the run's game
+/// numbers.
 pub type Settings {
-  Settings(creature: CreatureStart, spawn: Spawn, kind: Kind)
+  Settings(
+    creature: CreatureStart,
+    spawn: Spawn,
+    kind: Kind,
+    numbers: GameNumbers,
+  )
 }
 
 /// What the map and the connections tell a creature.
@@ -133,6 +162,16 @@ pub type Message {
   Retire
   /// A caster's connection strikes the creature (genesis_prime/game/strike_tell).
   Strike(tell: StrikeTell)
+  /// The map: the ready player of connection `by`, unit `unit_id`, entered the
+  /// creature's ring at `place`, its connection's move `seq`.
+  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int)
+  /// The map: the player of connection `by` left the creature's ring.
+  Withdrew(by: ConnectionId)
+  /// The connection of a player on the creature's threat list: its player
+  /// stands at `place`, its move `seq`.
+  TargetMoved(by: ConnectionId, place: Place, seq: Int)
+  /// The connection of a player the creature struck answers the strike.
+  StrikeAnswered(answered: Answered)
 }
 
 /// What a creature sends a connection without waiting.
@@ -142,15 +181,19 @@ pub type Outgoing {
   News(news: PeerNews)
   /// The answer to a strike, for the connection that told it.
   Struck(answered: Answered)
+  /// A tell to the connection of a player in the creature's fight: it threatens
+  /// or releases the player, or strikes it.
+  FightTold(told: Fight)
 }
 
-/// A creature's players in sight, its health and whether it was told to retire
-/// while it lay dead.
+/// A creature's players in sight, its health, its fight and whether it was told
+/// to retire while it lay dead.
 pub opaque type State {
   State(
     settings: Settings,
     body: Body,
     life: Life,
+    fight: creature_fight.State,
     retiring: Bool,
     viewers: Set(ConnectionId),
   )
@@ -161,10 +204,11 @@ pub fn rule(
   creature creature: CreatureStart,
   spawn spawn: Spawn,
   kind kind: Kind,
+  numbers numbers: GameNumbers,
 ) -> ServiceRule(Settings, State, Message, Outgoing) {
   step.Rule(
     name: rule_name,
-    settings: Settings(creature:, spawn:, kind:),
+    settings: Settings(creature:, spawn:, kind:, numbers:),
     new:,
     step:,
   )
@@ -183,6 +227,7 @@ pub fn new(settings: Settings) -> State {
     settings:,
     body:,
     life: creature_life.new(body:),
+    fight: creature_fight.new(),
     retiring: False,
     viewers: set.from_list(settings.creature.viewers),
   )
@@ -234,7 +279,7 @@ pub fn step(
       // before it is told the health it left, one sender in one order.
       let answer =
         OwnEffect(Send(
-          to: Connection(tell.from),
+          to: tell.from,
           message: Struck(answered: reaction.answer),
         ))
       let news =
@@ -278,11 +323,21 @@ pub fn step(
           )
         }
       }
+    OwnEvent(Told(message: Approached(..)))
+    | OwnEvent(Told(message: Withdrew(..)))
+    | OwnEvent(Told(message: TargetMoved(..)))
+    | OwnEvent(Told(message: StrikeAnswered(..))) ->
+      todo as "the fight's messages: the build carries them to creature_fight"
+    OwnEvent(ServiceTimerFired(timer:))
+      if timer == attack_timer
+      || timer == strike_deadline_timer
+      || timer == home_timer
+    -> todo as "the fight's timers: the build carries them to creature_fight"
     WatchEnded(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(..))
     | OwnEvent(ServiceTimerFired(..))
     | OwnEvent(CreatureNotStarted(..)) ->
-      panic as "a creature is told, and starts no timer but its corpse's and no creature"
+      panic as "a creature is told, and starts no timer but its corpse's and its fight's, and no creature"
   }
 }
 
@@ -341,12 +396,16 @@ fn news_to(
 }
 
 /// What the map's `Outgoing` means to a creature: `Watched` and `Unwatched`,
-/// each by the connection whose player sees or stops seeing it, and `Retire`.
-/// Any other is no message to a creature, and `Error(Nil)`.
+/// each by the connection whose player sees or stops seeing it, `Approached` and
+/// `Withdrew`, by the connection whose ready player entered or left its ring, and
+/// `Retire`. Any other is no message to a creature, and `Error(Nil)`.
 pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Watched(by:) -> Ok(Watched(by:))
     map.Unwatched(by:) -> Ok(Unwatched(by:))
+    map.Approached(by:, unit_id:, place:, seq:) ->
+      Ok(Approached(by:, unit_id:, place:, seq:))
+    map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.Retire -> Ok(Retire)
     map.Joined(..) | map.NotJoined(..) | map.Left | map.Gone(..) -> Error(Nil)
   }

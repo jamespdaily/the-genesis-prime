@@ -133,7 +133,8 @@ fn appearance(message: Message) -> Result(UnitCreateCreature, Nil) {
     | SentByMap(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByTarget(..)
-    | client_connection.SentByChat(..) -> Error(Nil)
+    | client_connection.SentByChat(..)
+    | client_connection.SentByFoe(..) -> Error(Nil)
   }
 }
 
@@ -168,6 +169,7 @@ fn move_to(run run: MapProcess, connection connection: Int, x x: Float) -> Nil {
           y: 0.0,
           z: 0.0,
         ),
+        seq: 1,
       ),
     )
   Nil
@@ -227,7 +229,8 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
           | SentByPeer(..)
           | client_connection.SentByTarget(..)
           | client_connection.SentBySessions(..)
-          | client_connection.SentByChat(..) -> Error(Nil)
+          | client_connection.SentByChat(..)
+          | client_connection.SentByFoe(..) -> Error(Nil)
         }
       },
     )
@@ -392,7 +395,7 @@ fn strike_with(
       life:,
       message: creature.Strike(tell: Strike(
         key: Key(cast_id:, phase: 0, unit_id:),
-        from: ConnectionId(1),
+        from: step.Connection(ConnectionId(1)),
         offence: Offence(
           blows: [
             Blow(spell4_effects_id: 1, damage_type: 3, damage:, delay_ms: 0),
@@ -401,7 +404,18 @@ fn strike_with(
           crit_severity: 1.5,
           strikethrough: 0.0,
         ),
-        rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+        striker: strike_tell.PlayerStriker(
+          unit_id: 1,
+          place: place_support.at(
+            world_id: 3460,
+            world_zone_id: 5967,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+          ),
+          seq: 1,
+          rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+        ),
       )),
     )
     as "the creature is found by its address and told"
@@ -431,7 +445,8 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
         SentByMap(..)
         | SentByPeer(..)
         | client_connection.SentBySessions(..)
-        | client_connection.SentByChat(..) -> Error(Nil)
+        | client_connection.SentByChat(..)
+        | client_connection.SentByFoe(..) -> Error(Nil)
       }
     })
   let assert Answered(key: Key(cast_id: 1, ..), outcome:) = answer
@@ -476,7 +491,8 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
         | SentByMap(..)
         | client_connection.SentBySessions(..)
         | client_connection.SentByTarget(..)
-        | client_connection.SentByChat(..) -> Error(Nil)
+        | client_connection.SentByChat(..)
+        | client_connection.SentByFoe(..) -> Error(Nil)
       }
     },
   )

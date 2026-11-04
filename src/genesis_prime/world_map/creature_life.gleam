@@ -30,10 +30,12 @@
 ////   retiring until the creature ends, so no viewer is sent a corpse the spawn's next
 ////   creature does not know.
 
-import genesis_prime/game/hit.{type Defence}
+import genesis_prime/game/hit.{type Defence, type Offence}
 import genesis_prime/game/strike_tell.{
-  type Answered, type Tell, Answered, Landed, Refused,
+  type Answered, type Tell, Answered, CreatureStriker, Landed, PlayerStriker,
+  Refused,
 }
+import genesis_prime/table/id.{type Spell4Id}
 import gleam/option.{type Option, None, Some}
 
 /// Whether a creature may be attacked by a player of each faction, from its
@@ -43,11 +45,42 @@ pub type Attackable {
   Attackable(exile: Bool, dominion: Bool)
 }
 
+/// Whether a creature fights a player of each faction that comes near it: its
+/// faction's level toward that player faction is Hostile, 0 to 2
+/// (FactionDispositionFromLevel, `world_data.creature_disposition`), worked out when
+/// the content loads beside `Attackable`. A Neutral creature fights only a player
+/// that strikes it.
+pub type Hostile {
+  Hostile(exile: Bool, dominion: Bool)
+}
+
+/// A creature's own attack, worked out when the content loads
+/// (genesis_prime/world_map/spawn) from its kind's spell
+/// (genesis_prime/world_map/creature_kind): the Spell4 it casts; the offence each
+/// cast strikes with, whose blow is the damage effect its difficulty chooses by the
+/// effect's caster prerequisite (`0x14049eeb0`: 184741 for difficulty 6 or less,
+/// 184777 for 7 or more), valued by the creature formula (`0x140565600`, GameFormula
+/// 712), with its critical hit chance, severity and strikethrough from its
+/// properties; the speed it runs at, in units a second
+/// (Creature2DisplayInfo.runLand times property 100, `0x1405b45e0`); and its reach,
+/// centre to centre: the spell's `targetMaxRange` plus its hit radius (a server
+/// choice, checked live).
+pub type Attack {
+  Attack(spell4_id: Spell4Id, offence: Offence, run_speed: Float, reach: Float)
+}
+
 /// What a creature brings to a fight, worked out when the content loads
 /// (genesis_prime/world_map/spawn): the hit radius of its display
-/// (Creature2DisplayInfo.hitRadius), whom it may be attacked by, and its defence.
+/// (Creature2DisplayInfo.hitRadius), whom it may be attacked by, whom it fights on
+/// sight, its defence, and its own attack.
 pub type Combat {
-  Combat(hit_radius: Float, attackable: Attackable, defence: Defence)
+  Combat(
+    hit_radius: Float,
+    attackable: Attackable,
+    hostile_to: Hostile,
+    defence: Defence,
+    attack: Attack,
+  )
 }
 
 /// A creature's fixed values for a fight: its health, what it brings and its kind's
@@ -127,9 +160,10 @@ pub fn struck(
       case
         hit.apply(
           health:,
+          shield: 0,
           offence: strike.offence,
           defence: body.combat.defence,
-          rolls: strike.rolls,
+          rolls: rolls_of(strike),
         )
       {
         hit.Deflected ->
@@ -139,14 +173,14 @@ pub fn struck(
             news: [],
             corpse_for_ms: None,
           )
-        hit.Landed(descriptions:, health: left, killed: True) ->
+        hit.Landed(descriptions:, health: left, killed: True, ..) ->
           Reaction(
             life: Dead,
             answer: Answered(key: strike.key, outcome: Landed(descriptions:)),
             news: [Health(health: left, dead: True), Died],
             corpse_for_ms: Some(body.respawn_ms),
           )
-        hit.Landed(descriptions:, health: left, killed: False) ->
+        hit.Landed(descriptions:, health: left, killed: False, ..) ->
           Reaction(
             life: Alive(health: left),
             answer: Answered(key: strike.key, outcome: Landed(descriptions:)),
@@ -154,6 +188,15 @@ pub fn struck(
             corpse_for_ms: None,
           )
       }
+  }
+}
+
+/// The rolls of a strike on a creature: a player's, from its seed. A creature
+/// never strikes a creature.
+fn rolls_of(strike: Tell) -> hit.Rolls {
+  case strike.striker {
+    PlayerStriker(rolls:, ..) -> rolls
+    CreatureStriker -> panic as "a creature struck a creature"
   }
 }
 

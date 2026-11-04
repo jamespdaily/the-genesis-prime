@@ -67,6 +67,7 @@ import genesis_prime/game/hit
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
 import genesis_prime/game/spell_area.{type Areas}
+import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{type Answered, type Tell}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
@@ -88,12 +89,16 @@ pub const strike_timer = TimerId(3)
 const bytes_per_unit = hit.roll_bytes
 
 /// The caster as a selection and a strike take it: who it is, where it stands and
-/// faces, its player faction and what its formulas read.
+/// faces, the place it stands at with the move sequence number of that place
+/// (genesis_prime/game/strike_tell `PlayerStriker`), its player faction and what
+/// its formulas read.
 pub type Attacker {
   Attacker(
     unit_id: Int,
     connection: ConnectionId,
     pose: Pose,
+    place: start_place.Place,
+    move_seq: Int,
     faction: PlayerFaction,
     stats: damage.Attacker,
   )
@@ -176,6 +181,7 @@ pub fn select(
   attacker attacker: Attacker,
   picture picture: Picture,
   areas areas: Areas,
+  now_ms now_ms: Int,
 ) -> Selection {
   let empty = Selection(asked:, units: [], blows: [])
   case
@@ -190,12 +196,12 @@ pub fn select(
       let centre = case asked.primary_target == attacker.unit_id {
         True -> Ok(attacker.pose)
         False ->
-          shown.place_of(picture:, unit_id: asked.primary_target)
+          shown.place_of(picture:, unit_id: asked.primary_target, now_ms:)
           |> result.map(fn(place) { Pose(at: area.point_of(place), yaw: 0.0) })
       }
       let from_area = case phase.selects_area, area.row, centre {
         True, Some(row), Ok(centre) ->
-          area_selection(attacker:, picture:, area:, row:, centre:)
+          area_selection(attacker:, picture:, area:, row:, centre:, now_ms:)
         _, _, _ -> []
       }
       let with_primary = case
@@ -224,12 +230,14 @@ fn area_selection(
   area area: spell_area.SpellArea,
   row row: area.Row,
   centre centre: Pose,
+  now_ms now_ms: Int,
 ) -> List(Int) {
   area.select(
     candidates: shown.candidates(
       picture:,
       faction: attacker.faction,
       caster_unit_id: attacker.unit_id,
+      now_ms:,
     ),
     centre:,
     row:,
@@ -281,9 +289,14 @@ pub fn begin(
                     phase: selection.asked.phase,
                     unit_id: aimed.unit_id,
                   ),
-                  from: attacker.connection,
+                  from: step.Connection(attacker.connection),
+                  striker: strike_tell.PlayerStriker(
+                    unit_id: attacker.unit_id,
+                    place: attacker.place,
+                    seq: attacker.move_seq,
+                    rolls:,
+                  ),
                   offence:,
-                  rolls:,
                 ),
               ),
               ..tells

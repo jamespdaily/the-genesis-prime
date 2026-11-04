@@ -367,7 +367,12 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               | client_connection.Health(..)
               | client_connection.Died
               | client_connection.CastMissed(..)
-              | client_connection.Removed -> "other"
+              | client_connection.Removed
+              | client_connection.CreatureMoved(..)
+              | client_connection.Targeting(..)
+              | client_connection.Threat(..)
+              | client_connection.CombatState(..)
+              | client_connection.Shield(..) -> "other"
             })
           False -> Error(Nil)
         }

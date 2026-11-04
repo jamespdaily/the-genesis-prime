@@ -29,7 +29,12 @@ pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
   sql.load_creature_kinds(db)
   |> result.map(fn(returned) {
     list.map(returned.rows, fn(row) {
-      Row(creature_id: row.creature_id, respawn_ms: row.respawn_ms)
+      Row(
+        creature_id: row.creature_id,
+        respawn_ms: row.respawn_ms,
+        attack_spell4_id: todo as "the build adds the column to the query",
+        attack_interval_ms: todo as "the build adds the column to the query",
+      )
     })
   })
 }

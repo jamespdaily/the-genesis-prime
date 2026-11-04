@@ -26,6 +26,7 @@ import genesis_prime/step.{
   LogError, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired, StartCreature,
   StartServiceTimer, WatchEnded, WatchId,
 }
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -293,8 +294,21 @@ pub fn a_spawn_whose_creature_crashes_waits_the_respawn_time_of_its_creatures_ki
     spawns.started_with(
       at: [0.0],
       kinds: Kinds(
-        default: Kind(respawn_ms: map_support.respawn_ms),
-        by_creature: dict.from_list([#(73_464, Kind(respawn_ms: 5000))]),
+        default: Kind(
+          respawn_ms: map_support.respawn_ms,
+          attack_spell4_id: Spell4Id(5649),
+          attack_interval_ms: 1500,
+        ),
+        by_creature: dict.from_list([
+          #(
+            73_464,
+            Kind(
+              respawn_ms: 5000,
+              attack_spell4_id: Spell4Id(5649),
+              attack_interval_ms: 1500,
+            ),
+          ),
+        ]),
       ),
     )
   let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)

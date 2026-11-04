@@ -7,13 +7,17 @@
 
 import database_support
 import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/game/hit.{Defence}
+import genesis_prime/game/hit.{Blow, Defence, Offence}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_kind.{Kind, Kinds}
-import genesis_prime/world_map/creature_life.{Attackable, Combat}
+import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
+import genesis_prime/world_map/creature_life.{
+  type Attack, Attack, Attackable, Combat, Hostile,
+}
+import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
@@ -24,6 +28,16 @@ import place_support
 
 /// Warfare Woods, WorldZone 5967 (Quest2.10518).
 pub const warfare_woods = 5967
+
+/// The game numbers migration 0010 seeds: an aggro range of 10, a leash range of
+/// 55, an aggro threat of 1 and a chase stop fraction of 0.5.
+pub const numbers: GameNumbers =
+  GameNumbers(
+    aggro_range: 10.0,
+    leash_range: 55.0,
+    aggro_threat: 1.0,
+    chase_stop_fraction: 0.5,
+  )
 
 /// The spawn numbered `number` of a Virtual Battle Beast, `x` units along the
 /// world's x axis.
@@ -79,6 +93,7 @@ pub fn beast_combat() -> creature_life.Combat {
   Combat(
     hit_radius: 3.0,
     attackable: Attackable(exile: True, dominion: True),
+    hostile_to: Hostile(exile: True, dominion: True),
     defence: Defence(
       deflect_chance: 0.016,
       crit_deflect_chance: 0.0,
@@ -87,7 +102,48 @@ pub fn beast_combat() -> creature_life.Combat {
       physical_mitigation: 0.0,
       tech_mitigation: 0.0,
       magic_mitigation: 0.0,
+      shield_mitigation_max: 0.0,
     ),
+    attack: beast_attack(),
+  )
+}
+
+/// The kinds migration 0010 leaves: row 0 alone, a respawn of 60 000 ms and an
+/// attack of Spell4 5649 every 1500 ms.
+pub fn kinds() -> Kinds {
+  Kinds(
+    default: Kind(
+      respawn_ms: 60_000,
+      attack_spell4_id: Spell4Id(5649),
+      attack_interval_ms: 1500,
+    ),
+    by_creature: dict.new(),
+  )
+}
+
+/// The Virtual Battle Beast's attack: Spell4 5649, whose effect 184741 hits for 12
+/// at difficulty 1 (`Spell4Effects.184741`, `0x140565600`), Physical (damage type
+/// 1), with no critical hit or strikethrough; a run speed of 10.0
+/// (`Creature2.73464`, `0x1405b45e0`) and a reach of the spell's range 5.0 plus the
+/// hit radius 3.0.
+pub fn beast_attack() -> Attack {
+  Attack(
+    spell4_id: Spell4Id(5649),
+    offence: Offence(
+      blows: [
+        Blow(
+          spell4_effects_id: 184_741,
+          damage_type: 1,
+          damage: 12,
+          delay_ms: 0,
+        ),
+      ],
+      crit_chance: 0.0,
+      crit_severity: 1.0,
+      strikethrough: 0.0,
+    ),
+    run_speed: 10.0,
+    reach: 8.0,
   )
 }
 
@@ -158,9 +214,17 @@ fn put_worlds(
   spawns spawns: List(Spawn),
   respawn_ms respawn_ms: Int,
 ) -> Nil {
+  content_game_number.put(key:, numbers:)
   content_creature_kind.put(
     key:,
-    kinds: Kinds(default: Kind(respawn_ms:), by_creature: dict.new()),
+    kinds: Kinds(
+      default: Kind(
+        respawn_ms:,
+        attack_spell4_id: Spell4Id(5649),
+        attack_interval_ms: 1500,
+      ),
+      by_creature: dict.new(),
+    ),
   )
   list.each(worlds, fn(world_id) {
     content_spawn.put_world(

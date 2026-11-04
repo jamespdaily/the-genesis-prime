@@ -26,7 +26,9 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{type Answered, type Tell as StrikeTell}
+import genesis_prime/game/strike_tell.{
+  type Answered, type Fight, type Tell as StrikeTell,
+}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
@@ -45,6 +47,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store
 import genesis_prime/world_map/creature_life.{type Attackable}
+import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/bit_array
@@ -68,11 +71,16 @@ pub type Request {
   /// for this ask (genesis_prime/world_map/registry).
   AskMapRun(map: MapId, incarnation: Int, message: map.Message)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step): that the
-  /// player of `connection` moved to `place` (genesis_prime/world_map/map
-  /// `Moved`), for the map to decide who sees whom. A tell of a join or a leave
-  /// cannot be built. It is never asked: the directory answers an ask of it as
-  /// no process running.
-  TellMoved(connection: ConnectionId, place: Place)
+  /// player of `connection` moved to `place`, the connection's move `seq`
+  /// (genesis_prime/world_map/map `Moved`), for the map to decide who sees whom
+  /// and whose ring the player stands in. A tell of a join or a leave cannot be
+  /// built. It is never asked: the directory answers an ask of it as no process
+  /// running.
+  TellMoved(connection: ConnectionId, place: Place, seq: Int)
+  /// What a `Tell` effect sends the run of a map: the player of `connection` is
+  /// ready, its client's first 0xF2 of the stay (genesis_prime/world_map/map
+  /// `Ready`), so a creature may fight it. Never asked.
+  TellReady(connection: ConnectionId)
   /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): news of this player's unit, which that
   /// connection writes as 0x262, 0x638 or 0x355 when its client can take it.
@@ -89,6 +97,15 @@ pub type Request {
   /// (genesis_prime/world_map/creature_life). Told through the creature registry
   /// with no watch, and never asked.
   TellStrike(tell: StrikeTell)
+  /// What a `Tell` effect sends a creature that holds this connection's player
+  /// on its threat list: the player stands at `place`, the connection's move
+  /// `seq` (genesis_prime/world_map/creature `TargetMoved`). Told through the
+  /// creature registry with no watch, and never asked.
+  TellTargetMoved(connection: ConnectionId, place: Place, seq: Int)
+  /// What a `Tell` effect sends a creature whose strike this connection's player
+  /// took: the answer (genesis_prime/world_map/creature `StrikeAnswered`). Told
+  /// through the creature registry with no watch, and never asked.
+  TellStrikeAnswered(answered: Answered)
 }
 
 /// News of one unit from its owner, a player's connection or a creature's
@@ -145,6 +162,20 @@ pub type News {
   /// The unit died: 0x88c with the dead bit (opcode.0x88c), written when the
   /// viewer's client shows the unit.
   Died
+  /// A creature runs `path`: 0x638 of kind 0, the map's time it starts at, and
+  /// kind 4, the path (`movement_command.kind_4`), written when the viewer's
+  /// client shows the unit; the viewer keeps the path for its picture
+  /// (genesis_prime/game/shown).
+  CreatureMoved(path: Path)
+  /// The unit targets `target_unit_id` with `threat`: 0x908 (opcode.0x908).
+  Targeting(target_unit_id: Int, threat: Int)
+  /// The unit holds `threat` toward `other_unit_id`, 0 for none: 0x90a
+  /// (opcode.0x90a).
+  Threat(other_unit_id: Int, threat: Int)
+  /// The unit is in a fight or out of one: 0x89a (opcode.0x89a).
+  CombatState(in_combat: Bool)
+  /// The unit's shield: 0x938 of stat 20 (opcode.0x938).
+  Shield(shield: Int)
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
@@ -199,6 +230,10 @@ pub type Message {
   /// answer to a strike its caster told, which the strike rule takes into the round
   /// it belongs to (genesis_prime/game/strike).
   SentByTarget(answered: Answered)
+  /// What a creature that fights this connection's player sends it without
+  /// waiting: that it threatens or releases the player, or its strike
+  /// (genesis_prime/game/player_life).
+  SentByFoe(fight: Fight)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

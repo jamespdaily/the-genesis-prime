@@ -322,8 +322,8 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentByChat, SentByMap, SentByPeer, SentBySessions, SentByTarget,
-  Settled, TellChat, TellMoved, TellPeer,
+  Otherwise, SentByChat, SentByFoe, SentByMap, SentByPeer, SentBySessions,
+  SentByTarget, Settled, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -381,6 +381,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
@@ -630,6 +631,8 @@ fn connected(
       settled(handled: chat_sent(session:, tell:), now:)
     OwnEvent(Woken(message: SentByTarget(answered:))) ->
       settled(handled: target_sent(session:, now:, answered:), now:)
+    OwnEvent(Woken(message: SentByFoe(fight:))) ->
+      settled(handled: foe_sent(session:, now:, fight:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -1010,6 +1013,13 @@ fn movement_message(
     Ok(movement.Reported(state:, world_zone_id:, by:)) -> {
       let session = moving(session:, holder:, entered:, state:)
       let top_zones = top_zone.top_zones(session.settings.tables)
+      let #(session, ready) = case by, entered.readiness {
+        movement.ReportedByTerrainReady, world_entry.ClientLoading ->
+          tells_the_map_ready(session:, entered:)
+        movement.ReportedByTerrainReady, world_entry.ClientReady
+        | movement.ReportedByZoneChanged, _
+        -> #(session, [])
+      }
       let #(updated, effects) = case by {
         movement.ReportedByTerrainReady ->
           chat.terrain_ready(chat: entered.chat, world_zone_id:, top_zones:)
@@ -1020,13 +1030,17 @@ fn movement_message(
             top_zones:,
           )
       }
-      carry_chat(session: with_chat(session:, chat: updated), effects:)
+      let #(session, written) =
+        chat_effects(session: with_chat(session:, chat: updated), effects:)
+      Continue(session, list.append(ready, written))
     }
     Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
       let new_kinds =
         list.filter(unrelayed, fn(kind) {
           !set.contains(session.unrelayed_logged, kind)
         })
+      let entered =
+        world_entry.Entered(..entered, move_seq: entered.move_seq + 1)
       let session =
         Session(
           ..moving(session:, holder:, entered:, state:),
@@ -1086,8 +1100,9 @@ fn moving(
 }
 
 /// The tell to the run of the player's map that the player moved: it names
-/// the player's connection and the place the movement now keeps, for the map
-/// to decide who sees whom, and no answer comes (`step.Tell`).
+/// the player's connection, the place the movement now keeps and the move's
+/// sequence number, for the map to decide who sees whom and whose ring the player
+/// stands in, and no answer comes (`step.Tell`).
 fn tells_the_map_moved(
   connection connection: ConnectionId,
   entered entered: world_entry.Entered,
@@ -1095,8 +1110,27 @@ fn tells_the_map_moved(
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
     to: step.Map(map: entered.map, incarnation: entered.incarnation),
-    request: TellMoved(connection:, place:),
+    request: TellMoved(connection:, place:, seq: entered.move_seq),
   ))
+}
+
+/// The stay's first 0xF2: the player is ready, and its map is told `Ready`, so a
+/// creature may fight it from now on.
+fn tells_the_map_ready(
+  session session: Session,
+  entered entered: world_entry.Entered,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  todo as "tells_the_map_ready: the build fills it in"
+}
+
+/// What a creature fighting the player sent (genesis_prime/game/player_life): its
+/// threat, its release or its strike, taken with the player in the world.
+fn foe_sent(
+  session session: Session,
+  now now: Now,
+  fight fight: strike_tell.Fight,
+) -> client_connection.Handled(Session) {
+  todo as "foe_sent: the build fills it in"
 }
 
 /// The move sent to each connection that sees the player, as news of 0x638s of
@@ -1377,6 +1411,7 @@ fn strike_begins(
       attacker:,
       picture: entered.shown,
       areas: spell_area.areas(tables:),
+      now_ms: now.monotonic_ms,
     )
   let #(link, entropy) =
     client_connection.draw(session.link, strike.entropy_needed(selection:))
@@ -1413,6 +1448,8 @@ fn attacker_of(
     unit_id: entered.unit_id,
     connection: client_connection.connection(session.link),
     pose: Pose(at: area.point_of(place), yaw: start_place.facing(place).yaw),
+    place:,
+    move_seq: entered.move_seq,
     faction:,
     stats: damage.Attacker(
       level:,
@@ -2104,7 +2141,13 @@ fn map_sent(
   message message: map.Outgoing,
 ) -> client_connection.Handled(Session) {
   case message, held_in_the_world(session.status) {
-    map.Joined(..), _ | map.NotJoined(..), _ | map.Left, _ | map.Retire, _ ->
+    map.Joined(..), _
+    | map.NotJoined(..), _
+    | map.Left, _
+    | map.Retire, _
+    | map.Approached(..), _
+    | map.Withdrew(..), _
+    ->
       end_for(
         session:,
         now:,
@@ -2325,7 +2368,12 @@ fn viewer_takes(
     | client_connection.CastMissed(..)
     | client_connection.CastFinished(..)
     | client_connection.Health(..)
-    | client_connection.Died -> False
+    | client_connection.Died
+    | client_connection.CreatureMoved(..)
+    | client_connection.Targeting(..)
+    | client_connection.Threat(..)
+    | client_connection.CombatState(..)
+    | client_connection.Shield(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && { unit_id == 0 || unit_id == entered.unit_id },
@@ -2366,7 +2414,7 @@ fn viewer_takes(
           _,
           unit_id,
           ShownCreature(
-            place:,
+            path: creature_path.Standing(at: place),
             life:,
             alive: creature_unit.health_of(unit:) > 0,
             hit_radius:,
@@ -2448,6 +2496,12 @@ fn viewer_takes(
       )
     client_connection.Died ->
       creature_news(session:, entered:, unit_id:, news: client_connection.Died)
+    client_connection.CreatureMoved(..)
+    | client_connection.Targeting(..)
+    | client_connection.Threat(..)
+    | client_connection.CombatState(..)
+    | client_connection.Shield(..) ->
+      todo as "the fight's news: the build writes 0x638, 0x908, 0x90a, 0x89a and 0x938 for a shown unit"
   }
 }
 
@@ -2480,7 +2534,12 @@ fn creature_news(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
-    | client_connection.CastFinished(..) -> session
+    | client_connection.CastFinished(..)
+    | client_connection.CreatureMoved(..)
+    | client_connection.Targeting(..)
+    | client_connection.Threat(..)
+    | client_connection.CombatState(..)
+    | client_connection.Shield(..) -> session
   }
   case strike.holds(strike: entered.strike, unit_id:) {
     True ->
@@ -2545,7 +2604,12 @@ fn creature_news_frames(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
-    | client_connection.CastFinished(..) -> []
+    | client_connection.CastFinished(..)
+    | client_connection.CreatureMoved(..)
+    | client_connection.Targeting(..)
+    | client_connection.Threat(..)
+    | client_connection.CombatState(..)
+    | client_connection.Shield(..) -> []
   }
 }
 
@@ -3077,6 +3141,8 @@ fn leave_answered(
     | step.Answer(FromMap(map.Unwatched(..)))
     | step.Answer(FromMap(map.Gone(..)))
     | step.Answer(FromMap(map.Retire))
+    | step.Answer(FromMap(map.Approached(..)))
+    | step.Answer(FromMap(map.Withdrew(..)))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) ->

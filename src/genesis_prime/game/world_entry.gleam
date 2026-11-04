@@ -77,8 +77,10 @@ import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
+import genesis_prime/game/item_property
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
+import genesis_prime/game/player_life
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
@@ -106,6 +108,7 @@ import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import gleam/dict.{type Dict}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -173,7 +176,10 @@ pub type Joined {
 /// (`Joined`'s unit, which the connection sends the players who see it), who
 /// sees it, the units its own client shows, the casts of other units its client
 /// has been sent the start of, where it stands
-/// (genesis_prime/game/movement) and whether it is camping
+/// (genesis_prime/game/movement), the move sequence number of its last accepted
+/// 0x637 (0 before any), whether its client has sent the stay's first 0xF2, its
+/// health, shield and the creatures it fights (genesis_prime/game/player_life),
+/// and whether it is camping
 /// (genesis_prime/game/camp), its casts (genesis_prime/game/cast), the rounds of
 /// its strikes (genesis_prime/game/strike) and its chat
 /// (genesis_prime/game/chat), which the rule keeps up to date. A player that has
@@ -197,11 +203,31 @@ pub type Entered {
     casts_written: Dict(Int, Int),
     gone: Set(Int),
     movement: movement.State,
+    move_seq: Int,
+    readiness: Readiness,
+    life: player_life.Life,
     camp: camp.Camp,
     cast: cast.State,
     strike: strike.State,
     chat: chat.Chat,
   )
+}
+
+/// Whether the player's client has finished loading the world: the connection
+/// tells its map `Ready` once, at the stay's first 0xF2 (`opcode.0xf2`), so no
+/// creature fights a loading player.
+pub type Readiness {
+  ClientLoading
+  ClientReady
+}
+
+/// The shield a player enters the world with: its gear's ShieldCapacityMax, full and
+/// rounded as its 0x262's stat 20 is (`player_unit.create`), or 0 with no shield.
+fn full_shield(loadout loadout: Loadout) -> Int {
+  case loadout.properties.shield {
+    Some(item_property.Shield(capacity_max:, ..)) -> float.round(capacity_max)
+    None -> 0
+  }
 }
 
 /// The process whose answer world entry waits for, for the log line of an ask
@@ -351,6 +377,12 @@ pub fn joined(
               casts_written: dict.new(),
               gone: set.new(),
               movement: movement.entered(place:, session_epoch:),
+              move_seq: 0,
+              readiness: ClientLoading,
+              life: player_life.new(
+                health: max_health,
+                shield: full_shield(loadout:),
+              ),
               camp: camp.none(),
               cast: cast.new(),
               strike: strike.new(),
@@ -398,7 +430,9 @@ pub fn joined(
         | map.Watched(..)
         | map.Unwatched(..)
         | map.Gone(..)
-        | map.Retire -> Error(Nil)
+        | map.Retire
+        | map.Approached(..)
+        | map.Withdrew(..) -> Error(Nil)
       }
     }
     Loading(..) -> Error(Nil)

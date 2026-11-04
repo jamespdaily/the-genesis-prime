@@ -47,7 +47,10 @@
 ////   from its CreatureLevel rows and its archetype, difficulty and tier multipliers
 ////   (`0x1404585c0`, `Creature2.73464.crit_deflect_glance`,
 ////   `Creature2.73464.mitigation`) through the rating formulas
-////   (genesis_prime/game/rating).
+////   (genesis_prime/game/rating). It also holds whom the creature fights on sight (a
+////   faction level of 0 to 2 toward each player faction) and its own attack, from its
+////   kind's spell (genesis_prime/world_map/creature_kind,
+////   genesis_prime/world_map/creature_life `Attack`).
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/hit
@@ -76,7 +79,10 @@ import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
 import genesis_prime/table/world
-import genesis_prime/world_map/creature_life.{type Combat, Attackable, Combat}
+import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
+import genesis_prime/world_map/creature_life.{
+  type Attack, type Combat, Attackable, Combat, Hostile,
+}
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/unit_fields
@@ -284,6 +290,10 @@ pub const dominion_faction = 166
 /// Friendly, `world_data.creature_disposition`).
 const highest_neutral_level = 7
 
+/// The highest level the client calls Hostile (FactionDispositionFromLevel,
+/// `world_data.creature_disposition`).
+const highest_hostile_level = 2
+
 /// The rows of the spawn table in, the selection out: every NonPlayer row is
 /// checked (a row that fails is a refusal, and fails the load), then the rows that
 /// start are chosen by the rule above and the rest counted, for each world; every
@@ -293,6 +303,7 @@ pub fn select(
   rows rows: List(Row),
   tables tables: table_store.Tables,
   formulas formulas: Formulas,
+  kinds kinds: Kinds,
 ) -> Selection {
   let catalog = catalog(tables:)
   let #(_shared, judged) =
@@ -300,7 +311,7 @@ pub fn select(
       case row.entity_type == non_player {
         False -> #(shared, Other(row:))
         True ->
-          case load_checks(catalog:, formulas:, shared:, row:) {
+          case load_checks(catalog:, formulas:, kinds:, shared:, row:) {
             Error(error) -> {
               let SpawnId(number) = row.id
               #(
@@ -498,6 +509,7 @@ const last_creature_level = 101
 fn combat_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
+  kind kind: Kind,
   creature creature: Creature2,
   level level: Int,
   display_info_id display_info_id: Int,
@@ -531,6 +543,14 @@ fn combat_of(
   use physical_resist <- result.try(property(26))
   use tech_resist <- result.try(property(27))
   use magic_resist <- result.try(property(28))
+  use attack <- result.try(attack_of(
+    catalog:,
+    formulas:,
+    kind:,
+    creature:,
+    level:,
+    hit_radius: display.hit_radius,
+  ))
   let mitigation = fn(offset_of_type, resist) {
     rating.mitigation_fraction(
       formulas:,
@@ -548,6 +568,10 @@ fn combat_of(
         player: dominion_faction,
         unit: faction_id,
       ),
+    ),
+    hostile_to: Hostile(
+      exile: hostile_to(catalog:, player: exile_faction, unit: faction_id),
+      dominion: hostile_to(catalog:, player: dominion_faction, unit: faction_id),
     ),
     defence: hit.Defence(
       deflect_chance: rating.to_fraction(
@@ -577,8 +601,28 @@ fn combat_of(
       physical_mitigation: mitigation(physical_offset, physical_resist),
       tech_mitigation: mitigation(tech_offset, tech_resist),
       magic_mitigation: mitigation(magic_offset, magic_resist),
+      shield_mitigation_max: 0.0,
     ),
+    attack:,
   ))
+}
+
+/// The creature's own attack (genesis_prime/world_map/creature_life `Attack`): its
+/// kind's spell, the damage effect its difficulty chooses by the effect's caster
+/// prerequisite (type 179, `0x14049eeb0`), its blow by the creature formula
+/// (`0x140565600`, GameFormula 712), its critical hit chance, severity and
+/// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
+/// times property 100, `0x1405b45e0`) and its reach (the spell's `targetMaxRange`
+/// plus `hit_radius`).
+fn attack_of(
+  catalog catalog: Catalog,
+  formulas formulas: Formulas,
+  kind kind: Kind,
+  creature creature: Creature2,
+  level level: Int,
+  hit_radius hit_radius: Float,
+) -> Result(Attack, SpawnError) {
+  todo as "attack_of: the build fills it in"
 }
 
 /// A creature's property: the CreatureLevel value times the archetype, difficulty and
@@ -823,6 +867,16 @@ fn attackable_by(
   faction_level(catalog:, from: player, to: unit) <= highest_neutral_level
 }
 
+/// Whether a unit of the faction fights a player of the other on sight: its level
+/// toward the player's faction is Hostile, 0 to 2 (`world_data.creature_disposition`).
+fn hostile_to(
+  catalog catalog: Catalog,
+  player player: Int,
+  unit unit: Int,
+) -> Bool {
+  faction_level(catalog:, from: player, to: unit) <= highest_hostile_level
+}
+
 /// The reason a row that passed the load checks does not start, or `Error(Nil)`
 /// for a row that does, in the order of the decode: no faction, Friendly to both
 /// player factions, an NPC link, health 0.
@@ -989,6 +1043,7 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
 fn load_checks(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
+  kinds kinds: Kinds,
   shared shared: SharedCombats,
   row row: Row,
 ) -> Result(#(Checked, SharedCombats), SpawnError) {
@@ -1039,6 +1094,7 @@ fn load_checks(
       combat_of(
         catalog:,
         formulas:,
+        kind: creature_kind.kind_of(kinds:, creature2_id: row.creature_id),
         creature:,
         level:,
         display_info_id: row.display_info_id,

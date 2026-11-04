@@ -24,6 +24,7 @@ import genesis_prime/world_map/creature_life.{
 }
 import gleam/option.{None, Some}
 import owned_test
+import place_support
 import spawn_support
 
 fn beast() -> creature_life.Body {
@@ -39,14 +40,25 @@ fn strike_of(
 ) -> strike_tell.Tell {
   Strike(
     key: Key(cast_id:, phase: 0, unit_id: 20),
-    from: ConnectionId(2),
+    from: step.Connection(ConnectionId(2)),
     offence: Offence(
       blows: [Blow(spell4_effects_id: 1, damage_type: 3, damage:, delay_ms: 0)],
       crit_chance: 0.0,
       crit_severity: 1.5,
       strikethrough: 0.0,
     ),
-    rolls:,
+    striker: strike_tell.PlayerStriker(
+      unit_id: 1,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+      seq: 1,
+      rolls:,
+    ),
   )
 }
 

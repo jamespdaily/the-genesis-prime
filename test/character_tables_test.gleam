@@ -202,9 +202,16 @@ pub fn the_planted_creature_and_faction_rows_select_the_spawns_the_clients_rows_
     })
     |> list.flatten
   let formulas = rating_support.formulas()
+  let kinds = spawn_support.kinds()
   let planted =
-    spawn.select(rows:, tables: character_tables.content_tables(), formulas:)
-  let real = spawn.select(rows:, tables: client_tables.every_table(), formulas:)
+    spawn.select(
+      rows:,
+      tables: character_tables.content_tables(),
+      formulas:,
+      kinds:,
+    )
+  let real =
+    spawn.select(rows:, tables: client_tables.every_table(), formulas:, kinds:)
   assert planted.refusals == [] && real.refusals == []
     as "no row is refused by either"
   assert planted.coverage == real.coverage

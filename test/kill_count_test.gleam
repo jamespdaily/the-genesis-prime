@@ -77,6 +77,7 @@ fn kill_loop(
     _ -> {
       let assert hit.Landed(health: left, ..) =
         hit.apply(
+          shield: 0,
           health:,
           offence: Offence(
             blows:,
@@ -92,6 +93,7 @@ fn kill_loop(
             physical_mitigation: 0.0,
             tech_mitigation: 0.0,
             magic_mitigation: 0.0,
+            shield_mitigation_max: 0.0,
           ),
           rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
         )

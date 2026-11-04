@@ -53,6 +53,7 @@ fn selected(rows rows: List(Row)) -> Selection {
     rows:,
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
+    kinds: spawn_support.kinds(),
   )
 }
 
@@ -72,7 +73,12 @@ fn selected_with(
     server_table.load_content_tables(over: server, from: folder)
     as "the planted files load as the content-only tables"
   let selection =
-    spawn.select(rows:, tables: more, formulas: rating_support.formulas())
+    spawn.select(
+      rows:,
+      tables: more,
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+    )
   table_store.unload(more)
   table_store.unload(server)
   selection
