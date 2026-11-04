@@ -28,7 +28,7 @@ Each script's docstring is its contract. Run them with `~/.genesis-prime/env.sh`
 
 ## Game tables
 
-Read a table's rows with `gleam run -m genesis_prime/table_rows -- <Table> [<id> | <column>=<value> | --columns]`; its module doc (`dev/genesis_prime/table_rows.gleam`) is its contract. It reads rows as the server's own reader does, so a parser of your own can only differ from it. A proof that rests on rows names the command with its arguments, so the read can be rerun. A type-3 column prints a value with the top bit set in both readings; the proof names the client's reader of that column, which decides the reading.
+Read a table's rows with `gleam run -m genesis_prime/table_rows -- <Table> [<id>... | <column>=<value> | --columns]` (several ids read the table once, so name them all in one run); its module doc (`dev/genesis_prime/table_rows.gleam`) is its contract. It reads rows as the server's own reader does, so a parser of your own can only differ from it. A proof that rests on rows names the command with its arguments, so the read can be rerun. A type-3 column prints a value with the top bit set in both readings; the proof names the client's reader of that column, which decides the reading.
 
 ## Which file to read
 
