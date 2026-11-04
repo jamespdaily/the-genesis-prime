@@ -1,4 +1,4 @@
-//// The session committed on 2026-11-03 (`test/wire_recording/2026-11-03-zone-session`)
+//// The session committed on 2026-11-04 (`test/wire_recording/2026-11-04-loadout-session`)
 //// replayed through the real server tree on a database of its own, with the
 //// recorded seed, times and fixture, and compared byte for byte. Expected
 //// values come from these places.

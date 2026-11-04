@@ -2687,6 +2687,7 @@ fn entry_answered(
           answer:,
           realm_id: session.settings.realm_id,
           next_whisper: session.next_whisper,
+          tables: session.settings.tables,
         )
       {
         Ok(#(entered, effects)) ->

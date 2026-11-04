@@ -30,6 +30,7 @@
 
 import ask_support
 import character_support
+import character_tables
 import connection_rule_support as support
 import event_wait
 import game_client
@@ -84,6 +85,7 @@ import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/result
 import log_capture
 import login_client
@@ -363,6 +365,40 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
   login_support.stop(started)
 }
 
+pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_on_the_bar_and_the_sheets_gear_figures_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let game = in_select(started:, port:, account:)
+  game_client.send_create(game:, body: create_request("Ab Cd"))
+  let created = created_result(game)
+  let _list = listed_entries(game)
+  send_play(game:, character_id: created.character_id)
+  let burst = game_client.read(game:, count: burst_length())
+  assert list.map(burst, fn(frame) { frame.message_id })
+    == game_client.world_entry_ids
+    as "the loadout comes after 0x19b and before 0x61 (opcode.0x19b, opcode.0x61)"
+  let loadout = game_client.loadout_in(frames: burst)
+  assert loadout.weapon == Some(81_346)
+    as "CharacterCreation row 466's weapon, itemId04, is equipped in slot 16 (lua.ActionBarFrame.InitializeBars)"
+  assert loadout.abilities == [#(0, 18_309), #(1, 37_968), #(2, 38_017)]
+    as "the Warrior's three level-1 spells (SpellLevel rows 919, 920 and 925) as their Spell4Base ids, in bag slots 0 to 2 (opcode.0x111.ability_bag)"
+  assert loadout.bar == [#(0, 18_309), #(1, 37_968), #(2, 38_017)]
+    as "the bar's large buttons 0 to 2 show the three abilities (opcode.0x19d)"
+  assert game_client.sheet(
+      unit: game_client.unit_create_player_in(frames: burst),
+      tables: character_tables.shared(),
+    )
+    == game_client.Sheet(
+      assault_power: 51,
+      support_power: 14,
+      max_health: 736,
+      max_shield: 450,
+    )
+    as "player.level1_gear_properties: the sheet shows Assault Power 51 (203.0625 x 0.25), Support Power 14 (55.6875 x 0.25), Max Health 736 and Max Shields 450"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
 pub fn a_created_dominion_cassian_veteran_is_played_into_the_world_at_row_42148_facing_the_clients_yaw_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, port, account) = start()
@@ -461,8 +497,8 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let assert [_, _, _, _, _, _, _, _, _] =
-    game_client.read(game:, count: burst_length())
+  assert list.length(game_client.read(game:, count: burst_length()))
+    == burst_length()
     as "the player entered the world"
   // The player's map is the run the real Maps holds for the character's world.
   let assert Ok(found) =

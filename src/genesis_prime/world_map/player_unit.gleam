@@ -7,9 +7,20 @@
 ////
 //// - **Alive:** stat 0 (health) above 0, or the client creates the player
 ////   dead (0x140457bc5). No client table or retail record gives a player's
-////   health by class and level (0x1404585c0), so health and property 7 (Base
-////   Health) are `stand_in_health`, 136, the client's level-1 creature Base
-////   Health (CreatureLevel row 1), until a marked retail record gives a player's.
+////   health by class and level (0x1404585c0), so `create` gives health and
+////   property 7 (Base Health) as `stand_in_health`, 136, the client's level-1
+////   creature Base Health (CreatureLevel row 1), and `with_gear` replaces it
+////   with the health the loadout's gear gives (genesis_prime/game/loadout),
+////   which world entry applies to the map's unit.
+//// - **Gear:** `with_gear` sets stat 0 to the maximum health and stat 20 (the
+////   current shield) to the shield's capacity, a full shield on entry (a server
+////   choice: the client holds no shield rule, `regen.client`), and the
+////   properties 7 (Base Health), 35 and 36 (Assault Rating and Support Rating),
+////   41 (ShieldCapacityMax), 42 (Armor), 175 (ShieldMitigationMax), 176
+////   (ShieldRegenPct) and 178 (ShieldRebootTime), each as base and value alike
+////   (0x1404584b0, 0x140458140). The shield's regeneration and reboot values
+////   replace the unit property defaults (0.25, 2500) rather than add to them (a
+////   server choice: the client sums nothing, `player.level1_gear_properties`).
 //// - **Level:** stat 10 is the character's level (0x140458140).
 //// - **Place:** the unit's own place, which the map is given with the join
 ////   (the saved place, bounded to the box the client bounds a unit's position
@@ -27,6 +38,7 @@
 //// - Every other field 0 or empty, each by its record
 ////   (opcode.0x262.player_fields, opcode.0x262.unit_fields).
 
+import genesis_prime/game/item_property.{type ItemProperties, Shield}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual}
@@ -42,9 +54,12 @@ import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/message/unit_stat.{UnitStat}
+import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
 import genesis_prime/store.{type Character, CharacterId}
+import gleam/float
 import gleam/int
+import gleam/list
+import gleam/option.{None, Some}
 
 /// Every player's health: the client's level-1 creature Base Health
 /// (0x1404585c0), which stands in for a health no table gives.
@@ -56,6 +71,9 @@ const health_stat = 0
 /// The stat the client keeps a unit's level in (0x140458140); a unit created
 /// without it is level 1 (0x1404543c1).
 const level_stat = 10
+
+/// The stat the client keeps a unit's current shield in (0x140458140).
+const shield_stat = 20
 
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).
@@ -190,4 +208,74 @@ pub fn create(
       outfit_info_id: 0,
     ),
   )
+}
+
+/// A bridge: the map builds the unit from the character alone, without the
+/// tables, so world entry applies the gear to the map's record, and the typed
+/// loadout and maximum health live in world entry's `Entered`. A map whose unit
+/// takes the loadout at its join makes this function, `stand_in_health` and the
+/// rebuild of the stats unnecessary.
+///
+/// The unit's 0x262 with the gear's values: stat 0 the maximum health, stat 20
+/// the shield, full, and the properties the gear gives, in the order of their
+/// ids. A unit whose gear holds no shield has no stat 20 and no shield
+/// properties.
+pub fn with_gear(
+  record record: UnitCreatePlayer,
+  max_health max_health: Int,
+  gear gear: ItemProperties,
+) -> UnitCreatePlayer {
+  let tail = record.tail
+  let shield_stats = case gear.shield {
+    Some(Shield(capacity_max:, ..)) -> [
+      UnitStat(stat_id: shield_stat, value: float.round(capacity_max)),
+    ]
+    None -> []
+  }
+  let shield_properties = case gear.shield {
+    Some(Shield(capacity_max:, mitigation_max:, regen_percent:, reboot_time_ms:)) -> [
+      #(41, capacity_max),
+      #(175, mitigation_max),
+      #(176, regen_percent),
+      #(178, int.to_float(reboot_time_ms)),
+    ]
+    None -> []
+  }
+  let properties =
+    list.flatten([
+      [
+        #(base_health_property, int.to_float(max_health)),
+        #(35, gear.assault_rating),
+        #(36, gear.support_rating),
+        #(42, gear.armor),
+      ],
+      shield_properties,
+    ])
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    |> list.map(fn(pair) {
+      let bits = float32.to_bits(pair.1)
+      UnitProperty(property_id: pair.0, field_2: bits, value: bits)
+    })
+  UnitCreatePlayer(
+    ..record,
+    tail: UnitCreateTail(
+      ..tail,
+      stats: list.flatten([
+        [
+          UnitStat(stat_id: health_stat, value: max_health),
+          UnitStat(stat_id: level_stat, value: level_of(tail.stats)),
+        ],
+        shield_stats,
+      ]),
+      properties:,
+    ),
+  )
+}
+
+/// The level among a unit's stats; a unit with none is level 1 (0x1404543c1).
+fn level_of(stats: List(UnitStat)) -> Int {
+  case list.find(stats, fn(stat) { stat.stat_id == level_stat }) {
+    Ok(stat) -> stat.value
+    Error(Nil) -> 1
+  }
 }
