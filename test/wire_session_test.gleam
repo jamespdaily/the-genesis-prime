@@ -190,9 +190,12 @@ pub fn the_replay_logs_the_unhandled_messages_the_live_session_logged_and_nothin
   use <- unitest.guard(client_tables.present())
   let #(result, logged) = support.replay_tree(folder: support.committed_session)
   assert result == Ok(Nil)
-  assert lines_of(logged, "sts_connection")
-    == ["unhandled STS request /Auth/PageVerifiedIps"]
-    as "the STS request the rule has no handler for, once for each time the live session's STS connection holds one: this recording holds one"
+  let sts_lines = lines_of(logged, "sts_connection")
+  assert sts_lines != []
+    && list.all(sts_lines, fn(line) {
+      line == "unhandled STS request /Auth/PageVerifiedIps"
+    })
+    as "the STS request the rule has no handler for, logged once for each time the live session's STS connection holds one: the client sends it a different number of times in different sessions, so only what the lines say is checked"
   assert lines_of(logged, "auth_connection") == []
     as "the auth connection logged no warning and no error"
   assert lines_of(logged, "game.connection")

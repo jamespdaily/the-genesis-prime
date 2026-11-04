@@ -1,6 +1,6 @@
 {
   "nMaxHealth": 942,
-  "nTime": 1793775775,
+  "nTime": 1793780786,
   "strName": "Tess Renamed",
   "tPos": {
     "y": -679.7122192382812,
@@ -17,13 +17,13 @@
   ],
   "bModelLoaded": true,
   "bControlled": true,
-  "nPolls": 14,
+  "nPolls": 15,
   "nHealth": 942,
   "bCharacterLoaded": true,
   "bPlayerUnit": true,
   "bReported": true,
   "nLevel": 3,
-  "nReportedAt": 1793775775,
+  "nReportedAt": 1793780786,
   "tAddonErrors": {},
   "bDead": false,
   "tLuaErrorEvents": {},
