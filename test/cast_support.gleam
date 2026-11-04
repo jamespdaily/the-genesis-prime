@@ -190,6 +190,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       cast.Tell(..)
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
+      | cast.Strike(..)
       | cast.Log(..) -> Error(Nil)
     }
   })
@@ -203,6 +204,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       cast.Send(..)
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
+      | cast.Strike(..)
       | cast.Log(..) -> Error(Nil)
     }
   })
@@ -213,8 +215,11 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
   list.filter_map(effects, fn(effect) {
     case effect {
       cast.StartTimer(timer:, after_ms:) -> Ok(#(timer, after_ms))
-      cast.Send(..) | cast.Tell(..) | cast.CancelTimer(..) | cast.Log(..) ->
-        Error(Nil)
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Log(..) -> Error(Nil)
     }
   })
 }
@@ -224,8 +229,11 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
   list.filter_map(effects, fn(effect) {
     case effect {
       cast.CancelTimer(timer:) -> Ok(timer)
-      cast.Send(..) | cast.Tell(..) | cast.StartTimer(..) | cast.Log(..) ->
-        Error(Nil)
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.Strike(..)
+      | cast.Log(..) -> Error(Nil)
     }
   })
 }

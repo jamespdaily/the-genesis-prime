@@ -286,6 +286,14 @@
 ////   a go or finish only for a start it wrote (`casts_written`, by cast id, kept
 ////   with the caster's unit id, so a removed unit's casts are finished before its
 ////   0x355 is written).
+//// - **Strikes** are a feature of their own (genesis_prime/game/strike): a go the cast
+////   rule asks for (`cast.Strike`) selects its targets from the units the client
+////   shows, draws the caster's rolls from the connection's seed, and tells each
+////   creature a `TellStrike` through the creature registry with no watch. The creature
+////   answers by a send, taken as `SentByTarget`; the round closes when each answer is in
+////   or the one strike timer, `strike.strike_timer`, fires for its deadline, and the
+////   closed round is the cast rule's `went`. A viewer writes a creature's health and
+////   death (`Health`, `Died`) for a creature it shows, whatever its own casts.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
@@ -314,8 +322,8 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentByChat, SentByMap, SentByPeer, SentBySessions, Settled,
-  TellChat, TellMoved, TellPeer,
+  Otherwise, SentByChat, SentByMap, SentByPeer, SentBySessions, SentByTarget,
+  Settled, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -331,6 +339,8 @@ import genesis_prime/game/movement
 import genesis_prime/game/routing
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike
+import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{type GameSettings}
@@ -609,6 +619,8 @@ fn connected(
       settled(handled: peer_sent(session:, news:), now:)
     OwnEvent(Woken(message: SentByChat(tell:))) ->
       settled(handled: chat_sent(session:, tell:), now:)
+    OwnEvent(Woken(message: SentByTarget(answered:))) ->
+      settled(handled: target_sent(session:, now:, answered:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -1203,10 +1215,32 @@ fn other_timer_fired(
   now now: Now,
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
-  case cast.owns(timer) {
-    True -> cast_due(session:, now:, timer:)
-    False -> claim_wait_over(session:, now:, timer:)
+  case cast.owns(timer), strike.owns(timer) {
+    True, _ -> cast_due(session:, now:, timer:)
+    False, True -> strike_due(session:, now:)
+    False, False -> claim_wait_over(session:, now:, timer:)
   }
+}
+
+/// A creature's answer to a strike this player told: the strike rule files it in
+/// the round it belongs to, and a round that closes is the cast rule's `went`; an
+/// answer with no player in the world, or for a round that is closed, is dropped
+/// (genesis_prime/game/strike).
+fn target_sent(
+  session session: Session,
+  now now: Now,
+  answered answered: Answered,
+) -> client_connection.Handled(Session) {
+  unbuilt(inputs: #(session, now, answered))
+}
+
+/// The strike timer fired: the rounds whose deadline has passed close with the
+/// units that answered (genesis_prime/game/strike `timer_fired`).
+fn strike_due(
+  session session: Session,
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  unbuilt(inputs: #(session, now))
 }
 
 /// A timer of the player's cast rule fired: its go, child cast or held press.
@@ -1276,6 +1310,7 @@ fn cast_effects(
         Ok(OwnEffect(StartTimer(timer:, after_ms:)))
       cast.CancelTimer(timer:), _ -> Ok(OwnEffect(CancelTimer(timer:)))
       cast.Log(level:, text:), _ -> Ok(log(session:, level:, text:))
+      cast.Strike(asked:), _ -> unbuilt(inputs: asked)
     }
   })
 }
@@ -2103,7 +2138,9 @@ fn viewer_takes(
     client_connection.Moving(..)
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
-    | client_connection.CastFinished(..) -> False
+    | client_connection.CastFinished(..)
+    | client_connection.Health(..)
+    | client_connection.Died -> False
   }
   use <- bool.guard(
     when: creates_or_removes && { unit_id == 0 || unit_id == entered.unit_id },
@@ -2192,6 +2229,9 @@ fn viewer_takes(
         [to_client(session, cast.finished_frame(cast_id:))],
       )
     }
+    client_connection.Health(health:, dead:) ->
+      unbuilt(inputs: #(session, shown, health, dead))
+    client_connection.Died -> unbuilt(inputs: #(session, shown))
   }
 }
 
@@ -3210,4 +3250,10 @@ fn account_id_of(status: Status) -> Option(Int) {
       ) -> Some(id)
     AwaitingHelloReply | TakingSessionKey -> None
   }
+}
+
+/// The body of a function the shape names and the build writes: the arguments
+/// are used, and the call stops.
+fn unbuilt(inputs _inputs: inputs) -> output {
+  panic as "not built: the shape holds the types"
 }

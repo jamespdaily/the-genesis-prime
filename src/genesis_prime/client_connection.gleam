@@ -26,6 +26,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike_tell.{type Answered, type Tell as StrikeTell}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
@@ -81,6 +82,11 @@ pub type Request {
   /// chat line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
   /// and never told to a map.
   TellChat(tell: ChatTell)
+  /// What a `Tell` effect sends a creature (genesis_prime/step `Creature`): the
+  /// strike of a cast's go, which the creature's owner process decides
+  /// (genesis_prime/world_map/creature_life). Told through the creature registry
+  /// with no watch, and never asked.
+  TellStrike(tell: StrikeTell)
 }
 
 /// News of one unit from its owner, a player's connection or a creature's
@@ -119,6 +125,13 @@ pub type News {
   /// A cast of the unit ends: 0x7fe (opcode.0x7fe), written for a cast the viewer
   /// wrote the start of, which the viewer then forgets.
   CastFinished(cast_id: Int)
+  /// The unit's health after a landed hit, from the creature that owns it: 0x937
+  /// (opcode.0x937), written when the viewer's client shows the unit, whatever
+  /// the viewer's own casts.
+  Health(health: Int, dead: Bool)
+  /// The unit died: 0x88c with the dead bit (opcode.0x88c), written when the
+  /// viewer's client shows the unit.
+  Died
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
@@ -169,6 +182,10 @@ pub type Message {
   /// or a whisper's reply, written while this player is in the world
   /// (genesis_prime/game/chat).
   SentByChat(tell: ChatTell)
+  /// What a creature this connection struck answers, without waiting: the
+  /// answer to a strike its caster told, which the strike rule takes into the round
+  /// it belongs to (genesis_prime/game/strike).
+  SentByTarget(answered: Answered)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

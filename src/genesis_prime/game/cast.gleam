@@ -127,6 +127,7 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/hit
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cancel_cast
@@ -187,6 +188,27 @@ pub type Effect {
   StartTimer(timer: TimerId, after_ms: Int)
   CancelTimer(timer: TimerId)
   Log(level: LogLevel, text: String)
+  /// A go is asked: the connection selects its targets, strikes them
+  /// (genesis_prime/game/strike) and, when the round closes, answers with `went`.
+  /// The go's 0x7f4 waits for that answer.
+  Strike(asked: GoAsked)
+}
+
+/// A go of a live cast that waits for its targets: which cast and phase, the spell
+/// and the cast's primary target, which a child cast on a struck unit holds as that
+/// unit and any other cast as its caster.
+pub type GoAsked {
+  GoAsked(cast_id: Int, phase: Int, spell4_id: Spell4Id, primary_target: Int)
+}
+
+/// A unit a go names, from the round that closed (genesis_prime/game/strike).
+pub type Struck {
+  /// The unit is named in the 0x7f4 with the damage that landed on it, which is
+  /// none for a spell that only selects it (Crush's first spell).
+  Hit(unit_id: Int, descriptions: List(hit.Description))
+  /// The unit deflected the strike: an entry of the 0x7fb, no description and no
+  /// child (`opcode.0x7fb`).
+  Deflected(unit_id: Int)
 }
 
 /// Why the client's message is refused: it ends the connection, because the
@@ -657,6 +679,24 @@ pub fn timer_fired(
   }
 }
 
+/// The round of a go closed with `struck`, the units it named in the order of its
+/// selection: the go's 0x7f4 with a target info for each (target flags 0), the
+/// 0x7fb of the deflected ones, the spell's own cooldown at its first go, the
+/// Proxies of the phase (a Proxy aimed at each struck unit starts one child for each
+/// Hit unit and none for a deflect) and the finish after the last go. A cast that is
+/// no longer live, because the client ended it while the round was open, has no go
+/// and writes nothing: the hits stand.
+pub fn went(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  cast_id cast_id: Int,
+  phase phase: Int,
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  unbuilt(inputs: #(cast, caster, now, cast_id, phase, struck))
+}
+
 /// The player left the world with casts live: every timer is cancelled and
 /// nothing is written.
 pub fn left(cast cast: State) -> #(State, List(Effect)) {
@@ -1074,4 +1114,10 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(bit)
       <> ", which the client never sends together"
   }
+}
+
+/// The body of a function the shape names and the build writes: the arguments
+/// are used, and the call stops.
+fn unbuilt(inputs _inputs: inputs) -> output {
+  panic as "not built: the shape holds the types"
 }

@@ -1865,6 +1865,27 @@ fields = [
 ]
 
 [[message]]
+id = 0x07FB
+name = "spell_missed"
+direction = "server_to_client"
+evidence = "opcode.0x7fb"
+summary = "some of a cast's targets were missed: the cast id and, for each, the target unit, a 4-bit reason and a time in milliseconds; the client finds the cast (an unknown id drops the message) and, for reason 0 with the player the caster or the target, raises AttackMissed, which it shows over the target as Deflect. A description with combat result 0 raises no floater, so this is how a deflect is shown. Gap: what any other reason means is not read"
+fields = [
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb" },
+  { name = "misses", kind = "array", count_bits = 32, element = "spell_miss", evidence = "opcode.0x7fb", named_by = "opcode.0x7fb" },
+]
+
+[[record]]
+name = "spell_miss"
+evidence = "opcode.0x7fb"
+summary = "one missed target of a cast: the unit id, the reason (0 is Dodge, which the client shows as Deflect) and a time in milliseconds the client adds to the miss's visual"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb" },
+  { name = "reason", kind = "unsigned", bits = 4, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb", values_type = "MissReason", values = [ { value = 0, name = "dodge", evidence = "opcode.0x7fb" } ] },
+  { name = "time_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", safe_by = "opcode.0x7fb.time" },
+]
+
+[[message]]
 id = 0x07FE
 name = "spell_finished"
 direction = "server_to_client"

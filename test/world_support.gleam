@@ -5,7 +5,7 @@
 
 import ask_support
 import character_tables
-import genesis_prime/client_connection.{type Message, SentByMap, SentByPeer}
+import genesis_prime/client_connection.{type Message, SentByMap}
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/server
 import genesis_prime/service
@@ -84,8 +84,12 @@ pub fn start(
         send: fn(to, outgoing) { send(connections:, to:, outgoing:) },
         start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
       ),
-      to_connection: fn(connection, news) {
-        registry.deliver(connections, connection, SentByPeer(news))
+      to_connection: fn(connection, outgoing) {
+        registry.deliver(
+          connections,
+          connection,
+          server.creature_message(outgoing:),
+        )
       },
     )
     |> supervisor.start

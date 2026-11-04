@@ -364,6 +364,8 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               client_connection.Appeared(..)
               | client_connection.CreatureAppeared(..)
               | client_connection.Moving(..)
+              | client_connection.Health(..)
+              | client_connection.Died
               | client_connection.Removed -> "other"
             })
           False -> Error(Nil)
@@ -598,7 +600,8 @@ pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_
         cast.Send(..)
         | cast.Tell(..)
         | cast.StartTimer(..)
-        | cast.CancelTimer(..) -> False
+        | cast.CancelTimer(..)
+        | cast.Strike(..) -> False
       }
     })
   }

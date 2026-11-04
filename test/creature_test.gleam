@@ -60,16 +60,18 @@ fn feed(
   state state: State,
   at_ms at_ms: Int,
   event event: Event(ServiceEvent(creature.Message)),
-) -> #(State, ServiceStep(PeerNews)) {
+) -> #(State, ServiceStep(creature.Outgoing)) {
   creature.step(state, support.input_at_ms(ms: at_ms, event:))
 }
 
 /// What the step sends, to the connection's number: the news it carries.
-fn sent(taken: ServiceStep(PeerNews)) -> List(#(Int, PeerNews)) {
+fn sent(taken: ServiceStep(creature.Outgoing)) -> List(#(Int, PeerNews)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(Send(to: Connection(ConnectionId(number)), message:)) ->
-        Ok(#(number, message))
+      OwnEffect(Send(
+        to: Connection(ConnectionId(number)),
+        message: creature.News(news:),
+      )) -> Ok(#(number, news))
       OwnEffect(Send(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))

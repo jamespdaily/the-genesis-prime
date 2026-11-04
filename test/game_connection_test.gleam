@@ -2552,7 +2552,7 @@ pub fn every_other_end_with_the_player_in_the_world_saves_first_test() -> Nil {
     ),
     #(feed(in_world(), WatchEnded(WatchId(9))), "a watch the rule did not open"),
     #(
-      feed(in_world(), OwnEvent(TimerFired(TimerId(3)))),
+      feed(in_world(), OwnEvent(TimerFired(TimerId(4)))),
       "a timer the rule did not start",
     ),
     #(
@@ -3750,6 +3750,7 @@ fn mapped(
     | AskSessions(..)
     | TellMoved(..)
     | TellPeer(..)
+    | client_connection.TellStrike(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }

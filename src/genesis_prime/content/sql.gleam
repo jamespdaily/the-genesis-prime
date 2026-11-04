@@ -8,6 +8,46 @@ import gleam/dynamic/decode
 import gleam/option.{type Option}
 import pog
 
+/// A row you get from running the `load_creature_kinds` query
+/// defined in `./src/genesis_prime/content/sql/load_creature_kinds.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCreatureKindsRow {
+  LoadCreatureKindsRow(creature_id: Int, respawn_ms: Int)
+}
+
+/// Every row of the creature_kind table in creature id order, row 0 the default
+/// first: the one query the load makes of the table at start
+/// (genesis_prime/content/creature_kind). The checks run on these rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_creature_kinds(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadCreatureKindsRow), pog.QueryError) {
+  let decoder = {
+    use creature_id <- decode.field(0, decode.int)
+    use respawn_ms <- decode.field(1, decode.int)
+    decode.success(LoadCreatureKindsRow(creature_id:, respawn_ms:))
+  }
+
+  "-- Every row of the creature_kind table in creature id order, row 0 the default
+-- first: the one query the load makes of the table at start
+-- (genesis_prime/content/creature_kind). The checks run on these rows, not in SQL.
+select
+  creature_id,
+  respawn_ms
+from creature_kind
+order by creature_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_spawns` query
 /// defined in `./src/genesis_prime/content/sql/load_spawns.sql`.
 ///

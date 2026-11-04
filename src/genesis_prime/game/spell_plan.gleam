@@ -129,6 +129,16 @@ pub type Condition {
   NeedsPrerequisite(prerequisite_id: PrerequisiteId)
 }
 
+/// Which unit a Proxy's child cast is made on.
+pub type ProxyTarget {
+  /// The caster of the spell whose Proxy fired.
+  OnCaster
+  /// Each unit the go struck: a Proxy whose effect aims at the area
+  /// (`Spell4Effects.targetFlags` 4), which starts one child for each Hit unit
+  /// (genesis_prime/game/cast `went`).
+  OnEachStruck
+}
+
 /// A spell and what it starts. `spell4_id` is the id of the Spell4 row; the cast
 /// ids a press makes are the cast rule's (genesis_prime/game/cast).
 pub type Spell {
@@ -171,6 +181,8 @@ pub type Proxy {
     /// Spell4Effects.phaseFlags: bit n is phase n; -1 every phase.
     phase_flags: Int,
     condition: Condition,
+    /// Which unit the child cast is made on, from the effect's `targetFlags`.
+    target: ProxyTarget,
     spell: Spell,
   )
 }
@@ -379,6 +391,7 @@ fn spell_of(
         delay_ms: effect.delay_time,
         phase_flags: effect.phase_flags,
         condition: condition_of(effect:),
+        target: target_of(effect:),
         spell: child,
       ))
     }),
@@ -479,6 +492,16 @@ fn weapon_of(weapon_slot: Int) -> WeaponSlot {
     2 -> Refused
     other -> OtherWeaponSlot(id: other)
   }
+}
+
+/// A Proxy aimed at the area (`targetFlags` bit 4) starts its child on each struck
+/// unit, any other on the caster (`Spell4Effects.targetFlags`).
+fn target_of(effect effect: spell4_effects.Spell4Effects) -> ProxyTarget {
+  use <- bool.guard(
+    when: !has_flag(flags: effect.target_flags, bit: 4),
+    return: OnCaster,
+  )
+  OnEachStruck
 }
 
 fn condition_of(effect effect: spell4_effects.Spell4Effects) -> Condition {

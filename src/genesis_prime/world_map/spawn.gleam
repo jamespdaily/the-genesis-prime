@@ -32,6 +32,11 @@
 ////   the row's own (`opcode.0x262.creature`): the client's weighted display pick
 ////   runs only for the spawns it makes itself (`0x1404846c0`).
 //// - **A level outside its row's range** is kept and listed in an info line.
+//// - **The creature's body** (`body_of`) is what a fight reads of it: its health, the
+////   hit radius of its display (Creature2DisplayInfo.hitRadius), its faction levels
+////   toward the two player factions (`faction_levels`), its deflect chance
+////   (`0x140463340`, from its CreatureLevel row and its archetype, difficulty and tier
+////   multipliers, `Creature2.73464.crit_deflect_glance`) and its kind's respawn time.
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/start_place.{type Place}
@@ -58,6 +63,8 @@ import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
 import genesis_prime/table/world
+import genesis_prime/world_map/creature_kind.{type Kind}
+import genesis_prime/world_map/creature_life.{type Body}
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/unit_fields
@@ -440,6 +447,29 @@ pub fn faction_levels(
     faction_level(catalog:, from: exile_faction, to: faction),
     faction_level(catalog:, from: dominion_faction, to: faction),
   )
+}
+
+/// Why a creature's body cannot be worked out.
+pub type BodyError {
+  /// A table row the body names is missing: the table, and the id.
+  NoBodyRow(table: String, id: Int)
+}
+
+/// The creature's body at `spawn` with its kind's respawn time, from the loaded
+/// tables: the spawn's health, the hit radius of its display, its faction levels and
+/// its deflect chance.
+pub fn body_of(
+  tables tables: table_store.Tables,
+  spawn spawn: Spawn,
+  kind kind: Kind,
+) -> Result(Body, BodyError) {
+  unbuilt(inputs: #(tables, spawn, kind))
+}
+
+/// The body of a function the shape names and the build writes: the arguments
+/// are used, and the call stops.
+fn unbuilt(inputs _inputs: inputs) -> output {
+  panic as "not built: the shape holds the types"
 }
 
 /// Whether a player of the faction may attack a unit of the other: the unit is

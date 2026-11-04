@@ -1,10 +1,13 @@
 //// One creature: the process that owns a creature's unit in one run of one map,
 //// from the time a player first sees its spawn to the time it has gone unseen
 //// for the idle stop. It sends the 0x262 and the 0x355 of its own unit to each
-//// player who sees it and decides nothing else: which players see it, when it
-//// starts and when it stops are the map's (genesis_prime/world_map/map), so
-//// every message about a unit comes from the unit's owner and a viewer has one
-//// sender for each unit.
+//// player who sees it, and owns its health: it takes the strikes a caster's
+//// connection tells it, decides what each does (genesis_prime/world_map/creature_life)
+//// and sends the 0x937 and 0x88c of its unit, the answer to the caster, and, after
+//// its corpse timer, the 0x355 and 0x262 of its respawn. Which players see it, when
+//// it starts and when it stops are the map's (genesis_prime/world_map/map), so every
+//// message about a unit comes from the unit's owner and a viewer has one sender for
+//// each unit.
 ////
 //// This is the rule of a service shell (genesis_prime/service/shell), started
 //// by the creature supervisor (genesis_prime/world_map/creature_supervisor)
@@ -29,6 +32,14 @@
 //// Retire ───────────────▶ Stop                                        (no one sees it: the map sent every
 ////                                                                      viewer Unwatched, 60 s ago or more)
 //// the run's end (WatchEnded) ─▶ Stop                                  (the map is gone: so are its players)
+////
+//// caster's connection c0
+//// Strike(key, c0, offence, rolls) ─▶ the hit rule on its health (genesis_prime/world_map/creature_life)
+////                                    alive: Send(c0, Struck(Landed | Deflected))   Send(each viewer, Health(h', dead))
+////                                    killed: Send(each viewer, Died); StartServiceTimer(corpse, respawn_ms)
+////                                    dead:  Send(c0, Struck(Refused(Dead)))
+//// the corpse timer ─────▶ alive again at full health      Send(each viewer, Removed), then CreatureAppeared
+////                         told Retire while dead: Stop (no viewer: the spawn's next creature starts full)
 //// ```
 ////
 //// - **The unit** is `creature_unit.create(spawn, unit_id, time)`, stamped with
@@ -37,7 +48,18 @@
 //// - **Retire** is the map's word that no player has seen the creature for the
 ////   idle stop, so it ends cleanly: the map's watch on it ends, and the spawn is
 ////   dormant with its unit id kept. A creature takes `Retire` once and has no
-////   viewer to tell: its viewers went with their `Unwatched`.
+////   viewer to tell: its viewers went with their `Unwatched`. A creature that lies
+////   dead when told to retire stops at its respawn, since its map keeps the spawn
+////   retiring until it ends and a corpse is never shown to a viewer that comes
+////   after.
+//// - **A strike** is told by the connection of the caster through the creature
+////   registry with no watch (genesis_prime/world_map/creature_registry `tell`), and
+////   answered by a send to that connection. A strike for a creature that has ended is
+////   dropped by the registry and left out at the caster's deadline
+////   (genesis_prime/game/strike).
+//// - **The corpse timer** is the creature's own, whatever its viewers: it starts at the
+////   kill for the kind's respawn time and fires with no viewer too
+////   (genesis_prime/world_map/creature_kind).
 //// - **A viewer that is not a connection any more** is dropped by the send (the
 ////   registry finds no process); the map's `Unwatched` follows from its end.
 //// - **A `Watched` twice from one connection** sends the 0x262 twice; the
@@ -52,6 +74,11 @@
 //// |---|---|
 //// | the creature crashes | its map's watch ends; the map sends every player `Gone(unit)` and starts the spawn again, after the respawn time and only if a player sees it then, as a new unit |
 //// | the creature is told `Retire` | it stops, and the map's watch ends; the map takes that as a clean stop |
+//// | the creature is told `Retire` while dead | it stops at its respawn, and the map's watch ends then |
+//// | the creature is struck while dead | the strike is answered `Refused(Dead)`; no health changes and no news is sent |
+//// | two strikes reach it one after the other | each is answered in turn on the health the one before left; the second finds a corpse if the first killed |
+//// | the caster's connection has ended when the creature answers | the send is dropped by the registry; the hit and its news stand |
+//// | a viewer arrives while the creature is dead | its 0x262 carries health 0, which the client creates dead |
 //// | the creature crashes while retiring | the same watch end: the map takes it as a clean stop, since no client shows the unit |
 //// | the map run ends | the creature's watch on the run ends and it stops |
 //// | the creature supervisor restarts | every creature ends and so does every map (genesis_prime/server): the world subtree is `rest_for_one` |
@@ -61,6 +88,7 @@
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
+import genesis_prime/game/strike_tell.{type Answered, type Tell as StrikeTell}
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, Asked, Connection,
@@ -94,6 +122,17 @@ pub type Message {
   Unwatched(by: ConnectionId)
   /// No player has seen the creature for the idle stop: end.
   Retire
+  /// A caster's connection strikes the creature (genesis_prime/game/strike_tell).
+  Strike(tell: StrikeTell)
+}
+
+/// What a creature sends a connection without waiting.
+pub type Outgoing {
+  /// News of the creature's own unit for a viewer: its 0x262, 0x355, 0x937 and
+  /// 0x88c.
+  News(news: PeerNews)
+  /// The answer to a strike, for the connection that told it.
+  Struck(answered: Answered)
 }
 
 /// A creature's players in sight.
@@ -105,7 +144,7 @@ pub opaque type State {
 pub fn rule(
   creature creature: CreatureStart,
   spawn spawn: Spawn,
-) -> ServiceRule(Settings, State, Message, PeerNews) {
+) -> ServiceRule(Settings, State, Message, Outgoing) {
   step.Rule(name: rule_name, settings: Settings(creature:, spawn:), new:, step:)
 }
 
@@ -120,7 +159,7 @@ pub fn new(settings: Settings) -> State {
 pub fn step(
   state state: State,
   input input: ServiceInput(Message),
-) -> #(State, ServiceStep(PeerNews)) {
+) -> #(State, ServiceStep(Outgoing)) {
   let creature = state.settings.creature
   case input.event {
     Stopping(..) -> #(state, Effects([Stop]))
@@ -149,6 +188,7 @@ pub fn step(
         False -> #(state, Effects([]))
       }
     OwnEvent(Told(message: Retire)) -> #(state, Effects([Stop]))
+    OwnEvent(Told(message: Strike(tell:))) -> unbuilt(inputs: #(state, tell))
     WatchEnded(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(..))
     | OwnEvent(ServiceTimerFired(..))
@@ -162,7 +202,7 @@ fn appeared(
   state state: State,
   viewer viewer: ConnectionId,
   now now: step.Now,
-) -> Effect(ServiceEffect(PeerNews)) {
+) -> Effect(ServiceEffect(Outgoing)) {
   let creature = state.settings.creature
   news_to(
     creature:,
@@ -183,15 +223,15 @@ fn news_to(
   creature creature: CreatureStart,
   viewer viewer: ConnectionId,
   news news: client_connection.News,
-) -> Effect(ServiceEffect(PeerNews)) {
+) -> Effect(ServiceEffect(Outgoing)) {
   OwnEffect(Send(
     to: Connection(viewer),
-    message: PeerNews(
+    message: News(PeerNews(
       map: creature.map,
       incarnation: creature.incarnation,
       unit_id: creature.unit_id,
       news:,
-    ),
+    )),
   ))
 }
 
@@ -205,4 +245,10 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     map.Retire -> Ok(Retire)
     map.Joined(..) | map.NotJoined(..) | map.Left | map.Gone(..) -> Error(Nil)
   }
+}
+
+/// The body of a function the shape names and the build writes: the arguments
+/// are used, and the call stops.
+fn unbuilt(inputs _inputs: inputs) -> output {
+  panic as "not built: the shape holds the types"
 }

@@ -129,6 +129,7 @@ fn appearance(message: Message) -> Result(UnitCreateCreature, Nil) {
     SentByPeer(..)
     | SentByMap(..)
     | client_connection.SentBySessions(..)
+    | client_connection.SentByTarget(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
 }
@@ -221,6 +222,7 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
           SentByMap(map.Gone(unit_id:)) -> Ok(unit_id)
           SentByMap(..)
           | SentByPeer(..)
+          | client_connection.SentByTarget(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }
