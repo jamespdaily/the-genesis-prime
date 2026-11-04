@@ -745,6 +745,44 @@ pub fn creature_level_rows() -> List(List(Cell)) {
   ])
 }
 
+/// The files with the creature auto-attack's Spell4 and Spell4Effects rows added
+/// (`creature_attack_spell4_rows`, `creature_attack_effect_rows`), for a load that
+/// selects spawns, whose attack is their kind's spell. The attack's effect ids make
+/// a Spell4Effects table of over a megabyte (a slot for each id up to 184777): the
+/// shared planted load holds it, and a test's own load that selects spawns passes
+/// `padding` True for one more empty row, so its table is never the same size as the
+/// shared one, which the literal-area check would take for one table loaded twice
+/// (`literal_area.tables_held_twice`).
+pub fn with_creature_attack(
+  files files: List(#(String, BitArray)),
+  padding padding: Bool,
+) -> List(#(String, BitArray)) {
+  let effects =
+    list.flatten([
+      spell4_effects_rows(),
+      creature_attack_effect_rows(),
+      case padding {
+        True -> [
+          planted_table.row(spell4_effects.schema, [#("ID", Integer(184_778))]),
+        ]
+        False -> []
+      },
+    ])
+  list.map(files, fn(file) {
+    case file.0 {
+      name if name == spell4.schema.file ->
+        planted_table.file(
+          spell4.schema,
+          list.append(creature_attack_spell4_rows(), spell4_rows())
+            |> list.sort(by_id),
+        )
+      name if name == spell4_effects.schema.file ->
+        planted_table.file(spell4_effects.schema, list.sort(effects, by_id))
+      _ -> file
+    }
+  })
+}
+
 /// The creature auto-attack the creature kinds name, Spell4 5649 (`Spell4.5649`):
 /// range 5.0, no base spell planted (no player casts it).
 pub fn creature_attack_spell4_rows() -> List(List(Cell)) {
@@ -941,15 +979,11 @@ pub fn spell_tree_files() -> List(#(String, BitArray)) {
   [
     planted_table.file(
       spell4.schema,
-      list.flatten([
-        rows.spell4,
-        [
-          planted_table.row(spell4.schema, [
-            #("ID", Integer(42_352)),
-            #("spell4BaseIdBaseSpell", Integer(26_543)),
-          ]),
-        ],
-        creature_attack_spell4_rows(),
+      list.append(rows.spell4, [
+        planted_table.row(spell4.schema, [
+          #("ID", Integer(42_352)),
+          #("spell4BaseIdBaseSpell", Integer(26_543)),
+        ]),
       ])
         |> list.sort(by_id),
     ),
@@ -960,11 +994,7 @@ pub fn spell_tree_files() -> List(#(String, BitArray)) {
       ])
         |> list.sort(by_id),
     ),
-    planted_table.file(
-      spell4_effects.schema,
-      list.append(rows.spell4_effects, creature_attack_effect_rows())
-        |> list.sort(by_id),
-    ),
+    planted_table.file(spell4_effects.schema, rows.spell4_effects),
     planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
     planted_table.file(
       spell4_aoe_target_constraints.schema,
@@ -990,17 +1020,9 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(item_display_source_entry.schema, source_entry_rows()),
     planted_table.file(item_display.schema, item_display_rows()),
     planted_table.file(creature_level.schema, creature_level_rows()),
-    planted_table.file(
-      spell4.schema,
-      list.append(creature_attack_spell4_rows(), spell4_rows())
-        |> list.sort(by_id),
-    ),
+    planted_table.file(spell4.schema, spell4_rows()),
     planted_table.file(spell4_base.schema, spell4_base_rows()),
-    planted_table.file(
-      spell4_effects.schema,
-      list.append(spell4_effects_rows(), creature_attack_effect_rows())
-        |> list.sort(by_id),
-    ),
+    planted_table.file(spell4_effects.schema, spell4_effects_rows()),
     planted_table.file(
       spell4_aoe_target_constraints.schema,
       spell4_aoe_target_constraints_rows(),

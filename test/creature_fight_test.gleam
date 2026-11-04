@@ -182,6 +182,18 @@ fn strike_of(
   ))
 }
 
+/// The tells of the step to players in the fight, by connection.
+fn fights_told(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(Int, strike_tell.Fight)) {
+  list.filter_map(support.sends(taken), fn(sent) {
+    case sent.1 {
+      creature.FightTold(told:) -> Ok(#(sent.0, told))
+      creature.News(..) | creature.Struck(..) -> Error(Nil)
+    }
+  })
+}
+
 /// Each send of the step in order, as one line: the news to a viewer, a fight's
 /// tell or a strike's answer to a connection.
 fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
@@ -257,7 +269,14 @@ fn timers(taken: ServiceStep(creature.Outgoing)) -> List(#(step.TimerId, Int)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(StartServiceTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
-      _ -> Error(Nil)
+      OwnEffect(step.Send(..))
+      | OwnEffect(step.Reply(..))
+      | OwnEffect(step.StartCreature(..))
+      | OwnEffect(step.CancelServiceTimer(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | step.Stop -> Error(Nil)
     }
   })
 }
@@ -281,12 +300,7 @@ fn timer_for(
 /// The path of the step's 0x638 to a viewer.
 fn path_sent(taken: ServiceStep(creature.Outgoing)) -> creature_path.Path {
   let assert [CreatureMoved(path:), ..] =
-    list.filter(news_to(taken, 2), fn(news) {
-      case news {
-        CreatureMoved(..) -> True
-        _ -> False
-      }
-    })
+    list.filter(news_to(taken, 2), fn(news) { name_of(news) == "0x638" })
     as "the step sends a 0x638"
   path
 }
@@ -300,9 +314,14 @@ fn x_of(place: start_place.Place) -> Float {
 pub fn a_move_with_a_lower_sequence_number_than_the_creature_holds_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    tell(state: beast([2]), at_ms: 0, message: approached(2, 5.0, 5))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 5),
+    )
   let tick = timer_for(aggro, 1500)
-  let #(state, older) = tell(state:, at_ms: 100, message: moved(2, 40.0, 4))
+  let #(state, older) =
+    tell(state:, at_ms: 100, message: moved(number: 2, x: 40.0, seq: 4))
   assert said(older) == []
     as "move 4 is older than the move 5 the creature holds: dropped, no chase"
   let #(_, ticked) = fire(state:, at_ms: 1500, timer: tick)
@@ -313,10 +332,15 @@ pub fn a_move_with_a_lower_sequence_number_than_the_creature_holds_is_dropped_te
 pub fn a_target_moved_of_seq_n_plus_1_then_an_approached_of_seq_n_leaves_the_creature_at_n_plus_1s_place_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, early) =
-    tell(state: beast([2]), at_ms: 0, message: moved(2, 30.0, 6))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: moved(number: 2, x: 30.0, seq: 6),
+    )
   assert said(early) == []
     as "a move from a player not on the list starts nothing"
-  let #(_, aggro) = tell(state:, at_ms: 10, message: approached(2, 5.0, 5))
+  let #(_, aggro) =
+    tell(state:, at_ms: 10, message: approached(number: 2, x: 5.0, seq: 5))
   let path = path_sent(aggro)
   assert x_of(creature_path.end(path:)) == 26.0
     as "the map's Approached of move 5 comes after the connection's move 6: the creature keeps move 6's place, 30, and runs to 30 - 0.5 x 8 = 26"
@@ -327,10 +351,16 @@ pub fn two_moves_of_one_client_frame_both_reach_the_creature_in_order_and_the_la
   // The connection stamps two 0x637s of one frame, which share one client clock
   // (`opcode.0x637.client_clock`), with its own moves 6 and 7.
   let #(state, _) =
-    tell(state: beast([2]), at_ms: 0, message: approached(2, 5.0, 5))
-  let #(state, first) = tell(state:, at_ms: 100, message: moved(2, 20.0, 6))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 5),
+    )
+  let #(state, first) =
+    tell(state:, at_ms: 100, message: moved(number: 2, x: 20.0, seq: 6))
   assert x_of(creature_path.end(path: path_sent(first))) == 16.0
-  let #(_, second) = tell(state:, at_ms: 100, message: moved(2, 40.0, 7))
+  let #(_, second) =
+    tell(state:, at_ms: 100, message: moved(number: 2, x: 40.0, seq: 7))
   assert x_of(creature_path.end(path: path_sent(second))) == 36.0
     as "move 7 is newer than move 6 though both carry one client clock: the creature runs on to 40 - 4"
 }
@@ -340,7 +370,11 @@ pub fn two_moves_of_one_client_frame_both_reach_the_creature_in_order_and_the_la
 pub fn a_viewer_entering_the_ring_is_targeted_the_creature_enters_combat_and_the_player_is_threatened_before_any_cast_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, aggro) =
-    tell(state: beast([2, 5]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   assert said(aggro)
     == [
       "0x908(20, 1) to 2", "0x908(20, 1) to 5", "0x89a(1) to 2", "0x89a(1) to 5",
@@ -354,7 +388,11 @@ pub fn a_viewer_entering_the_ring_is_targeted_the_creature_enters_combat_and_the
 pub fn a_player_that_is_not_a_viewer_is_not_aggroed_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, nothing) =
-    tell(state: beast([5]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   assert said(nothing) == [] && timers(nothing) == []
     as "threat only for viewers: the map's ring and its sight can cross with Unwatched"
 }
@@ -364,7 +402,11 @@ pub fn a_player_that_is_not_a_viewer_is_not_aggroed_test() -> Nil {
 pub fn damage_adds_damage_times_each_effects_threat_multiplier_and_the_top_entry_is_the_target_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    tell(state: beast([2, 5]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   // Effect 125182 (threatMultiplier 2.0) hits for 10 and effect 1 (1.0) for 5.
   let #(state, first) =
     tell(
@@ -409,14 +451,19 @@ pub fn damage_adds_damage_times_each_effects_threat_multiplier_and_the_top_entry
 pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planned_while_it_stays_in_reach_of_the_paths_end_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    tell(state: beast([2, 5]), at_ms: 0, message: approached(2, 30.0, 1))
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
   let assert Running(from:, to:, started_ms:, speed:) = path_sent(aggro)
   assert x_of(from) == 0.0
     && x_of(to) == 26.0
     && speed == 10.0
     && started_ms == start_ms
     as "from the spawn to 30 - 0.5 x 8, at runLand 10.0 x MoveSpeedMultiplier 1.0"
-  let #(state, near) = tell(state:, at_ms: 100, message: moved(2, 31.0, 2))
+  let #(state, near) =
+    tell(state:, at_ms: 100, message: moved(number: 2, x: 31.0, seq: 2))
   assert said(near) == []
     as "31 is 5 from the path's end 26, within reach 8: no new path"
   let #(_, watched) =
@@ -431,7 +478,11 @@ pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planne
 pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_written_as_the_go_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    tell(state: beast([2]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   let #(state, ticked) =
     fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   assert said(ticked) == ["0x7ff to 2", "Attacks to 2"]
@@ -440,23 +491,8 @@ pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_wri
     && start.caster_unit_id == 7
     && start.primary_target_unit_id == 20
     as "the kind's spell, cast by the creature on its target"
-  let assert [
-    #(
-      2,
-      creature.FightTold(told: Attacks(tell: Strike(
-        key:,
-        from:,
-        striker:,
-        offence:,
-      ))),
-    ),
-  ] =
-    list.filter(support.sends(ticked), fn(sent) {
-      case sent.1 {
-        creature.FightTold(..) -> True
-        _ -> False
-      }
-    })
+  let assert [#(2, Attacks(tell: Strike(key:, from:, striker:, offence:)))] =
+    fights_told(ticked)
   assert from == address()
     && striker == CreatureStriker
     && key.cast_id == start.cast_id
@@ -510,17 +546,15 @@ pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_wri
 pub fn an_answer_after_the_deadline_is_left_out_of_the_go_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    tell(state: beast([2]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   let #(state, ticked) =
     fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   let deadline = timer_for(ticked, 1000)
-  let assert [#(_, creature.FightTold(told: Attacks(tell: Strike(key:, ..))))] =
-    list.filter(support.sends(ticked), fn(sent) {
-      case sent.1 {
-        creature.FightTold(..) -> True
-        _ -> False
-      }
-    })
+  let assert [#(_, Attacks(tell: Strike(key:, ..)))] = fights_told(ticked)
   let #(state, late) = fire(state:, at_ms: 2500, timer: deadline)
   assert said(late) == ["0x7f4 to 2", "0x7fe to 2"]
   let assert [CastWent(go:), CastFinished(..)] = news_to(late, 2)
@@ -540,17 +574,15 @@ pub fn an_answer_after_the_deadline_is_left_out_of_the_go_test() -> Nil {
 pub fn a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    tell(state: beast([2]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   let #(state, ticked) =
     fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   let deadline = timer_for(ticked, 1000)
-  let assert [#(_, creature.FightTold(told: Attacks(tell: Strike(key:, ..))))] =
-    list.filter(support.sends(ticked), fn(sent) {
-      case sent.1 {
-        creature.FightTold(..) -> True
-        _ -> False
-      }
-    })
+  let assert [#(_, Attacks(tell: Strike(key:, ..)))] = fights_told(ticked)
   let #(state, _) =
     tell(
       state:,
@@ -572,8 +604,13 @@ pub fn a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test() -> 
 pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and_walks_home_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    tell(state: beast([2]), at_ms: 0, message: approached(2, 5.0, 1))
-  let #(state, chased) = tell(state:, at_ms: 0, message: moved(2, 100.0, 2))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, chased) =
+    tell(state:, at_ms: 0, message: moved(number: 2, x: 100.0, seq: 2))
   assert x_of(creature_path.end(path: path_sent(chased))) == 55.0
     as "the path to 96 is clipped at the leash circle, 55 from the spawn"
   // Ticks at 1.5, 3, 4.5 s chase on; the one at 6 s finds the creature at 55.
@@ -606,7 +643,11 @@ pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and
 pub fn the_next_strike_after_a_leash_finds_the_creature_at_full_health_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    tell(state: beast([2]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   let #(state, hurt) =
     tell(
       state:,
@@ -614,8 +655,8 @@ pub fn the_next_strike_after_a_leash_finds_the_creature_at_full_health_test() ->
       message: strike_of(number: 2, cast_id: 1, blows: [#(1, 20, 1.0)]),
     )
   assert list.contains(said(hurt), "0x937(32) to 2") as "52 - 20"
-  let #(state, chased) = tell(state:, at_ms: 200, message: moved(2, 100.0, 2))
-  let _ = chased
+  let #(state, _) =
+    tell(state:, at_ms: 200, message: moved(number: 2, x: 100.0, seq: 2))
   let #(state, t1) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   let #(state, t2) = fire(state:, at_ms: 3000, timer: timer_for(t1, 1500))
   let #(state, t3) = fire(state:, at_ms: 4500, timer: timer_for(t2, 1500))
@@ -635,8 +676,13 @@ pub fn the_next_strike_after_a_leash_finds_the_creature_at_full_health_test() ->
 pub fn at_home_the_creature_aggroes_the_near_players_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    tell(state: beast([2, 5]), at_ms: 0, message: approached(2, 5.0, 1))
-  let #(state, _) = tell(state:, at_ms: 0, message: moved(2, 100.0, 2))
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, _) =
+    tell(state:, at_ms: 0, message: moved(number: 2, x: 100.0, seq: 2))
   // Player 2 runs out of the ring: the map says so.
   let #(state, _) =
     tell(state:, at_ms: 0, message: creature.Withdrew(by: ConnectionId(2)))
@@ -645,7 +691,7 @@ pub fn at_home_the_creature_aggroes_the_near_players_test() -> Nil {
   let #(state, t3) = fire(state:, at_ms: 4500, timer: timer_for(t2, 1500))
   let #(state, leashed) = fire(state:, at_ms: 6000, timer: timer_for(t3, 1500))
   let #(state, returning) =
-    tell(state:, at_ms: 7000, message: approached(5, 3.0, 1))
+    tell(state:, at_ms: 7000, message: approached(number: 5, x: 3.0, seq: 1))
   assert said(returning) == []
     as "a player entering the ring while the creature walks home is only noted"
   let #(_, home) = fire(state:, at_ms: 11_500, timer: timer_for(leashed, 5500))
@@ -659,7 +705,11 @@ pub fn at_home_the_creature_aggroes_the_near_players_test() -> Nil {
 pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the_target_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    tell(state: beast([2, 5]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   let #(state, _) =
     tell(
       state:,
@@ -676,7 +726,11 @@ pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the
 pub fn death_takes_the_creature_out_of_combat_and_releases_everyone_on_its_list_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    tell(state: beast([2, 5]), at_ms: 0, message: approached(2, 5.0, 1))
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
   let #(state, _) =
     tell(
       state:,
@@ -701,7 +755,11 @@ pub fn death_takes_the_creature_out_of_combat_and_releases_everyone_on_its_list_
 pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_it_where_it_fell_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    tell(state: beast([2]), at_ms: 0, message: approached(2, 30.0, 1))
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
   let #(state, killed) =
     tell(
       state:,
@@ -716,11 +774,11 @@ pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_
     as "it fell 1 s into its run, 10 units along: the corpse lies there, not where the run would end"
   let #(_, stood) = fire(state:, at_ms: 61_000, timer: corpse)
   let appeared =
-    list.filter_map(news_to(stood, 9), fn(news) {
-      case news {
-        CreatureAppeared(place:, ..) -> Ok(x_of(place))
-        _ -> Error(Nil)
-      }
+    list.filter(news_to(stood, 9), fn(news) { name_of(news) == "0x262" })
+    |> list.map(fn(news) {
+      let assert CreatureAppeared(place:, ..) = news
+        as "a 0x262 of the creature"
+      x_of(place)
     })
   assert appeared == [0.0]
     as "it stands again at its spawn (death.creature_respawn)"
@@ -757,7 +815,7 @@ fn breaches(
   viewers_of viewers_of: fn(State) -> set.Set(ConnectionId),
 ) -> List(String) {
   let #(_, _, _, found) =
-    list.fold(ops, #(beast([]), [], 0, []), fn(held, op) {
+    list.fold(ops, #(beast(viewers: []), [], 0, []), fn(held, op) {
       let #(state, pending, at_ms, found) = held
       let at_ms = at_ms + 100
       let #(state, taken_timers) = case op {
@@ -777,7 +835,11 @@ fn breaches(
         }
         Near(n) -> {
           let #(state, taken) =
-            tell(state:, at_ms:, message: approached(n, 4.0, at_ms))
+            tell(
+              state:,
+              at_ms:,
+              message: approached(number: n, x: 4.0, seq: at_ms),
+            )
           #(state, timers(taken))
         }
         Hit(n) -> {
@@ -805,7 +867,8 @@ fn breaches(
       }
       let pending = case op {
         Tick -> taken_timers
-        _ -> list.append(pending, taken_timers)
+        See(..) | Unsee(..) | Near(..) | Hit(..) | Wait ->
+          list.append(pending, taken_timers)
       }
       let threat = creature_fight.threatened(state: creature.fight(state:))
       let found = case set.is_subset(threat, viewers_of(state)) {
@@ -839,4 +902,19 @@ pub fn the_harness_names_a_threat_entry_that_is_not_a_viewer_test() -> Nil {
   use <- owned_test.run(5000)
   // The planted bug: a view of the viewers that holds none.
   assert breaches(ops: [See(2), Near(2)], viewers_of: fn(_) { set.new() }) != []
+}
+
+pub fn a_strike_from_a_non_viewer_adds_no_threat_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 5's strike was on its way when the map's Unwatched of it arrived.
+  let #(state, taken) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
+    )
+  assert said(taken) == ["Landed to 5", "0x937(42) to 2"]
+    as "the damage applies: 52 - 10, shown to the viewer"
+  assert creature_fight.threatened(state: creature.fight(state:)) == set.new()
+    as "no threat for a connection that does not see the creature, so no fight starts"
 }

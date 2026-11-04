@@ -216,9 +216,10 @@
 ////   the map keeps, for each spawn that is not dormant, whether its creature is
 ////   live, retiring, waiting for its restart or failed (`SpawnState`), and sends it
 ////   `Watched`, `Unwatched` and `Retire`, so the creature sends the 0x262 and the
-////   0x355 of its own unit itself and decides nothing about its own life. A
-////   creature never moves, so a move of a player is the only change of sight with
-////   it.
+////   0x355 of its own unit itself and decides nothing about its own life. Sight of
+////   a creature is decided at its spawn's place, also while it runs (at most the
+////   leash range plus its reach off), so a move of a player is the only change of
+////   sight with it.
 //// - **A creature starts** when its spawn gets its first viewer, with the spawn's
 ////   unit id, a new life (its watch id) and its first viewers in `CreatureStart`, so
 ////   it sends their 0x262s as it starts and a burst of starts is followed by no burst
@@ -1286,7 +1287,7 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
     case dict.get(spawns.by_id, id) {
       Ok(found) ->
         hostile(spawn: found, faction_id:)
-        && creature_path.distance(place, found.place) <=. range
+        && creature_path.distance(from: place, to: found.place) <=. range
       Error(Nil) -> False
     }
   })

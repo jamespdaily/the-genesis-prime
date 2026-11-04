@@ -20,6 +20,7 @@
 ////   creature and its viewers' connections read their inputs at.
 
 import genesis_prime/game/start_place.{type Place}
+import gleam/bool
 import gleam/float
 import gleam/int
 
@@ -43,7 +44,7 @@ pub fn place_at(path path: Path, now_ms now_ms: Int) -> Place {
   case path {
     Standing(at:) -> at
     Running(from:, to:, started_ms:, speed:) -> {
-      let length = distance(from, to)
+      let length = distance(from: from, to: to)
       let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
       case length <=. 0.0 || run >=. length {
         True -> to
@@ -72,14 +73,14 @@ pub fn toward(
   speed speed: Float,
   now_ms now_ms: Int,
 ) -> Path {
-  let length = distance(from, target)
+  let length = distance(from: from, to: target)
   let wanted = case length <=. stop_short {
     True -> from
     False ->
       along(from:, to: target, fraction: { length -. stop_short } /. length)
   }
   let end = clipped(from:, to: wanted, circle:)
-  case distance(from, end) <=. 0.0 {
+  case distance(from: from, to: end) <=. 0.0 {
     True -> Standing(at: from)
     False -> Running(from:, to: end, started_ms: now_ms, speed:)
   }
@@ -92,10 +93,11 @@ pub fn straight(
   speed speed: Float,
   now_ms now_ms: Int,
 ) -> Path {
-  case distance(from, to) <=. 0.0 {
-    True -> Standing(at: to)
-    False -> Running(from:, to:, started_ms: now_ms, speed:)
-  }
+  use <- bool.guard(
+    when: distance(from: from, to: to) <=. 0.0,
+    return: Standing(at: to),
+  )
+  Running(from:, to:, started_ms: now_ms, speed:)
 }
 
 /// The monotonic time the path is run by: `started_ms` plus its length over its
@@ -105,12 +107,14 @@ pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
     Standing(..) -> now_ms
     Running(from:, to:, started_ms:, speed:) ->
       started_ms
-      + float.truncate(float.ceiling(distance(from, to) /. speed *. 1000.0))
+      + float.truncate(float.ceiling(
+        distance(from: from, to: to) /. speed *. 1000.0,
+      ))
   }
 }
 
 /// The distance between two places, in three dimensions.
-pub fn distance(first: Place, second: Place) -> Float {
+pub fn distance(from first: Place, to second: Place) -> Float {
   let dx = start_place.x(first) -. start_place.x(second)
   let dy = start_place.y(first) -. start_place.y(second)
   let dz = start_place.z(first) -. start_place.z(second)
@@ -140,14 +144,15 @@ fn along(from from: Place, to to: Place, fraction fraction: Float) -> Place {
 /// `to`, or the point where the segment from `from` to it leaves the circle when
 /// `to` lies outside it. A `from` outside the circle stays where it is.
 fn clipped(from from: Place, to to: Place, circle circle: Circle) -> Place {
-  case distance(circle.centre, to) <=. circle.radius {
-    True -> to
-    False ->
-      case distance(circle.centre, from) >=. circle.radius {
-        True -> from
-        False -> along(from:, to:, fraction: exit_fraction(from:, to:, circle:))
-      }
-  }
+  use <- bool.guard(
+    when: distance(from: circle.centre, to: to) <=. circle.radius,
+    return: to,
+  )
+  use <- bool.guard(
+    when: distance(from: circle.centre, to: from) >=. circle.radius,
+    return: from,
+  )
+  along(from:, to:, fraction: exit_fraction(from:, to:, circle:))
 }
 
 /// The fraction t in [0, 1] of the segment at which |from + t (to - from) - centre|
@@ -163,13 +168,20 @@ fn exit_fraction(
   let dx = start_place.x(to) -. start_place.x(from)
   let dy = start_place.y(to) -. start_place.y(from)
   let dz = start_place.z(to) -. start_place.z(from)
-  let a = dx *. dx +. dy *. dy +. dz *. dz
-  let b = 2.0 *. { fx *. dx +. fy *. dy +. fz *. dz }
-  let c = fx *. fx +. fy *. fy +. fz *. fz -. circle.radius *. circle.radius
-  let discriminant = float.max(0.0, b *. b -. 4.0 *. a *. c)
+  // The roots of quadratic * t^2 + linear * t + constant = 0.
+  let quadratic = dx *. dx +. dy *. dy +. dz *. dz
+  let linear = 2.0 *. { fx *. dx +. fy *. dy +. fz *. dz }
+  let constant =
+    fx *. fx +. fy *. fy +. fz *. fz -. circle.radius *. circle.radius
+  let discriminant =
+    float.max(0.0, linear *. linear -. 4.0 *. quadratic *. constant)
   let root = case float.square_root(discriminant) {
     Ok(root) -> root
     Error(Nil) -> 0.0
   }
-  float.clamp({ 0.0 -. b +. root } /. { 2.0 *. a }, min: 0.0, max: 1.0)
+  float.clamp(
+    { 0.0 -. linear +. root } /. { 2.0 *. quadratic },
+    min: 0.0,
+    max: 1.0,
+  )
 }

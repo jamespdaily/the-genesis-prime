@@ -45,10 +45,11 @@
 ////
 //// | Point | What happens | Test |
 //// |---|---|---|
-//// | C crashes mid-fight | the map's `Gone(C)`: C leaves the fighters, and 0x89a (P, 0) goes when none is left | `a_creature_crash_mid_fight_clears_the_players_combat_flag_test` |
+//// | C crashes mid-fight | the map's `Gone(C)`: C leaves the fighters, and 0x89a (P, 0) goes when none is left | `the_map_reporting_a_fighter_gone_clears_the_combat_flag_test`, `a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_test` |
 //// | P's answer reaches C after C's deadline | C's go leaves P out; P's hit stands and P's 0x92f shows it | `an_answer_after_the_deadline_is_left_out_of_the_go_test` |
-//// | C's strike reaches P after P's connection ended | dropped by the registry; C's deadline leaves P out | `a_player_whose_connection_ends_mid_chase_makes_the_creature_leash_test` |
-//// | P and C strike each other at one instant | each strike is a tell, each answered in its owner's own step | `mutual_strikes_are_both_answered_before_the_deadline_test` |
+//// | C's strike reaches P after P's connection ended | dropped by the registry; C's deadline leaves P out | `a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test` |
+//// | P and C strike each other at one instant | each strike is a tell, each answered in its owner's own step | `a_bot_pressing_as_the_dagun_strikes_it_gets_both_strikes_answered_test` |
+//// | P camps and enters again while a move of its first stay is in flight | the move sequence number counts for the connection's life, so the old move is lower and the creature drops it | `the_move_sequence_number_counts_through_a_camp_and_the_next_entry_test` |
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/hit.{type Defence, type Rolls}
@@ -57,6 +58,7 @@ import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/step.{type Address}
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -213,25 +215,21 @@ pub fn threatened(
   creature_life creature_life: Int,
   gone gone: Set(Int),
 ) -> #(Life, List(Effect)) {
-  case set.contains(gone, unit_id) || dict.has_key(life.fighters, unit_id) {
-    True -> #(life, [])
-    False -> {
-      let flag = case dict.is_empty(life.fighters) {
-        True -> [
-          ToClient(OwnCombatState(in_combat: True)),
-          ToViewers(client_connection.CombatState(in_combat: True)),
-        ]
-        False -> []
-      }
-      #(
-        Life(
-          ..life,
-          fighters: dict.insert(life.fighters, unit_id, creature_life),
-        ),
-        list.append(flag, [StreamTo(unit_id:, life: creature_life)]),
-      )
-    }
+  use <- bool.guard(
+    when: set.contains(gone, unit_id) || dict.has_key(life.fighters, unit_id),
+    return: #(life, []),
+  )
+  let flag = case dict.is_empty(life.fighters) {
+    True -> [
+      ToClient(OwnCombatState(in_combat: True)),
+      ToViewers(client_connection.CombatState(in_combat: True)),
+    ]
+    False -> []
   }
+  #(
+    Life(..life, fighters: dict.insert(life.fighters, unit_id, creature_life)),
+    list.append(flag, [StreamTo(unit_id:, life: creature_life)]),
+  )
 }
 
 /// The creature `unit_id` released the player, or the map reported it gone: it
@@ -240,19 +238,18 @@ pub fn released(
   life life: Life,
   unit_id unit_id: Int,
 ) -> #(Life, List(Effect)) {
-  case dict.has_key(life.fighters, unit_id) {
-    False -> #(life, [])
-    True -> {
-      let fighters = dict.delete(life.fighters, unit_id)
-      #(Life(..life, fighters:), case dict.is_empty(fighters) {
-        True -> [
-          ToClient(OwnCombatState(in_combat: False)),
-          ToViewers(client_connection.CombatState(in_combat: False)),
-        ]
-        False -> []
-      })
-    }
-  }
+  use <- bool.guard(
+    when: !dict.has_key(life.fighters, unit_id),
+    return: #(life, []),
+  )
+  let fighters = dict.delete(life.fighters, unit_id)
+  #(Life(..life, fighters:), case dict.is_empty(fighters) {
+    True -> [
+      ToClient(OwnCombatState(in_combat: False)),
+      ToViewers(client_connection.CombatState(in_combat: False)),
+    ]
+    False -> []
+  })
 }
 
 /// The creatures the player's accepted moves are told to, by unit id with their

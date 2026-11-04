@@ -663,6 +663,26 @@ proof = "0x14057a333 mov edx, 0x637; 0x14057a340 mov eax, [0x140c636a8] (the clo
 grade = "fairly sure"
 gap = "The layout is sure for kinds 0, 2 and 8 (the emulator vector) and read from the readers' decompile for the rest; that no other code clears the client-control flag is not searched beyond the two writers named (a scan for stores to that unit word would settle it); the message's id in the outer wrapping is not read (0x1403f4900 nests it in message 0x38c, sent as 0x244); kinds 8, 11, 24 and 27 carry the gaps of their own records; that the platform matrix at 0x11f0 is the inverse of the unit's world matrix, and which units count as platforms, are not read; the other queuers (0x14039daf0, 0x14039fb30, 0x14039fff0, 0x1403a0670, 0x14046bb00, 0x14046bd10, 0x14047fc40, 0x1405b3fc0) are not read for which kinds they add."
 
+["0x14018cd50"]
+statement = "Refreshes the frame clock once a frame: stores the client's millisecond clock (ReadClientClock) in the global that message 0x637, the camp and the movement queue read, and once a second re-reads the counter's frequency. So every message 0x637 sent within one frame carries the same clock."
+proof = "Saved C 0x14018cd50 (made under 8eb22adb6de47956): adds the counter's counts since the last call to 0x140c8a1a0; above the frequency (0x140c636b8) it calls ReadCounterFrequency and clears it; 0x14018cddc stores ReadClientClock's result in 0x140c636a8. refs_to 0x140c636a8: 425 refs, one write (0x14018cddc). refs_to 0x14018cd50: one call, 0x140009909 in RunFrame 0x1400097d0, and one data reference 0x140dde04c."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the data reference 0x140dde04c is taken to be unwind data, not read."
+name = "UpdateFrameClock"
+
+["0x14018cdf0"]
+statement = "The client's millisecond clock: an unsigned 32-bit count of milliseconds since the clock was first read (the client's start). Each call adds the performance counter's counts since the last call, divided by the counts a millisecond, keeping the remainder for the next call. Nothing else writes the count, so within one client process it never goes back and is never reset (not by a loading screen, a camp, a world change or a new connection); it wraps to 0 after 2^32 ms, about 49.7 days. A thread that finds another thread updating it returns the count as it stands."
+proof = "Saved C 0x14018cdf0 (made under 8eb22adb6de47956): the first call sets the previous count to now (DAT_140c8e0d0 bit 1, so the first step is 0); QueryPerformanceCounter; delta = now - previous; total = remainder (0x140c8a198) + delta; 0x14018cea1 div qword ptr [0x140c88498] (counts a millisecond, ReadCounterFrequency 0x14018ccf0); 0x14018cea8 add dword ptr [0x140c884a0], eax; remainder = total - quotient x counts a millisecond. refs_to 0x140c884a0: seven, of which three write, each the same add: 0x14018cea8 in 0x14018cdf0, 0x1401a0dae in 0x1401a0cc0 and 0x140298010 in 0x140297ed0 (saved C of both: the inline copy of this update). Bytes at 0x140c884a0: 0000000000000000 (starts at 0). The lock word 0x140c67448 path returns DAT_140c884a0 unchanged when another thread holds it."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the counter is taken as monotonic, as Windows documents QueryPerformanceCounter (a backwards counter would make the unsigned delta huge and the clock jump far forward, not back). ReadCounterFrequency runs again each second and could change the divisor only if the counter's frequency changed."
+name = "ReadClientClock"
+
+["opcode.0x637.client_clock"]
+statement = "Message 0x637's clock is the frame clock (UpdateFrameClock): milliseconds since the client started, 32 bits unsigned. Within one client process it never goes back across loading screens, camps, world changes or reconnects; it wraps after 2^32 ms (about 49.7 days); a client started again begins near 0. Two messages 0x637 can carry the same clock: FlushPlayerMovementCommands sends from its timer and is also called directly in the same frame (UpdatePlayerMovement 0x1403a25c0, 0x1403988d0, 0x14053a990), and the clock changes only once a frame. So between two messages of one connection, the later one's clock minus the earlier's, as a signed 32-bit number, is 0 or more; it is never below 0 unless they lie more than 2^31 ms (about 24.8 days) apart."
+proof = "0x14057a340 mov eax, [0x140c636a8] (the clock, stored first in the body; opcode.0x637). The only write of 0x140c636a8 is 0x14018cddc in UpdateFrameClock 0x14018cd50, called only from RunFrame (0x140009909); its value is ReadClientClock 0x14018cdf0's 32-bit count. refs_to 0x14057a2c0: calls at 0x1403988fd and 0x140398ca5 (0x1403988d0), 0x1403a2a43, 0x1403a5f07, 0x1403a62df and 0x1403a6387 (0x1403a25c0), 0x14053aacd (0x14053a990), and the timer's data references 0x14057a3b9, 0x14057a3ce, 0x14057a4d3, 0x14057a4e8. The client's own comparison of this clock with a deadline is the signed 32-bit difference (opcode.0x92.countdown_range: 0x14054ef67 cmp / 0x14054ef6a jns)."
+grade = "fairly sure"
+gap = "That a timer flush and a direct flush do fall in one frame is read from the call sites, not seen; a recording of 0x637s with two equal clocks would settle it. Whether the timer scheduler (0x140195960) can fire the flush twice in one frame is not read."
+
 ["opcode.0xf1"]
 statement = "Message 0xf1 (241), server to client. Body: values of 2, 32, 8 and 32 bits, in that order, none aligned to a byte (74 bits, padded to 10 bytes). Its handler stores the first three, and the fourth is the player's movement send interval in milliseconds: values below 25 become 25 and above 1000 become 1000. Until it arrives the interval is 125 ms. The client has no writer for it. Its handler also sets the world flag that the end of loading waits for (CheckWorldLoaded), so the client does not finish entering a world without it."
 proof = "Registered at 0x140078d86 mov edx, 0xf1 with 0x140078d7f lea r8d, [r9+0x10] (size), 0x140078d68 lea rcx, [0x1400a37d0] stored at 0x140078d7a (reader) and 0x140078d8b mov qword ptr [rsp+0x20], 0x0 (no writer). ReadMessage00F1Body: ReadBits32 width 2 (record offset 0), 0x20 (offset 4), ReadBits8 width 8 (offset 8), ReadBits32 width 0x20 (offset 0xc). HandleWorldMessage's jump table entry for 241 is 0x1403ec80b: 0x1403ec811 call 0x1403b67e0. There 0x1403b69b0 mov eax, dword ptr [r14+0xc]; 0x1403b69b4 cmp eax, 0x19; jae; 0x1403b69b9 mov dword ptr [0x140c3a004], 0x19; 0x1403b69c5 mov ecx, 0x3e8; 0x1403b69ca cmp eax, ecx; 0x1403b69cc cmova eax, ecx; 0x1403b69cf mov dword ptr [0x140c3a004], eax. Bytes at 0x140c3a004: 7d000000 (125). Emulator: vector.opcode.0xf1.body. HandleMessage00F1 0x1403b67e0: 0x1403b6806 mov dword ptr [rcx+0x6420], 0x1 on the world handler; CheckWorldLoaded 0x1403e8399 cmp dword ptr [rbx+0x6420], r13d returns not loaded while it is 0; the only other store, 0x1403b711c in 0x1403b6de0, is on a world change."
@@ -6152,10 +6172,10 @@ gap = "Roles from the names."
 name = "GetArmorPierce"
 
 ["0x140464240"]
-statement = "A mitigation percentage from a rating and a base: RatingToPercent with GameFormula 1234 (50, 0.008, knee 0, 7250, 0, cap 75) and the unit's level, never below 0."
-proof = "Decompiled: GameFormula 0x4d2; returns max(0, result). Its callers are the Lua functions GetPhysicalMitigation 0x14064d9b0, GetPhysicalMitigationRatingPercent 0x14064dc30, GetTechMitigation 0x14064dcc0, GetTechMitigationRatingPercent 0x14064df40, GetMagicMitigation 0x14064dfd0, GetMagicMitigationRatingPercent 0x14064e250 (names from their binding entries)."
+statement = "A mitigation fraction: RatingToPercent with GameFormula 1234's values (50, 0.008, 0, 7250, int0 0, cap 75), the unit's level, the base and the rating, never below 0. At level 1 with base 0, a rating of 150 gives 0.5996959 and any rating from about 188 gives the cap 0.75 (200 and 250 both give 0.75); at level 2 a rating of 250 gives 0.4993148, at level 50 0.0199726."
+proof = "Saved C 0x140464240 (made under 49fd5a78aaad3411): GameFormula 0x4d2's words 0x18, 0x1c, 0x20, 0x24, 4 and 8 (datafloat0, datafloat01, datafloat02, datafloat03, dataint0, dataint01); the level is the unit's word 0x3c, or 0x38 when 0x3c is 0; RatingToPercent(f01, f0, level, f02, int0, param_3, param_2, f03, int01), so the second argument is the rating and the third the base (LuaUnitGetPhysicalMitigation passes Armor + ResistPhysical, then 103 + 144). `gleam run -m genesis_prime/table_rows -- GameFormula 1234`. RatingToPercent 0x140453b60 emulated with these values (a scratch emulation script, rating_emulate.py): level 1 base 0 rating 150 -> 0.5996959, 200 -> 0.75, 250 -> 0.75, 100 -> 0.3999087, 0 -> 0; level 2 rating 250 -> 0.4993148; level 50 rating 250 -> 0.0199726; each equal to the formula of 0x140453b60."
 grade = "fairly sure"
-gap = "Read from the decompile."
+gap = "The argument order is read from the decompile, not the instructions; what the unit's words 0x38 and 0x3c hold (the level and an effective level) is not read."
 name = "GetMitigationPercent"
 
 ["0x14064d9b0"]
@@ -6164,6 +6184,20 @@ proof = "Binding entry at 0x140c5abd8 ('GetPhysicalMitigation'). Decompiled: 0x1
 grade = "fairly sure"
 gap = "The tech and magic twins are named from their binding entries, not read."
 name = "LuaUnitGetPhysicalMitigation"
+
+["0x14064dcc0"]
+statement = "Unit:GetTechMitigation() in the UI's Lua: as GetPhysicalMitigation with rating Armor (42) + ResistTech (27) and base DamageMitigationPctOffset (103) + DamageMitigationPctOffsetTech (145)."
+proof = "Saved C 0x14064dcc0: GetMitigationPercent(unit, the floats at 0x714 + 0x69c, 0x8fc + 0xa4c); 0x5c4 + 8 x id gives 42, 27, 103, 145."
+grade = "fairly sure"
+gap = "Read from the decompile; the binding name is from its entry, as in LuaUnitGetPhysicalMitigation."
+name = "LuaUnitGetTechMitigation"
+
+["0x14064dfd0"]
+statement = "Unit:GetMagicMitigation() in the UI's Lua: as GetPhysicalMitigation with rating Armor (42) + ResistMagic (28) and base DamageMitigationPctOffset (103) + DamageMitigationPctOffsetMagic (146)."
+proof = "Saved C 0x14064dfd0: GetMitigationPercent(unit, the floats at 0x714 + 0x6a4, 0x8fc + 0xa54); 0x5c4 + 8 x id gives 42, 28, 103, 146."
+grade = "fairly sure"
+gap = "Read from the decompile; the binding name is from its entry."
+name = "LuaUnitGetMagicMitigation"
 
 ["0x140453b60.callers"]
 statement = "Every rating the client turns into a percentage, as (GameFormula row: base property, rating property): 1230 (104, 32) strikethrough; 1231 (102, 34) crit chance; 1232 (127, 47) crit severity; 1233 (137, 25) lifesteal; 1234 mitigation (passed in); 1235 (101, 33) deflect; 1236 (105, 43) crit deflect; 1238 and 1239 (48, 49) PvP; 1240 (154, 29) multi-hit chance; 1241 (156, 63) reflect chance; 1242 (157, 37) critical mitigation; 1243 (158, 56) intensity; 1244 (196, 57) vigor; 1245 (164, 58) glance chance; 1269 (122, 59) armor pierce; 1270 (112, 60) multi-hit amount; 1271 (195, 61) glance amount; 1272 (155, 62) reflect amount; 2378 to 2380 (147 to 149, 168 to 170) tenacity, hope, toughness."
@@ -6242,10 +6276,9 @@ gap = "The creature record that holds the three ids (from 0x1404835c0) is not ti
 # Enums
 
 ["GameLib.CodeEnumDamageType"]
-statement = "The Lua enum of damage types: Physical 1, Tech 2, Magic 3, Heal 4, HealShields 5, Fall 6, Suffocate 7."
-proof = "Registration in 0x140709460: 0x14070adc1 lea rdx, [0x140b43b78] ('CodeEnumDamageType'); 0x14070ae04 lea r8, [0x140b43b68] ('Physical') / 0x14070ae13 mov r9d, 0x1; 0x14070ae28 mov r9d, 0x2; 0x14070ae36 lea r8, [0x140b43d44] ('Magic') / 0x14070ae3d mov r9d, 0x3; 0x14070ae52 mov r9d, 0x4; 0x14070ae60 lea r8, [0x140b43d30] ('HealShields') / 0x14070ae67 mov r9d, 0x5; 0x14070ae7c mov r9d, 0x6; 0x14070ae8a lea r8, [0x140b43d18] ('Suffocate') / 0x14070ae91 mov r9d, 0x7. Tech, Heal and Fall are the names at 0x140b43d4c, 0x140b43d3c and 0x140b43d24 by LuaDocData's list."
-grade = "fairly sure"
-gap = "The three short names were not read from their bytes."
+statement = "GameLib.CodeEnumDamageType in the UI's Lua: Physical 1, Tech 2, Magic 3, Heal 4, HealShields 5, Fall 6, Suffocate 7."
+proof = "0x140709460: 0x14070adc1 lea rdx, [0x140b43b78] ('CodeEnumDamageType'); then pairs of lea r8 (name) and mov r9d (value) before each call 0x1400eff50 (which sets field name = value): 0x14070ae04 [0x140b43b68] 'Physical' / 0x14070ae13 1; 0x14070ae21 [0x140b43d4c] 'Tech' / 2; 0x14070ae36 [0x140b43d44] 'Magic' / 3; 0x14070ae4b [0x140b43d3c] 'Heal' / 4; 0x14070ae60 [0x140b43d30] 'HealShields' / 5; 0x14070ae75 [0x140b43d24] 'Fall' / 6; 0x14070ae8a [0x140b43d18] 'Suffocate' / 7 (names from the bytes request). The table is GameLib's: UI/LuaDocData/data.xml types eDamageType as GameLib.CodeEnumDamageType."
+grade = "sure"
 
 ["GameLib.CodeEnumCombatResult"]
 statement = "The Lua enum of combat results, the 4-bit result of a damage description and of a combat log entry: Avoid 0, Critical 1, Hit 2, NeedsTelegraphEvaluation 3, OutsideTelegraph 4, OutsideTelegraphInvalid 5, InsideTelegraph 6, NeedsHitResultCalc 7."
@@ -6781,6 +6814,12 @@ proof = "Item2.novice_set; the sheet's reads in lua.Character.UpdateAttributes; 
 grade = "guess"
 gap = "The client never sums items into a unit (BuildItemProperties 0x14040c310); a retail 0x262 or 0x93a for a new character would settle whether the retail server did, and whether a shield's ShieldRebootTime and ShieldRegenPct replaced the UnitProperty2 defaults (2500, 0.25) or added to them."
 
+["player.level1_defence"]
+statement = "A level-1 player's defence by the client's own formulas, with UnitProperty2's defaults and the Novice gear (player.level1_gear_properties): deflect, critical deflect and glance chance are all 0, and so is glance amount, because their bases (101, 105, 164, 195) and ratings (33, 43, 58, 61) all default to 0 and no Novice item gives them. Physical mitigation is 0.5996959 for Armor 150 (Esper, Spellslinger) and 0.75, the cap, for Armor 200 (Medic, Stalker) and 250 (Warrior, Engineer), with ResistPhysical and both mitigation offsets 0. A creature's raw 12 is then 4.8036 or 3.0 before the shield, by the trace's recommended order (mitigation, then shield)."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2 26 27 28 32 33 42 43 58 61 101 103 104 105 144 145 146 164 195` (defaultValue 0 for each). `gleam run -m genesis_prime/table_rows -- GameFormula 1234 1235 1236 1245 1271`. A player's properties start at the defaults (SetUnitPropertiesFromCreate 0x1404584b0). RatingToPercent 0x140453b60 emulated at level 1, base 0, rating 0 for rows 1235, 1236, 1245 and 1271: 0 each; GetMitigationPercent's values as in its record. Item2.novice_set: no budget, stat, special or imbuement, so only innate ratings, Armor and shield."
+grade = "guess"
+gap = "The Armor values carry player.level1_gear_properties' guess (the server's rule of summing the Novice set); the client holds no base avoidance for players, so whether the retail server set any is not in the client. A retail 0x262 or 0x93a for a new level-1 character (its properties 33, 42, 43, 58, 101, 105, 164) would settle both. Rounding of 4.8036 and the hit order are server choices (the client trace of the combat core)."
+
 # The character sheet
 
 ["0x14064c960"]
@@ -6824,6 +6863,12 @@ statement = "Spell 5649 (Humanoid Shared Unarmed auto-attack 1) has two Physical
 proof = "`gleam run -m genesis_prime/table_rows -- Spell4Effects 184741`, `Spell4Effects 184777` (spellId 5649, effectType 8, damageType 1, dataBits00 1.0, dataBits01 0, phaseFlags all, orderIndex 0 and 1); `Prerequisite 30526` (type 179, comparison 6, object 6), `Prerequisite 30527` (type 179, comparison 4, object 7); PrerequisiteUnitDifficulty 0x14049eeb0; `Creature2 73464`, `Creature2 73465` (creature2DifficultyId 1). Damage: ComputeEffectValue 0x140565600 with the trace's creature properties."
 grade = "fairly sure"
 gap = "The client applies no effect itself (the server names effects in 0x7f4), so that the retail server checked prerequisiteIdCasterApply this way is inferred from the table, not read; the 12 rests on the creature's Strength from the damage trace, not re-read here."
+
+["Spell4Effects.damageType"]
+statement = "Spell4Effects' damageType uses GameLib.CodeEnumDamageType: 1 Physical, 2 Tech, 3 Magic. Effect 184741 (the creature auto-attack's hit) is Physical, so a level-1 player's mitigation against it is the physical one: rating Armor (42) + ResistPhysical (26), base DamageMitigationPctOffset (103) + DamageMitigationPctOffsetPhysical (144)."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4Effects 184741` (damageType 1). DamageOrHealingDone (record of 0x1404218a0's handler) gives heals 4 and 5, the enum's Heal and HealShields; the damage description's 3-bit damage type (0x7f4) carries the same values. Shred's effect 83788 is named Physical with damageType 1 in the damage trace of the combat core."
+grade = "fairly sure"
+gap = "That the table column and the enum share values is inferred from the heal values and the names, not read in a reader of the column; a retail combat log line of a known physical attack would settle it."
 
 ["Spell4.58591"]
 statement = "Warrior Kick, tier 1 (base 38017, Normal, global cooldown kind 3, so no global cooldown): two effects on the target, both 166 ms after the go. A Knockdown (crowd control state 8) for 3 s, then Physical damage of 0.0656 x Assault Power + 0.0656 x Support Power + 4.16 x level: 4.16 per cast at level 1 with no ratings. It triggers no other spell. Its area takes up to 5 foes in a 180-degree arc to 8 m."

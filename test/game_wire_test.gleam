@@ -40,6 +40,7 @@ import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
 import genesis_prime/content
+import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game_settings.{GameSettings}
@@ -1432,23 +1433,36 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
   login_support.stop(started)
 }
 
-/// Presses the ability and reads until `gos` gos have arrived and the server has
-/// written all it held for this connection (a ping and its pong), giving the frames
-/// of the press.
+/// Presses the ability and reads until `gos` gos of the player's own casts have
+/// arrived and the server has written all it held for this connection (a ping and
+/// its pong), giving the frames of the press.
 fn press_and_read_gos(
   game game: game_client.Game,
   have have: BitArray,
   client_cast_id client_cast_id: Int,
   gos gos: Int,
   pong pong: Int,
+  beast beast: Int,
 ) -> #(List(Frame), BitArray) {
   game_client.press_ability(game:, client_cast_id:, bag_index: 0, target: 0)
   let #(frames, have) =
     game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
-      list.length(game_client.go_targets_in(frames:)) >= gos
+      list.length(own_go_targets(frames:, beast:)) >= gos
     })
   let #(rest, have) = game_client.read_until_pong(game:, have:, number: pong)
   #(list.append(frames, rest), have)
+}
+
+/// The targets of each go of a cast that is not the Beast's, in order: a Beast a
+/// player strikes fights back, and its own gos name the player (the design of step
+/// F: a strike puts its striker on the creature's threat list).
+fn own_go_targets(
+  frames frames: List(Frame),
+  beast beast: Int,
+) -> List(List(Int)) {
+  game_client.go_targets_in(frames:)
+  |> list.filter(fn(go) { cast.caster_of(cast_id: go.0) != beast })
+  |> list.map(fn(go) { go.1 })
 }
 
 pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on_the_whole_server_test() -> Nil {
@@ -1469,8 +1483,15 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
   let assert [beast, ..] = game_client.creatures_created_in(frames:)
   let beast_unit = beast.unit_id
   let #(first_tap, have) =
-    press_and_read_gos(game:, have:, client_cast_id: 1, gos: 4, pong: 1)
-  assert list.map(game_client.go_targets_in(frames: first_tap), fn(go) { go.1 })
+    press_and_read_gos(
+      game:,
+      have:,
+      client_cast_id: 1,
+      gos: 4,
+      pong: 1,
+      beast: beast_unit,
+    )
+  assert own_go_targets(frames: first_tap, beast: beast_unit)
     == [[], [beast_unit], [beast_unit], [beast_unit]]
     as "Spell4.38765, Shred: its own go names nobody (it has no damage) and its Proxy 38767, aimed at the area (Spell4Effects 83788, targetFlags 4), goes in three phases (SpellPhase 3712 to 3714), each naming the Beast 3 m away inside Spell4AoeTargetConstraints 694 (360 degrees, 6.5 m)"
   assert list.map(game_client.health_in(frames: first_tap), fn(health) {
@@ -1479,8 +1500,15 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
     == [43, 34, 25]
     as "a Stalker of level 1 with the Novice gear (Assault Power 50.77): a hit of Shred's Proxy is 0.0967 x 50.77 = 4.91 plus 4.22 for the level, 9.13, rounded to 9 (Spell4Effects 83788, 0x140565600); the Beast has 52 health and never deflects, so each of the three hits takes 9"
   let #(second_tap, _) =
-    press_and_read_gos(game:, have:, client_cast_id: 2, gos: 4, pong: 2)
-  assert list.map(game_client.go_targets_in(frames: second_tap), fn(go) { go.1 })
+    press_and_read_gos(
+      game:,
+      have:,
+      client_cast_id: 2,
+      gos: 4,
+      pong: 2,
+      beast: beast_unit,
+    )
+  assert own_go_targets(frames: second_tap, beast: beast_unit)
     == [[], [beast_unit], [beast_unit], [beast_unit]]
     as "Spell4Thresholds 238: the second tap casts the stage 38766, which strikes nobody itself, and the stage's Proxy 39467 (Spell4Effects 83782), aimed at the area by Spell4Effects 86439 on Spell4 39467's area row 694, goes in three phases (SpellPhase 4032 to 4034), each naming the Beast"
   assert list.map(game_client.health_in(frames: second_tap), fn(health) {
@@ -3301,6 +3329,24 @@ fn read_fight(
   #(game_client.fight_in(frames:), have)
 }
 
+/// Whether a go among the events names `unit` as its one target.
+fn a_go_names(events: List(game_client.FightEvent), unit: Int) -> Bool {
+  list.any(game_client.gos_in(events:), fn(targets) {
+    list.map(targets, fn(target) { target.0 }) == [unit]
+  })
+}
+
+/// Whether a path of `unit` among the events ends at z.
+fn a_path_ends_at(
+  events events: List(game_client.FightEvent),
+  unit unit: Int,
+  z z: Float,
+) -> Bool {
+  list.any(game_client.moves_of(events:, unit:), fn(move) {
+    move.1 == Some(#(1.5, 2.5, z))
+  })
+}
+
 pub fn a_bot_entering_a_daguns_ring_is_chased_and_struck_and_walking_out_past_55_the_dagun_leashes_home_test() -> Nil {
   use <- owned_test.run(120_000)
   let started = world_with_a_dagun()
@@ -3309,14 +3355,7 @@ pub fn a_bot_entering_a_daguns_ring_is_chased_and_struck_and_walking_out_past_55
   // Into the ring: 9 units from the Dagun, beyond its reach of 7.
   walk_to(game:, z: dagun_z +. 9.0, clock: 100)
   let #(fight, have) =
-    read_fight(game:, have:, found: fn(events) {
-      list.any(events, fn(event) {
-        case event {
-          game_client.Went(targets: [#(target, _)], ..) -> target == own
-          _ -> False
-        }
-      })
-    })
+    read_fight(game:, have:, found: fn(events) { a_go_names(events, own) })
   assert list.contains(
     fight,
     game_client.Targeted(unit_id: dagun, target_unit_id: own, threat: 1),
@@ -3328,35 +3367,19 @@ pub fn a_bot_entering_a_daguns_ring_is_chased_and_struck_and_walking_out_past_55
     )
     && list.contains(fight, game_client.InCombat(unit_id: own, in_combat: True))
     as "both 0x89a: the Dagun's and the bot's own"
-  let assert Ok(game_client.Moves(kinds:, ..)) =
-    list.find(fight, fn(event) {
-      case event {
-        game_client.Moves(unit_id:, ..) -> unit_id == dagun
-        _ -> False
-      }
-    })
+  let assert [#(kinds, _), ..] =
+    game_client.moves_of(events: fight, unit: dagun)
+    as "the Dagun runs"
   assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
-  assert list.any(fight, fn(event) {
-    case event {
-      game_client.Went(targets: [#(target, [#(184_741, 12)])], ..) ->
-        target == own
-      _ -> False
-    }
-  })
+  assert list.contains(game_client.gos_in(events: fight), [
+    #(own, [#(184_741, 12)]),
+  ])
     as "0x7f4 names the bot, effect 184741, raw 12"
-  assert list.any(fight, fn(event) {
-      case event {
-        game_client.ShieldIs(unit_id:, shield:) ->
-          unit_id == own && shield < 450
-        _ -> False
-      }
+  assert list.any(game_client.shields_of(events: fight, unit: own), fn(shield) {
+      shield < 450
     })
-    && list.any(fight, fn(event) {
-      case event {
-        game_client.OwnHealthIs(unit_id:, health:) ->
-          unit_id == own && health < 736
-        _ -> False
-      }
+    && list.any(game_client.own_health_of(events: fight, unit: own), fn(health) {
+      health < 736
     })
     as "0x938 stat 20 below the full 450, then 0x92f below 736"
   // Out past the circle: 100 units from the Dagun's spawn.
@@ -3367,7 +3390,7 @@ pub fn a_bot_entering_a_daguns_ring_is_chased_and_struck_and_walking_out_past_55
         events,
         game_client.InCombat(unit_id: own, in_combat: False),
       )
-      && list.contains(events, game_client.HealthIs(unit_id: dagun, health: 52))
+      && list.contains(game_client.health_of(events:, unit: dagun), 52)
     })
   assert list.contains(
       leash,
@@ -3378,13 +3401,7 @@ pub fn a_bot_entering_a_daguns_ring_is_chased_and_struck_and_walking_out_past_55
       game_client.InCombat(unit_id: dagun, in_combat: False),
     )
     as "the leash: 0x90a 0 for the bot and 0x89a (C, 0)"
-  assert list.any(leash, fn(event) {
-    case event {
-      game_client.Moves(unit_id:, path_end: option.Some(#(_, _, z)), ..) ->
-        unit_id == dagun && z == dagun_z
-      _ -> False
-    }
-  })
+  assert a_path_ends_at(events: leash, unit: dagun, z: dagun_z)
     as "the path home ends at the Dagun's spawn"
   game_client.close(game:)
   login_support.stop(started)
@@ -3399,41 +3416,16 @@ pub fn a_bot_pressing_as_the_dagun_strikes_it_gets_both_strikes_answered_test() 
   // The Dagun's cast starts: its strike is on its way or in the bot's mailbox.
   let #(_, have) =
     read_fight(game:, have:, found: fn(events) {
-      list.any(events, fn(event) {
-        case event {
-          game_client.Started(caster_unit_id:, ..) -> caster_unit_id == dagun
-          _ -> False
-        }
-      })
+      game_client.casts_started_by(events:, unit: dagun) != []
     })
   game_client.press_ability(game:, client_cast_id: 1, bag_index: 2, target: 0)
   let #(fight, _) =
     read_fight(game:, have:, found: fn(events) {
-      list.any(events, fn(event) {
-        case event {
-          game_client.Went(targets: [#(target, _)], ..) -> target == dagun
-          _ -> False
-        }
-      })
-      && list.any(events, fn(event) {
-        case event {
-          game_client.OwnHealthIs(..) -> True
-          _ -> False
-        }
-      })
+      a_go_names(events, dagun)
+      && game_client.own_health_of(events:, unit: own) != []
     })
-  assert list.any(fight, fn(event) {
-      case event {
-        game_client.Went(targets: [#(target, _)], ..) -> target == dagun
-        _ -> False
-      }
-    })
-    && list.any(fight, fn(event) {
-      case event {
-        game_client.OwnHealthIs(unit_id:, ..) -> unit_id == own
-        _ -> False
-      }
-    })
+  assert a_go_names(fight, dagun)
+    && game_client.own_health_of(events: fight, unit: own) != []
     as "the Dagun answered the bot's strike within the bot's deadline, so the bot's go names it, and the bot's connection took the Dagun's strike while its own round waited: no process waits on the other"
   game_client.close(game:)
   login_support.stop(started)
@@ -3488,27 +3480,27 @@ pub fn a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test() -> 
   let #(fighter, own, _, have) =
     a_ready_medic(started:, number: 1, character_name: "Zed Qu")
   walk_to(game: fighter, z: dagun_z +. 9.5, clock: 100)
+  // The fighter ends once the Dagun runs toward it: mid-chase.
   let #(_, _) =
     read_fight(game: fighter, have:, found: fn(events) {
       list.contains(events, game_client.InCombat(unit_id: own, in_combat: True))
+      && game_client.moves_of(events:, unit: dagun) != []
     })
   game_client.close(game: fighter)
   let #(seen, _) =
     read_fight(game: watcher, have: watcher_have, found: fn(events) {
-      list.contains(
-        events,
-        game_client.InCombat(unit_id: dagun, in_combat: False),
-      )
-      && list.contains(events, game_client.HealthIs(unit_id: dagun, health: 52))
+      a_path_ends_at(events:, unit: dagun, z: dagun_z)
     })
-  assert list.any(seen, fn(event) {
-    case event {
-      game_client.Moves(unit_id:, path_end: option.Some(#(_, _, z)), ..) ->
-        unit_id == dagun && z == dagun_z
-      _ -> False
-    }
-  })
-    as "the fighter's end is its Unwatched: no threat is left, so the Dagun leashes and runs home, which the watcher sees"
+  assert list.contains(
+      seen,
+      game_client.Threatens(unit_id: dagun, other_unit_id: own, threat: 0),
+    )
+    && list.contains(
+      seen,
+      game_client.InCombat(unit_id: dagun, in_combat: False),
+    )
+    && list.contains(game_client.health_of(events: seen, unit: dagun), 52)
+    as "the fighter's end is its Unwatched: no threat is left, so the Dagun leashes (0x90a 0, 0x89a (C, 0), a full 0x937) and runs home, which the watcher sees"
   game_client.close(game: watcher)
   login_support.stop(started)
 }

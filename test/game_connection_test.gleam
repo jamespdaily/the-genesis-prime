@@ -5730,11 +5730,10 @@ fn told_creatures(taken: ConnectionStep(Request)) -> List(#(Int, Request)) {
 
 /// The sequence numbers of the step's tells of a move to the map.
 fn moves_told(taken: ConnectionStep(Request)) -> List(Int) {
-  list.filter_map(told_the_map(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(request: TellMoved(seq:, ..), ..)) -> Ok(seq)
-      _ -> Error(Nil)
-    }
+  list.map(told_the_map(taken), fn(effect) {
+    let assert OwnEffect(step.Tell(request: TellMoved(seq:, ..), ..)) = effect
+      as "the step tells the map a move"
+    seq
   })
 }
 
@@ -5871,7 +5870,19 @@ fn name_of_news(news: News) -> String {
   case news {
     client_connection.Shield(..) -> "0x938"
     client_connection.Health(..) -> "0x937"
-    _ -> "other"
+    client_connection.Appeared(..)
+    | client_connection.CreatureAppeared(..)
+    | client_connection.Moving(..)
+    | client_connection.Removed
+    | client_connection.CastStarted(..)
+    | client_connection.CastWent(..)
+    | client_connection.CastMissed(..)
+    | client_connection.CastFinished(..)
+    | client_connection.Died
+    | client_connection.CreatureMoved(..)
+    | client_connection.Targeting(..)
+    | client_connection.Threat(..)
+    | client_connection.CombatState(..) -> "other"
   }
 }
 

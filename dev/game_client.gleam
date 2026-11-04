@@ -40,6 +40,7 @@ import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
@@ -1359,26 +1360,7 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
         let assert Ok(moved) = unit_movement.decode(frame.body)
           as "0x638 decodes"
         let path_end =
-          list.find_map(moved.commands, fn(command) {
-            case command {
-              relayed_movement.Path(path) ->
-                list.last(path.points)
-                |> result.try(fn(point) {
-                  use x <- result.try(
-                    float32.bits(point.x) |> result.try(float32.value),
-                  )
-                  use y <- result.try(
-                    float32.bits(point.y) |> result.try(float32.value),
-                  )
-                  use z <- result.try(
-                    float32.bits(point.z) |> result.try(float32.value),
-                  )
-                  Ok(#(x, y, z))
-                })
-              _ -> Error(Nil)
-            }
-          })
-          |> option.from_result
+          list.find_map(moved.commands, path_end_of) |> option.from_result
         Ok(Moves(
           unit_id: moved.unit_id,
           kinds: list.map(moved.commands, relayed_kind),
@@ -1390,19 +1372,7 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
         Ok(Went(
           cast_id: go.cast_id,
           targets: list.map(go.targets, fn(target) {
-            #(
-              target.unit_id,
-              list.filter_map(target.effects, fn(effect) {
-                case effect.result {
-                  spell_effect_result.Damage(damage) ->
-                    Ok(#(
-                      effect.spell4_effects_id,
-                      damage.description.raw_damage,
-                    ))
-                  _ -> Error(Nil)
-                }
-              }),
-            )
+            #(target.unit_id, list.filter_map(target.effects, damage_of))
           }),
         ))
       }
@@ -1420,6 +1390,34 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
   })
 }
 
+/// The last point of a kind 4 path command, or `Error(Nil)` for another kind.
+fn path_end_of(
+  command: relayed_movement.RelayedMovement,
+) -> Result(#(Float, Float, Float), Nil) {
+  case command {
+    relayed_movement.Path(path) -> {
+      use point <- result.try(list.last(path.points))
+      use x <- result.try(float32.bits(point.x) |> result.try(float32.value))
+      use y <- result.try(float32.bits(point.y) |> result.try(float32.value))
+      use z <- result.try(float32.bits(point.z) |> result.try(float32.value))
+      Ok(#(x, y, z))
+    }
+    _ -> Error(Nil)
+  }
+}
+
+/// An effect info's Spell4Effects id and raw damage, or `Error(Nil)` for an effect
+/// that is not damage.
+fn damage_of(
+  effect: spell_effect_info.SpellEffectInfo,
+) -> Result(#(Int, Int), Nil) {
+  case effect.result {
+    spell_effect_result.Damage(damage) ->
+      Ok(#(effect.spell4_effects_id, damage.description.raw_damage))
+    _ -> Error(Nil)
+  }
+}
+
 /// A relayed command's kind, its first 5 bits (opcode.0x638).
 fn relayed_kind(command: relayed_movement.RelayedMovement) -> Int {
   case command {
@@ -1433,4 +1431,82 @@ fn relayed_kind(command: relayed_movement.RelayedMovement) -> Int {
     relayed_movement.StateFlags(..) -> 24
     relayed_movement.Mode(..) -> 27
   }
+}
+
+/// The player's own health each 0x92f among the events gives `unit`, in order.
+pub fn own_health_of(
+  events events: List(FightEvent),
+  unit unit: Int,
+) -> List(Int) {
+  list.filter_map(events, fn(event) {
+    case event {
+      OwnHealthIs(unit_id:, health:) if unit_id == unit -> Ok(health)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The shield each 0x938 of stat 20 among the events gives `unit`, in order.
+pub fn shields_of(
+  events events: List(FightEvent),
+  unit unit: Int,
+) -> List(Int) {
+  list.filter_map(events, fn(event) {
+    case event {
+      ShieldIs(unit_id:, shield:) if unit_id == unit -> Ok(shield)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The health each 0x937 among the events gives `unit`, in order.
+pub fn health_of(events events: List(FightEvent), unit unit: Int) -> List(Int) {
+  list.filter_map(events, fn(event) {
+    case event {
+      HealthIs(unit_id:, health:) if unit_id == unit -> Ok(health)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// Each go's targets among the events, in order: each target's unit with the
+/// effect ids and raw damage of its effects.
+pub fn gos_in(
+  events events: List(FightEvent),
+) -> List(List(#(Int, List(#(Int, Int))))) {
+  list.filter_map(events, fn(event) {
+    case event {
+      Went(targets:, ..) -> Ok(targets)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// Each 0x638 of `unit` among the events: its command kinds and the last point of
+/// its path, when it holds one.
+pub fn moves_of(
+  events events: List(FightEvent),
+  unit unit: Int,
+) -> List(#(List(Int), Option(#(Float, Float, Float)))) {
+  list.filter_map(events, fn(event) {
+    case event {
+      Moves(unit_id:, kinds:, path_end:) if unit_id == unit ->
+        Ok(#(kinds, path_end))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The Spell4 of each cast `unit` starts among the events (0x7ff), in order.
+pub fn casts_started_by(
+  events events: List(FightEvent),
+  unit unit: Int,
+) -> List(Int) {
+  list.filter_map(events, fn(event) {
+    case event {
+      Started(caster_unit_id:, spell4_id:, ..) if caster_unit_id == unit ->
+        Ok(spell4_id)
+      _ -> Error(Nil)
+    }
+  })
 }

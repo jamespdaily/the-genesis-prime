@@ -565,7 +565,7 @@ pub fn map_file_naming(parameter_id parameter_id: Int) -> #(String, BitArray) {
 }
 
 fn load() -> store.Tables {
-  load_files(files())
+  load_files(novice_tables.with_creature_attack(files: files(), padding: False))
 }
 
 /// The Faction2 rows the planted factions walk: id and parent, as the client's.

@@ -66,6 +66,7 @@ import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
@@ -312,72 +313,68 @@ fn walk(
   ends_ms ends_ms: Int,
   counts counts: Counts,
 ) -> Counts {
-  case now() >= ends_ms {
-    True -> counts
-    False -> {
-      let next_ms = now() + move_every_ms
-      let #(fighters, counts) =
-        hear(settings:, selector:, until_ms: next_ms, fighters:, counts:)
-      let place = step_from(place:, id:, step:, centre:)
-      let _sent =
-        service.tell_subject(
-          run.subject,
-          map.Moved(connection:, place:, seq: step),
-        )
-      list.each(dict.to_list(fighters), fn(fighter) {
-        creature_registry.tell(
-          settings.world.creatures,
-          map: MapId(world_id:, instance: 0),
-          incarnation: run.incarnation,
-          unit_id: fighter.0,
-          life: fighter.1,
-          message: creature.TargetMoved(by: connection, place:, seq: step),
-        )
-      })
-      let now_inside =
-        list.filter(pack, fn(found) {
-          creature_path.distance(place, found.place) <=. aggro_range
-        })
-        |> list.map(fn(found) { found.id })
-        |> set.from_list
-      let seen =
-        list.count(spawns, fn(found) { sight.sees(place, found.place) })
-      let counts =
-        Counts(
-          ..counts,
-          moves: counts.moves + 1,
-          approached: counts.approached
-            + set.size(set.difference(now_inside, inside)),
-          withdrew: counts.withdrew
-            + set.size(set.difference(inside, now_inside)),
-          target_moved: counts.target_moved + dict.size(fighters),
-          option_a: counts.option_a + seen,
-          by_creature: list.fold(
-            dict.keys(fighters),
-            counts.by_creature,
-            fn(by, unit_id) {
-              dict.upsert(by, unit_id, fn(found) { option.unwrap(found, 0) + 1 })
-            },
-          ),
-        )
-      walk(
-        settings:,
-        run:,
-        selector:,
-        connection:,
-        id:,
-        step: step + 1,
-        place:,
-        centre:,
-        spawns:,
-        pack:,
-        aggro_range:,
-        inside: now_inside,
-        fighters:,
-        ends_ms:,
-        counts:,
+  use <- bool.guard(when: now() >= ends_ms, return: counts)
+  {
+    let next_ms = now() + move_every_ms
+    let #(fighters, counts) =
+      hear(settings:, selector:, until_ms: next_ms, fighters:, counts:)
+    let place = step_from(place:, id:, step:, centre:)
+    let _sent =
+      service.tell_subject(
+        run.subject,
+        map.Moved(connection:, place:, seq: step),
       )
-    }
+    list.each(dict.to_list(fighters), fn(fighter) {
+      creature_registry.tell(
+        settings.world.creatures,
+        map: MapId(world_id:, instance: 0),
+        incarnation: run.incarnation,
+        unit_id: fighter.0,
+        life: fighter.1,
+        message: creature.TargetMoved(by: connection, place:, seq: step),
+      )
+    })
+    let now_inside =
+      list.filter(pack, fn(found) {
+        creature_path.distance(from: place, to: found.place) <=. aggro_range
+      })
+      |> list.map(fn(found) { found.id })
+      |> set.from_list
+    let seen = list.count(spawns, fn(found) { sight.sees(place, found.place) })
+    let counts =
+      Counts(
+        ..counts,
+        moves: counts.moves + 1,
+        approached: counts.approached
+          + set.size(set.difference(now_inside, inside)),
+        withdrew: counts.withdrew + set.size(set.difference(inside, now_inside)),
+        target_moved: counts.target_moved + dict.size(fighters),
+        option_a: counts.option_a + seen,
+        by_creature: list.fold(
+          dict.keys(fighters),
+          counts.by_creature,
+          fn(by, unit_id) {
+            dict.upsert(by, unit_id, fn(found) { option.unwrap(found, 0) + 1 })
+          },
+        ),
+      )
+    walk(
+      settings:,
+      run:,
+      selector:,
+      connection:,
+      id:,
+      step: step + 1,
+      place:,
+      centre:,
+      spawns:,
+      pack:,
+      aggro_range:,
+      inside: now_inside,
+      fighters:,
+      ends_ms:,
+      counts:,
+    )
   }
 }
 
@@ -446,7 +443,7 @@ fn step_from(
   centre centre: Place,
 ) -> Place {
   let length = speed *. int.to_float(move_every_ms) /. 1000.0
-  let away = creature_path.distance(place, centre)
+  let away = creature_path.distance(from: place, to: centre)
   let heading = case away >. radius {
     True ->
       maths.atan2(

@@ -100,6 +100,17 @@ pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
   int.to_float(float.round(stat_part)) +. row_part
 }
 
+/// A stat part above the creature's cap: ((1 - e^(-(S - c) / c)) x overflow + 1) x
+/// c (`0x140565600`).
+fn beyond_the_cap(
+  stat_part stat_part: Float,
+  cap cap: Float,
+  overflow overflow: Float,
+) -> Float {
+  let over = { stat_part -. cap } /. cap
+  { { 1.0 -. float.exponential(0.0 -. over) } *. overflow +. 1.0 } *. cap
+}
+
 /// What the creature formula reads of a creature caster: its level, its Strength
 /// (property 0) and its Assault Power (its AssaultRating, property 35, times 0.25,
 /// GameFormula 1266), each as the content load works out the creature's
@@ -175,13 +186,7 @@ pub fn creature_value(
     *. mean
   let capped = case stat_part <=. cap || cap <=. 0.0 {
     True -> stat_part
-    False ->
-      {
-        { 1.0 -. float.exponential({ 0.0 -. { stat_part -. cap } } /. cap) }
-        *. scaling.overflow
-        +. 1.0
-      }
-      *. cap
+    False -> beyond_the_cap(stat_part:, cap:, overflow: scaling.overflow)
   }
   let flat_part =
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {

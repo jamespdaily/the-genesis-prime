@@ -294,6 +294,15 @@
 ////   or the one strike timer, `strike.strike_timer`, fires for its deadline, and the
 ////   closed round is the cast rule's `went`. A viewer writes a creature's health and
 ////   death (`Health`, `Died`) for a creature it shows, whatever its own casts.
+//// - **A creature's fight** on the player is a feature of its own
+////   (genesis_prime/game/player_life), whose module holds the sequence: the
+////   connection tells its map `Ready` at the stay's first 0xF2, numbers each accepted
+////   0x637 with its move sequence number (for the connection's life, through a camp),
+////   takes `SentByFoe` (a creature's threat, release or strike) and the map's `Gone`
+////   of a fighter, streams each move to the creatures that fight the player
+////   (`TellTargetMoved`) and answers a strike (`TellStrikeAnswered`). A viewer writes
+////   a creature's 0x908, 0x90a, 0x89a and 0x638 path, and a player's 0x938 shield,
+////   for a unit it shows; its picture keeps a running creature's path.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).

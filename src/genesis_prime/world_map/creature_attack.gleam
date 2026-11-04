@@ -46,7 +46,7 @@ pub type Unevaluated {
 
 /// The damage effects (type 8) of the spell, in the order they take effect
 /// (`Spell4Effects.orderIndex`, then the row id).
-pub fn damage_effects(
+fn damage_effects(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
 ) -> List(Spell4Effects) {
