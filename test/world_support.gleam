@@ -5,7 +5,7 @@
 
 import ask_support
 import character_tables
-import genesis_prime/client_connection.{type Message, SentByMap}
+import genesis_prime/client_connection.{type Message}
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/server
 import genesis_prime/service
@@ -17,6 +17,7 @@ import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/static_supervisor as supervisor
+import gleam/result
 import spawn_support
 import supervisor_children
 
@@ -128,7 +129,8 @@ fn send(
 ) -> Result(Nil, Nil) {
   case to {
     Connection(connection:) ->
-      registry.deliver(connections, connection, SentByMap(outgoing))
+      server.map_message(outgoing:)
+      |> result.try(registry.deliver(connections, connection, _))
     step.Sessions
     | step.HandOff
     | step.Store

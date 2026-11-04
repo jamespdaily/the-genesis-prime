@@ -445,10 +445,15 @@ class QueryProcessFailureTest(HolderTest):
         self.assertEqual(len(self.holders), 2)
 
     def test_a_request_with_no_reply_in_time_is_reported_and_the_process_is_ended(self):
-        self.start_holder(self.paths, timeout_s=0.5)
-        status, out, err = self.run_command("ask", json.dumps({"id": 1, "kind": "hang"}))
+        # The command starts the holder itself, so that holder is the only one: a holder the test started
+        # as well could lose the lock to the command's own, which has the default time, and the test would
+        # then join a holder that never held the query process it reads.
+        status, out, err = self.run_command(
+            "ask", json.dumps({"id": 1, "kind": "hang"}), start=lambda paths: self.start_holder(paths, timeout_s=0.5)
+        )
         self.assertEqual((status, out), (1, ""))
-        self.assertIn("no reply within", err)
+        self.assertIn("no reply within 0.5 s", err)
+        self.assertEqual(len(self.holders), 1)
         self.holders[0].join(timeout=30)
         self.assertFalse(self.holders[0].is_alive())
         self.assertIsNotNone(self.query_processes[0].proc.poll())  # a late reply would answer the next request

@@ -40,6 +40,7 @@ import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
 import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/list
+import map_support
 import owned_test
 import place_support
 import rating_support
@@ -62,6 +63,7 @@ fn attacker() -> Attacker {
       z: 0.0,
     ),
     move_seq: 1,
+    stay: map_support.stay(count: 1),
     faction: Exile,
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
   )

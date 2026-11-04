@@ -33,7 +33,7 @@ import gleam/string
 import owned_test
 import planted_table
 
-pub fn the_servers_tables_are_the_forty_two_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_forty_three_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -70,6 +70,7 @@ pub fn the_servers_tables_are_the_forty_two_its_rules_read_test() -> Nil {
       "Spell4",
       "Spell4AoeTargetConstraints",
       "Spell4Base",
+      "Spell4Conditions",
       "Spell4Effects",
       "Spell4Telegraph",
       "Spell4Thresholds",
@@ -83,7 +84,7 @@ pub fn the_servers_tables_are_the_forty_two_its_rules_read_test() -> Nil {
       "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the training creatures' rows, what each spell strikes and the hit rule's formulas and bases"
+    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes and the hit rule's formulas and bases"
 }
 
 /// Runs a function of this module in a fresh node, which must return.

@@ -30,10 +30,20 @@ pub type UnitCreateGhost {
     race_id: Int,
     class_id: Int,
     gender: Int,
+    /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_9: Int,
+    /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_10: String,
+    /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_11: Int,
+    /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_12: List(Int),
+    /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_13: List(Int),
     title_id: Int,
     tail: UnitCreateTail,

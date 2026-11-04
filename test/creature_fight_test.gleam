@@ -46,10 +46,12 @@ import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_path.{Running}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
 import gleam/set
 import gleam/string
+import map_support
 import owned_test
 import place_support
 import qcheck
@@ -76,7 +78,9 @@ fn beast(viewers viewers: List(Int)) -> State {
         life:,
         spawn_id: SpawnId(1),
         clock_origin_ms: 5000,
-        viewers: list.map(viewers, ConnectionId),
+        viewers: list.map(viewers, fn(viewer) {
+          #(ConnectionId(viewer), stay_of(viewer))
+        }),
       ),
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       kind: Kind(
@@ -106,6 +110,12 @@ fn at(x: Float) -> start_place.Place {
 /// The unit of the player of connection `number`: ten times it.
 fn unit_of(number: Int) -> Int {
   number * 10
+}
+
+/// The stay of the player of connection `number`, as the map names it: its
+/// `number`th, so each player's is its own.
+fn stay_of(number: Int) -> Stay {
+  map_support.stay(count: number)
 }
 
 fn tell(
@@ -143,11 +153,17 @@ fn approached(
     unit_id: unit_of(number),
     place: at(x),
     seq:,
+    stay: stay_of(number),
   )
 }
 
 fn moved(number number: Int, x x: Float, seq seq: Int) -> creature.Message {
-  creature.TargetMoved(by: ConnectionId(number), place: at(x), seq:)
+  creature.TargetMoved(
+    by: ConnectionId(number),
+    place: at(x),
+    seq:,
+    stay: stay_of(number),
+  )
 }
 
 /// A strike of the player of connection `number` at x = 2 with these blows (effect,
@@ -164,6 +180,7 @@ fn strike_of(
       unit_id: unit_of(number),
       place: at(2.0),
       seq: 1,
+      stay: stay_of(number),
       rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
     ),
     offence: Offence(
@@ -187,9 +204,16 @@ fn strike_of(
 fn fights_told(
   taken: ServiceStep(creature.Outgoing),
 ) -> List(#(Int, strike_tell.Fight)) {
+  list.map(fights_told_for(taken), fn(told) { #(told.0, told.2) })
+}
+
+/// The same, each with the stay it goes for.
+fn fights_told_for(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(Int, Stay, strike_tell.Fight)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      creature.FightTold(told:) -> Ok(#(sent.0, told))
+      creature.FightTold(stay:, told:) -> Ok(#(sent.0, stay, told))
       creature.News(..) | creature.Struck(..) -> Error(Nil)
     }
   })
@@ -201,20 +225,20 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
   list.map(support.sends(taken), fn(sent) {
     let to = " to " <> int.to_string(sent.0)
     case sent.1 {
-      creature.News(news: PeerNews(news:, ..)) -> name_of(news) <> to
-      creature.FightTold(told: Threatened(unit_id:, life:)) ->
+      creature.News(news: PeerNews(news:, ..), ..) -> name_of(news) <> to
+      creature.FightTold(told: Threatened(unit_id:, life:), ..) ->
         "Threatened("
         <> int.to_string(unit_id)
         <> ", "
         <> int.to_string(life)
         <> ")"
         <> to
-      creature.FightTold(told: Released(unit_id:)) ->
+      creature.FightTold(told: Released(unit_id:), ..) ->
         "Released(" <> int.to_string(unit_id) <> ")" <> to
-      creature.FightTold(told: Attacks(..)) -> "Attacks" <> to
-      creature.Struck(answered: Answered(outcome: Landed(..), ..)) ->
+      creature.FightTold(told: Attacks(..), ..) -> "Attacks" <> to
+      creature.Struck(answered: Answered(outcome: Landed(..), ..), ..) ->
         "Landed" <> to
-      creature.Struck(answered: Answered(outcome: Refused(why:), ..)) ->
+      creature.Struck(answered: Answered(outcome: Refused(why:), ..), ..) ->
         case why {
           strike_tell.Dead -> "Refused(Dead)" <> to
           strike_tell.Returning -> "Refused(Returning)" <> to
@@ -251,6 +275,9 @@ fn name_of(news: News) -> String {
     client_connection.Removed -> "0x355"
     client_connection.Appeared(..)
     | client_connection.Moving(..)
+    | client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
     | client_connection.Shield(..) -> "other"
   }
 }
@@ -259,7 +286,8 @@ fn name_of(news: News) -> String {
 fn news_to(taken: ServiceStep(creature.Outgoing), number: Int) -> List(News) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent {
-      #(to, creature.News(news: PeerNews(news:, ..))) if to == number -> Ok(news)
+      #(to, creature.News(news: PeerNews(news:, ..), ..)) if to == number ->
+        Ok(news)
       _ -> Error(Nil)
     }
   })
@@ -382,6 +410,9 @@ pub fn a_viewer_entering_the_ring_is_targeted_the_creature_enters_combat_and_the
       "Threatened(7, 3) to 2",
     ]
     as "0x908 (C, P, aggro threat 1) and 0x89a (C, 1) to every viewer, then Threatened to P, and no 0x7ff before the first tick"
+  assert fights_told_for(aggro)
+    == [#(2, stay_of(2), Threatened(unit_id: unit, life:))]
+    as "the threat goes for the player's stay as the creature holds it, so the connection drops one of an earlier stay"
   assert list.map(timers(aggro), fn(timer) { timer.1 }) == [1500]
     as "the attack tick starts at the kind's interval"
 }
@@ -468,7 +499,11 @@ pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planne
   assert said(near) == []
     as "31 is 5 from the path's end 26, within reach 8: no new path"
   let #(_, watched) =
-    tell(state:, at_ms: 1000, message: creature.Watched(by: ConnectionId(9)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+    )
   let assert [CreatureAppeared(place:, ..), ..] = news_to(watched, 9)
   assert x_of(place) == 10.0
     as "a viewer arriving 1 s into the chase is sent the 0x262 where the creature runs: 10 units along"
@@ -629,6 +664,8 @@ pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and
       "Released(7) to 2",
     ]
     as "0x90a 0 for each entry, 0x89a (C, 0), a full 0x937, the path home, and Released"
+  assert fights_told_for(leashed) == [#(2, stay_of(2), Released(unit_id: unit))]
+    as "the release goes for the player's stay"
   let assert Running(to:, ..) = path_sent(leashed)
   assert x_of(to) == 0.0 as "the path runs home"
   let #(_, refused) =
@@ -774,7 +811,11 @@ pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_
     )
   let corpse = timer_for(killed, 60_000)
   let #(state, watched) =
-    tell(state:, at_ms: 2000, message: creature.Watched(by: ConnectionId(9)))
+    tell(
+      state:,
+      at_ms: 2000,
+      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+    )
   let assert [CreatureAppeared(place:, ..)] = news_to(watched, 9)
   assert x_of(place) == 10.0
     as "it fell 1 s into its run, 10 units along: the corpse lies there, not where the run would end"
@@ -827,7 +868,11 @@ fn breaches(
       let #(state, taken_timers) = case op {
         See(n) -> {
           let #(state, taken) =
-            tell(state:, at_ms:, message: creature.Watched(by: ConnectionId(n)))
+            tell(
+              state:,
+              at_ms:,
+              message: creature.Watched(by: ConnectionId(n), stay: stay_of(n)),
+            )
           #(state, timers(taken))
         }
         Unsee(n) -> {
@@ -938,7 +983,11 @@ pub fn a_viewer_arriving_mid_chase_gets_the_fight_and_the_rest_of_the_path_test(
       message: approached(number: 2, x: 30.0, seq: 1),
     )
   let #(state, watched) =
-    tell(state:, at_ms: 1000, message: creature.Watched(by: ConnectionId(9)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+    )
   assert list.map(news_to(watched, 9), name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x638"]
     as "the viewer's client shows what the others' do: the creature in combat, its target, and its run"
@@ -972,7 +1021,11 @@ pub fn a_viewer_arriving_mid_return_gets_the_path_home_and_no_fight_test() -> Ni
   let #(state, _) =
     tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
   let #(_, watched) =
-    tell(state:, at_ms: 1500, message: creature.Watched(by: ConnectionId(9)))
+    tell(
+      state:,
+      at_ms: 1500,
+      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+    )
   assert list.map(news_to(watched, 9), name_of) == ["0x262", "0x638"]
     as "out of combat: no 0x89a or 0x908, only the rest of the walk home"
   let assert [_, CreatureMoved(path: Running(from:, to:, ..))] =
@@ -1130,7 +1183,14 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
     tell(state:, at_ms: 100, message: creature.Unwatched(by: ConnectionId(2)))
   let #(state, _) = fire(state:, at_ms: 200, timer: timer_for(leashed, 100))
   let #(state, _) =
-    tell(state:, at_ms: 5000, message: creature.Watched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature.Watched(
+        by: ConnectionId(2),
+        stay: stay.next(stay_of(2)),
+      ),
+    )
   let #(_, again) =
     tell(
       state:,
@@ -1140,8 +1200,58 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
         unit_id: 21,
         place: at(5.0),
         seq: 7,
+        stay: stay.next(stay_of(2)),
       ),
     )
   assert list.contains(said(again), "0x908(21, 1) to 2")
     as "the equal sequence number is taken, with the new unit 21"
+  assert fights_told_for(again)
+    == [#(2, stay.next(stay_of(2)), Threatened(unit_id: unit, life:))]
+    as "the threat goes for the stay the newest Watched named"
+}
+
+pub fn a_strike_of_a_players_earlier_stay_that_reaches_the_creature_after_its_rejoin_threatens_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The player struck the Beast, then left the map and joined it again: the map
+  // sent the Beast Unwatched and the new stay's Watched. The strike, delayed, lands
+  // after both.
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: creature.Unwatched(by: ConnectionId(2)),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: creature.Watched(
+        by: ConnectionId(2),
+        stay: stay.next(stay_of(2)),
+      ),
+    )
+  let #(_, struck) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 10, 1.0)]),
+    )
+  assert fights_told_for(struck) == []
+    as "a strike of the earlier stay starts no fight with the player's new stay"
+}
+
+pub fn a_player_that_stops_seeing_the_creature_is_told_its_release_for_the_stay_it_had_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Unwatched takes the player out of the viewers and off the threat list in
+  // one step: its release still goes for the stay the Watched named.
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(_, unwatched) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  assert fights_told_for(unwatched)
+    == [#(2, stay_of(2), Released(unit_id: unit))]
 }

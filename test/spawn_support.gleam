@@ -263,3 +263,30 @@ fn put_worlds(
     )
   })
 }
+
+/// The offence with every blow dealing `damage`: planted test data, for a fight
+/// whose test is of a death, not of the number.
+pub fn dealing(
+  offence offence: hit.Offence,
+  damage damage: Int,
+) -> hit.Offence {
+  Offence(
+    ..offence,
+    blows: list.map(offence.blows, fn(blow) { Blow(..blow, damage:) }),
+  )
+}
+
+/// The spawn with every blow of its attack dealing `damage` (`dealing`).
+pub fn spawn_dealing(spawn spawn: Spawn, damage damage: Int) -> Spawn {
+  let attack = spawn.combat.attack
+  Spawn(
+    ..spawn,
+    combat: Combat(
+      ..spawn.combat,
+      attack: Attack(
+        ..attack,
+        offence: dealing(offence: attack.offence, damage:),
+      ),
+    ),
+  )
+}

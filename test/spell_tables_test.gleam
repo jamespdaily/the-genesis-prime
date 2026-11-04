@@ -9,6 +9,7 @@ import genesis_prime/table/class
 import genesis_prime/table/loader/tbl_file.{type Field, type Records, Field}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
@@ -109,7 +110,13 @@ pub fn every_planted_spell_row_holds_the_clients_values_in_each_column_it_sets_o
         "innateCost0", "innateCostType1", "innateCost1", "channelInitialDelay",
         "channelMaxTime", "channelPulseTime", "thresholdTime",
         "spellCoolDownIdGlobal", "globalCooldownEnum", "propertyFlags",
+        "spell4ConditionsIdCaster",
       ]),
+      differences(
+        schema: spell4_conditions.schema,
+        rows: spell_tables.spell4_conditions_rows(),
+        read: ["conditionMask", "conditionValue"],
+      ),
       differences(schema: spell4_base.schema, rows: rows.spell4_base, read: [
         "castMethod", "weaponSlot", "castBarType", "classIdPlayer",
       ]),

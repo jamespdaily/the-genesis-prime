@@ -133,7 +133,7 @@ pub fn the_committed_session_replays_to_its_recorded_bytes_with_the_recorded_see
     list.map(session.connections, fn(connection) {
       connection.recording.header.accept_ordinal
     })
-  assert ordinals == [1, 17, 26]
+  assert ordinals == [1, 16, 29]
     as "the accept ordinals the live session's recordings hold (their headers): the live server's own numbers are not 1, 2 and 3, since the node counts other things with them, and they grow with the order it accepted the connections in"
   let assert Ok(fixture) = simplifile.read(session.fixture)
     as "the fixture reads"
@@ -201,8 +201,8 @@ pub fn the_replay_logs_the_unhandled_messages_the_live_session_logged_and_nothin
   assert lines_of(logged, "game.connection")
     == list.map(
       [
-        "0x082D", "0x0635", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC",
-        "0x018F", "0x023C", "0x07EA", "0x023D", "0x0570",
+        "0x082D", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC", "0x018F",
+        "0x0635", "0x023C", "0x07EA", "0x023D", "0x0570",
       ],
       fn(id) { "unhandled game message " <> id },
     )

@@ -69,6 +69,7 @@ import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags
 import genesis_prime/message/movement_velocity
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/player_health
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
@@ -79,6 +80,7 @@ import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/whisper_failed
 import genesis_prime/readiness
 import genesis_prime/server
@@ -102,6 +104,7 @@ import log_capture
 import login_client
 import login_support
 import mailbox_support
+import message_support
 import novice_tables
 import owned_key
 import owned_test
@@ -341,8 +344,7 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
     as "row 466 is a PreTutorial start, WorldLocation2 row 51596: World 3460, zone 6009, and its position as 32-bit floats; the database kept them"
   send_play(game:, character_id: created.character_id)
   let burst = game_client.read(game:, count: burst_length())
-  assert list.map(burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
+  assert cast_support.ids(frames: burst) == game_client.world_entry_ids
     as "the player enters the world: the messages in the client's order (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61)"
   let assert [Frame(body: world, ..), Frame(body: unit, ..), ..] = burst
   let assert Ok(entered) = enter_world.decode(world)
@@ -389,8 +391,7 @@ pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_
   let _list = listed_entries(game)
   send_play(game:, character_id: created.character_id)
   let burst = game_client.read(game:, count: burst_length())
-  assert list.map(burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
+  assert cast_support.ids(frames: burst) == game_client.world_entry_ids
     as "the loadout comes after 0x19b and before 0x61 (opcode.0x19b, opcode.0x61)"
   let loadout = game_client.loadout_in(frames: burst)
   assert loadout.weapon == Some(81_346)
@@ -3291,19 +3292,33 @@ fn a_ready_medic(
   character_name character_name: String,
 ) -> #(game_client.Game, Int, Int, BitArray) {
   let #(game, frames, have) =
+    a_ready_player(started:, number:, character_name:, class_id: 4)
+  let own = game_client.unit_create_player_in(frames:).unit_id
+  let assert [dagun] = game_client.creatures_created_in(frames:)
+  #(game, own, dagun.unit_id, have)
+}
+
+/// A player of the class, of level 1, played in, its entry and the Dagun's 0x262
+/// read, and ready: its client's first 0xF2 sent. The frames read and the bytes
+/// kept.
+fn a_ready_player(
+  started started: login_support.Started,
+  number number: Int,
+  character_name character_name: String,
+  class_id class_id: Int,
+) -> #(game_client.Game, List(Frame), BitArray) {
+  let #(game, frames, have) =
     enters_and_sees_the_beasts(
       started:,
       number:,
       character_name:,
-      class_id: 4,
+      class_id:,
       beasts: 1,
     )
-  let own = game_client.unit_create_player_in(frames:).unit_id
-  let assert [dagun] = game_client.creatures_created_in(frames:)
   let assert Ok(body) =
     terrain_loaded.encode(TerrainLoaded(world_zone_id: 1100))
   game_client.send_world(game:, message_id: terrain_loaded.message_id, body:)
-  #(game, own, dagun.unit_id, have)
+  #(game, frames, have)
 }
 
 fn walk_to(game game: game_client.Game, z z: Float, clock clock: Int) -> Nil {
@@ -3417,6 +3432,179 @@ pub fn a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_te
     })
   assert list.contains(game_client.removals_in(frames:), dagun)
     as "the map's Gone: the bot's client removes the Dagun"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ------------------------------------------- death and coming back, on the whole server
+//
+// Expected values come from the design of step G (issue 368: test 12, the
+// coming back's frames of tests 8 and 9) and these places: the client's Death
+// addon sends 0x15a {its unit, 1 or 2, 0} for Wake Here and the Holocrypt
+// (`lua.GameLib.RezType`); Wake Here writes 0x92f, 0x938, 0x88c, 0x1b3, 0x355,
+// 0x636 and 0x247 in that order (`opcode.0x88c`, `opcode.0x1b3`,
+// `opcode.0x247.death`), at full health and shield (`death.server_choices`), the
+// values the player entered with in its 0x262 (stats 0 and 20); the Holocrypt
+// writes the same, then the entry burst at the start of the race and faction in
+// the world, else at the place the stay entered at (`death.server_choices`):
+// World 1387 holds no Novice start, so the place a new test character stands at.
+
+/// A world with one Dagun at x 1.5, z -20 whose blow is 100000: planted test
+/// data, since the Dagun's own 12 every 1500 ms takes some 400 ticks to kill a
+/// player of level 1, and the test is of the death and the coming back, not of the
+/// number. The fight's sequence is the client's as on the Dagun of
+/// `world_with_a_dagun`.
+fn world_with_a_lethal_dagun() -> login_support.Started {
+  let dagun =
+    spawn_support.spawn_dealing(
+      spawn: spawn_support.dagun(number: 1, x: 0.0),
+      damage: 100_000,
+    )
+  login_support.start_with(change: fn(settings) {
+    server.Settings(
+      ..settings,
+      world: server.World(
+        ..settings.world,
+        spawns: spawn_support.key_in(
+          world_id: 1387,
+          spawns: [
+            spawn.Spawn(..dagun, place: beast_place(x: 1.5, z: dagun_z)),
+          ],
+          respawn_ms: 60_000,
+        ),
+      ),
+    )
+  })
+}
+
+/// The player of the frames' 0x262 walks into the Dagun's ring and is read until
+/// its own 0x88c marks it dead and the death's last frame, the ghost's 0x636, has
+/// come: the bytes kept.
+fn killed_by_the_dagun(
+  game game: game_client.Game,
+  own own: Int,
+  have have: BitArray,
+) -> BitArray {
+  walk_to(game:, z: dagun_z +. 9.0, clock: 100)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+      list.contains(game_client.deaths_in(frames:), #(own, True))
+      && list.any(frames, fn(frame) { frame.message_id == 0x0636 })
+    })
+  have
+}
+
+/// 0x15a for the unit and the choice, with the value 0, sent inside 0x038C.
+fn choose(
+  game game: game_client.Game,
+  own own: Int,
+  choice choice: Int,
+) -> Nil {
+  game_client.send_world(
+    game:,
+    message_id: 0x015A,
+    body: message_support.choice_body(unit_id: own, choice:, value: 0),
+  )
+}
+
+/// The frames of the coming back among `frames`, in order.
+fn coming_back_in(frames frames: List(Frame)) -> List(Frame) {
+  list.filter(frames, fn(frame) {
+    list.contains(
+      [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247],
+      frame.message_id,
+    )
+  })
+}
+
+/// The stat of the player's own 0x262.
+fn entry_stat(entry entry: List(Frame), stat_id stat_id: Int) -> Int {
+  let player = game_client.unit_create_player_in(frames: entry)
+  let assert Ok(stat) =
+    list.find(player.tail.stats, fn(stat) { stat.stat_id == stat_id })
+    as "the player's 0x262 holds the stat"
+  stat.value
+}
+
+pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_over_the_wire_and_the_spellslinger_by_the_holocrypt_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // The Medic's half of the fight, a creature it kills standing again at its
+  // respawn, is `a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_the_same_fight_test`.
+  let started = world_with_a_lethal_dagun()
+  list.each(
+    [
+      #(1, "Ann Qu", 1),
+      #(2, "Bea Qu", 2),
+      #(3, "Cal Qu", 3),
+      #(4, "Dee Qu", 4),
+      #(5, "Eve Qu", 5),
+    ],
+    fn(bot) {
+      let #(number, character_name, class_id) = bot
+      let class = "class " <> int.to_string(class_id)
+      let #(game, entry, have) =
+        a_ready_player(started:, number:, character_name:, class_id:)
+      let own = game_client.unit_create_player_in(frames: entry).unit_id
+      let have = killed_by_the_dagun(game:, own:, have:)
+      choose(game:, own:, choice: 1)
+      let #(frames, _) =
+        game_client.read_until(
+          game:,
+          have:,
+          within_ms: 10_000,
+          found: fn(frames) {
+            list.contains(
+              list.map(coming_back_in(frames:), fn(frame) { frame.message_id }),
+              0x0247,
+            )
+          },
+        )
+      let back = coming_back_in(frames:)
+      assert cast_support.ids(frames: back)
+        == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
+        as { class <> " comes back by Wake Here in the client's order" }
+      assert list.contains(game_client.deaths_in(frames: back), #(own, False))
+        as { class <> ": 0x88c marks its unit alive" }
+      let assert [Frame(body: health, ..)] =
+        list.filter(back, fn(frame) { frame.message_id == 0x092F })
+      let assert Ok(health) = player_health.decode(health)
+      let assert [Frame(body: shield, ..)] =
+        list.filter(back, fn(frame) { frame.message_id == 0x0938 })
+      let assert Ok(shield) = unit_stat_changed.decode(shield)
+      assert health.health == entry_stat(entry:, stat_id: 0)
+        && shield.value == entry_stat(entry:, stat_id: 20)
+        as { class <> ": at the full health and shield it entered with" }
+      game_client.close(game:)
+    },
+  )
+  // The Spellslinger comes back by the Holocrypt.
+  let #(game, entry, have) =
+    a_ready_player(started:, number: 6, character_name: "Fay Qu", class_id: 7)
+  let own = game_client.unit_create_player_in(frames: entry).unit_id
+  let have = killed_by_the_dagun(game:, own:, have:)
+  choose(game:, own:, choice: 2)
+  let #(frames, _) =
+    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+      list.count(
+        list.drop_while(frames, fn(frame) { frame.message_id != 0x00AD }),
+        fn(_) { True },
+      )
+      >= burst_length()
+    })
+  let burst =
+    list.take(
+      list.drop_while(frames, fn(frame) { frame.message_id != 0x00AD }),
+      burst_length(),
+    )
+  assert cast_support.ids(frames: burst) == game_client.world_entry_ids
+    as "the Spellslinger comes back by the Holocrypt: the entry burst, 0xAD first"
+  let assert [Frame(body:, ..), ..] = burst
+  let assert Ok(entered) = enter_world.decode(body)
+  assert entered.world_id == 1387
+    && entered.position_x == float32.to_bits(1.5)
+    && entered.position_y == float32.to_bits(2.5)
+    && entered.position_z == float32.to_bits(3.5)
+    as "at the place the stay entered at: World 1387 holds no Novice start"
   game_client.close(game:)
   login_support.stop(started)
 }

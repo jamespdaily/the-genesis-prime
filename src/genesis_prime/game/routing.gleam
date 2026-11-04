@@ -30,12 +30,14 @@ import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/movement
+import genesis_prime/game/player_life
 import genesis_prime/message/ability_hold
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
 import genesis_prime/message/cancel_cast
 import genesis_prime/message/cast_ability
 import genesis_prime/message/character_select_start
+import genesis_prime/message/choose_resurrection
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/delete_character
 import genesis_prime/message/fall_value
@@ -72,6 +74,9 @@ pub type Feature {
   /// The press or hold of an ability or the cancel of a cast
   /// (genesis_prime/game/cast).
   Cast(message: cast.Message)
+  /// The player's choice of how to come back from death
+  /// (genesis_prime/game/player_life).
+  Life(message: player_life.Message)
 }
 
 /// Where the connection is when it takes a message.
@@ -213,6 +218,12 @@ const table = [
     cancel_cast.message_id,
     InsideWorldMessage,
     Cast(cast.Cancelled),
+    [AtWorld],
+  ),
+  Row(
+    choose_resurrection.message_id,
+    InsideWorldMessage,
+    Life(player_life.ResurrectionChosen),
     [AtWorld],
   ),
   Row(

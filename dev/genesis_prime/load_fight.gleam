@@ -43,7 +43,7 @@
 //// printed beside them.
 
 import argv
-import genesis_prime/client_connection.{type Message, SentByFoe}
+import genesis_prime/client_connection.{type Message, ForStay, SentByFoe}
 import genesis_prime/connection/registry
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
@@ -66,6 +66,7 @@ import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
+import genesis_prime/world_map/stay
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid, type Subject}
@@ -247,7 +248,12 @@ fn walker(
       let _sent =
         service.call_subject(
           run.subject,
-          map.Join(connection:, character: character(id), place: start),
+          map.Join(
+            connection:,
+            character: character(id),
+            place: start,
+            stay: stay.next(stay.none_yet()),
+          ),
           fn(answer) { process.send(replies, answer) },
         )
       let assert Ok(_joined) = process.receive(replies, within: 60_000)
@@ -332,7 +338,12 @@ fn walk(
         incarnation: run.incarnation,
         unit_id: fighter.0,
         life: fighter.1,
-        message: creature.TargetMoved(by: connection, place:, seq: step),
+        message: creature.TargetMoved(
+          by: connection,
+          place:,
+          seq: step,
+          stay: stay.next(stay.none_yet()),
+        ),
       )
     })
     let now_inside =
@@ -390,7 +401,10 @@ fn hear(
 ) -> #(Dict(Int, Int), Counts) {
   case process.selector_receive(selector, int.max(0, until_ms - now())) {
     Error(Nil) -> #(fighters, counts)
-    Ok(SentByFoe(fight: strike_tell.Threatened(unit_id:, life:))) ->
+    Ok(ForStay(
+      sent: SentByFoe(fight: strike_tell.Threatened(unit_id:, life:)),
+      ..,
+    )) ->
       hear(
         settings:,
         selector:,
@@ -398,7 +412,7 @@ fn hear(
         fighters: dict.insert(fighters, unit_id, life),
         counts:,
       )
-    Ok(SentByFoe(fight: strike_tell.Released(unit_id:))) ->
+    Ok(ForStay(sent: SentByFoe(fight: strike_tell.Released(unit_id:)), ..)) ->
       hear(
         settings:,
         selector:,
@@ -406,7 +420,7 @@ fn hear(
         fighters: dict.delete(fighters, unit_id),
         counts:,
       )
-    Ok(SentByFoe(fight: strike_tell.Attacks(tell:))) -> {
+    Ok(ForStay(sent: SentByFoe(fight: strike_tell.Attacks(tell:)), ..)) -> {
       let _told = case tell.from {
         step.Creature(map:, incarnation:, unit_id:, life:) ->
           creature_registry.tell(

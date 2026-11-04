@@ -23,7 +23,7 @@
 import ask_support
 import event_wait
 import genesis_prime/client_connection.{
-  type Message, CreatureAppeared, PeerNews, SentByMap, SentByPeer,
+  type Message, CreatureAppeared, ForStay, PeerNews, SentByMap, SentByPeer,
 }
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
@@ -100,6 +100,7 @@ fn join(run run: MapProcess, connection connection: Int) -> Int {
             y: 0.0,
             z: 0.0,
           ),
+          stay: map_support.stay(count: 1),
         ),
         reply,
       )
@@ -128,13 +129,13 @@ fn next(
 /// A creature's 0x262 as the connection was sent it, with the unit id it names.
 fn appearance(message: Message) -> Result(UnitCreateCreature, Nil) {
   case message {
-    SentByPeer(PeerNews(news: CreatureAppeared(unit:, ..), ..)) -> Ok(unit)
-    SentByPeer(..)
-    | SentByMap(..)
+    ForStay(
+      sent: SentByPeer(PeerNews(news: CreatureAppeared(unit:, ..), ..)),
+      ..,
+    ) -> Ok(unit)
+    ForStay(..)
     | client_connection.SentBySessions(..)
-    | client_connection.SentByTarget(..)
-    | client_connection.SentByChat(..)
-    | client_connection.SentByFoe(..) -> Error(Nil)
+    | client_connection.SentByChat(..) -> Error(Nil)
   }
 }
 
@@ -224,13 +225,10 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
       what: "Gone for the creature that was killed",
       wanted: fn(message) {
         case message {
-          SentByMap(map.Gone(unit_id:)) -> Ok(unit_id)
-          SentByMap(..)
-          | SentByPeer(..)
-          | client_connection.SentByTarget(..)
+          ForStay(sent: SentByMap(map.Gone(unit_id:)), ..) -> Ok(unit_id)
+          ForStay(..)
           | client_connection.SentBySessions(..)
-          | client_connection.SentByChat(..)
-          | client_connection.SentByFoe(..) -> Error(Nil)
+          | client_connection.SentByChat(..) -> Error(Nil)
         }
       },
     )
@@ -420,6 +418,7 @@ fn strike_with(
             z: 0.0,
           ),
           seq: 1,
+          stay: map_support.stay(count: 1),
           rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
         ),
       )),
@@ -447,12 +446,11 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
   let answer =
     next(received:, what: "the answer to the strike", wanted: fn(message) {
       case message {
-        client_connection.SentByTarget(answered:) -> Ok(answered)
-        SentByMap(..)
-        | SentByPeer(..)
+        ForStay(sent: client_connection.SentByTarget(answered:), ..) ->
+          Ok(answered)
+        ForStay(..)
         | client_connection.SentBySessions(..)
-        | client_connection.SentByChat(..)
-        | client_connection.SentByFoe(..) -> Error(Nil)
+        | client_connection.SentByChat(..) -> Error(Nil)
       }
     })
   let assert Answered(key: Key(cast_id: 1, ..), outcome:) = answer
@@ -492,13 +490,13 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
     what: "the corpse's 0x355 when the player left sight",
     wanted: fn(message) {
       case message {
-        SentByPeer(PeerNews(news: client_connection.Removed, ..)) -> Ok(Nil)
-        SentByPeer(..)
-        | SentByMap(..)
+        ForStay(
+          sent: SentByPeer(PeerNews(news: client_connection.Removed, ..)),
+          ..,
+        ) -> Ok(Nil)
+        ForStay(..)
         | client_connection.SentBySessions(..)
-        | client_connection.SentByTarget(..)
-        | client_connection.SentByChat(..)
-        | client_connection.SentByFoe(..) -> Error(Nil)
+        | client_connection.SentByChat(..) -> Error(Nil)
       }
     },
   )

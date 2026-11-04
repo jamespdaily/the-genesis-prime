@@ -39,7 +39,7 @@
 
 import argv
 import genesis_prime/client_connection.{
-  type Message, CreatureAppeared, PeerNews, SentByPeer,
+  type Message, CreatureAppeared, ForStay, PeerNews, SentByPeer,
 }
 import genesis_prime/connection/registry
 import genesis_prime/content/spawn as content_spawn
@@ -57,6 +57,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_cell
+import genesis_prime/world_map/stay
 import gleam/bool
 import gleam/dict
 import gleam/erlang/process.{type Name, type Subject}
@@ -233,6 +234,7 @@ fn player(
             connection: ConnectionId(id),
             character: character(id),
             place: place(x:, y:, z:),
+            stay: stay.next(stay.none_yet()),
           ),
           fn(answer) { process.send(replies, answer) },
         )
@@ -325,7 +327,7 @@ fn collect(
 ) -> List(Int) {
   case process.selector_receive(selector, within: wait()) {
     Error(Nil) -> found
-    Ok(SentByPeer(PeerNews(news: CreatureAppeared(..), ..))) ->
+    Ok(ForStay(sent: SentByPeer(PeerNews(news: CreatureAppeared(..), ..)), ..)) ->
       collect(selector:, wait:, found: [now_us(), ..found])
     Ok(_other) -> collect(selector:, wait:, found:)
   }

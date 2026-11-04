@@ -23,6 +23,7 @@ import genesis_prime/world_map/creature_life.{
   type Life, Body, Died, Health, StandsAgain, StopAtRespawn, StopNow,
 }
 import gleam/option.{None, Some}
+import map_support
 import owned_test
 import place_support
 import spawn_support
@@ -65,6 +66,7 @@ fn strike_of(
         z: 0.0,
       ),
       seq: 1,
+      stay: map_support.stay(count: 1),
       rolls:,
     ),
   )

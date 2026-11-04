@@ -292,9 +292,11 @@ pub fn the_login_session_holds_the_platform_logins_clear_requests_up_to_key_data
     as "the reads after KeyData are ciphered and left unread"
   let assert sts_message.LoginStart(login_name:, ..) = login_start
     as "the second request is LoginStart"
+  // The client's pings on an idle connection are the network layer's, bare, and
+  // may come before the login (opcode.0x0): only the wrapper's messages count.
   let assert [#(_, login), ..] =
-    as_pairs(frames_of(auth_connection.rule_name).0)
-    as "the auth connection holds a message"
+    as_pairs(wrapped_only(frames_of(auth_connection.rule_name).0))
+    as "the auth connection holds a message in the client's wrapper"
   let assert client_message.LoginRequest(message: request) = login
     as "the auth connection's message is the login request"
   assert login_name == string.lowercase(request.account_name)

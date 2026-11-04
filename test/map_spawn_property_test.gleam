@@ -234,6 +234,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
                 connection: ConnectionId(connection),
                 character: map_support.character(100 + connection),
                 place: map_spawn_support.at(x_of(stop)),
+                stay: map_support.stay(count: 1),
               ),
             )),
             connection:,
