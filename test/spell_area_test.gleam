@@ -3,6 +3,10 @@
 //// values come from these places.
 //// - Kick's rows: `Spell4.58591.area` (area row 640: 5 units, 0 to 8 m, 180 degrees;
 ////   telegraph 168: a cone 1 to 7 m over 100 degrees on the caster, flag 0x200).
+//// - The threshold stages: Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124
+////   name the stage spells of Shred, Relentless Strikes, Rampage and Charged Shot,
+////   and the Proxy rows 83782, 177158, 177171, 177498, 182203 and 182204 name the
+////   spells their stages start (`table_rows`, read on the client's tables).
 //// - The load's refusals: the module's doc comment, which states each gap where it is
 ////   enforced (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`, `0x14054d170`).
@@ -22,6 +26,7 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/result
 import owned_test
+import spell_tables
 import unitest
 
 fn kick_area(plant plant: area_tables.Kick) -> spell_area.SpellArea {
@@ -208,4 +213,62 @@ pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and
       ),
     ]
     as "Spell4.42352.area: telegraph 2888, a box 8 wide and 8 long centred 9.3 m ahead and turned 45 degrees, and 2889, a cone from 1 to 10.75 m over 62.5 degrees, both with flag 0x200; it has no never-drawn twin, so both drawn shapes are its hit shapes"
+}
+
+/// The stage spells of the level-1 RapidTap and ChargeRelease abilities and the spells
+/// their Proxies start: Spell4Thresholds 238 (Shred 38765 casts 38766, whose Proxy
+/// 83782 starts 39467), 9 and 10 (Relentless Strikes 32078 casts 32079 and 32080,
+/// Proxies 177158 and 177171 start 70045 and 70054), 1073 to 1075 (Rampage 58524 casts
+/// 66987, 71125 and 71126, Proxies 177498, 182203 and 182204 start 71392 to 71394) and
+/// 125, 123 and 124 (Charged Shot 34718 casts 34720, 34722 and 36691, which have no
+/// Proxy).
+const stage_spells_and_their_proxies = [
+  38_766, 39_467, 32_079, 70_045, 32_080, 70_054, 66_987, 71_392, 71_125, 71_393,
+  71_126, 71_394, 34_720, 34_722, 36_691,
+]
+
+fn spells_without_an_area(
+  areas areas: spell_area.Areas,
+  spells spells: List(Int),
+) -> List(Int) {
+  list.filter(spells, fn(spell4_id) {
+    result.is_error(spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id)))
+  })
+}
+
+pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_planted_trees_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(areas) =
+    spell_tables.with_loaded_deriving(
+      rows: spell_tables.rows(),
+      derivations: [spell_plan.derivation()],
+      body: fn(tables) { spell_area.build(tables:) },
+    )
+    as "the planted trees build their areas"
+  assert spells_without_an_area(areas:, spells: stage_spells_and_their_proxies)
+    == []
+    as "Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124 name the stage spells; Spell4Effects 83782, 177158, 177171, 177498, 182203 and 182204 start their Proxies: every one is cast and strikes by its own area"
+  let assert Ok(proxy) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(39_467))
+  let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0)
+  assert phase.selects_area
+    && list.map(phase.damage, fn(effect) { effect.aim })
+    == [spell_plan.AimsAtArea]
+    as "Spell4Effects 86439: the stage's Proxy 39467 holds one damage effect aimed at the area (targetFlags 4), on Spell4 39467's area row 694"
+}
+
+pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_clients_tables_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  assert spells_without_an_area(areas:, spells: stage_spells_and_their_proxies)
+    == []
+    as "Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124 name the stage spells; Spell4Effects 83782, 177158, 177171, 177498, 182203 and 182204 start their Proxies: every one is cast and strikes by its own area"
+  let assert Ok(proxy) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(39_467))
+  let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0)
+  assert phase.selects_area
+    && list.map(phase.damage, fn(effect) { effect.aim })
+    == [spell_plan.AimsAtArea]
+    as "Spell4Effects 86439: the stage's Proxy 39467 holds one damage effect aimed at the area (targetFlags 4)"
 }

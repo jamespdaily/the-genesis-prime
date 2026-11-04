@@ -5681,7 +5681,7 @@ gap = "Read from Ghidra's decompile; not run. The effect result data (0x1400946c
 statement = "Message 0x7fc (2044), world server to client: the server refuses the player's cast (ServerSpellCastResult). Body in wire order: the client's cast id (32 bits), the Spell4 id (18 bits) and the result (9 bits, a Spell.CodeEnumCastResult). The client removes the pending cast with that client id, shows the result to the player as a cast failure for that spell, and clears the player's global cooldown, except for result 13 (SpellAlreadyCasting) while the hold-to-cast setting is on. A spell id of 0 with no pending cast of that id does nothing. A wrong client id still shows the failure and clears the global cooldown."
 proof = "Registered in 0x14006c290 (saved C line 656, hash 8eb22adb6de47956): id 0x7fc, record 0xc, reader 0x140094fb0 (saved C: ReadBits32 0x20, 0x12, 9). Case 0x1403ee1a5 calls HandleSpellCastResult 0x1405a5010 (saved C): the pending list at cast system 0x7c8 searched by client id (cast offset 0x60); the spell record from field 1 (0 -> none); a text for results below 0x14c; 0x1403a12a0(game, result, spell, 1); 0x14046aa00(player, 0, 0) unless the setting at 0x140c45e50 is on and the result is 0xd; RemoveCast 0x140561ad0 of the pending cast. With no spell and no pending cast it returns before the report."
 grade = "fairly sure"
-gap = "Read from Ghidra's decompile; not run. 0x1403a12a0 (the failure report: Lua SpellCastFailed, a floater) and 0x14046aa00 (taken to clear the global cooldown) are not read here."
+gap = "Read from Ghidra's decompile; not run. 0x14046aa00 (taken to clear the global cooldown) is not read here. The failure report 0x1403a12a0 shows every result whose Spell4CastResult row has text, 13 included; the setting gates only the cooldown clear."
 
 ["opcode.0x7fe"]
 statement = "Message 0x7fe (2046), world server to client: a cast ends (ServerSpellFinish). Body: the cast id (32 bits). The client finds the cast (an unknown id is dropped), moves it to its finished state, which starts a Channeled cast's cooldowns, and removes it from its table, so the caster no longer counts as casting it."
@@ -7093,10 +7093,10 @@ gap = "Cases 0x97 and 0x119 to 0x11b are not read."
 name = "BuildCastResultText"
 
 ["0x1403a12a0"]
-statement = "Reports a failed cast to the player: logs it and raises the Lua event SpellCastFailed with the result's message type, the result, the player and its text and the spell's name; results 0 and 317 (Queued) report nothing."
-proof = "Saved C 0x1403a12a0.c (hash 8eb22adb6de47956): returns for result 0 or 0x13d; FUN_1400ea3e0(..., 'SpellCastFailed', 'iiUUSS', row word 4, row word 0, player, player, text, spell name)."
+statement = "Reports a refused cast to the player (the SpellCastFailed Lua event, which FloatText shows as a floater over the player while ui.showCombatFloater and the Spell Error Messages option are on, the option on by default). Nothing is reported for result 0 or 317 (Queued), with no spell or no player, for results 2 and 3, for 67 and 69 while a player state holds, for a result of 332 or more, or for a result whose Spell4CastResult row has no text. A spell with a service-token flag refused 15 or 16 raises SpellCastWithServiceToken instead. For a threshold ability with a shortcut it also resets the button. The text is the result's Spell4CastResult localizedTextIdDisplayText: 13 'You are already casting', 14 'You cannot do that yet', 15 'Ability on cooldown'; 317 has none."
+proof = "Saved C 0x1403a12a0.c (hash 8eb22adb6de47956): guard param_3, param_2 != 0 and != 0x13d, game 0x78; FUN_1405a4d90 and record 0x108 bit 0x20000000 with param_2 - 0xf <= 1 -> 'SpellCastWithServiceToken'; else log, then (param_4 or (param_2 - 2 > 1 and ((param_2 - 0x43) & ~2 != 0 or FUN_14047bfd0(unit) == 0))): method in {2, 6, 7} with FUN_1403c1f50 -> button reset; row pointer at DAT_140c7df98 + result x 0xa0 + 8 (row word 0 the id, word 4 combatMessageTypeEnum); FUN_1405648a0 builds the text (empty for result > 0x14b or no text) and 'SpellCastFailed' 'iiUUSS' only when it is not empty. FloatText.lua lines 131-153 (OnSpellCastFailed: unit, ui.showCombatFloater, bSpellErrorMessages, default true at line 93). Rows: `gleam run -m genesis_prime/table_rows -- Spell4CastResult 13 14 15 317`; texts by `client_files.py text 119683 119846 119214`."
 grade = "fairly sure"
-gap = "The branches for results 2, 3, 67, 69 and the service token event are not read."
+gap = "Read from Ghidra's decompile; not run. That the 0xa0-stride table holds Spell4CastResult rows is read from the words used (id, combatMessageTypeEnum 49); its filler is not read. FUN_14047bfd0 (the state for 67 and 69) is not read."
 name = "ReportCastFailure"
 
 ["0x140237240"]
@@ -7821,3 +7821,75 @@ statement = "Charged Shot's base cast 34718 (ChargeRelease, castTime 0, threshol
 proof = "SpellShowsCastBar 0x1407a1820 case 7: record 0x184 non-zero (cast.current_cast). ApplySpellGo 0x14053e5a0 (737aa5af0120fae9) line 233: castMethod 7 with record 0x184 != 0 -> no StartSpellCooldowns; lines 154-174: method 7 never clears unit 0x1600. FinishCast 0x14053e1b0 (49fd5a78aaad3411) lines 30-37 (cooldowns only for methods 1, 2 and 8) and 52 (result 8 skips the threshold); 0x7fe case 0x1403ee468 passes 8. Timer: 0x1403be620 sets the thresholdTime timer to ExpireSpellThreshold 0x1403bf2c0, which for method 7 sets entry word 8 and returns; the charge timer's callback (entry 0x68) is the empty function SizeEmptyBody. Readers of entry word 8: GetSpellThresholdProgress 0x1403c0340 (1.0) and 0x1403c04c0 (0 left); 0x1403bea90 (0x817) clears it. ResolveThresholdSpell 0x1403bfd60 and GetThresholdStageSpell 0x1403bfbf0 do not read it. Release press: 0x1403be120 (49fd5a78aaad3411) method 7 branch: StopSpellThreshold 0x1403bf400, then CastAbilityBagSpell; cast.press_queue: a bag press is never refused with 13. Rows: `table_rows -- Spell4 34718` (thresholdTime 8200, castTime 0), `Spell4Base 20684` (castMethod 7)."
 grade = "fairly sure"
 gap = "Read from the decompile; not run. The visuals a go of 34718 plays (Spell4VisualGroup 5836) are not read. The hold-to-cast branches (setting at 0x140c45e90, the released-key table at game 0x15c8 read by 0x1403c0760) are not read. A live hold of Charged Shot past 8.2 s against the server settles what the player sees."
+
+["0x1403bd6d0"]
+statement = "Casts an ability on the release of its action button while 'Hold to continue casting' is off (the shortcut input's state 0). It returns without sending or showing anything when: the Spell4Base id is 0 or there is no button; no ability bag item holds that Spell4Base; the ability book has no spell for it; or the press window refuses a second release of the same ability (0x1403a1630, 200 ms). A PressHold, RapidTap or ChargeRelease spell goes to the threshold press (0x1403bdea0) and returns. Any other spell is cast with CastAbilityBagSpell (fourth argument 0, so it sends 0x9a); a refusal other than 317 is shown by ReportCastFailure and resets the button."
+proof = "Saved C 0x1403bd6d0.c (hash 49fd5a78aaad3411): returns on param_2 == 0, param_3 null, bag count (game 0xa98) 0 or no item with item 0x40 == the base id; FUN_1405a4b80(item, 1) null -> return; FUN_1403a1630(game, base, 1) == 0 -> return; record 0x70 word 6 (castMethod) in {2, 6, 7} -> FUN_1403bdea0(game, spell id, button) and return; else (hold setting 0x140c45e50 on, button state 2 and 0x1403d8c10 == 0 -> return); CastAbilityBagSpell(game, item 0x24, 0, 0, 0, &out); result not 0 or 0x13d -> button 0x148 = 1, FUN_1403a12a0(game, result, spell, 0). Caller 0x1405c9900 state 0 (LAB_1405c9b49) when the hold setting is off or the previous state was not 2."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run on the client."
+name = "AbilityCastOnRelease"
+
+["0x1403a1630"]
+statement = "The ability press window: at most one release of an ability per window. Keyed by the Spell4Base id, it holds an entry for GameFormula 1138's dataint0 milliseconds (200 in the data; 150 with no row) from the first call. With no entry it makes one (marked released for a release, held for a hold press) and passes. A release (third argument 1) passes once after a hold press (held -> released) and is refused while the entry is already released, so a second tap of the same ability within 200 ms of the first tap's release sends nothing and shows nothing. A hold press (third argument 0) with an entry already present is refused. At the window's end the entry is removed (0x1403a1840)."
+proof = "Saved C 0x1403a1630.c (hash 8eb22adb6de47956): map at game 0x6d30 searched by key (node 0x20) = param_2; none -> AllocMemory(0x80), entry word 0 = (param_3 != 0), word 0x1c = key, timer callback FUN_1403a1840, period DAT_140dc21d4 = word 4 of FUN_140200220(0x472) (GameFormula row 1138), else 0x96; FUN_140195960(entry + 8, period, ...); return 1. Found, param_3 == 0: state 1 -> 2, return 0; state 0 or 2 -> return 0. Found, param_3 != 0: state 0 -> 1, return 1; state 1 -> return 0; state 2 -> 1, return 0. Callers: AbilityCastOnRelease 0x1403bd6d0 (1), AbilityPressHold 0x1403bd3d0 (0), 0x1403bd8b0, 0x14039b340. Row: `gleam run -m genesis_prime/table_rows -- GameFormula 1138` gives dataint0 = 200."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. That the timer fires once is taken from its callback removing the entry. 150 is only the code's fallback when the row is missing; the data gives 200."
+name = "AbilityPressWindow"
+
+["0x1403a1840"]
+statement = "Ends an ability's press window: removes its entry, and when the entry was left held (a hold press whose release came after a second press) with 'Hold to continue casting' on, presses the ability again (AbilityPressHold). With the setting off it only removes the entry."
+proof = "Saved C 0x1403a1840.c (hash 8eb22adb6de47956): finds the map node by entry word 0x1c, FUN_1403a1940, FUN_1403ae200(game 0x6d28, node); state 2 and setting 0x140c45e50 on -> FUN_1403c1fd0, FUN_1403bd3d0(game)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run."
+name = "AbilityPressWindowEnded"
+
+["0x1403bdea0"]
+statement = "The threshold press on release (hold off) of a PressHold, RapidTap or ChargeRelease ability. It returns without sending or showing anything when the spell id is 0, the spell has no record, its method is not one of the three, it has no Spell4Base, no ability bag item holds that base, or the spell it resolves to (through the player's spell override and an open threshold that names it as the second spell) has no record. A RapidTap spell goes straight to 0x1403be120. A PressHold one with useButtonDownForAbilities off returns while a live cast of the player's is in a state the check names; a ChargeRelease or PressHold one with no open threshold under useButtonDownForAbilities off goes to 0x1403bdb90, and with it on (or a threshold open) to 0x1403be120."
+proof = "Saved C 0x1403bdea0.c (hash 8eb22adb6de47956): FUN_1405a5b90 / FUN_1407a0fd0 spell lookup; record 0x18 (method) in {2, 6, 7} and record 4 (base) non-zero; bag item 0x40 == base; override vtable 0x18 at game 0x6d90; FUN_1403d3520; FUN_1403c0190 (threshold by second spell); FUN_1403acd90 null -> return; method 2 with 0x140c45e90 off walks unit 0x1608 casts; method 6 -> LAB_1403be0f2 FUN_1403be120; method 7 or 2: FUN_1403bf980 (open threshold) == 0 and 0x140c45e90 off -> FUN_1403bdb90."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. 0x1403bdb90 and the PressHold live-cast test (0x140195f70) are not read; neither is on Shred's path."
+name = "ThresholdPressOnRelease"
+
+["0x1403be120"]
+statement = "Casts the threshold stage a release names. Same silent returns as 0x1403bdea0 (no spell record, no Spell4Base, no bag item, no record for the resolved spell). For RapidTap it calls CastAbilityBagSpell with the ability's bag index (fourth argument 0, so 0x9a is sent); the stage is resolved inside it (ResolveThresholdSpell). A refusal other than 317 is logged and shown by ReportCastFailure, unless 'Hold to continue casting' is on and the button is held (state 2), when it is hidden. PressHold releases the threshold (0x1403bef30) and ChargeRelease stops its timers first."
+proof = "Saved C 0x1403be120.c (hash 49fd5a78aaad3411): lookups as 0x1403bdea0; method 2 -> FUN_14039cc30 cancel of the 0x1588 entry's cast and FUN_1403bef30(game, spell, 0); method 7 -> FUN_1403d5fd0 on game 0x15c0, FUN_1403bf400; CastAbilityBagSpell(game, item 0x24, 0, 0, 0, &out); 0 or 0x13d -> button casts' word 0x2c = 1, FUN_1405caa50; else FUN_1403b5250 + FUN_1400035b0(0x18, 3, ...) log, then when setting 0x140c45e50 is off or button vtable 0xa8 != 2: button 0x148 = 1, FUN_1403a12a0(game, result, spell, 0)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run."
+name = "CastThresholdStageOnRelease"
+
+["0x1403f7580"]
+statement = "Runs when the 'Hold to continue casting' setting (spell.holdToContinueCasting) changes: sets or clears input flag 8, sends 0x12b with the flags, and sets 'Use button down for abilities' (spell.useButtonDownForAbilities) to the same value, which runs that setting's own handler. So unticking Hold to continue casting turns off button-down casting too, and a 0x9a's press bit is then always 1. When turned off it also empties the held-ability list (game 0x6368)."
+proof = "Listing: 0x1403f759d or dword [rcx+0x7ba0], 8 / 0x1403f75a6 and dword [rcx+0x7ba0], -9; 0x1403f75b4 mov edx, 0x12b; 0x1403f75cc call 0x1403f4900 (SendWorldMessage); 0x1403f75d8 mov edx, [0x140c45e80]; 0x1403f75de lea rcx, [0x140c45e70] (the useButtonDownForAbilities setting, registered in 0x14093dee0); 0x1403f75e5 movzx r8d, bl (the new value); 0x1403f75ee call SetBoolSetting 0x14001a6c0, which calls the setting's handler at object + 0x38 (0x140c45ea8 = 0x1403f7480) when the value changes; 0x1403f7628 mov qword [rax+0x6370], 0. Registered as the handler at 0x140c45e68 by 0x14093dfe0 (spell.holdToContinueCasting, values at 0x140c45e50, default 1)."
+grade = "sure"
+name = "OnHoldToContinueCastingChanged"
+
+["0x1403f7480"]
+statement = "Runs when 'Use button down for abilities' changes: on, sets input flag 2; off, clears flag 2 and turns 'Hold to continue casting' off. Either way sends 0x12b with the flags. Options.lua keeps the two consistent from the other side: ticking Hold to continue casting ticks Use button down."
+proof = "Saved C 0x1403f7480.c (hash 8eb22adb6de47956): param_2 0 -> flags 0x7ba0 & ~2 and SetBoolSetting(0x140c45e30 (holdToContinueCasting), index, 0); else | 2; SendWorldMessage(game, 299, flags). Registered at 0x140c45ea8 by 0x14093dee0. Options.lua lines 837-838 (wndSubControl, wndRequiredControl) and 1985-1993."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run."
+name = "OnUseButtonDownChanged"
+
+["0x1404da740"]
+statement = "A limited action set key's down or up. It passes state 1 (down) or 0 (up) to the slot's shortcut. With 'Hold to continue casting' off, a down also starts a one-time timer of GameFormula 493's dataint0 (250 ms; 250 with no row) that passes state 2 (held) to the shortcut; every key event first stops that timer, so a tap released within 250 ms gives only states 1 and 0, and a longer hold gives 1, 2, then 0. With the setting on, state 2 follows the down at once."
+proof = "Saved C 0x1404da740.c (hash 8eb22adb6de47956): FUN_140195d70(game 0x14a0) stops the timer; shortcut vtable 0x40(shortcut, param_3 != 0); param_3 != 0 and setting 0x140c45e50 off -> FUN_140195960(game 0x14a0, DAT_140c65904, {1, ...}, 4) with callback FUN_1404da870, which calls vtable 0x40(shortcut, 2); setting on -> FUN_1404da870 at once. DAT_140c65904 set in 0x1404d6e30: FUN_140200220(0x1ed) word 4, else 0xfa. Row: `gleam run -m genesis_prime/table_rows -- GameFormula 493` gives dataint0 = 250."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. That the timer's first word 1 means one-shot is not read; a repeat would only resend state 2."
+name = "LimitedActionSetKey"
+
+["0x1405c9900"]
+statement = "An ability shortcut's input, by state. State 2 (held): sets the held spell (game 0x6364), validates with CastAbilityBagSpell (fourth argument 1, no send) and on a pass runs AbilityPressHold, else shows the refusal. State 0 (released): with 'Hold to continue casting' off, or when the state before was not 2, runs AbilityCastOnRelease (0x1403bd6d0); then clears the held spell. State 3: for a method other than PressHold, RapidTap or ChargeRelease, clears the held spell and, with the setting on, sends the hold release. State 1 (down): nothing."
+proof = "Saved C 0x1405c9900.c (hash 49fd5a78aaad3411): shortcut 0x118 = Spell4Base id; state 3 branch; state 2: game 0x6364 = spell id, CastAbilityBagSpell(game, item 0x24, shortcut 0x120, 1, 0, 0), 0 or 0x13d -> FUN_1403bd3d0, else FUN_1403a12a0; state 0: 0x1403d8c10 == 0 and setting 0x140c45e50 on and previous state (0x110) == 2 -> FUN_1403bd8b0, else FUN_1403bd6d0; game 0x6364 = 0; shortcut 0x110 = state."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. That a fourth argument of 1 makes CastAbilityBagSpell validate without sending is from an earlier decode of the cast path, not reread here."
+name = "AbilityShortcutInput"
+
+["GameFormula.1138"]
+statement = "The ability press window, dataint0 milliseconds: 200. A second release of the same ability within it sends nothing and shows nothing (0x1403a1630)."
+proof = "`gleam run -m genesis_prime/table_rows -- GameFormula 1138`: dataint0 = 200. Read by 0x1403a1630 as word 4 of FUN_140200220(0x472), 150 when the row is missing."
+grade = "sure"
+
+["GameFormula.493"]
+statement = "How long an action key must stay down, dataint0 milliseconds (250), before the client treats it as held (state 2) while 'Hold to continue casting' is off (0x1404da740)."
+proof = "`gleam run -m genesis_prime/table_rows -- GameFormula 493`: dataint0 = 250. Read in 0x1404d6e30 as word 4 of FUN_140200220(0x1ed) into DAT_140c65904, 0xfa when the row is missing."
+grade = "sure"

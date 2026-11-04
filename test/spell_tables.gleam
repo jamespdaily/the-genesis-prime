@@ -36,7 +36,9 @@
 ////   their Spell4 rows; Discharge proxies 80382 in every phase.
 //// - Shred 38765, Relentless Strikes 32078 and Rampage 58524: RapidTap with a
 ////   thresholdTime of 4000 and the stages of Spell4Thresholds 238, 9 and 10,
-////   1073 to 1075.
+////   1073 to 1075. Shred's two Proxies, 38767 and 39467, each hold one Physical
+////   damage effect aimed at the area (Spell4Effects 83788 and 86439: parameters
+////   12 0.0967 and 10 4.22).
 //// - Charged Shot 34718: ChargeRelease with a thresholdTime of 8200 and the stages
 ////   of Spell4Thresholds 125, 123 and 124.
 
@@ -817,7 +819,7 @@ pub fn rows() -> Rows {
         kind: 3,
         global: 100,
         cost: #(0, 0),
-        more: [],
+        more: [#("spell4AoeTargetConstraintsId", 694)],
       ),
       method_spell_row(
         id: 39_467,
@@ -827,7 +829,7 @@ pub fn rows() -> Rows {
         kind: 3,
         global: 100,
         cost: #(0, 0),
-        more: [],
+        more: [#("spell4AoeTargetConstraintsId", 694)],
       ),
       method_spell_row(
         id: 70_033,
@@ -981,6 +983,24 @@ pub fn rows() -> Rows {
         delay: 0,
         multiplier_bits: 1_065_353_216,
         parameters: [#(12, 0.335999995470047), #(10, 18.0)],
+      ),
+      damage_effect_row(
+        id: 83_788,
+        spell: 38_767,
+        damage_type: 1,
+        target_flags: 4,
+        delay: 0,
+        multiplier_bits: 1_065_353_216,
+        parameters: [#(12, 0.09669999778270721), #(10, 4.21999979019165)],
+      ),
+      damage_effect_row(
+        id: 86_439,
+        spell: 39_467,
+        damage_type: 1,
+        target_flags: 4,
+        delay: 0,
+        multiplier_bits: 1_065_353_216,
+        parameters: [#(12, 0.09669999778270721), #(10, 4.21999979019165)],
       ),
       effect_row(
         id: 62_204,

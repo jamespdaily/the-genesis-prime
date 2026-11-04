@@ -27,8 +27,8 @@
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`).
 //// - **Which spells** are read: the spells of each level-1 ability's tree
-////   (genesis_prime/game/spell_plan), a Proxy behind a prerequisite excepted, since it
-////   is never started. A spell with no area row selects nobody.
+////   (genesis_prime/game/spell_plan), its threshold stages (Spell4Thresholds) included,
+////   a Proxy behind a prerequisite excepted, since it is never started. A spell with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
 ////   `targetSelection` other than 1; a valid-targets bitmask other than 0 on a spell
 ////   with an area row; a hit row placed on any unit but the caster (`targetTypeFlags`
@@ -246,19 +246,20 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   })
 }
 
-/// The spell and every spell its Proxies start, below it: a Proxy behind a prerequisite
+/// The spell, the stage spells a RapidTap or ChargeRelease ability casts and every
+/// spell the Proxies of any of them start, below them: a Proxy behind a prerequisite
 /// is never started (genesis_prime/game/spell_plan `NeedsPrerequisite`), so its spell
 /// is not read.
 fn spells_of_tree(spell: Spell) -> List(Spell) {
-  [
-    spell,
-    ..list.flat_map(spell.proxies, fn(proxy) {
+  let stages = list.map(spell.stages, fn(stage) { stage.spell })
+  let proxied =
+    list.filter_map(spell.proxies, fn(proxy) {
       case proxy.condition {
-        spell_plan.Always -> spells_of_tree(proxy.spell)
-        spell_plan.NeedsPrerequisite(..) -> []
+        spell_plan.Always -> Ok(proxy.spell)
+        spell_plan.NeedsPrerequisite(..) -> Error(Nil)
       }
     })
-  ]
+  [spell, ..list.flat_map(list.append(stages, proxied), spells_of_tree)]
 }
 
 /// The Spell4Telegraph rows of each spell, in table order, grouped once.
