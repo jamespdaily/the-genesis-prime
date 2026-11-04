@@ -222,7 +222,7 @@
 import genesis_prime/connection/frame
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/script.{
-  type Cancel, type Elapsed, type Issued, type Script, type Scripts,
+  type Elapsed, type Issued, type Script, type Scripts,
 }
 import genesis_prime/seed
 import genesis_prime/service.{type Sent}
@@ -235,6 +235,7 @@ import genesis_prime/step.{
   Stopping, Write, WriteFailed,
 }
 import genesis_prime/step/runtime
+import genesis_prime/step/timer as timer_book
 import genesis_prime/step/watch.{type Watches}
 import genesis_prime/wire_recording.{type Side}
 import genesis_prime/wire_recording/recorder.{
@@ -339,13 +340,6 @@ type Mail(message, answer) {
   Stray(message: Dynamic)
 }
 
-/// A timer the shell started through its script's scheduler: how to cancel it,
-/// and the reference its message carries, which tells its timeout from a stale
-/// one of an earlier timer of the same id.
-type Started {
-  Started(cancel: Cancel, reference: Reference)
-}
-
 /// How an ask's wait ended.
 type Waited(answer) {
   Replied(answer: answer)
@@ -381,7 +375,7 @@ type Running(state, request) {
     /// The watches the rule has open, which keep the way to tell each process
     /// a watch found until the watch ends or is dropped.
     watches: Watches(fn(request) -> Nil),
-    timers: Dict(TimerId, Started),
+    timers: timer_book.Timers,
     stopping: Option(Int),
     /// The side the recording's closing line names: the client once the shell
     /// has taken the socket's close, the server until then. The rule may ask
@@ -684,7 +678,7 @@ fn accepted(
       reading: TakeWhatArrives,
       kept: dict.new(),
       watches: watch.new(),
-      timers: dict.new(),
+      timers: timer_book.new(),
       stopping: None,
       closed_by: wire_recording.Server,
     ),
@@ -1190,6 +1184,7 @@ fn tell(
     | step.Store
     | step.Maps
     | step.Map(..)
+    | step.Creature(..)
     | step.CharacterNamed(..) ->
       case watch.sender_at(watches: running.watches, address: to) {
         Ok(sender) -> sender(request)
@@ -1211,8 +1206,13 @@ fn start_timer(
   timer timer: TimerId,
   after_ms after_ms: Int,
 ) -> Running(state, request) {
-  case dict.has_key(running.timers, timer) {
-    True -> {
+  let started =
+    timer_book.start(timers: running.timers, timer:, schedule: fn(reference) {
+      running.script.schedule(connection.timers, timer, reference, after_ms)
+    })
+  case started {
+    Ok(timers) -> Running(..running, timers:)
+    Error(Nil) -> {
       runtime.log(
         LogError,
         "a rule started a timer whose id is already running, which the connection shell does not carry out",
@@ -1220,15 +1220,6 @@ fn start_timer(
       )
       close(running.socket)
       panic as "a rule started a timer whose id is already running"
-    }
-    False -> {
-      let reference = reference.new()
-      let cancel =
-        running.script.schedule(connection.timers, timer, reference, after_ms)
-      Running(
-        ..running,
-        timers: dict.insert(running.timers, timer, Started(cancel:, reference:)),
-      )
     }
   }
 }
@@ -1239,13 +1230,7 @@ fn cancel_timer(
   running running: Running(state, request),
   timer timer: TimerId,
 ) -> Running(state, request) {
-  case dict.get(running.timers, timer) {
-    Ok(Started(cancel:, ..)) -> {
-      cancel()
-      Running(..running, timers: dict.delete(running.timers, timer))
-    }
-    Error(Nil) -> running
-  }
+  Running(..running, timers: timer_book.cancel(timers: running.timers, timer:))
 }
 
 /// What the shell does after a step's effects. A step that ends in an ask
@@ -1560,14 +1545,14 @@ fn timer_elapsed(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  case dict.get(running.timers, timer) {
-    Ok(Started(reference: current, ..)) if current == reference ->
+  case timer_book.fired(timers: running.timers, timer:, reference:) {
+    Ok(timers) ->
       take_next(
         connection:,
-        running: Running(..running, timers: dict.delete(running.timers, timer)),
+        running: Running(..running, timers:),
         event: OwnEvent(step.TimerFired(timer:)),
       )
-    Ok(Started(..)) | Error(Nil) -> keep_open(connection:, running:)
+    Error(Nil) -> keep_open(connection:, running:)
   }
 }
 

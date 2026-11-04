@@ -56,6 +56,7 @@ import genesis_prime/message/unit_position_command.{
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
 import genesis_prime/store.{type Character, CharacterId}
+import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
@@ -64,20 +65,6 @@ import gleam/option.{None, Some}
 /// Every player's health: the client's level-1 creature Base Health
 /// (0x1404585c0), which stands in for a health no table gives.
 pub const stand_in_health = 136
-
-/// The stat the client keeps a unit's health in (0x140458140).
-const health_stat = 0
-
-/// The stat the client keeps a unit's level in (0x140458140); a unit created
-/// without it is level 1 (0x1404543c1).
-const level_stat = 10
-
-/// The stat the client keeps a unit's current shield in (0x140458140).
-const shield_stat = 20
-
-/// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
-/// (0x1404584b0).
-const base_health_property = 7
 
 /// A player's unit in a map: the character as the unit `unit_id`, placed at
 /// `place` with the body `visuals`. Only `new` builds one, so a unit always
@@ -174,38 +161,26 @@ pub fn create(
     pvp_flags: 0,
     premium_tier: 0,
     title_id: 0,
-    tail: UnitCreateTail(
-      create_flags: 0,
+    tail: unit_fields.tail(
       stats: [
-        UnitStat(stat_id: health_stat, value: stand_in_health),
-        UnitStat(stat_id: level_stat, value: character.level),
+        UnitStat(stat_id: unit_fields.health_stat, value: stand_in_health),
+        UnitStat(stat_id: unit_fields.level_stat, value: character.level),
       ],
-      server_time_estimate_start: 0,
       movement_commands: {
         let #(position, rotation) = standing(place:)
         [start_movement.Position(position), start_movement.Rotation(rotation)]
       },
       properties: [
         UnitProperty(
-          property_id: base_health_property,
+          property_id: unit_fields.base_health_property,
           field_2: health,
           value: health,
         ),
       ],
       item_visuals: visuals,
-      cast_id: 0,
       faction_id: character.faction_id,
-      base_faction_id: character.faction_id,
-      tagged_by_unit_id: 0,
-      tagged_by_group_id: 0,
-      field_14: 0,
-      field_16: 0,
-      world_socket_id: 0,
-      cluster_id: 0,
-      field_20: 0,
-      minimap_marker_id: 0,
       display_info_id: 0,
-      outfit_info_id: 0,
+      server_time_estimate_start: 0,
     ),
   )
 }
@@ -228,7 +203,10 @@ pub fn with_gear(
   let tail = record.tail
   let shield_stats = case gear.shield {
     Some(Shield(capacity_max:, ..)) -> [
-      UnitStat(stat_id: shield_stat, value: float.round(capacity_max)),
+      UnitStat(
+        stat_id: unit_fields.shield_stat,
+        value: float.round(capacity_max),
+      ),
     ]
     None -> []
   }
@@ -244,7 +222,7 @@ pub fn with_gear(
   let properties =
     list.flatten([
       [
-        #(base_health_property, int.to_float(max_health)),
+        #(unit_fields.base_health_property, int.to_float(max_health)),
         #(35, gear.assault_rating),
         #(36, gear.support_rating),
         #(42, gear.armor),
@@ -262,8 +240,8 @@ pub fn with_gear(
       ..tail,
       stats: list.flatten([
         [
-          UnitStat(stat_id: health_stat, value: max_health),
-          UnitStat(stat_id: level_stat, value: level_of(tail.stats)),
+          UnitStat(stat_id: unit_fields.health_stat, value: max_health),
+          UnitStat(stat_id: unit_fields.level_stat, value: level_of(tail.stats)),
         ],
         shield_stats,
       ]),
@@ -274,7 +252,7 @@ pub fn with_gear(
 
 /// The level among a unit's stats; a unit with none is level 1 (0x1404543c1).
 fn level_of(stats: List(UnitStat)) -> Int {
-  case list.find(stats, fn(stat) { stat.stat_id == level_stat }) {
+  case list.find(stats, fn(stat) { stat.stat_id == unit_fields.level_stat }) {
     Ok(stat) -> stat.value
     Error(Nil) -> 1
   }

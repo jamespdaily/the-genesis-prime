@@ -34,6 +34,7 @@ import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
@@ -379,8 +380,9 @@ pub fn pong_among_messages(
 pub type Others =
   Dict(Int, #(Float, Float, Float))
 
-/// What the client's view of other players holds after a message of the server:
-/// 0x262 creates a unit at its first kind 2 position (0x1404586e0), 0x638 moves
+/// What the client's view of other units holds after a message of the server:
+/// 0x262, of a player or of a creature, creates a unit at its first kind 2
+/// position (0x1404586e0), 0x638 moves
 /// the unit it names to each kind 2 position it carries, in order, so the last
 /// is where it stands (0x140787150), a 0x638 for a unit the client does not hold
 /// is dropped, as the client logs it and goes on (opcode.0x638), and 0x355
@@ -396,9 +398,60 @@ pub fn observe(others others: Others, frame frame: Frame) -> Others {
   }
 }
 
+/// The unit a 0x262 creates: a player's, or a creature's.
+pub type Created {
+  PlayerCreated(unit: UnitCreatePlayer)
+  CreatureCreated(unit: UnitCreateCreature)
+}
+
+/// The unit the body of a 0x262 creates: a player's when the body reads as one,
+/// else a creature's (the type is in the body, `opcode.0x262`), or `Error(Nil)`
+/// for a body that is neither.
+pub fn created_unit(body body: BitArray) -> Result(Created, Nil) {
+  unit_create_player.decode(body)
+  |> result.map(PlayerCreated)
+  |> result.lazy_or(fn() {
+    unit_create_creature.decode(body) |> result.map(CreatureCreated)
+  })
+  |> result.replace_error(Nil)
+}
+
 fn created(others others: Others, body body: BitArray) -> Others {
-  let assert Ok(unit) = unit_create_player.decode(body) as "0x0262 decodes"
-  dict.insert(others, unit.unit_id, placed_at(unit:))
+  let assert Ok(unit) = created_unit(body:)
+    as "0x0262 decodes as a player's or a creature's"
+  case unit {
+    PlayerCreated(unit:) -> dict.insert(others, unit.unit_id, placed_at(unit:))
+    CreatureCreated(unit:) ->
+      dict.insert(others, unit.unit_id, placed_creature_at(creature: unit))
+  }
+}
+
+/// Where a creature's 0x262 places its unit: the kind 2 command that is the first
+/// of its commands (0x1404586e0).
+fn placed_creature_at(
+  creature creature: UnitCreateCreature,
+) -> #(Float, Float, Float) {
+  let assert [start_movement.Position(placed), ..] =
+    creature.tail.movement_commands
+    as "0x0262 places the unit with a kind 2 command first"
+  standing(placed)
+}
+
+/// The creatures the 0x262 among the messages create, in the order sent: a 0x262
+/// that is a player's is left out.
+pub fn creatures_created_in(
+  frames frames: List(Frame),
+) -> List(UnitCreateCreature) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0262 ->
+        case created_unit(body: frame.body) {
+          Ok(CreatureCreated(unit:)) -> Ok(unit)
+          Ok(PlayerCreated(..)) | Error(Nil) -> Error(Nil)
+        }
+      _ -> Error(Nil)
+    }
+  })
 }
 
 /// Where a 0x262 places its unit: the kind 2 command that is the first of its

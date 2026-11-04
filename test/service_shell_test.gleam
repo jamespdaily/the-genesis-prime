@@ -230,13 +230,17 @@ pub fn a_send_is_handed_to_the_receivers_address_and_one_to_a_receiver_not_runni
   let sent = process.new_subject()
   let running = Connection(ConnectionId(1))
   let reach =
-    service.Reach(locate: fn(_address) { Error(Nil) }, send: fn(to, message) {
-      process.send(sent, #(to, message))
-      case to == running {
-        True -> Ok(Nil)
-        False -> Error(Nil)
-      }
-    })
+    service.Reach(
+      locate: fn(_address) { Error(Nil) },
+      send: fn(to, message) {
+        process.send(sent, #(to, message))
+        case to == running {
+          True -> Ok(Nil)
+          False -> Error(Nil)
+        }
+      },
+      start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
+    )
   let gate = process.new_name("gate")
   let tree =
     start_tree(ask_support.reaching(name: gate, shutdown_ms: 1000, reach:))
@@ -434,6 +438,7 @@ fn watching(
         }
       },
       send: fn(_to, _message) { Error(Nil) },
+      start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
     ),
   )
 }
@@ -477,6 +482,7 @@ fn hand_off_child(
       },
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
       shutdown_ms:,
+      told_through: None,
     ),
   )
 }
@@ -501,6 +507,7 @@ fn unnamed_hand_off() -> service_shell.Settings(
     rule: hand_off.rule(),
     reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 1000,
+    told_through: None,
   )
 }
 

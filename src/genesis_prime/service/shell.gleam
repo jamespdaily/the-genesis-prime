@@ -15,10 +15,13 @@
 //// supervisor starts it ─▶ the actor registers its name, traps exits
 ////   OwnEvent(Started)                               ─▶ step ─▶ effects
 ////   after each step's effects, before the mailbox is read:
+////     a creature that did not start ─▶ OwnEvent(CreatureNotStarted(id, reason)) ─▶ step ─▶ effects
 ////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
 ////   loop:
 ////     Call(message, reply)  ─▶ OwnEvent(Asked(CallerId(n), message)) ─▶ step ─▶ effects
 ////     TellCall(message)     ─▶ OwnEvent(Told(message))                 ─▶ step ─▶ effects
+////       (sent to the subject, or through the settings' scope: `group_registry`)
+////     a timer's firing      ─▶ OwnEvent(ServiceTimerFired(id))        ─▶ step ─▶ effects
 ////     a watched process's DOWN ─▶ WatchEnded(id)           ─▶ step ─▶ effects
 ////     the parent's exit     ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
 ////   Reply(CallerId(n), answer): the shell calls that call's reply with the
@@ -87,26 +90,51 @@
 ////   service has no watches, and a rule that needs one opens it again from
 ////   what it learns of its processes (Sessions has none to open: the
 ////   connections claim again).
+//// - **StartCreature.** `StartCreature(watch, creature)` has the settings'
+////   `reach` start the creature, which returns once the creature runs and is found
+////   at its address (genesis_prime/world_map/creature_supervisor); the shell then
+////   opens the watch on that address as `Watch` does. A creature that did not
+////   start opens no watch: the shell keeps its watch and the supervisor's reason,
+////   and takes `CreatureNotStarted(watch, reason)` as the next input once the
+////   step's effects are carried out, in the order named, before any
+////   `WatchEnded` the step's watches held to end give.
+//// - **Timers.** `StartServiceTimer(id, ms)` starts the operating system's timer
+////   (`script.operating_system_timer`), kept under `id` with the reference its
+////   firing carries (genesis_prime/step/timer); the firing comes back once as
+////   `ServiceTimerFired(id)`, and the shell forgets the timer. `CancelServiceTimer(id)`
+////   cancels it, so no firing follows: a firing whose reference is not the
+////   current timer's of that id, such as a cancelled timer's, is dropped. An id
+////   already running ends the process with an error log. A timer lives in the
+////   process: a restarted service has none, and a rule that needs one starts it
+////   again.
 //// - **Effects and inputs of the other kind.** A service's own effects are
-////   `Reply` and `Send`, and its own inputs are `Started`, `Asked` and `Told`
+////   `Reply`, `Send`, `StartCreature` and the timers, and its own inputs are
+////   `Started`, `Asked`, `Told`, `ServiceTimerFired` and `CreatureNotStarted`
 ////   (`ServiceEffect` and `ServiceEvent`). It has no `Write`, `StartTimer` or
-////   `CancelTimer`, and takes no `Woken`, `TimerFired` or `Answered`, so a rule
-////   that writes to a socket, starts a timer or takes those inputs does not
-////   compile against this shell. It makes no ask: its request type, `NoAsk`,
+////   `CancelTimer`, and takes no `Woken`, `TimerFired` or `Answered`, which are a
+////   connection's, so a rule that writes to a socket or takes those inputs does
+////   not compile against this shell. It makes no ask: its request type, `NoAsk`,
 ////   has no values, so no rule can build a step that ends in one; the shell's
 ////   case for such a step is unreachable.
 
+import genesis_prime/connection/script.{type Elapsed}
+import genesis_prime/group_registry.{type Scope}
 import genesis_prime/service.{type Call, type Reach, Call, TellCall}
 import genesis_prime/step.{
-  type Effect, type Event, type ServiceEffect, type ServiceEvent,
-  type ServiceRule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
-  Input, OwnEffect, OwnEvent, Reply, Send, Started, Stopping, Told, WatchEnded,
+  type CreatureStart, type Effect, type Event, type ServiceEffect,
+  type ServiceEvent, type ServiceRule, type TimerId, type WatchId, Asked,
+  CallerId, CancelServiceTimer, CreatureNotStarted, Effects, EffectsThenAsk,
+  Input, LogError, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired,
+  StartCreature, StartServiceTimer, Started, Stopping, Told, WatchEnded,
 }
 import genesis_prime/step/runtime.{Shutdown}
+import genesis_prime/step/timer as timer_book
 import genesis_prime/step/watch.{type Watches}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
+import gleam/erlang/reference.{type Reference}
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -123,13 +151,22 @@ pub type Settings(settings, state, message, outgoing) {
     /// How long it has to stop once the supervisor stops it; the child's
     /// shutdown timeout.
     shutdown_ms: Int,
+    /// The scope a process that finds it by an address tells it through
+    /// (genesis_prime/group_registry), or `None` for a service told only by its
+    /// subject.
+    told_through: Option(Scope(Call(message, outgoing))),
   )
 }
 
-/// What reaches the actor: a call, an exit signal it traps, the end of a
-/// process it watches, or a message it does not take.
+/// What reaches the actor: a call, an exit signal it traps, a timer's firing,
+/// the end of a process it watches, or a message it does not take.
 type Mail(message, outgoing) {
+  /// A call sent through the service's subject, or a tell sent through its
+  /// scope (`group_registry.deliver_one`).
   Called(call: Call(message, outgoing))
+  /// A timer fired: its id and the reference of the start it came from
+  /// (`script.Elapsed`).
+  TimerElapsed(timer: TimerId, reference: Reference)
   Exited(exit: process.ExitMessage)
   /// The end of a process the rule watches, by its monitor.
   Ended(down: process.Down)
@@ -138,8 +175,10 @@ type Mail(message, outgoing) {
 }
 
 /// A running service: its settings, its parent, the rule's state, the calls
-/// not yet answered by the number the shell gave each, and the monitor of each
-/// watch the rule has open.
+/// not yet answered by the number the shell gave each, the monitor of each
+/// watch the rule has open, the timers it has running with the subject their
+/// firings arrive on, and the creatures that did not start in the step being
+/// carried out, each with the watch it was to be under, in the order named.
 type Running(settings, state, message, outgoing) {
   Running(
     settings: Settings(settings, state, message, outgoing),
@@ -148,6 +187,9 @@ type Running(settings, state, message, outgoing) {
     callers: Dict(Int, fn(outgoing) -> Nil),
     next_caller: Int,
     watches: Watches(Nil),
+    timers: timer_book.Timers,
+    elapsed: Subject(Elapsed),
+    unstarted: List(#(WatchId, String)),
   )
 }
 
@@ -192,6 +234,18 @@ fn start(
   |> actor.start
 }
 
+/// The selector with what is told through the scope added, when the service has
+/// one.
+fn select_told(
+  selector selector: process.Selector(Mail(message, outgoing)),
+  scope scope: Option(Scope(Call(message, outgoing))),
+) -> process.Selector(Mail(message, outgoing)) {
+  case scope {
+    Some(scope) -> group_registry.select_delivered(scope, selector, Called)
+    None -> selector
+  }
+}
+
 /// Registers the name (a named service) or makes the subject its callers send
 /// to (an unnamed one), traps exits and takes `Started`.
 fn initialise(
@@ -214,6 +268,7 @@ fn initialise(
     None -> Ok(process.new_subject())
   })
   process.trap_exits(True)
+  let elapsed = process.new_subject()
   let rule = settings.rule
   let running =
     take(
@@ -224,6 +279,9 @@ fn initialise(
         callers: dict.new(),
         next_caller: 1,
         watches: watch.new(),
+        timers: timer_book.new(),
+        elapsed:,
+        unstarted: [],
       ),
       now: runtime.now(),
       event: OwnEvent(Started),
@@ -232,6 +290,10 @@ fn initialise(
     process.new_selector()
     |> process.select_other(Stray)
     |> process.select_map(calls, Called)
+    |> select_told(scope: settings.told_through)
+    |> process.select_map(elapsed, fn(fired) {
+      TimerElapsed(timer: fired.timer, reference: fired.reference)
+    })
     |> process.select_trapped_exits(Exited)
     |> process.select_monitors(Ended)
   Ok(
@@ -269,6 +331,16 @@ fn handle(
         now: runtime.now(),
         event: OwnEvent(Told(message:)),
       ))
+    TimerElapsed(timer:, reference:) ->
+      case timer_book.fired(timers: running.timers, timer:, reference:) {
+        Ok(timers) ->
+          actor.continue(take(
+            running: Running(..running, timers:),
+            now: runtime.now(),
+            event: OwnEvent(ServiceTimerFired(timer:)),
+          ))
+        Error(Nil) -> actor.continue(running)
+      }
     Ended(down:) -> actor.continue(watch_ended(running:, down:))
     Stray(message:) -> {
       runtime.log_stray(message:, shell: "service shell")
@@ -292,9 +364,10 @@ fn handle(
 }
 
 /// Folds one input through the rule, then carries out the step.
-/// The end of each watch of a target no process holds that the step opened is
-/// then taken as the next input, in the order opened, before the mailbox is
-/// read.
+/// Each creature the step named that did not start is then taken as
+/// `CreatureNotStarted`, in the order named, and the end of each watch of a
+/// target no process holds that the step opened as `WatchEnded`, in the order
+/// opened, each as the next input before the mailbox is read.
 fn take(
   running running: Running(settings, state, message, outgoing),
   now now: step.Now,
@@ -308,14 +381,23 @@ fn take(
     EffectsThenAsk(..) ->
       panic as "a service step ended in an ask, which its request type has no value for"
   }
-  case watch.next_unheld_end(running.watches) {
-    Ok(#(watch, watches)) ->
+  case running.unstarted {
+    [#(watch, reason), ..later] ->
       take(
-        running: Running(..running, watches:),
+        running: Running(..running, unstarted: later),
         now: runtime.now(),
-        event: WatchEnded(watch:),
+        event: OwnEvent(CreatureNotStarted(watch:, reason:)),
       )
-    Error(Nil) -> running
+    [] ->
+      case watch.next_unheld_end(running.watches) {
+        Ok(#(watch, watches)) ->
+          take(
+            running: Running(..running, watches:),
+            now: runtime.now(),
+            event: WatchEnded(watch:),
+          )
+        Error(Nil) -> running
+      }
   }
 }
 
@@ -361,6 +443,27 @@ fn carry(
             effects: later,
             ending:,
           )
+        OwnEffect(StartServiceTimer(timer:, after_ms:)) ->
+          carry(
+            running: start_timer(running:, timer:, after_ms:),
+            effects: later,
+            ending:,
+          )
+        OwnEffect(CancelServiceTimer(timer:)) ->
+          carry(
+            running: Running(
+              ..running,
+              timers: timer_book.cancel(timers: running.timers, timer:),
+            ),
+            effects: later,
+            ending:,
+          )
+        OwnEffect(StartCreature(watch:, creature:)) ->
+          carry(
+            running: start_creature(running:, watch:, creature:),
+            effects: later,
+            ending:,
+          )
         step.Watch(watch:, target:) ->
           carry(
             running: open_watch(running:, watch:, target:),
@@ -382,6 +485,64 @@ fn deliver(
 ) -> Running(settings, state, message, outgoing) {
   let _delivered = running.settings.reach.send(to, message)
   running
+}
+
+/// Starts the timer the rule named, whose firing arrives with a reference of its
+/// own; an id already running is a bug, and ends the process.
+fn start_timer(
+  running running: Running(settings, state, message, outgoing),
+  timer timer: TimerId,
+  after_ms after_ms: Int,
+) -> Running(settings, state, message, outgoing) {
+  let started =
+    timer_book.start(timers: running.timers, timer:, schedule: fn(reference) {
+      script.operating_system_timer(
+        subject: running.elapsed,
+        timer:,
+        reference:,
+        after_ms:,
+      )
+    })
+  case started {
+    Ok(timers) -> Running(..running, timers:)
+    Error(Nil) -> {
+      runtime.log(
+        LogError,
+        "a rule started a timer whose id is already running, which the service shell does not carry out",
+        step.no_one,
+      )
+      panic as "a rule started a timer whose id is already running"
+    }
+  }
+}
+
+/// Starts the creature through the settings' `reach`, and watches it under the
+/// rule's watch when it runs; one that did not start is kept to be given to the
+/// rule as `CreatureNotStarted` once the step's effects are carried out.
+fn start_creature(
+  running running: Running(settings, state, message, outgoing),
+  watch watch: WatchId,
+  creature creature: CreatureStart,
+) -> Running(settings, state, message, outgoing) {
+  case running.settings.reach.start_creature(creature) {
+    Ok(Nil) ->
+      open_watch(
+        running:,
+        watch:,
+        target: step.Creature(
+          map: creature.map,
+          incarnation: creature.incarnation,
+          unit_id: creature.unit_id,
+        ),
+      )
+    Error(error) ->
+      Running(
+        ..running,
+        unstarted: list.append(running.unstarted, [
+          #(watch, service.describe_start_child_error(error)),
+        ]),
+      )
+  }
 }
 
 /// Monitors the process at the address under the watch's id.

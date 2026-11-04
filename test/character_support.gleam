@@ -284,3 +284,26 @@ pub fn rename_result_in(frames: List(Frame)) -> RenameCharacterResult {
     as "0x014B decodes"
   result
 }
+
+/// Moves the stored character to the world and zone, at the position.
+pub fn move_to(
+  pool pool: pog.Connection,
+  character_id character_id: Int,
+  world_id world_id: Int,
+  world_zone_id world_zone_id: Int,
+  position position: #(Float, Float, Float),
+) -> Nil {
+  let assert Ok(_) =
+    pog.query(
+      "update character set world_id = $2, world_zone_id = $3, position_x = $4, position_y = $5, position_z = $6 where character_id = $1",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.parameter(pog.int(world_id))
+    |> pog.parameter(pog.int(world_zone_id))
+    |> pog.parameter(pog.float(position.0))
+    |> pog.parameter(pog.float(position.1))
+    |> pog.parameter(pog.float(position.2))
+    |> pog.execute(pool)
+    as "the character moved"
+  Nil
+}

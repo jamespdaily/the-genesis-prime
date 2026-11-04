@@ -376,14 +376,17 @@ fn gate_settings(
   gate_rule.Message,
   gate_rule.Answer,
 ) {
-  service_shell.Settings(rule: gate_as_rule(), reach:, shutdown_ms:)
+  service_shell.Settings(
+    rule: gate_as_rule(),
+    reach:,
+    shutdown_ms:,
+    told_through: None,
+  )
 }
 
 /// A reach that finds no process and sends to none.
 fn reaching_nothing() -> service.Reach(gate_rule.Answer) {
-  service.Reach(locate: fn(_address) { Error(Nil) }, send: fn(_to, _message) {
-    Error(Nil)
-  })
+  service.watch_only(locate: fn(_address) { Error(Nil) })
 }
 
 /// The gate's rule as its shell runs it.

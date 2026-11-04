@@ -44,6 +44,7 @@
 import genesis_prime/seed.{type Seed}
 import genesis_prime/step.{type Now, type TimerId}
 import genesis_prime/step/runtime
+import genesis_prime/step/timer
 import genesis_prime/wire_recording.{type Input}
 import gleam/erlang/process.{type Subject}
 import gleam/erlang/reference.{type Reference}
@@ -56,11 +57,6 @@ import gleam/option.{type Option, None}
 pub type Clock =
   fn(Input) -> Now
 
-/// Ends a timer that was started: a timeout already sent is discarded by the
-/// shell when it arrives, since no timer holds its reference.
-pub type Cancel =
-  fn() -> Nil
-
 /// A timer's firing, as the shell's own subject receives it: which timer, and
 /// the reference of the start it came from, which tells it from a stale firing
 /// of an earlier timer of the same id.
@@ -72,7 +68,7 @@ pub type Elapsed {
 /// sent to the subject. The server's scheduler is the operating system's timer;
 /// a replay's holds the timer until its client reaches the timer's line.
 pub type Scheduler =
-  fn(Subject(Elapsed), TimerId, Reference, Int) -> Cancel
+  fn(Subject(Elapsed), TimerId, Reference, Int) -> timer.Cancel
 
 /// How many bytes the next `Read` input holds, when the script fixes it: the
 /// server's script returns `None` and the shell takes what has arrived; a
@@ -132,12 +128,15 @@ pub fn operating_system() -> Result(Issued, Nil) {
   ))
 }
 
-fn operating_system_timer(
+/// The operating system's timer: after `after_ms`, `Elapsed(timer, reference)`
+/// is sent to the subject; the returned function cancels it. The server's
+/// scheduler for a connection, and every service shell's.
+pub fn operating_system_timer(
   subject subject: Subject(Elapsed),
   timer timer: TimerId,
   reference reference: Reference,
   after_ms after_ms: Int,
-) -> Cancel {
+) -> timer.Cancel {
   let started =
     process.send_after(subject, after_ms, Elapsed(timer:, reference:))
   fn() {

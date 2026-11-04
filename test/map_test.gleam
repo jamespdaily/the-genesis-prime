@@ -126,6 +126,9 @@ fn without_sends(
     case effect {
       OwnEffect(step.Send(..)) -> False
       OwnEffect(Reply(..))
+      | OwnEffect(step.StartCreature(..))
+      | OwnEffect(step.StartServiceTimer(..))
+      | OwnEffect(step.CancelServiceTimer(..))
       | step.Watch(..)
       | step.Unwatch(..)
       | step.Log(..)

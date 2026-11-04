@@ -27,6 +27,7 @@ import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
 import genesis_prime/store.{type Character}
+import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
@@ -58,6 +59,11 @@ fn start_world() -> World {
       map_supervisor: map_supervisor_name,
       maps_call_ms: 1000,
       map_shutdown_ms: 1000,
+      creatures: creature_registry.new(),
+      creature_supervisor: process.new_name("creature_supervisor"),
+      creature_shutdown_ms: 1000,
+      creature_restart_ms: 60_000,
+      spawns: [],
     )
   let tree =
     supervisor.new(supervisor.RestForOne)
@@ -70,6 +76,7 @@ fn start_world() -> World {
       realm_id: 1,
       tables: character_tables.shared(),
       reach: service.watch_only(locate: locate(scope, _)),
+      to_connection: fn(_connection, _news) { Error(Nil) },
     )
     |> supervisor.start
     as "the world tree started"
@@ -91,6 +98,7 @@ fn locate(scope: Registry(Nil), address: Address) -> Result(Pid, Nil) {
     | step.Store
     | step.Maps
     | step.Map(..)
+    | step.Creature(..)
     | step.CharacterNamed(..)
     | step.ZoneChannel(..) -> Error(Nil)
   }

@@ -243,6 +243,10 @@
 ////   shows no ghost. A message names the map and the run of the map it is about,
 ////   and one for another run or map is dropped: the unit id there may name
 ////   another unit.
+//// - **A creature's unit** reaches a viewer the same way, as news from the
+////   creature's own process (`CreatureAppeared`, then `Removed`), and is shown,
+////   removed and marked gone by the same rules: the viewer neither knows nor asks
+////   whose process owns a unit (genesis_prime/world_map/creature).
 //// - **Order.** For one viewer, an owner's 0x262, 0x638s and 0x355 are that
 ////   owner's messages only, which the BEAM delivers in the order sent (it orders
 ////   the signals of one sender to one receiver); the map's `Watched` and
@@ -330,6 +334,7 @@ import genesis_prime/message/game_hello_reply
 import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -1955,7 +1960,9 @@ fn viewer_takes(
   let unit_id = news.unit_id
   let shown = set.contains(entered.shown, unit_id)
   let creates_or_removes = case news.news {
-    client_connection.Appeared(..) | client_connection.Removed -> True
+    client_connection.Appeared(..)
+    | client_connection.CreatureAppeared(..)
+    | client_connection.Removed -> True
     client_connection.Moving(..) -> False
   }
   use <- bool.guard(
@@ -1964,7 +1971,7 @@ fn viewer_takes(
       log(
         session:,
         level: step.LogError,
-        text: "another player's connection sent a 0x262 or 0x355 naming unit "
+        text: "a unit's owner sent a 0x262 or 0x355 naming unit "
           <> int.to_string(unit_id)
           <> ", which is this player's own unit or none, so it is refused",
       ),
@@ -1978,6 +1985,15 @@ fn viewer_takes(
       )
       Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
         to_client(session, world_entry.unit_created_frame(unit:)),
+      ])
+    }
+    client_connection.CreatureAppeared(unit:) -> {
+      use <- bool.guard(
+        when: shown || set.contains(entered.gone, unit_id),
+        return: Continue(session, []),
+      )
+      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
+        to_client(session, creature_created_frame(unit:)),
       ])
     }
     client_connection.Moving(server_time_ms:, commands:) -> {
@@ -2156,7 +2172,15 @@ fn unit_moved_frame(
   Frame(message_id: unit_movement.message_id, body:)
 }
 
-/// 0x355 for another player's unit, with its one bit 0 (opcode.0x355).
+/// 0x262 for a creature, as its process built it.
+fn creature_created_frame(unit unit: UnitCreateCreature) -> Frame {
+  let assert Ok(body) = unit_create_creature.encode(unit)
+    as "a creature's values fit the message's fields: the spawn's checks hold each"
+  Frame(message_id: unit_create_creature.message_id, body:)
+}
+
+/// 0x355 for another player's unit or a creature, with its one bit 0
+/// (opcode.0x355).
 fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
     unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))

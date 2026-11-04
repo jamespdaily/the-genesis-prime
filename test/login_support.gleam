@@ -24,6 +24,7 @@ import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
+import genesis_prime/world_map/creature_registry
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None, Some}
 import login_client.{type Ports, Ports}
@@ -99,6 +100,11 @@ pub fn world() -> server.World {
     map_supervisor: process.new_name("test_map_supervisor"),
     maps_call_ms: 2000,
     map_shutdown_ms: 1000,
+    creatures: creature_registry.new(),
+    creature_supervisor: process.new_name("test_creature_supervisor"),
+    creature_shutdown_ms: 1000,
+    creature_restart_ms: 60_000,
+    spawns: [],
   )
 }
 

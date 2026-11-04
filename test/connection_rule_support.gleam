@@ -12,9 +12,10 @@ import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
   type Address, type Ask, type CallerId, type ConnectionStep, type Effect,
   type Event, type Input, type LogLevel, type LogLine, type ServiceStep,
-  type Step, type WatchId, CancelTimer, Connection, ConnectionId, Effects,
-  EffectsThenAsk, Input, Log, Now, OwnEffect, Peer, Reply, Send, StartTimer,
-  Stop, Unwatch, Watch, Write,
+  type Step, type WatchId, CancelServiceTimer, CancelTimer, Connection,
+  ConnectionId, Effects, EffectsThenAsk, Input, Log, Now, OwnEffect, Peer, Reply,
+  Send, StartCreature, StartServiceTimer, StartTimer, Stop, Unwatch, Watch,
+  Write,
 }
 import genesis_prime/store.{type Account, Account, AccountId}
 import gleam/bit_array
@@ -184,8 +185,14 @@ pub fn replies(step: ServiceStep(outgoing)) -> List(#(CallerId, outgoing)) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       OwnEffect(Reply(caller:, answer:)) -> Ok(#(caller, answer))
-      OwnEffect(Send(..)) | Watch(..) | Unwatch(..) | Log(..) | Stop ->
-        Error(Nil)
+      OwnEffect(Send(..))
+      | OwnEffect(StartCreature(..))
+      | OwnEffect(StartServiceTimer(..))
+      | OwnEffect(CancelServiceTimer(..))
+      | Watch(..)
+      | Unwatch(..)
+      | Log(..)
+      | Stop -> Error(Nil)
     }
   })
 }
@@ -199,6 +206,9 @@ pub fn sends(step: ServiceStep(outgoing)) -> List(#(Int, outgoing)) {
         Ok(#(number, message))
       OwnEffect(Send(..))
       | OwnEffect(Reply(..))
+      | OwnEffect(StartCreature(..))
+      | OwnEffect(StartServiceTimer(..))
+      | OwnEffect(CancelServiceTimer(..))
       | Watch(..)
       | Unwatch(..)
       | Log(..)

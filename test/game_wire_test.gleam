@@ -79,6 +79,7 @@ import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
+import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
@@ -2005,5 +2006,77 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
     as "the bot closed its connection, so the player sees its unit go"
   restore_signal_handler()
   game_client.close(game: zed)
+  login_support.stop(started)
+}
+
+/// The server's tree with the world standing the creatures of the planted
+/// tables' spawns, which are the real spawns' values (`character_tables_test`).
+fn start_with_creatures() -> login_support.Started {
+  login_support.start_with(change: fn(settings) {
+    server.Settings(
+      ..settings,
+      world: server.World(
+        ..settings.world,
+        spawns: spawn.all(character_tables.shared()),
+      ),
+    )
+  })
+}
+
+pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_and_a_second_bot_sees_the_same_unit_ids_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = start_with_creatures()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(first, first_character) =
+    new_player(started:, number: 1, character_name: "Zed Qu")
+  character_support.move_to(
+    pool:,
+    character_id: first_character,
+    world_id: 3460,
+    world_zone_id: 5967,
+    position: character_tables.exile_circle_centre(),
+  )
+  send_play(game: first, character_id: first_character)
+  let #(_burst, have) =
+    game_client.read_kept(game: first, have: <<>>, count: burst_length())
+  let #(frames, _) = game_client.read_kept(game: first, have:, count: 54)
+  let seen = game_client.creatures_created_in(frames:)
+  assert list.length(seen) == 54
+    as "one 0x262 for each of the 54 spawns: the 27 Virtual Battle Beasts and the 27 Virtual Defense Daguns, all within 1024 units of the characters in Warfare Woods"
+  let units = list.map(seen, fn(creature) { creature.unit_id })
+  assert list.length(list.unique(units)) == 54
+    && list.all(units, fn(unit_id) { unit_id > 0 && unit_id < 1_048_576 })
+    as "each unit id is its own, never 0 and below 2^20"
+  assert list.count(seen, fn(creature) { creature.creature_id == 73_464 }) == 27
+    && list.count(seen, fn(creature) { creature.creature_id == 73_465 }) == 27
+    as "opcode.0x262.creature: the Creature2 id of each spawn's creature"
+  assert list.all(seen, fn(creature) {
+    creature.tail.base_faction_id == creature.tail.faction_id
+    && creature.tail.display_info_id != 0
+  })
+    as "both faction fields hold the creature's faction, and a display is sent"
+  let #(second, second_character) =
+    new_player(started:, number: 2, character_name: "Ann Qu")
+  character_support.move_to(
+    pool:,
+    character_id: second_character,
+    world_id: 3460,
+    world_zone_id: 5967,
+    position: character_tables.exile_circle_centre(),
+  )
+  send_play(game: second, character_id: second_character)
+  let #(_burst, have) =
+    game_client.read_kept(game: second, have: <<>>, count: burst_length())
+  let #(frames, _) = game_client.read_kept(game: second, have:, count: 54 + 1)
+  assert list.sort(
+      list.map(game_client.creatures_created_in(frames:), fn(creature) {
+        creature.unit_id
+      }),
+      int.compare,
+    )
+    == list.sort(units, int.compare)
+    as "two players see one unit id for each creature"
+  game_client.close(game: first)
+  game_client.close(game: second)
   login_support.stop(started)
 }

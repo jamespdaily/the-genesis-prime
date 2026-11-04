@@ -3,13 +3,17 @@
 //// ask, so a test's answer never depends on which message reached the service
 //// first. It also holds the messages that make a service send and
 //// watch, whose watches end as the opening of the key of the same number, and
-//// the message that makes it misbehave: a crash.
+//// the message that makes it misbehave: a crash. It starts creatures and timers
+//// too: a creature that does not start opens the key of its watch's number below
+//// zero, and a timer opens the key `timer_key_base` more than its number when
+//// it fires.
 
 import genesis_prime/step.{
-  type Address, type CallerId, type Effect, type ServiceEffect,
-  type ServiceInput, type ServiceStep, Asked, Effects, Input, OwnEffect,
-  OwnEvent, Reply, Send, Started, Stop, Stopping, Told, Watch, WatchEnded,
-  WatchId,
+  type Address, type CallerId, type CreatureStart, type Effect,
+  type ServiceEffect, type ServiceInput, type ServiceStep, Asked,
+  CancelServiceTimer, CreatureNotStarted, Effects, Input, OwnEffect, OwnEvent,
+  Reply, Send, ServiceTimerFired, StartCreature, StartServiceTimer, Started,
+  Stop, Stopping, TimerId, Told, Watch, WatchEnded, WatchId,
 }
 import gleam/dict.{type Dict}
 import gleam/list
@@ -39,7 +43,19 @@ pub type Message {
   /// Watch the process at the address as each of the watches, in this order,
   /// in one step, then answer with `Echoed` and the count of watches.
   WatchEach(watches: List(Int), target: Address)
+  /// Start the creature, watched as watch `watch`, then answer with
+  /// `Echoed(watch)`. The creature's end opens the key `watch`; one that does
+  /// not start opens the key `-watch`.
+  StartCreatureAs(watch: Int, creature: CreatureStart)
+  /// Start timer `timer` for `after_ms`, then answer with `Echoed(timer)`. Its
+  /// firing opens the key `timer_key_base + timer`.
+  StartTimerAs(timer: Int, after_ms: Int)
+  /// Cancel timer `timer`, then answer with `Echoed(timer)`.
+  CancelTimerAs(timer: Int)
 }
+
+/// The key a timer's firing opens is its number plus this.
+pub const timer_key_base = 1000
 
 /// What the gate answers with.
 pub type Answer {
@@ -69,6 +85,10 @@ pub fn step(
     OwnEvent(Asked(caller:, message:)) -> asked(state:, caller:, message:)
     OwnEvent(Told(..)) ->
       panic as "the gate takes Started, Asked and Stopping only; nothing tells it"
+    OwnEvent(ServiceTimerFired(timer: TimerId(timer))) ->
+      opened(state:, key: timer_key_base + timer)
+    OwnEvent(CreatureNotStarted(watch: WatchId(watch), ..)) ->
+      opened(state:, key: -watch)
     WatchEnded(watch: WatchId(key)) -> opened(state:, key:)
   }
 }
@@ -123,6 +143,27 @@ fn asked(
       Effects([
         Watch(WatchId(watch), target),
         OwnEffect(Reply(caller, Echoed(watch))),
+      ]),
+    )
+    StartCreatureAs(watch:, creature:) -> #(
+      state,
+      Effects([
+        OwnEffect(StartCreature(WatchId(watch), creature)),
+        OwnEffect(Reply(caller, Echoed(watch))),
+      ]),
+    )
+    StartTimerAs(timer:, after_ms:) -> #(
+      state,
+      Effects([
+        OwnEffect(StartServiceTimer(TimerId(timer), after_ms)),
+        OwnEffect(Reply(caller, Echoed(timer))),
+      ]),
+    )
+    CancelTimerAs(timer:) -> #(
+      state,
+      Effects([
+        OwnEffect(CancelServiceTimer(TimerId(timer))),
+        OwnEffect(Reply(caller, Echoed(timer))),
       ]),
     )
     WatchEach(watches:, target:) -> #(

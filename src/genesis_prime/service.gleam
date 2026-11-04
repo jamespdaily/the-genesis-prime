@@ -12,11 +12,12 @@
 //// the names it started its processes with, and its shells use them, so no
 //// rule holds a process id.
 
-import genesis_prime/step.{type Address}
+import genesis_prime/step.{type Address, type CreatureStart}
 import genesis_prime/step/runtime
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
+import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 
 /// What reaches a service when another process asks it or tells it: the
@@ -72,13 +73,21 @@ pub type Reach(outgoing) {
     /// `Error(Nil)` when no process is running there; the message is
     /// dropped.
     send: fn(Address, outgoing) -> Result(Nil, Nil),
+    /// Starts the creature a rule's `StartCreature` names and returns once it
+    /// is running and found by its `Creature` address, or says why it did not
+    /// start, as the creature supervisor reported it.
+    start_creature: fn(CreatureStart) -> Result(Nil, StartChildError),
   )
 }
 
 /// A reach for a service that only watches: every send finds no process, so
-/// the message is dropped.
+/// the message is dropped, and no creature starts.
 pub fn watch_only(locate locate: Locate) -> Reach(outgoing) {
-  Reach(locate:, send: fn(_to, _message) { Error(Nil) })
+  Reach(
+    locate:,
+    send: fn(_to, _message) { Error(Nil) },
+    start_creature: fn(_creature) { Error(SupervisorNotRunning) },
+  )
 }
 
 /// Sends a service the message, for an asker's directory: `Error(Nil)` when
@@ -132,6 +141,26 @@ pub fn send_by_name(
   pid
 }
 
+/// A factory supervisor named `name` that starts a service with `start` for each
+/// argument it is asked with (`start_child`), each child temporary, a permanent
+/// child of the supervisor that holds it, and given `shutdown_ms` to stop. A
+/// temporary child is never restarted, so the restart limit, stated for the
+/// check that every supervisor states one, is never reached: whoever asked for the
+/// child starts another when it must (a map's creatures, Maps' maps).
+pub fn temporary_factory(
+  name name: Name(factory_supervisor.Message(argument, data)),
+  shutdown_ms shutdown_ms: Int,
+  start start: fn(argument) -> actor.StartResult(data),
+) -> ChildSpecification(factory_supervisor.Supervisor(argument, data)) {
+  factory_supervisor.worker_child(start)
+  |> factory_supervisor.named(name)
+  |> factory_supervisor.restart_strategy(supervision.Temporary)
+  |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
+  |> factory_supervisor.timeout(ms: shutdown_ms)
+  |> factory_supervisor.supervised
+  |> supervision.restart(supervision.Permanent)
+}
+
 /// Why a child of a factory supervisor was not started.
 pub type StartChildError {
   /// No process holds the supervisor's name, or it ended while the call
@@ -174,6 +203,15 @@ pub fn warn_unless_not_running(error: StartChildError) -> Nil {
         "the child " <> runtime.describe_start_error(reason),
         step.no_one,
       )
+  }
+}
+
+/// A sentence that says why a child was not started, for the log line of a rule
+/// that is told its creature did not start.
+pub fn describe_start_child_error(error: StartChildError) -> String {
+  case error {
+    SupervisorNotRunning -> "the supervisor is not running"
+    ChildNotStarted(reason:) -> runtime.describe_start_error(reason)
   }
 }
 
