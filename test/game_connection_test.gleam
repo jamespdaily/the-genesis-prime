@@ -7103,6 +7103,23 @@ pub fn a_viewer_that_arrives_while_the_player_is_dead_gets_its_0x262_with_health
     as "stat 0, the health, is 0: the client creates the body dead"
 }
 
+pub fn a_viewer_that_arrives_after_a_hit_gets_the_players_shield_and_health_now_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The Beast's 12 is mitigated to 3: 2 from the shield of 450 and 1 from the
+  // health of 736, as the strike tests above work them out.
+  let #(state, _) = feed(in_world(), a_beast_strike(own_unit_id))
+  let #(_, taken) =
+    feed(
+      state,
+      sent_by_the_map(SeenBy(by: ConnectionId(3), stay: viewer_stay(3))),
+    )
+  let assert [#(3, PeerNews(news: Appeared(unit:), ..))] = peer_tells(taken)
+  assert list.contains(unit.tail.stats, UnitStat(stat_id: 20, value: 448))
+    as "stat 20, the shield, as the hit left it (opcode.0x938)"
+  assert list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 735))
+    as "stat 0, the health, as the hit left it"
+}
+
 pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) = dead_in_world()

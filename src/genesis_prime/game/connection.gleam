@@ -3331,7 +3331,8 @@ fn held_in_the_world(status: Status) -> Option(#(Holder, world_entry.Entered)) {
 
 /// The unit of the player's own record as another player is created with it: at
 /// the place the player stands at now, with its health now as stat 0, so a dead
-/// player is created dead (`0x140457bc5`), and stamped from the map's clock, from
+/// player is created dead (`0x140457bc5`), and its shield now as stat 20
+/// (`opcode.0x938`), and stamped from the map's clock, from
 /// the origin `Joined` carried (`map.server_time`).
 fn appearance(
   entered entered: world_entry.Entered,
@@ -3340,14 +3341,16 @@ fn appearance(
   let unit =
     appearance_at(entered:, place: movement.place(entered.movement), now:)
   let health = player_life.health(life: entered.life)
+  let shield = player_life.shield(life: entered.life)
   UnitCreatePlayer(
     ..unit,
     tail: UnitCreateTail(
       ..unit.tail,
       stats: list.map(unit.tail.stats, fn(stat) {
-        case stat.stat_id == unit_fields.health_stat {
-          True -> UnitStat(..stat, value: health)
-          False -> stat
+        case stat.stat_id {
+          id if id == unit_fields.health_stat -> UnitStat(..stat, value: health)
+          id if id == unit_fields.shield_stat -> UnitStat(..stat, value: shield)
+          _ -> stat
         }
       }),
     ),
