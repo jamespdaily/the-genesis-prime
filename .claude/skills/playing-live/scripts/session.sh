@@ -324,6 +324,13 @@ make_run_database() {
     esac
   fi
   step "run database: $name made from $dev_database"
+  # The committed recording replays with no spawns (the replay's settings stand none), so the run
+  # stands none either: every spawn row goes, its stats with it (on delete cascade). A recording
+  # made with the world database's spawns holds creatures' news the replay can never take.
+  if ! err=$(psql -X -q -A -t -v ON_ERROR_STOP=1 -d "$name" -c "DELETE FROM spawn" 2>&1); then
+    fail "could not empty the spawns of the run database $name: $err"
+  fi
+  step "run database: $name holds no spawns, as the replay stands none"
 }
 
 # Drops the run's database, forcing off the connections still open to it, once no CREATE DATABASE
