@@ -176,8 +176,7 @@ pub type Joined {
 /// (`Joined`'s unit, which the connection sends the players who see it), who
 /// sees it, the units its own client shows, the casts of other units its client
 /// has been sent the start of, where it stands
-/// (genesis_prime/game/movement), the move sequence number of its last accepted
-/// 0x637 (0 before any), whether its client has sent the stay's first 0xF2, its
+/// (genesis_prime/game/movement), whether its client has sent the stay's first 0xF2, its
 /// health, shield and the creatures it fights (genesis_prime/game/player_life),
 /// and whether it is camping
 /// (genesis_prime/game/camp), its casts (genesis_prime/game/cast), the rounds of
@@ -203,7 +202,6 @@ pub type Entered {
     casts_written: Dict(Int, Int),
     gone: Set(Int),
     movement: movement.State,
-    move_seq: Int,
     readiness: Readiness,
     life: player_life.Life,
     camp: camp.Camp,
@@ -377,7 +375,6 @@ pub fn joined(
               casts_written: dict.new(),
               gone: set.new(),
               movement: movement.entered(place:, session_epoch:),
-              move_seq: 0,
               readiness: ClientLoading,
               life: player_life.new(
                 health: max_health,

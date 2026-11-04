@@ -52,11 +52,15 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/hit.{type Defence, type Rolls}
+import genesis_prime/game/item_property
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/rating.{type Formulas}
-import genesis_prime/game/strike_tell.{type Answered, type Tell}
+import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/step.{type Address}
 import gleam/dict.{type Dict}
+import gleam/int
+import gleam/list
+import gleam/option.{None, Some}
 import gleam/set.{type Set}
 
 /// A player's health and shield, and the creatures that hold it on their threat
@@ -75,7 +79,7 @@ pub type Effect {
   /// 20 and 0x937.
   ToViewers(news: News)
   /// The answer to a creature's strike, told to the creature.
-  Answer(to: Address, answered: Answered)
+  Answer(to: Address, answered: strike_tell.Answered)
   /// Tell the creature `unit_id` of life `life` the player's place now, with its
   /// move sequence number: the start of the stream.
   StreamTo(unit_id: Int, life: Int)
@@ -96,15 +100,40 @@ pub fn new(health health: Int, shield shield: Int) -> Life {
   Life(health:, shield:, fighters: dict.new())
 }
 
-/// A level-1 player's defence from its loadout: no deflect, critical deflect or
-/// glance, the mitigation of its gear's Armor by GameFormula 1234 at `level`, and
-/// its shield's ShieldMitigationMax.
+/// A level-1 player's defence from its loadout: its deflect, critical deflect and
+/// glance chances and its glance amount from UnitProperty2's defaults (0) and no
+/// rating (`player.level1_defence`), each through its rating formula; the mitigation
+/// of its gear's Armor (property 42, with ResistPhysical and the offsets at their
+/// defaults, 0) by GameFormula 1234 (`0x140464240`) for each damage type; and its
+/// shield's ShieldMitigationMax.
 pub fn defence(
   loadout loadout: Loadout,
   level level: Int,
   formulas formulas: Formulas,
 ) -> Defence {
-  todo as "defence: the build fills it in"
+  let chance = fn(formula) {
+    rating.to_fraction(formula:, level:, base: 0.0, rating: 0.0)
+  }
+  let mitigation =
+    rating.mitigation_fraction(
+      formulas:,
+      level:,
+      base: 0.0,
+      rating: loadout.properties.armor,
+    )
+  hit.Defence(
+    deflect_chance: chance(formulas.deflect_chance),
+    crit_deflect_chance: chance(formulas.crit_deflect),
+    glance_chance: chance(formulas.glance_chance),
+    glance_amount: chance(formulas.glance_amount),
+    physical_mitigation: mitigation,
+    tech_mitigation: mitigation,
+    magic_mitigation: mitigation,
+    shield_mitigation_max: case loadout.properties.shield {
+      Some(item_property.Shield(mitigation_max:, ..)) -> mitigation_max
+      None -> 0.0
+    },
+  )
 }
 
 /// A creature's strike on the player, on `rolls` from the player's seed: the hit
@@ -116,19 +145,93 @@ pub fn struck(
   strike strike: Tell,
   rolls rolls: Rolls,
 ) -> #(Life, List(Effect)) {
-  todo as "struck: the build fills it in"
+  case life.health {
+    0 -> #(life, [
+      Answer(
+        to: strike.from,
+        answered: Answered(
+          key: strike.key,
+          outcome: strike_tell.Refused(why: strike_tell.Dead),
+        ),
+      ),
+    ])
+    health ->
+      case
+        hit.apply(
+          health:,
+          shield: life.shield,
+          offence: strike.offence,
+          defence:,
+          rolls:,
+        )
+      {
+        hit.Deflected -> #(life, [
+          Answer(
+            to: strike.from,
+            answered: Answered(key: strike.key, outcome: strike_tell.Deflected),
+          ),
+        ])
+        hit.Landed(descriptions:, health: left, shield:, ..) -> {
+          let shield_news = case shield == life.shield {
+            True -> []
+            False -> [
+              ToClient(OwnShield(shield:)),
+              ToViewers(client_connection.Shield(shield:)),
+            ]
+          }
+          #(
+            Life(..life, health: left, shield:),
+            list.flatten([
+              shield_news,
+              [
+                ToClient(OwnHealth(health: left)),
+                ToViewers(client_connection.Health(
+                  health: left,
+                  dead: left == 0,
+                )),
+                Answer(
+                  to: strike.from,
+                  answered: Answered(
+                    key: strike.key,
+                    outcome: strike_tell.Landed(descriptions:),
+                  ),
+                ),
+              ],
+            ]),
+          )
+        }
+      }
+  }
 }
 
-/// The creature `unit_id` of life `life` threatens the player: it joins the
-/// fighters, the first one sets the combat flag, and its stream starts. Dropped for a
-/// unit in `gone`.
+/// The creature `unit_id` of life `creature_life` threatens the player: it joins
+/// the fighters, the first one sets the combat flag, and its stream starts. Dropped
+/// for a unit in `gone`, and for one already a fighter.
 pub fn threatened(
   life life: Life,
   unit_id unit_id: Int,
   creature_life creature_life: Int,
   gone gone: Set(Int),
 ) -> #(Life, List(Effect)) {
-  todo as "threatened: the build fills it in"
+  case set.contains(gone, unit_id) || dict.has_key(life.fighters, unit_id) {
+    True -> #(life, [])
+    False -> {
+      let flag = case dict.is_empty(life.fighters) {
+        True -> [
+          ToClient(OwnCombatState(in_combat: True)),
+          ToViewers(client_connection.CombatState(in_combat: True)),
+        ]
+        False -> []
+      }
+      #(
+        Life(
+          ..life,
+          fighters: dict.insert(life.fighters, unit_id, creature_life),
+        ),
+        list.append(flag, [StreamTo(unit_id:, life: creature_life)]),
+      )
+    }
+  }
 }
 
 /// The creature `unit_id` released the player, or the map reported it gone: it
@@ -137,16 +240,34 @@ pub fn released(
   life life: Life,
   unit_id unit_id: Int,
 ) -> #(Life, List(Effect)) {
-  todo as "released: the build fills it in"
+  case dict.has_key(life.fighters, unit_id) {
+    False -> #(life, [])
+    True -> {
+      let fighters = dict.delete(life.fighters, unit_id)
+      #(Life(..life, fighters:), case dict.is_empty(fighters) {
+        True -> [
+          ToClient(OwnCombatState(in_combat: False)),
+          ToViewers(client_connection.CombatState(in_combat: False)),
+        ]
+        False -> []
+      })
+    }
+  }
 }
 
 /// The creatures the player's accepted moves are told to, by unit id with their
-/// life.
+/// life, in unit id order.
 pub fn fighters(life life: Life) -> List(#(Int, Int)) {
-  todo as "fighters: the build fills it in"
+  dict.to_list(life.fighters)
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
 /// The player's health.
 pub fn health(life life: Life) -> Int {
   life.health
+}
+
+/// The player's shield.
+pub fn shield(life life: Life) -> Int {
+  life.shield
 }

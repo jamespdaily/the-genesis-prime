@@ -151,6 +151,7 @@ import genesis_prime/table/id.{
   CharacterCustomizationLabelId, ClassId, RaceId, Spell4Id,
 }
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, Unwatched, Watched}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
@@ -5689,4 +5690,283 @@ pub fn the_news_held_for_a_creature_that_is_removed_and_stands_again_before_the_
     && !list.contains(ids, 0x0937)
     && !list.contains(ids, 0x088C)
     as "the round closes with its go, and the death meant for the unit that was removed is not written onto the one that stands again under its id (opcode.0x355)"
+}
+
+// ------------------------------------------- a creature's fight, the player's side
+//
+// Expected values come from the design of step F (the Design artifact of issue
+// 367, section 1, and its shape review): the connection tells its map Ready at
+// the stay's first 0xF2 (`opcode.0xf2`); each accepted 0x637 gets the
+// connection's next move sequence number, which counts for the connection's life;
+// a creature's Threatened sets the combat flag and starts the stream of the
+// player's place to it, its Released or the map's Gone clears it with the last
+// fighter (`opcode.0x89a`: no client timer); a creature's strike is the hit rule
+// on the player's health and shield, written as 0x938 of stat 20 and 0x92f to the
+// player and 0x938 and 0x937 to its viewers (`opcode.0x92f`, `opcode.0x938`), and
+// answered to the creature; a viewer writes a creature's 0x908, 0x90a, 0x89a and
+// 0x638 [kind 0, kind 4] (`opcode.0x908`, `opcode.0x90a`, `movement_command.kind_4`),
+// and its picture finds a running creature where its path puts it.
+
+/// The creature that fights the tests' player: unit 7 of life 3 in the tests' run.
+fn fighter() -> step.Address {
+  step.Creature(map: camp_map(), incarnation:, unit_id: 7, life: 3)
+}
+
+fn foe(fight: strike_tell.Fight) -> Event(ConnectionEvent(Message, Answer)) {
+  OwnEvent(Woken(client_connection.SentByFoe(fight:)))
+}
+
+/// The tells of a step to creatures, as the creature's unit and the request.
+fn told_creatures(taken: ConnectionStep(Request)) -> List(#(Int, Request)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(to: step.Creature(unit_id:, ..), request:)) ->
+        Ok(#(unit_id, request))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The sequence numbers of the step's tells of a move to the map.
+fn moves_told(taken: ConnectionStep(Request)) -> List(Int) {
+  list.filter_map(told_the_map(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(request: TellMoved(seq:, ..), ..)) -> Ok(seq)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+fn a_move(x: Float) -> BitArray {
+  moves_message([game_client.position_command(x:, y: 2.5, z: 3.5)])
+}
+
+pub fn the_stays_first_0xf2_tells_the_map_the_player_is_ready_and_a_second_does_not_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, first) = read(in_world(), terrain_loaded_message(6009))
+  assert told_the_map(first)
+    == [
+      OwnEffect(step.Tell(
+        to: Map(camp_map(), incarnation),
+        request: client_connection.TellReady(connection: ConnectionId(1)),
+      )),
+    ]
+    as "opcode.0xf2: the client's terrain is loaded; a creature may fight the player from now on"
+  let #(_, second) = read(state, terrain_loaded_message(6009))
+  assert told_the_map(second) == [] as "Ready once a stay"
+}
+
+pub fn two_accepted_0x637s_of_one_client_clock_get_two_sequence_numbers_in_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `moves_message` writes the client clock 0x1234 into every 0x637: two moves of one
+  // frame share it (`opcode.0x637.client_clock`).
+  let #(state, first) = read(in_world(), a_move(1.5))
+  let #(_, second) = read(state, a_move(2.5))
+  assert moves_told(first) == [1] && moves_told(second) == [2]
+    as "the connection orders its moves itself, not by the client's clock"
+}
+
+pub fn the_move_sequence_number_counts_through_a_camp_and_the_next_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, first) = read(in_world(), a_move(1.5))
+  assert moves_told(first) == [1]
+  let #(state, second) = read(state, a_move(2.5))
+  assert moves_told(second) == [2]
+  let camped = camp_from(state)
+  let #(again, _) = entered_from(camped, world_character())
+  let #(_, after) = read(again, a_move(3.5))
+  assert moves_told(after) == [3]
+    as "a move of the new stay is newer than every move of the old one, so a creature never takes an old in-flight move of the first stay for a newer one"
+}
+
+pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_each_move_to_it_until_its_release_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state = watched_by(in_world(), [5])
+  let #(state, moved) = read(state, a_move(1.5))
+  assert told_creatures(moved) == [] as "no fighter: no stream"
+  let #(state, threatened) =
+    feed(state, foe(strike_tell.Threatened(unit_id: 7, life: 3)))
+  assert written_ids(threatened) == [0x089A]
+    as "0x89a (P, 1) to the player's own client"
+  assert list.map(peer_tells(threatened), fn(tell) {
+      #(tell.0, { tell.1 }.news)
+    })
+    == [#(5, client_connection.CombatState(in_combat: True))]
+    as "and to its viewers"
+  assert told_creatures(threatened)
+    == [
+      #(
+        7,
+        client_connection.TellTargetMoved(
+          connection: ConnectionId(1),
+          place: standing_at(x: 1.5, y: 2.5, z: 3.5),
+          seq: 1,
+        ),
+      ),
+    ]
+    as "the place now, with the sequence number of the move that put it there"
+  let #(state, next) = read(state, a_move(2.5))
+  assert told_creatures(next)
+    == [
+      #(
+        7,
+        client_connection.TellTargetMoved(
+          connection: ConnectionId(1),
+          place: standing_at(x: 2.5, y: 2.5, z: 3.5),
+          seq: 2,
+        ),
+      ),
+    ]
+    as "each accepted 0x637 goes to the fighter"
+  let #(state, released) = feed(state, foe(strike_tell.Released(unit_id: 7)))
+  assert written_ids(released) == [0x089A] as "0x89a (P, 0): the last fighter"
+  let #(_, after) = read(state, a_move(3.5))
+  assert told_creatures(after) == [] as "nothing after the release"
+}
+
+pub fn the_map_reporting_a_fighter_gone_clears_the_combat_flag_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    feed(in_world(), foe(strike_tell.Threatened(unit_id: 7, life: 3)))
+  let #(_, gone) = feed(state, sent_by_the_map(map.Gone(unit_id: 7)))
+  assert written_ids(gone) == [0x089A]
+    as "the creature crashed mid-fight: its Gone is its release, and 0x89a (P, 0) follows with no fighter left"
+}
+
+pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_the_creature_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state = watched_by(in_world(), [5])
+  let key = strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id: 1)
+  let #(_, struck) =
+    feed(
+      state,
+      foe(
+        strike_tell.Attacks(tell: strike_tell.Strike(
+          key:,
+          from: fighter(),
+          striker: strike_tell.CreatureStriker,
+          offence: spawn_support.beast_attack().offence,
+        )),
+      ),
+    )
+  assert written_ids(struck) == [0x0938, 0x092F]
+    as "0x938 of stat 20, the shield, then 0x92f, the player's own health"
+  assert list.map(peer_tells(struck), fn(tell) { name_of_news({ tell.1 }.news) })
+    == ["0x938", "0x937"]
+    as "its viewers are sent the shield and the health"
+  let assert [
+    #(
+      7,
+      client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
+        key: answered,
+        outcome: strike_tell.Landed(descriptions: [_]),
+      )),
+    ),
+  ] = told_creatures(struck)
+  assert answered == key as "the answer names the creature's strike"
+}
+
+fn name_of_news(news: News) -> String {
+  case news {
+    client_connection.Shield(..) -> "0x938"
+    client_connection.Health(..) -> "0x937"
+    _ -> "other"
+  }
+}
+
+pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_speed_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(medic_in_world(), beast_appears(unit_id: 40))
+  let from =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    )
+  let to =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 26.0,
+      y: 0.0,
+      z: 0.0,
+    )
+  let #(_, taken) =
+    feed(
+      state,
+      beast_news(
+        unit_id: 40,
+        news: client_connection.CreatureMoved(path: creature_path.Running(
+          from:,
+          to:,
+          started_ms: support.now_ms,
+          speed: 10.0,
+        )),
+      ),
+    )
+  let assert [Frame(message_id: 0x0638, body:)] = heard(taken, keyed())
+  let assert Ok(UnitMovement(unit_id: 40, commands:, ..)) =
+    unit_movement.decode(body)
+  let assert [
+    relayed_movement.Time(movement_time.MovementTime(..)),
+    relayed_movement.Path(path),
+  ] = commands
+    as "kind 0, the time the path starts at, then kind 4, the path"
+  assert path.speed == 0x4900
+    && path.path_type == 0
+    && path.mode == 0
+    && list.length(path.points) == 2
+    as "two points, straight lines, mode 0, at 10.0 as a half float (sign 0, exponent 18, fraction 256)"
+}
+
+pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The Beast appears 3 m ahead of the Medic; its next news is a path that starts
+  // 23 m ahead, now, and runs on away along -z: at the press it stands at the
+  // path's start, past Paralytic Surge's 15 m (Spell4AoeTargetConstraints 173).
+  let #(state, _) = feed(medic_in_world(), beast_appears(unit_id: 40))
+  let from =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z: -583.18798828125,
+    )
+  let to =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z: -603.18798828125,
+    )
+  let #(state, _) =
+    feed(
+      state,
+      beast_news(
+        unit_id: 40,
+        news: client_connection.CreatureMoved(path: creature_path.Running(
+          from:,
+          to:,
+          started_ms: support.now_ms,
+          speed: 10.0,
+        )),
+      ),
+    )
+  let #(_, struck) = press_and_close(state:, client_cast_id: 1)
+  assert struck == []
+    as "the selection reads the creature at place_at(path, now), 23 m away, not 3 m ahead where its 0x262 put it"
+}
+
+/// The connection camped out of the world from `state`: the camp, its save and the
+/// map's `Left`, back in character select.
+fn camp_from(state: game_connection.State) -> game_connection.State {
+  let #(state, _) = read(state, camp_request_message(True))
+  let #(state, taken) = read(state, camp_finished_message())
+  let #(state, taken) = answer(state:, taken:, outcome: place_saved())
+  answer(state:, taken:, outcome: step.Answer(FromMap(Left))).0
 }

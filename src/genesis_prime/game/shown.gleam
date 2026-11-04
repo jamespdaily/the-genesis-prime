@@ -150,7 +150,11 @@ pub fn with_path(
   unit_id unit_id: Int,
   path path: Path,
 ) -> Picture {
-  todo as "with_path: the build fills it in"
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(..) as creature) ->
+      dict.insert(picture, unit_id, ShownCreature(..creature, path:))
+    Ok(ShownPlayer) | Error(Nil) -> picture
+  }
 }
 
 /// The picture with the creature marked alive or dead by its owner's news; a unit

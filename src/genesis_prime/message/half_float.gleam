@@ -65,3 +65,18 @@ fn power_of_two(exponent: Int) -> Float {
     as "2 to an integer power is a number"
   value
 }
+
+/// The 16 bits of a number as the runtime's 16-bit float segment writes it,
+/// rounded to the nearest half float: the speed of a path the server writes
+/// (`movement_command.kind_4`). A number beyond the half float's range has no
+/// bits.
+pub fn to_bits(value value: Float) -> Result(Int, Nil) {
+  case float.absolute_value(value) <=. 65_504.0 {
+    True -> {
+      let assert <<bits:size(16)>> = <<value:float-size(16)>>
+        as "a number within 65504 fits a half float"
+      Ok(bits)
+    }
+    False -> Error(Nil)
+  }
+}

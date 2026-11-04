@@ -337,7 +337,9 @@ import genesis_prime/game/chat
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/damage
+import genesis_prime/game/hit
 import genesis_prime/game/movement
+import genesis_prime/game/player_life
 import genesis_prime/game/rating
 import genesis_prime/game/routing
 import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
@@ -357,10 +359,17 @@ import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
 }
+import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply
+import genesis_prime/message/half_float
 import genesis_prime/message/leave_world.{LeaveWorld}
+import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_path.{MovementPath}
+import genesis_prime/message/movement_time.{MovementTime}
+import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
@@ -370,6 +379,9 @@ import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
+import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/message/unit_target.{UnitTarget}
+import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/message/world_message
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -457,6 +469,11 @@ type Session {
     /// for the connection's life, so a reply to a whisper of an earlier stay in
     /// the world never meets a new whisper (genesis_prime/game/chat).
     next_whisper: Int,
+    /// The sequence number of the last 0x637 the connection accepted and told: it
+    /// counts for the connection's life, through a camp and the next entry, so a
+    /// creature never takes a move of an earlier stay for a newer one
+    /// (genesis_prime/world_map/creature_fight).
+    move_seq: Int,
     status: Status,
   )
 }
@@ -600,6 +617,7 @@ pub fn step(
             unhandled_channels_logged: set.new(),
             unknown_zones_logged: set.new(),
             next_whisper: 1,
+            move_seq: 0,
             status: AwaitingHelloReply,
           )),
           Effects([OwnEffect(Write(hello_bytes(settings)))]),
@@ -632,7 +650,7 @@ fn connected(
     OwnEvent(Woken(message: SentByTarget(answered:))) ->
       settled(handled: target_sent(session:, now:, answered:), now:)
     OwnEvent(Woken(message: SentByFoe(fight:))) ->
-      settled(handled: foe_sent(session:, now:, fight:), now:)
+      settled(handled: foe_sent(session:, fight:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -1039,17 +1057,21 @@ fn movement_message(
         list.filter(unrelayed, fn(kind) {
           !set.contains(session.unrelayed_logged, kind)
         })
-      let entered =
-        world_entry.Entered(..entered, move_seq: entered.move_seq + 1)
+      let move_seq = case commands {
+        [] -> session.move_seq
+        [_, ..] -> session.move_seq + 1
+      }
       let session =
         Session(
           ..moving(session:, holder:, entered:, state:),
+          move_seq:,
           unrelayed_logged: list.fold(
             new_kinds,
             session.unrelayed_logged,
             set.insert,
           ),
         )
+      let connection = client_connection.connection(session.link)
       Continue(
         session,
         list.flatten([
@@ -1065,16 +1087,26 @@ fn movement_message(
           case commands {
             [] -> []
             [_, ..] ->
-              list.append(
+              list.flatten([
                 [
                   tells_the_map_moved(
-                    connection: client_connection.connection(session.link),
+                    connection:,
                     entered:,
                     place:,
+                    seq: move_seq,
                   ),
                 ],
                 sends_the_move_to_the_viewers(entered:, now:, commands:),
-              )
+                list.map(player_life.fighters(life: entered.life), fn(fighter) {
+                  tells_a_fighter_the_place(
+                    connection:,
+                    entered:,
+                    fighter:,
+                    place:,
+                    seq: move_seq,
+                  )
+                }),
+              ])
           },
         ]),
       )
@@ -1107,10 +1139,32 @@ fn tells_the_map_moved(
   connection connection: ConnectionId,
   entered entered: world_entry.Entered,
   place place: Place,
+  seq seq: Int,
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
     to: step.Map(map: entered.map, incarnation: entered.incarnation),
-    request: TellMoved(connection:, place:, seq: entered.move_seq),
+    request: TellMoved(connection:, place:, seq:),
+  ))
+}
+
+/// The tell to a creature that holds the player on its threat list of the place the
+/// player stands at and the move's sequence number, through the creature registry
+/// with no watch.
+fn tells_a_fighter_the_place(
+  connection connection: ConnectionId,
+  entered entered: world_entry.Entered,
+  fighter fighter: #(Int, Int),
+  place place: Place,
+  seq seq: Int,
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(
+    to: step.Creature(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id: fighter.0,
+      life: fighter.1,
+    ),
+    request: client_connection.TellTargetMoved(connection:, place:, seq:),
   ))
 }
 
@@ -1120,17 +1174,170 @@ fn tells_the_map_ready(
   session session: Session,
   entered entered: world_entry.Entered,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  todo as "tells_the_map_ready: the build fills it in"
+  #(
+    with_entered(session:, change: fn(entered) {
+      world_entry.Entered(..entered, readiness: world_entry.ClientReady)
+    }),
+    [
+      OwnEffect(step.Tell(
+        to: step.Map(map: entered.map, incarnation: entered.incarnation),
+        request: client_connection.TellReady(
+          connection: client_connection.connection(session.link),
+        ),
+      )),
+    ],
+  )
 }
 
 /// What a creature fighting the player sent (genesis_prime/game/player_life): its
-/// threat, its release or its strike, taken with the player in the world.
+/// threat, its release or its strike, taken with the player in the world. With no
+/// player in the world it is dropped: a strike then finds no answer, and the
+/// creature's deadline leaves the player out.
 fn foe_sent(
   session session: Session,
-  now now: Now,
   fight fight: strike_tell.Fight,
 ) -> client_connection.Handled(Session) {
-  todo as "foe_sent: the build fills it in"
+  case held_in_the_world(session.status) {
+    None -> Continue(session, [])
+    Some(entered) -> {
+      let #(session, life, effects) = case fight {
+        strike_tell.Threatened(unit_id:, life: creature_life) -> {
+          let #(life, effects) =
+            player_life.threatened(
+              life: entered.life,
+              unit_id:,
+              creature_life:,
+              gone: entered.gone,
+            )
+          #(session, life, effects)
+        }
+        strike_tell.Released(unit_id:) -> {
+          let #(life, effects) =
+            player_life.released(life: entered.life, unit_id:)
+          #(session, life, effects)
+        }
+        strike_tell.Attacks(tell:) -> {
+          let #(link, entropy) =
+            client_connection.draw(session.link, hit.roll_bytes)
+          let assert Ok(rolls) = hit.rolls_of(bytes: entropy)
+            as "the seed gives 12 bytes for a strike's rolls"
+          let tables = session.settings.tables
+          let #(life, effects) =
+            player_life.struck(
+              life: entered.life,
+              defence: player_life.defence(
+                loadout: entered.loadout,
+                level: level_of(entered:),
+                formulas: rating.formulas(tables:),
+              ),
+              strike: tell,
+              rolls:,
+            )
+          #(Session(..session, link:), life, effects)
+        }
+      }
+      let session =
+        with_entered(session:, change: fn(entered) {
+          world_entry.Entered(..entered, life:)
+        })
+      Continue(session, life_effects(session:, entered:, effects:))
+    }
+  }
+}
+
+/// What player_life decided, as the connection's effects: its own unit's messages
+/// to its client, its news to its viewers, the answer told to the creature, and the
+/// start of a fighter's stream at the player's place now.
+fn life_effects(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  effects effects: List(player_life.Effect),
+) -> List(Effect(ConnectionEffect(Request))) {
+  list.flat_map(effects, fn(effect) {
+    case effect {
+      player_life.ToClient(written:) -> [
+        to_client(session, own_unit_frame(unit_id: entered.unit_id, written:)),
+      ]
+      player_life.ToViewers(news:) ->
+        list.map(sorted_viewers(entered:), fn(viewer) {
+          news_to(entered:, viewer:, news:)
+        })
+      player_life.Answer(to:, answered:) -> [
+        OwnEffect(step.Tell(
+          to:,
+          request: client_connection.TellStrikeAnswered(answered:),
+        )),
+      ]
+      player_life.StreamTo(unit_id:, life:) -> [
+        tells_a_fighter_the_place(
+          connection: client_connection.connection(session.link),
+          entered:,
+          fighter: #(unit_id, life),
+          place: movement.place(entered.movement),
+          seq: session.move_seq,
+        ),
+      ]
+    }
+  })
+}
+
+/// The connections that see the player, in the order of their numbers.
+fn sorted_viewers(entered entered: world_entry.Entered) -> List(ConnectionId) {
+  map.sorted_connections(entered.viewers)
+}
+
+/// The player's level: its unit's stat 10, 1 when it has none.
+fn level_of(entered entered: world_entry.Entered) -> Int {
+  unit_fields.stat(tail: entered.unit.tail, stat_id: unit_fields.level_stat)
+  |> result.unwrap(1)
+}
+
+/// The frame of a message about the player's own unit to its own client: 0x89a,
+/// 0x938 of stat 20, or 0x92f with no reason bit (`opcode.0x92f`: the bits name a
+/// fall or a breath).
+fn own_unit_frame(
+  unit_id unit_id: Int,
+  written written: player_life.Written,
+) -> Frame {
+  case written {
+    player_life.OwnCombatState(in_combat:) ->
+      combat_state_frame(unit_id:, in_combat:)
+    player_life.OwnShield(shield:) -> shield_frame(unit_id:, shield:)
+    player_life.OwnHealth(health:) -> {
+      let assert Ok(body) =
+        player_health.encode(PlayerHealth(unit_id:, health:, reason_mask: 0))
+        as "a unit id and a health of 32 bits and a mask of 18 fit the message"
+      Frame(message_id: player_health.message_id, body:)
+    }
+  }
+}
+
+/// 0x89a: the unit is in a fight or out of one (`opcode.0x89a`).
+fn combat_state_frame(
+  unit_id unit_id: Int,
+  in_combat in_combat: Bool,
+) -> Frame {
+  let assert Ok(body) =
+    unit_combat_state.encode(
+      UnitCombatState(unit_id:, in_combat: case in_combat {
+        True -> 1
+        False -> 0
+      }),
+    )
+    as "a unit id of 32 bits and a bit fit the message"
+  Frame(message_id: unit_combat_state.message_id, body:)
+}
+
+/// 0x938 of stat 20: the unit's shield (`opcode.0x938`).
+fn shield_frame(unit_id unit_id: Int, shield shield: Int) -> Frame {
+  let assert Ok(body) =
+    unit_stat_changed.encode(UnitStatChanged(
+      unit_id:,
+      stat_id: unit_fields.shield_stat,
+      value: shield,
+    ))
+    as "a unit id, a stat and a value fit the message"
+  Frame(message_id: unit_stat_changed.message_id, body:)
 }
 
 /// The move sent to each connection that sees the player, as news of 0x638s of
@@ -1449,7 +1656,7 @@ fn attacker_of(
     connection: client_connection.connection(session.link),
     pose: Pose(at: area.point_of(place), yaw: start_place.facing(place).yaw),
     place:,
-    move_seq: entered.move_seq,
+    move_seq: session.move_seq,
     faction:,
     stats: damage.Attacker(
       level:,
@@ -2174,15 +2381,25 @@ fn map_sent(
         },
       )
     map.Gone(unit_id:), Some(entered) -> {
-      let session = marked_gone(session:, unit_id:)
+      let #(life, released) = player_life.released(life: entered.life, unit_id:)
+      let session =
+        marked_gone(
+          session: with_entered(session:, change: fn(entered) {
+            world_entry.Entered(..entered, life:)
+          }),
+          unit_id:,
+        )
+      let released = life_effects(session:, entered:, effects: released)
       use <- bool.guard(
         when: !dict.has_key(entered.shown, unit_id),
-        return: Continue(session, []),
+        return: Continue(session, released),
       )
       Continue(
         session,
-        list.append(finishes_of_forgotten_casts(session:, entered:, unit_id:), [
-          to_client(session, unit_removed_frame(unit_id:)),
+        list.flatten([
+          finishes_of_forgotten_casts(session:, entered:, unit_id:),
+          [to_client(session, unit_removed_frame(unit_id:))],
+          released,
         ]),
       )
     }
@@ -2496,12 +2713,45 @@ fn viewer_takes(
       )
     client_connection.Died ->
       creature_news(session:, entered:, unit_id:, news: client_connection.Died)
-    client_connection.CreatureMoved(..)
-    | client_connection.Targeting(..)
-    | client_connection.Threat(..)
-    | client_connection.CombatState(..)
-    | client_connection.Shield(..) ->
-      todo as "the fight's news: the build writes 0x638, 0x908, 0x90a, 0x89a and 0x938 for a shown unit"
+    client_connection.CreatureMoved(path:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session =
+        shown_changed(session:, change: fn(picture) {
+          shown.with_path(picture:, unit_id:, path:)
+        })
+      Continue(session, case path_frame(entered:, unit_id:, path:) {
+        Some(frame) -> [to_client(session, frame)]
+        None -> []
+      })
+    }
+    client_connection.Targeting(target_unit_id:, threat:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      let assert Ok(body) =
+        unit_target.encode(UnitTarget(unit_id:, target_unit_id:, threat:))
+        as "unit ids and a threat of 32 bits fit the message"
+      Continue(session, [
+        to_client(session, Frame(message_id: unit_target.message_id, body:)),
+      ])
+    }
+    client_connection.Threat(other_unit_id:, threat:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      let assert Ok(body) =
+        unit_threat.encode(UnitThreat(unit_id:, other_unit_id:, threat:))
+        as "unit ids and a threat of 32 bits fit the message"
+      Continue(session, [
+        to_client(session, Frame(message_id: unit_threat.message_id, body:)),
+      ])
+    }
+    client_connection.CombatState(in_combat:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        to_client(session, combat_state_frame(unit_id:, in_combat:)),
+      ])
+    }
+    client_connection.Shield(shield:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [to_client(session, shield_frame(unit_id:, shield:))])
+    }
   }
 }
 
@@ -2798,6 +3048,50 @@ fn unit_moved_frame(
     ))
     as "a mover sends at most 31 commands and a time of 32 bits"
   Frame(message_id: unit_movement.message_id, body:)
+}
+
+/// 0x638 for a creature that runs a path: kind 0, the map's time the path starts at
+/// (`movement_command.kind_0`), and kind 4, its two points at its speed as a half
+/// float, type 0 (straight lines) and mode 0 (`movement_command.kind_4`). None for a
+/// creature that stands, or a speed no half float holds.
+fn path_frame(
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  path path: creature_path.Path,
+) -> Option(Frame) {
+  case path {
+    creature_path.Standing(..) -> None
+    creature_path.Running(from:, to:, started_ms:, speed:) ->
+      case half_float.to_bits(value: speed) {
+        Error(Nil) -> None
+        Ok(speed) -> {
+          let time =
+            map.server_time(
+              origin_ms: entered.clock_origin_ms,
+              monotonic_ms: started_ms,
+            )
+          Some(
+            unit_moved_frame(unit_id:, server_time_ms: time, commands: [
+              relayed_movement.Time(MovementTime(time:)),
+              relayed_movement.Path(MovementPath(
+                points: [vector_of(from), vector_of(to)],
+                speed:,
+                path_type: 0,
+                mode: 0,
+              )),
+            ]),
+          )
+        }
+      }
+  }
+}
+
+fn vector_of(place: Place) -> movement_float_vector.MovementFloatVector {
+  MovementFloatVector(
+    x: float32.to_bits(start_place.x(place)),
+    y: float32.to_bits(start_place.y(place)),
+    z: float32.to_bits(start_place.z(place)),
+  )
 }
 
 /// 0x262 for a creature, as its process built it.
