@@ -75,7 +75,7 @@ fn approaches(taken: step.ServiceStep(map.Outgoing)) -> List(#(Float, Int)) {
       map.Withdrew(..)
       | map.Watched(..)
       | map.Unwatched(..)
-      | map.Gone(..)
+      | map.Noticed(..)
       | map.Retire
       | map.Joined(..)
       | map.NotJoined(..)

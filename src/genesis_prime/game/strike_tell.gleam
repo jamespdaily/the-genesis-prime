@@ -12,13 +12,13 @@
 ////                                                            ─▶ hit rule ─▶ health, 0x937, 0x88c to its viewers
 ////   SentByTarget(Answered(key, outcome))   ◀─ Send(Connection(c), Answered(key, outcome))
 ////
-////   SentByFoe(Threatened(unit, life, player's unit))
-////                                          ◀─ the creature put the player on its threat list
+////   SentByFoe(Threatened(unit, life))      ◀─ the creature put the player on its threat list
 ////   SentByFoe(Attacks(Strike(key, Creature(..), CreatureStriker, offence)))
 ////                                          ◀─ the creature's own strike
 ////   hit rule on the player's health and shield, rolls from the player's seed
 ////   Tell(Creature(..), TellStrikeAnswered(Answered(key, outcome))) ─▶ the creature's round
-////   SentByFoe(Released(unit, player's unit)) ◀─ the creature took the player off its threat list
+////   SentByFoe(Released(unit))              ◀─ the creature took the player off its threat list
+////   (each SentByFoe travels for the player's stay: ForStay(stay, SentByFoe(..)))
 //// ```
 ////
 //// - **The key** names one strike: the cast, the go's phase and the struck unit, so
@@ -91,16 +91,14 @@ pub type Answered {
   Answered(key: Key, outcome: Outcome)
 }
 
-/// What a creature that fights a player tells the player's connection. A threat
-/// and a release name the player's unit `player_unit_id` as the creature holds it
-/// on its threat list: the map gives each stay of a player a new unit id, so the
-/// connection drops one sent for an earlier stay that reaches a later one.
+/// What a creature that fights a player tells the player's connection, for the
+/// player's stay (genesis_prime/world_map/stay).
 pub type Fight {
   /// The creature `unit_id` of life `life` put the player on its threat list.
-  Threatened(unit_id: Int, life: Int, player_unit_id: Int)
+  Threatened(unit_id: Int, life: Int)
   /// The creature `unit_id` took the player off its threat list: it leashed or
   /// died, or the player died.
-  Released(unit_id: Int, player_unit_id: Int)
+  Released(unit_id: Int)
   /// The creature strikes the player.
   Attacks(tell: Tell)
 }

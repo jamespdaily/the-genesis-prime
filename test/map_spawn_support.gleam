@@ -13,9 +13,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
-import genesis_prime/world_map/map.{
-  type State, Gone, Join, Leave, Moved, Watched,
-}
+import genesis_prime/world_map/map.{type State, Join, Leave, Moved, Watched}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/dict
 import gleam/int
@@ -100,6 +98,7 @@ pub fn join(
         connection: ConnectionId(connection),
         character: map_support.character(100 + connection),
         place: at(x),
+        stay: map_support.stay(count: 1),
       ),
     )),
   )
@@ -240,10 +239,13 @@ pub fn player_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
 
 pub fn said(message: map.Outgoing) -> String {
   case message {
-    Watched(by: ConnectionId(number), ..) ->
+    Watched(by: ConnectionId(number), ..)
+    | map.Noticed(notice: map.SeenBy(by: ConnectionId(number), ..), ..) ->
       "Watched by " <> int.to_string(number)
-    Gone(unit_id:) -> "Gone " <> int.to_string(unit_id)
-    map.Unwatched(by: ConnectionId(number)) ->
+    map.Noticed(notice: map.Gone(unit_id:), ..) ->
+      "Gone " <> int.to_string(unit_id)
+    map.Unwatched(by: ConnectionId(number))
+    | map.Noticed(notice: map.UnseenBy(by: ConnectionId(number)), ..) ->
       "Unwatched by " <> int.to_string(number)
     map.Retire -> "Retire"
     map.Approached(by: ConnectionId(number), ..) ->

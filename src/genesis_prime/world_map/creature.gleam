@@ -26,8 +26,8 @@
 ////                         Started ─▶ Watch(map run)                   (the shell monitors the run)
 ////                                    for each first viewer c (CreatureStart.viewers):
 ////                                      Send(c, CreatureAppeared) ───▶ writes 0x262 once
-//// Watched(by: c, unit) ─▶ viewers + c with its unit; Send(c, CreatureAppeared) ─▶ writes 0x262 once
-////                         (every news names the unit; c drops one of an earlier stay)
+//// Watched(by: c, stay) ─▶ viewers + c with its stay; Send(c, CreatureAppeared) ─▶ writes 0x262 once
+////                         (every send to c names its stay; c drops one of an earlier stay)
 //// Unwatched(by: c) ─────▶ viewers - c, if c was a viewer:
 ////                                    Send(c, Removed) ──────────────▶ writes 0x355 if shown
 //// Retire ───────────────▶ Stop                                        (no one sees it: the map sent every
@@ -73,7 +73,13 @@
 //// - **A viewer that is not a connection any more** is dropped by the send (the
 ////   registry finds no process); the map's `Unwatched` follows from its end.
 //// - **A `Watched` twice from one connection** sends the 0x262 twice; the
-////   viewer's connection writes it once, as it does for a player's unit.
+////   viewer's connection writes it once, as it does for a player's unit. The
+////   second `Watched` names the stay the creature tells that player by from then
+////   on (genesis_prime/world_map/stay).
+//// - **A tell to a player of the fight** goes for the stay the player's
+////   `Watched` named: every player on the threat list sees the creature, and an
+////   `Unwatched` takes the player off the list in the same step, with its
+////   release told for the stay it had.
 //// - **The map run's end** ends the creature: it watches the run by the pid the
 ////   run gave when it started the creature, not through Maps, which is waiting
 ////   on the run's start while the run starts its creatures.
@@ -121,6 +127,7 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{None, Some}
@@ -151,8 +158,8 @@ pub type Settings {
 
 /// What the map and the connections tell a creature.
 pub type Message {
-  /// The player of connection `by`, its unit `unit_id`, sees the creature.
-  Watched(by: ConnectionId, unit_id: Int)
+  /// The player of connection `by`, in its stay `stay`, sees the creature.
+  Watched(by: ConnectionId, stay: Stay)
   /// The player of connection `by` no longer sees the creature.
   Unwatched(by: ConnectionId)
   /// No player has seen the creature for the idle stop: end.
@@ -173,19 +180,20 @@ pub type Message {
 
 /// What a creature sends a connection without waiting.
 pub type Outgoing {
-  /// News of the creature's own unit for a viewer: its 0x262, 0x355, 0x937, 0x88c
-  /// and the fight's 0x908, 0x90a, 0x89a, 0x638, 0x7ff, 0x7f4, 0x7fb and 0x7fe.
-  News(news: PeerNews)
+  /// News of the creature's own unit for a viewer, in the viewer's stay `stay`:
+  /// its 0x262, 0x355, 0x937, 0x88c and the fight's 0x908, 0x90a, 0x89a, 0x638,
+  /// 0x7ff, 0x7f4, 0x7fb and 0x7fe.
+  News(stay: Stay, news: PeerNews)
   /// The answer to a strike, for the connection that told it.
   Struck(answered: Answered)
-  /// A tell to the connection of a player in the creature's fight: it threatens
-  /// or releases the player, or strikes it.
-  FightTold(told: Fight)
+  /// A tell to the connection of a player in the creature's fight, in the
+  /// player's stay `stay`: it threatens or releases the player, or strikes it.
+  FightTold(stay: Stay, told: Fight)
 }
 
-/// A creature's players in sight, each by its connection with its unit of the
-/// stay the map named it for, its health, its fight and whether it was told to
-/// retire while it lay dead.
+/// A creature's players in sight, each by its connection with the stay the map
+/// named it for, its health, its fight and whether it was told to retire while it
+/// lay dead.
 pub opaque type State {
   State(
     settings: Settings,
@@ -193,7 +201,7 @@ pub opaque type State {
     life: Life,
     fight: creature_fight.State,
     retiring: Bool,
-    viewers: Dict(ConnectionId, Int),
+    viewers: Dict(ConnectionId, Stay),
   )
 }
 
@@ -264,26 +272,32 @@ pub fn step(
         })
       ]),
     )
-    OwnEvent(Told(message: Watched(by:, unit_id:))) -> #(
-      State(..state, viewers: dict.insert(state.viewers, by, unit_id)),
+    OwnEvent(Told(message: Watched(by:, stay:))) -> #(
+      State(..state, viewers: dict.insert(state.viewers, by, stay)),
       Effects([
-        appeared(state:, viewer: #(by, unit_id), now_ms:),
+        appeared(state:, viewer: #(by, stay), now_ms:),
         ..list.map(
           creature_fight.arrival_news(state: state.fight, now_ms:),
-          fn(news) { news_to(creature:, viewer: #(by, unit_id), news:) },
+          fn(news) { news_to(creature:, viewer: #(by, stay), news:) },
         )
       ]),
     )
     OwnEvent(Told(message: Unwatched(by:))) ->
       case dict.get(state.viewers, by) {
-        Ok(unit_id) -> {
+        Ok(stay) -> {
+          let told_by = state.viewers
           let state = State(..state, viewers: dict.delete(state.viewers, by))
           let #(state, fought) =
-            fought(state:, input: creature_fight.Unwatched(by:), now_ms:)
+            fought_telling(
+              state:,
+              input: creature_fight.Unwatched(by:),
+              now_ms:,
+              stays: told_by,
+            )
           #(
             state,
             Effects([
-              news_to(creature:, viewer: #(by, unit_id), news: Removed),
+              news_to(creature:, viewer: #(by, stay), news: Removed),
               ..fought
             ]),
           )
@@ -452,6 +466,19 @@ fn fought(
   input input: creature_fight.Input,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  fought_telling(state:, input:, now_ms:, stays: state.viewers)
+}
+
+/// `fought`, telling each player of the fight for its stay in `stays`: the
+/// viewers, or, for an `Unwatched`, the viewers before it, so the player that
+/// stopped seeing the creature is told its release for the stay it had. A tell to
+/// a player with no stay there is dropped: the fight tells only its viewers.
+fn fought_telling(
+  state state: State,
+  input input: creature_fight.Input,
+  now_ms now_ms: Int,
+  stays stays: Dict(ConnectionId, Stay),
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   let #(fight, effects) =
     creature_fight.step(
       state: state.fight,
@@ -466,9 +493,12 @@ fn fought(
     let #(state, done) = so_far
     let #(state, more) = case effect {
       creature_fight.ToViewers(news:) -> #(state, to_viewers(state:, news:))
-      creature_fight.ToPlayer(to:, told:) -> #(state, [
-        OwnEffect(Send(to: Connection(to), message: FightTold(told:))),
-      ])
+      creature_fight.ToPlayer(to:, told:) -> #(state, case dict.get(stays, to) {
+        Ok(stay) -> [
+          OwnEffect(Send(to: Connection(to), message: FightTold(stay:, told:))),
+        ]
+        Error(Nil) -> []
+      })
       creature_fight.RestoreHealth -> {
         let life = creature_life.new(body: state.body)
         #(
@@ -547,7 +577,7 @@ fn viewer_news(news: creature_life.News) -> client_connection.News {
 /// it fell.
 fn appeared(
   state state: State,
-  viewer viewer: #(ConnectionId, Int),
+  viewer viewer: #(ConnectionId, Stay),
   now_ms now_ms: Int,
 ) -> Effect(ServiceEffect(Outgoing)) {
   let creature = state.settings.creature
@@ -584,31 +614,24 @@ fn to_viewers(
   })
 }
 
-/// The viewers, each with its unit, in the order of their connections.
-fn sorted_viewers(state state: State) -> List(#(ConnectionId, Int)) {
-  list.map(map.sorted_connections(viewers(state:)), fn(viewer) {
-    let assert Ok(unit_id) = dict.get(state.viewers, viewer)
-      as "a viewer the sort gives holds a unit"
-    #(viewer, unit_id)
-  })
+/// The viewers, each with its stay, in the order of their connections.
+fn sorted_viewers(state state: State) -> List(#(ConnectionId, Stay)) {
+  map.sorted_by_connection(state.viewers)
 }
 
-/// The send of news about the creature's own unit to a viewer's connection,
-/// naming the viewer's unit.
+/// The send of news about the creature's own unit to a viewer's connection, for
+/// the viewer's stay.
 fn news_to(
   creature creature: CreatureStart,
-  viewer viewer: #(ConnectionId, Int),
+  viewer viewer: #(ConnectionId, Stay),
   news news: client_connection.News,
 ) -> Effect(ServiceEffect(Outgoing)) {
   OwnEffect(Send(
     to: Connection(viewer.0),
-    message: News(PeerNews(
-      map: creature.map,
-      incarnation: creature.incarnation,
-      unit_id: creature.unit_id,
-      viewer_unit_id: viewer.1,
-      news:,
-    )),
+    message: News(
+      stay: viewer.1,
+      news: PeerNews(unit_id: creature.unit_id, news:),
+    ),
   ))
 }
 
@@ -618,12 +641,13 @@ fn news_to(
 /// `Retire`. Any other is no message to a creature, and `Error(Nil)`.
 pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
-    map.Watched(by:, unit_id:) -> Ok(Watched(by:, unit_id:))
+    map.Watched(by:, stay:) -> Ok(Watched(by:, stay:))
     map.Unwatched(by:) -> Ok(Unwatched(by:))
     map.Approached(by:, unit_id:, place:, seq:) ->
       Ok(Approached(by:, unit_id:, place:, seq:))
     map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.Retire -> Ok(Retire)
-    map.Joined(..) | map.NotJoined(..) | map.Left | map.Gone(..) -> Error(Nil)
+    map.Joined(..) | map.NotJoined(..) | map.Left | map.Noticed(..) ->
+      Error(Nil)
   }
 }

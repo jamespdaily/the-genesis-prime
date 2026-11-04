@@ -44,9 +44,9 @@ import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type News, type PeerNews, type Request, Appeared,
   AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CastFinished,
-  CastStarted, CastWent, CreatureAppeared, FromHandOff, FromMap, FromSessions,
-  FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer, SentBySessions,
-  SentByTarget, TellChat, TellMoved, TellPeer,
+  CastStarted, CastWent, CreatureAppeared, ForStay, FromHandOff, FromMap,
+  FromSessions, FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer,
+  SentBySessions, SentByTarget, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -148,6 +148,7 @@ import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/message/whisper_failed
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
+import genesis_prime/server
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome, CallerId,
   CancelTimer, ConnectionId, EndedBeforeAnswer, LogError, LogInfo, LogWarning,
@@ -172,17 +173,19 @@ import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/map.{Join, Leave, Left, Unwatched, Watched}
+import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, UnseenBy}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import map_support
 import message_support
 import owned_test
 import place_support
@@ -1317,10 +1320,15 @@ const incarnation = 77
 /// A map of the tests' realm and tables, as the server starts one for the tests'
 /// connections, with four other connections joined, so the next join is unit 5.
 fn map_with_four_players() -> map.State {
+  map_run_with_four_players(incarnation)
+}
+
+/// The same as the run `run` of the tests' map.
+fn map_run_with_four_players(run: Int) -> map.State {
   let state =
     map.new(map.Settings(
       map: camp_map(),
-      incarnation:,
+      incarnation: run,
       realm_id: settings().realm_id,
       tables: settings().tables,
       spawns: spawn.no_spawns(),
@@ -1349,6 +1357,7 @@ fn map_with_four_players() -> map.State {
               connection: ConnectionId(other),
               character: world_character(),
               place:,
+              stay: viewer_stay(other),
             ),
           )),
         ),
@@ -1438,7 +1447,7 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
   assert ask_request(taken)
     == AskMap(
       camp_map(),
-      Join(ConnectionId(1), world_character(), entry_place()),
+      Join(ConnectionId(1), world_character(), entry_place(), own_stay()),
     )
     as "the saved world of the character, its one open instance, the connection's id, the character and the place the client is told"
   assert support.writes(taken) == []
@@ -4108,41 +4117,50 @@ pub fn an_answer_in_the_camp_save_that_is_not_the_stores_is_a_bug_with_reason_8_
 // which is `start_place.moved` of the last position in the world's frame
 // (genesis_prime/game/movement).
 
-/// A send of the map to the connection.
-fn sent_by_the_map(
-  message: map.Outgoing,
+/// A message for the stay `stay` of the tests' player.
+fn for_stay(
+  stay: Stay,
+  sent: client_connection.StaySent,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  OwnEvent(Woken(SentByMap(message)))
+  OwnEvent(Woken(ForStay(stay:, sent:)))
 }
 
-/// News of the unit `unit_id` as its owner's connection in the tests' run of the
-/// tests' map sends it to the tests' player, naming the player's unit.
+/// The same message as `event`, a message for the tests' player's first stay, for
+/// its second: the stay of its next join, after a camp or the Holocrypt.
+fn in_second_stay(
+  event: Event(ConnectionEvent(Message, Answer)),
+) -> Event(ConnectionEvent(Message, Answer)) {
+  let assert OwnEvent(Woken(ForStay(sent:, ..))) = event
+    as "a message for a stay"
+  for_stay(map_support.stay(count: 2), sent)
+}
+
+/// A notice of the map to the connection, for the tests' player's first stay.
+fn sent_by_the_map(
+  notice: map.Notice,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  for_stay(own_stay(), SentByMap(notice))
+}
+
+/// The stay of the tests' player's first join: the connection's first.
+fn own_stay() -> Stay {
+  map_support.stay(count: 1)
+}
+
+/// The stay of the player of connection `viewer`, as the map's `SeenBy` names it:
+/// its `viewer`th, so each viewer's is its own.
+fn viewer_stay(viewer: Int) -> Stay {
+  map_support.stay(count: viewer)
+}
+
+/// News of the unit `unit_id` as its owner sends it to the tests' player.
 fn news_of(unit_id unit_id: Int, news news: News) -> PeerNews {
-  PeerNews(
-    map: camp_map(),
-    incarnation:,
-    unit_id:,
-    viewer_unit_id: own_unit_id,
-    news:,
-  )
+  PeerNews(unit_id:, news:)
 }
 
-/// News of the tests' player's unit as its connection sends it to the viewer of
-/// connection `viewer`, naming the viewer's unit.
-fn told(viewer viewer: Int, news news: News) -> PeerNews {
-  PeerNews(
-    map: camp_map(),
-    incarnation:,
-    unit_id: own_unit_id,
-    viewer_unit_id: viewer_unit(viewer),
-    news:,
-  )
-}
-
-/// The unit of the player of connection `viewer`, as the map's `Watched` names
-/// it: ten times the number.
-fn viewer_unit(viewer: Int) -> Int {
-  viewer * 10
+/// News of the tests' player's unit as its connection sends it to a viewer.
+fn told(news news: News) -> PeerNews {
+  PeerNews(unit_id: own_unit_id, news:)
 }
 
 /// A move of the unit `unit_id`, stamped `server_time_ms`.
@@ -4154,9 +4172,10 @@ fn moving(
   news_of(unit_id:, news: Moving(server_time_ms:, commands:))
 }
 
-/// A send of another player's connection to the connection.
+/// A send of another player's connection to the connection, for the tests'
+/// player's first stay.
 fn sent_by_a_peer(news: PeerNews) -> Event(ConnectionEvent(Message, Answer)) {
-  OwnEvent(Woken(SentByPeer(news)))
+  for_stay(own_stay(), SentByPeer(news))
 }
 
 /// Another player's unit: the tests' player's own record, as unit 9.
@@ -4322,36 +4341,27 @@ pub fn a_0x262_or_0x355_naming_the_viewers_own_unit_or_unit_0_is_refused_with_an
   })
 }
 
-pub fn news_for_another_run_of_the_map_or_another_map_is_dropped_for_each_kind_and_this_runs_is_written_test() -> Nil {
+pub fn news_for_another_stay_is_dropped_for_each_kind_and_this_stays_is_written_test() -> Nil {
   use <- owned_test.run(10_000)
-  let in_run = fn(map, incarnation, news) {
-    sent_by_a_peer(PeerNews(
-      map:,
-      incarnation:,
-      unit_id: 9,
-      viewer_unit_id: own_unit_id,
-      news:,
-    ))
+  let in_stay = fn(stay, news) {
+    for_stay(stay, SentByPeer(PeerNews(unit_id: 9, news:)))
   }
   let kinds = [
     Appeared(unit: another_unit()),
     Moving(server_time_ms: 1, commands: moved_unit_commands()),
     Removed,
   ]
-  // The unit is shown first, so that every kind would be written but for its run.
+  // The unit is shown first, so that every kind would be written but for its stay.
   let #(shown, _) = feed(in_world(), event_of(Appears))
   list.each(kinds, fn(news) {
-    let #(_, taken) = feed(shown, in_run(camp_map(), incarnation + 1, news))
+    let #(_, taken) = feed(shown, in_stay(map_support.stay(count: 2), news))
     assert support.writes(taken) == []
-      as "another run of the map: the unit id may name another unit there"
-    let #(_, taken) =
-      feed(shown, in_run(MapId(world_id: 3461, instance: 0), incarnation, news))
-    assert support.writes(taken) == [] as "another map"
+      as "another stay: in another run or map the unit id may name another unit"
     assert !support.stops(taken) && support.logs(taken) == []
       as "news that was on its way when the viewer left is no bug"
   })
-  let #(_, taken) = feed(shown, in_run(camp_map(), incarnation, Removed))
-  assert written_ids(taken) == [0x0355] as "the run the viewer is in"
+  let #(_, taken) = feed(shown, in_stay(own_stay(), Removed))
+  assert written_ids(taken) == [0x0355] as "the stay the viewer is in"
 }
 
 pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test() -> Nil {
@@ -4374,8 +4384,8 @@ pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test(
   )
   list.each(
     [
-      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
-      sent_by_the_map(Unwatched(by: ConnectionId(2))),
+      sent_by_the_map(SeenBy(by: ConnectionId(2), stay: viewer_stay(2))),
+      sent_by_the_map(UnseenBy(by: ConnectionId(2))),
     ],
     fn(event) {
       let #(_, taken) = feed(state, event)
@@ -4404,7 +4414,7 @@ pub fn a_player_that_enters_again_shows_no_unit_and_has_none_gone_test() -> Nil 
       outcome: step.Answer(FromStore(ForSelect(Listed([])))),
     )
   let #(again, _) = entered_from(state, world_character())
-  let #(_, taken) = feed(again, event_of(Appears))
+  let #(_, taken) = feed(again, in_second_stay(event_of(Appears)))
   assert written_ids(taken) == [0x0262]
     as "what the player's client held before its camp is not held now"
 }
@@ -4414,12 +4424,19 @@ pub fn a_player_that_enters_again_shows_no_unit_and_has_none_gone_test() -> Nil 
 /// The tells of a step to the connections of other players: the viewer's
 /// number and the news, in the order of the viewers' numbers.
 fn peer_tells(taken: ConnectionStep(Request)) -> List(#(Int, PeerNews)) {
+  list.map(peer_tells_for(taken), fn(tell) { #(tell.0, tell.2) })
+}
+
+/// The same, each with the stay it is told for.
+fn peer_tells_for(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, Stay, PeerNews)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(
         to: step.Connection(ConnectionId(viewer)),
-        request: TellPeer(news:),
-      )) -> Ok(#(viewer, news))
+        request: TellPeer(stay:, news:),
+      )) -> Ok(#(viewer, stay, news))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -4448,9 +4465,9 @@ fn watched_by(
   list.fold(viewers, state, fn(state, viewer) {
     feed(
       state,
-      sent_by_the_map(Watched(
+      sent_by_the_map(SeenBy(
         by: ConnectionId(viewer),
-        unit_id: viewer_unit(viewer),
+        stay: viewer_stay(viewer),
       )),
     ).0
   })
@@ -4483,17 +4500,11 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
   let #(_, taken) =
     feed(
       in_world(),
-      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+      sent_by_the_map(SeenBy(by: ConnectionId(2), stay: viewer_stay(2))),
     )
   assert peer_tells(taken)
     == [
-      #(
-        2,
-        told(
-          viewer: 2,
-          news: Appeared(unit: appearance_at(entry_place(), 1000)),
-        ),
-      ),
+      #(2, told(news: Appeared(unit: appearance_at(entry_place(), 1000)))),
     ]
     as "the viewer is sent the unit at once, from the origin the map's Joined carried: the map sends the client no unit"
   assert support.writes(taken) == []
@@ -4510,7 +4521,7 @@ pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_
   let #(_, taken) =
     feed(
       state,
-      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+      sent_by_the_map(SeenBy(by: ConnectionId(2), stay: viewer_stay(2))),
     )
   let assert [#(2, PeerNews(news: Appeared(unit:), ..))] = peer_tells(taken)
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
@@ -4527,12 +4538,12 @@ pub fn an_unwatched_makes_the_owner_send_that_viewer_its_0x355_and_no_more_moves
     moves_message([game_client.position_command(x: 1.0, y: 2.0, z: 3.0)])
   let state = watched_by(in_world(), [2, 3])
   let #(state, taken) =
-    feed(state, sent_by_the_map(Unwatched(by: ConnectionId(2))))
-  assert peer_tells(taken) == [#(2, told(viewer: 2, news: Removed))]
+    feed(state, sent_by_the_map(UnseenBy(by: ConnectionId(2))))
+  assert peer_tells(taken) == [#(2, told(news: Removed))]
     as "the viewer that stops seeing the unit is sent its removal, and only that one"
   assert list.map(peer_tells(read(state, moves).1), fn(sent) { sent.0 }) == [3]
     as "a viewer the map took back is sent no more moves"
-  let #(_, taken) = feed(state, sent_by_the_map(Unwatched(by: ConnectionId(8))))
+  let #(_, taken) = feed(state, sent_by_the_map(UnseenBy(by: ConnectionId(8))))
   assert peer_tells(taken) == [] && support.logs(taken) == []
     as "an Unwatched for a connection that is no viewer changes nothing and is no bug"
 }
@@ -4554,8 +4565,8 @@ pub fn the_owners_camp_sends_each_viewer_its_0x355_before_the_leave_is_asked_tes
   let #(_, taken) = answer(state:, taken:, outcome: place_saved())
   assert peer_tells(taken)
     == [
-      #(2, told(viewer: 2, news: Removed)),
-      #(3, told(viewer: 3, news: Removed)),
+      #(2, told(news: Removed)),
+      #(3, told(news: Removed)),
     ]
     as "its 0x355 to every viewer: the map's Unwatched after the leave would be a second sender"
   assert ask_request(taken) == leave_asked()
@@ -4604,14 +4615,8 @@ pub fn an_accepted_0x637_sends_one_0x638_to_each_viewer_with_the_relayed_command
   let #(_, taken) = read(watched_by(in_world(), [3, 2]), moves_message(sent))
   assert peer_tells(taken)
     == [
-      #(
-        2,
-        told(viewer: 2, news: Moving(server_time_ms: 1000, commands: relayed)),
-      ),
-      #(
-        3,
-        told(viewer: 3, news: Moving(server_time_ms: 1000, commands: relayed)),
-      ),
+      #(2, told(news: Moving(server_time_ms: 1000, commands: relayed))),
+      #(3, told(news: Moving(server_time_ms: 1000, commands: relayed))),
     ]
     as "one 0x638 per viewer, never to the mover itself, the commands in the order sent without kind 0, the sender's own clock (movement_command.kind_0); the time is the input's 1000 ms from the map's origin 0"
 }
@@ -4681,7 +4686,7 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
     let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
       peer_tells(at(
         monotonic_ms,
-        sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+        sent_by_the_map(SeenBy(by: ConnectionId(2), stay: viewer_stay(2))),
       ))
     unit.tail.server_time_estimate_start
   }
@@ -4715,7 +4720,13 @@ pub fn a_viewer_set_is_empty_after_a_camp_and_a_new_join_and_comes_back_only_by_
   let #(again, _) = entered_from(state, world_character())
   assert peer_tells(read(again, moves).1) == []
     as "the player that camped and entered again starts with no viewers, whoever saw the first one"
-  let again = watched_by(again, [4])
+  let #(again, _) =
+    feed(
+      again,
+      in_second_stay(
+        sent_by_the_map(SeenBy(by: ConnectionId(4), stay: viewer_stay(4))),
+      ),
+    )
   assert list.map(peer_tells(read(again, moves).1), fn(sent) { sent.0 }) == [4]
     as "the map's join sends the new notices"
 }
@@ -4834,7 +4845,7 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
   let #(_, appears) =
     feed(
       state,
-      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+      sent_by_the_map(SeenBy(by: ConnectionId(2), stay: viewer_stay(2))),
     )
   assert peer_tell_kinds(line_first) == []
     as "a player that does not see the speaker yet is told nothing"
@@ -4845,7 +4856,7 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
   let #(state, appears) =
     feed(
       in_world(),
-      sent_by_the_map(Watched(by: ConnectionId(2), unit_id: viewer_unit(2))),
+      sent_by_the_map(SeenBy(by: ConnectionId(2), stay: viewer_stay(2))),
     )
   let #(_, line) = read(state, chat_line_message(4, "Hello"))
   assert list.append(peer_tell_kinds(appears), peer_tell_kinds(line))
@@ -5784,8 +5795,9 @@ fn fighter() -> step.Address {
   step.Creature(map: camp_map(), incarnation:, unit_id: 7, life: 3)
 }
 
+/// A creature's tell of its fight, for the tests' player's first stay.
 fn foe(fight: strike_tell.Fight) -> Event(ConnectionEvent(Message, Answer)) {
-  OwnEvent(Woken(client_connection.SentByFoe(fight:)))
+  for_stay(own_stay(), client_connection.SentByFoe(fight:))
 }
 
 /// The tells of a step to creatures, as the creature's unit and the request.
@@ -5860,14 +5872,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
   let #(state, moved) = read(state, a_move(1.5))
   assert told_creatures(moved) == [] as "no fighter: no stream"
   let #(state, threatened) =
-    feed(
-      state,
-      foe(strike_tell.Threatened(
-        unit_id: 7,
-        life: 3,
-        player_unit_id: own_unit_id,
-      )),
-    )
+    feed(state, foe(strike_tell.Threatened(unit_id: 7, life: 3)))
   assert combat_states(threatened) == [#(5, 1)]
     as "0x89a (P, 1) to the player's own client: its unit 5, in combat"
   assert list.map(peer_tells(threatened), fn(tell) {
@@ -5900,11 +5905,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
       ),
     ]
     as "each accepted 0x637 goes to the fighter"
-  let #(state, released) =
-    feed(
-      state,
-      foe(strike_tell.Released(unit_id: 7, player_unit_id: own_unit_id)),
-    )
+  let #(state, released) = feed(state, foe(strike_tell.Released(unit_id: 7)))
   assert combat_states(released) == [#(5, 0)]
     as "0x89a (P, 0): the last fighter released it"
   let #(_, after) = read(state, a_move(3.5))
@@ -5914,14 +5915,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
 pub fn the_map_reporting_a_fighter_gone_clears_the_combat_flag_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) =
-    feed(
-      in_world(),
-      foe(strike_tell.Threatened(
-        unit_id: 7,
-        life: 3,
-        player_unit_id: own_unit_id,
-      )),
-    )
+    feed(in_world(), foe(strike_tell.Threatened(unit_id: 7, life: 3)))
   let #(_, gone) = feed(state, sent_by_the_map(map.Gone(unit_id: 7)))
   assert combat_states(gone) == [#(5, 0)]
     as "the creature crashed mid-fight: its Gone is its release, and 0x89a (P, 0) follows with no fighter left"
@@ -5946,32 +5940,6 @@ fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
       offence: spawn_support.beast_attack().offence,
     )),
   )
-}
-
-pub fn a_strike_on_a_unit_of_another_stay_is_dropped_test() -> Nil {
-  use <- owned_test.run(10_000)
-  // A strike of an earlier stay, delayed past the camp and this entry, names that
-  // stay's unit; the player of this stay is unit 5.
-  let #(_, old_unit) = feed(in_world(), a_beast_strike(4))
-  assert support.effects_of(old_unit) == []
-    as "nothing is written and nothing answered: the creature's deadline leaves the old unit out"
-  let other_run =
-    foe(
-      strike_tell.Attacks(tell: strike_tell.Strike(
-        key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id: 5),
-        from: step.Creature(
-          map: camp_map(),
-          incarnation: incarnation + 1,
-          unit_id: 7,
-          life: 3,
-        ),
-        striker: strike_tell.CreatureStriker,
-        offence: spawn_support.beast_attack().offence,
-      )),
-    )
-  let #(_, old_run) = feed(in_world(), other_run)
-  assert support.effects_of(old_run) == []
-    as "a creature of another run of the map is no creature of this stay"
 }
 
 pub fn a_stay_entered_again_before_any_move_tells_the_map_ready_with_the_connections_sequence_number_test() -> Nil {
@@ -6229,7 +6197,7 @@ fn a_beast_of(
         life: 3,
         spawn_id: spawn_id.SpawnId(1),
         clock_origin_ms: 0,
-        viewers: [#(ConnectionId(1), medic_unit)],
+        viewers: [#(ConnectionId(1), own_stay())],
       ),
       spawn:,
       kind: Kind(
@@ -6251,11 +6219,7 @@ fn to_the_medic(taken: step.ServiceStep(creature.Outgoing)) -> List(Message) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Send(to: step.Connection(ConnectionId(1)), message:)) ->
-        Ok(case message {
-          creature.News(news:) -> SentByPeer(news)
-          creature.Struck(answered:) -> SentByTarget(answered)
-          creature.FightTold(told:) -> client_connection.SentByFoe(told)
-        })
+        Ok(server.creature_message(outgoing: message))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -6487,10 +6451,9 @@ pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_ans
   let #(started, held_attack) =
     list.partition(to_the_medic(ticked), fn(message) {
       case message {
-        client_connection.SentByFoe(..) -> False
-        SentBySessions(..)
-        | SentByMap(..)
-        | SentByPeer(..)
+        ForStay(sent: client_connection.SentByFoe(..), ..) -> False
+        ForStay(..)
+        | SentBySessions(..)
         | client_connection.SentByChat(..)
         | SentByTarget(..) -> True
       }
@@ -6578,14 +6541,7 @@ fn killed(
   state: game_connection.State,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, _) =
-    feed(
-      state,
-      foe(strike_tell.Threatened(
-        unit_id: 7,
-        life: 3,
-        player_unit_id: own_unit_id,
-      )),
-    )
+    feed(state, foe(strike_tell.Threatened(unit_id: 7, life: 3)))
   feed(state, a_killing_strike())
 }
 
@@ -6965,8 +6921,15 @@ fn holocrypt_joining() -> #(game_connection.State, ConnectionStep(Request)) {
 /// The Holocrypt's join answered by a map that gave the player's first unit
 /// before: the player is in the world as unit 6.
 fn at_the_holocrypt() -> #(game_connection.State, ConnectionStep(Request)) {
+  at_the_holocrypt_in(map_after_a_stay())
+}
+
+/// The Holocrypt's join answered by the map `map_state`.
+fn at_the_holocrypt_in(
+  map_state: map.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = holocrypt_joining()
-  let #(_, joined) = mapped(map_state: map_after_a_stay(), taken:)
+  let #(_, joined) = mapped(map_state:, taken:)
   answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
 }
 
@@ -6998,6 +6961,7 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
         connection: ConnectionId(1),
         character: world_character(),
         place: start,
+        stay: map_support.stay(count: 2),
       ),
     )
     as "a Dominion Cassian in World 3460: the Novice start's row 51596 is that world's start of its race and faction"
@@ -7017,10 +6981,13 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
   let #(_, watched) =
     feed(
       state,
-      sent_by_the_map(Watched(by: ConnectionId(3), unit_id: viewer_unit(3))),
+      in_second_stay(
+        sent_by_the_map(SeenBy(by: ConnectionId(3), stay: viewer_stay(3))),
+      ),
     )
-  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id: 6, ..))] =
-    peer_tells(watched)
+  let assert [#(3, stay, PeerNews(news: Appeared(unit:), unit_id: 6))] =
+    peer_tells_for(watched)
+  assert stay == viewer_stay(3) as "for the stay of the viewer the map named"
   let assert [start_movement.Position(at), _] = unit.tail.movement_commands
   assert at.x == float32.to_bits(start_place.x(start))
     && at.z == float32.to_bits(start_place.z(start))
@@ -7068,9 +7035,9 @@ pub fn a_viewer_that_arrives_while_the_player_is_dead_gets_its_0x262_with_health
   let #(_, taken) =
     feed(
       state,
-      sent_by_the_map(Watched(by: ConnectionId(3), unit_id: viewer_unit(3))),
+      sent_by_the_map(SeenBy(by: ConnectionId(3), stay: viewer_stay(3))),
     )
-  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:, ..))] =
+  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:))] =
     peer_tells(taken)
   assert unit_id == own_unit_id as "the body, not the ghost"
   assert list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 0))
@@ -7086,7 +7053,7 @@ pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
     UnitStat(stat_id: 0, value: 736),
   )
     as "the new entry's 0x262 carries full health"
-  let #(_, struck) = feed(again, a_beast_strike(own_unit_id))
+  let #(_, struck) = feed(again, in_second_stay(a_beast_strike(own_unit_id)))
   assert decoded(heard(struck, keyed()), 0x0938, unit_stat_changed.decode)
     == [UnitStatChanged(unit_id: own_unit_id, stat_id: 20, value: 448)]
     && decoded(heard(struck, keyed()), 0x092F, player_health.decode)
@@ -7094,31 +7061,78 @@ pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
     as "alive and full: a strike lands on the full shield and health"
 }
 
-pub fn an_appeared_and_a_threatened_of_the_stay_before_the_holocrypt_delivered_after_its_join_are_dropped_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, _) = at_the_holocrypt()
-  let appeared = fn(viewer_unit_id) {
-    sent_by_a_peer(PeerNews(
-      map: camp_map(),
-      incarnation:,
-      unit_id: 9,
-      viewer_unit_id:,
-      news: Appeared(unit: another_unit()),
-    ))
-  }
-  let threatened = fn(player_unit_id) {
-    foe(strike_tell.Threatened(unit_id: 7, life: 3, player_unit_id:))
-  }
-  assert support.effects_of(feed(state, appeared(own_unit_id)).1) == []
-    as "a 0x262 sent to the player's unit 5, before the Holocrypt, would show a unit no one removes"
-  assert support.effects_of(feed(state, threatened(own_unit_id)).1) == []
-    as "a threat of unit 5 would put the player of unit 6 in a fight"
-  assert written_ids(feed(state, appeared(6)).1) == [0x0262]
-    && written_ids(feed(state, threatened(6)).1) == [0x089A]
-    as "the same news for this stay's unit 6 is taken"
+// ---- messages of an earlier stay
+//
+// Expected values: each join of a map is a new stay of the player, after every
+// earlier one (genesis_prime/world_map/stay). A message sent for one stay can
+// reach the connection after the leave that ended it (the Holocrypt's, the
+// camp's) and the next join, even in the same run of the map, or in a run that
+// restarted and gave the player the same unit id again. That client holds none
+// of the earlier stay's units and fights none of its creatures, so such a message
+// is dropped: nothing written, told or answered. The same message for the stay
+// the player is in is taken.
+
+/// What other processes send the tests' player for a stay, in an order the
+/// player takes each of: the map's `SeenBy` of connection 3, a peer's 0x262 of
+/// unit 9, a creature's threat, its strike on the player's unit `unit_id`, and its
+/// release.
+fn stay_messages(
+  unit_id unit_id: Int,
+) -> List(#(String, client_connection.StaySent)) {
+  let assert OwnEvent(Woken(ForStay(sent: strike, ..))) =
+    a_beast_strike(unit_id)
+    as "a strike is a creature's message for a stay"
+  [
+    #(
+      "the map's SeenBy",
+      SentByMap(SeenBy(by: ConnectionId(3), stay: viewer_stay(3))),
+    ),
+    #(
+      "a peer's 0x262",
+      SentByPeer(news_of(unit_id: 9, news: Appeared(unit: another_unit()))),
+    ),
+    #(
+      "a creature's threat",
+      client_connection.SentByFoe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    ),
+    #("a creature's strike", strike),
+    #(
+      "a creature's release",
+      client_connection.SentByFoe(strike_tell.Released(unit_id: 7)),
+    ),
+  ]
 }
 
-pub fn an_appeared_and_a_threatened_of_the_stay_before_a_camp_delivered_after_the_next_entry_are_dropped_test() -> Nil {
+/// Checks the tests' player in `state`, in its stay `stay` as unit `unit_id`
+/// after its first stay as unit 5: each message of the first stay is dropped,
+/// and each of `stay`, in order, is taken.
+fn takes_only_its_own_stay(
+  state state: game_connection.State,
+  stay stay: Stay,
+  unit_id unit_id: Int,
+) -> Nil {
+  list.each(stay_messages(unit_id: own_unit_id), fn(message) {
+    let #(_, taken) = feed(state, for_stay(own_stay(), message.1))
+    assert support.effects_of(taken) == []
+      as { message.0 <> " of the stay before is dropped" }
+  })
+  list.fold(stay_messages(unit_id:), state, fn(state, message) {
+    let #(state, taken) = feed(state, for_stay(stay, message.1))
+    assert support.effects_of(taken) != []
+      as { message.0 <> " of this stay is taken" }
+    state
+  })
+  Nil
+}
+
+pub fn messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = at_the_holocrypt()
+  assert player_in(taken).unit_id == 6
+  takes_only_its_own_stay(state:, stay: map_support.stay(count: 2), unit_id: 6)
+}
+
+pub fn messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(camped, _) = camped_out()
   let #(state, taken) = read(camped, select_start())
@@ -7130,29 +7144,25 @@ pub fn an_appeared_and_a_threatened_of_the_stay_before_a_camp_delivered_after_th
     )
   let #(state, taken) = joining_from(state, world_character())
   let #(_, joined) = mapped(map_state: map_after_a_stay(), taken:)
-  let #(state, _) =
+  let #(state, entry) =
     answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
-  let old =
-    sent_by_a_peer(PeerNews(
-      map: camp_map(),
-      incarnation:,
-      unit_id: 9,
-      viewer_unit_id: own_unit_id,
-      news: Appeared(unit: another_unit()),
-    ))
-  assert support.effects_of(feed(state, old).1) == []
-  assert support.effects_of(
-      feed(
-        state,
-        foe(strike_tell.Threatened(
-          unit_id: 7,
-          life: 3,
-          player_unit_id: own_unit_id,
-        )),
-      ).1,
-    )
-    == []
-    as "news of the first stay, unit 5, reaching the second, unit 6, is dropped"
+  assert player_in(entry).unit_id == 6
+  takes_only_its_own_stay(state:, stay: map_support.stay(count: 2), unit_id: 6)
+}
+
+pub fn messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The Holocrypt's join reaches a run of the map that started after the old one
+  // ended, with four players in it: it gives the player unit 5 again, the unit
+  // id of the stay before.
+  let #(state, taken) =
+    at_the_holocrypt_in(map_run_with_four_players(incarnation + 1))
+  assert player_in(taken).unit_id == own_unit_id
+  takes_only_its_own_stay(
+    state:,
+    stay: map_support.stay(count: 2),
+    unit_id: own_unit_id,
+  )
 }
 
 // ---- the done-when fight: each class against a planted creature, both rules

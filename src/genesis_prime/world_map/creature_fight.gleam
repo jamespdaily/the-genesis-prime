@@ -15,7 +15,7 @@
 ////                          ─Approached(P, unit, place, seq)─▶ Resting, P a viewer:
 ////                                                         threat {P: aggro_threat}; near + P
 ////                                                         ─0x908(C, P, threat) 0x89a(C, 1)──────▶
-//// ◀────────────────────── Threatened(C, life, P's unit) ──
+//// ◀──────────────────────────────── Threatened(C, life) ──
 //// 0x89a(P, 1) to P and P's viewers; P's place now, then each accepted 0x637:
 //// ─TargetMoved(place, seq)────────────────────────────────▶ the newest seq per connection wins
 ////                                                         StartTimer(attack tick, interval)
@@ -33,7 +33,7 @@
 //// the attack tick finds C at the leash circle with the target out of reach, or no threat is left:
 ////                                                         ─0x90a(C, X, 0) for each X, 0x89a(C, 0),
 ////                                                            0x937 full, 0x638 home────────────▶
-//// ◀────────────────────── Released(C, P's unit) ─ to each threatened connection
+//// ◀──────────────────────────────── Released(C) ─ to each threatened connection
 //// 0x89a(P, 0) when no fighter is left; the stream stops   Returning: strikes Refused(Returning),
 ////                                                         Approached only adds to near
 //// the home timer ─────────────────────────────────────▶   Resting; each near player it still sees
@@ -507,7 +507,7 @@ fn start_fight(
       ]
       let told =
         list.map(entries, fn(entry) {
-          ToPlayer(to: entry.0, told: threatened_told(fighter:, entry: entry.1))
+          ToPlayer(to: entry.0, told: threatened_told(fighter:))
         })
       let #(state, chased) = chase(state:, fighter:, now_ms:)
       #(
@@ -524,11 +524,9 @@ fn start_fight(
   }
 }
 
-/// The tell that puts the player of `entry` on the threat list, naming its unit.
-fn threatened_told(fighter fighter: Fighter, entry entry: Threat) -> Told {
+fn threatened_told(fighter fighter: Fighter) -> Told {
   case fighter.address {
-    step.Creature(life:, ..) ->
-      Threatened(unit_id: fighter.unit_id, life:, player_unit_id: entry.unit_id)
+    step.Creature(life:, ..) -> Threatened(unit_id: fighter.unit_id, life:)
     step.Sessions
     | step.HandOff
     | step.Store
@@ -539,11 +537,6 @@ fn threatened_told(fighter fighter: Fighter, entry entry: Threat) -> Told {
     | step.ZoneChannel(..) ->
       panic as "a creature's address is a Creature address"
   }
-}
-
-/// The tell that takes the player of `entry` off the threat list, naming its unit.
-fn released_told(fighter fighter: Fighter, entry entry: Threat) -> Told {
-  Released(unit_id: fighter.unit_id, player_unit_id: entry.unit_id)
 }
 
 /// A viewer's strike adds its threat: a resting creature starts a fight with it; a
@@ -582,15 +575,7 @@ fn threatened_by(
           status: Fighting(..fighting, threat: entries, target: top),
         )
       let told = case is_new {
-        True -> [
-          ToPlayer(
-            to: by,
-            told: threatened_told(
-              fighter:,
-              entry: Threat(unit_id:, amount: threat),
-            ),
-          ),
-        ]
+        True -> [ToPlayer(to: by, told: threatened_told(fighter:))]
         False -> []
       }
       let named = case top != target || top == by {
@@ -662,10 +647,11 @@ fn unwatched(
   }
 }
 
-/// The player of `by` leaves the threat list and is told `Released`; with no one
-/// left the creature leashes, else its entry is erased (0x90a 0) and a new top
-/// entry is named its target (0x908). A player no longer on the list (its
-/// `Unwatched` came during the round) was released then.
+/// The player of `by` leaves the threat list and is told `Released`: with no one
+/// left the creature leashes, which tells it with the rest of the leash, else its
+/// entry is erased (0x90a 0) and a new top entry is named its target (0x908). A
+/// player no longer on the list (its `Unwatched` came during the round) was
+/// released then.
 fn released(
   state state: State,
   fighter fighter: Fighter,
@@ -682,13 +668,10 @@ fn released(
     Ok(#(entries, entry)) -> {
       let erased = ToViewers(threat_news(Threat(..entry, amount: 0.0)))
       let entries = dict.delete(entries, by)
-      let told = ToPlayer(to: by, told: released_told(fighter:, entry:))
       case dict.is_empty(entries) {
-        True -> {
-          let #(state, effects) = leash(state:, fighter:, now_ms:)
-          #(state, list.append(effects, [told]))
-        }
+        True -> leash(state:, fighter:, now_ms:)
         False -> {
+          let told = ToPlayer(to: by, told: Released(unit_id: fighter.unit_id))
           let #(state, named, chased) =
             retargeted(state:, fighter:, entries:, now_ms:)
           #(state, list.flatten([[erased], named, [told], chased]))
@@ -996,7 +979,7 @@ fn leash(
       ],
       moved,
       list.map(entries, fn(entry) {
-        ToPlayer(to: entry.0, told: released_told(fighter:, entry: entry.1))
+        ToPlayer(to: entry.0, told: Released(unit_id: fighter.unit_id))
       }),
       [
         StartTimer(
@@ -1032,7 +1015,7 @@ fn killed(
           finished,
           [ToViewers(client_connection.CombatState(in_combat: False))],
           list.map(sorted_entries(threat), fn(entry) {
-            ToPlayer(to: entry.0, told: released_told(fighter:, entry: entry.1))
+            ToPlayer(to: entry.0, told: Released(unit_id: fighter.unit_id))
           }),
         ]),
       )
