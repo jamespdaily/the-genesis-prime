@@ -67,6 +67,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
 import genesis_prime/table/prerequisite
+import genesis_prime/table/spell4_conditions
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
@@ -78,6 +79,7 @@ import gleam/list
 import novice_tables
 import place_support
 import planted_table.{type Cell, Boolean, Float, Integer}
+import spell_tables
 
 /// The look of the planted CharacterCustomization row 10 (race 1, sex 0,
 /// faction 166): label 2 = 1 and label 21 = 2, which show display 137 on
@@ -105,6 +107,27 @@ pub fn shared_with_spell_trees() -> store.Tables {
     load_files(list.append(
       list.filter(files(), fn(file) { !list.contains(names, file.0) }),
       trees,
+    ))
+  })
+}
+
+/// The planted tables with Spell4Conditions row 43, the caster row of every
+/// ability a planted class presses, holding no dead bit (mask 1248, the client's
+/// 1249 less bit 0, `cast.dead_player`): test data, since no pressable planted
+/// ability names a caster row without it, so a dead caster's client sends a
+/// press only with this one. Loaded once under a key of its own.
+pub fn shared_with_row_43_for_the_dead() -> store.Tables {
+  database_support.once("character_tables_row_43_for_the_dead", fn() {
+    load_files(novice_tables.with_creature_attack(
+      files: files_replacing(
+        schema: spell4_conditions.schema,
+        rows: spell_tables.spell4_conditions_rows_of(masks: [
+          #(1, 225),
+          #(4, 0),
+          #(43, 1248),
+        ]),
+      ),
+      padding: False,
     ))
   })
 }

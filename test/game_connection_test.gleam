@@ -168,6 +168,7 @@ import genesis_prime/table/character_customization
 import genesis_prime/table/id.{
   CharacterCustomizationLabelId, ClassId, RaceId, Spell4Id,
 }
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_life
@@ -6612,7 +6613,6 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
     as "0x247 of type 22 for the player"
   let assert [ghost] = decoded(frames, 0x0262, unit_create_ghost.decode)
     as "the ghost's 0x262 is of type 23"
-  let player = player_in(entered().1)
   assert ghost.unit_id == ghost_unit_id
     && ghost.character_id == 42
     && ghost.realm_id == 5
@@ -6620,11 +6620,16 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
     && ghost.race_id == 1
     && ghost.class_id == 2
     && ghost.gender == 0
-    && ghost.title_id == player.title_id
-    as "the character's id, the realm's id 5, its name, race, class, gender and title"
+    && ghost.title_id == 0
+    as "the character's id, the realm's id 5, its name, race, class, gender, and title 0: the tests' character has none (opcode.0x262.ghost, its last value; 0 is no CharacterTitle row)"
   assert ghost.tail.stats == [] as "the client reads no stat of a ghost"
-  assert ghost.tail.movement_commands
-    == appearance_at(entry_place(), 0).tail.movement_commands
+  let assert [start_movement.Position(at), start_movement.Rotation(_)] =
+    ghost.tail.movement_commands
+    as "a position and a rotation, as the player's own 0x262 starts"
+  let body = entry_place()
+  assert at.x == float32.to_bits(start_place.x(body))
+    && at.y == float32.to_bits(start_place.y(body))
+    && at.z == float32.to_bits(start_place.z(body))
     as "at the body's place: where the player stood when it fell"
   assert decoded(frames, 0x01B3, resurrection_window.decode)
     == [
@@ -6707,6 +6712,52 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_for_a_unit_it_shows_and_n
   )
 }
 
+pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The news a dying player's connection tells its viewer, and then its coming
+  // back's, reach a viewer that shows the player as unit 9.
+  let #(state, died) = dead_in_world()
+  let #(_, woke) = read(state, wake_here())
+  let #(shown, _) = feed(in_world(), event_of(Appears))
+  let written = fn(news: List(News)) {
+    let #(_, frames) =
+      list.fold(news, #(shown, []), fn(held, news) {
+        let #(viewer, frames) = held
+        let #(viewer, taken) =
+          feed(viewer, sent_by_a_peer(news_of(unit_id: 9, news:)))
+        #(viewer, list.append(frames, heard(taken, keyed())))
+      })
+    frames
+  }
+  let death = written(news_told(died, 2))
+  assert list.map(death, fn(frame) { frame.message_id })
+    == [0x0938, 0x0937, 0x088C, 0x089A, 0x0247]
+    as "the shield and the health, then 0x88c, 0x89a and 0x247, in the order told"
+  assert decoded(death, 0x088C, unit_death_state.decode)
+    == [UnitDeathState(unit_id: 9, dead: 1, field_3: 0, field_4: 0)]
+    as "opcode.0x88c: the unit dead"
+  assert decoded(death, 0x089A, unit_combat_state.decode)
+    == [UnitCombatState(unit_id: 9, in_combat: 0)]
+    as "opcode.0x89a: out of combat (death.combat_flag)"
+  assert decoded(death, 0x0247, combat_log.decode)
+    == [CombatLog(entry: combat_log_entry.Death(CombatLogDeath(9)))]
+    as "opcode.0x247.death: type 22"
+  let back = written(news_told(woke, 2))
+  assert list.map(back, fn(frame) { frame.message_id })
+    == [0x0937, 0x0938, 0x088C, 0x0247]
+  assert decoded(back, 0x0937, unit_health.decode)
+    == [UnitHealth(unit_id: 9, health: 736, dead: 0)]
+    as "full health, 736 (player.level1_base_health)"
+  assert decoded(back, 0x0938, unit_stat_changed.decode)
+    == [UnitStatChanged(unit_id: 9, stat_id: 20, value: 450)]
+    as "the full shield, 450 (player.level1_gear_properties)"
+  assert decoded(back, 0x088C, unit_death_state.decode)
+    == [UnitDeathState(unit_id: 9, dead: 0, field_3: 0, field_4: 0)]
+  assert decoded(back, 0x0247, combat_log.decode)
+    == [CombatLog(entry: combat_log_entry.Resurrect(CombatLogResurrect(9)))]
+    as "opcode.0x247.death: type 23"
+}
+
 pub fn a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test() -> Nil {
   use <- owned_test.run(10_000)
   let state = watched_by(medic_in_world(), [2])
@@ -6742,6 +6793,34 @@ pub fn a_dead_players_press_of_an_ability_with_the_dead_bit_is_refused_57_and_st
   assert refused.result == cast_result.CasterCannotBeDead
     as "57 Caster_CannotBeDead: Paralytic Surge's caster row 43 has the dead bit"
   assert strikes_told(taken) == [] && !support.stops(taken)
+}
+
+/// The Medic of these tables in the world, the Beast unit 40 shown before it.
+fn medic_of(tables: table_store.Tables) -> game_connection.State {
+  let fresh = accepted(Settings(..settings(), tables:)).0
+  let #(medic, _) =
+    entered_from(
+      in_select_from(fresh),
+      Character(..world_character(), class_id: ClassId(4)),
+    )
+  feed(medic, beast_appears(unit_id: 40)).0
+}
+
+pub fn a_dead_players_press_of_an_ability_without_the_dead_bit_is_taken_as_the_livings_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client checks only bit 0 of the caster row: without it, it sends the
+  // press of a dead caster (cast.dead_player); the planted row 43 lacks it.
+  let living = medic_of(character_tables.shared_with_row_43_for_the_dead())
+  let #(dead, _) = killed(living)
+  let #(_, alive_press) =
+    press_paralytic_surge(state: living, client_cast_id: 2)
+  let #(_, dead_press) = press_paralytic_surge(state: dead, client_cast_id: 2)
+  assert written_ids(alive_press) != [0x07FC]
+    && list.length(strikes_told(alive_press)) == 1
+    as "the living Medic's press starts the cast and strikes the Beast"
+  assert written_ids(dead_press) == written_ids(alive_press)
+    && strikes_told(dead_press) == strikes_told(alive_press)
+    as "the dead Medic's press is taken as the living's: the same frames, the same strike"
 }
 
 pub fn a_strike_on_a_dead_player_is_refused_dead_and_writes_nothing_test() -> Nil {
@@ -7051,6 +7130,49 @@ pub fn what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_
   let #(_, moved) = read(state, a_move(1.5))
   assert moves_told(moved) == [1]
     as "after the stay's first 0xF2 a move moves the body, the first numbered since the dead dropped none"
+}
+
+pub fn the_holocrypt_of_a_world_with_no_start_of_the_race_and_faction_is_the_place_the_stay_entered_at_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The planted Novice start of the tests' race and faction stands in World 0
+  // here, so World 3460 holds none: the server's choice is the place the stay
+  // entered at (death.server_choices).
+  let fresh =
+    accepted(
+      Settings(
+        ..settings(),
+        tables: character_tables.shared_with_novice_start_in_world_0(),
+      ),
+    ).0
+  assert entry_place() != character_tables.novice_start_place()
+    as "the place the stay entered at is not the Novice start"
+  let #(state, _) = entered_from(in_select_from(fresh), world_character())
+  let #(state, _) = killed(watched_by(state, [2]))
+  let #(state, chosen) = read(state, holocrypt())
+  let #(_, joining) =
+    answer(state:, taken: chosen, outcome: step.Answer(FromMap(Left)))
+  assert ask_request(joining)
+    == AskMap(
+      map: camp_map(),
+      message: Join(
+        connection: ConnectionId(1),
+        character: world_character(),
+        place: entry_place(),
+        stay: map_support.stay(count: 2),
+      ),
+    )
+}
+
+pub fn the_map_ending_while_the_player_is_dead_saves_where_the_body_lies_and_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = dead_in_world()
+  let #(state, taken) = feed(state, WatchEnded(WatchId(2)))
+  assert ask_request(taken) == save_asked(1, entry_place())
+    as "the body's place: where it fell"
+  assert support.writes(taken) == [] && !support.stops(taken)
+  let #(_, ended) = answer(state:, taken:, outcome: place_saved())
+  assert disconnect(ended, keyed()) == LostUserServer
+    as "the player is gone from the world with its map, dead or not: 0x036A reason 8"
 }
 
 pub fn a_holocrypt_leave_with_no_answer_ends_the_connection_test() -> Nil {

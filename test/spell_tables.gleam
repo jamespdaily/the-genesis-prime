@@ -235,7 +235,14 @@ pub fn caster_conditions(id: Int) -> Int {
 /// (`table_rows -- Spell4Conditions`): 1 (mask 225, value 0) and 43 (mask 1249,
 /// value 0), each with the dead bit, and 4 (mask 0), with none.
 pub fn spell4_conditions_rows() -> List(List(Cell)) {
-  list.map([#(1, 225), #(4, 0), #(43, 1249)], fn(row) {
+  spell4_conditions_rows_of(masks: [#(1, 225), #(4, 0), #(43, 1249)])
+}
+
+/// Spell4Conditions rows, each its id and its conditionMask, with value 0.
+pub fn spell4_conditions_rows_of(
+  masks masks: List(#(Int, Int)),
+) -> List(List(Cell)) {
+  list.map(masks, fn(row) {
     planted_table.row(spell4_conditions.schema, [
       #("ID", Integer(row.0)),
       #("conditionMask", Integer(row.1)),
