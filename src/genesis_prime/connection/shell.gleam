@@ -1206,8 +1206,13 @@ fn start_timer(
   timer timer: TimerId,
   after_ms after_ms: Int,
 ) -> Running(state, request) {
-  case timer_book.is_running(timers: running.timers, timer:) {
-    True -> {
+  let started =
+    timer_book.start(timers: running.timers, timer:, schedule: fn(reference) {
+      running.script.schedule(connection.timers, timer, reference, after_ms)
+    })
+  case started {
+    Ok(timers) -> Running(..running, timers:)
+    Error(Nil) -> {
       runtime.log(
         LogError,
         "a rule started a timer whose id is already running, which the connection shell does not carry out",
@@ -1215,20 +1220,6 @@ fn start_timer(
       )
       close(running.socket)
       panic as "a rule started a timer whose id is already running"
-    }
-    False -> {
-      let reference = reference.new()
-      let cancel =
-        running.script.schedule(connection.timers, timer, reference, after_ms)
-      Running(
-        ..running,
-        timers: timer_book.started(
-          timers: running.timers,
-          timer:,
-          reference:,
-          cancel:,
-        ),
-      )
     }
   }
 }

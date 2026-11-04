@@ -2,7 +2,8 @@
 //// server_table`). Expected values are these.
 //// - The list: the tables the server's rules read. Of the client's 384,
 ////   the Creature2 table with its ArcheType, Difficulty, DisplayGroupEntry,
-////   DisplayInfo, OverrideProperties, Resist and Tier
+////   DisplayInfo, OutfitGroupEntry, OverrideProperties, Resist and Tier, with
+////   InstancePortal and PathMission
 ////   (`genesis_prime/world_map/spawn`),
 ////   CharacterCreation (the create request's row, the Novice set), CharacterCustomization,
 ////   CharacterCustomizationLabel (the look's rows and labels),
@@ -30,7 +31,7 @@ import gleam/string
 import owned_test
 import planted_table
 
-pub fn the_servers_tables_are_the_twenty_six_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_twenty_nine_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -46,6 +47,7 @@ pub fn the_servers_tables_are_the_twenty_six_its_rules_read_test() -> Nil {
       "Creature2Difficulty",
       "Creature2DisplayGroupEntry",
       "Creature2DisplayInfo",
+      "Creature2OutfitGroupEntry",
       "Creature2OverrideProperties",
       "Creature2Resist",
       "Creature2Tier",
@@ -53,11 +55,13 @@ pub fn the_servers_tables_are_the_twenty_six_its_rules_read_test() -> Nil {
       "CustomizationParameter",
       "CustomizationParameterMap",
       "GameFormula",
+      "InstancePortal",
       "Item2",
       "Item2Category",
       "Item2Family",
       "Item2Type",
       "ItemSlot",
+      "PathMission",
       "Spell4",
       "SpellLevel",
       "WorldLocation2",

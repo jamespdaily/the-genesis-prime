@@ -171,14 +171,7 @@ pub fn map_supervisor(
     Subject(Call(map.Message, map.Outgoing)),
   ),
 ) {
-  factory_supervisor.worker_child(start)
-  |> factory_supervisor.named(name)
-  |> factory_supervisor.restart_strategy(supervision.Temporary)
-  // A temporary map is never restarted, so this limit is never reached.
-  |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
-  |> factory_supervisor.timeout(ms: shutdown_ms)
-  |> factory_supervisor.supervised
-  |> supervision.restart(supervision.Permanent)
+  service.temporary_factory(name:, shutdown_ms:, start:)
 }
 
 /// The running map, started when it is not running: `Error(Nil)` when Maps

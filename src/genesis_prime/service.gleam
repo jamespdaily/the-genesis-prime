@@ -17,6 +17,7 @@ import genesis_prime/step/runtime
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
+import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 
 /// What reaches a service when another process asks it or tells it: the
@@ -138,6 +139,26 @@ pub fn send_by_name(
   use pid <- result.map(process.named(name))
   let _sent = send_to(pid, #(name, message))
   pid
+}
+
+/// A factory supervisor named `name` that starts a service with `start` for each
+/// argument it is asked with (`start_child`), each child temporary, a permanent
+/// child of the supervisor that holds it, and given `shutdown_ms` to stop. A
+/// temporary child is never restarted, so the restart limit, stated for the
+/// check that every supervisor states one, is never reached: whoever asked for the
+/// child starts another when it must (a map's creatures, Maps' maps).
+pub fn temporary_factory(
+  name name: Name(factory_supervisor.Message(argument, data)),
+  shutdown_ms shutdown_ms: Int,
+  start start: fn(argument) -> actor.StartResult(data),
+) -> ChildSpecification(factory_supervisor.Supervisor(argument, data)) {
+  factory_supervisor.worker_child(start)
+  |> factory_supervisor.named(name)
+  |> factory_supervisor.restart_strategy(supervision.Temporary)
+  |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
+  |> factory_supervisor.timeout(ms: shutdown_ms)
+  |> factory_supervisor.supervised
+  |> supervision.restart(supervision.Permanent)
 }
 
 /// Why a child of a factory supervisor was not started.

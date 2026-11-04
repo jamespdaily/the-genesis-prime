@@ -8,8 +8,18 @@
 ////   Virtual Battle Beast (Creature2 73464), each marked as that row. The Dominion
 ////   Virtual Defense Dagun (Creature2 73465) has no record anywhere, so each of its
 ////   27 points is marked as the offset of one of those rows.
-//// - The client's Creature2 validity rules (`0x140485790`): the tables' load fails
-////   when a spawn names a creature the client would not load.
+//// - The client's Creature2 validity rules (`0x140485790`, `0x140483d20`): the
+////   tables' load fails when a spawn names a creature the client would not load.
+//// - The creature trace of the combat core (the Client trace artifact of issue
+////   274, its creatures section; facts `Creature2.73464` and `Creature2.73465`,
+////   `0x1404585c0`): the Virtual Battle Beast is level 1, faction 1441, display
+////   26565, Base Health 135.97028 x 1.0 x 0.387 x 1.0 = 52.6205, so 52; the Virtual
+////   Defense Dagun is level 1, faction 1442, display 26578 and, with the
+////   archetype's 0.96, Base Health 50.5157, so 50.
+//// - The rule of the spawn's choices (its doc comment): an override of property 7
+////   is Base Health; the display is the entry of greatest weight with a
+////   Creature2DisplayInfo row, the lowest display id on a tie; an id of 0 for the
+////   difficulty or the resist needs no row, and multiplies by 1.0.
 //// The test of the points reads the client's real tables, so it is skipped where
 //// there are none (`GENESIS_NO_CLIENT=1`); the test of the validity rules loads
 //// planted tables, so it runs in CI.
@@ -17,9 +27,16 @@
 import character_tables
 import client_tables
 import genesis_prime/game/start_place
+import genesis_prime/table/creature2_display_group_entry
+import genesis_prime/table/creature2_display_info
+import genesis_prime/table/creature2_outfit_group_entry
+import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/id.{Creature2Id, WorldLocation2Id}
+import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/loader/tbl_file
+import genesis_prime/table/path_mission
 import genesis_prime/table/world_location2
 import genesis_prime/world_map/spawn.{type Spawn, NoRecord, WorldDatabase}
 import gleam/erlang/reference
@@ -129,6 +146,18 @@ pub fn a_creature_row_the_client_would_not_load_fails_the_tables_load_naming_the
         [#("creature2DisplayGroupId", planted_table.Integer(0))],
         "display group is 0",
       ),
+      #(
+        [#("pathMissionIdSoldier", planted_table.Integer(99))],
+        "pathMissionIdSoldier row does not exist",
+      ),
+      #(
+        [#("instancePortalId", planted_table.Integer(99))],
+        "instancePortalId row does not exist",
+      ),
+      #(
+        [#("creature2OutfitGroupId", planted_table.Integer(99))],
+        "outfit group has no entries",
+      ),
     ],
     fn(case_) {
       let #(changes, words) = case_
@@ -139,4 +168,147 @@ pub fn a_creature_row_the_client_would_not_load_fails_the_tables_load_naming_the
         as { "the reason names the creature and the rule: " <> reason }
     },
   )
+}
+
+/// The spawns of a load of these planted files, under a key of its own.
+fn spawns_of(files: List(#(String, BitArray))) -> List(Spawn) {
+  use folder <- planted_table.in_folder(files)
+  let assert Ok(tables) =
+    server_table.load_under(under: reference.new(), from: folder)
+    as "the planted files load as the server's tables"
+  spawn.all(tables)
+}
+
+/// The files with the file of `schema` holding `rows` in place of its own.
+fn replacing(
+  files files: List(#(String, BitArray)),
+  schema schema: tbl_file.Schema,
+  rows rows: List(List(planted_table.Cell)),
+) -> List(#(String, BitArray)) {
+  list.map(files, fn(file) {
+    case file.0 == schema.file {
+      True -> planted_table.file(schema, rows)
+      False -> file
+    }
+  })
+}
+
+/// The health, faction and display of the spawns of one creature, each once.
+fn values_of(
+  spawns: List(Spawn),
+  creature: Int,
+) -> List(#(Int, Int, Int, Int)) {
+  list.filter(spawns, fn(spawn) { spawn.creature_id == Creature2Id(creature) })
+  |> list.map(fn(spawn) {
+    #(spawn.level, spawn.health, spawn.faction_id, spawn.display_info_id)
+  })
+  |> list.unique
+}
+
+pub fn the_derived_spawns_carry_the_creature_traces_numbers_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let spawns = spawns_of(character_tables.files())
+  assert values_of(spawns, 73_464) == [#(1, 52, 1441, 26_565)]
+    as "Creature2.73464: level 1, Base Health 52.6205 truncated, faction 1441, display 26565"
+  assert values_of(spawns, 73_465) == [#(1, 50, 1442, 26_578)]
+    as "Creature2.73465: level 1, Base Health 50.5157 truncated, faction 1442, display 26578"
+}
+
+pub fn a_creatures_override_of_property_7_is_its_base_health_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let files =
+    replacing(
+      files: character_tables.files(),
+      schema: creature2_override_properties.schema,
+      rows: [
+        character_tables.override_row(
+          id: 1,
+          creature: 73_464,
+          property: 7,
+          value: 77.9,
+        ),
+        character_tables.override_row(
+          id: 2,
+          creature: 73_464,
+          property: 40,
+          value: 1.0,
+        ),
+      ],
+    )
+  let spawns = spawns_of(files)
+  assert values_of(spawns, 73_464) == [#(1, 77, 1441, 26_565)]
+    as "the override's 77.9 truncated, in place of the formula's 52"
+  assert values_of(spawns, 73_465) == [#(1, 50, 1442, 26_578)]
+    as "another creature keeps the formula"
+}
+
+pub fn the_display_is_the_entry_of_greatest_weight_with_a_display_row_and_the_lowest_id_on_a_tie_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let info = fn(id) {
+    planted_table.row(creature2_display_info.schema, [
+      #("ID", planted_table.Integer(id)),
+    ])
+  }
+  let weighted = fn(id, group, display, weight) {
+    planted_table.row(creature2_display_group_entry.schema, [
+      #("id", planted_table.Integer(id)),
+      #("creature2DisplayGroupId", planted_table.Integer(group)),
+      #("creature2DisplayInfoId", planted_table.Integer(display)),
+      #("weight", planted_table.Integer(weight)),
+    ])
+  }
+  let files =
+    character_tables.files()
+    |> replacing(schema: creature2_display_info.schema, rows: [
+      info(26_560),
+      info(26_565),
+      info(26_570),
+      info(26_578),
+    ])
+    |> replacing(schema: creature2_display_group_entry.schema, rows: [
+      weighted(1, 28_793, 26_565, 1),
+      weighted(2, 28_793, 26_570, 3),
+      weighted(3, 28_793, 26_560, 3),
+      weighted(4, 28_793, 26_500, 9),
+      weighted(5, 28_431, 26_578, 1),
+    ])
+  assert list.map(values_of(spawns_of(files), 73_464), fn(values) { values.3 })
+    == [26_560]
+    as "weight 3 beats weight 1 and, between 26570 and 26560 at weight 3, the lower id wins; the entry of weight 9 has no Creature2DisplayInfo row and counts for nothing"
+}
+
+pub fn a_difficulty_and_a_resist_of_0_need_no_row_and_the_difficulty_multiplies_by_1_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let files =
+    character_tables.files_with_beast_changed(changes: [
+      #("creature2DifficultyId", planted_table.Integer(0)),
+      #("creature2ResistId", planted_table.Integer(0)),
+    ])
+  assert values_of(spawns_of(files), 73_464) == [#(1, 135, 1441, 26_565)]
+    as "CreatureLevel 1's 135.97028 x 1.0 x 1.0 x 1.0, truncated"
+}
+
+pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let id = fn(schema, number) {
+    planted_table.row(schema, [#("ID", planted_table.Integer(number))])
+  }
+  let files =
+    character_tables.files_with_beast_changed(changes: [
+      #("pathMissionIdSoldier", planted_table.Integer(5)),
+      #("instancePortalId", planted_table.Integer(6)),
+      #("creature2OutfitGroupId", planted_table.Integer(7)),
+    ])
+    |> replacing(schema: path_mission.schema, rows: [id(path_mission.schema, 5)])
+    |> replacing(schema: instance_portal.schema, rows: [
+      id(instance_portal.schema, 6),
+    ])
+    |> replacing(schema: creature2_outfit_group_entry.schema, rows: [
+      planted_table.row(creature2_outfit_group_entry.schema, [
+        #("ID", planted_table.Integer(1)),
+        #("creature2OutfitGroupId", planted_table.Integer(7)),
+      ]),
+    ])
+  assert list.length(values_of(spawns_of(files), 73_464)) == 1
+    as "the creature with a mission, a portal and an outfit group that have rows is one the client loads"
 }

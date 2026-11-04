@@ -4,7 +4,8 @@
 //// of the same id, is told from the current one and dropped.
 ////
 //// - **Start.** A timer's id is unique among the running timers: starting one
-////   that runs is a bug, and the shell ends the process with an error log.
+////   that runs is a bug, and the shell ends the process with an error log. The
+////   reference is made here, once, for every shell.
 //// - **Fired.** A firing whose reference is the current timer's of that id gives
 ////   the id once and forgets the timer; any other firing gives none.
 //// - **Cancel.** The timer's way to cancel runs and the timer is forgotten, so a
@@ -12,6 +13,7 @@
 ////   is cancelled to nothing.
 
 import genesis_prime/step.{type TimerId}
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/reference.{type Reference}
 
@@ -35,24 +37,28 @@ pub fn new() -> Timers {
   Timers(running: dict.new())
 }
 
-/// Whether a timer is running under the id.
-pub fn is_running(timers timers: Timers, timer timer: TimerId) -> Bool {
-  dict.has_key(timers.running, timer)
-}
-
-/// The timers with one more running under `timer`, whose firing carries
-/// `reference` and which `cancel` ends. The shell checks `is_running` first.
-pub fn started(
+/// The timers with one more running under `timer`: `schedule` is given the
+/// reference its firing carries and starts the timer, giving the way to cancel
+/// it. `Error(Nil)` when a timer already runs under the id, which the shell
+/// refuses (a connection's closes its socket, a service's ends the process).
+pub fn start(
   timers timers: Timers,
   timer timer: TimerId,
-  reference reference: Reference,
-  cancel cancel: Cancel,
-) -> Timers {
-  Timers(running: dict.insert(
-    timers.running,
-    timer,
-    Started(cancel:, reference:),
-  ))
+  schedule schedule: fn(Reference) -> Cancel,
+) -> Result(Timers, Nil) {
+  use <- bool.guard(
+    when: dict.has_key(timers.running, timer),
+    return: Error(Nil),
+  )
+  let reference = reference.new()
+  let cancel = schedule(reference)
+  Ok(
+    Timers(running: dict.insert(
+      timers.running,
+      timer,
+      Started(cancel:, reference:),
+    )),
+  )
 }
 
 /// The timers without `timer`, which is cancelled; unchanged when none runs

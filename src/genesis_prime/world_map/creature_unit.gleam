@@ -25,17 +25,11 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{
   type UnitCreateCreature, UnitCreateCreature,
 }
-import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
-
-/// The stat the client keeps a unit's health in (`0x140458140`).
-const health_stat = 0
-
-/// The stat the client keeps a unit's level in (`0x140458140`).
-const level_stat = 10
+import genesis_prime/world_map/unit_fields
 
 /// Message 0x262 for the creature at `spawn` as unit `unit_id`, stamped with
 /// `server_time_estimate_start`, the map's server time (`map.server_time`).
@@ -50,32 +44,20 @@ pub fn create(
     unit_id:,
     creature_id:,
     checklist_index: 0,
-    tail: UnitCreateTail(
-      create_flags: 0,
+    tail: unit_fields.tail(
       stats: [
-        UnitStat(stat_id: health_stat, value: spawn.health),
-        UnitStat(stat_id: level_stat, value: spawn.level),
+        UnitStat(stat_id: unit_fields.health_stat, value: spawn.health),
+        UnitStat(stat_id: unit_fields.level_stat, value: spawn.level),
       ],
-      server_time_estimate_start:,
       movement_commands: [
         start_movement.Position(position),
         start_movement.Rotation(rotation),
       ],
       properties: [],
       item_visuals: [],
-      cast_id: 0,
       faction_id: spawn.faction_id,
-      base_faction_id: spawn.faction_id,
-      tagged_by_unit_id: 0,
-      tagged_by_group_id: 0,
-      field_14: 0,
-      field_16: 0,
-      world_socket_id: 0,
-      cluster_id: 0,
-      field_20: 0,
-      minimap_marker_id: 0,
       display_info_id: spawn.display_info_id,
-      outfit_info_id: 0,
+      server_time_estimate_start:,
     ),
   )
 }

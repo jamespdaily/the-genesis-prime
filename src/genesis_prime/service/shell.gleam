@@ -494,33 +494,24 @@ fn start_timer(
   timer timer: TimerId,
   after_ms after_ms: Int,
 ) -> Running(settings, state, message, outgoing) {
-  case timer_book.is_running(timers: running.timers, timer:) {
-    True -> {
+  let started =
+    timer_book.start(timers: running.timers, timer:, schedule: fn(reference) {
+      script.operating_system_timer(
+        subject: running.elapsed,
+        timer:,
+        reference:,
+        after_ms:,
+      )
+    })
+  case started {
+    Ok(timers) -> Running(..running, timers:)
+    Error(Nil) -> {
       runtime.log(
         LogError,
         "a rule started a timer whose id is already running, which the service shell does not carry out",
         step.no_one,
       )
       panic as "a rule started a timer whose id is already running"
-    }
-    False -> {
-      let reference = reference.new()
-      let cancel =
-        script.operating_system_timer(
-          subject: running.elapsed,
-          timer:,
-          reference:,
-          after_ms:,
-        )
-      Running(
-        ..running,
-        timers: timer_book.started(
-          timers: running.timers,
-          timer:,
-          reference:,
-          cancel:,
-        ),
-      )
     }
   }
 }

@@ -45,6 +45,7 @@ import genesis_prime/table/creature2_arche_type
 import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/creature2_display_group_entry
 import genesis_prime/table/creature2_display_info
+import genesis_prime/table/creature2_outfit_group_entry
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
@@ -52,9 +53,11 @@ import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{CharacterCustomizationLabelId}
+import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
+import genesis_prime/table/path_mission
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
@@ -117,13 +120,15 @@ pub fn shared_with_novice_start_in_world_0() -> store.Tables {
 /// WorldZone 5967, at the client's own centres (`Quest2.10518`, `Quest2.10524`).
 pub const circle_ids = [51_739, 52_898]
 
+/// The centre of the Exile objective circle, WorldLocation2 51739, from the
+/// client's row (`Quest2.10518`).
+pub fn exile_circle_centre() -> #(Float, Float, Float) {
+  #(-131.13499450683594, -875.2354125976562, 333.3179931640625)
+}
+
 fn circle_rows() -> List(List(Cell)) {
   [
-    circle(id: 51_739, position: #(
-      -131.13499450683594,
-      -875.2354125976562,
-      333.3179931640625,
-    )),
+    circle(id: 51_739, position: exile_circle_centre()),
     circle(id: 52_898, position: #(
       37.852699279785156,
       -875.4901733398438,
@@ -204,10 +209,13 @@ fn creature_files() -> List(#(String, BitArray)) {
       override_row(id: 25_967, creature: 73_465, property: 40, value: 1.0),
       override_row(id: 26_168, creature: 73_465, property: 42, value: 0.0),
     ]),
+    planted_table.file(creature2_outfit_group_entry.schema, []),
+    planted_table.file(instance_portal.schema, []),
+    planted_table.file(path_mission.schema, []),
   ]
 }
 
-fn creature_row(
+pub fn creature_row(
   id id: Int,
   arche_type arche_type: Int,
   group group: Int,
@@ -241,7 +249,7 @@ fn multiplier_row(
   ])
 }
 
-fn group_entry_row(
+pub fn group_entry_row(
   id id: Int,
   group group: Int,
   display display: Int,
@@ -254,7 +262,7 @@ fn group_entry_row(
   ])
 }
 
-fn override_row(
+pub fn override_row(
   id id: Int,
   creature creature: Int,
   property property: Int,
@@ -273,6 +281,20 @@ fn override_row(
 /// from a folder of them reads every file and meets every requirement.
 pub fn files() -> List(#(String, BitArray)) {
   files_with_looks(customization: customization_rows(), labels: label_rows())
+}
+
+/// The planted files with the file of `schema` holding these rows in place of the
+/// planted ones, for a test of a rule that reads that table.
+pub fn files_replacing(
+  schema schema: tbl_file.Schema,
+  rows rows: List(List(Cell)),
+) -> List(#(String, BitArray)) {
+  list.map(files(), fn(file) {
+    case file.0 == schema.file {
+      True -> planted_table.file(schema, rows)
+      False -> file
+    }
+  })
 }
 
 /// The planted files with the Virtual Battle Beast's Creature2 row (73464)

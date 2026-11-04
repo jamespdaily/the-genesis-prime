@@ -12,7 +12,8 @@
 ////   started, and a creature that ended is found no more.
 //// - Message 0x262 of a creature (`opcode.0x262.creature`): Creature2 id, stats
 ////   0 and 10, both factions, the display; the values are the Virtual Battle
-////   Beast's (`spawn_support`).
+////   Beast's of the creature trace (Base Health 52.6205 truncated to 52, level 1,
+////   faction 1441, display 26565), as the tables' load derives them.
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
@@ -25,6 +26,7 @@ import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
+import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
@@ -129,11 +131,14 @@ fn appearance(message: Message) -> Result(UnitCreateCreature, Nil) {
 
 pub fn a_creature_is_found_by_its_address_and_sends_its_0x262_to_a_player_in_sight_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world =
-    world_support.start(
-      spawns: [spawn_support.battle_beast(number: 1, x: 0.0)],
-      creature_restart_ms: 60_000,
-    )
+  // The spawn is one the tables' load derives, whose values are proven against
+  // the creature trace in `spawn_test`, and not one this test feeds in.
+  let assert [beast, ..] =
+    list.filter(spawn.all(character_tables.shared()), fn(spawn) {
+      spawn.creature_id == Creature2Id(73_464)
+    })
+    as "the planted tables stand Virtual Battle Beasts"
+  let world = world_support.start(spawns: [beast], creature_restart_ms: 60_000)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   let _player = join(run:, connection: 1)

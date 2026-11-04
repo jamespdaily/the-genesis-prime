@@ -1971,7 +1971,7 @@ fn viewer_takes(
       log(
         session:,
         level: step.LogError,
-        text: "another player's connection sent a 0x262 or 0x355 naming unit "
+        text: "a unit's owner sent a 0x262 or 0x355 naming unit "
           <> int.to_string(unit_id)
           <> ", which is this player's own unit or none, so it is refused",
       ),
@@ -2172,7 +2172,6 @@ fn unit_moved_frame(
   Frame(message_id: unit_movement.message_id, body:)
 }
 
-/// 0x355 for another player's unit, with its one bit 0 (opcode.0x355).
 /// 0x262 for a creature, as its process built it.
 fn creature_created_frame(unit unit: UnitCreateCreature) -> Frame {
   let assert Ok(body) = unit_create_creature.encode(unit)
@@ -2180,6 +2179,8 @@ fn creature_created_frame(unit unit: UnitCreateCreature) -> Frame {
   Frame(message_id: unit_create_creature.message_id, body:)
 }
 
+/// 0x355 for another player's unit or a creature, with its one bit 0
+/// (opcode.0x355).
 fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
     unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))

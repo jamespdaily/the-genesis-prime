@@ -25,6 +25,7 @@ import genesis_prime/world_map/creature.{
   type State, Settings, Unwatched, Watched,
 }
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/list
 import owned_test
 import spawn_support
@@ -36,15 +37,16 @@ const clock_origin_ms = 5000
 
 /// A creature standing at a Battle Beast spawn as unit 7 of the first run.
 fn creature() -> State {
-  creature.new(
-    Settings(creature: CreatureStart(
+  creature.new(Settings(
+    creature: CreatureStart(
       map: ship,
       incarnation: 1,
       unit_id: 7,
-      spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+      spawn_id: SpawnId(1),
       clock_origin_ms:,
-    )),
-  )
+    ),
+    spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+  ))
 }
 
 fn feed(

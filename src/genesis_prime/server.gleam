@@ -123,6 +123,8 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/spawn_id.{type SpawnId}
+import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -561,6 +563,7 @@ pub fn add_world(
   to_connection to_connection: fn(step.ConnectionId, PeerNews) ->
     Result(Nil, Nil),
 ) -> supervisor.Builder {
+  let spawn_index = spawn.index(world.spawns)
   tree
   |> supervisor.add(creature_registry.supervised(world.creatures))
   |> supervisor.add(world_map_registry.supervised(
@@ -572,7 +575,13 @@ pub fn add_world(
       name: world.creature_supervisor,
       shutdown_ms: world.creature_shutdown_ms,
       start: fn(start: creature_supervisor.CreatureProcessStart) {
-        start_creature_process(world:, reach:, to_connection:, start:)
+        start_creature_process(
+          world:,
+          spawns: spawn_index,
+          reach:,
+          to_connection:,
+          start:,
+        )
       },
     ),
   )
@@ -657,28 +666,36 @@ fn map_reach(
 /// then its address joined in the registry.
 fn start_creature_process(
   world world: World,
+  spawns spawns: Dict(SpawnId, Spawn),
   reach reach: Reach(map.Outgoing),
   to_connection to_connection: fn(step.ConnectionId, PeerNews) ->
     Result(Nil, Nil),
   start start: creature_supervisor.CreatureProcessStart,
 ) -> actor.StartResult(Subject(Call(creature.Message, PeerNews))) {
   let wanted = start.creature
-  service_shell.start_unnamed(service_shell.Settings(
-    rule: creature.rule(creature: wanted),
-    reach: creature_reach(world:, reach:, to_connection:, start:),
-    shutdown_ms: world.creature_shutdown_ms,
-    told_through: Some(creature_registry.scope(world.creatures)),
-  ))
-  |> result.map(fn(started) {
-    creature_registry.join(
-      world.creatures,
-      map: wanted.map,
-      incarnation: wanted.incarnation,
-      unit_id: wanted.unit_id,
-      pid: started.pid,
-    )
-    started
-  })
+  case dict.get(spawns, wanted.spawn_id) {
+    Error(Nil) ->
+      Error(actor.InitFailed(
+        "the creature names a spawn the world does not hold",
+      ))
+    Ok(found) ->
+      service_shell.start_unnamed(service_shell.Settings(
+        rule: creature.rule(creature: wanted, spawn: found),
+        reach: creature_reach(world:, reach:, to_connection:, start:),
+        shutdown_ms: world.creature_shutdown_ms,
+        told_through: Some(creature_registry.scope(world.creatures)),
+      ))
+      |> result.map(fn(started) {
+        creature_registry.join(
+          world.creatures,
+          map: wanted.map,
+          incarnation: wanted.incarnation,
+          unit_id: wanted.unit_id,
+          pid: started.pid,
+        )
+        started
+      })
+  }
 }
 
 /// A creature's reach: it finds the run that started it by that run's pid, since

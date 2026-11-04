@@ -2029,7 +2029,13 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(first, first_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
-  character_support.move_to_warfare_woods(pool:, character_id: first_character)
+  character_support.move_to(
+    pool:,
+    character_id: first_character,
+    world_id: 3460,
+    world_zone_id: 5967,
+    position: character_tables.exile_circle_centre(),
+  )
   send_play(game: first, character_id: first_character)
   let #(_burst, have) =
     game_client.read_kept(game: first, have: <<>>, count: burst_length())
@@ -2051,7 +2057,13 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
     as "both faction fields hold the creature's faction, and a display is sent"
   let #(second, second_character) =
     new_player(started:, number: 2, character_name: "Ann Qu")
-  character_support.move_to_warfare_woods(pool:, character_id: second_character)
+  character_support.move_to(
+    pool:,
+    character_id: second_character,
+    world_id: 3460,
+    world_zone_id: 5967,
+    position: character_tables.exile_circle_centre(),
+  )
   send_play(game: second, character_id: second_character)
   let #(_burst, have) =
     game_client.read_kept(game: second, have: <<>>, count: burst_length())

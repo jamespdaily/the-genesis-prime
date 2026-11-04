@@ -17,11 +17,11 @@ import gate_rule
 import genesis_prime/service
 import genesis_prime/step.{type Address, Creature, CreatureStart}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/erlang/process.{type Subject}
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import owned_test
-import spawn_support
 
 /// The creature the gate is asked to start: unit 7 of the first run of World
 /// 3460, standing at spawn 1.
@@ -30,7 +30,7 @@ fn a_creature() -> step.CreatureStart {
     map: MapId(world_id: 3460, instance: 0),
     incarnation: 1,
     unit_id: 7,
-    spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+    spawn_id: SpawnId(1),
     clock_origin_ms: 0,
   )
 }
@@ -179,13 +179,13 @@ pub fn a_timer_fires_once_and_a_cancelled_timer_never_fires_test() -> Nil {
   let cancelled = awaiting(gate:, key: gate_rule.timer_key_base + 2)
   let fires = awaiting(gate:, key: gate_rule.timer_key_base + 1)
   let last = awaiting(gate:, key: gate_rule.timer_key_base + 3)
-  assert ask_support.call_gate(gate, gate_rule.StartTimerAs(2, 20))
+  assert ask_support.call_gate(gate, gate_rule.StartTimerAs(2, 150))
     == gate_rule.Echoed(2)
   assert ask_support.call_gate(gate, gate_rule.CancelTimerAs(2))
     == gate_rule.Echoed(2)
   assert ask_support.call_gate(gate, gate_rule.StartTimerAs(1, 20))
     == gate_rule.Echoed(1)
-  assert ask_support.call_gate(gate, gate_rule.StartTimerAs(3, 200))
+  assert ask_support.call_gate(gate, gate_rule.StartTimerAs(3, 400))
     == gate_rule.Echoed(3)
   assert process.receive(fires, within: ask_support.event_wait_ms)
     == Ok(gate_rule.Opened(gate_rule.timer_key_base + 1))

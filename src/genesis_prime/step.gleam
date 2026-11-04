@@ -36,7 +36,7 @@
 //// chooses.
 
 import genesis_prime/world_map/map_id.{type MapId}
-import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/option.{type Option, None}
 
 /// A rule as its shell runs it. `name` is the rule's module path, which a
@@ -297,8 +297,8 @@ pub type CreatureStart {
     incarnation: Int,
     /// The creature's unit id in its run, from the map's counter.
     unit_id: Int,
-    /// The spawn it stands at (genesis_prime/world_map/spawn).
-    spawn: Spawn,
+    /// The spawn it stands at (genesis_prime/world_map/spawn), by its id.
+    spawn_id: SpawnId,
     /// The monotonic time the map's clock started at, from which the creature
     /// stamps its 0x262 (genesis_prime/world_map/map `server_time`).
     clock_origin_ms: Int,

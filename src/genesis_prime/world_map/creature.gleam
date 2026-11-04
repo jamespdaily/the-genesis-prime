@@ -57,6 +57,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
+import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/set.{type Set}
 
 /// The rule's name: its module path.
@@ -65,10 +66,11 @@ const rule_name = "genesis_prime/world_map/creature"
 /// The watch on the map run that started the creature.
 const run_watch = WatchId(1)
 
-/// What a creature is started with: which creature of which run it is, the
-/// spawn it stands at and the map's clock (`CreatureStart`).
+/// What a creature is started with: which creature of which run it is and the
+/// map's clock (`CreatureStart`), and the spawn it stands at, found by the id the
+/// start names.
 pub type Settings {
-  Settings(creature: CreatureStart)
+  Settings(creature: CreatureStart, spawn: Spawn)
 }
 
 /// What the map tells a creature.
@@ -87,8 +89,9 @@ pub opaque type State {
 /// The creature's rule, as its service shell runs it.
 pub fn rule(
   creature creature: CreatureStart,
+  spawn spawn: Spawn,
 ) -> ServiceRule(Settings, State, Message, PeerNews) {
-  step.Rule(name: rule_name, settings: Settings(creature:), new:, step:)
+  step.Rule(name: rule_name, settings: Settings(creature:, spawn:), new:, step:)
 }
 
 /// A creature's first state: no viewers.
@@ -118,7 +121,7 @@ pub fn step(
     OwnEvent(Told(message: Watched(by:))) -> {
       let unit =
         creature_unit.create(
-          spawn: creature.spawn,
+          spawn: state.settings.spawn,
           unit_id: creature.unit_id,
           server_time_estimate_start: map.server_time(
             origin_ms: creature.clock_origin_ms,

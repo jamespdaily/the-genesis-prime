@@ -398,19 +398,32 @@ pub fn observe(others others: Others, frame frame: Frame) -> Others {
   }
 }
 
+/// The unit a 0x262 creates: a player's, or a creature's.
+pub type Created {
+  PlayerCreated(unit: UnitCreatePlayer)
+  CreatureCreated(unit: UnitCreateCreature)
+}
+
+/// The unit the body of a 0x262 creates: a player's when the body reads as one,
+/// else a creature's (the type is in the body, `opcode.0x262`), or `Error(Nil)`
+/// for a body that is neither.
+pub fn created_unit(body body: BitArray) -> Result(Created, Nil) {
+  unit_create_player.decode(body)
+  |> result.map(PlayerCreated)
+  |> result.lazy_or(fn() {
+    unit_create_creature.decode(body) |> result.map(CreatureCreated)
+  })
+  |> result.replace_error(Nil)
+}
+
 fn created(others others: Others, body body: BitArray) -> Others {
-  let created =
-    unit_create_player.decode(body)
-    |> result.map(fn(unit) { #(unit.unit_id, placed_at(unit:)) })
-    |> result.lazy_or(fn() {
-      unit_create_creature.decode(body)
-      |> result.map(fn(creature) {
-        #(creature.unit_id, placed_creature_at(creature:))
-      })
-    })
-  let assert Ok(#(unit_id, placed)) = created
+  let assert Ok(unit) = created_unit(body:)
     as "0x0262 decodes as a player's or a creature's"
-  dict.insert(others, unit_id, placed)
+  case unit {
+    PlayerCreated(unit:) -> dict.insert(others, unit.unit_id, placed_at(unit:))
+    CreatureCreated(unit:) ->
+      dict.insert(others, unit.unit_id, placed_creature_at(creature: unit))
+  }
 }
 
 /// Where a creature's 0x262 places its unit: the kind 2 command that is the first
@@ -432,7 +445,10 @@ pub fn creatures_created_in(
   list.filter_map(frames, fn(frame) {
     case frame.message_id {
       0x0262 ->
-        unit_create_creature.decode(frame.body) |> result.replace_error(Nil)
+        case created_unit(body: frame.body) {
+          Ok(CreatureCreated(unit:)) -> Ok(unit)
+          Ok(PlayerCreated(..)) | Error(Nil) -> Error(Nil)
+        }
       _ -> Error(Nil)
     }
   })

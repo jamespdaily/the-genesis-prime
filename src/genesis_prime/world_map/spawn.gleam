@@ -34,10 +34,13 @@
 ////   creature's Creature2DisplayGroupEntry group with the greatest weight, the
 ////   lowest display id on a tie: the client's own weighted pick runs only for
 ////   spawns it makes itself (`0x1404846c0`), so the server's pick is a choice.
-//// - **The client's validity rules** (`0x140485790`): a Creature2 row is a
-////   creature the client loads only when its modelScale is above 0, its
+//// - **The client's validity rules** (`0x140485790`, `0x140483d20`): a Creature2
+////   row is a creature the client loads only when its modelScale is above 0, its
 ////   CreationTypeEnum is below 26, its archetype row exists, its difficulty and
-////   resist are 0 or have a row, and its display group is not 0; a spawn of a
+////   resist are 0 or have a row, its display group is not 0, its soldier mission
+////   and instance portal are 0 or have a row, and its outfit group is 0 or has
+////   entries (a 0 is taken to need no row: the training creatures hold 0, and
+////   the client's lookup of 0 is not read); a spawn of a
 ////   row that fails them is refused, since the client would drop the 0x262. A
 ////   spawn whose point lies outside its circle, whose circle has no row or
 ////   whose creature has no display entry is refused too. Any refusal fails the
@@ -50,6 +53,7 @@ import genesis_prime/table/creature2_arche_type
 import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/creature2_display_group_entry
 import genesis_prime/table/creature2_display_info
+import genesis_prime/table/creature2_outfit_group_entry
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
@@ -57,13 +61,18 @@ import genesis_prime/table/creature_level
 import genesis_prime/table/id.{
   type Creature2Id, type WorldLocation2Id, Creature2ArcheTypeId,
   Creature2DifficultyId, Creature2DisplayInfoId, Creature2Id, Creature2ResistId,
-  Creature2TierId, CreatureLevelId, WorldLocation2Id,
+  Creature2TierId, CreatureLevelId, InstancePortalId, PathMissionId,
+  WorldLocation2Id,
 }
+import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/path_mission
 import genesis_prime/table/world_location2.{type WorldLocation2}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/unit_fields
 import genesis_prime/world_map/warfare_woods.{type Point}
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -129,6 +138,9 @@ type ValidityRule {
   NoDifficultyRow
   NoResistRow
   NoDisplayGroup
+  NoSoldierMissionRow
+  NoInstancePortalRow
+  NoOutfitEntries
 }
 
 /// What a creature kind stands for: the creature, the circle of its objective,
@@ -157,9 +169,6 @@ const kinds = [
     recorded: False,
   ),
 ]
-
-/// The UnitProperty2 id of Base Health (`0x1404585c0`).
-const base_health_property = 7
 
 /// The spawns of the client's tables: each point of `warfare_woods` for each
 /// creature kind, checked against the rules above, or the first refusal, in the
@@ -300,6 +309,29 @@ fn valid_creature(
       NoResistRow,
     ),
     #(row.creature2_display_group_id != 0, NoDisplayGroup),
+    // FillCreatureInfo (0x140483d20) fails the record for a soldier mission or an
+    // instance portal with no row, and for an outfit group with no entries.
+    #(
+      exists(
+        path_mission.get(tables, PathMissionId(row.path_mission_id_soldier)),
+        row.path_mission_id_soldier,
+      ),
+      NoSoldierMissionRow,
+    ),
+    #(
+      exists(
+        instance_portal.get(tables, InstancePortalId(row.instance_portal_id)),
+        row.instance_portal_id,
+      ),
+      NoInstancePortalRow,
+    ),
+    #(
+      row.creature2_outfit_group_id == 0
+        || list.any(creature2_outfit_group_entry.all(tables), fn(entry) {
+        entry.creature2_outfit_group_id == row.creature2_outfit_group_id
+      }),
+      NoOutfitEntries,
+    ),
   ]
   case list.find(rules, fn(rule) { !rule.0 }) {
     Ok(#(_, rule)) -> Error(NotLoadedByTheClient(creature_id:, rule:))
@@ -308,9 +340,17 @@ fn valid_creature(
 }
 
 /// Base Health: the creature's own override of property 7 when it has one, else
-/// CreatureLevel[level] times the difficulty, tier and archetype multipliers,
-/// each product held as a 32-bit float (`0x1404585c0`), truncated. UnitProperty2
-/// 7's flags bit 0, which would stop the multipliers, is clear.
+/// CreatureLevel[level] times the archetype, difficulty and tier multipliers,
+/// each product held as a 32-bit float, truncated. The client looks the three
+/// multipliers up by the creature's words 4, 5 and 6, which are the archetype,
+/// difficulty and tier (`0x1404585c0`, `0x1404852b0`); the order of the products is
+/// that order, a reading, since the order of the multiplications is not read.
+/// UnitProperty2 7's flags bit 0, which would stop the multipliers, is clear.
+///
+/// A difficulty id of 0 multiplies by 1.0. The client's lookup of difficulty 0
+/// (`0x1401f64e0`) is not read; reading what it returns for an id with no row, and
+/// whether the creature's property code skips it, would settle it. The training
+/// creatures have difficulty 1.
 fn base_health(
   tables tables: table_store.Tables,
   row row: Creature2,
@@ -320,7 +360,7 @@ fn base_health(
     creature2_override_properties.all(tables)
     |> list.find(fn(override) {
       override.creature2_id == row.id
-      && override.unit_property_index == base_health_property
+      && override.unit_property_index == unit_fields.base_health_property
     })
   case overrides {
     Ok(override) -> Ok(float.truncate(override.unit_property_value))
@@ -349,9 +389,9 @@ fn base_health(
         }
         Ok(
           level.unit_property_value07
+          |> times(arche.unit_property_multiplier007)
           |> times(difficulty_multiplier)
-          |> times(tier.unit_property_multiplier007)
-          |> times(arche.unit_property_multiplier007),
+          |> times(tier.unit_property_multiplier007),
         )
       }
       case found {
@@ -418,6 +458,11 @@ pub fn of_map(spawns spawns: List(Spawn), map map: MapId) -> List(Spawn) {
   })
 }
 
+/// The spawns by their id, for a lookup that is made for each creature started.
+pub fn index(spawns spawns: List(Spawn)) -> Dict(SpawnId, Spawn) {
+  list.map(spawns, fn(spawn) { #(spawn.id, spawn) }) |> dict.from_list
+}
+
 /// The spawn with this id, or `Error(Nil)` for none.
 pub fn find(
   spawns spawns: List(Spawn),
@@ -466,5 +511,8 @@ fn describe_rule(rule: ValidityRule) -> String {
     NoDifficultyRow -> "its Creature2Difficulty row does not exist"
     NoResistRow -> "its Creature2Resist row does not exist"
     NoDisplayGroup -> "its display group is 0"
+    NoSoldierMissionRow -> "its pathMissionIdSoldier row does not exist"
+    NoInstancePortalRow -> "its instancePortalId row does not exist"
+    NoOutfitEntries -> "its outfit group has no entries"
   }
 }

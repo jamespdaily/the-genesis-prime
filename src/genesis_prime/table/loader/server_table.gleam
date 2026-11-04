@@ -14,6 +14,7 @@ import genesis_prime/table/creature2_arche_type
 import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/creature2_display_group_entry
 import genesis_prime/table/creature2_display_info
+import genesis_prime/table/creature2_outfit_group_entry
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
@@ -21,6 +22,7 @@ import genesis_prime/table/creature_level
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
+import genesis_prime/table/instance_portal
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
@@ -29,6 +31,7 @@ import genesis_prime/table/item_slot
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
+import genesis_prime/table/path_mission
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
 import genesis_prime/table/world_location2
@@ -43,8 +46,9 @@ import gleam/erlang/reference.{type Reference}
 /// - CharacterCustomization and CharacterCustomizationLabel: the rows and
 ///   labels of a character's look (genesis_prime/game/appearance).
 /// - Creature2 with its ArcheType, Difficulty, DisplayGroupEntry, DisplayInfo,
-///   OverrideProperties, Resist and Tier, and CreatureLevel: the creatures that
-///   stand and their values (genesis_prime/world_map/spawn).
+///   OutfitGroupEntry, OverrideProperties, Resist and Tier, InstancePortal and
+///   PathMission, and CreatureLevel: the creatures that stand and their values
+///   (genesis_prime/world_map/spawn).
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
 ///   create request carries (genesis_prime/game/appearance).
 /// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
@@ -65,6 +69,7 @@ pub fn entries() -> List(store.Entry) {
     creature2_difficulty.entry(),
     creature2_display_group_entry.entry(),
     creature2_display_info.entry(),
+    creature2_outfit_group_entry.entry(),
     creature2_override_properties.entry(),
     creature2_resist.entry(),
     creature2_tier.entry(),
@@ -72,11 +77,13 @@ pub fn entries() -> List(store.Entry) {
     customization_parameter.entry(),
     customization_parameter_map.entry(),
     game_formula.entry(),
+    instance_portal.entry(),
     item2.entry(),
     item2_category.entry(),
     item2_family.entry(),
     item2_type.entry(),
     item_slot.entry(),
+    path_mission.entry(),
     spell4.entry(),
     spell_level.entry(),
     world_location2.entry(),

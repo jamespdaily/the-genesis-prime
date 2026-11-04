@@ -39,6 +39,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
+import mailbox_support
 import map_support
 import owned_test
 import place_support
@@ -205,6 +206,7 @@ fn creature_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
       | step.ZoneChannel(..) -> Error(Nil)
     }
   })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
 /// What the step sends to players' connections, by the connection's number and
@@ -240,7 +242,7 @@ pub fn a_started_map_starts_one_creature_for_each_spawn_of_its_world_under_disti
   use <- owned_test.run(5000)
   let #(_, taken) = started(count: 3)
   let creatures = starts(taken)
-  assert list.map(creatures, fn(start) { { start.1 }.spawn.id })
+  assert list.map(creatures, fn(start) { { start.1 }.spawn_id })
     == [SpawnId(1), SpawnId(2), SpawnId(3)]
     as "one creature for each spawn, in the order of the spawns"
   let units = list.map(creatures, fn(start) { { start.1 }.unit_id })
@@ -314,7 +316,7 @@ pub fn a_creature_that_crashes_is_gone_to_every_player_and_its_spawn_returns_aft
   let #(_, taken) = feed(state:, event: OwnEvent(ServiceTimerFired(TimerId(1))))
   let assert [#(new_watch, returned)] = starts(taken)
     as "when the timer fires the spawn is started again, once"
-  assert returned.spawn.id == creature.spawn.id
+  assert returned.spawn_id == creature.spawn_id
     as "the new creature is the spawn's"
   assert returned.unit_id != creature.unit_id
     && returned.unit_id != 2
@@ -400,6 +402,7 @@ pub fn a_map_that_has_given_every_unit_id_below_2_to_the_20_crashes_which_ends_i
   let #(state, taken) = started(count: 1)
   let assert [#(watch, _)] = starts(taken)
   let ended = process.new_subject()
+  let given = process.new_subject()
   let pid =
     process.spawn_unlinked(fn() {
       let _unused =
@@ -412,7 +415,8 @@ pub fn a_map_that_has_given_every_unit_id_below_2_to_the_20_crashes_which_ends_i
             let #(state, _) = feed(state:, event: WatchEnded(watch))
             let #(state, taken) =
               feed(state:, event: OwnEvent(ServiceTimerFired(TimerId(1))))
-            let assert [#(watch, _)] = starts(taken)
+            let assert [#(watch, creature)] = starts(taken)
+            process.send(given, creature.unit_id)
             #(state, watch)
           },
         )
@@ -431,4 +435,9 @@ pub fn a_map_that_has_given_every_unit_id_below_2_to_the_20_crashes_which_ends_i
     "a map has given every unit id below 2^20",
   )
     as "the map crashed for want of a unit id, which ends the run"
+  let ids = mailbox_support.drain(given)
+  assert list.last(ids) == Ok(1_048_575)
+    as "the last unit id given is the greatest below 2^20: the limit is reached, not crossed early"
+  assert list.length(ids) == 1_048_574
+    as "each respawn from unit 2 to 1,048,575 was given an id"
 }

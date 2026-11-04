@@ -450,7 +450,7 @@ fn start_standing(
         map: state.settings.map,
         incarnation: state.settings.incarnation,
         unit_id:,
-        spawn:,
+        spawn_id: spawn.id,
         clock_origin_ms: state.started_ms,
       ),
     )),
@@ -610,8 +610,8 @@ fn tell_creature(
 }
 
 /// The creatures after the player of `connection` is decided against each of
-/// them, in the order of their unit ids, by `sees_now`, whether it sees the
-/// creature's spawn: a creature it did not see and does now is told `Watched`,
+/// them, by `sees_now`, whether it sees the creature's spawn, in the order of the
+/// map's table, which no sort is made for on each move (as `others_of`): a creature it did not see and does now is told `Watched`,
 /// one it saw and does not is told `Unwatched`, one that stays as it was is told
 /// nothing.
 fn creatures_decided(
@@ -619,12 +619,11 @@ fn creatures_decided(
   connection connection: ConnectionId,
   sees_now sees_now: fn(Spawn) -> Bool,
 ) -> #(Dict(Int, Standing), List(Effect(ServiceEffect(Outgoing)))) {
-  list.fold(
-    creatures_in_order(state),
+  dict.fold(
+    state.creatures,
     #(state.creatures, []),
-    fn(held, creature) {
+    fn(held, unit_id, standing) {
       let #(creatures, effects) = held
-      let #(unit_id, standing) = creature
       let was = set.contains(standing.sees, connection)
       case was, sees_now(standing.spawn) {
         False, True -> #(
@@ -633,9 +632,10 @@ fn creatures_decided(
             unit_id,
             Standing(..standing, sees: set.insert(standing.sees, connection)),
           ),
-          list.append(effects, [
+          [
             tell_creature(state:, unit_id:, message: Watched(by: connection)),
-          ]),
+            ..effects
+          ],
         )
         True, False -> #(
           dict.insert(
@@ -643,9 +643,10 @@ fn creatures_decided(
             unit_id,
             Standing(..standing, sees: set.delete(standing.sees, connection)),
           ),
-          list.append(effects, [
+          [
             tell_creature(state:, unit_id:, message: Unwatched(by: connection)),
-          ]),
+            ..effects
+          ],
         )
         True, True | False, False -> held
       }
