@@ -168,6 +168,9 @@ pub fn a_press_during_staggers_child_with_no_cast_bar_is_accepted_and_one_during
   assert refused_with(state:, bag_index: 3, target: 0, at: 1100).result
     == SpellAlreadyCasting
     as "a press during Telekinetic Strike's cast bar is refused 13"
+  assert refused_with(state:, bag_index: 3, target: 0, at: 2000).result
+    == SpellAlreadyCasting
+    as "also with 250 ms of the cast left, within the queue window: the client never queues a press behind its current cast (cast.press_queue: the casting test needs a request word a press leaves 0), so 13 is the server's choice and the press is not held"
 }
 
 pub fn a_0x801_clears_the_current_cast_whatever_cast_it_names_test() -> Nil {

@@ -55,6 +55,12 @@
 ////   `Spell4.propertyFlags`, `0x1403afb10`). A cast with no cast bar, such as
 ////   Stagger's Multiphase child, never blocks a press. The server keeps the same
 ////   in `current`.
+//// - **13 is the server's choice.** The client itself never refuses an ability
+////   press with 13, and never queues one behind its current cast: its casting
+////   test runs only for a request whose word 0x14 is non-zero, which a press
+////   leaves 0 (`cast.press_queue`). The server models the refusal on that unused
+////   test, so a press while the current cast is live is refused 13 whatever time
+////   the cast has left, and the cast bar is not touched.
 //// - **A press within 500 ms of a cooldown's end** is held: the client queues it
 ////   (317) and sends it (`0x1403b14c0`), so the server starts it when the
 ////   cooldown ends, from a timer, and answers nothing before. A second press
