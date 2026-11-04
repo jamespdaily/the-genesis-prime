@@ -260,3 +260,66 @@ pub fn a_column_type_has_the_clients_type_code_test() -> Nil {
     == [3, 4, 11, 20, 130]
     as "game_table.column_type: 3 a 32-bit integer, 4 a 32-bit float, 11 a boolean, 20 a 64-bit integer, 130 a string"
 }
+
+pub fn a_files_record_block_is_its_records_back_to_back_test() -> Nil {
+  use <- owned_test.run(5000)
+  let schema =
+    tbl_file.Schema(
+      table: "PlantedRecords",
+      file: "PlantedRecords",
+      record_size: 0,
+      columns: [
+        column("ID", tbl_file.Integer32),
+        column("name", tbl_file.Utf16Text),
+        column("count", tbl_file.Integer32),
+      ],
+    )
+  let bytes =
+    planted_table.bytes(
+      planted_table.table(schema, [
+        planted_table.row(schema, [
+          #("ID", Integer(1)),
+          #("name", planted_table.Text("one")),
+          #("count", Integer(0xB2D05E00)),
+        ]),
+        planted_table.row(schema, [#("ID", Integer(2))]),
+        planted_table.row(schema, [#("ID", Integer(3))]),
+      ]),
+    )
+  let assert Ok(tbl_file.Records(description:, bytes: records)) =
+    tbl_file.records(bytes)
+    as "a planted file's record block is read"
+  assert description.table == "PlantedRecords"
+  assert description.record_size == 24
+    as "game_table.schema: the string offset at 8, the count at 16, the end 20 rounded up to 24"
+  assert bit_array.byte_size(records) == 3 * 24
+    as "three records of 24 bytes and none of the string data that follows them"
+  assert bit_array.slice(records, 0, 4) == Ok(<<1:size(32)-little>>)
+    as "the first record starts with its id"
+  assert bit_array.slice(records, 16, 4) == Ok(<<0xB2D05E00:size(32)-little>>)
+    as "the first record's count is at offset 16"
+  assert bit_array.slice(records, 24, 4) == Ok(<<2:size(32)-little>>)
+    as "the second record follows at 24"
+  assert bit_array.slice(records, 48, 4) == Ok(<<3:size(32)-little>>)
+    as "the third record follows at 48"
+}
+
+pub fn a_file_cut_inside_its_record_block_has_no_record_block_test() -> Nil {
+  use <- owned_test.run(5000)
+  let schema = localized_text.schema
+  let bytes =
+    planted_table.bytes(
+      planted_table.table(schema, [
+        planted_table.row(schema, [#("ID", Integer(1))]),
+        planted_table.row(schema, [#("ID", Integer(2))]),
+      ]),
+    )
+  // The lookup follows the record block and holds 3 entries of 4 bytes (ids 0
+  // to 2), so a cut of 20 bytes ends 8 bytes inside the block's last record.
+  let assert Ok(cut) =
+    bit_array.slice(bytes, 0, bit_array.byte_size(bytes) - 20)
+    as "the planted file is longer than the cut"
+  assert tbl_file.records(cut)
+    == Error(tbl_file.OutsideFile(tbl_file.RecordBlock))
+    as "the header says the block holds more bytes than the file has"
+}

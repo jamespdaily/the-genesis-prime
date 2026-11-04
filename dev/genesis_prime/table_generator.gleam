@@ -27,7 +27,6 @@ import genesis_prime/table_generator/module_text
 import genesis_prime/table_generator/naming
 import genesis_prime/table_generator/reference.{type Table, Table}
 import genesis_prime/table_generator/registry_text
-import genesis_prime/table_rows
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -338,9 +337,8 @@ fn unlisted_columns(
       list.key_find(tables, file)
       |> result.replace_error(LoadedTableMissing(file:)),
     )
-    table_rows.read(bytes:, table: file)
+    column_sign.unlisted(signs:, bytes:)
     |> result.replace_error(UnreadableTable(file))
-    |> result.map(fn(read) { column_sign.unlisted(signs:, read:) })
   })
   |> result.map(list.flatten)
 }
