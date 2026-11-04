@@ -123,6 +123,7 @@ fn join_as(
         connection: ConnectionId(connection),
         character:,
         place: place_support.live_character_place(),
+        stay: map_support.stay(count: 1),
       ),
     )),
   )
@@ -401,7 +402,10 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
       Unwatch(WatchId(1)),
       OwnEffect(step.Send(
         Connection(ConnectionId(8)),
-        map.Unwatched(by: ConnectionId(7)),
+        map.Noticed(
+          stay: map_support.stay(count: 1),
+          notice: map.UnseenBy(by: ConnectionId(7)),
+        ),
       )),
       OwnEffect(Reply(CallerId(3), Left)),
     ]

@@ -31,6 +31,7 @@ const sources = [
   "genesis_prime/step/watch.gleam",
   "genesis_prime/world_map/map_id.gleam",
   "genesis_prime/world_map/spawn_id.gleam",
+  "genesis_prime/world_map/stay.gleam",
   "genesis_prime/wire_recording.gleam",
   "genesis_prime/wire_recording/recorder.gleam",
   "genesis_prime/service.gleam",

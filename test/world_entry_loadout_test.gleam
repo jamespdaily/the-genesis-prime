@@ -54,6 +54,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
+import map_support
 import novice_tables
 import owned_test
 import place_support
@@ -135,6 +136,7 @@ fn entering(
         session_epoch: character_support.epoch(1),
       ),
       connection: ConnectionId(1),
+      stay: map_support.stay(count: 1),
     )
     as "the store holds the character and its place"
   let unit =

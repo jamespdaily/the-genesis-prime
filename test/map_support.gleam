@@ -9,7 +9,9 @@ import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
+import gleam/list
 import spawn_support
 
 /// The map's realm: not 1, so a unit built with a fixed realm fails.
@@ -78,4 +80,12 @@ pub fn character(number number: Int) -> Character {
     ..character_support.character(number:),
     look: character_tables.row_10_look(),
   )
+}
+
+/// The stay a connection's `count`th join names: the one after `count - 1` others
+/// (genesis_prime/world_map/stay).
+pub fn stay(count count: Int) -> Stay {
+  list.fold(list.repeat(Nil, count), stay.none_yet(), fn(earlier, _) {
+    stay.next(earlier)
+  })
 }

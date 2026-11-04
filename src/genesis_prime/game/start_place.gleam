@@ -306,13 +306,31 @@ pub fn of(
   use found <- result.try(
     list.find(starts, fn(candidate) {
       candidate.start == start
-      && candidate.faction_id == faction_id
-      && list.contains(candidate.race_ids, race_id)
+      && of_race_and_faction(candidate:, faction_id:, race_id:)
     }),
   )
+  place_of_row(tables:, location_id: found.location_id)
+}
+
+/// Whether the start above is one of characters of this faction and race.
+fn of_race_and_faction(
+  candidate candidate: StartGroup,
+  faction_id faction_id: Int,
+  race_id race_id: RaceId,
+) -> Bool {
+  candidate.faction_id == faction_id
+  && list.contains(candidate.race_ids, race_id)
+}
+
+/// The place of a WorldLocation2 row: its world, zone, position and facing.
+/// `Error(Nil)` for a row the tables lack or one in world 0.
+fn place_of_row(
+  tables tables: table_store.Tables,
+  location_id location_id: Int,
+) -> Result(Place, Nil) {
   use row <- result.try(world_location2.get(
     tables:,
-    id: WorldLocation2Id(found.location_id),
+    id: WorldLocation2Id(location_id),
   ))
   place(
     world_id: row.world_id,
@@ -327,6 +345,27 @@ pub fn of(
       w: row.facing3,
     ),
   )
+}
+
+/// The place a dead character of this faction and race comes back at when it
+/// chooses the Holocrypt in the world `world_id`: the start of its race and
+/// faction above whose row is in that world. The server's choice: neither the
+/// client nor a retail record holds a Holocrypt's place (`death.server_choices`).
+/// `Error(Nil)` when no start of the race and faction is in that world.
+pub fn holocrypt(
+  tables tables: table_store.Tables,
+  faction_id faction_id: Int,
+  race_id race_id: RaceId,
+  world_id world_id: Int,
+) -> Result(Place, Nil) {
+  starts
+  |> list.filter(fn(candidate) {
+    of_race_and_faction(candidate:, faction_id:, race_id:)
+  })
+  |> list.filter_map(fn(candidate) {
+    place_of_row(tables:, location_id: candidate.location_id)
+  })
+  |> list.find(fn(found) { found.world_id == world_id })
 }
 
 /// The load's check that every row above is a WorldLocation2 row, so a client

@@ -23,6 +23,7 @@ import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
+import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_level
@@ -255,10 +256,15 @@ pub fn the_planted_formulas_levels_and_spells_are_the_clients_test() -> Nil {
     let get = fn(tables) {
       let assert Ok(row) = spell4.get(tables:, id: Spell4Id(pair.0))
         as "the spell exists"
-      row.spell4_base_id_base_spell
+      #(row.spell4_base_id_base_spell, row.spell4_conditions_id_caster)
     }
-    assert get(planted) == get(real) && get(real) == pair.1
-      as "Spell4: the planted row has the real row's Spell4Base id"
+    assert get(planted) == get(real) && { get(real) }.0 == pair.1
+      as "Spell4: the planted row has the real row's Spell4Base id and caster condition row"
+  })
+  list.each(spell4_conditions.all(planted), fn(row) {
+    assert spell4_conditions.get(tables: real, id: spell4_conditions.id(row))
+      == Ok(row)
+      as "Spell4Conditions: each planted row is the real row"
   })
   list.each(list.map(spell_level.all(planted), fn(row) { row.id }), fn(id) {
     let get = fn(tables) {

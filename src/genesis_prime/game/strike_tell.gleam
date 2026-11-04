@@ -10,7 +10,8 @@
 //// player's connection                                       creature
 ////   Tell(Creature(..), TellStrike(Strike(key, Connection(c), PlayerStriker(unit, place, seq, rolls), offence)))
 ////                                                            ─▶ hit rule ─▶ health, 0x937, 0x88c to its viewers
-////   SentByTarget(Answered(key, outcome))   ◀─ Send(Connection(c), Answered(key, outcome))
+////   SentByTarget(Answered(key, outcome))   ◀─ Send(Connection(c), Answered(key, outcome)),
+////                                             for the stay the strike was told for
 ////
 ////   SentByFoe(Threatened(unit, life))      ◀─ the creature put the player on its threat list
 ////   SentByFoe(Attacks(Strike(key, Creature(..), CreatureStriker, offence)))
@@ -18,6 +19,7 @@
 ////   hit rule on the player's health and shield, rolls from the player's seed
 ////   Tell(Creature(..), TellStrikeAnswered(Answered(key, outcome))) ─▶ the creature's round
 ////   SentByFoe(Released(unit))              ◀─ the creature took the player off its threat list
+////   (each SentByFoe travels for the player's stay: ForStay(stay, SentByFoe(..)))
 //// ```
 ////
 //// - **The key** names one strike: the cast, the go's phase and the struck unit, so
@@ -37,6 +39,7 @@
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type Address}
+import genesis_prime/world_map/stay.{type Stay}
 
 /// How long a round waits for its answers, in milliseconds. A creature's respawn time
 /// is never below it (genesis_prime/world_map/creature_kind), so a unit does not stand
@@ -59,7 +62,7 @@ pub type Striker {
   /// A player: its unit, the place it struck from and the move sequence number of
   /// that place (genesis_prime/game/connection), and its rolls, from its
   /// connection's seed.
-  PlayerStriker(unit_id: Int, place: Place, seq: Int, rolls: Rolls)
+  PlayerStriker(unit_id: Int, place: Place, seq: Int, stay: Stay, rolls: Rolls)
   /// A creature, which keeps no random state: the struck player's connection
   /// draws the rolls.
   CreatureStriker
@@ -90,7 +93,8 @@ pub type Answered {
   Answered(key: Key, outcome: Outcome)
 }
 
-/// What a creature that fights a player tells the player's connection.
+/// What a creature that fights a player tells the player's connection, for the
+/// player's stay (genesis_prime/world_map/stay).
 pub type Fight {
   /// The creature `unit_id` of life `life` put the player on its threat list.
   Threatened(unit_id: Int, life: Int)

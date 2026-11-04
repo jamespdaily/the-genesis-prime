@@ -34,6 +34,7 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision.{Permanent}
 import log_capture
 import login_support
+import map_support
 import owned_test
 import place_support
 import supervisor_children.{ChildSettings}
@@ -161,12 +162,10 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
     as "a tell that is an ask is a bug in the rule that tells it: an error line"
   server.tell_the_run(
     run,
-    TellPeer(PeerNews(
-      map: MapId(world_id: 3460, instance: 0),
-      incarnation: 1,
-      unit_id: 9,
-      news: Removed,
-    )),
+    TellPeer(
+      stay: map_support.stay(count: 1),
+      news: PeerNews(unit_id: 9, news: Removed),
+    ),
   )
   let assert Ok(#("error", _text)) =
     process.receive(logged, within: ask_support.event_wait_ms)

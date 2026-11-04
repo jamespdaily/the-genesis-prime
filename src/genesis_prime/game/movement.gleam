@@ -194,6 +194,13 @@ pub fn entered(
   State(place:, footing: OnTheWorld, session_epoch:, save_sequence: 0)
 }
 
+/// The movement of a player placed at `place` by the server, in the world's own
+/// frame, as the same login: its epoch and the number of its last save stay, so
+/// the next save is numbered after every earlier one (the Holocrypt).
+pub fn placed(state state: State, place place: Place) -> State {
+  State(..state, place:, footing: OnTheWorld)
+}
+
 /// The place the player last stood at in the world's own frame, with the way
 /// it faced.
 pub fn place(state state: State) -> Place {
@@ -385,8 +392,7 @@ pub fn take(
 ) -> Result(Taken, Refusal) {
   case message {
     PlayerMoved ->
-      player_movement.decode(body)
-      |> undecoded(player_movement.message_id)
+      decoded_moves(body:)
       |> result.try(fn(decoded) {
         use state <- result.map(moved(state:, moves: moves(message: decoded)))
         let #(commands, unrelayed) = relayed(commands: decoded.commands)
@@ -430,6 +436,29 @@ pub fn take(
       |> undecoded(fell_below_floor.message_id)
       |> result.replace(Kept(state))
   }
+}
+
+/// A 0x637 of a dead player's client, whose controlled unit is its ghost: decoded
+/// and checked as `take` checks the body's, from the body's footing `state`, so a
+/// body the client's reader would refuse, or a command its code never sends, is
+/// the refusal; else dropped. The client writes the ghost's moves as the body's
+/// and expects no answer (`ghost.movement`, `opcode.0x637`), and the body stays
+/// where it fell.
+pub fn ghost_moved(
+  state state: State,
+  body body: BitArray,
+) -> Result(Nil, Refusal) {
+  use decoded <- result.try(decoded_moves(body:))
+  moved(state:, moves: moves(message: decoded))
+  |> result.replace(Nil)
+}
+
+/// A 0x637's body, decoded as the client's reader reads it, or the refusal.
+fn decoded_moves(
+  body body: BitArray,
+) -> Result(player_movement.PlayerMovement, Refusal) {
+  player_movement.decode(body)
+  |> undecoded(player_movement.message_id)
 }
 
 /// A decode that failed, as the refusal for the message it was read for.

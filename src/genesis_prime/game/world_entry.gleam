@@ -7,12 +7,14 @@
 ////
 //// ```
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
-//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place)
+//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay)
 ////                                                 (or Refused: the rule hands back to select)
 //// Joined(unit record, loadout, health, run)
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 10, 0x1A0, 0x19D,
 ////                                                 0x6BC, 0x636, 0xF1, 0x61, WatchMap(map, run)
 //// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
+//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place, stay)
+////                                                 (then Joined and NotJoined as above)
 //// ```
 ////
 //// - **The unit** is the map's: it builds the player's unit when it takes the
@@ -67,6 +69,10 @@
 ////   asked, or the reverse, or the map's `Left`, which answers a leave)
 ////   is `Error(Nil)`, as character select gives, and the
 ////   rule treats it as a bug.
+//// - **The stay** (genesis_prime/world_map/stay) is the one the connection gives
+////   each join, after every earlier one; `Entered` keeps it, and the connection
+////   takes a message another process sent for the player's stay only when it
+////   names that one.
 //// - **Instance 0** for every world: open worlds share one instance
 ////   (genesis_prime/world_map/map_id), so an instanced world has no instance
 ////   to ask for.
@@ -100,12 +106,12 @@ import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId}
 import genesis_prime/store.{
-  type AccountId, type Character, type CharacterId, type SessionEpoch,
-  CharacterId,
+  type AccountId, type Character, type CharacterId, CharacterId,
 }
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/dict.{type Dict}
 import gleam/int
@@ -139,13 +145,17 @@ pub type Refusal {
 pub opaque type State {
   /// The store is asked for the character.
   Loading(character_id: CharacterId)
-  /// The map is asked to take the character at its saved place, which this
-  /// login holds as the epoch `session_epoch`.
+  /// The map is asked to take the character at `place`, with the movement it
+  /// enters with: at a play, the saved place as the login whose epoch the store
+  /// gave; at the Holocrypt, the stay's own movement placed there, so its saves
+  /// go on numbered after the earlier ones (`movement.placed`).
   Joining(
     character: Character,
     place: Place,
-    session_epoch: SessionEpoch,
+    movement: movement.State,
     map: MapId,
+    stay: Stay,
+    readiness: Readiness,
   )
 }
 
@@ -167,8 +177,10 @@ pub type Joined {
   NotInTheWorld(character_id: Int, warning: String)
 }
 
-/// A player in the world: its character, its map, the run of the map that took
-/// it, which the rule watches as `Map(map, incarnation)`, its unit id, the
+/// A player in the world: its character as the store loaded it (which a join at
+/// the Holocrypt asks the map with again), the place it entered this stay at, the
+/// stay its join named, its map, the run of the map that took it, which the rule watches as
+/// `Map(map, incarnation)`, its unit id, the
 /// origin of the map's clock (`Joined` carries it), its loadout and maximum
 /// health (typed, from the tables: the weapon, the abilities and the gear's
 /// properties, which the 0x262 carries as bits), its own 0x262 record
@@ -182,12 +194,16 @@ pub type Joined {
 /// its strikes (genesis_prime/game/strike) and its chat
 /// (genesis_prime/game/chat), which the rule keeps up to date. A player that has
 /// just entered is not camping, has no viewers and shows no unit: the map's
-/// `Watched` and `Unwatched` keep `viewers`, the connections whose players see
-/// this one, the connection sends everything about the player's own unit to them,
-/// and `shown` and `gone` are the units its client holds and the ones the map
-/// reported gone (genesis_prime/game/connection).
+/// `SeenBy` and `UnseenBy` keep `viewers`, the connections whose players see
+/// this one, each with its player's stay as the map named it, the
+/// connection sends everything about the player's own unit to them, and `shown`
+/// and `gone` are the units its client holds and the ones the map reported gone
+/// (genesis_prime/game/connection).
 pub type Entered {
   Entered(
+    character: Character,
+    entered_at: Place,
+    stay: Stay,
     character_id: CharacterId,
     map: MapId,
     incarnation: Int,
@@ -196,7 +212,7 @@ pub type Entered {
     loadout: Loadout,
     max_health: Int,
     clock_origin_ms: Int,
-    viewers: Set(ConnectionId),
+    viewers: Dict(ConnectionId, Stay),
     shown: shown.Picture,
     casts_written: Dict(Int, Int),
     gone: Set(Int),
@@ -215,6 +231,13 @@ pub type Entered {
 /// creature fights a loading player.
 pub type Readiness {
   ClientLoading
+  /// Loading after the Holocrypt's join. The client moved its ghost until the
+  /// join's 0xAD reached it, which removes every unit and its control
+  /// (`opcode.0x637`, 0x1403b6de0): a ghost's 0x637 sent before it arrives is
+  /// taken in this stay, and is dropped as the ghost's until the stay's first
+  /// 0xF2. A body's 0x637 before that 0xF2 is dropped too; the body stands at
+  /// the Holocrypt place the join gave, and its next move is taken.
+  GhostLoading
   ClientReady
 }
 
@@ -290,13 +313,14 @@ pub fn awaiting(state state: State) -> Awaiting {
 }
 
 /// The store's answer to `play_requested`'s ask: the map is asked to take the
-/// character at its saved world, or the play is refused, for a character the
-/// account does not have or one with no saved place. With no read asked for,
-/// it is none this module asked for and gives an `Error`.
+/// character at its saved world for the stay `stay`, or the play is refused, for
+/// a character the account does not have or one with no saved place. With no
+/// read asked for, it is none this module asked for and gives an `Error`.
 pub fn loaded(
   state state: State,
   answer answer: store.WorldAnswer,
   connection connection: ConnectionId,
+  stay stay: Stay,
 ) -> Result(Loaded, Nil) {
   case state {
     Loading(character_id: CharacterId(character_id)) ->
@@ -318,21 +342,16 @@ pub fn loaded(
                   <> ", which has no saved place",
               )
             Some(place) -> {
-              let sent = start_place.within_the_worlds_box(place)
-              let map =
-                MapId(
-                  world_id: start_place.world_id(place),
-                  instance: open_world_instance,
+              let #(state, effects) =
+                joining(
+                  character:,
+                  place:,
+                  movement: movement.entered(place:, session_epoch:),
+                  connection:,
+                  stay:,
+                  readiness: ClientLoading,
                 )
-              Join(
-                state: Joining(character:, place:, session_epoch:, map:),
-                effects: [
-                  AskMap(
-                    map:,
-                    message: map.Join(connection:, character:, place: sent),
-                  ),
-                ],
-              )
+              Join(state:, effects:)
             }
           }
       })
@@ -351,7 +370,7 @@ pub fn joined(
   next_whisper next_whisper: Int,
 ) -> Result(Joined, Nil) {
   case state {
-    Joining(character:, place:, session_epoch:, map:) -> {
+    Joining(character:, place:, movement:, map:, stay:, readiness:) -> {
       case answer {
         map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
@@ -359,6 +378,9 @@ pub fn joined(
           let CharacterId(character_id_number) = character.character_id
           Ok(InTheWorld(
             entered: Entered(
+              character:,
+              entered_at: place,
+              stay:,
               character_id: character.character_id,
               map:,
               incarnation:,
@@ -367,12 +389,12 @@ pub fn joined(
               loadout:,
               max_health:,
               clock_origin_ms:,
-              viewers: set.new(),
+              viewers: dict.new(),
               shown: dict.new(),
               casts_written: dict.new(),
               gone: set.new(),
-              movement: movement.entered(place:, session_epoch:),
-              readiness: ClientLoading,
+              movement:,
+              readiness:,
               life: player_life.new(
                 health: max_health,
                 shield: full_shield(unit:),
@@ -421,9 +443,9 @@ pub fn joined(
           ))
         }
         map.Left
+        | map.Noticed(..)
         | map.Watched(..)
         | map.Unwatched(..)
-        | map.Gone(..)
         | map.Retire
         | map.Approached(..)
         | map.Withdrew(..) -> Error(Nil)
@@ -431,6 +453,52 @@ pub fn joined(
     }
     Loading(..) -> Error(Nil)
   }
+}
+
+/// The player chose the Holocrypt and has left its map: the map of `place`'s
+/// world is asked to take it there for the stay `stay`, with the earlier stay's
+/// movement placed at `place`. The map's answer comes back to `joined`, as at a
+/// play.
+pub fn rejoining(
+  entered entered: Entered,
+  place place: Place,
+  connection connection: ConnectionId,
+  stay stay: Stay,
+) -> #(State, List(Effect)) {
+  joining(
+    character: entered.character,
+    place:,
+    movement: movement.placed(state: entered.movement, place:),
+    connection:,
+    stay:,
+    readiness: GhostLoading,
+  )
+}
+
+/// The ask of the map of `place`'s world to take the character there, with the
+/// movement it enters with and the readiness its client starts the stay in: the
+/// place the map is given is the bounded one the client is told.
+fn joining(
+  character character: Character,
+  place place: Place,
+  movement movement: movement.State,
+  connection connection: ConnectionId,
+  stay stay: Stay,
+  readiness readiness: Readiness,
+) -> #(State, List(Effect)) {
+  let map =
+    MapId(world_id: start_place.world_id(place), instance: open_world_instance)
+  #(Joining(character:, place:, movement:, map:, stay:, readiness:), [
+    AskMap(
+      map:,
+      message: map.Join(
+        connection:,
+        character:,
+        place: start_place.within_the_worlds_box(place),
+        stay:,
+      ),
+    ),
+  ])
 }
 
 /// 0xAD with the saved world and position, and 0.0 in the last two floats.
@@ -490,6 +558,13 @@ fn player_path(character character: Character) -> Effect {
 /// 0x636 with the value 0, the reset bit 1 and the player's unit id
 /// (vector.opcode.0x636.body).
 fn control_granted(unit_id unit_id: Int) -> Effect {
+  Send(control_granted_frame(unit_id:))
+}
+
+/// 0x636 for the unit `unit_id`, with the value 0 and the reset bit 1
+/// (vector.opcode.0x636.body): the entry burst's for the player, and a death's
+/// for its ghost and for the player again.
+pub fn control_granted_frame(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
     client_control_granted.encode(ClientControlGranted(
       echo_value: 0,
@@ -497,7 +572,7 @@ fn control_granted(unit_id unit_id: Int) -> Effect {
       unit_id:,
     ))
     as "a unit id of 32 bits fits the message"
-  Send(Frame(message_id: client_control_granted.message_id, body:))
+  Frame(message_id: client_control_granted.message_id, body:)
 }
 
 /// 0xF1 with difficulty 0, prime level 0, flags 0 and the client's own

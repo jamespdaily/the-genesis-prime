@@ -101,11 +101,11 @@
 
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
-  AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentByChat, SentByFoe, SentByMap, SentByPeer, SentBySessions, SentByTarget,
-  TellChat, TellMoved, TellPeer, TellReady, TellStrike, TellStrikeAnswered,
-  TellTargetMoved,
+  type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
+  AskMapRun, AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions,
+  FromStore, SentByChat, SentByFoe, SentByMap, SentByPeer, SentBySessions,
+  SentByTarget, TellChat, TellMoved, TellPeer, TellReady, TellStrike,
+  TellStrikeAnswered, TellTargetMoved,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -134,6 +134,7 @@ import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
@@ -273,7 +274,9 @@ pub fn start(
     name: settings.sessions,
     settings: service_shell.Settings(
       rule: account_session.rule(),
-      reach: connection_reach(settings, SentBySessions),
+      reach: connection_reach(settings, fn(message) {
+        Ok(SentBySessions(message))
+      }),
       shutdown_ms: settings.sessions_shutdown_ms,
       told_through: None,
     ),
@@ -492,7 +495,8 @@ pub fn tell_the_run(
 /// How a connection's shell sends a request to another connection by address
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
-/// registry as `SentByPeer`, and a chat tell (`TellChat`) as `SentByChat`, by the
+/// registry as `SentByPeer` for the viewer's stay (`ForStay`), and a chat tell
+/// (`TellChat`) as `SentByChat`, by the
 /// same reach the services' sends take (`connection_reach`). A strike
 /// (`TellStrike`), a fighter's move (`TellTargetMoved`) and the answer to a
 /// creature's strike (`TellStrikeAnswered`) told to a `Creature` go through the
@@ -503,11 +507,14 @@ pub fn tell_the_run(
 fn connection_deliver(
   settings: Settings,
 ) -> fn(step.Address, Request) -> Result(Nil, Nil) {
-  let reach = connection_reach(settings, SentByPeer)
-  let chat_reach = connection_reach(settings, SentByChat)
+  let reach =
+    connection_reach(settings, fn(sent: #(Stay, PeerNews)) {
+      Ok(ForStay(stay: sent.0, sent: SentByPeer(news: sent.1)))
+    })
+  let chat_reach = connection_reach(settings, fn(tell) { Ok(SentByChat(tell)) })
   fn(to: step.Address, request: Request) {
     case request, to {
-      TellPeer(news:), _ -> reach.send(to, news)
+      TellPeer(stay:, news:), _ -> reach.send(to, #(stay, news))
       TellChat(tell:), _ -> chat_reach.send(to, tell)
       TellStrike(tell:), step.Creature(map:, incarnation:, unit_id:, life:) ->
         creature_registry.tell(
@@ -518,7 +525,7 @@ fn connection_deliver(
           life:,
           message: creature.Strike(tell:),
         )
-      TellTargetMoved(connection:, place:, seq:),
+      TellTargetMoved(connection:, place:, seq:, stay:),
         step.Creature(map:, incarnation:, unit_id:, life:)
       ->
         creature_registry.tell(
@@ -527,7 +534,7 @@ fn connection_deliver(
           incarnation:,
           unit_id:,
           life:,
-          message: creature.TargetMoved(by: connection, place:, seq:),
+          message: creature.TargetMoved(by: connection, place:, seq:, stay:),
         )
       TellStrikeAnswered(answered:),
         step.Creature(map:, incarnation:, unit_id:, life:)
@@ -564,32 +571,60 @@ fn connection_deliver(
 
 /// How a service reaches the processes its rule names: the same lookups, and
 /// a send to a connection, which takes what the service sends wrapped by
-/// `wrap` (`SentBySessions`, `SentByMap`). Only a connection is sent to; any
-/// other address has no process that takes a message from a service.
+/// `wrap` (`SentBySessions`, a map's notice for a stay). Only a connection is sent
+/// to; any other address has no process that takes a message from a service. A
+/// send `wrap` has no message for is a bug of the sender's rule: an error line,
+/// and nothing is sent.
 fn connection_reach(
   settings: Settings,
-  wrap: fn(outgoing) -> Message,
+  wrap: fn(outgoing) -> Result(Message, Nil),
 ) -> Reach(outgoing) {
   let registry = settings.registry
   service.Reach(
     locate: locate(settings),
     send: fn(to, outgoing) {
-      case to {
-        step.Connection(connection:) ->
-          registry.deliver(registry, connection, wrap(outgoing))
-        step.ZoneChannel(..) ->
-          registry.deliver_group(registry, to, wrap(outgoing))
-        step.Sessions
-        | step.HandOff
-        | step.Store
-        | step.Maps
-        | step.Map(..)
-        | step.Creature(..)
-        | step.CharacterNamed(..) -> Error(Nil)
+      case wrap(outgoing), to {
+        Error(Nil), _ -> {
+          runtime.log(
+            LogError,
+            "a service sent a connection something no connection takes",
+            step.no_one,
+          )
+          Error(Nil)
+        }
+        Ok(message), step.Connection(connection:) ->
+          registry.deliver(registry, connection, message)
+        Ok(message), step.ZoneChannel(..) ->
+          registry.deliver_group(registry, to, message)
+        Ok(_), step.Sessions
+        | Ok(_), step.HandOff
+        | Ok(_), step.Store
+        | Ok(_), step.Maps
+        | Ok(_), step.Map(..)
+        | Ok(_), step.Creature(..)
+        | Ok(_), step.CharacterNamed(..)
+        -> Error(Nil)
       }
     },
     start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
   )
+}
+
+/// The message a connection takes what a map sends it as: a notice for the
+/// player's stay. Any other outgoing of a map is an answer or a creature's, never
+/// sent to a connection, and has none.
+pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
+  case outgoing {
+    map.Noticed(stay:, notice:) -> Ok(ForStay(stay:, sent: SentByMap(notice:)))
+    map.Joined(..)
+    | map.NotJoined(..)
+    | map.Left
+    | map.Watched(..)
+    | map.Unwatched(..)
+    | map.Retire
+    | map.Approached(..)
+    | map.Withdrew(..) -> Error(Nil)
+  }
 }
 
 /// The world subtree: the creature registry, Maps, the creature supervisor, then
@@ -605,7 +640,7 @@ fn world(
     world: settings.world,
     realm_id: settings.game.settings.realm_id,
     tables: settings.game.settings.tables,
-    reach: connection_reach(settings, SentByMap),
+    reach: connection_reach(settings, fn(outgoing) { map_message(outgoing:) }),
     to_connection: fn(connection, outgoing) {
       registry.deliver(connections, connection, creature_message(outgoing:))
     },
@@ -835,13 +870,15 @@ fn creature_reach(
 }
 
 /// The message a connection takes what a creature sends it as: the news of a unit
-/// as `SentByPeer`, the answer to its strike as `SentByTarget`, and the creature's
-/// threat, release or strike as `SentByFoe`.
+/// as `SentByPeer`, the creature's threat, release or strike as `SentByFoe`, each
+/// for the viewer's stay, and the answer to its strike as `SentByTarget`, for the
+/// stay the strike was told for.
 pub fn creature_message(outgoing outgoing: creature.Outgoing) -> Message {
   case outgoing {
-    creature.News(news:) -> SentByPeer(news)
-    creature.Struck(answered:) -> SentByTarget(answered)
-    creature.FightTold(told:) -> SentByFoe(told)
+    creature.News(stay:, news:) -> ForStay(stay:, sent: SentByPeer(news:))
+    creature.Struck(stay:, answered:) ->
+      ForStay(stay:, sent: SentByTarget(answered))
+    creature.FightTold(stay:, told:) -> ForStay(stay:, sent: SentByFoe(told))
   }
 }
 

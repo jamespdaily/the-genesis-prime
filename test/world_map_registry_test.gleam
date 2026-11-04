@@ -34,6 +34,7 @@ import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/list
 import gleam/otp/static_supervisor as supervisor
+import map_support
 import owned_test
 import place_support
 import spawn_support
@@ -142,6 +143,7 @@ fn join_of(id id: Int, character character: Character) -> map.Message {
     connection: ConnectionId(id),
     character:,
     place: place_support.live_character_place(),
+    stay: map_support.stay(count: 1),
   )
 }
 

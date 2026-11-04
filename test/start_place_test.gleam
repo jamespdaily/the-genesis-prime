@@ -198,6 +198,40 @@ pub fn a_start_race_or_faction_with_no_row_has_no_place_test() -> Nil {
   assert none(exile, 9, Novice) == Error(Nil) as "race 9 is no player race"
 }
 
+pub fn the_holocrypt_place_is_the_start_of_the_race_and_faction_in_the_players_world_and_none_in_another_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The server's choice of a Holocrypt place (`death.server_choices`, the Design
+  // of step G): the start of the character's race and faction whose row is in the
+  // world it died in.
+  let tables = character_tables.shared()
+  let holocrypt = fn(faction_id, race_id, world_id) {
+    start_place.holocrypt(
+      tables:,
+      faction_id:,
+      race_id: RaceId(race_id),
+      world_id:,
+    )
+  }
+  let assert Ok(novice) = holocrypt(dominion, 1, 3460)
+    as "a Dominion Cassian in World 3460: the Novice start's row is there"
+  assert character_tables.is_the_place_of(
+    place: novice,
+    row: character_tables.start_row(51_596),
+  )
+    as "row 51596, in World 3460, facing the client's yaw of the row"
+  let assert Ok(levian_bay) = holocrypt(dominion, 12, 1387)
+    as "a Dominion Mechari in World 1387: its Veteran landing is there"
+  assert character_tables.is_the_place_of(
+    place: levian_bay,
+    row: character_tables.start_row(42_148),
+  )
+    as "row 42148 (Quest2.10530.links, Cassian and Mechari)"
+  assert holocrypt(dominion, 5, 1387) == Error(Nil)
+    as "a Draken lands at 8223, in World 870: no start of its race is in World 1387"
+  assert holocrypt(exile, 1, 1387) == Error(Nil)
+    as "no Exile start is in World 1387"
+}
+
 pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_row_in_the_clients_tables_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())

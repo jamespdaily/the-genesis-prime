@@ -50,6 +50,7 @@ import genesis_prime/world_map/creature_life.{type Attackable}
 import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
 import gleam/int
@@ -84,9 +85,10 @@ pub type Request {
   TellReady(connection: ConnectionId, seq: Int)
   /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): news of this player's unit, which that
-  /// connection writes as 0x262, 0x638 or 0x355 when its client can take it.
-  /// Never asked, and never told to a map.
-  TellPeer(news: PeerNews)
+  /// connection writes as 0x262, 0x638 or 0x355 when its client can take it, for
+  /// that player's stay `stay`, as the map's `SeenBy` named it. Never asked, and
+  /// never told to a map.
+  TellPeer(stay: Stay, news: PeerNews)
   /// What a `Tell` effect sends the connection of another player, or every
   /// connection of a zone channel, or the connection that holds a character's
   /// name (genesis_prime/step `Connection`, `ZoneChannel`, `CharacterNamed`): a
@@ -102,7 +104,7 @@ pub type Request {
   /// on its threat list: the player stands at `place`, the connection's move
   /// `seq` (genesis_prime/world_map/creature `TargetMoved`). Told through the
   /// creature registry with no watch, and never asked.
-  TellTargetMoved(connection: ConnectionId, place: Place, seq: Int)
+  TellTargetMoved(connection: ConnectionId, place: Place, seq: Int, stay: Stay)
   /// What a `Tell` effect sends a creature whose strike this connection's player
   /// took: the answer (genesis_prime/world_map/creature `StrikeAnswered`). Told
   /// through the creature registry with no watch, and never asked.
@@ -110,12 +112,11 @@ pub type Request {
 }
 
 /// News of one unit from its owner, a player's connection or a creature's
-/// process, to the connection of a player who sees it: the run of the map the
-/// owner is in (`map` and `incarnation`, as its connection watches it), the
-/// owner's unit in that run, and what happened to it. A viewer that is in another run of the map, or another map, drops it:
-/// the unit id there may name another unit.
+/// process, to the connection of a player who sees it: the owner's unit in the
+/// run of the map both are in, and what happened to it. It travels for the
+/// viewer's stay (`TellPeer`, `ForStay`), which names that run.
 pub type PeerNews {
-  PeerNews(map: MapId, incarnation: Int, unit_id: Int, news: News)
+  PeerNews(unit_id: Int, news: News)
 }
 
 /// What a unit's owner tells the connections that see its unit, which they write
@@ -163,6 +164,16 @@ pub type News {
   /// The unit died: 0x88c with the dead bit (opcode.0x88c), written when the
   /// viewer's client shows the unit.
   Died
+  /// The unit came back from death: 0x88c with the dead bit clear
+  /// (opcode.0x88c), written when the viewer's client shows the unit.
+  CameBack
+  /// A player's death for the combat log: 0x247 of type 22 (opcode.0x247.death),
+  /// written when the viewer's client shows the unit. The client logs it only
+  /// for a player or a ghost, so a creature never sends it.
+  DeathLogged
+  /// A player's coming back for the combat log: 0x247 of type 23
+  /// (opcode.0x247.death), written when the viewer's client shows the unit.
+  CameBackLogged
   /// A creature runs `path`: 0x638 of kind 0, the map's time it starts at, and
   /// kind 4, the path (`movement_command.kind_4`), written when the viewer's
   /// client shows the unit; the viewer keeps the path for its picture
@@ -185,20 +196,13 @@ const most_commands_in_a_message = 31
 /// The news a move is sent as: its `commands` in order, at most 31 to a message,
 /// and none for no command.
 pub fn peer_moves(
-  map map: MapId,
-  incarnation incarnation: Int,
   unit_id unit_id: Int,
   server_time_ms server_time_ms: Int,
   commands commands: List(RelayedMovement),
 ) -> List(PeerNews) {
   list.sized_chunk(commands, most_commands_in_a_message)
   |> list.map(fn(chunk) {
-    PeerNews(
-      map:,
-      incarnation:,
-      unit_id:,
-      news: Moving(server_time_ms:, commands: chunk),
-    )
+    PeerNews(unit_id:, news: Moving(server_time_ms:, commands: chunk))
   })
 }
 
@@ -214,27 +218,35 @@ pub type Answer {
 /// it. Only the game rule is sent anything; the login's rules take `Nil`.
 pub type Message {
   SentBySessions(message: account_session.Outgoing)
-  /// What a map sends the connection of a player in it without waiting: who
-  /// sees this connection's player (`Watched`, `Unwatched`), and a unit whose
-  /// owner's connection ended (`Gone`). A map's answers (`Joined`, `Left`) come
-  /// as an ask's outcome, never as this.
-  SentByMap(message: map.Outgoing)
-  /// What the connection of another player sends it without waiting: news of
-  /// that player's unit, written while this player is in the world
-  /// (genesis_prime/game/connection).
-  SentByPeer(news: PeerNews)
+  /// What another process sent the connection without waiting for its player's
+  /// stay `stay` in the world (genesis_prime/world_map/stay): the connection
+  /// takes it only while that stay is its player's, and drops it otherwise.
+  ForStay(stay: Stay, sent: StaySent)
   /// What the connection of another player sent it without waiting: a chat line
   /// or a whisper's reply, written while this player is in the world
   /// (genesis_prime/game/chat).
   SentByChat(tell: ChatTell)
-  /// What a creature this connection struck answers, without waiting: the
-  /// answer to a strike its caster told, which the strike rule takes into the round
-  /// it belongs to (genesis_prime/game/strike).
-  SentByTarget(answered: Answered)
-  /// What a creature that fights this connection's player sends it without
-  /// waiting: that it threatens or releases the player, or its strike
+}
+
+/// What another process sends a connection for its player's stay, inside
+/// `ForStay`.
+pub type StaySent {
+  /// What a map sends the connection of a player in it: who sees this
+  /// connection's player (`SeenBy`, `UnseenBy`), and a unit whose owner ended
+  /// (`Gone`). A map's answers (`Joined`, `Left`) come as an ask's outcome,
+  /// never as this.
+  SentByMap(notice: map.Notice)
+  /// What the connection of another player, or a creature's process, sends it:
+  /// news of the unit it owns (genesis_prime/game/connection).
+  SentByPeer(news: PeerNews)
+  /// What a creature that fights this connection's player sends it: that it
+  /// threatens or releases the player, or its strike
   /// (genesis_prime/game/player_life).
   SentByFoe(fight: Fight)
+  /// What a creature this connection's player struck answers: the answer to a
+  /// strike its caster told in this stay, which the strike rule takes into the
+  /// round it belongs to (genesis_prime/game/strike).
+  SentByTarget(answered: Answered)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

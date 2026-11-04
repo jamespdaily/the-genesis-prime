@@ -61,20 +61,25 @@
 //// - **No target.** None of the 18 level-1 abilities needs a target the client
 ////   picks (`Spell4TargetMechanics.targetType`), so the plan holds no range and
 ////   no target rule.
-//// - **What fails the load:** a Spell4, Spell4Base, SpellCoolDown or Class row the
-////   tree names that the tables lack, a cost of a type not read, a cycle of Proxy
-////   effects, and a channel with no pulse time.
+//// - **The caster's death.** Bit 0 of the spell's caster condition row says
+////   whether its caster must be alive, must be dead or may be either
+////   (`Spell4.spell4ConditionsIdCaster`, `CasterDeath`); the row's other
+////   conditions are not read.
+//// - **What fails the load:** a Spell4, Spell4Base, Spell4Conditions, SpellCoolDown
+////   or Class row the tree names that the tables lack, a cost of a type not read, a
+////   cycle of Proxy effects, and a channel with no pulse time.
 
 import genesis_prime/game/loadout
 import genesis_prime/table/class
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
-  ClassId, PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
-  SpellCoolDownId,
+  ClassId, PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId,
+  Spell4Id, SpellCoolDownId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
@@ -202,6 +207,21 @@ pub type Channel {
   Channel(initial_delay_ms: Int, max_time_ms: Int, pulse_time_ms: Int)
 }
 
+/// What the spell's caster condition row says of a dead caster: bit 0 of its
+/// Spell4Conditions mask, with the same bit of its value
+/// (`Spell4.spell4ConditionsIdCaster`). The row's other bits are not read: the
+/// rule checks no other condition of the caster.
+pub type CasterDeath {
+  /// The mask's bit 0 with the value's bit 0 clear: a dead caster is refused 57
+  /// Caster_CannotBeDead.
+  CannotBeDead
+  /// The mask's bit 0 with the value's bit 0 set: a living caster is refused 58
+  /// Caster_MustBeDead.
+  MustBeDead
+  /// No row (id 0), or a row without the mask's bit 0: never refused for death.
+  AliveOrDead
+}
+
 /// One stage of a RapidTap or ChargeRelease ability: the spell a tap or a charge
 /// level casts, and the time the threshold takes to reach it from the stage before
 /// (Spell4Thresholds.thresholdDuration).
@@ -236,6 +256,8 @@ pub type Spell {
     /// Spell4.propertyFlags 0x10 or 0x1 (`Spell4.propertyFlags`).
     ignores_casting: Bool,
     weapon: WeaponSlot,
+    /// Whether the caster must be alive or dead to cast it.
+    caster_death: CasterDeath,
     global_cooldown: GlobalCooldown,
     /// The 0x7fc result of a press the caster cannot pay the innate cost of,
     /// when the spell has a cost (`Spell4CastResult.vital_cost`).
@@ -494,6 +516,7 @@ fn spell_of(
     )),
   )
   use global_cooldown <- result.try(global_cooldown_of(tables:, row:))
+  use caster_death <- result.try(caster_death_of(tables:, row:))
   use unpayable_cost <- result.try(
     unpayable_cost_of(tables:, row:, base:, costs: [
       #(row.innate_cost_type0, row.innate_cost0),
@@ -564,6 +587,7 @@ fn spell_of(
     ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
       || has_flag(flags: row.property_flags, bit: 0x1),
     weapon: weapon_of(base.weapon_slot),
+    caster_death:,
     global_cooldown:,
     unpayable_cost:,
     phase_delays_ms: delays,
@@ -800,6 +824,34 @@ fn global_cooldown_of(
         refused_while_running:,
         starts_for_ms: Some(cool_down.cooldown_time),
       ))
+    }
+  }
+}
+
+/// The bit 0 of the spell's caster condition row: CheckCastCaster tests it
+/// against the caster before a cast is sent (`Spell4.spell4ConditionsIdCaster`).
+/// A row the Spell4 row names and the table lacks is a `NoRow`.
+fn caster_death_of(
+  tables tables: table_store.Tables,
+  row row: spell4.Spell4,
+) -> Result(CasterDeath, PlanError) {
+  case row.spell4_conditions_id_caster {
+    0 -> Ok(AliveOrDead)
+    id -> {
+      use condition <- result.try(
+        spell4_conditions.get(tables:, id: Spell4ConditionsId(id))
+        |> result.replace_error(NoRow(table: "Spell4Conditions", id:)),
+      )
+      Ok(
+        case
+          has_flag(flags: condition.condition_mask, bit: 1),
+          has_flag(flags: condition.condition_value, bit: 1)
+        {
+          False, _ -> AliveOrDead
+          True, False -> CannotBeDead
+          True, True -> MustBeDead
+        },
+      )
     }
   }
 }

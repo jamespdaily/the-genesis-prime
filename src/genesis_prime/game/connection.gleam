@@ -204,21 +204,22 @@
 ////   bytes after it, is one the client never writes, and ends the connection.
 //// - **Other players' units.** The map decides who sees whom
 ////   (genesis_prime/world_map/map) and tells the connection of each player in
-////   it, as the message `SentByMap`, who sees its player (`Watched(by)` when a
-////   player comes to see it, `Unwatched(by)` when one stops), and `Gone(unit)`
+////   it, as the message `SentByMap`, who sees its player (`SeenBy(by, stay)` when
+////   a player comes to see it, `UnseenBy(by)` when one stops), and `Gone(unit)`
 ////   when a player's connection has ended. The connection keeps
-////   the connections that see its player as its viewers, in the player's
-////   `Entered`, and sends everything about its own unit to them itself, as
+////   the connections that see its player as its viewers, each with its player's
+////   stay, in the player's `Entered`, and sends everything about its own unit to
+////   them itself, as
 ////   `SentByPeer` through the registry (the same path the map's sends take,
 ////   `genesis_prime/server`'s `connection_reach`); the map sends no unit:
 ////
 ////   ```
 ////   owner's connection (player in the world)                       viewer's connection             client
-////   Watched(by v) from the map ─▶ Tell(v, Appeared(0x262 at its place))  ─▶ writes 0x262 if not shown ─▶ the unit is created
+////   SeenBy(v, stay) from the map ─▶ Tell(v, Appeared(0x262 at its place)) ─▶ writes 0x262 if not shown ─▶ the unit is created
 ////   0x637 accepted             ─▶ Tell(map, Moved(place)); Tell(each viewer, Moving(0x638)) ─▶ writes 0x638 if shown ─▶ the unit moves
-////   Unwatched(by v)            ─▶ Tell(v, Removed)                    ─▶ writes 0x355 if shown   ─▶ the unit is removed
+////   UnseenBy(v)                ─▶ Tell(v, Removed)                    ─▶ writes 0x355 if shown   ─▶ the unit is removed
 ////   its camp (0xC0)            ─▶ Tell(each viewer, Removed), then Leave
-////   its connection ends        ─▶ nothing: the map sends each viewer Unwatched, and every player Gone(unit)
+////   its connection ends        ─▶ nothing: the map sends each viewer UnseenBy, and every player Gone(unit)
 ////                                                                     Gone(unit) ─▶ writes 0x355 if shown, and the unit is gone
 ////   ```
 ////
@@ -231,7 +232,7 @@
 ////   outcome. With no player in the world (after the camp's leave, say) a send is
 ////   dropped and nothing is written for other units; a player that enters again
 ////   starts with no viewers and no units shown, and the map's new join sends it a
-////   `Watched` for each player in sight, whose owners then send it their 0x262s.
+////   `SeenBy` for each player in sight, whose owners then send it their 0x262s.
 //// - **What a viewer writes** is what its client can take, kept by the player's
 ////   `Entered` for the current run of the map: `shown`, the units it has written
 ////   a 0x262 of and not a 0x355, and `gone`, the units the map reported `Gone`. A
@@ -240,17 +241,24 @@
 ////   controlled unit, 0x1403d9760); a 0x638 and a 0x355 are written for a shown
 ////   unit only, a 0x355 ends it; `Gone` writes a 0x355 for a shown unit and marks
 ////   the unit gone, so a 0x262 from the owner that ended, which lands after it,
-////   shows no ghost. A message names the map and the run of the map it is about,
-////   and one for another run or map is dropped: the unit id there may name
-////   another unit.
+////   shows no ghost.
+//// - **Stays.** Every message another process sends for the player's stay in the
+////   world (the map's notices, a peer's or a creature's news, a creature's threat,
+////   release and strike) comes in one envelope, `ForStay(stay, ..)`, which names
+////   the stay it was sent for (genesis_prime/world_map/stay), and is taken at one
+////   entry point (`stay_sent`) only when that stay is the player's: one of an
+////   earlier stay, sent before a camp or the Holocrypt, reaches a client that holds
+////   none of its units, or a run of the map that gives the same unit ids again,
+////   and is dropped. The connection names a new stay in each join's ask, and each
+////   viewer's stay, as the map's `SeenBy` gave it, in every news it sends it.
 //// - **A creature's unit** reaches a viewer the same way, as news from the
 ////   creature's own process (`CreatureAppeared`, then `Removed`), and is shown,
 ////   removed and marked gone by the same rules: the viewer neither knows nor asks
 ////   whose process owns a unit (genesis_prime/world_map/creature).
 //// - **Order.** For one viewer, an owner's 0x262, 0x638s and 0x355 are that
 ////   owner's messages only, which the BEAM delivers in the order sent (it orders
-////   the signals of one sender to one receiver); the map's `Watched` and
-////   `Unwatched` to one owner are the map's only, so the owner's viewers change in
+////   the signals of one sender to one receiver); the map's `SeenBy` and
+////   `UnseenBy` to one owner are the map's only, so the owner's viewers change in
 ////   order. The one case two senders speak of a unit, `Gone` after the owner has
 ////   ended, is the viewer's `gone`.
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
@@ -303,6 +311,30 @@
 ////   (`TellTargetMoved`) and answers a strike (`TellStrikeAnswered`). A viewer writes
 ////   a creature's 0x908, 0x90a, 0x89a and 0x638 path, and a player's 0x938 shield,
 ////   for a unit it shows; its picture keeps a running creature's path.
+//// - **Death and coming back** are player_life's (its module holds the sequence
+////   and the failure table): a strike that leaves the player at 0 kills it; the
+////   connection writes the death's frames, ends the player's casts
+////   (`cast.died`), and while the player is dead decodes and drops each 0x637, its
+////   ghost's (`ghost.movement`), as it does after the Holocrypt's join until the
+////   stay's first 0xF2 (`world_entry.GhostLoading`), checks its presses as the client checks a dead
+////   caster (`caster_of`, `cast.dead_player`) and takes 0x15a from inside
+////   0x038C. Wake Here writes the coming back where the body lies. The Holocrypt
+////   writes the same, then leaves the map and joins again at the Holocrypt place
+////   (`start_place.holocrypt`, else the place the stay entered at) with no store
+////   ask; the save timer stops at the leave and starts again with the burst:
+////
+////   ```
+////   0x15a {P, 2, 0} ─▶ the coming back's frames and news; the unit's 0x355 to each viewer
+////                    ─▶ map run: Leave(connection)                       (LeavingMap, JoinAt(place))
+////   Left, NotRunning or EndedBeforeAnswer
+////                    ─▶ the map's watch dropped; map of place's world: Join(connection, character, place)
+////                                                                        (EnteringWorld, FromHolocrypt)
+////   Joined           ─▶ 0xAD, 0x262, .. 0x61, the watch, as a play's burst (the client's 0xAD
+////                       removes every unit and loads again, 0x1403b6de0); the stay's movement
+////                       is kept, placed there (`movement.placed`)
+////   NotJoined        ─▶ 0x0594, character select
+////   no answer        ─▶ 0x036A reason 8, as the camp's leave or a play's join
+////   ```
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
@@ -330,9 +362,8 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
-  Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentByChat, SentByFoe, SentByMap, SentByPeer, SentBySessions,
-  SentByTarget, Settled, TellChat, TellMoved, TellPeer,
+  Continue, Done, ForStay, FromHandOff, FromMap, FromSessions, FromStore, Inside,
+  Otherwise, SentByChat, SentBySessions, Settled, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -363,6 +394,10 @@ import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
+import genesis_prime/message/combat_log.{CombatLog}
+import genesis_prime/message/combat_log_death.{CombatLogDeath}
+import genesis_prime/message/combat_log_entry
+import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
 import genesis_prime/message/create_character
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
@@ -377,9 +412,11 @@ import genesis_prime/message/movement_path.{MovementPath}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/resurrection_window.{ResurrectionWindow}
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_create_ghost.{UnitCreateGhost}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -388,6 +425,7 @@ import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
+import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
@@ -407,9 +445,10 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/bool
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -483,6 +522,11 @@ type Session {
     /// creature never takes a move of an earlier stay for a newer one
     /// (genesis_prime/world_map/creature_fight).
     move_seq: Int,
+    /// The stay the connection's last join named (genesis_prime/world_map/stay):
+    /// each join asks with the one after it, so the stays count for the
+    /// connection's life and a message of an earlier stay never names the
+    /// current one.
+    last_stay: Stay,
     status: Status,
   )
 }
@@ -507,9 +551,11 @@ type Status {
   /// slot for this connection; the client is in character select, which holds
   /// its own state, asks the store itself and says when its answer is awaited.
   InCharacterSelect(holder: Holder, select: character_select.State)
-  /// The client asked to play a character; world entry asks the store, then
-  /// the map. A refusal hands the client back to a new character select.
-  EnteringWorld(holder: Holder, entry: world_entry.State)
+  /// The client asked to play a character, or its dead player chose the
+  /// Holocrypt (`from`); world entry asks the store, then the map, or the map
+  /// alone for the Holocrypt. A refusal hands the client back to a new character
+  /// select, after 0x0594 when it came from the world.
+  EnteringWorld(holder: Holder, entry: world_entry.State, from: EntryFrom)
   /// The player is in the world, in `entered`'s map, which the connection
   /// watches (`map_watch`).
   InWorld(holder: Holder, entered: world_entry.Entered)
@@ -520,8 +566,26 @@ type Status {
   /// The camp's place is saved and the map's run is asked to take the player
   /// out (`world_map/map.Leave`), and its answer is awaited. A connection in this
   /// status ends without a save: the place is already saved, and the map drops
-  /// a player whose connection ends.
-  LeavingMap(holder: Holder, entered: world_entry.Entered)
+  /// a player whose connection ends. `then` says what follows `Left`.
+  LeavingMap(holder: Holder, entered: world_entry.Entered, then: AfterLeave)
+}
+
+/// What follows the map's answer to a leave.
+type AfterLeave {
+  /// The camp: 0x0594 and a new character select.
+  ToCharacterSelect
+  /// The Holocrypt: the map of `place`'s world is asked to take the player there
+  /// (`world_entry.rejoining`), and its entry burst follows.
+  JoinAt(place: Place)
+}
+
+/// Where an entry into the world started, for what its refusal does.
+type EntryFrom {
+  /// A play in character select: the refusal is 0x0162 and the list again.
+  FromCharacterSelect
+  /// The Holocrypt, with the client still in the world: the refusal is 0x0594,
+  /// as the camp's leave writes, then a new character select.
+  FromHolocrypt
 }
 
 /// What a save of the player's place is for, so its answer knows what comes
@@ -627,6 +691,7 @@ pub fn step(
             unknown_zones_logged: set.new(),
             next_whisper: 1,
             move_seq: 0,
+            last_stay: stay.none_yet(),
             status: AwaitingHelloReply,
           )),
           Effects([OwnEffect(Write(hello_bytes(settings)))]),
@@ -650,16 +715,10 @@ fn connected(
   case event {
     OwnEvent(Woken(message: SentBySessions(message:))) ->
       settled(handled: sessions_sent(session:, now:, message:), now:)
-    OwnEvent(Woken(message: SentByMap(message:))) ->
-      settled(handled: map_sent(session:, now:, message:), now:)
-    OwnEvent(Woken(message: SentByPeer(news:))) ->
-      settled(handled: peer_sent(session:, news:), now:)
+    OwnEvent(Woken(message: ForStay(stay:, sent:))) ->
+      settled(handled: stay_sent(session:, now:, stay:, sent:), now:)
     OwnEvent(Woken(message: SentByChat(tell:))) ->
       settled(handled: chat_sent(session:, tell:), now:)
-    OwnEvent(Woken(message: SentByTarget(answered:))) ->
-      settled(handled: target_sent(session:, now:, answered:), now:)
-    OwnEvent(Woken(message: SentByFoe(fight:))) ->
-      settled(handled: foe_sent(session:, fight:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -949,7 +1008,8 @@ fn routed(
     Ok(routing.Movement(..))
     | Ok(routing.Camp(..))
     | Ok(routing.Chat(..))
-    | Ok(routing.Cast(..)) -> misrouted(session:, now:, inner:)
+    | Ok(routing.Cast(..))
+    | Ok(routing.Life(..)) -> misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
         routing.BeforeHelloReply ->
@@ -1034,6 +1094,31 @@ fn movement_message(
   inner inner: Frame,
   message message: movement.Message,
 ) -> client_connection.Handled(Session) {
+  case message, player_life.state(life: entered.life), entered.readiness {
+    movement.PlayerMoved, player_life.Dead, _
+    | movement.PlayerMoved, player_life.Alive, world_entry.GhostLoading
+    -> ghost_moving(session:, now:, entered:, body: inner.body)
+    movement.PlayerMoved, player_life.Alive, world_entry.ClientLoading
+    | movement.PlayerMoved, player_life.Alive, world_entry.ClientReady
+    | movement.ZoneChanged, _, _
+    | movement.IntervalAnswered, _, _
+    | movement.SpeedChosen, _, _
+    | movement.TerrainReady, _, _
+    | movement.Fell, _, _
+    | movement.FellBelowFloor, _, _
+    -> body_moving(session:, now:, holder:, entered:, inner:, message:)
+  }
+}
+
+/// A movement message of the player's body, taken by the movement rule.
+fn body_moving(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: movement.Message,
+) -> client_connection.Handled(Session) {
   case movement.take(entered.movement, message, inner.body) {
     Ok(movement.Kept(state:)) ->
       Continue(moving(session:, holder:, entered:, state:), [])
@@ -1041,8 +1126,9 @@ fn movement_message(
       let session = moving(session:, holder:, entered:, state:)
       let top_zones = top_zone.top_zones(session.settings.tables)
       let #(session, ready) = case by, entered.readiness {
-        movement.ReportedByTerrainReady, world_entry.ClientLoading ->
-          tells_the_map_ready(session:, entered:)
+        movement.ReportedByTerrainReady, world_entry.ClientLoading
+        | movement.ReportedByTerrainReady, world_entry.GhostLoading
+        -> tells_the_map_ready(session:, entered:)
         movement.ReportedByTerrainReady, world_entry.ClientReady
         | movement.ReportedByZoneChanged, _
         -> #(session, [])
@@ -1124,6 +1210,23 @@ fn movement_message(
   }
 }
 
+/// A 0x637 while the player is dead moves its ghost, the client's controlled
+/// unit: it is decoded, checked as the body's and dropped (`movement.ghost_moved`),
+/// so the body's place, the map, the viewers and the fighters are told nothing and
+/// the move sequence number does not grow. A body the client's reader refuses, or
+/// a command its code never sends, ends the connection.
+fn ghost_moving(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  body body: BitArray,
+) -> client_connection.Handled(Session) {
+  case movement.ghost_moved(state: entered.movement, body:) {
+    Ok(Nil) -> Continue(session, [])
+    Error(refusal) -> end_for(session:, now:, text: movement.describe(refusal))
+  }
+}
+
 /// The session with the player's movement replaced.
 fn moving(
   session session: Session,
@@ -1173,7 +1276,12 @@ fn tells_a_fighter_the_place(
       unit_id: fighter.0,
       life: fighter.1,
     ),
-    request: client_connection.TellTargetMoved(connection:, place:, seq:),
+    request: client_connection.TellTargetMoved(
+      connection:,
+      place:,
+      seq:,
+      stay: entered.stay,
+    ),
   ))
 }
 
@@ -1199,54 +1307,41 @@ fn tells_the_map_ready(
   )
 }
 
-/// What a creature fighting the player sent (genesis_prime/game/player_life): its
-/// threat, its release or its strike, taken with the player in the world. With no
-/// player in the world it is dropped, and so is a strike on another unit or from a
-/// creature of another run: a strike of an earlier stay delayed past a camp and a
-/// new entry. A dropped strike finds no answer, and the creature's deadline leaves
-/// the player out.
-fn foe_sent(
+/// What another process sent for a stay of the player (`ForStay`), taken at this
+/// one entry point: only while the player is in the world, and only when the stay
+/// is the player's own (genesis_prime/world_map/stay). Any other is dropped: it was
+/// sent for an earlier stay, before a camp or the Holocrypt, and reaches a later
+/// one whose client holds none of the earlier units and whose creatures and
+/// viewers are others, or it reaches no stay at all. A dropped strike finds no
+/// answer, and the creature's deadline leaves the player out.
+fn stay_sent(
   session session: Session,
-  fight fight: strike_tell.Fight,
+  now now: Now,
+  stay stay: Stay,
+  sent sent: client_connection.StaySent,
 ) -> client_connection.Handled(Session) {
   case held_in_the_world(session.status) {
-    None -> Continue(session, [])
-    Some(entered) ->
-      case is_of_this_stay(entered:, fight:) {
-        False -> Continue(session, [])
-        True -> foe_taken(session:, entered:, fight:)
+    Some(#(holder, entered)) if entered.stay == stay ->
+      case sent {
+        client_connection.SentByMap(notice:) ->
+          map_sent(session:, now:, entered:, notice:)
+        client_connection.SentByPeer(news:) ->
+          viewer_takes(session:, entered:, news:)
+        client_connection.SentByFoe(fight:) ->
+          foe_taken(session:, now:, holder:, entered:, fight:)
+        client_connection.SentByTarget(answered:) ->
+          target_taken(session:, now:, entered:, answered:)
       }
+    Some(_) | None -> Continue(session, [])
   }
 }
 
-/// Whether a strike is on the player's unit of this stay, from a creature of the
-/// run of the map it is in; a threat or a release always is.
-fn is_of_this_stay(
-  entered entered: world_entry.Entered,
-  fight fight: strike_tell.Fight,
-) -> Bool {
-  case fight {
-    strike_tell.Attacks(tell:) ->
-      tell.key.unit_id == entered.unit_id
-      && case tell.from {
-        step.Creature(map:, incarnation:, ..) ->
-          map == entered.map && incarnation == entered.incarnation
-        step.Sessions
-        | step.HandOff
-        | step.Store
-        | step.Maps
-        | step.Map(..)
-        | step.Connection(..)
-        | step.CharacterNamed(..)
-        | step.ZoneChannel(..) -> False
-      }
-    strike_tell.Threatened(..) | strike_tell.Released(..) -> True
-  }
-}
-
-/// A creature's threat, release or strike on the player in the world.
+/// A creature's threat, release or strike on the player in the world; a strike
+/// that kills carries out the death (`life_carried`).
 fn foe_taken(
   session session: Session,
+  now now: Now,
+  holder holder: Holder,
   entered entered: world_entry.Entered,
   fight fight: strike_tell.Fight,
 ) -> client_connection.Handled(Session) {
@@ -1281,6 +1376,7 @@ fn foe_taken(
           ),
           strike: tell,
           rolls:,
+          place: movement.place(entered.movement),
         )
       #(Session(..session, link:), life, effects)
     }
@@ -1289,21 +1385,23 @@ fn foe_taken(
     with_entered(session:, change: fn(entered) {
       world_entry.Entered(..entered, life:)
     })
-  Continue(session, life_effects(session:, entered:, effects:))
+  life_carried(session:, now:, holder:, effects:)
 }
 
 /// What player_life decided, as the connection's effects: its own unit's messages
 /// to its client, its news to its viewers, the answer told to the creature, and the
-/// start of a fighter's stream at the player's place now.
+/// start of a fighter's stream at the player's place now. The casts' end and the
+/// Holocrypt are `life_carried`'s.
 fn life_effects(
   session session: Session,
+  now now: Now,
   entered entered: world_entry.Entered,
   effects effects: List(player_life.Effect),
 ) -> List(Effect(ConnectionEffect(Request))) {
   list.flat_map(effects, fn(effect) {
     case effect {
       player_life.ToClient(written:) -> [
-        to_client(session, own_unit_frame(unit_id: entered.unit_id, written:)),
+        to_client(session, own_unit_frame(entered:, now:, written:)),
       ]
       player_life.ToViewers(news:) ->
         list.map(sorted_viewers(entered:), fn(viewer) {
@@ -1324,13 +1422,243 @@ fn life_effects(
           seq: session.move_seq,
         ),
       ]
+      player_life.EndCasts | player_life.GoToHolocrypt -> []
     }
   })
 }
 
-/// The connections that see the player, in the order of their numbers.
-fn sorted_viewers(entered entered: world_entry.Entered) -> List(ConnectionId) {
-  map.sorted_connections(entered.viewers)
+/// The player's 0x15a, taken from inside 0x038C in the world
+/// (genesis_prime/game/player_life): the life is kept and its effects carried
+/// out (`life_carried`); a body the client's reader refuses ends the connection,
+/// and any other refusal is a warning that changes nothing.
+fn life_message(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: player_life.Message,
+) -> client_connection.Handled(Session) {
+  case
+    player_life.take(
+      life: entered.life,
+      message:,
+      body: inner.body,
+      unit_id: entered.unit_id,
+    )
+  {
+    Ok(#(life, effects)) ->
+      life_carried(
+        session: with_entered(session:, change: fn(entered) {
+          world_entry.Entered(..entered, life:)
+        }),
+        now:,
+        holder:,
+        effects:,
+      )
+    Error(refusal) ->
+      case refusal {
+        player_life.NotDecoded(..) ->
+          end_for(session:, now:, text: player_life.describe(refusal:))
+        player_life.NotThePlayer(..)
+        | player_life.NotOffered(..)
+        | player_life.NotDead
+        | player_life.NonzeroValue(..) ->
+          Continue(session, [
+            log(
+              session:,
+              level: LogWarning,
+              text: player_life.describe(refusal:),
+            ),
+          ])
+      }
+  }
+}
+
+/// What player_life decided, carried out in order: the frames and news as
+/// `life_effects` makes them, `EndCasts` as the cast rule's `died`, whose 0x7fe
+/// go out in its place in the order, and `GoToHolocrypt` as the leave of the map
+/// that the Holocrypt's join follows (`leaving_for_the_holocrypt`), which comes
+/// last.
+fn life_carried(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  effects effects: List(player_life.Effect),
+) -> client_connection.Handled(Session) {
+  let #(session, written, to_the_holocrypt) =
+    list.fold(effects, #(session, [], False), fn(so_far, effect) {
+      let #(session, written, to_the_holocrypt) = so_far
+      case entered_of(session.status) {
+        None -> so_far
+        Some(entered) ->
+          case effect {
+            player_life.EndCasts -> {
+              let #(updated, ended) = cast.died(cast: entered.cast, now:)
+              let #(session, more) =
+                cast_effects(
+                  session: with_cast(session:, cast: updated),
+                  now:,
+                  effects: ended,
+                )
+              #(session, list.append(written, more), to_the_holocrypt)
+            }
+            player_life.GoToHolocrypt -> #(session, written, True)
+            player_life.ToClient(..)
+            | player_life.ToViewers(..)
+            | player_life.Answer(..)
+            | player_life.StreamTo(..) -> #(
+              session,
+              list.append(
+                written,
+                life_effects(session:, now:, entered:, effects: [effect]),
+              ),
+              to_the_holocrypt,
+            )
+          }
+      }
+    })
+  case to_the_holocrypt, entered_of(session.status) {
+    True, Some(entered) ->
+      leaving_for_the_holocrypt(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        before: written,
+      )
+    True, None | False, _ -> Continue(session, written)
+  }
+}
+
+/// The Holocrypt's first step: the place is the start of the player's race and
+/// faction in its world (`start_place.holocrypt`), or, when its world holds none,
+/// the place the player entered this stay at (the server's choice,
+/// `death.server_choices`); after the effects `before`, the player's unit is
+/// removed from its viewers, its chat groups, casts and strikes left, its save
+/// timer cancelled and its map asked to take it out, as the camp's leave does with
+/// no save, with the Holocrypt's join to follow in place of character select
+/// (`LeavingMap` with `JoinAt`). The place is saved by the next stay's timer.
+fn leaving_for_the_holocrypt(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  before before: List(Effect(ConnectionEffect(Request))),
+) -> client_connection.Handled(Session) {
+  let place =
+    start_place.holocrypt(
+      tables: session.settings.tables,
+      faction_id: entered.character.faction_id,
+      race_id: entered.character.race_id,
+      world_id: start_place.world_id(movement.place(entered.movement)),
+    )
+    |> result.unwrap(entered.entered_at)
+  let #(session, left_behind) = world_left(session:, now:, entered:)
+  leaving_the_map(
+    session:,
+    now:,
+    holder:,
+    entered:,
+    before: list.append(before, left_behind),
+    then: JoinAt(place:),
+  )
+}
+
+/// A yes or no as the 1-bit value a message holds it in: 1 for yes.
+fn bit(yes: Bool) -> Int {
+  use <- bool.guard(when: yes, return: 1)
+  0
+}
+
+/// 0x88c {unit, dead, 0, 0}: the unit died or came back (`opcode.0x88c`); the
+/// 5-bit value is not read and the 32-bit one is used only for a unit under
+/// client control that comes back, so both are 0.
+fn death_state_frame(unit_id unit_id: Int, dead dead: Bool) -> Frame {
+  let assert Ok(body) =
+    unit_death_state.encode(UnitDeathState(
+      unit_id:,
+      dead: bit(dead),
+      field_3: 0,
+      field_4: 0,
+    ))
+    as "a unit id of 32 bits and the safe values fit the message (opcode.0x88c)"
+  Frame(message_id: unit_death_state.message_id, body:)
+}
+
+/// 0x247 of type 22 when `died`, else 23, for the unit (`opcode.0x247.death`).
+fn combat_log_frame(unit_id unit_id: Int, died died: Bool) -> Frame {
+  let assert Ok(body) =
+    combat_log.encode(
+      CombatLog(entry: case died {
+        True -> combat_log_entry.Death(CombatLogDeath(unit_id:))
+        False -> combat_log_entry.Resurrect(CombatLogResurrect(unit_id:))
+      }),
+    )
+    as "a unit id of 32 bits fits the entry"
+  Frame(message_id: combat_log.message_id, body:)
+}
+
+/// The ghost's 0x262 of type 23 at `place`: the character's id, realm, name,
+/// race, class, gender and title as the player's own 0x262 has them, the values
+/// the client does not read 0 or empty, and the player's tail with the ghost's
+/// position and rotation and no stat, since the client reads none of a ghost
+/// (`0x140096970`, `opcode.0x262.ghost`).
+fn ghost_created_frame(
+  entered entered: world_entry.Entered,
+  place place: Place,
+  now now: Now,
+) -> Frame {
+  let player = appearance_at(entered:, place:, now:)
+  let assert Ok(body) =
+    unit_create_ghost.encode(UnitCreateGhost(
+      unit_id: map.ghost_unit_id(unit_id: entered.unit_id),
+      character_id: player.character_id,
+      realm_id: player.realm_id,
+      name: player.name,
+      race_id: player.race_id,
+      class_id: player.class_id,
+      gender: player.gender,
+      field_9: 0,
+      field_10: "",
+      field_11: 0,
+      field_12: [],
+      field_13: [],
+      title_id: player.title_id,
+      tail: UnitCreateTail(..player.tail, stats: []),
+    ))
+    as "the player's own 0x262 values fit the ghost's, whose fields are the same"
+  Frame(message_id: unit_create_ghost.message_id, body:)
+}
+
+/// 0x1b3 with the ghost's id, dead or not, and the server's choices: no cost,
+/// penalty, cooldown or forced release, and Wake Here and Holocrypt offered
+/// (`player_life.offered_choices`, `opcode.0x1b3`).
+fn resurrection_window_frame(
+  ghost_unit_id ghost_unit_id: Int,
+  dead dead: Bool,
+) -> Frame {
+  let assert Ok(body) =
+    resurrection_window.encode(ResurrectionWindow(
+      ghost_unit_id:,
+      wake_here_cost: player_life.window_zero,
+      death_penalty_ms: player_life.window_zero,
+      dead: bit(dead),
+      choices: player_life.offered_choices,
+      caster_asked: 0,
+      wake_here_cooldown_ms: player_life.window_zero,
+      forced_release_ms: player_life.window_zero,
+    ))
+    as "a unit id, three 32-bit values, two bits, 8 bits and two 32-bit values fit the message"
+  Frame(message_id: resurrection_window.message_id, body:)
+}
+
+/// The connections that see the player, each with its player's stay, in the
+/// order of their numbers.
+fn sorted_viewers(
+  entered entered: world_entry.Entered,
+) -> List(#(ConnectionId, Stay)) {
+  map.sorted_by_connection(entered.viewers)
 }
 
 /// The player's level: its unit's stat 10, 1 when it has none.
@@ -1340,12 +1668,16 @@ fn level_of(entered entered: world_entry.Entered) -> Int {
 }
 
 /// The frame of a message about the player's own unit to its own client: 0x89a,
-/// 0x938 of stat 20, or 0x92f with no reason bit (`opcode.0x92f`: the bits name a
-/// fall or a breath).
+/// 0x938 of stat 20, 0x92f with no reason bit (`opcode.0x92f`: the bits name a
+/// fall or a breath), and the death's: 0x88c, 0x247, the ghost's 0x262 at the
+/// body's place, 0x1b3, the ghost's 0x355 and 0x636 for the ghost or the body.
 fn own_unit_frame(
-  unit_id unit_id: Int,
+  entered entered: world_entry.Entered,
+  now now: Now,
   written written: player_life.Written,
 ) -> Frame {
+  let unit_id = entered.unit_id
+  let ghost_unit_id = map.ghost_unit_id(unit_id:)
   case written {
     player_life.OwnCombatState(in_combat:) ->
       combat_state_frame(unit_id:, in_combat:)
@@ -1356,6 +1688,18 @@ fn own_unit_frame(
         as "a unit id and a health of 32 bits and a mask of 18 fit the message"
       Frame(message_id: player_health.message_id, body:)
     }
+    player_life.OwnDeathState(dead:) -> death_state_frame(unit_id:, dead:)
+    player_life.OwnDeathLogged -> combat_log_frame(unit_id:, died: True)
+    player_life.OwnCameBackLogged -> combat_log_frame(unit_id:, died: False)
+    player_life.GhostCreated(place:) ->
+      ghost_created_frame(entered:, place:, now:)
+    player_life.OwnResurrectionWindow(dead:) ->
+      resurrection_window_frame(ghost_unit_id:, dead:)
+    player_life.GhostRemoved -> unit_removed_frame(unit_id: ghost_unit_id)
+    player_life.ControlGiven(to: player_life.ControlGhost) ->
+      world_entry.control_granted_frame(unit_id: ghost_unit_id)
+    player_life.ControlGiven(to: player_life.ControlBody) ->
+      world_entry.control_granted_frame(unit_id:)
   }
 }
 
@@ -1365,12 +1709,10 @@ fn combat_state_frame(
   in_combat in_combat: Bool,
 ) -> Frame {
   let assert Ok(body) =
-    unit_combat_state.encode(
-      UnitCombatState(unit_id:, in_combat: case in_combat {
-        True -> 1
-        False -> 0
-      }),
-    )
+    unit_combat_state.encode(UnitCombatState(
+      unit_id:,
+      in_combat: bit(in_combat),
+    ))
     as "a unit id of 32 bits and a bit fit the message"
   Frame(message_id: unit_combat_state.message_id, body:)
 }
@@ -1397,21 +1739,23 @@ fn sends_the_move_to_the_viewers(
   now now: Now,
   commands commands: List(RelayedMovement),
 ) -> List(Effect(ConnectionEffect(Request))) {
-  use <- bool.guard(when: set.is_empty(entered.viewers), return: [])
+  let server_time_ms =
+    map.server_time(
+      origin_ms: entered.clock_origin_ms,
+      monotonic_ms: now.monotonic_ms,
+    )
   let moves =
     client_connection.peer_moves(
-      map: entered.map,
-      incarnation: entered.incarnation,
       unit_id: entered.unit_id,
-      server_time_ms: map.server_time(
-        origin_ms: entered.clock_origin_ms,
-        monotonic_ms: now.monotonic_ms,
-      ),
+      server_time_ms:,
       commands:,
     )
-  list.flat_map(set.to_list(entered.viewers), fn(viewer) {
+  list.flat_map(dict.to_list(entered.viewers), fn(viewer) {
     list.map(moves, fn(news) {
-      OwnEffect(step.Tell(to: step.Connection(viewer), request: TellPeer(news:)))
+      OwnEffect(step.Tell(
+        to: step.Connection(viewer.0),
+        request: TellPeer(stay: viewer.1, news:),
+      ))
     })
   })
 }
@@ -1467,7 +1811,7 @@ fn chat_message(
       chat: entered.chat,
       message:,
       body: inner.body,
-      viewers: entered.viewers,
+      viewers: viewer_connections(entered:),
       realm_name: session.settings.realm_name,
       connection: client_connection.connection(session.link),
       tables: session.settings.tables,
@@ -1482,7 +1826,8 @@ fn chat_message(
 /// What the cast messages do, taken from inside 0x038C, in the world
 /// (genesis_prime/game/cast): the press is refused or accepted and its writes,
 /// tells and timers are carried out, the cancel ends a cast, and a refusal ends
-/// the connection.
+/// the connection. A dead player's press is checked as the client checks it
+/// (`caster_of`).
 fn cast_message(
   session session: Session,
   now now: Now,
@@ -1519,29 +1864,25 @@ fn other_timer_fired(
   }
 }
 
-/// A creature's answer to a strike this player told: the strike rule files it in
-/// the round it belongs to, and a round that closes is the cast rule's `went`; an
-/// answer with no player in the world, or for a round that is closed, is dropped
+/// A creature's answer to a strike this player told in this stay (`stay_sent`):
+/// the strike rule files it in the round it belongs to, and a round that closes is
+/// the cast rule's `went`; an answer for a round that is closed is dropped
 /// (genesis_prime/game/strike).
-fn target_sent(
+fn target_taken(
   session session: Session,
   now now: Now,
+  entered entered: world_entry.Entered,
   answered answered: Answered,
 ) -> client_connection.Handled(Session) {
-  case held_in_the_world(session.status) {
-    None -> Continue(session, [])
-    Some(entered) -> {
-      let #(updated, effects) =
-        strike.answered(strike: entered.strike, answer: answered, now:)
-      let #(session, written) =
-        carry_strike(
-          session: with_strike(session:, strike: updated),
-          now:,
-          effects:,
-        )
-      Continue(session, written)
-    }
-  }
+  let #(updated, effects) =
+    strike.answered(strike: entered.strike, answer: answered, now:)
+  let #(session, written) =
+    carry_strike(
+      session: with_strike(session:, strike: updated),
+      now:,
+      effects:,
+    )
+  Continue(session, written)
 }
 
 /// The strike timer fired: the rounds whose deadline has passed close with the
@@ -1552,7 +1893,7 @@ fn strike_due(
 ) -> client_connection.Handled(Session) {
   case held_in_the_world(session.status) {
     None -> Continue(session, [])
-    Some(entered) -> {
+    Some(#(_, entered)) -> {
       let #(updated, effects) = strike.timer_fired(strike: entered.strike, now:)
       let #(session, written) =
         carry_strike(
@@ -1574,7 +1915,7 @@ fn cast_due(
 ) -> client_connection.Handled(Session) {
   case held_in_the_world(session.status) {
     None -> Continue(session, [])
-    Some(entered) -> {
+    Some(#(_, entered)) -> {
       let #(updated, effects) =
         cast.timer_fired(
           cast: entered.cast,
@@ -1588,15 +1929,23 @@ fn cast_due(
 }
 
 /// The player as its cast rule takes it: who it is, where it stands, what it
-/// holds, who sees it and the units its client shows.
+/// holds, who sees it and whether it is dead.
 fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
   cast.Caster(
     unit_id: entered.unit_id,
     place: movement.place(entered.movement),
     abilities: entered.loadout.abilities,
     weapon: Some(entered.loadout.weapon),
-    audience: entered.viewers,
+    audience: viewer_connections(entered:),
+    dead: player_life.state(life: entered.life) == player_life.Dead,
   )
+}
+
+/// The connections whose players see the player.
+fn viewer_connections(
+  entered entered: world_entry.Entered,
+) -> Set(ConnectionId) {
+  set.from_list(dict.keys(entered.viewers))
 }
 
 /// The session with the player's cast state replaced.
@@ -1629,9 +1978,10 @@ fn cast_effects(
     let #(session, done) = so_far
     let #(session, more) = case effect, entered_of(session.status) {
       cast.Send(frame:), _ -> #(session, [to_client(session, frame)])
-      cast.Tell(to:, news:), Some(entered) -> #(session, [
-        news_to(entered:, viewer: to, news:),
-      ])
+      cast.Tell(to:, news:), Some(entered) -> #(
+        session,
+        news_to_connection(entered:, connection: to, news:),
+      )
       cast.Tell(..), None -> #(session, [])
       cast.StartTimer(timer:, after_ms:), _ -> #(session, [
         OwnEffect(StartTimer(timer:, after_ms:)),
@@ -1701,6 +2051,7 @@ fn attacker_of(
     pose: Pose(at: area.point_of(place), yaw: start_place.facing(place).yaw),
     place:,
     move_seq: session.move_seq,
+    stay: entered.stay,
     faction:,
     stats: damage.Attacker(
       level: level_of(entered:),
@@ -1872,6 +2223,15 @@ fn world_carried(
                   chat_message(session:, now:, entered:, inner: whole, message:)
                 Ok(routing.Cast(message:)) ->
                   cast_message(session:, now:, entered:, inner: whole, message:)
+                Ok(routing.Life(message:)) ->
+                  life_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
+                    message:,
+                  )
                 Ok(routing.Hello)
                 | Ok(routing.CharacterSelect(..))
                 | Ok(routing.WorldEntry)
@@ -1994,10 +2354,13 @@ fn play_requested(
     Selecting(holder:) ->
       case world_entry.take(account_id: holder.account_id, body: inner.body) {
         Ok(#(entry, effects)) ->
-          carry_out(
-            session: Session(..session, status: EnteringWorld(holder:, entry:)),
+          entering_world(
+            session:,
             now:,
-            effects: list.map(effects, from_entry),
+            holder:,
+            entry:,
+            from: FromCharacterSelect,
+            effects:,
             written: [],
           )
         Error(refusal) ->
@@ -2096,33 +2459,18 @@ fn carry_out(
       ])
     [LeavesWorld, ..] ->
       case holds_a_player(session.status) {
-        Some(#(holder, entered)) ->
+        Some(#(holder, entered)) -> {
+          let #(session, left_behind) = world_left(session:, now:, entered:)
           saving(
-            session: Session(
-              ..session,
-              next_whisper: chat.next_whisper(chat: entered.chat),
-            ),
+            session:,
             now:,
             holder:,
             entered:,
             then: Camped,
-            before: list.flatten([
-              list.reverse(written),
-              chat_effects(session:, effects: chat.left(entered.chat)).1,
-              cast_effects(
-                session:,
-                now:,
-                effects: cast.left(cast: entered.cast).1,
-              ).1,
-              carry_strike(
-                session:,
-                now:,
-                effects: strike.left(strike: entered.strike).1,
-              ).1,
-              [OwnEffect(CancelTimer(timer: save_timer))],
-            ]),
+            before: list.append(list.reverse(written), left_behind),
             within_ms: session.settings.ask_deadline_ms,
           )
+        }
         None ->
           end_for(
             session:,
@@ -2133,6 +2481,30 @@ fn carry_out(
     [Asks(request:), ..] ->
       ask(session:, now:, request:, before: list.reverse(written))
   }
+}
+
+/// What the player leaves behind as it leaves its stay in the world, by its camp
+/// or the Holocrypt: its chat groups, its casts and its strikes are left, and the
+/// save timer cancelled; the session keeps the chat's next whisper number, which
+/// counts for the connection's life.
+fn world_left(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  #(
+    Session(..session, next_whisper: chat.next_whisper(chat: entered.chat)),
+    list.flatten([
+      chat_effects(session:, effects: chat.left(entered.chat)).1,
+      cast_effects(session:, now:, effects: cast.left(cast: entered.cast).1).1,
+      carry_strike(
+        session:,
+        now:,
+        effects: strike.left(strike: entered.strike).1,
+      ).1,
+      [OwnEffect(CancelTimer(timer: save_timer))],
+    ]),
+  )
 }
 
 /// Starts the timer that saves the player's place every `movement.save_period_ms`.
@@ -2183,11 +2555,12 @@ fn answered(
       claim_answered(session:, now:, holder:, resume:, retries:, outcome:)
     InCharacterSelect(holder:, select:) ->
       select_answered(session:, now:, holder:, select:, outcome:)
-    EnteringWorld(holder:, entry:) ->
-      entry_answered(session:, now:, holder:, entry:, outcome:)
+    EnteringWorld(holder:, entry:, from:) ->
+      entry_answered(session:, now:, holder:, entry:, from:, outcome:)
     SavingPlace(holder:, entered:, then:) ->
       save_answered(session:, now:, holder:, entered:, then:, outcome:)
-    LeavingMap(holder:, ..) -> leave_answered(session:, now:, holder:, outcome:)
+    LeavingMap(holder:, entered:, then:) ->
+      leave_answered(session:, now:, holder:, entered:, then:, outcome:)
     AwaitingHelloReply | WaitingToClaim(..) | InWorld(..) ->
       end_for(session:, now:, text: "an answer came when no ask was out")
   }
@@ -2374,57 +2747,41 @@ fn sessions_sent(
   }
 }
 
-/// What the map sent the connection, while its player is in the world or its
-/// claim is made again with the player in it: who sees its player (`Watched`,
-/// `Unwatched`), and a unit whose owner's connection ended (`Gone`). A connection
-/// sends everything about its own unit itself: told `Watched(by)` it sends `by` its
-/// 0x262 at its current place, told `Unwatched(by)` its 0x355. The shell takes a
-/// send between steps, after the ask's outcome and the step it starts are done
+/// What the map sent for the player's stay (`stay_sent`): who sees its player
+/// (`SeenBy`, `UnseenBy`), and a unit whose owner ended (`Gone`). A connection
+/// sends everything about its own unit itself: told `SeenBy(by, stay)` it keeps
+/// `by` with its stay and sends it its 0x262 at its current place, with its health
+/// now, told `UnseenBy(by)` its 0x355. The shell takes a send between steps, after
+/// the ask's outcome and the step it starts are done
 /// (genesis_prime/connection/shell), and world entry writes its whole burst in the
 /// one step that takes the map's `Joined`, so a send of the map, which comes after
 /// its answer, is always taken after the burst: no status holds sends during
-/// entry. With no player in the world (the player left the map, or never joined)
-/// the send is dropped, since the client holds no world. `Joined` and `Left` are
-/// answers, never sends, and are a bug.
+/// entry.
 fn map_sent(
   session session: Session,
   now now: Now,
-  message message: map.Outgoing,
+  entered entered: world_entry.Entered,
+  notice notice: map.Notice,
 ) -> client_connection.Handled(Session) {
-  case message, held_in_the_world(session.status) {
-    map.Joined(..), _
-    | map.NotJoined(..), _
-    | map.Left, _
-    | map.Retire, _
-    | map.Approached(..), _
-    | map.Withdrew(..), _
-    ->
-      end_for(
-        session:,
-        now:,
-        text: "the map sent an answer, or a creature's word, as a message",
-      )
-    map.Watched(..), None | map.Unwatched(..), None | map.Gone(..), None ->
-      Continue(session, [])
-    map.Watched(by:), Some(entered) ->
-      Continue(viewers_changed(session:, change: set.insert(_, by)), [
+  case notice {
+    map.SeenBy(by:, stay:) ->
+      Continue(viewers_changed(session:, change: dict.insert(_, by, stay)), [
         news_to(
           entered:,
-          viewer: by,
+          viewer: #(by, stay),
           news: client_connection.Appeared(unit: appearance(entered:, now:)),
         ),
       ])
-    map.Unwatched(by:), Some(entered) ->
+    map.UnseenBy(by:) ->
       Continue(
-        viewers_changed(session:, change: set.delete(_, by)),
-        case set.contains(entered.viewers, by) {
-          True -> [
-            news_to(entered:, viewer: by, news: client_connection.Removed),
-          ]
-          False -> []
-        },
+        viewers_changed(session:, change: dict.delete(_, by)),
+        news_to_connection(
+          entered:,
+          connection: by,
+          news: client_connection.Removed,
+        ),
       )
-    map.Gone(unit_id:), Some(entered) -> {
+    map.Gone(unit_id:) -> {
       let #(life, released) = player_life.released(life: entered.life, unit_id:)
       let session =
         marked_gone(
@@ -2433,7 +2790,7 @@ fn map_sent(
           }),
           unit_id:,
         )
-      let released = life_effects(session:, entered:, effects: released)
+      let released = life_effects(session:, now:, entered:, effects: released)
       use <- bool.guard(
         when: !dict.has_key(entered.shown, unit_id),
         return: Continue(session, released),
@@ -2459,7 +2816,7 @@ fn chat_sent(
   tell tell: chat_tell.Tell,
 ) -> client_connection.Handled(Session) {
   case held_in_the_world(session.status) {
-    Some(entered) -> {
+    Some(#(_, entered)) -> {
       let #(updated, effects) = chat.told(chat: entered.chat, tell:)
       carry_chat(session: with_chat(session:, chat: updated), effects:)
     }
@@ -2583,26 +2940,6 @@ fn chat_effects(
   #(session, list.reverse(written))
 }
 
-/// What another player's connection sent about the unit it owns, written while
-/// this player is in the world, in the run of the map the news names, and only
-/// as the client can take it (`viewer_takes`). News from another run or another
-/// map is dropped: it names a unit id that may be another unit here.
-fn peer_sent(
-  session session: Session,
-  news news: client_connection.PeerNews,
-) -> client_connection.Handled(Session) {
-  case held_in_the_world(session.status) {
-    None -> Continue(session, [])
-    Some(entered) -> {
-      use <- bool.guard(
-        when: entered.map != news.map || entered.incarnation != news.incarnation,
-        return: Continue(session, []),
-      )
-      viewer_takes(session:, entered:, news:)
-    }
-  }
-}
-
 /// What a viewer writes of news of a unit, from the units this connection has
 /// shown and the ones the map reported gone: a 0x262 for a unit not shown and not
 /// gone, which is then shown (the client keeps one unit per id until its 0x355,
@@ -2630,6 +2967,9 @@ fn viewer_takes(
     | client_connection.CastFinished(..)
     | client_connection.Health(..)
     | client_connection.Died
+    | client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
     | client_connection.CreatureMoved(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
@@ -2757,6 +3097,10 @@ fn viewer_takes(
       )
     client_connection.Died ->
       creature_news(session:, entered:, unit_id:, news: client_connection.Died)
+    client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged ->
+      life_news(session:, entered:, unit_id:, news: news.news)
     client_connection.CreatureMoved(path:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session =
@@ -2821,6 +3165,9 @@ fn creature_news(
         shown.with_alive(picture:, unit_id:, alive: False)
       })
     client_connection.Health(dead: False, ..)
+    | client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
     | client_connection.Appeared(..)
     | client_connection.CreatureAppeared(..)
     | client_connection.Moving(..)
@@ -2852,6 +3199,54 @@ fn creature_news(
   }
 }
 
+/// A player's news of its own death that its viewer writes for a unit its client
+/// shows: 0x88c with the dead bit clear for `CameBack`, which marks the unit alive
+/// in the picture, and 0x247 of type 22 or 23 for `DeathLogged` and
+/// `CameBackLogged`. Dropped for a unit not shown.
+fn life_news(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  news news: client_connection.News,
+) -> client_connection.Handled(Session) {
+  use <- bool.guard(
+    when: !dict.has_key(entered.shown, unit_id),
+    return: Continue(session, []),
+  )
+  case news {
+    client_connection.CameBack ->
+      Continue(
+        shown_changed(session:, change: fn(picture) {
+          shown.with_alive(picture:, unit_id:, alive: True)
+        }),
+        [to_client(session, death_state_frame(unit_id:, dead: False))],
+      )
+    client_connection.DeathLogged ->
+      Continue(session, [
+        to_client(session, combat_log_frame(unit_id:, died: True)),
+      ])
+    client_connection.CameBackLogged ->
+      Continue(session, [
+        to_client(session, combat_log_frame(unit_id:, died: False)),
+      ])
+    client_connection.Appeared(..)
+    | client_connection.CreatureAppeared(..)
+    | client_connection.Moving(..)
+    | client_connection.Removed
+    | client_connection.CastStarted(..)
+    | client_connection.CastWent(..)
+    | client_connection.CastMissed(..)
+    | client_connection.CastFinished(..)
+    | client_connection.Health(..)
+    | client_connection.Died
+    | client_connection.CreatureMoved(..)
+    | client_connection.Targeting(..)
+    | client_connection.Threat(..)
+    | client_connection.CombatState(..)
+    | client_connection.Shield(..) -> Continue(session, [])
+  }
+}
+
 /// The frame of a creature's news, when its client still shows the creature: 0x937
 /// for its health, 0x88c for its death.
 fn creature_news_frames(
@@ -2864,34 +3259,19 @@ fn creature_news_frames(
   case news {
     client_connection.Health(health:, dead:) -> {
       let assert Ok(body) =
-        unit_health.encode(
-          UnitHealth(unit_id:, health:, dead: case dead {
-            True -> 1
-            False -> 0
-          }),
-        )
+        unit_health.encode(UnitHealth(unit_id:, health:, dead: bit(dead)))
         as "a unit id of 32 bits, a health of 32 and a bit fit the message"
       [
         to_client(session, Frame(message_id: unit_health.message_id, body:)),
       ]
     }
-    client_connection.Died -> {
-      let assert Ok(body) =
-        unit_death_state.encode(UnitDeathState(
-          unit_id:,
-          dead: 1,
-          field_3: 0,
-          field_4: 0,
-        ))
-        as "a unit id of 32 bits and the safe values fit the message (opcode.0x88c)"
-      [
-        to_client(
-          session,
-          Frame(message_id: unit_death_state.message_id, body:),
-        ),
-      ]
-    }
-    client_connection.Appeared(..)
+    client_connection.Died -> [
+      to_client(session, death_state_frame(unit_id:, dead: True)),
+    ]
+    client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
+    | client_connection.Appeared(..)
     | client_connection.CreatureAppeared(..)
     | client_connection.Moving(..)
     | client_connection.Removed
@@ -2923,23 +3303,62 @@ fn finishes_of_forgotten_casts(
   |> list.map(fn(cast_id) { to_client(session, cast.finished_frame(cast_id:)) })
 }
 
-/// The player the client holds in this connection's world, while it holds one:
-/// the player in the world, or in the world and waiting to claim again, where a
-/// send is taken.
-fn held_in_the_world(status: Status) -> Option(world_entry.Entered) {
-  use <- bool.guard(when: !holds_the_world(status), return: None)
-  entered_of(status)
+/// The player the client holds in this connection's world, with its account's
+/// holder, while it holds one: the player in the world, or its claim made again
+/// with the player in it, where a send is taken. A claim with its ask out, a save
+/// and a leave take no send.
+fn held_in_the_world(status: Status) -> Option(#(Holder, world_entry.Entered)) {
+  case status {
+    InWorld(holder:, entered:)
+    | WaitingToClaim(holder:, resume: ResumeWorld(entered:), ..) ->
+      Some(#(holder, entered))
+    WaitingToClaim(resume: ResumeSelect, ..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> None
+  }
 }
 
 /// The unit of the player's own record as another player is created with it: at
-/// the place the player stands at now and stamped from the map's clock, from the
-/// origin `Joined` carried (`map.server_time`).
+/// the place the player stands at now, with its health now as stat 0, so a dead
+/// player is created dead (`0x140457bc5`), and its shield now as stat 20
+/// (`opcode.0x938`), and stamped from the map's clock, from
+/// the origin `Joined` carried (`map.server_time`).
 fn appearance(
   entered entered: world_entry.Entered,
   now now: Now,
 ) -> UnitCreatePlayer {
-  let #(position, rotation) =
-    player_unit.standing(place: movement.place(entered.movement))
+  let unit =
+    appearance_at(entered:, place: movement.place(entered.movement), now:)
+  let health = player_life.health(life: entered.life)
+  let shield = player_life.shield(life: entered.life)
+  UnitCreatePlayer(
+    ..unit,
+    tail: UnitCreateTail(
+      ..unit.tail,
+      stats: list.map(unit.tail.stats, fn(stat) {
+        case stat.stat_id {
+          id if id == unit_fields.health_stat -> UnitStat(..stat, value: health)
+          id if id == unit_fields.shield_stat -> UnitStat(..stat, value: shield)
+          _ -> stat
+        }
+      }),
+    ),
+  )
+}
+
+/// The player's own record at `place`, stamped from the map's clock, from the
+/// origin `Joined` carried (`map.server_time`).
+fn appearance_at(
+  entered entered: world_entry.Entered,
+  place place: Place,
+  now now: Now,
+) -> UnitCreatePlayer {
+  let #(position, rotation) = player_unit.standing(place:)
   UnitCreatePlayer(
     ..entered.unit,
     tail: UnitCreateTail(
@@ -2957,30 +3376,42 @@ fn appearance(
 }
 
 /// The tell of news about the player's own unit to the connection of a player
-/// who sees it, in the run of the map the player is in.
+/// who sees it, for that player's stay.
 fn news_to(
   entered entered: world_entry.Entered,
-  viewer viewer: ConnectionId,
+  viewer viewer: #(ConnectionId, Stay),
   news news: client_connection.News,
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
-    to: step.Connection(viewer),
-    request: TellPeer(news: client_connection.PeerNews(
-      map: entered.map,
-      incarnation: entered.incarnation,
-      unit_id: entered.unit_id,
-      news:,
-    )),
+    to: step.Connection(viewer.0),
+    request: TellPeer(
+      stay: viewer.1,
+      news: client_connection.PeerNews(unit_id: entered.unit_id, news:),
+    ),
   ))
 }
 
+/// The tell of news to the connection, when its player sees this one; none when
+/// it no longer does: its client was sent the unit's 0x355 and forgot the unit.
+fn news_to_connection(
+  entered entered: world_entry.Entered,
+  connection connection: ConnectionId,
+  news news: client_connection.News,
+) -> List(Effect(ConnectionEffect(Request))) {
+  case dict.get(entered.viewers, connection) {
+    Ok(stay) -> [news_to(entered:, viewer: #(connection, stay), news:)]
+    Error(Nil) -> []
+  }
+}
+
 /// The tells that remove the player's own unit from the client of each player who
-/// sees it, for its camp, which sends them before its leave is asked: the map's
-/// `Unwatched` after the leave would be a second sender of news of the unit.
+/// sees it, for its camp and the Holocrypt, which send them before its leave is
+/// asked: the map's `Unwatched` after the leave would be a second sender of news
+/// of the unit.
 fn removes_its_unit_from_the_viewers(
   entered entered: world_entry.Entered,
 ) -> List(Effect(ConnectionEffect(Request))) {
-  list.map(set.to_list(entered.viewers), fn(viewer) {
+  list.map(sorted_viewers(entered:), fn(viewer) {
     news_to(entered:, viewer:, news: client_connection.Removed)
   })
 }
@@ -2988,7 +3419,7 @@ fn removes_its_unit_from_the_viewers(
 /// The session with the player's viewers changed by `change`.
 fn viewers_changed(
   session session: Session,
-  change change: fn(Set(ConnectionId)) -> Set(ConnectionId),
+  change change: fn(Dict(ConnectionId, Stay)) -> Dict(ConnectionId, Stay),
 ) -> Session {
   with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, viewers: change(entered.viewers))
@@ -3056,23 +3487,6 @@ fn with_entered(
     | TakingSessionKey -> session.status
   }
   Session(..session, status:)
-}
-
-/// Whether the client holds the player in its world, so another unit's message
-/// is written: the player is in the world, or its claim is made again with the
-/// player in it. A claim with its ask out, a save and a leave take no send.
-fn holds_the_world(status: Status) -> Bool {
-  case status {
-    InWorld(..) | WaitingToClaim(resume: ResumeWorld(..), ..) -> True
-    WaitingToClaim(resume: ResumeSelect, ..)
-    | ClaimingSession(..)
-    | InCharacterSelect(..)
-    | EnteringWorld(..)
-    | SavingPlace(..)
-    | LeavingMap(..)
-    | AwaitingHelloReply
-    | TakingSessionKey -> False
-  }
 }
 
 /// 0x638 for a move of another player's unit, with the reset bit 0 (the unit's
@@ -3166,7 +3580,7 @@ fn watch_ended(
   watch watch: WatchId,
 ) -> client_connection.Handled(Session) {
   case held_in_the_world(session.status) {
-    Some(entered) ->
+    Some(#(_, entered)) ->
       case chat.watch_ended(chat: entered.chat, watch:) {
         Ok(#(updated, effects)) ->
           carry_chat(session: with_chat(session:, chat: updated), effects:)
@@ -3405,7 +3819,14 @@ fn save_answered(
         | step.NotRunning
         | step.NoAnswerInTime
         | step.EndedBeforeAnswer ->
-          leaving_the_map(session:, now:, holder:, entered:, before: lines)
+          leaving_the_map(
+            session:,
+            now:,
+            holder:,
+            entered:,
+            before: lines,
+            then: ToCharacterSelect,
+          )
       }
     Camped, Error(Nil) ->
       told(
@@ -3418,19 +3839,21 @@ fn save_answered(
   }
 }
 
-/// The camp's save is answered: the map's run that took the player is asked to
-/// take it out, after the effects `before`, and the connection waits in
-/// `LeavingMap`.
+/// The camp's save is answered, or the player chose the Holocrypt: the map's run
+/// that took the player is asked to take it out, after the effects `before` and
+/// the unit's 0x355 to each viewer, and the connection waits in `LeavingMap` for
+/// what comes `then`.
 fn leaving_the_map(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   before before: List(Effect(ConnectionEffect(Request))),
+  then then: AfterLeave,
 ) -> client_connection.Handled(Session) {
   let before = list.append(before, removes_its_unit_from_the_viewers(entered:))
   ask(
-    session: Session(..session, status: LeavingMap(holder:, entered:)),
+    session: Session(..session, status: LeavingMap(holder:, entered:, then:)),
     now:,
     request: AskMapRun(
       map: entered.map,
@@ -3450,20 +3873,20 @@ fn leave_answered(
   session session: Session,
   now now: Now,
   holder holder: Holder,
+  entered entered: world_entry.Entered,
+  then then: AfterLeave,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromMap(map.Left)) | step.NotRunning | step.EndedBeforeAnswer ->
-      Continue(
-        Session(
-          ..session,
-          status: InCharacterSelect(holder:, select: character_select.new()),
-        ),
-        [
-          Unwatch(watch: map_watch),
-          to_client(session, leave_world_frame()),
-        ],
-      )
+      case then {
+        JoinAt(place:) ->
+          joining_at_the_holocrypt(session:, now:, holder:, entered:, place:)
+        ToCharacterSelect ->
+          in_character_select(session:, holder:, written: [
+            Unwatch(watch: map_watch),
+          ])
+      }
     step.NoAnswerInTime ->
       told(
         session:,
@@ -3475,9 +3898,9 @@ fn leave_answered(
     step.StoppedWaiting -> stopped(session, now)
     step.Answer(FromMap(map.Joined(..)))
     | step.Answer(FromMap(map.NotJoined(..)))
+    | step.Answer(FromMap(map.Noticed(..)))
     | step.Answer(FromMap(map.Watched(..)))
     | step.Answer(FromMap(map.Unwatched(..)))
-    | step.Answer(FromMap(map.Gone(..)))
     | step.Answer(FromMap(map.Retire))
     | step.Answer(FromMap(map.Approached(..)))
     | step.Answer(FromMap(map.Withdrew(..)))
@@ -3492,6 +3915,36 @@ fn leave_answered(
         text: "the answer is none the leave of the map asked for",
       )
   }
+}
+
+/// The Holocrypt's second step, after the map's leave: the map of the place's
+/// world is asked to take the player at `place` for a new stay, with the earlier
+/// stay's movement (`world_entry.rejoining`), the old map's watch dropped, in
+/// `EnteringWorld` from the Holocrypt.
+fn joining_at_the_holocrypt(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  place place: Place,
+) -> client_connection.Handled(Session) {
+  let stay = stay.next(session.last_stay)
+  let #(entry, effects) =
+    world_entry.rejoining(
+      entered:,
+      place:,
+      connection: client_connection.connection(session.link),
+      stay:,
+    )
+  entering_world(
+    session: Session(..session, last_stay: stay),
+    now:,
+    holder:,
+    entry:,
+    from: FromHolocrypt,
+    effects:,
+    written: [Unwatch(watch: map_watch)],
+  )
 }
 
 /// The connection ends after the save it waited for: the lines the answer made,
@@ -3636,6 +4089,7 @@ fn entry_answered(
   now now: Now,
   holder holder: Holder,
   entry entry: world_entry.State,
+  from from: EntryFrom,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
@@ -3647,22 +4101,24 @@ fn entry_answered(
         level: LogWarning,
         text: "the store is unavailable",
       )
-    step.Answer(FromStore(store.ForWorld(answer))) ->
+    step.Answer(FromStore(store.ForWorld(answer))) -> {
+      let stay = stay.next(session.last_stay)
       case
         world_entry.loaded(
           entry,
           answer:,
           connection: client_connection.connection(session.link),
+          stay:,
         )
       {
         Ok(world_entry.Join(state:, effects:)) ->
-          carry_out(
-            session: Session(
-              ..session,
-              status: EnteringWorld(holder:, entry: state),
-            ),
+          entering_world(
+            session: Session(..session, last_stay: stay),
             now:,
-            effects: list.map(effects, from_entry),
+            holder:,
+            entry: state,
+            from:,
+            effects:,
             written: [],
           )
         Ok(world_entry.Refused(character_id:, warning:)) ->
@@ -3674,6 +4130,7 @@ fn entry_answered(
           )
         Error(Nil) -> entry_unasked(session, now)
       }
+    }
     step.Answer(FromMap(answer)) ->
       case
         world_entry.joined(
@@ -3686,12 +4143,19 @@ fn entry_answered(
         Ok(world_entry.InTheWorld(entered:, effects:)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)
         Ok(world_entry.NotInTheWorld(character_id:, warning:)) ->
-          select_step(
-            session:,
-            now:,
-            holder:,
-            step: refused_play(holder:, character_id:, warning:),
-          )
+          case from {
+            FromCharacterSelect ->
+              select_step(
+                session:,
+                now:,
+                holder:,
+                step: refused_play(holder:, character_id:, warning:),
+              )
+            FromHolocrypt ->
+              in_character_select(session:, holder:, written: [
+                log(session:, level: LogWarning, text: warning),
+              ])
+          }
         Error(Nil) -> entry_unasked(session, now)
       }
     step.Answer(FromStore(store.ForLogin(..)))
@@ -3715,6 +4179,42 @@ fn entry_answered(
       )
     step.StoppedWaiting -> stopped(session, now)
   }
+}
+
+/// The player is in no map any more (the camp's leave, or a refused join at the
+/// Holocrypt): after the effects `written`, 0x0594 puts the client in character
+/// select, and a new character select waits for its 0x07E0.
+fn in_character_select(
+  session session: Session,
+  holder holder: Holder,
+  written written: List(Effect(ConnectionEffect(Request))),
+) -> client_connection.Handled(Session) {
+  Continue(
+    Session(
+      ..session,
+      status: InCharacterSelect(holder:, select: character_select.new()),
+    ),
+    list.append(written, [to_client(session, leave_world_frame())]),
+  )
+}
+
+/// World entry's effects carried out after the effects `written`, with the
+/// connection waiting in `EnteringWorld` for the answer to its ask.
+fn entering_world(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entry entry: world_entry.State,
+  from from: EntryFrom,
+  effects effects: List(world_entry.Effect),
+  written written: List(Effect(ConnectionEffect(Request))),
+) -> client_connection.Handled(Session) {
+  carry_out(
+    session: Session(..session, status: EnteringWorld(holder:, entry:, from:)),
+    now:,
+    effects: list.map(effects, from_entry),
+    written:,
+  )
 }
 
 /// An answer that is none world entry asked for: a bug, so the client is told
