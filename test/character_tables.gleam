@@ -4,7 +4,12 @@
 //// columns the server reads (`character_tables_test` compares each with the
 //// real row where the client is present); every other column is 0.
 ////
-//// - CharacterCreation rows 21, 338, 339, 359, 466, 530, 536 and 539, with their xp.
+//// - CharacterCreation rows 21, 338, 339, 359, 530, 536 and 539, with their xp, and
+////   the twelve Novice rows of `novice_tables` (466 and eleven more), with their
+////   items.
+//// - The Novice gear's tables (`novice_tables`): Item2, Item2Type, Item2Family,
+////   Item2Category, ItemSlot, CreatureLevel, Spell4 and SpellLevel, and the
+////   GameFormula rows the item formulas read.
 //// - GameFormula row 145 (its dataint0, the highest level) and XpPerLevel
 ////   records 1 to 51 with their minXpForLevel, which GetLevelForExperience
 ////   0x140029820 reads.
