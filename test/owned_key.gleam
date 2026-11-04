@@ -11,9 +11,9 @@
 ////   body fails if it ends with terms under it. A key from `new_fixture_key`
 ////   belongs to a fixture the test's processes read until the test ends, so
 ////   `owned_test.run` erases it then.
-//// - **A shared load is not made here.** One that every test reads for the whole
-////   run (`database_support.once`) is made with `reference.new()` and is never
-////   erased.
+//// - **A shared load** that every test reads for the whole run
+////   (`database_support.once`) is made with `reference.new()`, or with
+////   `new_shared_key` for content terms, and is never erased.
 //// - **The limit:** a key made in a process the body started is that process's,
 ////   and the body is not asked about it.
 
@@ -36,6 +36,12 @@ pub fn new_key() -> store.Key {
 /// `owned_test.run` erases the terms stored under it when the body ends.
 pub fn new_fixture_key() -> store.Key {
   own(store.new_key(), ErasedWithTheTest)
+}
+
+/// A new store key for terms every test shares for the whole run
+/// (`database_support.once`): no process owns it and nothing erases it.
+pub fn new_shared_key() -> store.Key {
+  store.new_key()
 }
 
 type Kind {

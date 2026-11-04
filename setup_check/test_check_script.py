@@ -962,10 +962,12 @@ class LiteralAreaTest(unittest.TestCase):
         self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
         self.assertIn("wrote no literal area peak", run.output)
 
-    def test_a_larger_region_set_through_the_environment_fails_the_check_since_the_limit_is_a_share_of_the_default(self):
-        run = shared_run("literal-miscs", ERL_FLAGS="+MIscs 4096")
-        self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
-        self.assertIn("+MIscs", run.output)
+    def test_a_larger_region_set_through_any_erlang_flags_variable_fails_the_check_since_the_limit_is_a_share_of_the_default(self):
+        for variable in ("ERL_FLAGS", "ERL_AFLAGS", "ERL_ZFLAGS", "ELIXIR_ERL_OPTIONS"):
+            with self.subTest(variable=variable):
+                run = shared_run("literal-miscs-" + variable, **{variable: "+MIscs 4096"})
+                self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
+                self.assertIn("+MIscs", run.output)
 
     def test_only_the_first_test_run_is_given_the_file(self):
         run = self.at(1)

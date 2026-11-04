@@ -1,8 +1,14 @@
 -module(owned_key_ffi).
--export([new/0, own/2, left_behind/1, erase_left/1, terms_under/1, erase/1]).
+-export([new/0, own/2, left_behind/1, erase_left/1, terms_under/1, erase/1, wait_until_dead/1]).
 
-%% A new reference, remembered in the calling process's dictionary as made by it
-%% and to be erased by it.
+%% The references each process made, kept in a table that outlives the
+%% processes: {Owner, Reference, Kind}. A body that crashes, is killed by a
+%% linked process or runs past its deadline is dead when its terms are counted,
+%% so a process dictionary would be gone with it.
+-define(TABLE, owned_key_references).
+
+%% A new reference, remembered as made by the calling process and to be erased
+%% by it.
 new() ->
     Reference = make_ref(),
     remember(Reference, erased_by_the_test),
@@ -18,15 +24,36 @@ own(Key, _Kind) ->
     Key.
 
 remember(Reference, Kind) ->
-    put({owned_key, Reference}, Kind),
+    ensure_table(),
+    ets:insert(?TABLE, {self(), Reference, Kind}),
     ok.
 
-%% The references a process made through new/0 and own/2, with their kinds. A
-%% process that has ended has none: its dictionary is gone.
+%% The table is made by a process that stays for the life of the VM, by the
+%% first caller; a caller that loses the race finds it made.
+ensure_table() ->
+    case ets:whereis(?TABLE) of
+        undefined ->
+            Caller = self(),
+            Made = make_ref(),
+            spawn(fun() ->
+                try ets:new(?TABLE, [named_table, public, bag, {write_concurrency, true}]) of
+                    _ ->
+                        Caller ! {Made, made},
+                        receive stop -> ok end
+                catch
+                    error:badarg -> Caller ! {Made, made}
+                end
+            end),
+            receive {Made, made} -> ok end;
+        _ ->
+            ok
+    end.
+
+%% The references a process made through new/0 and own/2, with their kinds.
 owned_by(Owner) ->
-    case process_info(Owner, dictionary) of
-        {dictionary, Dictionary} -> [{Reference, Kind} || {{owned_key, Reference}, Kind} <- Dictionary];
-        undefined -> []
+    case ets:whereis(?TABLE) of
+        undefined -> [];
+        _ -> [{Reference, Kind} || {_Owner, Reference, Kind} <- ets:lookup(?TABLE, Owner)]
     end.
 
 %% The persistent terms stored under the load keys of these references: each
@@ -44,11 +71,18 @@ left_behind(Owner) ->
     Mine = [Reference || {Reference, erased_by_the_test} <- owned_by(Owner)],
     length(stored_under(Mine)).
 
-%% Erases every persistent term stored under the keys the owner made.
+%% Erases every persistent term stored under the keys the owner made, of either
+%% kind, and forgets the owner's keys.
 erase_left(Owner) ->
-    erase_each(stored_under([Reference || {Reference, _Kind} <- owned_by(Owner)])).
+    erase_each(stored_under([Reference || {Reference, _Kind} <- owned_by(Owner)])),
+    case ets:whereis(?TABLE) of
+        undefined -> ok;
+        _ -> ets:delete(?TABLE, Owner)
+    end,
+    nil.
 
-%% How many persistent terms are stored under one load key.
+%% How many persistent terms are stored under one load key. The planted tables'
+%% count of a load's terms is this one (planted_table_ffi).
 terms_under({load_key, Reference}) ->
     length(stored_under([Reference]));
 terms_under(_ServerKey) ->
@@ -63,3 +97,10 @@ erase(_ServerKey) ->
 erase_each(Stored) ->
     lists:foreach(fun persistent_term:erase/1, Stored),
     nil.
+
+%% Returns when the process has ended, at once if it has.
+wait_until_dead(Pid) ->
+    Monitor = erlang:monitor(process, Pid),
+    receive
+        {'DOWN', Monitor, process, Pid, _Reason} -> nil
+    end.

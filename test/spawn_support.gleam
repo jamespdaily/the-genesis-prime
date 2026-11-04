@@ -83,7 +83,7 @@ pub fn key_with(spawns spawns: List(Spawn)) -> table_store.Key {
 /// never erased, as the content load leaves them for a database with no spawn.
 pub fn key_without_spawns() -> table_store.Key {
   database_support.once("spawn_support_key_without_spawns", fn() {
-    let key = table_store.new_key()
+    let key = owned_key.new_shared_key()
     put_worlds(key:, spawns: [])
     key
   })

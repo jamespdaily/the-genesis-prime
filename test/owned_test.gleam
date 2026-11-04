@@ -19,7 +19,8 @@ pub type Outcome(a) {
 ///
 /// A body that returns with persistent terms still stored under the keys it made
 /// (`owned_key`) fails, and the terms are erased so the tests after it do not
-/// pay for them.
+/// pay for them. A body that crashes or runs past its deadline fails for that,
+/// and its terms are erased too.
 pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
   let reply = process.new_subject()
   let worker =
@@ -36,9 +37,12 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
     |> process.select(reply)
     |> process.select_specific_monitor(monitor, fn(_down) { Crashed })
     |> process.selector_receive(within: timeout_ms)
+  // The body is ended first, so it puts nothing more, and then its terms are
+  // counted and erased, whatever ended it: its return, a crash or the deadline.
+  process.kill(worker)
+  wait_until_dead(worker)
   let left_behind = owned_key.left_behind(worker)
   owned_key.erase_left(worker)
-  process.kill(worker)
   case outcome {
     Ok(Returned(value)) ->
       case left_behind {
@@ -61,3 +65,7 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
 /// (`{gleam_unitest, skip}`, unitest_ffi:skip/0).
 @external(erlang, "owned_test_ffi", "run_unless_skipped")
 fn run_unless_skipped(body: fn() -> a) -> Result(a, Nil)
+
+/// Returns when the process has ended, at once if it already has.
+@external(erlang, "owned_key_ffi", "wait_until_dead")
+fn wait_until_dead(pid: process.Pid) -> Nil

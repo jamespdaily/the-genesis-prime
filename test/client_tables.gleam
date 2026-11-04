@@ -88,6 +88,13 @@ pub fn shared() -> store.Tables {
 /// no table is held twice in the literal area (the server's 36 take 306 MiB, and
 /// a second copy of them filled the area). The first caller loads, every later
 /// caller in any test process gets the same `Tables`. Never unload them.
+///
+/// The value is the load of the other 348 tables only: its `terms` and its
+/// `digest` (`store.digest`) cover those files, not the server's 36, whose are
+/// `shared`'s. Reads by table key work for all 384, because both hold the
+/// server's key (`store.server_key`), the key the server loads its content
+/// tables under (`genesis_prime.load_content`): a load of those over either
+/// value writes under the key both read.
 pub fn every_table() -> store.Tables {
   database_support.once("client_every_table", fn() {
     let server_files = list.map(server_table.entries(), store.file)

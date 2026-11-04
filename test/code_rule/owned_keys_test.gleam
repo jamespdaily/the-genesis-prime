@@ -45,6 +45,36 @@ pub fn a_store_key_made_for_content_terms_without_owned_key_is_a_breach_test() -
     as "the key is made on line 4, for the content term written under it"
 }
 
+pub fn a_store_key_made_for_the_content_load_is_a_breach_in_a_module_that_never_calls_put_content_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module("test/some_test.gleam", [
+      "import genesis_prime/content",
+      "import genesis_prime/table/loader/store",
+      "fn load(tables, pool) {",
+      "  content.load(tables:, pool:, key: store.new_key())",
+      "}",
+    ])
+  assert planted.lines(owned_keys.breaches([file])) == [5]
+    as "the content load writes terms under the key made on line 5"
+}
+
+pub fn a_store_key_made_for_the_spawn_terms_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module("test/some_test.gleam", [
+      "import genesis_prime/content/spawn as content_spawn",
+      "import genesis_prime/table/loader/store",
+      "fn put(spawns) {",
+      "  content_spawn.put_world(key: store.new_key(), world_id: 1, spawns:)",
+      "}",
+    ])
+  assert planted.lines(owned_keys.breaches([file])) == [5]
+    as "the spawn terms are written under the key made on line 5"
+}
+
 pub fn a_key_made_with_owned_key_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
