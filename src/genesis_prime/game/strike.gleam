@@ -43,6 +43,10 @@
 ////   its health with no number: the client never saw the hit.
 //// - **The caster's 0x801 while a round is open** ends the cast; the round closes as
 ////   always and `cast.went` finds no live cast, so nothing is written and the hits stand.
+//// - **The caster's offence** is its blows (each effect's value by the client's formula,
+////   rounded), and its critical hit chance, severity and strikethrough from the rating
+////   formulas at its level, with the base of a player and a rating of 0: a Novice's gear
+////   gives none of the three (`player.level1_gear_properties`).
 //// - **The caster's rolls** come from its seeded random, 12 bytes for each selected unit,
 ////   so a recording replays them and the creature keeps no random state.
 //// - **A creature's health news for a unit of an open round** is held until that round's

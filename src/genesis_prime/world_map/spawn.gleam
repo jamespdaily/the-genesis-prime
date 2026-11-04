@@ -274,25 +274,30 @@ pub fn select(
   formulas formulas: Formulas,
 ) -> Selection {
   let catalog = catalog(tables:)
-  let judged =
-    list.map(rows, fn(row) {
+  let #(_shared, judged) =
+    list.map_fold(rows, dict.new(), fn(shared, row) {
       case row.entity_type == non_player {
-        False -> Other(row:)
+        False -> #(shared, Other(row:))
         True ->
-          case load_checks(catalog:, formulas:, row:) {
+          case load_checks(catalog:, formulas:, shared:, row:) {
             Error(error) -> {
               let SpawnId(number) = row.id
-              Refused(refusal.Refusal(
-                table: "spawn",
-                id: number,
-                rule: describe(error:),
-              ))
+              #(
+                shared,
+                Refused(refusal.Refusal(
+                  table: "spawn",
+                  id: number,
+                  rule: describe(error:),
+                )),
+              )
             }
-            Ok(checked) ->
+            Ok(#(checked, shared)) -> #(
+              shared,
               case left_out_of(catalog:, checked:) {
                 Ok(reason) -> Excluded(row:, reason:)
                 Error(Nil) -> Started(checked:)
-              }
+              },
+            )
           }
       }
     })
@@ -453,6 +458,11 @@ pub fn faction_levels(
     faction_level(catalog:, from: dominion_faction, to: faction),
   )
 }
+
+/// The combat values already worked out in a load, by creature, level, display and
+/// faction: the spawns that share them hold one term, so the load's term is small.
+type SharedCombats =
+  Dict(#(Int, Int, Int, Int), Combat)
 
 /// The CreatureLevel row of properties 100 and above, one for every level
 /// (`CreatureLevel.101`).
@@ -945,8 +955,9 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
 fn load_checks(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
+  shared shared: SharedCombats,
   row row: Row,
-) -> Result(Checked, SpawnError) {
+) -> Result(#(Checked, SharedCombats), SpawnError) {
   let creature_id = Creature2Id(row.creature_id)
   use creature <- result.try(valid_creature(catalog:, creature_id:))
   use <- bool.guard(
@@ -985,29 +996,38 @@ fn load_checks(
     catalog:,
     outfit_info_id: row.outfit_info_id,
   ))
-  use combat <- result.try(combat_of(
-    catalog:,
-    formulas:,
-    creature:,
-    level:,
-    display_info_id: row.display_info_id,
-    faction_id: row.faction_id,
-  ))
-  Ok(Checked(
-    row:,
-    creature:,
-    spawn: Spawn(
-      id: row.id,
-      creature_id:,
-      place:,
-      level:,
-      health:,
-      faction_id: row.faction_id,
-      base_faction_id: row.base_faction_id,
-      display_info_id: row.display_info_id,
-      outfit_info_id: row.outfit_info_id,
-      combat:,
+  let key = #(row.creature_id, level, row.display_info_id, row.faction_id)
+  use #(combat, shared) <- result.try(case dict.get(shared, key) {
+    Ok(combat) -> Ok(#(combat, shared))
+    Error(Nil) ->
+      combat_of(
+        catalog:,
+        formulas:,
+        creature:,
+        level:,
+        display_info_id: row.display_info_id,
+        faction_id: row.faction_id,
+      )
+      |> result.map(fn(combat) { #(combat, dict.insert(shared, key, combat)) })
+  })
+  Ok(#(
+    Checked(
+      row:,
+      creature:,
+      spawn: Spawn(
+        id: row.id,
+        creature_id:,
+        place:,
+        level:,
+        health:,
+        faction_id: row.faction_id,
+        base_faction_id: row.base_faction_id,
+        display_info_id: row.display_info_id,
+        outfit_info_id: row.outfit_info_id,
+        combat:,
+      ),
     ),
+    shared,
   ))
 }
 

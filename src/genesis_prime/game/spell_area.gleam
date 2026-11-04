@@ -26,12 +26,19 @@
 //// - **Closest first.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`).
+//// - **Which spells** are read: the spells of each level-1 ability's tree
+////   (genesis_prime/game/spell_plan), a Proxy behind a prerequisite excepted, since it
+////   is never started. A spell with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
-////   `targetSelection` other than 1; a valid-targets bitmask other than 0; a hit row
-////   placed on any unit but the caster (`targetTypeFlags` other than 1); a shape the
-////   rule does not build (1, 3, 5, 6, or 8 with a box that has a width or a length); a damage effect aimed by a
-////   flag value not read; and a formula that reads a parameter the player's value does
-////   not (genesis_prime/game/damage `unread`). Each gap is stated where it is enforced.
+////   `targetSelection` other than 1; a valid-targets bitmask other than 0 on a spell
+////   with an area row; a hit row placed on any unit but the caster (`targetTypeFlags`
+////   other than 1); a shape the rule does not build (1, 3, 5, 6, or 8 with a box that
+////   has a width or a length: the box's height, p4, is never tested); a damage effect
+////   (type 8) aimed by a flag value not read; a formula that reads a parameter the
+////   player's value does not (genesis_prime/game/damage `unread`); and a phase that
+////   selects units from a spell with no area row. A hit row's phases are not read, so
+////   a spell's shapes hold for each of its gos. Each gap is stated where it is
+////   enforced.
 
 import genesis_prime/game/area.{
   type Inside, type Placement, type Row, Box, Circle, Cone, InsideRow,
