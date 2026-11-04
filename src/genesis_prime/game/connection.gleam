@@ -278,14 +278,14 @@
 ////   the failure table).
 //// - **Casts** are a feature of their own (genesis_prime/game/cast): the player's
 ////   `Entered` keeps its cast state, the routing table sends 0x9a and 0x801 to it
-////   from inside 0x038C with the player in the world, and the timers from
-////   `cast.first_timer` up are its (`other_timer_fired`). The rule turns its
+////   from inside 0x038C with the player in the world, and the timers `cast.owns`
+////   names are its (`other_timer_fired`). The rule turns its
 ////   effects into writes to the caster, tells of news to the viewers
 ////   (`CastStarted`, `CastWent`, `CastFinished`, in the run of the player's map),
 ////   timers and log lines. A viewer writes a 0x7ff only for a caster it shows, and
 ////   a go or finish only for a start it wrote (`casts_written`, by cast id, kept
-////   with the caster's unit id so a removed unit's casts are forgotten); `shown`
-////   holds each unit with what a cast needs of it (genesis_prime/game/cast `Shown`).
+////   with the caster's unit id, so a removed unit's casts are finished before its
+////   0x355 is written).
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).

@@ -753,19 +753,22 @@ fn players_seeing(
   |> list.map(fn(player) { player.0 })
 }
 
-/// The players by their connection's number.
-fn players_in_order(state: State) -> List(#(ConnectionId, Player)) {
-  dict.to_list(state.players)
-  |> list.sort(fn(first, second) { compare_connections(first.0, second.0) })
-}
-
-fn compare_connections(
-  first: ConnectionId,
-  second: ConnectionId,
+/// The order of two connections by their numbers.
+pub fn compare_connections(
+  first first: ConnectionId,
+  second second: ConnectionId,
 ) -> order.Order {
   let ConnectionId(first) = first
   let ConnectionId(second) = second
   int.compare(first, second)
+}
+
+/// The players by their connection's number.
+fn players_in_order(state: State) -> List(#(ConnectionId, Player)) {
+  dict.to_list(state.players)
+  |> list.sort(fn(first, second) {
+    compare_connections(first: first.0, second: second.0)
+  })
 }
 
 fn compare_spawns(first: SpawnId, second: SpawnId) -> order.Order {

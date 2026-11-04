@@ -467,19 +467,6 @@ fn files_replacing_all(
   })
 }
 
-/// The rows without the ones with these ids: every planted row holds its ID in
-/// its first cell.
-fn without(
-  rows rows: List(List(planted_table.Cell)),
-  ids ids: List(Int),
-) -> List(List(planted_table.Cell)) {
-  list.filter(rows, fn(row) {
-    let assert [planted_table.Integer(id), ..] = row
-      as "a planted row holds its ID first"
-    !list.contains(ids, id)
-  })
-}
-
 /// Why the load of the planted files fails, as the reason the loadouts could
 /// not be built.
 fn why_the_load_fails(files files: List(#(String, BitArray))) -> String {
@@ -522,7 +509,7 @@ fn a_load_without_the_row_fails(
   let reason =
     why_the_load_fails(files: files_replacing(
       schema:,
-      rows: without(rows:, ids: [id]),
+      rows: planted_table.without(rows:, ids: [id]),
     ))
   assert string.contains(reason, table)
     && string.contains(reason, "row " <> int.to_string(id))
@@ -587,7 +574,7 @@ pub fn a_class_with_no_level_1_spell_row_or_a_createable_class_and_faction_with_
   let reason =
     why_the_load_fails(files: files_replacing(
       schema: spell_level.schema,
-      rows: without(rows: novice_tables.spell_level_rows(), ids: [
+      rows: planted_table.without(rows: novice_tables.spell_level_rows(), ids: [
         631,
         1086,
         1089,
@@ -599,7 +586,9 @@ pub fn a_class_with_no_level_1_spell_row_or_a_createable_class_and_faction_with_
   let reason =
     why_the_load_fails(files: files_replacing(
       schema: character_creation.schema,
-      rows: without(rows: character_tables.creation_rows(), ids: [478]),
+      rows: planted_table.without(rows: character_tables.creation_rows(), ids: [
+        478,
+      ]),
     ))
   assert string.contains(reason, "CharacterCreation")
     && string.contains(reason, "class 1")

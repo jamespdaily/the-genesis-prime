@@ -162,7 +162,35 @@ pub fn a_press_during_staggers_child_with_no_cast_bar_is_accepted_and_one_during
     as "Stagger's child 38780 is a Multiphase spell with phases to come, so it is live for 700 ms"
   let #(_, effects) = support.pressed(state:, bag_index: 3, target: 0, at: 1100)
   assert accepted(effects:)
-    as "0x14053dd00: only a spell with a cast bar is the unit's current cast, and Spell4Base 23162 has castBarType 0, so 13 is not given while it is live (0x1403afb10)"
+    as "0x14053dd00: only a spell with a cast bar is the unit's current cast, and Spell4Base 23162 has castBarType 0 and no cast time, so 13 is not given while it is live (0x1403afb10)"
+  let #(state, _) =
+    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+  assert refused_with(state:, bag_index: 3, target: 0, at: 1100).result
+    == SpellAlreadyCasting
+    as "a press during Telekinetic Strike's cast bar is refused 13"
+}
+
+pub fn a_0x801_clears_the_current_cast_whatever_cast_it_names_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+  let assert Ok(#(state, _)) =
+    cast.take(
+      cast: state,
+      message: cast.Cancelled,
+      body: support.cancel_body(
+        cast_id: 2_147_483_648,
+        reason: SpellCancelled,
+        bit: 1,
+      ),
+      caster: support.caster(),
+      plans: support.plans(),
+      now: support.at(ms: 1100),
+    )
+    as "a cancel of an id that is no live cast of the caster is accepted"
+  let #(_, effects) = support.pressed(state:, bag_index: 3, target: 0, at: 1200)
+  assert accepted(effects:)
+    as "cast.current_cast: the client clears the player's current cast before every 0x801 it sends, whatever cast that is, so Telekinetic Strike no longer counts as casting"
 }
 
 pub fn a_live_cast_whose_spell_lets_a_press_through_does_not_block_it_and_the_go_of_a_normal_cast_frees_the_caster_test() -> Nil {
@@ -262,6 +290,13 @@ pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_o
   assert first.initial_positions == [] && first.telegraph_positions == []
 }
 
+/// The server id 0x7fd gave the pressed cast.
+fn pressed_id_of(effects effects: List(cast.Effect)) -> Int {
+  let assert [confirmed, ..] = support.writes(effects:)
+    as "a press writes its 0x7fd first"
+  cast_id_of(confirmed)
+}
+
 /// What the client is sent and each viewer told of each cast, by the cast's id:
 /// the messages in order.
 fn per_cast(effects: List(cast.Effect)) -> List(#(Int, List(Int))) {
@@ -345,6 +380,11 @@ pub fn cast_ids_are_above_2_pow_31_hold_the_unit_and_never_repeat_among_one_unit
     as "2^31 + 7 x 2^11 + 0 (the design's mint)"
   assert cast.cast_id(unit_id: 7, number: 2049) == 2_147_497_985
     as "the number counts mod 2^11"
+  assert cast.caster_of(cast_id: 2_147_483_648 + 7 * 2048 + 5) == 7
+    as "2^31 + 7 x 2^11 + n names unit 7 for every n below 2^11"
+  assert cast.caster_of(cast_id: 2_147_483_648 + 1_048_575 * 2048 + 2047)
+    == 1_048_575
+    as "the highest unit and number: the id is still below 2^32"
   assert cast.mint(unit_id: 7, number: 0, live: [
       cast.cast_id(unit_id: 7, number: 0),
     ])
@@ -448,7 +488,7 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
       })
     })
   assert phase_gos == [#(166, 0), #(366, 1), #(533, 2), #(700, 3)]
-    as "SpellPhase 3717 to 3720: delays of 166, 200, 167 and 167 ms, each the gap after the phase before (the design's reading of the rows)"
+    as "SpellPhase 3717 to 3720: delays of 166, 200, 167 and 167 ms, each the gap after the phase before: the client sums the delays into a cast's duration when its castTime is 0 (0x14053d1f0) and schedules no phase itself, so the go times are the server's choice"
   let children =
     list.flat_map(fired, fn(step) {
       list.filter_map(support.writes(effects: step.1), fn(frame) {
@@ -469,6 +509,18 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
   let assert Ok(last) = list.last(fired)
   assert list.last(ids_of(effects: last.1)) == Ok(0x07FE)
     as "38780's finish comes after its last phase"
+  let every_start =
+    list.append(
+      list.filter_map(support.writes(effects:), fn(frame) {
+        case frame.message_id == 0x07FF {
+          True -> Ok(started_of(frame).cast_id)
+          False -> Error(Nil)
+        }
+      }),
+      list.map(children, fn(child) { child.cast_id }),
+    )
+  assert list.length(list.unique([pressed_id_of(effects:), ..every_start])) == 6
+    as "Stagger, 38780 and the four 38781 are six casts of one caster, each with an id of its own (0x140561c30: one table for every unit)"
 }
 
 pub fn gate_casts_starts_its_cooldown_and_sends_no_target_in_any_go_test() -> Nil {
@@ -603,8 +655,11 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
     && support.tells(effects: same) == []
   assert is_one_debug_line(same) as "and a debug line"
   let assert Ok(#(_, threshold)) = cancel(state, Other(0), 0)
-    as "(0, 0) is the ChargeRelease threshold's cancel (opcode.0x801)"
-  assert ids_of(effects: threshold) == [0x07FE]
+    as "(0, 0) is the ChargeRelease threshold's cancel, which the client sends with the threshold's value (opcode.0x801)"
+  assert support.writes(effects: threshold) == []
+    && support.cancelled_timers(effects: threshold) == []
+  assert is_one_debug_line(threshold)
+    as "ChargeRelease is built in a later step, so the cancel is no change and a debug line: nothing evidences a 0x7fe for it"
   assert cancel(state, Other(11), 1) |> result.is_ok
     as "reason 11 (SpellInterrupted) with the bit 1 is sent by the input mode change"
   assert cancel(state, SpellAlreadyCasting, 1)

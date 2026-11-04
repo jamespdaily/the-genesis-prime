@@ -31,6 +31,7 @@
 ////   choice, the client holding no shield rule (`regen.client`).
 
 import character_support
+import character_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -136,7 +137,14 @@ fn entering(
       connection: ConnectionId(1),
     )
     as "the store holds the character and its place"
-  let unit = unit_support.novice_unit(character:, place:, unit_id: 1, body: [])
+  let unit =
+    unit_support.novice_unit(
+      tables: character_tables.shared(),
+      character:,
+      place:,
+      unit_id: 1,
+      body: [],
+    )
   let assert Ok(world_entry.InTheWorld(entered:, effects:)) =
     world_entry.joined(
       state:,

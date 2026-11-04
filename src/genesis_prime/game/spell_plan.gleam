@@ -66,6 +66,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/string
 
@@ -81,6 +82,19 @@ pub type CastMethod {
   Multiphase
   Transactional
   OtherMethod(id: Int)
+}
+
+/// Whether the client shows a cast bar for a spell (`SpellShowsCastBar`,
+/// `cast.current_cast`), decided here for the methods the server casts.
+pub type CastBar {
+  /// A Normal spell with a cast time and a castBarType, or a Multiphase one with
+  /// either.
+  ShowsCastBar
+  HidesCastBar
+  /// The method's rule (Channeled by its root or channel record, PressHold always,
+  /// ChargeRelease by its threshold, and so on) is not built: a press of such a
+  /// spell is refused 285, and a tree a Normal press starts may not hold one.
+  UndecidedCastBar
 }
 
 /// Whether the spell needs the weapon (Spell4Base.weaponSlot, `0x1403afb10`).
@@ -126,10 +140,9 @@ pub type Spell {
     cast_time_ms: Int,
     /// Spell4.spellCoolDown: the spell's own cooldown, from its first go.
     cooldown_ms: Int,
-    /// Whether the client shows a cast bar for the spell, and so keeps it as the
-    /// unit's current cast until its go: a cast time and Spell4Base.castBarType
-    /// not 0 (`Spell4Base.castBarType`, `cast.current_cast`).
-    cast_bar: Bool,
+    /// Whether the client shows a cast bar for the spell, and so makes it the
+    /// unit's current cast (`cast.current_cast`).
+    cast_bar: CastBar,
     /// Whether a live cast of this spell leaves the caster free to press another:
     /// Spell4.propertyFlags 0x40 (`Spell4.propertyFlags`).
     free_while_live: Bool,
@@ -172,6 +185,10 @@ pub type PlanError {
   /// A spell's innate cost is of a type whose check the client's code was not
   /// read for (`0x1403b3320`).
   UnreadCost(spell4_id: Int, cost_type: Int)
+  /// A tree a Normal press starts holds a spell whose cast method's cast bar rule
+  /// is not built, so the server cannot say which cast the client counts as
+  /// current.
+  UnbuiltCastBar(spell4_id: Int, cast_method: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -187,6 +204,12 @@ pub fn describe(error error: PlanError) -> String {
     ProxyCycle(chain:) ->
       "the Proxy effects of an ability lead round a cycle of spells: "
       <> string_of(chain)
+    UnbuiltCastBar(spell4_id:, cast_method:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has the cast method "
+      <> int.to_string(cast_method)
+      <> ", whose cast bar rule is not built, in the tree of a Normal ability"
     UnreadCost(spell4_id:, cost_type:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -231,8 +254,55 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
     use spell <- result.try(
       spell_of(tables:, effects:, phases:, spell4_id: row.spell4_id, chain: []),
     )
+    use Nil <- result.try(checked_cast_bars(spell:))
     Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
   })
+}
+
+/// A Normal ability's tree holds no spell whose cast bar rule is not built: the
+/// cast rule needs each cast's bar to know which cast is current. An ability of
+/// another method is never cast (it is refused 285), so its tree is not held to it.
+fn checked_cast_bars(spell spell: Spell) -> Result(Nil, PlanError) {
+  case spell.method {
+    Normal -> children_decided(spell:)
+    Channeled
+    | PressHold
+    | ChanneledField
+    | ClientSideInteraction
+    | RapidTap
+    | ChargeRelease
+    | Multiphase
+    | Transactional
+    | OtherMethod(..) -> Ok(Nil)
+  }
+}
+
+fn children_decided(spell spell: Spell) -> Result(Nil, PlanError) {
+  list.try_each(spell.proxies, fn(proxy) {
+    case proxy.spell.cast_bar {
+      UndecidedCastBar ->
+        Error(UnbuiltCastBar(
+          spell4_id: proxy.spell.spell4_id.value,
+          cast_method: method_number(method: proxy.spell.method),
+        ))
+      ShowsCastBar | HidesCastBar -> children_decided(spell: proxy.spell)
+    }
+  })
+}
+
+fn method_number(method method: CastMethod) -> Int {
+  case method {
+    Normal -> 0
+    Channeled -> 1
+    PressHold -> 2
+    ChanneledField -> 3
+    ClientSideInteraction -> 5
+    RapidTap -> 6
+    ChargeRelease -> 7
+    Multiphase -> 8
+    Transactional -> 9
+    OtherMethod(id:) -> id
+  }
 }
 
 fn effects_by_spell(
@@ -243,10 +313,8 @@ fn effects_by_spell(
   |> list.group(fn(effect) { effect.spell_id })
   |> dict.map_values(fn(_, effects) {
     list.sort(effects, fn(first, second) {
-      int.compare(
-        first.order_index * 1_000_000_000 + first.id,
-        second.order_index * 1_000_000_000 + second.id,
-      )
+      int.compare(first.order_index, second.order_index)
+      |> order.break_tie(int.compare(first.id, second.id))
     })
   })
 }
@@ -316,33 +384,77 @@ fn spell_of(
     }),
   )
   let method = method_of(base.cast_method)
+  use delays <- result.try(phase_delays(phases:, method:, spell4_id:))
   Ok(Spell(
     spell4_id: Spell4Id(spell4_id),
     spell4_base_id: Spell4BaseId(row.spell4_base_id_base_spell),
     method:,
     cast_time_ms: row.cast_time,
     cooldown_ms: row.spell_cool_down,
-    cast_bar: base.cast_bar_type != 0 && row.cast_time != 0,
+    cast_bar: cast_bar_of(method:, row:, base:),
     free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
     ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
       || has_flag(flags: row.property_flags, bit: 0x1),
     weapon: weapon_of(base.weapon_slot),
     global_cooldown:,
     unpayable_cost:,
-    phase_delays_ms: case method {
-      Multiphase -> dict.get(phases, spell4_id) |> result.unwrap([])
-      Normal
-      | Channeled
-      | PressHold
-      | ChanneledField
-      | ClientSideInteraction
-      | RapidTap
-      | ChargeRelease
-      | Transactional
-      | OtherMethod(..) -> []
-    },
+    phase_delays_ms: delays,
     proxies:,
   ))
+}
+
+/// Whether the client shows a cast bar for the spell, by its method
+/// (`cast.current_cast`): Normal needs a cast time and a castBarType, Multiphase
+/// either; the other methods' rules are not built.
+fn cast_bar_of(
+  method method: CastMethod,
+  row row: spell4.Spell4,
+  base base: spell4_base.Spell4Base,
+) -> CastBar {
+  let has_bar = base.cast_bar_type != 0
+  let has_time = row.cast_time != 0
+  case method {
+    Normal -> bar_if(shows: has_bar && has_time)
+    Multiphase -> bar_if(shows: has_bar || has_time)
+    Channeled
+    | PressHold
+    | ChanneledField
+    | ClientSideInteraction
+    | RapidTap
+    | ChargeRelease
+    | Transactional
+    | OtherMethod(..) -> UndecidedCastBar
+  }
+}
+
+fn bar_if(shows shows: Bool) -> CastBar {
+  use <- bool.guard(when: shows, return: ShowsCastBar)
+  HidesCastBar
+}
+
+/// The phase delays of a spell: a Multiphase spell's SpellPhase rows the client
+/// keeps, which it must have, and none for any other method.
+fn phase_delays(
+  phases phases: Dict(Int, List(Int)),
+  method method: CastMethod,
+  spell4_id spell4_id: Int,
+) -> Result(List(Int), PlanError) {
+  case method {
+    Multiphase ->
+      case dict.get(phases, spell4_id) {
+        Ok([_, ..] as delays) -> Ok(delays)
+        Ok([]) | Error(Nil) -> Error(NoRow(table: "SpellPhase", id: spell4_id))
+      }
+    Normal
+    | Channeled
+    | PressHold
+    | ChanneledField
+    | ClientSideInteraction
+    | RapidTap
+    | ChargeRelease
+    | Transactional
+    | OtherMethod(..) -> Ok([])
+  }
 }
 
 fn method_of(cast_method: Int) -> CastMethod {

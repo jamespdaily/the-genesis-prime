@@ -15,7 +15,7 @@ import character_support
 import character_tables
 import client_tables
 import genesis_prime/game/item_property.{Shield}
-import genesis_prime/game/loadout
+import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/start_place
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
@@ -38,6 +38,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import owned_test
 import place_support
+import unit_support
 import unitest
 
 /// The Novice start enum of CharacterCreation (`Item2.novice_set`).
@@ -52,19 +53,10 @@ fn step_b(
   place place: start_place.Place,
   unit_id unit_id: Int,
   realm_id realm_id: Int,
-  tables tables: table_store.Tables,
+  loadout set: Loadout,
+  max_health max_health: Int,
   body body: List(ItemVisual),
 ) -> UnitCreatePlayer {
-  let assert Ok(set) =
-    loadout.of(
-      tables:,
-      class_id: character.class_id,
-      faction_id: character.faction_id,
-    )
-    as "the Novice set of a row a player can make"
-  let assert Ok(max_health) =
-    loadout.max_health(tables:, loadout: set, level: character.level)
-    as "CreatureLevel holds the level"
   let store.CharacterId(character_id) = character.character_id
   let stand_in = 136
   let health = float32.to_bits(int.to_float(stand_in))
@@ -192,26 +184,25 @@ fn every_row_is_unchanged(tables tables: table_store.Tables) -> Int {
           level:,
         )
       let place = place_support.live_character_place()
-      let old =
-        step_b(character:, place:, unit_id: 9, realm_id: 4, tables:, body: look)
-      let assert Ok(set) =
-        loadout.of(tables:, class_id: character.class_id, faction_id: pair.1)
-        as "the Novice set of a row a player can make"
-      let assert Ok(max_health) =
-        loadout.max_health(tables:, loadout: set, level:)
-        as "CreatureLevel holds the level"
-      let new =
-        player_unit.create(
-          unit: player_unit.new(
-            character:,
-            place:,
-            unit_id: 9,
-            body: look,
-            loadout: set,
-            max_health:,
-          ),
-          realm_id: 4,
+      let unit =
+        unit_support.novice_unit(
+          tables:,
+          character:,
+          place:,
+          unit_id: 9,
+          body: look,
         )
+      let old =
+        step_b(
+          character:,
+          place:,
+          unit_id: 9,
+          realm_id: 4,
+          loadout: player_unit.loadout(unit:),
+          max_health: player_unit.max_health(unit:),
+          body: look,
+        )
+      let new = player_unit.create(unit:, realm_id: 4)
       assert new == old
         as {
           "class "
@@ -243,18 +234,26 @@ pub fn the_map_builds_the_0x262_step_b_sent_for_the_planted_novice_rows_test() -
 
 pub fn the_oracle_differs_from_a_unit_with_another_health_test() -> Nil {
   use <- owned_test.run(10_000)
-  let tables = character_tables.shared()
   let character = character_support.character(number: 5)
   let place = place_support.live_character_place()
-  let old =
-    step_b(character:, place:, unit_id: 9, realm_id: 4, tables:, body: look)
-  let assert Ok(set) =
-    loadout.of(
-      tables:,
-      class_id: character.class_id,
-      faction_id: character.faction_id,
+  let unit =
+    unit_support.novice_unit(
+      tables: character_tables.shared(),
+      character:,
+      place:,
+      unit_id: 9,
+      body: look,
     )
-    as "the planted tables hold the Novice set of the tests' character"
+  let old =
+    step_b(
+      character:,
+      place:,
+      unit_id: 9,
+      realm_id: 4,
+      loadout: player_unit.loadout(unit:),
+      max_health: player_unit.max_health(unit:),
+      body: look,
+    )
   let other =
     player_unit.create(
       unit: player_unit.new(
@@ -262,7 +261,7 @@ pub fn the_oracle_differs_from_a_unit_with_another_health_test() -> Nil {
         place:,
         unit_id: 9,
         body: look,
-        loadout: set,
+        loadout: player_unit.loadout(unit:),
         max_health: 1,
       ),
       realm_id: 4,

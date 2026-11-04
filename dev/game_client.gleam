@@ -229,15 +229,30 @@ pub fn press_ability(
   bag_index bag_index: Int,
   target target: Int,
 ) -> Nil {
+  send_world(
+    game:,
+    message_id: cast_ability.message_id,
+    body: press_body(client_cast_id:, bag_index:, target:, press: 1),
+  )
+}
+
+/// The body of the client's 0x9a (opcode.0x9a): its cast id, the bag index, the
+/// target and the press bit.
+pub fn press_body(
+  client_cast_id client_cast_id: Int,
+  bag_index bag_index: Int,
+  target target: Int,
+  press press: Int,
+) -> BitArray {
   let assert Ok(body) =
     cast_ability.encode(cast_ability.CastAbility(
       client_cast_id:,
       bag_index:,
       target_unit_id: target,
-      press: 1,
+      press:,
     ))
     as "a press fits the message"
-  send_world(game:, message_id: cast_ability.message_id, body:)
+  body
 }
 
 /// What the client's reader makes of a cast message of the server's.

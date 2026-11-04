@@ -283,6 +283,18 @@ pub fn file(
   #(schema.file, bytes(table(schema:, rows:)))
 }
 
+/// The rows without the ones with these ids: every planted row holds its ID in
+/// its first cell.
+pub fn without(
+  rows rows: List(List(Cell)),
+  ids ids: List(Int),
+) -> List(List(Cell)) {
+  list.filter(rows, fn(row) {
+    let assert [Integer(id), ..] = row as "a planted row holds its ID first"
+    !list.contains(ids, id)
+  })
+}
+
 /// Makes a folder of its own, writes each file into it as `<name>.tbl`, runs
 /// the body with the folder's path, and removes the folder afterwards.
 pub fn in_folder(files: List(#(String, BitArray)), body: fn(String) -> a) -> a {

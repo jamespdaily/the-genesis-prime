@@ -25,7 +25,6 @@
 
 import character_tables
 import connection_rule_support as support
-import genesis_prime/game/loadout
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
@@ -44,6 +43,7 @@ import map_support
 import novice_tables
 import owned_test
 import place_support
+import unit_support
 
 const incarnation = 31
 
@@ -83,31 +83,18 @@ fn answer_of(
   unit_id unit_id: Int,
   body body: List(ItemVisual),
 ) -> map.Outgoing {
-  let tables = character_tables.shared()
-  let assert Ok(loadout) =
-    loadout.of(
-      tables:,
-      class_id: character.class_id,
-      faction_id: character.faction_id,
+  let unit =
+    unit_support.novice_unit(
+      tables: character_tables.shared(),
+      character:,
+      place: place_support.live_character_place(),
+      unit_id:,
+      body:,
     )
-    as "the planted tables hold a Novice set for the class and faction"
-  let assert Ok(max_health) =
-    loadout.max_health(tables:, loadout:, level: character.level)
-    as "the planted tables hold a CreatureLevel row for the character's level"
   Joined(
-    unit: player_unit.create(
-      unit: player_unit.new(
-        character:,
-        place: place_support.live_character_place(),
-        unit_id:,
-        body:,
-        loadout:,
-        max_health:,
-      ),
-      realm_id:,
-    ),
-    loadout:,
-    max_health:,
+    unit: player_unit.create(unit:, realm_id:),
+    loadout: player_unit.loadout(unit:),
+    max_health: player_unit.max_health(unit:),
     incarnation:,
     clock_origin_ms: 0,
   )

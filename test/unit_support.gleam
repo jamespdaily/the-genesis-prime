@@ -1,14 +1,14 @@
 //// What the tests that need a player's unit share: a loadout that holds nothing
 //// (so a test of the unit's place, body or level reads no table) and the unit of
-//// a character with the loadout the planted tables give its class and faction.
+//// a character with the loadout the tables give its class and faction.
 
-import character_tables
 import genesis_prime/game/item_property.{ItemProperties}
 import genesis_prime/game/loadout.{type Loadout, Loadout}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import gleam/option.{None}
 
@@ -54,23 +54,23 @@ pub fn bare_unit(
 }
 
 /// The unit of the character with the loadout of its class and faction and the
-/// health that gives at its level, from the planted tables.
+/// health that gives at its level, from the tables.
 pub fn novice_unit(
+  tables tables: table_store.Tables,
   character character: Character,
   place place: Place,
   unit_id unit_id: Int,
   body body: List(ItemVisual),
 ) -> PlayerUnit {
-  let tables = character_tables.shared()
   let assert Ok(loadout) =
     loadout.of(
       tables:,
       class_id: character.class_id,
       faction_id: character.faction_id,
     )
-    as "the planted tables hold a Novice set for the class and faction"
+    as "the tables hold a Novice set for the class and faction"
   let assert Ok(max_health) =
     loadout.max_health(tables:, loadout:, level: character.level)
-    as "the planted tables hold a CreatureLevel row for the level"
+    as "the tables hold a CreatureLevel row for the level"
   player_unit.new(character:, place:, unit_id:, body:, loadout:, max_health:)
 }

@@ -86,10 +86,12 @@
 ////   the player leaving the world cancels them.
 //// - **The cancel** is 0x801: the server's cast id, a reason and a bit, which the
 ////   client sends as (6 or 11, 1) when the player's cast ends in its client, and
-////   (0, 0) for a ChargeRelease threshold (`opcode.0x801`). The cast ends with its
-////   go timers cancelled and 0x7fe to the caster and the audience, no strike; a
-////   cast that is not live is no change and a debug line. Any other reason or bit
-////   is one the client never sends, and ends the connection.
+////   (0, 0) for a ChargeRelease threshold (`opcode.0x801`). It clears the caster's
+////   current cast, whatever cast that is, and the cast ends with its go timers
+////   cancelled and 0x7fe to the caster and the audience, no strike; a cast that is
+////   not live is a debug line. A threshold cancel is a debug line and no change,
+////   until ChargeRelease is built. Any other reason or bit is one the client never
+////   sends, and ends the connection.
 //// - **The audience** of a cast is the caster's viewers when it starts; its go and
 ////   finish go to them. A viewer writes a 0x7ff only when its client shows the
 ////   caster, and a go, or a finish, only for a cast it wrote
@@ -132,10 +134,11 @@ import genesis_prime/message/spell_go.{type SpellGo, SpellGo}
 import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
 import genesis_prime/message/spell_started.{type SpellStarted, SpellStarted}
 import genesis_prime/step.{
-  type ConnectionId, type LogLevel, type Now, type TimerId, ConnectionId,
-  LogDebug, LogInfo, LogWarning, TimerId,
+  type ConnectionId, type LogLevel, type Now, type TimerId, LogDebug, LogInfo,
+  LogWarning, TimerId,
 }
 import genesis_prime/table/id.{type Item2Id, type Spell4BaseId, type Spell4Id}
+import genesis_prime/world_map/map
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -222,8 +225,6 @@ pub type Live {
     audience: Set(ConnectionId),
     /// How many of its gos have been sent.
     gone: Int,
-    /// The timers of its gos still waiting.
-    timers: List(TimerId),
   )
 }
 
@@ -244,7 +245,7 @@ pub opaque type State {
     casts: Dict(Int, Live),
     /// The caster's current cast, which a press is refused against (13).
     current: Option(Int),
-    timers: Dict(Int, Due),
+    timers: Dict(TimerId, Due),
     held: Option(Held),
     /// How many casts the player has started, which the cast ids are made from.
     presses: Int,
@@ -450,7 +451,7 @@ fn press_of(
       #(
         State(
           ..cast,
-          timers: dict.insert(cast.timers, number_of(timer:), StartHeld),
+          timers: dict.insert(cast.timers, timer, StartHeld),
           held: Some(Held(client_cast_id:, spell:)),
         ),
         [StartTimer(timer:, after_ms: wait_ms)],
@@ -560,6 +561,22 @@ fn cancelled(
     },
     return: Error(UnknownCancel(reason:, bit: cancel.field_3)),
   )
+  use <- bool.guard(
+    when: reason == 0,
+    return: Ok(
+      #(cast, [
+        Log(
+          level: LogDebug,
+          text: "the client ended the ChargeRelease threshold of the cast "
+            <> int.to_string(cancel.cast_id)
+            <> ", which is not built",
+        ),
+      ]),
+    ),
+  )
+  // The client clears the player's current cast before it sends, whatever cast
+  // that is (`cast.current_cast`).
+  let cast = State(..cast, current: None)
   case dict.get(cast.casts, cancel.cast_id) {
     Error(Nil) ->
       Ok(
@@ -573,15 +590,12 @@ fn cancelled(
         ]),
       )
     Ok(live) -> {
-      let waiting =
-        list.filter(live.timers, fn(timer) {
-          dict.has_key(cast.timers, number_of(timer:))
-        })
+      let waiting = go_timers_of(cast:, cast_id: cancel.cast_id)
       let cast =
         State(
           ..cast,
           timers: list.fold(waiting, cast.timers, fn(timers, timer) {
-            dict.delete(timers, number_of(timer:))
+            dict.delete(timers, timer)
           }),
         )
       let #(cast, finished) = finish(cast:, cast_id: cancel.cast_id, live:)
@@ -603,11 +617,10 @@ pub fn timer_fired(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  case dict.get(cast.timers, number_of(timer:)) {
+  case dict.get(cast.timers, timer) {
     Error(Nil) -> #(cast, [])
     Ok(due) -> {
-      let cast =
-        State(..cast, timers: dict.delete(cast.timers, number_of(timer:)))
+      let cast = State(..cast, timers: dict.delete(cast.timers, timer))
       let now_ms = now.monotonic_ms
       case due {
         Go(cast_id:, phase:) -> go(cast:, caster:, now_ms:, cast_id:, phase:)
@@ -649,9 +662,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       held: None,
       current: None,
     ),
-    list.map(dict.keys(cast.timers), fn(number) {
-      CancelTimer(timer: TimerId(number))
-    }),
+    list.map(dict.keys(cast.timers), fn(timer) { CancelTimer(timer:) }),
   )
 }
 
@@ -675,9 +686,9 @@ fn start(
     )
   let audience = caster.audience
   let go_times = spell_plan.go_times_ms(spell:)
-  let #(cast, timers, timer_effects) =
-    list.index_fold(go_times, #(cast, [], []), fn(so_far, wait_ms, phase) {
-      let #(cast, timers, effects) = so_far
+  let #(cast, timer_effects) =
+    list.index_fold(go_times, #(cast, []), fn(so_far, wait_ms, phase) {
+      let #(cast, effects) = so_far
       case wait_ms > 0 {
         False -> so_far
         True -> {
@@ -685,13 +696,8 @@ fn start(
           #(
             State(
               ..cast,
-              timers: dict.insert(
-                cast.timers,
-                number_of(timer:),
-                Go(cast_id: id, phase:),
-              ),
+              timers: dict.insert(cast.timers, timer, Go(cast_id: id, phase:)),
             ),
-            [timer, ..timers],
             list.append(effects, [StartTimer(timer:, after_ms: wait_ms)]),
           )
         }
@@ -706,7 +712,6 @@ fn start(
       primary_target: caster.unit_id,
       audience:,
       gone: 0,
-      timers: list.reverse(timers),
     )
   let global_ends = case spell.global_cooldown.starts_for_ms {
     Some(wait_ms) -> Some(now_ms + wait_ms)
@@ -719,8 +724,8 @@ fn start(
       global_cooldown_ends_ms: global_ends,
       casts: dict.insert(cast.casts, id, live),
       current: case spell.cast_bar {
-        True -> Some(id)
-        False -> cast.current
+        spell_plan.ShowsCastBar -> Some(id)
+        spell_plan.HidesCastBar | spell_plan.UndecidedCastBar -> cast.current
       },
     )
   let to_caster = case client_cast_id {
@@ -786,7 +791,7 @@ fn go(
         True ->
           case
             live.parent == None
-            && spell.cast_bar
+            && spell.cast_bar == spell_plan.ShowsCastBar
             || cast.current == Some(cast_id)
           {
             True -> None
@@ -860,7 +865,7 @@ fn child(
               ..cast,
               timers: dict.insert(
                 cast.timers,
-                number_of(timer:),
+                timer,
                 StartChild(
                   root: live.root,
                   parent: live.spell.spell4_id,
@@ -909,16 +914,20 @@ fn new_timer(cast cast: State) -> #(State, TimerId) {
   )
 }
 
-fn number_of(timer timer: TimerId) -> Int {
-  let TimerId(number) = timer
-  number
+/// The timers of a live cast's gos that still wait.
+fn go_timers_of(cast cast: State, cast_id cast_id: Int) -> List(TimerId) {
+  dict.filter(cast.timers, fn(_, due) {
+    case due {
+      Go(cast_id: waiting, ..) -> waiting == cast_id
+      StartChild(..) | StartHeld -> False
+    }
+  })
+  |> dict.keys
 }
 
 fn sorted(audience: Set(ConnectionId)) -> List(ConnectionId) {
   list.sort(set.to_list(audience), fn(first, second) {
-    let ConnectionId(first) = first
-    let ConnectionId(second) = second
-    int.compare(first, second)
+    map.compare_connections(first:, second:)
   })
 }
 

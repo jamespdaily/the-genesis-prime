@@ -21,6 +21,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import owned_test
+import planted_table
 import spell_tables
 import unitest
 
@@ -41,7 +42,7 @@ pub fn telekinetic_strike_takes_1250_ms_has_a_global_cooldown_of_1000_ms_that_bl
     as "Spell.CodeEnumCastMethod 0, Spell4Base 19102"
   assert spell.cast_time_ms == 1250 as "Spell4.32893: castTime 1250"
   assert spell.cooldown_ms == 0 as "Spell4.32893: no cooldown of its own"
-  assert spell.cast_bar
+  assert spell.cast_bar == spell_plan.ShowsCastBar
     as "Spell4Base 19102: castBarType 1 with a cast time, so the client shows the bar and keeps it as the current cast (cast.current_cast)"
   assert !spell.ignores_casting && !spell.free_while_live
     as "Spell4.32893: propertyFlags 0x4000002 has neither 0x1, 0x10 nor 0x40"
@@ -86,7 +87,7 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
     as "kind 1 starts the global cooldown and is not refused by it; row 180 is 750 ms"
   let assert [staggering] = spell.proxies
   assert staggering.spell.spell4_id == Spell4Id(38_780)
-  assert !staggering.spell.cast_bar
+  assert staggering.spell.cast_bar == spell_plan.HidesCastBar
     as "Spell4Base 23162: castBarType 0, so the client never makes 38780 the current cast (Spell4Base.castBarType)"
   assert staggering.spell.method == spell_plan.Multiphase
     as "Spell.CodeEnumCastMethod 8; Spell4.38791"
@@ -131,27 +132,66 @@ pub fn a_spell_row_a_tree_names_that_the_tables_lack_fails_the_build_naming_the_
     as "62204 proxies 30900, which has no Spell4 row: the load names the table and the id"
 }
 
-pub fn a_cycle_of_proxies_fails_the_build_naming_the_spells_on_the_way_test() -> Nil {
+/// The planted rows with one more effect row.
+fn with_effect(effect effect: List(planted_table.Cell)) -> spell_tables.Rows {
+  let rows = spell_tables.rows()
+  spell_tables.Rows(..rows, spell4_effects: [effect, ..rows.spell4_effects])
+}
+
+pub fn a_cycle_of_proxies_fails_the_load_naming_the_spells_on_the_way_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Error(error) =
+    spell_tables.derivation_result(
+      rows: with_effect(effect: spell_tables.effect_row(
+        id: 99_001,
+        spell: 30_900,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 32_893,
+      )),
+    )
+    as "Telekinetic Strike proxies 30900, which proxies Telekinetic Strike: the tables' load fails, so the server does not start"
+  assert string.contains(table_store.describe(error), "32893 -> 30900 -> 32893")
+    as "the load names the chain from the pressed ability to the spell that repeats"
+}
+
+pub fn a_multiphase_spell_with_no_kept_phase_row_fails_the_load_naming_the_table_and_owner_test() -> Nil {
   use <- owned_test.run(60_000)
   let rows = spell_tables.rows()
-  let result =
-    spell_tables.with_loaded(
-      rows: spell_tables.Rows(..rows, spell4_effects: [
-        spell_tables.effect_row(
-          id: 99_001,
-          spell: 30_900,
-          type_: 26,
-          target_flags: 1,
-          delay: 0,
-          phases: -1,
-          data: 32_893,
-        ),
-        ..rows.spell4_effects
-      ]),
-      body: fn(tables) { spell_plan.build(tables:) },
+  let assert Error(error) =
+    spell_tables.derivation_result(
+      rows: spell_tables.Rows(..rows, spell_phases: []),
     )
-  assert result == Error(spell_plan.ProxyCycle(chain: [32_893, 30_900, 32_893]))
-    as "Telekinetic Strike proxies 30900, which proxies Telekinetic Strike: the chain from the pressed ability to the spell that repeats"
+    as "38780 is Multiphase and keeps no phase, which the client's rule (0x14055e180) would give it none of: the load fails rather than give it one go"
+  let reason = table_store.describe(error)
+  assert string.contains(reason, "SpellPhase")
+    && string.contains(reason, "38780")
+    as "the load names the table and the owner"
+}
+
+pub fn a_normal_abilitys_tree_with_a_spell_whose_cast_bar_rule_is_not_built_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Error(error) =
+    spell_tables.derivation_result(
+      rows: with_effect(effect: spell_tables.effect_row(
+        id: 99_002,
+        spell: 32_893,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 41_276,
+      )),
+    )
+    as "Telekinetic Strike proxies Electrocute (Spell4Base 25473, castMethod 1: Channeled), whose cast bar rule (cast.current_cast: its root or its channel record) is not built"
+  let reason = table_store.describe(error)
+  assert string.contains(reason, "41276")
+    && string.contains(reason, "cast method 1")
+    as "the load names the spell and its method"
+  assert spell_tables.derivation_result(rows: spell_tables.rows()) == Ok(Nil)
+    as "a Channeled ability that is itself pressed builds: it is refused 285, never cast, and Stagger's Multiphase child 38780 is decided (castTime or castBarType)"
 }
 
 pub fn the_load_fails_with_the_builds_reason_naming_the_table_and_row_test() -> Nil {
@@ -180,7 +220,7 @@ fn spell_spell4_without(
 ) -> spell_tables.Rows {
   spell_tables.Rows(
     ..rows,
-    spell4: spell_tables.without(rows: rows.spell4, ids:),
+    spell4: planted_table.without(rows: rows.spell4, ids:),
   )
 }
 

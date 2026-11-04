@@ -84,6 +84,10 @@ fn spell4_row(
 fn property_flags(id: Int) -> Int {
   case id {
     32_893 | 29_874 | 32_809 -> 0x4000002
+    58_591 -> 0x4000102
+    41_438 -> 0x4000103
+    34_355 -> 0x3
+    42_297 | 30_436 -> 0x100
     32_812 -> 0x4100003
     38_791 -> 0x4000003
     38_780 -> 0x103
@@ -159,6 +163,10 @@ pub fn rows() -> Rows {
         #(1239, 3, 32_812),
         #(1086, 4, 29_874),
         #(808, 5, 38_791),
+        #(925, 1, 58_591),
+        #(1188, 2, 41_438),
+        #(1185, 2, 41_276),
+        #(1236, 7, 34_355),
       ],
       fn(row) {
         planted_table.row(spell_level.schema, [
@@ -171,6 +179,66 @@ pub fn rows() -> Rows {
       },
     ),
     spell4: [
+      spell4_row(
+        id: 58_591,
+        base: 38_017,
+        cast_time: 0,
+        cooldown: 20_000,
+        range: 7.0,
+        cost: #(0, 0),
+        kind: 3,
+        global: 127,
+      ),
+      spell4_row(
+        id: 41_438,
+        base: 25_635,
+        cast_time: 0,
+        cooldown: 30_000,
+        range: 25.0,
+        cost: #(0, 0),
+        kind: 1,
+        global: 0,
+      ),
+      spell4_row(
+        id: 41_276,
+        base: 25_473,
+        cast_time: 0,
+        cooldown: 0,
+        range: 25.0,
+        cost: #(0, 0),
+        kind: 3,
+        global: 0,
+      ),
+      spell4_row(
+        id: 34_355,
+        base: 20_325,
+        cast_time: 0,
+        cooldown: 30_000,
+        range: 17.0,
+        cost: #(0, 0),
+        kind: 1,
+        global: 155,
+      ),
+      spell4_row(
+        id: 25_190,
+        base: 11_781,
+        cast_time: 0,
+        cooldown: 0,
+        range: 0.0,
+        cost: #(0, 0),
+        kind: 3,
+        global: 0,
+      ),
+      spell4_row(
+        id: 30_436,
+        base: 16_838,
+        cast_time: 0,
+        cooldown: 0,
+        range: 0.0,
+        cost: #(0, 0),
+        kind: 3,
+        global: 0,
+      ),
       spell4_row(
         id: 32_893,
         base: 19_102,
@@ -284,6 +352,12 @@ pub fn rows() -> Rows {
     ]
       |> list.sort(by_id),
     spell4_base: [
+      base_row(id: 38_017, method: 0, weapon: 0, bar: 0, class: 1),
+      base_row(id: 25_635, method: 0, weapon: 1, bar: 0, class: 2),
+      base_row(id: 25_473, method: 1, weapon: 1, bar: 0, class: 2),
+      base_row(id: 20_325, method: 0, weapon: 0, bar: 0, class: 7),
+      base_row(id: 11_781, method: 0, weapon: 0, bar: 1, class: 0),
+      base_row(id: 16_838, method: 0, weapon: 0, bar: 0, class: 0),
       base_row(id: 19_102, method: 0, weapon: 0, bar: 1, class: 3),
       base_row(id: 17_288, method: 0, weapon: 0, bar: 0, class: 0),
       base_row(id: 19_019, method: 0, weapon: 0, bar: 0, class: 3),
@@ -298,6 +372,24 @@ pub fn rows() -> Rows {
     ]
       |> list.sort(by_id),
     spell4_effects: [
+      effect_row(
+        id: 67_778,
+        spell: 34_355,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 25_190,
+      ),
+      effect_row(
+        id: 67_779,
+        spell: 34_355,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 30_436,
+      ),
       effect_row(
         id: 62_159,
         spell: 32_893,
@@ -424,7 +516,14 @@ pub fn rows() -> Rows {
       phase_row(id: 3720, delay: 167, order: 3),
     ],
     spell_cool_downs: list.map(
-      [#(104, 1250), #(159, 1250), #(180, 750), #(213, 1000)],
+      [
+        #(104, 1250),
+        #(127, 1250),
+        #(155, 750),
+        #(159, 1250),
+        #(180, 750),
+        #(213, 1000),
+      ],
       fn(row) {
         planted_table.row(spell_cool_down.schema, [
           #("ID", Integer(row.0)),
@@ -447,17 +546,6 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
   let assert [Integer(second_id), ..] = second
     as "a planted row holds its ID first"
   int.compare(first_id, second_id)
-}
-
-/// The rows without the ones of a table that have these ids.
-pub fn without(
-  rows rows: List(List(Cell)),
-  ids ids: List(Int),
-) -> List(List(Cell)) {
-  list.filter(rows, fn(row) {
-    let assert [Integer(id), ..] = row as "a planted row holds its ID first"
-    !list.contains(ids, id)
-  })
 }
 
 /// The load of the planted tables with the plan's derivation, which fails when

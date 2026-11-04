@@ -7,26 +7,28 @@
 //// global cooldown kind 2, a cast bar that lets a press through, or a cast time
 //// with a cooldown of its own: `blocked_only` (kind 2), `exempt` and `slow`.
 
+import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/spell_plan.{
-  type Plans, type Proxy, type Spell, Always, GlobalCooldown, NoWeaponNeeded,
-  Normal, PrimaryWeapon, Proxy, Spell,
+  type Plans, type Spell, GlobalCooldown, NoWeaponNeeded, Normal, Spell,
 }
 import genesis_prime/message/cancel_cast.{CancelCast}
-import genesis_prime/message/cast_ability.{CastAbility}
 import genesis_prime/message/cast_result.{type CastResult}
 import genesis_prime/step.{
   type ConnectionId, type Now, type TimerId, ConnectionId, Now,
 }
-import genesis_prime/table/id.{Item2Id, Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/id.{
+  type Spell4BaseId, Item2Id, Spell4BaseId, Spell4Id,
+}
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import place_support
+import spell_tables
 
 /// A child spell the client's row gives these ids: no cast time, no cooldown, no
 /// range, kind 3 (`opcode.0x7ff.root_parent`: the global cooldown kind of every
@@ -38,7 +40,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     method: Normal,
     cast_time_ms: 0,
     cooldown_ms: 0,
-    cast_bar: False,
+    cast_bar: spell_plan.HidesCastBar,
     free_while_live: False,
     ignores_casting: False,
     weapon: NoWeaponNeeded,
@@ -52,194 +54,13 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
   )
 }
 
-fn proxy(
-  effect effect: Int,
-  delay delay: Int,
-  phases phases: Int,
-  spell spell: Spell,
-) -> Proxy {
-  Proxy(
-    effect_id: Spell4EffectsId(effect),
-    delay_ms: delay,
-    phase_flags: phases,
-    condition: Always,
-    spell:,
-  )
-}
-
-/// Telekinetic Strike, `Spell4.32893`: 1250 ms with a cast bar, kind 0
-/// with SpellCoolDown 213 (1000 ms), and the Proxy to 30900 on the caster.
-pub fn telekinetic_strike() -> Spell {
-  Spell(
-    ..child(spell4_id: 32_893, base: 19_102),
-    cast_time_ms: 1250,
-    cast_bar: True,
-    global_cooldown: GlobalCooldown(
-      refused_while_running: True,
-      starts_for_ms: Some(1000),
-    ),
-    proxies: [
-      proxy(
-        effect: 62_204,
-        delay: 0,
-        phases: -1,
-        spell: child(spell4_id: 30_900, base: 17_288),
-      ),
-    ],
-  )
-}
-
-/// Kick, `Spell4.58591`: instant, cooldown 20 s, range 7, kind 3.
-pub fn kick() -> Spell {
-  Spell(..child(spell4_id: 58_591, base: 38_017), cooldown_ms: 20_000)
-}
-
-/// Crush, `Spell4.32812`: cooldown 35 s, kind 3, a Proxy 100 ms after the go to 42297.
-pub fn crush() -> Spell {
-  Spell(
-    ..child(spell4_id: 32_812, base: 19_022),
-    cooldown_ms: 35_000,
-    ignores_casting: True,
-    proxies: [
-      proxy(
-        effect: 62_007,
-        delay: 100,
-        phases: 1,
-        spell: child(spell4_id: 42_297, base: 26_488),
-      ),
-    ],
-  )
-}
-
-/// Stagger, `Spell4.38791`: cooldown 25 s, weapon slot 1, kind 1 with
-/// SpellCoolDown 180 (750 ms), a Proxy to 38780, a Multiphase spell of phases of
-/// 166, 200, 167 and 167 ms that proxies 38781 in each phase.
-pub fn stagger() -> Spell {
-  let phases =
-    Spell(
-      ..child(spell4_id: 38_780, base: 23_162),
-      method: spell_plan.Multiphase,
-      phase_delays_ms: [166, 200, 167, 167],
-      proxies: [
-        proxy(
-          effect: 83_823,
-          delay: 0,
-          phases: 1,
-          spell: child(spell4_id: 38_781, base: 23_163),
-        ),
-        proxy(
-          effect: 83_824,
-          delay: 0,
-          phases: 2,
-          spell: child(spell4_id: 38_781, base: 23_163),
-        ),
-        proxy(
-          effect: 83_825,
-          delay: 0,
-          phases: 4,
-          spell: child(spell4_id: 38_781, base: 23_163),
-        ),
-        proxy(
-          effect: 83_826,
-          delay: 0,
-          phases: 8,
-          spell: child(spell4_id: 38_781, base: 23_163),
-        ),
-      ],
-    )
-  Spell(
-    ..child(spell4_id: 38_791, base: 23_173),
-    ignores_casting: True,
-    cooldown_ms: 25_000,
-    weapon: PrimaryWeapon,
-    global_cooldown: GlobalCooldown(
-      refused_while_running: False,
-      starts_for_ms: Some(750),
-    ),
-    proxies: [
-      proxy(effect: 83_853, delay: 0, phases: 1, spell: phases),
-    ],
-  )
-}
-
-/// Gate, `Spell4.34355`: cooldown 30 s, kind 1 with SpellCoolDown 155 (750 ms),
-/// Proxies to 25190 and 30436; it deals no damage.
-pub fn gate() -> Spell {
-  Spell(
-    ..child(spell4_id: 34_355, base: 20_325),
-    ignores_casting: True,
-    cooldown_ms: 30_000,
-    global_cooldown: GlobalCooldown(
-      refused_while_running: False,
-      starts_for_ms: Some(750),
-    ),
-    proxies: [
-      proxy(
-        effect: 67_778,
-        delay: 0,
-        phases: -1,
-        spell: child(spell4_id: 25_190, base: 11_781),
-      ),
-      proxy(
-        effect: 67_779,
-        delay: 0,
-        phases: -1,
-        spell: child(spell4_id: 30_436, base: 16_838),
-      ),
-    ],
-  )
-}
-
-/// Mind Burst, `Spell4.32809`: cost of 1 in vital 6, which a new unit cannot pay
-/// (`Spell4CastResult.vital_cost`: 51).
-pub fn mind_burst() -> Spell {
-  Spell(
-    ..child(spell4_id: 32_809, base: 19_019),
-    global_cooldown: GlobalCooldown(
-      refused_while_running: True,
-      starts_for_ms: Some(1250),
-    ),
-    unpayable_cost: Some(51),
-  )
-}
-
-/// Gamma Rays, `Spell4.29874`: cost of 2 in vital 18 (`Spell4CastResult.vital_cost`: 55).
-pub fn gamma_rays() -> Spell {
-  Spell(
-    ..child(spell4_id: 29_874, base: 16_322),
-    cast_bar: True,
-    cast_time_ms: 1250,
-    weapon: PrimaryWeapon,
-    global_cooldown: GlobalCooldown(
-      refused_while_running: True,
-      starts_for_ms: Some(1250),
-    ),
-    unpayable_cost: Some(55),
-  )
-}
-
-/// Electrocute, `Spell4.41276`: a Channeled spell (`0x14053d1f0`), not Normal.
-pub fn electrocute() -> Spell {
-  Spell(..child(spell4_id: 41_276, base: 25_473), method: spell_plan.Channeled)
-}
-
-/// Zap, `Spell4.41438`: weapon slot 1, kind 1 with no global row, cooldown 30 s.
-pub fn zap() -> Spell {
-  Spell(
-    ..child(spell4_id: 41_438, base: 25_635),
-    ignores_casting: True,
-    cooldown_ms: 30_000,
-    weapon: PrimaryWeapon,
-  )
-}
-
 /// A planted spell with a cast time of 1000 ms and a cast bar whose live cast
 /// leaves the caster free to press another (`0x1403afb10`).
 pub fn exempt() -> Spell {
   Spell(
     ..child(spell4_id: 1, base: 1),
     cast_time_ms: 1000,
-    cast_bar: True,
+    cast_bar: spell_plan.ShowsCastBar,
     free_while_live: True,
   )
 }
@@ -261,30 +82,31 @@ pub fn slow() -> Spell {
   Spell(..child(spell4_id: 3, base: 3), cast_time_ms: 1000, cooldown_ms: 5000)
 }
 
-/// The abilities by bag index: 0 Telekinetic Strike, 1 Crush, 2 Mind Burst, 3 Kick,
-/// 4 Stagger, 5 Gate, 6 Gamma Rays, 7 Electrocute, 8 the exempt spell, 9 Zap,
-/// 10 the kind 2 spell and 11 the slow spell.
-pub fn spells() -> List(Spell) {
-  [
-    telekinetic_strike(),
-    crush(),
-    mind_burst(),
-    kick(),
-    stagger(),
-    gate(),
-    gamma_rays(),
-    electrocute(),
-    exempt(),
-    zap(),
-    blocked_only(),
-    slow(),
-  ]
+/// The abilities by bag index, as Spell4Base ids: 0 Telekinetic Strike, 1 Crush,
+/// 2 Mind Burst, 3 Kick, 4 Stagger, 5 Gate, 6 Gamma Rays, 7 Electrocute, 8 the
+/// exempt spell, 9 Zap, 10 the kind 2 spell and 11 the slow spell.
+pub fn abilities() -> List(Spell4BaseId) {
+  list.map(
+    [
+      19_102, 19_022, 19_019, 38_017, 23_173, 20_325, 16_322, 25_473, 1, 25_635,
+      2, 3,
+    ],
+    Spell4BaseId,
+  )
 }
 
+/// The plans of the abilities above: the client's trees as `spell_plan.build`
+/// makes them from the planted rows (`spell_tables`, each value the client's own
+/// row), and the three planted spells by hand.
 pub fn plans() -> Plans {
-  dict.from_list(
-    list.map(spells(), fn(spell) { #({ spell.spell4_base_id }.value, spell) }),
-  )
+  let assert Ok(built) =
+    spell_tables.with_loaded(rows: spell_tables.rows(), body: fn(tables) {
+      spell_plan.build(tables:)
+    })
+    as "the planted spell rows build"
+  list.fold([exempt(), blocked_only(), slow()], built, fn(plans, spell) {
+    dict.insert(plans, spell.spell4_base_id.value, spell)
+  })
 }
 
 /// The player 7 with the abilities above and its weapon, seen by the connections
@@ -294,7 +116,7 @@ pub fn caster() -> Caster {
   cast.Caster(
     unit_id: 7,
     place:,
-    abilities: list.map(spells(), fn(spell) { spell.spell4_base_id }),
+    abilities: abilities(),
     weapon: Some(Item2Id(81_351)),
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
   )
@@ -313,15 +135,7 @@ pub fn press_body(
   target target: Int,
   press press: Int,
 ) -> BitArray {
-  let assert Ok(body) =
-    cast_ability.encode(CastAbility(
-      client_cast_id:,
-      bag_index:,
-      target_unit_id: target,
-      press:,
-    ))
-    as "the press fits the message"
-  body
+  game_client.press_body(client_cast_id:, bag_index:, target:, press:)
 }
 
 /// The body of the client's 0x801 (opcode.0x801): the server's cast id, the
