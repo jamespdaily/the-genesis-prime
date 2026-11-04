@@ -7,6 +7,7 @@ import glance.{type Expression, type Statement}
 import gleam/bit_array
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 
 /// The parsed module. A file that does not parse stops the test with the
@@ -105,6 +106,58 @@ pub fn references(module: glance.Module) -> List(Reference) {
       | glance.Case(..)
       | glance.BinaryOperator(..)
       | glance.Echo(..) -> []
+    }
+  })
+}
+
+/// Where the reference is written.
+pub fn location_of(reference: Reference) -> glance.Span {
+  case reference {
+    Qualified(location:, ..) -> location
+    Unqualified(location:, ..) -> location
+  }
+}
+
+/// Every reference in the module's functions to one of the named functions of
+/// the named modules, however the module imports them: through the module's
+/// last segment or its alias, or by an unqualified import (under its alias if
+/// it has one). A module imported `as _` is named no way.
+pub fn references_to(
+  module module: glance.Module,
+  from modules: List(String),
+  named functions: List(String),
+) -> List(Reference) {
+  let imports =
+    list.filter_map(module.imports, fn(definition) {
+      case list.contains(modules, definition.definition.module) {
+        True -> Ok(definition.definition)
+        False -> Error(Nil)
+      }
+    })
+  let qualifiers =
+    list.filter_map(imports, fn(import_) {
+      case import_.alias {
+        None ->
+          Ok(
+            import_.module
+            |> string.split("/")
+            |> list.last
+            |> result.unwrap(import_.module),
+          )
+        Some(glance.Named(name)) -> Ok(name)
+        Some(glance.Discarded(_)) -> Error(Nil)
+      }
+    })
+  let unqualified =
+    imports
+    |> list.flat_map(fn(import_) { import_.unqualified_values })
+    |> list.filter(fn(value) { list.contains(functions, value.name) })
+    |> list.map(fn(value) { option.unwrap(value.alias, value.name) })
+  list.filter(references(module), fn(reference) {
+    case reference {
+      Qualified(qualifier:, name:, ..) ->
+        list.contains(qualifiers, qualifier) && list.contains(functions, name)
+      Unqualified(name:, ..) -> list.contains(unqualified, name)
     }
   })
 }
