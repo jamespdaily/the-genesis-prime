@@ -118,16 +118,15 @@ pub fn shared_with_spell_trees() -> store.Tables {
 /// press only with this one. Loaded once under a key of its own.
 pub fn shared_with_row_43_for_the_dead() -> store.Tables {
   database_support.once("character_tables_row_43_for_the_dead", fn() {
-    load_files(novice_tables.with_creature_attack(
-      files: files_replacing(
-        schema: spell4_conditions.schema,
-        rows: spell_tables.spell4_conditions_rows_of(masks: [
-          #(1, 225),
-          #(4, 0),
-          #(43, 1248),
-        ]),
-      ),
-      padding: False,
+    // No creature attack rows: their Spell4Effects table of over a megabyte is the
+    // shared load's alone (`novice_tables.with_creature_attack`).
+    load_files(files_replacing(
+      schema: spell4_conditions.schema,
+      rows: spell_tables.spell4_conditions_rows_of(masks: [
+        #(1, 225),
+        #(4, 0),
+        #(43, 1248),
+      ]),
     ))
   })
 }

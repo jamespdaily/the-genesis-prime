@@ -6791,7 +6791,9 @@ fn medic_of(tables: table_store.Tables) -> game_connection.State {
 }
 
 pub fn a_dead_players_press_of_an_ability_without_the_dead_bit_is_taken_as_the_livings_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(60_000)
+  // A test whose first use loads a set of planted tables of its own: the
+  // deadline is a hang guard, the load alone can take most of 10 s.
   // The client checks only bit 0 of the caster row: without it, it sends the
   // press of a dead caster (cast.dead_player); the planted row 43 lacks it.
   let living = medic_of(character_tables.shared_with_row_43_for_the_dead())
@@ -7117,7 +7119,9 @@ pub fn what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_
 }
 
 pub fn the_holocrypt_of_a_world_with_no_start_of_the_race_and_faction_is_the_place_the_stay_entered_at_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(60_000)
+  // A test whose first use loads a set of planted tables of its own: the
+  // deadline is a hang guard, the load alone can take most of 10 s.
   // The planted Novice start of the tests' race and faction stands in World 0
   // here, so World 3460 holds none: the server's choice is the place the stay
   // entered at (death.server_choices).
