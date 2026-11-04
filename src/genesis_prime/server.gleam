@@ -111,6 +111,7 @@ import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell as connection_shell
+import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off
@@ -125,6 +126,7 @@ import genesis_prime/store/worker.{type Job}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/creature_registry.{type CreatureRegistry}
 import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map
@@ -191,9 +193,6 @@ pub type World {
     creature_supervisor: Name(creature_supervisor.CreatureSupervisor),
     /// How long a creature has to stop.
     creature_shutdown_ms: Int,
-    /// How long a spawn whose creature crashed waits before a creature is
-    /// started there again.
-    creature_restart_ms: Int,
     /// How long a creature that no player sees keeps running, and how often
     /// each map looks for one: the idle stop and the sweep of the map's rule.
     idle_stop_ms: Int,
@@ -617,7 +616,7 @@ pub fn add_world(
             realm_id:,
             tables:,
             spawns: content_spawn.world(world.spawns, start.map.world_id),
-            creature_restart_ms: world.creature_restart_ms,
+            kinds: content_creature_kind.kinds(world.spawns),
             idle_stop_ms: world.idle_stop_ms,
             sweep_ms: world.sweep_ms,
           ),
@@ -709,7 +708,14 @@ fn start_creature_process(
       ))
     Ok(found) ->
       service_shell.start_unnamed(service_shell.Settings(
-        rule: creature.rule(creature: wanted, spawn: found),
+        rule: creature.rule(
+          creature: wanted,
+          spawn: found,
+          kind: creature_kind.kind_of(
+            kinds: content_creature_kind.kinds(world.spawns),
+            creature2_id: { found.creature_id }.value,
+          ),
+        ),
         reach: creature_reach(world:, reach:, to_connection:, start:),
         shutdown_ms: world.creature_shutdown_ms,
         told_through: Some(creature_registry.scope(world.creatures)),

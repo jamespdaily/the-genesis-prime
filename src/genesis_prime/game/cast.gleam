@@ -133,13 +133,23 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cancel_cast
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_result
+import genesis_prime/message/combat_result
 import genesis_prime/message/float32
+import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
+import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
+import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
+import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_finished.{SpellFinished}
 import genesis_prime/message/spell_go.{type SpellGo, SpellGo}
+import genesis_prime/message/spell_miss.{SpellMiss}
+import genesis_prime/message/spell_missed.{type SpellMissed, SpellMissed}
 import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
 import genesis_prime/message/spell_started.{type SpellStarted, SpellStarted}
+import genesis_prime/message/spell_target_info.{
+  type SpellTargetInfo, SpellTargetInfo,
+}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, LogDebug, LogInfo,
   LogWarning, TimerId,
@@ -443,6 +453,7 @@ fn press_of(
         spell:,
         root: spell.spell4_id,
         parent: None,
+        primary_target: caster.unit_id,
         client_cast_id: Some(client_cast_id),
       )
     Refuse(result:) -> #(cast, [
@@ -651,8 +662,8 @@ pub fn timer_fired(
       let cast = State(..cast, timers: dict.delete(cast.timers, timer))
       let now_ms = now.monotonic_ms
       case due {
-        Go(cast_id:, phase:) -> go(cast:, caster:, now_ms:, cast_id:, phase:)
-        StartChild(root:, parent:, proxy:, ..) ->
+        Go(cast_id:, phase:) -> asked(cast:, cast_id:, phase:)
+        StartChild(root:, parent:, proxy:, primary_target:) ->
           start(
             cast:,
             caster:,
@@ -660,6 +671,7 @@ pub fn timer_fired(
             spell: proxy.spell,
             root:,
             parent: Some(parent),
+            primary_target:,
             client_cast_id: None,
           )
         StartHeld ->
@@ -694,7 +706,27 @@ pub fn went(
   phase phase: Int,
   struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
-  unbuilt(inputs: #(cast, caster, now, cast_id, phase, struck))
+  go(cast:, caster:, now_ms: now.monotonic_ms, cast_id:, phase:, struck:)
+}
+
+/// A go of a live cast is asked: the connection selects its targets and strikes them,
+/// and answers with `went` when the round closes. A cast that is not live has no go.
+fn asked(
+  cast cast: State,
+  cast_id cast_id: Int,
+  phase phase: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.casts, cast_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(live) -> #(cast, [
+      Strike(asked: GoAsked(
+        cast_id:,
+        phase:,
+        spell4_id: live.spell.spell4_id,
+        primary_target: live.primary_target,
+      )),
+    ])
+  }
 }
 
 /// The player left the world with casts live: every timer is cancelled and
@@ -722,6 +754,7 @@ fn start(
   spell spell: Spell,
   root root: Spell4Id,
   parent parent: Option(Spell4Id),
+  primary_target primary_target: Int,
   client_cast_id client_cast_id: Option(Int),
 ) -> #(State, List(Effect)) {
   let id =
@@ -749,16 +782,9 @@ fn start(
         }
       }
     })
-  let start_message = started_message(id:, spell:, root:, parent:, caster:)
-  let live =
-    Live(
-      spell:,
-      root:,
-      parent:,
-      primary_target: caster.unit_id,
-      audience:,
-      gone: 0,
-    )
+  let start_message =
+    started_message(id:, spell:, root:, parent:, primary_target:, caster:)
+  let live = Live(spell:, root:, parent:, primary_target:, audience:, gone: 0)
   let global_ends = case spell.global_cooldown.starts_for_ms {
     Some(wait_ms) -> Some(now_ms + wait_ms)
     None -> cast.global_cooldown_ends_ms
@@ -789,35 +815,49 @@ fn start(
   let opening = [Send(frame: to_caster), ..list.append(told, timer_effects)]
   case go_times {
     [0, ..] -> {
-      let #(cast, going) = go(cast:, caster:, now_ms:, cast_id: id, phase: 0)
+      let #(cast, going) = asked(cast:, cast_id: id, phase: 0)
       #(cast, list.append(opening, going))
     }
     _ -> #(cast, opening)
   }
 }
 
-/// The go of phase `phase` of a live cast: 0x7f4 to the caster and the audience,
-/// the spell's own cooldown at its first go, the current cast cleared at the go
-/// of a Normal cast, the Proxies of the phase, and the finish after the last go.
-/// A cast that is not live has no go.
+/// The go of phase `phase` of a live cast, with the units its round struck: 0x7f4 to
+/// the caster and the audience, then the 0x7fb of the deflected ones (the client
+/// accepts either order and drops a miss after the finish, `cast.miss_order`), the
+/// spell's own cooldown at its first go, the current cast cleared at the go of a
+/// Normal cast, the Proxies of the phase, and the finish after the last go. A cast
+/// that is not live has no go.
 fn go(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
   cast_id cast_id: Int,
   phase phase: Int,
+  struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id) {
     Error(Nil) -> #(cast, [])
     Ok(live) -> {
       let spell = live.spell
-      let go_message = go_message(cast_id:, phase:, caster:)
-      let going = [
-        Send(frame: went_frame(go: go_message)),
-        ..list.map(sorted(live.audience), fn(viewer) {
-          Tell(to: viewer, news: client_connection.CastWent(go: go_message))
-        })
-      ]
+      let go_message = go_message(cast_id:, phase:, caster:, struck:)
+      let missed = missed_message(cast_id:, struck:)
+      let going =
+        list.flatten([
+          [Send(frame: went_frame(go: go_message))],
+          list.map(sorted(live.audience), fn(viewer) {
+            Tell(to: viewer, news: client_connection.CastWent(go: go_message))
+          }),
+          case missed {
+            Some(missed) -> [
+              Send(frame: missed_frame(missed:)),
+              ..list.map(sorted(live.audience), fn(viewer) {
+                Tell(to: viewer, news: client_connection.CastMissed(missed:))
+              })
+            ]
+            None -> []
+          },
+        ])
       let running =
         dict.get(cast.cooldown_ends_ms, spell.spell4_id.value)
         |> result.map(fn(ends_ms) { ends_ms > now_ms })
@@ -859,7 +899,8 @@ fn go(
           #(cast, []),
           fn(so_far, proxy) {
             let #(cast, effects) = so_far
-            let #(cast, more) = child(cast:, caster:, now_ms:, live:, proxy:)
+            let #(cast, more) =
+              children(cast:, caster:, now_ms:, live:, proxy:, struck:)
             #(cast, list.append(effects, more))
           },
         )
@@ -874,14 +915,43 @@ fn go(
   }
 }
 
-/// A Proxy of a go: the child starts at once for no delay, else after it from a
-/// timer of its own; a Proxy behind a prerequisite is not started.
+/// A Proxy of a go: a Proxy aimed at the area starts one child for each Hit unit of
+/// the round and none for a deflect, any other starts one on the caster.
+fn children(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  live live: Live,
+  proxy proxy: Proxy,
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  let targets = case proxy.target {
+    spell_plan.OnCaster -> [caster.unit_id]
+    spell_plan.OnEachStruck ->
+      list.filter_map(struck, fn(one) {
+        case one {
+          Hit(unit_id:, ..) -> Ok(unit_id)
+          Deflected(..) -> Error(Nil)
+        }
+      })
+  }
+  list.fold(targets, #(cast, []), fn(so_far, primary_target) {
+    let #(cast, effects) = so_far
+    let #(cast, more) =
+      child(cast:, caster:, now_ms:, live:, proxy:, primary_target:)
+    #(cast, list.append(effects, more))
+  })
+}
+
+/// One child of a Proxy: it starts at once for no delay, else after it from a timer
+/// of its own; a Proxy behind a prerequisite is not started.
 fn child(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
   live live: Live,
   proxy proxy: Proxy,
+  primary_target primary_target: Int,
 ) -> #(State, List(Effect)) {
   case proxy.condition {
     spell_plan.NeedsPrerequisite(..) -> #(cast, [
@@ -902,6 +972,7 @@ fn child(
             spell: proxy.spell,
             root: live.root,
             parent: Some(live.spell.spell4_id),
+            primary_target:,
             client_cast_id: None,
           )
         True -> {
@@ -915,7 +986,7 @@ fn child(
                 StartChild(
                   root: live.root,
                   parent: live.spell.spell4_id,
-                  primary_target: live.primary_target,
+                  primary_target:,
                   proxy:,
                 ),
               ),
@@ -999,6 +1070,7 @@ fn started_message(
   spell spell: Spell,
   root root: Spell4Id,
   parent parent: Option(Spell4Id),
+  primary_target primary_target: Int,
   caster caster: Caster,
 ) -> SpellStarted {
   SpellStarted(
@@ -1011,7 +1083,7 @@ fn started_message(
     },
     caster_unit_id: caster.unit_id,
     field_6: 0,
-    primary_target_unit_id: caster.unit_id,
+    primary_target_unit_id: primary_target,
     position: position_of(place: caster.place),
     yaw: yaw_of(place: caster.place),
     initial_positions: [],
@@ -1021,18 +1093,29 @@ fn started_message(
   )
 }
 
-/// 0x7f4 for a go with no target, no position and no missile
-/// (`opcode.0x7f4`, `spell.empty_lists`).
+/// 0x7f4 for a go: a target info for each Hit unit in the order of the round, with
+/// target flags 0 (`opcode.0x7f4.target_info`), each with the damage that landed, no
+/// position and no missile (`opcode.0x7f4`, `spell.empty_lists`). A deflected unit has
+/// no info: the 0x7fb shows it.
 fn go_message(
   cast_id cast_id: Int,
   phase phase: Int,
   caster caster: Caster,
+  struck struck: List(Struck),
 ) -> SpellGo {
   SpellGo(
     cast_id:,
     ignore_cooldown: 0,
     destination: position_of(place: caster.place),
-    targets: [],
+    targets: list.filter_map(struck, fn(one) {
+      case one {
+        Hit(unit_id:, descriptions:) -> Ok(#(unit_id, descriptions))
+        Deflected(..) -> Error(Nil)
+      }
+    })
+      |> list.index_map(fn(hit, index) {
+        target_info(index:, unit_id: hit.0, descriptions: hit.1)
+      }),
     initial_positions: [],
     telegraph_positions: [],
     missiles: [],
@@ -1116,8 +1199,68 @@ pub fn describe(refusal refusal: Refusal) -> String {
   }
 }
 
-/// The body of a function the shape names and the build writes: the arguments
-/// are used, and the call stops.
-fn unbuilt(inputs _inputs: inputs) -> output {
-  panic as "not built: the shape holds the types"
+/// One struck unit's info in a go: its place in the list, target flags 0
+/// (`opcode.0x7f4.target_info`), the combat result of the strike, and an effect
+/// info for each landed blow with its damage description and delay. The instance
+/// count and the effects' instance ids number from 1 (kept by the client, no reader
+/// traced).
+fn target_info(
+  index index: Int,
+  unit_id unit_id: Int,
+  descriptions descriptions: List(hit.Description),
+) -> SpellTargetInfo {
+  SpellTargetInfo(
+    unit_id:,
+    index:,
+    flags: 0,
+    instance_count: 1,
+    combat_result: case
+      list.any(descriptions, fn(description) {
+        description.damage.combat_result == combat_result.Critical
+      })
+    {
+      True -> combat_result.Critical
+      False -> combat_result.Hit
+    },
+    effects: list.index_map(descriptions, fn(description, effect_index) {
+      SpellEffectInfo(
+        spell4_effects_id: description.spell4_effects_id,
+        instance_id: effect_index + 1,
+        delay_ms: description.delay_ms,
+        field_4: 0,
+        result: spell_effect_result.Damage(SpellEffectDamage(
+          description: description.damage,
+        )),
+      )
+    }),
+  )
+}
+
+/// 0x7fb for the deflected units of a go, or none when none was deflected: each
+/// entry has reason 0 (Dodge, which the client shows as Deflect) and time 0
+/// (`opcode.0x7fb`, `opcode.0x7fb.time`).
+fn missed_message(
+  cast_id cast_id: Int,
+  struck struck: List(Struck),
+) -> Option(SpellMissed) {
+  case
+    list.filter_map(struck, fn(one) {
+      case one {
+        Deflected(unit_id:) ->
+          Ok(SpellMiss(unit_id:, reason: miss_reason.Dodge, time_ms: 0))
+        Hit(..) -> Error(Nil)
+      }
+    })
+  {
+    [] -> None
+    misses -> Some(SpellMissed(cast_id:, misses:))
+  }
+}
+
+/// 0x07FB for a cast whose targets were missed, written by the caster's rule and by
+/// each viewer's connection the same way.
+pub fn missed_frame(missed missed: SpellMissed) -> Frame {
+  let assert Ok(body) = spell_missed.encode(missed)
+    as "a cast id of 32 bits, a unit id of 32 and a reason of 4 fit the message"
+  Frame(message_id: spell_missed.message_id, body:)
 }

@@ -54,18 +54,6 @@ avoid_panic = "off"
 # `get` and `all`. Only the registry and the tests call them until an engine
 # does, which is no defect in generated code.
 "src/genesis_prime/table/*.gleam" = ["unused_exports"]
-# The strike step's rules are called through bodies that are written after the
-# shape is reviewed, so until then only their tests call them; this entry goes
-# with the build commit.
-"src/genesis_prime/game/area.gleam" = ["unused_exports"]
-"src/genesis_prime/game/damage.gleam" = ["unused_exports"]
-"src/genesis_prime/game/hit.gleam" = ["unused_exports"]
-"src/genesis_prime/game/rating.gleam" = ["unused_exports"]
-"src/genesis_prime/game/shown.gleam" = ["unused_exports"]
-"src/genesis_prime/game/spell_area.gleam" = ["unused_exports"]
-"src/genesis_prime/game/strike.gleam" = ["unused_exports"]
-"src/genesis_prime/message/spell_missed.gleam" = ["unused_exports"]
-"src/genesis_prime/world_map/spawn.gleam" = ["unused_exports"]
 # OTP calls the application's `start` and `stop` by the names in the application
 # file, which the lint does not see.
 "src/genesis_prime/application.gleam" = ["unused_exports"]

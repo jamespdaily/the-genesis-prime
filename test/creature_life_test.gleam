@@ -14,7 +14,7 @@
 ////   stands stops at once; at its respawn a creature that was told to retire ends
 ////   and any other stands again at full health (`death.creature_respawn`).
 
-import genesis_prime/game/hit.{Blow, Defence, Offence, Rolls}
+import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused, Strike,
 }
@@ -24,15 +24,10 @@ import genesis_prime/world_map/creature_life.{
 }
 import gleam/option.{None, Some}
 import owned_test
+import spawn_support
 
 fn beast() -> creature_life.Body {
-  Body(
-    max_health: 52,
-    hit_radius: 3.0,
-    levels: #(0, 0),
-    defence: Defence(deflect_chance: 0.016),
-    respawn_ms: 60_000,
-  )
+  Body(max_health: 52, combat: spawn_support.beast_combat(), respawn_ms: 60_000)
 }
 
 /// A strike of one blow of `damage`, which no roll turns into a critical hit or a
@@ -49,12 +44,13 @@ fn strike_of(
       blows: [Blow(spell4_effects_id: 1, damage_type: 3, damage:, delay_ms: 0)],
       crit_chance: 0.0,
       crit_severity: 1.5,
+      strikethrough: 0.0,
     ),
     rolls:,
   )
 }
 
-const no_luck = Rolls(crit: 0.5, deflect: 0.5)
+const no_luck = Rolls(crit: 0.5, deflect: 0.5, glance: 0.5)
 
 pub fn a_hit_that_leaves_health_sends_the_new_health_and_no_death_test() -> Nil {
   use <- owned_test.run(5000)
@@ -130,7 +126,7 @@ pub fn a_deflected_strike_changes_no_health_and_sends_no_news_test() -> Nil {
       body: beast(),
       strike: strike_of(
         damage: 18,
-        rolls: Rolls(crit: 0.5, deflect: 0.01),
+        rolls: Rolls(crit: 0.5, deflect: 0.01, glance: 0.5),
         cast_id: 1,
       ),
     )

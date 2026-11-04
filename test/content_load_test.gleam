@@ -16,11 +16,13 @@ import character_tables
 import database_support
 import genesis_prime
 import genesis_prime/content
+import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/migration
 import genesis_prime/readiness
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_kind
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
@@ -105,6 +107,48 @@ pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> 
     as "migration 0008's 27 Virtual Defense Daguns, the only spawns the template holds"
   assert dict.size(content_spawn.world(key:, world_id: 22).by_id) == 0
     as "a World row with no spawn that starts has an empty term"
+}
+
+pub fn the_load_puts_the_kinds_in_a_term_the_default_row_is_the_60_second_choice_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  change(
+    database,
+    "insert into creature_kind (creature_id, respawn_ms, source, reason) values (73464, 5000, 'server_choice', 'a short respawn for the training Beast')",
+  )
+  let #(loaded, key) = load(database:)
+  assert loaded == Ok(Nil)
+  let kinds = content_creature_kind.kinds(key:)
+  assert creature_kind.kind_of(kinds:, creature2_id: 73_464).respawn_ms == 5000
+    as "a creature with a row of its own takes it"
+  assert creature_kind.kind_of(kinds:, creature2_id: 73_465).respawn_ms
+    == 60_000
+    as "any other creature takes the default row of migration 0009 (death.creature_respawn)"
+}
+
+pub fn a_database_with_no_default_kind_stops_the_load_naming_the_table_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  change(database, "delete from creature_kind where creature_id = 0")
+  let #(loaded, _key) = load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "no default row stops the start"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.id) })
+    == [#("creature_kind", 0)]
+}
+
+pub fn a_kind_row_for_a_creature_the_client_does_not_hold_stops_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  change(
+    database,
+    "insert into creature_kind (creature_id, respawn_ms, source, reason) values (200001, 5000, 'server_choice', 'a creature the client does not hold')",
+  )
+  let #(loaded, _key) = load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a refused kind row stops the start"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.id) })
+    == [#("creature_kind", 200_001)]
 }
 
 pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil {

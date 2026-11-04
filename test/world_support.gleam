@@ -41,12 +41,12 @@ pub fn creature_pids(world world: World) -> List(Pid) {
 
 /// A world whose maps stand a creature at each of the spawns a player sees: the
 /// spawns are put in the world's term (World 3460's), a spawn returns
-/// `creature_restart_ms` after its creature crashed, a creature that no player has
+/// `respawn_ms` after its creature crashed, a creature that no player has
 /// seen for `idle_stop_ms` stops at the next sweep, and the sweep runs every
 /// `sweep_ms`.
 pub fn start(
   spawns spawns: List(Spawn),
-  creature_restart_ms creature_restart_ms: Int,
+  respawn_ms respawn_ms: Int,
   idle_stop_ms idle_stop_ms: Int,
   sweep_ms sweep_ms: Int,
 ) -> World {
@@ -54,7 +54,7 @@ pub fn start(
   let connections = registry.new()
   let creatures = creature_registry.new()
   let creature_supervisor = process.new_name("creature_supervisor")
-  let key = spawn_support.key_with(spawns:)
+  let key = spawn_support.key_with(spawns:, respawn_ms:)
   let world =
     server.World(
       maps:,
@@ -64,7 +64,6 @@ pub fn start(
       creatures:,
       creature_supervisor:,
       creature_shutdown_ms: 1000,
-      creature_restart_ms:,
       idle_stop_ms:,
       sweep_ms:,
       spawns: key,

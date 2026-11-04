@@ -147,12 +147,14 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, Unwatched, Watched}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn
 import gleam/bit_array
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -1298,7 +1300,7 @@ fn map_with_four_players() -> map.State {
       realm_id: settings().realm_id,
       tables: settings().tables,
       spawns: spawn.no_spawns(),
-      creature_restart_ms: 60_000,
+      kinds: Kinds(default: Kind(respawn_ms: 60_000), by_creature: dict.new()),
       idle_stop_ms: 60_000,
       sweep_ms: 10_000,
     ))
@@ -5304,10 +5306,21 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     creature_unit.create(
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       unit_id: 40,
+      health: 52,
       server_time_estimate_start: 0,
     )
+  let beast = spawn_support.battle_beast(number: 1, x: 0.0)
   let appears =
-    sent_by_a_peer(news_of(unit_id: 40, news: CreatureAppeared(creature)))
+    sent_by_a_peer(news_of(
+      unit_id: 40,
+      news: CreatureAppeared(
+        unit: creature,
+        life: 4,
+        place: beast.place,
+        hit_radius: beast.combat.hit_radius,
+        attackable: beast.combat.attackable,
+      ),
+    ))
   let #(state, taken) = feed(in_world(), appears)
   let assert [Frame(message_id: 0x0262, body:)] = heard(taken, keyed())
     as "a creature's 0x262 is written as the creature's process sent it"

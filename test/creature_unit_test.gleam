@@ -13,6 +13,7 @@ import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import message_support
 import owned_test
+import spawn_support
 
 pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -> Nil {
   use <- owned_test.run(5000)
@@ -37,10 +38,12 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       base_faction_id: 1441,
       display_info_id: 26_565,
       outfit_info_id: 0,
+      combat: spawn_support.beast_combat(),
     )
   assert unit_create_creature.encode(creature_unit.create(
       spawn: beast,
       unit_id: 0x1001,
+      health: 52,
       server_time_estimate_start: 0,
     ))
     == Ok(message_support.hex(

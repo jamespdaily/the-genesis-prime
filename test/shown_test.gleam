@@ -11,13 +11,18 @@
 
 import genesis_prime/game/area.{Candidate, Point}
 import genesis_prime/game/shown.{Dominion, Exile, ShownCreature, ShownPlayer}
+import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
 import gleam/dict
 import owned_test
 import place_support
 
+const both = Attackable(exile: True, dominion: True)
+
+const not_exiles = Attackable(exile: False, dominion: True)
+
 fn creature(
   x x: Float,
-  levels levels: #(Int, Int),
+  attackable attackable: Attackable,
   alive alive: Bool,
 ) -> shown.Shown {
   ShownCreature(
@@ -31,18 +36,18 @@ fn creature(
     life: 4,
     alive:,
     hit_radius: 3.0,
-    levels:,
+    attackable:,
   )
 }
 
 fn picture() -> shown.Picture {
   dict.from_list([
-    #(1, creature(x: 1.0, levels: #(0, 0), alive: True)),
-    #(2, creature(x: 2.0, levels: #(0, 0), alive: False)),
+    #(1, creature(x: 1.0, attackable: both, alive: True)),
+    #(2, creature(x: 2.0, attackable: both, alive: False)),
     #(3, ShownPlayer),
-    #(4, creature(x: 4.0, levels: #(10, 0), alive: True)),
-    #(5, creature(x: 5.0, levels: #(5, 5), alive: True)),
-    #(7, creature(x: 7.0, levels: #(0, 0), alive: True)),
+    #(4, creature(x: 4.0, attackable: not_exiles, alive: True)),
+    #(5, creature(x: 5.0, attackable: both, alive: True)),
+    #(7, creature(x: 7.0, attackable: both, alive: True)),
   ])
 }
 
@@ -53,7 +58,7 @@ pub fn only_alive_hostile_or_neutral_creatures_other_than_the_caster_are_candida
       Candidate(unit_id: 1, at: Point(x: 1.0, z: -3.0), hit_radius: 3.0),
       Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0),
     ]
-    as "unit 2 is dead, 3 is a player, 4 is Friendly to Exiles (level 10), 7 is the caster; the Neutral unit 5 (level 5) is struck"
+    as "unit 2 is dead, 3 is a player, 4 is Friendly to Exiles (Friendly to Exiles), 7 is the caster; the Neutral unit 5 is struck"
 }
 
 pub fn the_faction_level_read_is_the_casters_own_test() -> Nil {
@@ -66,7 +71,7 @@ pub fn the_faction_level_read_is_the_casters_own_test() -> Nil {
       Candidate(unit_id: 4, at: Point(x: 4.0, z: -3.0), hit_radius: 3.0),
       Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0),
     ]
-    as "the second level of a creature is its level toward the Dominion: unit 4 is hostile to it"
+    as "the creature's news says whom it may be attacked by: unit 4 may be attacked by the Dominion"
 }
 
 pub fn a_creature_marked_dead_by_its_news_is_no_longer_a_candidate_test() -> Nil {

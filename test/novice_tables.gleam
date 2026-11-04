@@ -33,11 +33,15 @@ import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_telegraph
+import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
+import genesis_prime/table/telegraph_damage
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -692,6 +696,12 @@ pub fn creature_level_rows() -> List(List(Cell)) {
       #("unitPropertyValue07", Float(pair.1)),
     ])
   })
+  |> list.append([
+    planted_table.row(creature_level.schema, [
+      #("ID", Integer(101)),
+      #("unitPropertyValue01", Float(0.05)),
+    ]),
+  ])
 }
 
 /// The planted SpellLevel rows: id, class, level, prerequisite and Spell4 id.
@@ -755,12 +765,72 @@ pub fn spell4_ids_and_bases() -> List(#(Int, Int)) {
   ]
 }
 
+/// Paralytic Surge's Spell4AoeTargetConstraints row: 173 (`Spell4.42352.area`).
+const paralytic_surge_area = 173
+
+/// The planted Spell4Effects row of Paralytic Surge's damage: the client's row 96125
+/// (Tech damage, aimed at the area, in every phase: 0.0935 Assault Power + 0.0935
+/// Support Power + 8.14 per level, dataBits00 the float 1.0), the one spell the
+/// loadout's tests strike with, so a bot can kill a planted creature.
+pub fn spell4_effects_rows() -> List(List(Cell)) {
+  [
+    planted_table.row(spell4_effects.schema, [
+      #("ID", Integer(96_125)),
+      #("spellId", Integer(42_352)),
+      #("targetFlags", Integer(4)),
+      #("effectType", Integer(8)),
+      #("damageType", Integer(2)),
+      #("delayTime", Integer(0)),
+      #("phaseFlags", Integer(-1)),
+      #("dataBits00", Integer(1_065_353_216)),
+      #("parameterType00", Integer(12)),
+      #("parameterType01", Integer(13)),
+      #("parameterType02", Integer(10)),
+      #("parameterValue00", Float(0.09350000321865082)),
+      #("parameterValue01", Float(0.09350000321865082)),
+      #("parameterValue02", Float(8.140000343322754)),
+    ]),
+  ]
+}
+
+/// The planted Spell4AoeTargetConstraints row 173 (`Spell4.42352.area`): 5 units, 0 to
+/// 15 m, 180 degrees, Closest.
+pub fn spell4_aoe_target_constraints_rows() -> List(List(Cell)) {
+  [
+    planted_table.row(spell4_aoe_target_constraints.schema, [
+      #("ID", Integer(paralytic_surge_area)),
+      #("angle", Float(180.0)),
+      #("targetCount", Integer(5)),
+      #("minRange", Float(0.0)),
+      #("maxRange", Float(15.0)),
+      #("targetSelection", Integer(1)),
+    ]),
+  ]
+}
+
+/// The planted Spell4ValidTargets row 1: bitmask 0, the alive (`Spell4ValidTargets.targetBitmask`).
+pub fn spell4_valid_targets_rows() -> List(List(Cell)) {
+  [
+    planted_table.row(spell4_valid_targets.schema, [
+      #("ID", Integer(1)),
+      #("targetBitmask", Integer(0)),
+    ]),
+  ]
+}
+
 /// The planted Spell4 rows.
 pub fn spell4_rows() -> List(List(Cell)) {
   list.map(spell4_ids_and_bases(), fn(pair) {
     planted_table.row(spell4.schema, [
       #("ID", Integer(pair.0)),
       #("spell4BaseIdBaseSpell", Integer(pair.1)),
+      #(
+        "spell4AoeTargetConstraintsId",
+        Integer(case pair.0 {
+          42_352 -> paralytic_surge_area
+          _ -> 0
+        }),
+      ),
     ])
   })
 }
@@ -770,7 +840,16 @@ pub fn spell4_rows() -> List(List(Cell)) {
 /// child.
 pub fn spell4_base_rows() -> List(List(Cell)) {
   list.map(spell4_ids_and_bases(), fn(pair) {
-    planted_table.row(spell4_base.schema, [#("ID", Integer(pair.1))])
+    planted_table.row(spell4_base.schema, [
+      #("ID", Integer(pair.1)),
+      #(
+        "spell4ValidTargetId",
+        Integer(case pair.0 {
+          42_352 -> 1
+          _ -> 0
+        }),
+      ),
+    ])
   })
 }
 
@@ -788,7 +867,14 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(creature_level.schema, creature_level_rows()),
     planted_table.file(spell4.schema, spell4_rows()),
     planted_table.file(spell4_base.schema, spell4_base_rows()),
-    planted_table.file(spell4_effects.schema, []),
+    planted_table.file(spell4_effects.schema, spell4_effects_rows()),
+    planted_table.file(
+      spell4_aoe_target_constraints.schema,
+      spell4_aoe_target_constraints_rows(),
+    ),
+    planted_table.file(spell4_telegraph.schema, []),
+    planted_table.file(telegraph_damage.schema, []),
+    planted_table.file(spell4_valid_targets.schema, spell4_valid_targets_rows()),
     planted_table.file(spell_phase.schema, []),
     planted_table.file(spell_cool_down.schema, []),
     planted_table.file(class.schema, []),

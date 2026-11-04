@@ -1,7 +1,8 @@
 //// The content tables: data the server owns, kept in Postgres and loaded once at
 //// start into persistent terms. Behaviour stays in code (rules, the client's
 //// formulas, message layouts, client facts); `spawn` is the first content table
-//// (genesis_prime/content/spawn) and every later one follows the same pattern.
+//// (genesis_prime/content/spawn), `creature_kind` the second
+//// (genesis_prime/content/creature_kind), and every later one follows the same pattern.
 ////
 //// - **Where a row comes from.** Every content table has `source` (a row of the
 ////   `content_source` table: `world_database`, `retail_record`, `server_choice`,
@@ -67,14 +68,17 @@
 //// | several rows are refused | every refusal is logged, then the start stops |
 //// | a query fails | the start stops with the database's reason |
 
+import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/rating
 import genesis_prime/migration.{type Migration}
 import genesis_prime/readiness
 import genesis_prime/step
 import genesis_prime/step/runtime
 import genesis_prime/store/worker
 import genesis_prime/table/loader/store.{type Key}
+import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
 import gleam/erlang/process
@@ -147,8 +151,23 @@ fn read(
       )
     }),
   )
-  let selection = spawn.select(rows:, tables:)
-  case selection.refusals {
+  use kind_rows <- result.try(
+    content_creature_kind.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_creature_kind.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
+  let selection =
+    spawn.select(rows:, tables:, formulas: rating.formulas(tables:))
+  let kinds = creature_kind.select(rows: kind_rows, tables:)
+  let kind_refusals = case kinds {
+    Ok(..) -> []
+    Error(refusals) -> refusals
+  }
+  case list.append(selection.refusals, kind_refusals) {
     [] -> {
       list.each(selection.coverage, fn(coverage) {
         runtime.log(
@@ -159,6 +178,10 @@ fn read(
       })
       log_levels_out_of_range(selection)
       content_spawn.put(key:, selection:)
+      case kinds {
+        Ok(kinds) -> content_creature_kind.put(key:, kinds:)
+        Error(..) -> Nil
+      }
       Ok(Nil)
     }
     refusals -> {

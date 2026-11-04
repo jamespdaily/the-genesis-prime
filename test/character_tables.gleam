@@ -66,6 +66,7 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
+import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
@@ -180,11 +181,17 @@ fn creature_files() -> List(#(String, BitArray)) {
       ),
     ]),
     planted_table.file(creature2_arche_type.schema, [
-      multiplier_row(schema: creature2_arche_type.schema, id: 1, value: 1.0),
+      multiplier_row(
+        schema: creature2_arche_type.schema,
+        id: 1,
+        value: 1.0,
+        deflect: 1.0,
+      ),
       multiplier_row(
         schema: creature2_arche_type.schema,
         id: 10,
         value: 0.9599999785423279,
+        deflect: 1.0,
       ),
     ]),
     planted_table.file(creature2_difficulty.schema, [
@@ -192,10 +199,16 @@ fn creature_files() -> List(#(String, BitArray)) {
         schema: creature2_difficulty.schema,
         id: 1,
         value: 0.3869999945163727,
+        deflect: 0.3199999928474426,
       ),
     ]),
     planted_table.file(creature2_tier.schema, [
-      multiplier_row(schema: creature2_tier.schema, id: 1, value: 1.0),
+      multiplier_row(
+        schema: creature2_tier.schema,
+        id: 1,
+        value: 1.0,
+        deflect: 1.0,
+      ),
     ]),
     planted_table.file(creature2_resist.schema, [
       planted_table.row(creature2_resist.schema, [#("ID", Integer(1))]),
@@ -203,9 +216,11 @@ fn creature_files() -> List(#(String, BitArray)) {
     planted_table.file(creature2_display_info.schema, [
       planted_table.row(creature2_display_info.schema, [
         #("ID", Integer(26_565)),
+        #("hitRadius", Float(3.0)),
       ]),
       planted_table.row(creature2_display_info.schema, [
         #("ID", Integer(26_578)),
+        #("hitRadius", Float(2.0)),
       ]),
     ]),
     planted_table.file(creature2_display_group_entry.schema, [
@@ -247,14 +262,19 @@ pub fn creature_row(
   planted_table.row(creature2.schema, list.append(changes, base))
 }
 
+/// A multiplier row: the one for Base Health, and the one for BaseAvoidChance (101), the
+/// only other property the Virtual Battle Beast's defence has: the client's rows give
+/// the others 0 products (`Creature2.73464.crit_deflect_glance`).
 fn multiplier_row(
   schema schema: tbl_file.Schema,
   id id: Int,
   value value: Float,
+  deflect deflect: Float,
 ) -> List(Cell) {
   planted_table.row(schema, [
     #("ID", Integer(id)),
     #("unitPropertyMultiplier007", Float(value)),
+    #("unitPropertyMultiplier101", Float(deflect)),
   ])
 }
 
@@ -473,10 +493,20 @@ fn files_with_looks(
     chat_channel_file(),
     planted_table.file(
       game_formula.schema,
-      list.append(
+      list.flatten([
         game_formula_rows(ids: [highest_level_formula], highest: 50),
         list.map(novice_tables.formulas(), novice_tables.game_formula_row),
-      ),
+        combat_formula_rows(),
+      ]),
+    ),
+    planted_table.file(
+      unit_property2.schema,
+      list.map([#(102, 0.0), #(104, 0.0), #(127, 1.5)], fn(property) {
+        planted_table.row(unit_property2.schema, [
+          #("ID", Integer(property.0)),
+          #("defaultValue", Float(property.1)),
+        ])
+      }),
     ),
     planted_table.file(
       xp_per_level.schema,
@@ -1014,6 +1044,35 @@ pub fn min_xp_for_level() -> List(Int) {
     12_562_350, 14_060_140, 15_698_220, 17_487_670, 19_437_010, 21_558_320,
     23_862_010, 26_360_090, 2_147_483_647,
   ]
+}
+
+/// The GameFormula rows of the hit rule's ratings, the client's own: 1230 strikethrough,
+/// 1231 crit chance, 1232 crit severity, 1234 mitigation, 1235 deflect, 1236 critical
+/// deflect, 1245 glance chance and 1271 glance amount (`genesis_prime/game/rating`).
+pub fn combat_formula_rows() -> List(List(Cell)) {
+  list.map(
+    [
+      #(1230, 0.003, 30.0, 5000.0, 100),
+      #(1231, 0.0025, 30.0, 7000.0, 100),
+      #(1232, 0.01, 250.0, 5500.0, 300),
+      #(1234, 0.008, 0.0, 7250.0, 75),
+      #(1235, 0.0015, 30.0, 7000.0, 100),
+      #(1236, 0.0025, 100.0, 778.0, 100),
+      #(1245, 0.005792, 60.0, 4000.0, 100),
+      #(1271, 0.0055, 75.0, 4000.0, 100),
+    ],
+    fn(formula) {
+      planted_table.row(game_formula.schema, [
+        #("ID", Integer(formula.0)),
+        #("dataint0", Integer(0)),
+        #("dataint01", Integer(formula.4)),
+        #("datafloat0", Float(50.0)),
+        #("datafloat01", Float(formula.1)),
+        #("datafloat02", Float(formula.2)),
+        #("datafloat03", Float(formula.3)),
+      ])
+    },
+  )
 }
 
 /// GameFormula rows of these ids, each with `highest` as its dataint0.

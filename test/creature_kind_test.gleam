@@ -159,6 +159,10 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "creature_kind_world_database_row_has_a_source_row",
       ),
       #(
+        "insert into creature_kind (creature_id, respawn_ms, source, source_row) values (73464, 5000, 'world_database', 1), (73465, 5000, 'world_database', 1)",
+        "creature_kind_source_row_is_unique",
+      ),
+      #(
         "insert into creature_kind (creature_id, respawn_ms, source, reason) values (262144, 5000, 'server_choice', 'x')",
         "creature_kind_creature_id_is_in_18_bits",
       ),

@@ -1,22 +1,30 @@
 //// A player's strikes (`genesis_prime/game/strike`), run as the pure rule it is on
-//// a driven clock: a go's round, the answers, the deadline and the timer. Expected
-//// values come from these places.
+//// a driven clock: a go's selection, its round, the answers, the deadline and the
+//// timer. Expected values come from these places.
 //// - The rule's doc comment: a strike is told to each selected unit in selection
-////   order with the caster's rolls (8 seed bytes for each unit, 4 for the critical
-////   hit roll and 4 for the deflect roll, each a fraction of 2^32); a round closes
+////   order with the caster's rolls (12 seed bytes for each unit, 4 for each of the
+////   critical hit, deflect and glance rolls, each a fraction of 2^32); a round closes
 ////   when each answer is in or its 1 s deadline has passed; the go lists the units in
 ////   selection order; a refusal or a silent creature is left out and the count is not
-////   refilled; an answer for a closed round is dropped; rounds close in phase order;
-////   one strike timer is set to the earliest open deadline.
+////   refilled; an answer for a closed round is dropped; the rounds of one cast close in
+////   phase order, an empty one too; one strike timer is set to the earliest open
+////   deadline and set again only when it is not running; health news of a unit of an open
+////   round is held until the round's go.
 //// - Design 274 section 2: the deadline is 1 second.
-//// - The cast and phase of Stagger's second go: `Spell4.38791.area`.
+//// - The cast and phase of Stagger's gos: `Spell4.38791.area`.
+//// - Kick's area row and cone: `Spell4.58591.area` (5 units, 0 to 8 m, 180 degrees; a
+////   cone 1 to 7 m over 100 degrees); the Beast's hit radius is 3.0.
+//// - A creature that is not a foe or is dead is never selected
+////   (`Spell4ValidTargets.targetBitmask`, `0x1403ad540`).
 
+import area_tables
+import client_tables
+import genesis_prime/client_connection
 import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast.{type GoAsked, GoAsked}
 import genesis_prime/game/damage
 import genesis_prime/game/hit.{Rolls}
-import genesis_prime/game/rating.{Formula, Formulas}
-import genesis_prime/game/shown.{Exile}
+import genesis_prime/game/shown.{Exile, ShownCreature, ShownPlayer}
 import genesis_prime/game/spell_area.{AimsAtArea, DamageEffect}
 import genesis_prime/game/strike.{
   type Attacker, type Effect, type Selection, type State, Aimed, Attacker,
@@ -27,8 +35,13 @@ import genesis_prime/game/strike_tell.{
 }
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
+import gleam/dict
 import gleam/list
 import owned_test
+import place_support
+import rating_support
+import unitest
 
 fn at(ms ms: Int) -> step.Now {
   Now(monotonic_ms: ms, filetime: 0)
@@ -41,39 +54,6 @@ fn attacker() -> Attacker {
     pose: Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0),
     faction: Exile,
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
-  )
-}
-
-/// GameFormula rows 1231, 1232 and 1235 as the fact file records them
-/// (`0x140463700`, `0x140463e80`, `0x140463340`).
-fn formulas() -> rating.Formulas {
-  Formulas(
-    crit_chance: Formula(
-      f0: 50.0,
-      f01: 0.0025,
-      f02: 30.0,
-      f03: 7000.0,
-      int0: 0,
-      int01: 100,
-    ),
-    crit_severity: Formula(
-      f0: 50.0,
-      f01: 0.01,
-      f02: 250.0,
-      f03: 5500.0,
-      int0: 0,
-      int01: 300,
-    ),
-    deflect_chance: Formula(
-      f0: 50.0,
-      f01: 0.0015,
-      f02: 30.0,
-      f03: 7000.0,
-      int0: 0,
-      int01: 100,
-    ),
-    player_base_crit_chance: 0.05,
-    player_base_crit_severity: 1.5,
   )
 }
 
@@ -107,11 +87,11 @@ fn selection(
   )
 }
 
-/// 8 seed bytes for each unit: the critical hit roll's 4 bytes, then the deflect
-/// roll's, from the numbers of each (a number n is the fraction n / 2^32).
-fn entropy(rolls rolls: List(#(Int, Int))) -> BitArray {
-  list.fold(rolls, <<>>, fn(bytes, pair) {
-    <<bytes:bits, pair.0:size(32), pair.1:size(32)>>
+/// 12 seed bytes for each unit: the critical hit roll's 4 bytes, the deflect roll's, then
+/// the glance roll's (a number n is the fraction n / 2^32).
+fn entropy(rolls rolls: List(#(Int, Int, Int))) -> BitArray {
+  list.fold(rolls, <<>>, fn(bytes, triple) {
+    <<bytes:bits, triple.0:size(32), triple.1:size(32), triple.2:size(32)>>
   })
 }
 
@@ -124,8 +104,8 @@ fn begun(
     strike: state,
     selection:,
     attacker: attacker(),
-    formulas: formulas(),
-    entropy: entropy(rolls: list.map(selection.units, fn(_) { #(0, 0) })),
+    formulas: rating_support.formulas(),
+    entropy: entropy(rolls: list.map(selection.units, fn(_) { #(0, 0, 0) })),
     now: at(ms: now_ms),
   )
 }
@@ -154,6 +134,7 @@ fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
       strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
+      | strike.Released(..)
       | strike.Log(..) -> False
     }
   })
@@ -168,6 +149,7 @@ fn went(effects effects: List(Effect)) -> List(#(Int, Int, List(cast.Struck))) {
       strike.TellStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
+      | strike.Released(..)
       | strike.Log(..) -> Error(Nil)
     }
   })
@@ -177,7 +159,10 @@ fn timers(effects effects: List(Effect)) -> List(strike.Effect) {
   list.filter(effects, fn(effect) {
     case effect {
       strike.StartTimer(..) | strike.CancelTimer(..) -> True
-      strike.TellStrike(..) | strike.Went(..) | strike.Log(..) -> False
+      strike.TellStrike(..)
+      | strike.Went(..)
+      | strike.Released(..)
+      | strike.Log(..) -> False
     }
   })
 }
@@ -195,11 +180,11 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
       strike: strike.new(),
       selection: chosen,
       attacker: attacker(),
-      formulas: formulas(),
+      formulas: rating_support.formulas(),
       entropy: entropy(rolls: [
-        #(0, 2_147_483_648),
-        #(1_073_741_824, 3_221_225_472),
-        #(0, 0),
+        #(0, 2_147_483_648, 0),
+        #(1_073_741_824, 3_221_225_472, 2_147_483_648),
+        #(0, 0, 0),
       ]),
       now: at(ms: 1000),
     )
@@ -211,6 +196,7 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
         strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
+        | strike.Released(..)
         | strike.Log(..) -> Error(Nil)
       }
     })
@@ -221,24 +207,24 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
         3,
         Key(cast_id: 5, phase: 0, unit_id: 10),
         ConnectionId(2),
-        Rolls(crit: 0.0, deflect: 0.5),
+        Rolls(crit: 0.0, deflect: 0.5, glance: 0.0),
       ),
       #(
         11,
         3,
         Key(cast_id: 5, phase: 0, unit_id: 11),
         ConnectionId(2),
-        Rolls(crit: 0.25, deflect: 0.75),
+        Rolls(crit: 0.25, deflect: 0.75, glance: 0.5),
       ),
       #(
         12,
         3,
         Key(cast_id: 5, phase: 0, unit_id: 12),
         ConnectionId(2),
-        Rolls(crit: 0.0, deflect: 0.0),
+        Rolls(crit: 0.0, deflect: 0.0, glance: 0.0),
       ),
     ]
-    as "one strike for each selected unit in selection order, each with its own 8 bytes of the caster's seed as two fractions of 2^32, answered to the caster's connection"
+    as "one strike for each selected unit in selection order, each with its own 12 bytes of the caster's seed as three fractions of 2^32, answered to the caster's connection"
   assert timers(effects:)
     == [strike.StartTimer(timer: strike.strike_timer, after_ms: 1000)]
     as "one strike timer for the round's deadline, 1 s after the go"
@@ -327,6 +313,24 @@ pub fn a_silent_creature_is_left_out_at_the_deadline_on_a_driven_timer_test() ->
     as "the timer that fired is no longer running and no round is open, so none is set or cancelled"
 }
 
+pub fn the_timer_is_set_again_after_it_fired_with_a_round_still_waiting_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    begun(
+      state: strike.new(),
+      selection: selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10],
+        damaging: True,
+      ),
+      now_ms: 1000,
+    )
+  let #(_, fired_early) = strike.timer_fired(strike: state, now: at(ms: 1500))
+  assert timers(effects: fired_early)
+    == [strike.StartTimer(timer: strike.strike_timer, after_ms: 500)]
+    as "the timer fired and ended, so it is set again for the deadline 500 ms on: the shell refuses to start a timer that is running"
+}
+
 pub fn an_answer_for_a_closed_round_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   let go = asked(cast_id: 5, phase: 0)
@@ -391,6 +395,36 @@ pub fn a_later_phase_is_never_written_before_an_earlier_one_test() -> Nil {
     as "both close at once, phase 0 first"
 }
 
+pub fn an_empty_selection_waits_behind_the_casts_earlier_rounds_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    begun(
+      state: strike.new(),
+      selection: selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10],
+        damaging: True,
+      ),
+      now_ms: 1000,
+    )
+  let #(state, empty) =
+    begun(
+      state:,
+      selection: selection(
+        asked: asked(cast_id: 5, phase: 1),
+        units: [],
+        damaging: True,
+      ),
+      now_ms: 1200,
+    )
+  assert went(effects: empty) == []
+    as "Stagger 38780: phase 0 waits on a creature that crashed, so phase 1, which selects nobody, is not written before it"
+  let #(_, due) = strike.timer_fired(strike: state, now: at(ms: 2000))
+  assert list.map(went(effects: due), fn(round) { #(round.0, round.1, round.2) })
+    == [#(5, 0, []), #(5, 1, [])]
+    as "the deadline closes phase 0 with nobody, and phase 1 follows it"
+}
+
 pub fn the_one_strike_timer_moves_to_the_next_open_deadline_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =
@@ -416,7 +450,7 @@ pub fn the_one_strike_timer_moves_to_the_next_open_deadline_test() -> Nil {
   assert timers(effects: first)
     == [strike.StartTimer(timer: strike.strike_timer, after_ms: 1000)]
   assert timers(effects: second) == []
-    as "the timer already waits for the earlier deadline, 2000 ms"
+    as "the timer already waits for the earlier deadline, 2000 ms, and is not started again while it runs"
   let #(_, closed) =
     answer(
       state:,
@@ -489,4 +523,245 @@ pub fn the_player_leaving_cancels_the_timer_and_drops_later_answers_test() -> Ni
       now_ms: 1100,
     )
   assert went(effects: late) == []
+}
+
+pub fn health_news_of_a_unit_of_an_open_round_is_held_until_the_rounds_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    begun(
+      state: strike.new(),
+      selection: selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10, 11],
+        damaging: True,
+      ),
+      now_ms: 1000,
+    )
+  assert strike.holds(strike: state, unit_id: 10)
+    && !strike.holds(strike: state, unit_id: 99)
+    as "unit 10 is in the caster's open round, unit 99 is not"
+  let death = client_connection.Died
+  let state = strike.hold(strike: state, unit_id: 10, news: death)
+  let #(state, first) =
+    answer(
+      state:,
+      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      outcome: landed(),
+      now_ms: 1100,
+    )
+  assert first == []
+    as "the answer of unit 10 leaves the round open for unit 11: nothing is written, nothing released"
+  let #(state, closing) =
+    answer(
+      state:,
+      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      outcome: landed(),
+      now_ms: 1200,
+    )
+  assert list.map(closing, fn(effect) {
+      case effect {
+        strike.Went(..) -> "went"
+        strike.Released(unit_id:, ..) -> "released " <> unit_label(unit_id)
+        strike.CancelTimer(..) -> "cancel"
+        strike.TellStrike(..) | strike.StartTimer(..) | strike.Log(..) ->
+          "other"
+      }
+    })
+    == ["went", "released ten", "cancel"]
+    as "the go is written first, then the death the held news carries: the client shows the number before the death"
+  assert !strike.holds(strike: state, unit_id: 10)
+}
+
+fn unit_label(unit_id: Int) -> String {
+  case unit_id {
+    10 -> "ten"
+    _ -> "another"
+  }
+}
+
+fn creature_at(
+  x x: Float,
+  z z: Float,
+  alive alive: Bool,
+  attackable attackable: Attackable,
+) -> shown.Shown {
+  ShownCreature(
+    place: place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z:),
+    life: 4,
+    alive:,
+    hit_radius: 3.0,
+    attackable:,
+  )
+}
+
+fn picture() -> shown.Picture {
+  let both = Attackable(exile: True, dominion: True)
+  dict.from_list([
+    #(21, creature_at(x: 0.0, z: -3.0, alive: True, attackable: both)),
+    #(22, creature_at(x: 0.0, z: -5.0, alive: True, attackable: both)),
+    #(23, creature_at(x: 0.0, z: -6.5, alive: True, attackable: both)),
+    #(24, creature_at(x: 0.0, z: 4.0, alive: True, attackable: both)),
+    #(25, creature_at(x: 0.0, z: -8.0, alive: True, attackable: both)),
+    #(26, creature_at(x: 0.0, z: -4.0, alive: False, attackable: both)),
+    #(
+      27,
+      creature_at(
+        x: 0.0,
+        z: -4.0,
+        alive: True,
+        attackable: Attackable(exile: False, dominion: True),
+      ),
+    ),
+    #(28, ShownPlayer),
+    #(20, creature_at(x: 40.0, z: 40.0, alive: True, attackable: both)),
+  ])
+}
+
+pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(areas) = area_tables.built(kick: area_tables.kick())
+    as "the planted Kick builds"
+  let chosen =
+    strike.select(
+      asked: asked(cast_id: 5, phase: 0),
+      attacker: attacker(),
+      picture: picture(),
+      areas:,
+    )
+  assert list.map(chosen.units, fn(aimed) { aimed.unit_id }) == [21, 22, 23]
+    as "Kick's cone is 1 to 7 m over 100 degrees ahead: units 21, 22 and 23; 24 is behind, 25 past 7 m, 26 is dead, 27 is Friendly to Exiles and 28 is a player (Spell4.58591.area)"
+  assert list.length(chosen.blows) == 1
+    as "Kick's one damage effect, aimed at the area"
+}
+
+pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(areas) =
+    area_tables.built(
+      kick: area_tables.Kick(..area_tables.kick(), effect_target_flags: 2),
+    )
+    as "the planted Kick builds"
+  let chosen =
+    strike.select(
+      asked: GoAsked(
+        cast_id: 5,
+        phase: 0,
+        spell4_id: Spell4Id(58_591),
+        primary_target: 20,
+      ),
+      attacker: attacker(),
+      picture: picture(),
+      areas:,
+    )
+  assert chosen.units == [Aimed(unit_id: 20, life: 4)]
+    as "Spell4Effects.targetFlags 2 strikes the cast's own target (38781 on each struck unit), with that creature's life"
+}
+
+pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(areas) = area_tables.built(kick: area_tables.kick())
+    as "the planted Kick builds"
+  let chosen =
+    strike.select(
+      asked: GoAsked(
+        cast_id: 5,
+        phase: 0,
+        spell4_id: Spell4Id(1),
+        primary_target: 7,
+      ),
+      attacker: attacker(),
+      picture: picture(),
+      areas:,
+    )
+  assert chosen.units == [] && chosen.blows == []
+}
+
+/// A foe at (x, z), alive and attackable by an Exile.
+fn foe_at(x x: Float, z z: Float) -> shown.Shown {
+  creature_at(
+    x:,
+    z:,
+    alive: True,
+    attackable: Attackable(exile: True, dominion: True),
+  )
+}
+
+pub fn crushs_second_spell_strikes_up_to_four_within_4_m_of_the_struck_foe_and_the_foe_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let around_the_foe =
+    dict.from_list([
+      #(21, foe_at(x: 0.0, z: -3.0)),
+      #(22, foe_at(x: 0.0, z: -5.0)),
+      #(23, foe_at(x: 3.0, z: -3.0)),
+      #(24, foe_at(x: 0.0, z: -7.0)),
+      #(25, foe_at(x: 5.0, z: -3.0)),
+      #(26, foe_at(x: 0.0, z: -6.5)),
+    ])
+  let chosen =
+    strike.select(
+      asked: GoAsked(
+        cast_id: 5,
+        phase: 0,
+        spell4_id: Spell4Id(42_297),
+        primary_target: 21,
+      ),
+      attacker: attacker(),
+      picture: around_the_foe,
+      areas:,
+    )
+  assert list.map(chosen.units, fn(aimed) { aimed.unit_id }) == [21, 22, 23, 26]
+    as "Spell4.32812.area: row 704 takes 4 within 4 m of the foe it is cast on, nearest first: the foe (0 m), 22 (2 m), 23 (3 m) and 26 (3.5 m); 24 is 4 m away and fifth, 25 is 5 m away; the foe is selected by the area and added once"
+  assert list.length(chosen.blows) == 1
+    as "Spell4Effects 95950: Magic damage, aimed at both the cast's target and the area"
+}
+
+pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and_its_child_strikes_its_own_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let close_by =
+    dict.from_list([
+      #(21, foe_at(x: 0.0, z: -1.0)),
+      #(22, foe_at(x: 0.0, z: -2.0)),
+      #(23, foe_at(x: 0.0, z: -3.0)),
+      #(24, foe_at(x: 0.0, z: -4.0)),
+      #(25, foe_at(x: 0.0, z: -5.0)),
+      #(26, foe_at(x: 0.0, z: -6.0)),
+      #(27, foe_at(x: 0.0, z: -9.0)),
+    ])
+  list.each([0, 1, 2, 3], fn(phase) {
+    let chosen =
+      strike.select(
+        asked: GoAsked(
+          cast_id: 5,
+          phase:,
+          spell4_id: Spell4Id(38_780),
+          primary_target: 7,
+        ),
+        attacker: attacker(),
+        picture: close_by,
+        areas:,
+      )
+    assert list.map(chosen.units, fn(aimed) { aimed.unit_id })
+      == [21, 22, 23, 24, 25]
+      && chosen.blows == []
+      as "Spell4.38791.area: 38780 picks its 5 nearest ahead within its 8 m cone (90 degrees, twin 2189) at each of its four phases and strikes nobody itself (its Proxy starts 38781 on each)"
+  })
+  let child =
+    strike.select(
+      asked: GoAsked(
+        cast_id: 6,
+        phase: 0,
+        spell4_id: Spell4Id(38_781),
+        primary_target: 22,
+      ),
+      attacker: attacker(),
+      picture: close_by,
+      areas:,
+    )
+  assert child.units == [Aimed(unit_id: 22, life: 4)]
+    && list.length(child.blows) == 1
+    as "38781 damages its own target, the unit it was started on (Spell4Effects 83829: targetFlags 2)"
 }

@@ -26,8 +26,10 @@ import genesis_prime/step.{
   LogError, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired, StartCreature,
   StartServiceTimer, WatchEnded, WatchId,
 }
+import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -285,6 +287,23 @@ pub fn a_creature_that_crashes_while_retiring_is_taken_as_retired_test() -> Nil 
   assert dormant(state:, spawn: 1)
 }
 
+pub fn a_spawn_whose_creature_crashes_waits_the_respawn_time_of_its_creatures_kind_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    spawns.started_with(
+      at: [0.0],
+      kinds: Kinds(
+        default: Kind(respawn_ms: map_support.respawn_ms),
+        by_creature: dict.from_list([#(73_464, Kind(respawn_ms: 5000))]),
+      ),
+    )
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let #(watch, _) = the_start(taken)
+  let #(_, taken) = spawns.feed(state:, at_ms: 7000, event: WatchEnded(watch))
+  assert spawns.timers(taken) == [#(1, 5000)]
+    as "the Virtual Battle Beast (Creature2 73464) has a kind of its own, 5 s, which the crash restart waits instead of the default's 60 s: one number serves the corpse and the restart"
+}
+
 pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_under_a_new_unit_id_if_seen_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) = spawns.started(at: [0.0])
@@ -300,7 +319,7 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
       #(2, "Gone " <> int.to_string(first.unit_id)),
     ]
     as "every player in the map is told the unit is gone, also one that did not see it"
-  assert spawns.timers(taken) == [#(1, map_support.creature_restart_ms)]
+  assert spawns.timers(taken) == [#(1, map_support.respawn_ms)]
     as "the spawn waits the respawn time, under the timer of its own number"
   assert spawns.starts(taken) == [] as "and is not started again at once"
   let #(_, taken) =

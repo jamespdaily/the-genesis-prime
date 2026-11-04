@@ -24,6 +24,7 @@ create table creature_kind (
   constraint creature_kind_creature_id_is_in_18_bits
     check (creature_id between 0 and 262143),
   constraint creature_kind_respawn_ms_is_positive check (respawn_ms > 0),
+  constraint creature_kind_source_row_is_unique unique (source, source_row),
   constraint creature_kind_source_row_is_positive check (source_row > 0),
   constraint creature_kind_world_database_row_has_a_source_row
     check ((source = 'world_database') = (source_row is not null)),

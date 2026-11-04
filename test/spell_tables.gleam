@@ -403,7 +403,7 @@ pub fn rows() -> Rows {
         id: 62_204,
         spell: 32_893,
         type_: 26,
-        target_flags: 1,
+        target_flags: 4,
         delay: 0,
         phases: -1,
         data: 30_900,

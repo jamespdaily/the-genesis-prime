@@ -93,12 +93,18 @@ import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, Asked, Connection,
   CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send, ServiceTimerFired,
-  Started, Stop, Stopping, Told, Watch, WatchEnded, WatchId,
+  Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded, WatchId,
+}
+import genesis_prime/world_map/creature_kind.{type Kind}
+import genesis_prime/world_map/creature_life.{
+  type Body, type Life, Body, Died, Ends, Health, StandsAgain, StopAtRespawn,
+  StopNow,
 }
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/set.{type Set}
 
 /// The rule's name: its module path.
@@ -107,14 +113,17 @@ const rule_name = "genesis_prime/world_map/creature"
 /// The watch on the map run that started the creature.
 const run_watch = WatchId(1)
 
+/// The corpse timer: the creature's one timer.
+const corpse_timer = TimerId(1)
+
 /// What a creature is started with: which creature of which run it is and the
-/// map's clock (`CreatureStart`), and the spawn it stands at, found by the id the
-/// start names.
+/// map's clock (`CreatureStart`), the spawn it stands at, found by the id the start
+/// names, and the kind the server chose for its Creature2 row.
 pub type Settings {
-  Settings(creature: CreatureStart, spawn: Spawn)
+  Settings(creature: CreatureStart, spawn: Spawn, kind: Kind)
 }
 
-/// What the map tells a creature.
+/// What the map and the connections tell a creature.
 pub type Message {
   /// The player of connection `by` sees the creature.
   Watched(by: ConnectionId)
@@ -135,22 +144,48 @@ pub type Outgoing {
   Struck(answered: Answered)
 }
 
-/// A creature's players in sight.
+/// A creature's players in sight, its health and whether it was told to retire
+/// while it lay dead.
 pub opaque type State {
-  State(settings: Settings, viewers: Set(ConnectionId))
+  State(
+    settings: Settings,
+    body: Body,
+    life: Life,
+    retiring: Bool,
+    viewers: Set(ConnectionId),
+  )
 }
 
 /// The creature's rule, as its service shell runs it.
 pub fn rule(
   creature creature: CreatureStart,
   spawn spawn: Spawn,
+  kind kind: Kind,
 ) -> ServiceRule(Settings, State, Message, Outgoing) {
-  step.Rule(name: rule_name, settings: Settings(creature:, spawn:), new:, step:)
+  step.Rule(
+    name: rule_name,
+    settings: Settings(creature:, spawn:, kind:),
+    new:,
+    step:,
+  )
 }
 
-/// A creature's first state: the players the map started it for are its viewers.
+/// A creature's first state: the players the map started it for are its viewers,
+/// and it stands at full health.
 pub fn new(settings: Settings) -> State {
-  State(settings:, viewers: set.from_list(settings.creature.viewers))
+  let body =
+    Body(
+      max_health: settings.spawn.health,
+      combat: settings.spawn.combat,
+      respawn_ms: settings.kind.respawn_ms,
+    )
+  State(
+    settings:,
+    body:,
+    life: creature_life.new(body:),
+    retiring: False,
+    viewers: set.from_list(settings.creature.viewers),
+  )
 }
 
 /// One input in, the new state and what the shell must do out, as the sequence
@@ -187,17 +222,88 @@ pub fn step(
         )
         False -> #(state, Effects([]))
       }
-    OwnEvent(Told(message: Retire)) -> #(state, Effects([Stop]))
-    OwnEvent(Told(message: Strike(tell:))) -> unbuilt(inputs: #(state, tell))
+    OwnEvent(Told(message: Retire)) ->
+      case creature_life.on_retire(life: state.life) {
+        StopNow -> #(state, Effects([Stop]))
+        StopAtRespawn -> #(State(..state, retiring: True), Effects([]))
+      }
+    OwnEvent(Told(message: Strike(tell:))) -> {
+      let reaction =
+        creature_life.struck(life: state.life, body: state.body, strike: tell)
+      // The answer goes first: the caster's connection then knows the strike
+      // before it is told the health it left, one sender in one order.
+      let answer =
+        OwnEffect(Send(
+          to: Connection(tell.from),
+          message: Struck(answered: reaction.answer),
+        ))
+      let news =
+        list.flat_map(reaction.news, fn(news) {
+          list.map(sorted(state.viewers), fn(viewer) {
+            news_to(creature:, viewer:, news: viewer_news(news))
+          })
+        })
+      let corpse = case reaction.corpse_for_ms {
+        Some(after_ms) -> [
+          OwnEffect(step.StartServiceTimer(timer: corpse_timer, after_ms:)),
+        ]
+        None -> []
+      }
+      #(
+        State(..state, life: reaction.life),
+        Effects(list.flatten([[answer], news, corpse])),
+      )
+    }
+    OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer ->
+      case
+        creature_life.corpse_timer_fired(
+          life: state.life,
+          body: state.body,
+          retiring: state.retiring,
+        )
+      {
+        Ends -> #(state, Effects([Stop]))
+        StandsAgain(life:) -> {
+          let state = State(..state, life:)
+          #(
+            state,
+            Effects(
+              list.flat_map(sorted(state.viewers), fn(viewer) {
+                [
+                  news_to(creature:, viewer:, news: Removed),
+                  appeared(state:, viewer:, now: input.now),
+                ]
+              }),
+            ),
+          )
+        }
+      }
     WatchEnded(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(..))
     | OwnEvent(ServiceTimerFired(..))
     | OwnEvent(CreatureNotStarted(..)) ->
-      panic as "a creature is told, and starts no timer and no creature"
+      panic as "a creature is told, and starts no timer but its corpse's and no creature"
   }
 }
 
-/// The send of the creature's 0x262 to a viewer, stamped with the map's time.
+/// The viewers in connection number order, so what a creature sends is the same on
+/// every run.
+fn sorted(viewers: Set(ConnectionId)) -> List(ConnectionId) {
+  list.sort(set.to_list(viewers), fn(first, second) {
+    map.compare_connections(first:, second:)
+  })
+}
+
+/// What a viewer's connection writes of a news of the creature's health.
+fn viewer_news(news: creature_life.News) -> client_connection.News {
+  case news {
+    Health(health:, dead:) -> client_connection.Health(health:, dead:)
+    Died -> client_connection.Died
+  }
+}
+
+/// The send of the creature's 0x262 to a viewer, stamped with the map's time, at
+/// its current health.
 fn appeared(
   state state: State,
   viewer viewer: ConnectionId,
@@ -207,14 +313,21 @@ fn appeared(
   news_to(
     creature:,
     viewer:,
-    news: CreatureAppeared(unit: creature_unit.create(
-      spawn: state.settings.spawn,
-      unit_id: creature.unit_id,
-      server_time_estimate_start: map.server_time(
-        origin_ms: creature.clock_origin_ms,
-        monotonic_ms: now.monotonic_ms,
+    news: CreatureAppeared(
+      unit: creature_unit.create(
+        spawn: state.settings.spawn,
+        unit_id: creature.unit_id,
+        health: creature_life.health(life: state.life),
+        server_time_estimate_start: map.server_time(
+          origin_ms: creature.clock_origin_ms,
+          monotonic_ms: now.monotonic_ms,
+        ),
       ),
-    )),
+      life: creature.life,
+      place: state.settings.spawn.place,
+      hit_radius: state.body.combat.hit_radius,
+      attackable: state.body.combat.attackable,
+    ),
   )
 }
 
@@ -245,10 +358,4 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     map.Retire -> Ok(Retire)
     map.Joined(..) | map.NotJoined(..) | map.Left | map.Gone(..) -> Error(Nil)
   }
-}
-
-/// The body of a function the shape names and the build writes: the arguments
-/// are used, and the call stops.
-fn unbuilt(inputs _inputs: inputs) -> output {
-  panic as "not built: the shape holds the types"
 }

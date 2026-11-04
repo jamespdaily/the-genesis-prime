@@ -31,24 +31,29 @@
 ////   creature does not know.
 
 import genesis_prime/game/hit.{type Defence}
-import genesis_prime/game/strike_tell.{type Answered, type Tell}
-import gleam/option.{type Option}
+import genesis_prime/game/strike_tell.{
+  type Answered, type Tell, Answered, Landed, Refused,
+}
+import gleam/option.{type Option, None, Some}
+
+/// Whether a creature may be attacked by a player of each faction, from its
+/// faction's level toward that player faction: Hostile or Neutral, 7 or less
+/// (`0x1403ad540`), worked out when the content loads.
+pub type Attackable {
+  Attackable(exile: Bool, dominion: Bool)
+}
 
 /// What a creature brings to a fight, worked out when the content loads
-/// (genesis_prime/world_map/spawn `body_of`): its health, its hit radius, its faction
-/// levels toward the two player factions, its defence and its kind's respawn time.
+/// (genesis_prime/world_map/spawn): the hit radius of its display
+/// (Creature2DisplayInfo.hitRadius), whom it may be attacked by, and its defence.
+pub type Combat {
+  Combat(hit_radius: Float, attackable: Attackable, defence: Defence)
+}
+
+/// A creature's fixed values for a fight: its health, what it brings and its kind's
+/// respawn time (genesis_prime/world_map/creature_kind).
 pub type Body {
-  Body(
-    max_health: Int,
-    /// Creature2DisplayInfo.hitRadius.
-    hit_radius: Float,
-    /// The creature's faction level toward the Exile and the Dominion faction
-    /// (genesis_prime/world_map/spawn `faction_levels`).
-    levels: #(Int, Int),
-    defence: Defence,
-    /// The kind's respawn time (genesis_prime/world_map/creature_kind).
-    respawn_ms: Int,
-  )
+  Body(max_health: Int, combat: Combat, respawn_ms: Int)
 }
 
 /// Whether the creature stands or lies dead, and its health.
@@ -107,7 +112,49 @@ pub fn struck(
   body body: Body,
   strike strike: Tell,
 ) -> Reaction {
-  unbuilt(inputs: #(life, body, strike))
+  case life {
+    Dead ->
+      Reaction(
+        life:,
+        answer: Answered(
+          key: strike.key,
+          outcome: Refused(why: strike_tell.Dead),
+        ),
+        news: [],
+        corpse_for_ms: None,
+      )
+    Alive(health:) ->
+      case
+        hit.apply(
+          health:,
+          offence: strike.offence,
+          defence: body.combat.defence,
+          rolls: strike.rolls,
+        )
+      {
+        hit.Deflected ->
+          Reaction(
+            life:,
+            answer: Answered(key: strike.key, outcome: strike_tell.Deflected),
+            news: [],
+            corpse_for_ms: None,
+          )
+        hit.Landed(descriptions:, health: left, killed: True) ->
+          Reaction(
+            life: Dead,
+            answer: Answered(key: strike.key, outcome: Landed(descriptions:)),
+            news: [Health(health: left, dead: True), Died],
+            corpse_for_ms: Some(body.respawn_ms),
+          )
+        hit.Landed(descriptions:, health: left, killed: False) ->
+          Reaction(
+            life: Alive(health: left),
+            answer: Answered(key: strike.key, outcome: Landed(descriptions:)),
+            news: [Health(health: left, dead: False)],
+            corpse_for_ms: None,
+          )
+      }
+  }
 }
 
 /// What a creature told to retire does: a creature that stands stops at once, and
@@ -120,7 +167,10 @@ pub type OnRetire {
 
 /// What the creature does when the map tells it to retire.
 pub fn on_retire(life life: Life) -> OnRetire {
-  unbuilt(inputs: life)
+  case life {
+    Alive(..) -> StopNow
+    Dead -> StopAtRespawn
+  }
 }
 
 /// What the corpse timer's firing leads to.
@@ -139,11 +189,8 @@ pub fn corpse_timer_fired(
   body body: Body,
   retiring retiring: Bool,
 ) -> AtCorpse {
-  unbuilt(inputs: #(life, body, retiring))
-}
-
-/// The body of a function the shape names and the build writes: the arguments
-/// are used, and the call stops.
-fn unbuilt(inputs _inputs: inputs) -> output {
-  panic as "not built: the shape holds the types"
+  case life, retiring {
+    Dead, True -> Ends
+    Dead, False | Alive(..), _ -> StandsAgain(life: new(body:))
+  }
 }

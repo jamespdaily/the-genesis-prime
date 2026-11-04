@@ -8,6 +8,7 @@
 ////   `Spell4ValidTargets.targetBitmask`, `0x14054d170`).
 
 import area_tables
+import client_tables
 import genesis_prime/game/area.{Cone, InsideRow, InsideShapes, Placement, Row}
 import genesis_prime/game/spell_area.{
   AimNotRead, SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster,
@@ -17,6 +18,7 @@ import genesis_prime/table/id.{Spell4Id}
 import gleam/list
 import gleam/option.{Some}
 import owned_test
+import unitest
 
 fn kick_area(plant plant: area_tables.Kick) -> spell_area.SpellArea {
   let assert Ok(areas) = area_tables.built(kick: plant)
@@ -119,4 +121,31 @@ pub fn a_damage_effect_aimed_by_a_flag_value_not_read_fails_the_load_test() -> N
     )
     == Error(AimNotRead(spell4_id: 58_591, effect_id: 1, target_flags: 3))
     as "Spell4Effects.targetFlags: 1, 2, 4 and 6 are the values the rows hold"
+}
+
+pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and_a_cone_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(kicked) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
+    as "Kick is in the areas"
+  assert kicked.row
+    == Some(Row(min_range: 0.0, max_range: 8.0, degrees: 180.0, target_count: 5))
+    as "Spell4.58591.area: row 640"
+  let assert [Placement(shape: Cone(inner:, outer:, degrees:), ..)] =
+    kicked.shapes
+    as "Kick's 168 is its one hit shape: a cone"
+  assert inner == 1.0 && outer == 7.0 && degrees == 100.0
+    as "Spell4.58591.area: 1 to 7 m over 100 degrees"
+  let assert Ok(crush) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(32_812))
+  let assert Ok(phase) = spell_area.phase(spell: crush, phase: 0)
+  assert phase.selects_area && phase.damage == []
+    as "Crush's first spell has only a Proxy on its area: it selects and strikes nothing itself (Spell4.32812.area)"
+  let assert Ok(stagger) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(38_780))
+  assert list.length(stagger.phases) == 4
+    && list.all(stagger.phases, fn(phase) { phase.selects_area })
+    as "Stagger's 38780 selects at each of its four phases (Spell4.38791.area)"
 }

@@ -11,7 +11,8 @@ import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   CharacterCreationId, CreatureLevelId, GameFormulaId, Item2CategoryId,
   Item2FamilyId, Item2Id, Item2TypeId, ItemDisplayId, ItemDisplaySourceEntryId,
-  ItemSlotId, Spell4Id, SpellLevelId,
+  ItemSlotId, Spell4AoeTargetConstraintsId, Spell4EffectsId, Spell4Id,
+  Spell4ValidTargetsId, SpellLevelId, UnitProperty2Id,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
@@ -21,7 +22,11 @@ import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_aoe_target_constraints
+import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_level
+import genesis_prime/table/unit_property2
 import gleam/list
 import novice_tables
 import owned_test
@@ -164,8 +169,8 @@ pub fn the_planted_formulas_levels_and_spells_are_the_clients_test() -> Nil {
     assert get(planted) == get(real)
       as "GameFormula: the planted row has the real row's columns the formulas read"
   })
-  assert list.length(creature_level.all(planted)) == 50
-    as "the planted CreatureLevel table holds levels 1 to 50"
+  assert list.length(creature_level.all(planted)) == 51
+    as "the planted CreatureLevel table holds levels 1 to 50 and the last row 101, which holds the properties from 100 up for every level (CreatureLevel.101)"
   list.each(
     list.map(creature_level.all(planted), fn(row) { row.id }),
     fn(level) {
@@ -173,12 +178,79 @@ pub fn the_planted_formulas_levels_and_spells_are_the_clients_test() -> Nil {
         let assert Ok(row) =
           creature_level.get(tables:, id: CreatureLevelId(level))
           as "the level exists"
-        row.unit_property_value07
+        case level {
+          101 -> row.unit_property_value01
+          _ -> row.unit_property_value07
+        }
       }
       assert get(planted) == get(real)
-        as "CreatureLevel: the planted row has the real row's Base Health"
+        as "CreatureLevel: the planted row has the real row's Base Health, or for the last row 101 its BaseAvoidChance (property 101)"
     },
   )
+  list.each([1230, 1231, 1232, 1234, 1235, 1236, 1245, 1271], fn(id) {
+    let get = fn(tables) {
+      let assert Ok(row) = game_formula.get(tables:, id: GameFormulaId(id))
+        as "the formula exists"
+      #(
+        row.dataint0,
+        row.dataint01,
+        row.datafloat0,
+        row.datafloat01,
+        row.datafloat02,
+        row.datafloat03,
+      )
+    }
+    assert get(planted) == get(real)
+      as "GameFormula: the planted rating row has the real row's columns the hit rule reads"
+  })
+  list.each([102, 104, 127], fn(id) {
+    let get = fn(tables) {
+      let assert Ok(row) = unit_property2.get(tables:, id: UnitProperty2Id(id))
+        as "the property exists"
+      row.default_value
+    }
+    assert get(planted) == get(real)
+      as "UnitProperty2: the planted default is the real one"
+  })
+  let assert Ok(planted_surge) =
+    spell4_effects.get(tables: planted, id: Spell4EffectsId(96_125))
+  let assert Ok(real_surge) =
+    spell4_effects.get(tables: real, id: Spell4EffectsId(96_125))
+  let columns = fn(row: spell4_effects.Spell4Effects) {
+    #(
+      row.spell_id,
+      row.target_flags,
+      row.effect_type,
+      row.damage_type,
+      row.delay_time,
+      row.phase_flags,
+      row.data_bits00,
+      row.data_bits01,
+      #(row.parameter_type00, row.parameter_value00),
+      #(row.parameter_type01, row.parameter_value01),
+      #(row.parameter_type02, row.parameter_value02),
+      #(row.parameter_type03, row.parameter_value03),
+    )
+  }
+  assert columns(planted_surge) == columns(real_surge)
+    as "Spell4Effects 96125: Paralytic Surge's damage row is the real one in each column the damage reads"
+  let assert Ok(planted_area) =
+    spell4_aoe_target_constraints.get(
+      tables: planted,
+      id: Spell4AoeTargetConstraintsId(173),
+    )
+  let assert Ok(real_area) =
+    spell4_aoe_target_constraints.get(
+      tables: real,
+      id: Spell4AoeTargetConstraintsId(173),
+    )
+  assert planted_area == real_area
+    as "Spell4AoeTargetConstraints 173 is the real row"
+  let assert Ok(planted_valid) =
+    spell4_valid_targets.get(tables: planted, id: Spell4ValidTargetsId(1))
+  let assert Ok(real_valid) =
+    spell4_valid_targets.get(tables: real, id: Spell4ValidTargetsId(1))
+  assert planted_valid == real_valid as "Spell4ValidTargets 1 is the real row"
   list.each(novice_tables.spell4_ids_and_bases(), fn(pair) {
     let get = fn(tables) {
       let assert Ok(row) = spell4.get(tables:, id: Spell4Id(pair.0))

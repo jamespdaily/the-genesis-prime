@@ -31,6 +31,7 @@ import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/spell_go.{type SpellGo}
+import genesis_prime/message/spell_missed.{type SpellMissed}
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
@@ -43,6 +44,7 @@ import genesis_prime/step.{
   Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
 }
 import genesis_prime/store
+import genesis_prime/world_map/creature_life.{type Attackable}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/bit_array
@@ -105,10 +107,18 @@ pub type News {
   /// from the map's clock: 0x262 (opcode.0x262).
   Appeared(unit: UnitCreatePlayer)
   /// A creature as the client creates it, at its spawn and stamped from the
-  /// map's clock: 0x262 of type 0 (opcode.0x262.creature). Sent by the
-  /// creature's own process (genesis_prime/world_map/creature), which owns the
-  /// unit.
-  CreatureAppeared(unit: UnitCreateCreature)
+  /// map's clock: 0x262 of type 0 (opcode.0x262.creature), at its current health
+  /// (0 for a corpse). Sent by the creature's own process
+  /// (genesis_prime/world_map/creature), which owns the unit, with what the viewer's
+  /// strikes need of it: its life, which its address needs, the hit radius of its
+  /// display and whom it may be attacked by.
+  CreatureAppeared(
+    unit: UnitCreateCreature,
+    life: Int,
+    place: Place,
+    hit_radius: Float,
+    attackable: Attackable,
+  )
   /// The unit moved: the map's server time at the move (the map's clock,
   /// `world_map/map.server_time`) and at most 31 of its relayed commands in the
   /// order sent, since 0x638's count is 5 bits (opcode.0x638).
@@ -122,6 +132,9 @@ pub type News {
   /// A cast of the unit goes off: 0x7f4 (opcode.0x7f4), written for a cast the
   /// viewer wrote the start of.
   CastWent(go: SpellGo)
+  /// Some targets of a cast of the unit were missed: 0x7fb (opcode.0x7fb), written for
+  /// a cast the viewer wrote the start of, after its 0x7f4.
+  CastMissed(missed: SpellMissed)
   /// A cast of the unit ends: 0x7fe (opcode.0x7fe), written for a cast the viewer
   /// wrote the start of, which the viewer then forgets.
   CastFinished(cast_id: Int)

@@ -79,6 +79,7 @@ import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
+import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -192,7 +193,7 @@ pub type Entered {
     max_health: Int,
     clock_origin_ms: Int,
     viewers: Set(ConnectionId),
-    shown: Set(Int),
+    shown: shown.Picture,
     casts_written: Dict(Int, Int),
     gone: Set(Int),
     movement: movement.State,
@@ -346,7 +347,7 @@ pub fn joined(
               max_health:,
               clock_origin_ms:,
               viewers: set.new(),
-              shown: set.new(),
+              shown: dict.new(),
               casts_written: dict.new(),
               gone: set.new(),
               movement: movement.entered(place:, session_epoch:),

@@ -99,7 +99,9 @@ import login_support
 import mailbox_support
 import novice_tables
 import owned_test
+import place_support
 import pog
+import spawn_support
 import unitest
 
 /// The 16 bytes the client shows as its session key: the wire bytes of the
@@ -2236,4 +2238,322 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)
+}
+
+/// A world with one Virtual Battle Beast 3 m ahead of the place a new test character
+/// stands at (World 1387, zone 1100, at 1.5, 2.5, 3.5, facing -z), which respawns
+/// after 300 ms.
+fn world_with_a_beast_ahead() -> login_support.Started {
+  let beast_place =
+    place_support.at(
+      world_id: 1387,
+      world_zone_id: 1100,
+      x: 1.5,
+      y: 2.5,
+      z: 0.5,
+    )
+  login_support.start_with(change: fn(settings) {
+    server.Settings(
+      ..settings,
+      world: server.World(
+        ..settings.world,
+        spawns: spawn_support.key_in(
+          world_id: 1387,
+          spawns: [spawn_support.beast_at(number: 1, place: beast_place)],
+          respawn_ms: 300,
+        ),
+      ),
+    )
+  })
+}
+
+/// Plays a new player's character into the world and reads until the Beast's 0x262
+/// arrives: the burst and the creature, and the bytes beyond them.
+fn enters_and_sees_the_beast(
+  started started: login_support.Started,
+  number number: Int,
+  character_name character_name: String,
+) -> #(game_client.Game, List(Frame), BitArray) {
+  let #(game, character) = new_player(started:, number:, character_name:)
+  send_play(game:, character_id: character)
+  let #(frames, have) =
+    game_client.read_until(
+      game:,
+      have: <<>>,
+      within_ms: 5000,
+      found: fn(frames) { game_client.creatures_created_in(frames:) != [] },
+    )
+  #(game, frames, have)
+}
+
+fn face(game game: game_client.Game, yaw yaw: Float, clock clock: Int) -> Nil {
+  game_client.send_world(
+    game:,
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: clock, commands: [
+      game_client.rotation_command(yaw:, pitch: 0.0, roll: 0.0),
+    ]),
+  )
+}
+
+pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_the_same_fight_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let started = world_with_a_beast_ahead()
+  let #(first, first_frames, first_have) =
+    enters_and_sees_the_beast(started:, number: 1, character_name: "Zed Qu")
+  let #(second, second_frames, second_have) =
+    enters_and_sees_the_beast(started:, number: 2, character_name: "Ann Qu")
+  let assert [beast, ..] =
+    game_client.creatures_created_in(frames: first_frames)
+  let beast_unit = beast.unit_id
+  assert list.map(
+      game_client.creatures_created_in(frames: second_frames),
+      fn(unit) { unit.unit_id },
+    )
+    == [beast_unit]
+    as "both players are shown the same creature"
+  let own_place =
+    game_client.placed_at(unit: game_client.unit_create_player_in(
+      frames: first_frames,
+    ))
+  let toward =
+    game_client.yaw_toward(from: #(own_place.0, own_place.2), target: #(
+      1.5,
+      0.5,
+    ))
+  // The caster turns its back on the Beast: the press strikes nothing.
+  face(game: first, yaw: toward +. 3.1415927, clock: 100)
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index: 2,
+    target: 0,
+  )
+  let #(away, first_have) =
+    game_client.read_until(
+      game: first,
+      have: first_have,
+      within_ms: 5000,
+      found: fn(frames) {
+        list.any(game_client.casts_in(frames:), fn(event) {
+          case event {
+            game_client.CastFinished(..) -> True
+            game_client.CastRefused(..)
+            | game_client.CastConfirmed(..)
+            | game_client.CastStarted(..)
+            | game_client.CastWent(..) -> False
+          }
+        })
+      },
+    )
+  assert list.map(game_client.go_targets_in(frames: away), fn(go) { go.1 })
+    == [[]]
+    && game_client.health_in(frames: away) == []
+    as "a press with its back to the Beast strikes nobody: the go names no target and no 0x937 follows (the facing is the last kind 14 yaw)"
+  // Facing the Beast, it presses until the Beast dies.
+  face(game: first, yaw: toward, clock: 200)
+  let #(first_have, healths) =
+    press_until_dead(
+      game: first,
+      have: first_have,
+      beast: beast_unit,
+      cast_id: 2,
+    )
+  assert healths == [0]
+    as "the test character is level 9, so a hit of Paralytic Surge is 8.14 x 9 = 73 (Spell4Effects 96125: 8.14 a level), which takes the Beast's 52 health to 0 at once"
+  let #(watched, second_have) =
+    game_client.read_until(
+      game: second,
+      have: second_have,
+      within_ms: 5000,
+      found: fn(frames) {
+        list.any(game_client.deaths_in(frames:), fn(death) {
+          death == #(beast_unit, True)
+        })
+      },
+    )
+  let seen_health =
+    list.filter_map(game_client.health_in(frames: watched), fn(health) {
+      case health.0 == beast_unit {
+        True -> Ok(health.1)
+        False -> Error(Nil)
+      }
+    })
+  assert seen_health == healths
+    as "the watcher reads the same 0x937 the caster did, then 0x88c"
+  assert list.contains(
+    game_client.go_targets_in(frames: watched),
+    #(last_cast_of(watched), [beast_unit]),
+  )
+    as "the watcher reads the same 0x7f4, naming the Beast, for the cast it was sent the start of (opcode.0x7ff, opcode.0x7f4)"
+  let assert Ok(last) = list.last(game_client.health_in(frames: watched))
+  assert last == #(beast_unit, 0, True)
+    as "opcode.0x937: health 0 with the dead bit, from the creature itself"
+  // The creature stands again after its respawn time: 0x355, then a full 0x262.
+  let #(after_first, first_have) =
+    game_client.read_until(
+      game: first,
+      have: first_have,
+      within_ms: 5000,
+      found: fn(frames) {
+        game_client.removals_in(frames:) != []
+        && game_client.creatures_created_in(frames:) != []
+      },
+    )
+  let #(after_second, _) =
+    game_client.read_until(
+      game: second,
+      have: second_have,
+      within_ms: 5000,
+      found: fn(frames) {
+        game_client.removals_in(frames:) != []
+        && game_client.creatures_created_in(frames:) != []
+      },
+    )
+  list.each([after_first, after_second], fn(frames) {
+    assert list.contains(game_client.removals_in(frames:), beast_unit)
+      && list.map(game_client.creatures_created_in(frames:), fn(unit) {
+        unit.unit_id
+      })
+      == [beast_unit]
+      as "death.creature_respawn: 0x355, then a 0x262 with the same unit id, to each viewer"
+  })
+  // The picture of the respawned Beast is alive again: a press strikes it.
+  let #(_, after_respawn) =
+    press_until_a_hit(
+      game: first,
+      have: first_have,
+      beast: beast_unit,
+      cast_id: 100,
+    )
+  assert after_respawn == 0
+    as "the respawned Beast was struck and killed again, so the caster's picture holds it alive again: the 0x355 cleared it and the respawn's 0x262 restored it"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+/// The id of the last cast the frames start (0x7ff).
+fn last_cast_of(frames: List(Frame)) -> Int {
+  let assert Ok(game_client.CastStarted(cast_id:, ..)) =
+    list.filter(game_client.casts_in(frames:), fn(event) {
+      case event {
+        game_client.CastStarted(..) -> True
+        game_client.CastRefused(..)
+        | game_client.CastConfirmed(..)
+        | game_client.CastWent(..)
+        | game_client.CastFinished(..) -> False
+      }
+    })
+    |> list.last
+    as "the watcher was sent a cast's start"
+  cast_id
+}
+
+/// Presses Paralytic Surge until a press hits the Beast (a deflected one is shown by a
+/// 0x7fb and strikes again), and gives the Beast's health after the hit.
+fn press_until_a_hit(
+  game game: game_client.Game,
+  have have: BitArray,
+  beast beast: Int,
+  cast_id cast_id: Int,
+) -> #(BitArray, Int) {
+  game_client.press_ability(
+    game:,
+    client_cast_id: cast_id,
+    bag_index: 2,
+    target: 0,
+  )
+  let #(frames, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      game_client.health_in(frames:) != []
+      || game_client.missed_in(frames:) != []
+    })
+  case
+    list.find(game_client.health_in(frames:), fn(health) { health.0 == beast })
+  {
+    Ok(health) -> #(have, health.1)
+    Error(Nil) -> press_until_a_hit(game:, have:, beast:, cast_id: cast_id + 1)
+  }
+}
+
+/// The place of the first frame of the message in the frames, or -1.
+fn position_of(frames frames: List(Frame), message_id message_id: Int) -> Int {
+  case
+    list.index_map(frames, fn(frame, index) { #(frame.message_id, index) })
+    |> list.find(fn(entry) { entry.0 == message_id })
+  {
+    Ok(#(_, index)) -> index
+    Error(Nil) -> -1
+  }
+}
+
+/// Presses Paralytic Surge, one cast after another, until the 0x88c of the Beast
+/// arrives; the Beast's health after each hit, in order, and the bytes beyond.
+fn press_until_dead(
+  game game: game_client.Game,
+  have have: BitArray,
+  beast beast: Int,
+  cast_id cast_id: Int,
+) -> #(BitArray, List(Int)) {
+  press_loop(game:, have:, beast:, cast_id:, healths: [])
+}
+
+fn press_loop(
+  game game: game_client.Game,
+  have have: BitArray,
+  beast beast: Int,
+  cast_id cast_id: Int,
+  healths healths: List(Int),
+) -> #(BitArray, List(Int)) {
+  game_client.press_ability(
+    game:,
+    client_cast_id: cast_id,
+    bag_index: 2,
+    target: 0,
+  )
+  let #(frames, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      let finished =
+        list.any(game_client.casts_in(frames:), fn(event) {
+          case event {
+            game_client.CastFinished(..) -> True
+            game_client.CastRefused(..)
+            | game_client.CastConfirmed(..)
+            | game_client.CastStarted(..)
+            | game_client.CastWent(..) -> False
+          }
+        })
+      finished
+      && {
+        game_client.health_in(frames:) != []
+        || game_client.missed_in(frames:) != []
+      }
+    })
+  assert list.is_empty(game_client.health_in(frames:))
+    || position_of(frames:, message_id: 0x07F4)
+    < position_of(frames:, message_id: 0x0937)
+    as "the caster's client is written the go, with the number, before the health it caused: a creature's news for a unit of the caster's open round is held until the go is written"
+  let hits =
+    list.filter_map(game_client.health_in(frames:), fn(health) {
+      case health.0 == beast {
+        True -> Ok(health.1)
+        False -> Error(Nil)
+      }
+    })
+  let healths = list.append(healths, hits)
+  case list.last(healths) {
+    Ok(0) -> {
+      let #(_, have) =
+        game_client.read_until(game:, have:, within_ms: 5000, found: fn(more) {
+          list.any(
+            list.append(frames, more) |> game_client.deaths_in(frames: _),
+            fn(death) { death == #(beast, True) },
+          )
+        })
+      #(have, healths)
+    }
+    Ok(_) | Error(Nil) ->
+      press_loop(game:, have:, beast:, cast_id: cast_id + 1, healths:)
+  }
 }

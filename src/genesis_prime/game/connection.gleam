@@ -329,14 +329,19 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
+import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
+import genesis_prime/game/damage
 import genesis_prime/game/movement
+import genesis_prime/game/rating
 import genesis_prime/game/routing
+import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
@@ -361,7 +366,9 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
+import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/world_message
 import genesis_prime/step.{
@@ -374,9 +381,11 @@ import genesis_prime/step.{
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict
 import gleam/int
@@ -1204,7 +1213,7 @@ fn cast_message(
     )
   {
     Ok(#(updated, effects)) ->
-      carry_cast(session: with_cast(session:, cast: updated), effects:)
+      carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     Error(refusal) -> end_for(session:, now:, text: cast.describe(refusal))
   }
 }
@@ -1231,7 +1240,20 @@ fn target_sent(
   now now: Now,
   answered answered: Answered,
 ) -> client_connection.Handled(Session) {
-  unbuilt(inputs: #(session, now, answered))
+  case held_in_the_world(session.status) {
+    None -> Continue(session, [])
+    Some(entered) -> {
+      let #(updated, effects) =
+        strike.answered(strike: entered.strike, answer: answered, now:)
+      let #(session, written) =
+        carry_strike(
+          session: with_strike(session:, strike: updated),
+          now:,
+          effects:,
+        )
+      Continue(session, written)
+    }
+  }
 }
 
 /// The strike timer fired: the rounds whose deadline has passed close with the
@@ -1240,7 +1262,19 @@ fn strike_due(
   session session: Session,
   now now: Now,
 ) -> client_connection.Handled(Session) {
-  unbuilt(inputs: #(session, now))
+  case held_in_the_world(session.status) {
+    None -> Continue(session, [])
+    Some(entered) -> {
+      let #(updated, effects) = strike.timer_fired(strike: entered.strike, now:)
+      let #(session, written) =
+        carry_strike(
+          session: with_strike(session:, strike: updated),
+          now:,
+          effects:,
+        )
+      Continue(session, written)
+    }
+  }
 }
 
 /// A timer of the player's cast rule fired: its go, child cast or held press.
@@ -1260,7 +1294,7 @@ fn cast_due(
           caster: caster_of(entered:),
           now:,
         )
-      carry_cast(session: with_cast(session:, cast: updated), effects:)
+      carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     }
   }
 }
@@ -1287,31 +1321,178 @@ fn with_cast(session session: Session, cast cast: cast.State) -> Session {
 /// What the cast rule decided, carried out in order.
 fn carry_cast(
   session session: Session,
+  now now: Now,
   effects effects: List(cast.Effect),
 ) -> client_connection.Handled(Session) {
-  Continue(session, cast_effects(session:, effects:))
+  let #(session, written) = cast_effects(session:, now:, effects:)
+  Continue(session, written)
 }
 
-/// The connection's effects for what the cast rule decided: a write, a tell of
-/// news to a viewer in the run of the player's map, a timer or a log line. A
-/// tell with no player in the world is dropped.
+/// The connection's effects for what the cast rule decided, with the session as
+/// they leave it: a write, a tell of news to a viewer in the run of the player's
+/// map, a timer or a log line, and a go asked, which selects and strikes its targets
+/// (`strike_begins`). A tell with no player in the world is dropped.
 fn cast_effects(
   session session: Session,
+  now now: Now,
   effects effects: List(cast.Effect),
-) -> List(Effect(ConnectionEffect(Request))) {
-  let entered = entered_of(session.status)
-  list.filter_map(effects, fn(effect) {
-    case effect, entered {
-      cast.Send(frame:), _ -> Ok(to_client(session, frame))
-      cast.Tell(to:, news:), Some(entered) ->
-        Ok(news_to(entered:, viewer: to, news:))
-      cast.Tell(..), None -> Error(Nil)
-      cast.StartTimer(timer:, after_ms:), _ ->
-        Ok(OwnEffect(StartTimer(timer:, after_ms:)))
-      cast.CancelTimer(timer:), _ -> Ok(OwnEffect(CancelTimer(timer:)))
-      cast.Log(level:, text:), _ -> Ok(log(session:, level:, text:))
-      cast.Strike(asked:), _ -> unbuilt(inputs: asked)
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  list.fold(effects, #(session, []), fn(so_far, effect) {
+    let #(session, done) = so_far
+    let #(session, more) = case effect, entered_of(session.status) {
+      cast.Send(frame:), _ -> #(session, [to_client(session, frame)])
+      cast.Tell(to:, news:), Some(entered) -> #(session, [
+        news_to(entered:, viewer: to, news:),
+      ])
+      cast.Tell(..), None -> #(session, [])
+      cast.StartTimer(timer:, after_ms:), _ -> #(session, [
+        OwnEffect(StartTimer(timer:, after_ms:)),
+      ])
+      cast.CancelTimer(timer:), _ -> #(session, [
+        OwnEffect(CancelTimer(timer:)),
+      ])
+      cast.Log(level:, text:), _ -> #(session, [log(session:, level:, text:)])
+      cast.Strike(asked:), Some(entered) ->
+        strike_begins(session:, now:, entered:, asked:)
+      cast.Strike(..), None -> #(session, [])
     }
+    #(session, list.append(done, more))
+  })
+}
+
+/// A go asked: its targets are selected from the units the client shows, the
+/// caster's rolls are drawn from the connection's seed, and the strike rule begins
+/// its round (genesis_prime/game/strike).
+fn strike_begins(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  asked asked: cast.GoAsked,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let tables = session.settings.tables
+  let attacker = attacker_of(session:, entered:)
+  let selection =
+    strike.select(
+      asked:,
+      attacker:,
+      picture: entered.shown,
+      areas: spell_area.areas(tables:),
+    )
+  let #(link, entropy) =
+    client_connection.draw(session.link, strike.entropy_needed(selection:))
+  let #(updated, effects) =
+    strike.begin(
+      strike: entered.strike,
+      selection:,
+      attacker:,
+      formulas: rating.formulas(tables:),
+      entropy:,
+      now:,
+    )
+  carry_strike(
+    session: with_strike(session: Session(..session, link:), strike: updated),
+    now:,
+    effects:,
+  )
+}
+
+/// The player as its strikes take it: who it is, where it stands and faces, which
+/// player faction it is of and what its damage reads of it (its level and the
+/// ratings its gear gives).
+fn attacker_of(
+  session session: Session,
+  entered entered: world_entry.Entered,
+) -> strike.Attacker {
+  let place = movement.place(entered.movement)
+  let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
+    as "a character's faction is Exile or Dominion (start_place)"
+  let level =
+    list.find(entered.unit.tail.stats, fn(stat) {
+      stat.stat_id == unit_fields.level_stat
+    })
+    |> result.map(fn(stat) { stat.value })
+    |> result.unwrap(1)
+  strike.Attacker(
+    unit_id: entered.unit_id,
+    connection: client_connection.connection(session.link),
+    pose: Pose(
+      at: Point(x: start_place.x(place), z: start_place.z(place)),
+      yaw: start_place.facing(place).yaw,
+    ),
+    faction:,
+    stats: damage.Attacker(
+      level:,
+      assault_rating: entered.loadout.properties.assault_rating,
+      support_rating: entered.loadout.properties.support_rating,
+    ),
+  )
+}
+
+/// The session with the player's strike state replaced.
+fn with_strike(
+  session session: Session,
+  strike strike: strike.State,
+) -> Session {
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(..entered, strike:)
+  })
+}
+
+/// What the strike rule decided, carried out in order, with the session as they leave
+/// it: a strike told to a creature through the creature registry, a timer, a closed
+/// round's go (the cast rule's `went`), the news held for the round's units, or a log
+/// line.
+fn carry_strike(
+  session session: Session,
+  now now: Now,
+  effects effects: List(strike.Effect),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  list.fold(effects, #(session, []), fn(so_far, effect) {
+    let #(session, done) = so_far
+    let #(session, more) = case effect, entered_of(session.status) {
+      _, None -> #(session, [])
+      strike.TellStrike(unit_id:, life:, tell:), Some(entered) -> #(session, [
+        OwnEffect(step.Tell(
+          to: step.Creature(
+            map: entered.map,
+            incarnation: entered.incarnation,
+            unit_id:,
+            life:,
+          ),
+          request: client_connection.TellStrike(tell:),
+        )),
+      ])
+      strike.StartTimer(timer:, after_ms:), Some(_) -> #(session, [
+        OwnEffect(StartTimer(timer:, after_ms:)),
+      ])
+      strike.CancelTimer(timer:), Some(_) -> #(session, [
+        OwnEffect(CancelTimer(timer:)),
+      ])
+      strike.Went(asked:, struck:), Some(entered) -> {
+        let #(updated, cast_effects_out) =
+          cast.went(
+            cast: entered.cast,
+            caster: caster_of(entered:),
+            now:,
+            cast_id: asked.cast_id,
+            phase: asked.phase,
+            struck:,
+          )
+        cast_effects(
+          session: with_cast(session:, cast: updated),
+          now:,
+          effects: cast_effects_out,
+        )
+      }
+      strike.Released(unit_id:, news:), Some(entered) -> #(
+        session,
+        creature_news_frames(session:, entered:, unit_id:, news:),
+      )
+      strike.Log(level:, text:), Some(_) -> #(session, [
+        log(session:, level:, text:),
+      ])
+    }
+    #(session, list.append(done, more))
   })
 }
 
@@ -1646,7 +1827,16 @@ fn carry_out(
             before: list.flatten([
               list.reverse(written),
               chat_effects(session:, effects: chat.left(entered.chat)).1,
-              cast_effects(session:, effects: cast.left(cast: entered.cast).1),
+              cast_effects(
+                session:,
+                now:,
+                effects: cast.left(cast: entered.cast).1,
+              ).1,
+              carry_strike(
+                session:,
+                now:,
+                effects: strike.left(strike: entered.strike).1,
+              ).1,
               [OwnEffect(CancelTimer(timer: save_timer))],
             ]),
             within_ms: session.settings.ask_deadline_ms,
@@ -1949,7 +2139,7 @@ fn map_sent(
     map.Gone(unit_id:), Some(entered) -> {
       let session = marked_gone(session:, unit_id:)
       use <- bool.guard(
-        when: !set.contains(entered.shown, unit_id),
+        when: !dict.has_key(entered.shown, unit_id),
         return: Continue(session, []),
       )
       Continue(
@@ -2130,7 +2320,7 @@ fn viewer_takes(
   news news: client_connection.PeerNews,
 ) -> client_connection.Handled(Session) {
   let unit_id = news.unit_id
-  let shown = set.contains(entered.shown, unit_id)
+  let shown = dict.has_key(entered.shown, unit_id)
   let creates_or_removes = case news.news {
     client_connection.Appeared(..)
     | client_connection.CreatureAppeared(..)
@@ -2138,6 +2328,7 @@ fn viewer_takes(
     client_connection.Moving(..)
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
+    | client_connection.CastMissed(..)
     | client_connection.CastFinished(..)
     | client_connection.Health(..)
     | client_connection.Died -> False
@@ -2160,18 +2351,36 @@ fn viewer_takes(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
-        to_client(session, world_entry.unit_created_frame(unit:)),
-      ])
+      Continue(
+        shown_changed(session:, change: dict.insert(_, unit_id, ShownPlayer)),
+        [to_client(session, world_entry.unit_created_frame(unit:))],
+      )
     }
-    client_connection.CreatureAppeared(unit:) -> {
+    client_connection.CreatureAppeared(
+      unit:,
+      life:,
+      place:,
+      hit_radius:,
+      attackable:,
+    ) -> {
       use <- bool.guard(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
-        to_client(session, creature_created_frame(unit:)),
-      ])
+      Continue(
+        shown_changed(session:, change: dict.insert(
+          _,
+          unit_id,
+          ShownCreature(
+            place:,
+            life:,
+            alive: creature_unit.health_of(unit:) > 0,
+            hit_radius:,
+            attackable:,
+          ),
+        )),
+        [to_client(session, creature_created_frame(unit:))],
+      )
     }
     client_connection.Moving(server_time_ms:, commands:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
@@ -2214,6 +2423,13 @@ fn viewer_takes(
       )
       Continue(session, [to_client(session, cast.went_frame(go:))])
     }
+    client_connection.CastMissed(missed:) -> {
+      use <- bool.guard(
+        when: !dict.has_key(entered.casts_written, missed.cast_id),
+        return: Continue(session, []),
+      )
+      Continue(session, [to_client(session, cast.missed_frame(missed:))])
+    }
     client_connection.CastFinished(cast_id:) -> {
       use <- bool.guard(
         when: !dict.has_key(entered.casts_written, cast_id),
@@ -2230,8 +2446,112 @@ fn viewer_takes(
       )
     }
     client_connection.Health(health:, dead:) ->
-      unbuilt(inputs: #(session, shown, health, dead))
-    client_connection.Died -> unbuilt(inputs: #(session, shown))
+      creature_news(
+        session:,
+        entered:,
+        unit_id:,
+        news: client_connection.Health(health:, dead:),
+      )
+    client_connection.Died ->
+      creature_news(session:, entered:, unit_id:, news: client_connection.Died)
+  }
+}
+
+/// A creature's health or death news, for a creature this client shows: its picture
+/// marks the creature dead at once, which a selection reads, and the frame is
+/// written, or held until the go of the caster's own round that names the unit is
+/// written, so the client shows the number before the death it caused
+/// (genesis_prime/game/strike). Another watcher's connection is not held: it is told
+/// the news and the cast by two senders, which no order holds.
+fn creature_news(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  news news: client_connection.News,
+) -> client_connection.Handled(Session) {
+  use <- bool.guard(
+    when: !dict.has_key(entered.shown, unit_id),
+    return: Continue(session, []),
+  )
+  let session = case news {
+    client_connection.Died | client_connection.Health(dead: True, ..) ->
+      shown_changed(session:, change: fn(picture) {
+        shown.with_alive(picture:, unit_id:, alive: False)
+      })
+    client_connection.Health(dead: False, ..)
+    | client_connection.Appeared(..)
+    | client_connection.CreatureAppeared(..)
+    | client_connection.Moving(..)
+    | client_connection.Removed
+    | client_connection.CastStarted(..)
+    | client_connection.CastWent(..)
+    | client_connection.CastMissed(..)
+    | client_connection.CastFinished(..) -> session
+  }
+  case strike.holds(strike: entered.strike, unit_id:) {
+    True ->
+      Continue(
+        with_strike(
+          session:,
+          strike: strike.hold(strike: entered.strike, unit_id:, news:),
+        ),
+        [],
+      )
+    False ->
+      Continue(
+        session,
+        creature_news_frames(session:, entered:, unit_id:, news:),
+      )
+  }
+}
+
+/// The frame of a creature's news, when its client still shows the creature: 0x937
+/// for its health, 0x88c for its death.
+fn creature_news_frames(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  news news: client_connection.News,
+) -> List(Effect(ConnectionEffect(Request))) {
+  use <- bool.guard(when: !dict.has_key(entered.shown, unit_id), return: [])
+  case news {
+    client_connection.Health(health:, dead:) -> {
+      let assert Ok(body) =
+        unit_health.encode(
+          UnitHealth(unit_id:, health:, dead: case dead {
+            True -> 1
+            False -> 0
+          }),
+        )
+        as "a unit id of 32 bits, a health of 32 and a bit fit the message"
+      [
+        to_client(session, Frame(message_id: unit_health.message_id, body:)),
+      ]
+    }
+    client_connection.Died -> {
+      let assert Ok(body) =
+        unit_death_state.encode(UnitDeathState(
+          unit_id:,
+          dead: 1,
+          field_3: 0,
+          field_4: 0,
+        ))
+        as "a unit id of 32 bits and the safe values fit the message (opcode.0x88c)"
+      [
+        to_client(
+          session,
+          Frame(message_id: unit_death_state.message_id, body:),
+        ),
+      ]
+    }
+    client_connection.Appeared(..)
+    | client_connection.CreatureAppeared(..)
+    | client_connection.Moving(..)
+    | client_connection.Removed
+    | client_connection.CastStarted(..)
+    | client_connection.CastWent(..)
+    | client_connection.CastMissed(..)
+    | client_connection.CastFinished(..) -> []
   }
 }
 
@@ -2326,7 +2646,7 @@ fn viewers_changed(
 /// The session with the units its client shows changed by `change`.
 fn shown_changed(
   session session: Session,
-  change change: fn(Set(Int)) -> Set(Int),
+  change change: fn(shown.Picture) -> shown.Picture,
 ) -> Session {
   with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, shown: change(entered.shown))
@@ -2340,7 +2660,7 @@ fn unit_forgotten(session session: Session, unit_id unit_id: Int) -> Session {
   with_entered(session:, change: fn(entered) {
     world_entry.Entered(
       ..entered,
-      shown: set.delete(entered.shown, unit_id),
+      shown: dict.delete(entered.shown, unit_id),
       casts_written: dict.filter(entered.casts_written, fn(_, caster) {
         caster != unit_id
       }),
@@ -3250,10 +3570,4 @@ fn account_id_of(status: Status) -> Option(Int) {
       ) -> Some(id)
     AwaitingHelloReply | TakingSessionKey -> None
   }
-}
-
-/// The body of a function the shape names and the build writes: the arguments
-/// are used, and the call stops.
-fn unbuilt(inputs _inputs: inputs) -> output {
-  panic as "not built: the shape holds the types"
 }

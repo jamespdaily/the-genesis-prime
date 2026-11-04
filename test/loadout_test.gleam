@@ -312,13 +312,14 @@ fn files_with_formulas(
       True ->
         planted_table.file(
           game_formula.schema,
-          list.append(
+          list.flatten([
             character_tables.game_formula_rows(
               ids: [character_tables.highest_level_formula],
               highest: 50,
             ),
             list.map(formulas, novice_tables.game_formula_row),
-          ),
+            character_tables.combat_formula_rows(),
+          ]),
         )
       False -> file
     }

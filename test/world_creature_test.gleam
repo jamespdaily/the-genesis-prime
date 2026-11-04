@@ -25,10 +25,13 @@ import event_wait
 import genesis_prime/client_connection.{
   type Message, CreatureAppeared, PeerNews, SentByMap, SentByPeer,
 }
+import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
+import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
@@ -125,7 +128,7 @@ fn next(
 /// A creature's 0x262 as the connection was sent it, with the unit id it names.
 fn appearance(message: Message) -> Result(UnitCreateCreature, Nil) {
   case message {
-    SentByPeer(PeerNews(news: CreatureAppeared(unit:), ..)) -> Ok(unit)
+    SentByPeer(PeerNews(news: CreatureAppeared(unit:, ..), ..)) -> Ok(unit)
     SentByPeer(..)
     | SentByMap(..)
     | client_connection.SentBySessions(..)
@@ -141,10 +144,10 @@ const idle_stop_ms = 100
 const sweep_ms = 20
 
 /// A world of one Battle Beast at x 0 whose creatures stop on the short times.
-fn one_beast(creature_restart_ms creature_restart_ms: Int) -> World {
+fn one_beast(respawn_ms respawn_ms: Int) -> World {
   world_support.start(
     spawns: [spawn_support.battle_beast(number: 1, x: 0.0)],
-    creature_restart_ms:,
+    respawn_ms:,
     idle_stop_ms:,
     sweep_ms:,
   )
@@ -175,7 +178,7 @@ const far = 50_000.0
 
 pub fn a_creature_is_started_when_a_player_sees_its_spawn_found_by_its_address_and_sends_its_0x262_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = one_beast(creature_restart_ms: 60_000)
+  let world = one_beast(respawn_ms: 60_000)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   assert creature_registry.find(
@@ -206,7 +209,7 @@ pub fn a_creature_is_started_when_a_player_sees_its_spawn_found_by_its_address_a
 
 pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_unit_after_the_respawn_time_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = one_beast(creature_restart_ms: 100)
+  let world = one_beast(respawn_ms: 100)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   let player = join(run:, connection: 1)
@@ -240,7 +243,7 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
 
 pub fn a_creature_stops_after_its_last_viewer_leaves_sight_and_the_spawn_seen_again_keeps_its_unit_id_and_shows_once_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = one_beast(creature_restart_ms: 60_000)
+  let world = one_beast(respawn_ms: 60_000)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   let _player = join(run:, connection: 1)
@@ -281,7 +284,7 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
         spawn_support.battle_beast(number: 1, x: 0.0),
         spawn_support.battle_beast(number: 2, x: 100.0),
       ],
-      creature_restart_ms: 60_000,
+      respawn_ms: 60_000,
       idle_stop_ms:,
       sweep_ms:,
     )
@@ -332,12 +335,7 @@ fn crowded_world() -> World {
         x: int.to_float(index + 1) *. 0.4,
       )
     })
-  world_support.start(
-    spawns:,
-    creature_restart_ms: 60_000,
-    idle_stop_ms:,
-    sweep_ms:,
-  )
+  world_support.start(spawns:, respawn_ms: 60_000, idle_stop_ms:, sweep_ms:)
 }
 
 pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_and_found_test() -> Nil {
@@ -373,4 +371,122 @@ pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_sta
   event_wait.until("every creature the map started has ended", fn() {
     world_support.creature_pids(world) == []
   })
+}
+
+/// The strike of connection 1 on the Beast `unit_id` with one blow of `damage` and no
+/// luck, told through the registry as a caster's connection tells it.
+fn strike_with(
+  world world: World,
+  run run: MapProcess,
+  unit_id unit_id: Int,
+  life life: Int,
+  damage damage: Int,
+  cast_id cast_id: Int,
+) -> Nil {
+  let assert Ok(Nil) =
+    creature_registry.tell(
+      world.creatures,
+      map: ship,
+      incarnation: run.incarnation,
+      unit_id:,
+      life:,
+      message: creature.Strike(tell: Strike(
+        key: Key(cast_id:, phase: 0, unit_id:),
+        from: ConnectionId(1),
+        offence: Offence(
+          blows: [
+            Blow(spell4_effects_id: 1, damage_type: 3, damage:, delay_ms: 0),
+          ],
+          crit_chance: 0.0,
+          crit_severity: 1.5,
+          strikethrough: 0.0,
+        ),
+        rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+      )),
+    )
+    as "the creature is found by its address and told"
+  Nil
+}
+
+pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_kinds_respawn_time_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = one_beast(respawn_ms: 150)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let _found = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  strike_with(
+    world:,
+    run:,
+    unit_id: first.unit_id,
+    life: 2,
+    damage: 60,
+    cast_id: 1,
+  )
+  let answer =
+    next(received:, what: "the answer to the strike", wanted: fn(message) {
+      case message {
+        client_connection.SentByTarget(answered:) -> Ok(answered)
+        SentByMap(..)
+        | SentByPeer(..)
+        | client_connection.SentBySessions(..)
+        | client_connection.SentByChat(..) -> Error(Nil)
+      }
+    })
+  let assert Answered(key: Key(cast_id: 1, ..), outcome:) = answer
+  let assert Landed(descriptions: [description]) = outcome
+  assert description.damage.killed == 1
+    as "the 60 damage takes the Beast's 52 health to 0"
+  let again =
+    next(
+      received:,
+      what: "the 0x262 of the creature standing again",
+      wanted: appearance,
+    )
+  assert again.unit_id == first.unit_id
+    && list.contains(again.tail.stats, UnitStat(stat_id: 0, value: 52))
+    as "death.creature_respawn: the same unit id, at full health, after the kind's respawn time"
+}
+
+pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn_seen_again_stands_full_with_its_unit_id_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = one_beast(respawn_ms: 400)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  strike_with(
+    world:,
+    run:,
+    unit_id: first.unit_id,
+    life: 2,
+    damage: 60,
+    cast_id: 1,
+  )
+  move_to(run:, connection: 1, x: far)
+  event_wait.until("the dead creature stopped at its respawn", fn() {
+    !process.is_alive(pid)
+  })
+  move_to(run:, connection: 1, x: 0.0)
+  let second =
+    next(
+      received:,
+      what: "the 0x262 of the creature started again",
+      wanted: fn(message) {
+        case appearance(message) {
+          Ok(unit) ->
+            case
+              list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 52))
+            {
+              True -> Ok(unit)
+              False -> Error(Nil)
+            }
+          Error(Nil) -> Error(Nil)
+        }
+      },
+    )
+  assert second.unit_id == first.unit_id
+    as "a clean stop keeps the spawn's unit id, and the creature that starts is at full health (the corpse died with its process)"
 }

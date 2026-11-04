@@ -6,8 +6,10 @@
 //// - Telekinetic Strike: area row 345 (5 units, 30 m, 360 degrees) and the rectangle
 ////   of telegraph 2169 (3 wide, 29 long, 1 m ahead) (`Spell4.32893.area`).
 //// - Zap: area row 411 (5 units, 25 m, 360 degrees) and the twin rectangle 2837,
-////   3.5 wide and 24 long, 1 m ahead, with no flag 0x200: its size grows by the
-////   struck unit's hit radius (`Spell4.41438.area`, `0x14054da10`).
+////   3.5 wide and 24 long, 1 m ahead, with no flag 0x200: its half width 1.75 grows by
+////   the struck unit's hit radius to 4.75 (`Spell4.41438.area`). That the unit's hit
+////   circle overlapping the shape is what grows it is the server's choice, from the
+////   client's drawn sizing (`0x14054da10`), not a client rule.
 //// - Crush: area row 404 selects 1 unit (`Spell4.32812.area`).
 //// - The Virtual Battle Beast's hit radius is 3.0 (`Creature2.73464`).
 //// - Facing: the unit faces (-sin yaw, -cos yaw), so a unit at distance d at the
@@ -105,6 +107,29 @@ pub fn a_spell_with_no_telegraph_is_struck_within_its_area_rows_range_and_arc_te
   assert by(5.0, 91.0) == []
 }
 
+pub fn crushs_twin_cone_strikes_a_beast_2_m_ahead_because_the_hit_circle_reaches_inside_its_inner_radius_test() -> Nil {
+  use <- owned_test.run(5000)
+  let row =
+    Row(min_range: 0.0, max_range: 25.0, degrees: 360.0, target_count: 1)
+  let twin =
+    InsideShapes([
+      Placement(
+        shape: Cone(inner: 1.0, outer: 26.0, degrees: 45.0),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+        grows_by_hit_radius: True,
+      ),
+    ])
+  assert struck(
+      candidates: [beast(1, at(distance: 2.0, degrees: 0.0, yaw: 0.0))],
+      row:,
+      inside: twin,
+    )
+    == [1]
+    as "Spell4.32812.area: the twin 5123 has flag 64 and no 0x200, so it grows; its inner radius 1 shrinks by the Beast's 3.0 to 0 (server choice: the hit circle overlaps the shape, 0x14054d170 case 4)"
+}
+
 pub fn a_unit_inside_the_telegraph_but_beyond_the_area_rows_range_is_not_struck_test() -> Nil {
   use <- owned_test.run(5000)
   let row =
@@ -116,7 +141,7 @@ pub fn a_unit_inside_the_telegraph_but_beyond_the_area_rows_range_is_not_struck_
         ahead: 0.0,
         aside: 0.0,
         turn_degrees: 0.0,
-        grows_by_hit_radius: False,
+        grows_by_hit_radius: True,
       ),
     ])
   let by = fn(distance) {

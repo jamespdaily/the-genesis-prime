@@ -17,6 +17,7 @@ import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_miss.{SpellMiss}
 import genesis_prime/message/spell_missed
+import genesis_prime/message/spell_started
 import genesis_prime/table/id.{Spell4Id}
 import gleam/list
 import owned_test
@@ -28,10 +29,16 @@ const first_cast = 2_147_497_984
 /// fires at 2250 ms.
 fn gone() -> #(cast.State, List(cast.Effect)) {
   let #(state, pressed) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed_raw(
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: 0,
+      target: 0,
+      at: 1000,
+    )
   let assert [#(timer, 1250)] = support.started_timers(effects: pressed)
     as "the cast time of Spell4.32893"
-  support.fired(state:, timer:, at: 2250)
+  support.fired_raw(state:, timer:, at: 2250)
 }
 
 pub fn a_go_with_damage_asks_for_its_targets_and_writes_nothing_until_the_round_closes_test() -> Nil {
@@ -125,4 +132,38 @@ pub fn a_0x801_while_a_round_is_open_leaves_the_close_with_nothing_to_write_test
     )
   assert effects == []
     as "the cast is no longer live: no go and no finish are written, and the hits stand in the creature"
+}
+
+pub fn a_proxy_aimed_at_the_area_starts_one_child_for_each_hit_unit_and_none_for_a_deflect_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) = gone()
+  let #(_, effects) =
+    cast.went(
+      cast: state,
+      caster: support.caster(),
+      now: support.at(ms: 2260),
+      cast_id: first_cast,
+      phase: 0,
+      struck: [
+        Hit(unit_id: 10, descriptions: []),
+        Deflected(unit_id: 11),
+        Hit(unit_id: 12, descriptions: []),
+      ],
+    )
+  let frames = support.writes(effects:)
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x07F4, 0x07FB, 0x07FF, 0x07FF, 0x07FE]
+    as "the go, then the miss, then each child's start (its own go asks for its targets), then the pressed cast's finish, after the miss (cast.miss_order: a miss after the finish is dropped)"
+  let starts =
+    list.filter_map(frames, fn(frame) {
+      case frame.message_id == 0x07FF {
+        True -> {
+          let assert Ok(start) = spell_started.decode(frame.body)
+          Ok(#(start.spell4_id, start.primary_target_unit_id))
+        }
+        False -> Error(Nil)
+      }
+    })
+  assert starts == [#(30_900, 10), #(30_900, 12)]
+    as "Spell4Effects 62204 is a Proxy to 30900 aimed at the area: one child for each Hit unit, with that unit as its primary target, and none for the deflected 11"
 }

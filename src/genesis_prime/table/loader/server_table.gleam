@@ -39,11 +39,16 @@ import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_telegraph
+import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
+import genesis_prime/table/telegraph_damage
+import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
@@ -71,6 +76,12 @@ import gleam/erlang/reference.{type Reference}
 /// - Spell4 and SpellLevel: a class's level-1 abilities (genesis_prime/game/loadout).
 /// - Spell4, Spell4Base, Spell4Effects, SpellPhase, SpellCoolDown and Class: the
 ///   tree of casts each of those abilities starts (genesis_prime/game/spell_plan).
+/// - Spell4, Spell4AoeTargetConstraints, Spell4Telegraph, TelegraphDamage,
+///   Spell4ValidTargets and Spell4Effects: what each spell strikes, its area, hit
+///   shapes and damage effects (genesis_prime/game/spell_area).
+/// - GameFormula and UnitProperty2: the hit rule's rating formulas and a player's
+///   bases (genesis_prime/game/rating); with CreatureLevel and the creature tables, a
+///   creature's defence (genesis_prime/world_map/spawn).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -103,11 +114,16 @@ pub fn entries() -> List(store.Entry) {
     item_slot.entry(),
     path_mission.entry(),
     spell4.entry(),
+    spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),
     spell4_effects.entry(),
+    spell4_telegraph.entry(),
+    spell4_valid_targets.entry(),
     spell_cool_down.entry(),
     spell_level.entry(),
     spell_phase.entry(),
+    telegraph_damage.entry(),
+    unit_property2.entry(),
     world_location2.entry(),
     world_zone.entry(),
     xp_per_level.entry(),

@@ -104,10 +104,9 @@ pub fn world() -> server.World {
     creatures: creature_registry.new(),
     creature_supervisor: process.new_name("test_creature_supervisor"),
     creature_shutdown_ms: 1000,
-    creature_restart_ms: 60_000,
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
-    spawns: spawn_support.key_with(spawns: []),
+    spawns: spawn_support.key_with(spawns: [], respawn_ms: 60_000),
   )
 }
 
@@ -163,7 +162,7 @@ pub fn servers_settings() -> server.Settings {
   envoy.set("GENESIS_REALM_NAME", "Test")
   genesis_prime.settings(
     tables: character_tables.shared(),
-    spawns: spawn_support.key_with(spawns: []),
+    spawns: spawn_support.key_with(spawns: [], respawn_ms: 60_000),
   )
 }
 

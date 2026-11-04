@@ -74,7 +74,7 @@ pub fn each_rules_bucket_in_the_servers_settings_holds_what_a_client_sends_at_th
   let settings =
     genesis_prime.settings(
       tables: character_tables.shared(),
-      spawns: spawn_support.key_with(spawns: []),
+      spawns: spawn_support.key_with(spawns: [], respawn_ms: 60_000),
     )
   let sts = settings.login.sts.settings
   let auth = settings.login.auth.settings
