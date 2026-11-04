@@ -23,7 +23,9 @@
 ////   and 167 ms (SpellPhase 3717 to 3720), each phase proxying 38781 by its
 ////   phaseFlags 1, 2, 4 and 8 (`Spell4.38791`).
 //// The child spells' bases are the client's (`table_rows -- Spell4 30900 34775 35886 38781`),
-//// each of cast method 0 but 38780's.
+//// each of cast method 0 but 38780's. Each Spell4 row holds the client's caster
+//// condition row (`caster_conditions`), and the three rows they name are planted
+//// (`spell4_conditions_rows`).
 ////
 //// The abilities of the cast methods, each row as `table_rows` prints it for the
 //// Spell4, Spell4Base, Spell4Thresholds, SpellPhase and Spell4Effects rows of the

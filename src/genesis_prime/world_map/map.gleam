@@ -36,8 +36,8 @@
 ////   ◀─ NotJoined(reason)         when the class and faction have no Novice set or the level no Base Health row:
 ////                                    no unit id is given, no player kept, no watch opened
 ////                                          for each player c2 in sight, in the same step:
-////   ◀─ Watched(by: c2)                                                        ─▶ send to c1
-////                                          Watched(by: c1) to c2               ─▶ send to c2
+////   ◀─ Watched(by: c2, its unit)                                              ─▶ send to c1
+////                                          Watched(by: c1, its unit) to c2     ─▶ send to c2
 //// ```
 ////
 //// Leave, from the map's side, for a player whose connection goes on after its
@@ -130,7 +130,7 @@
 ////   kept in `inside` and told when its creature starts.
 ////
 //// What a connection does with them is its own (genesis_prime/game/connection):
-//// told `Watched(by: v)`, it sends v its 0x262 at its current place, then its
+//// told `Watched(by: v, unit)`, it sends v its 0x262 at its current place, then its
 //// 0x638s as it moves; told `Unwatched(by: v)`, its 0x355; on its camp, its 0x355
 //// to every viewer before its `Leave`. A viewer's connection writes only what
 //// its client can take, from the units it has shown and the ones the map reported
@@ -145,6 +145,11 @@
 //// - **The incarnation** is in every `Joined`, so the joiner watches the run
 ////   of the map that holds its player, not a later one started after this
 ////   one ended.
+//// - **The watcher's unit** is in every `Watched`, and a creature starts with
+////   each first viewer's: the owner names it in every news it sends that viewer,
+////   so a news meant for a player's earlier stay, which reaches it after a leave
+////   and a new join, names an id the map no longer gives that player and is
+////   dropped (genesis_prime/game/connection).
 //// - **Unit ids** start at 1 and are never given to two units at once, whoever
 ////   leaves or ends: the client refuses a 0x262 whose unit id it already holds
 ////   (opcode.0x262), and a 0x262 with unit id 0 makes the client's controlled unit

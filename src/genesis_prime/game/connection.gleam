@@ -204,11 +204,12 @@
 ////   bytes after it, is one the client never writes, and ends the connection.
 //// - **Other players' units.** The map decides who sees whom
 ////   (genesis_prime/world_map/map) and tells the connection of each player in
-////   it, as the message `SentByMap`, who sees its player (`Watched(by)` when a
-////   player comes to see it, `Unwatched(by)` when one stops), and `Gone(unit)`
+////   it, as the message `SentByMap`, who sees its player (`Watched(by, unit)` when
+////   a player comes to see it, `Unwatched(by)` when one stops), and `Gone(unit)`
 ////   when a player's connection has ended. The connection keeps
-////   the connections that see its player as its viewers, in the player's
-////   `Entered`, and sends everything about its own unit to them itself, as
+////   the connections that see its player as its viewers, each with its player's
+////   unit, in the player's `Entered`, and sends everything about its own unit to
+////   them itself, as
 ////   `SentByPeer` through the registry (the same path the map's sends take,
 ////   `genesis_prime/server`'s `connection_reach`); the map sends no unit:
 ////
@@ -242,7 +243,11 @@
 ////   the unit gone, so a 0x262 from the owner that ended, which lands after it,
 ////   shows no ghost. A message names the map and the run of the map it is about,
 ////   and one for another run or map is dropped: the unit id there may name
-////   another unit.
+////   another unit. It names the viewer's own unit of the stay it was sent for, as
+////   the map's `Watched(by, unit)` gave it, and one for another unit is dropped:
+////   it was sent before the player's Holocrypt or camp and reaches its next stay,
+////   whose client holds none of the earlier units. A creature's threat and
+////   release name the player's unit the same way.
 //// - **A creature's unit** reaches a viewer the same way, as news from the
 ////   creature's own process (`CreatureAppeared`, then `Removed`), and is shown,
 ////   removed and marked gone by the same rules: the viewer neither knows nor asks
@@ -306,11 +311,13 @@
 //// - **Death and coming back** are player_life's (its module holds the sequence
 ////   and the failure table): a strike that leaves the player at 0 kills it; the
 ////   connection writes the death's frames, ends the player's casts
-////   (`cast.died`), and while the player is dead takes each 0x637 as its ghost's
-////   (told to no one), refuses its presses (`cast.take_while_dead`) and takes
-////   0x15a from inside 0x038C. Wake Here writes the coming back where the body
-////   lies. The Holocrypt writes the same, then leaves the map and joins again at
-////   the Holocrypt place (`start_place.holocrypt`) with no store ask:
+////   (`cast.died`), and while the player is dead decodes and drops each 0x637, its
+////   ghost's (`ghost.movement`), checks its presses as the client checks a dead
+////   caster (`caster_of`, `cast.dead_player`) and takes 0x15a from inside
+////   0x038C. Wake Here writes the coming back where the body lies. The Holocrypt
+////   writes the same, then leaves the map and joins again at the Holocrypt place
+////   (`start_place.holocrypt`, else the place the stay entered at) with no store
+////   ask; the save timer stops at the leave and starts again with the burst:
 ////
 ////   ```
 ////   0x15a {P, 2, 0} ─▶ the coming back's frames and news; the unit's 0x355 to each viewer
@@ -2758,8 +2765,9 @@ fn sessions_sent(
 /// What the map sent the connection, while its player is in the world or its
 /// claim is made again with the player in it: who sees its player (`Watched`,
 /// `Unwatched`), and a unit whose owner's connection ended (`Gone`). A connection
-/// sends everything about its own unit itself: told `Watched(by)` it sends `by` its
-/// 0x262 at its current place, told `Unwatched(by)` its 0x355. The shell takes a
+/// sends everything about its own unit itself: told `Watched(by, unit)` it keeps
+/// `by` with its unit and sends it its 0x262 at its current place, with its health
+/// now, told `Unwatched(by)` its 0x355. The shell takes a
 /// send between steps, after the ask's outcome and the step it starts are done
 /// (genesis_prime/connection/shell), and world entry writes its whole burst in the
 /// one step that takes the map's `Joined`, so a send of the map, which comes after
