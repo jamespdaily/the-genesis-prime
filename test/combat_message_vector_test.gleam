@@ -16,6 +16,7 @@
 //// values, the values encode back to them, and every shorter run of the bytes
 //// ends inside a field.
 
+import genesis_prime/message/ability_hold.{AbilityHold}
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
@@ -86,6 +87,8 @@ const server_cast_id = 0x80002804
 pub fn the_message_numbers_are_the_clients_test() -> Nil {
   use <- owned_test.run(5000)
   assert cast_ability.message_id == 0x9A as "opcode.0x9a: message 0x9a (154)"
+  assert ability_hold.message_id == 0x4DB
+    as "opcode.0x4db: message 0x4db (1243)"
   assert item_added.message_id == 0x111 as "opcode.0x111.ability_bag: id 0x111"
   assert ability_tiers.message_id == 0x1A0
     as "opcode.0x1a0: message 0x1a0 (416)"
@@ -120,6 +123,17 @@ pub fn the_message_numbers_are_the_clients_test() -> Nil {
   assert choose_resurrection.message_id == 0x15A
     as "opcode.0x15a: message 0x15a (346)"
   assert combat_log.message_id == 0x247 as "opcode.0x247: message 0x247 (583)"
+}
+
+pub fn a_hold_is_a_bag_index_a_target_and_a_held_bit_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0x4db: bag index 2 in 16 bits, target 0x12345 in 32, held 1 in 1 bit",
+    body: message_support.hex("02 00 45 23 01 00 01"),
+    value: AbilityHold(bag_index: 2, target_unit_id: 0x12345, held: 1),
+    encode: ability_hold.encode,
+    decode: ability_hold.decode,
+  )
 }
 
 pub fn a_press_is_a_client_cast_id_a_bag_index_a_target_and_a_press_bit_test() -> Nil {

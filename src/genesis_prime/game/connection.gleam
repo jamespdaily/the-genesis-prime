@@ -277,7 +277,7 @@
 ////   joins again (genesis_prime/game/chat has the sequences, the refusals and
 ////   the failure table).
 //// - **Casts** are a feature of their own (genesis_prime/game/cast): the player's
-////   `Entered` keeps its cast state, the routing table sends 0x9a and 0x801 to it
+////   `Entered` keeps its cast state, the routing table sends 0x9a, 0x4DB and 0x801 to it
 ////   from inside 0x038C with the player in the world, and the timers `cast.owns`
 ////   names are its (`other_timer_fired`). The rule turns its
 ////   effects into writes to the caster, tells of news to the viewers

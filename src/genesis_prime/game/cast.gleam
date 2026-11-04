@@ -27,15 +27,35 @@
 //// ◀── 0x7fe {k}             Tell(each viewer, CastFinished) ──────────────▶ 0x7fe, for a cast it wrote
 //// ◀── 0x814 {ability, bit}  the last tap or the release closes the threshold
 //// 0x801 {k, 6, 1} ─────────▶ the cast ends: its timers cancelled, 0x7fe to all
+////
+//// 0x4db held 1 ────────────▶ the ability is held: the same press, with the id k minted and no 0x7fd
+////                            its cast over and its cooldowns run ─▶ the same press again (StartTimer(repeat))
+//// 0x4db held 0 ────────────▶ the ability is not held: the repeat timer cancelled; a charge fires its stage
 //// ```
 ////
 //// - **The press** is 0x9a inside 0x038C: the client's cast id, the ability's bag
 ////   index, the target and the press bit (`opcode.0x9a`). A cast id of 0 is one
-////   the client never sends, and ends the connection. A press bit of 0 is the
-////   hold-to-cast setting; the press is logged and ignored, since the server
-////   builds no hold. A bag index the player does not hold is answered 0x7fc with
+////   the client never sends, and ends the connection. A press bit of 0 is a
+////   console setting's; the press is logged and ignored. A bag index the player does not hold is answered 0x7fc with
 ////   Spell4 id 0 and result 4 (`0x14039a040`; the server's choice, which the
 ////   client allows).
+//// - **The hold** is 0x4db: the client sends it instead of 0x9a under its default
+////   hold-to-continue-casting setting, once with held 1 at key down and once with
+////   held 0 at key up, with no cast id of its own (`opcode.0x4db`). A held 1 is the
+////   same press as a 0x9a's with two differences: the server mints the cast id and
+////   writes 0x7ff in place of 0x7fd (a 0x7fd names a pending cast the client does
+////   not make), and a refusal is a 0x7fc with client cast id 0
+////   (`cast.hold_answer`). The client holds no repeat timer, so while the key is
+////   held the server casts the ability again, when its last cast is over and the
+////   global cooldown it started and the ability's own cooldown have ended, on a
+////   timer of the rule; a press behind another cast waits for its end, never
+////   refused 13, which the client hides under the setting (`cast.hold_repeat`; the
+////   server's choice). A second ability's held 1 replaces the held one, and a second
+////   held 1 of the held ability is the same hold. Held 0 ends the repeats and cuts
+////   no cast or channel short; for a ChargeRelease ability it fires the charged
+////   stage, and a RapidTap ability's repeats are its next stages inside its
+////   threshold (`cast.hold_by_method`, `cast.hold_stop`). A refused repeat ends the
+////   hold. A bag index with no ability is answered as a 0x9a's is.
 //// - **The target** of every cast is the caster: no level-1 ability needs a
 ////   target the client picks (`Spell4TargetMechanics.targetType`: the client makes
 ////   the caster the target of a spell of kind 0, 2, 6 or 7 before it sends), so
@@ -144,6 +164,11 @@
 //// | Point | What happens |
 //// |---|---|
 //// | a 0x9a body the client's reader refuses, or a cast id of 0 | the connection ends, nothing written |
+//// | a 0x4db body the client's reader refuses | the connection ends, nothing written |
+//// | a 0x4db whose bag index holds no ability | 0x7fc {0, 0, 4} for held 1, a debug line for held 0 |
+//// | a 0x4db held 1 of the ability already held | the same hold: nothing written |
+//// | a held cast refused, at the first press or a repeat | the 0x7fc, and the hold ends |
+//// | the repeat timer fires after the release | nothing: the release cancelled it, and a firing that was already sent finds no hold |
 //// | a press whose bag index the player does not hold | 0x7fc {client id, 0, 4} |
 //// | a press past the last stage of an open threshold | 0x7fc {client id, the ability, 4} |
 //// | a refusal of the client's own checks | 0x7fc with the result; nothing else changes |
@@ -155,7 +180,7 @@
 //// | a parent cast finishes with a child's timer pending | the child starts when its timer fires, with the root and parent it was made with |
 //// | a threshold's window ends with taps left | the threshold closes, nothing is written, the cooldown starts |
 //// | the player camps with casts, children or a threshold pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
-//// | the caster's connection ends | its timers end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
+//// | the caster's connection ends, a key held | its timers and the hold end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
 //// | a timer fires after its cast ended | a go finds no live cast and does nothing; the cast's end cancels its go timers |
 //// | a timer fires in a status that holds no player in the world | dropped; the world is left already |
 //// | the answer of a store ask comes after a timer's due time | the timer is taken after the answer: the go and finish are late by the ask, never lost |
@@ -167,6 +192,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/hit
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_result
@@ -209,6 +235,9 @@ import gleam/set.{type Set}
 pub type Message {
   /// 0x009A, the press of an ability.
   Pressed
+  /// 0x04DB, the key or button of an ability goes down or up under the client's
+  /// hold-to-continue-casting setting, which is on by default.
+  KeyHeld
   /// 0x0801, the client ends one of its player's casts.
   Cancelled
 }
@@ -291,6 +320,8 @@ pub type Due {
   )
   /// The held press starts.
   StartHeld
+  /// The ability the player holds down casts again: its cooldowns have ended.
+  RepeatHeld
   /// The time of the RapidTap threshold of the ability `spell4_id` runs out.
   WindowEnd(spell4_id: Int)
   /// The ChargeRelease threshold of the ability `spell4_id` reaches the charge
@@ -348,7 +379,22 @@ pub type Threshold {
 /// A press the client queued within 500 ms of a cooldown's end, or the server
 /// queues within 500 ms of the end of the current cast.
 pub type Held {
-  Held(client_cast_id: Int, resolution: Resolution, until: HeldUntil)
+  Held(client_cast_id: Option(Int), resolution: Resolution, until: HeldUntil)
+}
+
+/// The ability whose key the player holds down: it casts when the key goes down
+/// and again each time its cast has ended and its cooldowns allow, until the key
+/// comes up (`cast.hold_repeat`).
+pub type Holding {
+  Holding(
+    ability: Spell,
+    /// The timer that waits for the cooldowns to end, when one runs.
+    repeat_timer: Option(TimerId),
+    /// The cast the hold started last, once it has started one: until that cast is
+    /// over the ability is not cast again, and from then on a cooldown is waited
+    /// for and no longer refused.
+    last_cast: Option(Int),
+  )
 }
 
 /// What a held press waits for.
@@ -376,6 +422,7 @@ pub opaque type State {
     thresholds: Dict(Int, Threshold),
     timers: Dict(TimerId, Due),
     held: Option(Held),
+    holding: Option(Holding),
     /// How many casts the player has started, which the cast ids are made from.
     presses: Int,
     /// How many timers the rule has started, which the timer ids are made from.
@@ -408,6 +455,7 @@ pub fn new() -> State {
     thresholds: dict.new(),
     timers: dict.new(),
     held: None,
+    holding: None,
     presses: 0,
     timers_started: 0,
     logged: set.new(),
@@ -457,8 +505,8 @@ fn mint_from(
   }
 }
 
-/// The caster's 0x9a or 0x801, decoded and decided: the new state and what the
-/// connection must do, or the refusal that ends the connection. `now` is the
+/// The caster's 0x9a, 0x4DB or 0x801, decoded and decided: the new state and what
+/// the connection must do, or the refusal that ends the connection. `now` is the
 /// time of the input; the plans give each ability's tree.
 pub fn take(
   cast cast: State,
@@ -468,14 +516,15 @@ pub fn take(
   plans plans: Plans,
   now now: Now,
 ) -> Result(#(State, List(Effect)), Refusal) {
+  let now_ms = now.monotonic_ms
   case message {
     Pressed -> pressed(cast:, body:, caster:, plans:, now:)
+    KeyHeld -> key_held(cast:, body:, caster:, plans:, now:)
     Cancelled ->
       cancelled(cast:, body:, now:)
-      |> result.map(fn(taken) {
-        released(taken:, caster:, now_ms: now.monotonic_ms)
-      })
+      |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
   }
+  |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
 }
 
 /// A step's result with the held press started when the step cleared the current
@@ -528,16 +577,12 @@ fn pressed(
       #(cast, [
         Log(
           level: LogInfo,
-          text: "a press with the press bit 0 is the hold-to-cast setting, which is not built",
+          text: "a press with the press bit 0 is a console setting's, which is not built",
         ),
       ]),
     ),
   )
-  let held_spell =
-    list.drop(caster.abilities, press.bag_index)
-    |> list.first
-    |> result.try(fn(base) { spell_plan.in_plans(plans:, base:) })
-  case held_spell {
+  case ability_at(caster:, plans:, bag_index: press.bag_index) {
     Error(Nil) ->
       Ok(
         #(cast, [
@@ -565,11 +610,279 @@ fn pressed(
             cast:,
             caster:,
             now_ms: now.monotonic_ms,
-            client_cast_id: press.client_cast_id,
+            client_cast_id: Some(press.client_cast_id),
             resolution:,
           ))
       }
   }
+}
+
+/// The ability the player holds at the bag index, as the plans have it.
+fn ability_at(
+  caster caster: Caster,
+  plans plans: Plans,
+  bag_index bag_index: Int,
+) -> Result(Spell, Nil) {
+  list.drop(caster.abilities, bag_index)
+  |> list.first
+  |> result.try(fn(base) { spell_plan.in_plans(plans:, base:) })
+}
+
+/// The key of an ability goes down (held 1) or up (held 0). The client's reader
+/// refuses a body longer or shorter than the message (`opcode.0x4db`), which ends
+/// the connection, and a bag index with no ability is answered as a 0x9a's is,
+/// with the client cast id 0 the client shows with no pending cast
+/// (`cast.hold_stop`).
+fn key_held(
+  cast cast: State,
+  body body: BitArray,
+  caster caster: Caster,
+  plans plans: Plans,
+  now now: Now,
+) -> Result(#(State, List(Effect)), Refusal) {
+  use change <- result.try(
+    ability_hold.decode(body)
+    |> client_connection.decoded(message_id: ability_hold.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  let now_ms = now.monotonic_ms
+  Ok(
+    case
+      ability_at(caster:, plans:, bag_index: change.bag_index),
+      change.held == 1
+    {
+      Error(Nil), True -> #(cast, [
+        refused(
+          client_cast_id: 0,
+          spell4_id: 0,
+          result: cast_result.SpellUnknown,
+        ),
+      ])
+      Error(Nil), False -> #(cast, [
+        Log(
+          level: LogDebug,
+          text: "the key of the bag index "
+            <> int.to_string(change.bag_index)
+            <> ", which holds no ability, comes up",
+        ),
+      ])
+      Ok(ability), True -> key_down(cast:, ability:)
+      Ok(ability), False -> key_up(cast:, caster:, ability:, now_ms:)
+    },
+  )
+}
+
+/// The ability becomes the one held: a second key down of the ability already held
+/// is the same hold, and the newest ability's key replaces the held one, whose
+/// cast under way ends by itself (the server's choice: the client sends each key
+/// its own key up, and gives no way to hold two). Its first cast is made by
+/// `continued`, once the caster is free.
+fn key_down(
+  cast cast: State,
+  ability ability: Spell,
+) -> #(State, List(Effect)) {
+  case cast.holding {
+    Some(Holding(ability: held, ..)) if held.spell4_id == ability.spell4_id -> #(
+      cast,
+      [],
+    )
+    Some(_) | None -> {
+      let #(cast, cancels) = stop_holding(cast:)
+      #(
+        State(
+          ..cast,
+          holding: Some(Holding(ability:, repeat_timer: None, last_cast: None)),
+        ),
+        cancels,
+      )
+    }
+  }
+}
+
+/// The ability's key comes up: its repeats stop, and the cast under way is left to
+/// end. A ChargeRelease ability with its threshold open fires its charged stage, as
+/// a 0x9a release does.
+fn key_up(
+  cast cast: State,
+  caster caster: Caster,
+  ability ability: Spell,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, cancels) = case cast.holding {
+    Some(Holding(ability: held, ..)) if held.spell4_id == ability.spell4_id ->
+      stop_holding(cast:)
+    Some(_) | None -> #(cast, [])
+  }
+  case
+    ability.method == spell_plan.ChargeRelease
+    && dict.has_key(cast.thresholds, ability.spell4_id.value)
+  {
+    False -> #(cast, cancels)
+    True ->
+      case resolved(cast:, ability:) {
+        Error(Nil) -> #(cast, [
+          refused(
+            client_cast_id: 0,
+            spell4_id: ability.spell4_id.value,
+            result: cast_result.SpellUnknown,
+          ),
+          ..cancels
+        ])
+        Ok(resolution) -> {
+          let #(cast, released) =
+            press_of(cast:, caster:, now_ms:, client_cast_id: None, resolution:)
+          #(cast, list.append(cancels, released))
+        }
+      }
+  }
+}
+
+/// No ability is held: the timer that waits to repeat is cancelled.
+fn stop_holding(cast cast: State) -> #(State, List(Effect)) {
+  case cast.holding {
+    None -> #(cast, [])
+    Some(Holding(repeat_timer:, ..)) -> {
+      let #(cast, cancels) = case repeat_timer {
+        Some(timer) -> #(
+          State(..cast, timers: dict.delete(cast.timers, timer)),
+          [CancelTimer(timer:)],
+        )
+        None -> #(cast, [])
+      }
+      #(State(..cast, holding: None), cancels)
+    }
+  }
+}
+
+/// The timer of the held ability's repeat fired: it waits no longer, unless the
+/// hold ended or moved on to another timer.
+fn repeat_fired(cast cast: State, timer timer: TimerId) -> State {
+  State(
+    ..cast,
+    holding: option.map(cast.holding, fn(holding) {
+      case holding.repeat_timer == Some(timer) {
+        True -> Holding(..holding, repeat_timer: None)
+        False -> holding
+      }
+    }),
+  )
+}
+
+/// A step's result with the held ability cast again when the step left nothing in
+/// its way: its last cast is over, the caster's current cast is, and no timer waits
+/// for a cooldown (`cast.hold_repeat`).
+fn continued(
+  taken taken: #(State, List(Effect)),
+  caster caster: Caster,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, effects) = taken
+  case cast.holding {
+    Some(Holding(ability:, repeat_timer: None, last_cast:)) -> {
+      let #(cast, more) =
+        repeated(cast:, caster:, now_ms:, ability:, last_cast:)
+      #(cast, list.append(effects, more))
+    }
+    Some(Holding(repeat_timer: Some(_), ..)) | None -> taken
+  }
+}
+
+/// The held ability's next cast: a refusal when no stage is left, nothing while its
+/// last cast or the caster's current cast is under way, a timer while a cooldown
+/// runs, else the press itself.
+fn repeated(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  ability ability: Spell,
+  last_cast last_cast: Option(Int),
+) -> #(State, List(Effect)) {
+  case resolved(cast:, ability:) {
+    Error(Nil) -> no_stage_left(cast:, ability:)
+    Ok(resolution) ->
+      next_cast(cast:, caster:, now_ms:, resolution:, last_cast:)
+  }
+}
+
+/// A held RapidTap ability whose threshold has no stage at its index: refused, as
+/// a 0x9a press is, and the hold ends.
+fn no_stage_left(
+  cast cast: State,
+  ability ability: Spell,
+) -> #(State, List(Effect)) {
+  let #(cast, cancels) = stop_holding(cast:)
+  #(
+    cast,
+    list.append(cancels, [
+      refused(
+        client_cast_id: 0,
+        spell4_id: ability.spell4_id.value,
+        result: cast_result.SpellUnknown,
+      ),
+    ]),
+  )
+}
+
+fn next_cast(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  resolution resolution: Resolution,
+  last_cast last_cast: Option(Int),
+) -> #(State, List(Effect)) {
+  let last_cast_is_live =
+    option.map(last_cast, dict.has_key(cast.casts, _)) == Some(True)
+  let blocked =
+    last_cast_is_live
+    || casting(cast)
+    && !resolution.spell.ignores_casting
+    || option.is_some(cast.held)
+  let wait_ms = case last_cast {
+    Some(_) -> cooldown_wait_ms(cast:, spell: resolution.spell, now_ms:)
+    None -> 0
+  }
+  case blocked, wait_ms > 0 {
+    True, _ -> #(cast, [])
+    False, True -> repeat_after(cast:, wait_ms:)
+    False, False ->
+      press_of(cast:, caster:, now_ms:, client_cast_id: None, resolution:)
+  }
+}
+
+/// How long a held ability waits before it casts again: until the global cooldown
+/// its last cast started and the spell's own cooldown have both ended, whether or
+/// not the global cooldown would refuse the spell, so a repeat is never at once
+/// (the server's choice, `cast.hold_repeat`).
+fn cooldown_wait_ms(
+  cast cast: State,
+  spell spell: Spell,
+  now_ms now_ms: Int,
+) -> Int {
+  let #(_, own_left) = cooldown_left_ms(cast:, spell:, now_ms:)
+  let global_left =
+    option.map(cast.global_cooldown_ends_ms, fn(ends_ms) {
+      int.max(0, ends_ms - now_ms)
+    })
+    |> option.unwrap(0)
+  int.max(global_left, own_left)
+}
+
+/// The held ability waits `wait_ms` for its cooldowns on a timer of its own.
+fn repeat_after(
+  cast cast: State,
+  wait_ms wait_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, timer) = new_timer(cast:)
+  #(
+    State(
+      ..cast,
+      timers: dict.insert(cast.timers, timer, RepeatHeld),
+      holding: option.map(cast.holding, fn(holding) {
+        Holding(..holding, repeat_timer: Some(timer))
+      }),
+    ),
+    [StartTimer(timer:, after_ms: wait_ms)],
+  )
 }
 
 /// What a press of the ability casts: through its open threshold the stage at the
@@ -593,19 +906,41 @@ fn resolved(
 }
 
 /// What a press of a spell comes to: the client's refusal, a held press or a
-/// cast that starts.
+/// cast that starts. A press with no client cast id is a held key's (0x4DB): the
+/// server mints the cast id, no 0x7fd is written, a refusal carries the client
+/// cast id 0, and a cooldown or a current cast is waited for by the hold itself.
 fn press_of(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
-  client_cast_id client_cast_id: Int,
+  client_cast_id client_cast_id: Option(Int),
   resolution resolution: Resolution,
 ) -> #(State, List(Effect)) {
   let spell = resolution.spell
   let is_release = is_release(resolution:)
   let held = option.is_some(cast.held)
+  let refusal = fn(result) {
+    refused(
+      client_cast_id: option.unwrap(client_cast_id, 0),
+      spell4_id: spell.spell4_id.value,
+      result:,
+    )
+  }
   case verdict(cast:, caster:, spell:, now_ms:, is_release:) {
-    Accept ->
+    Accept -> {
+      let cast = case client_cast_id {
+        Some(_) -> cast
+        None ->
+          hold_started(
+            cast:,
+            ability: resolution.ability,
+            cast_id: mint(
+              unit_id: caster.unit_id,
+              number: cast.presses,
+              live: dict.keys(cast.casts),
+            ),
+          )
+      }
       case resolution.stage {
         None ->
           start(
@@ -616,7 +951,7 @@ fn press_of(
             root: resolution.ability.spell4_id,
             parent: None,
             primary_target: caster.unit_id,
-            client_cast_id: Some(client_cast_id),
+            client_cast_id:,
             role: Base(ability: resolution.ability),
           )
         Some(index) ->
@@ -628,59 +963,115 @@ fn press_of(
             root: resolution.ability.spell4_id,
             parent: Some(resolution.ability.spell4_id),
             primary_target: caster.unit_id,
-            client_cast_id: Some(client_cast_id),
+            client_cast_id:,
             role: Stage(ability: resolution.ability, index:),
           )
       }
-    Refuse(result:) -> #(cast, [
-      refused(client_cast_id:, spell4_id: spell.spell4_id.value, result:),
-    ])
+    }
+    Refuse(result:) ->
+      refused_hold(
+        cast:,
+        client_cast_id:,
+        ability: resolution.ability,
+        effects: [
+          refusal(result),
+        ],
+      )
     NotBuilt(result:, why:) ->
       case set.contains(cast.logged, spell.spell4_id.value) {
-        True -> #(cast, [
-          refused(client_cast_id:, spell4_id: spell.spell4_id.value, result:),
-        ])
-        False -> #(
-          State(..cast, logged: set.insert(cast.logged, spell.spell4_id.value)),
-          [
-            Log(
-              level: LogWarning,
-              text: "the ability with Spell4 "
-                <> int.to_string(spell.spell4_id.value)
-                <> " "
-                <> why
-                <> ": it is refused with "
-                <> int.to_string(cast_result.to_value(result)),
+        True ->
+          refused_hold(
+            cast:,
+            client_cast_id:,
+            ability: resolution.ability,
+            effects: [refusal(result)],
+          )
+        False ->
+          refused_hold(
+            cast: State(
+              ..cast,
+              logged: set.insert(cast.logged, spell.spell4_id.value),
             ),
-            refused(client_cast_id:, spell4_id: spell.spell4_id.value, result:),
-          ],
-        )
+            client_cast_id:,
+            ability: resolution.ability,
+            effects: [
+              Log(
+                level: LogWarning,
+                text: "the ability with Spell4 "
+                  <> int.to_string(spell.spell4_id.value)
+                  <> " "
+                  <> why
+                  <> ": it is refused with "
+                  <> int.to_string(cast_result.to_value(result)),
+              ),
+              refusal(result),
+            ],
+          )
       }
     Hold(..) | HoldForCast if is_release && held -> #(cast, [
-      refused(
-        client_cast_id:,
-        spell4_id: spell.spell4_id.value,
-        result: cast_result.SpellAlreadyCasting,
-      ),
+      refusal(cast_result.SpellAlreadyCasting),
     ])
-    Hold(wait_ms:) -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(cast.timers, timer, StartHeld),
-          held: Some(Held(client_cast_id:, resolution:, until: CooldownEnds)),
-        ),
-        [StartTimer(timer:, after_ms: wait_ms)],
-      )
+    Hold(wait_ms:) ->
+      case client_cast_id, is_release {
+        None, False -> repeat_after(cast:, wait_ms:)
+        Some(_), _ | None, True -> {
+          let #(cast, timer) = new_timer(cast:)
+          #(
+            State(
+              ..cast,
+              timers: dict.insert(cast.timers, timer, StartHeld),
+              held: Some(Held(client_cast_id:, resolution:, until: CooldownEnds)),
+            ),
+            [StartTimer(timer:, after_ms: wait_ms)],
+          )
+        }
+      }
+    HoldForCast ->
+      case client_cast_id, is_release {
+        None, False -> #(cast, [])
+        Some(_), _ | None, True -> #(
+          State(
+            ..cast,
+            held: Some(Held(client_cast_id:, resolution:, until: CastClears)),
+          ),
+          [],
+        )
+      }
+  }
+}
+
+/// The ability's hold has started the cast `cast_id`, so its cooldowns are waited
+/// for from now on and no longer refused.
+fn hold_started(
+  cast cast: State,
+  ability ability: Spell,
+  cast_id cast_id: Int,
+) -> State {
+  case cast.holding {
+    Some(Holding(ability: held, ..) as holding)
+      if held.spell4_id == ability.spell4_id
+    ->
+      State(..cast, holding: Some(Holding(..holding, last_cast: Some(cast_id))))
+    Some(_) | None -> cast
+  }
+}
+
+/// A refusal of a press written; a refused held key stops its hold, which the
+/// client does not know (it shows the failure and goes on holding).
+fn refused_hold(
+  cast cast: State,
+  client_cast_id client_cast_id: Option(Int),
+  ability ability: Spell,
+  effects effects: List(Effect),
+) -> #(State, List(Effect)) {
+  case client_cast_id, cast.holding {
+    None, Some(Holding(ability: held, ..))
+      if held.spell4_id == ability.spell4_id
+    -> {
+      let #(cast, cancels) = stop_holding(cast:)
+      #(cast, list.append(cancels, effects))
     }
-    HoldForCast -> #(
-      State(
-        ..cast,
-        held: Some(Held(client_cast_id:, resolution:, until: CastClears)),
-      ),
-      [],
-    )
+    Some(_), _ | None, Some(_) | None, None -> #(cast, effects)
   }
 }
 
@@ -745,6 +1136,25 @@ fn verdict(
       why: "has an innate cost of a resource the server does not hold",
     ),
   )
+  let #(global_left, own_left) = cooldown_left_ms(cast:, spell:, now_ms:)
+  case global_left > queue_window_ms, own_left > queue_window_ms {
+    True, _ -> Refuse(result: cast_result.SpellGlobalCooldown)
+    False, True -> Refuse(result: cast_result.SpellCooldown)
+    False, False ->
+      case int.max(global_left, own_left) {
+        0 -> Accept
+        wait_ms -> Hold(wait_ms:)
+      }
+  }
+}
+
+/// What is left of the global cooldown, when it refuses the spell, and of the
+/// spell's own cooldown, in milliseconds.
+fn cooldown_left_ms(
+  cast cast: State,
+  spell spell: Spell,
+  now_ms now_ms: Int,
+) -> #(Int, Int) {
   let global_left = case
     spell.global_cooldown.refused_while_running,
     option.map(cast.global_cooldown_ends_ms, fn(ends_ms) {
@@ -758,15 +1168,7 @@ fn verdict(
     dict.get(cast.cooldown_ends_ms, spell.spell4_id.value)
     |> result.map(fn(ends_ms) { int.max(0, ends_ms - now_ms) })
     |> result.unwrap(0)
-  case global_left > queue_window_ms, own_left > queue_window_ms {
-    True, _ -> Refuse(result: cast_result.SpellGlobalCooldown)
-    False, True -> Refuse(result: cast_result.SpellCooldown)
-    False, False ->
-      case int.max(global_left, own_left) {
-        0 -> Accept
-        wait_ms -> Hold(wait_ms:)
-      }
-  }
+  #(global_left, own_left)
 }
 
 /// The methods the rule casts; a spell of any other is refused 285.
@@ -901,7 +1303,11 @@ fn end_live_cast(
       case due {
         Go(cast_id: waiting, ..) | Finish(cast_id: waiting) ->
           waiting == cast_id
-        StartChild(..) | StartHeld | WindowEnd(..) | ChargeLevel(..) -> False
+        StartChild(..)
+        | StartHeld
+        | RepeatHeld
+        | WindowEnd(..)
+        | ChargeLevel(..) -> False
       }
     })
   let #(cast, finished) = finish(cast:, cast_id:, live:, now_ms:)
@@ -944,6 +1350,7 @@ pub fn timer_fired(
     caster:,
     now_ms: now.monotonic_ms,
   )
+  |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
 fn fire(
@@ -976,6 +1383,7 @@ fn fire(
             client_cast_id: None,
             role: Child,
           )
+        RepeatHeld -> #(repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
             None -> #(cast, [])
@@ -1023,6 +1431,7 @@ pub fn went(
     caster:,
     now_ms: now.monotonic_ms,
   )
+  |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
 /// A go of a live cast is asked: the connection selects its targets and strikes them,
@@ -1054,6 +1463,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       casts: dict.new(),
       timers: dict.new(),
       held: None,
+      holding: None,
       current: None,
       thresholds: dict.new(),
     ),
@@ -1377,7 +1787,8 @@ fn close_threshold(
           case due {
             WindowEnd(spell4_id:) | ChargeLevel(spell4_id:, ..) ->
               spell4_id == key
-            Go(..) | Finish(..) | StartChild(..) | StartHeld -> False
+            Go(..) | Finish(..) | StartChild(..) | StartHeld | RepeatHeld ->
+              False
           }
         })
       let cast = State(..cast, thresholds: dict.delete(cast.thresholds, key))

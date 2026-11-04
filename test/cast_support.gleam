@@ -19,7 +19,7 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
 import genesis_prime/step.{
-  type ConnectionId, type Now, type TimerId, ConnectionId, Now,
+  type ConnectionId, type LogLevel, type Now, type TimerId, ConnectionId, Now,
 }
 import genesis_prime/table/id.{
   type Spell4BaseId, Item2Id, Spell4BaseId, Spell4Id,
@@ -27,7 +27,7 @@ import genesis_prime/table/id.{
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/set
 import place_support
 import spell_tables
@@ -184,6 +184,80 @@ pub fn press_body(
   game_client.press_body(client_cast_id:, bag_index:, target:, press:)
 }
 
+/// The body of the client's 0x4db (opcode.0x4db): the bag index, the target and
+/// the held bit.
+pub fn hold_body(
+  bag_index bag_index: Int,
+  target target: Int,
+  held held: Int,
+) -> BitArray {
+  game_client.hold_body(bag_index:, target:, held:)
+}
+
+/// The key of the bag index goes down (`held` 1) or up (`held` 0) at the time,
+/// taken by the rule; it must be taken, not refused. A go it asks for is a
+/// `Strike` effect, not yet written.
+pub fn key_raw(
+  state state: State,
+  bag_index bag_index: Int,
+  held held: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  key_raw_in(plans: plans(), state:, bag_index:, held:, at: ms)
+}
+
+/// The same for the abilities of the plans given.
+pub fn key_raw_in(
+  plans plans: Plans,
+  state state: State,
+  bag_index bag_index: Int,
+  held held: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let assert Ok(taken) =
+    cast.take(
+      cast: state,
+      message: cast.KeyHeld,
+      body: hold_body(bag_index:, target: 0, held:),
+      caster: caster(),
+      plans:,
+      now: at(ms:),
+    )
+    as "a 0x4db that fits the message is taken"
+  taken
+}
+
+/// The same, with each go answered as a round that struck nobody.
+pub fn key(
+  state state: State,
+  bag_index bag_index: Int,
+  held held: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  key_in(plans: plans(), state:, bag_index:, held:, at: ms)
+}
+
+/// The same for the abilities of the plans given.
+pub fn key_in(
+  plans plans: Plans,
+  state state: State,
+  bag_index bag_index: Int,
+  held held: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let #(state, effects) = key_raw_in(plans:, state:, bag_index:, held:, at: ms)
+  answered_with_no_targets(state:, effects:, at: ms)
+}
+
+/// The plans with Mind Burst (bag index 2) costless: it costs 1 Psi Point, which a
+/// new unit holds none of (`Spell4CastResult.vital_cost`), and a test of the
+/// repeat is not about that refusal. Every other value is the client's row.
+pub fn plans_with_costless_mind_burst() -> Plans {
+  with_spells(plans: plans(), spells: [
+    Spell(..ability(base: 19_019), unpayable_cost: None),
+  ])
+}
+
 /// The body of the client's 0x801 (opcode.0x801): the server's cast id, the
 /// reason and the bit.
 pub fn cancel_body(
@@ -325,6 +399,20 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
   })
 }
 
+/// The log lines written, with their levels, in order.
+pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast.Log(level:, text:) -> Ok(#(level, text))
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..) -> Error(Nil)
+    }
+  })
+}
+
 /// The timers started, with their delays, in order.
 pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
   list.filter_map(effects, fn(effect) {
@@ -446,6 +534,25 @@ pub fn run_timers_striking(
     pending: due_of(effects:, now_ms: from_ms),
     fired_so_far: [],
     struck:,
+    until_ms: None,
+  )
+}
+
+/// The same for a state that repeats, which never runs out of timers: only the
+/// timers due at `until_ms` or before fire, and the ones due later are left, as the
+/// clock the test drives has not reached them.
+pub fn run_timers_until(
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  until_ms until_ms: Int,
+) -> #(State, List(#(Int, List(Effect)))) {
+  run_pending(
+    state:,
+    pending: due_of(effects:, now_ms: from_ms),
+    fired_so_far: [],
+    struck: [],
+    until_ms: Some(until_ms),
   )
 }
 
@@ -463,11 +570,14 @@ fn run_pending(
   pending pending: List(#(Int, TimerId)),
   fired_so_far fired_so_far: List(#(Int, List(Effect))),
   struck struck: List(cast.Struck),
+  until_ms until_ms: Option(Int),
 ) -> #(State, List(#(Int, List(Effect)))) {
+  let limit = option.unwrap(until_ms, 9_007_199_254_740_991)
   case
     list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
   {
     [] -> #(state, list.reverse(fired_so_far))
+    [#(due, _), ..] if due > limit -> #(state, list.reverse(fired_so_far))
     [#(due, timer), ..rest] -> {
       let #(state, raw) = fired_raw(state:, timer:, at: due)
       let #(state, effects) =
@@ -481,7 +591,73 @@ fn run_pending(
         ),
         fired_so_far: [#(due, effects), ..fired_so_far],
         struck:,
+        until_ms:,
       )
     }
   }
+}
+
+/// What a client reads of the casts among its frames, as one line each, the
+/// casts named k1, k2 and so on in the order their ids first appear.
+pub fn cast_lines(frames frames: List(Frame)) -> List(String) {
+  let events = game_client.casts_in(frames:)
+  let ids =
+    list.filter_map(events, fn(event) {
+      case event {
+        game_client.CastConfirmed(server_cast_id:, ..) -> Ok(server_cast_id)
+        game_client.CastStarted(cast_id:, ..)
+        | game_client.CastWent(cast_id:, ..)
+        | game_client.CastFinished(cast_id:) -> Ok(cast_id)
+        game_client.CastRefused(..)
+        | game_client.ThresholdOpened(..)
+        | game_client.ThresholdIndex(..)
+        | game_client.ThresholdClosed(..)
+        | game_client.ThresholdEnded(..) -> Error(Nil)
+      }
+    })
+    |> list.unique
+  let label = fn(id) {
+    let assert Ok(position) =
+      list.index_map(ids, fn(known, position) { #(known, position) })
+      |> list.key_find(id)
+      as "every cast id of a line was read before"
+    "k" <> int.to_string(position + 1)
+  }
+  list.map(events, fn(event) {
+    case event {
+      game_client.CastRefused(spell4_id:, result:, ..) ->
+        "refused " <> int.to_string(spell4_id) <> " " <> int.to_string(result)
+      game_client.CastConfirmed(server_cast_id:, ..) ->
+        "confirmed " <> label(server_cast_id)
+      game_client.CastStarted(
+        cast_id:,
+        spell4_id:,
+        root_spell4_id:,
+        parent_spell4_id:,
+        ..,
+      ) ->
+        "started "
+        <> label(cast_id)
+        <> " "
+        <> int.to_string(spell4_id)
+        <> " root "
+        <> int.to_string(root_spell4_id)
+        <> " parent "
+        <> int.to_string(parent_spell4_id)
+      game_client.CastWent(cast_id:, phase:) ->
+        "went " <> label(cast_id) <> " p" <> int.to_string(phase)
+      game_client.CastFinished(cast_id:) -> "finished " <> label(cast_id)
+      game_client.ThresholdOpened(spell4_id:, cancel_cast_id:) ->
+        "opened " <> int.to_string(spell4_id) <> " " <> label(cancel_cast_id)
+      game_client.ThresholdIndex(spell4_id:, index:) ->
+        "index " <> int.to_string(spell4_id) <> " " <> int.to_string(index)
+      game_client.ThresholdClosed(spell4_id:, start_cooldowns:) ->
+        "closed "
+        <> int.to_string(spell4_id)
+        <> " "
+        <> int.to_string(start_cooldowns)
+      game_client.ThresholdEnded(spell4_id:) ->
+        "ended " <> int.to_string(spell4_id)
+    }
+  })
 }
