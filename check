@@ -138,17 +138,18 @@ test_workers=${GENESIS_TEST_WORKERS:-1}
 # main did, at 99.3% (1,066,336,256 bytes), holding 1.0 GiB of live terms (the
 # client's 384 tables 587 MiB, the server's 36 of them again 306 MiB, leaked
 # planted loads 70 MiB and growing). With each table held once and no test
-# leaving terms, the highest carriers of three runs were 66.7%, 67.2% and 72.8%
-# of the region: the live terms are flat at 637 MiB (59%), and the rest comes
-# and goes within a run (erased terms waiting for a purge, loads in flight) and
-# differs from run to run. The limit is 80%: it fails at 859 MB, 77 MB above the
-# worst run measured, so a good run does not fail, and it leaves 205 MiB free,
-# 1.8 times the largest table the suite puts (Spline2Node, 115.7 MB), and 174
-# MiB before the 97% where the VM dies. A run over it fails the check, so the
-# margin cannot vanish unnoticed again. The limit is not set from outside: +MIscs is refused, and a higher
+# leaving terms, the live terms are flat at 637 MiB (59%), and the highest
+# carriers of six runs were 65.2%, 66.7%, 67.0%, 67.2%, 72.8% and 75.4% of the
+# region: the rest comes and goes within a run (erased terms waiting for a purge,
+# loads in flight) and differs from run to run by up to 105 MiB. The limit is
+# 85%: it fails at 870 MiB, 9.6 points above the worst run measured, so a good
+# run does not fail, and it leaves 154 MiB free, 1.4 times the largest table the
+# suite puts (Spline2Node, 115.7 MB), and 123 MiB before the 97% where the VM
+# dies. A run over it fails the check, so the margin cannot vanish unnoticed
+# again. The limit is not set from outside: +MIscs is refused, and a higher
 # limit is a change to this line with the measurement that justifies it.
 literal_region_bytes=1073741824
-literal_limit_percent=80
+literal_limit_percent=85
 
 # The machine's settings (env.sh) and the patched OTP first on PATH, before any part.
 . setup_check/environment.sh
