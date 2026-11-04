@@ -336,19 +336,70 @@ pub fn a_row_with_health_0_is_left_out_and_a_row_with_no_stats_starts_with_the_c
       spawn_support.beast_row(number: 2),
       spawn.Row(
         ..spawn_support.beast_row(number: 3),
-        health: Some(1234.9),
-        level: Some(8.0),
+        health: Some(0.9),
+        level: Some(3.0),
       ),
     ])
-  assert started(selection) == [2, 3] as "dead is left out, no stats is kept"
-  assert left_out(selection:, reason: Dead) == 1
+  assert started(selection) == [2] as "dead is left out, no stats is kept"
+  assert left_out(selection:, reason: Dead) == 2
+    as "a recorded health that truncates to 0 is 0 to the client"
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(no_stats) = dict.get(world.by_id, SpawnId(2))
   assert #(no_stats.level, no_stats.health) == #(1, 52)
     as "the creature's minLevel and Base Health 52.6205 truncated"
-  let assert Ok(with_stats) = dict.get(world.by_id, SpawnId(3))
-  assert #(with_stats.level, with_stats.health) == #(8, 1234)
-    as "stat 10 and stat 0 truncated"
+}
+
+pub fn a_spawn_with_no_recorded_health_has_the_base_health_of_its_own_level_not_its_rows_minimum_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `0x1404585c0`: Base Health is the CreatureLevel row of the level times the
+  // difficulty's multiplier. The Battle Beast's row has minLevel 1 (52); a spawn
+  // of stat 10 = 3 has the planted CreatureLevel 3 (the client's row, 342.0863)
+  // times Creature2Difficulty 1's 0.387 = 132.3874, truncated to 132, and one of
+  // level 8 (1715.1594) 663.7667, so 663.
+  let selection =
+    selected(rows: [
+      spawn.Row(..spawn_support.beast_row(number: 1), level: Some(3.0)),
+      spawn.Row(..spawn_support.beast_row(number: 2), level: Some(8.0)),
+    ])
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(third) = dict.get(world.by_id, SpawnId(1))
+  assert #(third.level, third.health, third.health_source)
+    == #(3, 132, spawn.ClientDefault)
+    as "level 3: the formula at the spawn's own level"
+  let assert Ok(eighth) = dict.get(world.by_id, SpawnId(2))
+  assert #(eighth.level, eighth.health, eighth.health_source)
+    == #(8, 663, spawn.ClientDefault)
+    as "level 8"
+}
+
+pub fn a_recorded_health_is_the_spawns_health_and_maximum_whatever_the_clients_formula_gives_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The world database's stat 0 is a retail record of each spawn's health
+  // (`world_data.spawn_health`): Creature2 11945 at level 3 records 442 where the
+  // client's formula gives 274; the 0x262 sends it as stat 0 and property 7, so
+  // current and maximum are the one recorded value, whether above or below the
+  // formula's 132 for the planted beast at level 3.
+  let selection =
+    selected(rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 1),
+        health: Some(442.9),
+        level: Some(3.0),
+      ),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 2),
+        health: Some(50.0),
+        level: Some(3.0),
+      ),
+    ])
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(above) = dict.get(world.by_id, SpawnId(1))
+  assert #(above.level, above.health, above.health_source)
+    == #(3, 442, spawn.Recorded)
+    as "recorded 442.9 is the health, truncated as the client truncates"
+  let assert Ok(below) = dict.get(world.by_id, SpawnId(2))
+  assert #(below.health, below.health_source) == #(50, spawn.Recorded)
+    as "world_data.spawn_health: a recorded health below the formula's 132 is the health too"
 }
 
 pub fn a_level_outside_its_rows_range_is_kept_and_listed_test() -> Nil {
