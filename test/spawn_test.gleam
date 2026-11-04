@@ -10,18 +10,24 @@
 ////   27 points is marked as the offset of one of those rows.
 //// - The client's Creature2 validity rules (`0x140485790`): the tables' load fails
 ////   when a spawn names a creature the client would not load.
-//// The test reads the client's real tables, so it is skipped where there are
-//// none (`GENESIS_NO_CLIENT=1`).
+//// The test of the points reads the client's real tables, so it is skipped where
+//// there are none (`GENESIS_NO_CLIENT=1`); the test of the validity rules loads
+//// planted tables, so it runs in CI.
 
+import character_tables
 import client_tables
 import genesis_prime/game/start_place
 import genesis_prime/table/id.{Creature2Id, WorldLocation2Id}
-import genesis_prime/table/loader/store
+import genesis_prime/table/loader/server_table
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/world_location2
 import genesis_prime/world_map/spawn.{type Spawn, NoRecord, WorldDatabase}
+import gleam/erlang/reference
 import gleam/float
 import gleam/list
+import gleam/string
 import owned_test
+import planted_table
 import unitest
 
 /// The world-database rows of the 27 Virtual Battle Beasts.
@@ -36,7 +42,7 @@ fn of_creature(spawns: List(Spawn), creature: Int) -> List(Spawn) {
 
 /// Whether the spawn stands inside the client's circle it names: within the
 /// circle's radius of its centre.
-fn inside_its_circle(tables: store.Tables, spawn: Spawn) -> Bool {
+fn inside_its_circle(tables: table_store.Tables, spawn: Spawn) -> Bool {
   let assert Ok(circle) = world_location2.get(tables, spawn.area)
     as "the spawn's circle is a WorldLocation2 row"
   let dx = start_place.x(spawn.place) -. circle.position0
@@ -76,4 +82,61 @@ pub fn the_battle_beasts_stand_at_the_world_databases_points_and_the_daguns_at_t
     && start_place.world_zone_id(spawn.place) == 5967
   })
     as "every spawn stands in World 3460, Warfare Woods"
+}
+
+/// The load of planted tables whose Virtual Battle Beast row has `changes`, and
+/// why it failed: the derivation's name and its reason.
+fn failed_load(
+  changes changes: List(#(String, planted_table.Cell)),
+) -> #(String, String) {
+  use folder <- planted_table.in_folder(
+    character_tables.files_with_beast_changed(changes:),
+  )
+  let assert Error(table_store.DerivationFailed(name:, reason:)) =
+    server_table.load_under(under: reference.new(), from: folder)
+    as "a creature row the client would not load fails the tables' load"
+  #(name, reason)
+}
+
+pub fn a_creature_row_the_client_would_not_load_fails_the_tables_load_naming_the_rule_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x140485790: a row is a creature the client loads only when its modelScale
+  // is above 0, its CreationTypeEnum is below 26, its archetype row exists, its
+  // difficulty and resist are 0 or have a row, and its display group is not 0.
+  list.each(
+    [
+      #(
+        [#("modelScale", planted_table.Float(0.0))],
+        "modelScale is not above 0",
+      ),
+      #(
+        [#("CreationTypeEnum", planted_table.Integer(26))],
+        "CreationTypeEnum is not below 26",
+      ),
+      #(
+        [#("creature2ArcheTypeId", planted_table.Integer(99))],
+        "Creature2ArcheType row does not exist",
+      ),
+      #(
+        [#("creature2DifficultyId", planted_table.Integer(99))],
+        "Creature2Difficulty row does not exist",
+      ),
+      #(
+        [#("creature2ResistId", planted_table.Integer(99))],
+        "Creature2Resist row does not exist",
+      ),
+      #(
+        [#("creature2DisplayGroupId", planted_table.Integer(0))],
+        "display group is 0",
+      ),
+    ],
+    fn(case_) {
+      let #(changes, words) = case_
+      let #(name, reason) = failed_load(changes:)
+      assert name == "Spawns" as "the spawns' derivation is what failed"
+      assert string.contains(reason, "Creature2 73464")
+        && string.contains(reason, words)
+        as { "the reason names the creature and the rule: " <> reason }
+    },
+  )
 }

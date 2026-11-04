@@ -145,8 +145,20 @@ fn circle(id id: Int, position position: #(Float, Float, Float)) -> List(Cell) {
 fn creature_files() -> List(#(String, BitArray)) {
   [
     planted_table.file(creature2.schema, [
-      creature_row(id: 73_464, arche_type: 1, group: 28_793, faction: 1441),
-      creature_row(id: 73_465, arche_type: 10, group: 28_431, faction: 1442),
+      creature_row(
+        id: 73_464,
+        arche_type: 1,
+        group: 28_793,
+        faction: 1441,
+        changes: [],
+      ),
+      creature_row(
+        id: 73_465,
+        arche_type: 10,
+        group: 28_431,
+        faction: 1442,
+        changes: [],
+      ),
     ]),
     planted_table.file(creature2_arche_type.schema, [
       multiplier_row(schema: creature2_arche_type.schema, id: 1, value: 1.0),
@@ -201,8 +213,9 @@ fn creature_row(
   arche_type arche_type: Int,
   group group: Int,
   faction faction: Int,
+  changes changes: List(#(String, Cell)),
 ) -> List(Cell) {
-  planted_table.row(creature2.schema, [
+  let base = [
     #("ID", Integer(id)),
     #("CreationTypeEnum", Integer(0)),
     #("creature2DifficultyId", Integer(1)),
@@ -214,7 +227,8 @@ fn creature_row(
     #("factionId", Integer(faction)),
     #("minLevel", Integer(1)),
     #("maxLevel", Integer(1)),
-  ])
+  ]
+  planted_table.row(creature2.schema, list.append(changes, base))
 }
 
 fn multiplier_row(
@@ -260,6 +274,36 @@ fn override_row(
 /// from a folder of them reads every file and meets every requirement.
 pub fn files() -> List(#(String, BitArray)) {
   files_with_looks(customization: customization_rows(), labels: label_rows())
+}
+
+/// The planted files with the Virtual Battle Beast's Creature2 row (73464)
+/// changed in the columns `changes` name, each a column of the client's table and
+/// the cell it holds instead.
+pub fn files_with_beast_changed(
+  changes changes: List(#(String, Cell)),
+) -> List(#(String, BitArray)) {
+  list.map(files(), fn(file) {
+    case file.0 == creature2.schema.file {
+      True ->
+        planted_table.file(creature2.schema, [
+          creature_row(
+            id: 73_464,
+            arche_type: 1,
+            group: 28_793,
+            faction: 1441,
+            changes:,
+          ),
+          creature_row(
+            id: 73_465,
+            arche_type: 10,
+            group: 28_431,
+            faction: 1442,
+            changes: [],
+          ),
+        ])
+      False -> file
+    }
+  })
 }
 
 /// The planted files with the WorldZone file holding these zones, each a pair of
