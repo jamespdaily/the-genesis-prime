@@ -778,6 +778,15 @@ fn removed(others others: Others, body body: BitArray) -> Others {
   dict.delete(others, gone.unit_id)
 }
 
+/// Where a creature's 0x262 places it, as `placed_at` reads a player's.
+pub fn creature_placed_at(
+  unit unit: UnitCreateCreature,
+) -> #(Float, Float, Float) {
+  let assert [start_movement.Position(placed), ..] = unit.tail.movement_commands
+    as "0x0262 places the unit with a kind 2 command first"
+  standing(placed)
+}
+
 fn standing(
   placed: unit_position_command.UnitPositionCommand,
 ) -> #(Float, Float, Float) {

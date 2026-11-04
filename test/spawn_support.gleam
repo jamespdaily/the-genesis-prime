@@ -53,6 +53,22 @@ pub fn beast_at(number number: Int, place place: Place) -> Spawn {
   Spawn(..battle_beast(number:, x: 0.0), place:)
 }
 
+/// A Beast standing at `place` that never deflects, so no roll of a caster's seed
+/// changes what a hit does to it: every hit lands for the damage the formula gives.
+pub fn beast_without_deflect_at(
+  number number: Int,
+  place place: Place,
+) -> Spawn {
+  let beast = beast_at(number:, place:)
+  Spawn(
+    ..beast,
+    combat: Combat(
+      ..beast.combat,
+      defence: Defence(..beast.combat.defence, deflect_chance: 0.0),
+    ),
+  )
+}
+
 /// What the Virtual Battle Beast brings to a fight: the hit radius of its display, 3.0
 /// (`Spell4.32812.area`); whom it may be attacked by (hostile to Exiles, `Creature2.73464`;
 /// the Dominion's level is not read, and no test asserts it); a deflect chance of 0.016,

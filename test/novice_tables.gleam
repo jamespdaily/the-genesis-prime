@@ -887,6 +887,8 @@ pub fn spell_tree_files() -> List(#(String, BitArray)) {
       spell4_aoe_target_constraints.schema,
       rows.spell4_aoe_target_constraints,
     ),
+    planted_table.file(spell4_telegraph.schema, rows.spell4_telegraph),
+    planted_table.file(telegraph_damage.schema, rows.telegraph_damage),
     planted_table.file(spell_phase.schema, rows.spell_phases),
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),

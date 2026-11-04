@@ -52,14 +52,27 @@ pub fn try_insert(
   class_id class_id: Int,
   path path: Int,
 ) -> Result(Int, Refused) {
+  try_insert_at_level(pool:, account:, name:, class_id:, path:, level: 9)
+}
+
+/// The same with the level the character is stored at, which the other tests give 9.
+pub fn try_insert_at_level(
+  pool pool: pog.Connection,
+  account account: AccountId,
+  name name: String,
+  class_id class_id: Int,
+  path path: Int,
+  level level: Int,
+) -> Result(Int, Refused) {
   let AccountId(account_id) = account
   pog.query(
-    "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values ($1, $2, 1, 3, $3, 166, 9, $4, 1387, 1100, 1.5, 2.5, 3.5) returning character_id",
+    "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values ($1, $2, 1, 3, $3, 166, $5, $4, 1387, 1100, 1.5, 2.5, 3.5) returning character_id",
   )
   |> pog.parameter(pog.int(account_id))
   |> pog.parameter(pog.text(name))
   |> pog.parameter(pog.int(class_id))
   |> pog.parameter(pog.int(path))
+  |> pog.parameter(pog.int(level))
   |> pog.returning(decode.at([0], decode.int))
   |> pog.execute(pool)
   |> result.map_error(fn(error) {
@@ -139,7 +152,20 @@ pub fn insert(
   class_id class_id: Int,
   path path: Int,
 ) -> Int {
-  let assert Ok(id) = try_insert(pool:, account:, name:, class_id:, path:)
+  insert_at_level(pool:, account:, name:, class_id:, path:, level: 9)
+}
+
+/// The same with the level the character is stored at.
+pub fn insert_at_level(
+  pool pool: pog.Connection,
+  account account: AccountId,
+  name name: String,
+  class_id class_id: Int,
+  path path: Int,
+  level level: Int,
+) -> Int {
+  let assert Ok(id) =
+    try_insert_at_level(pool:, account:, name:, class_id:, path:, level:)
     as "the character was inserted"
   id
 }

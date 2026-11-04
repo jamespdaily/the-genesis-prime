@@ -973,15 +973,14 @@ pub fn rows() -> Rows {
         data: 42_297,
         order: 0,
       ),
-      effect_row(
+      damage_effect_row(
         id: 62_159,
         spell: 32_893,
-        type_: 8,
+        damage_type: 3,
         target_flags: 4,
         delay: 0,
-        phases: -1,
-        data: 1_065_353_216,
-        order: 0,
+        multiplier_bits: 1_065_353_216,
+        parameters: [#(12, 0.335999995470047), #(10, 18.0)],
       ),
       effect_row(
         id: 62_204,
@@ -1370,8 +1369,32 @@ pub fn rows() -> Rows {
       aoe_row(id: 704, angle: 360.0, count: 4, max_range: 4.0),
     ],
     spell4_valid_targets: [valid_targets_row(bitmask: 0)],
-    spell4_telegraph: [],
-    telegraph_damage: [],
+    spell4_telegraph: list.map(
+      [#(118, 133), #(401, 125), #(4069, 2169)],
+      fn(link) {
+        planted_table.row(spell4_telegraph.schema, [
+          #("ID", Integer(link.0)),
+          #("spell4Id", Integer(32_893)),
+          #("telegraphDamageId", Integer(link.1)),
+        ])
+      },
+    ),
+    telegraph_damage: list.map(
+      [#(125, 1568, 15), #(133, 4640, 14), #(2169, 64, 0)],
+      fn(row) {
+        planted_table.row(telegraph_damage.schema, [
+          #("ID", Integer(row.0)),
+          #("damageShapeEnum", Integer(7)),
+          #("param00", Float(3.0)),
+          #("param01", Float(20.0)),
+          #("param02", Float(29.0)),
+          #("zPositionOffset", Float(1.0)),
+          #("telegraphDamageFlags", Integer(row.1)),
+          #("targetTypeFlags", Integer(1)),
+          #("displayFlags", Integer(row.2)),
+        ])
+      },
+    ),
     spell_phases: [
       phase_row(id: 3717, owner: 38_780, order: 0, delay: 166, flags: 0),
       phase_row(id: 3718, owner: 38_780, order: 1, delay: 200, flags: 0),
