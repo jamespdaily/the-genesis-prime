@@ -40,6 +40,10 @@ import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
+import genesis_prime/message/spell_threshold_closed
+import genesis_prime/message/spell_threshold_ended
+import genesis_prime/message/spell_threshold_index
+import genesis_prime/message/spell_threshold_opened
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
@@ -274,6 +278,16 @@ pub type CastEvent {
   CastWent(cast_id: Int, phase: Int)
   /// 0x7fe: a cast ends (opcode.0x7fe).
   CastFinished(cast_id: Int)
+  /// 0x816: a threshold opens for the spell, with the value the client sends back
+  /// in a 0x801 (opcode.0x816).
+  ThresholdOpened(spell4_id: Int, cancel_cast_id: Int)
+  /// 0x817: the open threshold's index is set (opcode.0x817).
+  ThresholdIndex(spell4_id: Int, index: Int)
+  /// 0x814: the threshold closes, starting the cooldowns when the bit is set
+  /// (opcode.0x814).
+  ThresholdClosed(spell4_id: Int, start_cooldowns: Int)
+  /// 0x815: the threshold ends (opcode.0x815).
+  ThresholdEnded(spell4_id: Int)
 }
 
 /// The cast messages among the frames, in order, each as the client's reader
@@ -317,6 +331,32 @@ pub fn casts_in(frames frames: List(Frame)) -> List(CastEvent) {
         let assert Ok(finished) = spell_finished.decode(frame.body)
           as "0x7fe decodes"
         Ok(CastFinished(cast_id: finished.cast_id))
+      }
+      0x0816 -> {
+        let assert Ok(opened) = spell_threshold_opened.decode(frame.body)
+          as "0x816 decodes"
+        Ok(ThresholdOpened(
+          spell4_id: opened.spell4_id,
+          cancel_cast_id: opened.cancel_cast_id,
+        ))
+      }
+      0x0817 -> {
+        let assert Ok(moved) = spell_threshold_index.decode(frame.body)
+          as "0x817 decodes"
+        Ok(ThresholdIndex(spell4_id: moved.spell4_id, index: moved.index))
+      }
+      0x0814 -> {
+        let assert Ok(closed) = spell_threshold_closed.decode(frame.body)
+          as "0x814 decodes"
+        Ok(ThresholdClosed(
+          spell4_id: closed.spell4_id,
+          start_cooldowns: closed.start_cooldowns,
+        ))
+      }
+      0x0815 -> {
+        let assert Ok(ended) = spell_threshold_ended.decode(frame.body)
+          as "0x815 decodes"
+        Ok(ThresholdEnded(spell4_id: ended.spell4_id))
       }
       _ -> Error(Nil)
     }

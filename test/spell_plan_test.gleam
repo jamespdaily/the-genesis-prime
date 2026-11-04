@@ -5,23 +5,30 @@
 //// `Spell4.32809` with `Spell4CastResult.vital_cost` (the short vitals),
 //// `Spell4Effects.effectType.26` (a Proxy starts a spell),
 //// `SpellPhase.phaseDelay` with `0x14055e180` (the phases), `0x14046afc0` and
-//// `0x1403b14c0` (the global cooldown) and `Spell.CodeEnumCastMethod`. The
+//// `0x1403b14c0` (the global cooldown), `Spell.CodeEnumCastMethod`,
+//// `cast.current_cast` with `Spell4Base.castBarType` and `Spell4.thresholdTime`
+//// (the cast bar of each method), `Spell4Thresholds.spell4IdToCast` with
+//// `0x1403bfd60` (the stages), `0x14053d1f0` (a channel's gos), `0x14053e5a0` (the
+//// cooldown of each method) and `Spell4CastResult.vital_cost`. The
 //// planted tables hold those rows (`spell_tables`); the real tables are read
 //// where the client is present. A missing row and a cycle are planted.
 
 import client_tables
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_plan.{
-  type Spell, Always, GlobalCooldown, Normal, PrimaryWeapon,
+  type Spell, Always, AtFirstGo, AtLastGo, Channel, Channeled, ChargeRelease,
+  GlobalCooldown, Multiphase, Normal, NotAtAGo, PrimaryWeapon, RapidTap,
 }
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import owned_test
 import planted_table
+import qcheck
 import spell_tables
 import unitest
 
@@ -162,36 +169,21 @@ pub fn a_multiphase_spell_with_no_kept_phase_row_fails_the_load_naming_the_table
   let rows = spell_tables.rows()
   let assert Error(error) =
     spell_tables.derivation_result(
-      rows: spell_tables.Rows(..rows, spell_phases: []),
+      rows: spell_tables.Rows(
+        ..rows,
+        spell_phases: planted_table.without(rows: rows.spell_phases, ids: [
+          3717,
+          3718,
+          3719,
+          3720,
+        ]),
+      ),
     )
     as "38780 is Multiphase and keeps no phase, which the client's rule (0x14055e180) would give it none of: the load fails rather than give it one go"
   let reason = table_store.describe(error)
   assert string.contains(reason, "SpellPhase")
     && string.contains(reason, "38780")
     as "the load names the table and the owner"
-}
-
-pub fn a_normal_abilitys_tree_with_a_spell_whose_cast_bar_rule_is_not_built_fails_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let assert Error(error) =
-    spell_tables.derivation_result(
-      rows: with_effect(effect: spell_tables.effect_row(
-        id: 99_002,
-        spell: 32_893,
-        type_: 26,
-        target_flags: 1,
-        delay: 0,
-        phases: -1,
-        data: 41_276,
-      )),
-    )
-    as "Telekinetic Strike proxies Electrocute (Spell4Base 25473, castMethod 1: Channeled), whose cast bar rule (cast.current_cast: its root or its channel record) is not built"
-  let reason = table_store.describe(error)
-  assert string.contains(reason, "41276")
-    && string.contains(reason, "cast method 1")
-    as "the load names the spell and its method"
-  assert spell_tables.derivation_result(rows: spell_tables.rows()) == Ok(Nil)
-    as "a Channeled ability that is itself pressed builds: it is refused 285, never cast, and Stagger's Multiphase child 38780 is decided (castTime or castBarType)"
 }
 
 pub fn the_load_fails_with_the_builds_reason_naming_the_table_and_row_test() -> Nil {
@@ -292,4 +284,331 @@ pub fn every_class_ability_of_the_clients_tables_builds_a_tree_and_the_nine_norm
   let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
   assert list.length(gate.proxies) == 2
     as "Spell4.34355: Proxies to 25190 and 30436"
+}
+
+/// The ids of the stages of a spell, in order, with each thresholdDuration.
+fn stages_of(spell spell: Spell) -> List(#(Int, Int)) {
+  list.map(spell.stages, fn(stage) {
+    #(stage.spell.spell4_id.value, stage.duration_ms)
+  })
+}
+
+pub fn the_stages_of_a_tap_or_charge_ability_are_the_rows_of_spell4_thresholds_in_order_index_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert stages_of(spell: planted(base: 23_148)) == [#(38_766, 0)]
+    as "Spell4Thresholds 238: Shred casts 38766"
+  assert stages_of(spell: planted(base: 18_309)) == [#(32_079, 0), #(32_080, 0)]
+    as "Spell4Thresholds 9 and 10: Relentless Strikes, orderIndex 0 and 1"
+  assert stages_of(spell: planted(base: 37_968))
+    == [#(66_987, 0), #(71_125, 0), #(71_126, 0)]
+    as "Spell4Thresholds 1073 to 1075: Rampage"
+  assert stages_of(spell: planted(base: 20_684))
+    == [#(34_720, 0), #(34_722, 1000), #(36_691, 1400)]
+    as "Spell4Thresholds 125, 123 and 124 by orderIndex 0, 1 and 2, not by id: each row's thresholdDuration is the time to the level"
+  assert planted(base: 19_102).stages == []
+    as "a Normal ability has no Spell4Thresholds row"
+}
+
+pub fn a_stage_spell_is_a_full_tree_with_its_own_proxy_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert [stage] = planted(base: 23_148).stages
+  let assert [proxy] = stage.spell.proxies
+    as "Spell4Effects 83782: the stage 38766 proxies 39467"
+  assert proxy.spell.spell4_id == Spell4Id(39_467)
+  assert stage.spell.method == RapidTap
+    as "Spell4Base 23149: castMethod 6, with thresholdTime 0"
+  assert stage.spell.threshold_ms == 0 && stage.spell.stages == []
+    as "Spell4.38766: a stage opens no threshold of its own"
+}
+
+pub fn a_stage_spell4_row_the_tables_lack_fails_the_build_naming_the_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let result =
+    spell_tables.with_loaded(
+      rows: spell_spell4_without(rows: spell_tables.rows(), ids: [38_766]),
+      body: fn(tables) { spell_plan.build(tables:) },
+    )
+  assert result == Error(spell_plan.NoRow(table: "Spell4", id: 38_766))
+    as "Spell4Thresholds 238 casts 38766, which has no Spell4 row"
+}
+
+pub fn the_stage_resolver_gives_the_row_at_the_index_the_ability_at_minus_1_and_nothing_past_the_end_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let charged_shot = planted(base: 20_684)
+  let spell4_id_at = fn(index) {
+    spell_plan.stage_at(spell: charged_shot, index:)
+    |> result.map(fn(spell) { spell.spell4_id.value })
+  }
+  assert spell4_id_at(0) == Ok(34_720)
+    as "0x1403bfd60: an open threshold casts the row at its index"
+  assert spell4_id_at(1) == Ok(34_722)
+  assert spell4_id_at(2) == Ok(36_691)
+  assert spell4_id_at(-1) == Ok(34_718)
+    as "0x1403bfd60: the index -1 casts the spell itself"
+  assert spell4_id_at(3) == Error(Nil)
+    as "0x1403bfd60: past the last row the press is refused 4"
+}
+
+pub fn a_cost_in_a_stage_row_gives_the_result_of_its_vital_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = spell_tables.rows()
+  let costly =
+    list.map(rows.spell4_thresholds, fn(row) {
+      case row {
+        [planted_table.Integer(124), ..] ->
+          spell_tables.threshold_row(
+            id: 124,
+            parent: 34_718,
+            to_cast: 36_691,
+            order: 2,
+            duration: 1400,
+            cost: #(15, 5),
+          )
+        _ -> row
+      }
+    })
+  let result =
+    spell_tables.with_loaded(
+      rows: spell_tables.Rows(..rows, spell4_thresholds: costly),
+      body: fn(tables) { spell_plan.build(tables:) },
+    )
+  let assert Ok(plans) = result as "the planted rows build"
+  let assert Ok(charged_shot) =
+    spell_plan.in_plans(plans:, base: Spell4BaseId(20_684))
+  let assert Ok(last) = spell_plan.stage_at(spell: charged_shot, index: 2)
+  assert last.unpayable_cost == Some(167)
+    as "Spell4CastResult.vital_cost: a cost of 5 in vital 15 (Focus) of a unit that holds none gives 167; row 124's own value is 0, which passes"
+  assert list.all(planted(base: 20_684).stages, fn(stage) {
+    stage.spell.unpayable_cost == None
+  })
+    as "Spell4Thresholds 124 holds Focus with the value 0"
+}
+
+pub fn the_phases_channel_and_threshold_of_each_method_are_read_from_the_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let pulse_blast = planted(base: 26_468)
+  assert pulse_blast.method == Multiphase
+  assert spell_plan.go_times_ms(spell: pulse_blast) == [0, 1250]
+    as "SpellPhase 5390 and 5391: delays 0 and 1250 (the running sum)"
+  assert pulse_blast.cooldown_start == AtLastGo
+    as "SpellPhase 5391: phaseFlags 0x200, so the cooldown starts at the last phase (0x14053e5a0)"
+  let quick_draw = planted(base: 27_638)
+  assert spell_plan.go_times_ms(spell: quick_draw) == [0, 366, 566, 766, 1000]
+    as "SpellPhase 5882 to 5886: delays 0, 366, 200, 200 and 234"
+  assert quick_draw.cooldown_start == AtLastGo
+    as "SpellPhase 5883: phaseFlags 0x200"
+  assert quick_draw.channel == None
+    as "Spell4.43468: the channel columns hold values, but only a Channeled spell keeps them (Spell4.channelPulseTime)"
+  assert list.all(quick_draw.proxies, fn(proxy) {
+    case proxy.condition {
+      spell_plan.NeedsPrerequisite(..) -> True
+      Always -> False
+    }
+  })
+    as "Spell4Effects 196513 to 196522: every Proxy of Quick Draw sits behind prerequisite 17301 or 17302"
+  assert planted(base: 23_161).cooldown_start == AtFirstGo
+    as "SpellPhase 3715 and 3716: flags 0 and 0x180, no 0x200"
+  let discharge = planted(base: 38_201)
+  assert discharge.method == Channeled
+  assert discharge.channel
+    == Some(Channel(
+      initial_delay_ms: 410,
+      max_time_ms: 1250,
+      pulse_time_ms: 410,
+    ))
+    as "Spell4.58832: channelInitialDelay 410, channelMaxTime 1250, channelPulseTime 410"
+  assert discharge.cooldown_start == AtLastGo
+    as "0x14053e5a0: a channel's cooldown starts at the go that reaches the count"
+  assert planted(base: 23_148).threshold_ms == 4000
+    as "Spell4.38765: thresholdTime 4000"
+  assert planted(base: 23_148).cooldown_start == NotAtAGo
+    as "0x14053e5a0: a RapidTap go starts no cooldown"
+  assert planted(base: 20_684).method == ChargeRelease
+  assert planted(base: 20_684).threshold_ms == 8200
+    as "Spell4.34718: thresholdTime 8200"
+  assert spell_plan.go_times_ms(spell: planted(base: 20_684)) == []
+    as "cast.charge_release_base: the base cast of Charged Shot has no go before its 0x7fe"
+}
+
+pub fn a_channels_gos_fall_at_the_initial_delay_plus_each_pulse_and_its_finish_at_the_max_time_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let discharge = planted(base: 38_201)
+  assert spell_plan.go_times_ms(spell: discharge) == [410, 820, 1230]
+    as "Spell4.58832: (1250 - 410 + 410) / 410 = 3 gos (0x14053d1f0), at the initial delay plus each pulse (the times are a server choice)"
+  assert spell_plan.finish_after_ms(spell: discharge) == Some(1250)
+    as "the channel ends at channelMaxTime, after its last pulse at 1230"
+  let electrocute = planted(base: 25_473)
+  assert spell_plan.go_times_ms(spell: electrocute)
+    == [500, 1000, 1500, 2000, 2500, 3000]
+    as "Spell4.41276: (3000 - 500 + 500) / 500 = 6 gos"
+  assert spell_plan.finish_after_ms(spell: electrocute) == None
+    as "its last pulse is at channelMaxTime, so the finish comes with it"
+}
+
+pub fn a_channels_gos_number_the_formula_of_the_client_and_stay_within_its_max_time_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use #(initial, extra, pulse) <- qcheck.given(qcheck.tuple3(
+    qcheck.bounded_int(from: 0, to: 3000),
+    qcheck.bounded_int(from: 0, to: 10_000),
+    qcheck.bounded_int(from: 1, to: 2000),
+  ))
+  let max = initial + extra
+  let times =
+    spell_plan.channel_go_times_ms(Channel(
+      initial_delay_ms: initial,
+      max_time_ms: max,
+      pulse_time_ms: pulse,
+    ))
+  assert list.length(times) == { max - initial + pulse } / pulse
+    as "0x14053d1f0: (channelMaxTime - channelInitialDelay + channelPulseTime) / channelPulseTime, in whole numbers"
+  assert list.first(times) == Ok(initial)
+    as "the first pulse is at the initial delay"
+  let assert Ok(last) = list.last(times)
+  assert last <= max && last + pulse > max
+    as "the last pulse is within the max time and the next would pass it"
+  assert list.window_by_2(times)
+    |> list.all(fn(pair) { pair.1 - pair.0 == pulse })
+    as "the pulses are one pulse time apart"
+}
+
+pub fn a_channeled_spell_with_no_pulse_time_fails_the_load_naming_the_spell_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = spell_tables.rows()
+  let no_pulse =
+    list.map(rows.spell4, fn(row) {
+      case row {
+        [planted_table.Integer(58_832), ..] ->
+          spell_tables.method_spell_row(
+            id: 58_832,
+            base: 38_201,
+            cast_time: 0,
+            cooldown: 0,
+            kind: 0,
+            global: 159,
+            cost: #(0, 0),
+            more: [
+              #("channelInitialDelay", 410),
+              #("channelMaxTime", 1250),
+              #("channelPulseTime", 0),
+            ],
+          )
+        _ -> row
+      }
+    })
+  let assert Error(error) =
+    spell_tables.derivation_result(
+      rows: spell_tables.Rows(..rows, spell4: no_pulse),
+    )
+    as "a pulse time of 0 gives no count of gos (0x14053d1f0), so the load fails"
+  assert string.contains(table_store.describe(error), "58832")
+}
+
+pub fn the_costs_of_impale_and_electrocute_give_the_results_of_their_vital_slots_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert planted(base: 23_161).unpayable_cost == Some(53)
+    as "Spell4.38779: an innate cost of type 8 (Resource3) of 35 gives 53"
+  assert planted(base: 25_473).unpayable_cost == Some(51)
+    as "Spell4.41276: type 6 (Resource1) of 8 gives 51"
+}
+
+pub fn the_cast_bar_of_each_method_follows_what_the_client_shows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let shows = fn(base, pressed) {
+    spell_plan.shows_cast_bar(spell: planted(base:), pressed:)
+  }
+  assert shows(26_468, True)
+    && shows(27_638, True)
+    && shows(38_201, True)
+    && shows(25_473, True)
+    && shows(20_684, True)
+    as "cast.current_cast: Multiphase with a cast time or castBarType, Channeled with a castBarType, ChargeRelease with a thresholdTime"
+  assert !shows(23_161, True)
+    && !shows(23_148, True)
+    && !shows(18_309, True)
+    && !shows(37_968, True)
+    as "cast.current_cast: Impale (Multiphase, no cast time, castBarType 0) and the three RapidTap abilities (no cast time) show none"
+  let assert [stage] = planted(base: 23_148).stages
+  assert !spell_plan.shows_cast_bar(spell: stage.spell, pressed: False)
+    as "a RapidTap stage has no cast time"
+  let channeled_without_bar =
+    spell_plan.Spell(
+      ..planted(base: 38_201),
+      cast_bar: spell_plan.ShowsWhenPressed,
+    )
+  assert spell_plan.shows_cast_bar(spell: channeled_without_bar, pressed: True)
+    && !spell_plan.shows_cast_bar(spell: channeled_without_bar, pressed: False)
+    as "cast.current_cast: a Channeled spell with no castBarType shows the bar when it is the pressed spell itself"
+}
+
+pub fn every_ability_of_the_clients_tables_builds_and_each_spell_shows_the_cast_bar_its_method_gives_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let plans = spell_plan.plans(tables:)
+  let ability = fn(base) {
+    let assert Ok(spell) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
+      as { "the plan holds the ability " <> int.to_string(base) }
+    spell
+  }
+  list.each(
+    [
+      #(26_468, 42_276),
+      #(27_638, 43_468),
+      #(38_201, 58_832),
+      #(25_473, 41_276),
+      #(20_684, 34_718),
+    ],
+    fn(pair) {
+      assert spell_plan.shows_cast_bar(spell: ability(pair.0), pressed: True)
+        as {
+          "cast.current_cast: the ability "
+          <> int.to_string(pair.1)
+          <> " shows its cast bar"
+        }
+      assert ability(pair.0).spell4_id == Spell4Id(pair.1)
+    },
+  )
+  list.each(
+    [#(23_161, 38_779), #(23_148, 38_765), #(18_309, 32_078), #(37_968, 58_524)],
+    fn(pair) {
+      assert !spell_plan.shows_cast_bar(spell: ability(pair.0), pressed: True)
+        as {
+          "cast.current_cast: the ability "
+          <> int.to_string(pair.1)
+          <> " shows no cast bar"
+        }
+      assert ability(pair.0).spell4_id == Spell4Id(pair.1)
+    },
+  )
+  let stages_of_all =
+    list.flat_map([23_148, 18_309, 37_968, 20_684], fn(base) {
+      list.map(ability(base).stages, fn(stage) { stage.spell })
+    })
+  assert list.map(stages_of_all, fn(spell) { spell.spell4_id.value })
+    == [38_766, 32_079, 32_080, 66_987, 71_125, 71_126, 34_720, 34_722, 36_691]
+    as "Spell4Thresholds.spell4IdToCast: Shred, Relentless Strikes, Rampage and Charged Shot, each in orderIndex order"
+  assert list.all(stages_of_all, fn(spell) {
+    !spell_plan.shows_cast_bar(spell:, pressed: False)
+  })
+    as "cast.current_cast: the stages have a thresholdTime and a cast time of 0"
+  assert list.map(ability(20_684).stages, fn(stage) { stage.duration_ms })
+    == [0, 1000, 1400]
+    as "Spell4Thresholds 125, 123 and 124: thresholdDuration 0, 1000 and 1400"
+  let assert [pulse_blast_child] =
+    list.map(ability(26_468).proxies, fn(proxy) { proxy.spell })
+    as "Spell4Effects 95881: Pulse Blast proxies 37302"
+  assert pulse_blast_child.spell4_id == Spell4Id(37_302)
+    && spell_plan.shows_cast_bar(spell: pulse_blast_child, pressed: False)
+    as "Spell4Base 22522: Multiphase with castBarType 1"
+  let assert [shred_child] =
+    list.map(ability(23_148).proxies, fn(proxy) { proxy.spell })
+    as "Spell4Effects 83776: Shred proxies 38767"
+  assert shred_child.spell4_id == Spell4Id(38_767)
+    && !spell_plan.shows_cast_bar(spell: shred_child, pressed: False)
+    as "Spell4Base 23150: Multiphase, castBarType 0, cast time 0"
+  let assert [shred_stage] = ability(23_148).stages
+  let assert [stage_child] = shred_stage.spell.proxies
+  assert stage_child.spell.spell4_id == Spell4Id(39_467)
+    && !spell_plan.shows_cast_bar(spell: stage_child.spell, pressed: False)
+    as "Spell4Base 23799: Multiphase, castBarType 0, cast time 0"
 }

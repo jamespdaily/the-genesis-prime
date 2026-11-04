@@ -587,10 +587,15 @@ pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_
     )
     as "Spell4CastResult.vital_cost: 2 Actuators of a Medic that holds none gives 55"
   let #(state, first) =
-    support.pressed(state: cast.new(), bag_index: 7, target: 0, at: 1000)
+    support.pressed(
+      state: cast.new(),
+      bag_index: support.unbuilt_bag_index,
+      target: 0,
+      at: 1000,
+    )
   assert list.map(support.writes(effects: first), refusal_result)
     == [IllegalSpellCast]
-    as "Spell.CodeEnumCastMethod: Electrocute is Channeled, which a later step casts; 285 is what the design gives it"
+    as "Spell.CodeEnumCastMethod: a PressHold spell is not cast by a method the rule builds, and 285 is what the design gives it"
   let logs = fn(effects) {
     list.filter(effects, fn(effect) {
       case effect {
@@ -603,7 +608,13 @@ pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_
     })
   }
   assert list.length(logs(first)) == 1 as "logged for the coverage measure"
-  let #(_, second) = support.pressed(state:, bag_index: 7, target: 0, at: 2000)
+  let #(_, second) =
+    support.pressed(
+      state:,
+      bag_index: support.unbuilt_bag_index,
+      target: 0,
+      at: 2000,
+    )
   assert logs(second) == [] as "once on the connection, not for each press"
 }
 
@@ -662,7 +673,7 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
   assert support.writes(effects: threshold) == []
     && support.cancelled_timers(effects: threshold) == []
   assert is_one_debug_line(threshold)
-    as "ChargeRelease is built in a later step, so the cancel is no change and a debug line: nothing evidences a 0x7fe for it"
+    as "(0, 0) names a threshold that is not open (the cast is Telekinetic Strike's), so the cancel is no change and a debug line"
   assert cancel(state, Other(11), 1) |> result.is_ok
     as "reason 11 (SpellInterrupted) with the bit 1 is sent by the input mode change"
   assert cancel(state, SpellAlreadyCasting, 1)

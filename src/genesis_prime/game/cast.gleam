@@ -2,25 +2,30 @@
 //// (genesis_prime/game/connection) as movement and chat are: the press of an
 //// ability on the action bar, the answers the client expects, the cast bar and
 //// cooldowns it keeps, the cast's go and finish, the child casts a Proxy effect
-//// starts, and the cast's end when the client cancels it. The caster's connection
-//// owns its casts and sends every message about them; it tells the connections
-//// that see its player the same news, which they write for a cast they know.
+//// starts, the thresholds of a RapidTap or ChargeRelease ability, and the cast's
+//// end when the client cancels it. The caster's connection owns its casts and
+//// sends every message about them; it tells the connections that see its player
+//// the same news, which they write for a cast they know.
 ////
 //// ```
 //// client                    connection (this rule)                         viewers' connections
 //// 0x9a press ──────────────▶ decode; bag index ─▶ the ability's tree (genesis_prime/game/spell_plan)
+////                            an open threshold of the ability ─▶ the stage its index names
 ////                            a refusal of the client's own checks ──▶ 0x7fc {client id, Spell4 id, result}
 ////                            accepted: id k = mint(unit, n); the gcd starts
 //// ◀── 0x7fd {client id, k, caster}                  (the caster's cast starts in its client)
 ////                            Tell(each viewer, CastStarted)  ──────────────▶ 0x7ff, when its client shows the caster
+//// ◀── 0x816 {ability, ability, 0, k}   a RapidTap or ChargeRelease ability's first press opens its threshold
+//// ◀── 0x817 {ability, index}           the next tap's stage, or the next charge level (a timer)
 ////                            cast time 0: the go at once; else StartTimer(go)
 //// ◀── 0x7f4 {k, phase 0, no target, no effect}  ◀── Tell(each viewer, CastWent) ─▶ 0x7f4, for a cast it wrote
-////                            the first go starts the spell's own cooldown
+////                            the spell's own cooldown starts at the go its method names
 ////                            each Proxy of the phase: StartTimer(delay), or at once for delay 0
 ////                            a child: id k2 = mint, root = the pressed spell, parent = the proxying spell
 //// ◀── 0x7ff {k2, ..}        Tell(each viewer, CastStarted) ───────────────▶ 0x7ff
 //// ◀── 0x7f4, 0x7fe          its go and finish, as the pressed cast's
 //// ◀── 0x7fe {k}             Tell(each viewer, CastFinished) ──────────────▶ 0x7fe, for a cast it wrote
+//// ◀── 0x814 {ability, bit}  the last tap or the release closes the threshold
 //// 0x801 {k, 6, 1} ─────────▶ the cast ends: its timers cancelled, 0x7fe to all
 //// ```
 ////
@@ -42,19 +47,21 @@
 ////   caster's current cast is live (below); 14 while the global cooldown has more
 ////   than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
 ////   more than 500 ms left (`0x1403b14c0`); 169 for a spell that needs the weapon
-////   when slot 16 holds none (`0x1403afb10`); 51 or 55, 50 + the class's resource
-////   slot, for a cost the unit cannot pay, since a new unit holds 0 of every
-////   resource (`Spell4CastResult.vital_cost`); and 285 for a spell that is not
-////   Normal (`Spell.CodeEnumCastMethod`, the cast methods of a later step), each
-////   logged once on the connection for the coverage measure.
-//// - **The current cast** is the client's: a cast with a cast time and a cast bar
-////   is the caster's current cast from its start until its go (a Normal cast) or
-////   its finish (a Multiphase one), and a 0x801 clears it; the client refuses a
-////   press with 13 only against it, and not when its spell is free while live or
-////   the pressed spell ignores casting (`cast.current_cast`,
-////   `Spell4.propertyFlags`, `0x1403afb10`). A cast with no cast bar, such as
-////   Stagger's Multiphase child, never blocks a press. The server keeps the same
-////   in `current`.
+////   when slot 16 holds none (`0x1403afb10`); 50 + the class's resource slot for
+////   a cost the unit cannot pay, since a new unit holds 0 of every resource
+////   (`Spell4CastResult.vital_cost`); and 285 for a spell whose method is not one
+////   of Normal, Multiphase, Channeled, RapidTap and ChargeRelease
+////   (`Spell.CodeEnumCastMethod`). A cost and a method not built are each logged
+////   once on the connection for the coverage measure.
+//// - **The current cast** is the client's: a cast whose spell shows a cast bar
+////   (`spell_plan.shows_cast_bar`) is the caster's current cast from its start. Its
+////   go clears it for a Normal cast with a cast time and no parent, and a cast
+////   that is itself the current cast clears it at its go unless its method is
+////   Multiphase, ChargeRelease or PressHold or it is a channel; any cast's finish
+////   clears it, and a 0x801 clears it whatever cast it names. The client refuses
+////   a press with 13 only against it, and not when its spell is free while live or
+////   the pressed spell ignores casting (`cast.current_cast`, `Spell4.propertyFlags`,
+////   `0x1403afb10`). The server keeps the same in `current`.
 //// - **13 is the server's choice.** The client itself never refuses an ability
 ////   press with 13, and never queues one behind its current cast: its casting
 ////   test runs only for a request whose word 0x14 is non-zero, which a press
@@ -64,24 +71,27 @@
 //// - **A press within 500 ms of a cooldown's end** is held: the client queues it
 ////   (317) and sends it (`0x1403b14c0`), so the server starts it when the
 ////   cooldown ends, from a timer, and answers nothing before. A second press
-////   while one is held is refused 13 (the server's choice).
+////   while one is held is refused 13 (the server's choice). The held press keeps
+////   the stage it resolved to when it came, as the client does.
 //// - **The cast id** is 2^31 + unit id x 2^11 + n mod 2^11, skipping an id a live
 ////   cast of the caster holds: unique among the live casts of every unit, since
 ////   the client keeps one table of casts (`0x140561c30`) and unit ids are below
 ////   2^20, and never 0. The client's own counter makes no collision: its
 ////   pending casts live apart (`cast.pending_table`). A child takes the next id.
 //// - **The cast bar and cooldowns** are the client's own: 0x7fd and 0x7ff start
-////   the caster's global cooldown (`0x14046afc0`, kinds 0 and 1), and a first go
-////   starts the spell's own (`0x14046b1e0`), so the server sends no 0x804. The
-////   server keeps the same, to refuse what the client would: the global cooldown
-////   from the accept for the SpellCoolDown time, the spell's own from the first
-////   go, the child casts none (kind 3).
+////   the caster's global cooldown (`0x14046afc0`, kinds 0 and 1), and a go starts
+////   the spell's own (`0x14046b1e0`), so the server sends no 0x804. The server
+////   keeps the same, to refuse what the client would: the global cooldown from the
+////   accept for the SpellCoolDown time, the spell's own where its method says
+////   (`spell_plan.CooldownStart`, `0x14053e5a0`), the child casts none (kind 3).
 //// - **The go** is 0x7f4 with the cast id, the ignore-cooldown bit 0, the caster's
 ////   place as the destination, no target, no position and no missile, and the
 ////   phase (`opcode.0x7f4`): a go that names no target carries no damage, which
-////   the next step adds. Each go is followed by the spell's Proxies of that phase,
-////   and the finish, 0x7fe, comes after the last go, at once for a spell that is
-////   not Multiphase.
+////   the next step adds. A Multiphase spell's phase is the phase's index and a
+////   channel's the pulse's (`opcode.0x7f4.phase`). Each go is followed by the
+////   spell's Proxies of that phase, and the finish, 0x7fe, comes after the last go,
+////   at once for a spell that is not Multiphase, and for a channel at its
+////   channelMaxTime from a timer of its own.
 //// - **A child cast** is the Proxy's spell cast as its own, from the caster, with
 ////   root the pressed spell and parent the spell whose Proxy fired
 ////   (`opcode.0x7ff.root_parent`), after the Proxy's delay from the parent's go;
@@ -90,21 +100,38 @@
 ////   prerequisite is not started. A child's timer is its own: the parent's finish
 ////   leaves the pending children, which start 100 ms after it (Crush), and only
 ////   the player leaving the world cancels them.
+//// - **A RapidTap threshold** opens with the first tap's 0x816 and lasts the
+////   ability's thresholdTime from a timer the server mirrors, since the client
+////   closes it by itself then (`opcode.0x816`). Each later tap casts the stage at
+////   the threshold's index, with root the ability and parent the ability
+////   (`cast.stage_root_parent`), and the next index goes in 0x817; the last stage
+////   closes the threshold with 0x814 and the bit set, which starts the ability's
+////   cooldown. The window ending closes it, writes nothing and starts the cooldown
+////   (`opcode.0x814`, `opcode.0x817`, `0x1403bfd60`).
+//// - **A ChargeRelease threshold** opens with the first press's 0x816; the press's
+////   cast, the base cast, stays live with no go until the release or a cancel
+////   (`cast.charge_release_base`). Each later row's thresholdDuration after the
+////   one before, a timer sends the next level in 0x817. The release is the next
+////   press, which casts the row at the level reached; its first go starts the
+////   ability's cooldown, and after its finish 0x814 closes the threshold and the
+////   base cast ends with 0x7fe. The client marks the charge full at the ability's
+////   thresholdTime and sends nothing, so the server holds the charge until a
+////   release or a cancel.
 //// - **The cancel** is 0x801: the server's cast id, a reason and a bit, which the
 ////   client sends as (6 or 11, 1) when the player's cast ends in its client, and
-////   (0, 0) for a ChargeRelease threshold (`opcode.0x801`). It clears the caster's
-////   current cast, whatever cast that is, and the cast ends with its go timers
-////   cancelled and 0x7fe to the caster and the audience, no strike; a cast that is
-////   not live is a debug line. A threshold cancel is a debug line and no change,
-////   until ChargeRelease is built. Any other reason or bit is one the client never
-////   sends, and ends the connection.
+////   (0, 0) with the 0x816 value for an open ChargeRelease threshold
+////   (`opcode.0x801`). It clears the caster's current cast, whatever cast that is,
+////   and the cast ends with its go timers cancelled and 0x7fe to the caster and the
+////   audience, no strike; the base cast of a charge ends its threshold too, with
+////   0x814 before its 0x7fe. A cast that is not live is a debug line. Any other
+////   reason or bit is one the client never sends, and ends the connection.
 //// - **The audience** of a cast is the caster's viewers when it starts; its go and
 ////   finish go to them. A viewer writes a 0x7ff only when its client shows the
 ////   caster, and a go, or a finish, only for a cast it wrote
-////   (genesis_prime/game/connection).
+////   (genesis_prime/game/connection). The threshold messages go to the caster only.
 //// - **Timers** are the connection's: this rule starts them with ids from
-////   `first_timer`, one for each go, child or held press waiting, and owns the
-////   ids from there up (`owns`).
+////   `first_timer`, one for each go, finish, child, held press, threshold window
+////   and charge level waiting, and owns the ids from there up (`owns`).
 ////
 //// What happens at each failure point of a cast:
 ////
@@ -112,12 +139,15 @@
 //// |---|---|
 //// | a 0x9a body the client's reader refuses, or a cast id of 0 | the connection ends, nothing written |
 //// | a press whose bag index the player does not hold | 0x7fc {client id, 0, 4} |
+//// | a press past the last stage of an open threshold | 0x7fc {client id, the ability, 4} |
 //// | a refusal of the client's own checks | 0x7fc with the result; nothing else changes |
 //// | a press while one is held | 0x7fc 13 |
 //// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
+//// | a 0x801 (0, 0) naming no open threshold | no change, a debug line |
 //// | a 0x801 with a reason and bit the client never sends | the connection ends |
 //// | a parent cast finishes with a child's timer pending | the child starts when its timer fires, with the root and parent it was made with |
-//// | the player camps with casts or children pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
+//// | a threshold's window ends with taps left | the threshold closes, nothing is written, the cooldown starts |
+//// | the player camps with casts, children or a threshold pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
 //// | the caster's connection ends | its timers end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
 //// | a timer fires after its cast ended | a go finds no live cast and does nothing; the cast's end cancels its go timers |
 //// | a timer fires in a status that holds no player in the world | dropped; the world is left already |
@@ -139,6 +169,9 @@ import genesis_prime/message/spell_finished.{SpellFinished}
 import genesis_prime/message/spell_go.{type SpellGo, SpellGo}
 import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
 import genesis_prime/message/spell_started.{type SpellStarted, SpellStarted}
+import genesis_prime/message/spell_threshold_closed.{SpellThresholdClosed}
+import genesis_prime/message/spell_threshold_index.{SpellThresholdIndex}
+import genesis_prime/message/spell_threshold_opened.{SpellThresholdOpened}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, LogDebug, LogInfo,
   LogWarning, TimerId,
@@ -206,6 +239,9 @@ pub type Refusal {
 pub type Due {
   /// The go of phase `phase` of the live cast `cast_id`.
   Go(cast_id: Int, phase: Int)
+  /// The live channel `cast_id` ends at its channelMaxTime, which can come after
+  /// its last pulse.
+  Finish(cast_id: Int)
   /// The child cast of `proxy` starts: with the pressed spell as its root and the
   /// spell whose Proxy fired as its parent, which need not be live.
   StartChild(
@@ -216,6 +252,28 @@ pub type Due {
   )
   /// The held press starts.
   StartHeld
+  /// The time of the RapidTap threshold of the ability `spell4_id` runs out.
+  WindowEnd(spell4_id: Int)
+  /// The ChargeRelease threshold of the ability `spell4_id` reaches the charge
+  /// level `level`.
+  ChargeLevel(spell4_id: Int, level: Int)
+}
+
+/// What a press resolved to when it came: the spell it casts, the ability that
+/// was pressed, and which stage of the ability's open threshold it casts (none for
+/// the ability's own spell).
+pub type Resolution {
+  Resolution(spell: Spell, ability: Spell, stage: Option(Int))
+}
+
+/// What a cast is to its ability's threshold.
+type Role {
+  /// A child a Proxy started: no threshold is touched.
+  Child
+  /// The ability's own spell, which opens a threshold when its method has one.
+  Base(ability: Spell)
+  /// The stage at `index` of the ability's open threshold.
+  Stage(ability: Spell, index: Int)
 }
 
 /// A cast of the caster that has started and not finished.
@@ -231,16 +289,29 @@ pub type Live {
     audience: Set(ConnectionId),
     /// How many of its gos have been sent.
     gone: Int,
+    /// The ability whose open threshold this cast is a stage of.
+    stage_of: Option(Spell),
+    /// Whether this cast's finish closes the ability's threshold: a release, and the
+    /// last tap.
+    closes_threshold: Bool,
   )
+}
+
+/// An open threshold of one ability: the stage or charge level the next press
+/// casts, and the id of the base cast, which the client sends back in a 0x801
+/// (`opcode.0x816`).
+pub type Threshold {
+  Threshold(ability: Spell, index: Int, cast_id: Int)
 }
 
 /// A press the client queued within 500 ms of a cooldown's end.
 pub type Held {
-  Held(client_cast_id: Int, spell: Spell)
+  Held(client_cast_id: Int, resolution: Resolution)
 }
 
-/// What the rule keeps for one player: its cooldowns, its live casts and what
-/// waits on a timer, and the counters its cast ids and timer ids are made from.
+/// What the rule keeps for one player: its cooldowns, its live casts, its open
+/// thresholds and what waits on a timer, and the counters its cast ids and timer
+/// ids are made from.
 pub opaque type State {
   State(
     /// The monotonic time the global cooldown ends at, once one has started. The
@@ -251,6 +322,8 @@ pub opaque type State {
     casts: Dict(Int, Live),
     /// The caster's current cast, which a press is refused against (13).
     current: Option(Int),
+    /// The open thresholds, by the Spell4 id of the ability.
+    thresholds: Dict(Int, Threshold),
     timers: Dict(TimerId, Due),
     held: Option(Held),
     /// How many casts the player has started, which the cast ids are made from.
@@ -282,6 +355,7 @@ pub fn new() -> State {
     cooldown_ends_ms: dict.new(),
     casts: dict.new(),
     current: None,
+    thresholds: dict.new(),
     timers: dict.new(),
     held: None,
     presses: 0,
@@ -346,7 +420,7 @@ pub fn take(
 ) -> Result(#(State, List(Effect)), Refusal) {
   case message {
     Pressed -> pressed(cast:, body:, caster:, plans:, now:)
-    Cancelled -> cancelled(cast:, body:)
+    Cancelled -> cancelled(cast:, body:, now:)
   }
 }
 
@@ -392,14 +466,47 @@ fn pressed(
           ),
         ]),
       )
-    Ok(spell) ->
-      Ok(press_of(
-        cast:,
-        caster:,
-        now_ms: now.monotonic_ms,
-        client_cast_id: press.client_cast_id,
-        spell:,
-      ))
+    Ok(ability) ->
+      case resolved(cast:, ability:) {
+        Error(Nil) ->
+          Ok(
+            #(cast, [
+              refused(
+                client_cast_id: press.client_cast_id,
+                spell4_id: ability.spell4_id.value,
+                result: cast_result.SpellUnknown,
+              ),
+            ]),
+          )
+        Ok(resolution) ->
+          Ok(press_of(
+            cast:,
+            caster:,
+            now_ms: now.monotonic_ms,
+            client_cast_id: press.client_cast_id,
+            resolution:,
+          ))
+      }
+  }
+}
+
+/// What a press of the ability casts: through its open threshold the stage at the
+/// threshold's index, the ability's own spell at -1, and none past the last stage
+/// (`0x1403bfd60`); with no threshold open, the ability's own spell.
+fn resolved(
+  cast cast: State,
+  ability ability: Spell,
+) -> Result(Resolution, Nil) {
+  case dict.get(cast.thresholds, ability.spell4_id.value) {
+    Error(Nil) -> Ok(Resolution(spell: ability, ability:, stage: None))
+    Ok(threshold) ->
+      spell_plan.stage_at(spell: ability, index: threshold.index)
+      |> result.map(fn(spell) {
+        Resolution(spell:, ability:, stage: case threshold.index < 0 {
+          True -> None
+          False -> Some(threshold.index)
+        })
+      })
   }
 }
 
@@ -410,30 +517,42 @@ fn press_of(
   caster caster: Caster,
   now_ms now_ms: Int,
   client_cast_id client_cast_id: Int,
-  spell spell: Spell,
+  resolution resolution: Resolution,
 ) -> #(State, List(Effect)) {
+  let spell = resolution.spell
   case verdict(cast:, caster:, spell:, now_ms:) {
     Accept ->
-      start(
-        cast:,
-        caster:,
-        now_ms:,
-        spell:,
-        root: spell.spell4_id,
-        parent: None,
-        client_cast_id: Some(client_cast_id),
-      )
+      case resolution.stage {
+        None ->
+          start(
+            cast:,
+            caster:,
+            now_ms:,
+            spell:,
+            root: resolution.ability.spell4_id,
+            parent: None,
+            client_cast_id: Some(client_cast_id),
+            role: Base(ability: resolution.ability),
+          )
+        Some(index) ->
+          start(
+            cast:,
+            caster:,
+            now_ms:,
+            spell:,
+            root: resolution.ability.spell4_id,
+            parent: Some(resolution.ability.spell4_id),
+            client_cast_id: Some(client_cast_id),
+            role: Stage(ability: resolution.ability, index:),
+          )
+      }
     Refuse(result:) -> #(cast, [
       refused(client_cast_id:, spell4_id: spell.spell4_id.value, result:),
     ])
-    NotBuilt ->
+    NotBuilt(result:, why:) ->
       case set.contains(cast.logged, spell.spell4_id.value) {
         True -> #(cast, [
-          refused(
-            client_cast_id:,
-            spell4_id: spell.spell4_id.value,
-            result: cast_result.IllegalSpellCast,
-          ),
+          refused(client_cast_id:, spell4_id: spell.spell4_id.value, result:),
         ])
         False -> #(
           State(..cast, logged: set.insert(cast.logged, spell.spell4_id.value)),
@@ -442,13 +561,12 @@ fn press_of(
               level: LogWarning,
               text: "the ability with Spell4 "
                 <> int.to_string(spell.spell4_id.value)
-                <> " is not cast by the Normal method, which is not built: it is refused with 285",
+                <> " "
+                <> why
+                <> ": it is refused with "
+                <> int.to_string(cast_result.to_value(result)),
             ),
-            refused(
-              client_cast_id:,
-              spell4_id: spell.spell4_id.value,
-              result: cast_result.IllegalSpellCast,
-            ),
+            refused(client_cast_id:, spell4_id: spell.spell4_id.value, result:),
           ],
         )
       }
@@ -458,7 +576,7 @@ fn press_of(
         State(
           ..cast,
           timers: dict.insert(cast.timers, timer, StartHeld),
-          held: Some(Held(client_cast_id:, spell:)),
+          held: Some(Held(client_cast_id:, resolution:)),
         ),
         [StartTimer(timer:, after_ms: wait_ms)],
       )
@@ -473,8 +591,9 @@ type Verdict {
   Refuse(result: cast_result.CastResult)
   /// The press is within the queue window of a cooldown's end.
   Hold(wait_ms: Int)
-  /// The spell is not cast by the Normal method.
-  NotBuilt
+  /// The spell waits for a later step: its method is not built, or its cost needs
+  /// a resource the server does not hold. It is refused, and logged once.
+  NotBuilt(result: cast_result.CastResult, why: String)
 }
 
 fn verdict(
@@ -487,7 +606,13 @@ fn verdict(
     when: option.is_some(cast.held),
     return: Refuse(result: cast_result.SpellAlreadyCasting),
   )
-  use <- bool.guard(when: spell.method != spell_plan.Normal, return: NotBuilt)
+  use <- bool.guard(
+    when: !is_built(spell.method),
+    return: NotBuilt(
+      result: cast_result.IllegalSpellCast,
+      why: "is not cast by a method that is built",
+    ),
+  )
   use <- bool.guard(
     when: lacks_the_weapon(spell:, caster:),
     return: Refuse(result: cast_result.WeaponSlot),
@@ -498,8 +623,9 @@ fn verdict(
   )
   use <- bool.guard(
     when: option.is_some(spell.unpayable_cost),
-    return: Refuse(
+    return: NotBuilt(
       result: cast_result.from_value(option.unwrap(spell.unpayable_cost, 0)),
+      why: "has an innate cost of a resource the server does not hold",
     ),
   )
   let global_left = case
@@ -523,6 +649,22 @@ fn verdict(
         0 -> Accept
         wait_ms -> Hold(wait_ms:)
       }
+  }
+}
+
+/// The methods the rule casts; a spell of any other is refused 285.
+fn is_built(method: spell_plan.CastMethod) -> Bool {
+  case method {
+    spell_plan.Normal
+    | spell_plan.Multiphase
+    | spell_plan.Channeled
+    | spell_plan.RapidTap
+    | spell_plan.ChargeRelease -> True
+    spell_plan.PressHold
+    | spell_plan.ChanneledField
+    | spell_plan.ClientSideInteraction
+    | spell_plan.Transactional
+    | spell_plan.OtherMethod(..) -> False
   }
 }
 
@@ -551,6 +693,7 @@ fn casting(cast: State) -> Bool {
 fn cancelled(
   cast cast: State,
   body body: BitArray,
+  now now: Now,
 ) -> Result(#(State, List(Effect)), Refusal) {
   use cancel <- result.try(
     cancel_cast.decode(body)
@@ -567,56 +710,85 @@ fn cancelled(
     },
     return: Error(UnknownCancel(reason:, bit: cancel.field_3)),
   )
-  use <- bool.guard(
-    when: reason == 0,
-    return: Ok(
-      #(cast, [
-        Log(
-          level: LogDebug,
-          text: "the client ended the ChargeRelease threshold of the cast "
-            <> int.to_string(cancel.cast_id)
-            <> ", which is not built",
-        ),
-      ]),
-    ),
-  )
-  // The client clears the player's current cast before it sends, whatever cast
-  // that is (`cast.current_cast`).
-  let cast = State(..cast, current: None)
-  case dict.get(cast.casts, cancel.cast_id) {
-    Error(Nil) ->
+  let now_ms = now.monotonic_ms
+  case reason == 0, open_charge_of(cast:, cast_id: cancel.cast_id) {
+    True, None ->
       Ok(
         #(cast, [
           Log(
             level: LogDebug,
-            text: "the client ended the cast "
+            text: "the client ended the threshold of the cast "
               <> int.to_string(cancel.cast_id)
-              <> ", which is not live",
+              <> ", which is not open",
           ),
         ]),
       )
-    Ok(live) -> {
-      let waiting = go_timers_of(cast:, cast_id: cancel.cast_id)
-      let cast =
-        State(
-          ..cast,
-          timers: list.fold(waiting, cast.timers, fn(timers, timer) {
-            dict.delete(timers, timer)
-          }),
-        )
-      let #(cast, finished) = finish(cast:, cast_id: cancel.cast_id, live:)
-      Ok(#(
-        cast,
-        list.append(
-          list.map(waiting, fn(timer) { CancelTimer(timer:) }),
-          finished,
-        ),
+    True, Some(threshold) | False, Some(threshold) ->
+      // The client clears the player's current cast before it sends, whatever cast
+      // that is (`cast.current_cast`); the base cast of the charge ends with the
+      // threshold.
+      Ok(close_threshold(
+        cast: State(..cast, current: None),
+        ability: threshold.ability,
+        now_ms:,
       ))
+    False, None -> {
+      let cast = State(..cast, current: None)
+      case dict.get(cast.casts, cancel.cast_id) {
+        Error(Nil) ->
+          Ok(
+            #(cast, [
+              Log(
+                level: LogDebug,
+                text: "the client ended the cast "
+                  <> int.to_string(cancel.cast_id)
+                  <> ", which is not live",
+              ),
+            ]),
+          )
+        Ok(live) ->
+          Ok(end_live_cast(cast:, cast_id: cancel.cast_id, live:, now_ms:))
+      }
     }
   }
 }
 
-/// A timer of the rule fired: a go, a child cast or the held press.
+/// A live cast the client cancelled ends: its waiting go and finish timers are
+/// cancelled and its 0x7fe goes out.
+fn end_live_cast(
+  cast cast: State,
+  cast_id cast_id: Int,
+  live live: Live,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let waiting = timers_of(cast:, cast_id:)
+  let cast =
+    State(
+      ..cast,
+      timers: list.fold(waiting, cast.timers, fn(timers, timer) {
+        dict.delete(timers, timer)
+      }),
+    )
+  let #(cast, finished) = finish(cast:, cast_id:, live:, now_ms:)
+  #(
+    cast,
+    list.append(list.map(waiting, fn(timer) { CancelTimer(timer:) }), finished),
+  )
+}
+
+/// The open threshold whose base cast is `cast_id`: the 32-bit value the 0x816
+/// carried, which the client names in a 0x801 (`opcode.0x816`).
+fn open_charge_of(cast cast: State, cast_id cast_id: Int) -> Option(Threshold) {
+  dict.values(cast.thresholds)
+  |> list.find(fn(threshold) {
+    threshold.cast_id == cast_id
+    && threshold.ability.method == spell_plan.ChargeRelease
+  })
+  |> option.from_result
+}
+
+/// A timer of the rule fired: a go, a finish, a child cast, the held press or a
+/// threshold's time.
 pub fn timer_fired(
   cast cast: State,
   timer timer: TimerId,
@@ -630,6 +802,11 @@ pub fn timer_fired(
       let now_ms = now.monotonic_ms
       case due {
         Go(cast_id:, phase:) -> go(cast:, caster:, now_ms:, cast_id:, phase:)
+        Finish(cast_id:) ->
+          case dict.get(cast.casts, cast_id) {
+            Error(Nil) -> #(cast, [])
+            Ok(live) -> finish(cast:, cast_id:, live:, now_ms:)
+          }
         StartChild(root:, parent:, proxy:, ..) ->
           start(
             cast:,
@@ -639,19 +816,23 @@ pub fn timer_fired(
             root:,
             parent: Some(parent),
             client_cast_id: None,
+            role: Child,
           )
         StartHeld ->
           case cast.held {
             None -> #(cast, [])
-            Some(Held(client_cast_id:, spell:)) ->
+            Some(Held(client_cast_id:, resolution:)) ->
               press_of(
                 cast: State(..cast, held: None),
                 caster:,
                 now_ms:,
                 client_cast_id:,
-                spell:,
+                resolution:,
               )
           }
+        WindowEnd(spell4_id:) -> window_ended(cast:, spell4_id:, now_ms:)
+        ChargeLevel(spell4_id:, level:) ->
+          charge_level_reached(cast:, spell4_id:, level:)
       }
     }
   }
@@ -667,6 +848,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       timers: dict.new(),
       held: None,
       current: None,
+      thresholds: dict.new(),
     ),
     list.map(dict.keys(cast.timers), fn(timer) { CancelTimer(timer:) }),
   )
@@ -674,7 +856,9 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 
 /// A cast of the spell starts: its id, the start written to the caster (0x7fd for
 /// a press, 0x7ff for a child) and told to the audience, the global cooldown, the
-/// timer of each later go, and the first go at once when it has no wait.
+/// threshold's message and timers when the cast opens or moves one, the timer of
+/// each later go and of a channel's finish, and the first go at once when it has
+/// no wait.
 fn start(
   cast cast: State,
   caster caster: Caster,
@@ -683,6 +867,7 @@ fn start(
   root root: Spell4Id,
   parent parent: Option(Spell4Id),
   client_cast_id client_cast_id: Option(Int),
+  role role: Role,
 ) -> #(State, List(Effect)) {
   let id =
     mint(
@@ -692,22 +877,23 @@ fn start(
     )
   let audience = caster.audience
   let go_times = spell_plan.go_times_ms(spell:)
+  let gos =
+    list.index_map(go_times, fn(wait_ms, phase) {
+      #(wait_ms, Go(cast_id: id, phase:))
+    })
+    |> list.filter(fn(go) { go.0 > 0 })
+  let finishing = case spell_plan.finish_after_ms(spell:) {
+    Some(wait_ms) -> [#(wait_ms, Finish(cast_id: id))]
+    None -> []
+  }
   let #(cast, timer_effects) =
-    list.index_fold(go_times, #(cast, []), fn(so_far, wait_ms, phase) {
+    list.fold(list.append(gos, finishing), #(cast, []), fn(so_far, wait) {
       let #(cast, effects) = so_far
-      case wait_ms > 0 {
-        False -> so_far
-        True -> {
-          let #(cast, timer) = new_timer(cast:)
-          #(
-            State(
-              ..cast,
-              timers: dict.insert(cast.timers, timer, Go(cast_id: id, phase:)),
-            ),
-            list.append(effects, [StartTimer(timer:, after_ms: wait_ms)]),
-          )
-        }
-      }
+      let #(cast, timer) = new_timer(cast:)
+      #(
+        State(..cast, timers: dict.insert(cast.timers, timer, wait.1)),
+        list.append(effects, [StartTimer(timer:, after_ms: wait.0)]),
+      )
     })
   let start_message = started_message(id:, spell:, root:, parent:, caster:)
   let live =
@@ -718,6 +904,11 @@ fn start(
       primary_target: caster.unit_id,
       audience:,
       gone: 0,
+      stage_of: case role {
+        Stage(ability:, ..) -> Some(ability)
+        Child | Base(..) -> None
+      },
+      closes_threshold: closes_threshold(role:),
     )
   let global_ends = case spell.global_cooldown.starts_for_ms {
     Some(wait_ms) -> Some(now_ms + wait_ms)
@@ -729,9 +920,11 @@ fn start(
       presses: cast.presses + 1,
       global_cooldown_ends_ms: global_ends,
       casts: dict.insert(cast.casts, id, live),
-      current: case spell.cast_bar {
-        spell_plan.ShowsCastBar -> Some(id)
-        spell_plan.HidesCastBar | spell_plan.UndecidedCastBar -> cast.current
+      current: case
+        spell_plan.shows_cast_bar(spell:, pressed: root == spell.spell4_id)
+      {
+        True -> Some(id)
+        False -> cast.current
       },
     )
   let to_caster = case client_cast_id {
@@ -746,7 +939,14 @@ fn start(
         news: client_connection.CastStarted(start: start_message),
       )
     })
-  let opening = [Send(frame: to_caster), ..list.append(told, timer_effects)]
+  let #(cast, threshold_effects) = threshold_step(cast:, role:, cast_id: id)
+  let opening =
+    list.flatten([
+      [Send(frame: to_caster)],
+      told,
+      threshold_effects,
+      timer_effects,
+    ])
   case go_times {
     [0, ..] -> {
       let #(cast, going) = go(cast:, caster:, now_ms:, cast_id: id, phase: 0)
@@ -756,9 +956,303 @@ fn start(
   }
 }
 
+/// Whether the finish of a cast that is a stage closes its ability's threshold: a
+/// release always does, a tap only when it is the last stage.
+fn closes_threshold(role role: Role) -> Bool {
+  case role {
+    Child | Base(..) -> False
+    Stage(ability:, index:) ->
+      case ability.method {
+        spell_plan.ChargeRelease -> True
+        spell_plan.RapidTap -> index + 1 >= list.length(ability.stages)
+        spell_plan.Normal
+        | spell_plan.Channeled
+        | spell_plan.PressHold
+        | spell_plan.ChanneledField
+        | spell_plan.ClientSideInteraction
+        | spell_plan.Multiphase
+        | spell_plan.Transactional
+        | spell_plan.OtherMethod(..) -> False
+      }
+  }
+}
+
+/// The threshold's part of a cast's start: the ability's own spell opens one
+/// (0x816, with its time or its charge timer), and a tap that is not the last
+/// moves the index of a RapidTap one (0x817).
+fn threshold_step(
+  cast cast: State,
+  role role: Role,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  case role {
+    Child -> #(cast, [])
+    Base(ability:) ->
+      case spell_plan.opens_threshold(spell: ability) {
+        True -> open_threshold(cast:, ability:, cast_id:)
+        False -> #(cast, [])
+      }
+    Stage(ability:, index:) ->
+      case dict.get(cast.thresholds, ability.spell4_id.value) {
+        Error(Nil) -> #(cast, [])
+        Ok(threshold) -> {
+          let next = index + 1
+          case
+            ability.method == spell_plan.RapidTap
+            && next < list.length(ability.stages)
+          {
+            True -> #(
+              State(
+                ..cast,
+                thresholds: dict.insert(
+                  cast.thresholds,
+                  ability.spell4_id.value,
+                  Threshold(..threshold, index: next),
+                ),
+              ),
+              [
+                Send(frame: index_frame(
+                  spell4_id: ability.spell4_id,
+                  index: next,
+                )),
+              ],
+            )
+            False -> #(cast, [])
+          }
+        }
+      }
+  }
+}
+
+/// The ability's first press opens its threshold at index 0: 0x816 with the base
+/// cast's id, and the timer of its time (RapidTap) or of its first charge level
+/// (ChargeRelease).
+fn open_threshold(
+  cast cast: State,
+  ability ability: Spell,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  let cast =
+    State(
+      ..cast,
+      thresholds: dict.insert(
+        cast.thresholds,
+        ability.spell4_id.value,
+        Threshold(ability:, index: 0, cast_id:),
+      ),
+    )
+  let opened = Send(frame: opened_frame(spell4_id: ability.spell4_id, cast_id:))
+  case ability.method {
+    spell_plan.RapidTap -> {
+      let #(cast, timer) = new_timer(cast:)
+      #(
+        State(
+          ..cast,
+          timers: dict.insert(
+            cast.timers,
+            timer,
+            WindowEnd(spell4_id: ability.spell4_id.value),
+          ),
+        ),
+        [opened, StartTimer(timer:, after_ms: ability.threshold_ms)],
+      )
+    }
+    spell_plan.ChargeRelease -> {
+      let #(cast, waiting) = charge_timer(cast:, ability:, level: 1)
+      #(cast, [opened, ..waiting])
+    }
+    spell_plan.Normal
+    | spell_plan.Channeled
+    | spell_plan.PressHold
+    | spell_plan.ChanneledField
+    | spell_plan.ClientSideInteraction
+    | spell_plan.Multiphase
+    | spell_plan.Transactional
+    | spell_plan.OtherMethod(..) -> #(cast, [opened])
+  }
+}
+
+/// The timer of the charge level `level`, after the row's thresholdDuration, when
+/// the ability has that row.
+fn charge_timer(
+  cast cast: State,
+  ability ability: Spell,
+  level level: Int,
+) -> #(State, List(Effect)) {
+  case list.drop(ability.stages, level) |> list.first {
+    Error(Nil) -> #(cast, [])
+    Ok(stage) -> {
+      let #(cast, timer) = new_timer(cast:)
+      #(
+        State(
+          ..cast,
+          timers: dict.insert(
+            cast.timers,
+            timer,
+            ChargeLevel(spell4_id: ability.spell4_id.value, level:),
+          ),
+        ),
+        [StartTimer(timer:, after_ms: stage.duration_ms)],
+      )
+    }
+  }
+}
+
+/// The charge reaches `level`: 0x817, and the timer of the next level.
+fn charge_level_reached(
+  cast cast: State,
+  spell4_id spell4_id: Int,
+  level level: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.thresholds, spell4_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(threshold) -> {
+      let cast =
+        State(
+          ..cast,
+          thresholds: dict.insert(
+            cast.thresholds,
+            spell4_id,
+            Threshold(..threshold, index: level),
+          ),
+        )
+      let #(cast, waiting) =
+        charge_timer(cast:, ability: threshold.ability, level: level + 1)
+      #(cast, [
+        Send(frame: index_frame(
+          spell4_id: threshold.ability.spell4_id,
+          index: level,
+        )),
+        ..waiting
+      ])
+    }
+  }
+}
+
+/// A RapidTap threshold's time ran out: the client closes it by itself, so the
+/// server writes nothing, closes its own and starts the ability's cooldown
+/// (`opcode.0x816`).
+fn window_ended(
+  cast cast: State,
+  spell4_id spell4_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.thresholds, spell4_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(threshold) -> #(
+      start_cooldown(
+        cast: State(..cast, thresholds: dict.delete(cast.thresholds, spell4_id)),
+        spell: threshold.ability,
+        now_ms:,
+      ),
+      [],
+    )
+  }
+}
+
+/// The ability's threshold closes: its timers are cancelled and 0x814 is sent. A
+/// RapidTap one starts the ability's cooldown with the bit; a ChargeRelease one
+/// ends its base cast with 0x7fe after the 0x814.
+fn close_threshold(
+  cast cast: State,
+  ability ability: Spell,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let key = ability.spell4_id.value
+  case dict.get(cast.thresholds, key) {
+    Error(Nil) -> #(cast, [])
+    Ok(threshold) -> {
+      let waiting =
+        dict.filter(cast.timers, fn(_, due) {
+          case due {
+            WindowEnd(spell4_id:) | ChargeLevel(spell4_id:, ..) ->
+              spell4_id == key
+            Go(..) | Finish(..) | StartChild(..) | StartHeld -> False
+          }
+        })
+        |> dict.keys
+      let cast =
+        State(
+          ..cast,
+          thresholds: dict.delete(cast.thresholds, key),
+          timers: list.fold(waiting, cast.timers, fn(timers, timer) {
+            dict.delete(timers, timer)
+          }),
+        )
+      let cancels = list.map(waiting, fn(timer) { CancelTimer(timer:) })
+      case ability.method {
+        spell_plan.RapidTap -> #(
+          start_cooldown(cast:, spell: ability, now_ms:),
+          list.append(cancels, [
+            Send(frame: closed_frame(
+              spell4_id: ability.spell4_id,
+              start_cooldowns: 1,
+            )),
+          ]),
+        )
+        spell_plan.ChargeRelease -> {
+          let closed =
+            Send(frame: closed_frame(
+              spell4_id: ability.spell4_id,
+              start_cooldowns: 0,
+            ))
+          let #(cast, ended) =
+            end_base_cast(cast:, cast_id: threshold.cast_id, now_ms:)
+          #(cast, list.flatten([cancels, [closed], ended]))
+        }
+        spell_plan.Normal
+        | spell_plan.Channeled
+        | spell_plan.PressHold
+        | spell_plan.ChanneledField
+        | spell_plan.ClientSideInteraction
+        | spell_plan.Multiphase
+        | spell_plan.Transactional
+        | spell_plan.OtherMethod(..) -> #(cast, cancels)
+      }
+    }
+  }
+}
+
+/// The base cast of a charge ends with its 0x7fe, when it is still live.
+fn end_base_cast(
+  cast cast: State,
+  cast_id cast_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.casts, cast_id) {
+    Ok(base) -> finish(cast:, cast_id:, live: base, now_ms:)
+    Error(Nil) -> #(cast, [])
+  }
+}
+
+/// The spell's own cooldown starts now, unless it is running already or the spell
+/// has none.
+fn start_cooldown(
+  cast cast: State,
+  spell spell: Spell,
+  now_ms now_ms: Int,
+) -> State {
+  let running =
+    dict.get(cast.cooldown_ends_ms, spell.spell4_id.value)
+    |> result.map(fn(ends_ms) { ends_ms > now_ms })
+    |> result.unwrap(False)
+  case spell.cooldown_ms > 0 && !running {
+    True ->
+      State(
+        ..cast,
+        cooldown_ends_ms: dict.insert(
+          cast.cooldown_ends_ms,
+          spell.spell4_id.value,
+          now_ms + spell.cooldown_ms,
+        ),
+      )
+    False -> cast
+  }
+}
+
 /// The go of phase `phase` of a live cast: 0x7f4 to the caster and the audience,
-/// the spell's own cooldown at its first go, the current cast cleared at the go
-/// of a Normal cast, the Proxies of the phase, and the finish after the last go.
+/// the spell's own cooldown at the go its method names, the current cast cleared
+/// as the client does, the Proxies of the phase, and the finish after the last go.
 /// A cast that is not live has no go.
 fn go(
   cast cast: State,
@@ -778,41 +1272,27 @@ fn go(
           Tell(to: viewer, news: client_connection.CastWent(go: go_message))
         })
       ]
-      let running =
-        dict.get(cast.cooldown_ends_ms, spell.spell4_id.value)
-        |> result.map(fn(ends_ms) { ends_ms > now_ms })
-        |> result.unwrap(False)
-      let cooldown_ends_ms = case
-        live.gone == 0 && spell.cooldown_ms > 0 && !running
-      {
-        True ->
-          dict.insert(
-            cast.cooldown_ends_ms,
-            spell.spell4_id.value,
-            now_ms + spell.cooldown_ms,
-          )
-        False -> cast.cooldown_ends_ms
+      let go_count = list.length(spell_plan.go_times_ms(spell:))
+      let cast = case spell.cooldown_start {
+        spell_plan.AtFirstGo if live.gone == 0 ->
+          start_cooldown(cast:, spell:, now_ms:)
+        spell_plan.AtLastGo if live.gone + 1 == go_count ->
+          start_cooldown(cast:, spell:, now_ms:)
+        spell_plan.AtFirstGo | spell_plan.AtLastGo | spell_plan.NotAtAGo -> cast
       }
-      let current = case spell.method == spell_plan.Normal {
-        True ->
-          case
-            live.parent == None
-            && spell.cast_bar == spell_plan.ShowsCastBar
-            || cast.current == Some(cast_id)
-          {
-            True -> None
-            False -> cast.current
-          }
+      let cast = case live.stage_of {
+        Some(ability)
+          if spell.method == spell_plan.ChargeRelease && live.gone == 0
+        -> start_cooldown(cast:, spell: ability, now_ms:)
+        Some(_) | None -> cast
+      }
+      let current = case clears_current(cast:, live:, cast_id:) {
+        True -> None
         False -> cast.current
       }
       let live = Live(..live, gone: live.gone + 1)
       let cast =
-        State(
-          ..cast,
-          cooldown_ends_ms:,
-          current:,
-          casts: dict.insert(cast.casts, cast_id, live),
-        )
+        State(..cast, current:, casts: dict.insert(cast.casts, cast_id, live))
       let #(cast, children) =
         list.fold(
           spell_plan.proxies_in_phase(spell:, phase:),
@@ -824,14 +1304,59 @@ fn go(
           },
         )
       let #(cast, finished) = case
-        live.gone == list.length(spell_plan.go_times_ms(spell:))
+        live.gone == go_count
+        && option.is_none(spell_plan.finish_after_ms(spell:))
       {
-        True -> finish(cast:, cast_id:, live:)
+        True -> finish(cast:, cast_id:, live:, now_ms:)
         False -> #(cast, [])
       }
       #(cast, list.flatten([going, children, finished]))
     }
   }
+}
+
+/// Whether a go clears the caster's current cast (`cast.current_cast`): a cast with
+/// a cast bar, a cast time and no parent clears whichever cast is current, unless
+/// its method is Channeled, PressHold, ChanneledField, ChargeRelease or
+/// Multiphase; any other cast clears it only when it is the current cast, has no
+/// channel and is not PressHold, ChargeRelease or Multiphase.
+fn clears_current(
+  cast cast: State,
+  live live: Live,
+  cast_id cast_id: Int,
+) -> Bool {
+  let spell = live.spell
+  let clears_whichever = case spell.method {
+    spell_plan.Normal
+    | spell_plan.ClientSideInteraction
+    | spell_plan.RapidTap
+    | spell_plan.Transactional
+    | spell_plan.OtherMethod(..) ->
+      spell.cast_time_ms != 0
+      && live.parent == None
+      && spell_plan.shows_cast_bar(
+        spell:,
+        pressed: live.root == spell.spell4_id,
+      )
+    spell_plan.Channeled
+    | spell_plan.PressHold
+    | spell_plan.ChanneledField
+    | spell_plan.ChargeRelease
+    | spell_plan.Multiphase -> False
+  }
+  let clears_itself = case spell.method {
+    spell_plan.Normal
+    | spell_plan.Channeled
+    | spell_plan.ChanneledField
+    | spell_plan.ClientSideInteraction
+    | spell_plan.RapidTap
+    | spell_plan.Transactional
+    | spell_plan.OtherMethod(..) ->
+      cast.current == Some(cast_id) && option.is_none(spell.channel)
+    spell_plan.PressHold | spell_plan.ChargeRelease | spell_plan.Multiphase ->
+      False
+  }
+  clears_whichever || clears_itself
 }
 
 /// A Proxy of a go: the child starts at once for no delay, else after it from a
@@ -863,6 +1388,7 @@ fn child(
             root: live.root,
             parent: Some(live.spell.spell4_id),
             client_cast_id: None,
+            role: Child,
           )
         True -> {
           let #(cast, timer) = new_timer(cast:)
@@ -888,13 +1414,16 @@ fn child(
 }
 
 /// A live cast ends: 0x7fe to the caster and the audience, and the cast is no
-/// longer live nor the caster's current cast.
+/// longer live nor the caster's current cast. A channel starts its cooldown here
+/// too (`0x14053e1b0`), and a stage that closes its ability's threshold does that
+/// after its 0x7fe.
 fn finish(
   cast cast: State,
   cast_id cast_id: Int,
   live live: Live,
+  now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  #(
+  let cast =
     State(
       ..cast,
       casts: dict.delete(cast.casts, cast_id),
@@ -902,14 +1431,32 @@ fn finish(
         True -> None
         False -> cast.current
       },
-    ),
-    [
-      Send(frame: finished_frame(cast_id:)),
-      ..list.map(sorted(live.audience), fn(viewer) {
-        Tell(to: viewer, news: client_connection.CastFinished(cast_id:))
-      })
-    ],
-  )
+    )
+  let cast = case live.spell.method {
+    spell_plan.Channeled -> start_cooldown(cast:, spell: live.spell, now_ms:)
+    spell_plan.Normal
+    | spell_plan.PressHold
+    | spell_plan.ChanneledField
+    | spell_plan.ClientSideInteraction
+    | spell_plan.RapidTap
+    | spell_plan.ChargeRelease
+    | spell_plan.Multiphase
+    | spell_plan.Transactional
+    | spell_plan.OtherMethod(..) -> cast
+  }
+  let ended = [
+    Send(frame: finished_frame(cast_id:)),
+    ..list.map(sorted(live.audience), fn(viewer) {
+      Tell(to: viewer, news: client_connection.CastFinished(cast_id:))
+    })
+  ]
+  case live.stage_of, live.closes_threshold {
+    Some(ability), True -> {
+      let #(cast, closed) = close_threshold(cast:, ability:, now_ms:)
+      #(cast, list.append(ended, closed))
+    }
+    Some(_), False | None, True | None, False -> #(cast, ended)
+  }
 }
 
 /// The next timer's id, and the state counting it.
@@ -920,12 +1467,12 @@ fn new_timer(cast cast: State) -> #(State, TimerId) {
   )
 }
 
-/// The timers of a live cast's gos that still wait.
-fn go_timers_of(cast cast: State, cast_id cast_id: Int) -> List(TimerId) {
+/// The timers of a live cast's gos and finish that still wait.
+fn timers_of(cast cast: State, cast_id cast_id: Int) -> List(TimerId) {
   dict.filter(cast.timers, fn(_, due) {
     case due {
-      Go(cast_id: waiting, ..) -> waiting == cast_id
-      StartChild(..) | StartHeld -> False
+      Go(cast_id: waiting, ..) | Finish(cast_id: waiting) -> waiting == cast_id
+      StartChild(..) | StartHeld | WindowEnd(..) | ChargeLevel(..) -> False
     }
   })
   |> dict.keys
@@ -1035,6 +1582,47 @@ fn confirmed_frame(
     )
     as "a cast id of 32 bits and floats fit the message, and the rule sends no list"
   Frame(message_id: spell_cast_confirmed.message_id, body:)
+}
+
+/// 0x0816 for a threshold that opens: the ability's spell as the opened and the
+/// resolving spell, 0 for the third (the opened spell's own cooldowns), and the
+/// base cast's id as the value the client sends back (`opcode.0x816`).
+fn opened_frame(spell4_id spell4_id: Spell4Id, cast_id cast_id: Int) -> Frame {
+  let assert Ok(body) =
+    spell_threshold_opened.encode(SpellThresholdOpened(
+      spell4_id: spell4_id.value,
+      resolving_spell4_id: spell4_id.value,
+      cooldown_spell4_id: 0,
+      cancel_cast_id: cast_id,
+    ))
+    as "Spell4 ids of 18 bits and a cast id of 32 fit the message"
+  Frame(message_id: spell_threshold_opened.message_id, body:)
+}
+
+/// 0x0817 for the index the next press casts (`opcode.0x817`).
+fn index_frame(spell4_id spell4_id: Spell4Id, index index: Int) -> Frame {
+  let assert Ok(body) =
+    spell_threshold_index.encode(SpellThresholdIndex(
+      spell4_id: spell4_id.value,
+      index:,
+    ))
+    as "a Spell4 id of 18 bits and a stage index of 8 fit the message"
+  Frame(message_id: spell_threshold_index.message_id, body:)
+}
+
+/// 0x0814 for a threshold that closes, with the bit that starts the cooldowns
+/// (`opcode.0x814`).
+fn closed_frame(
+  spell4_id spell4_id: Spell4Id,
+  start_cooldowns start_cooldowns: Int,
+) -> Frame {
+  let assert Ok(body) =
+    spell_threshold_closed.encode(SpellThresholdClosed(
+      spell4_id: spell4_id.value,
+      start_cooldowns:,
+    ))
+    as "a Spell4 id of 18 bits and a bit fit the message"
+  Frame(message_id: spell_threshold_closed.message_id, body:)
 }
 
 /// 0x07FF for a cast that starts, which the caster's rule tells each viewer as

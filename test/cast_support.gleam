@@ -3,16 +3,18 @@
 //// set), a caster, the bytes of the client's presses and cancels, and helpers
 //// that find the writes, the tells and the timers in a step's effects.
 ////
-//// Three spells are planted, not client rows, because no level-1 ability has
-//// global cooldown kind 2, a cast bar that lets a press through, or a cast time
-//// with a cooldown of its own: `blocked_only` (kind 2), `exempt` and `slow`.
+//// Four spells are planted, not client rows, because no level-1 ability has
+//// global cooldown kind 2, a cast bar that lets a press through, a cast time
+//// with a cooldown of its own, or a cast method the rule does not cast:
+//// `blocked_only` (kind 2), `exempt`, `slow` and `unbuilt` (PressHold).
 
 import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, GlobalCooldown, NoWeaponNeeded, Normal, Spell,
+  type Plans, type Spell, AtFirstGo, GlobalCooldown, NoWeaponNeeded, Normal,
+  Spell,
 }
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
@@ -50,7 +52,11 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     ),
     unpayable_cost: None,
     phase_delays_ms: [],
+    threshold_ms: 0,
+    stages: [],
+    channel: None,
     proxies: [],
+    cooldown_start: AtFirstGo,
   )
 }
 
@@ -84,15 +90,41 @@ pub fn slow() -> Spell {
 
 /// The abilities by bag index, as Spell4Base ids: 0 Telekinetic Strike, 1 Crush,
 /// 2 Mind Burst, 3 Kick, 4 Stagger, 5 Gate, 6 Gamma Rays, 7 Electrocute, 8 the
-/// exempt spell, 9 Zap, 10 the kind 2 spell and 11 the slow spell.
+/// exempt spell, 9 Zap, 10 the kind 2 spell, 11 the slow spell, 12 Pulse Blast,
+/// 13 Quick Draw, 14 Discharge, 15 Shred, 16 Relentless Strikes, 17 Rampage,
+/// 18 Charged Shot, 19 Impale and 20 the PressHold spell.
 pub fn abilities() -> List(Spell4BaseId) {
   list.map(
     [
       19_102, 19_022, 19_019, 38_017, 23_173, 20_325, 16_322, 25_473, 1, 25_635,
-      2, 3,
+      2, 3, 26_468, 27_638, 38_201, 23_148, 18_309, 37_968, 20_684, 23_161, 4,
     ],
     Spell4BaseId,
   )
+}
+
+pub const pulse_blast = 12
+
+pub const quick_draw = 13
+
+pub const discharge = 14
+
+pub const shred = 15
+
+pub const relentless_strikes = 16
+
+pub const rampage = 17
+
+pub const charged_shot = 18
+
+pub const impale = 19
+
+pub const unbuilt_bag_index = 20
+
+/// A planted spell of the PressHold method, which the rule does not cast
+/// (`Spell.CodeEnumCastMethod`).
+pub fn unbuilt() -> Spell {
+  Spell(..child(spell4_id: 4, base: 4), method: spell_plan.PressHold)
 }
 
 /// The plans of the abilities above: the client's trees as `spell_plan.build`
@@ -104,9 +136,27 @@ pub fn plans() -> Plans {
       spell_plan.build(tables:)
     })
     as "the planted spell rows build"
-  list.fold([exempt(), blocked_only(), slow()], built, fn(plans, spell) {
+  with_spells(plans: built, spells: [
+    exempt(),
+    blocked_only(),
+    slow(),
+    unbuilt(),
+  ])
+}
+
+/// The plans with these spells in place of the ability of the same Spell4Base id.
+pub fn with_spells(plans plans: Plans, spells spells: List(Spell)) -> Plans {
+  list.fold(spells, plans, fn(plans, spell) {
     dict.insert(plans, spell.spell4_base_id.value, spell)
   })
+}
+
+/// The ability of the Spell4Base id as the plans hold it.
+pub fn ability(base base: Int) -> Spell {
+  let assert Ok(spell) =
+    spell_plan.in_plans(plans: plans(), base: Spell4BaseId(base))
+    as "the plans hold the ability"
+  spell
 }
 
 /// The player 7 with the abilities above and its weapon, seen by the connections
@@ -169,17 +219,47 @@ pub fn pressed_by(
   target target: Int,
   at ms: Int,
 ) -> #(State, List(Effect)) {
+  pressed_in(plans: plans(), state:, caster:, bag_index:, target:, at: ms)
+}
+
+/// A press at the time of an ability of the plans given.
+pub fn pressed_in(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  bag_index bag_index: Int,
+  target target: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
   let assert Ok(taken) =
     cast.take(
       cast: state,
       message: cast.Pressed,
       body: press_body(client_cast_id: 9, bag_index:, target:, press: 1),
       caster:,
-      plans: plans(),
+      plans:,
       now: at(ms:),
     )
     as "the press is taken: a refusal of the client's own checks is a 0x7fc, never an error"
   taken
+}
+
+/// The client's 0x801 at the time, taken by the rule.
+pub fn cancelled(
+  state state: State,
+  cast_id cast_id: Int,
+  reason reason: CastResult,
+  bit bit: Int,
+  at ms: Int,
+) -> Result(#(State, List(Effect)), cast.Refusal) {
+  cast.take(
+    cast: state,
+    message: cast.Cancelled,
+    body: cancel_body(cast_id:, reason:, bit:),
+    caster: caster(),
+    plans: plans(),
+    now: at(ms:),
+  )
 }
 
 /// What the client is written, in order.

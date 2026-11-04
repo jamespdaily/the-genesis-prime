@@ -19,7 +19,10 @@
 ////   Health.
 //// - The 18 SpellLevel rows of level 1 with no prerequisite and class 1's rows
 ////   921 (level 4) and 928 (level 16, with a prerequisite), and the Spell4 rows
-////   of the 18 level-1 spells, each with its Spell4Base id.
+////   of the 18 level-1 spells, each with its Spell4Base id. The trees of 17 of the
+////   abilities are the rows of `spell_tables` (each the client's own row, with its
+////   children, stages, phases, thresholds and global cooldowns); Paralytic Surge,
+////   42352, is one instant Normal cast.
 
 import genesis_prime/table/character_creation
 import genesis_prime/table/class
@@ -35,6 +38,7 @@ import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
@@ -42,7 +46,9 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import planted_table.{type Cell, Boolean, Float, Integer}
+import spell_tables
 
 /// A Novice set the planted CharacterCreation rows hold: the row, its class and
 /// faction, the five armor pieces, the shield and the weapon.
@@ -755,23 +761,34 @@ pub fn spell4_ids_and_bases() -> List(#(Int, Int)) {
   ]
 }
 
-/// The planted Spell4 rows.
+/// The planted Spell4 rows: the trees of `spell_tables` and Paralytic Surge.
 pub fn spell4_rows() -> List(List(Cell)) {
-  list.map(spell4_ids_and_bases(), fn(pair) {
+  list.append(spell_tables.rows().spell4, [
     planted_table.row(spell4.schema, [
-      #("ID", Integer(pair.0)),
-      #("spell4BaseIdBaseSpell", Integer(pair.1)),
-    ])
-  })
+      #("ID", Integer(42_352)),
+      #("spell4BaseIdBaseSpell", Integer(26_543)),
+    ]),
+  ])
+  |> list.sort(by_id)
 }
 
-/// The planted Spell4Base rows of the same spells: the Normal cast method and
-/// nothing else, so each spell is one cast with no cost, no cooldown and no
-/// child.
+/// The planted Spell4Base rows: the trees of `spell_tables` and Paralytic Surge,
+/// which is the Normal cast method and nothing else, so it is one cast with no
+/// cost, no cooldown and no child.
 pub fn spell4_base_rows() -> List(List(Cell)) {
-  list.map(spell4_ids_and_bases(), fn(pair) {
-    planted_table.row(spell4_base.schema, [#("ID", Integer(pair.1))])
-  })
+  list.append(spell_tables.rows().spell4_base, [
+    planted_table.row(spell4_base.schema, [#("ID", Integer(26_543))]),
+  ])
+  |> list.sort(by_id)
+}
+
+/// Every planted row holds its ID in its first cell.
+fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
+  let assert [Integer(first_id), ..] = first
+    as "a planted row holds its ID first"
+  let assert [Integer(second_id), ..] = second
+    as "a planted row holds its ID first"
+  int.compare(first_id, second_id)
 }
 
 /// The planted files of the tables only the loadout and the spell plans read,
@@ -788,10 +805,20 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(creature_level.schema, creature_level_rows()),
     planted_table.file(spell4.schema, spell4_rows()),
     planted_table.file(spell4_base.schema, spell4_base_rows()),
-    planted_table.file(spell4_effects.schema, []),
-    planted_table.file(spell_phase.schema, []),
-    planted_table.file(spell_cool_down.schema, []),
-    planted_table.file(class.schema, []),
+    planted_table.file(
+      spell4_effects.schema,
+      spell_tables.rows().spell4_effects,
+    ),
+    planted_table.file(
+      spell4_thresholds.schema,
+      spell_tables.rows().spell4_thresholds,
+    ),
+    planted_table.file(spell_phase.schema, spell_tables.rows().spell_phases),
+    planted_table.file(
+      spell_cool_down.schema,
+      spell_tables.rows().spell_cool_downs,
+    ),
+    planted_table.file(class.schema, spell_tables.rows().classes),
     planted_table.file(spell_level.schema, spell_level_rows()),
   ]
 }
