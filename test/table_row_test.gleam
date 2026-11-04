@@ -14,41 +14,26 @@
 ////
 //// The values were read from the files by a script apart from the generator
 //// (struct unpacking of the offsets given), not by the code under test.
-//// Each test loads one table from the extracted client files and is skipped
-//// where `GENESIS_NO_CLIENT=1`.
+//// Each test reads its table from the load of all the client's tables that
+//// every test shares (`client_tables.every_table`), and is skipped where
+//// `GENESIS_NO_CLIENT=1`.
 
 import client_tables
 import genesis_prime/table/creature2
 import genesis_prime/table/id
 import genesis_prime/table/item2
 import genesis_prime/table/level_up_unlock
-import genesis_prime/table/loader/store
 import genesis_prime/table/localized_text
 import genesis_prime/table/spell4
 import genesis_prime/table/spline2_node
-import gleam/erlang/reference
 import gleam/list
 import owned_test
 import unitest
 
-/// Loads one table from the extracted client files, or stops the test.
-fn load(entry: store.Entry) -> store.Tables {
-  let assert Ok(tables) =
-    store.load(
-      under: reference.new(),
-      from: client_tables.folder(),
-      entries: [entry],
-      requirements: [],
-      derivations: [],
-    )
-    as "the table did not load from the client's files"
-  tables
-}
-
 pub fn creature2_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let tables = load(creature2.entry())
+  let tables = client_tables.every_table()
   let assert Ok(first) = creature2.get(tables, id.Creature2Id(1))
     as "Creature2.tbl: lookup entry of id 1 (file offset 0x2afa204) is row 0"
   assert first.id == 1 as "Creature2.tbl 0x31f0: u32 ID of row 0"
@@ -80,13 +65,12 @@ pub fn creature2_rows_decode_to_the_values_the_file_holds_test() -> Nil {
     as "Creature2.tbl: the lookup count is 80250, so id 80250 is past it"
   assert list.length(creature2.all(tables)) == 56_369
     as "Creature2.tbl header 0x30: 56369 records (game_tables.ClientData)"
-  store.unload(tables)
 }
 
 pub fn a_32_bit_integer_column_is_read_as_a_signed_number_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let tables = load(creature2.entry())
+  let tables = client_tables.every_table()
   let assert Ok(first) = creature2.get(tables, id.Creature2Id(1))
     as "Creature2.tbl: id 1 has a row"
   assert first.quest_anim_objective_index == -1
@@ -94,13 +78,12 @@ pub fn a_32_bit_integer_column_is_read_as_a_signed_number_test() -> Nil {
   let assert Ok(last) = creature2.get(tables, id.Creature2Id(80_249))
     as "Creature2.tbl: id 80249 has a row"
   assert last.quest_anim_objective_index == 0 as "Creature2.tbl 0x256d5bc: u32"
-  store.unload(tables)
 }
 
 pub fn a_32_bit_integer_column_the_client_reads_unsigned_is_read_as_an_unsigned_number_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let tables = load(level_up_unlock.entry())
+  let tables = client_tables.every_table()
   let assert Ok(unlock) = level_up_unlock.get(tables, id.LevelUpUnlockId(36))
     as "LevelUpUnlock.tbl: lookup entry of id 36 (file offset 0x1a00) is row 28"
   assert unlock.level == 4_294_967_295
@@ -108,13 +91,12 @@ pub fn a_32_bit_integer_column_the_client_reads_unsigned_is_read_as_an_unsigned_
   let assert Ok(first) = level_up_unlock.get(tables, id.LevelUpUnlockId(1))
     as "LevelUpUnlock.tbl: lookup entry of id 1 (file offset 0x1974) is row 0"
   assert first.level == 20 as "LevelUpUnlock.tbl 0x278: u32 20"
-  store.unload(tables)
 }
 
 pub fn spell4_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let tables = load(spell4.entry())
+  let tables = client_tables.every_table()
   let assert Ok(first) = spell4.get(tables, id.Spell4Id(1))
     as "Spell4.tbl: lookup entry of id 1 (file offset 0x21c7e24) is row 0"
   assert first.id == 1 as "Spell4.tbl 0x1e40: u32 ID"
@@ -139,13 +121,12 @@ pub fn spell4_rows_decode_to_the_values_the_file_holds_test() -> Nil {
     as "Spell4.tbl: the lookup count is 88880, so id 88880 is past it"
   assert list.length(spell4.all(tables)) == 66_591
     as "Spell4.tbl header 0x30: 66591 records (game_tables.ClientData)"
-  store.unload(tables)
 }
 
 pub fn item2_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let tables = load(item2.entry())
+  let tables = client_tables.every_table()
   let assert Ok(first) = item2.get(tables, id.Item2Id(1))
     as "Item2.tbl: lookup entry of id 1 (file offset 0xe9dfc4) is row 0"
   assert first.id == 1 as "Item2.tbl 0xcf0: u32 ID"
@@ -175,13 +156,12 @@ pub fn item2_rows_decode_to_the_values_the_file_holds_test() -> Nil {
     as "Item2.tbl: the lookup count is 93023, so id 93023 is past it"
   assert list.length(item2.all(tables)) == 72_106
     as "Item2.tbl header 0x30: 72106 records (game_tables.ClientData)"
-  store.unload(tables)
 }
 
 pub fn spline2_node_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let tables = load(spline2_node.entry())
+  let tables = client_tables.every_table()
   let assert Ok(first) = spline2_node.get(tables, id.Spline2NodeId(41_581))
     as "Spline2Node.tbl: lookup entry of id 41581 (file offset 0x147bfb4) is row 0"
   assert first.id == 41_581 as "Spline2Node.tbl 0x300: u32 ID"
@@ -213,13 +193,12 @@ pub fn spline2_node_rows_decode_to_the_values_the_file_holds_test() -> Nil {
     as "Spline2Node.tbl: the lookup count is 755608, so id 755608 is past it"
   assert list.length(spline2_node.all(tables)) == 380_576
     as "Spline2Node.tbl header 0x30: 380576 records (game_tables.ClientData)"
-  store.unload(tables)
 }
 
 pub fn localized_text_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let tables = load(localized_text.entry())
+  let tables = client_tables.every_table()
   let assert Ok(first) = localized_text.get(tables, id.LocalizedTextId(1))
     as "LocalizedText.tbl: lookup entry of id 1 (file offset 0xe666d4) is row 0"
   assert first.id == 1 as "LocalizedText.tbl 0x230: u32 ID"
@@ -243,5 +222,4 @@ pub fn localized_text_rows_decode_to_the_values_the_file_holds_test() -> Nil {
     as "LocalizedText.tbl: the lookup count is 771980, so id 771980 is past it"
   assert list.length(localized_text.all(tables)) == 539_251
     as "LocalizedText.tbl header 0x30: 539251 records (game_tables.ClientData)"
-  store.unload(tables)
 }
