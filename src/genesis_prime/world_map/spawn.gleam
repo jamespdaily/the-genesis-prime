@@ -612,156 +612,156 @@ fn creature_property(
       case property {
         7 ->
           scaled(
-            level.unit_property_value07,
-            arche.unit_property_multiplier007,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value07,
+            archetype: arche.unit_property_multiplier007,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier007
             }),
-            tier.unit_property_multiplier007,
+            tier: tier.unit_property_multiplier007,
           )
         26 ->
           scaled(
-            level.unit_property_value26,
-            arche.unit_property_multiplier026,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value26,
+            archetype: arche.unit_property_multiplier026,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier026
             }),
-            tier.unit_property_multiplier026,
+            tier: tier.unit_property_multiplier026,
           )
         27 ->
           scaled(
-            level.unit_property_value27,
-            arche.unit_property_multiplier027,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value27,
+            archetype: arche.unit_property_multiplier027,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier027
             }),
-            tier.unit_property_multiplier027,
+            tier: tier.unit_property_multiplier027,
           )
         28 ->
           scaled(
-            level.unit_property_value28,
-            arche.unit_property_multiplier028,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value28,
+            archetype: arche.unit_property_multiplier028,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier028
             }),
-            tier.unit_property_multiplier028,
+            tier: tier.unit_property_multiplier028,
           )
         33 ->
           scaled(
-            level.unit_property_value33,
-            arche.unit_property_multiplier033,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value33,
+            archetype: arche.unit_property_multiplier033,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier033
             }),
-            tier.unit_property_multiplier033,
+            tier: tier.unit_property_multiplier033,
           )
         42 ->
           scaled(
-            level.unit_property_value42,
-            arche.unit_property_multiplier042,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value42,
+            archetype: arche.unit_property_multiplier042,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier042
             }),
-            tier.unit_property_multiplier042,
+            tier: tier.unit_property_multiplier042,
           )
         43 ->
           scaled(
-            level.unit_property_value43,
-            arche.unit_property_multiplier043,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value43,
+            archetype: arche.unit_property_multiplier043,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier043
             }),
-            tier.unit_property_multiplier043,
+            tier: tier.unit_property_multiplier043,
           )
         58 ->
           scaled(
-            level.unit_property_value58,
-            arche.unit_property_multiplier058,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value58,
+            archetype: arche.unit_property_multiplier058,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier058
             }),
-            tier.unit_property_multiplier058,
+            tier: tier.unit_property_multiplier058,
           )
         61 ->
           scaled(
-            level.unit_property_value61,
-            arche.unit_property_multiplier061,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value61,
+            archetype: arche.unit_property_multiplier061,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier061
             }),
-            tier.unit_property_multiplier061,
+            tier: tier.unit_property_multiplier061,
           )
         101 ->
           scaled(
-            level.unit_property_value01,
-            arche.unit_property_multiplier101,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value01,
+            archetype: arche.unit_property_multiplier101,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier101
             }),
-            tier.unit_property_multiplier101,
+            tier: tier.unit_property_multiplier101,
           )
         103 ->
           scaled(
-            level.unit_property_value03,
-            arche.unit_property_multiplier103,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value03,
+            archetype: arche.unit_property_multiplier103,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier103
             }),
-            tier.unit_property_multiplier103,
+            tier: tier.unit_property_multiplier103,
           )
         105 ->
           scaled(
-            level.unit_property_value05,
-            arche.unit_property_multiplier105,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value05,
+            archetype: arche.unit_property_multiplier105,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier105
             }),
-            tier.unit_property_multiplier105,
+            tier: tier.unit_property_multiplier105,
           )
         144 ->
           scaled(
-            level.unit_property_value44,
-            arche.unit_property_multiplier144,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value44,
+            archetype: arche.unit_property_multiplier144,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier144
             }),
-            tier.unit_property_multiplier144,
+            tier: tier.unit_property_multiplier144,
           )
         145 ->
           scaled(
-            level.unit_property_value45,
-            arche.unit_property_multiplier145,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value45,
+            archetype: arche.unit_property_multiplier145,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier145
             }),
-            tier.unit_property_multiplier145,
+            tier: tier.unit_property_multiplier145,
           )
         146 ->
           scaled(
-            level.unit_property_value46,
-            arche.unit_property_multiplier146,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value46,
+            archetype: arche.unit_property_multiplier146,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier146
             }),
-            tier.unit_property_multiplier146,
+            tier: tier.unit_property_multiplier146,
           )
         164 ->
           scaled(
-            level.unit_property_value64,
-            arche.unit_property_multiplier164,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value64,
+            archetype: arche.unit_property_multiplier164,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier164
             }),
-            tier.unit_property_multiplier164,
+            tier: tier.unit_property_multiplier164,
           )
         195 ->
           scaled(
-            level.unit_property_value95,
-            arche.unit_property_multiplier195,
-            through(difficulty, fn(difficulty) {
+            value: level.unit_property_value95,
+            archetype: arche.unit_property_multiplier195,
+            difficulty: through(difficulty:, column: fn(difficulty) {
               difficulty.unit_property_multiplier195
             }),
-            tier.unit_property_multiplier195,
+            tier: tier.unit_property_multiplier195,
           )
         _ -> Error(PropertyNotBuilt(creature_id:, property:))
       }
