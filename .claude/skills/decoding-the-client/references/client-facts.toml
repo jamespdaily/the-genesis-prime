@@ -5783,12 +5783,6 @@ grade = "fairly sure"
 gap = "Where the per-slot prerequisite array comes from, and which slots a level 1 character has unlocked, are not read; that Ok is 1 is assumed from 0x19d's result test, not read from the enum."
 name = "LuaActionSetLibIsSlotUnlocked"
 
-["opcode.0x801"]
-statement = "Message 0x801 (2049), client to world server: the client cancels one of its player's casts (ClientSpellStopCast). Body in wire order: the cast id (32 bits), the reason (9 bits, a Spell.CodeEnumCastResult) and one bit, which this sender always sets. The client sends it when a unit dies while the player's current cast targets it, with reason 6 (SpellCancelled), after logging the reason's text and ending the cast on its side."
-proof = "Registered in 0x14006c290 (saved C line 652, hash 8eb22adb6de47956): id 0x801, record 0xc, sizer 0x140094190, writer 0x1400941a0 (saved C: WriteBitsSlow 0x20 of the first word, 9 of the second, 1 of whether the third is non-zero). Sender 0x14039cce0 (saved C): returns with no player; the reason's text for values below 0x14c; 0x1404698a0 on the player unit; SendWorldMessage(game, 0x801, {cast id, reason, 1}). The caller on a death, SetUnitDeathState 0x14045e740 with reason 6, is from the death trace."
-grade = "fairly sure"
-gap = "Read from Ghidra's decompile; not run. Other senders of 0x801 (a player pressing escape or moving during a cast) and whether the cast id is the server's or the client's id were not read; 0x1404698a0 is not read."
-
 ["opcode.0x37e"]
 statement = "Message 0x37e (894), client to world server, sent from the ability press: when the player presses an ability while a unit value of its own (set from unit stat 12 in message 0x262) is non-zero, the client clears that state, sends 0x37e with every field 0, holds the press for a retry and reports 2 (MovingToCast) instead of sending 0x9a. Body in wire order: 14 bits, 32 bits, 32 bits, 1 bit, 1 bit."
 proof = "Registered in 0x14006c290 (saved C line 308, hash 8eb22adb6de47956): id 0x37e, record 0x14, writer 0x140087270 (saved C: WriteBitsSlow 0xe, 0x20, 0x20, then 0x1400a7250 one bit twice). Sender 0x1403a2550 (saved C): when the player unit's word at 0x1cc is non-zero, 0x1404739b0(player, 0, 0, 0, 0, 0) and SendWorldMessage(game, 0x37e, zeros). Caller CastAbilityBagSpell 0x14039a040: when that word is non-zero it stores the press (game state 0x6648 = 4, 0x664c target, 0x66a0 bag index), starts a timer at 0x6658 and returns 2. SetUnitStatsFromCreate 0x140458140 case 0xc stores stat 12's second value at that word."
@@ -6273,13 +6267,6 @@ grade = "fairly sure"
 gap = "The effective power level for level-scaled items is not read."
 name = "AddItemInnateBaseHealth"
 
-["0x14040e340"]
-statement = "Adds an item's innate Armor (property 42) to its display properties: for armor (item family 1) only, another curve at the item's power level times a slot modifier."
-proof = "Decompiled: family test (0x140 == 1); curve class table 0x140b66a78; times the builder's 0xc4; 0x14040e610(…, 0x2a, value). Called from 0x14040c310 before 0x14040e3d0."
-grade = "fairly sure"
-gap = "The curve and the modifier's column are not read."
-name = "AddItemInnateArmor"
-
 ["0x14040c310"]
 statement = "Builds an item's display properties (innate health, armor and weapon values, then its other stats); the client never sums items into a unit's properties."
 proof = "Decompiled: clears the 15-entry property list (id 0xc5 = empty), then 0x14040c610, 0x14040df10, 0x14040e340, 0x14040e3d0. Indexed writes to a unit's 0x5c0 + 8 x id are only in 0x140466a90 (the earlier decode's search)."
@@ -6676,3 +6663,435 @@ statement = "Message 0xe4 (228), client to server, empty body: the player asks t
 proof = "Registered in 0x14006c290 (saved C line 356): id 0xe4, record 1, SizeEmptyBody, WriteEmptyBody. Sent from 0x140397ce0 (saved C line 142) after: the controlled unit's target (word 0x108) found, its type 0x14, its dead flag (0x250) set, 0x14045a950, the class row's spell (word 0x54) found by 0x1403acd90 and a cast check."
 grade = "fairly sure"
 gap = "Read from the decompile; out of this step's scope."
+
+["0x14040df10"]
+statement = "Adds an item's innate Assault Rating (property 35) and Support Rating (property 36). It applies to armor (item family 1), and to any other item whose equipped slot flags (the item slot's and the Item2 row's, joined) hold 0x10580 (bit 16 is WeaponPrimary), but never to family 26. Value v = the item slot's armorModifier x a curve at the item's power level (GameFormula 1288's curve, 132 x n, for weapons, family 2; GameFormula 549's, 3.6 x n, for every other family) x ((1 - |b|) x GameFormula 1265's first value (0.25) + 1), where b is Item2.supportPowerPercentage (-1 all assault, +1 all support). For an item with the PvP flag (Item2.flags 0x8000) a share GameFormula 1265's second value (0.01) of v is taken off and given as properties 48 and 49 (times 1265's third and fourth values, 25 each). Then Assault Rating += (1 - (b + 1) / 2) x v and Support Rating += (b + 1) / 2 x v; a share within 84 float steps of zero is not added. A Novice weapon (power level 2, WeaponPrimary armorModifier 0.75, b = -0.5) gives Assault Rating 167.0625 and Support Rating 55.6875; a Novice armor piece (b = -1) gives Assault Rating 7.2 x its slot's armorModifier (chest and legs 9.0, shoulder 7.2, feet and hands 5.4) and no Support Rating; a shield (family 15, slot ArmorShields) gives none."
+proof = "Ghidra listing 0x14040df10..0x14040e33d: 0x14040e056 mov rax, [rdi+0x10] (the item record); family at record 0x140 (0x1a returns 0; not 1 needs record 0x180 & 0x10580); curve object 0x140c8abf8 (class 0x140b66a58, slot 1 0x14041dc90) for family 2, else 0x140c8ac10 (class 0x140b66a48, slot 1 0x14041da70), called at 0x14040e053 with the output's 0xc (the power level); 0x14040e063 mulss xmm9, xmm0 (builder 0xc8, the slot's armorModifier, times the curve); 0x14040e068 movss xmm7, [rax+0x178] (supportPowerPercentage); GameFormula 0x4f1 (1265) at 0x14040e10e, its 0x18 (datafloat0); 0x14040e13c andps (|b|); 0x14040e14b test [rax+0x14c], 0x8000, then 1265's 0x1c, 0x20, 0x24 and properties 0x30, 0x31 through 0x14040e610; 0x14040e0ea..0x14040e0f8: xmm10 = (b + 1) x 0.5, xmm8 = 1 - xmm10; 0x14040e276 mulss xmm8, xmm9 then the 84-step test (cmp eax, 0x54) and the inline add to property 0x23; 0x14040e2f6 mulss xmm10, xmm9 and property 0x24 at 0x14040e308. Record fields from FillItemInfo 0x1404445d0. Emulated (emulate request on 0x14040df10, stand-ins: 0x140200220 returning a planted GameFormula row {dataint0 0, datafloat0 0.25, datafloat01 -10, datafloat02 slope, datafloat03 1} so 1265's first value and the curve both read it, the curve's e^(-10 x n) term being below a float step; 0x1407dd89c (atexit) returning 0; follow_calls): family 2, slot flags 0x10000, b -0.5, modifier 0.75, power level 2, slope 132 -> [(35, 167.0625), (36, 55.6875)]; family 1, flags 1, b -1, modifier 1.25, slope 3.6 -> [(35, 9.0)]; modifier 0.75 -> [(35, 5.3999996)]; modifier 1.0 -> [(35, 7.1999998)]; family 15, flags 0x8000 -> nothing. Rows: `gleam run -m genesis_prime/table_rows -- GameFormula 1265`, `GameFormula 549`, `GameFormula 1288`."
+grade = "fairly sure"
+gap = "The PvP branch (Item2.flags 0x8000) and the change of b for an item with a random bias (builder 0x40, or 0x44 with an ItemStat entry of kind 4, and the quality byte at 0x88's 6) are read from the listing, not run with real rows; no Novice item has either."
+name = "AddItemInnateRatings"
+
+["0x14041da70"]
+statement = "The rating curve for an item that is not a weapon: GameFormula 549's curve at the power level n, datafloat0 x e^(datafloat01 x (n - dataint0)) + datafloat02 x (n - dataint0)^datafloat03; with row 549 (0, 0, 3.6, 1) it is 3.6 x n."
+proof = "Decompiled: the same shape as GameFormula67Curve 0x14041e450 on GameFormula 0x225 (549): dataint0 at 4, datafloat0..03 at 0x18..0x24; 0x1408fbfc0 (powf) with e (0x140b79f98, 2.7182817). Slot 1 of the class 0x140b66a48 (bytes at 0x140b66a50). `gleam run -m genesis_prime/table_rows -- GameFormula 549`. Its output in AddItemInnateRatings' emulation, 3.6 x 2 = 7.1999998, matches."
+grade = "fairly sure"
+gap = "Run only through AddItemInnateRatings with a planted row, not on its own with row 549."
+name = "ItemRatingCurve"
+
+["0x14041dc90"]
+statement = "The rating curve for a weapon (item family 2): GameFormula 1288's curve, the shape of GameFormula67Curve; with row 1288 (0, 0, 132, 1) it is 132 x n."
+proof = "Decompiled: GameFormula 0x508 (1288), the same reads and powf as 0x14041da70. Slot 1 of the class 0x140b66a58 (bytes at 0x140b66a60). `gleam run -m genesis_prime/table_rows -- GameFormula 1288`. AddItemInnateRatings' emulation with slope 132 gives 167.0625 + 55.6875 = 222.75 = 0.75 x 264 x 1.125."
+grade = "fairly sure"
+gap = "Run only through AddItemInnateRatings with a planted row."
+name = "WeaponRatingCurve"
+
+["0x14040e340"]
+statement = "Adds an armor item's innate Armor (property 42): for armor (item family 1) only, the armor curve at the item's power level times the item category's armorModifier times the item slot's armorModifier. A Novice piece (power level 2, curve 40) gives 40 x category x slot: heavy (Item2Category 3, 1.25) chest and legs 62.5, shoulder 50, feet and hands 37.5, 250 for the set; medium (category 2, 1.0) 200; light (category 1, 0.75) 150."
+proof = "Decompiled: family test (record 0x140 == 1); the curve object 0x140c8abb8 (class 0x140b66a78, slot 1 0x14041deb0) at the output's 0xc; times the builder's 0xc4, which PrepareItemPropertyBuilder 0x14040c610 sets to Item2Category 0x20 (armorModifier) x ItemSlot 0x14 (armorModifier); 0x14040e610(…, 0x2a, value). Called from BuildItemProperties 0x14040c310 after AddItemInnateRatings. Category and slot rows: `gleam run -m genesis_prime/table_rows -- Item2Category` (1: 0.75, 2: 1.0, 3: 1.25) and `ItemSlot` (1 ArmorChest 1.25, 2 ArmorLegs 1.25, 4 ArmorShoulder 1.0, 5 ArmorFeet 0.75, 6 ArmorHands 0.75)."
+grade = "fairly sure"
+gap = "Read from the decompile and the builder's fill; not emulated (the curve reads three GameFormula rows, which one planted row cannot stand for)."
+name = "AddItemInnateArmor"
+
+["0x14041deb0"]
+statement = "The armor curve at power level n: below GameFormula 1286's dataint0 (50) it is GameFormula 547's curve at n - 547.dataint0, 20 x n with row 547 (0, 0, 20, 1); from 50 to below GameFormula 1287's dataint0 (120) it is 1286's curve (1000 x e^0 + 6.8 x ...) at n less an offset; from 120 up, 1287's (1476 + 4 x ...). Power level 2 gives 40."
+proof = "Decompiled: GameFormula 0x506 (1286) dataint0 at 0x14041dfa0..; n < it -> rows 0x223 (547), n - 547.dataint0; else 0x507 (1287) dataint0, n < it -> 1286's values at n - 0x14041f840(); else 1287's at n - 0x14041f890(); each e^(f01 x m) x f0 + m^f03 x f02. Slot 1 of the class 0x140b66a78 (bytes at 0x140b66a80). `gleam run -m genesis_prime/table_rows -- GameFormula 547`, `1286`, `1287`."
+grade = "fairly sure"
+gap = "The offsets 0x14041f840 and 0x14041f890 for power levels 50 and up are not read; not emulated."
+name = "ItemArmorCurve"
+
+["0x14040dbf0"]
+statement = "Adds a shield item's innate shield properties, in place of ratings, armor and health: ShieldCapacityMax (41) = the shield curve at the power level x a capacity factor; ShieldRegenPct (176), ShieldRebootTime (178) and ShieldMitigationMax (175) from their own factors. Each factor is read at the item budget's fraction for that property, or 0.5 when the item has no budget entry for it. A Novice shield (Item2 8534 or 8535, power level 2, no budget) gives ShieldCapacityMax 450, ShieldRegenPct 0.15, ShieldRebootTime 5125 and ShieldMitigationMax 0.625. A value within 84 float steps of zero is not added."
+proof = "Decompiled: returns 0 unless the builder's 0xc0 (the shield flag of PrepareItemPropertyBuilder); x = 0.5 (0x140b79e48, bytes 00 00 00 3f) into 0x14041d420, 0x14041d540, 0x14041d660, 0x14041d780; the builder's five budget entries at 0x118/0x11c (kind 1 and property 0x29, 0xaf, 0xb0, 0xb2) replace x with the ItemBudget row's value (0x108 + 4 + 4i), and those entries are filled only by 0x14040ca70 through 0x14040e6d0, which BuildItemProperties runs only for an item with an itemBudgetId or itemStatId; curve object 0x140c8abe8 (class 0x140b66a88, slot 1 0x14041d850) at the output's 0xc; 0x14040e610(…, 0x29, curve x factor), then 0xb0, 0xb2, 0xaf added inline after the 84-step test. Emulated helpers (emulate requests, 0x140200220 standing in with the planted row, args [0, 0.5]): 0x14041d420 with GameFormula 1260 -> 1.0; 0x14041d540 with 1260 -> 0.15000001; 0x14041d660 with 1261 -> 0.625; 0x14041d780 with 1261 -> 5125; 0x14041d850 with 548 at power level 2 -> 450.0. Rows: `gleam run -m genesis_prime/table_rows -- GameFormula 1260`, `1261`, `548`; `Item2 8534`, `Item2 8535` (budget 0, stat 0, power level 2, type 53, slot 43 ArmorShields)."
+grade = "fairly sure"
+gap = "0x14040dbf0 itself is not emulated (its helpers are); that the builder's budget entries are zero for an item with no budget rests on the callers' clearing of the builder, not fully read."
+name = "AddShieldItemProperties"
+
+["0x14041d420"]
+statement = "A shield item's capacity factor at budget fraction x: GameFormula 1260's first value + (its second - its first) x x, floored at 0; 1.0 at x = 0.5 (0.75 to 1.25)."
+proof = "Listing: 0x14041d475 mov ecx, 0x4ec (GameFormula 1260); 0x14041d48e movss xmm6, [rax+0x1c]; 0x14041d4d4 movss xmm0, [rax+0x18]; 0x14041d4f8 subss xmm6, xmm0; 0x14041d50e mulss xmm6, xmm8 (x); 0x14041d519 addss xmm6, xmm0; 0x14041d51d comiss xmm6, xmm7 (against 0). Emulated with row 1260 planted, x 0.5 -> 1.0."
+grade = "sure"
+name = "ShieldCapacityFactor"
+
+["0x14041d540"]
+statement = "A shield item's ShieldRegenPct at budget fraction x: GameFormula 1260's third value + (its fourth - its third) x x, floored at 0; 0.15 at x = 0.5 (0.05 to 0.25)."
+proof = "Listing: 0x14041d595 mov ecx, 0x4ec (GameFormula 1260); 0x14041d5ae movss xmm6, [rax+0x24]; 0x14041d5f4 movss xmm0, [rax+0x20]; 0x14041d618 subss xmm6, xmm0; 0x14041d62e mulss xmm6, xmm8; 0x14041d639 addss xmm6, xmm0; 0x14041d63d comiss xmm6, xmm7. Emulated with row 1260 planted, x 0.5 -> 0.15000001."
+grade = "sure"
+name = "ShieldRegenPctAt"
+
+["0x14041d660"]
+statement = "A shield item's ShieldMitigationMax at budget fraction x: GameFormula 1261's first value + (its second - its first) x x, floored at 0; 0.625 at x = 0.5 (0.25 to 1.0)."
+proof = "Listing: 0x14041d6b5 mov ecx, 0x4ed (GameFormula 1261); 0x14041d6ce movss xmm6, [rax+0x1c]; 0x14041d714 movss xmm0, [rax+0x18]; 0x14041d738 subss xmm6, xmm0; 0x14041d74e mulss xmm6, xmm8; 0x14041d759 addss xmm6, xmm0; 0x14041d75d comiss xmm6, xmm7. Emulated with row 1261 planted, x 0.5 -> 0.625."
+grade = "sure"
+name = "ShieldMitigationMaxAt"
+
+["0x14041d780"]
+statement = "A shield item's ShieldRebootTime at budget fraction x: the whole number between GameFormula 1261's dataint0 (10000) and dataint01 (250) by 0x14041fac0; 5125 at x = 0.5."
+proof = "Listing: 0x14041d7dd mov edi, [rax+0x8] (dataint01), 0x14041d819 mov ebx, [rax+0x4] (dataint0), then 0x14041d842 jmp 0x14041fac0 with xmm1 = x, r8d = dataint0, r9d = dataint01. Emulated with row 1261 planted, x 0.5 -> rax 5125."
+grade = "sure"
+name = "ShieldRebootTimeAt"
+
+["0x14041fac0"]
+statement = "A whole number between two bounds a and b at fraction x: with the bounds ordered low to high (x becomes 1 - x when a is the larger), low + (high - low) x x + 0.00001, cut to a whole number; 0 when not above 0."
+proof = "Decompiled: the swap loop (param_2 = 1.0 - param_2); (float)(b - a) x x + a + 0x140b79cc4 (bytes ac c5 27 37, 0.00001); the cut. Emulated through 0x14041d780: bounds 10000 and 250 at 0.5 give 5125."
+grade = "fairly sure"
+gap = "The -1 and 0 result guards are read from the decompile only."
+name = "LerpWholeNumber"
+
+["0x14041d850"]
+statement = "The shield capacity curve: GameFormula 548's curve (the shape of GameFormula67Curve); with row 548 (0, 0, 225, 1) it is 225 x n, 450 at power level 2."
+proof = "Decompiled: GameFormula 0x224 (548). Slot 1 of the class 0x140b66a88 (bytes at 0x140b66a90). Emulated with row 548 planted, args [0, 2] -> 450.0. `gleam run -m genesis_prime/table_rows -- GameFormula 548`."
+grade = "sure"
+name = "ShieldCapacityCurve"
+
+["0x14040e610"]
+statement = "Adds a value to an item's display property list of 15 entries: the entry for the property, or the first empty one (id 197), gets the value added; a full list returns 0x95 and adds nothing; a value within 84 float steps of zero is not added at all. Adding property 48 or 49 (PvP ratings) sets bit 0 of the output's flags at 0x20."
+proof = "Decompiled: the step test (|0 - bits| > 0x54); ids at the output's 0x94 (0xc5 empty), values at 0xd0; 0xe < index returns 0x95; param_3 - 0x30 < 2 sets output 0x20 bit 0. Run inside AddItemInnateRatings' emulation (the property list read back)."
+grade = "fairly sure"
+gap = "Run only as a callee of AddItemInnateRatings."
+name = "AddItemProperty"
+
+["0x14040c610"]
+statement = "Prepares an item's property builder from its item record: looks up the Item2 row, its Item2Type, Item2Family, Item2Category, ItemBudget and ItemStat rows and the ItemSlot its type names (none for family 33 or category 143); the slot modifier is ItemSlot.armorModifier (1.0 with no slot) and the armor modifier Item2Category.armorModifier x that; the item is a shield when its type, category or family flags hold 0x400 and its equipped slot flags hold 0x8000 (ArmorShields); the effective power level is the record's power level (Item2.powerLevel) unless the item scales (Item2.flags bit 3)."
+proof = "Decompiled: builder 0xe0 = 0x1402096e0 (Item2) on record 0; 0xe8 = 0x14020a3a0 (Item2Type) on 0x144; 0xf0 = 0x140209f60 (Item2Family) on 0x140; 0xf8 = 0x140209b20 (Item2Category) on 0x148; 0x108 = 0x14020a7e0 (ItemBudget) on 0x168; 0x110 = 0x14020ac20 (ItemStat) on 0x16c; 0x100 = 0x14020e7a0 (ItemSlot) on Item2Type's 8 (itemSlotId), cleared when 0x140 == 0x21 or 0x148 == 0x8f; 0xc8 = ItemSlot 0x14 (armorModifier) or 1.0; 0xc4 = Item2Category 0x20 (armorModifier) x 0xc8; 0xb8 = record 0x14c bit 3, 0xbc bit 20; 0xc0 = (record 0x154 & 0x400) and record 0x180 & 0x8000; then 0x14040d060, which sets the output's 4 and 0xc (the power level, or the builder's 0x18 when 0xb8 is set) and passes 0xc to the level-scaling 0x14040f710, which leaves it when the builder's 0x1c is 0 and its 0x28..0x34 limits are 0. Table names from each lookup's PTR_u_ string; column offsets from `gleam run -m genesis_prime/table_rows -- <Table> --columns`."
+grade = "fairly sure"
+gap = "Read from the decompile; which caller fills the builder's level-scaling words (0x18..0x34) for a unit's equipped item is not read, so the power level is the row's only for an item outside scaling (as every Novice item, flags bit 3 clear)."
+name = "PrepareItemPropertyBuilder"
+
+["0x1404445d0"]
+statement = "Fills the client's item record from an Item2 row: the family, type and category ids, Item2.flags, bindFlags, the type, category and family flags joined, itemQualityId, requiredLevel (1 when 0), powerLevel, requiredItemLevel, itemBudgetId, itemStatId, itemRuneInstanceId, itemImbuementId, supportPowerPercentage (kept only from -1 to 1), the item slot (when the joined flags hold 0x400), the equipped slot flags (the ItemSlot's joined with Item2.equippedSlotFlags) and itemSpecialId00; then builds the item's properties."
+proof = "Decompiled: record words from the row (puVar4): 0x50 <- Item2Family id, 0x51 <- Item2Type id, 0x52 <- Item2Category id, 0x53 <- row 0x1f (flags, offset 124), 0x54 <- 0x20 (bindFlags), 0x55 <- Item2Type 5 | Item2Category 3 | Item2Family 2 (each table's flags), 0x56 <- 4 (itemQualityId), 0x57 <- 0x10 (requiredLevel) or 1, 0x58 <- 0xf (powerLevel), 0x59 <- 0x11, 0x5a..0x5c <- 1..3, 0x5d <- 6, 0x5e <- 0x2b (supportPowerPercentage, offset 172) inside [-1.0 (0x140b7a23c), 1.0], 0x5f <- ItemSlot id when 0x55 & 0x400, 0x60 <- ItemSlot 4 (equippedSlotFlags) | row 0x13 (equippedSlotFlags, offset 76), 0x6f <- 5 (itemSpecialId00); then BuildItemProperties at 0x140444b8e. Row word index x 4 = the column offset in `gleam run -m genesis_prime/table_rows -- Item2 --columns`. Called by 0x1400b5df0 for a new 0x1f0-byte record."
+grade = "fairly sure"
+gap = "Read from the decompile; the proxy path (flags 0x4000, GameFormula 1214's item) is not followed."
+name = "FillItemInfo"
+
+["Item2.novice_set"]
+statement = "Each Novice (characterCreationStartEnum 4) set is five armor pieces (chest, legs, shoulder, feet, hands), a shield (Item2 8534 or 8535) and a weapon, every one at power level 2 with no budget, stat, special or imbuement. By the client's item formulas each set's items give: weapon Assault Rating 167.0625 and Support Rating 55.6875; the armor Assault Rating 9.0 + 9.0 + 7.2 + 5.4 + 5.4, Base Health 150 + 150 + 120 + 90 + 90 = 600, and Armor 250 (Warrior, Engineer: Item2Category 3), 200 (Medic, Stalker: category 2) or 150 (Esper, Spellslinger: category 1); the shield ShieldCapacityMax 450, ShieldRegenPct 0.15, ShieldRebootTime 5125 and ShieldMitigationMax 0.625. A class's two sets (CharacterCreation factionId 167 and 166) give the same values."
+proof = "`gleam run -m genesis_prime/table_rows -- CharacterCreation characterCreationStartEnum=4` (67 rows; two sets per class); `Item2 <id>` for the 44 items, `Item2Type`, `Item2Category`, `Item2Family`, `ItemSlot`. Weapons: family 2, types in slot 20 WeaponPrimary (armorModifier 0.75, equippedSlotFlags 0x10000), supportPowerPercentage -0.5; armor: family 1, supportPowerPercentage -1.0, types in slots 1, 2, 4, 5, 6; shields: family 15, type 53, slot 43 ArmorShields (0x8000); all families' flags 0x4e0 (0x400 set). Values by AddItemInnateRatings 0x14040df10, AddItemInnateArmor 0x14040e340, AddItemInnateBaseHealth 0x14040e3d0 and AddShieldItemProperties 0x14040dbf0."
+grade = "fairly sure"
+gap = "The formulas' grades carry over (armor not emulated)."
+
+["player.level1_gear_properties"]
+statement = "A level-1 player's gear properties by the server's rule of summing the equipped Novice set's item properties (Jim's rule for Base Health, extended): AssaultRating (35) 203.0625, SupportRating (36) 55.6875, Armor (42) 250, 200 or 150 by class, ShieldCapacityMax (41) 450, ShieldRegenPct (176) 0.15, ShieldRebootTime (178) 5125, ShieldMitigationMax (175) 0.625, with Base Health (7) 736. The character sheet then shows Assault Power 51, Support Power 14, Max Health 736 and Max Shields 450."
+proof = "Item2.novice_set; the sheet's reads in lua.Character.UpdateAttributes; float32 sum 167.0625 + 9 + 9 + 7.1999998 + 5.3999996 + 5.3999996 = 203.06248, x 0.25 = 50.77; 55.6875 x 0.25 = 13.92."
+grade = "guess"
+gap = "The client never sums items into a unit (BuildItemProperties 0x14040c310); a retail 0x262 or 0x93a for a new character would settle whether the retail server did, and whether a shield's ShieldRebootTime and ShieldRegenPct replaced the UnitProperty2 defaults (2500, 0.25) or added to them."
+
+# The character sheet
+
+["0x14064c960"]
+statement = "Unit:GetAssaultPower() in the UI's Lua: the unit's AssaultRating (property 35) times GameFormula 1266's first value (0.25, or 0.25 without the row), as a number; nothing for no unit."
+proof = "Named by the pair at 0x140c5aa90 (the name 'GetAssaultPower' at 0x140b2a578, the function 0x14064c960). Decompiled: the unit's 0x6dc (0x5c4 + 8 x 35) times GameFormula 0x4f2's 0x18, else 0x140b79df8."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "LuaUnitGetAssaultPower"
+
+["0x14064ca50"]
+statement = "Unit:GetSupportPower() in the UI's Lua: the unit's SupportRating (property 36) times GameFormula 1266's second value (0.25)."
+proof = "Named by the pair at 0x140c5aab0 (the name 'GetSupportPower' at 0x140b2a550, the function 0x14064ca50). Decompiled: the unit's 0x6e4 (0x5c4 + 8 x 36) times GameFormula 0x4f2's 0x1c."
+grade = "fairly sure"
+gap = "Read from the decompile; the value without the row is not read."
+name = "LuaUnitGetSupportPower"
+
+["lua.Character.UpdateAttributes"]
+statement = "The character sheet's top figures: Assault Power (Unit:GetAssaultPower, shown with no decimals), Support Power (GetSupportPower), Max Health (GetMaxHealth, property 7) and Max Shields (GetShieldCapacityMax, property 41); the Assault and Support icons' tooltips show AssaultRating (35) and SupportRating (36) with two decimals. Armor (42) appears only inside the mitigation tooltips, added to each mitigation rating."
+proof = "UI/Character/Character.lua, Character:UpdateAttributes from line 1097: lines 1108 to 1111 (SetText of the four figures), 1120 and 1121 (tooltips); lines 819, 825, 831 (GetUnitProperty(Unit.CodeEnumProperties.Armor) in the physical, tech and magic mitigation tooltips)."
+grade = "fairly sure"
+gap = "Read from the Lua source, not seen on a live sheet; a live sitting with a Novice character would settle it."
+
+# The creature auto-attack's effects
+
+["0x14049eeb0"]
+statement = "Prerequisite type 179: the unit's difficulty compared with the prerequisite's object id (comparison 1 equal, 2 not equal, 3 above, 4 at least, 5 below, 6 at most, unsigned); false with no unit. The difficulty is the unit's own value at 0x30 when it is 24 or less, else its creature's creature2DifficultyId (Creature2Difficulty 1 to 6 are group value 0, solo; 7 and up are group values 5, 20, 40 and more)."
+proof = "Slot 0x378 of the prerequisite class 0x140b67740 (bytes b0 ee 49 40 01 00 00 00 at 0x140b67ab8; slot 0x18 is 0x14049bf10, refs_to 0x140b67758), called by the prerequisite switch 0x1404a2100 case 0xb3 with (unit, condition's comparison, condition's object id). Listing: 0x14049eec0 test rdx, rdx; 0x14049eed2 cmp qword ptr [rdx+0x18], 0; 0x14049eedf call [rax+0x10] (the unit class 0x140b66fd0's slot 2, 0x14045ba40); 0x14049eef8 jmp 0x1404a2090 with edx = comparison, r8d = the value, r9d = the object id. 0x1404a2090 decompiled: cases 1 to 6 on unsigned values. 0x14045ba40 decompiled: the unit's 0x30 when not above 0x18, else the creature record's 0x14 (FillCreatureInfoBase word 5 = Creature2 creature2DifficultyId), 0x19 with no record; the unit constructor 0x140454380 sets 0x30 to 0x19. `gleam run -m genesis_prime/table_rows -- Creature2Difficulty` (rankValue, groupValue)."
+grade = "fairly sure"
+gap = "Writers of the unit's 0x30 other than the constructor were not searched (no message or stat read here sets it: SetUnitStatsFromCreate 0x140458140 does not), so a creature is taken to use its row's difficulty; a search of the listing for stores to a unit's 0x30 would settle it."
+name = "PrerequisiteUnitDifficulty"
+
+["0x14045ba40"]
+statement = "A unit's difficulty: its own value at 0x30 when 24 or less, else its creature's creature2DifficultyId, else 25."
+proof = "Decompiled: iVar1 = unit 0x30; above 0x18 -> the record at unit 0x18 (the creature record, as Unit:GetArchetype 0x14064a260 reads its 0x10 through 0x1401f60a0 'Creature2ArcheType') at 0x14, else 0x19. Slot 2 of the unit class 0x140b66fd0 (bytes at 0x140b66fe0)."
+grade = "fairly sure"
+gap = "Writers of the unit's 0x30 other than the constructor were not searched."
+name = "GetUnitDifficulty"
+
+["Spell4Effects.184741"]
+statement = "Spell 5649 (Humanoid Shared Unarmed auto-attack 1) has two Physical Damage (type 8) effects on its target (targetFlags 2), alike but for their caster prerequisite and parameters: 184741 (Strength 0.55, Assault Power 0.55; prerequisite 30526, the caster's difficulty at most 6, a solo creature) and 184777 (0.8 each; prerequisite 30527, difficulty at least 7, a group creature). So exactly one applies to a cast: 184741 for the training creatures (Creature2 73464 and 73465, difficulty 1). By the tooltip formula with trace-damage's creature values (Strength and Assault Power 10.47) each hit is round(10.47 x 0.55 + 10.47 x 0.55) = 12, under the creature cap 93.5, before the server's mitigation."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4Effects 184741`, `Spell4Effects 184777` (spellId 5649, effectType 8, damageType 1, dataBits00 1.0, dataBits01 0, phaseFlags all, orderIndex 0 and 1); `Prerequisite 30526` (type 179, comparison 6, object 6), `Prerequisite 30527` (type 179, comparison 4, object 7); PrerequisiteUnitDifficulty 0x14049eeb0; `Creature2 73464`, `Creature2 73465` (creature2DifficultyId 1). Damage: ComputeEffectValue 0x140565600 with the trace's creature properties."
+grade = "fairly sure"
+gap = "The client applies no effect itself (the server names effects in 0x7f4), so that the retail server checked prerequisiteIdCasterApply this way is inferred from the table, not read; the 12 rests on the creature's Strength from the damage trace, not re-read here."
+
+["Spell4.58591"]
+statement = "Warrior Kick, tier 1 (base 38017, Normal, global cooldown kind 3, so no global cooldown): two effects on the target, both 166 ms after the go. A Knockdown (crowd control state 8) for 3 s, then Physical damage of 0.0656 x Assault Power + 0.0656 x Support Power + 4.16 x level: 4.16 per cast at level 1 with no ratings. It triggers no other spell. Its area takes up to 5 foes in a 180-degree arc to 8 m."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 58591` (spell4BaseIdBaseSpell 38017, spellCoolDown 20000, targetMaxRange 7.0, globalCooldownEnum 3, spell4AoeTargetConstraintsId 640); Spell4Effects rows with spellId 58591: 140382 effectType 4 (CCStateSet), targetFlags 4, delayTime 166, durationTime 3000, dataBits00 8, dataBits03 1; 140383 effectType 8 (Damage), damageType 1, delayTime 166, dataBits00 1065353216 (1.0), parameterType 12/13/10 with values 0.0656, 0.0656, 4.16. `-- Spell4AoeTargetConstraints 640`: angle 180, targetCount 5, maxRange 8. Tooltip text 505006: 'Deal $(eff=140383.input0pct) physical damage and Knockdown ... foes.' Effect type names: Spell.CodeEnumSpellEffectType read at 0x140c34140; state 8 Knockdown and 0 Stun by the order of Unit.CodeEnumCCState in the client's LuaDocData/data.xml and by this tooltip."
+grade = "fairly sure"
+gap = "The value is the client's tooltip formula; rounding to the description's whole number and the hit order are the server's choice. What targetFlags 4 selects and what the server does with a CCStateSet effect are not read."
+
+["Spell4.41438"]
+statement = "Engineer Zap, tier 1 (base 25635, Normal, 30 s cooldown, global cooldown kind 1): Physical damage of 0.1434 x Assault Power + 0.1434 x Support Power + 9.08 x level (9.08 at level 1 with no ratings), then a Stun for 2.5 s. It triggers no other spell."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 41438`; Spell4Effects 125182 (effectType 8, damageType 1, flags 1, threatMultiplier 2.0, parameters 12 0.1434, 13 0.1434, 10 9.08) and 125183 (effectType 4, durationTime 2500, dataBits00 0, dataBits03 1). Tooltip 361870 names the damage and a Stun."
+grade = "fairly sure"
+gap = "As for Spell4.58591."
+
+["Spell4.32893"]
+statement = "Esper Telekinetic Strike, tier 1 (base 19102, Normal, 1.25 s cast): Magic damage of 0.336 x Assault Power + 18.0 x level (18.0 at level 1 with no ratings) to the target, and a Proxy that starts spell 30900 'Focus Psi Add (1)' on the caster, which adds 1 to the caster's vital 6 (Resource1, the Esper's Psi Points). 30900 in turn proxies 41869 and 77116, which only add a client effect (Fluff) for 8 s."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 32893` (castTime 1250, targetMaxRange 30); Spell4Effects 62159 (effectType 8, damageType 3, parameters 12 0.336, 10 18.0) and 62204 (effectType 26 Proxy, targetFlags 1, dataBits00 30900); Spell4 30900 effects 56858 (effectType 1 VitalModifier, dataBits00 6, dataBits01 1, dataBits02 1) and 200542 (Proxy 41869); 41869 effect 210256 (Proxy 77116); 77116 effect 200468 (Fluff, 8000 ms). `-- Vital 6`: localizedTextIdDisplayText 170473 'Resource1'. Tooltip 314851: 'Deal ... magic damage ... and generate a Psi Point.'"
+grade = "fairly sure"
+gap = "As for Spell4.58591. Which unit targetFlags 1 names (the caster, by the tooltip) is not read in the client."
+
+["Spell4.32809"]
+statement = "Esper Mind Burst, tier 1 (base 19019, Normal, no cooldown): it costs 1 of vital 6 (Psi Points) and deals one Magic hit whose size depends on the Psi Points spent, by the client's own tooltip: 1 point 0.2595 x Assault Power + 13.85 x level, 2 points 0.5195 AP + 27.69 x level, 3 points 0.7788 AP + 41.54 x level, 4 points 1.038 AP + 55.39 x level, 5 points 1.298 AP + 69.23 x level (13.85 to 69.23 at level 1 with no ratings). At 5 points it also proxies 57030, an 8 s critical-severity buff on the caster. Other proxies (87353, 87355) apply only behind prerequisites 44174, 43574 and 43575 (a rune set)."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 32809` (innateCostType0 6, innateCost0 1, innateCostEMMId0 4); Spell4Effects 61993..61997 (effectType 8, damageType 3, phaseFlags 1, emmValue 0..4, parameters 12 and 10 as stated), 95008 Fluff, 135961 (Proxy 57030, emmValue 4), 230116 (Proxy 87353, prerequisiteIdCasterApply 44174). Tooltip 243874: '1PP: $(eff=61993.input0pct) dmg ... 5PP: $(eff=61997.input0pct) dmg'."
+grade = "fairly sure"
+gap = "That emmValue is the Psi Points spent minus 1, and that innateCostEMMId0 4 lets the cast spend up to 4 more, rest on the tooltip's pairing of effects with points, not on client code. Whether the client refuses Mind Burst with no Psi Points is not read (see 0x1403b1780); the server must hold Psi Points to choose the effect."
+
+["Spell4.32812"]
+statement = "Esper Crush, tier 1 (base 19022, Normal, 35 s cooldown, global cooldown kind 3): its only effect, 100 ms after the go, is a Proxy that starts spell 42297 'Crush - Proxy' (base 26488, named Crush) on the target. 42297 deals Magic damage of 0.0837 x Assault Power + 0.0837 x Support Power + 8.94 x level (8.94 at level 1 with no ratings) and a Knockdown for 4 s, to up to 4 units within 4 m."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 32812` and `-- Spell4 42297` (base 26488, castMethod 0 by `-- Spell4Base 26488`, localizedTextIdName 376513 'Crush', spell4AoeTargetConstraintsId 704: angle 360, targetCount 4, maxRange 4); Spell4Effects 62007 (effectType 26 Proxy, targetFlags 4, delayTime 100, dataBits00 42297), 95949 (effectType 4, targetFlags 6, durationTime 4000, dataBits00 8), 95950 (effectType 8, damageType 3, targetFlags 6, parameters 12 0.0837, 13 0.0837, 10 8.94). Tooltip 243880 names $(eff=95950.input0pct) as Crush's damage."
+grade = "fairly sure"
+gap = "As for Spell4.58591. That the server casts 42297 as its own cast is the reading of the Proxy record (Spell4Effects.effectType.26), not seen in a retail recording."
+
+["Spell4.29874"]
+statement = "Medic Gamma Rays, tier 1 (base 16322, Normal, 1.25 s cast): it costs 2 of vital 18 (Actuators) and fires three beams, each able to hit the same foe, by the client's own tooltip: a Tech hit of 0.3141 x Assault Power + 13.66 x level on the target, and Proxies that start 34775 (Left Line) and 35886 (Right Line), each one more Tech hit of the same size. At level 1 with no ratings: 13.66 per beam, 40.98 when all three hit one creature. Each beam's area takes up to 2 foes in a 180-degree arc to 25 m."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 29874` (innateCostType0 18, innateCost0 2, castTime 1250, spell4AoeTargetConstraintsId 701: angle 180, targetCount 2, maxRange 25); Spell4Effects 69127 (effectType 8, damageType 2, parameters 12 0.3141, 10 13.66), 69881 (Proxy 34775), 73230 (Proxy 35886); 34775 effect 69244 and 35886 effect 73229 (both effectType 8, damageType 2, same parameters). `-- Vital 18`: text 198529 'Actuator'. Tooltip 195417: 'Deal ... technology damage with 3 beams. Each beam can hit $(spell=29874.aoeTc) foes, and foes can be hit by each beam.'"
+grade = "fairly sure"
+gap = "Whether a level-1 Medic holds 2 Actuators, and whether innateCost is spent or checked by the client, is not read; without them the server may refuse the cast. The beams' shapes (telegraphs) are not read."
+
+["Spell4.42352"]
+statement = "Medic Paralytic Surge, tier 1 (base 26543, Normal, 25 s cooldown, global cooldown kind 1): Tech damage of 0.0935 x Assault Power + 0.0935 x Support Power + 8.14 x level (8.14 at level 1 with no ratings), then a Stun for 2.7 s. It triggers no other spell."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 42352`; Spell4Effects 96125 (effectType 8, damageType 2, parameters 12 0.0935, 13 0.0935, 10 8.14) and 96126 (effectType 4, durationTime 2700). Tooltip 377336."
+grade = "fairly sure"
+gap = "As for Spell4.58591."
+
+["Spell4.38791"]
+statement = "Stalker Stagger, tier 1 (base 23173, Normal, 25 s cooldown, global cooldown kind 1): a Proxy that starts 38780 'Stagger - Normal' on the caster, a Multiphase spell of four phases (166, 200, 167 and 167 ms). Each phase proxies 38781 'Stagger - Damage' onto the target, a Physical hit of 0.035 x Assault Power + 0.035 x Support Power + 3.0 x level; the first phase also Stuns for 2.5 s. At level 1 with no ratings: 3.0 per hit, 12.0 per Stagger. A fifth and sixth proxy in the last phase (79220, 79229) apply only behind prerequisite 37037."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 38791`, `-- Spell4 38780`, `-- Spell4 38781`; `-- Spell4Base 23162` castMethod 8 (Multiphase); `-- SpellPhase spell4IdOwner=38780`: rows 3717..3720, phaseDelay 166, 200, 167, 167, orderIndex 0..3. Spell4Effects 83853 (Proxy 38780, targetFlags 1), 83823..83826 (Proxy 38781, phaseFlags 1, 2, 4, 8), 83827 (CCStateSet, 2500 ms, phaseFlags 1), 208128 and 208198 (prerequisiteIdCasterApply 37037), 83829 (effectType 8, damageType 1, targetFlags 2, parameters 12 0.035, 13 0.035, 10 3.0). Tooltip 311256: 'Deals $(eff=83829.input0pct) physical damage 4 times and applies a Stun'."
+grade = "fairly sure"
+gap = "As for Spell4.58591. That an effect's phaseFlags bit n selects phase n (orderIndex) fits the rows and is not read in the client."
+
+["Spell4.34355"]
+statement = "Spellslinger Gate, tier 1 (base 20325, Normal, 30 s cooldown, global cooldown kind 1): it deals no damage. It moves the caster forward (ForcedMove), changes a caster property for 0.4 s, and proxies 25190 (destination visuals) and 30436 'Gate - Norm - Stun', which Stuns up to 5 foes within 25 m for 3.25 s. Gate cannot kill a creature."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 34355`; Spell4Effects 67776 (effectType 3 ForcedMove, dataBits01 and 02 1101004800), 67777 (effectType 11 UnitPropertyModifier, property 134, 400 ms), 67778 (Proxy 25190), 67779 (Proxy 30436); 30436 effect 100836 (effectType 4, 3250 ms, aoe 411: 360 degrees, 5 targets, 25 m); 25190 effect 40372 (Fluff). No row of 34355, 25190 or 30436 has effectType 8, 10, 12, 33, 118 or 138. Tooltip 302793: 'Blink forward ... and apply a Stun'."
+grade = "fairly sure"
+gap = "Effect type names are the client's enum; what the server does with ForcedMove and UnitPropertyModifier is not read. That Gate deals no damage rests on its rows and those of the two spells it proxies."
+
+# How a triggered spell is carried
+
+["Spell4Effects.effectType.26"]
+statement = "A Proxy effect (type 26) names another spell in dataBits00: in 15,084 of the 16,929 Proxy rows it is a Spell4 id, in 1,808 it is 0. The client gives a Proxy effect no behaviour of its own: when a go names one it builds the plain effect object every unlisted type gets. So a triggered spell's effects reach the client only when the server sends that spell's own cast, or names its effect rows in a go: the client looks an effect row up by its id alone, not checking it belongs to the cast's spell."
+proof = "Spell4Effects all rows (`gleam run -m genesis_prime/table_rows -- Spell4Effects`, counted by a scratch script): effectType 26 rows by dataBits00: 15,084 Spell4 ids, 1,808 zero, 37 other. Effect object switch 0x140718120 (saved C): cases 3, 4, 8/12/33/138, 10/118, 18, 36, 55 and others get their own class; 26 falls to the default (0x1405d65a0 alone). The effect row lookup 0x1404e1c50 (saved C) searches the player's override map and then 0x1407a1080 by the effect id only."
+grade = "fairly sure"
+gap = "The other dataBits of a Proxy (dataBits03 1.0, dataBits04 1 or -1, dataBits05 60 or 1 or 1000) are not read; they look like a chance, a target choice and a time. Whether retail sent a triggered spell as its own 0x7ff, or folded its effects into the parent's go, needs a retail recording."
+
+["opcode.0x7ff.root_parent"]
+statement = "Message 0x7ff's root and parent Spell4 ids are kept with the cast. A non-zero parent marks a triggered (child) cast: the go's test of whether the cast is its caster's current cast takes that path for a child, a ChargeRelease child's first go starts the parent spell's cooldowns instead of its own, and when a threshold cast (PressHold, RapidTap, ChargeRelease) of the player's ends, the parent's threshold state is cleared (the cast's own spell's when the parent is 0). The root is read only for threshold casts, as the key of the threshold lookup. For a Normal cast neither changes what the client shows. A child cast whose caster is the player sent as 0x7ff starts no global cooldown for the nine abilities' children, whose global cooldown kind is 3."
+proof = "HandleSpellStart 0x1405a51a0 (saved C) copies 0x7ff's fields into the cast record (spell id, root, parent at its first three words). InitCast 0x14053d1f0: 0x14053d210 add rcx, 0x68; 0x14053d232 call 0x14053d550, which copies the record word by word (0x14053d554 mov eax, dword ptr [rdx + 0x4]; 0x14053d55a mov eax, dword ptr [rdx + 0x8]). Readers of the parent (cast offset 0x70): ApplySpellGo 0x14053e5a0 (saved C, the 'parent != 0' term of the current-cast test; castMethod 7 -> 0x1403acd90 of the parent, then StartSpellCooldowns 0x14046b1e0), 0x14053e1b0 (parent, else the spell id at 0x130, to 0x1403bef30 with 1, for castMethods 2, 6, 7 when the player is the caster). Reader of the root (cast offset 0x6c): 0x140546e60 passes it to 0x1403bfb60 for castMethods 2, 6, 7. Global cooldown kinds: StartGlobalCooldown 0x14046afc0 acts only for kinds 0 and 1; Spell4 30900, 38780, 38781, 42297, 34775, 35886, 30436 have globalCooldownEnum 3."
+grade = "fairly sure"
+gap = "Readers were found by grepping the saved C of the cast functions for the two offsets; a reader through another base register may be missed. The values retail sent are not in the client: the server's choice is root = the pressed spell and parent = the spell whose Proxy fired (0 for the pressed spell), which no client path contradicts; a retail recording would settle it. Whether a child's 0x7ff, which makes the child the caster's current cast, hides a parent's cast bar is not read."
+
+# Pending casts and the cast table
+
+["cast.pending_table"]
+statement = "The player's pending casts (made on a press, before the server answers) are never in the cast table that FindCast searches. They sit in a separate pending list keyed by the client's cast id; the table holds only casts with a server cast id, keyed by it. 0x7fc and 0x7fd find a pending cast by its client id in the list; 0x7fd then moves it into the table under the server's id. So a server cast id that equals a pending cast's client id is harmless, and the server's cast ids need not stay above the client's counter. The client's counter starts at 1 and every cast object the client makes, pending or from a server message, takes its next value (2 first); only that constructor changes it."
+proof = "FindCast 0x140561c30 (saved C, hash 49fd5a78aaad3411): hashes the id with the function at cast system 0x7b8 and walks the buckets at 0x7b0, the map at 0x7a0 only. CreateCast 0x140561780 (saved C): record cast id 0 -> linked into the list at 0x7c8; non-zero -> 0x1400b6080 into the map at 0x7a0 with the record's cast id as key. ConfirmLocalCast 0x14055de80 (saved C): walks the list at 0x7c8 comparing the cast's client id (offset 0x60) with 0x7fd's first field, unlinks it, stores the server id at 0x5c, and inserts a new map node keyed by the server id. ConstructCast 0x14053c500 (saved C): DAT_140c1e71c = DAT_140c1e71c + 1, stored at the cast's offset 0x60; a grep of the whole saved C finds no other use of 0x140c1e71c. Bytes at 0x140c1e71c: 01000000 (record 0x140c1e71c)."
+grade = "fairly sure"
+gap = "Read from the decompile. ConfirmLocalCast inserts without checking that the server id is already in the table; a duplicate server id would shadow the older cast (the newer is found first), so server ids must still be unique among live casts."
+
+# The deflect floater
+
+["opcode.0x7fb"]
+statement = "Message 0x7fb (2043), world server to client: some of a cast's targets were missed. Body: cast id (32 bits), a count (32 bits), and that many entries of target unit id (32), a reason (4 bits) and a 32-bit value. The client finds the cast (an unknown id drops the message), marks it missed, and for each entry with reason 0 plays the miss and, when the player is the caster or the target, raises AttackMissed(caster, target, 0 = Dodge, spell name), which FloatText shows over the target as 'Deflect'. An entry with another reason shows nothing that was read. This, not a damage description, is how a deflect is shown: a description with combat result 0 (Avoid) raises no floater."
+proof = "Registered in 0x14006c290 (saved C line 662): id 0x7fb, record 0x10, reader 0x1400956e0 (saved C: ReadBits32 0x20, ReadBits32 0x20 count, entries of 0xc bytes: ReadBits32 0x20, 4, 0x20). HandleWorldMessage case: 0x1403ee1fe mov edx, dword ptr [rdi]; 0x1403ee207 call 0x140561c30; 0x1403ee212 jz 0x1403ec71b; 0x1403ee227 call 0x14053f090. 0x14053f090: 0x14053f0ab mov dword ptr [rcx + 0x150], 0x6; per entry 0x14053f115 cmp dword ptr [rsi + 0x4], r12d; jz -> 0x14053f209 call 0x140542a30 (target in r8d, 0x10 or 0x11 in r9d, the entry's value on the stack); else text 0x302f ('$1n dodged $2n') into a local string that is freed. 0x140542a30 (saved C): when the player unit (game 0x78) is the target or the caster, an event of kind 9 with caster, target and spell id, queued on the target unit or by 0x140577250, whose object (class at 0x140b73e80, slot 3 = 0x14071fda0) calls 0x1404296f0: FUN_1400ea3e0(..., 'AttackMissed', ..., caster, target, 0, spell name). Callers: 0x140542a30 only from 0x14053f090 (query callers); 0x1404296f0 only from 0x14071fda0. GameLib.CodeEnumMissType: 0x14070aebc lea rdx, [0x140b43d00] ('CodeEnumMissType'), 0x14070af0e xor r9d, r9d before the single entry (Dodge = 0). FloatText.lua 721: eMissType == Dodge -> Apollo.GetString('CRB_Dodged'); `gleam run -m genesis_prime/table_rows -- LocalizedEnum enumName=CRB_Dodged`: localizedTextId 135387, text 135387 'Deflect' (client_files.py text)."
+grade = "fairly sure"
+gap = "Read from the decompile and listings, not run. The value field, the 0x10/0x11 argument, the miss visual (0x140578460) and the two calls to 0x14039c720 (player is caster of a missed primary target; player is the missed target) are not read. What other reasons mean is not read. Whether the server should also send a go naming the missed target is not in the client."
+
+["LocalizedEnum.CRB_Dodged"]
+statement = "The UI string CRB_Dodged, which FloatText shows for every AttackMissed of type Dodge, is the text 'Deflect'; CRB_Blocked is text 135388. CRB_Deflect is text 214, also 'Deflect'."
+proof = "`gleam run -m genesis_prime/table_rows -- LocalizedEnum enumName=CRB_Dodged` (ID 1183, localizedTextId 135387), `enumName=CRB_Blocked` (1184, 135388), `localizedTextId=214` (58, CRB_Deflect). `python3.13 -I scripts/client_files.py text 135387 214`: 'Deflect', 'Deflect'."
+grade = "fairly sure"
+gap = "That Apollo.GetString resolves a name through LocalizedEnum is read from the names matching, not from the client's GetString code."
+
+["0x1400956e0"]
+statement = "Reads message 0x7fb's body: cast id, count, and per entry a target unit id, a 4-bit reason and a 32-bit value."
+proof = "See opcode.0x7fb."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "ReadMessage07FBBody"
+
+["0x14053f090"]
+statement = "Handles message 0x7fb for a known cast: marks the cast missed and shows each reason-0 target's miss."
+proof = "See opcode.0x7fb."
+grade = "fairly sure"
+gap = "Read from the decompile and listing."
+name = "HandleSpellMiss"
+
+["0x140542a30"]
+statement = "Shows one target's miss of a cast: the miss visual, and when the player is caster or target, a queued AttackMissed event."
+proof = "See opcode.0x7fb."
+grade = "fairly sure"
+gap = "The visual part (0x140578460, 0x140542e70) is not read."
+name = "ShowSpellMiss"
+
+["0x140577250"]
+statement = "Makes and queues a miss event (event kind 9), whose firing raises AttackMissed."
+proof = "Saved C: AllocMemory(400), class pointer 0x140b73e80, copies the 0xb0-byte event in by 0x14071fcd0, links it into the list at 0x140c65b78. Called for kind 9 by 0x140542a30, by 0x140543630 (case 9) and by 0x1405787d0 (case 9)."
+grade = "fairly sure"
+gap = "When the queue fires its events is not read."
+name = "QueueMissEvent"
+
+["0x14071fda0"]
+statement = "Fires a queued miss event: raises AttackMissed with its caster, target and spell."
+proof = "Saved C: FUN_1404296f0(game 0x7340, event 0x180, event 0x17c, event 0x188); slot 3 of the class at 0x140b73e80 (bytes at 0x140b73e98: 0x14071fda0)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "FireMissEvent"
+
+["0x1404296f0"]
+statement = "Raises the Lua event AttackMissed(caster, target, miss type 0, spell name) when the player exists and the spell is known."
+proof = "Saved C: FindUnit of the player, 0x1403acd90 for the spell, FUN_1400ea3e0(..., 'AttackMissed', ..., param_2, param_3, 0, name); string_refs 'AttackMissed': 0x14042975c only."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "RaiseAttackMissed"
+
+# Smaller facts met on the way
+
+["0x1403b1780"]
+statement = "Checks a spell's two caster vital requirements before a press is sent: for each it reads the caster's vital (health, shield, Resource0 to Resource10, focus, interrupt armor and others) and its maximum, compares them by the requirement's mode (above mode 4 as a percentage) with its value, and on failure gives the matching cast result, such as 50 to 56 CasterVitalCostResource0 to 6. None of the nine Normal starting abilities has such a requirement; their innate costs (Mind Burst 1 Psi Point, Gamma Rays 2 Actuators) are not this check."
+proof = "Saved C (hash 8eb22adb6de47956): loops twice over the spell's requirement block (type, mode, value), switch on the type: 5..11 -> 0x140466340(unit, 0..6) and results 0x32..0x38, 0x10 -> resource 7 and 0xb1, 0x1b..0x1d -> resources 8..10 and 0x147..0x149, 1 -> 0x2c, 3 -> 0xb0, 0xf -> 0xa7, 0x14 -> 0xfa, default -> 0xaf or the player's handler; then 0x1407a1750(mode, current, value). Called by CheckCastCaster 0x1403afb10 (saved C line 479). Cast result names from Spell.CodeEnumCastResult read at 0x140c2f290. Spell4 rows of the nine: casterInnateRequirement0/1 all 0."
+grade = "guess"
+gap = "That the block it reads is Spell4's casterInnateRequirement columns is matched by meaning, not by the loader; the field order seen (type, mode, value) differs from the columns' order. Whether the client checks innateCost anywhere is not read."
+name = "CheckCasterVitalRequirements"
+
+["Creature2.73464.mitigation"]
+statement = "The Virtual Battle Beast at level 1 has 0% physical, tech and magic mitigation: its Armor is overridden to 0 and its resists and mitigation offsets are 0, so the rating formula gives 0. A hit's damage on it is its base value."
+proof = "`gleam run -m genesis_prime/table_rows -- Creature2OverrideProperties creature2Id=73464` (property 40 = 1.0, 42 = 0.0); `-- CreatureLevel 1` unitPropertyValue26/27/28 = 0; `-- CreatureLevel 101` unitPropertyValue03/44/45/46 = 0 (properties 103, 144, 145, 146); `-- GameFormula 1234`: dataint0 0, dataint01 75, datafloat0 50, datafloat01 0.008, datafloat02 0, datafloat03 7250. The rating-to-percent formula (0x140453b60) at rating 0 with int0 0 and f02 0 gives 0, plus a base of 0."
+grade = "fairly sure"
+gap = "That tech and magic mitigation use row 1234 as physical does is the damage trace's reading (callers listed, bodies not read). Whether mitigation multiplies the base is the server's choice."
+
+["0x140568540"]
+statement = "Fills the client's own record of one Spell4 row, the record every cast check reads. Among its fields: the cast method from the Spell4Base row, the cast time, the global cooldown kind and row, the cast bar type from Spell4Base, the two innate cost types and the two innate cost values, and thresholdTime. These are copied as stored; the innate cost EMM ids are kept but no cost check reads them."
+proof = "Saved C 0x140568540.c (hash 8eb22adb6de47956): the Spell4 row by id (0x140236580) and its Spell4Base row (0x140236e00 of row word 4, spell4BaseIdBaseSpell). Record offsets from row dwords: 0x18 = base offset 0x50 (Spell4Base.castMethod, column offset 80); 0x1c = row[7] (castTime, offset 28); 0x24 = row[0x57] (globalCooldownEnum, 348); 0x28 = row[0x4a] (spellCoolDownIdGlobal, 296); 0x2c = base 0x60 (castBarType, 96); 0xa8, 0xac = row[0x16], row[0x17] (innateCostType0/1, 88, 92); 0xb0, 0xb4 = row[0x18], row[0x19] (innateCost0/1, 96, 100); 0xb8, 0xbc = row[0x1a], row[0x1b] (innateCostEMMId0/1); 0x184 = row[0x32] (thresholdTime, 200). Column offsets from `table_rows -- Spell4 --columns` and `Spell4Base --columns`. The cost check 0x1403b3320 reads only 0xa8 to 0xb4."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. Fields other than those listed are not matched to columns here."
+name = "FillSpellRecord"
+
+["0x14055e180"]
+statement = "Builds the client's spell tables at load. For each Spell4 row whose cast method is Channeled or ChanneledField it keeps a channel record of channelInitialDelay, channelMaxTime, channelPulseTime and spellChannelFlags; no other cast method gets one. For each Spell4 row whose cast method is Multiphase it keeps a phase list, filled from SpellPhase: every SpellPhase row of that owner (spell4IdOwner) with orderIndex below 32 and either orderIndex 0 or a non-zero phaseDelay adds its phaseDelay and phaseFlags, in table row order."
+proof = "Saved C 0x14055e180.c (hash 8eb22adb6de47956): per Spell4Base row, castMethod (base offset 0x50) with (m - 1) & ~2 == 0 pushes the row to the channel list, m == 8 to the phase list (lines 529-559). Channel records (lines 1064-1112): from the Spell4 row offsets 0x70, 0x74, 0x78, 0xd4 (channelInitialDelay 112, channelMaxTime 116, channelPulseTime 120, spellChannelFlags 212). Phase lists (lines 1113-1199): every SpellPhase row (table at 0x140c64af8, loader 0x14023e6e0) looked up by owner (row 0x10); if orderIndex (row 0xc) < 0x20 and (orderIndex == 0 or phaseDelay (row 4) != 0), FUN_140003460 appends phaseDelay to the first list and phaseFlags (row 8) to the second. SpellPhase columns from `table_rows -- SpellPhase --columns`."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. FUN_140003460 is taken to append to a list of count and items; the hash maps that link a spell to its channel record and phase list are matched by use in InitCast, not followed."
+name = "BuildSpellTables"
+
+["SpellPhase.phaseDelay"]
+statement = "The phase rows of the three Multiphase starting abilities, in the order the client keeps them. Pulse Blast 42276: phase 0 delay 0 flags 0; phase 1 delay 1250 flags 0x200. Impale 38779: phase 0 delay 0 flags 0; phase 1 delay 300 flags 0x180. Quick Draw 43468: phase 0 delay 0 flags 0; phase 1 delay 366 flags 0x200; phase 2 delay 200 flags 0; phase 3 delay 200 flags 4; phase 4 delay 234 flags 0. So Pulse Blast and Impale have two phases and Quick Draw five. Read as gaps after the phase before, the phases fall at 0 and 1250 ms (Pulse Blast), 0 and 300 ms (Impale) and 0, 366, 566, 766 and 1000 ms (Quick Draw); for Pulse Blast and Quick Draw the delays sum to the spell's castTime."
+proof = "SpellPhase.tbl read whole (`gleam run -m genesis_prime/table_rows -- SpellPhase`, saved in the decode folder): rows 5390-5391 (owner 42276), 3715-3716 (38779), 5882-5886 (43468), orderIndex 0.. in row order. Spell4 42276 castTime 1250, 43468 castTime 1000, 38779 castTime 0 (`table_rows -- Spell4 <id>`). Kept rows by the loader rule in 0x14055e180."
+grade = "fairly sure"
+gap = "That a delay is the gap after the phase before (not a time from the start) is read from InitCast summing them into a cast's duration when its castTime is 0, not from a timer that schedules phases; the client schedules no phase itself, so the server's go timing is a server choice the rows suggest. Flags 0x80 and 0x100 (Impale) are not read."
+
+["0x14053d1f0"]
+statement = "Sets up a cast when it starts: its spell, caster, target and start time; its duration; and how many gos it expects (its phase count). A spell with a channel record lasts channelMaxTime and expects (channelMaxTime - channelInitialDelay + channelPulseTime) / channelPulseTime gos, in whole numbers: Electrocute 3000 ms and 6, Discharge 1250 ms and 3. A Multiphase spell lasts its castTime, or, when castTime is 0, the sum of its phase delays (Impale 300 ms), and expects one go per kept phase row (Pulse Blast 2, Impale 2, Quick Draw 5); it notes whether any phase has flag 0x200. Any other spell lasts its castTime and expects 1."
+proof = "Saved C 0x14053d1f0.c (hash 8eb22adb6de47956): cast 0x50 = record 0x1c (castTime); with no channel record (spell info 0x50 null), castMethod 8 and castTime 0, adds each phase delay (list at spell info 0x58). With a channel record, cast 0x50 = channel[1] (channelMaxTime) and cast 0x1a0 = (channel[1] - channel[0] + channel[2]) / channel[2]. Castmethod 8 without a channel record: cast 0x1a0 = phase count (list 0x58 + 8), cast 0x148 = 1 unless a phase flag (list 0x58 + 0x10) has 0x200. Otherwise 0x1a0 = 1. 0x14053d21a mov edi, r9d; 0x14053d210 add rcx, 0x68; 0x14053d232 call 0x14053d550 copies the cast info (the press's spell, root and parent ids) to cast 0x68. Rows: Spell4 41276 channelInitialDelay 500, channelMaxTime 3000, channelPulseTime 500; 58832 410, 1250, 410 (`table_rows -- Spell4 <id>`)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. The integer division is read from the decompile, not the instructions."
+name = "InitCast"
+
+["Spell4.channelPulseTime"]
+statement = "The two Channeled starting abilities. Electrocute 41276: channelInitialDelay 500, channelMaxTime 3000, channelPulseTime 500, spellChannelFlags 0, cast bar type 1; the client expects 6 gos and shows a 3 s cast bar. Discharge 58832: 410, 1250, 410, flags 0, cast bar type 1; the client expects 3 gos and shows a 1.25 s cast bar. Neither has a cooldown. The client schedules no pulse: each pulse is a go the server sends, and the client counts them. Pulses at channelInitialDelay and every channelPulseTime after, up to channelMaxTime, give the same counts (500, 1000, ... 3000 ms; 410, 820, 1230 ms)."
+proof = "gleam run -m genesis_prime/table_rows -- Spell4 41276 and 58832 (channel columns, spellCoolDown 0); Spell4Base 25473 and 38201: castMethod 1, castBarType 1 (Spell4Base.tbl read whole). Counts by InitCast 0x14053d1f0. Cast bar time: IsUnitCastBarShown 0x140469530 (start + duration)."
+grade = "fairly sure"
+gap = "The pulse times are inferred from the count formula; the client reads none. Quick Draw 43468 also has channel columns (366, 1000, 634) but is Multiphase, so the client makes no channel record for it."
+
+["0x14053e5a0"]
+statement = "Applies a go (0x7f4) to a known cast. It counts the go, keeps the go's phase, and when the phase before had flag 0x40 removes effects that phase did not name. For a Multiphase cast it acts on the new phase's flags (0x200 marks the cast to start its cooldown at its last phase; 4 and 0x400 end visuals). The caster's current cast is cleared at a go only for a spell with no channel record whose method is not PressHold, ChargeRelease or Multiphase: so a RapidTap or Normal cast stops counting as casting at its go, while a channel, a Multiphase or a ChargeRelease cast keeps counting until its finish. Cooldowns: a Channeled cast starts its cooldowns at the go that reaches its expected go count; PressHold and RapidTap start none at a go; a ChargeRelease stage with no thresholdTime starts the cooldowns of the spell that opened the charge (the cast's parent) at its first go; a Multiphase cast starts them at its phase 0 go when no phase has flag 0x200, else at a go of its last phase; any other cast at its first go. The ignore-cooldown bit stops each of these."
+proof = "Saved C 0x14053e5a0.c (hash 49fd5a78aaad3411): lines 43-67 (previous phase 0x1b0, phase flag 0x40); line 69 go count (cast 400) += 1; line 71 phase = go byte 0x50; lines 126-148 (castMethod 8: flag 0x200 -> cast 0x14c = 1; flag 0x400 clear and 4 set -> slot 0x20 on cast 0x228 items, else slot 0x50); lines 151-185 (unit 0x1600 cleared when the spell record's 0x2c, 0x1c and method allow, or when the current cast is this one, spell info 0x50 null and method not 2, 7, 8); lines 224-254 (cooldowns: method 1 when go count >= cast 0x1a0; methods 2 and 6 none; method 7 with record 0x184 == 0 -> StartSpellCooldowns 0x14046b1e0 of the spell id at cast 0x70; method 8 phase 0 with cast 0x148, or phase >= count - 1 with cast 0x14c and the ignore bit clear)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. What the cast 0x228 items are (taken as telegraph visuals) is not read; the cast's parent at 0x70 is the third word of the cast info copied by InitCast, read for the player's own press only."
+name = "ApplySpellGo"
+
+["0x1403bfd60"]
+statement = "Resolves which spell a press of a PressHold, RapidTap or ChargeRelease ability casts (the threshold step; CastAbilityBagSpell calls it for those three methods only). When the player has no open threshold for the spell: a spell whose thresholdTime is 0 is refused with 285 IllegalSpellCast, and any other casts itself (all eight such starting spells have one: Relentless Strikes, Rampage and Shred 4000, Charged Shot 8200). When a threshold is open for it (opened by message 0x816): the press casts the spell4IdToCast of the threshold row at the open threshold's current index (rows of that parent in orderIndex order), or the spell itself when the index is -1; past the last row it gets no spell and is refused with 4 SpellUnknown. The chosen stage spell's own threshold row vital costs are then checked. Under the hold-to-cast setting, a ChargeRelease press with no open threshold instead checks the cooldowns (14, 15, 16) and innate costs and casts row 0's spell."
+proof = "Saved C 0x1403bfd60.c (hash 8eb22adb6de47956); CastAbilityBagSpell 0x14039a040 lines 154-157: castMethod in {2, 6, 7} (iVar6 - 2 & ~5 == 0 and not 3) calls it. No entry in the map at game 0x1588: method 2, 6 or 7 with record 0x184 (thresholdTime) == 0 -> result 0x11d. Entry found: 0x1403bfbf0 (index == -1 -> the spell; else 0x140564f40(parent, index) row's word 4, spell4IdToCast; none -> 0), then 0x1403acd90 null -> 4. 0x1403bfccc cmp r8d, -0x1; 0x1403bfcdb call 0x140564f40 with r8d the index. 0x1403c0128 xor r8d, r8d; 0x1403c012e call 0x1403c0620 (row vital costs). Rows: Spell4 32078, 58524, 38765 thresholdTime 4000; 34718 8200."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. 0x1403acd90 returning null for spell 0 is assumed. The hold-to-cast branch (setting at 0x140c45e90 on and no held key) is read, not traced to its button."
+name = "ResolveThresholdSpell"
+
+["Spell4Thresholds.spell4IdToCast"]
+statement = "The threshold rows of the four starting abilities that use them, by orderIndex: Relentless Strikes 32078: 32079 (stage 2), 32080 (stage 3). Rampage 58524: 66987, 71125, 71126. Shred 38765: 38766 (2nd hit). Charged Shot 34718: 34720 (C1, duration 0), 34722 (C3, 1000 ms), 36691 (C4, 1400 ms, cost type 15 value 0). So a RapidTap ability has one stage more than its rows (Shred 2 taps, Relentless Strikes 3, Rampage 4), each a separate spell; a ChargeRelease ability has as many charge levels as rows (Charged Shot 3). The client keeps the rows per parent sorted by orderIndex and reads thresholdDuration, the two vital cost types and the two vital cost values."
+proof = "Spell4Thresholds.tbl read whole (`gleam run -m genesis_prime/table_rows -- Spell4Thresholds`, saved in the decode folder): rows 9, 10 (32078); 1073-1075 (58524); 238 (38765); 125, 123, 124 (34718, orderIndex 0, 1, 2). Loader 0x140561340 (saved C, hash 8eb22adb6de47956): copies parent, toCast, orderIndex, thresholdDuration, vitalEnumCostType00/01, vitalCostValue00/01 per row into the map at spell system 0x788 keyed by parent, then 0x140566940 sorts by orderIndex (compares row 0xc). Stage spells 38766, 32079, 32080, 66987, 71125, 71126 are castMethod 6 and 34720, 34722, 36691 castMethod 7, all with thresholdTime 0 (Spell4 and Spell4Base rows)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. Stage counts shown to the player are from the Lua events in opcode.0x816 and opcode.0x817."
+
+["opcode.0x816"]
+statement = "Message 0x816 (2070), world server to client: open a threshold for one of the player's spells. Body: the spell (18 bits), a second spell (18 bits), a third spell (18 bits) and a 32-bit value. When the player has no open threshold for the spell, the client opens one at index 0, starts a timer of the spell's thresholdTime, and for a ChargeRelease spell a second timer of the next row's thresholdDuration (row 1); it raises Lua StartSpellThreshold(spell, stage count, cast method), the count being the row count plus one for RapidTap and PressHold and the row count for ChargeRelease. A press of a spell whose open threshold names it as the second spell is resolved through that threshold. The third spell is the spell whose cooldowns start when a RapidTap threshold ends (0 means the opened spell). An open threshold for the spell already: nothing changes. When the timer runs out, a RapidTap threshold starts those cooldowns and closes (ClearSpellThreshold); a ChargeRelease threshold is only marked and stays open."
+proof = "Registered in 0x14006c290 (saved C line 686, hash 49fd5a78aaad3411): id 0x816, record 0x10, reader 0x140095f30 (ReadBits32 0x12, 0x12, 0x12, 0x20). Jump table entry for 0x816 (bytes at 0x1403f1344 + 4 x (0x816 - 97)) is 0x1403ef34e: 0x1403ef354 call 0x1403be940. 0x1403be940 (saved C): clears the request map at game 0x15a8 for the spell, then, when the map at game 0x1588 has no entry, 0x1403be620(game, spell, field 1, field 2, field 3). 0x1403be620 (saved C): entry index and done words 0; entry 0x10 = field 1, 0x14 = field 2, 0x18 = field 3; timer of record 0x184 calling 0x1403bf2c0; method 2 row 0 / method 7 row 1 thresholdDuration timer; 'StartSpellThreshold' with count + 1 (count for method 7) and the method. 0x1403c0190 matches entry 0x10 to the pressed spell. 0x1403bf2c0: method 6 -> StartSpellCooldowns 0x14046b1e0 of entry 0x14's spell or the key, then 0x1403bf4e0; method 7 -> return. CastBar.lua OnStartSpellThreshold (lines 254-298) draws the tap circle or the tier marks."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. The 32-bit field is kept and, for a ChargeRelease, sent back as the cast id of a 0x801 when the player dies while charging (0x14055afc0 to 0x1403bef30 with 1); what retail put in the second and third fields for a starting ability is not in the client (the spell itself and 0 fit the code)."
+
+["opcode.0x817"]
+statement = "Message 0x817 (2071), world server to client: set an open threshold's index. Body: the spell (18 bits) and the index (8 bits, signed: 255 is -1). With an open threshold for the spell, the client sets its index and raises Lua UpdateSpellThreshold(spell, index + 1). While the index is below the stage count (row count, less one for ChargeRelease) a ChargeRelease threshold restarts its charge timer with the next row's thresholdDuration (or thresholdTime when that is 0) and raises StartSpellThreshold again. At or past the count the threshold is marked done, and a RapidTap threshold starts the cooldowns of its third spell (or the spell). It does not close the threshold. The index is what the player's next press resolves through, so the server sets which stage or charge level the next press casts."
+proof = "Registered in 0x14006c290 (saved C line 687): id 0x817, record 8, reader 0x140095fb0 (ReadBits32 0x12, then 0x14006bec0, 8 bits). Jump table entry 0x1403ef360: 0x1403ef366 call 0x1403bea90. 0x1403bea90 (saved C, hash 8eb22adb6de47956): entry index = (char) field 1, word 2 = 0; 'UpdateSpellThreshold' (index + 1) unless record 0x10c bit 0x40; count 0x140564fb0, minus 1 for method 7; index < count and method 7 -> timer 0x1403c0210 (row index + 1 thresholdDuration, else record 0x184) and 'StartSpellThreshold'; else done word = 1 and method 6 -> StartSpellCooldowns 0x14046b1e0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. How retail paced 0x817 for a RapidTap (after each tap's go, or once at the end) is not in the client."
+
+["opcode.0x815"]
+statement = "Message 0x815 (2069), world server to client: end an open threshold. Body: the spell (18 bits). The client marks the threshold ended; for a RapidTap threshold it starts the cooldowns of its third spell (or the spell) and closes it (ClearSpellThreshold); for a PressHold one it starts the spell's cooldowns and closes it; a ChargeRelease threshold stays open."
+proof = "Registered in 0x14006c290 (saved C line 688): id 0x815, record 4, reader 0x140080d30 (ReadBits32 0x12). Jump table entry 0x1403ef372: 0x1403ef378 call 0x1403bed60, which calls 0x1403bef30(game, spell, 0): entry 0xc = 1; with the last argument 0, 0x1403bf2c0 (method 2 -> StartSpellCooldowns and close; 6 -> StartSpellCooldowns; 7 -> return; then 0x1403bf4e0 with no cooldown)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run."
+
+["opcode.0x814"]
+statement = "Message 0x814 (2068), world server to client: close an open threshold. Body: the spell (18 bits) and one bit. The client stops the threshold's timers, releases its action button's hold, and, when the bit is set, starts the cooldowns of the threshold's third spell (or the spell); it removes the threshold and raises Lua ClearSpellThreshold(spell). The player's next press of the ability then casts the ability's own spell again. This is the only message that closes a ChargeRelease threshold."
+proof = "Registered in 0x14006c290 (saved C line 689): id 0x814, record 8, reader 0x140096000 (ReadBits32 0x12, ReadBits32 1). Jump table entry 0x1403ef384: 0x1403ef38a call 0x1403bee40, which calls 0x1403bf4e0(game, spell, bit). 0x1403bf4e0 (saved C, hash 8eb22adb6de47956): timers at entry 0x20 and 0x68 stopped; bit -> StartSpellCooldowns 0x14046b1e0 of entry 0x14 or the spell; entry freed and removed from the map at game 0x1588; 'ClearSpellThreshold'. Callers of 0x1403bf4e0: this case, 0x1403bf2c0 (timer end, 0x815) with 0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. 0x1403c1f50 and 0x1405ca990 (the button release) are not read."
+
+["Spell4.thresholdTime"]
+statement = "How the client runs the RapidTap and ChargeRelease starting abilities, from the press code and messages 0x814 to 0x817. RapidTap (Shred, Relentless Strikes, Rampage): every tap the client accepts sends one 0x9a with the ability's bag index; the first casts the ability's own spell; once the server opens a threshold (0x816) each later tap casts the next stage spell the open index names. The client limits taps only by its usual checks (the global cooldown: Shred 1000 ms, Relentless Strikes 750, Rampage 500 then 333; a tap within the last 500 ms is queued), by refusing a tap past the last stage (4) and by the thresholdTime window (4000 ms from the 0x816), after which it closes the threshold itself. A RapidTap stage's go starts no cooldown; Rampage's 8 s cooldown starts when its threshold ends. ChargeRelease (Charged Shot): the first press casts 34718 and the server opens the threshold; the client never sends a charge level: the server raises it with 0x817 at each row's thresholdDuration, and the release press is a second 0x9a with the same bag index, which the client casts as the row at the current index (34720, 34722 or 36691). Charged Shot's 10 s cooldown starts at the stage's first go. The 8200 ms window does not close it; only 0x814 does."
+proof = "ResolveThresholdSpell 0x1403bfd60; CastAbilityBagSpell 0x14039a040 (each accepted press reaches SendWorldMessage 0x9a at line 307; 0x9b instead for a spell whose target mechanic word is 4); opcode.0x816, opcode.0x817, opcode.0x814, opcode.0x815 records here; ApplySpellGo 0x14053e5a0 (method 6 no cooldown, method 7 parent's cooldowns). SpellCoolDown rows 115 (1000), 121 (750), 103 (500), 107 (333), 82 (1000) by `table_rows -- SpellCoolDown <id>`; Spell4 rows' spellCoolDownIdGlobal. Global cooldown queue: CheckSpellCooldowns 0x1403b14c0. The threshold button path 0x1403be120 (from the action button object 0x1405c9900) calls CastAbilityBagSpell for a ChargeRelease press with a threshold open (setting off)."
+grade = "fairly sure"
+gap = "Not run live. Which button edge (down or up) makes the press depends on the hold-to-cast setting (0x1405c9900 states 0, 2, 3), read only in part. A live run of Shred and Charged Shot against the server settles the pacing."
+
+["0x1403b3320"]
+statement = "Checks one of a spell's two innate costs against the caster's vitals before the client sends a cast. A cost of 0 or a type of 0 or above 30 passes. For the types read: Health (1) needs health at least the cost (44); Shield Capacity (3) gives 176; Vitals 5 to 11 (Endurance, Resource1 to Resource6) read the caster's resource slots 0 to 6 and need the slot at least the cost (50 to 56 CasterVitalCostResource0 to 6); Focus (15) is a percentage of the maximum (167); 16 gives 177, 20 to 24 and 27 to 29 their own results. Any other type (Actuator 18 among them) goes to the player's class mechanic (CheckClassResourceCost), or gives 175 when the caster is not the player. A negative cost compares absolute values. Impale (type 8, 35) needs resource slot 3 at least 35, else 53; Electrocute (type 6, 8) slot 1 at least 8, else 51; Mind Burst (type 6, 1) slot 1 at least 1, else 51; Gamma Rays (type 18, 2) goes to the Medic's class mechanic."
+proof = "llvm-objdump 0x1403b3331 mov edx, dword ptr [rsi + 4*rcx + 0xa8] (cost type); 0x1403b3340 cmp edx, 0x1f; 0x1403b334e mov ebx, dword ptr [rsi + 4*rcx + 0xb0] (cost); 0x1403b3373 test ebx, ebx; 0x1403b3397 jmp rax (switch on type - 1). Saved C 0x1403b3320.c (hash 8eb22adb6de47956): case 5 reads the unit's float at 0x220 (< cost -> 0x33), case 7 at 0x228 (-> 0x35), cases 4..10 at 0x21c..0x234 (-> 0x32..0x38), case 0 health (0x2c), default -> game 0x6d90 object's slot 0x78 call: 0x1403b3792 movd xmm2, ebx; 0x1403b3799 xorps xmm2 (sign mask bytes at 0x140b7b530: 00000080 x4); 0x1403b37a0 call qword ptr [rax + 0x78]. Vital names: Vital.tbl localizedTextIdDisplayText via client_files.py text (6 Resource1, 8 Resource3, 18 Actuator). CastResult names from the enum at 0x140c2f290. Rows: Spell4 38779, 41276, 32809, 29874 innate cost columns."
+grade = "fairly sure"
+gap = "The switch's case list is read from the decompile, not each jump table entry. The innate cost EMM id (Mind Burst 4) is not read by this check; whether something else changes the cost is not searched."
+name = "CheckInnateCost"
+
+["0x1405e7980"]
+statement = "The class mechanic's check of a cost in a vital that is not one of the fixed resource slots (Actuator for the Medic's Gamma Rays). It looks through the player's class resource slots 0 to 7 (Class.vitalEnumResource00 to 07) for slots holding that vital, and passes at the first such slot where the slot's current value minus the cost is at least 0 and at most the slot's maximum. When no slot passes it gives the last matching slot's result (slot n gives 50 + n, CasterVitalCostResource0 to 6; slot 7 gives 177); when the class has no slot for that vital it passes; with no player or no class row it gives 175. Every class's mechanic uses this same check."
+proof = "Saved C 0x1405e7980.c (hash 8eb22adb6de47956): player class row at unit 0xe0; slot vital at row 0x64 + 4i (Class.vitalEnumResource00 at offset 100, `table_rows -- Class --columns`); maximum by slot 0x38 (seed_1405e75d0: unit 0x60c, 0x614 ... step 8); current float at unit 0x21c + 4i; result dword at 0x140c38eb0 + 0x21c + 4i + 4. Bytes at 0x140c390d0: 50, 51, 52, 53, 54, 55, 56, 177 as 32-bit values. Slot 0x78 of each class mechanic table (0x140b6e4a0 base, 0x140b6e570 Esper, 0x140b6e3d0 Medic, 0x140b66630 Warrior, 0x140b66700 Engineer, 0x140b66550 Spellslinger) holds 0x1405e7980 (read from the tables' bytes). The cost arrives negated (0x1403b3799 xorps). Class 4 Medic slots 1 to 5 hold vital 18 (Class.tbl)."
+grade = "fairly sure"
+gap = "Where the slot maximum comes from is not read (unit properties 9 to 15, Resource 0 to 6 Max, are the likely source; a maximum of 0 refuses any current above the cost). Not run."
+name = "CheckClassResourceCost"
+
+["0x1403c9f30"]
+statement = "Makes the player's class mechanic from its Class row's mechanic when the player is created: Esper (mechanic 1), Medic (2), Spellslinger (4), Warrior (5) and Engineer (6) each get their own, Stalker (0) the base one. The cast check runs its cost check through it, and for every class except the Spellslinger that is the plain innate cost check of both costs; the Spellslinger's first maps the spell through its own spell lookup."
+proof = "Saved C 0x1403c9f30.c (hash 8eb22adb6de47956): Class row by id (0x1401f31e0, table 'Class'), switch on row 0x18 (Class.mechanic, offset 24): 1 -> 0x140b6e570, 2 -> 0x140b6e3d0, 4 -> 0x140b66550, 5 -> 0x140b66630, 6 -> 0x140b66700, else the base 0x140b6e4a0. Caller 0x1403b5ad0 with the player's class. CheckCastCaster 0x1403afb10 lines 502-560: for the player, slots 0x88, 0xb8, 0x98; slot 0x98 is 0x1405e7be0 in every table, which jumps to slot 0xa0: 0x1405e7c17 jmp qword ptr [rax + 0xa0]. Slot 0xa0: 0x1405e7b80 (both costs through 0x1403b3320) in five tables, 0x1405e7ef0 (slot 0x18 then the same) in the Spellslinger's. Class.mechanic per class from Class.tbl."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. Slots 0x88 (0x140001ba0) and 0xb8 (0x1405e7c30) are not costs and are not read in full."
+name = "CreateClassMechanic"
+
+["Class.vitalEnumResource00"]
+statement = "Each class's eight resource slots (0 to 7) name a vital: Warrior 5, 4 (Kinetic Energy), 6, 6, 4, 4, 4, 16; Engineer 5, 26 (Volatility), 7, 7, 7, 7, 7, 16; Esper 5 then none, 16 in slot 7; Medic 5, 18 (Actuator) in slots 1 to 5, none, 16; Stalker 5, 13, 13, 12 (Suit Power), 9, 10, 11, 16; Spellslinger 5, none, none, none, 19 (Spell Surge), none, none, 16. The fixed innate cost check does not use this table: Resource1 (vital 6) always reads slot 1 and Resource3 (vital 8) slot 3. So the starting costs read the Engineer's Volatility slot (Electrocute), the Esper's slot 1 (Mind Burst), the Stalker's Suit Power slot (Impale) and the Medic's Actuator slots (Gamma Rays)."
+proof = "Class.tbl read whole (`gleam run -m genesis_prime/table_rows -- Class`, saved in the decode folder), columns vitalEnumResource00 to 07 (offset 100 on). Vital names: `client_files.py text` of Vital.tbl's localizedTextIdDisplayText (4 Kinetic Energy, 12 Suit Power, 13 Actuator, 18 Actuator, 19 Spell Surge, 26 Volatility). Fixed slots: CheckInnateCost 0x1403b3320 cases 4 to 10."
+grade = "fairly sure"
+gap = "That the slot list is read only by the class mechanic is from the readers found (0x1405e7980, 0x1405e7aa0, 0x1405e78c0), not a full search."
+
+["0x140454380"]
+statement = "Constructs a unit when the client creates one (message 0x262). It zeroes the unit's eleven resource slots, so a new unit, the player's own included, holds 0 of every class resource until the server sets them: by the create message's stats (stat 2 to 9 set slots 0 to 7) or by message 0x935 (the same stat numbers). The client has no other writer of the slots that a cast's cost reads. So for a new character Impale, Electrocute, Mind Burst and Gamma Rays are refused before sending until the server sends a value at least the cost."
+proof = "Saved C 0x140454380.c (hash 8eb22adb6de47956) line 464: FUN_1407e4830(unit + 0x21c, 0, 0x2c) (eleven 4-byte slots). Caller HandleMessage0262 0x1403d9760 (line 23). SetUnitStatsFromCreate 0x140458140 (cases 2 to 9 -> 0x21c to 0x238). ApplyUnitStat 0x1403d9a60 (cases 2 to 9 the same, reached by 0x935: 0x1403ed542 call 0x1403d9a60). Other writers of 0x21c to 0x228 found by a grep of the saved C (0x140305c20, UpdatePlayerMovement 0x1403a25c0) write other objects' fields at those offsets."
+grade = "fairly sure"
+gap = "The grep searched for direct stores at these offsets; a store through a computed slot index would not show. A live run that creates a Stalker with no stat 5 and presses Impale (expect 53 in the client's log, no 0x9a) settles it."
+name = "ConstructUnit"
+
+["opcode.0x801"]
+statement = "Message 0x801 (2049), client to world server: the client cancels one of its player's casts (ClientSpellStopCast). Body in wire order: the cast id (32 bits), the reason (9 bits, a Spell.CodeEnumCastResult) and one bit. The cast id is the server's id for the cast (the one in 0x7fd or 0x7ff), never the client's own id. The client clears its player's current cast before it sends, so it no longer counts as casting; the cast itself stays until the server's 0x7fe. Senders: a unit dies while the player's current cast targets it (6 SpellCancelled); the player dies (6, every cast of the player's; a ChargeRelease or PressHold one ends its threshold instead, which for a ChargeRelease sends the threshold's 32-bit value from 0x816 with reason 0 and the bit 0); a held-key cast path from the movement update (6); an input mode change (11 SpellInterrupted, unless the spell allows it); world message 0x5df's handler (11); and a cast with a duration ended from the input code (6). All but the threshold one set the bit."
+proof = "Writer 0x1400941a0 (32, 9, 1 bits). CancelCastWithResult 0x14039cce0 (saved C): FUN_1404698a0 (unit 0x1600 = 0, the current cast cleared) then SendWorldMessage 0x801 {cast 0x5c, reason, 1}. 0x14039cc30: the same with the bit 0. Cast 0x5c is the server id: ConfirmLocalCast 0x14055de80 line 61 stores 0x7fd's server id there and keys the cast table by it; FindCast 0x140561c30 reads that table. Callers of CancelCastWithResult: SetUnitDeathState 0x14045e740 (6), 0x14055afc0 from SetUnitDead 0x14045ec90 (6; method 7 or 2 -> 0x1403bef30 with 1), 0x1403981c0 from 0x140398360 from UpdatePlayerMovement 0x1403a25c0 (6), 0x1404d9f20 (11 unless record 0x108 bit 0x2000), 0x1404d8a90 (6), 0x1405c0b80 (11; jump table entry 0x5df is 0x1403ef8e6, 0x1403ef8f0 call 0x1405c0b80). Enum names from the table at 0x140c2f290 (6 SpellCancelled, 11 SpellInterrupted)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. What 0x1404d9f20's input mode is (likely movement or a mount) and what reaches 0x1404d8a90 (an input command table at 0x1404d6ed2) are not read; so whether pressing escape or moving cancels a channel is not settled. A live Electrocute cast with a step mid-channel settles it."
+
+["cast.multiphase_messages"]
+statement = "The client sends nothing between the phases of a Multiphase cast or the pulses of a channel: from the press to the finish it sends only the 0x9a, and a 0x801 if a cancel path fires. The only messages the cast code sends are 0x9a or 0x9b (a press), 0x801 (a cancel), 0x37e and 0x17e (held presses) and 0x805 (a ClientSideInteraction cast only)."
+proof = "Grep of the saved C (hash 49fd5a78aaad3411) for SendWorldMessage in every function that reads a cast's spell record or calls FindCast 0x140561c30: 0x17e (0x1403981c0) and 0x805 (0x1405465a0, set as a timer callback by StartCast 0x14053dd00 only for castMethod 5); plus the press senders in CastAbilityBagSpell 0x14039a040 (0x9a, 0x9b), 0x1403a2550 (0x37e) and the 0x801 senders (opcode.0x801). ApplySpellGo 0x14053e5a0 and InitCast 0x14053d1f0 send nothing."
+grade = "fairly sure"
+gap = "A sender reached only through a call the grep's function set misses would not show; a live Pulse Blast cast with the frames logged settles it."
