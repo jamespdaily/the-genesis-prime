@@ -48,7 +48,7 @@
 //// | C crashes mid-fight | the map's `Gone(C)`: C leaves the fighters, and 0x89a (P, 0) goes when none is left | `the_map_reporting_a_fighter_gone_clears_the_combat_flag_test`, `a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_test` |
 //// | P's answer reaches C after C's deadline | C's go leaves P out; P's hit stands and P's 0x92f shows it | `an_answer_after_the_deadline_is_left_out_of_the_go_test` |
 //// | C's strike reaches P after P's connection ended | dropped by the registry; C's deadline leaves P out | `a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test` |
-//// | P and C strike each other at one instant | each strike is a tell, each answered in its owner's own step | `a_bot_pressing_as_the_dagun_strikes_it_gets_both_strikes_answered_test` |
+//// | P and C strike each other at one instant | each strike is a tell, each answered in its owner's own step | `a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test` |
 //// | P camps and enters again while a move of its first stay is in flight | the move sequence number counts for the connection's life, so the old move is lower and the creature drops it | `the_move_sequence_number_counts_through_a_camp_and_the_next_entry_test` |
 
 import genesis_prime/client_connection.{type News}

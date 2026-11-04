@@ -757,10 +757,25 @@ pub fn with_creature_attack(
   files files: List(#(String, BitArray)),
   padding padding: Bool,
 ) -> List(#(String, BitArray)) {
+  with_creature_attack_multiplier(
+    files:,
+    padding:,
+    multiplier_bits: 1_065_353_216,
+  )
+}
+
+/// `with_creature_attack`, with the attack effects' dataBits00 set to
+/// `multiplier_bits` in place of the float 1.0's: a synthetic row, for a test of a
+/// multiplier the load refuses.
+pub fn with_creature_attack_multiplier(
+  files files: List(#(String, BitArray)),
+  padding padding: Bool,
+  multiplier_bits multiplier_bits: Int,
+) -> List(#(String, BitArray)) {
   let effects =
     list.flatten([
       spell4_effects_rows(),
-      creature_attack_effect_rows(),
+      creature_attack_effect_rows_of(multiplier_bits:),
       case padding {
         True -> [
           planted_table.row(spell4_effects.schema, [#("ID", Integer(184_778))]),
@@ -799,6 +814,12 @@ pub fn creature_attack_spell4_rows() -> List(List(Cell)) {
 /// caster of difficulty at most 6 (prerequisite 30526), and 184777, 0.8 each, for
 /// difficulty at least 7 (30527); dataBits00 the float 1.0, threatMultiplier 1.0.
 pub fn creature_attack_effect_rows() -> List(List(Cell)) {
+  creature_attack_effect_rows_of(multiplier_bits: 1_065_353_216)
+}
+
+fn creature_attack_effect_rows_of(
+  multiplier_bits multiplier_bits: Int,
+) -> List(List(Cell)) {
   [#(184_741, 30_526, 0.550000011920929), #(184_777, 30_527, 0.800000011920929)]
   |> list.map(fn(effect) {
     planted_table.row(spell4_effects.schema, [
@@ -808,7 +829,7 @@ pub fn creature_attack_effect_rows() -> List(List(Cell)) {
       #("effectType", Integer(8)),
       #("damageType", Integer(1)),
       #("flags", Integer(128)),
-      #("dataBits00", Integer(1_065_353_216)),
+      #("dataBits00", Integer(multiplier_bits)),
       #("threatMultiplier", Float(1.0)),
       #("prerequisiteIdCasterApply", Integer(effect.1)),
       #("parameterType00", Integer(1)),

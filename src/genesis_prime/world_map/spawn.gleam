@@ -81,7 +81,6 @@ import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
 import genesis_prime/table/spell4
-import genesis_prime/table/spell4_effects
 import genesis_prime/table/world
 import genesis_prime/world_map/creature_attack
 import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
@@ -258,6 +257,13 @@ type SpawnError {
     creature_id: Creature2Id,
     spell4_effects_id: Int,
     parameter_kind: Int,
+  )
+  /// A damage effect of the creature's attack has a multiplier, dataBits00 read as a
+  /// 32-bit float, that is not finite (genesis_prime/game/damage `formula_of`).
+  AttackMultiplierNotFinite(
+    creature_id: Creature2Id,
+    spell4_effects_id: Int,
+    bits: Int,
   )
 }
 
@@ -680,11 +686,18 @@ fn attack_of(
     damage.Creature(
       level:,
       strength:,
-      assault_power: assault_rating *. assault_power_per_rating,
+      assault_power: damage.power_of(rating: assault_rating),
     )
   use blows <- result.try(
     list.try_map(effects, fn(effect) {
-      let formula = attack_formula(effect:)
+      use formula <- result.try(
+        damage.formula_of(effect:)
+        |> result.replace_error(AttackMultiplierNotFinite(
+          creature_id:,
+          spell4_effects_id: effect.id,
+          bits: effect.data_bits00,
+        )),
+      )
       case damage.creature_unread(formula:) {
         Some(damage.Unread(parameter_kind:)) ->
           Error(AttackFormulaNotRead(
@@ -743,40 +756,6 @@ fn attack_of(
 /// The GameFormula row whose values scale a creature caster's damage
 /// (`0x140565600`).
 const creature_scaling_formula = 712
-
-/// A rating's Assault Power: 0.25 of it (GameFormula 1266, `0x140462930`).
-const assault_power_per_rating = 0.25
-
-/// An attack effect's row as the damage formula reads it: dataBits00 as a 32-bit
-/// float, the integer dataBits01 and the four parameters.
-fn attack_formula(
-  effect effect: spell4_effects.Spell4Effects,
-) -> damage.Formula {
-  damage.Formula(
-    multiplier: float32.bits(int.bitwise_and(effect.data_bits00, 0xFFFFFFFF))
-      |> result.try(float32.value)
-      |> result.unwrap(0.0),
-    base: effect.data_bits01,
-    parameters: [
-      damage.Parameter(
-        kind: effect.parameter_type00,
-        value: effect.parameter_value00,
-      ),
-      damage.Parameter(
-        kind: effect.parameter_type01,
-        value: effect.parameter_value01,
-      ),
-      damage.Parameter(
-        kind: effect.parameter_type02,
-        value: effect.parameter_value02,
-      ),
-      damage.Parameter(
-        kind: effect.parameter_type03,
-        value: effect.parameter_value03,
-      ),
-    ],
-  )
-}
 
 /// A creature's property: the CreatureLevel value times the archetype, difficulty and
 /// tier multipliers, each product held as a 32-bit float, or the creature's own
@@ -1560,6 +1539,18 @@ fn describe(error error: SpawnError) -> String {
       <> " reads parameter type "
       <> int.to_string(parameter_kind)
       <> ", which the creature formula does not read"
+    AttackMultiplierNotFinite(
+      creature_id: Creature2Id(creature_id),
+      spell4_effects_id:,
+      bits:,
+    ) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s attack effect "
+      <> int.to_string(spell4_effects_id)
+      <> " has a multiplier, dataBits00 "
+      <> int.to_string(bits)
+      <> ", that is not a finite 32-bit float"
   }
 }
 

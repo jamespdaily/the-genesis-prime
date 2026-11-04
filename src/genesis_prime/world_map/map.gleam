@@ -295,6 +295,7 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/loadout.{type Loadout}
+import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
@@ -308,7 +309,6 @@ import genesis_prime/step.{
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
@@ -1296,7 +1296,8 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
     case dict.get(spawns.by_id, id) {
       Ok(found) ->
         hostile(spawn: found, faction_id:)
-        && creature_path.distance(from: place, to: found.place) <=. range
+        && sight.squared_distance(first: place, second: found.place)
+        <=. range *. range
       Error(Nil) -> False
     }
   })
@@ -1305,10 +1306,10 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
 
 /// Whether the spawn's creature fights a player of the faction on sight.
 fn hostile(spawn spawn: spawn.Spawn, faction_id faction_id: Int) -> Bool {
-  case faction_id == spawn.exile_faction, faction_id == spawn.dominion_faction {
-    True, _ -> spawn.combat.hostile_to.exile
-    _, True -> spawn.combat.hostile_to.dominion
-    False, False -> False
+  case shown.faction_of(faction_id:) {
+    Ok(shown.Exile) -> spawn.combat.hostile_to.exile
+    Ok(shown.Dominion) -> spawn.combat.hostile_to.dominion
+    Error(Nil) -> False
   }
 }
 

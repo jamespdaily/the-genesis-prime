@@ -25,10 +25,13 @@
 ////   reads Strength and Assault Power and is held under a cap that grows with the
 ////   level by GameFormula 712 (`0x140565600`).
 
+import genesis_prime/message/float32
+import genesis_prime/table/spell4_effects
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option}
+import gleam/result
 
 /// One parameter of an effect: the unit value its type names, and the factor it
 /// is multiplied by.
@@ -40,6 +43,25 @@ pub type Parameter {
 /// float, the integer dataBits01, and the four parameters.
 pub type Formula {
   Formula(multiplier: Float, base: Int, parameters: List(Parameter))
+}
+
+/// A damage effect's row as the formula reads it, or an error when its dataBits00,
+/// read as a 32-bit float, is not finite: the one build of the formula, for a
+/// player's spells (genesis_prime/game/spell_area) and a creature's attack
+/// (genesis_prime/world_map/spawn).
+pub fn formula_of(
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Formula, Nil) {
+  use multiplier <- result.map(
+    float32.bits(int.bitwise_and(effect.data_bits00, 0xFFFFFFFF))
+    |> result.try(float32.value),
+  )
+  Formula(multiplier:, base: effect.data_bits01, parameters: [
+    Parameter(kind: effect.parameter_type00, value: effect.parameter_value00),
+    Parameter(kind: effect.parameter_type01, value: effect.parameter_value01),
+    Parameter(kind: effect.parameter_type02, value: effect.parameter_value02),
+    Parameter(kind: effect.parameter_type03, value: effect.parameter_value03),
+  ])
 }
 
 /// What the formula reads of the caster: its level and its two ratings.
@@ -57,17 +79,27 @@ pub type Unread {
 /// first and second values, `0x140462930`, `0x140462980`).
 const power_per_rating = 0.25
 
+/// The Assault Power or Support Power of a rating (GameFormula 1266).
+pub fn power_of(rating rating: Float) -> Float {
+  rating *. power_per_rating
+}
+
 /// The first parameter type of the formula that is not built, or `None` when the
 /// formula reads only what a player caster holds: the level and the two powers.
 pub fn unread(formula formula: Formula) -> Option(Unread) {
-  case
-    list.find(formula.parameters, fn(parameter) {
-      parameter.value != 0.0 && !is_read(parameter.kind)
-    })
-  {
-    Ok(parameter) -> Some(Unread(parameter_kind: parameter.kind))
-    Error(Nil) -> None
-  }
+  first_unread(formula:, is_read:)
+}
+
+/// The first parameter with a factor whose type `is_read` refuses.
+fn first_unread(
+  formula formula: Formula,
+  is_read is_read: fn(Int) -> Bool,
+) -> Option(Unread) {
+  list.find(formula.parameters, fn(parameter) {
+    parameter.value != 0.0 && !is_read(parameter.kind)
+  })
+  |> result.map(fn(parameter) { Unread(parameter_kind: parameter.kind) })
+  |> option.from_result
 }
 
 fn is_read(kind: Int) -> Bool {
@@ -82,9 +114,9 @@ pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
       case parameter.kind {
         12 ->
-          sum +. parameter.value *. attacker.assault_rating *. power_per_rating
+          sum +. parameter.value *. power_of(rating: attacker.assault_rating)
         13 ->
-          sum +. parameter.value *. attacker.support_rating *. power_per_rating
+          sum +. parameter.value *. power_of(rating: attacker.support_rating)
         _ -> sum
       }
     })
@@ -135,14 +167,7 @@ pub type CreatureScaling {
 /// The first parameter type the creature formula does not read, or `None`: it reads
 /// Strength (type 1), Assault Power (12) and the level (10).
 pub fn creature_unread(formula formula: Formula) -> Option(Unread) {
-  case
-    list.find(formula.parameters, fn(parameter) {
-      parameter.value != 0.0 && !is_read_for_a_creature(parameter.kind)
-    })
-  {
-    Ok(parameter) -> Some(Unread(parameter_kind: parameter.kind))
-    Error(Nil) -> None
-  }
+  first_unread(formula:, is_read: is_read_for_a_creature)
 }
 
 fn is_read_for_a_creature(kind: Int) -> Bool {

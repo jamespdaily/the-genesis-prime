@@ -44,11 +44,10 @@ import genesis_prime/game/area.{
   type Inside, type Placement, type Row, Box, Circle, Cone, InsideRow,
   InsideShapes, Placement, Rectangle, Row,
 }
-import genesis_prime/game/damage.{type Formula, Formula, Parameter}
+import genesis_prime/game/damage.{type Formula}
 import genesis_prime/game/spell_plan.{
   type Aim, type Spell, AimsAtArea, AimsAtBoth, AimsAtPrimaryTarget,
 }
-import genesis_prime/message/float32
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
   Spell4EffectsId, Spell4ValidTargetsId, TelegraphDamageId,
@@ -465,34 +464,14 @@ fn damage_effects_of(
   |> result.unwrap([])
   |> list.filter(fn(effect) { effect.effect_type == 8 })
   |> list.try_map(fn(effect) {
-    use multiplier <- result.try(
-      float32.bits(int.bitwise_and(effect.data_bits00, 0xFFFFFFFF))
-      |> result.try(float32.value)
+    use formula <- result.try(
+      damage.formula_of(effect:)
       |> result.replace_error(MultiplierNotFinite(
         spell4_id: id,
         effect_id: effect.id,
         bits: effect.data_bits00,
       )),
     )
-    let formula =
-      Formula(multiplier:, base: effect.data_bits01, parameters: [
-        Parameter(
-          kind: effect.parameter_type00,
-          value: effect.parameter_value00,
-        ),
-        Parameter(
-          kind: effect.parameter_type01,
-          value: effect.parameter_value01,
-        ),
-        Parameter(
-          kind: effect.parameter_type02,
-          value: effect.parameter_value02,
-        ),
-        Parameter(
-          kind: effect.parameter_type03,
-          value: effect.parameter_value03,
-        ),
-      ])
     let aim = spell_plan.aim_of(target_flags: effect.target_flags)
     use Nil <- result.try(case aim {
       spell_plan.OtherAim(flags:) ->

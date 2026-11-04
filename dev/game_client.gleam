@@ -1433,50 +1433,11 @@ fn relayed_kind(command: relayed_movement.RelayedMovement) -> Int {
   }
 }
 
-/// The player's own health each 0x92f among the events gives `unit`, in order.
-pub fn own_health_of(
-  events events: List(FightEvent),
-  unit unit: Int,
-) -> List(Int) {
-  list.filter_map(events, fn(event) {
-    case event {
-      OwnHealthIs(unit_id:, health:) if unit_id == unit -> Ok(health)
-      _ -> Error(Nil)
-    }
-  })
-}
-
-/// The shield each 0x938 of stat 20 among the events gives `unit`, in order.
-pub fn shields_of(
-  events events: List(FightEvent),
-  unit unit: Int,
-) -> List(Int) {
-  list.filter_map(events, fn(event) {
-    case event {
-      ShieldIs(unit_id:, shield:) if unit_id == unit -> Ok(shield)
-      _ -> Error(Nil)
-    }
-  })
-}
-
 /// The health each 0x937 among the events gives `unit`, in order.
 pub fn health_of(events events: List(FightEvent), unit unit: Int) -> List(Int) {
   list.filter_map(events, fn(event) {
     case event {
       HealthIs(unit_id:, health:) if unit_id == unit -> Ok(health)
-      _ -> Error(Nil)
-    }
-  })
-}
-
-/// Each go's targets among the events, in order: each target's unit with the
-/// effect ids and raw damage of its effects.
-pub fn gos_in(
-  events events: List(FightEvent),
-) -> List(List(#(Int, List(#(Int, Int))))) {
-  list.filter_map(events, fn(event) {
-    case event {
-      Went(targets:, ..) -> Ok(targets)
       _ -> Error(Nil)
     }
   })
@@ -1492,20 +1453,6 @@ pub fn moves_of(
     case event {
       Moves(unit_id:, kinds:, path_end:) if unit_id == unit ->
         Ok(#(kinds, path_end))
-      _ -> Error(Nil)
-    }
-  })
-}
-
-/// The Spell4 of each cast `unit` starts among the events (0x7ff), in order.
-pub fn casts_started_by(
-  events events: List(FightEvent),
-  unit unit: Int,
-) -> List(Int) {
-  list.filter_map(events, fn(event) {
-    case event {
-      Started(caster_unit_id:, spell4_id:, ..) if caster_unit_id == unit ->
-        Ok(spell4_id)
       _ -> Error(Nil)
     }
   })

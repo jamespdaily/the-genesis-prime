@@ -3329,13 +3329,6 @@ fn read_fight(
   #(game_client.fight_in(frames:), have)
 }
 
-/// Whether a go among the events names `unit` as its one target.
-fn a_go_names(events: List(game_client.FightEvent), unit: Int) -> Bool {
-  list.any(game_client.gos_in(events:), fn(targets) {
-    list.map(targets, fn(target) { target.0 }) == [unit]
-  })
-}
-
 /// Whether a path of `unit` among the events ends at z.
 fn a_path_ends_at(
   events events: List(game_client.FightEvent),
@@ -3347,15 +3340,25 @@ fn a_path_ends_at(
   })
 }
 
-pub fn a_bot_entering_a_daguns_ring_is_chased_and_struck_and_walking_out_past_55_the_dagun_leashes_home_test() -> Nil {
+pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
+  // The smoke test of the whole server: the aggro and the chase come at the
+  // move, with no tick to wait for. The strike, the shield and the leash are driven
+  // with the creature's timers in the test of both rules together
+  // (game_connection_test, `a_beasts_aggro_strike_and_leash_...`).
   let started = world_with_a_dagun()
   let #(game, own, dagun, have) =
     a_ready_medic(started:, number: 1, character_name: "Zed Qu")
   // Into the ring: 9 units from the Dagun, beyond its reach of 7.
   walk_to(game:, z: dagun_z +. 9.0, clock: 100)
-  let #(fight, have) =
-    read_fight(game:, have:, found: fn(events) { a_go_names(events, own) })
+  let #(fight, _) =
+    read_fight(game:, have:, found: fn(events) {
+      game_client.moves_of(events:, unit: dagun) != []
+      && list.contains(
+        events,
+        game_client.InCombat(unit_id: own, in_combat: True),
+      )
+    })
   assert list.contains(
     fight,
     game_client.Targeted(unit_id: dagun, target_unit_id: own, threat: 1),
@@ -3367,66 +3370,12 @@ pub fn a_bot_entering_a_daguns_ring_is_chased_and_struck_and_walking_out_past_55
     )
     && list.contains(fight, game_client.InCombat(unit_id: own, in_combat: True))
     as "both 0x89a: the Dagun's and the bot's own"
-  let assert [#(kinds, _), ..] =
+  let assert [#(kinds, path_end), ..] =
     game_client.moves_of(events: fight, unit: dagun)
     as "the Dagun runs"
   assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
-  assert list.contains(game_client.gos_in(events: fight), [
-    #(own, [#(184_741, 12)]),
-  ])
-    as "0x7f4 names the bot, effect 184741, raw 12"
-  assert list.any(game_client.shields_of(events: fight, unit: own), fn(shield) {
-      shield < 450
-    })
-    && list.any(game_client.own_health_of(events: fight, unit: own), fn(health) {
-      health < 736
-    })
-    as "0x938 stat 20 below the full 450, then 0x92f below 736"
-  // Out past the circle: 100 units from the Dagun's spawn.
-  walk_to(game:, z: dagun_z +. 100.0, clock: 200)
-  let #(leash, _) =
-    read_fight(game:, have:, found: fn(events) {
-      list.contains(
-        events,
-        game_client.InCombat(unit_id: own, in_combat: False),
-      )
-      && list.contains(game_client.health_of(events:, unit: dagun), 52)
-    })
-  assert list.contains(
-      leash,
-      game_client.Threatens(unit_id: dagun, other_unit_id: own, threat: 0),
-    )
-    && list.contains(
-      leash,
-      game_client.InCombat(unit_id: dagun, in_combat: False),
-    )
-    as "the leash: 0x90a 0 for the bot and 0x89a (C, 0)"
-  assert a_path_ends_at(events: leash, unit: dagun, z: dagun_z)
-    as "the path home ends at the Dagun's spawn"
-  game_client.close(game:)
-  login_support.stop(started)
-}
-
-pub fn a_bot_pressing_as_the_dagun_strikes_it_gets_both_strikes_answered_test() -> Nil {
-  use <- owned_test.run(120_000)
-  let started = world_with_a_dagun()
-  let #(game, own, dagun, have) =
-    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
-  walk_to(game:, z: dagun_z +. 9.0, clock: 100)
-  // The Dagun's cast starts: its strike is on its way or in the bot's mailbox.
-  let #(_, have) =
-    read_fight(game:, have:, found: fn(events) {
-      game_client.casts_started_by(events:, unit: dagun) != []
-    })
-  game_client.press_ability(game:, client_cast_id: 1, bag_index: 2, target: 0)
-  let #(fight, _) =
-    read_fight(game:, have:, found: fn(events) {
-      a_go_names(events, dagun)
-      && game_client.own_health_of(events:, unit: own) != []
-    })
-  assert a_go_names(fight, dagun)
-    && game_client.own_health_of(events: fight, unit: own) != []
-    as "the Dagun answered the bot's strike within the bot's deadline, so the bot's go names it, and the bot's connection took the Dagun's strike while its own round waited: no process waits on the other"
+  assert path_end == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
+    as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
   game_client.close(game:)
   login_support.stop(started)
 }

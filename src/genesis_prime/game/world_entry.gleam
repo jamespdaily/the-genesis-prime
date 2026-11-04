@@ -77,7 +77,6 @@ import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
-import genesis_prime/game/item_property
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -107,8 +106,8 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/unit_fields
 import gleam/dict.{type Dict}
-import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -219,13 +218,11 @@ pub type Readiness {
   ClientReady
 }
 
-/// The shield a player enters the world with: its gear's ShieldCapacityMax, full and
-/// rounded as its 0x262's stat 20 is (`player_unit.create`), or 0 with no shield.
-fn full_shield(loadout loadout: Loadout) -> Int {
-  case loadout.properties.shield {
-    Some(item_property.Shield(capacity_max:, ..)) -> float.round(capacity_max)
-    None -> 0
-  }
+/// The shield a player enters the world with: the stat 20 its client was told in
+/// its 0x262 (`player_unit.create`), or 0 when the unit holds none.
+fn full_shield(unit unit: UnitCreatePlayer) -> Int {
+  unit_fields.stat(tail: unit.tail, stat_id: unit_fields.shield_stat)
+  |> result.unwrap(0)
 }
 
 /// The process whose answer world entry waits for, for the log line of an ask
@@ -378,7 +375,7 @@ pub fn joined(
               readiness: ClientLoading,
               life: player_life.new(
                 health: max_health,
-                shield: full_shield(loadout:),
+                shield: full_shield(unit:),
               ),
               camp: camp.none(),
               cast: cast.new(),

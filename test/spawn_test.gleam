@@ -35,6 +35,7 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
+import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth, NoFaction, NpcLink,
 }
@@ -281,6 +282,35 @@ pub fn a_row_hostile_to_one_faction_and_friendly_to_the_other_starts_test() -> N
     == #(0, 10)
     as "Faction2Relationship 2943 and 2944: level 0 to Exile 167, 10 to Dominion 166"
   assert started(selection) == [73_464]
+}
+
+pub fn whom_a_creature_fights_on_sight_is_its_factions_hostile_level_to_each_player_faction_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Faction2Relationship 2943 and 2944: the Beast's faction 1441 is level 0,
+  // Hostile, to Exile 167 and 10, Friendly, to Dominion 166; 2946 and 2947: the
+  // Dagun's faction 1442 is level 0 to Dominion 166 and 10 to Exile 167
+  // (`world_data.creature_disposition`: Hostile is 0 to 2).
+  let selection =
+    selected(rows: [
+      spawn_support.beast_row(number: 1),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 2),
+        creature_id: 73_465,
+        display_info_id: 26_578,
+        faction_id: 1442,
+        base_faction_id: 1442,
+      ),
+    ])
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let hostility = fn(number) {
+    let assert Ok(found) = dict.get(world.by_id, SpawnId(number))
+      as "the spawn starts"
+    found.combat.hostile_to
+  }
+  assert hostility(1) == Hostile(exile: True, dominion: False)
+    as "the Beast (Creature2 73464, faction 1441) fights Exiles on sight, not the Dominion"
+  assert hostility(2) == Hostile(exile: False, dominion: True)
+    as "the Dagun (Creature2 73465, faction 1442) fights the Dominion on sight, not Exiles"
 }
 
 pub fn a_row_whose_faction_relates_only_to_the_players_parent_faction_is_hostile_to_both_and_starts_test() -> Nil {
@@ -558,8 +588,21 @@ fn replacing(
 
 /// The Beast of spawn 1 as the planted files select it.
 fn attack_beast_of(files files: List(#(String, BitArray))) -> spawn.Spawn {
+  let selection =
+    beast_selection(files: novice_tables.with_creature_attack(
+      files:,
+      padding: True,
+    ))
+  let assert [] = selection.refusals as "the Beast's row is taken"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
+  beast
+}
+
+/// The selection of the Beast's row, spawn 1, over these files and the content files.
+fn beast_selection(files files: List(#(String, BitArray))) -> spawn.Selection {
   use folder <- planted_table.in_folder(list.append(
-    novice_tables.with_creature_attack(files:, padding: True),
+    files,
     character_tables.content_files(),
   ))
   let assert Ok(server) =
@@ -577,10 +620,28 @@ fn attack_beast_of(files files: List(#(String, BitArray))) -> spawn.Spawn {
     )
   table_store.unload(more)
   table_store.unload(server)
-  let assert [] = selection.refusals as "the Beast's row is taken"
-  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
-  let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
-  beast
+  selection
+}
+
+pub fn an_attack_effect_whose_multiplier_is_not_a_finite_float_refuses_the_spawn_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Synthetic: the client's effect 184741 has dataBits00 1.0; 0x7F800000 is the
+  // 32-bit float's infinity, which the VM cannot hold.
+  let selection =
+    beast_selection(files: novice_tables.with_creature_attack_multiplier(
+      files: character_tables.files(),
+      padding: True,
+      multiplier_bits: 0x7F800000,
+    ))
+  assert selection.refusals
+    == [
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(1),
+        rule: "Creature2 73464's attack effect 184741 has a multiplier, dataBits00 2139095040, that is not a finite 32-bit float",
+      ),
+    ]
+    as "the load names the effect, where a multiplier read as 0 would strike for the stat part alone"
 }
 
 fn nearly(first: Float, second: Float) -> Bool {

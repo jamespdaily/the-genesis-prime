@@ -1695,9 +1695,6 @@ fn attacker_of(
   let place = movement.place(entered.movement)
   let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
     as "a character's faction is Exile or Dominion (start_place)"
-  let level =
-    unit_fields.stat(tail: entered.unit.tail, stat_id: unit_fields.level_stat)
-    |> result.unwrap(1)
   strike.Attacker(
     unit_id: entered.unit_id,
     connection: client_connection.connection(session.link),
@@ -1706,7 +1703,7 @@ fn attacker_of(
     move_seq: session.move_seq,
     faction:,
     stats: damage.Attacker(
-      level:,
+      level: level_of(entered:),
       assault_rating: entered.loadout.properties.assault_rating,
       support_rating: entered.loadout.properties.support_rating,
     ),

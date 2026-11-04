@@ -186,10 +186,17 @@ fn read(
     Ok(..) -> []
     Error(refusals) -> refusals
   }
-  let selection = case kinds {
+  // With a kind row refused, the spawns are checked with the kinds the load took,
+  // so the start names a bad spawn too; with the default row missing or refused no
+  // spawn has a kind, and that refusal alone stops the start.
+  let kinds_for_spawns = case kinds {
+    Ok(kinds) -> Ok(kinds)
+    Error(..) -> creature_kind.taken(rows: kind_rows, tables:)
+  }
+  let selection = case kinds_for_spawns {
     Ok(kinds) ->
       spawn.select(rows:, tables:, formulas: rating.formulas(tables:), kinds:)
-    Error(..) ->
+    Error(Nil) ->
       spawn.Selection(
         worlds: dict.new(),
         refusals: [],

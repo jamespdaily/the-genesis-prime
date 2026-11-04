@@ -9,6 +9,7 @@
 ////   a name missing, a name not known, a unit not the name's  ─▶ Refusal
 ////   leash_range ≤ aggro_range                                ─▶ Refusal
 ////   aggro_range ≥ the sight range                            ─▶ Refusal
+////   aggro_threat ≤ 0, chase_stop_fraction outside (0, 1)     ─▶ Refusal
 ////   otherwise ─▶ GameNumbers, read by every map and creature of the run
 //// ```
 ////
@@ -17,6 +18,11 @@
 ////   (genesis_prime/world_map/sight).
 //// - **The leash range** lies outside the aggro range, so a creature at home with a
 ////   player in its ring does not leash at once.
+//// - **The aggro threat** is above 0: an entry of 0 threat is not a foe the client
+////   shows hostile (`0x14045a950`), and a target of none is no fight.
+//// - **The chase stop fraction** lies strictly between 0 and 1: at 0 the creature
+////   stops at the edge of its reach, where the target's first step leaves it, and
+////   at 1 it runs onto the target's own place.
 //// - **Every refusal is collected**, as the other content tables' are
 ////   (genesis_prime/content); the ranges are checked once every name is there.
 
@@ -57,8 +63,9 @@ const expected = [
 ]
 
 /// The numbers of the rows, or every refusal: a name missing or not known, a unit
-/// that is not the name's, a leash range not above the aggro range, and an aggro
-/// range not below `sight_range`.
+/// that is not the name's, a leash range not above the aggro range, an aggro range
+/// not below `sight_range`, an aggro threat not above 0 and a chase stop fraction
+/// not strictly between 0 and 1.
 pub fn select(
   rows rows: List(Row),
   sight_range sight_range: Float,
@@ -107,31 +114,46 @@ fn ranges_checked(
       aggro_threat: value("aggro_threat"),
       chase_stop_fraction: value("chase_stop_fraction"),
     )
-  let leash = case numbers.leash_range <=. numbers.aggro_range {
-    True -> [
-      refused(
-        name: "leash_range",
-        rule: "a leash range of "
-          <> float.to_string(numbers.leash_range)
-          <> " is not above the aggro range of "
-          <> float.to_string(numbers.aggro_range),
-      ),
-    ]
-    False -> []
-  }
-  let sight = case numbers.aggro_range >=. sight_range {
-    True -> [
-      refused(
-        name: "aggro_range",
-        rule: "an aggro range of "
-          <> float.to_string(numbers.aggro_range)
-          <> " is not below the sight range of "
-          <> float.to_string(sight_range),
-      ),
-    ]
-    False -> []
-  }
-  case list.append(leash, sight) {
+  let checks = [
+    #(
+      numbers.leash_range <=. numbers.aggro_range,
+      "leash_range",
+      "a leash range of "
+        <> float.to_string(numbers.leash_range)
+        <> " is not above the aggro range of "
+        <> float.to_string(numbers.aggro_range),
+    ),
+    #(
+      numbers.aggro_range >=. sight_range,
+      "aggro_range",
+      "an aggro range of "
+        <> float.to_string(numbers.aggro_range)
+        <> " is not below the sight range of "
+        <> float.to_string(sight_range),
+    ),
+    #(
+      numbers.aggro_threat <=. 0.0,
+      "aggro_threat",
+      "an aggro threat of "
+        <> float.to_string(numbers.aggro_threat)
+        <> " is not above 0",
+    ),
+    #(
+      numbers.chase_stop_fraction <=. 0.0 || numbers.chase_stop_fraction >=. 1.0,
+      "chase_stop_fraction",
+      "a chase stop fraction of "
+        <> float.to_string(numbers.chase_stop_fraction)
+        <> " is not between 0 and 1",
+    ),
+  ]
+  case
+    list.filter_map(checks, fn(check) {
+      case check.0 {
+        True -> Ok(refused(name: check.1, rule: check.2))
+        False -> Error(Nil)
+      }
+    })
+  {
     [] -> Ok(numbers)
     refusals -> Error(refusals)
   }

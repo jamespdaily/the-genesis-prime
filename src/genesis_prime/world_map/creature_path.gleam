@@ -20,6 +20,7 @@
 ////   creature and its viewers' connections read their inputs at.
 
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/world_map/sight
 import gleam/bool
 import gleam/float
 import gleam/int
@@ -115,11 +116,7 @@ pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
 
 /// The distance between two places, in three dimensions.
 pub fn distance(from first: Place, to second: Place) -> Float {
-  let dx = start_place.x(first) -. start_place.x(second)
-  let dy = start_place.y(first) -. start_place.y(second)
-  let dz = start_place.z(first) -. start_place.z(second)
-  let squared = dx *. dx +. dy *. dy +. dz *. dz
-  case float.square_root(squared) {
+  case float.square_root(sight.squared_distance(first:, second:)) {
     Ok(root) -> root
     Error(Nil) -> 0.0
   }

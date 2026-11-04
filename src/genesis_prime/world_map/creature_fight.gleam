@@ -89,7 +89,7 @@
 //// | P's answer comes after the strike deadline | the go leaves P out; the hit stands and P's 0x92f shows it | `an_answer_after_the_deadline_is_left_out_of_the_go_test` |
 //// | P's connection ends, camps or P goes out of sight | the map's `Unwatched` drops P from threat; with no threat left the creature leashes | `a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test`, `unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the_target_test` |
 //// | a strike or `TargetMoved` from a connection that is not a viewer (a race with `Unwatched`) | the damage applies, no threat is added | `a_strike_from_a_non_viewer_adds_no_threat_test` |
-//// | P and C strike each other at one instant | both are tells; each side answers in its own step, before the other's deadline | `a_bot_pressing_as_the_dagun_strikes_it_gets_both_strikes_answered_test` |
+//// | P and C strike each other at one instant | both are tells; each side answers in its own step, before the other's deadline | `a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test` |
 //// | C crashes mid-fight | the map sends every player `Gone`; P drops C, and sends 0x89a (P, 0) when no fighter is left (genesis_prime/game/player_life) | `a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_test` |
 //// | C is told `Retire` while Returning | it stops; the map's sweep sends it only with no viewer, so no one is on its threat list | `over_random_sights_rings_strikes_and_ticks_the_threat_list_stays_within_the_viewers_test` |
 //// | a timer of a round that closed, or of a fight that ended, fires | it is of an old generation and does nothing | `a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test` |

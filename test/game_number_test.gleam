@@ -83,6 +83,58 @@ pub fn a_leash_range_not_above_the_aggro_range_is_refused_test() -> Nil {
     as "a creature at home with a player in its ring would leash at once"
 }
 
+pub fn an_aggro_threat_not_above_0_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows =
+    list.map(seeded(), fn(row) {
+      case row.name {
+        "aggro_threat" -> Row(..row, value: 0.0)
+        _ -> row
+      }
+    })
+  let assert Error([refused]) = game_number.select(rows:, sight_range:)
+  assert refused
+    == Refusal(
+      table: "game_number",
+      row: RowName("aggro_threat"),
+      rule: "an aggro threat of 0.0 is not above 0",
+    )
+    as "an entry of 0 threat is no foe the client shows hostile (0x14045a950)"
+}
+
+pub fn a_chase_stop_fraction_of_0_or_1_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let with_fraction = fn(fraction) {
+    list.map(seeded(), fn(row) {
+      case row.name {
+        "chase_stop_fraction" -> Row(..row, value: fraction)
+        _ -> row
+      }
+    })
+  }
+  assert game_number.select(rows: with_fraction(0.0), sight_range:)
+    == Error([
+      Refusal(
+        table: "game_number",
+        row: RowName("chase_stop_fraction"),
+        rule: "a chase stop fraction of 0.0 is not between 0 and 1",
+      ),
+    ])
+    as "at 0 the creature stops at the edge of its reach"
+  assert game_number.select(rows: with_fraction(1.0), sight_range:)
+    == Error([
+      Refusal(
+        table: "game_number",
+        row: RowName("chase_stop_fraction"),
+        rule: "a chase stop fraction of 1.0 is not between 0 and 1",
+      ),
+    ])
+    as "at 1 it runs onto the target's own place"
+  let assert Ok(_) = game_number.select(rows: with_fraction(0.99), sight_range:)
+    as "a fraction inside (0, 1) is taken"
+  Nil
+}
+
 pub fn an_aggro_range_not_below_sight_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let rows =

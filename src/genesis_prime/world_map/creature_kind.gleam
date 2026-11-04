@@ -102,16 +102,36 @@ pub fn select(
         Refusal(table:, row: RowId(row.creature_id), rule:)
       })
     })
-  case list.append(missing_default, refused), default {
-    [], Ok(default) ->
-      Ok(Kinds(
-        default: kind_of_row(default),
-        by_creature: list.filter(rows, fn(row) { row.creature_id != 0 })
-          |> list.map(fn(row) { #(row.creature_id, kind_of_row(row)) })
-          |> dict.from_list,
-      ))
+  case list.append(missing_default, refused), kinds_of(rows:) {
+    [], Ok(kinds) -> Ok(kinds)
     refusals, _ -> Error(refusals)
   }
+}
+
+/// The kinds of the rows `select` takes, leaving out the ones it refuses, or
+/// `Error(Nil)` when the default row is missing or refused. The content load checks
+/// the spawns with these when it refuses a kind row, so the one start names a bad
+/// spawn too (genesis_prime/content).
+pub fn taken(
+  rows rows: List(Row),
+  tables tables: table_store.Tables,
+) -> Result(Kinds, Nil) {
+  kinds_of(
+    rows: list.filter(rows, fn(row) {
+      result.is_error(refusal_of(row:, tables:))
+    }),
+  )
+}
+
+/// The kinds of the rows, or `Error(Nil)` with no default row among them.
+fn kinds_of(rows rows: List(Row)) -> Result(Kinds, Nil) {
+  use default <- result.map(list.find(rows, fn(row) { row.creature_id == 0 }))
+  Kinds(
+    default: kind_of_row(default),
+    by_creature: list.filter(rows, fn(row) { row.creature_id != 0 })
+      |> list.map(fn(row) { #(row.creature_id, kind_of_row(row)) })
+      |> dict.from_list,
+  )
 }
 
 /// The first rule the row breaks, in the order of `select`'s doc, or `Error(Nil)`
