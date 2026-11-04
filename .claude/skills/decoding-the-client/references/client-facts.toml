@@ -6300,10 +6300,9 @@ gap = "The reader is read from Ghidra's decompile, not run in the emulator; what
 name = "ReadUnitCreateCreatureData"
 
 ["0x140649e20"]
-statement = "The Lua method Unit:GetType(): the unit's type as a name, from a list of 37: 0 NonPlayer, 1 Chest, 2 Destructible, 3 Vehicle, 5 Harvest, 6 Corpse, 7 Mount, 8 Collectible, 10 Simple, 11 Platform, 12 Mailbox, 13 Turret, 14 InstancePortal, 16 Residence, 17 StructuredPlug, 18 PinataLoot, 19 BindPoint, 20 Player, 21 HiddenSpell, 22 Trigger, 23 Ghost, 25 Esper Pet, 26 World object, 27 Scanner, 28 Camera, 30 DestructibleDoor, 31 Pickup, 32 SimpleCollidable, 33 HousingMannequin, 34 HousingHarvestPlug, 35 HousingPlant, 36 Lockbox; types 4, 9, 15, 24 and 29 name short strings not read here; a type of 37 or more gives 'Unknown', and a unit it cannot find gives ''."
-proof = "Decompiled 0x140649e20: a 37-entry table of string pointers on the stack, indexed by the unit's type word (the same word InitUnitFromCreate 0x140456960 sets from 0x262's 6-bit type), 'Unknown' (7 characters) for 0x25 or more. Entries 4, 9, 15, 24 and 29 point at 0x140b2bbd8, 0x140b2bba8, 0x140b2bb64, 0x1409f42e4 and 0x140b2bc0c."
-grade = "fairly sure"
-gap = "The five short strings are not read; that this is the Lua method GetType is from its argument handling (0x1406622c0 with 1, the unit) and its place among the Unit methods, whose pair table is not cited here."
+statement = "The Lua method Unit:GetType(): the unit's type as a name, from a list of 37 indexed by message 0x262's unit type: 0 NonPlayer, 1 Chest, 2 Destructible, 3 Vehicle, 4 Door, 5 Harvest, 6 Corpse, 7 Mount, 8 Collectible, 9 Taxi, 10 Simple, 11 Platform, 12 Mailbox, 13 Turret, 14 InstancePortal, 15 Plug, 16 Residence, 17 StructuredPlug, 18 PinataLoot, 19 BindPoint, 20 Player, 21 HiddenSpell, 22 Trigger, 23 Ghost, 24 Pet, 25 Esper Pet, 26 World object, 27 Scanner, 28 Camera, 29 Trap, 30 DestructibleDoor, 31 Pickup, 32 SimpleCollidable, 33 HousingMannequin, 34 HousingHarvestPlug, 35 HousingPlant, 36 Lockbox; a type of 37 or more gives 'Unknown', and a unit it cannot find gives ''."
+proof = "Saved C 0x140649e20.c (hash 49fd5a78aaad3411): a 37-entry table of string pointers on the stack (local_138 is entry 0, each later local 8 bytes on), indexed by the unit's word 0x80, 'Unknown' for 0x25 or more. InitUnitFromCreate 0x140456960 (saved C line 108) stores message 0x262's type (record word 1) in that word (param_1 + 0x10 as longlong*). Entries 4, 9, 15, 24 and 29 read with bytes requests: 0x140b2bbd8 'Door', 0x140b2bba8 'Taxi', 0x140b2bb64 'Plug', 0x1409f42e4 'Pet', 0x140b2bc0c 'Trap'. Unit method pair table: bytes at 0x140c5a7b0 hold the name pointer 0x140b2a0f8 followed by 0x140649e20."
+grade = "sure"
 name = "LuaUnitGetType"
 
 ["opcode.0x262.creature"]
@@ -6434,10 +6433,10 @@ gap = "Read from Ghidra's decompile; what the cast registry's friendly test is, 
 name = "GetUnitDispositionTo"
 
 ["0x140787760"]
-statement = "A faction's level, 0 to 10, toward another faction: first a reputation the faction may carry (for a player's faction) mapped to a level; otherwise the first Faction2Relationship found between this faction and the other faction or, failing that, each of the other faction's parents in turn; with none, 10 when the other is this faction itself and 5 otherwise. Relationships are filed under both factions, so each row works both ways."
-proof = "Decompiled: 0x140717160 finds the other faction's registry entry; the chain is walked through each entry's parent link (set by BuildFactionRegistry 0x140716ac0 from faction2IdParent); 0x140717560 looks up this faction's relationship map, the level at node 0xc; the reputation hook at the object's words 3 and 4 with 0x1407a2a00; the fallback 5 or 10 against the object's slot 0x18 (its own id). BuildFactionRegistry calls 0x1407171f0 for factionId0's entry and, when they differ, factionId1's. Faction object class 0x140b77da0 (bytes read: slot 0x28 0x140787760, slot 0x30 0x140787830)."
+statement = "A faction's level, 0 to 10, toward another faction: first a reputation the faction may carry (for a player's faction) mapped to a level; otherwise, for the other faction and then each of its parents in turn, the first Faction2Relationship between it and this faction or, failing that, any of this faction's parents in turn; with none, 10 when the other is this faction itself and 5 otherwise. Relationships are filed under both factions, so each row works both ways, and the search makes the level the same both ways for every faction the world database gives a creature. The player factions are Dominion 166 and Exile 167, both children of 165."
+proof = "Saved C 0x140787760.c (hash 49fd5a78aaad3411): the outer loop walks the other faction's registry entry (FindFactionEntry 0x140717160) through each entry's word 1 (the parent link BuildFactionRegistry 0x140716ac0 sets from faction2IdParent, after its loop through word 1 refusing a cycle); for each it calls FindFactionRelationship 0x140717560 with this faction's entry (object word 2), which looks the id up in the entry's relationship map (words 3 and on) and, failing, moves to the entry's word 1, this faction's parent. 0x1407171f0 files a Faction2Relationship row under factionId0's entry keyed by factionId1, and under factionId1's keyed by factionId0. Fallback 5 or 10 against the object's slot 0x18. Faction2 rows 166 and 167 (faction2IdParent 165): `gleam run -m genesis_prime/table_rows -- Faction2`. Symmetry: scratch py/analyse.py level2 over every type 0 spawn's faction1 with 166 and 167, both directions, classes match."
 grade = "fairly sure"
-gap = "Read from Ghidra's decompile; whether this faction's own parents are also searched (0x140717560 walks something at its words 0 and 3) and the reputation mapping 0x1407a2a00 are not read."
+gap = "Read from the decompile, not run; the reputation mapping 0x1407a2a00 is not read (a player's faction reputation may override a level), and that object word 2 is this faction's own entry is read from the call, not from the object's builder."
 name = "GetFactionLevelTo"
 
 ["0x140787830"]
@@ -6957,6 +6956,81 @@ proof = "Saved C: FindUnit of the player, 0x1403acd90 for the spell, FUN_1400ea3
 grade = "fairly sure"
 gap = "Read from the decompile."
 name = "RaiseAttackMissed"
+
+# World spawns: what the world database's entity types mean, which creatures a player can
+# attack, which spawns the client would refuse and what limits the client's units
+
+["world_data.entity_type"]
+statement = "The world database's spawn entity_type is message 0x262's unit type (Unit:GetType's index), not Creature2.CreationTypeEnum. Its values and names, spawns per world (22 Western, 51 Eastern, 426 Eastern, 870 Western, 990 Eastern, 1061 NewCentral, 1387 Western, 1535 PvPArena, 3022 PvPArena2, 3460 NewPlayerExperience): 0 NonPlayer 48,143 (22: 13,863; 51: 16,174; 426: 534; 870: 816; 990: 975; 1061: 14,732; 1387: 937; 3460: 112); 2 Destructible 13 (1061); 4 Door 171 (22: 28; 51: 88; 426: 7; 870: 3; 990: 1; 1061: 36; 1387: 4; 1535: 2; 3022: 2); 5 Harvest 5,015 (22: 1,619; 51: 1,898; 1061: 1,498); 8 Collectible 4,380 (22: 1,293; 51: 1,883; 426: 23; 870: 58; 990: 49; 1061: 993; 1387: 81); 9 Taxi 34 (22: 7; 51: 13; 1061: 14); 10 Simple 17,904 (22: 6,066; 51: 6,163; 426: 139; 870: 177; 990: 225; 1061: 4,402; 1387: 430; 3460: 302); 11 Platform 491 (22: 125; 51: 105; 426: 5; 870: 8; 990: 1; 1061: 131; 1387: 116); 12 Mailbox 101 (22: 38; 51: 35; 426, 870, 990, 1387: 1 each; 1061: 24); 13 Turret 241 (22: 154; 51: 65; 426: 1; 1061: 12; 1387: 7; 3460: 2); 14 InstancePortal 79 (22: 29; 51: 31; 426, 870, 990, 1387: 1 each; 1061: 15); 19 BindPoint 44 (22: 16; 51: 19; 1061: 9); 32 SimpleCollidable 1,178 (22: 306; 51: 503; 426: 27; 870: 8; 990: 7; 1061: 303; 1387: 9; 3460: 15). 77,795 spawns in all."
+proof = "World database (Jim's wildstar-knowledge world-data, ~/Coding/wildstar/world-data/spawn.tsv): awk counts of column 2 by column 4. Names: LuaUnitGetType 0x140649e20. That it is the unit type and not CreationTypeEnum: joined with Creature2 (`gleam run -m genesis_prime/table_rows -- Creature2`, scratch py/load.py), entity_type equals CreationTypeEnum for every spawn except entity_type 19 (44 spawns, CreationTypeEnum 18) and 32 (1,178 spawns, CreationTypeEnum 20); the 19s are 'Transmat Terminal' rows with a bindPointId (10483 bind 6, 10485 bind 7, 10499 bind 16), and 19 is BindPoint in GetType's list. World names: `table_rows -- World 22 51 426 870 990 1061 1387 1535 3022 3460` (assetPath)."
+grade = "fairly sure"
+gap = "The world database is not the client; that its entity_type is what the server sent in 0x262 rests on the name match and the two off-by-enum values. A retail recording of a 0x262 for a bind point (type 19) would settle it."
+
+["Creature2.CreationTypeEnum"]
+statement = "A creature's creation type, 0 to 25, a separate enum from message 0x262's unit type: the client only refuses a row whose value is 26 or more (ValidateCreatureRows). Its values agree with the unit type for 0 to 14, but rows with 18 are bind points (unit type 19, BindPoint) and rows with 20 are what the world database spawns as unit type 32 (SimpleCollidable). Counts over 56,369 rows: 0: 37,292; 1: 293; 2: 26; 3: 141; 4: 400; 5: 329; 7: 210; 8: 943; 9: 220; 10: 14,254; 11: 612; 12: 37; 13: 116; 14: 250; 15: 1; 16: 4; 18: 76; 19: 3; 20: 1,019; 21: 114; 22: 2; 23: 1; 24: 1; 25: 25."
+proof = "`gleam run -m genesis_prime/table_rows -- Creature2` counted with scratch py/load.py; ValidateCreatureRows 0x140485790 (row[1] < 0x1a). Bind points: rows 10483, 10485, 10499, 10503, 10504, 10508 (CreationTypeEnum 18, bindPointId 6, 7, 16, 18, 17, 19). The pairing with unit types is from the world database's entity_type (world_data.entity_type)."
+grade = "guess"
+gap = "No client code that turns a creation type into a unit type was found (a grep of the saved C for a function mapping 0x12 to 0x13 and 0x14 to 0x20 found none); the pairing for 15 to 25 other than 18 and 20 is unread. The client's enum names for this column, if it has any, would settle it."
+
+["0x140717560"]
+statement = "Finds the relationship a faction has with a given faction id: looks in the faction's own relationship map, then in each of its parents' maps in turn; none found gives nothing. A missing entry is reported as an error."
+proof = "Saved C 0x140717560.c (hash 8eb22adb6de47956): an empty entry (word 0 null) goes to the report through 0x140196f30 and returns 0; else a tree search of the map at word 3 for the key (node 0x20), the found node's 0x28 returned; not found moves to word 1 until null. Called by GetFactionLevelTo 0x140787760."
+grade = "fairly sure"
+gap = "Read from the decompile; not run."
+name = "FindFactionRelationship"
+
+["0x140717160"]
+statement = "Finds a faction's registry entry by Faction2 id, or nothing when the id has no Faction2 row."
+proof = "Saved C 0x140717160.c (hash 8eb22adb6de47956): a hash bucket search of the registry at 0x140c665d0 (hash slot 0x20, compare slot 0x28), returning the node's word 3, the entry pointer BuildFactionRegistry 0x140716ac0 stores. GetFactionLevelTo 0x140787760 returns 5 when it gives nothing."
+grade = "fairly sure"
+gap = "Read from the decompile; not run."
+name = "FindFactionEntry"
+
+["0x1403ad540"]
+statement = "Checks a player's ability cast against its target's disposition, refusing with cast result 99 (TargetFaction). Unless the spell's flag word B has bit 4, the caster's disposition toward the target decides: a Hostile target is refused unless word B has bit 0; a Neutral target is refused only when flag word A has bit 26; a Friendly target, or one the cast registry calls friendly, is refused unless word A has bit 31. When the target has a word 0x18 that 0x140466b90 refuses, the result is 181 (TradeskillTier) first. So the client lets a player's ability reach a Neutral unit unless that spell forbids it, and keeps hostile-only and friendly-only spells to their own side."
+proof = "Saved C 0x1403ad540.c (hash 49fd5a78aaad3411): 0x140466b90 on the target's word 0x18 -> 0xb5; spell record (param_1 word 0x70) byte 0x110 bit 0x10 skips; GetUnitDispositionTo 0x14045a950; param_4 == 0 and not 2: 0 with 0x110 & 1 clear -> 99, 1 with 0x10c bit 0x4000000 -> 99; else 0x10c bit 0x80000000 clear -> 99. Only caller CastAbilityBagSpell 0x14039a040 (site 0x14039a47f), with param_4 the cast registry's slot 0x48 (DAT_140c65b70) for the player and target, when the target is not the player. Names: `gleam run -m genesis_prime/table_rows -- Spell4CastResult` rows 99 (TargetFaction), 181."
+grade = "fairly sure"
+gap = "Which Spell4 or Spell4Base columns the spell record's words 0x10c and 0x110 come from is not read (Spell4Base targetingFlags is at row offset 124, not these), so how many attack spells carry bit 0 or bit 26 is unknown; the cast registry's slot 0x48 is not read. Settled by reading the spell record's builder, then counting the class abilities' flags."
+name = "CheckCastTargetFaction"
+
+["0x140661520"]
+statement = "The Lua method Unit:CanGrantXp(): true when the unit has Creature2 flags bit 13 (0x2000) clear, false when it is set or the unit is not found."
+proof = "Saved C 0x140661520.c (hash 8eb22adb6de47956): FindUnit, then the unit's word 0x24 & 0x2000 == 0 -> true. The unit's word 0x24 is Creature2.flags (SetUnitCreature 0x140458a40 copies creature record word 0x24, FillCreatureInfoBase's flags from row offset 336). Unit method pair table: bytes at 0x140c5b780 hold the name pointer 0x140b2b6c8 followed by 0x140661520 (name read as the pair table's string)."
+grade = "fairly sure"
+gap = "For a unit with no creature word 0x24 is whatever else sets it, not read."
+name = "LuaUnitCanGrantXp"
+
+["0x140649c40"]
+statement = "The Lua method Unit:ShouldShowNamePlate(): false for a creature whose Creature2 uiFlags has bit 5 (0x20), and for a unit it cannot find; other units go on to type-specific tests (a Mount, type 7, looks at its riders)."
+proof = "Saved C 0x140649c40.c (hash 8eb22adb6de47956): FindUnit; the unit's creature (word 0x18) non-null and word 0x28 & 0x20 -> false; word 0x80 == 7 branch. Word 0x28 is uiFlags (SetUnitCreature 0x140458a40). Unit method pair table: bytes at 0x140c5b330 hold the name pointer 0x140b2af30 followed by 0x140649c40."
+grade = "fairly sure"
+gap = "Only the creature branch is read; the rest of the function's tests are not."
+name = "LuaUnitShouldShowNamePlate"
+
+["0x140656be0"]
+statement = "The Lua method Unit:GetActivationState(): a table of the unit's activation states (the UI reads Vendor, TalkTo, QuestReward, QuestReceiving, QuestNew, QuestNewMain, FlightPath, FlightPathNew, FlightPathSettler), each with bIsActive, bCanInteract, bUseableWhenDead, bUseableWhenHostile, bShowCallout, bClickToMove, bIsHighlightable, bShowOverhead and bUsePlayerPath."
+proof = "string_refs 'GetActivationState': 0x140b2ad80 pointed to from the pair at 0x140c5b0b0, followed by 0x140656be0. Saved C 0x140656be0.c (hash 8eb22adb6de47956): the keys as wide strings. Names of states: client UI Nameplates.lua (tActivation.Vendor and the rest), MiniMap.lua line 1364, ZoneMap.lua line 2718."
+grade = "fairly sure"
+gap = "Where each state comes from (Creature2 activationFlags, a server message, or both) is not read: whether a vendor or quest giver is marked by the client's data or the server's is open. The function at 0x1406622c0's sibling that fills the state list would settle it."
+name = "LuaUnitGetActivationState"
+
+["world_data.creature_disposition"]
+statement = "How the world database's 48,143 NonPlayer (type 0) spawns stand toward the two player factions, by the client's faction rule (GetFactionLevelTo, then FactionDispositionFromLevel: 0 to 2 Hostile, 3 to 7 Neutral, 8 to 10 Friendly), as (to Exile 167, to Dominion 166): Hostile to both 19,736; Hostile to Exile, Friendly to Dominion 4,708; Friendly to Exile, Hostile to Dominion 4,818; Neutral to both 10,697; Neutral to one, Friendly to the other 64; Friendly to both 7,668; no faction (0) 452. The level is the same both ways for every spawn. Per world (both-Hostile, Exile-only Hostile, Dominion-only Hostile, both-Neutral, one Neutral, both-Friendly, none): 22: 4,841, 1,826, 643, 3,914, 0, 2,425, 214; 51: 4,895, 1,648, 2,899, 3,689, 0, 2,863, 180; 426: 73, 35, 97, 178, 0, 131, 20; 870: 140, 134, 83, 330, 0, 129, 0; 990: 96, 65, 286, 301, 0, 227, 0; 1061: 9,636, 835, 744, 1,658, 64, 1,757, 38; 1387: 55, 138, 47, 608, 0, 89, 0; 3460: 0, 27, 19, 19, 0, 47, 0. faction1 is the unit's faction and faction2 its base faction: faction2 equals Creature2.factionId for every type 0 spawn, faction1 differs in 24 (1061: 16; 22: 5; 51: 3). The 452 with no faction are all archetype 29 (Townie) rows whose own factionId is 0, all with Creature2 flags bit 0 and uiFlags bits 0 to 3."
+proof = "World database (wildstar-knowledge world-data spawn.tsv, Jim's data), joined in scratch py/analyse.py (level2, disp) with `gleam run -m genesis_prime/table_rows -- Faction2`, `-- Faction2Relationship` and `-- Creature2`. Rule: GetFactionLevelTo 0x140787760, FactionDispositionFromLevel (fact file), GetUnitDispositionTo 0x14045a950 (no faction is Neutral). Archetype icons: `table_rows -- Creature2ArcheType` (23, 25, 27, 28, 29 Townie; 30 Guard; 17 Vehicle). Sanity: the 27 Virtual Battle Beasts of world 3460 (faction 1441) fall in Hostile to Exile, Friendly to Dominion, as Faction2Relationship.factionLevel says."
+grade = "fairly sure"
+gap = "A player's reputation (0x1407a2a00) may change a level and is not read; the threat-list and duel overrides of GetUnitDispositionTo are the server's to cause. Which world database faction field the server must send as 0x262's faction and which as base faction rests on faction2 matching Creature2.factionId."
+
+["world_data.spawn_checks"]
+statement = "Every one of the 77,795 world database spawns names a Creature2 row, and every named row passes ValidateCreatureRows, so none would be refused by the client's creature checks; of all 56,369 Creature2 rows only 9 fail (60332, 62369, 71691, 71826, 73479: archetype and display group; 66205, 67918: display group 0; 71696, 71697: archetype), and none is spawned. Every spawn's display_info is non-zero and names a Creature2DisplayInfo row, and for every type 0 spawn it is one of its creature's display group entries; every non-zero outfit_info names a Creature2OutfitInfo row. Faults a load must decide for type 0 spawns: faction 0 in 452 (22: 214, 51: 180, 426: 20, 1061: 38; message 0x19b then fails for the unit); health stat 0 in 215, which the client creates dead (22: 41, 51: 66, 426: 9, 870: 1, 990: 11, 1061: 86, 1387: 1); a level (stat 10) outside the row's minLevel..maxLevel in 6 (world 426, spawns 18426 to 18428, 18443, 18444, 18499: level 1 where the row has 0..0); no stats at all in the 112 of world 3460. Across all types, 1,272 spawns carry faction 0."
+proof = "Scratch py/analyse.py valid() applies ValidateCreatureRows 0x140485790's rules (modelScale > 0, CreationTypeEnum < 26, archetype names a Creature2ArcheType row, difficulty and resist 0 or a row, display group non-zero) to `gleam run -m genesis_prime/table_rows -- Creature2` with `-- Creature2ArcheType`, `-- Creature2Difficulty`, `-- Creature2Resist`; displays and outfits against the ID columns of `-- Creature2DisplayInfo` (13,948 rows) and `-- Creature2OutfitInfo` (3,132), groups against `-- Creature2DisplayGroupEntry`. World database: wildstar-knowledge world-data spawn.tsv, stat_ids and stat_values columns. Health 0 creates dead: opcode.0x262.creature. Faction 0: opcode.0x262."
+grade = "fairly sure"
+gap = "The count of rows failing rests on ValidateCreatureRows' rules as read from its decompile (its record's gap: the exclusion set the zero-display branch consults); whether the client compares stat 10 with the level range is not read."
+
+["unit.count_limit"]
+statement = "The client sets no limit on how many units it holds: message 0x262 makes a unit for any id it does not already hold, with no count test, each unit taking a 14,256-byte record plus its actor and world unit. With step C's sight being the server's choice (unit.range), the number of units a client is sent is bounded only by the server."
+proof = "Saved C 0x1403d9760.c HandleMessage0262 (hash 737aa5af0120fae9): FindUnit, AllocMemory(0x37b0), ConstructUnit, InitUnitFromCreate 0x140456960; no comparison with a count before or after. Unit removal: RemoveUnit's record and unit.range (no distance removal)."
+grade = "fairly sure"
+gap = "Only the create path is read: whether InitUnitFromCreate's registration in the world (game 0x6f30 list, the world unit) has a fixed capacity, and how the frame rate falls with thousands of units, are not read. A live run that creates several thousand creatures in sight would settle both."
 
 # Smaller facts met on the way
 
