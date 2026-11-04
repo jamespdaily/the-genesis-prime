@@ -40,6 +40,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     ),
     level: 1,
     health: 52,
+    health_source: spawn.ClientDefault,
     faction_id: 1441,
     base_faction_id: 1441,
     display_info_id: 26_565,

@@ -18,6 +18,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/step.{
   type ConnectionId, type Event, type ServiceEvent, type ServiceStep, Connection,
   ConnectionId, CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
@@ -29,6 +30,7 @@ import genesis_prime/world_map/creature.{
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/int
 import gleam/list
@@ -47,6 +49,15 @@ fn creature() -> State {
 
 /// The same creature, started for these players, who see the spawn.
 fn creature_for(viewers viewers: List(ConnectionId)) -> State {
+  creature_at(spawn: spawn_support.battle_beast(number: 1, x: 0.0), viewers:)
+}
+
+/// A creature standing at this spawn as unit 7 of the first run, started for these
+/// players.
+fn creature_at(
+  spawn spawn: Spawn,
+  viewers viewers: List(ConnectionId),
+) -> State {
   creature.new(Settings(
     creature: CreatureStart(
       map: ship,
@@ -57,7 +68,7 @@ fn creature_for(viewers viewers: List(ConnectionId)) -> State {
       clock_origin_ms:,
       viewers:,
     ),
-    spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+    spawn:,
     kind: Kind(respawn_ms: 60_000),
   ))
 }
@@ -431,4 +442,80 @@ pub fn a_creature_that_stands_carries_its_life_hit_radius_and_whom_it_may_be_att
   assert creature_unit.health_of(unit:) == 52
     && attackable == spawn_support.beast_combat().attackable
     as "life 3 is the number of the map's watch it was started under; the hit radius of the Beast's display is 3.0 (Spell4.32812.area)"
+}
+
+/// A Battle Beast spawn whose health is the world database's recorded 442, the
+/// value of Creature2 11945 (`world_data.spawn_health`).
+fn recorded_beast() -> Spawn {
+  Spawn(
+    ..spawn_support.battle_beast(number: 1, x: 0.0),
+    health: 442,
+    health_source: spawn.Recorded,
+  )
+}
+
+/// The property list a recorded 442 is sent as: Base Health, property 7, with 442.0
+/// in both words, 0x43DD0000 as a 32-bit float (sign 0, exponent 135, mantissa
+/// 0x5D0000), as the player's vector sends its own (`opcode.0x262.health`).
+fn base_health_442() -> List(unit_property.UnitProperty) {
+  [UnitProperty(property_id: 7, field_2: 0x43DD0000, value: 0x43DD0000)]
+}
+
+pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_current_health_and_its_recorded_maximum_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    feed(
+      state: creature_at(spawn: recorded_beast(), viewers: [ConnectionId(2)]),
+      at_ms: 5000,
+      event: OwnEvent(Started),
+    )
+  let #(state, _) =
+    feed(
+      state:,
+      at_ms: 6000,
+      event: OwnEvent(Told(strike_of(damage: 14, cast_id: 1))),
+    )
+  let #(_, taken) =
+    feed(
+      state:,
+      at_ms: 7000,
+      event: OwnEvent(Told(Watched(by: ConnectionId(9)))),
+    )
+  let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
+    sent(taken)
+  assert creature_unit.health_of(unit:) == 428
+    as "the recorded 442 less the strike's 14: stat 0 is the current health"
+  assert unit.tail.properties == base_health_442()
+    as "opcode.0x262.creature: property 7 is the recorded maximum, so the bar reads 428 of 442"
+}
+
+pub fn a_recorded_creature_comes_back_at_its_recorded_health_with_its_recorded_maximum_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    feed(
+      state: creature_at(spawn: recorded_beast(), viewers: [ConnectionId(2)]),
+      at_ms: 5000,
+      event: OwnEvent(Started),
+    )
+  let #(state, _) =
+    feed(
+      state:,
+      at_ms: 6000,
+      event: OwnEvent(Told(strike_of(damage: 442, cast_id: 1))),
+    )
+  let #(_, taken) =
+    feed(
+      state:,
+      at_ms: 66_000,
+      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
+    )
+  let assert [
+    _,
+    #(2, creature.News(news: PeerNews(news: CreatureAppeared(unit:, ..), ..))),
+  ] = outgoing(taken)
+    as "death.creature_respawn: 0x355, then a full 0x262 to the viewer"
+  assert creature_unit.health_of(unit:) == 442
+    as "it comes back at the recorded value, not the client's formula"
+  assert unit.tail.properties == base_health_442()
+    as "and sends it as Base Health again"
 }
