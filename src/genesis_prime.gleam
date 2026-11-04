@@ -1,17 +1,19 @@
 //// Starts the server: it loads the client's game tables from the folder named
 //// by GENESIS_TABLE_DIR, stopping at once with the reason when one does not
-//// load, then starts the supervision tree under the application's root
-//// (genesis_prime/application), with the database named by PGHOST, PGPORT,
-//// PGUSER, PGPASSWORD and PGDATABASE. Once one read of the database has
-//// returned, and the migrations the database recorded are the files in
-//// priv/migrations (genesis_prime/migration), it prints the ready line, and it
-//// keeps the node alive until SIGTERM, which OTP turns into the tree's ordered
-//// stop and then the node's. A database that lacks a migration, ran a
-//// migration this build has no file for, ran an edited one, has no record of
-//// its migrations or cannot be read makes `main` stop with the reason and the
-//// node end with status 1, with no ready line, however late the database
-//// answers: one that is down at start is logged as unreachable and asked again
-//// until it answers.
+//// load, then loads the content tables (genesis_prime/content) from the database
+//// named by PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE into persistent
+//// terms, and only then starts the supervision tree under the application's root
+//// (genesis_prime/application), with the same database. The content load waits for
+//// the database as the readiness ask does, so one that is down at start is logged
+//// as unreachable and asked again until it answers, and no listener is open
+//// meanwhile. Once one read of the database has returned, and the migrations the
+//// database recorded are the files in priv/migrations (genesis_prime/migration),
+//// it prints the ready line, and it keeps the node alive until SIGTERM, which OTP
+//// turns into the tree's ordered stop and then the node's. A database that lacks
+//// a migration, ran a migration this build has no file for, ran an edited one,
+//// has no record of its migrations or cannot be read, or holds a spawn row the
+//// client would refuse, makes `main` stop with the reason and the node end with
+//// status 1, with no ready line, however late the database answers.
 //// It serves the client's STS and auth logins (`login`) and the game server
 //// (`game`).
 

@@ -74,19 +74,19 @@
 //// Join / Moved: the spawns the player sees now (spawn_cell.near, then exact sight)
 ////   a dormant spawn, seen now:   unit id u = the spawn's own, else next unit id
 ////                                 life w = next watch
-////                                 StartCreature(w, spawn, u, life w)  ─▶ the creature supervisor starts it;
-////                                                                       the shell watches Creature(map, run, u, w) as w
-////                                 Send(Creature(.., u, w), Watched(by: c)) ─▶ the creature sends c its 0x262
+////                                 StartCreature(w, spawn, u, life w, viewers [c]) ─▶ the creature supervisor starts it;
+////                                                                       the shell watches Creature(map, run, u, w) as w;
+////                                                                       the creature sends c its 0x262 as it starts
 ////   a live spawn, seen now:      Watched(by: c) ─▶ Creature(.., u, w); idle ends
 ////   a live spawn, no longer:     Unwatched(by: c) ─▶ the creature sends c its 0x355
 ////                                 the last viewer gone: idle since now
-////   a retiring spawn, seen now:  c is held: nothing is sent, nothing starts
+////   a retiring spawn, seen now:  nothing is sent, nothing starts: c is found among the seers at its end
 //// the sweep fires ─▶ for each live spawn idle for idle_stop_ms or more:
 ////                                 Send(Creature(.., u, w), Retire)     the spawn is retiring
 ////                                 StartServiceTimer(TimerId(0), sweep_ms)
 //// WatchEnded(w) of a retiring creature (or one that crashed while retiring)
 ////                              ─▶ dormant, with u kept; no Gone: the 0x355s went when its viewers did
-////                                 held viewers now: StartCreature(u, life w'); Watched(by: c) for each
+////                                 players who see the spawn now: StartCreature(u, life w', viewers them)
 //// WatchEnded(w) of a live creature (a crash)
 ////                              ─▶ Gone(u) to every player in the map (the creature that ended sent nothing)
 ////                                 StartServiceTimer(the spawn's number, creature_restart_ms); u is given up
@@ -185,17 +185,19 @@
 ////   creature never moves, so a move of a player is the only change of sight with
 ////   it.
 //// - **A creature starts** when its spawn gets its first viewer, with the spawn's
-////   unit id and a new life, its watch id; the map's `Reply` of a Join comes first,
-////   then the starts, then the `Watched` sends.
+////   unit id, a new life (its watch id) and its first viewers in `CreatureStart`, so
+////   it sends their 0x262s as it starts and a burst of starts is followed by no burst
+////   of `Watched`; the map's `Reply` of a Join comes first, then the starts. A
+////   player's watch is taken before the starts, so no life is the player's watch.
 //// - **A creature stops** when no player has seen it for `idle_stop_ms`: the sweep,
 ////   every `sweep_ms`, sends `Retire` to each live spawn idle that long, so a stop
 ////   comes between `idle_stop_ms` and `idle_stop_ms + sweep_ms` after the last
 ////   viewer left. A player that steps back within that time finds the same
 ////   creature, with its corpse and its health.
-//// - **A spawn seen while its creature retires** is held: the creature has been
+//// - **A spawn seen while its creature retires** waits: the creature has been
 ////   told to stop, so it cannot be shown to a viewer, and nothing starts until its
-////   end. Then a creature starts there under the same unit id and a new life, and
-////   the players held are told to it `Watched`. The registry drops a member when
+////   end. Then a creature starts there under the same unit id and a new life, with
+////   the players who see the spawn from where they stand then as its first viewers. The registry drops a member when
 ////   it learns of the member's end, which can be after the map has, so the new
 ////   creature's address differs by its life: two members of one group would crash
 ////   the map's `find` (`group_registry`).
@@ -240,8 +242,8 @@
 //// | a creature does not start | an error line with the supervisor's reason; the spawn stays empty for the run; the burst's other spawns start |
 //// | the map crashes in the middle of a burst of starts | every creature started sees the run end and stops; the players' connections end with the run |
 //// | a Leave or an end is queued behind a burst of starts | taken next: `Unwatched` to each of the player's creatures, each stopped after the idle stop |
-//// | a spawn is seen while its creature retires | held; a creature starts at its end, with the same unit id and a new life |
-//// | a creature crashes while retiring | taken as retired: the spawn is dormant, or a new creature starts if a player was held |
+//// | a spawn is seen while its creature retires | waits; a creature starts at its end, with the same unit id and a new life, if a player still sees it |
+//// | a creature crashes while retiring | taken as retired: the spawn is dormant, or a new creature starts if a player sees it |
 //// | a creature crashes while live | every player is sent `Gone`; the spawn waits the respawn time, then a new unit is started there if a player sees it, and it is dormant if none does |
 //// | the respawn timer fires with no one in sight | the spawn is dormant |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
