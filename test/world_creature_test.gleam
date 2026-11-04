@@ -398,7 +398,13 @@ fn strike_with(
         from: step.Connection(ConnectionId(1)),
         offence: Offence(
           blows: [
-            Blow(spell4_effects_id: 1, damage_type: 3, damage:, delay_ms: 0),
+            Blow(
+              spell4_effects_id: 1,
+              damage_type: 3,
+              damage:,
+              delay_ms: 0,
+              threat_multiplier: 1.0,
+            ),
           ],
           crit_chance: 0.0,
           crit_severity: 1.5,

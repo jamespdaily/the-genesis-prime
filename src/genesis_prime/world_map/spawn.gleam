@@ -53,6 +53,7 @@
 ////   genesis_prime/world_map/creature_life `Attack`).
 
 import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
@@ -70,6 +71,7 @@ import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
 import genesis_prime/table/faction2
 import genesis_prime/table/faction2_relationship
+import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   type Creature2Id, Creature2ArcheTypeId, Creature2DifficultyId,
   Creature2DisplayInfoId, Creature2Id, Creature2OutfitInfoId, Creature2ResistId,
@@ -78,7 +80,10 @@ import genesis_prime/table/id.{
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
+import genesis_prime/table/spell4
+import genesis_prime/table/spell4_effects
 import genesis_prime/table/world
+import genesis_prime/world_map/creature_attack
 import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, type Combat, Attackable, Combat, Hostile,
@@ -241,6 +246,19 @@ type SpawnError {
   NoOutfitRow(outfit_info_id: Int)
   /// The row's world has no row in the client's World table (world 0 has none).
   InNoWorld(world_id: Int)
+  /// A damage effect of the creature's attack spell has a caster prerequisite the
+  /// server does not evaluate (genesis_prime/world_map/creature_attack).
+  AttackNotEvaluated(
+    creature_id: Creature2Id,
+    unevaluated: creature_attack.Unevaluated,
+  )
+  /// A damage effect of the creature's attack names a parameter the creature formula
+  /// does not read (genesis_prime/game/damage `creature_unread`).
+  AttackFormulaNotRead(
+    creature_id: Creature2Id,
+    spell4_effects_id: Int,
+    parameter_kind: Int,
+  )
 }
 
 /// The client's rule a creature's row fails (`0x140485790`).
@@ -318,7 +336,7 @@ pub fn select(
                 shared,
                 Refused(refusal.Refusal(
                   table: "spawn",
-                  id: number,
+                  row: refusal.RowId(number),
                   rule: describe(error:),
                 )),
               )
@@ -549,7 +567,7 @@ fn combat_of(
     kind:,
     creature:,
     level:,
-    hit_radius: display.hit_radius,
+    display:,
   ))
   let mitigation = fn(offset_of_type, resist) {
     rating.mitigation_fraction(
@@ -620,9 +638,144 @@ fn attack_of(
   kind kind: Kind,
   creature creature: Creature2,
   level level: Int,
-  hit_radius hit_radius: Float,
+  display display: creature2_display_info.Creature2DisplayInfo,
 ) -> Result(Attack, SpawnError) {
-  todo as "attack_of: the build fills it in"
+  let creature_id = Creature2Id(creature.id)
+  let property = fn(number) {
+    creature_property(catalog:, row: creature, level:, property: number)
+  }
+  use spell <- result.try(
+    spell4.get(catalog.tables, kind.attack_spell4_id)
+    |> result.replace_error(NoPropertyRow(
+      creature_id:,
+      table: "Spell4",
+      id: kind.attack_spell4_id.value,
+    )),
+  )
+  use scaling <- result.try(
+    game_formula.get(catalog.tables, id.GameFormulaId(creature_scaling_formula))
+    |> result.replace_error(NoPropertyRow(
+      creature_id:,
+      table: "GameFormula",
+      id: creature_scaling_formula,
+    )),
+  )
+  use effects <- result.try(
+    creature_attack.applying(
+      tables: catalog.tables,
+      spell4_id: kind.attack_spell4_id.value,
+      difficulty: creature.creature2_difficulty_id,
+    )
+    |> result.map_error(fn(unevaluated) {
+      AttackNotEvaluated(creature_id:, unevaluated:)
+    }),
+  )
+  use strength <- result.try(property(0))
+  use assault_rating <- result.try(property(35))
+  use move_speed <- result.try(property(100))
+  use crit_chance_base <- result.try(property(102))
+  use strikethrough_base <- result.try(property(104))
+  use crit_severity_base <- result.try(property(127))
+  let caster =
+    damage.Creature(
+      level:,
+      strength:,
+      assault_power: assault_rating *. assault_power_per_rating,
+    )
+  use blows <- result.try(
+    list.try_map(effects, fn(effect) {
+      let formula = attack_formula(effect:)
+      case damage.creature_unread(formula:) {
+        Some(damage.Unread(parameter_kind:)) ->
+          Error(AttackFormulaNotRead(
+            creature_id:,
+            spell4_effects_id: effect.id,
+            parameter_kind:,
+          ))
+        None ->
+          Ok(hit.Blow(
+            spell4_effects_id: effect.id,
+            damage_type: effect.damage_type,
+            damage: float.round(damage.creature_value(
+              formula:,
+              creature: caster,
+              scaling: damage.CreatureScaling(
+                per_level: scaling.datafloat0,
+                base: scaling.datafloat01,
+                overflow: scaling.datafloat02,
+                divisor: scaling.datafloat03,
+              ),
+            )),
+            delay_ms: effect.delay_time,
+            threat_multiplier: effect.threat_multiplier,
+          ))
+      }
+    }),
+  )
+  Ok(creature_life.Attack(
+    spell4_id: kind.attack_spell4_id,
+    offence: hit.Offence(
+      blows:,
+      crit_chance: rating.to_fraction(
+        formula: formulas.crit_chance,
+        level:,
+        base: crit_chance_base,
+        rating: 0.0,
+      ),
+      crit_severity: rating.to_fraction(
+        formula: formulas.crit_severity,
+        level:,
+        base: crit_severity_base,
+        rating: 0.0,
+      ),
+      strikethrough: rating.to_fraction(
+        formula: formulas.strikethrough,
+        level:,
+        base: strikethrough_base,
+        rating: 0.0,
+      ),
+    ),
+    run_speed: display.run_land *. move_speed,
+    reach: spell.target_max_range +. display.hit_radius,
+  ))
+}
+
+/// The GameFormula row whose values scale a creature caster's damage
+/// (`0x140565600`).
+const creature_scaling_formula = 712
+
+/// A rating's Assault Power: 0.25 of it (GameFormula 1266, `0x140462930`).
+const assault_power_per_rating = 0.25
+
+/// An attack effect's row as the damage formula reads it: dataBits00 as a 32-bit
+/// float, the integer dataBits01 and the four parameters.
+fn attack_formula(
+  effect effect: spell4_effects.Spell4Effects,
+) -> damage.Formula {
+  damage.Formula(
+    multiplier: float32.bits(int.bitwise_and(effect.data_bits00, 0xFFFFFFFF))
+      |> result.try(float32.value)
+      |> result.unwrap(0.0),
+    base: effect.data_bits01,
+    parameters: [
+      damage.Parameter(
+        kind: effect.parameter_type00,
+        value: effect.parameter_value00,
+      ),
+      damage.Parameter(
+        kind: effect.parameter_type01,
+        value: effect.parameter_value01,
+      ),
+      damage.Parameter(
+        kind: effect.parameter_type02,
+        value: effect.parameter_value02,
+      ),
+      damage.Parameter(
+        kind: effect.parameter_type03,
+        value: effect.parameter_value03,
+      ),
+    ],
+  )
 }
 
 /// A creature's property: the CreatureLevel value times the archetype, difficulty and
@@ -675,6 +828,60 @@ fn creature_property(
           Creature2DifficultyId(row.creature2_difficulty_id),
         )
       case property {
+        0 ->
+          scaled(
+            value: level.unit_property_value00,
+            archetype: arche.unit_property_multiplier000,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier000
+            }),
+            tier: tier.unit_property_multiplier000,
+          )
+        35 ->
+          scaled(
+            value: level.unit_property_value35,
+            archetype: arche.unit_property_multiplier035,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier035
+            }),
+            tier: tier.unit_property_multiplier035,
+          )
+        100 ->
+          scaled(
+            value: level.unit_property_value00,
+            archetype: arche.unit_property_multiplier100,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier100
+            }),
+            tier: tier.unit_property_multiplier100,
+          )
+        102 ->
+          scaled(
+            value: level.unit_property_value02,
+            archetype: arche.unit_property_multiplier102,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier102
+            }),
+            tier: tier.unit_property_multiplier102,
+          )
+        104 ->
+          scaled(
+            value: level.unit_property_value04,
+            archetype: arche.unit_property_multiplier104,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier104
+            }),
+            tier: tier.unit_property_multiplier104,
+          )
+        127 ->
+          scaled(
+            value: level.unit_property_value27,
+            archetype: arche.unit_property_multiplier127,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier127
+            }),
+            tier: tier.unit_property_multiplier127,
+          )
         7 ->
           scaled(
             value: level.unit_property_value07,
@@ -1336,6 +1543,23 @@ fn describe(error error: SpawnError) -> String {
     NoOutfitRow(outfit_info_id:) ->
       "Creature2OutfitInfo " <> int.to_string(outfit_info_id) <> " has no row"
     InNoWorld(world_id:) -> "World " <> int.to_string(world_id) <> " has no row"
+    AttackNotEvaluated(creature_id: Creature2Id(creature_id), unevaluated:) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s attack: "
+      <> creature_attack.describe(unevaluated:)
+    AttackFormulaNotRead(
+      creature_id: Creature2Id(creature_id),
+      spell4_effects_id:,
+      parameter_kind:,
+    ) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s attack effect "
+      <> int.to_string(spell4_effects_id)
+      <> " reads parameter type "
+      <> int.to_string(parameter_kind)
+      <> ", which the creature formula does not read"
   }
 }
 

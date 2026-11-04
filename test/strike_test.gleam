@@ -75,6 +75,7 @@ fn damage_effect() -> spell_area.DamageEffect {
     phase_flags: -1,
     aim: AimsAtArea,
     formula: damage.Formula(multiplier: 1.0, base: 0, parameters: []),
+    threat_multiplier: 1.0,
   )
 }
 
@@ -269,6 +270,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         damage.Parameter(kind: 13, value: 0.0935),
         damage.Parameter(kind: 10, value: 8.14),
       ]),
+      threat_multiplier: 1.0,
     )
   let telekinetic_strike =
     DamageEffect(
@@ -281,6 +283,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         damage.Parameter(kind: 12, value: 0.336),
         damage.Parameter(kind: 10, value: 18.0),
       ]),
+      threat_multiplier: 2.0,
     )
   let #(_, effects) =
     strike.begin(
@@ -301,8 +304,20 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
   assert offence
     == Offence(
       blows: [
-        Blow(spell4_effects_id: 96_125, damage_type: 2, damage: 14, delay_ms: 0),
-        Blow(spell4_effects_id: 62_159, damage_type: 3, damage: 35, delay_ms: 0),
+        Blow(
+          spell4_effects_id: 96_125,
+          damage_type: 2,
+          damage: 14,
+          delay_ms: 0,
+          threat_multiplier: 1.0,
+        ),
+        Blow(
+          spell4_effects_id: 62_159,
+          damage_type: 3,
+          damage: 35,
+          delay_ms: 0,
+          threat_multiplier: 2.0,
+        ),
       ],
       crit_chance: 0.0,
       crit_severity: 1.5,

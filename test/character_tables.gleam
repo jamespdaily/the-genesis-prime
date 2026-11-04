@@ -66,6 +66,7 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
+import genesis_prime/table/prerequisite
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
@@ -200,12 +201,14 @@ fn creature_files() -> List(#(String, BitArray)) {
         id: 1,
         value: 1.0,
         deflect: 1.0,
+        attack: Attack(stats: 1.0, crit: 1.0, severity: 1.0),
       ),
       multiplier_row(
         schema: creature2_arche_type.schema,
         id: 10,
         value: 0.9599999785423279,
         deflect: 1.0,
+        attack: Attack(stats: 1.059999942779541, crit: 1.0, severity: 1.0),
       ),
     ]),
     planted_table.file(creature2_difficulty.schema, [
@@ -214,6 +217,11 @@ fn creature_files() -> List(#(String, BitArray)) {
         id: 1,
         value: 0.3869999945163727,
         deflect: 0.3199999928474426,
+        attack: Attack(
+          stats: 0.6800000071525574,
+          crit: 0.3199999928474426,
+          severity: 1.0,
+        ),
       ),
     ]),
     planted_table.file(creature2_tier.schema, [
@@ -222,6 +230,7 @@ fn creature_files() -> List(#(String, BitArray)) {
         id: 1,
         value: 1.0,
         deflect: 1.0,
+        attack: Attack(stats: 1.0, crit: 1.0, severity: 0.8500000238418579),
       ),
     ]),
     planted_table.file(creature2_resist.schema, [
@@ -231,10 +240,12 @@ fn creature_files() -> List(#(String, BitArray)) {
       planted_table.row(creature2_display_info.schema, [
         #("ID", Integer(26_565)),
         #("hitRadius", Float(3.0)),
+        #("runLand", Float(10.0)),
       ]),
       planted_table.row(creature2_display_info.schema, [
         #("ID", Integer(26_578)),
         #("hitRadius", Float(2.0)),
+        #("runLand", Float(10.0)),
       ]),
     ]),
     planted_table.file(creature2_display_group_entry.schema, [
@@ -276,19 +287,35 @@ pub fn creature_row(
   planted_table.row(creature2.schema, list.append(changes, base))
 }
 
-/// A multiplier row: the one for Base Health, and the one for BaseAvoidChance (101), the
-/// only other property the Virtual Battle Beast's defence has: the client's rows give
-/// the others 0 products (`Creature2.73464.crit_deflect_glance`).
+/// The multipliers of the properties a creature's attack reads, each the client's
+/// row's: Strength and AssaultRating (0 and 35, `stats`), BaseCritChance and
+/// BaseAvoidReduceChance (102 and 104, `crit`) and CriticalHitSeverityMultiplier
+/// (127, `severity`); MoveSpeedMultiplier (100) is 1.0 in every row they read.
+type Attack {
+  Attack(stats: Float, crit: Float, severity: Float)
+}
+
+/// A multiplier row: the one for Base Health, the one for BaseAvoidChance (101), the
+/// only other property the Virtual Battle Beast's defence has (the client's rows give
+/// the others 0 products, `Creature2.73464.crit_deflect_glance`), and the ones its
+/// attack reads.
 fn multiplier_row(
   schema schema: tbl_file.Schema,
   id id: Int,
   value value: Float,
   deflect deflect: Float,
+  attack attack: Attack,
 ) -> List(Cell) {
   planted_table.row(schema, [
     #("ID", Integer(id)),
+    #("unitPropertyMultiplier000", Float(attack.stats)),
     #("unitPropertyMultiplier007", Float(value)),
+    #("unitPropertyMultiplier035", Float(attack.stats)),
+    #("unitPropertyMultiplier100", Float(1.0)),
     #("unitPropertyMultiplier101", Float(deflect)),
+    #("unitPropertyMultiplier102", Float(attack.crit)),
+    #("unitPropertyMultiplier104", Float(attack.crit)),
+    #("unitPropertyMultiplier127", Float(attack.severity)),
   ])
 }
 
@@ -601,6 +628,7 @@ pub fn content_files() -> List(#(String, BitArray)) {
       }),
     ),
     planted_table.file(creature2_outfit_info.schema, []),
+    planted_table.file(prerequisite.schema, prerequisite_rows()),
     planted_table.file(
       world.schema,
       list.map(content_worlds, fn(id) {
@@ -608,6 +636,20 @@ pub fn content_files() -> List(#(String, BitArray)) {
       }),
     ),
   ]
+}
+
+/// The client's Prerequisite rows of the creature attack's effects
+/// (`Spell4Effects.184741`): 30526, the caster's difficulty (type 179) at most 6
+/// (comparison 6), and 30527, at least 7 (comparison 4).
+pub fn prerequisite_rows() -> List(List(Cell)) {
+  list.map([#(30_526, 6, 6), #(30_527, 4, 7)], fn(condition) {
+    planted_table.row(prerequisite.schema, [
+      #("ID", Integer(condition.0)),
+      #("prerequisiteTypeId0", Integer(179)),
+      #("prerequisiteComparisonId0", Integer(condition.1)),
+      #("objectId0", Integer(condition.2)),
+    ])
+  })
 }
 
 /// The tables only the content load reads, loaded once from the planted files

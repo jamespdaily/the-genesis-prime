@@ -250,7 +250,13 @@ fn strike_of(damage damage: Int, cast_id cast_id: Int) -> creature.Message {
     from: step.Connection(ConnectionId(2)),
     offence: Offence(
       blows: [
-        Blow(spell4_effects_id: 1, damage_type: 3, damage:, delay_ms: 0),
+        Blow(
+          spell4_effects_id: 1,
+          damage_type: 3,
+          damage:,
+          delay_ms: 0,
+          threat_multiplier: 1.0,
+        ),
       ],
       crit_chance: 0.0,
       crit_severity: 1.5,

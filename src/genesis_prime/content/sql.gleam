@@ -15,7 +15,12 @@ import pog
 /// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
 pub type LoadCreatureKindsRow {
-  LoadCreatureKindsRow(creature_id: Int, respawn_ms: Int)
+  LoadCreatureKindsRow(
+    creature_id: Int,
+    respawn_ms: Int,
+    attack_spell4_id: Int,
+    attack_interval_ms: Int,
+  )
 }
 
 /// Every row of the creature_kind table in creature id order, row 0 the default
@@ -31,7 +36,14 @@ pub fn load_creature_kinds(
   let decoder = {
     use creature_id <- decode.field(0, decode.int)
     use respawn_ms <- decode.field(1, decode.int)
-    decode.success(LoadCreatureKindsRow(creature_id:, respawn_ms:))
+    use attack_spell4_id <- decode.field(2, decode.int)
+    use attack_interval_ms <- decode.field(3, decode.int)
+    decode.success(LoadCreatureKindsRow(
+      creature_id:,
+      respawn_ms:,
+      attack_spell4_id:,
+      attack_interval_ms:,
+    ))
   }
 
   "-- Every row of the creature_kind table in creature id order, row 0 the default
@@ -39,9 +51,53 @@ pub fn load_creature_kinds(
 -- (genesis_prime/content/creature_kind). The checks run on these rows, not in SQL.
 select
   creature_id,
-  respawn_ms
+  respawn_ms,
+  attack_spell4_id,
+  attack_interval_ms
 from creature_kind
 order by creature_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `load_game_numbers` query
+/// defined in `./src/genesis_prime/content/sql/load_game_numbers.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadGameNumbersRow {
+  LoadGameNumbersRow(name: String, value: Float, unit: String)
+}
+
+/// Every row of the game_number table in name order: the one query the load makes
+/// of the table at start (genesis_prime/content/game_number). The checks run on
+/// these rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_game_numbers(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadGameNumbersRow), pog.QueryError) {
+  let decoder = {
+    use name <- decode.field(0, decode.string)
+    use value <- decode.field(1, decode.float)
+    use unit <- decode.field(2, decode.string)
+    decode.success(LoadGameNumbersRow(name:, value:, unit:))
+  }
+
+  "-- Every row of the game_number table in name order: the one query the load makes
+-- of the table at start (genesis_prime/content/game_number). The checks run on
+-- these rows, not in SQL.
+select
+  name,
+  value,
+  unit
+from game_number
+order by name;
 "
   |> pog.query
   |> pog.returning(decoder)

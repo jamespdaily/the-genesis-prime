@@ -78,6 +78,7 @@ pub type DamageEffect {
     phase_flags: Int,
     aim: Aim,
     formula: Formula,
+    threat_multiplier: Float,
   )
 }
 
@@ -521,6 +522,7 @@ fn damage_effects_of(
       phase_flags: effect.phase_flags,
       aim:,
       formula:,
+      threat_multiplier: effect.threat_multiplier,
     ))
   })
 }

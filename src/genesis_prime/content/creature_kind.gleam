@@ -32,8 +32,8 @@ pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
       Row(
         creature_id: row.creature_id,
         respawn_ms: row.respawn_ms,
-        attack_spell4_id: todo as "the build adds the column to the query",
-        attack_interval_ms: todo as "the build adds the column to the query",
+        attack_spell4_id: row.attack_spell4_id,
+        attack_interval_ms: row.attack_interval_ms,
       )
     })
   })

@@ -21,8 +21,9 @@
 ////   `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
 ////   1.0 for a player (UnitProperty2 140 to 143: the multiplier's default).
-//// - **A creature caster** has another formula (`0x140565600`: the level scaling
-////   with GameFormula 712) and waits for the step where creatures fight.
+//// - **A creature caster** has its own formula (`creature_value`): the stat part
+////   reads Strength and Assault Power and is held under a cap that grows with the
+////   level by GameFormula 712 (`0x140565600`).
 
 import gleam/float
 import gleam/int
@@ -97,4 +98,99 @@ pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
   let row_part =
     { int.to_float(formula.base) +. flat_part } *. formula.multiplier
   int.to_float(float.round(stat_part)) +. row_part
+}
+
+/// What the creature formula reads of a creature caster: its level, its Strength
+/// (property 0) and its Assault Power (its AssaultRating, property 35, times 0.25,
+/// GameFormula 1266), each as the content load works out the creature's
+/// properties (genesis_prime/world_map/spawn).
+pub type Creature {
+  Creature(level: Int, strength: Float, assault_power: Float)
+}
+
+/// GameFormula 712's four values, which scale a creature's stat part
+/// (`0x140565600`): c = (level x `per_level` + `base`) x the mean of the stat
+/// parameters; a stat part above c grows only to ((1 - e^(-(S - c) / c)) x
+/// `overflow` + 1) x c; and the stat and row parts are divided by `divisor`.
+pub type CreatureScaling {
+  CreatureScaling(
+    per_level: Float,
+    base: Float,
+    overflow: Float,
+    divisor: Float,
+  )
+}
+
+/// The first parameter type the creature formula does not read, or `None`: it reads
+/// Strength (type 1), Assault Power (12) and the level (10).
+pub fn creature_unread(formula formula: Formula) -> Option(Unread) {
+  case
+    list.find(formula.parameters, fn(parameter) {
+      parameter.value != 0.0 && !is_read_for_a_creature(parameter.kind)
+    })
+  {
+    Ok(parameter) -> Some(Unread(parameter_kind: parameter.kind))
+    Error(Nil) -> None
+  }
+}
+
+fn is_read_for_a_creature(kind: Int) -> Bool {
+  kind == 0 || kind == 1 || kind == 10 || kind == 12
+}
+
+/// The effect's value for a creature caster, before any rounding to a whole number
+/// (`0x140565600`): the stat part rounded half away from zero, held under the
+/// creature's cap, plus the row part, both divided by GameFormula 712's fourth
+/// value. The multiplier M is 1.0: a creature's DamageDealtMultiplier (UnitProperty2
+/// 140 to 143) is the default's. Effect 184741 of a level-1 Virtual Battle Beast
+/// (Strength and Assault Power 10.47) is 12.
+pub fn creature_value(
+  formula formula: Formula,
+  creature creature: Creature,
+  scaling scaling: CreatureScaling,
+) -> Float {
+  let stat_parameters =
+    list.filter(formula.parameters, fn(parameter) {
+      parameter.kind == 1 || parameter.kind == 12
+    })
+  let stat_part =
+    list.fold(stat_parameters, 0.0, fn(sum, parameter) {
+      case parameter.kind {
+        1 -> sum +. parameter.value *. creature.strength
+        _ -> sum +. parameter.value *. creature.assault_power
+      }
+    })
+    |> float.round
+    |> int.to_float
+  let mean = case stat_parameters {
+    [] -> 0.0
+    _ ->
+      list.fold(stat_parameters, 0.0, fn(sum, parameter) {
+        sum +. parameter.value
+      })
+      /. int.to_float(list.length(stat_parameters))
+  }
+  let cap =
+    { int.to_float(creature.level) *. scaling.per_level +. scaling.base }
+    *. mean
+  let capped = case stat_part <=. cap || cap <=. 0.0 {
+    True -> stat_part
+    False ->
+      {
+        { 1.0 -. float.exponential({ 0.0 -. { stat_part -. cap } } /. cap) }
+        *. scaling.overflow
+        +. 1.0
+      }
+      *. cap
+  }
+  let flat_part =
+    list.fold(formula.parameters, 0.0, fn(sum, parameter) {
+      case parameter.kind {
+        10 -> sum +. parameter.value *. int.to_float(creature.level)
+        _ -> sum
+      }
+    })
+  let row_part =
+    { int.to_float(formula.base) +. flat_part } *. formula.multiplier
+  { capped +. row_part } /. scaling.divisor
 }

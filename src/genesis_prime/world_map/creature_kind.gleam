@@ -36,11 +36,13 @@
 //// - **Every refusal is collected**, one bad row beside its neighbours, as the
 ////   other content tables' are (genesis_prime/content).
 
-import genesis_prime/content/refusal.{type Refusal, Refusal}
+import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
 import genesis_prime/game/strike_tell
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Spell4Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4
+import genesis_prime/world_map/creature_attack
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -88,41 +90,17 @@ pub fn select(
     Error(Nil) -> [
       Refusal(
         table: table,
-        id: 0,
+        row: RowId(0),
         rule: "the table has no default row 0, which every creature without a row of its own takes",
       ),
     ]
   }
   let refused =
     list.filter_map(rows, fn(row) {
-      case
-        row.creature_id != 0
-        && result.is_error(creature2.get(
-          tables:,
-          id: Creature2Id(row.creature_id),
-        ))
-      {
-        True ->
-          Ok(Refusal(
-            table: table,
-            id: row.creature_id,
-            rule: "the client's Creature2 table has no such creature",
-          ))
-        False ->
-          case row.respawn_ms < strike_tell.deadline_ms {
-            True ->
-              Ok(Refusal(
-                table: table,
-                id: row.creature_id,
-                rule: "a respawn time of "
-                  <> int.to_string(row.respawn_ms)
-                  <> " ms is below the strike deadline of "
-                  <> int.to_string(strike_tell.deadline_ms)
-                  <> " ms",
-              ))
-            False -> Error(Nil)
-          }
-      }
+      refusal_of(row:, tables:)
+      |> result.map(fn(rule) {
+        Refusal(table:, row: RowId(row.creature_id), rule:)
+      })
     })
   case list.append(missing_default, refused), default {
     [], Ok(default) ->
@@ -134,6 +112,73 @@ pub fn select(
       ))
     refusals, _ -> Error(refusals)
   }
+}
+
+/// The first rule the row breaks, in the order of `select`'s doc, or `Error(Nil)`
+/// for a row the load takes.
+fn refusal_of(
+  row row: Row,
+  tables tables: table_store.Tables,
+) -> Result(String, Nil) {
+  let deadline = int.to_string(strike_tell.deadline_ms)
+  let checks = [
+    fn() {
+      case
+        row.creature_id != 0
+        && result.is_error(creature2.get(
+          tables:,
+          id: Creature2Id(row.creature_id),
+        ))
+      {
+        True -> Ok("the client's Creature2 table has no such creature")
+        False -> Error(Nil)
+      }
+    },
+    fn() {
+      case row.respawn_ms < strike_tell.deadline_ms {
+        True ->
+          Ok(
+            "a respawn time of "
+            <> int.to_string(row.respawn_ms)
+            <> " ms is below the strike deadline of "
+            <> deadline
+            <> " ms",
+          )
+        False -> Error(Nil)
+      }
+    },
+    fn() {
+      case spell4.get(tables:, id: Spell4Id(row.attack_spell4_id)) {
+        Error(Nil) ->
+          Ok(
+            "the attack spell "
+            <> int.to_string(row.attack_spell4_id)
+            <> " has no row in the client's Spell4 table",
+          )
+        Ok(..) -> Error(Nil)
+      }
+    },
+    fn() {
+      case row.attack_interval_ms < strike_tell.deadline_ms {
+        True ->
+          Ok(
+            "an attack interval of "
+            <> int.to_string(row.attack_interval_ms)
+            <> " ms is below the strike deadline of "
+            <> deadline
+            <> " ms, so two of the creature's strike rounds would be open at once",
+          )
+        False -> Error(Nil)
+      }
+    },
+    fn() {
+      case creature_attack.evaluated(tables:, spell4_id: row.attack_spell4_id) {
+        Error(unevaluated) -> Ok(creature_attack.describe(unevaluated:))
+        Ok(Nil) -> Error(Nil)
+      }
+    },
+  ]
+  list.find_map(checks, fn(check) { check() })
 }
 
 fn kind_of_row(row: Row) -> Kind {

@@ -42,7 +42,15 @@ fn strike_of(
     key: Key(cast_id:, phase: 0, unit_id: 20),
     from: step.Connection(ConnectionId(2)),
     offence: Offence(
-      blows: [Blow(spell4_effects_id: 1, damage_type: 3, damage:, delay_ms: 0)],
+      blows: [
+        Blow(
+          spell4_effects_id: 1,
+          damage_type: 3,
+          damage:,
+          delay_ms: 0,
+          threat_multiplier: 1.0,
+        ),
+      ],
       crit_chance: 0.0,
       crit_severity: 1.5,
       strikethrough: 0.0,

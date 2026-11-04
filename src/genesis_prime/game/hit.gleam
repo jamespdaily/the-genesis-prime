@@ -43,8 +43,9 @@
 //// - **The shield** takes up to the target's ShieldMitigationMax of each blow after
 ////   mitigation (property 175, 0.625 for a Novice, `player.level1_gear_properties`),
 ////   limited by what it holds, and the description's shield absorbed is the amount
-////   it took; the rest is the health's. A creature has no shield (0), so its hits
-////   are as before. The order is the server's choice (274 section 3).
+////   it took; the rest is the health's. Its share is rounded half away from zero, a
+////   server choice as every step's rounding is. A creature has no shield (0), so its
+////   hits are as before. The order is the server's choice (274 section 3).
 //// - **The damage** of a blow is a whole number, rounded half away from zero (the
 ////   server's choice: the client rounds only the stat part, `0x140566d40`), and each
 ////   step rounds again.
@@ -63,10 +64,17 @@ import gleam/int
 import gleam/list
 
 /// One damage effect as the caster worked it out: the Spell4Effects row, the
-/// damage type, the damage before any critical hit as a whole number, and the
-/// effect's delay (the client applies the description after it).
+/// damage type, the damage before any critical hit as a whole number, the
+/// effect's delay (the client applies the description after it), and the
+/// effect's `threatMultiplier`, which the struck creature's threat reads.
 pub type Blow {
-  Blow(spell4_effects_id: Int, damage_type: Int, damage: Int, delay_ms: Int)
+  Blow(
+    spell4_effects_id: Int,
+    damage_type: Int,
+    damage: Int,
+    delay_ms: Int,
+    threat_multiplier: Float,
+  )
 }
 
 /// What the caster brings to a strike: its blows, its critical hit chance and
@@ -184,9 +192,9 @@ pub fn apply(
         float.max(0.0, offence.crit_chance -. defence.crit_deflect_chance)
       let critical = rolls.crit <. crit_chance
       let glancing = rolls.glance <. defence.glance_chance
-      let #(descriptions, left, killed) =
-        list.fold(offence.blows, #([], health, False), fn(so_far, blow) {
-          let #(done, left, killed) = so_far
+      let #(descriptions, left, shield_left, killed) =
+        list.fold(offence.blows, #([], health, shield, False), fn(so_far, blow) {
+          let #(done, left, shield_left, killed) = so_far
           let raw = case critical {
             True ->
               float.round(int.to_float(blow.damage) *. offence.crit_severity)
@@ -203,8 +211,14 @@ pub fn apply(
               *. { 1.0 -. mitigation_of(defence:, blow:) },
             )
           let mitigated = after_glance - taken
-          let overkill = int.max(0, taken - left)
-          let kills = left > 0 && taken >= left
+          let shielded =
+            int.min(
+              shield_left,
+              float.round(int.to_float(taken) *. defence.shield_mitigation_max),
+            )
+          let to_health = taken - shielded
+          let overkill = int.max(0, to_health - left)
+          let kills = left > 0 && to_health >= left
           let description =
             Description(
               spell4_effects_id: blow.spell4_effects_id,
@@ -213,31 +227,28 @@ pub fn apply(
                 blow:,
                 raw:,
                 mitigated:,
-                taken:,
+                shielded:,
+                to_health:,
                 overkill:,
                 glanced:,
                 kills:,
                 critical:,
               ),
             )
-          #([description, ..done], int.max(0, left - taken), killed || kills)
+          #(
+            [description, ..done],
+            int.max(0, left - to_health),
+            shield_left - shielded,
+            killed || kills,
+          )
         })
       Landed(
         descriptions: list.reverse(descriptions),
         health: left,
-        shield: shield_after(shield:, defence:),
+        shield: shield_left,
         killed:,
       )
     }
-  }
-}
-
-/// The shield left after the blows: the build adds the shield's step to each blow;
-/// a unit with no shield keeps 0.
-fn shield_after(shield shield: Int, defence defence: Defence) -> Int {
-  case defence.shield_mitigation_max >. 0.0 {
-    True -> todo as "the shield step: the build fills it in"
-    False -> shield
   }
 }
 
@@ -258,7 +269,8 @@ fn described(
   blow blow: Blow,
   raw raw: Int,
   mitigated mitigated: Int,
-  taken taken: Int,
+  shielded shielded: Int,
+  to_health to_health: Int,
   overkill overkill: Int,
   glanced glanced: Int,
   kills kills: Bool,
@@ -268,8 +280,8 @@ fn described(
     raw_damage: raw,
     scaled_raw_damage: raw,
     absorbed: mitigated,
-    shield_absorbed: 0,
-    health_damage_with_overkill: taken,
+    shield_absorbed: shielded,
+    health_damage_with_overkill: to_health,
     overkill:,
     glance: glanced,
     killed: case kills {

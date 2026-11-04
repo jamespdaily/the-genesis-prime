@@ -60,6 +60,7 @@ fn casts_to_kill(
               ),
             )),
             delay_ms: effect.delay_ms,
+            threat_multiplier: effect.threat_multiplier,
           )
         })
       })

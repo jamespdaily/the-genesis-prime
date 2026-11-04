@@ -7,9 +7,15 @@
 //// content.load ─▶ rows(db) ─▶ game_number.select(rows, sight.range) ─▶ put(key, numbers)
 //// a map's and a creature's start ─▶ numbers(key) ─▶ GameNumbers: no copy, no query
 //// ```
+////
+//// - **The query** is `sql/load_game_numbers.sql`, run by the load's own pool
+////   before the tree starts; nothing queries the table during play.
 
+import genesis_prime/content/sql
 import genesis_prime/table/loader/store.{type Key}
-import genesis_prime/world_map/game_number.{type GameNumbers, type Row}
+import genesis_prime/world_map/game_number.{type GameNumbers, type Row, Row}
+import gleam/list
+import gleam/result
 import pog
 
 /// The table's name in the log and in a term.
@@ -17,7 +23,12 @@ pub const table = "game_number"
 
 /// Every row of the game_number table, in name order, or why the query failed.
 pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
-  todo as "rows: the build adds the query"
+  sql.load_game_numbers(db)
+  |> result.map(fn(returned) {
+    list.map(returned.rows, fn(row) {
+      Row(name: row.name, value: row.value, unit: row.unit)
+    })
+  })
 }
 
 /// Writes the numbers under the key, once.

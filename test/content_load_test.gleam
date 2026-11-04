@@ -115,7 +115,7 @@ pub fn the_load_puts_the_kinds_in_a_term_the_default_row_is_the_60_second_choice
   let database = database_support.new_database(on: database_support.shared())
   change(
     database,
-    "insert into creature_kind (creature_id, respawn_ms, source, reason) values (73464, 5000, 'server_choice', 'a short respawn for the training Beast')",
+    "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 1500, 'server_choice', 'a short respawn for the training Beast')",
   )
   let #(loaded, key) = load(database:)
   assert loaded == Ok(Nil)
@@ -134,8 +134,8 @@ pub fn a_database_with_no_default_kind_stops_the_load_naming_the_table_test() ->
   let #(loaded, _key) = load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "no default row stops the start"
-  assert list.map(refusals, fn(refused) { #(refused.table, refused.id) })
-    == [#("creature_kind", 0)]
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [#("creature_kind", refusal.RowId(0))]
 }
 
 pub fn a_kind_row_for_a_creature_the_client_does_not_hold_stops_the_load_test() -> Nil {
@@ -143,13 +143,13 @@ pub fn a_kind_row_for_a_creature_the_client_does_not_hold_stops_the_load_test() 
   let database = database_support.new_database(on: database_support.shared())
   change(
     database,
-    "insert into creature_kind (creature_id, respawn_ms, source, reason) values (200001, 5000, 'server_choice', 'a creature the client does not hold')",
+    "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (200001, 5000, 5649, 1500, 'server_choice', 'a creature the client does not hold')",
   )
   let #(loaded, _key) = load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "a refused kind row stops the start"
-  assert list.map(refusals, fn(refused) { #(refused.table, refused.id) })
-    == [#("creature_kind", 200_001)]
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [#("creature_kind", refusal.RowId(200_001))]
 }
 
 pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil {
@@ -209,7 +209,12 @@ pub fn two_refused_rows_are_both_logged_with_table_id_and_rule_and_stop_the_load
       #("spawn", "Creature2 200002 has no row"),
     ]
     as "both rows are refused, each naming the table and the rule: one bad row shows its neighbours"
-  assert list.all(refusals, fn(refused) { refused.id > 0 })
+  assert list.all(refusals, fn(refused) {
+    case refused.row {
+      refusal.RowId(id:) -> id > 0
+      refusal.RowName(..) -> False
+    }
+  })
   let logged =
     mailbox_support.drain(lines)
     |> list.map(fn(line) { line.1 })
@@ -219,7 +224,11 @@ pub fn two_refused_rows_are_both_logged_with_table_id_and_rule_and_stop_the_load
       list.contains(logged, refusal.describe(refused))
     })
     as "every refusal is logged before the start stops"
-  assert refusal.describe(Refusal(table: "spawn", id: 5, rule: "a rule"))
+  assert refusal.describe(Refusal(
+      table: "spawn",
+      row: refusal.RowId(5),
+      rule: "a rule",
+    ))
     == "the table spawn row 5 is refused: a rule"
 }
 
@@ -232,4 +241,23 @@ pub fn a_query_that_fails_stops_the_load_with_the_databases_reason_test() -> Nil
     as "a failed query stops the load"
   assert string.contains(reason, "undefined_column")
     as { "the database's reason is named: " <> reason }
+}
+
+pub fn a_missing_and_an_unknown_game_number_stop_the_load_each_named_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  change(database, "delete from game_number where name = 'leash_range'")
+  change(
+    database,
+    "insert into game_number (name, value, unit, source, reason) values ('evade_range', 30, 'units', 'server_choice', 'a number the server has no use for')",
+  )
+  let #(loaded, _key) = load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a game number the server does not know, or one it reads and does not find, stops the start (the design of step F, section 2)"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [
+      #("game_number", refusal.RowName("evade_range")),
+      #("game_number", refusal.RowName("leash_range")),
+    ]
+    as "each refusal names the table and the number by its name"
 }

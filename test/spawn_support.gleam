@@ -136,6 +136,7 @@ pub fn beast_attack() -> Attack {
           damage_type: 1,
           damage: 12,
           delay_ms: 0,
+          threat_multiplier: 1.0,
         ),
       ],
       crit_chance: 0.0,

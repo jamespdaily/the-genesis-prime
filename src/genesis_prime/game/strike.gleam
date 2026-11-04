@@ -338,6 +338,7 @@ fn offence_of(
           attacker: attacker.stats,
         )),
         delay_ms: effect.delay_ms,
+        threat_multiplier: effect.threat_multiplier,
       )
     }),
     crit_chance: rating.to_fraction(

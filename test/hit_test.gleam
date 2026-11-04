@@ -34,7 +34,13 @@ const beast =
 fn offence(damage damage: Int, damage_type damage_type: Int) -> hit.Offence {
   Offence(
     blows: [
-      Blow(spell4_effects_id: 62_159, damage_type:, damage:, delay_ms: 0),
+      Blow(
+        spell4_effects_id: 62_159,
+        damage_type:,
+        damage:,
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
     ],
     crit_chance: 0.1,
     crit_severity: 1.5,

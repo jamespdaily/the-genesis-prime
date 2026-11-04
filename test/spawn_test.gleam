@@ -140,10 +140,14 @@ pub fn a_row_whose_creature_has_no_row_or_whose_display_is_not_its_creatures_is_
     ])
   assert selection.refusals
     == [
-      Refusal(table: "spawn", id: 7, rule: "Creature2 200002 has no row"),
       Refusal(
         table: "spawn",
-        id: 8,
+        row: refusal.RowId(7),
+        rule: "Creature2 200002 has no row",
+      ),
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(8),
         rule: "display 12345 is not in the display group of Creature2 73464",
       ),
     ]
@@ -158,7 +162,8 @@ fn refused_by(changes changes: List(#(String, planted_table.Cell))) -> String {
       files: character_tables.files_with_beast_changed(changes:),
       rows: [spawn_support.beast_row(number: 1)],
     )
-  let assert [Refusal(table: "spawn", id: 1, rule:)] = selection.refusals
+  let assert [Refusal(table: "spawn", row: refusal.RowId(1), rule:)] =
+    selection.refusals
     as "a creature row the client would not load refuses the spawn"
   rule
 }

@@ -18,9 +18,13 @@
 //// - **The leash range** lies outside the aggro range, so a creature at home with a
 ////   player in its ring does not leash at once.
 //// - **Every refusal is collected**, as the other content tables' are
-////   (genesis_prime/content).
+////   (genesis_prime/content); the ranges are checked once every name is there.
 
-import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
+import gleam/dict
+import gleam/float
+import gleam/list
+import gleam/result
 
 /// One row of the game_number table as the load reads it.
 pub type Row {
@@ -44,6 +48,14 @@ pub type GameNumbers {
   )
 }
 
+/// Each number the server reads, by name, with its unit.
+const expected = [
+  #("aggro_range", "units"),
+  #("leash_range", "units"),
+  #("aggro_threat", "threat"),
+  #("chase_stop_fraction", "fraction"),
+]
+
 /// The numbers of the rows, or every refusal: a name missing or not known, a unit
 /// that is not the name's, a leash range not above the aggro range, and an aggro
 /// range not below `sight_range`.
@@ -51,5 +63,80 @@ pub fn select(
   rows rows: List(Row),
   sight_range sight_range: Float,
 ) -> Result(GameNumbers, List(Refusal)) {
-  todo as "select: the build fills it in"
+  let unknown =
+    list.filter_map(rows, fn(row) {
+      case list.key_find(expected, row.name) {
+        Error(Nil) ->
+          Ok(refused(name: row.name, rule: "the server knows no such number"))
+        Ok(unit) if unit != row.unit ->
+          Ok(refused(
+            name: row.name,
+            rule: "its unit is " <> row.unit <> ", not " <> unit,
+          ))
+        Ok(..) -> Error(Nil)
+      }
+    })
+  let values =
+    list.map(rows, fn(row) { #(row.name, row.value) }) |> dict.from_list
+  let missing =
+    list.filter_map(expected, fn(name_and_unit) {
+      case dict.has_key(values, name_and_unit.0) {
+        True -> Error(Nil)
+        False ->
+          Ok(refused(
+            name: name_and_unit.0,
+            rule: "the table has no such row, which the server reads",
+          ))
+      }
+    })
+  case list.append(unknown, missing) {
+    [_, ..] as refusals -> Error(refusals)
+    [] -> ranges_checked(values:, sight_range:)
+  }
+}
+
+fn ranges_checked(
+  values values: dict.Dict(String, Float),
+  sight_range sight_range: Float,
+) -> Result(GameNumbers, List(Refusal)) {
+  let value = fn(name) { dict.get(values, name) |> result.unwrap(0.0) }
+  let numbers =
+    GameNumbers(
+      aggro_range: value("aggro_range"),
+      leash_range: value("leash_range"),
+      aggro_threat: value("aggro_threat"),
+      chase_stop_fraction: value("chase_stop_fraction"),
+    )
+  let leash = case numbers.leash_range <=. numbers.aggro_range {
+    True -> [
+      refused(
+        name: "leash_range",
+        rule: "a leash range of "
+          <> float.to_string(numbers.leash_range)
+          <> " is not above the aggro range of "
+          <> float.to_string(numbers.aggro_range),
+      ),
+    ]
+    False -> []
+  }
+  let sight = case numbers.aggro_range >=. sight_range {
+    True -> [
+      refused(
+        name: "aggro_range",
+        rule: "an aggro range of "
+          <> float.to_string(numbers.aggro_range)
+          <> " is not below the sight range of "
+          <> float.to_string(sight_range),
+      ),
+    ]
+    False -> []
+  }
+  case list.append(leash, sight) {
+    [] -> Ok(numbers)
+    refusals -> Error(refusals)
+  }
+}
+
+fn refused(name name: String, rule rule: String) -> Refusal {
+  Refusal(table: "game_number", row: RowName(name), rule:)
 }
