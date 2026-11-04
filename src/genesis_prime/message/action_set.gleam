@@ -22,6 +22,8 @@ pub const message_id = 0x019D
 pub type ActionSet {
   ActionSet(
     action_set_index: Int,
+    /// Safe by `opcode.0x19d.set_value`: the client's code gives this field no
+    /// use the server needs, and that fact shows its value is safe.
     field_2: Int,
     result: Int,
     shortcuts: List(ActionShortcut),

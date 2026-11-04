@@ -40,6 +40,7 @@ import genesis_prime/table/xp_per_level
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import novice_tables
 import place_support
 import planted_table.{type Cell, Boolean, Float, Integer}
 
@@ -230,12 +231,16 @@ fn files_with_looks(
     chat_channel_file(),
     planted_table.file(
       game_formula.schema,
-      game_formula_rows(ids: [highest_level_formula], highest: 50),
+      list.append(
+        game_formula_rows(ids: [highest_level_formula], highest: 50),
+        list.map(novice_tables.formulas(), novice_tables.game_formula_row),
+      ),
     ),
     planted_table.file(
       xp_per_level.schema,
       xp_per_level_rows(min_xp_for_level()),
     ),
+    ..novice_tables.files()
   ]
 }
 
@@ -290,7 +295,8 @@ fn creation(
   ])
 }
 
-fn creation_rows() -> List(List(Cell)) {
+/// The planted CharacterCreation rows, each with its ID cell first.
+pub fn creation_rows() -> List(List(Cell)) {
   [
     // 21: a disabled Arkship row (start 0).
     creation(
@@ -351,21 +357,6 @@ fn creation_rows() -> List(List(Cell)) {
       currency_amount: 0,
       entitlement: 0,
     ),
-    // 466: a PreTutorial row, class 1, race 1, sex 1, faction 167, no entitlement and no cost.
-    creation(
-      id: 466,
-      class_id: 1,
-      race_id: 1,
-      sex: 1,
-      faction_id: 167,
-      costume_only: False,
-      enabled: True,
-      start: 4,
-      xp: 0,
-      currency_type: 0,
-      currency_amount: 0,
-      entitlement: 0,
-    ),
     // 530: costume only, class 0.
     creation(
       id: 530,
@@ -411,6 +402,7 @@ fn creation_rows() -> List(List(Cell)) {
       currency_amount: 1,
       entitlement: 0,
     ),
+    ..novice_tables.creation_rows()
   ]
 }
 

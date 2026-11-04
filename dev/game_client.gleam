@@ -17,12 +17,15 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/message/ability_tiers
+import genesis_prime/message/action_set
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined
 import genesis_prime/message/chat_line
 import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
 import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/item_added
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/player_movement.{PlayerMovement}
@@ -35,10 +38,13 @@ import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_property
 import genesis_prime/message/world_message.{WorldMessage}
 import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/float
 import gleam/list
+import gleam/option.{type Option}
 import gleam/result
 import login_client
 import mug
@@ -452,11 +458,19 @@ fn standing(
 /// The ids of the messages that put a player in the world, in the order the
 /// client needs (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc,
 /// opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD first; 0x262 before 0x19B; 0x19B
-/// before 0x6BC, 0x636 and 0x61; then the zone channel (opcode.0x1da, opcode.0x1bc).
+/// before the weapon and the three abilities (0x111, opcode.0x111.ability_bag),
+/// their tiers (0x1A0, opcode.0x1a0), the action set (0x19D, opcode.0x19d), 0x6BC,
+/// 0x636 and 0x61; then the zone channel (opcode.0x1da, opcode.0x1bc).
 pub const world_entry_ids = [
   0x00AD,
   0x0262,
   0x019B,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x01A0,
+  0x019D,
   0x06BC,
   0x0636,
   0x00F1,
@@ -735,4 +749,120 @@ pub fn whisper_next(
 ) -> #(Chatter, Int) {
   whisper(game: chatter.game, target:, text:, chat_message_id: chatter.next_id)
   #(Chatter(..chatter, next_id: chatter.next_id + 1), chatter.next_id)
+}
+
+/// What the entry's items, tiers and action set give the player's action bar, as
+/// the client keeps them: the weapon equipped in slot 16, the abilities in the
+/// bag by bag index, and the bar slots of action set 0 whose ability the client
+/// can show (the ability's item is held, and its tier is set for action set 0).
+pub type Loadout {
+  Loadout(
+    weapon: Option(Int),
+    abilities: List(#(Int, Int)),
+    bar: List(#(Int, Int)),
+  )
+}
+
+/// The loadout the messages of an entry give (opcode.0x111.ability_bag: an item
+/// at location 4 is an ability, its item id the Spell4Base id and its bag index
+/// the slot a press names; lua.ActionBarFrame.InitializeBars: the weapon is the
+/// item equipped in slot 16, location 0; opcode.0x1a0: a tier per base and set;
+/// opcode.0x19d: a type 4 shortcut is an ability by its Spell4Base id, in the bar
+/// slot its bag index names, and the client shows it when it holds the ability,
+/// 0x1403c1bf0).
+pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
+  let items =
+    list.filter(frames, fn(frame) { frame.message_id == item_added.message_id })
+    |> list.map(fn(frame) {
+      let assert Ok(added) = item_added.decode(frame.body) as "0x0111 decodes"
+      added.item
+    })
+  let weapon =
+    list.find(items, fn(item) { item.location == 0 && item.bag_index == 16 })
+    |> result.map(fn(item) { item.item_id })
+    |> option.from_result
+  let abilities =
+    list.filter(items, fn(item) { item.location == 4 })
+    |> list.map(fn(item) { #(item.bag_index, item.item_id) })
+  let held_with_tier =
+    list.filter_map(frames, fn(frame) {
+      case frame.message_id == ability_tiers.message_id {
+        True -> {
+          let assert Ok(tiers) = ability_tiers.decode(frame.body)
+            as "0x01A0 decodes"
+          Ok(tiers.tiers)
+        }
+        False -> Error(Nil)
+      }
+    })
+    |> list.flatten
+    |> list.filter(fn(tier) { tier.action_set_index == 0 })
+    |> list.map(fn(tier) { tier.spell4_base_id })
+  let bar =
+    list.filter_map(frames, fn(frame) {
+      case frame.message_id == action_set.message_id {
+        True -> {
+          let assert Ok(set) = action_set.decode(frame.body) as "0x019D decodes"
+          Ok(set)
+        }
+        False -> Error(Nil)
+      }
+    })
+    |> list.filter(fn(set) { set.action_set_index == 0 && set.result == 1 })
+    |> list.flat_map(fn(set) { set.shortcuts })
+    |> list.filter(fn(shortcut) {
+      shortcut.shortcut_type == 4
+      && list.any(abilities, fn(ability) { ability.1 == shortcut.object_id })
+      && list.contains(held_with_tier, shortcut.object_id)
+    })
+    |> list.map(fn(shortcut) { #(shortcut.bag_index, shortcut.object_id) })
+  Loadout(weapon:, abilities:, bar:)
+}
+
+/// The figures the character sheet shows (lua.Character.UpdateAttributes), whole
+/// numbers.
+pub type Sheet {
+  Sheet(
+    assault_power: Int,
+    support_power: Int,
+    max_health: Int,
+    max_shield: Int,
+  )
+}
+
+/// The factor from a rating to a power: GameFormula 1266's first value, 0.25
+/// (0x14064c960, 0x14064ca50).
+const power_per_rating = 0.25
+
+/// The sheet's figures for the player a 0x262 creates: Assault Power is property
+/// 35 times the factor (0x14064c960), Support Power is property 36 times it
+/// (0x14064ca50), Max Health is property 7 cut to a whole number (0x14064a6d0)
+/// and Max Shields is property 41 (0x14064faa0); a property the 0x262 does not
+/// set is 0. Power and shields show rounded to the whole number.
+pub fn sheet(unit unit: UnitCreatePlayer) -> Sheet {
+  let property = fn(id) {
+    case
+      list.find(unit.tail.properties, fn(property) {
+        property.property_id == id
+      })
+    {
+      Ok(property) -> property_value(property)
+      Error(Nil) -> 0.0
+    }
+  }
+  Sheet(
+    assault_power: float.round(property(35) *. power_per_rating),
+    support_power: float.round(property(36) *. power_per_rating),
+    max_health: float.truncate(property(7)),
+    max_shield: float.round(property(41)),
+  )
+}
+
+/// The float a property holds as its value.
+fn property_value(property: unit_property.UnitProperty) -> Float {
+  let assert Ok(bits) = float32.bits(property.value)
+    as "a property's value is 32 bits"
+  let assert Ok(value) = float32.value(bits)
+    as "the server sends a finite property value"
+  value
 }

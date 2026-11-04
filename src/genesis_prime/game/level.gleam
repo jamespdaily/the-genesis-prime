@@ -38,7 +38,7 @@ pub fn for_experience(
 }
 
 /// The highest level, from GameFormula row 145's dataint0.
-fn highest_level(tables: table_store.Tables) -> Result(Int, Nil) {
+pub fn highest_level(tables: table_store.Tables) -> Result(Int, Nil) {
   game_formula.get(tables:, id: GameFormulaId(highest_level_formula))
   |> result.map(fn(row) { row.dataint0 })
 }

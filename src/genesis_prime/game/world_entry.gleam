@@ -9,8 +9,8 @@
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place)
 ////                                                 (or Refused: the rule hands back to select)
-//// Joined(unit record, run)   ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1,
-////                                                 0x61, WatchMap(map, run)
+//// Joined(unit record, run)   ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 4, 0x1A0, 0x19D,
+////                                                 0x6BC, 0x636, 0xF1, 0x61, WatchMap(map, run)
 //// ```
 ////
 //// - **The unit** is the map's: it builds the player's unit when it takes the
@@ -18,9 +18,19 @@
 ////   `joined` sends as it is. The place the map is given, and 0xAD and 0x262
 ////   carry, is bounded (below).
 //// - **The order** is the client's: 0xAD first; 0x262 before 0x19B; 0x19B
-////   before 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
+////   before the loadout, 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
 ////   player). 0xF1 sets the flag loading's last stage waits on (0x1403b67e0).
+//// - **The loadout** (genesis_prime/game/loadout) is sent after 0x19B, which sets
+////   the player, and before 0x61: the Novice weapon as an item equipped in slot
+////   16 (0x111 at location 0), then one ability item per level-1 spell (0x111 at
+////   location 4, bag index from 0), then the tier 1 of each ability in action
+////   sets 0 to 3 (0x1A0) and action set 0 with the abilities in bar slots 0 to 2
+////   (0x19D) (`opcode.0x111.ability_bag`, `opcode.0x1a0`, `opcode.0x19d`). Without
+////   the weapon the client hides the bar and refuses the abilities that need
+////   one (`lua.ActionBarFrame.InitializeBars`, `0x1403afb10`). The unit's 0x262
+////   carries the gear's health, shield and properties
+////   (genesis_prime/world_map/player_unit `with_gear`).
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
 ////   floats, which neither entry path reads (opcode.0xad.last_floats). The
 ////   position, here and in 0x262, is bounded to the box the client bounds a
@@ -56,15 +66,22 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/camp
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
+import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/message/ability_tier.{AbilityTier}
+import genesis_prime/message/ability_tiers.{AbilityTiers}
+import genesis_prime/message/action_set.{ActionSet}
+import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
+import genesis_prime/message/item_added.{ItemAdded}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/player_path.{PlayerPath}
+import genesis_prime/message/shared_item.{SharedItem}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId}
@@ -72,9 +89,13 @@ import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, type SessionEpoch,
   CharacterId,
 }
+import genesis_prime/table/id.{type Spell4BaseId}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/player_unit
 import gleam/int
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/set.{type Set}
@@ -276,53 +297,73 @@ pub fn joined(
   answer answer: map.Outgoing,
   realm_id realm_id: Int,
   next_whisper next_whisper: Int,
+  tables tables: table_store.Tables,
 ) -> Result(#(Entered, List(Effect)), Nil) {
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
       case answer {
-        map.Joined(unit:, incarnation:, clock_origin_ms:) -> {
+        map.Joined(unit: map_unit, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
+          let assert Ok(loadout) =
+            loadout.of(
+              tables:,
+              class_id: character.class_id,
+              faction_id: character.faction_id,
+            )
+            as "the load requires a Novice set for every class and faction a player can make"
+          let assert Ok(max_health) =
+            loadout.max_health(tables:, loadout:, level: character.level)
+            as "CreatureLevel holds a row for every level of a character"
+          let unit =
+            player_unit.with_gear(
+              record: map_unit,
+              max_health:,
+              gear: loadout.properties,
+            )
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
-          Ok(
-            #(
-              Entered(
-                character_id: character.character_id,
-                map:,
-                incarnation:,
-                unit_id:,
-                unit:,
-                clock_origin_ms:,
-                viewers: set.new(),
-                shown: set.new(),
-                gone: set.new(),
-                movement: movement.entered(place:, session_epoch:),
-                camp: camp.none(),
-                chat: chat.new(
-                  speaker: chat_tell.Speaker(
-                    realm_id:,
-                    character_id: character_id_number,
-                    name: character.name,
-                    faction_id: character.faction_id,
-                    unit_id:,
-                    map:,
-                    incarnation:,
-                  ),
-                  next_whisper:,
+          Ok(#(
+            Entered(
+              character_id: character.character_id,
+              map:,
+              incarnation:,
+              unit_id:,
+              unit:,
+              clock_origin_ms:,
+              viewers: set.new(),
+              shown: set.new(),
+              gone: set.new(),
+              movement: movement.entered(place:, session_epoch:),
+              camp: camp.none(),
+              chat: chat.new(
+                speaker: chat_tell.Speaker(
+                  realm_id:,
+                  character_id: character_id_number,
+                  name: character.name,
+                  faction_id: character.faction_id,
+                  unit_id:,
+                  map:,
+                  incarnation:,
                 ),
+                next_whisper:,
               ),
+            ),
+            list.flatten([
               [
                 enter_world(place: sent),
                 player_created(unit:),
                 unit_is_player(unit_id:),
+              ],
+              loadout_sent(character_number: character_id_number, loadout:),
+              [
                 player_path(character:),
                 control_granted(unit_id:),
                 movement_interval(),
                 entered_world(),
                 WatchMap(map:, incarnation:),
               ],
-            ),
-          )
+            ]),
+          ))
         }
         map.Left | map.Watched(..) | map.Unwatched(..) | map.Gone(..) ->
           Error(Nil)
@@ -418,4 +459,160 @@ fn entered_world() -> Effect {
   let assert Ok(body) = player_entered_world.encode(PlayerEnteredWorld)
     as "an empty body encodes"
   Send(Frame(message_id: player_entered_world.message_id, body:))
+}
+
+/// The location of the held items that are equipped: the weapon, in the slot
+/// the loadout names (`0x1403afb10`).
+const equipped_location = 0
+
+/// The location of the held items that are abilities (`opcode.0x111.ability_bag`).
+const ability_location = 4
+
+/// The reason an item is added for when it is held from the start: 49, which
+/// adds an ability without raising the ability book's change
+/// (`opcode.0x111.ability_bag`) and, as every reason but 27, shows the ability
+/// in its bar slot (`0x1403c1bf0`).
+const held_from_the_start = 49
+
+/// The action sets an ability book entry holds, 0 to 3 (`opcode.0x1a0`).
+const action_sets = [0, 1, 2, 3]
+
+/// The tier every ability starts at (`opcode.0x1a0`: tier 0 counts as 1).
+const first_tier = 1
+
+/// The result of an action set the client takes as ok (`opcode.0x19d`).
+const action_set_ok = 1
+
+/// The action set shown until a message changes it (`opcode.0x19d`).
+const first_action_set = 0
+
+/// The shortcut type of an ability, by its Spell4Base id (`opcode.0x19d`).
+const ability_shortcut = 4
+
+/// The 2-bit value of an action set: bit 0 set marks the set unlocked, which the
+/// ability book's set arrows and the active set's switch read; nothing in casting
+/// or the bar reads it (`opcode.0x19d.set_value`). Set 0, the active set, is
+/// unlocked.
+const set_unlocked = 1
+
+/// The loadout's messages, in order: the weapon, each ability, the tiers and
+/// action set 0.
+fn loadout_sent(
+  character_number character_number: Int,
+  loadout loadout: Loadout,
+) -> List(Effect) {
+  let weapon =
+    held_item(
+      character_number:,
+      item_id: { loadout.weapon }.value,
+      location: equipped_location,
+      bag_index: loadout.weapon_slot,
+    )
+  let abilities =
+    list.index_map(loadout.abilities, fn(ability, bag_index) {
+      held_item(
+        character_number:,
+        item_id: ability.value,
+        location: ability_location,
+        bag_index:,
+      )
+    })
+  list.flatten([
+    [weapon],
+    abilities,
+    [
+      ability_tiers_frame(abilities: loadout.abilities),
+      action_set_frame(abilities: loadout.abilities),
+    ],
+  ])
+}
+
+/// 0x111 for an item the character holds, a stack of 1 with no charges and full
+/// durability. The guid is a server choice, one per held slot of a character:
+/// the client keys held items by location and index and only keeps the guid
+/// (0x140569d30). Every value the client's code does not name is 0
+/// (`opcode.0x111.shared_item_unnamed`), the lists empty.
+fn held_item(
+  character_number character_number: Int,
+  item_id item_id: Int,
+  location location: Int,
+  bag_index bag_index: Int,
+) -> Effect {
+  let assert Ok(body) =
+    item_added.encode(ItemAdded(
+      item: SharedItem(
+        item_guid: character_number * 65_536 + location * 256 + bag_index,
+        field_2: 0,
+        item_id:,
+        location:,
+        bag_index:,
+        stack_count: 1,
+        charges: 0,
+        field_8: 0,
+        field_9: 0,
+        field_10: 0,
+        durability: float32.to_bits(1.0),
+        field_12: 0,
+        field_13: 0,
+        field_14: 0,
+        field_15: 0,
+        field_16: 0,
+        field_17: 0,
+        field_18: 0,
+        field_19: 0,
+        field_20: 0,
+        field_21: 0,
+        field_22: 0,
+        field_23: 0,
+        list_a: [],
+        list_b: [],
+        field_27: 0,
+      ),
+      reason: held_from_the_start,
+    ))
+    as "an item of 18 bits, a location of 9 and a character's guid of 64 fit the message"
+  Send(Frame(message_id: item_added.message_id, body:))
+}
+
+/// 0x1A0 with tier 1 of each ability in each action set.
+fn ability_tiers_frame(abilities abilities: List(Spell4BaseId)) -> Effect {
+  let assert Ok(body) =
+    ability_tiers.encode(
+      AbilityTiers(
+        tiers: list.flat_map(abilities, fn(ability) {
+          list.map(action_sets, fn(action_set_index) {
+            AbilityTier(
+              spell4_base_id: ability.value,
+              tier: first_tier,
+              action_set_index:,
+            )
+          })
+        }),
+      ),
+    )
+    as "a Spell4Base id of 18 bits, a tier of 4 and a set of 3 fit the message"
+  Send(Frame(message_id: ability_tiers.message_id, body:))
+}
+
+/// 0x19D for action set 0, the abilities in bar slots 0, 1 and 2. A shortcut
+/// of type 4 names an ability by its Spell4Base id; the client reads its
+/// location for no type 4 shortcut (`0x1403c1bf0`), so it is the ability
+/// location.
+fn action_set_frame(abilities abilities: List(Spell4BaseId)) -> Effect {
+  let assert Ok(body) =
+    action_set.encode(ActionSet(
+      action_set_index: first_action_set,
+      field_2: set_unlocked,
+      result: action_set_ok,
+      shortcuts: list.index_map(abilities, fn(ability, slot) {
+        ActionShortcut(
+          shortcut_type: ability_shortcut,
+          location: ability_location,
+          bag_index: slot,
+          object_id: ability.value,
+        )
+      }),
+    ))
+    as "a bar slot below 48 and an id of 32 bits fit the message"
+  Send(Frame(message_id: action_set.message_id, body:))
 }
