@@ -17,11 +17,11 @@ import gate_rule
 import genesis_prime/service
 import genesis_prime/step.{type Address, Creature, CreatureStart}
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/erlang/process.{type Subject}
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import owned_test
+import spawn_support
 
 /// The creature the gate is asked to start: unit 7 of the first run of World
 /// 3460, standing at spawn 1.
@@ -30,8 +30,7 @@ fn a_creature() -> step.CreatureStart {
     map: MapId(world_id: 3460, instance: 0),
     incarnation: 1,
     unit_id: 7,
-    spawn: SpawnId(1),
-    appear_after_ms: 0,
+    spawn: spawn_support.battle_beast(number: 1, x: 0.0),
     clock_origin_ms: 0,
   )
 }

@@ -35,6 +35,7 @@ import genesis_prime/store/worker
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_registry
+import genesis_prime/world_map/spawn
 import gleam/erlang/application as erlang_application
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/charlist.{type Charlist}
@@ -241,7 +242,7 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 5000,
     registry: registry.new(),
-    world: world(),
+    world: world(tables),
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
     login: login(),
@@ -253,9 +254,9 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
 /// 5 s, the same as an ask, a map and a creature have 5 s to stop, and a spawn
 /// whose creature ended stays empty for 60 s, the respawn time the server
 /// chooses since no client table holds one (death.creature_respawn). It stands
-/// no creature until the spawns are given. Recording is off; the dev start
-/// changes it.
-fn world() -> server.World {
+/// the creatures of the tables' spawns. Recording is off; the dev start changes
+/// it.
+fn world(tables: store.Tables) -> server.World {
   server.World(
     maps: process.new_name("maps"),
     map_supervisor: process.new_name("map_supervisor"),
@@ -265,7 +266,7 @@ fn world() -> server.World {
     creature_supervisor: process.new_name("creature_supervisor"),
     creature_shutdown_ms: 5000,
     creature_restart_ms: 60_000,
-    spawns: [],
+    spawns: spawn.all(tables),
   )
 }
 

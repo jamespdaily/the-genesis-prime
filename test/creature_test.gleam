@@ -2,15 +2,15 @@
 //// is: inputs in, new state and effects out. Expected values come from these
 //// places.
 //// - The doc comment of `genesis_prime/world_map/creature` (its sequence and its
-////   failure table): told `Watched(by)` it sends that connection its 0x262 once it
-////   shows itself; told `Unwatched(by)` its 0x355, if it showed itself; a creature
-////   that waits `appear_after_ms` shows itself when its timer fires; it watches its
+////   failure table): told `Watched(by)` it sends that connection its 0x262; told
+////   `Unwatched(by)` its 0x355, if that connection was a viewer; it watches its
 ////   map run and stops with it.
 //// - Design C (the Design artifact of issue 274, section 2): every message about a
 ////   unit comes from its owner's process, so the 0x262 and the 0x355 are the
 ////   creature's own sends, to the viewer's connection.
 //// - The map's clock: `server_time_estimate_start` is the milliseconds since the
 ////   map started, from the origin the creature was given (`map.server_time`).
+//// - The creature's values are the Virtual Battle Beast's (`spawn_support`).
 
 import connection_rule_support as support
 import genesis_prime/client_connection.{
@@ -18,15 +18,13 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Connection, ConnectionId,
-  CreatureStart, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired,
-  StartCreature, StartServiceTimer, Started, Stop, TimerId, Told, WatchEnded,
-  WatchId,
+  CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
+  StartServiceTimer, Started, Stop, Told, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/creature.{
   type State, Settings, Unwatched, Watched,
 }
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/list
 import owned_test
 import spawn_support
@@ -36,20 +34,17 @@ const ship = MapId(world_id: 3460, instance: 0)
 /// The time the map's clock started at on the monotonic clock.
 const clock_origin_ms = 5000
 
-/// A creature standing at spawn 1 as unit 7 of the first run, that shows itself
-/// `appear_after_ms` after it starts.
-fn creature(appear_after_ms appear_after_ms: Int) -> State {
-  creature.new(Settings(
-    creature: CreatureStart(
+/// A creature standing at a Battle Beast spawn as unit 7 of the first run.
+fn creature() -> State {
+  creature.new(
+    Settings(creature: CreatureStart(
       map: ship,
       incarnation: 1,
       unit_id: 7,
-      spawn: SpawnId(1),
-      appear_after_ms:,
+      spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       clock_origin_ms:,
-    ),
-    spawn: spawn_support.battle_beast(number: 1, x: 0.0),
-  ))
+    )),
+  )
 }
 
 fn feed(
@@ -79,14 +74,10 @@ fn sent(taken: ServiceStep(PeerNews)) -> List(#(Int, PeerNews)) {
   })
 }
 
-pub fn a_creature_that_stands_from_the_start_watches_its_run_and_sends_its_0x262_to_each_player_who_sees_it_test() -> Nil {
+pub fn a_creature_watches_its_run_and_sends_its_0x262_to_each_player_who_sees_it_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, taken) =
-    feed(
-      state: creature(appear_after_ms: 0),
-      at_ms: 5000,
-      event: OwnEvent(Started),
-    )
+    feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
   assert support.watches(taken) == [#(WatchId(1), step.Map(ship, 1))]
     as "the creature watches the run that started it, so it ends with it"
   let #(_, taken) =
@@ -106,58 +97,45 @@ pub fn a_creature_that_stands_from_the_start_watches_its_run_and_sends_its_0x262
     as "stamped from the map's clock: 6500 ms on the monotonic clock, 1500 after the map started"
 }
 
-pub fn a_creature_that_appears_later_sends_its_0x262_only_when_its_timer_fires_and_its_0x355_to_who_stops_seeing_it_test() -> Nil {
+pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothing_to_one_that_never_saw_it_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, taken) =
-    feed(
-      state: creature(appear_after_ms: 60_000),
-      at_ms: 5000,
-      event: OwnEvent(Started),
-    )
-  assert list.contains(
-    support.effects_of(taken),
-    OwnEffect(StartServiceTimer(timer: TimerId(1), after_ms: 60_000)),
-  )
-    as "the creature waits the respawn time before it shows itself"
-  let #(state, taken) =
+  let #(state, _) =
+    feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
+  let #(state, _) =
     feed(
       state:,
       at_ms: 6000,
       event: OwnEvent(Told(Watched(by: ConnectionId(5)))),
     )
-  assert sent(taken) == []
-    as "a creature that has not shown itself sends nothing"
-  let #(state, taken) =
-    feed(state:, at_ms: 65_000, event: OwnEvent(ServiceTimerFired(TimerId(1))))
-  let assert [#(5, PeerNews(unit_id: 7, news: CreatureAppeared(..), ..))] =
-    sent(taken)
-    as "it shows itself to the player who saw it by then"
   let #(state, taken) =
     feed(
       state:,
-      at_ms: 66_000,
+      at_ms: 7000,
       event: OwnEvent(Told(Unwatched(by: ConnectionId(5)))),
     )
   let assert [#(5, PeerNews(unit_id: 7, news: Removed, ..))] = sent(taken)
     as "a player who stops seeing it is sent its 0x355"
-  let #(_, taken) =
+  let #(state, taken) =
     feed(
       state:,
-      at_ms: 67_000,
+      at_ms: 8000,
       event: OwnEvent(Told(Unwatched(by: ConnectionId(5)))),
     )
   assert sent(taken) == []
     as "a connection that is not a viewer is sent nothing"
+  let #(_, taken) =
+    feed(
+      state:,
+      at_ms: 9000,
+      event: OwnEvent(Told(Unwatched(by: ConnectionId(6)))),
+    )
+  assert sent(taken) == [] as "a connection that never saw it is sent nothing"
 }
 
 pub fn a_creature_stops_when_its_run_ends_and_when_the_server_stops_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    feed(
-      state: creature(appear_after_ms: 0),
-      at_ms: 5000,
-      event: OwnEvent(Started),
-    )
+    feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
   let #(_, taken) = feed(state:, at_ms: 6000, event: WatchEnded(WatchId(1)))
   assert support.stops(taken) as "the end of its run ends the creature"
   let #(_, taken) =

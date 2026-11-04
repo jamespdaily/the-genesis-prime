@@ -284,3 +284,20 @@ pub fn rename_result_in(frames: List(Frame)) -> RenameCharacterResult {
     as "0x014B decodes"
   result
 }
+
+/// Moves the stored character to World 3460, Warfare Woods (WorldZone 5967), at
+/// the centre of the Exile objective circle (WorldLocation2 51739), so a player
+/// who plays it enters within 1024 units of the training creatures.
+pub fn move_to_warfare_woods(
+  pool pool: pog.Connection,
+  character_id character_id: Int,
+) -> Nil {
+  let assert Ok(_) =
+    pog.query(
+      "update character set world_id = 3460, world_zone_id = 5967, position_x = -131.135, position_y = -875.235, position_z = 333.318 where character_id = $1",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.execute(pool)
+    as "the character moved"
+  Nil
+}

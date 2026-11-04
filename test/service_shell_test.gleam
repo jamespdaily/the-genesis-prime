@@ -482,6 +482,7 @@ fn hand_off_child(
       },
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
       shutdown_ms:,
+      told_through: None,
     ),
   )
 }
@@ -506,6 +507,7 @@ fn unnamed_hand_off() -> service_shell.Settings(
     rule: hand_off.rule(),
     reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 1000,
+    told_through: None,
   )
 }
 

@@ -16,6 +16,7 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import character_tables
 import event_wait
 import genesis_prime/client_connection.{
   type Message, CreatureAppeared, PeerNews, SentByMap, SentByPeer,
@@ -28,7 +29,9 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
+import genesis_prime/world_map/spawn
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/int
 import gleam/list
 import map_support
 import owned_test
@@ -222,4 +225,31 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
     )
     == Error(Nil)
   })
+}
+
+/// The most a map's start may take with this world's spawns, in milliseconds.
+/// A map starts its creatures one by one inside its own start, which Maps waits
+/// for (an actor's start may take 5000 ms). This world's 54 spawns took 1 ms, the
+/// clock's resolution (three runs on the development machine); the bound is 50
+/// ms, about 1% of the 5000, so a world with some two thousand spawns, or a start
+/// that costs 50 times what it did, fails here and reopens the choice to start
+/// creatures after the map's start (the shell taking `Started` from its own
+/// mailbox).
+const map_start_bound_ms = 50
+
+pub fn a_map_that_starts_its_creatures_inside_its_own_start_starts_within_the_bound_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let spawns = spawn.all(character_tables.shared())
+  assert list.length(spawns) == 54
+    as "the world's spawns are the 27 Battle Beasts and the 27 Daguns"
+  let world = world_support.start(spawns:, creature_restart_ms: 60_000)
+  let before = ask_support.monotonic_ms()
+  let _run = started(world)
+  let took = ask_support.monotonic_ms() - before
+  assert took < map_start_bound_ms
+    as {
+      "the map's start with the world's spawns took "
+      <> int.to_string(took)
+      <> " ms"
+    }
 }

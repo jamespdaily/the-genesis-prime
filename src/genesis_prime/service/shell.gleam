@@ -20,7 +20,7 @@
 ////   loop:
 ////     Call(message, reply)  ─▶ OwnEvent(Asked(CallerId(n), message)) ─▶ step ─▶ effects
 ////     TellCall(message)     ─▶ OwnEvent(Told(message))                 ─▶ step ─▶ effects
-////       (sent to the subject, or to the pid: `service.tell_pid`)
+////       (sent to the subject, or through the settings' scope: `group_registry`)
 ////     a timer's firing      ─▶ OwnEvent(ServiceTimerFired(id))        ─▶ step ─▶ effects
 ////     a watched process's DOWN ─▶ WatchEnded(id)           ─▶ step ─▶ effects
 ////     the parent's exit     ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
@@ -118,6 +118,7 @@
 ////   case for such a step is unreachable.
 
 import genesis_prime/connection/script.{type Elapsed}
+import genesis_prime/group_registry.{type Scope}
 import genesis_prime/service.{type Call, type Reach, Call, TellCall}
 import genesis_prime/step.{
   type CreatureStart, type Effect, type Event, type ServiceEffect,
@@ -150,14 +151,18 @@ pub type Settings(settings, state, message, outgoing) {
     /// How long it has to stop once the supervisor stops it; the child's
     /// shutdown timeout.
     shutdown_ms: Int,
+    /// The scope a process that finds it by an address tells it through
+    /// (genesis_prime/group_registry), or `None` for a service told only by its
+    /// subject.
+    told_through: Option(Scope(Call(message, outgoing))),
   )
 }
 
 /// What reaches the actor: a call, an exit signal it traps, a timer's firing,
 /// the end of a process it watches, or a message it does not take.
 type Mail(message, outgoing) {
-  /// A call sent through the service's subject, or a tell sent to its pid
-  /// (`service.tell_pid`).
+  /// A call sent through the service's subject, or a tell sent through its
+  /// scope (`group_registry.deliver_one`).
   Called(call: Call(message, outgoing))
   /// A timer fired: its id and the reference of the start it came from
   /// (`script.Elapsed`).
@@ -229,6 +234,18 @@ fn start(
   |> actor.start
 }
 
+/// The selector with what is told through the scope added, when the service has
+/// one.
+fn select_told(
+  selector selector: process.Selector(Mail(message, outgoing)),
+  scope scope: Option(Scope(Call(message, outgoing))),
+) -> process.Selector(Mail(message, outgoing)) {
+  case scope {
+    Some(scope) -> group_registry.select_delivered(scope, selector, Called)
+    None -> selector
+  }
+}
+
 /// Registers the name (a named service) or makes the subject its callers send
 /// to (an unnamed one), traps exits and takes `Started`.
 fn initialise(
@@ -273,7 +290,7 @@ fn initialise(
     process.new_selector()
     |> process.select_other(Stray)
     |> process.select_map(calls, Called)
-    |> service.select_told(Called)
+    |> select_told(scope: settings.told_through)
     |> process.select_map(elapsed, fn(fired) {
       TimerElapsed(timer: fired.timer, reference: fired.reference)
     })

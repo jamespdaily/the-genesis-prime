@@ -376,7 +376,12 @@ fn gate_settings(
   gate_rule.Message,
   gate_rule.Answer,
 ) {
-  service_shell.Settings(rule: gate_as_rule(), reach:, shutdown_ms:)
+  service_shell.Settings(
+    rule: gate_as_rule(),
+    reach:,
+    shutdown_ms:,
+    told_through: None,
+  )
 }
 
 /// A reach that finds no process and sends to none.

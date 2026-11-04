@@ -9,6 +9,15 @@ import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/chat_channel
+import genesis_prime/table/creature2
+import genesis_prime/table/creature2_arche_type
+import genesis_prime/table/creature2_difficulty
+import genesis_prime/table/creature2_display_group_entry
+import genesis_prime/table/creature2_display_info
+import genesis_prime/table/creature2_override_properties
+import genesis_prime/table/creature2_resist
+import genesis_prime/table/creature2_tier
+import genesis_prime/table/creature_level
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
@@ -26,6 +35,9 @@ import gleam/erlang/reference.{type Reference}
 /// - ChatChannel: the flags of each chat channel (genesis_prime/game/chat).
 /// - CharacterCustomization and CharacterCustomizationLabel: the rows and
 ///   labels of a character's look (genesis_prime/game/appearance).
+/// - Creature2 with its ArcheType, Difficulty, DisplayGroupEntry, DisplayInfo,
+///   OverrideProperties, Resist and Tier, and CreatureLevel: the creatures that
+///   stand and their values (genesis_prime/world_map/spawn).
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
 ///   create request carries (genesis_prime/game/appearance).
 /// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
@@ -37,6 +49,15 @@ pub fn entries() -> List(store.Entry) {
     chat_channel.entry(),
     character_customization.entry(),
     character_customization_label.entry(),
+    creature2.entry(),
+    creature2_arche_type.entry(),
+    creature2_difficulty.entry(),
+    creature2_display_group_entry.entry(),
+    creature2_display_info.entry(),
+    creature2_override_properties.entry(),
+    creature2_resist.entry(),
+    creature2_tier.entry(),
+    creature_level.entry(),
     customization_parameter.entry(),
     customization_parameter_map.entry(),
     game_formula.entry(),

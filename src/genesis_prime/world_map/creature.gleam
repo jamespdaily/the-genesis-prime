@@ -8,9 +8,10 @@
 //// by the creature supervisor (genesis_prime/world_map/creature_supervisor)
 //// when its map's `StartCreature` effect is carried out, and found by its
 //// `Creature` address in the registry (genesis_prime/world_map/creature_registry).
-//// Its state, the players who see it and whether it shows itself, lives only in
-//// the process: a crash loses it, and the map, which watches the creature, tells
-//// every player the unit is `Gone` and starts the spawn again as another unit.
+//// Its state, the players who see it, lives only in the process: a crash loses
+//// it, and the map, which watches the creature, tells every player the unit is
+//// `Gone`, starts the spawn again as another unit after the respawn time, and
+//// tells the new creature who sees it.
 ////
 //// From the start to the end of a creature, and what the players in sight are
 //// sent:
@@ -18,21 +19,12 @@
 //// ```
 //// map                     creature                                    player's connection
 ////                         Started ─▶ Watch(map run)                   (the shell monitors the run)
-////                                    appear_after > 0: StartServiceTimer(appear)
-////                                    appear_after = 0: shows itself
-//// Watched(by: c) ───────▶ viewers + c; showing: Send(c, CreatureAppeared) ──▶ writes 0x262 once
-////                                    not showing yet: nothing
-//// Unwatched(by: c) ─────▶ viewers - c; showing and c was a viewer:
-////                                    Send(c, Removed) ──────────────────────▶ writes 0x355 if shown
-//// the appear timer ─────▶ shows itself: Send(each viewer, CreatureAppeared) ─▶ writes 0x262 once
+//// Watched(by: c) ───────▶ viewers + c; Send(c, CreatureAppeared) ───▶ writes 0x262 once
+//// Unwatched(by: c) ─────▶ viewers - c, if c was a viewer:
+////                                    Send(c, Removed) ──────────────▶ writes 0x355 if shown
 //// the run's end (WatchEnded) ─▶ Stop                                  (the map is gone: so are its players)
 //// ```
 ////
-//// - **Appear.** A creature whose `appear_after_ms` is above 0 stays out of
-////   sight until its timer fires, then shows itself to every player who sees it
-////   by then. It is how a spawn comes back after its creature crashed
-////   (genesis_prime/world_map/map): a creature that crashes in a loop shows
-////   itself at most once an `appear_after_ms`.
 //// - **The unit** is `creature_unit.create(spawn, unit_id, time)`, stamped with
 ////   the map's server time at the moment it is sent, from the clock origin the
 ////   map gave (`map.server_time`).
@@ -48,30 +40,35 @@
 ////
 //// | Point | What happens |
 //// |---|---|
-//// | the creature crashes, shown or not | its map's watch ends; the map sends every player `Gone(unit)` and starts the spawn again as a new unit that appears after the respawn time |
+//// | the creature crashes | its map's watch ends; the map sends every player `Gone(unit)` and starts the spawn again, after the respawn time, as a new unit |
 //// | the map run ends | the creature's watch on the run ends and it stops |
 //// | the creature supervisor restarts | every creature ends and so does every map (genesis_prime/server): the world subtree is `rest_for_one` |
 //// | a viewer's connection ends | a send to it is dropped; the map sends `Unwatched`, and the creature forgets it |
 //// | a `Watched` or `Unwatched` reaches a creature that has ended | dropped: the registry finds no process |
-//// | the appear timer fires after the creature stopped | not possible: the timer lives in the process |
 
-import genesis_prime/client_connection.{type PeerNews}
-import genesis_prime/step.{
-  type ConnectionId, type CreatureStart, type ServiceInput, type ServiceRule,
-  type ServiceStep, Asked, CreatureNotStarted, Effects, OwnEvent,
-  ServiceTimerFired, Started, Stop, Stopping, Told, WatchEnded,
+import genesis_prime/client_connection.{
+  type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
+import genesis_prime/step.{
+  type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
+  type ServiceInput, type ServiceRule, type ServiceStep, Asked, Connection,
+  CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send, ServiceTimerFired,
+  Started, Stop, Stopping, Told, Watch, WatchEnded, WatchId,
+}
+import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
-import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/set.{type Set}
 
 /// The rule's name: its module path.
 const rule_name = "genesis_prime/world_map/creature"
 
+/// The watch on the map run that started the creature.
+const run_watch = WatchId(1)
+
 /// What a creature is started with: which creature of which run it is, the
-/// map's clock and delay (`CreatureStart`), and the spawn it stands at.
+/// spawn it stands at and the map's clock (`CreatureStart`).
 pub type Settings {
-  Settings(creature: CreatureStart, spawn: Spawn)
+  Settings(creature: CreatureStart)
 }
 
 /// What the map tells a creature.
@@ -82,27 +79,21 @@ pub type Message {
   Unwatched(by: ConnectionId)
 }
 
-/// A creature's players in sight, and whether it shows itself yet.
+/// A creature's players in sight.
 pub opaque type State {
-  State(settings: Settings, viewers: Set(ConnectionId), showing: Bool)
+  State(settings: Settings, viewers: Set(ConnectionId))
 }
 
 /// The creature's rule, as its service shell runs it.
 pub fn rule(
   creature creature: CreatureStart,
-  spawn spawn: Spawn,
 ) -> ServiceRule(Settings, State, Message, PeerNews) {
-  step.Rule(name: rule_name, settings: Settings(creature:, spawn:), new:, step:)
+  step.Rule(name: rule_name, settings: Settings(creature:), new:, step:)
 }
 
-/// A creature's first state: no viewers, and showing itself when it waits no
-/// time.
+/// A creature's first state: no viewers.
 pub fn new(settings: Settings) -> State {
-  State(
-    settings:,
-    viewers: set.new(),
-    showing: settings.creature.appear_after_ms <= 0,
-  )
+  State(settings:, viewers: set.new())
 }
 
 /// One input in, the new state and what the shell must do out, as the sequence
@@ -112,15 +103,64 @@ pub fn step(
   state state: State,
   input input: ServiceInput(Message),
 ) -> #(State, ServiceStep(PeerNews)) {
+  let creature = state.settings.creature
   case input.event {
     Stopping(..) -> #(state, Effects([Stop]))
-    OwnEvent(Started)
-    | OwnEvent(Told(..))
+    OwnEvent(Started) -> #(
+      state,
+      Effects([
+        Watch(
+          watch: run_watch,
+          target: step.Map(map: creature.map, incarnation: creature.incarnation),
+        ),
+      ]),
+    )
+    OwnEvent(Told(message: Watched(by:))) -> {
+      let unit =
+        creature_unit.create(
+          spawn: creature.spawn,
+          unit_id: creature.unit_id,
+          server_time_estimate_start: map.server_time(
+            origin_ms: creature.clock_origin_ms,
+            monotonic_ms: input.now.monotonic_ms,
+          ),
+        )
+      #(
+        State(..state, viewers: set.insert(state.viewers, by)),
+        Effects([news_to(creature:, viewer: by, news: CreatureAppeared(unit:))]),
+      )
+    }
+    OwnEvent(Told(message: Unwatched(by:))) ->
+      case set.contains(state.viewers, by) {
+        True -> #(
+          State(..state, viewers: set.delete(state.viewers, by)),
+          Effects([news_to(creature:, viewer: by, news: Removed)]),
+        )
+        False -> #(state, Effects([]))
+      }
+    WatchEnded(..) -> #(state, Effects([Stop]))
+    OwnEvent(Asked(..))
     | OwnEvent(ServiceTimerFired(..))
-    | WatchEnded(..) -> panic as "a creature's rule step is not built"
-    OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
-      panic as "a creature is told, and starts no creature"
+    | OwnEvent(CreatureNotStarted(..)) ->
+      panic as "a creature is told, and starts no timer and no creature"
   }
+}
+
+/// The send of news about the creature's own unit to a viewer's connection.
+fn news_to(
+  creature creature: CreatureStart,
+  viewer viewer: ConnectionId,
+  news news: client_connection.News,
+) -> Effect(ServiceEffect(PeerNews)) {
+  OwnEffect(Send(
+    to: Connection(viewer),
+    message: PeerNews(
+      map: creature.map,
+      incarnation: creature.incarnation,
+      unit_id: creature.unit_id,
+      news:,
+    ),
+  ))
 }
 
 /// What the map's `Outgoing` means to a creature: `Watched` and `Unwatched`,

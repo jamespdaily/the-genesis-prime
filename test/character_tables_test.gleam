@@ -16,6 +16,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
+import genesis_prime/world_map/spawn
 import gleam/list
 import owned_test
 import unitest
@@ -94,8 +95,9 @@ pub fn the_planted_start_places_are_the_clients_world_location2_rows_test() -> N
   let real = client_tables.shared()
   let planted = character_tables.shared()
   let ids = list.map(character_tables.start_rows(), fn(row) { row.id })
-  assert list.length(world_location2.all(planted)) == list.length(ids)
-    as "the planted table holds exactly the start places"
+  assert list.length(world_location2.all(planted))
+    == list.length(ids) + list.length(character_tables.circle_ids)
+    as "the planted table holds exactly the start places and the objective circles"
   list.each(ids, fn(id) {
     let get = fn(tables) {
       let assert Ok(row) =
@@ -142,4 +144,38 @@ pub fn the_planted_level_rows_are_the_clients_game_formula_and_xp_per_level_rows
   assert list.length(xp_per_level.all(planted))
     == list.length(character_tables.min_xp_for_level())
     as "the planted table holds exactly the records the level rule reads"
+}
+
+pub fn the_spawns_built_from_the_planted_creature_rows_are_the_spawns_the_clients_rows_build_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  assert spawn.all(character_tables.shared())
+    == spawn.all(client_tables.shared())
+    as "the planted creature rows carry the real rows' values in the columns the spawns read: the same 54 spawns"
+  assert list.length(spawn.all(character_tables.shared())) == 54
+}
+
+pub fn the_planted_objective_circles_are_the_clients_world_location2_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let real = client_tables.shared()
+  let planted = character_tables.shared()
+  list.each(character_tables.circle_ids, fn(id) {
+    let get = fn(tables) {
+      let assert Ok(row) =
+        world_location2.get(tables:, id: WorldLocation2Id(id))
+        as "the row exists"
+      #(
+        row.id,
+        row.radius,
+        row.position0,
+        row.position1,
+        row.position2,
+        row.world_id,
+        row.world_zone_id,
+      )
+    }
+    assert get(planted) == get(real)
+      as "WorldLocation2: the planted circle has the real row's id, radius, position, world and zone"
+  })
 }

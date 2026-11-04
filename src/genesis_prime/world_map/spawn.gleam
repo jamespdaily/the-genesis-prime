@@ -43,15 +43,31 @@
 ////   whose creature has no display entry is refused too. Any refusal fails the
 ////   load.
 
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Place, Facing}
+import genesis_prime/message/float32
+import genesis_prime/table/creature2.{type Creature2}
+import genesis_prime/table/creature2_arche_type
+import genesis_prime/table/creature2_difficulty
+import genesis_prime/table/creature2_display_group_entry
+import genesis_prime/table/creature2_display_info
+import genesis_prime/table/creature2_override_properties
+import genesis_prime/table/creature2_resist
+import genesis_prime/table/creature2_tier
+import genesis_prime/table/creature_level
 import genesis_prime/table/id.{
-  type Creature2Id, type WorldLocation2Id, Creature2Id, WorldLocation2Id,
+  type Creature2Id, type WorldLocation2Id, Creature2ArcheTypeId,
+  Creature2DifficultyId, Creature2DisplayInfoId, Creature2Id, Creature2ResistId,
+  Creature2TierId, CreatureLevelId, WorldLocation2Id,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/world_location2.{type WorldLocation2}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/warfare_woods.{type Point}
+import gleam/float
 import gleam/int
 import gleam/list
+import gleam/order
 import gleam/result
 
 /// Where a spawn's point comes from.
@@ -60,8 +76,8 @@ pub type Source {
   /// lacks, read from a record of the retail game.
   WorldDatabase(row_id: Int)
   /// No record anywhere: the point is the offset of the world-database point
-  /// `row_id` from its circle's centre, applied to this spawn's circle, a
-  /// server's choice.
+  /// `offset_of_row_id` from the Exile circle's centre, applied to this spawn's
+  /// circle, a server's choice.
   NoRecord(offset_of_row_id: Int)
 }
 
@@ -71,7 +87,7 @@ pub type Spawn {
     id: SpawnId,
     /// The creature's Creature2 row.
     creature_id: Creature2Id,
-    /// Where the creature stands and faces: in World 3460, zone 5967.
+    /// Where the creature stands and faces: in the world and zone of its circle.
     place: Place,
     /// The WorldLocation2 circle of the client the point lies inside.
     area: WorldLocation2Id,
@@ -93,8 +109,12 @@ type SpawnError {
   NoCreatureRow(creature_id: Creature2Id)
   /// The client would not load the creature's row (`0x140485790`).
   NotLoadedByTheClient(creature_id: Creature2Id, rule: ValidityRule)
+  /// The creature's tier or level has no row, so its Base Health has no formula.
+  NoHealthRow(creature_id: Creature2Id)
   /// The circle has no WorldLocation2 row.
   NoAreaRow(area: WorldLocation2Id)
+  /// The circle is in world 0, which is no World row.
+  AreaInNoWorld(area: WorldLocation2Id)
   /// The spawn's point lies outside its circle.
   OutsideArea(spawn: SpawnId, area: WorldLocation2Id)
   /// The creature's display group has no entry to send.
@@ -111,12 +131,267 @@ type ValidityRule {
   NoDisplayGroup
 }
 
-/// The spawns of the client's tables: each point of this module checked against
-/// the rules above, or the first refusal, in the order of the points.
-fn build(
-  tables _tables: table_store.Tables,
+/// What a creature kind stands for: the creature, the circle of its objective,
+/// and whether its points are the world database's or offsets from it.
+type Kind {
+  Kind(creature_id: Creature2Id, area: WorldLocation2Id, recorded: Bool)
+}
+
+/// The Exile objective circle (WorldLocation2 51739), whose centre the
+/// world-database points are measured from.
+const exile_circle = WorldLocation2Id(51_739)
+
+/// The creatures that stand, in the order of their spawns: the Virtual Battle
+/// Beast at the world database's points, in the Exile circle, and the Virtual
+/// Defense Dagun at the offsets of the same points, in the Dominion circle
+/// (WorldLocation2 52898).
+const kinds = [
+  Kind(
+    creature_id: Creature2Id(73_464),
+    area: WorldLocation2Id(51_739),
+    recorded: True,
+  ),
+  Kind(
+    creature_id: Creature2Id(73_465),
+    area: WorldLocation2Id(52_898),
+    recorded: False,
+  ),
+]
+
+/// The UnitProperty2 id of Base Health (`0x1404585c0`).
+const base_health_property = 7
+
+/// The spawns of the client's tables: each point of `warfare_woods` for each
+/// creature kind, checked against the rules above, or the first refusal, in the
+/// order of the spawns.
+fn build(tables tables: table_store.Tables) -> Result(List(Spawn), SpawnError) {
+  use exile <- result.try(circle(tables:, area: exile_circle))
+  use built <- result.try(
+    list.try_fold(kinds, [], fn(built, kind) {
+      use spawns <- result.map(of_kind(
+        tables:,
+        kind:,
+        exile:,
+        first_id: list.length(built) + 1,
+      ))
+      list.append(built, spawns)
+    }),
+  )
+  Ok(built)
+}
+
+/// The spawns of one kind: one for each point.
+fn of_kind(
+  tables tables: table_store.Tables,
+  kind kind: Kind,
+  exile exile: WorldLocation2,
+  first_id first_id: Int,
 ) -> Result(List(Spawn), SpawnError) {
-  Ok([])
+  use row <- result.try(valid_creature(tables:, creature_id: kind.creature_id))
+  use health <- result.try(base_health(tables:, row:))
+  use display_info_id <- result.try(display(tables:, row:))
+  use area <- result.try(circle(tables:, area: kind.area))
+  warfare_woods.battle_beast_points
+  |> list.index_map(fn(point, index) { #(point, SpawnId(first_id + index)) })
+  |> list.try_map(fn(entry) {
+    let #(point, id) = entry
+    use place <- result.try(place_of(point:, kind:, area:, exile:))
+    let spawn =
+      Spawn(
+        id:,
+        creature_id: kind.creature_id,
+        place:,
+        area: kind.area,
+        source: case kind.recorded {
+          True -> WorldDatabase(row_id: point.row_id)
+          False -> NoRecord(offset_of_row_id: point.row_id)
+        },
+        level: row.min_level,
+        health:,
+        faction_id: row.faction_id,
+        display_info_id:,
+      )
+    case inside(place:, area:) {
+      True -> Ok(spawn)
+      False -> Error(OutsideArea(spawn: id, area: kind.area))
+    }
+  })
+}
+
+/// The place of a point: the world database's own for a recorded kind, else the
+/// point's offset from the Exile circle's centre applied to the kind's circle.
+fn place_of(
+  point point: Point,
+  kind kind: Kind,
+  area area: WorldLocation2,
+  exile exile: WorldLocation2,
+) -> Result(Place, SpawnError) {
+  let #(x, y, z) = case kind.recorded {
+    True -> #(point.x, point.y, point.z)
+    False -> #(
+      area.position0 +. { point.x -. exile.position0 },
+      area.position1 +. { point.y -. exile.position1 },
+      area.position2 +. { point.z -. exile.position2 },
+    )
+  }
+  start_place.place(
+    world_id: area.world_id,
+    world_zone_id: area.world_zone_id,
+    x:,
+    y:,
+    z:,
+    facing: Facing(yaw: point.yaw, pitch: point.pitch, roll: point.roll),
+  )
+  |> result.replace_error(AreaInNoWorld(area: WorldLocation2Id(area.id)))
+}
+
+/// Whether the place lies within the circle's radius of its centre.
+fn inside(place place: Place, area area: WorldLocation2) -> Bool {
+  let dx = start_place.x(place) -. area.position0
+  let dy = start_place.y(place) -. area.position1
+  let dz = start_place.z(place) -. area.position2
+  dx *. dx +. dy *. dy +. dz *. dz <=. area.radius *. area.radius
+}
+
+fn circle(
+  tables tables: table_store.Tables,
+  area area: WorldLocation2Id,
+) -> Result(WorldLocation2, SpawnError) {
+  world_location2.get(tables, area) |> result.replace_error(NoAreaRow(area:))
+}
+
+/// The creature's row, when the client would load it (`0x140485790`).
+fn valid_creature(
+  tables tables: table_store.Tables,
+  creature_id creature_id: Creature2Id,
+) -> Result(Creature2, SpawnError) {
+  use row <- result.try(
+    creature2.get(tables, creature_id)
+    |> result.replace_error(NoCreatureRow(creature_id:)),
+  )
+  let exists = fn(found: Result(a, Nil), id: Int) {
+    id == 0 || result.is_ok(found)
+  }
+  let rules = [
+    #(row.model_scale >. 0.0, ModelScaleNotAbove0),
+    #(row.creation_type_enum < 26, CreationTypeNotBelow26),
+    #(
+      result.is_ok(creature2_arche_type.get(
+        tables,
+        Creature2ArcheTypeId(row.creature2_arche_type_id),
+      )),
+      NoArcheTypeRow,
+    ),
+    #(
+      exists(
+        creature2_difficulty.get(
+          tables,
+          Creature2DifficultyId(row.creature2_difficulty_id),
+        ),
+        row.creature2_difficulty_id,
+      ),
+      NoDifficultyRow,
+    ),
+    #(
+      exists(
+        creature2_resist.get(tables, Creature2ResistId(row.creature2_resist_id)),
+        row.creature2_resist_id,
+      ),
+      NoResistRow,
+    ),
+    #(row.creature2_display_group_id != 0, NoDisplayGroup),
+  ]
+  case list.find(rules, fn(rule) { !rule.0 }) {
+    Ok(#(_, rule)) -> Error(NotLoadedByTheClient(creature_id:, rule:))
+    Error(Nil) -> Ok(row)
+  }
+}
+
+/// Base Health: the creature's own override of property 7 when it has one, else
+/// CreatureLevel[level] times the difficulty, tier and archetype multipliers,
+/// each product held as a 32-bit float (`0x1404585c0`), truncated. UnitProperty2
+/// 7's flags bit 0, which would stop the multipliers, is clear.
+fn base_health(
+  tables tables: table_store.Tables,
+  row row: Creature2,
+) -> Result(Int, SpawnError) {
+  let creature_id = Creature2Id(row.id)
+  let overrides =
+    creature2_override_properties.all(tables)
+    |> list.find(fn(override) {
+      override.creature2_id == row.id
+      && override.unit_property_index == base_health_property
+    })
+  case overrides {
+    Ok(override) -> Ok(float.truncate(override.unit_property_value))
+    Error(Nil) -> {
+      let found = {
+        use level <- result.try(creature_level.get(
+          tables,
+          CreatureLevelId(row.min_level),
+        ))
+        use tier <- result.try(creature2_tier.get(
+          tables,
+          Creature2TierId(row.creature2_tier_id),
+        ))
+        use arche <- result.try(creature2_arche_type.get(
+          tables,
+          Creature2ArcheTypeId(row.creature2_arche_type_id),
+        ))
+        let difficulty =
+          creature2_difficulty.get(
+            tables,
+            Creature2DifficultyId(row.creature2_difficulty_id),
+          )
+        let difficulty_multiplier = case difficulty {
+          Ok(difficulty) -> difficulty.unit_property_multiplier007
+          Error(Nil) -> 1.0
+        }
+        Ok(
+          level.unit_property_value07
+          |> times(difficulty_multiplier)
+          |> times(tier.unit_property_multiplier007)
+          |> times(arche.unit_property_multiplier007),
+        )
+      }
+      case found {
+        Ok(health) -> Ok(float.truncate(health))
+        Error(Nil) -> Error(NoHealthRow(creature_id:))
+      }
+    }
+  }
+}
+
+/// The product as a 32-bit float.
+fn times(left: Float, right: Float) -> Float {
+  float32.rounded(left *. right)
+}
+
+/// The display the 0x262 sends: the entry of the creature's display group with
+/// the greatest weight and an existing Creature2DisplayInfo, the lowest display
+/// id on a tie.
+fn display(
+  tables tables: table_store.Tables,
+  row row: Creature2,
+) -> Result(Int, SpawnError) {
+  creature2_display_group_entry.all(tables)
+  |> list.filter(fn(entry) {
+    entry.creature2_display_group_id == row.creature2_display_group_id
+    && result.is_ok(creature2_display_info.get(
+      tables,
+      Creature2DisplayInfoId(entry.creature2_display_info_id),
+    ))
+  })
+  |> list.sort(fn(first, second) {
+    int.compare(second.weight, first.weight)
+    |> order.break_tie(int.compare(
+      first.creature2_display_info_id,
+      second.creature2_display_info_id,
+    ))
+  })
+  |> list.first
+  |> result.map(fn(entry) { entry.creature2_display_info_id })
+  |> result.replace_error(NoDisplay(creature_id: Creature2Id(row.id)))
 }
 
 /// The spawns as a value the tables' load builds once, under the tables' key
@@ -162,8 +437,14 @@ fn describe(error error: SpawnError) -> String {
       <> int.to_string(creature_id)
       <> ": "
       <> describe_rule(rule)
+    NoHealthRow(creature_id: Creature2Id(creature_id)) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> " has no CreatureLevel or Creature2Tier row for its Base Health"
     NoAreaRow(area: WorldLocation2Id(area)) ->
       "WorldLocation2 " <> int.to_string(area) <> " has no row"
+    AreaInNoWorld(area: WorldLocation2Id(area)) ->
+      "WorldLocation2 " <> int.to_string(area) <> " is in world 0"
     OutsideArea(spawn: SpawnId(spawn), area: WorldLocation2Id(area)) ->
       "spawn "
       <> int.to_string(spawn)

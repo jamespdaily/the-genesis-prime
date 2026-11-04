@@ -71,6 +71,7 @@ import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/chat_result
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
@@ -610,9 +611,18 @@ pub fn summary(tally: Tally) -> String {
 pub fn events_of(frame: Frame) -> List(Event) {
   case frame.message_id {
     0x0262 -> {
-      let assert Ok(unit) = unit_create_player.decode(frame.body)
-        as "0x0262 decodes"
-      [UnitShown(unit_id: unit.unit_id, name: unit.name)]
+      let shown =
+        unit_create_player.decode(frame.body)
+        |> result.map(fn(unit) {
+          [UnitShown(unit_id: unit.unit_id, name: unit.name)]
+        })
+        |> result.lazy_or(fn() {
+          unit_create_creature.decode(frame.body)
+          |> result.map(fn(_creature) { [] })
+        })
+      let assert Ok(events) = shown
+        as "0x0262 decodes as a player's or a creature's"
+      events
     }
     0x0638 -> {
       let assert Ok(moved) = unit_movement.decode(frame.body)

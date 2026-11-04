@@ -46,49 +46,33 @@
 ////   scope first, so the game listener restarts with it and every game client
 ////   is dropped and logs in again; the sessions watch each connection, so each
 ////   slot is freed (genesis_prime/account_session).
-//// - **The name.** The scope is named by an atom made once at start with
-////   `process.new_name`, so each tree has its own scope and none is shared.
+////
+//// The scope is `genesis_prime/group_registry`'s, which holds the lookup, the
+//// delivery and the name of the scope; this module names the groups of
+//// connections and joins and leaves them for a connection's shell.
 
+import genesis_prime/group_registry.{type Scope}
 import genesis_prime/step.{type Address, type ConnectionId, Connection}
-import gleam/dynamic.{type Dynamic}
-import gleam/erlang/process.{type Name, type Pid, type Selector}
-import gleam/list
-import gleam/otp/actor
+import gleam/erlang/process.{type Pid, type Selector}
 import gleam/otp/supervision.{type ChildSpecification}
-
-/// How long the scope has to stop once the supervisor stops it.
-const shutdown_ms = 1000
 
 /// The scope connections are found in: made once, with `new`, and given to the
 /// tree and to the shells that join it and look in it. `message` is the type
 /// of what `deliver` sends to a connection and its shell's selector takes
 /// (`select_delivered`), the message type of the connections' rule, so a
-/// sender and a receiver of different types do not compile. It is a phantom
-/// type, as the message type of `process.Name`.
+/// sender and a receiver of different types do not compile.
 pub opaque type Registry(message) {
-  Registry(scope: Name(Nil))
-}
-
-/// Why the scope could not start, as `pg` reported it.
-type StartFailure {
-  CouldNotStart(reason: String)
+  Registry(scope: Scope(message))
 }
 
 /// A new registry, with a scope name no other registry has.
 pub fn new() -> Registry(message) {
-  Registry(scope: process.new_name("connections"))
+  Registry(scope: group_registry.new("connections"))
 }
 
 /// The scope as a permanent child of a supervisor.
 pub fn supervised(registry: Registry(message)) -> ChildSpecification(Nil) {
-  supervision.worker(fn() {
-    case start_scope(registry.scope) {
-      Ok(pid) -> Ok(actor.Started(pid:, data: Nil))
-      Error(CouldNotStart(reason:)) -> Error(actor.InitFailed(reason))
-    }
-  })
-  |> supervision.restart(supervision.Permanent)
-  |> supervision.timeout(ms: shutdown_ms)
+  group_registry.supervised(registry.scope)
 }
 
 /// Makes the calling process the member of the connection's group; the
@@ -97,7 +81,7 @@ pub fn join(
   registry registry: Registry(message),
   connection connection: ConnectionId,
 ) -> Nil {
-  pg_join(registry.scope, Connection(connection:))
+  group_registry.join(registry.scope, Connection(connection:), process.self())
 }
 
 /// Makes the calling process a member of the group at `address`, a
@@ -108,7 +92,7 @@ pub fn join_group(
   registry registry: Registry(message),
   address address: Address,
 ) -> Nil {
-  pg_join_once(registry.scope, address)
+  group_registry.join(registry.scope, address, process.self())
 }
 
 /// Removes the calling process from the group at `address`; nothing happens
@@ -118,7 +102,7 @@ pub fn leave_group(
   registry registry: Registry(message),
   address address: Address,
 ) -> Nil {
-  pg_leave(registry.scope, address)
+  group_registry.leave(registry.scope, address, process.self())
 }
 
 /// The process of the connection whose player is in the world under the folded
@@ -127,7 +111,9 @@ pub fn find_named(
   registry registry: Registry(message),
   folded_name folded_name: String,
 ) -> Result(Pid, Nil) {
-  case members(registry.scope, step.CharacterNamed(folded_name:)) {
+  case
+    group_registry.members(registry.scope, step.CharacterNamed(folded_name:))
+  {
     [pid, ..] -> Ok(pid)
     [] -> Error(Nil)
   }
@@ -141,19 +127,13 @@ pub fn deliver_group(
   address address: Address,
   message message: message,
 ) -> Result(Nil, Nil) {
-  case members(registry.scope, address) {
-    [] -> Error(Nil)
-    pids -> {
-      list.each(pids, send_woken(_, message))
-      Ok(Nil)
-    }
-  }
+  group_registry.deliver_all(registry.scope, address, message)
 }
 
 /// Sends the process `message` as `deliver` does, for a process `find_named`
 /// gave.
 pub fn deliver_to(pid pid: Pid, message message: message) -> Nil {
-  send_woken(pid, message)
+  group_registry.deliver_to(pid:, message:)
 }
 
 /// The process of a connection, or `Error(Nil)` when none is a member.
@@ -161,12 +141,7 @@ pub fn find(
   registry registry: Registry(message),
   connection connection: ConnectionId,
 ) -> Result(Pid, Nil) {
-  case members(registry.scope, Connection(connection:)) {
-    [pid] -> Ok(pid)
-    [] -> Error(Nil)
-    [_, _, ..] ->
-      panic as "a connection id is joined by one process; the shell takes a fresh one for each connection"
-  }
+  group_registry.find(registry.scope, Connection(connection:))
 }
 
 /// Sends the connection's process `message`, which its shell takes as a
@@ -177,52 +152,16 @@ pub fn deliver(
   connection connection: ConnectionId,
   message message: message,
 ) -> Result(Nil, Nil) {
-  case find(registry:, connection:) {
-    Ok(pid) -> {
-      send_woken(pid, message)
-      Ok(Nil)
-    }
-    Error(Nil) -> Error(Nil)
-  }
+  group_registry.deliver_one(registry.scope, Connection(connection:), message)
 }
 
 /// Adds to a selector the messages `deliver` sends through the registry to the
 /// process, each taken as `mapping(message)`, in the order it arrived among the
-/// others the selector takes. The registry is not read: it fixes the message's
-/// type, which `deliver` sends.
+/// others the selector takes.
 pub fn select_delivered(
-  registry _registry: Registry(message),
+  registry registry: Registry(message),
   selector selector: Selector(payload),
   mapping mapping: fn(message) -> payload,
 ) -> Selector(payload) {
-  process.select_record(selector, tag: Woken, fields: 1, mapping: fn(sent) {
-    mapping(woken_message(sent))
-  })
+  group_registry.select_delivered(registry.scope, selector, mapping)
 }
-
-/// The first element of what `deliver` sends: the atom `woken`, which
-/// `genesis_prime_connection_registry_ffi:send_woken` writes the same way.
-type DeliveryTag {
-  Woken
-}
-
-@external(erlang, "genesis_prime_connection_registry_ffi", "start_scope")
-fn start_scope(scope: Name(Nil)) -> Result(Pid, StartFailure)
-
-@external(erlang, "genesis_prime_connection_registry_ffi", "join_group")
-fn pg_join(scope: Name(Nil), group: step.Address) -> Nil
-
-@external(erlang, "genesis_prime_connection_registry_ffi", "join_once")
-fn pg_join_once(scope: Name(Nil), group: step.Address) -> Nil
-
-@external(erlang, "genesis_prime_connection_registry_ffi", "leave_group")
-fn pg_leave(scope: Name(Nil), group: step.Address) -> Nil
-
-@external(erlang, "genesis_prime_connection_registry_ffi", "members")
-fn members(scope: Name(Nil), group: step.Address) -> List(Pid)
-
-@external(erlang, "genesis_prime_connection_registry_ffi", "send_woken")
-fn send_woken(pid: Pid, message: message) -> Nil
-
-@external(erlang, "genesis_prime_connection_registry_ffi", "woken_message")
-fn woken_message(sent: Dynamic) -> message

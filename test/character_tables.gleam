@@ -13,7 +13,14 @@
 ////   27 (CharacterCustomizationLabel), which no row holds.
 //// - WorldLocation2 rows 51596, 42074, 41641, 42148 and 8223,
 ////   the start places (genesis_prime/game/start_place), with the world, zone,
-////   position and facing quaternion of the client's row.
+////   position and facing quaternion of the client's row, and rows 51739 and
+////   52898, the objective circles the creatures stand in (radius, position,
+////   world and zone).
+//// - The training creatures' rows: Creature2 73464 and 73465 with the rows their
+////   values come from (ArcheType 1 and 10, Difficulty 1, Tier 1, CreatureLevel 1,
+////   Resist 1, the display groups 28793 and 28431 with their entries and
+////   displays 26565 and 26578, and the Stamina and Armor overrides), in the
+////   columns the spawns read (genesis_prime/world_map/spawn).
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
 ////   and 48 for race 1, sex 0. The planted maps are that many rows of one
 ////   parameter that sets one part, which carry those counts; the real
@@ -28,12 +35,22 @@ import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/chat_channel
+import genesis_prime/table/creature2
+import genesis_prime/table/creature2_arche_type
+import genesis_prime/table/creature2_difficulty
+import genesis_prime/table/creature2_display_group_entry
+import genesis_prime/table/creature2_display_info
+import genesis_prime/table/creature2_override_properties
+import genesis_prime/table/creature2_resist
+import genesis_prime/table/creature2_tier
+import genesis_prime/table/creature_level
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{CharacterCustomizationLabelId}
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
+import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
@@ -78,6 +95,7 @@ pub fn shared_with_novice_start_in_world_0() -> store.Tables {
           _ -> planted_start_row(row)
         }
       })
+      |> list.append(circle_rows())
     load_files(
       list.map(files(), fn(file) {
         case file.0 == world_location2.schema.file {
@@ -87,6 +105,154 @@ pub fn shared_with_novice_start_in_world_0() -> store.Tables {
       }),
     )
   })
+}
+
+/// The WorldLocation2 rows of the two objective circles the training creatures
+/// stand in: 51739 (Exile) and 52898 (Dominion), radius 55, in World 3460,
+/// WorldZone 5967, at the client's own centres (`Quest2.10518`, `Quest2.10524`).
+pub const circle_ids = [51_739, 52_898]
+
+fn circle_rows() -> List(List(Cell)) {
+  [
+    circle(id: 51_739, position: #(
+      -131.13499450683594,
+      -875.2354125976562,
+      333.3179931640625,
+    )),
+    circle(id: 52_898, position: #(
+      37.852699279785156,
+      -875.4901733398438,
+      289.1130065917969,
+    )),
+  ]
+}
+
+fn circle(id id: Int, position position: #(Float, Float, Float)) -> List(Cell) {
+  planted_table.row(world_location2.schema, [
+    #("ID", Integer(id)),
+    #("radius", Float(55.0)),
+    #("position0", Float(position.0)),
+    #("position1", Float(position.1)),
+    #("position2", Float(position.2)),
+    #("worldId", Integer(3460)),
+    #("worldZoneId", Integer(5967)),
+  ])
+}
+
+/// The planted files of the creatures the spawns stand: each row is the client's
+/// own in the columns the spawns read (`the_planted_creature_rows_...` compares
+/// the spawns built from them with the real ones).
+fn creature_files() -> List(#(String, BitArray)) {
+  [
+    planted_table.file(creature2.schema, [
+      creature_row(id: 73_464, arche_type: 1, group: 28_793, faction: 1441),
+      creature_row(id: 73_465, arche_type: 10, group: 28_431, faction: 1442),
+    ]),
+    planted_table.file(creature2_arche_type.schema, [
+      multiplier_row(schema: creature2_arche_type.schema, id: 1, value: 1.0),
+      multiplier_row(
+        schema: creature2_arche_type.schema,
+        id: 10,
+        value: 0.9599999785423279,
+      ),
+    ]),
+    planted_table.file(creature2_difficulty.schema, [
+      multiplier_row(
+        schema: creature2_difficulty.schema,
+        id: 1,
+        value: 0.3869999945163727,
+      ),
+    ]),
+    planted_table.file(creature2_tier.schema, [
+      multiplier_row(schema: creature2_tier.schema, id: 1, value: 1.0),
+    ]),
+    planted_table.file(creature_level.schema, [
+      planted_table.row(creature_level.schema, [
+        #("ID", Integer(1)),
+        #("unitPropertyValue07", Float(135.97027587890625)),
+      ]),
+    ]),
+    planted_table.file(creature2_resist.schema, [
+      planted_table.row(creature2_resist.schema, [#("ID", Integer(1))]),
+    ]),
+    planted_table.file(creature2_display_info.schema, [
+      planted_table.row(creature2_display_info.schema, [
+        #("ID", Integer(26_565)),
+      ]),
+      planted_table.row(creature2_display_info.schema, [
+        #("ID", Integer(26_578)),
+      ]),
+    ]),
+    planted_table.file(creature2_display_group_entry.schema, [
+      group_entry_row(id: 27_192, group: 28_793, display: 26_565),
+      group_entry_row(id: 27_216, group: 28_431, display: 26_578),
+    ]),
+    planted_table.file(creature2_override_properties.schema, [
+      override_row(id: 25_965, creature: 73_464, property: 40, value: 1.0),
+      override_row(id: 26_167, creature: 73_464, property: 42, value: 0.0),
+      override_row(id: 25_967, creature: 73_465, property: 40, value: 1.0),
+      override_row(id: 26_168, creature: 73_465, property: 42, value: 0.0),
+    ]),
+  ]
+}
+
+fn creature_row(
+  id id: Int,
+  arche_type arche_type: Int,
+  group group: Int,
+  faction faction: Int,
+) -> List(Cell) {
+  planted_table.row(creature2.schema, [
+    #("ID", Integer(id)),
+    #("CreationTypeEnum", Integer(0)),
+    #("creature2DifficultyId", Integer(1)),
+    #("creature2ArcheTypeId", Integer(arche_type)),
+    #("creature2TierId", Integer(1)),
+    #("creature2DisplayGroupId", Integer(group)),
+    #("creature2ResistId", Integer(1)),
+    #("modelScale", Float(1.0)),
+    #("factionId", Integer(faction)),
+    #("minLevel", Integer(1)),
+    #("maxLevel", Integer(1)),
+  ])
+}
+
+fn multiplier_row(
+  schema schema: tbl_file.Schema,
+  id id: Int,
+  value value: Float,
+) -> List(Cell) {
+  planted_table.row(schema, [
+    #("ID", Integer(id)),
+    #("unitPropertyMultiplier007", Float(value)),
+  ])
+}
+
+fn group_entry_row(
+  id id: Int,
+  group group: Int,
+  display display: Int,
+) -> List(Cell) {
+  planted_table.row(creature2_display_group_entry.schema, [
+    #("id", Integer(id)),
+    #("creature2DisplayGroupId", Integer(group)),
+    #("creature2DisplayInfoId", Integer(display)),
+    #("weight", Integer(1)),
+  ])
+}
+
+fn override_row(
+  id id: Int,
+  creature creature: Int,
+  property property: Int,
+  value value: Float,
+) -> List(Cell) {
+  planted_table.row(creature2_override_properties.schema, [
+    #("ID", Integer(id)),
+    #("creature2Id", Integer(creature)),
+    #("unitPropertyIndex", Integer(property)),
+    #("unitPropertyValue", Float(value)),
+  ])
 }
 
 /// The planted files of the server's tables, each by its file name: one file
@@ -219,13 +385,16 @@ fn files_with_looks(
   customization customization: List(List(Cell)),
   labels labels: List(List(Cell)),
 ) -> List(#(String, BitArray)) {
-  [
+  list.append(creature_files(), [
     planted_table.file(character_creation.schema, creation_rows()),
     planted_table.file(character_customization.schema, customization),
     planted_table.file(character_customization_label.schema, labels),
     planted_table.file(customization_parameter.schema, parameter_rows()),
     planted_table.file(customization_parameter_map.schema, map_rows()),
-    planted_table.file(world_location2.schema, planted_start_rows()),
+    planted_table.file(
+      world_location2.schema,
+      list.append(planted_start_rows(), circle_rows()),
+    ),
     world_zone_file(world_zones()),
     chat_channel_file(),
     planted_table.file(
@@ -236,7 +405,7 @@ fn files_with_looks(
       xp_per_level.schema,
       xp_per_level_rows(min_xp_for_level()),
     ),
-  ]
+  ])
 }
 
 /// The planted file of CustomizationParameterMap with one map, of race 1 and

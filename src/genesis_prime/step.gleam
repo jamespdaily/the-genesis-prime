@@ -36,7 +36,7 @@
 //// chooses.
 
 import genesis_prime/world_map/map_id.{type MapId}
-import genesis_prime/world_map/spawn_id.{type SpawnId}
+import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/option.{type Option, None}
 
 /// A rule as its shell runs it. `name` is the rule's module path, which a
@@ -286,8 +286,7 @@ pub type ServiceEffect(outgoing) {
 }
 
 /// A creature a map has its supervisor start: which creature of the map's
-/// run it is, where it comes from, how long it stays out of sight and the
-/// clock it stamps its 0x262 from. The creature's rule and its process are
+/// run it is, the spawn it stands at and the clock it stamps its 0x262 from. The creature's rule and its process are
 /// `genesis_prime/world_map/creature`; this is the rule's start settings, with
 /// no process in it.
 pub type CreatureStart {
@@ -299,10 +298,7 @@ pub type CreatureStart {
     /// The creature's unit id in its run, from the map's counter.
     unit_id: Int,
     /// The spawn it stands at (genesis_prime/world_map/spawn).
-    spawn: SpawnId,
-    /// How long the creature waits, from its start, before it shows itself to
-    /// the players who see it: 0 for a creature that stands from the start.
-    appear_after_ms: Int,
+    spawn: Spawn,
     /// The monotonic time the map's clock started at, from which the creature
     /// stamps its 0x262 (genesis_prime/world_map/map `server_time`).
     clock_origin_ms: Int,

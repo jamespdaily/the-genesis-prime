@@ -183,8 +183,8 @@ pub type World {
     creature_supervisor: Name(creature_supervisor.CreatureSupervisor),
     /// How long a creature has to stop.
     creature_shutdown_ms: Int,
-    /// How long a spawn whose creature ended stays empty before the next
-    /// creature shows itself.
+    /// How long a spawn whose creature ended waits before a creature is started
+    /// there again.
     creature_restart_ms: Int,
     /// Every spawn of every map, from the tables' load (`spawn.all`); each map
     /// stands the creatures of its own world.
@@ -252,6 +252,7 @@ pub fn start(
       rule: hand_off.rule(),
       reach: service.watch_only(locate: locate(settings)),
       shutdown_ms: settings.hand_off_shutdown_ms,
+      told_through: None,
     ),
   ))
   |> supervisor.add(service_shell.supervised(
@@ -260,6 +261,7 @@ pub fn start(
       rule: account_session.rule(),
       reach: connection_reach(settings, SentBySessions),
       shutdown_ms: settings.sessions_shutdown_ms,
+      told_through: None,
     ),
   ))
   |> supervisor.add(world(settings))
@@ -590,6 +592,7 @@ pub fn add_world(
           ),
           reach: map_reach(world:, reach:),
           shutdown_ms: world.map_shutdown_ms,
+          told_through: None,
         ))
       },
     ),
@@ -651,8 +654,7 @@ fn map_reach(
 }
 
 /// Starts one creature as the creature supervisor asks: the shell of its rule,
-/// then its address joined in the registry. A spawn that is not in the world's
-/// spawns is a start that fails.
+/// then its address joined in the registry.
 fn start_creature_process(
   world world: World,
   reach reach: Reach(map.Outgoing),
@@ -661,28 +663,22 @@ fn start_creature_process(
   start start: creature_supervisor.CreatureProcessStart,
 ) -> actor.StartResult(Subject(Call(creature.Message, PeerNews))) {
   let wanted = start.creature
-  case spawn.find(world.spawns, wanted.spawn) {
-    Error(Nil) ->
-      Error(actor.InitFailed(
-        "the creature names a spawn the world does not hold",
-      ))
-    Ok(found) ->
-      service_shell.start_unnamed(service_shell.Settings(
-        rule: creature.rule(creature: wanted, spawn: found),
-        reach: creature_reach(world:, reach:, to_connection:, start:),
-        shutdown_ms: world.creature_shutdown_ms,
-      ))
-      |> result.map(fn(started) {
-        creature_registry.join(
-          world.creatures,
-          map: wanted.map,
-          incarnation: wanted.incarnation,
-          unit_id: wanted.unit_id,
-          pid: started.pid,
-        )
-        started
-      })
-  }
+  service_shell.start_unnamed(service_shell.Settings(
+    rule: creature.rule(creature: wanted),
+    reach: creature_reach(world:, reach:, to_connection:, start:),
+    shutdown_ms: world.creature_shutdown_ms,
+    told_through: Some(creature_registry.scope(world.creatures)),
+  ))
+  |> result.map(fn(started) {
+    creature_registry.join(
+      world.creatures,
+      map: wanted.map,
+      incarnation: wanted.incarnation,
+      unit_id: wanted.unit_id,
+      pid: started.pid,
+    )
+    started
+  })
 }
 
 /// A creature's reach: it finds the run that started it by that run's pid, since

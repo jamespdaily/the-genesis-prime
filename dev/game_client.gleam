@@ -31,6 +31,7 @@ import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
@@ -370,8 +371,9 @@ pub fn pong_among_messages(
 pub type Others =
   Dict(Int, #(Float, Float, Float))
 
-/// What the client's view of other players holds after a message of the server:
-/// 0x262 creates a unit at its first kind 2 position (0x1404586e0), 0x638 moves
+/// What the client's view of other units holds after a message of the server:
+/// 0x262, of a player or of a creature, creates a unit at its first kind 2
+/// position (0x1404586e0), 0x638 moves
 /// the unit it names to each kind 2 position it carries, in order, so the last
 /// is where it stands (0x140787150), a 0x638 for a unit the client does not hold
 /// is dropped, as the client logs it and goes on (opcode.0x638), and 0x355
@@ -388,8 +390,43 @@ pub fn observe(others others: Others, frame frame: Frame) -> Others {
 }
 
 fn created(others others: Others, body body: BitArray) -> Others {
-  let assert Ok(unit) = unit_create_player.decode(body) as "0x0262 decodes"
-  dict.insert(others, unit.unit_id, placed_at(unit:))
+  let created =
+    unit_create_player.decode(body)
+    |> result.map(fn(unit) { #(unit.unit_id, placed_at(unit:)) })
+    |> result.lazy_or(fn() {
+      unit_create_creature.decode(body)
+      |> result.map(fn(creature) {
+        #(creature.unit_id, placed_creature_at(creature:))
+      })
+    })
+  let assert Ok(#(unit_id, placed)) = created
+    as "0x0262 decodes as a player's or a creature's"
+  dict.insert(others, unit_id, placed)
+}
+
+/// Where a creature's 0x262 places its unit: the kind 2 command that is the first
+/// of its commands (0x1404586e0).
+fn placed_creature_at(
+  creature creature: UnitCreateCreature,
+) -> #(Float, Float, Float) {
+  let assert [start_movement.Position(placed), ..] =
+    creature.tail.movement_commands
+    as "0x0262 places the unit with a kind 2 command first"
+  standing(placed)
+}
+
+/// The creatures the 0x262 among the messages create, in the order sent: a 0x262
+/// that is a player's is left out.
+pub fn creatures_created_in(
+  frames frames: List(Frame),
+) -> List(UnitCreateCreature) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0262 ->
+        unit_create_creature.decode(frame.body) |> result.replace_error(Nil)
+      _ -> Error(Nil)
+    }
+  })
 }
 
 /// Where a 0x262 places its unit: the kind 2 command that is the first of its
