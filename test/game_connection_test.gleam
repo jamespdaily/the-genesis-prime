@@ -2212,7 +2212,7 @@ pub fn a_saved_position_beyond_the_worlds_box_is_written_as_the_boxs_edge_in_0xa
     as "the place the character is saved at stays as the database held it; only what the client is sent is bounded"
 }
 
-pub fn a_character_never_saved_still_gets_a_position_at_its_start_place_and_faces_0_0_0_test() -> Nil {
+pub fn a_character_never_turned_still_gets_a_position_at_its_saved_place_and_faces_0_0_0_test() -> Nil {
   use <- owned_test.run(10_000)
   assert player_in(entered().1).tail.movement_commands
     == [
@@ -2229,7 +2229,7 @@ pub fn a_character_never_saved_still_gets_a_position_at_its_start_place_and_face
         blends: 0,
       )),
     ]
-    as "0x1404586e0: without a kind 2 the unit stands at 0, 0, 0, so even a character with no save gets its start place; its facing is 0, 0, 0"
+    as "0x1404586e0: without a kind 2 the unit stands at 0, 0, 0, so a character whose saved place was never turned still gets a position at its saved place; its facing is 0, 0, 0"
 }
 
 // ---- every 60 s ----
