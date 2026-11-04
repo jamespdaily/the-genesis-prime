@@ -1461,6 +1461,13 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
       "closed 38765 1",
     ]
     as "cast.hold_repeat: with the key still down, one global cooldown later (Spell4.38765: SpellCoolDown 115, 1000 ms) the next tap casts the stage 38766 (Spell4Thresholds 238), the last, and 0x814 closes the threshold (opcode.0x814)"
+  // The release is sent, but the test cannot show that no cast follows it: a
+  // repeat the release failed to stop would come one global cooldown (1000 ms)
+  // later, after any answer the server could give to a message sent now, so only
+  // a wait past that time would show it on the wire, and the parallel suite
+  // waits on no clock. The pure-rule tests do: the release cancels the repeat
+  // timer, and a timer that fires after the release starts nothing
+  // (cast_hold_test).
   game_client.hold_ability(game: first, bag_index: 0, target: 0, held: 0)
   let #(seen, _) =
     game_client.read_kept(game: second, have: second_have, count: 12)
@@ -1510,8 +1517,16 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
   game_client.hold_ability(game: second, bag_index: 0, target: 0, held: 1)
   let #(own, _) =
     game_client.read_kept(game: second, have: second_have, count: 1)
-  assert list.length(own) == 1
-    as "the server goes on: the other player's own hold is answered"
+  let assert [
+    game_client.CastStarted(
+      spell4_id: 58_832,
+      root_spell4_id: 58_832,
+      parent_spell4_id: 0,
+      caster_unit_id: 2,
+      ..,
+    ),
+  ] = game_client.casts_in(frames: own)
+    as "the server goes on: the second player's own hold of Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631), is answered with its own 0x7ff, unit 2 casting"
   game_client.close(game: second)
   login_support.stop(started)
 }

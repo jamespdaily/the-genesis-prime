@@ -329,9 +329,63 @@ pub fn shred_taps_the_first_stage_then_each_next_stage_within_the_window_and_the
     )
     == ["started k1 38765 root 38765 parent 0", "opened 38765 k1"]
     as "the key still down, the closed threshold gives the next repeat the first tap again"
+  let assert [#(repeat_timer, 1000)] =
+    list.filter(support.started_timers(effects: repeat), fn(started) {
+      started.1 == 1000
+    })
+    as "the restarted first tap waits one global cooldown for the next on one timer"
   let #(_, up) = key(state:, bag_index: support.shred, held: 0, at: 3100)
-  assert list.length(support.cancelled_timers(effects: up)) >= 1
-    as "cast.hold_by_method: held 0 stops the taps"
+  assert support.cancelled_timers(effects: up) == [repeat_timer]
+    as "cast.hold_by_method: held 0 stops the taps, and cancels that timer alone, not the threshold's window"
+}
+
+pub fn a_cancel_of_a_held_charge_ends_the_hold_so_nothing_restarts_and_the_release_fires_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, down) =
+    key(state: cast.new(), bag_index: support.charged_shot, held: 1, at: 1000)
+  let assert [charge] = started_ids(effects: down)
+  let assert Ok(#(state, cancelled)) =
+    support.cancelled(
+      state:,
+      cast_id: charge,
+      reason: cast_result.Other(0),
+      bit: 0,
+      at: 12_000,
+    )
+    as "opcode.0x801: reason 0 with bit 0 is the client ending an open charge"
+  assert started_ids(effects: cancelled) == []
+    && support.started_timers(effects: cancelled) == []
+    as "the server's choice: a cancel is the player's intent to stop, so the charge does not restart although the global cooldown has run and no cooldown of its own began (cast.hold_stop)"
+  assert support.cast_lines(frames: support.writes(effects: cancelled))
+    == ["closed 34718 0", "finished k1"]
+    as "the cancel closes the threshold and ends the base cast, as without a hold"
+  let #(_, released) =
+    key(state:, bag_index: support.charged_shot, held: 0, at: 12_100)
+  assert released == []
+    as "the held 0 the client sends after the cancel fires nothing"
+}
+
+pub fn a_cancel_of_a_held_normal_cast_ends_the_hold_and_stops_its_repeats_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, down) =
+    key_raw(state: cast.new(), bag_index: telekinetic_strike, held: 1, at: 1000)
+  let assert [cast_id] = started_ids(effects: down)
+  let assert Ok(#(state, cancelled)) =
+    support.cancelled(
+      state:,
+      cast_id:,
+      reason: cast_result.SpellCancelled,
+      bit: 1,
+      at: 1500,
+    )
+    as "opcode.0x801: reason 6 with bit 1 is the client ending the player's cast"
+  assert support.cast_lines(frames: support.writes(effects: cancelled))
+    == ["finished k1"]
+  assert support.started_timers(effects: cancelled) == []
+    as "no repeat waits for the global cooldown after a cancel"
+  let #(_, released) =
+    key(state:, bag_index: telekinetic_strike, held: 0, at: 1600)
+  assert released == [] as "the held 0 that follows changes nothing"
 }
 
 pub fn charged_shot_is_charged_by_the_press_and_fired_at_its_stage_by_the_release_test() -> Nil {

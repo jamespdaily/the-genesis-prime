@@ -194,19 +194,9 @@ pub fn hold_body(
   game_client.hold_body(bag_index:, target:, held:)
 }
 
-/// The key of the bag index goes down (`held` 1) or up (`held` 0) at the time,
-/// taken by the rule; it must be taken, not refused. A go it asks for is a
-/// `Strike` effect, not yet written.
-pub fn key_raw(
-  state state: State,
-  bag_index bag_index: Int,
-  held held: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  key_raw_in(plans: plans(), state:, bag_index:, held:, at: ms)
-}
-
-/// The same for the abilities of the plans given.
+/// The key of the bag index goes down (`held` 1) or up (`held` 0) at the time, for
+/// the abilities of the plans given, taken by the rule; it must be taken, not
+/// refused. A go it asks for is a `Strike` effect, not yet written.
 pub fn key_raw_in(
   plans plans: Plans,
   state state: State,
@@ -228,16 +218,6 @@ pub fn key_raw_in(
 }
 
 /// The same, with each go answered as a round that struck nobody.
-pub fn key(
-  state state: State,
-  bag_index bag_index: Int,
-  held held: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  key_in(plans: plans(), state:, bag_index:, held:, at: ms)
-}
-
-/// The same for the abilities of the plans given.
 pub fn key_in(
   plans plans: Plans,
   state state: State,

@@ -36,9 +36,9 @@
 //// - **The press** is 0x9a inside 0x038C: the client's cast id, the ability's bag
 ////   index, the target and the press bit (`opcode.0x9a`). A cast id of 0 is one
 ////   the client never sends, and ends the connection. A press bit of 0 is a
-////   console setting's; the press is logged and ignored. A bag index the player does not hold is answered 0x7fc with
-////   Spell4 id 0 and result 4 (`0x14039a040`; the server's choice, which the
-////   client allows).
+////   console setting's; the press is logged and ignored. A bag index the player
+////   does not hold is answered 0x7fc with Spell4 id 0 and result 4
+////   (`0x14039a040`; the server's choice, which the client allows).
 //// - **The hold** is 0x4db: the client sends it instead of 0x9a under its default
 ////   hold-to-continue-casting setting, once with held 1 at key down and once with
 ////   held 0 at key up, with no cast id of its own (`opcode.0x4db`). A held 1 is the
@@ -55,7 +55,9 @@
 ////   no cast or channel short; for a ChargeRelease ability it fires the charged
 ////   stage, and a RapidTap ability's repeats are its next stages inside its
 ////   threshold (`cast.hold_by_method`, `cast.hold_stop`). A refused repeat ends the
-////   hold. A bag index with no ability is answered as a 0x9a's is.
+////   hold, and so does a 0x801 naming the hold's last cast (the server's choice: a
+////   cancel is the player's intent to stop, so a cancelled charge neither restarts
+////   nor fires at the held 0 that follows). A bag index with no ability is answered as a 0x9a's is.
 //// - **The target** of every cast is the caster: no level-1 ability needs a
 ////   target the client picks (`Spell4TargetMechanics.targetType`: the client makes
 ////   the caster the target of a spell of kind 0, 2, 6 or 7 before it sends), so
@@ -193,7 +195,7 @@ import genesis_prime/game/hit
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/ability_hold
-import genesis_prime/message/cancel_cast
+import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
@@ -586,11 +588,7 @@ fn pressed(
     Error(Nil) ->
       Ok(
         #(cast, [
-          refused(
-            client_cast_id: press.client_cast_id,
-            spell4_id: 0,
-            result: cast_result.SpellUnknown,
-          ),
+          refused_unknown(client_cast_id: press.client_cast_id, spell4_id: 0),
         ]),
       )
     Ok(ability) ->
@@ -598,10 +596,9 @@ fn pressed(
         Error(Nil) ->
           Ok(
             #(cast, [
-              refused(
+              refused_unknown(
                 client_cast_id: press.client_cast_id,
                 spell4_id: ability.spell4_id.value,
-                result: cast_result.SpellUnknown,
               ),
             ]),
           )
@@ -652,11 +649,7 @@ fn key_held(
       change.held == 1
     {
       Error(Nil), True -> #(cast, [
-        refused(
-          client_cast_id: 0,
-          spell4_id: 0,
-          result: cast_result.SpellUnknown,
-        ),
+        refused_unknown(client_cast_id: 0, spell4_id: 0),
       ])
       Error(Nil), False -> #(cast, [
         Log(
@@ -721,11 +714,7 @@ fn key_up(
     True ->
       case resolved(cast:, ability:) {
         Error(Nil) -> #(cast, [
-          refused(
-            client_cast_id: 0,
-            spell4_id: ability.spell4_id.value,
-            result: cast_result.SpellUnknown,
-          ),
+          refused_unknown(client_cast_id: 0, spell4_id: ability.spell4_id.value),
           ..cancels
         ])
         Ok(resolution) -> {
@@ -814,11 +803,7 @@ fn no_stage_left(
   #(
     cast,
     list.append(cancels, [
-      refused(
-        client_cast_id: 0,
-        spell4_id: ability.spell4_id.value,
-        result: cast_result.SpellUnknown,
-      ),
+      refused_unknown(client_cast_id: 0, spell4_id: ability.spell4_id.value),
     ]),
   )
 }
@@ -851,8 +836,10 @@ fn next_cast(
 
 /// How long a held ability waits before it casts again: until the global cooldown
 /// its last cast started and the spell's own cooldown have both ended, whether or
-/// not the global cooldown would refuse the spell, so a repeat is never at once
-/// (the server's choice, `cast.hold_repeat`).
+/// not the global cooldown would refuse the spell (the server's choice,
+/// `cast.hold_repeat`). Every level-1 ability and stage starts a global cooldown or
+/// has a cooldown of its own, so a repeat is never at once; a later ability with
+/// neither would recast as soon as its cast ended.
 fn cooldown_wait_ms(
   cast cast: State,
   spell spell: Spell,
@@ -934,11 +921,7 @@ fn press_of(
           hold_started(
             cast:,
             ability: resolution.ability,
-            cast_id: mint(
-              unit_id: caster.unit_id,
-              number: cast.presses,
-              live: dict.keys(cast.casts),
-            ),
+            cast_id: next_cast_id(cast:, caster:),
           )
       }
       case resolution.stage {
@@ -1247,44 +1230,64 @@ fn cancelled(
     },
     return: Error(UnknownCancel(reason:, bit: cancel.field_3)),
   )
-  let now_ms = now.monotonic_ms
+  // A cancel is the player's intent to stop: the cast it names ends the hold that
+  // started it (the server's choice), so nothing restarts or fires after it.
+  let #(cast, stopped) = stop_holding_cast(cast:, cast_id: cancel.cast_id)
+  let #(cast, effects) = cancelling(cast:, cancel:, now_ms: now.monotonic_ms)
+  Ok(#(cast, list.append(stopped, effects)))
+}
+
+/// The hold whose last cast is `cast_id` ends.
+fn stop_holding_cast(
+  cast cast: State,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  case cast.holding {
+    Some(Holding(last_cast: Some(last), ..)) if last == cast_id ->
+      stop_holding(cast:)
+    Some(_) | None -> #(cast, [])
+  }
+}
+
+/// What a cancel the client may send ends: an open charge with its threshold, or
+/// a live cast.
+fn cancelling(
+  cast cast: State,
+  cancel cancel: CancelCast,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let reason = cast_result.to_value(cancel.reason)
   case reason == 0, open_charge_of(cast:, cast_id: cancel.cast_id) {
-    True, None ->
-      Ok(
-        #(State(..cast, current: None), [
-          Log(
-            level: LogDebug,
-            text: "the client ended the threshold of the cast "
-              <> int.to_string(cancel.cast_id)
-              <> ", which is not open",
-          ),
-        ]),
-      )
+    True, None -> #(State(..cast, current: None), [
+      Log(
+        level: LogDebug,
+        text: "the client ended the threshold of the cast "
+          <> int.to_string(cancel.cast_id)
+          <> ", which is not open",
+      ),
+    ])
     True, Some(threshold) | False, Some(threshold) ->
       // The client clears the player's current cast before it sends, whatever cast
       // that is (`cast.current_cast`); the base cast of the charge ends with the
       // threshold.
-      Ok(close_threshold(
+      close_threshold(
         cast: State(..cast, current: None),
         ability: threshold.ability,
         now_ms:,
-      ))
+      )
     False, None -> {
       let cast = State(..cast, current: None)
       case dict.get(cast.casts, cancel.cast_id) {
-        Error(Nil) ->
-          Ok(
-            #(cast, [
-              Log(
-                level: LogDebug,
-                text: "the client ended the cast "
-                  <> int.to_string(cancel.cast_id)
-                  <> ", which is not live",
-              ),
-            ]),
-          )
+        Error(Nil) -> #(cast, [
+          Log(
+            level: LogDebug,
+            text: "the client ended the cast "
+              <> int.to_string(cancel.cast_id)
+              <> ", which is not live",
+          ),
+        ])
         Ok(live) ->
-          Ok(end_live_cast(cast:, cast_id: cancel.cast_id, live:, now_ms:))
+          end_live_cast(cast:, cast_id: cancel.cast_id, live:, now_ms:)
       }
     }
   }
@@ -1471,6 +1474,17 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
   )
 }
 
+/// The id the caster's next cast takes: the id of its next press that no live cast
+/// holds. `start` and the hold that records the cast it starts both ask this, so
+/// they name the same cast.
+fn next_cast_id(cast cast: State, caster caster: Caster) -> Int {
+  mint(
+    unit_id: caster.unit_id,
+    number: cast.presses,
+    live: dict.keys(cast.casts),
+  )
+}
+
 /// A cast of the spell starts: its id, the start written to the caster (0x7fd for
 /// a press, 0x7ff for a child) and told to the audience, the global cooldown, the
 /// threshold's message and timers when the cast opens or moves one, the timer of
@@ -1487,12 +1501,7 @@ fn start(
   client_cast_id client_cast_id: Option(Int),
   role role: Role,
 ) -> #(State, List(Effect)) {
-  let id =
-    mint(
-      unit_id: caster.unit_id,
-      number: cast.presses,
-      live: dict.keys(cast.casts),
-    )
+  let id = next_cast_id(cast:, caster:)
   let audience = caster.audience
   let go_times = spell_plan.go_times_ms(spell:)
   let gos =
@@ -2200,6 +2209,15 @@ fn go_message(
     missiles: [],
     phase:,
   )
+}
+
+/// The refusal of a press that names no ability, or no stage left of one: result 4
+/// (`0x14039a040`), the same answer to a 0x9a and to a 0x4db.
+fn refused_unknown(
+  client_cast_id client_cast_id: Int,
+  spell4_id spell4_id: Int,
+) -> Effect {
+  refused(client_cast_id:, spell4_id:, result: cast_result.SpellUnknown)
 }
 
 fn refused(
