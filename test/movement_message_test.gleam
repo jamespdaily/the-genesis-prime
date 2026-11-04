@@ -149,8 +149,8 @@ type Kind {
 
 fn float_vectors() -> List(movement_float_vector.MovementFloatVector) {
   [
-    MovementFloatVector(field_1: 0x3F800001, field_2: 0x40000002, field_3: 3),
-    MovementFloatVector(field_1: 4, field_2: 0xC0400005, field_3: 6),
+    MovementFloatVector(x: 0x3F800001, y: 0x40000002, z: 3),
+    MovementFloatVector(x: 4, y: 0xC0400005, z: 6),
   ]
 }
 
@@ -205,15 +205,15 @@ fn kinds() -> List(Kind) {
       list.flatten([
         [#(10, 2)],
         float_vector_data(),
-        [#(16, 0xABCD), #(2, 2), #(4, 9), u32(77), bit(1)],
+        [#(16, 0x4900), #(2, 1), #(4, 9), u32(77), bit(1)],
       ]),
       Kind4(MovementKind4(
-        field_2: float_vectors(),
-        field_3: 0xABCD,
-        field_4: 2,
-        field_5: 9,
-        field_6: 77,
-        field_7: 1,
+        points: float_vectors(),
+        speed: 0x4900,
+        path_type: 1,
+        mode: 9,
+        field_5: 77,
+        field_6: 1,
       )),
     ),
     Kind(

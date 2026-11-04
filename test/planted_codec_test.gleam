@@ -26,6 +26,8 @@ import simplifile
 
 const bit_stream_path = "src/genesis_prime/message/bit_stream.gleam"
 
+const half_float_path = "src/genesis_prime/message/half_float.gleam"
+
 pub fn the_codec_generated_for_a_schema_with_a_field_of_every_kind_round_trips_test() -> Nil {
   use <- owned_test.run(180_000)
   use folder <- recording_support.in_folder
@@ -117,10 +119,13 @@ fn build_and_run(
     as "the driver reads"
   let assert Ok(bit_stream) = simplifile.read(bit_stream_path)
     as "the bit stream module reads"
+  let assert Ok(half_float) = simplifile.read(half_float_path)
+    as "the half float module, which the bit stream's half float field reads, reads"
   list.each(
     [
       GeneratedFile(path: "src/planted_driver.gleam", text: driver),
       GeneratedFile(path: bit_stream_path, text: bit_stream),
+      GeneratedFile(path: half_float_path, text: half_float),
       ..files
     ],
     fn(file) {

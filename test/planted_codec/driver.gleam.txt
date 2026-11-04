@@ -113,6 +113,21 @@ fn refusals() -> Nil {
       }
     }
   })
+  list.each([0x00A7, 0x8000, 0xFC00], fn(speed) {
+    assert planted_message.encode(PlantedMessage(..base, speed:))
+      == Error(bit_stream.ValueBelowMinimum(
+        field: "speed",
+        minimum: 0.00001,
+        value: speed,
+      ))
+      as "a half float below its minimum or with its sign bit set is refused"
+  })
+  assert planted_message.encode(PlantedMessage(..base, speed: 0x7C00))
+    |> result.is_ok
+    as "exponent 31 is a finite number above the minimum"
+  assert planted_message.encode(PlantedMessage(..base, inner: PlantedRecord(number: 32, label: "")))
+    == Error(bit_stream.ValueDoesNotFit(field: "number", bits: 5, value: 32))
+    as "a record in place is written by its module, so its own field's width refuses"
   assert planted_message.encode(PlantedMessage(..base, frame: <<9, 0, 0, 0>>))
     == Error(bit_stream.InnerFrameDisagrees(field: "frame"))
     as "a whole frame whose length differs from its bytes is refused"
@@ -150,6 +165,9 @@ fn empty() -> #(String, PlantedMessage) {
       counted_numbers: [],
       counted_records: [],
       shapes: [],
+      speed: 0x00A8,
+      inner: PlantedRecord(number: 0, label: ""),
+      shape: Flag(PlantedFlag(on: 0)),
       mode: Other(0),
       frame: <<4, 0, 0, 0>>,
     ),
@@ -192,6 +210,9 @@ fn full() -> #(String, PlantedMessage) {
               ))
           }
         }),
+      speed: 0x7BFF,
+      inner: PlantedRecord(number: 31, label: string.repeat("i", 130)),
+      shape: Pair(PlantedPair(values: [1, 2, 3], label: "s")),
       mode: First,
       frame: <<8, 0, 0, 0, 1, 2, 3, 4>>,
     ),
@@ -221,6 +242,9 @@ fn mixed() -> #(String, PlantedMessage) {
         Pair(PlantedPair(values: [63, 0, 63], label: "\u{1F600}")),
         Flag(PlantedFlag(on: 1)),
       ],
+      speed: 0x4900,
+      inner: PlantedRecord(number: 5, label: "\u{1F600}"),
+      shape: Flag(PlantedFlag(on: 1)),
       mode: planted_mode.Second,
       frame: <<5, 0, 0, 0, 7>>,
     ),

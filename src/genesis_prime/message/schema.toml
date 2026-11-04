@@ -436,29 +436,7 @@ fields = [
   { name = "pvp_flags", kind = "unsigned", bits = 3, evidence = "0x1400962d0", named_by = "0x1403b48b0" },
   { name = "premium_tier", kind = "unsigned", bits = 8, evidence = "0x1400962d0", named_by = "opcode.0x262.player_fields" },
   { name = "title_id", kind = "unsigned", bits = 14, evidence = "0x1400962d0", named_by = "0x14045b6f0" },
-  { name = "create_flags", kind = "unsigned", bits = 8, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
-  { name = "stats", kind = "array", count_bits = 5, element = "unit_stat", evidence = "0x140096fa0", named_by = "0x140458140" },
-  { name = "server_time_estimate_start", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404586e0" },
-  { name = "movement_commands", kind = "array", count_bits = 5, element = "start_movement", evidence = "0x140096fa0", named_by = "0x1404586e0" },
-  { name = "properties", kind = "array", count_bits = 8, element = "unit_property", evidence = "0x140096fa0", named_by = "0x1404584b0" },
-  { name = "item_visuals", kind = "array", count_bits = 7, element = "item_visual", evidence = "0x140096fa0", named_by = "0x1400ab890" },
-  { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404697a0" },
-  { name = "faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "base_faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "tagged_by_unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
-  { name = "tagged_by_group_id", kind = "unsigned", bits = 64, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
-  { name = "first_tag", kind = "constant", bits = 2, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_31", kind = "unsigned", bits = 1, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
-  { name = "second_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_33", kind = "unsigned", bits = 64, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
-  { name = "world_socket_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
-  { name = "third_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "cluster_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045ad90" },
-  { name = "field_37", kind = "unsigned", bits = 18, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
-  { name = "minimap_marker_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
-  { name = "display_info_id", kind = "unsigned", bits = 17, evidence = "0x140096fa0", named_by = "0x14047c210" },
-  { name = "outfit_info_id", kind = "unsigned", bits = 15, evidence = "0x140096fa0", named_by = "0x14047c320" },
+  { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
 ]
 
 [[message]]
@@ -642,6 +620,36 @@ fields = [
 ]
 
 [[record]]
+name = "unit_create_tail"
+evidence = "0x140096fa0"
+summary = "the part of message 0x262 after the type's data, the same for every unit type: the create flags, the stats, the movement commands, the properties, the item visuals, the cast in progress, the two factions, who tagged the unit, three tagged values and the minimap marker, display info and outfit info; the lists the schema does not hold are sent empty"
+fields = [
+  { name = "create_flags", kind = "unsigned", bits = 8, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
+  { name = "stats", kind = "array", count_bits = 5, element = "unit_stat", evidence = "0x140096fa0", named_by = "0x140458140" },
+  { name = "server_time_estimate_start", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404586e0" },
+  { name = "movement_commands", kind = "array", count_bits = 5, element = "start_movement", evidence = "0x140096fa0", named_by = "0x1404586e0" },
+  { name = "properties", kind = "array", count_bits = 8, element = "unit_property", evidence = "0x140096fa0", named_by = "0x1404584b0" },
+  { name = "item_visuals", kind = "array", count_bits = 7, element = "item_visual", evidence = "0x140096fa0", named_by = "0x1400ab890" },
+  { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404697a0" },
+  { name = "faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "base_faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "tagged_by_unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
+  { name = "tagged_by_group_id", kind = "unsigned", bits = 64, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
+  { name = "first_tag", kind = "constant", bits = 2, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "field_14", kind = "unsigned", bits = 1, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
+  { name = "second_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "field_16", kind = "unsigned", bits = 64, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
+  { name = "world_socket_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
+  { name = "third_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "cluster_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045ad90" },
+  { name = "field_20", kind = "unsigned", bits = 18, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
+  { name = "minimap_marker_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
+  { name = "display_info_id", kind = "unsigned", bits = 17, evidence = "0x140096fa0", named_by = "0x14047c210" },
+  { name = "outfit_info_id", kind = "unsigned", bits = 15, evidence = "0x140096fa0", named_by = "0x14047c320" },
+]
+
+[[record]]
 name = "unit_stat"
 evidence = "0x140458140"
 summary = "one stat of a new unit, in the integer form: stat 0 is the unit's health"
@@ -810,15 +818,29 @@ fields = [
 [[record]]
 name = "movement_kind_4"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 4, whose meaning the client's code does not show: n vectors of three 32-bit floats (n in 10 bits), then 16 bits, 2 bits, 4 bits, 32 bits and one bit"
+summary = "a movement command of kind 4, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3), a 4-bit mode, a 32-bit value and one bit. Gap: the mode, the 32-bit value and the last bit are not read, and the codec does not check the point count each type needs"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 4, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 10, element = "movement_float_vector", evidence = "0x140c1f070" },
-  { name = "field_3", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_4", kind = "unsigned", bits = 2, evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 4, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_7", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "points", kind = "array", count_bits = 10, element = "movement_float_vector", evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "speed", kind = "half_float_at_least", minimum = "0.00001", evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "path_type", kind = "unsigned_below", bits = 2, limit = 2, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "mode", kind = "unsigned", bits = 4, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "movement_command.kind_4" },
+  { name = "field_6", kind = "unsigned", bits = 1, evidence = "movement_command.kind_4" },
+]
+
+[[record]]
+name = "movement_path"
+evidence = "movement_command.kind_4"
+summary = "a movement command of kind 4 as the server writes it, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3) and a 4-bit mode. Gap: the client's code does not show what the mode, the 32-bit value and the last bit do, so the server writes 0 in the value and the bit, and the codec does not check the point count each type needs"
+fields = [
+  { name = "kind", kind = "constant", bits = 5, value = 4, evidence = "0x140c1f070", named_by = "0x140c1f070" },
+  { name = "points", kind = "array", count_bits = 10, element = "movement_float_vector", evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "speed", kind = "half_float_at_least", minimum = "0.00001", evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "path_type", kind = "unsigned_below", bits = 2, limit = 2, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "mode", kind = "unsigned", bits = 4, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "value", kind = "constant", bits = 32, value = 0, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "last_bit", kind = "constant", bits = 1, value = 0, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
 ]
 
 [[record]]
@@ -1134,11 +1156,11 @@ fields = [
 [[record]]
 name = "movement_float_vector"
 evidence = "0x140c1f070"
-summary = "one vector of a movement command's list: three 32-bit floats"
+summary = "one vector of a movement command's list: three 32-bit floats, which kind 4 names x, y and z as the points of its path"
 fields = [
-  { name = "field_1", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_2", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_3", kind = "float32", evidence = "0x140c1f070" },
+  { name = "x", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_4" },
+  { name = "y", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_4" },
+  { name = "z", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_4" },
 ]
 
 [[record]]
@@ -1192,11 +1214,13 @@ variants = [
 [[union]]
 name = "relayed_movement"
 evidence = "opcode.0x637"
-summary = "one movement command the server relays to the players who see a unit: the kinds of the per-frame batch the client's writer builds after the time command (1 platform, 2 position, 8 velocity, 11 move asked, 14 rotation, 24 state flags, 27 mode), every field named, and no kind 0, the sender's own clock. Gap: the other kinds, which game moves queue and the client's writer may send, are not relayed, since opcode.0x637 does not say which queuers exist or what they mean"
+summary = "one movement command of a message about a unit's movement: the kinds of the per-frame batch the client's writer builds after the time command (1 platform, 2 position, 8 velocity, 11 move asked, 14 rotation, 24 state flags, 27 mode), which the server relays to the players who see a unit, every field named, and the two a server that moves a unit writes itself, 0 (the time its later commands apply at) and 4 (a path). Gap: the other kinds, which game moves queue and the client's writer may send, are not relayed, since opcode.0x637 does not say which queuers exist or what they mean"
 tag_bits = 5
 variants = [
+  { tag = 0, name = "time", record = "movement_time", named_by = "movement_command.kind_0" },
   { tag = 1, name = "platform", record = "movement_platform", named_by = "opcode.0x637" },
   { tag = 2, name = "position", record = "unit_position_command", named_by = "0x1400ad350" },
+  { tag = 4, name = "path", record = "movement_path", named_by = "movement_command.kind_4" },
   { tag = 8, name = "velocity", record = "movement_velocity", named_by = "movement_command.kind_8" },
   { tag = 11, name = "move_asked", record = "movement_move_asked", named_by = "movement_command.kind_11" },
   { tag = 14, name = "rotation", record = "movement_rotation", named_by = "0x140715350" },
@@ -1498,4 +1522,517 @@ fields = [
   { name = "field_10", kind = "unsigned", bits = 18, evidence = "0x140085790", safe_by = "0x140085790" },
   { name = "list_a", kind = "array", count_bits = 3, element = "unsigned", element_bits = 32, evidence = "0x140085790", named_by = "0x140085790" },
   { name = "list_b", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "0x140085790", named_by = "0x140085790" },
+]
+
+[[message]]
+id = 0x009A
+name = "cast_ability"
+direction = "client_to_server"
+evidence = "opcode.0x9a"
+summary = "the client casts the spell of an ability bag slot: its own id for the cast, the bag index the ability's item was added at (message 0x111 with location 4), the target unit id (0 for none) and a bit that is 1 for a press and 0 only under a console setting; a cast placed on the ground is message 0x9b, which the schema does not hold"
+fields = [
+  { name = "client_cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x9a", named_by = "opcode.0x9a" },
+  { name = "bag_index", kind = "unsigned", bits = 16, evidence = "opcode.0x9a", named_by = "opcode.0x9a" },
+  { name = "target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x9a", named_by = "opcode.0x9a" },
+  { name = "press", kind = "unsigned", bits = 1, evidence = "opcode.0x9a", named_by = "opcode.0x9a" },
+]
+
+[[message]]
+id = 0x0111
+name = "item_added"
+direction = "server_to_client"
+evidence = "opcode.0x111.ability_bag"
+summary = "adds an item the player holds; an item at location 4 is an ability, whose item id is its Spell4Base id and whose bag index is the slot a press names, and the client adds the base to the ability book; the reason is 6 bits, and 49 adds without raising the book's change"
+fields = [
+  { name = "item", kind = "record", record = "shared_item", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "reason", kind = "unsigned", bits = 6, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+]
+
+[[record]]
+name = "shared_item"
+evidence = "opcode.0x111.ability_bag"
+summary = "the item record message 0x111 carries: the GUID, the item id, the location and bag index, the stack count and charges, the durability and the values the client's code names only by width and position. Gap: the server writes no id in the list of realm and character ids (a count of 0), since the width of one entry is not read"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "field_2", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag" },
+  { name = "item_id", kind = "unsigned", bits = 18, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "location", kind = "unsigned", bits = 9, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "bag_index", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "stack_count", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "charges", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "field_8", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_9", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_10", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag" },
+  { name = "durability", kind = "float32", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "field_12", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_13", kind = "unsigned", bits = 8, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_14", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_16", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_17", kind = "unsigned", bits = 3, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_18", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_19", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_20", kind = "unsigned", bits = 3, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_21", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_22", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "field_23", kind = "unsigned", bits = 18, evidence = "opcode.0x111.ability_bag" },
+  { name = "list_a", kind = "array", count_bits = 3, element = "unsigned", element_bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "list_b", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "opcode.0x111.ability_bag" },
+  { name = "no_character_ids", kind = "constant", bits = 6, value = 0, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+  { name = "field_27", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag" },
+]
+
+[[message]]
+id = 0x01A0
+name = "ability_tiers"
+direction = "server_to_client"
+evidence = "opcode.0x1a0"
+summary = "the ability book's tiers: for each Spell4Base id, the tier and the action set it holds for, which the client keeps with the Spell4 id of that tier; the book's spell for the active action set is what a press casts"
+fields = [
+  { name = "tiers", kind = "array", count_bits = 32, element = "ability_tier", evidence = "opcode.0x1a0", named_by = "opcode.0x1a0" },
+]
+
+[[record]]
+name = "ability_tier"
+evidence = "opcode.0x1a0"
+summary = "one entry of the ability book's tiers: the Spell4Base id, the tier (0 counts as 1) and the action set index"
+fields = [
+  { name = "spell4_base_id", kind = "unsigned", bits = 18, evidence = "opcode.0x1a0", named_by = "opcode.0x1a0" },
+  { name = "tier", kind = "unsigned", bits = 4, evidence = "opcode.0x1a0", named_by = "opcode.0x1a0" },
+  { name = "action_set_index", kind = "unsigned", bits = 3, evidence = "opcode.0x1a0", named_by = "opcode.0x1a0" },
+]
+
+[[message]]
+id = 0x019D
+name = "action_set"
+direction = "server_to_client"
+evidence = "opcode.0x19d"
+summary = "one action set of the action bar: the set's index, which the client refuses above 3 (the whole message), a 2-bit value it keeps per set, the result (1 is ok, any other raises ActionSetError) and the shortcuts, each replacing the bar slot it names, which the client refuses above 47"
+fields = [
+  { name = "action_set_index", kind = "unsigned_below", bits = 3, limit = 4, evidence = "opcode.0x19d", named_by = "opcode.0x19d" },
+  { name = "field_2", kind = "unsigned", bits = 2, evidence = "opcode.0x19d" },
+  { name = "result", kind = "unsigned", bits = 6, evidence = "opcode.0x19d", named_by = "opcode.0x19d" },
+  { name = "shortcuts", kind = "array", count_bits = 6, element = "action_shortcut", evidence = "opcode.0x19d", named_by = "opcode.0x19d" },
+]
+
+[[record]]
+name = "action_shortcut"
+evidence = "opcode.0x19d"
+summary = "one shortcut of an action set: the type (4 is an ability by its Spell4Base id, 0 empties the slot), an item location, the bar slot in the field the client calls the bag index (0 to 47) and the object id"
+fields = [
+  { name = "shortcut_type", kind = "unsigned", bits = 4, evidence = "opcode.0x19d", named_by = "opcode.0x19d" },
+  { name = "location", kind = "unsigned", bits = 9, evidence = "opcode.0x19d", named_by = "opcode.0x19d" },
+  { name = "bag_index", kind = "unsigned_below", bits = 32, limit = 48, evidence = "opcode.0x19d", named_by = "opcode.0x19d" },
+  { name = "object_id", kind = "unsigned", bits = 32, evidence = "opcode.0x19d", named_by = "opcode.0x19d" },
+]
+
+[[message]]
+id = 0x0262
+name = "unit_create_creature"
+direction = "server_to_client"
+evidence = "opcode.0x262.creature"
+summary = "creates a unit of type 0, a creature, in the world: the Creature2 id, which the client refuses unless it loaded the row, and the quest checklist index, then the values of a player's create: the stats (stat 0 is health, and a creature created with 0 is dead; stat 10 is the level), the movement commands (the server writes kind 2, the position, and kind 14, the rotation), the properties (which may be none, since the client computes each from its tables), both factions, which the client keeps in place of the row's, and the display info, which must be sent since with 0 the creature has no model; the lists the schema does not hold are sent empty"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "unit_type", kind = "constant", bits = 6, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "creature_id", kind = "unsigned", bits = 18, evidence = "0x140095fb0", named_by = "0x140095fb0" },
+  { name = "checklist_index", kind = "unsigned", bits = 8, evidence = "0x140095fb0", named_by = "0x140095fb0" },
+  { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
+]
+
+[[message]]
+id = 0x0262
+name = "unit_create_ghost"
+direction = "server_to_client"
+evidence = "0x140096970"
+summary = "creates a unit of type 23, a ghost: a player's data without its owned units, its PvP flags and its premium tier (the character id, the realm, the name, the race, which the client refuses above 17, the class, the gender, a 64-bit value, a text, a 4-bit value, a list of 64-bit values, a list of 32-bit values and the title), then the values of a player's create; the meanings of the 64-bit value, the text, the 4-bit value and the two lists are not read"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "unit_type", kind = "constant", bits = 6, value = 23, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x140096970", named_by = "0x140096970" },
+  { name = "realm_id", kind = "unsigned", bits = 14, evidence = "0x140096970", named_by = "0x140096970" },
+  { name = "name", kind = "wide_text", evidence = "0x140096970", named_by = "0x140096970" },
+  { name = "race_id", kind = "unsigned_below", bits = 5, limit = 18, evidence = "0x140096970", named_by = "0x140096970" },
+  { name = "class_id", kind = "unsigned", bits = 5, evidence = "0x140096970", named_by = "0x140096970" },
+  { name = "gender", kind = "unsigned", bits = 2, evidence = "0x140096970", named_by = "0x140096970" },
+  { name = "field_9", kind = "unsigned", bits = 64, evidence = "0x140096970" },
+  { name = "field_10", kind = "wide_text", evidence = "0x140096970" },
+  { name = "field_11", kind = "unsigned", bits = 4, evidence = "0x140096970" },
+  { name = "field_12", kind = "array", count_bits = 5, element = "unsigned", element_bits = 64, evidence = "0x140096970" },
+  { name = "field_13", kind = "array", count_bits = 6, element = "unsigned", element_bits = 32, evidence = "0x140096970" },
+  { name = "title_id", kind = "unsigned", bits = 14, evidence = "0x140096970", named_by = "0x140096970" },
+  { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
+]
+
+[[message]]
+id = 0x07FC
+name = "spell_cast_refused"
+direction = "server_to_client"
+evidence = "opcode.0x7fc"
+summary = "refuses the player's cast: the client's own id for the cast, the Spell4 id and the result, which the client shows as a cast failure for that spell; it drops the pending cast and clears the global cooldown"
+fields = [
+  { name = "client_cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fc", named_by = "opcode.0x7fc" },
+  { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7fc", named_by = "opcode.0x7fc" },
+  { name = "result", kind = "unsigned", bits = 9, evidence = "opcode.0x7fc", named_by = "opcode.0x7fc", values_type = "CastResult", values = [ { value = 1, name = "unable_to_create_spell", evidence = "Spell.CodeEnumCastResult" }, { value = 4, name = "spell_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 5, name = "spell_bad", evidence = "Spell.CodeEnumCastResult" }, { value = 6, name = "spell_cancelled", evidence = "opcode.0x801" }, { value = 13, name = "spell_already_casting", evidence = "Spell.CodeEnumCastResult" }, { value = 14, name = "spell_global_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 15, name = "spell_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 16, name = "spell_group_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 17, name = "spell_pre_requisites", evidence = "Spell.CodeEnumCastResult" }, { value = 30, name = "caster_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 31, name = "caster_must_have_target", evidence = "Spell.CodeEnumCastResult" }, { value = 33, name = "caster_not_incontrol_of_self", evidence = "Spell.CodeEnumCastResult" }, { value = 34, name = "caster_movement", evidence = "Spell.CodeEnumCastResult" }, { value = 57, name = "caster_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 90, name = "target_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 91, name = "no_target", evidence = "Spell.CodeEnumCastResult" }, { value = 99, name = "target_faction", evidence = "Spell.CodeEnumCastResult" }, { value = 101, name = "target_orientation", evidence = "Spell.CodeEnumCastResult" }, { value = 104, name = "target_range_min", evidence = "Spell.CodeEnumCastResult" }, { value = 105, name = "target_range_max", evidence = "Spell.CodeEnumCastResult" }, { value = 106, name = "target_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 166, name = "caster_needs_los", evidence = "Spell.CodeEnumCastResult" }, { value = 169, name = "weapon_slot", evidence = "Spell.CodeEnumCastResult" }, { value = 182, name = "spell_no_charges", evidence = "Spell.CodeEnumCastResult" }, { value = 183, name = "target_range_vertical", evidence = "Spell.CodeEnumCastResult" }, { value = 285, name = "illegal_spell_cast", evidence = "Spell.CodeEnumCastResult" }, { value = 317, name = "queued", evidence = "Spell.CodeEnumCastResult" } ] },
+]
+
+[[message]]
+id = 0x07FD
+name = "spell_cast_confirmed"
+direction = "server_to_client"
+evidence = "opcode.0x7fd"
+summary = "accepts the player's pending cast and gives it its id: the client's id, the server's, the primary target, the field position and the yaw, then the initial and telegraph positions; the client files the pending cast under the server's id and starts it"
+fields = [
+  { name = "client_cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fd", named_by = "opcode.0x7fd" },
+  { name = "server_cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fd", named_by = "opcode.0x7fd" },
+  { name = "primary_target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fd", named_by = "opcode.0x7fd" },
+  { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7fd", named_by = "opcode.0x7fd" },
+  { name = "yaw", kind = "float32", evidence = "opcode.0x7fd", named_by = "opcode.0x7fd" },
+  { name = "initial_positions", kind = "array", count_bits = 8, element = "spell_initial_position", evidence = "opcode.0x7fd", named_by = "opcode.0x7fd" },
+  { name = "telegraph_positions", kind = "array", count_bits = 8, element = "spell_telegraph_position", evidence = "opcode.0x7fd", named_by = "opcode.0x7fd" },
+]
+
+[[message]]
+id = 0x07FF
+name = "spell_started"
+direction = "server_to_client"
+evidence = "opcode.0x7ff"
+summary = "a unit starts a cast: the cast id, the Spell4 id and its root and parent, the caster, a 16-bit value, the primary target, the field position and the yaw, the initial and telegraph positions and two bits; the client shows the caster's cast bar when it has the caster, and starts the player's global cooldown when the caster is the player. Gap: the 16-bit value, the two bits and the uses of the root and parent ids are not read"
+fields = [
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "root_spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "parent_spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "caster_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "field_6", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff" },
+  { name = "primary_target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "yaw", kind = "float32", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "initial_positions", kind = "array", count_bits = 8, element = "spell_initial_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "telegraph_positions", kind = "array", count_bits = 8, element = "spell_telegraph_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "field_12", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff" },
+  { name = "field_13", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff" },
+]
+
+[[record]]
+name = "spell_position"
+evidence = "opcode.0x7ff"
+summary = "a position of a cast message: three 32-bit floats (ReadVector3 0x1400a8a30)"
+fields = [
+  { name = "x", kind = "float32", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "y", kind = "float32", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "z", kind = "float32", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+]
+
+[[record]]
+name = "spell_initial_position"
+evidence = "opcode.0x7ff"
+summary = "one initial position of a cast message: a unit id, 8 bits, a position, a float and 32 bits; their meanings are not read"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "field_2", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff" },
+  { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "field_4", kind = "float32", evidence = "opcode.0x7ff" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff" },
+]
+
+[[record]]
+name = "spell_telegraph_position"
+evidence = "opcode.0x7ff"
+summary = "one telegraph position of a cast message: 16 bits, a unit id, 8 bits, a position, a float and 32 bits; their meanings are not read"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "field_3", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff" },
+  { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
+  { name = "field_5", kind = "float32", evidence = "opcode.0x7ff" },
+  { name = "field_6", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff" },
+]
+
+[[message]]
+id = 0x07F4
+name = "spell_go"
+direction = "server_to_client"
+evidence = "opcode.0x7f4"
+summary = "a cast goes off: the cast id, the ignore-cooldown bit, the destination, the targets with their effects, the initial and telegraph positions, the missiles and the phase; the client counts the go, keeps the phase, builds a node for each target unit it has, and starts the caster's cooldowns on the first go of a Normal cast unless the bit is set. An effect's result is a bit or a damage description, and a tag of 2 or 3 fails the read"
+fields = [
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "ignore_cooldown", kind = "unsigned", bits = 1, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "destination", kind = "record", record = "spell_position", evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "targets", kind = "array", count_bits = 8, element = "spell_target_info", evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "initial_positions", kind = "array", count_bits = 8, element = "spell_initial_position", evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "telegraph_positions", kind = "array", count_bits = 8, element = "spell_telegraph_position", evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "missiles", kind = "array", count_bits = 8, element = "spell_missile_info", evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "phase", kind = "unsigned", bits = 8, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+]
+
+[[record]]
+name = "spell_missile_info"
+evidence = "opcode.0x7f4"
+summary = "one missile of a go: a position, two 32-bit values, a position and one bit; their meanings are not read"
+fields = [
+  { name = "field_1", kind = "record", record = "spell_position", evidence = "opcode.0x7f4" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4" },
+  { name = "field_4", kind = "record", record = "spell_position", evidence = "opcode.0x7f4" },
+  { name = "field_5", kind = "unsigned", bits = 1, evidence = "opcode.0x7f4" },
+]
+
+[[record]]
+name = "spell_target_info"
+evidence = "opcode.0x7f4"
+summary = "one target of a go: the unit id, an index, the target flags, an instance count, the combat result and the effects on it"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "index", kind = "unsigned", bits = 8, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "flags", kind = "unsigned", bits = 8, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "instance_count", kind = "unsigned", bits = 16, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+  { name = "combat_result", kind = "unsigned", bits = 4, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4", values_type = "CombatResult", values = [ { value = 0, name = "avoid", evidence = "GameLib.CodeEnumCombatResult" }, { value = 1, name = "critical", evidence = "GameLib.CodeEnumCombatResult" }, { value = 2, name = "hit", evidence = "GameLib.CodeEnumCombatResult" }, { value = 3, name = "needs_telegraph_evaluation", evidence = "GameLib.CodeEnumCombatResult" }, { value = 4, name = "outside_telegraph", evidence = "GameLib.CodeEnumCombatResult" }, { value = 5, name = "outside_telegraph_invalid", evidence = "GameLib.CodeEnumCombatResult" }, { value = 6, name = "inside_telegraph", evidence = "GameLib.CodeEnumCombatResult" }, { value = 7, name = "needs_hit_result_calc", evidence = "GameLib.CodeEnumCombatResult" } ] },
+  { name = "effects", kind = "array", count_bits = 8, element = "spell_effect_info", evidence = "opcode.0x7f4", named_by = "opcode.0x7f4" },
+]
+
+[[record]]
+name = "spell_effect_info"
+evidence = "0x140094890"
+summary = "one effect on a target of a go: the Spell4Effects id, the effect instance id, the delay in milliseconds, a 32-bit value and the result, which is a bit or a damage description. Gap: the 32-bit value is not read"
+fields = [
+  { name = "spell4_effects_id", kind = "unsigned", bits = 19, evidence = "0x140094890", named_by = "0x140094890" },
+  { name = "instance_id", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
+  { name = "delay_ms", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140094890" },
+  { name = "result", kind = "record", record = "spell_effect_result", evidence = "0x140094890", named_by = "0x140094890" },
+]
+
+[[union]]
+name = "spell_effect_result"
+evidence = "0x140094890"
+summary = "the result of an effect: the tag in 2 bits picks the layout, and the client's reader fails a tag of 2 or 3"
+tag_bits = 2
+variants = [
+  { tag = 0, name = "bit", record = "spell_effect_bit", named_by = "0x140094890" },
+  { tag = 1, name = "damage", record = "spell_effect_damage", named_by = "0x140094890" },
+]
+
+[[record]]
+name = "spell_effect_bit"
+evidence = "0x140094890"
+summary = "an effect result of tag 0: one bit, which the client does not read"
+fields = [
+  { name = "kind", kind = "constant", bits = 2, value = 0, evidence = "0x140094890", named_by = "0x140094890" },
+  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140094890" },
+]
+
+[[record]]
+name = "spell_effect_damage"
+evidence = "0x1400946c0"
+summary = "an effect result of tag 1: a damage description, from which the client makes the floating number, the hit reaction and the combat log line, and which never changes health"
+fields = [
+  { name = "kind", kind = "constant", bits = 2, value = 1, evidence = "0x140094890", named_by = "0x140094890" },
+  { name = "description", kind = "record", record = "spell_damage_description", evidence = "0x1400946c0", named_by = "0x1400946c0" },
+]
+
+[[record]]
+name = "spell_damage_description"
+evidence = "0x1400946c0"
+summary = "a damage description: the raw damage, the scaled raw damage, the damage absorbed, the damage the shield absorbed, the health damage with the overkill, the overkill, the glance amount, the killed bit, the combat result, the damage type and the hit entries. Gap: the second value is a level-scaled raw damage by inference only"
+fields = [
+  { name = "raw_damage", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
+  { name = "scaled_raw_damage", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
+  { name = "absorbed", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
+  { name = "shield_absorbed", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
+  { name = "health_damage_with_overkill", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
+  { name = "overkill", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
+  { name = "glance", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
+  { name = "killed", kind = "unsigned", bits = 1, evidence = "0x1400946c0", named_by = "0x1400946c0" },
+  { name = "combat_result", kind = "unsigned", bits = 4, evidence = "0x1400946c0", named_by = "0x1400946c0", values_type = "CombatResult", values = [ { value = 0, name = "avoid", evidence = "GameLib.CodeEnumCombatResult" }, { value = 1, name = "critical", evidence = "GameLib.CodeEnumCombatResult" }, { value = 2, name = "hit", evidence = "GameLib.CodeEnumCombatResult" }, { value = 3, name = "needs_telegraph_evaluation", evidence = "GameLib.CodeEnumCombatResult" }, { value = 4, name = "outside_telegraph", evidence = "GameLib.CodeEnumCombatResult" }, { value = 5, name = "outside_telegraph_invalid", evidence = "GameLib.CodeEnumCombatResult" }, { value = 6, name = "inside_telegraph", evidence = "GameLib.CodeEnumCombatResult" }, { value = 7, name = "needs_hit_result_calc", evidence = "GameLib.CodeEnumCombatResult" } ] },
+  { name = "damage_type", kind = "unsigned", bits = 3, evidence = "0x1400946c0", named_by = "0x1400946c0", values_type = "DamageType", values = [ { value = 1, name = "physical", evidence = "GameLib.CodeEnumDamageType" }, { value = 2, name = "tech", evidence = "GameLib.CodeEnumDamageType" }, { value = 3, name = "magic", evidence = "GameLib.CodeEnumDamageType" }, { value = 4, name = "heal", evidence = "GameLib.CodeEnumDamageType" }, { value = 5, name = "heal_shields", evidence = "GameLib.CodeEnumDamageType" }, { value = 6, name = "fall", evidence = "GameLib.CodeEnumDamageType" }, { value = 7, name = "suffocate", evidence = "GameLib.CodeEnumDamageType" } ] },
+  { name = "hits", kind = "array", count_bits = 8, element = "spell_hit_entry", evidence = "0x1400946c0", named_by = "0x1400946c0" },
+]
+
+[[record]]
+name = "spell_hit_entry"
+evidence = "0x1400945e0"
+summary = "one hit entry of a damage description: seven 32-bit values and a 3-bit kind, of which 2 and 3 make a multi-hit line and any other a deflect line; the values' meanings are not read"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
+  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
+  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x1400945e0" },
+  { name = "kind", kind = "unsigned", bits = 3, evidence = "0x1400945e0", named_by = "0x1400946c0" },
+]
+
+[[message]]
+id = 0x07FE
+name = "spell_finished"
+direction = "server_to_client"
+evidence = "opcode.0x7fe"
+summary = "a cast ends: the cast id; the client drops an unknown id, and a Channeled cast starts its cooldowns here"
+fields = [
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fe", named_by = "opcode.0x7fe" },
+]
+
+[[message]]
+id = 0x0801
+name = "cancel_cast"
+direction = "client_to_server"
+evidence = "opcode.0x801"
+summary = "the client cancels one of its player's casts: the cast id, the reason (6 when the cast's target died) and one bit, which the client's sender always sets; the other senders of the message and whether the id is the server's or the client's are not read"
+fields = [
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x801", named_by = "opcode.0x801" },
+  { name = "reason", kind = "unsigned", bits = 9, evidence = "opcode.0x801", named_by = "opcode.0x801", values_type = "CastResult", values = [ { value = 1, name = "unable_to_create_spell", evidence = "Spell.CodeEnumCastResult" }, { value = 4, name = "spell_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 5, name = "spell_bad", evidence = "Spell.CodeEnumCastResult" }, { value = 6, name = "spell_cancelled", evidence = "opcode.0x801" }, { value = 13, name = "spell_already_casting", evidence = "Spell.CodeEnumCastResult" }, { value = 14, name = "spell_global_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 15, name = "spell_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 16, name = "spell_group_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 17, name = "spell_pre_requisites", evidence = "Spell.CodeEnumCastResult" }, { value = 30, name = "caster_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 31, name = "caster_must_have_target", evidence = "Spell.CodeEnumCastResult" }, { value = 33, name = "caster_not_incontrol_of_self", evidence = "Spell.CodeEnumCastResult" }, { value = 34, name = "caster_movement", evidence = "Spell.CodeEnumCastResult" }, { value = 57, name = "caster_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 90, name = "target_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 91, name = "no_target", evidence = "Spell.CodeEnumCastResult" }, { value = 99, name = "target_faction", evidence = "Spell.CodeEnumCastResult" }, { value = 101, name = "target_orientation", evidence = "Spell.CodeEnumCastResult" }, { value = 104, name = "target_range_min", evidence = "Spell.CodeEnumCastResult" }, { value = 105, name = "target_range_max", evidence = "Spell.CodeEnumCastResult" }, { value = 106, name = "target_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 166, name = "caster_needs_los", evidence = "Spell.CodeEnumCastResult" }, { value = 169, name = "weapon_slot", evidence = "Spell.CodeEnumCastResult" }, { value = 182, name = "spell_no_charges", evidence = "Spell.CodeEnumCastResult" }, { value = 183, name = "target_range_vertical", evidence = "Spell.CodeEnumCastResult" }, { value = 285, name = "illegal_spell_cast", evidence = "Spell.CodeEnumCastResult" }, { value = 317, name = "queued", evidence = "Spell.CodeEnumCastResult" } ] },
+  { name = "field_3", kind = "unsigned", bits = 1, evidence = "opcode.0x801" },
+]
+
+[[message]]
+id = 0x0937
+name = "unit_health"
+direction = "server_to_client"
+evidence = "opcode.0x937"
+summary = "a unit's health, which the client stores as sent for any unit but the player's own (it ignores that one); with the dead bit set and health 0 it marks the unit dead"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x937", named_by = "opcode.0x937" },
+  { name = "health", kind = "unsigned", bits = 32, evidence = "opcode.0x937", named_by = "opcode.0x937" },
+  { name = "dead", kind = "unsigned", bits = 1, evidence = "opcode.0x937", named_by = "opcode.0x937" },
+]
+
+[[message]]
+id = 0x092F
+name = "player_health"
+direction = "server_to_client"
+evidence = "opcode.0x92f"
+summary = "the player's own health, which the client ignores for any other unit: the unit id, the health and an 18-bit reason mask of which 0x40 is falling and 0x200 breath, which raise a Fall or Suffocate damage floater when health fell; it never marks the player dead"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x92f", named_by = "opcode.0x92f" },
+  { name = "health", kind = "unsigned", bits = 32, evidence = "opcode.0x92f", named_by = "opcode.0x92f" },
+  { name = "reason_mask", kind = "unsigned", bits = 18, evidence = "opcode.0x92f", named_by = "opcode.0x92f" },
+]
+
+[[message]]
+id = 0x0938
+name = "unit_stat_changed"
+direction = "server_to_client"
+evidence = "opcode.0x938"
+summary = "a unit's stat changed, as an integer: stat 20 is the shield, 22 the absorption and 10 the level, and stat 0 (health) is not taken here"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
+  { name = "stat_id", kind = "unsigned", bits = 5, evidence = "opcode.0x938", named_by = "opcode.0x938" },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
+]
+
+[[message]]
+id = 0x088C
+name = "unit_death_state"
+direction = "server_to_client"
+evidence = "opcode.0x88c"
+summary = "a unit died or came back: the unit id and the dead bit, a 5-bit value the client reads and does not use and a 32-bit value it uses only when a unit under client control comes back with it non-zero; the message sets no health and opens no window"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x88c", named_by = "opcode.0x88c" },
+  { name = "dead", kind = "unsigned", bits = 1, evidence = "opcode.0x88c", named_by = "opcode.0x88c" },
+  { name = "field_3", kind = "unsigned", bits = 5, evidence = "opcode.0x88c", safe_by = "opcode.0x88c" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x88c", safe_by = "opcode.0x88c" },
+]
+
+[[message]]
+id = 0x0908
+name = "unit_target"
+direction = "server_to_client"
+evidence = "opcode.0x908"
+summary = "a unit's target and its threat toward that target, a threat of 0 removing the entry; the client raises TargetedByUnit when the target is the player"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x908", named_by = "opcode.0x908" },
+  { name = "target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x908", named_by = "opcode.0x908" },
+  { name = "threat", kind = "unsigned", bits = 32, evidence = "opcode.0x908", named_by = "opcode.0x908" },
+]
+
+[[message]]
+id = 0x090A
+name = "unit_threat"
+direction = "server_to_client"
+evidence = "opcode.0x90a"
+summary = "a unit's threat toward another unit without changing its target, a threat of 0 removing the entry"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x90a", named_by = "opcode.0x90a" },
+  { name = "other_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x90a", named_by = "opcode.0x90a" },
+  { name = "threat", kind = "unsigned", bits = 32, evidence = "opcode.0x90a", named_by = "opcode.0x90a" },
+]
+
+[[message]]
+id = 0x089A
+name = "unit_combat_state"
+direction = "server_to_client"
+evidence = "opcode.0x89a"
+summary = "a unit enters or leaves combat: the only message that sets the flag, which the client keeps until a message with 0"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x89a", named_by = "opcode.0x89a" },
+  { name = "in_combat", kind = "unsigned", bits = 1, evidence = "opcode.0x89a", named_by = "opcode.0x89a" },
+]
+
+[[message]]
+id = 0x01B3
+name = "resurrection_window"
+direction = "server_to_client"
+evidence = "opcode.0x1b3"
+summary = "the player's death state and the resurrection window's choices: the unit to control while dead (the ghost), the Wake Here cost in credits, the death penalty in milliseconds, the dead bit, the offered choices, whether a caster has asked, the Wake Here cooldown and the forced-release countdown in milliseconds; the window's choices, cost and timers come only from this message"
+fields = [
+  { name = "ghost_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x1b3", named_by = "opcode.0x1b3" },
+  { name = "wake_here_cost", kind = "unsigned", bits = 32, evidence = "opcode.0x1b3", named_by = "opcode.0x1b3" },
+  { name = "death_penalty_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x1b3", named_by = "opcode.0x1b3" },
+  { name = "dead", kind = "unsigned", bits = 1, evidence = "opcode.0x1b3", named_by = "opcode.0x1b3" },
+  { name = "choices", kind = "unsigned", bits = 8, evidence = "opcode.0x1b3", named_by = "lua.GameLib.RezType" },
+  { name = "caster_asked", kind = "unsigned", bits = 1, evidence = "opcode.0x1b3", named_by = "opcode.0x1b3" },
+  { name = "wake_here_cooldown_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x1b3", named_by = "opcode.0x1b3" },
+  { name = "forced_release_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x1b3", named_by = "opcode.0x1b3" },
+]
+
+[[message]]
+id = 0x015A
+name = "choose_resurrection"
+direction = "client_to_server"
+evidence = "opcode.0x15a"
+summary = "the player chose how to come back: the player's unit id (not the ghost's), the choice and a 32-bit value the client's Death addon always sends as 0; the client does not check that the choice was offered and waits for no answer"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x15a", named_by = "opcode.0x15a" },
+  { name = "choice", kind = "unsigned", bits = 7, evidence = "opcode.0x15a", named_by = "lua.GameLib.RezType" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x15a" },
+]
+
+[[message]]
+id = 0x0247
+name = "combat_log"
+direction = "server_to_client"
+evidence = "opcode.0x247"
+summary = "a combat log entry: the type in 6 bits picks the entry's layout, and the client's reader fails a type above 35; the schema holds types 22 (death) and 23 (resurrect), and a spell hit's line is made by the client from its damage description"
+fields = [
+  { name = "entry", kind = "record", record = "combat_log_entry", evidence = "opcode.0x247", named_by = "opcode.0x247" },
+]
+
+[[union]]
+name = "combat_log_entry"
+evidence = "opcode.0x247"
+summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 22 and 23, and the client's reader takes 0 to 35"
+tag_bits = 6
+variants = [
+  { tag = 22, name = "death", record = "combat_log_death", named_by = "opcode.0x247.death" },
+  { tag = 23, name = "resurrect", record = "combat_log_resurrect", named_by = "opcode.0x247.death" },
+]
+
+[[record]]
+name = "combat_log_death"
+evidence = "opcode.0x247.death"
+summary = "a combat log entry of type 22: the unit that died, which the client logs only for a player or a ghost or a unit one owns"
+fields = [
+  { name = "kind", kind = "constant", bits = 6, value = 22, evidence = "opcode.0x247.death", named_by = "opcode.0x247.death" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.death", named_by = "opcode.0x247.death" },
+]
+
+[[record]]
+name = "combat_log_resurrect"
+evidence = "opcode.0x247.death"
+summary = "a combat log entry of type 23: the unit that came back, which the client logs only for a player or a ghost or a unit one owns"
+fields = [
+  { name = "kind", kind = "constant", bits = 6, value = 23, evidence = "opcode.0x247.death", named_by = "opcode.0x247.death" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.death", named_by = "opcode.0x247.death" },
 ]

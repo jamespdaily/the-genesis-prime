@@ -1,24 +1,28 @@
 //// Generated from `schema.toml` by `genesis_prime/generate_messages`;
 //// never edited by hand.
 ////
-//// A union inside a message body: one movement command the server relays to
-//// the players who see a unit: the kinds of the per-frame batch the client's
-//// writer builds after the time command (1 platform, 2 position, 8 velocity,
-//// 11 move asked, 14 rotation, 24 state flags, 27 mode), every field named,
-//// and no kind 0, the sender's own clock. Gap: the other kinds, which game
-//// moves queue and the client's writer may send, are not relayed, since
-//// opcode.0x637 does not say which queuers exist or what they mean. Its
-//// variants are listed in `schema.toml` with the client's evidence, and the
-//// fact file's `opcode.0x637` names the union.
+//// A union inside a message body: one movement command of a message about a
+//// unit's movement: the kinds of the per-frame batch the client's writer
+//// builds after the time command (1 platform, 2 position, 8 velocity, 11 move
+//// asked, 14 rotation, 24 state flags, 27 mode), which the server relays to
+//// the players who see a unit, every field named, and the two a server that
+//// moves a unit writes itself, 0 (the time its later commands apply at) and 4
+//// (a path). Gap: the other kinds, which game moves queue and the client's
+//// writer may send, are not relayed, since opcode.0x637 does not say which
+//// queuers exist or what they mean. Its variants are listed in `schema.toml`
+//// with the client's evidence, and the fact file's `opcode.0x637` names the
+//// union.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
 import genesis_prime/message/movement_mode.{type MovementMode}
 import genesis_prime/message/movement_move_asked.{type MovementMoveAsked}
+import genesis_prime/message/movement_path.{type MovementPath}
 import genesis_prime/message/movement_platform.{type MovementPlatform}
 import genesis_prime/message/movement_rotation.{type MovementRotation}
 import genesis_prime/message/movement_state_flags.{type MovementStateFlags}
+import genesis_prime/message/movement_time.{type MovementTime}
 import genesis_prime/message/movement_velocity.{type MovementVelocity}
 import genesis_prime/message/unit_position_command.{type UnitPositionCommand}
 import gleam/pair
@@ -28,12 +32,18 @@ import gleam/result
 /// variant, and the variant's record reads them again as its first field. A
 /// kind no variant has is refused.
 pub type RelayedMovement {
+  /// Kind 0, read by `movement_time`. The fact file's `movement_command.kind_0`
+  /// names the kind.
+  Time(MovementTime)
   /// Kind 1, read by `movement_platform`. The fact file's `opcode.0x637` names
   /// the kind.
   Platform(MovementPlatform)
   /// Kind 2, read by `unit_position_command`. The fact file's `0x1400ad350`
   /// names the kind.
   Position(UnitPositionCommand)
+  /// Kind 4, read by `movement_path`. The fact file's `movement_command.kind_4`
+  /// names the kind.
+  Path(MovementPath)
   /// Kind 8, read by `movement_velocity`. The fact file's
   /// `movement_command.kind_8` names the kind.
   Velocity(MovementVelocity)
@@ -54,8 +64,10 @@ pub type RelayedMovement {
 /// Writes the variant's record to the stream.
 pub fn write(writer writer: Writer, record record: RelayedMovement) -> Writer {
   case record {
+    Time(variant) -> movement_time.write(writer, variant)
     Platform(variant) -> movement_platform.write(writer, variant)
     Position(variant) -> unit_position_command.write(writer, variant)
+    Path(variant) -> movement_path.write(writer, variant)
     Velocity(variant) -> movement_velocity.write(writer, variant)
     MoveAsked(variant) -> movement_move_asked.write(writer, variant)
     Rotation(variant) -> movement_rotation.write(writer, variant)
@@ -68,6 +80,7 @@ pub fn write(writer writer: Writer, record record: RelayedMovement) -> Writer {
 pub fn read(reader: Reader) -> Result(#(RelayedMovement, Reader), DecodeError) {
   use kind <- result.try(bit_stream.peek_unsigned(reader, 5))
   case kind {
+    0 -> reader |> movement_time.read |> result.map(pair.map_first(_, Time))
     1 ->
       reader
       |> movement_platform.read
@@ -76,6 +89,7 @@ pub fn read(reader: Reader) -> Result(#(RelayedMovement, Reader), DecodeError) {
       reader
       |> unit_position_command.read
       |> result.map(pair.map_first(_, Position))
+    4 -> reader |> movement_path.read |> result.map(pair.map_first(_, Path))
     8 ->
       reader
       |> movement_velocity.read

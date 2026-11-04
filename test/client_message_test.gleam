@@ -9,8 +9,12 @@
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_finished.{CampFinished}
 import genesis_prime/message/camp_request.{CampRequest}
+import genesis_prime/message/cancel_cast.{CancelCast}
+import genesis_prime/message/cast_ability.{CastAbility}
+import genesis_prime/message/cast_result
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/choose_realm.{ChooseRealm}
+import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/client_message
 import genesis_prime/message/client_wrapper.{ClientWrapper}
@@ -274,6 +278,31 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         formats: [],
         chat_message_id: 2,
         account: 0,
+      )),
+    ),
+    #(
+      0x009A,
+      client_message.CastAbility(message: CastAbility(
+        client_cast_id: 0x80002803,
+        bag_index: 2,
+        target_unit_id: 0x12345,
+        press: 1,
+      )),
+    ),
+    #(
+      0x0801,
+      client_message.CancelCast(message: CancelCast(
+        cast_id: 0x80002804,
+        reason: cast_result.SpellCancelled,
+        field_3: 1,
+      )),
+    ),
+    #(
+      0x015A,
+      client_message.ChooseResurrection(message: ChooseResurrection(
+        unit_id: 0x1001,
+        choice: 1,
+        field_3: 0,
       )),
     ),
   ]

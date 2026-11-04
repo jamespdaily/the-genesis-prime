@@ -37,6 +37,7 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
@@ -155,36 +156,38 @@ pub fn create(
     pvp_flags: 0,
     premium_tier: 0,
     title_id: 0,
-    create_flags: 0,
-    stats: [
-      UnitStat(stat_id: health_stat, value: stand_in_health),
-      UnitStat(stat_id: level_stat, value: character.level),
-    ],
-    server_time_estimate_start: 0,
-    movement_commands: {
-      let #(position, rotation) = standing(place:)
-      [start_movement.Position(position), start_movement.Rotation(rotation)]
-    },
-    properties: [
-      UnitProperty(
-        property_id: base_health_property,
-        field_2: health,
-        value: health,
-      ),
-    ],
-    item_visuals: visuals,
-    cast_id: 0,
-    faction_id: character.faction_id,
-    base_faction_id: character.faction_id,
-    tagged_by_unit_id: 0,
-    tagged_by_group_id: 0,
-    field_31: 0,
-    field_33: 0,
-    world_socket_id: 0,
-    cluster_id: 0,
-    field_37: 0,
-    minimap_marker_id: 0,
-    display_info_id: 0,
-    outfit_info_id: 0,
+    tail: UnitCreateTail(
+      create_flags: 0,
+      stats: [
+        UnitStat(stat_id: health_stat, value: stand_in_health),
+        UnitStat(stat_id: level_stat, value: character.level),
+      ],
+      server_time_estimate_start: 0,
+      movement_commands: {
+        let #(position, rotation) = standing(place:)
+        [start_movement.Position(position), start_movement.Rotation(rotation)]
+      },
+      properties: [
+        UnitProperty(
+          property_id: base_health_property,
+          field_2: health,
+          value: health,
+        ),
+      ],
+      item_visuals: visuals,
+      cast_id: 0,
+      faction_id: character.faction_id,
+      base_faction_id: character.faction_id,
+      tagged_by_unit_id: 0,
+      tagged_by_group_id: 0,
+      field_14: 0,
+      field_16: 0,
+      world_socket_id: 0,
+      cluster_id: 0,
+      field_20: 0,
+      minimap_marker_id: 0,
+      display_info_id: 0,
+      outfit_info_id: 0,
+    ),
   )
 }

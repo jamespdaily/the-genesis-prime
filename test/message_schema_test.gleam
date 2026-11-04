@@ -8,9 +8,10 @@ import genesis_prime/message_generator
 import genesis_prime/message_schema.{
   ArrayOfFloat32, ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, Both,
   ConflictingValues, Constant, DuplicateTag, DuplicateValue, DuplicateValueName,
-  DuplicateVariantName, NamedValues, Union, UnknownCountField, UnknownRecord,
-  UnknownVariantRecord, UnsignedArrayCountedBy, UnsignedBelow, ValueNamedOther,
-  ValuesOnOtherKind, Variant, VariantKindDisagrees, WrongTypeOfKey,
+  DuplicateVariantName, HalfFloatAtLeast, NamedValues, OneRecord, Union,
+  UnknownCountField, UnknownRecord, UnknownVariantRecord, UnsignedArrayCountedBy,
+  UnsignedBelow, ValueNamedOther, ValuesOnOtherKind, Variant,
+  VariantKindDisagrees, WrongTypeOfKey,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -527,4 +528,93 @@ pub fn records_counted_by_an_array_are_written_and_read_with_no_count_of_their_o
         as { "the message holds `" <> text <> "`" }
     },
   )
+}
+
+const one_record_and_a_half_float =
+  "  { name = \"shape\", kind = \"record\", record = \"planted_union\", evidence = \"x\" },
+  { name = \"speed\", kind = \"half_float_at_least\", minimum = \"0.00001\", evidence = \"x\" },"
+
+pub fn the_reader_knows_one_record_in_place_and_a_half_float_with_a_minimum_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert field_kinds(union_schema(
+      variants: flag_and_pair,
+      fields: one_record_and_a_half_float,
+    ))
+    == [OneRecord(record: "planted_union"), HalfFloatAtLeast(minimum: 0.00001)]
+}
+
+pub fn a_record_field_names_a_record_or_union_the_schema_holds_and_a_minimum_is_a_float_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(union_schema(
+      variants: flag_and_pair,
+      fields: "  { name = \"shape\", kind = \"record\", record = \"missing\", evidence = \"x\" },",
+    ))
+    == Error(UnknownRecord(field: "shape", record: "missing"))
+    as "the record is one of the schema's"
+  assert message_schema.parse(union_schema(
+      variants: flag_and_pair,
+      fields: "  { name = \"speed\", kind = \"half_float_at_least\", minimum = \"fast\", evidence = \"x\" },",
+    ))
+    == Error(WrongTypeOfKey("speed", "minimum"))
+    as "the minimum is a number written as text"
+  assert message_schema.parse(union_schema(
+      variants: flag_and_pair,
+      fields: "  { name = \"speed\", kind = \"half_float_at_least\", minimum = 0.00001, evidence = \"x\" },",
+    ))
+    == Error(WrongTypeOfKey("speed", "minimum"))
+    as "a TOML float is refused, since the TOML reader's float of 0.00001 is 1.0000000000000004e-5"
+  assert message_schema.parse(union_schema(
+      variants: flag_and_pair,
+      fields: "  { name = \"speed\", kind = \"half_float_at_least\", evidence = \"x\" },",
+    ))
+    == Error(message_schema.MissingKey("speed", "minimum"))
+    as "a half float with a minimum names it"
+}
+
+pub fn a_record_in_place_is_written_and_read_by_its_module_and_a_half_float_refuses_below_its_minimum_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files =
+    generated(union_schema(
+      variants: flag_and_pair,
+      fields: one_record_and_a_half_float,
+    ))
+  let message = generated_file(files, "planted")
+  list.each(
+    [
+      "import genesis_prime/message/planted_union.{type PlantedUnion}",
+      "Planted(shape: PlantedUnion, speed: Int)",
+      "|> planted_union.write(message.shape)",
+      "bit_stream.write_half_float_at_least(\"speed\", message.speed, 1.0e-5)",
+      "use #(shape, reader) <- result.try(planted_union.read(reader))",
+      "bit_stream.read_half_float_at_least(\n    reader,\n    \"speed\",\n    1.0e-5,\n  )",
+    ],
+    fn(text) {
+      assert string.contains(message, text)
+        as { "the message holds `" <> text <> "`" }
+    },
+  )
+}
+
+pub fn a_module_that_sorts_before_the_bit_stream_is_imported_before_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files =
+    generated(string.replace(
+      schema_with(
+        "  { name = \"records\", kind = \"array\", count_bits = 4, element = \"planted_record\", evidence = \"x\" },",
+      ),
+      "planted_record",
+      "aaa_record",
+    ))
+  let message = generated_file(files, "planted")
+  let assert Ok(#(before_bit_stream, _)) =
+    string.split_once(
+      message,
+      "import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}",
+    )
+    as "the message imports the bit stream"
+  assert string.contains(
+    before_bit_stream,
+    "import genesis_prime/message/aaa_record.{type AaaRecord}",
+  )
+    as "`gleam format` keeps imports in the order of their modules' names, so the codec writes them in that order and the full check's comparison of the generated files holds"
 }

@@ -52,6 +52,7 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
@@ -524,25 +525,27 @@ pub fn unit_create_player_is_the_clients_907_bits_test() -> Nil {
       pvp_flags: 3,
       premium_tier: 0x51,
       title_id: 0x61,
-      create_flags: 0x80,
-      stats: [],
-      server_time_estimate_start: 0x90,
-      movement_commands: [],
-      properties: [],
-      item_visuals: [],
-      cast_id: 0xD0,
-      faction_id: 0xD4,
-      base_faction_id: 0xD8,
-      tagged_by_unit_id: 0xDC,
-      tagged_by_group_id: 0xE0E0E0E0E0E0E0E0,
-      field_31: 1,
-      field_33: 0x5A5A5A5A5A5A5A5A,
-      world_socket_id: 0x99,
-      cluster_id: 0x10C,
-      field_37: 0x110,
-      minimap_marker_id: 0x114,
-      display_info_id: 0x118,
-      outfit_info_id: 0x11C,
+      tail: UnitCreateTail(
+        create_flags: 0x80,
+        stats: [],
+        server_time_estimate_start: 0x90,
+        movement_commands: [],
+        properties: [],
+        item_visuals: [],
+        cast_id: 0xD0,
+        faction_id: 0xD4,
+        base_faction_id: 0xD8,
+        tagged_by_unit_id: 0xDC,
+        tagged_by_group_id: 0xE0E0E0E0E0E0E0E0,
+        field_14: 1,
+        field_16: 0x5A5A5A5A5A5A5A5A,
+        world_socket_id: 0x99,
+        cluster_id: 0x10C,
+        field_20: 0x110,
+        minimap_marker_id: 0x114,
+        display_info_id: 0x118,
+        outfit_info_id: 0x11C,
+      ),
     ),
     encode: unit_create_player.encode,
     decode: unit_create_player.decode,
@@ -570,32 +573,34 @@ fn minimal_player() -> UnitCreatePlayer {
     pvp_flags: 0,
     premium_tier: 0,
     title_id: 0,
-    create_flags: 0,
-    stats: [],
-    server_time_estimate_start: 0,
-    movement_commands: [
-      start_movement.Position(UnitPositionCommand(
-        x: 0x45879585,
-        y: 0xC487D70A,
-        z: 0xC570E87B,
-        blends: 0,
-      )),
-    ],
-    properties: [],
-    item_visuals: [],
-    cast_id: 0,
-    faction_id: 0,
-    base_faction_id: 0,
-    tagged_by_unit_id: 0,
-    tagged_by_group_id: 0,
-    field_31: 0,
-    field_33: 0,
-    world_socket_id: 0,
-    cluster_id: 0,
-    field_37: 0,
-    minimap_marker_id: 0,
-    display_info_id: 0,
-    outfit_info_id: 0,
+    tail: UnitCreateTail(
+      create_flags: 0,
+      stats: [],
+      server_time_estimate_start: 0,
+      movement_commands: [
+        start_movement.Position(UnitPositionCommand(
+          x: 0x45879585,
+          y: 0xC487D70A,
+          z: 0xC570E87B,
+          blends: 0,
+        )),
+      ],
+      properties: [],
+      item_visuals: [],
+      cast_id: 0,
+      faction_id: 0,
+      base_faction_id: 0,
+      tagged_by_unit_id: 0,
+      tagged_by_group_id: 0,
+      field_14: 0,
+      field_16: 0,
+      world_socket_id: 0,
+      cluster_id: 0,
+      field_20: 0,
+      minimap_marker_id: 0,
+      display_info_id: 0,
+      outfit_info_id: 0,
+    ),
   )
 }
 
@@ -621,10 +626,13 @@ pub fn a_player_with_health_and_base_health_is_the_clients_912_bits_test() -> Ni
     ),
     value: UnitCreatePlayer(
       ..minimal_player(),
-      stats: [UnitStat(stat_id: 0, value: 136)],
-      properties: [
-        UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
-      ],
+      tail: UnitCreateTail(
+        ..minimal_player().tail,
+        stats: [UnitStat(stat_id: 0, value: 136)],
+        properties: [
+          UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
+        ],
+      ),
     ),
     encode: unit_create_player.encode,
     decode: unit_create_player.decode,
@@ -696,9 +704,12 @@ pub fn a_unit_create_names_the_items_a_player_wears_test() -> Nil {
     ))
     as "vector.opcode.0x262.player decodes"
   let worn =
-    UnitCreatePlayer(..player, item_visuals: [
-      ItemVisual(slot: 2, display_id: 0x1234, item_color_set_id: 0x56, dye: 7),
-    ])
+    UnitCreatePlayer(
+      ..player,
+      tail: UnitCreateTail(..player.tail, item_visuals: [
+        ItemVisual(slot: 2, display_id: 0x1234, item_color_set_id: 0x56, dye: 7),
+      ]),
+    )
   let assert Ok(bytes) = unit_create_player.encode(worn)
     as "a unit with an item visual encodes"
   assert unit_create_player.decode(bytes) == Ok(worn)
