@@ -15,6 +15,7 @@ import genesis_prime
 import genesis_prime/client_connection.{
   AskStore, BurstBelowOne, BurstBelowWait, Continue, Done, PerSecondBelowOne,
 }
+import genesis_prime/content/term
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, Ask, AskId, Effects, EffectsThenAsk, Log,
   LogInfo, LogLine, Stop,
@@ -70,7 +71,11 @@ pub fn each_rules_bucket_in_the_servers_settings_holds_what_a_client_sends_at_th
   // server that is started sets them for real.
   envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
   envoy.set("GENESIS_REALM_NAME", "Test")
-  let settings = genesis_prime.settings(tables: character_tables.shared())
+  let settings =
+    genesis_prime.settings(
+      tables: character_tables.shared(),
+      spawns: term.new_key(),
+    )
   let sts = settings.login.sts.settings
   let auth = settings.login.auth.settings
   let game = settings.game.settings

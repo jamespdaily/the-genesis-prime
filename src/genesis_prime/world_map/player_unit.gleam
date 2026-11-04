@@ -179,7 +179,9 @@ pub fn create(
       ],
       item_visuals: visuals,
       faction_id: character.faction_id,
+      base_faction_id: character.faction_id,
       display_info_id: 0,
+      outfit_info_id: 0,
       server_time_estimate_start: 0,
     ),
   )

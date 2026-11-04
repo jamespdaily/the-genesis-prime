@@ -22,7 +22,7 @@ import genesis_prime/step.{
   StartServiceTimer, Started, Stop, Told, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/creature.{
-  type State, Settings, Unwatched, Watched,
+  type State, Retire, Settings, Unwatched, Watched,
 }
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -42,6 +42,7 @@ fn creature() -> State {
       map: ship,
       incarnation: 1,
       unit_id: 7,
+      life: 3,
       spawn_id: SpawnId(1),
       clock_origin_ms:,
     ),
@@ -143,4 +144,15 @@ pub fn a_creature_stops_when_its_run_ends_and_when_the_server_stops_test() -> Ni
   let #(_, taken) =
     feed(state:, at_ms: 6000, event: step.Stopping(deadline_ms: 11_000))
   assert support.stops(taken) as "the server stopping ends it"
+}
+
+pub fn a_creature_told_to_retire_stops_with_nothing_to_send_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
+  let #(_, taken) = feed(state:, at_ms: 80_000, event: OwnEvent(Told(Retire)))
+  assert support.stops(taken)
+    as "the map's Retire ends the creature: no player has seen it for the idle stop"
+  assert sent(taken) == []
+    as "its viewers went with their Unwatched, so there is no 0x355 left to send"
 }

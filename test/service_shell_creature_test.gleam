@@ -30,6 +30,7 @@ fn a_creature() -> step.CreatureStart {
     map: MapId(world_id: 3460, instance: 0),
     incarnation: 1,
     unit_id: 7,
+    life: 3,
     spawn_id: SpawnId(1),
     clock_origin_ms: 0,
   )
@@ -37,7 +38,12 @@ fn a_creature() -> step.CreatureStart {
 
 /// The address `a_creature` is found at.
 fn a_creatures_address() -> Address {
-  Creature(map: MapId(world_id: 3460, instance: 0), incarnation: 1, unit_id: 7)
+  Creature(
+    map: MapId(world_id: 3460, instance: 0),
+    incarnation: 1,
+    unit_id: 7,
+    life: 3,
+  )
 }
 
 /// A gate whose reach starts creatures as `starting` says, tells `started` of

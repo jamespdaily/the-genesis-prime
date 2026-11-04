@@ -13,7 +13,7 @@
 ////  │    ├─ creature registry: OTP's pg scope, named      permanent
 ////  │    ├─ Maps: the registry actor, named              permanent
 ////  │    ├─ creature supervisor: factory supervisor, named  permanent
-////  │    │    └─ one creature per spawn of a map run: service shell + creature rule, unnamed  temporary
+////  │    │    └─ one creature per spawn a player sees in a map run: service shell + creature rule, unnamed  temporary
 ////  │    └─ map supervisor: factory supervisor, named     permanent
 ////  │         └─ one map per MapId: service shell + map rule, unnamed  temporary
 ////  ├─ login supervisor (one-for-one, 3 restarts in 10 s)  permanent
@@ -39,6 +39,12 @@
 //// listener's rules; one `Locate` and the sessions' `Reach`, made from the
 //// same names and the registry, find the processes a rule watches or sends to.
 ////
+//// Before the tree starts, `main` loads the content tables (genesis_prime/content)
+//// into persistent terms under `World.spawns`'s key, with a database pool of its
+//// own: a map reads its world's spawns from the term when it starts and no process
+//// queries a content table during play. The load stops the start when a row is
+//// refused or the migrations differ, so no listener opens first.
+////
 //// What a restart rebuilds, and what a client sees:
 //// - **The pool** reconnects to Postgres. Asks to the store meanwhile answer
 ////   `Unavailable`.
@@ -62,11 +68,12 @@
 ////   map and every creature. Each in-world connection watches its map, so its end
 ////   ends the connection with 0x036A reason 8, and its client logs in again.
 //// - **The creatures** (genesis_prime/world_map/creature, `creature_supervisor`,
-////   `creature_registry`): a map has a creature started at each spawn of its
-////   world as it starts, and watches it. A creature that ends is replaced by the
-////   map as a new unit after a delay, and every player is told the old unit is
-////   gone; a map run that ends ends its creatures, which watch it by the pid it
-////   started them with. The creature supervisor sits after Maps and before the
+////   `creature_registry`): a map has a creature started at a spawn of its
+////   world when a player first sees the spawn, watches it, and stops it when no
+////   player has seen it for the idle stop. A creature that crashes is replaced by
+////   the map as a new unit after a delay if a player sees the spawn then, and
+////   every player is told the old unit is gone; a map run that ends ends its
+////   creatures, which watch it by the pid it started them with. The creature supervisor sits after Maps and before the
 ////   map supervisor, so its restart ends every map and every creature, and the
 ////   registry's, before them all, ends the same; a creature that fails to start
 ////   leaves its spawn empty for the run, with an error line.
@@ -104,6 +111,8 @@ import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell as connection_shell
+import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/term
 import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off
 import genesis_prime/login/auth_connection
@@ -122,9 +131,7 @@ import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
-import genesis_prime/world_map/spawn.{type Spawn}
-import genesis_prime/world_map/spawn_id.{type SpawnId}
-import gleam/dict.{type Dict}
+import gleam/dict
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -185,12 +192,17 @@ pub type World {
     creature_supervisor: Name(creature_supervisor.CreatureSupervisor),
     /// How long a creature has to stop.
     creature_shutdown_ms: Int,
-    /// How long a spawn whose creature ended waits before a creature is started
-    /// there again.
+    /// How long a spawn whose creature crashed waits before a creature is
+    /// started there again.
     creature_restart_ms: Int,
-    /// Every spawn of every map, from the tables' load (`spawn.all`); each map
-    /// stands the creatures of its own world.
-    spawns: List(Spawn),
+    /// How long a creature that no player sees keeps running, and how often
+    /// each map looks for one: the idle stop and the sweep of the map's rule.
+    idle_stop_ms: Int,
+    sweep_ms: Int,
+    /// The key the content load put each world's spawns under
+    /// (genesis_prime/content/spawn): a map reads its world's term when it
+    /// starts, and a creature reads its spawn from it, with no query during play.
+    spawns: term.Key,
   )
 }
 
@@ -341,12 +353,13 @@ fn locate(settings: Settings) -> Locate {
       step.CharacterNamed(folded_name:) ->
         registry.find_named(registry, folded_name)
       step.ZoneChannel(..) -> Error(Nil)
-      step.Creature(map:, incarnation:, unit_id:) ->
+      step.Creature(map:, incarnation:, unit_id:, life:) ->
         creature_registry.find(
           settings.world.creatures,
           map:,
           incarnation:,
           unit_id:,
+          life:,
         )
       step.Maps -> process.named(settings.world.maps)
       step.Map(map:, incarnation:) ->
@@ -563,7 +576,6 @@ pub fn add_world(
   to_connection to_connection: fn(step.ConnectionId, PeerNews) ->
     Result(Nil, Nil),
 ) -> supervisor.Builder {
-  let spawn_index = spawn.index(world.spawns)
   tree
   |> supervisor.add(creature_registry.supervised(world.creatures))
   |> supervisor.add(world_map_registry.supervised(
@@ -575,13 +587,7 @@ pub fn add_world(
       name: world.creature_supervisor,
       shutdown_ms: world.creature_shutdown_ms,
       start: fn(start: creature_supervisor.CreatureProcessStart) {
-        start_creature_process(
-          world:,
-          spawns: spawn_index,
-          reach:,
-          to_connection:,
-          start:,
-        )
+        start_creature_process(world:, reach:, to_connection:, start:)
       },
     ),
   )
@@ -596,8 +602,10 @@ pub fn add_world(
             incarnation: start.incarnation,
             realm_id:,
             tables:,
-            spawns: spawn.of_map(world.spawns, start.map),
+            spawns: content_spawn.world(world.spawns, start.map.world_id),
             creature_restart_ms: world.creature_restart_ms,
+            idle_stop_ms: world.idle_stop_ms,
+            sweep_ms: world.sweep_ms,
           ),
           reach: map_reach(world:, reach:),
           shutdown_ms: world.map_shutdown_ms,
@@ -618,8 +626,14 @@ fn map_reach(
   service.Reach(
     locate: fn(address) {
       case address {
-        step.Creature(map:, incarnation:, unit_id:) ->
-          creature_registry.find(world.creatures, map:, incarnation:, unit_id:)
+        step.Creature(map:, incarnation:, unit_id:, life:) ->
+          creature_registry.find(
+            world.creatures,
+            map:,
+            incarnation:,
+            unit_id:,
+            life:,
+          )
         step.Sessions
         | step.HandOff
         | step.Store
@@ -632,7 +646,7 @@ fn map_reach(
     },
     send: fn(to, outgoing) {
       case to {
-        step.Creature(map:, incarnation:, unit_id:) ->
+        step.Creature(map:, incarnation:, unit_id:, life:) ->
           creature.told_by_map(outgoing)
           |> result.try(fn(message) {
             creature_registry.tell(
@@ -640,6 +654,7 @@ fn map_reach(
               map:,
               incarnation:,
               unit_id:,
+              life:,
               message:,
             )
           })
@@ -666,14 +681,14 @@ fn map_reach(
 /// then its address joined in the registry.
 fn start_creature_process(
   world world: World,
-  spawns spawns: Dict(SpawnId, Spawn),
   reach reach: Reach(map.Outgoing),
   to_connection to_connection: fn(step.ConnectionId, PeerNews) ->
     Result(Nil, Nil),
   start start: creature_supervisor.CreatureProcessStart,
 ) -> actor.StartResult(Subject(Call(creature.Message, PeerNews))) {
   let wanted = start.creature
-  case dict.get(spawns, wanted.spawn_id) {
+  let spawns = content_spawn.world(world.spawns, wanted.map.world_id)
+  case dict.get(spawns.by_id, wanted.spawn_id) {
     Error(Nil) ->
       Error(actor.InitFailed(
         "the creature names a spawn the world does not hold",
@@ -691,6 +706,7 @@ fn start_creature_process(
           map: wanted.map,
           incarnation: wanted.incarnation,
           unit_id: wanted.unit_id,
+          life: wanted.life,
           pid: started.pid,
         )
         started
@@ -716,8 +732,14 @@ fn creature_reach(
         step.Map(map:, incarnation:)
           if map == own.map && incarnation == own.incarnation
         -> Ok(start.run)
-        step.Creature(map:, incarnation:, unit_id:) ->
-          creature_registry.find(world.creatures, map:, incarnation:, unit_id:)
+        step.Creature(map:, incarnation:, unit_id:, life:) ->
+          creature_registry.find(
+            world.creatures,
+            map:,
+            incarnation:,
+            unit_id:,
+            life:,
+          )
         step.Sessions
         | step.HandOff
         | step.Store

@@ -1,23 +1,26 @@
-//// Creatures running under the creature supervisor, started by their map as the
-//// server's world subtree starts them (`genesis_prime/world_map/creature`,
-//// `creature_supervisor`, `creature_registry`). Expected values come from these
-//// places.
-//// - The failure table of the combat core's design (the Design artifact of issue
-////   274, section 5, step C) and the doc comment of `genesis_prime/world_map/creature`:
-////   a creature that crashes while shown is `Gone` to the players in the map and
-////   its spawn returns after the respawn time as a new unit that is sent to the
-////   players who saw the old one; a map run that ends ends its creatures.
-//// - The doc comment of `genesis_prime/world_map/creature_registry`: a creature
-////   is found by `Creature(map, incarnation, unit_id)` from the moment it is
-////   started, and a creature that ended is found no more.
+//// Creatures running under the creature supervisor, started by their map when a
+//// player first sees their spawn and stopped when no player has for the idle stop
+//// (`genesis_prime/world_map/creature`, `creature_supervisor`,
+//// `creature_registry`). Expected values come from these places.
+//// - The design of the world spawns (the Design artifact of issue 375, sections 3
+////   and 6): a creature runs only while a player sees its spawn and up to the idle
+////   stop after; it is found by `Creature(map, incarnation, unit_id, life)` from the
+////   moment it is started, and not any more once it ended; a spawn stopped and seen
+////   again keeps its unit id and shows once; a creature that crashes while seen is
+////   `Gone` to the players and its spawn returns as a new unit after the respawn
+////   time; a map run that ends ends its creatures.
+//// - A creature's life is the number of the watch its map opened on it, from 1 in
+////   a run; the first player's connection takes watch 1 (`genesis_prime/world_map/map`
+////   `joined_new`), so the first creature a player sees has life 2.
 //// - Message 0x262 of a creature (`opcode.0x262.creature`): Creature2 id, stats
 ////   0 and 10, both factions, the display; the values are the Virtual Battle
 ////   Beast's of the creature trace (Base Health 52.6205 truncated to 52, level 1,
-////   faction 1441, display 26565), as the tables' load derives them.
-//// Every wait is for an event, with a deadline a passing test never reaches.
+////   faction 1441, display 26565), as the spawn table's row carries them
+////   (`spawn_support`).
+//// The idle stop and the sweep are shortened for these tests, so no test waits
+//// 60 s. Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
-import character_tables
 import event_wait
 import genesis_prime/client_connection.{
   type Message, CreatureAppeared, PeerNews, SentByMap, SentByPeer,
@@ -26,12 +29,10 @@ import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
-import genesis_prime/world_map/spawn
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
 import gleam/list
@@ -55,11 +56,13 @@ fn started(world: World) -> MapProcess {
   found
 }
 
-/// The process of the creature that is unit `unit_id` in the run, once it runs.
+/// The process of the creature that is unit `unit_id` in the run under `life`,
+/// once it runs.
 fn creature_pid(
   world world: World,
   run run: MapProcess,
   unit_id unit_id: Int,
+  life life: Int,
 ) -> Pid {
   let find = fn() {
     creature_registry.find(
@@ -67,6 +70,7 @@ fn creature_pid(
       map: ship,
       incarnation: run.incarnation,
       unit_id:,
+      life:,
     )
   }
   event_wait.until("the creature was started and joined its address", fn() {
@@ -129,22 +133,63 @@ fn appearance(message: Message) -> Result(UnitCreateCreature, Nil) {
   }
 }
 
-pub fn a_creature_is_found_by_its_address_and_sends_its_0x262_to_a_player_in_sight_test() -> Nil {
+/// Short times for a world whose creatures stop: a creature no player has seen
+/// for 100 ms stops at the next sweep, every 20 ms.
+const idle_stop_ms = 100
+
+const sweep_ms = 20
+
+/// A world of one Battle Beast at x 0 whose creatures stop on the short times.
+fn one_beast(creature_restart_ms creature_restart_ms: Int) -> World {
+  world_support.start(
+    spawns: [spawn_support.battle_beast(number: 1, x: 0.0)],
+    creature_restart_ms:,
+    idle_stop_ms:,
+    sweep_ms:,
+  )
+}
+
+/// The connection's player moves to `x` in the world, a tell the map takes in
+/// the order it takes its other inputs.
+fn move_to(run run: MapProcess, connection connection: Int, x x: Float) -> Nil {
+  let _sent =
+    service.tell_subject(
+      run.subject,
+      map.Moved(
+        connection: ConnectionId(connection),
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: spawn_support.warfare_woods,
+          x:,
+          y: 0.0,
+          z: 0.0,
+        ),
+      ),
+    )
+  Nil
+}
+
+/// Far from every spawn the tests stand.
+const far = 50_000.0
+
+pub fn a_creature_is_started_when_a_player_sees_its_spawn_found_by_its_address_and_sends_its_0x262_test() -> Nil {
   use <- owned_test.run(30_000)
-  // The spawn is one the tables' load derives, whose values are proven against
-  // the creature trace in `spawn_test`, and not one this test feeds in.
-  let assert [beast, ..] =
-    list.filter(spawn.all(character_tables.shared()), fn(spawn) {
-      spawn.creature_id == Creature2Id(73_464)
-    })
-    as "the planted tables stand Virtual Battle Beasts"
-  let world = world_support.start(spawns: [beast], creature_restart_ms: 60_000)
+  let world = one_beast(creature_restart_ms: 60_000)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
+  assert creature_registry.find(
+      world.creatures,
+      map: ship,
+      incarnation: run.incarnation,
+      unit_id: 2,
+      life: 2,
+    )
+    == Error(Nil)
+    as "no player sees the spawn yet, so no creature runs"
   let _player = join(run:, connection: 1)
   let creature = next(received:, what: "a creature's 0x262", wanted: appearance)
-  assert creature.unit_id == 1
-    as "the creature stands under the first unit id of the run"
+  assert creature.unit_id == 2
+    as "the creature stands under the unit id after the player's, which is 1"
   assert creature.creature_id == 73_464
     as "it is the spawn's Creature2 row, which the client refuses unless it loaded it"
   assert list.contains(creature.tail.stats, UnitStat(stat_id: 0, value: 52))
@@ -152,24 +197,20 @@ pub fn a_creature_is_found_by_its_address_and_sends_its_0x262_to_a_player_in_sig
     as "stat 0 is Base Health 52.6205 truncated, and stat 10 the level"
   assert creature.tail.faction_id == 1441
     && creature.tail.base_faction_id == 1441
-    as "Creature2.factionId in both fields"
+    as "the spawn's faction and base faction"
   assert creature.tail.display_info_id == 26_565
-  let _unused = creature_pid(world:, run:, unit_id: 1)
+  let _unused = creature_pid(world:, run:, unit_id: 2, life: 2)
   Nil
 }
 
 pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_unit_after_the_respawn_time_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world =
-    world_support.start(
-      spawns: [spawn_support.battle_beast(number: 1, x: 0.0)],
-      creature_restart_ms: 100,
-    )
+  let world = one_beast(creature_restart_ms: 100)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   let player = join(run:, connection: 1)
   let first = next(received:, what: "the creature's 0x262", wanted: appearance)
-  let pid = creature_pid(world:, run:, unit_id: first.unit_id)
+  let pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
   process.kill(pid)
   let gone =
     next(
@@ -190,9 +231,44 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
   let returned =
     next(received:, what: "the returned creature's 0x262", wanted: appearance)
   assert returned.unit_id != first.unit_id && returned.unit_id != player
-    as "the spawn returns as a new unit"
+    as "the spawn returns as a new unit, since the old id was given up with the Gone"
   assert returned.creature_id == first.creature_id
     as "it is the spawn's creature"
+}
+
+pub fn a_creature_stops_after_its_last_viewer_leaves_sight_and_the_spawn_seen_again_keeps_its_unit_id_and_shows_once_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = one_beast(creature_restart_ms: 60_000)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let first_pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  move_to(run:, connection: 1, x: far)
+  event_wait.until("the creature stopped after the idle stop", fn() {
+    !process.is_alive(first_pid)
+  })
+  event_wait.until("the stopped creature is found no more", fn() {
+    creature_registry.find(
+      world.creatures,
+      map: ship,
+      incarnation: run.incarnation,
+      unit_id: first.unit_id,
+      life: 2,
+    )
+    == Error(Nil)
+  })
+  move_to(run:, connection: 1, x: 0.0)
+  let second =
+    next(
+      received:,
+      what: "the 0x262 of the creature started again",
+      wanted: appearance,
+    )
+  assert second.unit_id == first.unit_id
+    as "the spawn keeps its unit id across a clean stop (death.creature_respawn)"
+  let _second_pid = creature_pid(world:, run:, unit_id: second.unit_id, life: 3)
+  Nil
 }
 
 pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
@@ -204,10 +280,13 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
         spawn_support.battle_beast(number: 2, x: 100.0),
       ],
       creature_restart_ms: 60_000,
+      idle_stop_ms:,
+      sweep_ms:,
     )
   let run = started(world)
-  let first = creature_pid(world:, run:, unit_id: 1)
-  let second = creature_pid(world:, run:, unit_id: 2)
+  let _player = join(run:, connection: 1)
+  let first = creature_pid(world:, run:, unit_id: 2, life: 2)
+  let second = creature_pid(world:, run:, unit_id: 3, life: 3)
   let ended = process.monitor(run.pid)
   process.kill(run.pid)
   let _reason = ask_support.ended(ended)
@@ -219,41 +298,64 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
       world.creatures,
       map: ship,
       incarnation: run.incarnation,
-      unit_id: 1,
+      unit_id: 2,
+      life: 2,
     )
     == Error(Nil)
     && creature_registry.find(
       world.creatures,
       map: ship,
       incarnation: run.incarnation,
-      unit_id: 2,
+      unit_id: 3,
+      life: 3,
     )
     == Error(Nil)
   })
 }
 
-/// The most a map's start may take with this world's spawns, in milliseconds.
-/// A map starts its creatures one by one inside its own start, which Maps waits
-/// for (an actor's start may take 5000 ms). This world's 54 spawns took 1 ms, the
-/// clock's resolution (three runs on the development machine); the bound is 50
-/// ms, about 1% of the 5000, so a world with some two thousand spawns, or a start
-/// that costs 50 times what it did, fails here and reopens the choice to start
-/// creatures after the map's start (the shell taking `Started` from its own
-/// mailbox).
-const map_start_bound_ms = 50
+/// The most a Join may take with this many spawns in sight, from the ask to the
+/// last creature found at its address, in milliseconds. The densest point of the
+/// world database holds 2,386 spawns within sight (design 375, section 3); the
+/// bound is the design's 100 ms, which this test states with the time it took
+/// and the margin once it has been measured.
+const join_bound_ms = 100
 
-pub fn a_map_that_starts_its_creatures_inside_its_own_start_starts_within_the_bound_test() -> Nil {
+/// How many spawns stand in sight of the joining player.
+const spawns_in_sight = 2400
+
+pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_within_the_bound_test() -> Nil {
   use <- owned_test.run(30_000)
-  let spawns = spawn.all(character_tables.shared())
-  assert list.length(spawns) == 54
-    as "the world's spawns are the 27 Battle Beasts and the 27 Daguns"
-  let world = world_support.start(spawns:, creature_restart_ms: 60_000)
+  let spawns =
+    list.repeat(Nil, spawns_in_sight)
+    |> list.index_map(fn(_, index) {
+      spawn_support.battle_beast(
+        number: index + 1,
+        x: int.to_float(index + 1) *. 0.4,
+      )
+    })
+  let world =
+    world_support.start(
+      spawns:,
+      creature_restart_ms: 60_000,
+      idle_stop_ms:,
+      sweep_ms:,
+    )
+  let run = started(world)
   let before = ask_support.monotonic_ms()
-  let _run = started(world)
+  let _player = join(run:, connection: 1)
+  let _last =
+    creature_pid(
+      world:,
+      run:,
+      unit_id: spawns_in_sight + 1,
+      life: spawns_in_sight + 1,
+    )
   let took = ask_support.monotonic_ms() - before
-  assert took < map_start_bound_ms
+  assert took < join_bound_ms
     as {
-      "the map's start with the world's spawns took "
+      "the join with "
+      <> int.to_string(spawns_in_sight)
+      <> " spawns in sight took "
       <> int.to_string(took)
       <> " ms"
     }

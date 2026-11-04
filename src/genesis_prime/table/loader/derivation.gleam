@@ -5,7 +5,6 @@ import genesis_prime/game/appearance
 import genesis_prime/game/loadout
 import genesis_prime/game/top_zone
 import genesis_prime/table/loader/store
-import genesis_prime/world_map/spawn
 
 /// Each derived value. A feature whose rule reads a value of the tables that
 /// is costly to build adds it here.
@@ -15,13 +14,10 @@ import genesis_prime/world_map/spawn
 ///   properties, whose missing rows fail the load (genesis_prime/game/loadout).
 /// - The top zones: each WorldZone's top zone, which a cycle in the parent chain
 ///   fails (genesis_prime/game/top_zone).
-/// - The spawns: each creature's place and values, which a creature the client
-///   would not load fails (genesis_prime/world_map/spawn).
 pub fn all() -> List(store.Derivation) {
   [
     appearance.derivation(),
     loadout.derivation(),
     top_zone.derivation(),
-    spawn.derivation(),
   ]
 }

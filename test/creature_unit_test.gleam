@@ -7,9 +7,9 @@
 
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/message/unit_create_creature
-import genesis_prime/table/id.{Creature2Id, WorldLocation2Id}
+import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/spawn.{Spawn, WorldDatabase}
+import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import message_support
 import owned_test
@@ -31,12 +31,12 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       id: SpawnId(1),
       creature_id: Creature2Id(73_464),
       place:,
-      area: WorldLocation2Id(51_739),
-      source: WorldDatabase(row_id: 29_113),
       level: 1,
       health: 52,
       faction_id: 1441,
+      base_faction_id: 1441,
       display_info_id: 26_565,
+      outfit_info_id: 0,
     )
   assert unit_create_creature.encode(creature_unit.create(
       spawn: beast,

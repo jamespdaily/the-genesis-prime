@@ -16,7 +16,6 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
-import genesis_prime/world_map/spawn
 import gleam/list
 import owned_test
 import unitest
@@ -147,15 +146,6 @@ pub fn the_planted_level_rows_are_the_clients_game_formula_and_xp_per_level_rows
   assert list.length(xp_per_level.all(planted))
     == list.length(character_tables.min_xp_for_level())
     as "the planted table holds exactly the records the level rule reads"
-}
-
-pub fn the_spawns_built_from_the_planted_creature_rows_are_the_spawns_the_clients_rows_build_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  assert spawn.all(character_tables.shared())
-    == spawn.all(client_tables.shared())
-    as "the planted creature rows carry the real rows' values in the columns the spawns read: the same 54 spawns"
-  assert list.length(spawn.all(character_tables.shared())) == 54
 }
 
 pub fn the_planted_objective_circles_are_the_clients_world_location2_rows_test() -> Nil {

@@ -79,7 +79,6 @@ import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
-import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
@@ -2009,18 +2008,12 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
   login_support.stop(started)
 }
 
-/// The server's tree with the world standing the creatures of the planted
-/// tables' spawns, which are the real spawns' values (`character_tables_test`).
+/// The server's tree with the world standing the creatures of the spawn table
+/// the test's database holds: the 27 Virtual Defense Daguns the migrations seed
+/// and the 27 Virtual Battle Beasts of the planted world-database file, loaded
+/// through the content load into a key of the test's own.
 fn start_with_creatures() -> login_support.Started {
-  login_support.start_with(change: fn(settings) {
-    server.Settings(
-      ..settings,
-      world: server.World(
-        ..settings.world,
-        spawns: spawn.all(character_tables.shared()),
-      ),
-    )
-  })
+  panic as "the planted spawns are loaded into the test's world after the shape's review"
 }
 
 pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_and_a_second_bot_sees_the_same_unit_ids_test() -> Nil {

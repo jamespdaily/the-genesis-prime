@@ -7,6 +7,8 @@ import ask_support
 import character_tables
 import genesis_prime/client_connection.{type Message, SentByMap, SentByPeer}
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/term
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
@@ -16,6 +18,7 @@ import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/static_supervisor as supervisor
+import spawn_support
 
 /// A running world: its supervisor, Maps, the creatures' registry and the
 /// registry the players' connections are found in.
@@ -28,15 +31,26 @@ pub type World {
   )
 }
 
-/// A world that stands a creature at each of the spawns, whose spawns return
-/// `creature_restart_ms` after their creature ended.
+/// A world whose maps stand a creature at each of the spawns a player sees: the
+/// spawns are put in the world's term (World 3460's), a spawn returns
+/// `creature_restart_ms` after its creature crashed, a creature that no player has
+/// seen for `idle_stop_ms` stops at the next sweep, and the sweep runs every
+/// `sweep_ms`.
 pub fn start(
   spawns spawns: List(Spawn),
   creature_restart_ms creature_restart_ms: Int,
+  idle_stop_ms idle_stop_ms: Int,
+  sweep_ms sweep_ms: Int,
 ) -> World {
   let maps = process.new_name("maps")
   let connections = registry.new()
   let creatures = creature_registry.new()
+  let key = term.new_key()
+  content_spawn.put_world(
+    key:,
+    world_id: 3460,
+    spawns: spawn_support.world_spawns(spawns),
+  )
   let world =
     server.World(
       maps:,
@@ -47,7 +61,9 @@ pub fn start(
       creature_supervisor: process.new_name("creature_supervisor"),
       creature_shutdown_ms: 1000,
       creature_restart_ms:,
-      spawns:,
+      idle_stop_ms:,
+      sweep_ms:,
+      spawns: key,
     )
   let tree =
     supervisor.new(supervisor.RestForOne)

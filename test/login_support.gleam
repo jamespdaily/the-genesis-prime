@@ -16,6 +16,7 @@ import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/listener
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
+import genesis_prime/content/term
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
@@ -104,7 +105,9 @@ pub fn world() -> server.World {
     creature_supervisor: process.new_name("test_creature_supervisor"),
     creature_shutdown_ms: 1000,
     creature_restart_ms: 60_000,
-    spawns: [],
+    idle_stop_ms: 60_000,
+    sweep_ms: 10_000,
+    spawns: term.new_key(),
   )
 }
 
@@ -158,7 +161,10 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
 pub fn servers_settings() -> server.Settings {
   envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
   envoy.set("GENESIS_REALM_NAME", "Test")
-  genesis_prime.settings(tables: character_tables.shared())
+  genesis_prime.settings(
+    tables: character_tables.shared(),
+    spawns: term.new_key(),
+  )
 }
 
 /// The rate bucket the server's own settings give the auth rule.

@@ -295,8 +295,14 @@ pub type CreatureStart {
     map: MapId,
     /// The run of that map the creature belongs to: it ends with the run.
     incarnation: Int,
-    /// The creature's unit id in its run, from the map's counter.
+    /// The creature's unit id in its run: its spawn's own, from the map's counter
+    /// when the spawn first has a creature, and kept while the creature stops
+    /// cleanly.
     unit_id: Int,
+    /// The creature's life: the number of the watch the map opens on it, unique in
+    /// the run, so the address `Creature(map, incarnation, unit_id, life)` is
+    /// one creature process and no other.
+    life: Int,
     /// The spawn it stands at (genesis_prime/world_map/spawn), by its id.
     spawn_id: SpawnId,
     /// The monotonic time the map's clock started at, from which the creature
@@ -350,11 +356,13 @@ pub type Address {
   Map(map: MapId, incarnation: Int)
   /// One connection.
   Connection(connection: ConnectionId)
-  /// One creature, in one run of one map: its unit id there. A creature that
-  /// ends and is replaced is another unit, so another address, and a watch or a
-  /// send never lands on a replacement
+  /// One creature, in one run of one map: its unit id there and its life, the
+  /// number of the map's watch it was started under. A spawn's unit id is kept
+  /// across a clean stop, so the unit id alone names the stopped creature and
+  /// the one started in its place; the life tells them apart, so a watch or a
+  /// send never lands on a replacement and no two members of one group exist
   /// (genesis_prime/world_map/creature_registry).
-  Creature(map: MapId, incarnation: Int, unit_id: Int)
+  Creature(map: MapId, incarnation: Int, unit_id: Int, life: Int)
   /// The one connection whose player is in the world under this name, folded
   /// to lower case (genesis_prime/game/chat): a group of the connections'
   /// registry (genesis_prime/connection/registry) that the connection joins as

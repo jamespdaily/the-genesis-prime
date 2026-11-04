@@ -23,6 +23,7 @@ import character_support
 import character_tables
 import event_wait
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/content/term
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
@@ -63,7 +64,9 @@ fn start_world() -> World {
       creature_supervisor: process.new_name("creature_supervisor"),
       creature_shutdown_ms: 1000,
       creature_restart_ms: 60_000,
-      spawns: [],
+      idle_stop_ms: 60_000,
+      sweep_ms: 10_000,
+      spawns: term.new_key(),
     )
   let tree =
     supervisor.new(supervisor.RestForOne)

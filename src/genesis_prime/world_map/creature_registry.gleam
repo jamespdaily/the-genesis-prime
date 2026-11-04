@@ -1,5 +1,5 @@
 //// Where the creatures are found: a scope of `genesis_prime/group_registry`, with one group for each
-//// creature, named by its `Creature(map, incarnation, unit_id)` address
+//// creature, named by its `Creature(map, incarnation, unit_id, life)` address
 //// (genesis_prime/step). It is the world supervisor's first child, so every
 //// process that finds a creature (a map's shell for a `Watch` or a `Send`, a
 //// player's connection for a tell) asks it, and no process keeps a list of
@@ -21,9 +21,11 @@
 //// - **Join.** The creature supervisor's start function joins the new
 ////   process under its address as the process returns, so the creature is found
 ////   from the moment `StartCreature` has been carried out.
-//// - **An address is one creature in one run.** A creature that ends and is
-////   replaced is another unit and so another address: a find never lands on a
-////   replacement.
+//// - **An address is one creature process in one run.** A spawn keeps its unit id
+////   across a clean stop, so a creature that stops and the creature started in
+////   its place have one unit id and two lives, and so two addresses: a find
+////   never lands on a replacement, and the registry never holds two members of
+////   one group (`group_registry.find` panics on a group of two).
 //// - **A creature ending.** The scope monitors each member and drops it from
 ////   its group; a `find` just after the end may still give the pid, and a tell to
 ////   it is then dropped like any message to a process that ended.
@@ -71,31 +73,36 @@ pub fn scope(registry registry: CreatureRegistry) -> Scope(Delivered) {
 }
 
 /// Makes the process the member of the group of the creature that is unit
-/// `unit_id` in this run of the map; the creature supervisor's start function
+/// `unit_id` in this run of the map under this life; the creature supervisor's start function
 /// calls it once for each creature.
 pub fn join(
   registry registry: CreatureRegistry,
   map map: MapId,
   incarnation incarnation: Int,
   unit_id unit_id: Int,
+  life life: Int,
   pid pid: Pid,
 ) -> Nil {
   group_registry.join(
     registry.scope,
-    Creature(map:, incarnation:, unit_id:),
+    Creature(map:, incarnation:, unit_id:, life:),
     pid,
   )
 }
 
-/// The process of the creature that is unit `unit_id` in this run of the map, or
-/// `Error(Nil)` when none is a member.
+/// The process of the creature that is unit `unit_id` in this run of the map
+/// under this life, or `Error(Nil)` when none is a member.
 pub fn find(
   registry registry: CreatureRegistry,
   map map: MapId,
   incarnation incarnation: Int,
   unit_id unit_id: Int,
+  life life: Int,
 ) -> Result(Pid, Nil) {
-  group_registry.find(registry.scope, Creature(map:, incarnation:, unit_id:))
+  group_registry.find(
+    registry.scope,
+    Creature(map:, incarnation:, unit_id:, life:),
+  )
 }
 
 /// Tells the creature the message, which its shell takes as a `Told` input;
@@ -105,11 +112,12 @@ pub fn tell(
   map map: MapId,
   incarnation incarnation: Int,
   unit_id unit_id: Int,
+  life life: Int,
   message message: creature.Message,
 ) -> Result(Nil, Nil) {
   group_registry.deliver_one(
     registry.scope,
-    Creature(map:, incarnation:, unit_id:),
+    Creature(map:, incarnation:, unit_id:, life:),
     TellCall(message:),
   )
 }

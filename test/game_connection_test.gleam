@@ -143,6 +143,7 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, Unwatched, Watched}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/spawn
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -1263,8 +1264,10 @@ fn map_with_four_players() -> map.State {
       incarnation:,
       realm_id: settings().realm_id,
       tables: settings().tables,
-      spawns: [],
+      spawns: spawn.no_spawns(),
       creature_restart_ms: 60_000,
+      idle_stop_ms: 60_000,
+      sweep_ms: 10_000,
     ))
   list.fold([2, 3, 4, 5], state, fn(state, other) {
     let assert Some(place) = world_character().place

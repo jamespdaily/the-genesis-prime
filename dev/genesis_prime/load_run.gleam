@@ -385,7 +385,8 @@ pub fn start_server() -> Settings {
   runtime.keep_mailboxes_out_of_crash_reports()
   load_sample.start()
   let #(tables, _count) = genesis_prime.load_tables()
-  let settings = genesis_prime.settings(tables:)
+  let spawns = genesis_prime.load_content(tables:)
+  let settings = genesis_prime.settings(tables:, spawns:)
   let login = settings.login
   let settings =
     server.Settings(

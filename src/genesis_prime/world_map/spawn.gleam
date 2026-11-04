@@ -1,52 +1,39 @@
-//// The creatures a map stands: each spawn is one place a creature of the client's
-//// Creature2 table stands at, with the values the creature's 0x262 carries,
-//// read from the client's tables when they load. A spawn names the circle of the
-//// client's WorldLocation2 table it stands inside and where its point comes
-//// from, so no point is taken for the client's.
+//// The spawns a map stands creatures at: one spawn is one place a creature of the
+//// client's Creature2 table stands at, with the values its 0x262 carries. The rows
+//// come from the server's `spawn` table (genesis_prime/content/spawn), which holds
+//// every place the world database records; this module is the pure part: the
+//// client's checks of a row, the selection of the rows that start as fight
+//// creatures, and the shape a world's spawns are kept in.
 ////
 //// ```
-//// the tables load ─▶ derivation: the points of this module, each checked against the
-////                    client's Creature2 rules and its circle ─▶ the spawns, kept once
-//// the server starts ─▶ World.spawns = all(tables) ─▶ each map is given of_map(spawns, map)
-//// a map's Started   ─▶ one StartCreature per spawn of its map
+//// the spawn table (one query, at start) ─▶ Row ─▶ load checks (the client's validity rules)
+////                                                 ─▶ selection (who a player can attack)
+////                                                 ─▶ Spawn, one WorldSpawns term for each world
+//// a map's start    ─▶ reads its world's WorldSpawns: no copy, no query
+//// a player's move  ─▶ spawn_cell.near ─▶ exact sight ─▶ the spawns it sees
 //// ```
 ////
-//// - **Which creatures stand.** The Novice training simulation (World 3460) in
-////   Warfare Woods (zone 5967): Virtual Battle Beast (Creature2 73464) for the
-////   Exile fight and Virtual Defense Dagun (Creature2 73465) for the Dominion
-////   fight (Quest2.10518, Quest2.10524). Both stand in the map, and every player
-////   in sight of one sees it. The Sim-Turrets (faction 219) are left out.
-//// - **Where.** The 27 Battle Beasts stand at the 27 points of Jim's world
-////   database (`spawn.tsv`, rows 29113 to 29139), each marked
-////   `WorldDatabase(row)`, since the client holds no spawn point; all lie inside
-////   the client's objective circle (WorldLocation2 51739, radius 55). The 27
-////   Daguns have no record anywhere: each stands at the offset of one of those
-////   points from that circle's centre, applied to the Dagun circle's centre
-////   (WorldLocation2 52898, radius 55), marked `NoRecord(row)`; their heights
-////   are checked live. A point's facing is the world database's rotation.
-//// - **The creature's values**, from the client's own formulas, kept in the
-////   spawn so the 0x262 needs no table at run time: the level is Creature2's
-////   minLevel (equal to maxLevel for both), Base Health is
-////   CreatureLevel[level] × the Creature2ArcheType, Creature2Difficulty and
-////   Creature2Tier multipliers for UnitProperty2 7, truncated (`0x1404585c0`),
-////   the faction is Creature2.factionId (the client keeps the message's two
-////   fields in place of the row's), and the display is the entry of the
-////   creature's Creature2DisplayGroupEntry group with the greatest weight, the
-////   lowest display id on a tie: the client's own weighted pick runs only for
-////   spawns it makes itself (`0x1404846c0`), so the server's pick is a choice.
-//// - **The client's validity rules** (`0x140485790`, `0x140483d20`): a Creature2
-////   row is a creature the client loads only when its modelScale is above 0, its
-////   CreationTypeEnum is below 26, its archetype row exists, its difficulty and
-////   resist are 0 or have a row, its display group is not 0, its soldier mission
-////   and instance portal are 0 or have a row, and its outfit group is 0 or has
-////   entries (a 0 is taken to need no row: the training creatures hold 0, and
-////   the client's lookup of 0 is not read); a spawn of a
-////   row that fails them is refused, since the client would drop the 0x262. A
-////   spawn whose point lies outside its circle, whose circle has no row or
-////   whose creature has no display entry is refused too. Any refusal fails the
-////   load.
+//// - **What starts.** A row of entity type 0 (NonPlayer, the unit type of message
+////   0x262: `world_data.entity_type`, `0x140649e20`) with a faction, that is not
+////   Friendly to both player factions, whose Creature2 row has no quest, trainer,
+////   station, taxi, bind or portal link, and whose health stat is not 0; a row
+////   with no stats is kept. The client lets a player attack a Hostile or a Neutral
+////   unit and not a Friendly one (`0x1403ad540`), and a faction's level to a
+////   player faction walks the faction's parents (`0x140787760`, `0x140717560`,
+////   Faction2Relationship). Every other row is counted for the coverage measure.
+//// - **What fails the load.** A row whose creature has no Creature2 row, or fails
+////   the client's validity rules (`0x140485790`, `0x140483d20`), or whose display
+////   is not in its creature's display group or has no Creature2DisplayInfo row:
+////   the client would drop the 0x262 or show no model.
+//// - **The creature's values.** Health is stat 0, truncated, and level is stat 10;
+////   a row with no stats takes the creature's `minLevel` and Base Health by the
+////   client's formula (`0x1404585c0`). Faction, base faction, display and outfit are
+////   the row's own (`opcode.0x262.creature`): the client's weighted display pick
+////   runs only for the spawns it makes itself (`0x1404846c0`).
+//// - **A level outside its row's range** is kept and listed in an info line.
 
-import genesis_prime/game/start_place.{type Place, Facing}
+import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/creature2_arche_type
@@ -59,60 +46,124 @@ import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
 import genesis_prime/table/id.{
-  type Creature2Id, type WorldLocation2Id, Creature2ArcheTypeId,
-  Creature2DifficultyId, Creature2DisplayInfoId, Creature2Id, Creature2ResistId,
-  Creature2TierId, CreatureLevelId, InstancePortalId, PathMissionId,
-  WorldLocation2Id,
+  type Creature2Id, Creature2ArcheTypeId, Creature2DifficultyId,
+  Creature2DisplayInfoId, Creature2Id, Creature2ResistId, Creature2TierId,
+  CreatureLevelId, InstancePortalId, PathMissionId,
 }
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
-import genesis_prime/table/world_location2.{type WorldLocation2}
-import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/unit_fields
-import genesis_prime/world_map/warfare_woods.{type Point}
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/order
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
-/// Where a spawn's point comes from.
-pub type Source {
-  /// A point of Jim's world database, `spawn.tsv` row `row_id`: data the client
-  /// lacks, read from a record of the retail game.
-  WorldDatabase(row_id: Int)
-  /// No record anywhere: the point is the offset of the world-database point
-  /// `offset_of_row_id` from the Exile circle's centre, applied to this spawn's
-  /// circle, a server's choice.
-  NoRecord(offset_of_row_id: Int)
-}
-
-/// One creature's place and values.
-pub type Spawn {
-  Spawn(
+/// One row of the spawn table as the load reads it: the values of the row, and
+/// its health and level stats when it has them. Positions and rotations are
+/// 32-bit floats.
+pub type Row {
+  Row(
     id: SpawnId,
-    /// The creature's Creature2 row.
-    creature_id: Creature2Id,
-    /// Where the creature stands and faces: in the world and zone of its circle.
-    place: Place,
-    /// The WorldLocation2 circle of the client the point lies inside.
-    area: WorldLocation2Id,
-    source: Source,
-    /// Stat 10: the row's level.
-    level: Int,
-    /// Stat 0: Base Health by the client's creature formula, truncated.
-    health: Int,
-    /// Creature2.factionId, sent in both faction fields.
-    faction_id: Int,
-    /// The Creature2DisplayInfo the 0x262 sends.
+    entity_type: Int,
+    creature_id: Int,
+    world_id: Int,
+    area_id: Int,
+    x: Float,
+    y: Float,
+    z: Float,
+    rotation_x: Float,
+    rotation_y: Float,
+    rotation_z: Float,
     display_info_id: Int,
+    outfit_info_id: Int,
+    faction_id: Int,
+    base_faction_id: Int,
+    health: Option(Float),
+    level: Option(Float),
   )
 }
 
-/// Why the spawns cannot be built.
+/// One creature's place and values, as its 0x262 carries them, so the 0x262
+/// needs no table at run time.
+pub type Spawn {
+  Spawn(
+    /// The spawn table's id, the spawn's number for the run.
+    id: SpawnId,
+    /// The creature's Creature2 row.
+    creature_id: Creature2Id,
+    /// Where the creature stands and faces, in the row's world and area.
+    place: Place,
+    /// Stat 10.
+    level: Int,
+    /// Stat 0, truncated.
+    health: Int,
+    /// The faction the 0x262 sends (the row's `faction_id`).
+    faction_id: Int,
+    /// The base faction the 0x262 sends.
+    base_faction_id: Int,
+    /// The Creature2DisplayInfo the 0x262 sends.
+    display_info_id: Int,
+    /// The Creature2OutfitInfo the 0x262 sends, 0 for none.
+    outfit_info_id: Int,
+  )
+}
+
+/// The spawns that start in one world, as the persistent term of the world holds
+/// them (genesis_prime/content/spawn): by id, for a creature's start, and by
+/// cell, for a player's move. A map and a creature read it and keep no copy.
+pub type WorldSpawns {
+  WorldSpawns(by_id: Dict(SpawnId, Spawn), cells: Cells)
+}
+
+/// A world with no spawn.
+pub fn no_spawns() -> WorldSpawns {
+  WorldSpawns(by_id: dict.new(), cells: spawn_cell.empty())
+}
+
+/// What the selection found: the spawns that start, in a `WorldSpawns` for each
+/// world that has any, the rows the load refuses, the spawns whose level lies
+/// outside their row's range, and the coverage of each world.
+pub type Selection {
+  Selection(
+    worlds: Dict(Int, WorldSpawns),
+    refusals: List(Refusal),
+    out_of_range_levels: List(SpawnId),
+    coverage: List(WorldCoverage),
+  )
+}
+
+/// Why a NonPlayer row does not start.
+pub type LeftOut {
+  /// Faction 0: the client sees no faction, and a 0x262 with none fails
+  /// (`opcode.0x262`).
+  NoFaction
+  /// Friendly to both player factions.
+  FriendlyToBoth
+  /// The creature's row has a quest, trainer, station, taxi, bind or portal link.
+  NpcLink
+  /// Health stat 0: the client creates the unit dead (`opcode.0x262.creature`).
+  Dead
+}
+
+/// What one world has of the client's tables' spawns, the coverage measure: how
+/// many start, how many NonPlayer rows are left out and why, and how many rows
+/// there are of every other entity type, by type.
+pub type WorldCoverage {
+  WorldCoverage(
+    world_id: Int,
+    started: Int,
+    left_out: List(#(LeftOut, Int)),
+    other_types: List(#(Int, Int)),
+  )
+}
+
+/// Why a row fails the load.
 type SpawnError {
   /// The creature has no Creature2 row.
   NoCreatureRow(creature_id: Creature2Id)
@@ -120,14 +171,13 @@ type SpawnError {
   NotLoadedByTheClient(creature_id: Creature2Id, rule: ValidityRule)
   /// The creature's tier or level has no row, so its Base Health has no formula.
   NoHealthRow(creature_id: Creature2Id)
-  /// The circle has no WorldLocation2 row.
-  NoAreaRow(area: WorldLocation2Id)
-  /// The circle is in world 0, which is no World row.
-  AreaInNoWorld(area: WorldLocation2Id)
-  /// The spawn's point lies outside its circle.
-  OutsideArea(spawn: SpawnId, area: WorldLocation2Id)
-  /// The creature's display group has no entry to send.
-  NoDisplay(creature_id: Creature2Id)
+  /// The row's display is not in its creature's display group.
+  DisplayNotInGroup(creature_id: Creature2Id, display_info_id: Int)
+  /// The row's display has no Creature2DisplayInfo row, so the creature has no
+  /// model.
+  NoDisplayRow(display_info_id: Int)
+  /// The row's world is 0, which is no World row.
+  InNoWorld
 }
 
 /// The client's rule a creature's row fails (`0x140485790`).
@@ -143,130 +193,107 @@ type ValidityRule {
   NoOutfitEntries
 }
 
-/// What a creature kind stands for: the creature, the circle of its objective,
-/// and whether its points are the world database's or offsets from it.
-type Kind {
-  Kind(creature_id: Creature2Id, area: WorldLocation2Id, recorded: Bool)
+/// A row that passed the load checks, with the creature's values.
+type Checked {
+  Checked(row: Row, spawn: Spawn, creature: Creature2)
 }
 
-/// The Exile objective circle (WorldLocation2 51739), whose centre the
-/// world-database points are measured from.
-const exile_circle = WorldLocation2Id(51_739)
-
-/// The creatures that stand, in the order of their spawns: the Virtual Battle
-/// Beast at the world database's points, in the Exile circle, and the Virtual
-/// Defense Dagun at the offsets of the same points, in the Dominion circle
-/// (WorldLocation2 52898).
-const kinds = [
-  Kind(
-    creature_id: Creature2Id(73_464),
-    area: WorldLocation2Id(51_739),
-    recorded: True,
-  ),
-  Kind(
-    creature_id: Creature2Id(73_465),
-    area: WorldLocation2Id(52_898),
-    recorded: False,
-  ),
-]
-
-/// The spawns of the client's tables: each point of `warfare_woods` for each
-/// creature kind, checked against the rules above, or the first refusal, in the
-/// order of the spawns.
-fn build(tables tables: table_store.Tables) -> Result(List(Spawn), SpawnError) {
-  use exile <- result.try(circle(tables:, area: exile_circle))
-  use built <- result.try(
-    list.try_fold(kinds, [], fn(built, kind) {
-      use spawns <- result.map(of_kind(
-        tables:,
-        kind:,
-        exile:,
-        first_id: list.length(built) + 1,
-      ))
-      list.append(built, spawns)
-    }),
-  )
-  Ok(built)
-}
-
-/// The spawns of one kind: one for each point.
-fn of_kind(
+/// The rows of the spawn table in, the selection out: every row is checked
+/// (a row that fails is a refusal, and fails the load), then the NonPlayer rows
+/// that start are chosen by the rule above and the rest counted. Pure: the
+/// client's tables are the only other input.
+pub fn select(
+  rows rows: List(Row),
   tables tables: table_store.Tables,
-  kind kind: Kind,
-  exile exile: WorldLocation2,
-  first_id first_id: Int,
-) -> Result(List(Spawn), SpawnError) {
-  use row <- result.try(valid_creature(tables:, creature_id: kind.creature_id))
-  use health <- result.try(base_health(tables:, row:))
-  use display_info_id <- result.try(display(tables:, row:))
-  use area <- result.try(circle(tables:, area: kind.area))
-  warfare_woods.battle_beast_points
-  |> list.index_map(fn(point, index) { #(point, SpawnId(first_id + index)) })
-  |> list.try_map(fn(entry) {
-    let #(point, id) = entry
-    use place <- result.try(place_of(point:, kind:, area:, exile:))
-    let spawn =
-      Spawn(
-        id:,
-        creature_id: kind.creature_id,
-        place:,
-        area: kind.area,
-        source: case kind.recorded {
-          True -> WorldDatabase(row_id: point.row_id)
-          False -> NoRecord(offset_of_row_id: point.row_id)
-        },
-        level: row.min_level,
-        health:,
-        faction_id: row.faction_id,
-        display_info_id:,
-      )
-    case inside(place:, area:) {
-      True -> Ok(spawn)
-      False -> Error(OutsideArea(spawn: id, area: kind.area))
-    }
-  })
+) -> Selection {
+  let checked =
+    list.map(rows, fn(row) {
+      load_checks(tables:, row:)
+      |> result.map_error(fn(error) {
+        let SpawnId(number) = row.id
+        refusal.Refusal(table: "spawn", id: number, rule: describe(error:))
+      })
+    })
+  let _checked = result.partition(checked)
+  panic as "the selection rule is built after the shape's review"
 }
 
-/// The place of a point: the world database's own for a recorded kind, else the
-/// point's offset from the Exile circle's centre applied to the kind's circle.
-fn place_of(
-  point point: Point,
-  kind kind: Kind,
-  area area: WorldLocation2,
-  exile exile: WorldLocation2,
-) -> Result(Place, SpawnError) {
-  let #(x, y, z) = case kind.recorded {
-    True -> #(point.x, point.y, point.z)
-    False -> #(
-      area.position0 +. { point.x -. exile.position0 },
-      area.position1 +. { point.y -. exile.position1 },
-      area.position2 +. { point.z -. exile.position2 },
+/// The checks the client makes of one row: its creature loads and its display
+/// is one of the creature's, and its health and level are the stats' or the
+/// creature's own.
+fn load_checks(
+  tables tables: table_store.Tables,
+  row row: Row,
+) -> Result(Checked, SpawnError) {
+  let creature_id = Creature2Id(row.creature_id)
+  use creature <- result.try(valid_creature(tables:, creature_id:))
+  use place <- result.try(
+    start_place.place(
+      world_id: row.world_id,
+      world_zone_id: row.area_id,
+      x: row.x,
+      y: row.y,
+      z: row.z,
+      facing: start_place.Facing(
+        yaw: row.rotation_x,
+        pitch: row.rotation_y,
+        roll: row.rotation_z,
+      ),
     )
-  }
-  start_place.place(
-    world_id: area.world_id,
-    world_zone_id: area.world_zone_id,
-    x:,
-    y:,
-    z:,
-    facing: Facing(yaw: point.yaw, pitch: point.pitch, roll: point.roll),
+    |> result.replace_error(InNoWorld),
   )
-  |> result.replace_error(AreaInNoWorld(area: WorldLocation2Id(area.id)))
+  use health <- result.try(case row.health {
+    Some(stat) -> Ok(float.truncate(stat))
+    None -> base_health(tables:, row: creature)
+  })
+  let level = case row.level {
+    Some(stat) -> float.truncate(stat)
+    None -> creature.min_level
+  }
+  use _in_group <- result.try(display_in_group(
+    tables:,
+    creature:,
+    display_info_id: row.display_info_id,
+  ))
+  Ok(Checked(
+    row:,
+    creature:,
+    spawn: Spawn(
+      id: row.id,
+      creature_id:,
+      place:,
+      level:,
+      health:,
+      faction_id: row.faction_id,
+      base_faction_id: row.base_faction_id,
+      display_info_id: row.display_info_id,
+      outfit_info_id: row.outfit_info_id,
+    ),
+  ))
 }
 
-/// Whether the place lies within the circle's radius of its centre.
-fn inside(place place: Place, area area: WorldLocation2) -> Bool {
-  let dx = start_place.x(place) -. area.position0
-  let dy = start_place.y(place) -. area.position1
-  let dz = start_place.z(place) -. area.position2
-  dx *. dx +. dy *. dy +. dz *. dz <=. area.radius *. area.radius
-}
-
-fn circle(
+/// The row's display is an entry of the creature's display group and has a
+/// Creature2DisplayInfo row.
+fn display_in_group(
   tables tables: table_store.Tables,
-  area area: WorldLocation2Id,
-) -> Result(WorldLocation2, SpawnError) {
-  world_location2.get(tables, area) |> result.replace_error(NoAreaRow(area:))
+  creature creature: Creature2,
+  display_info_id display_info_id: Int,
+) -> Result(Nil, SpawnError) {
+  let in_group =
+    list.any(creature2_display_group_entry.all(tables), fn(entry) {
+      entry.creature2_display_group_id == creature.creature2_display_group_id
+      && entry.creature2_display_info_id == display_info_id
+    })
+  use <- bool.guard(
+    when: !in_group,
+    return: Error(DisplayNotInGroup(
+      creature_id: Creature2Id(creature.id),
+      display_info_id:,
+    )),
+  )
+  creature2_display_info.get(tables, Creature2DisplayInfoId(display_info_id))
+  |> result.replace(Nil)
+  |> result.replace_error(NoDisplayRow(display_info_id:))
 }
 
 /// The creature's row, when the client would load it (`0x140485790`).
@@ -407,72 +434,8 @@ fn times(left: Float, right: Float) -> Float {
   float32.rounded(left *. right)
 }
 
-/// The display the 0x262 sends: the entry of the creature's display group with
-/// the greatest weight and an existing Creature2DisplayInfo, the lowest display
-/// id on a tie.
-fn display(
-  tables tables: table_store.Tables,
-  row row: Creature2,
-) -> Result(Int, SpawnError) {
-  creature2_display_group_entry.all(tables)
-  |> list.filter(fn(entry) {
-    entry.creature2_display_group_id == row.creature2_display_group_id
-    && result.is_ok(creature2_display_info.get(
-      tables,
-      Creature2DisplayInfoId(entry.creature2_display_info_id),
-    ))
-  })
-  |> list.sort(fn(first, second) {
-    int.compare(second.weight, first.weight)
-    |> order.break_tie(int.compare(
-      first.creature2_display_info_id,
-      second.creature2_display_info_id,
-    ))
-  })
-  |> list.first
-  |> result.map(fn(entry) { entry.creature2_display_info_id })
-  |> result.replace_error(NoDisplay(creature_id: Creature2Id(row.id)))
-}
-
-/// The spawns as a value the tables' load builds once, under the tables' key
-/// (genesis_prime/table/loader/store `derived`); a refusal fails the load.
-pub fn derivation() -> table_store.Derivation {
-  table_store.derivation(key: spawns_key, build: fn(tables) {
-    build(tables:) |> result.map_error(describe)
-  })
-}
-
-/// The key of the spawns in the tables' store.
-const spawns_key: table_store.DerivedKey(List(Spawn)) =
-  table_store.DerivedKey("Spawns")
-
-/// The spawns the tables' load built.
-pub fn all(tables tables: table_store.Tables) -> List(Spawn) {
-  table_store.derived(tables:, key: spawns_key)
-}
-
-/// The spawns of one map: those in its world.
-pub fn of_map(spawns spawns: List(Spawn), map map: MapId) -> List(Spawn) {
-  list.filter(spawns, fn(spawn) {
-    start_place.world_id(spawn.place) == map.world_id
-  })
-}
-
-/// The spawns by their id, for a lookup that is made for each creature started.
-pub fn index(spawns spawns: List(Spawn)) -> Dict(SpawnId, Spawn) {
-  list.map(spawns, fn(spawn) { #(spawn.id, spawn) }) |> dict.from_list
-}
-
-/// The spawn with this id, or `Error(Nil)` for none.
-pub fn find(
-  spawns spawns: List(Spawn),
-  spawn id: SpawnId,
-) -> Result(Spawn, Nil) {
-  list.find(spawns, fn(spawn) { spawn.id == id })
-}
-
-/// A sentence that says why the spawns cannot be built, for the message the
-/// server stops with.
+/// A sentence that says why a row fails the load, for the log and the message the
+/// start stops with.
 fn describe(error error: SpawnError) -> String {
   case error {
     NoCreatureRow(creature_id: Creature2Id(creature_id)) ->
@@ -486,19 +449,14 @@ fn describe(error error: SpawnError) -> String {
       "Creature2 "
       <> int.to_string(creature_id)
       <> " has no CreatureLevel or Creature2Tier row for its Base Health"
-    NoAreaRow(area: WorldLocation2Id(area)) ->
-      "WorldLocation2 " <> int.to_string(area) <> " has no row"
-    AreaInNoWorld(area: WorldLocation2Id(area)) ->
-      "WorldLocation2 " <> int.to_string(area) <> " is in world 0"
-    OutsideArea(spawn: SpawnId(spawn), area: WorldLocation2Id(area)) ->
-      "spawn "
-      <> int.to_string(spawn)
-      <> " lies outside WorldLocation2 "
-      <> int.to_string(area)
-    NoDisplay(creature_id: Creature2Id(creature_id)) ->
-      "Creature2 "
+    DisplayNotInGroup(creature_id: Creature2Id(creature_id), display_info_id:) ->
+      "display "
+      <> int.to_string(display_info_id)
+      <> " is not in the display group of Creature2 "
       <> int.to_string(creature_id)
-      <> " has no display in its display group"
+    NoDisplayRow(display_info_id:) ->
+      "Creature2DisplayInfo " <> int.to_string(display_info_id) <> " has no row"
+    InNoWorld -> "its world is 0, which is no World row"
   }
 }
 

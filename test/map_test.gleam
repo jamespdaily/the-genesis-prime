@@ -24,8 +24,8 @@ import connection_rule_support as support
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
-  ConnectionId, Effects, LogError, OwnEffect, OwnEvent, Reply, Started, Stop,
-  Stopping, Unwatch, Watch, WatchEnded, WatchId,
+  ConnectionId, Effects, LogError, OwnEffect, OwnEvent, Reply, StartServiceTimer,
+  Started, Stop, Stopping, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{RaceId}
@@ -166,10 +166,17 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
     as "the player's connection is watched, then the join is answered with the unit of the Join's character at the Join's place, in the map's realm, with the body of its look: unit ids start at 1"
 }
 
-pub fn started_does_nothing_and_stopping_stops_the_rule_test() -> Nil {
+pub fn started_starts_the_sweep_timer_and_stopping_stops_the_rule_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, taken) = feed(started(), OwnEvent(Started))
-  assert taken == Effects([]) as "a map starts empty"
+  assert taken
+    == Effects([
+      OwnEffect(StartServiceTimer(
+        timer: map.sweep_timer,
+        after_ms: map_support.sweep_ms,
+      )),
+    ])
+    as "a map starts empty, with only its sweep timer"
   let #(_, taken) = feed(state, Stopping(deadline_ms: 9000))
   assert taken == Effects([Stop]) as "Stopping stops the rule at once"
 }
