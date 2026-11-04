@@ -19,9 +19,15 @@
 ////   power level (FindItemDisplaySourceEntry 0x140444130). An item with no
 ////   source has no display, which is the same as no visual: a shield's.
 //// - **An item whose flags hold 0x4000** is never dressed (0x140444130).
-//// - **What the code does not read:** the client also leaves an item undressed
+//// - **What the loadout refuses:** the client also leaves an item undressed
 ////   when its type, category and family flags lack 0x400 or its equipped slot
-////   flags are 0 (`opcode.0x262.worn_visuals`); the Novice items all have them.
+////   flags are 0 (`opcode.0x262.worn_visuals`). The loadout refuses such an item
+////   at load: item_property gives it no equipped slot flags (a Novice item has
+////   none of its own), so
+////   `armor_of` and `weapon_of` fail with `NoEquippedSlot` or `NoWeapon` before
+////   a visual is asked for. An item with flags 0x4000 is refused there as well
+////   (item_property), so the 0x4000 rule here is the client's, kept for an item
+////   outside a Novice set.
 
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/table/id.{

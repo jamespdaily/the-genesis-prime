@@ -332,6 +332,26 @@ pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_tes
     as "the player is in the map, and its connection watched"
 }
 
+pub fn a_character_whose_class_and_faction_have_no_novice_set_is_answered_with_its_body_alone_test() -> Nil {
+  use <- owned_test.run(5000)
+  let setless = Character(..map_support.character(107), class_id: ClassId(99))
+  let #(state, taken) =
+    join_as(state: started(), connection: 7, caller: 1, character: setless)
+  assert support.replies(taken)
+    == [
+      #(
+        CallerId(1),
+        answer_of(character: setless, unit_id: 1, visuals: row_10_body()),
+      ),
+    ]
+    as "no Novice set holds class 99, so nothing is worn and the unit has its body alone: the map does not crash on one character's data, which would end every player's connection, and the player's own connection refuses it"
+  assert support.logs_of(step: taken, level: LogError) == []
+  assert list.length(support.watches(taken)) == 1
+    as "the player is in the map, and its connection watched"
+  let #(_, second) = join(state:, connection: 8, caller: 2)
+  assert unit_of(second, 2) == 2 as "the map goes on and takes the next player"
+}
+
 pub fn a_watch_that_names_no_player_is_an_error_and_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) = join(state: started(), connection: 7, caller: 1)

@@ -249,6 +249,7 @@
 //// | the respawn timer fires with no one in sight | the spawn is dormant |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
 //// | the respawn timer fires after the map ended | not possible: the timer lives in the process |
+//// | a joining character's class and faction have no Novice set | the unit has its body alone and the join goes on: the player's connection refuses that one player, and the map does not crash on one character's data |
 //// | the map has given every unit id | the map crashes, which ends its run and its players' connections; the next run starts from 1 |
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run |
 //// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) |
@@ -1193,13 +1194,14 @@ fn joined_new(
   let watch = WatchId(state.next_watch)
   let state = State(..state, next_watch: state.next_watch + 1)
   let tables = state.settings.tables
-  let assert Ok(loadout) =
+  let worn =
     loadout.of(
       tables:,
       class_id: character.class_id,
       faction_id: character.faction_id,
     )
-    as "the load requires a Novice set for every class and faction a player can make"
+    |> result.map(loadout.item_visuals)
+    |> result.unwrap([])
   let unit =
     player_unit.new(
       character:,
@@ -1210,7 +1212,7 @@ fn joined_new(
           index: appearance.index(tables:),
           character:,
         ),
-        loadout.item_visuals(loadout:),
+        worn,
       ),
     )
   let in_sight =

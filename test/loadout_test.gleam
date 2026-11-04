@@ -46,10 +46,13 @@ import character_tables
 import client_tables
 import genesis_prime/game/item_property.{Shield}
 import genesis_prime/game/loadout.{type Loadout, Equipped}
+import genesis_prime/game/worn_visual
 import genesis_prime/table/character_creation
 import genesis_prime/table/creature_level
 import genesis_prime/table/game_formula
-import genesis_prime/table/id.{ClassId, Item2Id, Spell4BaseId}
+import genesis_prime/table/id.{
+  ClassId, Item2Id, ItemDisplayId, ItemSlotId, Spell4BaseId,
+}
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
@@ -66,7 +69,7 @@ import gleam/erlang/reference
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/string
 import novice_tables
 import owned_test
@@ -875,20 +878,70 @@ pub fn an_item_with_a_display_of_its_own_is_drawn_with_it_test() -> Nil {
     as "opcode.0x262.worn_visuals: an Item2 itemDisplayId that is not 0 is the display, and the source's entries are not looked at"
 }
 
-pub fn an_item_whose_flags_hold_0x4000_is_held_and_never_dressed_test() -> Nil {
+/// The planted Item2 rows and one more, item 99001, of the heavy chest type 15
+/// and the source 75, which no set holds, with these flags.
+fn item2_rows_and_a_chest_with(
+  flags flags: Int,
+) -> List(List(planted_table.Cell)) {
+  list.append(novice_tables.item2_rows(), [
+    planted_table.row(item2.schema, [
+      #("ID", planted_table.Integer(99_001)),
+      #("item2FamilyId", planted_table.Integer(1)),
+      #("item2CategoryId", planted_table.Integer(3)),
+      #("item2TypeId", planted_table.Integer(15)),
+      #("itemSourceId", planted_table.Integer(75)),
+      #("powerLevel", planted_table.Integer(2)),
+      #("flags", planted_table.Integer(flags)),
+      #("supportPowerPercentage", planted_table.Float(-1.0)),
+    ]),
+  ])
+}
+
+/// The visual of item 99001 with these flags, in tables loaded from the planted
+/// files and that item.
+fn visual_of_a_chest_with(
+  flags flags: Int,
+) -> Result(option.Option(worn_visual.WornVisual), worn_visual.WornVisualError) {
+  let assert Ok(tables) =
+    loaded(files: files_replacing(
+      schema: item2.schema,
+      rows: item2_rows_and_a_chest_with(flags:),
+    ))
+    as "the planted tables with an item no set holds load"
+  let visual = worn_visual.of_item(tables:, item2_id: 99_001)
+  table_store.unload(tables)
+  visual
+}
+
+pub fn an_item_whose_flags_hold_0x4000_is_never_dressed_test() -> Nil {
   use <- owned_test.run(60_000)
-  let loadout =
-    warrior_167_in(changes: [
+  assert visual_of_a_chest_with(flags: 0x4001) == Ok(None)
+    as "0x140444130: an item whose flags hold 0x4000 has no display entry, so no visual, though its source and type have an entry"
+  assert visual_of_a_chest_with(flags: 1)
+    == Ok(
+      Some(worn_visual.WornVisual(
+        slot: ItemSlotId(1),
+        display: ItemDisplayId(3838),
+      )),
+    )
+    as "the same item without the flag is dressed: ItemSlot 1 and the display of the entry of source 75 and type 15, 3838"
+}
+
+pub fn a_novice_item_whose_flags_hold_0x4000_is_not_read_and_fails_the_load_naming_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let reason =
+    why_the_load_fails_with(changes: [
       #(
         item2.schema,
         novice_tables.item2_rows_with(id: 81_359, display: 0, flags: 0x4001),
       ),
     ])
-  assert worn_of(loadout:)
-    == [#(2, 3840), #(4, 530), #(5, 3841), #(6, 3839), #(20, 119)]
-    as "0x140444130: an item whose flags hold 0x4000 has no display entry, so no visual: the chest 81359 shows nothing and the other pieces and the weapon are as they were"
-  assert list.contains(loadout.armor, Equipped(Item2Id(81_359), 0))
-    as "holding an item draws nothing and its flags do not refuse it (0x1403b77d0): the chest is still held at bag index 0"
+  assert string.contains(reason, "item 81359")
+    && string.contains(reason, "0x4000")
+    as {
+      "FillItemInfo 0x1404445d0 takes most of the item's fields from GameFormula 1214's proxy item when its flags hold 0x4000, a path the properties do not follow, so the load refuses the item: "
+      <> reason
+    }
 }
 
 /// Why the load of the planted files with these tables replaced fails.
