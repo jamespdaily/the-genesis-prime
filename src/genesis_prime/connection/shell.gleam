@@ -160,6 +160,9 @@
 ////   group of the connection's id as any service's send makes, and a connection
 ////   that is gone drops it with no line. A tell to a `ZoneChannel` needs no watch
 ////   either: `deliver` sends it to every member of the group. A tell to a
+////   `Creature` needs none: `deliver` sends it through the creature registry, and
+////   a creature that has ended drops it with no line, since the rule that struck it
+////   keeps its own deadline. A tell to a
 ////   `CharacterNamed` goes through a watch, as a tell to a map run does: the
 ////   lookup finds the one connection that holds the name, and a name no
 ////   connection holds ends the watch as any target no process holds.
@@ -1164,7 +1167,8 @@ fn open_watch(
 /// Tells the process at the address the request. A connection is sent it
 /// through the settings' `deliver`, which finds it in the registry; one that
 /// has ended drops it, as a send to a gone process is dropped, with no line
-/// since a player's viewers end all the time. Any other process is told through
+/// since a player's viewers end all the time. A creature is told the same way,
+/// through the creature registry. Any other process is told through
 /// the way the open watch on that address found, so a move costs no lookup, and
 /// a tell to an address no open watch found a process for is dropped with a
 /// warning: the watch was dropped, the process ended, or it was never running.
@@ -1175,7 +1179,7 @@ fn tell(
   request request: request,
 ) -> Nil {
   case to {
-    step.Connection(..) | step.ZoneChannel(..) -> {
+    step.Connection(..) | step.ZoneChannel(..) | step.Creature(..) -> {
       let _delivered = connection.settings.deliver(to, request)
       Nil
     }
@@ -1184,7 +1188,6 @@ fn tell(
     | step.Store
     | step.Maps
     | step.Map(..)
-    | step.Creature(..)
     | step.CharacterNamed(..) ->
       case watch.sender_at(watches: running.watches, address: to) {
         Ok(sender) -> sender(request)

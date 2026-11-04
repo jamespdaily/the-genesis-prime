@@ -1,10 +1,13 @@
 //// One creature: the process that owns a creature's unit in one run of one map,
 //// from the time a player first sees its spawn to the time it has gone unseen
 //// for the idle stop. It sends the 0x262 and the 0x355 of its own unit to each
-//// player who sees it and decides nothing else: which players see it, when it
-//// starts and when it stops are the map's (genesis_prime/world_map/map), so
-//// every message about a unit comes from the unit's owner and a viewer has one
-//// sender for each unit.
+//// player who sees it, and owns its health: it takes the strikes a caster's
+//// connection tells it, decides what each does (genesis_prime/world_map/creature_life)
+//// and sends the 0x937 and 0x88c of its unit, the answer to the caster, and, after
+//// its corpse timer, the 0x355 and 0x262 of its respawn. Which players see it, when
+//// it starts and when it stops are the map's (genesis_prime/world_map/map), so every
+//// message about a unit comes from the unit's owner and a viewer has one sender for
+//// each unit.
 ////
 //// This is the rule of a service shell (genesis_prime/service/shell), started
 //// by the creature supervisor (genesis_prime/world_map/creature_supervisor)
@@ -29,6 +32,14 @@
 //// Retire ───────────────▶ Stop                                        (no one sees it: the map sent every
 ////                                                                      viewer Unwatched, 60 s ago or more)
 //// the run's end (WatchEnded) ─▶ Stop                                  (the map is gone: so are its players)
+////
+//// caster's connection c0
+//// Strike(key, c0, offence, rolls) ─▶ the hit rule on its health (genesis_prime/world_map/creature_life)
+////                                    alive: Send(c0, Struck(Landed | Deflected))   Send(each viewer, Health(h', dead))
+////                                    killed: Send(each viewer, Died); StartServiceTimer(corpse, respawn_ms)
+////                                    dead:  Send(c0, Struck(Refused(Dead)))
+//// the corpse timer ─────▶ alive again at full health      Send(each viewer, Removed), then CreatureAppeared
+////                         told Retire while dead: Stop (no viewer: the spawn's next creature starts full)
 //// ```
 ////
 //// - **The unit** is `creature_unit.create(spawn, unit_id, time)`, stamped with
@@ -37,7 +48,18 @@
 //// - **Retire** is the map's word that no player has seen the creature for the
 ////   idle stop, so it ends cleanly: the map's watch on it ends, and the spawn is
 ////   dormant with its unit id kept. A creature takes `Retire` once and has no
-////   viewer to tell: its viewers went with their `Unwatched`.
+////   viewer to tell: its viewers went with their `Unwatched`. A creature that lies
+////   dead when told to retire stops at its respawn, since its map keeps the spawn
+////   retiring until it ends and a corpse is never shown to a viewer that comes
+////   after.
+//// - **A strike** is told by the connection of the caster through the creature
+////   registry with no watch (genesis_prime/world_map/creature_registry `tell`), and
+////   answered by a send to that connection. A strike for a creature that has ended is
+////   dropped by the registry and left out at the caster's deadline
+////   (genesis_prime/game/strike).
+//// - **The corpse timer** is the creature's own, whatever its viewers: it starts at the
+////   kill for the kind's respawn time and fires with no viewer too
+////   (genesis_prime/world_map/creature_kind).
 //// - **A viewer that is not a connection any more** is dropped by the send (the
 ////   registry finds no process); the map's `Unwatched` follows from its end.
 //// - **A `Watched` twice from one connection** sends the 0x262 twice; the
@@ -52,6 +74,11 @@
 //// |---|---|
 //// | the creature crashes | its map's watch ends; the map sends every player `Gone(unit)` and starts the spawn again, after the respawn time and only if a player sees it then, as a new unit |
 //// | the creature is told `Retire` | it stops, and the map's watch ends; the map takes that as a clean stop |
+//// | the creature is told `Retire` while dead | it stops at its respawn, and the map's watch ends then |
+//// | the creature is struck while dead | the strike is answered `Refused(Dead)`; no health changes and no news is sent |
+//// | two strikes reach it one after the other | each is answered in turn on the health the one before left; the second finds a corpse if the first killed |
+//// | the caster's connection has ended when the creature answers | the send is dropped by the registry; the hit and its news stand |
+//// | a viewer arrives while the creature is dead | its 0x262 carries health 0, which the client creates dead |
 //// | the creature crashes while retiring | the same watch end: the map takes it as a clean stop, since no client shows the unit |
 //// | the map run ends | the creature's watch on the run ends and it stops |
 //// | the creature supervisor restarts | every creature ends and so does every map (genesis_prime/server): the world subtree is `rest_for_one` |
@@ -61,16 +88,23 @@
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
+import genesis_prime/game/strike_tell.{type Answered, type Tell as StrikeTell}
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, Asked, Connection,
   CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send, ServiceTimerFired,
-  Started, Stop, Stopping, Told, Watch, WatchEnded, WatchId,
+  Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded, WatchId,
+}
+import genesis_prime/world_map/creature_kind.{type Kind}
+import genesis_prime/world_map/creature_life.{
+  type Body, type Life, Body, Died, Ends, Health, StandsAgain, StopAtRespawn,
+  StopNow,
 }
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/set.{type Set}
 
 /// The rule's name: its module path.
@@ -79,14 +113,17 @@ const rule_name = "genesis_prime/world_map/creature"
 /// The watch on the map run that started the creature.
 const run_watch = WatchId(1)
 
+/// The corpse timer: the creature's one timer.
+const corpse_timer = TimerId(1)
+
 /// What a creature is started with: which creature of which run it is and the
-/// map's clock (`CreatureStart`), and the spawn it stands at, found by the id the
-/// start names.
+/// map's clock (`CreatureStart`), the spawn it stands at, found by the id the start
+/// names, and the kind the server chose for its Creature2 row.
 pub type Settings {
-  Settings(creature: CreatureStart, spawn: Spawn)
+  Settings(creature: CreatureStart, spawn: Spawn, kind: Kind)
 }
 
-/// What the map tells a creature.
+/// What the map and the connections tell a creature.
 pub type Message {
   /// The player of connection `by` sees the creature.
   Watched(by: ConnectionId)
@@ -94,24 +131,61 @@ pub type Message {
   Unwatched(by: ConnectionId)
   /// No player has seen the creature for the idle stop: end.
   Retire
+  /// A caster's connection strikes the creature (genesis_prime/game/strike_tell).
+  Strike(tell: StrikeTell)
 }
 
-/// A creature's players in sight.
+/// What a creature sends a connection without waiting.
+pub type Outgoing {
+  /// News of the creature's own unit for a viewer: its 0x262, 0x355, 0x937 and
+  /// 0x88c.
+  News(news: PeerNews)
+  /// The answer to a strike, for the connection that told it.
+  Struck(answered: Answered)
+}
+
+/// A creature's players in sight, its health and whether it was told to retire
+/// while it lay dead.
 pub opaque type State {
-  State(settings: Settings, viewers: Set(ConnectionId))
+  State(
+    settings: Settings,
+    body: Body,
+    life: Life,
+    retiring: Bool,
+    viewers: Set(ConnectionId),
+  )
 }
 
 /// The creature's rule, as its service shell runs it.
 pub fn rule(
   creature creature: CreatureStart,
   spawn spawn: Spawn,
-) -> ServiceRule(Settings, State, Message, PeerNews) {
-  step.Rule(name: rule_name, settings: Settings(creature:, spawn:), new:, step:)
+  kind kind: Kind,
+) -> ServiceRule(Settings, State, Message, Outgoing) {
+  step.Rule(
+    name: rule_name,
+    settings: Settings(creature:, spawn:, kind:),
+    new:,
+    step:,
+  )
 }
 
-/// A creature's first state: the players the map started it for are its viewers.
+/// A creature's first state: the players the map started it for are its viewers,
+/// and it stands at full health.
 pub fn new(settings: Settings) -> State {
-  State(settings:, viewers: set.from_list(settings.creature.viewers))
+  let body =
+    Body(
+      max_health: settings.spawn.health,
+      combat: settings.spawn.combat,
+      respawn_ms: settings.kind.respawn_ms,
+    )
+  State(
+    settings:,
+    body:,
+    life: creature_life.new(body:),
+    retiring: False,
+    viewers: set.from_list(settings.creature.viewers),
+  )
 }
 
 /// One input in, the new state and what the shell must do out, as the sequence
@@ -120,7 +194,7 @@ pub fn new(settings: Settings) -> State {
 pub fn step(
   state state: State,
   input input: ServiceInput(Message),
-) -> #(State, ServiceStep(PeerNews)) {
+) -> #(State, ServiceStep(Outgoing)) {
   let creature = state.settings.creature
   case input.event {
     Stopping(..) -> #(state, Effects([Stop]))
@@ -148,33 +222,104 @@ pub fn step(
         )
         False -> #(state, Effects([]))
       }
-    OwnEvent(Told(message: Retire)) -> #(state, Effects([Stop]))
+    OwnEvent(Told(message: Retire)) ->
+      case creature_life.on_retire(life: state.life) {
+        StopNow -> #(state, Effects([Stop]))
+        StopAtRespawn -> #(State(..state, retiring: True), Effects([]))
+      }
+    OwnEvent(Told(message: Strike(tell:))) -> {
+      let reaction =
+        creature_life.struck(life: state.life, body: state.body, strike: tell)
+      // The answer goes first: the caster's connection then knows the strike
+      // before it is told the health it left, one sender in one order.
+      let answer =
+        OwnEffect(Send(
+          to: Connection(tell.from),
+          message: Struck(answered: reaction.answer),
+        ))
+      let news =
+        list.flat_map(reaction.news, fn(news) {
+          list.map(map.sorted_connections(state.viewers), fn(viewer) {
+            news_to(creature:, viewer:, news: viewer_news(news))
+          })
+        })
+      let corpse = case reaction.corpse_for_ms {
+        Some(after_ms) -> [
+          OwnEffect(step.StartServiceTimer(timer: corpse_timer, after_ms:)),
+        ]
+        None -> []
+      }
+      #(
+        State(..state, life: reaction.life),
+        Effects(list.flatten([[answer], news, corpse])),
+      )
+    }
+    OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer ->
+      case
+        creature_life.corpse_timer_fired(
+          life: state.life,
+          body: state.body,
+          retiring: state.retiring,
+        )
+      {
+        Ends -> #(state, Effects([Stop]))
+        StandsAgain(life:) -> {
+          let state = State(..state, life:)
+          #(
+            state,
+            Effects(
+              list.flat_map(map.sorted_connections(state.viewers), fn(viewer) {
+                [
+                  news_to(creature:, viewer:, news: Removed),
+                  appeared(state:, viewer:, now: input.now),
+                ]
+              }),
+            ),
+          )
+        }
+      }
     WatchEnded(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(..))
     | OwnEvent(ServiceTimerFired(..))
     | OwnEvent(CreatureNotStarted(..)) ->
-      panic as "a creature is told, and starts no timer and no creature"
+      panic as "a creature is told, and starts no timer but its corpse's and no creature"
   }
 }
 
-/// The send of the creature's 0x262 to a viewer, stamped with the map's time.
+/// What a viewer's connection writes of a news of the creature's health.
+fn viewer_news(news: creature_life.News) -> client_connection.News {
+  case news {
+    Health(health:, dead:) -> client_connection.Health(health:, dead:)
+    Died -> client_connection.Died
+  }
+}
+
+/// The send of the creature's 0x262 to a viewer, stamped with the map's time, at
+/// its current health.
 fn appeared(
   state state: State,
   viewer viewer: ConnectionId,
   now now: step.Now,
-) -> Effect(ServiceEffect(PeerNews)) {
+) -> Effect(ServiceEffect(Outgoing)) {
   let creature = state.settings.creature
   news_to(
     creature:,
     viewer:,
-    news: CreatureAppeared(unit: creature_unit.create(
-      spawn: state.settings.spawn,
-      unit_id: creature.unit_id,
-      server_time_estimate_start: map.server_time(
-        origin_ms: creature.clock_origin_ms,
-        monotonic_ms: now.monotonic_ms,
+    news: CreatureAppeared(
+      unit: creature_unit.create(
+        spawn: state.settings.spawn,
+        unit_id: creature.unit_id,
+        health: creature_life.health(life: state.life),
+        server_time_estimate_start: map.server_time(
+          origin_ms: creature.clock_origin_ms,
+          monotonic_ms: now.monotonic_ms,
+        ),
       ),
-    )),
+      life: creature.life,
+      place: state.settings.spawn.place,
+      hit_radius: state.body.combat.hit_radius,
+      attackable: state.body.combat.attackable,
+    ),
   )
 }
 
@@ -183,15 +328,15 @@ fn news_to(
   creature creature: CreatureStart,
   viewer viewer: ConnectionId,
   news news: client_connection.News,
-) -> Effect(ServiceEffect(PeerNews)) {
+) -> Effect(ServiceEffect(Outgoing)) {
   OwnEffect(Send(
     to: Connection(viewer),
-    message: PeerNews(
+    message: News(PeerNews(
       map: creature.map,
       incarnation: creature.incarnation,
       unit_id: creature.unit_id,
       news:,
-    ),
+    )),
   ))
 }
 

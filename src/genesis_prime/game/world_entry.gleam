@@ -79,7 +79,9 @@ import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
+import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
@@ -172,7 +174,8 @@ pub type Joined {
 /// sees it, the units its own client shows, the casts of other units its client
 /// has been sent the start of, where it stands
 /// (genesis_prime/game/movement) and whether it is camping
-/// (genesis_prime/game/camp), its casts (genesis_prime/game/cast) and its chat
+/// (genesis_prime/game/camp), its casts (genesis_prime/game/cast), the rounds of
+/// its strikes (genesis_prime/game/strike) and its chat
 /// (genesis_prime/game/chat), which the rule keeps up to date. A player that has
 /// just entered is not camping, has no viewers and shows no unit: the map's
 /// `Watched` and `Unwatched` keep `viewers`, the connections whose players see
@@ -190,12 +193,13 @@ pub type Entered {
     max_health: Int,
     clock_origin_ms: Int,
     viewers: Set(ConnectionId),
-    shown: Set(Int),
+    shown: shown.Picture,
     casts_written: Dict(Int, Int),
     gone: Set(Int),
     movement: movement.State,
     camp: camp.Camp,
     cast: cast.State,
+    strike: strike.State,
     chat: chat.Chat,
   )
 }
@@ -343,12 +347,13 @@ pub fn joined(
               max_health:,
               clock_origin_ms:,
               viewers: set.new(),
-              shown: set.new(),
+              shown: dict.new(),
               casts_written: dict.new(),
               gone: set.new(),
               movement: movement.entered(place:, session_epoch:),
               camp: camp.none(),
               cast: cast.new(),
+              strike: strike.new(),
               chat: chat.new(
                 speaker: chat_tell.Speaker(
                   realm_id:,

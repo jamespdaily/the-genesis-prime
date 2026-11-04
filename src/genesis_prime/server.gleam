@@ -101,16 +101,17 @@
 
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
-  type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
-  AskMapRun, AskSessions, AskStore, FromHandOff, FromMap, FromSessions,
-  FromStore, SentByChat, SentByMap, SentByPeer, SentBySessions, TellChat,
-  TellMoved, TellPeer,
+  type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
+  AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
+  SentByChat, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat,
+  TellMoved, TellPeer, TellStrike,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell as connection_shell
+import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off
@@ -125,6 +126,7 @@ import genesis_prime/store/worker.{type Job}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/creature_registry.{type CreatureRegistry}
 import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map
@@ -191,9 +193,6 @@ pub type World {
     creature_supervisor: Name(creature_supervisor.CreatureSupervisor),
     /// How long a creature has to stop.
     creature_shutdown_ms: Int,
-    /// How long a spawn whose creature crashed waits before a creature is
-    /// started there again.
-    creature_restart_ms: Int,
     /// How long a creature that no player sees keeps running, and how often
     /// each map looks for one: the idle stop and the sweep of the map's rule.
     idle_stop_ms: Int,
@@ -330,7 +329,7 @@ fn directory(settings: Settings) -> Directory {
           deadline_ms:,
           reply: fn(answer) { reply(FromMap(answer)) },
         )
-      TellMoved(..) | TellPeer(..) | TellChat(..) -> Error(Nil)
+      TellMoved(..) | TellPeer(..) | TellChat(..) | TellStrike(..) -> Error(Nil)
     }
   }
 }
@@ -430,6 +429,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     TellChat(tell:) -> registry.deliver_to(pid, SentByChat(tell:))
     TellMoved(..)
     | TellPeer(..)
+    | TellStrike(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -457,6 +457,7 @@ pub fn tell_the_run(
     }
     TellPeer(..)
     | TellChat(..)
+    | TellStrike(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -474,8 +475,10 @@ pub fn tell_the_run(
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
 /// registry as `SentByPeer`, and a chat tell (`TellChat`) as `SentByChat`, by the
-/// same reach the services' sends take (`connection_reach`). Any other request is
-/// no tell to a connection: a rule that sends one has a bug, logged as an error,
+/// same reach the services' sends take (`connection_reach`). A strike
+/// (`TellStrike`) told to a `Creature` goes through the creature registry with no
+/// watch, as the creature's `Strike` message. Any other request is no tell to a
+/// connection or a creature: a rule that sends one has a bug, logged as an error,
 /// and nothing is sent.
 fn connection_deliver(
   settings: Settings,
@@ -483,15 +486,26 @@ fn connection_deliver(
   let reach = connection_reach(settings, SentByPeer)
   let chat_reach = connection_reach(settings, SentByChat)
   fn(to: step.Address, request: Request) {
-    case request {
-      TellPeer(news:) -> reach.send(to, news)
-      TellChat(tell:) -> chat_reach.send(to, tell)
-      TellMoved(..)
-      | AskStore(..)
-      | AskHandOff(..)
-      | AskSessions(..)
-      | AskMap(..)
-      | AskMapRun(..) -> {
+    case request, to {
+      TellPeer(news:), _ -> reach.send(to, news)
+      TellChat(tell:), _ -> chat_reach.send(to, tell)
+      TellStrike(tell:), step.Creature(map:, incarnation:, unit_id:, life:) ->
+        creature_registry.tell(
+          settings.world.creatures,
+          map:,
+          incarnation:,
+          unit_id:,
+          life:,
+          message: creature.Strike(tell:),
+        )
+      TellStrike(..), _
+      | TellMoved(..), _
+      | AskStore(..), _
+      | AskHandOff(..), _
+      | AskSessions(..), _
+      | AskMap(..), _
+      | AskMapRun(..), _
+      -> {
         runtime.log(
           LogError,
           "a rule sent a connection something other than news of a player's unit",
@@ -547,8 +561,8 @@ fn world(
     realm_id: settings.game.settings.realm_id,
     tables: settings.game.settings.tables,
     reach: connection_reach(settings, SentByMap),
-    to_connection: fn(connection, news) {
-      registry.deliver(connections, connection, SentByPeer(news))
+    to_connection: fn(connection, outgoing) {
+      registry.deliver(connections, connection, creature_message(outgoing:))
     },
   )
 }
@@ -572,7 +586,7 @@ pub fn add_world(
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
   reach reach: Reach(map.Outgoing),
-  to_connection to_connection: fn(step.ConnectionId, PeerNews) ->
+  to_connection to_connection: fn(step.ConnectionId, creature.Outgoing) ->
     Result(Nil, Nil),
 ) -> supervisor.Builder {
   tree
@@ -602,7 +616,7 @@ pub fn add_world(
             realm_id:,
             tables:,
             spawns: content_spawn.world(world.spawns, start.map.world_id),
-            creature_restart_ms: world.creature_restart_ms,
+            kinds: content_creature_kind.kinds(world.spawns),
             idle_stop_ms: world.idle_stop_ms,
             sweep_ms: world.sweep_ms,
           ),
@@ -681,10 +695,10 @@ fn map_reach(
 fn start_creature_process(
   world world: World,
   reach reach: Reach(map.Outgoing),
-  to_connection to_connection: fn(step.ConnectionId, PeerNews) ->
+  to_connection to_connection: fn(step.ConnectionId, creature.Outgoing) ->
     Result(Nil, Nil),
   start start: creature_supervisor.CreatureProcessStart,
-) -> actor.StartResult(Subject(Call(creature.Message, PeerNews))) {
+) -> actor.StartResult(Subject(Call(creature.Message, creature.Outgoing))) {
   let wanted = start.creature
   let spawns = content_spawn.world(world.spawns, wanted.map.world_id)
   case dict.get(spawns.by_id, wanted.spawn_id) {
@@ -694,7 +708,14 @@ fn start_creature_process(
       ))
     Ok(found) ->
       service_shell.start_unnamed(service_shell.Settings(
-        rule: creature.rule(creature: wanted, spawn: found),
+        rule: creature.rule(
+          creature: wanted,
+          spawn: found,
+          kind: creature_kind.kind_of(
+            kinds: content_creature_kind.kinds(world.spawns),
+            creature2_id: { found.creature_id }.value,
+          ),
+        ),
         reach: creature_reach(world:, reach:, to_connection:, start:),
         shutdown_ms: world.creature_shutdown_ms,
         told_through: Some(creature_registry.scope(world.creatures)),
@@ -720,10 +741,10 @@ fn start_creature_process(
 fn creature_reach(
   world world: World,
   reach reach: Reach(map.Outgoing),
-  to_connection to_connection: fn(step.ConnectionId, PeerNews) ->
+  to_connection to_connection: fn(step.ConnectionId, creature.Outgoing) ->
     Result(Nil, Nil),
   start start: creature_supervisor.CreatureProcessStart,
-) -> Reach(PeerNews) {
+) -> Reach(creature.Outgoing) {
   let own = start.creature
   service.Reach(
     locate: fn(address) {
@@ -764,6 +785,15 @@ fn creature_reach(
     },
     start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
   )
+}
+
+/// The message a connection takes what a creature sends it as: the news of a unit
+/// as `SentByPeer`, the answer to its strike as `SentByTarget`.
+pub fn creature_message(outgoing outgoing: creature.Outgoing) -> Message {
+  case outgoing {
+    creature.News(news:) -> SentByPeer(news)
+    creature.Struck(answered:) -> SentByTarget(answered)
+  }
 }
 
 /// The login subtree: the STS listener, then the auth listener, under a

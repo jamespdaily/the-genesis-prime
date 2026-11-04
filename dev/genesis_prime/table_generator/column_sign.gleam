@@ -220,6 +220,30 @@ pub fn all() -> List(ColumnSign) {
       evidence: "genesis_prime/game/spell_plan tests phaseFlags bit n of a phase with a bitwise and, which gives the same answer for the signed and the unsigned reading of the 32 bits (-1 and 0xffffffff both fire in every phase)",
     ),
     ColumnSign(
+      table: "TelegraphDamage",
+      column: "telegraphTimeEndMs",
+      sign: Unread,
+      evidence: "no rule of the server reads telegraphTimeEndMs of TelegraphDamage (genesis_prime/game/spell_area reads damageShapeEnum, param00 to param05, the position offsets, rotationDegrees, telegraphDamageFlags by bit and targetTypeFlags); a row holds a value with bit 31 set",
+    ),
+    ColumnSign(
+      table: "TelegraphDamage",
+      column: "phaseFlags",
+      sign: Unread,
+      evidence: "no rule of the server reads phaseFlags of TelegraphDamage (genesis_prime/game/spell_area reads damageShapeEnum, param00 to param05, the position offsets, rotationDegrees, telegraphDamageFlags by bit and targetTypeFlags); a row holds a value with bit 31 set",
+    ),
+    ColumnSign(
+      table: "TelegraphDamage",
+      column: "spellThresholdRestrictionFlags",
+      sign: Unread,
+      evidence: "no rule of the server reads spellThresholdRestrictionFlags of TelegraphDamage (genesis_prime/game/spell_area reads damageShapeEnum, param00 to param05, the position offsets, rotationDegrees, telegraphDamageFlags by bit and targetTypeFlags); a row holds a value with bit 31 set",
+    ),
+    ColumnSign(
+      table: "TelegraphDamage",
+      column: "opacityModifier",
+      sign: Unread,
+      evidence: "no rule of the server reads opacityModifier of TelegraphDamage (genesis_prime/game/spell_area reads damageShapeEnum, param00 to param05, the position offsets, rotationDegrees, telegraphDamageFlags by bit and targetTypeFlags); a row holds a value with bit 31 set",
+    ),
+    ColumnSign(
       table: "WorldLocation2",
       column: "phases",
       sign: Unread,

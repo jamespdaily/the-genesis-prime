@@ -35,7 +35,6 @@
 //// - **The name.** The scope is named by an atom made once at start with
 ////   `process.new_name`, so each tree has its own scope and none is shared.
 
-import genesis_prime/client_connection.{type PeerNews}
 import genesis_prime/group_registry.{type Scope}
 import genesis_prime/service.{type Call, TellCall}
 import genesis_prime/step.{Creature}
@@ -46,7 +45,7 @@ import gleam/otp/supervision.{type ChildSpecification}
 
 /// What a creature's shell takes through the scope: the calls a service takes.
 pub type Delivered =
-  Call(creature.Message, PeerNews)
+  Call(creature.Message, creature.Outgoing)
 
 /// The scope creatures are found in: made once, with `new`, and given to the
 /// tree and to the shells that look in it.

@@ -218,8 +218,47 @@ pub fn pressed_by(
   pressed_in(plans: plans(), state:, caster:, bag_index:, target:, at: ms)
 }
 
-/// A press at the time of an ability of the plans given.
+/// A press at the time of an ability of the plans given, taken by the rule, and its
+/// go answered as a round that struck nobody.
 pub fn pressed_in(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  bag_index bag_index: Int,
+  target target: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let #(state, effects) =
+    pressed_raw_in(plans:, state:, caster:, bag_index:, target:, at: ms)
+  answered_with_no_targets(state:, effects:, at: ms)
+}
+
+/// A press whose go, and each go it leads to at once, strikes these units.
+pub fn pressed_striking(
+  state state: State,
+  bag_index bag_index: Int,
+  struck struck: List(cast.Struck),
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let #(state, effects) =
+    pressed_raw(state:, caster: caster(), bag_index:, target: 0, at: ms)
+  answered_by(state:, effects:, at: ms, struck:)
+}
+
+/// A press of the bag index, as the rule gives it: a go it asks for is a `Strike`
+/// effect, not yet written.
+pub fn pressed_raw(
+  state state: State,
+  caster caster: Caster,
+  bag_index bag_index: Int,
+  target target: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  pressed_raw_in(plans: plans(), state:, caster:, bag_index:, target:, at: ms)
+}
+
+/// A press at the time of an ability of the plans given, as the rule gives it.
+pub fn pressed_raw_in(
   plans plans: Plans,
   state state: State,
   caster caster: Caster,
@@ -266,6 +305,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       cast.Tell(..)
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
+      | cast.Strike(..)
       | cast.Log(..) -> Error(Nil)
     }
   })
@@ -279,6 +319,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       cast.Send(..)
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
+      | cast.Strike(..)
       | cast.Log(..) -> Error(Nil)
     }
   })
@@ -289,8 +330,11 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
   list.filter_map(effects, fn(effect) {
     case effect {
       cast.StartTimer(timer:, after_ms:) -> Ok(#(timer, after_ms))
-      cast.Send(..) | cast.Tell(..) | cast.CancelTimer(..) | cast.Log(..) ->
-        Error(Nil)
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Log(..) -> Error(Nil)
     }
   })
 }
@@ -300,19 +344,78 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
   list.filter_map(effects, fn(effect) {
     case effect {
       cast.CancelTimer(timer:) -> Ok(timer)
-      cast.Send(..) | cast.Tell(..) | cast.StartTimer(..) | cast.Log(..) ->
-        Error(Nil)
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.Strike(..)
+      | cast.Log(..) -> Error(Nil)
     }
   })
 }
 
-/// Fires a timer at the time.
+/// Fires a timer at the time, and answers every go it asks for with no target, as a
+/// caster with no foe in its area is answered: the rule's tests that are not about
+/// targets read the go as written at once.
 pub fn fired(
   state state: State,
   timer timer: TimerId,
   at ms: Int,
 ) -> #(State, List(Effect)) {
+  let #(state, effects) = fired_raw(state:, timer:, at: ms)
+  answered_with_no_targets(state:, effects:, at: ms)
+}
+
+/// Fires a timer at the time, as the rule gives it.
+pub fn fired_raw(
+  state state: State,
+  timer timer: TimerId,
+  at ms: Int,
+) -> #(State, List(Effect)) {
   cast.timer_fired(cast: state, timer:, caster: caster(), now: at(ms:))
+}
+
+/// Each `Strike` effect replaced, in place, by what `went` gives for a round that struck
+/// nobody; the effects it gives are answered the same way.
+pub fn answered_with_no_targets(
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  answered_by(state:, effects:, at: ms, struck: [])
+}
+
+/// Each `Strike` effect replaced, in place, by what `went` gives for a round that struck
+/// these units; the effects it gives are answered the same way.
+pub fn answered_by(
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+  struck struck: List(cast.Struck),
+) -> #(State, List(Effect)) {
+  list.fold(effects, #(state, []), fn(so_far, effect) {
+    let #(state, done) = so_far
+    case effect {
+      cast.Strike(asked:) -> {
+        let #(state, going) =
+          cast.went(
+            cast: state,
+            caster: caster(),
+            now: at(ms:),
+            cast_id: asked.cast_id,
+            phase: asked.phase,
+            struck:,
+          )
+        let #(state, more) =
+          answered_by(state:, effects: going, at: ms, struck:)
+        #(state, list.append(done, more))
+      }
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Log(..) -> #(state, list.append(done, [effect]))
+    }
+  })
 }
 
 /// A frame's message id.
@@ -328,10 +431,21 @@ pub fn run_timers(
   effects effects: List(Effect),
   from_ms from_ms: Int,
 ) -> #(State, List(#(Int, List(Effect)))) {
+  run_timers_striking(state:, effects:, from_ms:, struck: [])
+}
+
+/// The same, with each go striking these units.
+pub fn run_timers_striking(
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  struck struck: List(cast.Struck),
+) -> #(State, List(#(Int, List(Effect)))) {
   run_pending(
     state:,
     pending: due_of(effects:, now_ms: from_ms),
     fired_so_far: [],
+    struck:,
   )
 }
 
@@ -348,13 +462,16 @@ fn run_pending(
   state state: State,
   pending pending: List(#(Int, TimerId)),
   fired_so_far fired_so_far: List(#(Int, List(Effect))),
+  struck struck: List(cast.Struck),
 ) -> #(State, List(#(Int, List(Effect)))) {
   case
     list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
   {
     [] -> #(state, list.reverse(fired_so_far))
     [#(due, timer), ..rest] -> {
-      let #(state, effects) = fired(state:, timer:, at: due)
+      let #(state, raw) = fired_raw(state:, timer:, at: due)
+      let #(state, effects) =
+        answered_by(state:, effects: raw, at: due, struck:)
       let cancelled = cancelled_timers(effects:)
       run_pending(
         state:,
@@ -363,6 +480,7 @@ fn run_pending(
           due_of(effects:, now_ms: due),
         ),
         fired_so_far: [#(due, effects), ..fired_so_far],
+        struck:,
       )
     }
   }

@@ -32,13 +32,23 @@
 ////   the row's own (`opcode.0x262.creature`): the client's weighted display pick
 ////   runs only for the spawns it makes itself (`0x1404846c0`).
 //// - **A level outside its row's range** is kept and listed in an info line.
+//// - **What a creature brings to a fight** (`Combat`) is worked out here with the rest of
+////   its values: the hit radius of its display (Creature2DisplayInfo.hitRadius), whom it
+////   may be attacked by (a faction level toward each player faction of 7 or less,
+////   `0x1403ad540`) and its defence: deflect, critical deflect, glance and mitigation
+////   from its CreatureLevel rows and its archetype, difficulty and tier multipliers
+////   (`0x1404585c0`, `Creature2.73464.crit_deflect_glance`,
+////   `Creature2.73464.mitigation`) through the rating formulas
+////   (genesis_prime/game/rating).
 
 import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/hit
+import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/creature2_arche_type
-import genesis_prime/table/creature2_difficulty
+import genesis_prime/table/creature2_difficulty.{type Creature2Difficulty}
 import genesis_prime/table/creature2_display_group_entry
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/creature2_outfit_group_entry
@@ -58,6 +68,7 @@ import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
 import genesis_prime/table/world
+import genesis_prime/world_map/creature_life.{type Combat, Attackable, Combat}
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/unit_fields
@@ -118,6 +129,8 @@ pub type Spawn {
     display_info_id: Int,
     /// The Creature2OutfitInfo the 0x262 sends, 0 for none.
     outfit_info_id: Int,
+    /// What the creature brings to a fight.
+    combat: Combat,
   )
 }
 
@@ -188,8 +201,10 @@ type SpawnError {
   NoCreatureRow(creature_id: Creature2Id)
   /// The client would not load the creature's row (`0x140485790`).
   NotLoadedByTheClient(creature_id: Creature2Id, rule: ValidityRule)
-  /// The creature's tier or level has no row, so its Base Health has no formula.
-  NoHealthRow(creature_id: Creature2Id)
+  /// A row a creature's Base Health or defence reads is missing: the table and the id.
+  NoPropertyRow(creature_id: Creature2Id, table: String, id: Int)
+  /// A property the load is asked for is not one it builds.
+  PropertyNotBuilt(creature_id: Creature2Id, property: Int)
   /// The row's display is not in its creature's display group.
   DisplayNotInGroup(creature_id: Creature2Id, display_info_id: Int)
   /// The row's display has no Creature2DisplayInfo row, so the creature has no
@@ -228,7 +243,7 @@ type Checked {
 type Catalog {
   Catalog(
     tables: table_store.Tables,
-    overrides: Dict(Int, Float),
+    overrides: Dict(#(Int, Int), Float),
     display_groups: Dict(Int, Set(Int)),
     outfit_groups: Set(Int),
     parents: Dict(Int, Int),
@@ -239,9 +254,9 @@ type Catalog {
 
 /// The Exile and Dominion player factions, children of faction 165
 /// (`0x140787760`).
-const exile_faction = 167
+pub const exile_faction = 167
 
-const dominion_faction = 166
+pub const dominion_faction = 166
 
 /// The highest level the client calls Neutral; a level above it is Friendly
 /// (FactionDispositionFromLevel: 0 to 2 Hostile, 3 to 7 Neutral, 8 to 10
@@ -256,27 +271,33 @@ const highest_neutral_level = 7
 pub fn select(
   rows rows: List(Row),
   tables tables: table_store.Tables,
+  formulas formulas: Formulas,
 ) -> Selection {
   let catalog = catalog(tables:)
-  let judged =
-    list.map(rows, fn(row) {
+  let #(_shared, judged) =
+    list.map_fold(rows, dict.new(), fn(shared, row) {
       case row.entity_type == non_player {
-        False -> Other(row:)
+        False -> #(shared, Other(row:))
         True ->
-          case load_checks(catalog:, row:) {
+          case load_checks(catalog:, formulas:, shared:, row:) {
             Error(error) -> {
               let SpawnId(number) = row.id
-              Refused(refusal.Refusal(
-                table: "spawn",
-                id: number,
-                rule: describe(error:),
-              ))
+              #(
+                shared,
+                Refused(refusal.Refusal(
+                  table: "spawn",
+                  id: number,
+                  rule: describe(error:),
+                )),
+              )
             }
-            Ok(checked) ->
+            Ok(#(checked, shared)) -> #(
+              shared,
               case left_out_of(catalog:, checked:) {
                 Ok(reason) -> Excluded(row:, reason:)
                 Error(Nil) -> Started(checked:)
-              }
+              },
+            )
           }
       }
     })
@@ -332,15 +353,11 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
       creature2_override_properties.all(tables),
       dict.new(),
       fn(found, override) {
-        case override.unit_property_index == unit_fields.base_health_property {
-          True ->
-            dict.insert(
-              found,
-              override.creature2_id,
-              override.unit_property_value,
-            )
-          False -> found
-        }
+        dict.insert(
+          found,
+          #(override.creature2_id, override.unit_property_index),
+          override.unit_property_value,
+        )
       },
     ),
     display_groups: list.fold(
@@ -440,6 +457,338 @@ pub fn faction_levels(
     faction_level(catalog:, from: exile_faction, to: faction),
     faction_level(catalog:, from: dominion_faction, to: faction),
   )
+}
+
+/// The combat values already worked out in a load, by creature, level, display and
+/// faction: the spawns that share them hold one term, so the load's term is small.
+type SharedCombats =
+  Dict(#(Int, Int, Int, Int), Combat)
+
+/// The CreatureLevel row of properties 100 and above, one for every level
+/// (`CreatureLevel.101`).
+const last_creature_level = 101
+
+/// What the creature brings to a fight: its display's hit radius, whom it may be
+/// attacked by, and its defence. Each chance is a rating formula's result from the
+/// creature's base and rating properties at its level (`0x140463340` deflect,
+/// `0x140463ac0` critical deflect, `0x140461a30` glance chance, `0x1404615f0` glance
+/// amount); a mitigation is the formula of GameFormula 1234 from Armor plus the
+/// resist of its damage type and the two offsets (`0x140464240`).
+fn combat_of(
+  catalog catalog: Catalog,
+  formulas formulas: Formulas,
+  creature creature: Creature2,
+  level level: Int,
+  display_info_id display_info_id: Int,
+  faction_id faction_id: Int,
+) -> Result(Combat, SpawnError) {
+  let creature_id = Creature2Id(creature.id)
+  let missing = fn(table, id) { NoPropertyRow(creature_id:, table:, id:) }
+  use display <- result.try(
+    creature2_display_info.get(
+      catalog.tables,
+      Creature2DisplayInfoId(display_info_id),
+    )
+    |> result.replace_error(missing("Creature2DisplayInfo", display_info_id)),
+  )
+  let property = fn(number) {
+    creature_property(catalog:, row: creature, level:, property: number)
+  }
+  use deflect_base <- result.try(property(101))
+  use deflect_rating <- result.try(property(33))
+  use crit_deflect_base <- result.try(property(105))
+  use crit_deflect_rating <- result.try(property(43))
+  use glance_base <- result.try(property(164))
+  use glance_rating <- result.try(property(58))
+  use glance_amount_base <- result.try(property(195))
+  use glance_amount_rating <- result.try(property(61))
+  use offset <- result.try(property(103))
+  use armor <- result.try(property(42))
+  use physical_offset <- result.try(property(144))
+  use tech_offset <- result.try(property(145))
+  use magic_offset <- result.try(property(146))
+  use physical_resist <- result.try(property(26))
+  use tech_resist <- result.try(property(27))
+  use magic_resist <- result.try(property(28))
+  let mitigation = fn(offset_of_type, resist) {
+    rating.mitigation_fraction(
+      formulas:,
+      level:,
+      base: offset +. offset_of_type,
+      rating: armor +. resist,
+    )
+  }
+  Ok(Combat(
+    hit_radius: display.hit_radius,
+    attackable: Attackable(
+      exile: attackable_by(catalog:, player: exile_faction, unit: faction_id),
+      dominion: attackable_by(
+        catalog:,
+        player: dominion_faction,
+        unit: faction_id,
+      ),
+    ),
+    defence: hit.Defence(
+      deflect_chance: rating.to_fraction(
+        formula: formulas.deflect_chance,
+        level:,
+        base: deflect_base,
+        rating: deflect_rating,
+      ),
+      crit_deflect_chance: rating.to_fraction(
+        formula: formulas.crit_deflect,
+        level:,
+        base: crit_deflect_base,
+        rating: crit_deflect_rating,
+      ),
+      glance_chance: rating.to_fraction(
+        formula: formulas.glance_chance,
+        level:,
+        base: glance_base,
+        rating: glance_rating,
+      ),
+      glance_amount: rating.to_fraction(
+        formula: formulas.glance_amount,
+        level:,
+        base: glance_amount_base,
+        rating: glance_amount_rating,
+      ),
+      physical_mitigation: mitigation(physical_offset, physical_resist),
+      tech_mitigation: mitigation(tech_offset, tech_resist),
+      magic_mitigation: mitigation(magic_offset, magic_resist),
+    ),
+  ))
+}
+
+/// A creature's property: the CreatureLevel value times the archetype, difficulty and
+/// tier multipliers, each product held as a 32-bit float, or the creature's own
+/// override. Properties below 100 are read from the row of `level`, the others from
+/// the last row (`CreatureLevel.101`) at the column of the property minus 100
+/// (`0x1404585c0`). Only the properties Base Health and a fight read are built;
+/// UnitProperty2's flags, which would stop the multipliers, are read for none of them
+/// but 101, 102, 105 and 164 (`Creature2.73464.crit_deflect_glance`), and any other
+/// property is not built.
+fn creature_property(
+  catalog catalog: Catalog,
+  row row: Creature2,
+  level level_number: Int,
+  property property: Int,
+) -> Result(Float, SpawnError) {
+  let creature_id = Creature2Id(row.id)
+  case dict.get(catalog.overrides, #(row.id, property)) {
+    Ok(value) -> Ok(value)
+    Error(Nil) -> {
+      let missing = fn(table, id) { NoPropertyRow(creature_id:, table:, id:) }
+      let level_id = case property < 100 {
+        True -> level_number
+        False -> last_creature_level
+      }
+      use level <- result.try(
+        creature_level.get(catalog.tables, CreatureLevelId(level_id))
+        |> result.replace_error(missing("CreatureLevel", level_id)),
+      )
+      use tier <- result.try(
+        creature2_tier.get(
+          catalog.tables,
+          Creature2TierId(row.creature2_tier_id),
+        )
+        |> result.replace_error(missing("Creature2Tier", row.creature2_tier_id)),
+      )
+      use arche <- result.try(
+        creature2_arche_type.get(
+          catalog.tables,
+          Creature2ArcheTypeId(row.creature2_arche_type_id),
+        )
+        |> result.replace_error(missing(
+          "Creature2ArcheType",
+          row.creature2_arche_type_id,
+        )),
+      )
+      let difficulty =
+        creature2_difficulty.get(
+          catalog.tables,
+          Creature2DifficultyId(row.creature2_difficulty_id),
+        )
+      case property {
+        7 ->
+          scaled(
+            value: level.unit_property_value07,
+            archetype: arche.unit_property_multiplier007,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier007
+            }),
+            tier: tier.unit_property_multiplier007,
+          )
+        26 ->
+          scaled(
+            value: level.unit_property_value26,
+            archetype: arche.unit_property_multiplier026,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier026
+            }),
+            tier: tier.unit_property_multiplier026,
+          )
+        27 ->
+          scaled(
+            value: level.unit_property_value27,
+            archetype: arche.unit_property_multiplier027,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier027
+            }),
+            tier: tier.unit_property_multiplier027,
+          )
+        28 ->
+          scaled(
+            value: level.unit_property_value28,
+            archetype: arche.unit_property_multiplier028,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier028
+            }),
+            tier: tier.unit_property_multiplier028,
+          )
+        33 ->
+          scaled(
+            value: level.unit_property_value33,
+            archetype: arche.unit_property_multiplier033,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier033
+            }),
+            tier: tier.unit_property_multiplier033,
+          )
+        42 ->
+          scaled(
+            value: level.unit_property_value42,
+            archetype: arche.unit_property_multiplier042,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier042
+            }),
+            tier: tier.unit_property_multiplier042,
+          )
+        43 ->
+          scaled(
+            value: level.unit_property_value43,
+            archetype: arche.unit_property_multiplier043,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier043
+            }),
+            tier: tier.unit_property_multiplier043,
+          )
+        58 ->
+          scaled(
+            value: level.unit_property_value58,
+            archetype: arche.unit_property_multiplier058,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier058
+            }),
+            tier: tier.unit_property_multiplier058,
+          )
+        61 ->
+          scaled(
+            value: level.unit_property_value61,
+            archetype: arche.unit_property_multiplier061,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier061
+            }),
+            tier: tier.unit_property_multiplier061,
+          )
+        101 ->
+          scaled(
+            value: level.unit_property_value01,
+            archetype: arche.unit_property_multiplier101,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier101
+            }),
+            tier: tier.unit_property_multiplier101,
+          )
+        103 ->
+          scaled(
+            value: level.unit_property_value03,
+            archetype: arche.unit_property_multiplier103,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier103
+            }),
+            tier: tier.unit_property_multiplier103,
+          )
+        105 ->
+          scaled(
+            value: level.unit_property_value05,
+            archetype: arche.unit_property_multiplier105,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier105
+            }),
+            tier: tier.unit_property_multiplier105,
+          )
+        144 ->
+          scaled(
+            value: level.unit_property_value44,
+            archetype: arche.unit_property_multiplier144,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier144
+            }),
+            tier: tier.unit_property_multiplier144,
+          )
+        145 ->
+          scaled(
+            value: level.unit_property_value45,
+            archetype: arche.unit_property_multiplier145,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier145
+            }),
+            tier: tier.unit_property_multiplier145,
+          )
+        146 ->
+          scaled(
+            value: level.unit_property_value46,
+            archetype: arche.unit_property_multiplier146,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier146
+            }),
+            tier: tier.unit_property_multiplier146,
+          )
+        164 ->
+          scaled(
+            value: level.unit_property_value64,
+            archetype: arche.unit_property_multiplier164,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier164
+            }),
+            tier: tier.unit_property_multiplier164,
+          )
+        195 ->
+          scaled(
+            value: level.unit_property_value95,
+            archetype: arche.unit_property_multiplier195,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier195
+            }),
+            tier: tier.unit_property_multiplier195,
+          )
+        _ -> Error(PropertyNotBuilt(creature_id:, property:))
+      }
+    }
+  }
+}
+
+/// The value times the archetype, difficulty and tier multipliers in the order the
+/// client reads them, each product held as a 32-bit float.
+fn scaled(
+  value value: Float,
+  archetype archetype: Float,
+  difficulty difficulty: Float,
+  tier tier: Float,
+) -> Result(Float, SpawnError) {
+  Ok(value |> times(archetype) |> times(difficulty) |> times(tier))
+}
+
+/// The difficulty's multiplier, or 1.0 for a difficulty with no row.
+fn through(
+  difficulty difficulty: Result(Creature2Difficulty, Nil),
+  column column: fn(Creature2Difficulty) -> Float,
+) -> Float {
+  case difficulty {
+    Ok(difficulty) -> column(difficulty)
+    Error(Nil) -> 1.0
+  }
 }
 
 /// Whether a player of the faction may attack a unit of the other: the unit is
@@ -618,8 +967,10 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
 /// creature's own.
 fn load_checks(
   catalog catalog: Catalog,
+  formulas formulas: Formulas,
+  shared shared: SharedCombats,
   row row: Row,
-) -> Result(Checked, SpawnError) {
+) -> Result(#(Checked, SharedCombats), SpawnError) {
   let creature_id = Creature2Id(row.creature_id)
   use creature <- result.try(valid_creature(catalog:, creature_id:))
   use <- bool.guard(
@@ -658,20 +1009,38 @@ fn load_checks(
     catalog:,
     outfit_info_id: row.outfit_info_id,
   ))
-  Ok(Checked(
-    row:,
-    creature:,
-    spawn: Spawn(
-      id: row.id,
-      creature_id:,
-      place:,
-      level:,
-      health:,
-      faction_id: row.faction_id,
-      base_faction_id: row.base_faction_id,
-      display_info_id: row.display_info_id,
-      outfit_info_id: row.outfit_info_id,
+  let key = #(row.creature_id, level, row.display_info_id, row.faction_id)
+  use #(combat, shared) <- result.try(case dict.get(shared, key) {
+    Ok(combat) -> Ok(#(combat, shared))
+    Error(Nil) ->
+      combat_of(
+        catalog:,
+        formulas:,
+        creature:,
+        level:,
+        display_info_id: row.display_info_id,
+        faction_id: row.faction_id,
+      )
+      |> result.map(fn(combat) { #(combat, dict.insert(shared, key, combat)) })
+  })
+  Ok(#(
+    Checked(
+      row:,
+      creature:,
+      spawn: Spawn(
+        id: row.id,
+        creature_id:,
+        place:,
+        level:,
+        health:,
+        faction_id: row.faction_id,
+        base_faction_id: row.base_faction_id,
+        display_info_id: row.display_info_id,
+        outfit_info_id: row.outfit_info_id,
+        combat:,
+      ),
     ),
+    shared,
   ))
 }
 
@@ -784,13 +1153,13 @@ fn valid_creature(
   }
 }
 
-/// Base Health: the creature's own override of property 7 when it has one, else
-/// CreatureLevel[level] times the archetype, difficulty and tier multipliers,
-/// each product held as a 32-bit float, truncated. The client looks the three
-/// multipliers up by the creature's words 4, 5 and 6, which are the archetype,
-/// difficulty and tier (`0x1404585c0`, `0x1404852b0`); the order of the products is
-/// that order, a reading, since the order of the multiplications is not read.
-/// UnitProperty2 7's flags bit 0, which would stop the multipliers, is clear.
+/// Base Health: property 7 at the creature's minimum level, truncated: its own
+/// override when it has one, else CreatureLevel[level] times the archetype, difficulty
+/// and tier multipliers (`creature_property`). The client looks the three multipliers
+/// up by the creature's words 4, 5 and 6, which are the archetype, difficulty and
+/// tier (`0x1404585c0`, `0x1404852b0`); the order of the products is that order, a
+/// reading, since the order of the multiplications is not read. UnitProperty2 7's
+/// flags bit 0, which would stop the multipliers, is clear.
 ///
 /// A difficulty id of 0 multiplies by 1.0. The client's lookup of difficulty 0
 /// (`0x1401f64e0`) is not read; reading what it returns for an id with no row, and
@@ -800,46 +1169,13 @@ fn base_health(
   catalog catalog: Catalog,
   row row: Creature2,
 ) -> Result(Int, SpawnError) {
-  let tables = catalog.tables
-  let creature_id = Creature2Id(row.id)
-  case dict.get(catalog.overrides, row.id) {
-    Ok(value) -> Ok(float.truncate(value))
-    Error(Nil) -> {
-      let found = {
-        use level <- result.try(creature_level.get(
-          tables,
-          CreatureLevelId(row.min_level),
-        ))
-        use tier <- result.try(creature2_tier.get(
-          tables,
-          Creature2TierId(row.creature2_tier_id),
-        ))
-        use arche <- result.try(creature2_arche_type.get(
-          tables,
-          Creature2ArcheTypeId(row.creature2_arche_type_id),
-        ))
-        let difficulty =
-          creature2_difficulty.get(
-            tables,
-            Creature2DifficultyId(row.creature2_difficulty_id),
-          )
-        let difficulty_multiplier = case difficulty {
-          Ok(difficulty) -> difficulty.unit_property_multiplier007
-          Error(Nil) -> 1.0
-        }
-        Ok(
-          level.unit_property_value07
-          |> times(arche.unit_property_multiplier007)
-          |> times(difficulty_multiplier)
-          |> times(tier.unit_property_multiplier007),
-        )
-      }
-      case found {
-        Ok(health) -> Ok(float.truncate(health))
-        Error(Nil) -> Error(NoHealthRow(creature_id:))
-      }
-    }
-  }
+  creature_property(
+    catalog:,
+    row:,
+    level: row.min_level,
+    property: unit_fields.base_health_property,
+  )
+  |> result.map(float.truncate)
 }
 
 /// The product as a 32-bit float.
@@ -895,10 +1231,20 @@ fn describe(error error: SpawnError) -> String {
       <> int.to_string(creature_id)
       <> ": "
       <> describe_rule(rule)
-    NoHealthRow(creature_id: Creature2Id(creature_id)) ->
+    NoPropertyRow(creature_id: Creature2Id(creature_id), table:, id:) ->
       "Creature2 "
       <> int.to_string(creature_id)
-      <> " has no CreatureLevel or Creature2Tier row for its Base Health"
+      <> " has no "
+      <> table
+      <> " row "
+      <> int.to_string(id)
+      <> " for its Base Health or defence"
+    PropertyNotBuilt(creature_id: Creature2Id(creature_id), property:) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> " is asked for property "
+      <> int.to_string(property)
+      <> ", which the load does not build"
     DisplayNotInGroup(creature_id: Creature2Id(creature_id), display_info_id:) ->
       "display "
       <> int.to_string(display_info_id)

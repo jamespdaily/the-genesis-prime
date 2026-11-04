@@ -6,9 +6,10 @@
 //// - **Type 0** (a NonPlayer unit) with the Creature2 id, which the client
 ////   refuses unless it loaded the row, and the quest checklist index 0
 ////   (opcode.0x262.creature, `0x140095fb0`).
-//// - **Alive:** stat 0 (health) above 0, or the client creates the creature
-////   dead (opcode.0x262.creature); it is the spawn's Base Health. Stat 10 is
-////   the spawn's level (`0x140458140`).
+//// - **Health:** stat 0, which is above 0 for a creature that stands and 0 for one
+////   that lies dead, which the client creates dead (opcode.0x262.creature); a
+////   creature at full health holds the spawn's Base Health. Stat 10 is the spawn's
+////   level (`0x140458140`).
 //// - **Place:** a kind 2 movement command at the spawn's position and a kind 14
 ////   at its facing, each with its bit clear, which places the unit at once
 ////   (`genesis_prime/world_map/player_unit.standing`).
@@ -30,12 +31,15 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/unit_fields
+import gleam/result
 
-/// Message 0x262 for the creature at `spawn` as unit `unit_id`, stamped with
-/// `server_time_estimate_start`, the map's server time (`map.server_time`).
+/// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health`,
+/// stamped with `server_time_estimate_start`, the map's server time
+/// (`map.server_time`).
 pub fn create(
   spawn spawn: Spawn,
   unit_id unit_id: Int,
+  health health: Int,
   server_time_estimate_start server_time_estimate_start: Int,
 ) -> UnitCreateCreature {
   let Creature2Id(creature_id) = spawn.creature_id
@@ -46,7 +50,7 @@ pub fn create(
     checklist_index: 0,
     tail: unit_fields.tail(
       stats: [
-        UnitStat(stat_id: unit_fields.health_stat, value: spawn.health),
+        UnitStat(stat_id: unit_fields.health_stat, value: health),
         UnitStat(stat_id: unit_fields.level_stat, value: spawn.level),
       ],
       movement_commands: [
@@ -62,4 +66,10 @@ pub fn create(
       server_time_estimate_start:,
     ),
   )
+}
+
+/// The health stat of a creature's 0x262: 0 for a creature that lies dead.
+pub fn health_of(unit unit: UnitCreateCreature) -> Int {
+  unit_fields.stat(tail: unit.tail, stat_id: unit_fields.health_stat)
+  |> result.unwrap(0)
 }

@@ -3,6 +3,8 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/loadout
+import genesis_prime/game/rating
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/top_zone
 import genesis_prime/table/loader/store
@@ -15,6 +17,10 @@ import genesis_prime/table/loader/store
 ///   properties, whose missing rows fail the load (genesis_prime/game/loadout).
 /// - The spell plans: the tree of casts each class's level-1 ability starts, whose
 ///   missing rows, unread costs and cycles fail the load (genesis_prime/game/spell_plan).
+/// - The spell areas: what each spell of those trees strikes (genesis_prime/game/spell_area),
+///   built after the trees.
+/// - The rating formulas: the hit rule's GameFormula rows and a player's bases
+///   (genesis_prime/game/rating).
 /// - The top zones: each WorldZone's top zone, which a cycle in the parent chain
 ///   fails (genesis_prime/game/top_zone).
 pub fn all() -> List(store.Derivation) {
@@ -22,6 +28,8 @@ pub fn all() -> List(store.Derivation) {
     appearance.derivation(),
     loadout.derivation(),
     spell_plan.derivation(),
+    spell_area.derivation(),
+    rating.derivation(),
     top_zone.derivation(),
   ]
 }

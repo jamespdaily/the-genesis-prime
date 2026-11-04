@@ -6839,7 +6839,7 @@ gap = "As for Spell4.58591."
 
 ["Spell4.32893"]
 statement = "Esper Telekinetic Strike, tier 1 (base 19102, Normal, 1.25 s cast): Magic damage of 0.336 x Assault Power + 18.0 x level (18.0 at level 1 with no ratings) to the target, and a Proxy that starts spell 30900 'Focus Psi Add (1)' on the caster, which adds 1 to the caster's vital 6 (Resource1, the Esper's Psi Points). 30900 in turn proxies 41869 and 77116, which only add a client effect (Fluff) for 8 s."
-proof = "`gleam run -m genesis_prime/table_rows -- Spell4 32893` (castTime 1250, targetMaxRange 30); Spell4Effects 62159 (effectType 8, damageType 3, parameters 12 0.336, 10 18.0) and 62204 (effectType 26 Proxy, targetFlags 1, dataBits00 30900); Spell4 30900 effects 56858 (effectType 1 VitalModifier, dataBits00 6, dataBits01 1, dataBits02 1) and 200542 (Proxy 41869); 41869 effect 210256 (Proxy 77116); 77116 effect 200468 (Fluff, 8000 ms). `-- Vital 6`: localizedTextIdDisplayText 170473 'Resource1'. Tooltip 314851: 'Deal ... magic damage ... and generate a Psi Point.'"
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 32893` (castTime 1250, targetMaxRange 30); Spell4Effects 62159 (effectType 8, damageType 3, parameters 12 0.336, 10 18.0) and 62204 (effectType 26 Proxy, targetFlags 4 in the extracted table of 2026-11-04, which an earlier read gave as 1; dataBits00 30900); Spell4 30900 effects 56858 (effectType 1 VitalModifier, dataBits00 6, dataBits01 1, dataBits02 1) and 200542 (Proxy 41869); 41869 effect 210256 (Proxy 77116); 77116 effect 200468 (Fluff, 8000 ms). `-- Vital 6`: localizedTextIdDisplayText 170473 'Resource1'. Tooltip 314851: 'Deal ... magic damage ... and generate a Psi Point.'"
 grade = "fairly sure"
 gap = "As for Spell4.58591. Which unit targetFlags 1 names (the caster, by the tooltip) is not read in the client."
 
@@ -7510,6 +7510,216 @@ grade = "fairly sure"
 gap = "Read from the decompile; what sets 0xd4c for another unit is not read."
 name = "LuaUnitGetEffectiveItemLevel"
 
+["0x1405698c0"]
+statement = "Builds a spell's area record at load from its Spell4AoeTargetConstraints row, its Spell4Base row and that base's Spell4ValidTargets row, as ten 32-bit words: minRange, maxRange, angle, targetCount, targetSelection, the base's targetGroupIdAoeGroup, then the valid-target bitmask's bits 0x8, 0x20, 0x40 and 0x80 each on their own (each word is the bit's value, or 0). A spell with no constraints row gets no area record."
+proof = "0x1405698ed call 0x140236e00 (Spell4Base row); 0x1405698f7 call 0x1402369c0 (Spell4AoeTargetConstraints row, PTR_u_Spell4AoeTargetConstraints_140a6d0e0); 0x140569903 call 0x14023cfc0 (Spell4ValidTargets row, PTR_u_Spell4ValidTargets_140a6d620); 0x14056991a mov ecx, dword ptr [rbx+0x4] / 0x14056991d mov dword ptr [rsi+0x8], ecx (angle to word 2); 0x140569920 mov ecx, dword ptr [rbx+0x10] / 0x140569923 mov dword ptr [rsi+0x4], ecx (maxRange to word 1); 0x140569926 mov ecx, dword ptr [rbx+0xc] / 0x140569929 mov dword ptr [rsi], ecx (minRange to word 0); 0x14056992b mov eax, dword ptr [rbx+0x8] / 0x14056992e (targetCount to word 3); 0x140569931 mov eax, dword ptr [rbx+0x14] / 0x140569934 (targetSelection to word 4); 0x140569937 mov eax, dword ptr [rbp+0x34] / 0x14056993a (Spell4Base targetGroupIdAoeGroup, offset 52, to word 5); 0x140569945 and eax, 0x8, 0x14056994e and eax, 0x20, 0x140569957 and eax, 0x40, 0x140569960 and eax, 0x80 (targetBitmask, offset 4). Columns: `gleam run -m genesis_prime/table_rows -- Spell4AoeTargetConstraints --columns`, `-- Spell4Base --columns`, `-- Spell4ValidTargets --columns`. Its only caller is BuildSpellTables 0x14055e180 (saved C line 1039, hash 737aa5af0120fae9), which keys the record by Spell4 id in the spell tables' map at 0x558, filled only for Spell4 rows whose spell4AoeTargetConstraintsId is not 0 (lines 405-418)."
+grade = "sure"
+name = "FillSpellAoeConstraints"
+
+["0x1407a1260"]
+statement = "Finds a spell's area record by Spell4 id in the spell tables' area map; 0 for id 0 or a spell with no record. Its only caller links the record to the spell's info, where every later reader takes it."
+proof = "Saved C 0x1407a1260.c (hash 8eb22adb6de47956): returns 0 for param 0; hashes the id with the map's own function (map at tables 0x558), walks the bucket and returns the node's value (node word 3). Callers by grep of the saved C: only 0x140569480 (saved C, hash 8eb22adb6de47956), which stores the result at spell info 0x48, beside 0x1407a1300 (channel record, 0x50) and 0x1407a13a0 (phase list, 0x58), the two InitCast 0x14053d1f0 reads."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; that the builder's spell info is the spell object every reader sees (its fields at the same offsets) rests on InitCast reading 0x50 and 0x58 there, not on a read of 0x1405697b0's copy."
+name = "GetSpellAoeConstraints"
+
+["0x140569480"]
+statement = "Links one spell's load-time records into its spell info: two records from the maps at 0x548 and 0x550 (not read), its area record, its channel record and its phase list, then its spell group lists."
+proof = "Saved C 0x140569480.c (hash 8eb22adb6de47956): info 0x38 = 0x1407a1120, 0x40 = 0x1407a11c0, 0x48 = GetSpellAoeConstraints 0x1407a1260, 0x50 = 0x1407a1300 (map 0x560, the channel records BuildSpellTables fills at saved C line 1088), 0x58 = 0x1407a13a0 (map 0x568, the phase lists, line 1123); called by BuildSpellTables 0x14055e180 line 1258 for each Spell4 row."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the maps at 0x548 and 0x550 hold and the group-list part after them are not read."
+name = "LinkSpellRecords"
+
+["0x1405ecf20"]
+statement = "The Lua method Spell:GetAOETargetInfo. For a spell with an area record it returns its selection and target fields with fMinimumRange, fMaximumRange, fAngle (the row's values as stored), bCanAffectDead (valid-target bit 0x8), bClusterOnly (bit 0x20) and bMustBeInCombat (bit 0x40); for a spell without one only the selection field. It is the only client reader of an area record's angle and of the valid-target bits."
+proof = "Saved C 0x1405ecf20.c (hash 8eb22adb6de47956): the Game.Spell argument's spell by 0x1403acd90; spell 0x48 null takes the short branch (line 40); otherwise floats from the area record's words 0, 1 and 2 under the keys L\"fMinimumRange\", L\"fMaximumRange\", L\"fAngle\" (lines 66-133), integers from words 6, 7 and 8 under L\"bCanAffectDead\", L\"bClusterOnly\", L\"bMustBeInCombat\" (lines 165-231). LuaDocData/data.xml line 6754: Spell GetAOETargetInfo, items eSelectionType, idTarget, fMinimumRange, fMaximumRange, fAngle, nTargetCount, bCanAffectDead, bClusterOnly, bGroupOnly, bMustBeInCombat. Readers of a spell's area record by grep of the saved C for a deref of 0x48 on a spell: this function and 0x1405458e0 (maxRange only); 0x140403400, 0x140722d30 and 0x140722ed0 read 0x48 of other objects."
+grade = "fairly sure"
+gap = "The pushes of eSelectionType, idTarget and nTargetCount are inlined and their values are not traced in the decompile; a reader that holds the area record through a copied pointer, not a 0x48 deref, would be missed by the grep. Settled by refs_to on every load of a spell's 0x48 field."
+name = "SpellGetAOETargetInfo"
+
+["Spell4AoeTargetConstraints.client_use"]
+statement = "The client never selects targets from a spell's area constraints. It reads them only to give Spell:GetAOETargetInfo to the UI, and maxRange to place a cast visual that far ahead of the caster along the caster's facing. Which units an area spell strikes, how many and in what order is decided by the server alone, and the client takes the struck units from the go's target list."
+proof = "The table is read only by its four accessors (0x140236970, 0x1402369c0, 0x140236a20, 0x140236a80), BuildSpellTables 0x14055e180 (a missing row fails the spell with 0x3d, saved C line 418) and FillSpellAoeConstraints 0x1405698c0 (grep of the saved C for PTR_u_Spell4AoeTargetConstraints). The area record is found only by GetSpellAoeConstraints 0x1407a1260 and read only by SpellGetAOETargetInfo 0x1405ecf20 and 0x1405458e0 (saved C, hash 8eb22adb6de47956, lines 85-100: the caster's position plus its facing direction from 0x1405b44a0 times the record's maxRange)."
+grade = "fairly sure"
+gap = "As 0x1405ecf20: a reader holding the record through a copied pointer is not ruled out by instruction-level references. A retail recording of Kick on two creatures settles which units the server struck."
+
+["Spell4AoeTargetConstraints.targetSelection"]
+statement = "The order an area spell takes its targets in, by the client's enum CodeEnumAOESelectionType: 0 None, 1 Closest, 2 Furthest, 3 Random, 4 LowestAbsoluteHealth, 5 MissingMostHealth. Every area row of the level-1 abilities (640, 411, 345, 404, 704, 701, 173, 299) is 1, Closest. The client applies no order itself (Spell4AoeTargetConstraints.client_use)."
+proof = "Lua enum registration in 0x1405e8230 (saved C, hash 8eb22adb6de47956, lines 427-492): 'CodeEnumAOESelectionType', then the name at 0x140b23594 with 0.0, 'Closest' 1.0 (0x3ff0000000000000), 'Furthest' 2.0, 'Random' 3.0, 'LowestAbsoluteHealth' 4.0, 'MissingMostHealth' 5.0; LuaDocData/data.xml line 6845 lists None first. Rows: `gleam run -m genesis_prime/table_rows -- Spell4AoeTargetConstraints 640 411 345 404 704 701 173 299` (targetSelection 1 in each). The enum is read with the column by name only: GetAOETargetInfo hands the value to Lua as eSelectionType."
+grade = "fairly sure"
+gap = "That the column holds this enum rests on the Lua field eSelectionType and the matching name, not on client code comparing it; the string at 0x140b23594 is taken as 'None' from data.xml, its bytes not read. Distance for Closest (from the caster, from the telegraph, edge or centre) is not named by the client."
+
+["Spell4ValidTargets.targetBitmask"]
+statement = "A spell's valid-target bits, by the names the client gives them in GetAOETargetInfo: 0x8 the area can strike dead units (bCanAffectDead), 0x20 cluster only, 0x40 must be in combat; 0x80 is copied but named nowhere. Every level-1 ability and every spell they trigger uses Spell4ValidTargets row 1, bitmask 0: its area strikes no dead unit."
+proof = "FillSpellAoeConstraints 0x1405698c0 (0x140569945 and eax, 0x8 ... 0x140569960 and eax, 0x80 into words 6 to 9); SpellGetAOETargetInfo 0x1405ecf20 names words 6, 7, 8. Rows: `gleam run -m genesis_prime/table_rows -- Spell4ValidTargets` (row 1 targetBitmask 0) and `-- Spell4Base 38017 25635 19102 19019 19022 26488 16322 20737 21506 26543 23173 23162 23163 20325 16838` (spell4ValidTargetId 1 in each)."
+grade = "fairly sure"
+gap = "The names come from the Lua keys only; no client code tests the bits, so that bit 0x8 clear means a dead unit is skipped by the retail server is the name's reading, not seen in a recording."
+
+["0x14054d170"]
+statement = "Sets a telegraph's drawn shape from its TelegraphDamage row's damageShapeEnum (0 to 8; any other fails with 0x80004005), and its turn from rotationDegrees (degrees to radians). Shape 0 circle of radius param00. 1 ring from param00 (inner) to param01 (outer). 2 box centred on the telegraph, param00 wide, param01 high, param02 long. 3 two such boxes. 4 cone from param00 (inner) to param01 (outer) radius, param02 degrees across in all (360 is a full circle). 5 pie: a circle from param00 to param01 missing a slice of param02 degrees. 6 box of param00, param01, param02 as given (not halved). 7 rectangle param00 wide and param01 high, starting at the telegraph and reaching param02 ahead. 8 long cone like 4, with an optional box of param03 to param05. Each size is grown by the viewing player's hit radius unless the row's telegraphDamageFlags has 0x200."
+proof = "0x14054d240 mov ecx, dword ptr [rax+0x8]; 0x14054d243 cmp ecx, 0x8; 0x14054d246 ja 0x14054d98a (default, 0x80004005); 0x14054d253 mov ecx, dword ptr [rdx+rcx*4+0x54d9e0]; 0x14054d25d jmp rcx. Saved C 0x14054d170.c (hash 8eb22adb6de47956): the turn is pi (bytes at 0x140c3b438: db0f4940) x 1/180 (bytes at 0x140b79d28: 0.0055556) x row 0x40; case 0 angle 2 pi (0x40c90fdb) and radius param 0; case 4 angle pi/180 x param 2 clamped to 2 pi (bytes at 0x140b7a018: 6.283185), inner radius row 0xc less the hit radius, outer param 1; case 5 angle 2 pi less pi/180 x param 2; case 2 and 7 half extents param 0, 1, 2 x 0.5 (bytes at 0x140b7ac50: four 0.5), case 7 also offsets the shape by minus half of param 2 along its length (sign mask 0x140b7b530); case 6 the params unhalved; case 8 params 3 to 5 halved when above 1e-5. Params through GetTelegraphParam 0x14054da10 (row 0xc + 4 x index). Rows: `gleam run -m genesis_prime/table_rows -- TelegraphDamage 168 2836 133 139 5124 310 2451 2888 2889 2188 2189 142 400`."
+grade = "fairly sure"
+gap = "This is the drawn shape; the client tests no unit against it. Whether the retail server struck by the same shape (and with the target's hit radius) is not read in the client; a retail recording of a creature at the edge of Kick's cone settles it. Shape 3's two boxes and the shader's use of the halved values are read from the decompile only."
+name = "SetTelegraphShape"
+
+["0x14054da10"]
+statement = "Gives one of a telegraph's six size parameters (TelegraphDamage param00 to param05) as drawn: the row's value plus the viewing player's own hit radius times a per-use factor (0 when the row's telegraphDamageFlags has 0x200), grown in over the telegraph's start."
+proof = "Saved C 0x14054da10.c (hash 8eb22adb6de47956): flag 0x200 at row 0x44 zeroes the factor; the player unit (world 0x78) hit radius from 0xd08 + 0x8c, else its display row's 0x28 by 0x14022d500; row value at 0xc + 4 x index; a four-point ramp over the row's 0x2c time."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the ramp's exact steps are not read."
+name = "GetTelegraphParam"
+
+["0x140542d90"]
+statement = "Says whether a TelegraphDamage row is drawn for a cast in its current state: never when telegraphDamageFlags has 0x40 or 0x100; while casting (state 2) when displayFlags has 4; at and after the go (state 3) when displayFlags has 8; and only while the caster is known and passes the row's prerequisite."
+proof = "Saved C 0x140542d90.c (hash 8eb22adb6de47956): (row 0x44 & 0x140) == 0; cast 0x150 == 2 tests row 0x58 & 4, == 3 tests & 8; FindUnit of cast 0x154 (the caster); row 0x50 through the prerequisite check at 0x140c659a0. Called per spell telegraph row by 0x140546e60."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile. That a never-drawn row (flag 0x40) is the retail server's hit area is inferred from each such row repeating a drawn row's shape (Spell4.32893.area), not read."
+name = "TelegraphShownForCast"
+
+["0x140546e60"]
+statement = "Makes a cast's telegraphs from its spell's TelegraphDamage rows (Spell4Telegraph), each placed by the row's targetTypeFlags: 1 on the caster at its position and facing; 0 or 2 on the cast's target; 4 on each unit of the go's target list whose target info has flag 4; 8 at a position the cast holds. A row with flag 0x2000 waits for its phase."
+proof = "Saved C 0x140546e60.c (hash 8eb22adb6de47956): for each row of spell 0x60 (filled by BuildSpellTables 0x14055e180 lines 1709-1717 from Spell4Telegraph's telegraphDamageId), TelegraphShownForCast 0x140542d90; row word 0x12 (offset 0x48, targetTypeFlags) & 1 places on FindUnit(cast 0x154) (line 173); == 0 or & 2 on cast 0x158 (line 252); & 4 on each target node of cast 0x48 with node 0x54 & 4 (lines 330-335); & 8 at cast 0x160 (line 428); row word 0x11 (telegraphDamageFlags) bit 0xd takes the phase branch (line 100)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the timing words (row 0x24, 0x28) and the 0x40000 branch are not read through."
+name = "CreateCastTelegraphs"
+
+["0x140549e10"]
+statement = "Constructs one telegraph from a TelegraphDamage row, a placement unit, a position and a facing, for a cast or the ground-placement preview, and sets its shape (twice for shape 3)."
+proof = "Saved C 0x140549e10.c (hash 8eb22adb6de47956): the row at telegraph 0x30; spell by 0x1405a5b90 or 0x1407a0fd0; 0x14054a160 builds the shape, called again when row 0x8 == 3. The ground preview 0x14053a210 (lines 197-222) passes the player's position and facing (unit 0x12c0) and skips rows with flag 0x40."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the other arguments' meanings are not read."
+name = "ConstructTelegraph"
+
+["0x14054b1b0"]
+statement = "Updates a telegraph's placement each frame: its TelegraphDamage xPositionOffset and zPositionOffset are negated and yPositionOffset kept before the offset is turned by the placement unit's facing, so a positive zPositionOffset is ahead of the unit."
+proof = "Saved C 0x14054b1b0.c (hash 49fd5a78aaad3411) lines 775-779: offset = (row 0x34 x [0x140b7a23c], row 0x38, row 0x3c x [0x140b7a23c]) unless row 0x44 has 0x4000; bytes at 0x140b7a23c: 000080bf (-1.0)."
+grade = "fairly sure"
+gap = "That ahead is the negated z rests on the facing convention (movement_command.kind_14.facing), not on a read of the turn that follows; a live run of Paralytic Surge (its square has zPositionOffset 9.3) shows it."
+name = "UpdateTelegraph"
+
+["opcode.0x7f4.target_info"]
+statement = "Each target info of a go (0x7f4) is one struck unit, and the client keeps one target node per unit: unit id, index (8 bits), target flags (8 bits), instance count (16 bits), combat result (4 bits) and the effect infos. A unit the client does not have is skipped; a second info for a unit already in the cast updates its node. Target flag 4 places on that unit each of the spell's telegraphs whose targetTypeFlags has 4; no telegraph row of the level-1 abilities has it, so 0 is safe for them. When the player is the caster or the unit and the info's combat result is 1 (Critical), the client raises a combat event (kind 6 for the caster, 2 for the unit)."
+proof = "0x14053d680 (saved C, hash 8eb22adb6de47956): FindUnit; walks cast 0x48 for a node with the id, else allocates one and calls 0x140717990; then FUN_14039c720(world, 6) when cast 0x154 is the controlled unit (world 0x6490) and info word 2 == 1, and (world, 2, id) when the unit is the controlled unit. 0x140717990 (saved C, hash 8eb22adb6de47956): node 0x44 = info byte 4, 0x54 = byte 5, 0x58 = word 8, 0x50 = 16 bits at 6; each effect info by 0x140718120. CreateCastTelegraphs 0x140546e60 line 335 tests node 0x54 & 4. Telegraph rows: `gleam run -m genesis_prime/table_rows -- TelegraphDamage` for the rows in Spell4.58591.area and the others (targetTypeFlags 1 in each)."
+grade = "fairly sure"
+gap = "The index and the other target flag bits are kept but no reader of them was traced; what combat events 6 and 2 do is not read."
+
+["0x14053d680"]
+statement = "Applies one target info of a go to its cast: makes or updates the struck unit's target node (opcode.0x7f4.target_info)."
+proof = "Saved C 0x14053d680.c (hash 8eb22adb6de47956), called by ApplySpellGo 0x14053e5a0 for each target info."
+grade = "fairly sure"
+gap = "As opcode.0x7f4.target_info."
+name = "ApplyGoTargetInfo"
+
+["0x140717990"]
+statement = "Fills a cast's new target node from a go's target info: the unit, index, target flags, combat result and instance count, links it to the unit and to the cast, and adds each effect info."
+proof = "Saved C 0x140717990.c (hash 8eb22adb6de47956): node 0x40 = unit id, 0x44 index, 0x54 flags, 0x58 result, 0x50 count; linked into unit 0x15c8 and cast 0x48; 0x140718120 per effect info."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "InitCastTargetNode"
+
+["0x1401b3170"]
+statement = "Turns a facing direction into yaw, pitch and roll in radians: yaw = atan2(-x, -z), pitch = arcsine of y (plus or minus pi/2 beyond 0.99999), roll 0. So a unit of yaw t faces the direction (-sin t, 0, -cos t): yaw 0 faces -z, and yaw grows turning from -z towards -x."
+proof = "0x1401b31d1 movss xmm0, dword ptr [rdx] (x); 0x1401b31d5 movss xmm1, dword ptr [rdx+0x8] (z); 0x1401b31ea xorps xmm0, xmmword ptr [0x140b7b530]; 0x1401b31f1 xorps xmm1, xmmword ptr [0x140b7b530] (sign flips); 0x1401b31f8 call 0x1408fd190 (atan2 of first argument y and second x, record 0x1408fd190); 0x1401b3212 movss dword ptr [rbx], xmm0 (yaw first); 0x1401b3185 comiss xmm9, dword ptr [0x140b79ecc] and 0x1401b3191 mov qword ptr [rcx+0x4], 0x3fc90fdb (pitch pi/2 past the bound). Bytes at 0x140b7b530: 00000080 (sign mask)."
+grade = "sure"
+name = "DirectionToEulerAngles"
+
+["movement_command.kind_14.facing"]
+statement = "The caster's facing for an area, as the server knows it, is the yaw (first float) of the last kind 14 (rotation) command of the player's 0x637 batches: the unit faces (-sin yaw, 0, -cos yaw). When the batch's kind 1 names a platform unit the yaw is relative to that unit's facing. The client sends no facing in 0x9a."
+proof = "ApplyMoveCommandSetRotation 0x140715350 (three floats yaw, pitch, roll); the client builds kind 14 by DirectionToEulerAngles 0x1401b3170 (0x14039febf call 0x1401b3170); opcode.0x637 (the batch and platform rule); opcode.0x9a (cast id, bag index, target, press bit only)."
+grade = "fairly sure"
+gap = "The 0x637 record notes kind 14 is left out in one unit state and dropped when unchanged, so the server keeps the last one; whether the client sends a batch right before 0x9a (so the facing is current at the press) is not read in CastAbilityBagSpell 0x14039a040."
+
+["Spell4Effects.targetFlags"]
+statement = "Which units an effect applies to, by the level-1 abilities' rows: 1 the caster, 2 the cast's own target, 4 the units the area struck, 6 both. The client applies no effect itself, so this is the server's rule."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4Effects spellId=<id>` for 58591, 41438, 32893, 32809, 32812, 42297, 29874, 34775, 35886, 42352, 38791, 38780, 38781, 34355 and 30436: every damage and crowd-control effect on a foe has 4 (38781's has 2, 42297's 6); every Proxy to a self spell (30900, 38780, 34775, 35886) and Gate's ForcedMove have 1. Tooltips: 314851 (Telekinetic Strike) 'generate a Psi Point', 505006 (Kick) 'foes'."
+grade = "guess"
+gap = "No client code reading the column was found (the Spell4Effects accessors' callers 0x14055c800 and 0x14055c940 were searched only by grep). A retail recording of Kick on two creatures, or the client's effect target code, settles it."
+
+["Spell4.58591.area"]
+statement = "Kick strikes up to 5 foes, nearest first, within 8 m and 180 degrees of the caster's facing (area row 640); its drawn telegraph (168, shown while casting and at the go) is a cone on the caster from 1 to 7 m, 100 degrees across. Both effects (Knockdown, Physical damage) apply to the struck units (targetFlags 4)."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 58591` (spell4AoeTargetConstraintsId 640); `-- Spell4AoeTargetConstraints 640` (angle 180, targetCount 5, minRange 0, maxRange 8, targetSelection 1); `-- Spell4Telegraph spell4Id=58591` (168); `-- TelegraphDamage 168` (damageShapeEnum 4, param00 1, param01 7, param02 100, targetTypeFlags 1, telegraphDamageFlags 512, displayFlags 15, telegraphTimeEndMs 500). Shapes by SetTelegraphShape 0x14054d170; placement by CreateCastTelegraphs 0x140546e60."
+grade = "fairly sure"
+gap = "Whether the server strikes by the area row, the telegraph or both (the row's 8 m and 180 degrees against the cone's 7 m and 100) is not in the client; a retail recording settles it. Flag 512 (0x200) draws the cone without the viewer's hit radius."
+
+["Spell4.41438.area"]
+statement = "Zap strikes up to 5 foes, nearest first, within 25 m all round (area row 411); its telegraphs (2836 drawn, 2837 never drawn, same shape) are a rectangle on the caster 3.5 m wide, 30 m high and 24 m long, 1 m ahead. Damage and Stun apply to the struck units."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4AoeTargetConstraints 411` (360, 5, 0, 25, 1); `-- Spell4Telegraph spell4Id=41438` (2836, 2837); `-- TelegraphDamage 2836 2837` (shape 7, 3.5, 30, 24, zPositionOffset 1.0 on 2836, targetTypeFlags 1, flags 1568 and 64); effects 125182 and 125183 targetFlags 4."
+grade = "fairly sure"
+gap = "As Spell4.58591.area. 2837 has no zPositionOffset while 2836 has 1.0."
+
+["Spell4.32893.area"]
+statement = "Telekinetic Strike strikes up to 5 foes, nearest first, within 30 m all round (area row 345); its telegraphs (133 drawn while casting, 125 drawn, 2169 never drawn, all alike) are a rectangle on the caster 3 m wide, 20 m high and 29 m long, 1 m ahead. The damage applies to the struck units; the Psi Point Proxy (30900) also has targetFlags 4, though the tooltip gives the Psi Point to the caster."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4AoeTargetConstraints 345` (360, 5, 0, 30, 1); `-- Spell4Telegraph spell4Id=32893` (133, 125, 2169); `-- TelegraphDamage 133 125 2169` (shape 7, 3, 20, 29, zPositionOffset 1.0, targetTypeFlags 1; flags 4640, 1568, 64; displayFlags 14, 15, 0); effects 62159 and 62204 targetFlags 4; tooltip 314851."
+grade = "fairly sure"
+gap = "As Spell4.58591.area. Whether the Psi Point is given once per cast or once per struck unit (62204 has targetFlags 4) is not in the client."
+
+["Spell4.32809.area"]
+statement = "Mind Burst strikes up to 5 foes, nearest first, within 30 m all round (area row 345); its telegraphs (139 drawn, 141 never drawn) are a long cone on the caster from 1 to 26 m, 30 degrees across, with param04 20 (a height, unread)."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 32809` (spell4AoeTargetConstraintsId 345); `-- Spell4Telegraph spell4Id=32809` (139, 141); `-- TelegraphDamage 139 141` (shape 8, 1, 26, 30, param04 20, targetTypeFlags 1, flags 9760 and 64); damage effects 61993 to 61997 targetFlags 4."
+grade = "fairly sure"
+gap = "As Spell4.58591.area; what shape 8's param04 bounds is read only as an optional half extent in SetTelegraphShape."
+
+["Spell4.32812.area"]
+statement = "Crush picks 1 foe, the nearest, within 25 m all round (area row 404) and drawn as a long cone on the caster from 1 to 26 m, 45 degrees across (5124 drawn, 5123 never drawn). Its Proxy (targetFlags 4) starts 42297 on that foe 100 ms after the go; 42297 has no telegraph and strikes up to 4 units, nearest first, within 4 m all round (area row 704) with Knockdown and Magic damage (targetFlags 6: its target and its area)."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4AoeTargetConstraints 404 704` (404: 360, 1, 0, 25, 1; 704: 360, 4, 0, 4, 1); `-- Spell4Telegraph spell4Id=32812` (5124, 5123), `spell4Id=42297` (none); `-- TelegraphDamage 5124 5123` (shape 8, 1, 26, 45, param04 20, targetTypeFlags 1, flags 9760 and 64); effects 62007 (Proxy 42297, targetFlags 4, delay 100), 95949 and 95950 (targetFlags 6); `-- Spell4Base 26488` (spell4TargetMechanicId 8: a kind that needs a target, Spell4TargetMechanics.targetType)."
+grade = "fairly sure"
+gap = "That 42297's 4 m is measured around the foe it is cast on (not the caster) is inferred from its target-needing mechanic and targetFlags 6, not read; a retail recording settles it."
+
+["Spell4.29874.area"]
+statement = "Gamma Rays fires three beams; each strikes up to 2 foes, nearest first, within 25 m and 180 degrees of the caster's facing (area row 701 on 29874, 34775 and 35886). The beams are rectangles on the caster 0.9 m wide and 20 m high: the centre one (310) 19 m long, the side ones 1.2 m to either side (311 and 312 drawn 19 m long; 2451 and 2452, the side spells' own, 20 m long). The centre damage (69127) applies to 29874's struck units; 34775 and 35886 are started on the caster (targetFlags 1) and each damages its own struck units."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4AoeTargetConstraints 701` (180, 2, 0, 25, 1); `-- Spell4 29874 34775 35886` (701 each); `-- Spell4Telegraph spell4Id=29874` (310, 311, 312), `spell4Id=34775` (2451), `spell4Id=35886` (2452); `-- TelegraphDamage 310 311 312 2451 2452` (shape 7, 0.9, 20, 19 or 20, xPositionOffset 0, 1.2, -1.2, 1.2, -1.2, targetTypeFlags 1); effects 69127, 69244, 73229 targetFlags 4, 69881 and 73230 targetFlags 1. Tooltip 195417: 'Each beam can hit $(spell=29874.aoeTc) foes'."
+grade = "fairly sure"
+gap = "As Spell4.58591.area. Which side +1.2 is (left or right) is not read."
+
+["Spell4.42352.area"]
+statement = "Paralytic Surge strikes up to 5 foes, nearest first, within 15 m and 180 degrees of the caster's facing (area row 173). Two telegraphs are drawn on the caster: a box 8 m wide, 15 m high and 8 m long centred 9.3 m ahead and turned 45 degrees (2888), and a long cone from 1 to 10.75 m, 62.5 degrees across, param04 9.75 (2889, drawn without the hit radius)."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4AoeTargetConstraints 173` (180, 5, 0, 15, 1); `-- Spell4Telegraph spell4Id=42352` (2888, 2889); `-- TelegraphDamage 2888 2889` (2888: shape 2, 8, 15, 8, zPositionOffset 9.3, rotationDegrees 45; 2889: shape 8, 1, 10.75, 62.5, param04 9.75, flags 66048; both targetTypeFlags 1, displayFlags 11); effects 96125 and 96126 targetFlags 4."
+grade = "fairly sure"
+gap = "Neither telegraph is a never-drawn twin, so which shape (or both) the retail server struck by is not suggested by the rows."
+
+["Spell4.38791.area"]
+statement = "Stagger has no area of its own; its drawn telegraph (2188) is a cone on the caster from 1 to 8 m, 90 degrees across. It starts 38780 on the caster, which strikes up to 5 foes, nearest first, within 8 m all round (area row 299) with a never-drawn cone of the same shape (2189), and in each of its four phases starts 38781 on each struck unit (targetFlags 4); 38781 has no area and damages its own target (targetFlags 2)."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 38791 38780 38781` (aoe 0, 299, 0); `-- Spell4AoeTargetConstraints 299` (360, 5, 0, 8, 1); `-- Spell4Telegraph spell4Id=38791` (2188), `spell4Id=38780` (2189), `spell4Id=38781` (none); `-- TelegraphDamage 2188 2189` (shape 4, 1, 8, 90, targetTypeFlags 1, flags 1568 and 64); effects 83853 (Proxy 38780, targetFlags 1), 83823 to 83826 (Proxy 38781, targetFlags 4, phaseFlags 1, 2, 4, 8), 83827 (Stun, targetFlags 4), 83829 (damage, targetFlags 2)."
+grade = "fairly sure"
+gap = "As Spell4.58591.area; whether the 4 phases strike the units chosen at the first phase or choose again each phase is not in the client."
+
+["Spell4.34355.area"]
+statement = "Gate has no area of its own and deals no damage; its drawn telegraph (142) is a rectangle on the caster 4 m wide, 30 m high and 19 m long, 1 m ahead. Its Stun spell 30436 strikes up to 5 foes, nearest first, within 25 m all round (area row 411) with a never-drawn rectangle of the same shape (400)."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 34355 30436` (aoe 0 and 411); `-- Spell4Telegraph spell4Id=34355` (142), `spell4Id=30436` (400); `-- TelegraphDamage 142 400` (shape 7, 4, 30, 19, zPositionOffset 1.0, targetTypeFlags 1, flags 34336 and 64); effect 100836 (Stun, targetFlags 4)."
+grade = "fairly sure"
+gap = "Whether 30436's rectangle is placed at the caster's start or at its place after the blink is not read."
+
+["cast.state"]
+statement = "A cast's state takes five values: 0 when made, 2 when it starts (0x7ff), 3 at each go (0x7f4), 5 when it finishes (0x7fe) or fails with a cast result, and 6 when a miss message (0x7fb) names it. Only one piece of client code tests the state: the telegraph test (TelegraphShownForCast), which draws a row's telegraph only in states 2 and 3. Nothing tests for 5 or 6. The state does not decide whether a cast is found, whether a later go or miss for the same cast id is applied, whether its cooldowns start, whether its caster counts as casting, or whether floaters, Deflect or damage numbers are shown. So state 6 does one thing: no new telegraph row is drawn for the cast while it lasts. Telegraphs already drawn stay, and the cast does not end."
+proof = "Stores at the state word, over the whole executable (llvm-objdump -d of WildStar64.exe, grep 'mov dword ptr [r.. + 0x150], 0x[2356]'): 0x14053ddb4 mov dword ptr [rbx + 0x150], 0x2 (StartCast 0x14053dd00); 0x14053e6ae mov dword ptr [r13 + 0x150], 0x3 (ApplySpellGo 0x14053e5a0); 0x14053e2d0 mov dword ptr [rsi + 0x150], 0x5 (0x14053e1b0, called from the 0x7fe case at 0x1403ee468); 0x14053dfcf mov dword ptr [rbx + 0x150], 0x5 (0x14053df40, which also stores the cast result at cast 0x34c); 0x14053f0ab mov dword ptr [rcx + 0x150], 0x6 (HandleSpellMiss 0x14053f090). 0x14053da80 stores its third argument there, 3 or 2 from 0x140458fe0 (saved C line 84, '3 - (iVar2 != 0)'). The cast's constructor 0x14053c500 zeroes the word (saved C line 33, param_1[0x2a] = 0). Reads: no 'cmp dword ptr [r.. + 0x150], imm' is in the listing apart from compares with 0 or a register in non-cast code (0x1402f70d0, 0x1404c0bfb, 0x140770e96, 0x140773538-0x140773906); of the 26 'mov/movzx/movsxd reg, dword ptr [r.. + 0x150]' loads outside the stack, only 0x140542da7 mov eax, dword ptr [rcx + 0x150] is followed within six instructions by a compare with a small number: 0x140542dad cmp eax, 0x2 (TelegraphShownForCast 0x140542d90; saved C 0x140542d90.c, hash 8eb22adb6de47956: state 2 tests row 0x58 & 4, state 3 tests & 8, any other state returns 0). The saved C (hash 737aa5af0120fae9) has no other test of a 32-bit value at that offset in the cast code 0x14053xxxx-0x14056xxxx. ApplySpellGo, ApplyGoTargetInfo 0x14053d680, ShowSpellMiss 0x140542a30 (cast fields read: 0x54, 0xc0, 0x130, 0x138, 0x154) and HandleSpellMiss read no state. The world-message cases for 0x7f4 (0x1403ee1c9-0x1403ee1f2) and 0x7fb (0x1403ee1fe-0x1403ee227) are FindCast, test rax, je 0x1403ec71b, the cast's id getter (call qword ptr [rax + 0x8]), then the handler, with no state test."
+grade = "fairly sure"
+gap = "Not run. A read of the state through a copy, a computed offset or a getter would be missed by the instruction search. The other 25 loads of a 32-bit value at that offset (0x1400c3b1f, 0x1403398b6, 0x140339a3f, 0x14033d8e2, 0x1403a570a, 0x1403b2c5c, 0x1404137bb, 0x140416490, 0x14045d468, 0x14048530b, 0x14051f15e, 0x1405c85ba, 0x1405d99dc-0x1405da4c7, 0x140600a65, 0x14061b8e8, 0x14076a815, 0x14077cac0) were not each traced to their struct. 0x1403b2c40 reads spell-record flags and 0x14077ca60 is a TradeskillTier getter, so neither is a cast. The message that reaches 0x140458fe0 is not read. A live run that sends 0x7fb and then a later 0x7f4 for the same cast would confirm that the go still applies."
+
+["cast.miss_order"]
+statement = "The order of the miss message (0x7fb) and the go (0x7f4) of the same cast does not change what the client shows for the targets. Both messages only need the cast to be live: started by 0x7ff with a cast id other than 0, and not yet finished by 0x7fe. Miss before go: the miss finds the cast, shows Deflect for each reason-0 entry and sets the state to missed. The go then sets the state back to gone, draws the go's telegraphs and applies every target info, with its damage numbers. The cast ends up exactly like a cast with no miss. Go before miss: the go draws its telegraphs and applies its target infos, then the miss shows Deflect and leaves the cast in the missed state. From then on, telegraph rows that were not yet drawn are never drawn: rows whose time window opens later, or rows of a later phase. Telegraphs already drawn stay. A go that comes after a miss is always applied, and the miss never blocks one. Server choice: send the go first, then the miss, in the same send. Deflect and the hit targets' numbers come out the same either way, and the only difference is the telegraph rows the go has not drawn yet. Which order the retail server used is not in the client."
+proof = "HandleSpellMiss 0x14053f090 (saved C, hash 737aa5af0120fae9) writes only the state (0x14053f0ab mov dword ptr [rcx + 0x150], 0x6); per entry ShowSpellMiss 0x140542a30 when the reason is 0, which reads no target node and no state (cast.state). ApplySpellGo 0x14053e5a0 (saved C, hash 737aa5af0120fae9) has no test before 0x14053e6ae mov dword ptr [r13 + 0x150], 0x3, applies the target infos through ApplyGoTargetInfo 0x14053d680, and calls the telegraph maker 0x14053eb29 call 0x140546e60 after the state is 3. The telegraph maker 0x140546e60 (saved C, hash 8eb22adb6de47956) asks TelegraphShownForCast for each row (0x140546ed4 call 0x140542d90; 0x140546edb je 0x1405484f6 skips the row when it is not shown, and removes nothing). It makes a row only when its id is not yet in the cast's set at cast 0x248 and the time since the cast's start (clock 0x140c636a8 minus cast 0x194, set by InitCast 0x14053d1f0 line 30) is inside the row's window (row words 9 and 10, lines 101-103). It then posts itself again on the cast's event at cast 0x300 (lines 954-957, FUN_140195960 on an 'EVNT' object 0x544e5645), so it runs again later. It is first posted by 0x14053d850, which CreateCast calls (0x140561819 call 0x14053d850), and by InitCast (line 126-129). FindCast holds only casts with a server id (cast.pending_table); CreateCast 0x140561780 files a cast with a non-zero id in the table at cast system 0x7a0 (saved C line 120)."
+grade = "fairly sure"
+gap = "Not run. When the cast's event fires (every frame or on a timer) is not read, so whether a miss and a go that arrive in separate frames leave a pass in between is not settled. If such a pass runs while the state is missed it draws nothing, and the go then draws the state-3 rows. Rows shown only in state 2 that were not yet drawn would then never be drawn. That the retail server sent the go before the miss is a guess. A live run that sends both orders for a creature strike with one dodged and one hit target would settle what is seen."
+
+["cast.miss_after_finish"]
+statement = "A miss message (0x7fb) that arrives after the cast's finish (0x7fe) is dropped, and nothing is shown, Deflect included. The finish removes the cast from the table and deletes it, so the miss's cast id is unknown by then. The same holds for a go (0x7f4) or any other cast message after the finish. The server must send the miss before the finish."
+proof = "0x7fe case: 0x1403ee441 call 0x140561c30 (FindCast); 0x1403ee468 call 0x14053e1b0 (state 5 at 0x14053e2d0); 0x1403ee480 call 0x140561ad0. 0x140561ad0 (saved C, hash 8eb22adb6de47956): when cast 0x38 is 0, which it is for every cast filed under a non-zero id (CreateCast 0x140561780 sets cast 0x38 only on the id-0 stray list, saved C lines 100-108; the constructor 0x14053c500 zeroes it, line 15), it hashes the cast id at cast 0x5c, unlinks the matching entry of the table at cast system 0x7b0 and decrements the count at 0x7a0 (lines 32-48). It then calls the cast's destructor with 1 (line 51, (**(code **)*param_2)(param_2,1)). 0x7fb case: 0x1403ee207 call 0x140561c30; 0x1403ee212 je 0x1403ec71b (the do-nothing case) when it returns null."
+grade = "fairly sure"
+gap = "Read from the decompile for 0x140561ad0, from the listing for the cases; not run. That the hash map 0x7b0/0x7a8 here is the one FindCast 0x140561c30 searches is matched by its use of the same cast-system fields, not traced instruction by instruction."
+
+["0x140561ad0"]
+statement = "Destroys a cast: clears it as its caster's current cast, takes it out of the cast table by its cast id, and deletes it. After this, any server message naming that cast id is dropped."
+proof = "Saved C 0x140561ad0.c (hash 8eb22adb6de47956): 0x14053d140 (FindUnit of cast 0x154; clears the unit's current cast through 0x1404698a0 when it is this cast); the SprintStateUpdated event for the player's own cast; the table unlink by the id at cast 0x5c when cast 0x38 is 0; the cast's destructor with 1. Callers: the 0x7fe case at 0x1403ee480, and 0x14045561e, 0x140455797, 0x14055d46a, 0x14055d4dd, 0x14055e0c5, 0x14055e106, 0x14055e14d, 0x1405a517b, 0x1405a5b59 (listing)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run. 0x14053d140's callees 0x14039df50, 0x1404695e0 and 0x1404698a0 are taken by their use, not read. The other callers are not read."
+name = "DestroyCast"
+
+["0x14053d850"]
+statement = "Posts a cast's telegraph maker (CreateCastTelegraphs) on the cast's own event, so its telegraphs are made when that event fires. CreateCast does this for each cast it makes."
+proof = "Saved C 0x14053d850.c (hash 8eb22adb6de47956): FUN_140195960(cast + 0x300, 0, {0, cast, FUN_140546e60, 0}, 4). Caller: CreateCast 0x140561819 call 0x14053d850. FUN_140195960 checks the object's tag 0x544e5645 ('EVNT')."
+grade = "fairly sure"
+gap = "What kind 4 means to FUN_140195960 (a one-shot or a timed post), and when the cast's event fires, are not read."
+name = "PostCastTelegraphs"
 ["opcode.0x7f4.phase"]
 statement = "What the client does with a go's phase byte. It stores it as the cast's current phase and uses it in three places only: (1) a client missile (Spell4ClientMissile) of the spell plays only when its phaseFlags is -1 or has bit <phase> set, for any cast method; (2) a TelegraphDamage visual of the cast is gated the same way by its phaseFlags; (3) when the phase before had flag 0x40, effects not named in it are removed. (2) and (3) apply only to a Multiphase cast, or a Channeled or ChanneledField cast whose spellChannelFlags has bit 1, and there the phase is compared with the cast's expected go count: for such a channel the phase is the pulse index, 0 to count - 1. Electrocute 41276 and Discharge 58832 have spellChannelFlags 0 and no client missile, so for them the client shows the same thing whatever the byte holds. The pulse index is the reading that fits the client's own model of a channel's phases."
 proof = "ApplySpellGo 0x14053e5a0 (737aa5af0120fae9) line 71: cast 0x1b0 = go byte 0x50. Lines 46-52: previous phase < cast 0x1a0 (expected gos) and phase list present and (castMethod 8, or castMethod 1 or 3 with channel record word 0xc & 1) and the phase's flag 0x40 -> remove. 0x1405450f0 (8eb22adb6de47956) line 69 and 0x1405458e0 (8eb22adb6de47956) line 30: row word 0xd8 (Spell4ClientMissile.phaseFlags, offset 216 by `table_rows -- Spell4ClientMissile --columns`) == -1 or bit (phase & 0x1f) set. 0x1405458e0 lines 128-133: 0x140241c40 row (TelegraphDamage) word 0x4c (TelegraphDamage.phaseFlags, offset 76) tested against the phase only when castMethod 8, or castMethod 1/3 with channel record 0xc & 1. Channel record word 0xc is spellChannelFlags (BuildSpellTables 0x14055e180, Spell4 offset 212). The only other readers of cast 0x1b0 found by grepping the saved C cast functions for '0x1b0)' are these. Rows: `table_rows -- Spell4 41276 58832`: spellChannelFlags 0, every spell4ClientMissileId 0."

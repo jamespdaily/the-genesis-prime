@@ -225,13 +225,13 @@ pub fn the_sheets_power_factors_are_game_formula_1266s_two_values_test() -> Nil 
         True ->
           planted_table.file(
             game_formula.schema,
-            list.append(
+            list.flatten([
               character_tables.game_formula_rows(
                 ids: [character_tables.highest_level_formula],
                 highest: 50,
               ),
               list.map(formulas, novice_tables.game_formula_row),
-            ),
+            ]),
           )
         False -> file
       }

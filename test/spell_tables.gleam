@@ -45,12 +45,16 @@ import genesis_prime/game/spell_plan
 import genesis_prime/table/class
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
+import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
+import genesis_prime/table/telegraph_damage
 import gleam/int
 import gleam/list
 import gleam/order
@@ -65,6 +69,10 @@ pub type Rows {
     spell4_base: List(List(Cell)),
     spell4_effects: List(List(Cell)),
     spell4_thresholds: List(List(Cell)),
+    spell4_aoe_target_constraints: List(List(Cell)),
+    spell4_valid_targets: List(List(Cell)),
+    spell4_telegraph: List(List(Cell)),
+    telegraph_damage: List(List(Cell)),
     spell_phases: List(List(Cell)),
     spell_cool_downs: List(List(Cell)),
     classes: List(List(Cell)),
@@ -94,7 +102,64 @@ fn spell4_row(
     #("globalCooldownEnum", Integer(kind)),
     #("spellCoolDownIdGlobal", Integer(global)),
     #("propertyFlags", Integer(property_flags(id))),
+    #("spell4AoeTargetConstraintsId", Integer(area_id(id))),
   ])
+}
+
+/// Spell4.spell4AoeTargetConstraintsId of the planted rows, as `table_rows -- Spell4
+/// <id>` prints it (`Spell4.58591.area`): 0 for a spell with no area row.
+fn area_id(id: Int) -> Int {
+  case id {
+    29_874 | 34_775 | 35_886 -> 701
+    30_436 | 41_276 | 41_438 -> 411
+    32_809 | 32_893 | 37_302 -> 345
+    32_812 | 42_276 -> 404
+    34_720 | 34_722 | 36_691 -> 407
+    38_767 | 39_467 -> 694
+    38_779 -> 699
+    38_780 -> 299
+    42_297 -> 704
+    43_498 | 43_499 -> 405
+    58_591 | 70_033 | 70_045 | 70_054 -> 640
+    58_832 -> 173
+    70_135 | 71_392 | 71_393 | 71_394 -> 342
+    _ -> 0
+  }
+}
+
+/// A Spell4AoeTargetConstraints row: the arc, the count of targets and the range, with
+/// the order Closest (1) and no minimum range, as the client's rows of the planted
+/// spells hold them.
+pub fn aoe_row(
+  id id: Int,
+  angle angle: Float,
+  count count: Int,
+  max_range max_range: Float,
+) -> List(Cell) {
+  aoe_row_selecting(id:, angle:, count:, max_range:, selection: 1)
+}
+
+/// The same with the order the area picks its targets in (`targetSelection`).
+pub fn aoe_row_selecting(
+  id id: Int,
+  angle angle: Float,
+  count count: Int,
+  max_range max_range: Float,
+  selection selection: Int,
+) -> List(Cell) {
+  planted_table.row(spell4_aoe_target_constraints.schema, [
+    #("ID", Integer(id)),
+    #("angle", Float(angle)),
+    #("targetCount", Integer(count)),
+    #("minRange", Float(0.0)),
+    #("maxRange", Float(max_range)),
+    #("targetSelection", Integer(selection)),
+  ])
+}
+
+/// The rows in the order of their ids, which the tables' files hold them in.
+pub fn sorted_by_id(rows: List(List(Cell))) -> List(List(Cell)) {
+  list.sort(rows, by_id)
 }
 
 /// Spell4.propertyFlags of the planted rows, as `table_rows -- Spell4 <id>` prints
@@ -140,6 +205,50 @@ fn base_row(
     #("weaponSlot", Integer(weapon)),
     #("castBarType", Integer(bar)),
     #("classIdPlayer", Integer(class)),
+    #("spell4ValidTargetId", Integer(1)),
+  ])
+}
+
+/// A Spell4ValidTargets row 1, which every planted base names: the targets a spell
+/// may strike (`Spell4ValidTargets.targetBitmask`; the client's row 1 holds 0, the
+/// alive).
+pub fn valid_targets_row(bitmask bitmask: Int) -> List(Cell) {
+  planted_table.row(spell4_valid_targets.schema, [
+    #("ID", Integer(1)),
+    #("targetBitmask", Integer(bitmask)),
+  ])
+}
+
+/// A Spell4Effects row of a damage effect (type 8): its damage type, the unit it aims
+/// at, its delay, its multiplier as 32 float bits and the formula's parameters as
+/// type and value pairs, in every phase.
+pub fn damage_effect_row(
+  id id: Int,
+  spell spell: Int,
+  damage_type damage_type: Int,
+  target_flags target_flags: Int,
+  delay delay: Int,
+  multiplier_bits multiplier_bits: Int,
+  parameters parameters: List(#(Int, Float)),
+) -> List(Cell) {
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(spell)),
+    #("targetFlags", Integer(target_flags)),
+    #("effectType", Integer(8)),
+    #("damageType", Integer(damage_type)),
+    #("delayTime", Integer(delay)),
+    #("phaseFlags", Integer(-1)),
+    #("dataBits00", Integer(multiplier_bits)),
+    ..list.flatten(
+      list.index_map(parameters, fn(parameter, index) {
+        let number = int.to_string(index)
+        [
+          #("parameterType0" <> number, Integer(parameter.0)),
+          #("parameterValue0" <> number, Float(parameter.1)),
+        ]
+      }),
+    )
   ])
 }
 
@@ -864,15 +973,14 @@ pub fn rows() -> Rows {
         data: 42_297,
         order: 0,
       ),
-      effect_row(
+      damage_effect_row(
         id: 62_159,
         spell: 32_893,
-        type_: 8,
+        damage_type: 3,
         target_flags: 4,
         delay: 0,
-        phases: -1,
-        data: 1_065_353_216,
-        order: 0,
+        multiplier_bits: 1_065_353_216,
+        parameters: [#(12, 0.335999995470047), #(10, 18.0)],
       ),
       effect_row(
         id: 62_204,
@@ -1245,6 +1353,48 @@ pub fn rows() -> Rows {
       ),
     ]
       |> list.sort(by_id),
+    spell4_aoe_target_constraints: [
+      aoe_row(id: 173, angle: 180.0, count: 5, max_range: 15.0),
+      aoe_row(id: 299, angle: 360.0, count: 5, max_range: 8.0),
+      aoe_row(id: 342, angle: 180.0, count: 3, max_range: 8.0),
+      aoe_row(id: 345, angle: 360.0, count: 5, max_range: 30.0),
+      aoe_row(id: 404, angle: 360.0, count: 1, max_range: 25.0),
+      aoe_row(id: 405, angle: 360.0, count: 3, max_range: 25.0),
+      aoe_row(id: 407, angle: 360.0, count: 5, max_range: 35.0),
+      aoe_row(id: 411, angle: 360.0, count: 5, max_range: 25.0),
+      aoe_row(id: 640, angle: 180.0, count: 5, max_range: 8.0),
+      aoe_row(id: 694, angle: 360.0, count: 5, max_range: 6.5),
+      aoe_row(id: 699, angle: 360.0, count: 2, max_range: 7.0),
+      aoe_row(id: 701, angle: 180.0, count: 2, max_range: 25.0),
+      aoe_row(id: 704, angle: 360.0, count: 4, max_range: 4.0),
+    ],
+    spell4_valid_targets: [valid_targets_row(bitmask: 0)],
+    spell4_telegraph: list.map(
+      [#(118, 133), #(401, 125), #(4069, 2169)],
+      fn(link) {
+        planted_table.row(spell4_telegraph.schema, [
+          #("ID", Integer(link.0)),
+          #("spell4Id", Integer(32_893)),
+          #("telegraphDamageId", Integer(link.1)),
+        ])
+      },
+    ),
+    telegraph_damage: list.map(
+      [#(125, 1568, 15), #(133, 4640, 14), #(2169, 64, 0)],
+      fn(row) {
+        planted_table.row(telegraph_damage.schema, [
+          #("ID", Integer(row.0)),
+          #("damageShapeEnum", Integer(7)),
+          #("param00", Float(3.0)),
+          #("param01", Float(20.0)),
+          #("param02", Float(29.0)),
+          #("zPositionOffset", Float(1.0)),
+          #("telegraphDamageFlags", Integer(row.1)),
+          #("targetTypeFlags", Integer(1)),
+          #("displayFlags", Integer(row.2)),
+        ])
+      },
+    ),
     spell_phases: [
       phase_row(id: 3717, owner: 38_780, order: 0, delay: 166, flags: 0),
       phase_row(id: 3718, owner: 38_780, order: 1, delay: 200, flags: 0),
@@ -1341,6 +1491,10 @@ fn entries() -> List(table_store.Entry) {
     spell4_base.entry(),
     spell4_effects.entry(),
     spell4_thresholds.entry(),
+    spell4_aoe_target_constraints.entry(),
+    spell4_valid_targets.entry(),
+    spell4_telegraph.entry(),
+    telegraph_damage.entry(),
     spell_phase.entry(),
     spell_cool_down.entry(),
     class.entry(),
@@ -1354,6 +1508,13 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell4_base.schema, rows.spell4_base),
     planted_table.file(spell4_effects.schema, rows.spell4_effects),
     planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
+    planted_table.file(
+      spell4_aoe_target_constraints.schema,
+      rows.spell4_aoe_target_constraints,
+    ),
+    planted_table.file(spell4_valid_targets.schema, rows.spell4_valid_targets),
+    planted_table.file(spell4_telegraph.schema, rows.spell4_telegraph),
+    planted_table.file(telegraph_damage.schema, rows.telegraph_damage),
     planted_table.file(spell_phase.schema, rows.spell_phases),
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),
@@ -1366,6 +1527,15 @@ pub fn with_loaded(
   rows rows: Rows,
   body body: fn(table_store.Tables) -> a,
 ) -> a {
+  with_loaded_deriving(rows:, derivations: [], body:)
+}
+
+/// The same with these derivations run on the load, which fails when one does.
+pub fn with_loaded_deriving(
+  rows rows: Rows,
+  derivations derivations: List(table_store.Derivation),
+  body body: fn(table_store.Tables) -> a,
+) -> a {
   let files = files_of(rows:)
   use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
@@ -1374,7 +1544,7 @@ pub fn with_loaded(
       from: folder,
       entries: entries(),
       requirements: [],
-      derivations: [],
+      derivations:,
     )
     as "the planted spell tables load"
   let result = body(tables)

@@ -16,6 +16,7 @@ import frame_reader
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/area.{Point}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
@@ -39,6 +40,7 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_threshold_closed
 import genesis_prime/message/spell_threshold_ended
@@ -47,7 +49,9 @@ import genesis_prime/message/spell_threshold_opened
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_death_state
 import genesis_prime/message/unit_destroyed
+import genesis_prime/message/unit_health
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property
@@ -363,6 +367,131 @@ pub fn casts_in(frames frames: List(Frame)) -> List(CastEvent) {
   })
 }
 
+/// The units each go (0x7f4) among the frames names, in order, by cast id: the target
+/// infos' unit ids in the order sent (opcode.0x7f4.target_info).
+pub fn go_targets_in(frames frames: List(Frame)) -> List(#(Int, List(Int))) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x07F4 -> {
+        let assert Ok(go) = spell_go.decode(frame.body) as "0x7f4 decodes"
+        Ok(#(go.cast_id, list.map(go.targets, fn(target) { target.unit_id })))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The units each miss (0x7fb) among the frames names, in order, by cast id
+/// (opcode.0x7fb).
+pub fn missed_in(frames frames: List(Frame)) -> List(#(Int, List(Int))) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x07FB -> {
+        let assert Ok(missed) = spell_missed.decode(frame.body)
+          as "0x7fb decodes"
+        Ok(#(missed.cast_id, list.map(missed.misses, fn(miss) { miss.unit_id })))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The health each 0x937 among the frames gives, in order: the unit, its health and
+/// whether it is dead (opcode.0x937).
+pub fn health_in(frames frames: List(Frame)) -> List(#(Int, Int, Bool)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0937 -> {
+        let assert Ok(health) = unit_health.decode(frame.body)
+          as "0x937 decodes"
+        Ok(#(health.unit_id, health.health, health.dead == 1))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The units each 0x88c among the frames marks dead or alive, in order
+/// (opcode.0x88c).
+pub fn deaths_in(frames frames: List(Frame)) -> List(#(Int, Bool)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x088C -> {
+        let assert Ok(state) = unit_death_state.decode(frame.body)
+          as "0x88c decodes"
+        Ok(#(state.unit_id, state.dead == 1))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The units each 0x355 among the frames removes, in order (opcode.0x355).
+pub fn removals_in(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0355 -> {
+        let assert Ok(gone) = unit_destroyed.decode(frame.body)
+          as "0x355 decodes"
+        Ok(gone.unit_id)
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The yaw of a unit at `from` that faces `target`: atan2(-dx, -dz), since a unit
+/// faces (-sin yaw, -cos yaw) (`movement_command.kind_14.facing`, `0x1401b3170`).
+pub fn yaw_toward(
+  from from: #(Float, Float),
+  target target: #(Float, Float),
+) -> Float {
+  area.bearing(
+    from: Point(x: from.0, z: from.1),
+    target: Point(x: target.0, z: target.1),
+    yaw: 0.0,
+  )
+}
+
+/// Reads game messages, waiting on the server and never for a fixed time, until the
+/// frames read so far satisfy `found`, and gives all of them in order with the bytes
+/// kept; a connection that ends or no progress within `within_ms` stops the test.
+pub fn read_until(
+  game game: Game,
+  have have: BitArray,
+  within_ms within_ms: Int,
+  found found: fn(List(Frame)) -> Bool,
+) -> #(List(Frame), BitArray) {
+  read_until_from(game:, have:, frames: [], within_ms:, found:)
+}
+
+fn read_until_from(
+  game game: Game,
+  have have: BitArray,
+  frames frames: List(Frame),
+  within_ms within_ms: Int,
+  found found: fn(List(Frame)) -> Bool,
+) -> #(List(Frame), BitArray) {
+  use <- bool.guard(when: found(frames), return: #(frames, have))
+  case poll(game:, have:, wait_ms: within_ms) {
+    Ok(#([], _)) ->
+      panic as "the server wrote nothing while a client waited for a message"
+    Ok(#(more, have)) ->
+      read_until_from(
+        game:,
+        have:,
+        frames: list.append(frames, more),
+        within_ms:,
+        found:,
+      )
+    Error(error) ->
+      panic as {
+        "the game server's connection failed while a client waited: "
+        <> mug.describe_error(error)
+      }
+  }
+}
+
 /// The movement command of kind 2 that puts the player at x, y, z with its
 /// bit clear, as the client's movement update sends it (opcode.0x637).
 pub fn position_command(x x: Float, y y: Float, z z: Float) -> MovementCommand {
@@ -647,6 +776,15 @@ fn last_position(
 fn removed(others others: Others, body body: BitArray) -> Others {
   let assert Ok(gone) = unit_destroyed.decode(body) as "0x0355 decodes"
   dict.delete(others, gone.unit_id)
+}
+
+/// Where a creature's 0x262 places it, as `placed_at` reads a player's.
+pub fn creature_placed_at(
+  unit unit: UnitCreateCreature,
+) -> #(Float, Float, Float) {
+  let assert [start_movement.Position(placed), ..] = unit.tail.movement_commands
+    as "0x0262 places the unit with a kind 2 command first"
+  standing(placed)
 }
 
 fn standing(

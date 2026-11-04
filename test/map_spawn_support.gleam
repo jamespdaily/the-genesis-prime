@@ -11,10 +11,12 @@ import genesis_prime/step.{
   Reply, Send, ServiceTimerFired, StartCreature, StartServiceTimer, Started,
   Told,
 }
+import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{
   type State, Gone, Join, Leave, Moved, Watched,
 }
 import genesis_prime/world_map/map_id.{MapId}
+import gleam/dict
 import gleam/int
 import gleam/list
 import map_support
@@ -50,12 +52,29 @@ pub fn feed(
 
 /// A map with a spawn at each of these x positions, numbered from 1, started.
 pub fn started(at xs: List(Float)) -> #(State, ServiceStep(map.Outgoing)) {
+  started_with(at: xs, kinds: default_kinds())
+}
+
+/// The kinds of the tests' maps: the server's 60 s default for every creature.
+pub fn default_kinds() -> Kinds {
+  Kinds(
+    default: Kind(respawn_ms: map_support.respawn_ms),
+    by_creature: dict.new(),
+  )
+}
+
+/// The same with the kinds the test chooses.
+pub fn started_with(
+  at xs: List(Float),
+  kinds kinds: Kinds,
+) -> #(State, ServiceStep(map.Outgoing)) {
   let state =
-    map_support.standing(
+    map_support.standing_with(
       incarnation: 1,
       spawns: list.index_map(xs, fn(x, index) {
         spawn_support.battle_beast(number: index + 1, x:)
       }),
+      kinds:,
     )
   feed(state:, at_ms: started_at_ms, event: OwnEvent(Started))
 }

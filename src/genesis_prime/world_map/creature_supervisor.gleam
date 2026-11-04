@@ -38,7 +38,6 @@
 ////   supervisor that is not running (restarting, or stopping) is a failed
 ////   start.
 
-import genesis_prime/client_connection.{type PeerNews}
 import genesis_prime/service.{type Call}
 import genesis_prime/step.{type CreatureStart}
 import genesis_prime/world_map/creature
@@ -58,7 +57,7 @@ pub type CreatureProcessStart {
 pub type CreatureSupervisor =
   factory_supervisor.Message(
     CreatureProcessStart,
-    Subject(Call(creature.Message, PeerNews)),
+    Subject(Call(creature.Message, creature.Outgoing)),
   )
 
 /// The creature supervisor, named, whose children are creatures started by
@@ -67,11 +66,11 @@ pub fn supervisor(
   name name: Name(CreatureSupervisor),
   shutdown_ms shutdown_ms: Int,
   start start: fn(CreatureProcessStart) ->
-    actor.StartResult(Subject(Call(creature.Message, PeerNews))),
+    actor.StartResult(Subject(Call(creature.Message, creature.Outgoing))),
 ) -> ChildSpecification(
   factory_supervisor.Supervisor(
     CreatureProcessStart,
-    Subject(Call(creature.Message, PeerNews)),
+    Subject(Call(creature.Message, creature.Outgoing)),
   ),
 ) {
   service.temporary_factory(name:, shutdown_ms:, start:)

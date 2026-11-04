@@ -26,10 +26,12 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike_tell.{type Answered, type Tell as StrikeTell}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/spell_go.{type SpellGo}
+import genesis_prime/message/spell_missed.{type SpellMissed}
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
@@ -42,6 +44,7 @@ import genesis_prime/step.{
   Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
 }
 import genesis_prime/store
+import genesis_prime/world_map/creature_life.{type Attackable}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/bit_array
@@ -81,6 +84,11 @@ pub type Request {
   /// chat line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
   /// and never told to a map.
   TellChat(tell: ChatTell)
+  /// What a `Tell` effect sends a creature (genesis_prime/step `Creature`): the
+  /// strike of a cast's go, which the creature's owner process decides
+  /// (genesis_prime/world_map/creature_life). Told through the creature registry
+  /// with no watch, and never asked.
+  TellStrike(tell: StrikeTell)
 }
 
 /// News of one unit from its owner, a player's connection or a creature's
@@ -99,10 +107,18 @@ pub type News {
   /// from the map's clock: 0x262 (opcode.0x262).
   Appeared(unit: UnitCreatePlayer)
   /// A creature as the client creates it, at its spawn and stamped from the
-  /// map's clock: 0x262 of type 0 (opcode.0x262.creature). Sent by the
-  /// creature's own process (genesis_prime/world_map/creature), which owns the
-  /// unit.
-  CreatureAppeared(unit: UnitCreateCreature)
+  /// map's clock: 0x262 of type 0 (opcode.0x262.creature), at its current health
+  /// (0 for a corpse). Sent by the creature's own process
+  /// (genesis_prime/world_map/creature), which owns the unit, with what the viewer's
+  /// strikes need of it: its life, which its address needs, the hit radius of its
+  /// display and whom it may be attacked by.
+  CreatureAppeared(
+    unit: UnitCreateCreature,
+    life: Int,
+    place: Place,
+    hit_radius: Float,
+    attackable: Attackable,
+  )
   /// The unit moved: the map's server time at the move (the map's clock,
   /// `world_map/map.server_time`) and at most 31 of its relayed commands in the
   /// order sent, since 0x638's count is 5 bits (opcode.0x638).
@@ -116,9 +132,19 @@ pub type News {
   /// A cast of the unit goes off: 0x7f4 (opcode.0x7f4), written for a cast the
   /// viewer wrote the start of.
   CastWent(go: SpellGo)
+  /// Some targets of a cast of the unit were missed: 0x7fb (opcode.0x7fb), written for
+  /// a cast the viewer wrote the start of, after its 0x7f4.
+  CastMissed(missed: SpellMissed)
   /// A cast of the unit ends: 0x7fe (opcode.0x7fe), written for a cast the viewer
   /// wrote the start of, which the viewer then forgets.
   CastFinished(cast_id: Int)
+  /// The unit's health after a landed hit, from the creature that owns it: 0x937
+  /// (opcode.0x937), written when the viewer's client shows the unit, whatever
+  /// the viewer's own casts.
+  Health(health: Int, dead: Bool)
+  /// The unit died: 0x88c with the dead bit (opcode.0x88c), written when the
+  /// viewer's client shows the unit.
+  Died
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
@@ -169,6 +195,10 @@ pub type Message {
   /// or a whisper's reply, written while this player is in the world
   /// (genesis_prime/game/chat).
   SentByChat(tell: ChatTell)
+  /// What a creature this connection struck answers, without waiting: the
+  /// answer to a strike its caster told, which the strike rule takes into the round
+  /// it belongs to (genesis_prime/game/strike).
+  SentByTarget(answered: Answered)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

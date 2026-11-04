@@ -44,11 +44,16 @@ import gleam/string
 import owned_key
 import owned_test
 import planted_table
+import rating_support
 import spawn_support
 
 /// The selection of the rows against the planted tables.
 fn selected(rows rows: List(Row)) -> Selection {
-  spawn.select(rows:, tables: character_tables.content_tables())
+  spawn.select(
+    rows:,
+    tables: character_tables.content_tables(),
+    formulas: rating_support.formulas(),
+  )
 }
 
 /// The selection of the rows against the tables of these planted files.
@@ -66,7 +71,8 @@ fn selected_with(
   let assert Ok(more) =
     server_table.load_content_tables(over: server, from: folder)
     as "the planted files load as the content-only tables"
-  let selection = spawn.select(rows:, tables: more)
+  let selection =
+    spawn.select(rows:, tables: more, formulas: rating_support.formulas())
   table_store.unload(more)
   table_store.unload(server)
   selection

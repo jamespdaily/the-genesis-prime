@@ -21,6 +21,7 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
 import owned_test
+import rating_support
 import spawn_support
 import unitest
 
@@ -200,8 +201,10 @@ pub fn the_planted_creature_and_faction_rows_select_the_spawns_the_clients_rows_
       })
     })
     |> list.flatten
-  let planted = spawn.select(rows:, tables: character_tables.content_tables())
-  let real = spawn.select(rows:, tables: client_tables.every_table())
+  let formulas = rating_support.formulas()
+  let planted =
+    spawn.select(rows:, tables: character_tables.content_tables(), formulas:)
+  let real = spawn.select(rows:, tables: client_tables.every_table(), formulas:)
   assert planted.refusals == [] && real.refusals == []
     as "no row is refused by either"
   assert planted.coverage == real.coverage

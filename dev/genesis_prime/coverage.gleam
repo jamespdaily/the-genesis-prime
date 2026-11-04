@@ -20,6 +20,7 @@ import genesis_prime/coverage/engine
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
+import genesis_prime/game/rating
 import genesis_prime/store/worker
 import genesis_prime/table
 import genesis_prime/table/loader/store
@@ -83,15 +84,20 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
           "The spawn coverage needs the spawn table (run the migrations and the import on the play database): "
           <> worker.describe_query_error(error)
         Ok(rows) ->
-          string.join(
-            [
-              "Spawns that start, by world:",
-              ..list.map(spawn.select(rows:, tables:).coverage, fn(coverage) {
-                "- " <> spawn.describe_coverage(coverage:)
-              })
-            ],
-            "\n",
-          )
+          case rating.build(tables:) {
+            Error(error) -> rating.describe(error:)
+            Ok(formulas) ->
+              string.join(
+                [
+                  "Spawns that start, by world:",
+                  ..list.map(
+                    spawn.select(rows:, tables:, formulas:).coverage,
+                    fn(coverage) { "- " <> spawn.describe_coverage(coverage:) },
+                  )
+                ],
+                "\n",
+              )
+          }
       }
   }
 }

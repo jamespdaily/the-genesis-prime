@@ -93,7 +93,7 @@
 ////                                 players who see the spawn now: StartCreature(u, life w', viewers them)
 //// WatchEnded(w) of a live creature (a crash)
 ////                              ─▶ Gone(u) to every player in the map (the creature that ended sent nothing)
-////                                 StartServiceTimer(the spawn's number, creature_restart_ms); u is given up
+////                                 StartServiceTimer(the spawn's number, its kind's respawn time); u is given up
 //// the spawn's timer fires      ─▶ players see the spawn now: a new unit id, a creature as for a dormant spawn
 ////                                 none: dormant
 //// CreatureNotStarted(w)        ─▶ error line; the spawn stays empty for the run
@@ -212,12 +212,12 @@
 //// - **A creature that ends** while live (its watch's `WatchEnded`, whatever the
 ////   reason) is removed, and every player in the map is sent `Gone` of its unit,
 ////   as for a player's end: the creature that ended sent nothing. Its spawn waits
-////   `creature_restart_ms` on a timer of the spawn's number, and nothing about
+////   its creature's kind's respawn time on a timer of the spawn's number, and nothing about
 ////   the spawn is started or told until it fires. Then, when a player sees the
 ////   spawn from where it stands, a creature is started there as a new unit under
 ////   the next unit id, and each player in sight is told to it `Watched`; when none
 ////   does, the spawn is dormant. A creature that crashes in a loop is so started at
-////   most once in `creature_restart_ms`.
+////   most once in a respawn time.
 //// - **A creature that ends while retiring** is a clean stop, whatever the reason:
 ////   no client shows the unit.
 //// - **A map that ends** ends its creatures: each watches the run.
@@ -273,6 +273,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_kind.{type Kinds}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import genesis_prime/world_map/sight
@@ -321,7 +322,7 @@ pub type Settings {
     realm_id: Int,
     tables: table_store.Tables,
     spawns: WorldSpawns,
-    creature_restart_ms: Int,
+    kinds: Kinds,
     idle_stop_ms: Int,
     sweep_ms: Int,
   )
@@ -475,7 +476,7 @@ pub fn rule(
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
   spawns spawns: WorldSpawns,
-  creature_restart_ms creature_restart_ms: Int,
+  kinds kinds: Kinds,
   idle_stop_ms idle_stop_ms: Int,
   sweep_ms sweep_ms: Int,
 ) -> ServiceRule(Settings, State, Message, Outgoing) {
@@ -487,7 +488,7 @@ pub fn rule(
       realm_id:,
       tables:,
       spawns:,
-      creature_restart_ms:,
+      kinds:,
       idle_stop_ms:,
       sweep_ms:,
     ),
@@ -698,7 +699,7 @@ fn creature_ended(
           list.append(gone, [
             OwnEffect(StartServiceTimer(
               timer: TimerId(number),
-              after_ms: state.settings.creature_restart_ms,
+              after_ms: restart_ms(state:, spawn:),
             )),
           ]),
         ),
@@ -707,6 +708,20 @@ fn creature_ended(
     Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:)
     Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
       panic as "a watch ended for a creature the map holds no live or retiring spawn for"
+  }
+}
+
+/// How long a spawn whose creature crashed waits before a creature starts there
+/// again: the respawn time of its creature's kind (genesis_prime/world_map/creature_kind).
+fn restart_ms(state state: State, spawn spawn: SpawnId) -> Int {
+  case dict.get(state.settings.spawns.by_id, spawn) {
+    Ok(found) ->
+      creature_kind.kind_of(
+        kinds: state.settings.kinds,
+        creature2_id: { found.creature_id }.value,
+      ).respawn_ms
+    Error(Nil) ->
+      panic as "a creature crashed for a spawn the map's world does not hold"
   }
 }
 
@@ -753,8 +768,18 @@ fn players_seeing(
   |> list.map(fn(player) { player.0 })
 }
 
+/// The connections of a set in the order of their numbers, so what is sent to each is
+/// the same on every run.
+pub fn sorted_connections(
+  connections: Set(ConnectionId),
+) -> List(ConnectionId) {
+  list.sort(set.to_list(connections), fn(first, second) {
+    compare_connections(first:, second:)
+  })
+}
+
 /// The order of two connections by their numbers.
-pub fn compare_connections(
+fn compare_connections(
   first first: ConnectionId,
   second second: ConnectionId,
 ) -> order.Order {

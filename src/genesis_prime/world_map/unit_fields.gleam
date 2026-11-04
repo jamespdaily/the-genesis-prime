@@ -12,6 +12,8 @@ import genesis_prime/message/unit_create_tail.{
 }
 import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat.{type UnitStat}
+import gleam/list
+import gleam/result
 
 /// The stat the client keeps a unit's health in (0x140458140).
 pub const health_stat = 0
@@ -26,6 +28,15 @@ pub const shield_stat = 20
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).
 pub const base_health_property = 7
+
+/// The value of a stat of a unit's tail, `Error(Nil)` for a stat it does not hold.
+pub fn stat(
+  tail tail: UnitCreateTail,
+  stat_id stat_id: Int,
+) -> Result(Int, Nil) {
+  list.find(tail.stats, fn(stat) { stat.stat_id == stat_id })
+  |> result.map(fn(stat) { stat.value })
+}
 
 /// The record after a unit's type data: the stats, the movement commands that
 /// place it, the properties, the item visuals, the faction and the base faction,

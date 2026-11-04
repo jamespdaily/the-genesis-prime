@@ -294,9 +294,7 @@ pub fn settings(
 }
 
 /// The world subtree's names, and its times: a watch's call to Maps may take
-/// 5 s, the same as an ask, a map and a creature have 5 s to stop, and a spawn
-/// whose creature crashed stays empty for 60 s, the respawn time the server
-/// chooses since no client table holds one (death.creature_respawn). A creature
+/// 5 s, the same as an ask, and a map and a creature have 5 s to stop. A creature
 /// that no player has seen for 60 s stops, and each map looks for one every 10
 /// s: the idle stop is the server's choice, since no one sees a stopped creature
 /// and the delay only bounds how often a spawn starts and stops as a player
@@ -311,7 +309,6 @@ fn world(spawns: store.Key) -> server.World {
     creatures: creature_registry.new(),
     creature_supervisor: process.new_name("creature_supervisor"),
     creature_shutdown_ms: 5000,
-    creature_restart_ms: 60_000,
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
     spawns:,

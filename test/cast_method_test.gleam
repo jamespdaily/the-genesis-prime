@@ -698,6 +698,9 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.Appeared(..)
         | client_connection.CreatureAppeared(..)
         | client_connection.Moving(..)
+        | client_connection.CastMissed(..)
+        | client_connection.Health(..)
+        | client_connection.Died
         | client_connection.Removed -> False
       }
     })
@@ -839,6 +842,7 @@ fn count_logs(effects effects: List(cast.Effect)) -> Int {
       cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
+      | cast.Strike(..)
       | cast.CancelTimer(..) -> False
     }
   })
@@ -902,10 +906,9 @@ pub fn a_press_with_500_ms_or_less_of_the_current_cast_left_is_held_and_starts_a
   assert refusal_line(effects: second) == "7fc 43468 13"
     as "a second press while one is held is refused 13"
   let #(state, go) = support.fired(state:, timer: go_timer, at: 2250)
-  assert list.take(ids_of(effects: go), 5)
-    == [0x07F4, 0x07FF, 0x07F4, 0x07FE, 0x07FE]
-    as "cast.current_cast: the go of a Normal cast clears the current cast; Telekinetic Strike's go, its child and its finish come first (Spell4Effects.effectType.26)"
-  assert list.drop(ids_of(effects: go), 5) |> list.take(2) == [0x07FD, 0x07F4]
+  assert list.take(ids_of(effects: go), 2) == [0x07F4, 0x07FE]
+    as "cast.current_cast: the go of a Normal cast clears the current cast; Telekinetic Strike's go and its finish come first, and its Proxy 62204 is aimed at the area (targetFlags 4), so it starts a child for each struck unit and none for a go that struck nobody (Spell4Effects.effectType.26)"
+  assert list.drop(ids_of(effects: go), 2) |> list.take(2) == [0x07FD, 0x07F4]
     as "then the held press is taken at the same go: Pulse Blast's 0x7fd and its first go"
   assert support.started_timers(effects: go) |> list.map(fn(timer) { timer.1 })
     == [1250]

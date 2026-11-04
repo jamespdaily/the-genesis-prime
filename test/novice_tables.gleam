@@ -33,12 +33,16 @@ import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
+import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
+import genesis_prime/table/telegraph_damage
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -606,17 +610,29 @@ pub type Formula {
   )
 }
 
-/// The client's GameFormula rows the item formulas and the health rule read.
+/// The client's GameFormula rows the item formulas, the health rule and the hit rule's
+/// ratings read: 1230 strikethrough, 1231 crit chance, 1232 crit severity, 1234
+/// mitigation, 1235 deflect, 1236 critical deflect, 1245 glance chance and 1271 glance
+/// amount are the hit rule's (`genesis_prime/game/rating`; `rating_support` builds the
+/// rule's formulas from them).
 pub fn formulas() -> List(Formula) {
   [
     Formula(67, 0, 0, 0.0, 0.0, 60.0, 1.0),
     Formula(547, 0, 0, 0.0, 0.0, 20.0, 1.0),
     Formula(548, 0, 0, 0.0, 0.0, 225.0, 1.0),
     Formula(549, 0, 0, 0.0, 0.0, 3.5999999046325684, 1.0),
+    Formula(1230, 0, 100, 50.0, 0.003, 30.0, 5000.0),
+    Formula(1231, 0, 100, 50.0, 0.0025, 30.0, 7000.0),
+    Formula(1232, 0, 300, 50.0, 0.01, 250.0, 5500.0),
+    Formula(1234, 0, 75, 50.0, 0.008, 0.0, 7250.0),
+    Formula(1235, 0, 100, 50.0, 0.0015, 30.0, 7000.0),
+    Formula(1236, 0, 100, 50.0, 0.0025, 100.0, 778.0),
+    Formula(1245, 0, 100, 50.0, 0.005792, 60.0, 4000.0),
     Formula(1260, 0, 0, 0.75, 1.25, 0.05000000074505806, 0.25),
     Formula(1261, 10_000, 250, 0.25, 1.0, 0.0, 0.0),
     Formula(1265, 0, 0, 0.25, 0.009999999776482582, 25.0, 25.0),
     Formula(1266, 0, 0, 0.25, 0.25, 0.0, 0.0),
+    Formula(1271, 0, 100, 50.0, 0.0055, 75.0, 4000.0),
     Formula(1286, 50, 0, 1000.0, 0.0, 6.800000190734863, 1.0),
     Formula(1288, 0, 0, 0.0, 0.0, 132.0, 1.0),
   ]
@@ -632,7 +648,17 @@ pub fn game_formula_row(formula: Formula) -> List(Cell) {
     #("datafloat01", Float(formula.float01)),
     #("datafloat02", Float(formula.float02)),
     #("datafloat03", Float(formula.float03)),
+    #("datafloat04", Float(fifth_float(formula.id))),
   ])
+}
+
+/// GameFormula's datafloat04, which no planted formula reads: 0 in every row the planted
+/// tables hold but the crit severity's, 1232, whose row holds 105.0.
+fn fifth_float(id: Int) -> Float {
+  case id {
+    1232 -> 105.0
+    _ -> 0.0
+  }
 }
 
 /// The planted CreatureLevel rows 1 to 50: id and Base Health (property 7).
@@ -695,6 +721,12 @@ pub fn creature_level_rows() -> List(List(Cell)) {
       #("unitPropertyValue07", Float(pair.1)),
     ])
   })
+  |> list.append([
+    planted_table.row(creature_level.schema, [
+      #("ID", Integer(101)),
+      #("unitPropertyValue01", Float(0.05)),
+    ]),
+  ])
 }
 
 /// The planted SpellLevel rows: id, class, level, prerequisite and Spell4 id.
@@ -758,12 +790,62 @@ pub fn spell4_ids_and_bases() -> List(#(Int, Int)) {
   ]
 }
 
+/// Paralytic Surge's Spell4AoeTargetConstraints row: 173 (`Spell4.42352.area`).
+const paralytic_surge_area = 173
+
+/// The planted Spell4Effects row of Paralytic Surge's damage: the client's row 96125
+/// (Tech damage, aimed at the area, in every phase: 0.0935 Assault Power + 0.0935
+/// Support Power + 8.14 per level, dataBits00 the float 1.0), the one spell the
+/// loadout's tests strike with, so a bot can kill a planted creature.
+pub fn spell4_effects_rows() -> List(List(Cell)) {
+  [
+    spell_tables.damage_effect_row(
+      id: 96_125,
+      spell: 42_352,
+      damage_type: 2,
+      target_flags: 4,
+      delay: 0,
+      multiplier_bits: 1_065_353_216,
+      parameters: [
+        #(12, 0.09350000321865082),
+        #(13, 0.09350000321865082),
+        #(10, 8.140000343322754),
+      ],
+    ),
+  ]
+}
+
+/// The planted Spell4AoeTargetConstraints row 173 (`Spell4.42352.area`): 5 units, 0 to
+/// 15 m, 180 degrees, Closest.
+pub fn spell4_aoe_target_constraints_rows() -> List(List(Cell)) {
+  [
+    spell_tables.aoe_row(
+      id: paralytic_surge_area,
+      angle: 180.0,
+      count: 5,
+      max_range: 15.0,
+    ),
+  ]
+}
+
+/// The planted Spell4ValidTargets row 1: bitmask 0, the alive (`Spell4ValidTargets.targetBitmask`).
+pub fn spell4_valid_targets_rows() -> List(List(Cell)) {
+  [spell_tables.valid_targets_row(bitmask: 0)]
+}
+
 /// The planted Spell4 rows.
 pub fn spell4_rows() -> List(List(Cell)) {
   list.map(spell4_ids_and_bases(), fn(pair) {
     planted_table.row(spell4.schema, [
       #("ID", Integer(pair.0)),
       #("spell4BaseIdBaseSpell", Integer(pair.1)),
+      #(
+        "spell4AoeTargetConstraintsId",
+        Integer(case pair.0 {
+          42_352 -> paralytic_surge_area
+          _ -> 0
+        }),
+      ),
     ])
   })
 }
@@ -773,7 +855,16 @@ pub fn spell4_rows() -> List(List(Cell)) {
 /// child.
 pub fn spell4_base_rows() -> List(List(Cell)) {
   list.map(spell4_ids_and_bases(), fn(pair) {
-    planted_table.row(spell4_base.schema, [#("ID", Integer(pair.1))])
+    planted_table.row(spell4_base.schema, [
+      #("ID", Integer(pair.1)),
+      #(
+        "spell4ValidTargetId",
+        Integer(case pair.0 {
+          42_352 -> 1
+          _ -> 0
+        }),
+      ),
+    ])
   })
 }
 
@@ -814,6 +905,12 @@ pub fn spell_tree_files() -> List(#(String, BitArray)) {
     ),
     planted_table.file(spell4_effects.schema, rows.spell4_effects),
     planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
+    planted_table.file(
+      spell4_aoe_target_constraints.schema,
+      rows.spell4_aoe_target_constraints,
+    ),
+    planted_table.file(spell4_telegraph.schema, rows.spell4_telegraph),
+    planted_table.file(telegraph_damage.schema, rows.telegraph_damage),
     planted_table.file(spell_phase.schema, rows.spell_phases),
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),
@@ -834,7 +931,14 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(creature_level.schema, creature_level_rows()),
     planted_table.file(spell4.schema, spell4_rows()),
     planted_table.file(spell4_base.schema, spell4_base_rows()),
-    planted_table.file(spell4_effects.schema, []),
+    planted_table.file(spell4_effects.schema, spell4_effects_rows()),
+    planted_table.file(
+      spell4_aoe_target_constraints.schema,
+      spell4_aoe_target_constraints_rows(),
+    ),
+    planted_table.file(spell4_telegraph.schema, []),
+    planted_table.file(telegraph_damage.schema, []),
+    planted_table.file(spell4_valid_targets.schema, spell4_valid_targets_rows()),
     planted_table.file(spell4_thresholds.schema, []),
     planted_table.file(spell_phase.schema, []),
     planted_table.file(spell_cool_down.schema, []),

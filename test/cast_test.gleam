@@ -364,6 +364,9 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               client_connection.Appeared(..)
               | client_connection.CreatureAppeared(..)
               | client_connection.Moving(..)
+              | client_connection.Health(..)
+              | client_connection.Died
+              | client_connection.CastMissed(..)
               | client_connection.Removed -> "other"
             })
           False -> Error(Nil)
@@ -423,42 +426,59 @@ pub fn cast_ids_are_above_2_pow_31_hold_the_unit_and_never_repeat_among_one_unit
     as "the next number is another id"
 }
 
-pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_child_starts_on_the_caster_test() -> Nil {
+pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_child_starts_on_each_struck_unit_test() -> Nil {
   use <- owned_test.run(5000)
+  let foe = [cast.Hit(unit_id: 10, descriptions: [])]
   let #(state, effects) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed_striking(
+      state: cast.new(),
+      bag_index: 0,
+      struck: foe,
+      at: 1000,
+    )
   let assert [#(_, 1250)] = support.started_timers(effects:)
     as "Spell4.32893: castTime 1250, the go's timer"
-  let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
+  let #(_, fired) =
+    support.run_timers_striking(state:, effects:, from_ms: 1000, struck: foe)
   let assert [#(2250, step)] = fired
     as "the go, its child and the finish come from the one timer, 1250 ms after the accept"
   assert ids_of(effects: step) == [0x07F4, 0x07FF, 0x07F4, 0x07FE, 0x07FE]
     as "the go of 32893, the start, go and finish of the child 30900 (Spell4Effects.effectType.26: a Proxy starts its spell as its own cast), then the finish of 32893"
   let assert [go_frame, child_frame, ..] = support.writes(effects: step)
   let assert Ok(go) = spell_go.decode(go_frame.body)
-  assert go.targets == [] && go.phase == 0 && go.ignore_cooldown == 0
-    as "opcode.0x7f4: a go with no damage names no target"
+  assert list.map(go.targets, fn(target) { #(target.unit_id, target.flags) })
+    == [#(10, 0)]
+    && go.phase == 0
+    && go.ignore_cooldown == 0
+    as "opcode.0x7f4: the go names the one struck unit, target flags 0"
   let child = started_of(child_frame)
   assert child.spell4_id == 30_900
     && child.root_spell4_id == 32_893
     && child.parent_spell4_id == 32_893
     as "opcode.0x7ff.root_parent: root the pressed spell, parent the spell whose Proxy fired"
-  assert child.caster_unit_id == 7 && child.primary_target_unit_id == 7
-    as "Spell4.32893: 30900 starts on the caster"
+  assert child.caster_unit_id == 7 && child.primary_target_unit_id == 10
+    as "Spell4Effects 62204 has targetFlags 4 in the client's table, so its Proxy starts 30900 on each struck unit (an earlier decode read 1: the tooltip says the caster gains the Psi Point, which the live sitting checks)"
   assert child.cast_id != go.cast_id
     && cast.caster_of(cast_id: child.cast_id) == 7
 }
 
 pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_test() -> Nil {
   use <- owned_test.run(5000)
+  let foe = [cast.Hit(unit_id: 10, descriptions: [])]
   let #(state, effects) =
-    support.pressed(state: cast.new(), bag_index: 1, target: 0, at: 1000)
+    support.pressed_striking(
+      state: cast.new(),
+      bag_index: 1,
+      struck: foe,
+      at: 1000,
+    )
   assert ids_of(effects:) == [0x07FD, 0x07F4, 0x07FE]
     as "Spell4.32812: instant, so the go and finish come at the accept"
   let assert [#(100, _)] =
     list.map(support.started_timers(effects:), fn(t) { #(t.1, t.0) })
-    as "Spell4.32812: the Proxy's delayTime is 100"
-  let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
+    as "Spell4.32812: the Proxy's delayTime is 100, and its one foe is struck"
+  let #(_, fired) =
+    support.run_timers_striking(state:, effects:, from_ms: 1000, struck: foe)
   let assert [#(1100, step)] = fired
   let assert [child_frame, ..] = support.writes(effects: step)
   let child = started_of(child_frame)
@@ -471,8 +491,14 @@ pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_t
 
 pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_38791_and_parent_38780_test() -> Nil {
   use <- owned_test.run(5000)
+  let foe = [cast.Hit(unit_id: 10, descriptions: [])]
   let #(state, effects) =
-    support.pressed(state: cast.new(), bag_index: 4, target: 0, at: 1000)
+    support.pressed_striking(
+      state: cast.new(),
+      bag_index: 4,
+      struck: foe,
+      at: 1000,
+    )
   let assert [multiphase_frame] =
     list.filter(support.writes(effects:), fn(frame) {
       frame.message_id == 0x07FF
@@ -483,7 +509,8 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
     && multiphase.root_spell4_id == 38_791
     && multiphase.parent_spell4_id == 38_791
     as "Spell4.38791: the Proxy starts the Multiphase spell 38780"
-  let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
+  let #(_, fired) =
+    support.run_timers_striking(state:, effects:, from_ms: 1000, struck: foe)
   let phase_gos =
     list.flat_map(fired, fn(step) {
       list.filter_map(support.writes(effects: step.1), fn(frame) {
@@ -611,7 +638,8 @@ pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_
         cast.Send(..)
         | cast.Tell(..)
         | cast.StartTimer(..)
-        | cast.CancelTimer(..) -> False
+        | cast.CancelTimer(..)
+        | cast.Strike(..) -> False
       }
     })
   }
