@@ -18,9 +18,15 @@ import gleam/result
 pub type SpellInitialPosition {
   SpellInitialPosition(
     unit_id: Int,
+    /// Safe by `spell.empty_lists`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_2: Int,
     position: SpellPosition,
+    /// Safe by `spell.empty_lists`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_4: Int,
+    /// Safe by `spell.empty_lists`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_5: Int,
   )
 }

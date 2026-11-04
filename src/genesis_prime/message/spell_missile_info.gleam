@@ -17,10 +17,20 @@ import gleam/result
 /// with no such doc has no use the client's code shows.
 pub type SpellMissileInfo {
   SpellMissileInfo(
+    /// Safe by `spell.empty_lists`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_1: SpellPosition,
+    /// Safe by `spell.empty_lists`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_2: Int,
+    /// Safe by `spell.empty_lists`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_3: Int,
+    /// Safe by `spell.empty_lists`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_4: SpellPosition,
+    /// Safe by `spell.empty_lists`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_5: Int,
   )
 }

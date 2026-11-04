@@ -9,14 +9,17 @@
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place)
 ////                                                 (or Refused: the rule hands back to select)
-//// Joined(unit record, run)   ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 10, 0x1A0, 0x19D,
+//// Joined(unit record, loadout, health, run)
+////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 10, 0x1A0, 0x19D,
 ////                                                 0x6BC, 0x636, 0xF1, 0x61, WatchMap(map, run)
+//// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
 //// ```
 ////
 //// - **The unit** is the map's: it builds the player's unit when it takes the
-////   player (genesis_prime/world_map/map) and answers 0x262's record, which
-////   `joined` sends as it is. The place the map is given, and 0xAD and 0x262
-////   carry, is bounded (below).
+////   player (genesis_prime/world_map/map), with the loadout and the maximum
+////   health, and answers 0x262's record, which `joined` sends as it is, and the
+////   typed loadout and maximum health, which `Entered` keeps. The place the map
+////   is given, and 0xAD and 0x262 carry, is bounded (below).
 //// - **The order** is the client's: 0xAD first; 0x262 before 0x19B; 0x19B
 ////   before the loadout, 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
@@ -33,7 +36,7 @@
 ////   draws nothing: the worn set is drawn by the item visuals the map's unit
 ////   carries in its 0x262 (genesis_prime/world_map/player_unit,
 ////   `opcode.0x262.worn_visuals`). The unit's 0x262 also carries the gear's
-////   health, shield and properties (`with_gear`).
+////   health, shield and properties (`player_unit.create`).
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
 ////   floats, which neither entry path reads (opcode.0xad.last_floats). The
 ////   position, here and in 0x262, is bounded to the box the client bounds a
@@ -56,6 +59,10 @@
 ////   entered: a warning, and the rule hands back to character select, which
 ////   sends 0x0162 Failed and the list again, as before world entry
 ////   (opcode.0x162.after_create).
+//// - **A join the map refuses** (`map.NotJoined`: the character's class and
+////   faction have no Novice set, or its level has no Base Health row) is not
+////   entered: a warning, and the rule hands back to character select as for a
+////   character with no saved place.
 //// - **An answer that is none of the ask out** (the map's while the store is
 ////   asked, or the reverse, or the map's `Left`, which answers a leave)
 ////   is `Error(Nil)`, as character select gives, and the
@@ -67,6 +74,7 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/camp
+import genesis_prime/game/cast
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/loadout.{type Loadout}
@@ -93,10 +101,9 @@ import genesis_prime/store.{
   CharacterId,
 }
 import genesis_prime/table/id.{type Spell4BaseId}
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
-import genesis_prime/world_map/player_unit
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -146,17 +153,27 @@ pub type Loaded {
   Refused(character_id: Int, warning: String)
 }
 
+/// What the map's answer to the join leads to.
+pub type Joined {
+  /// The player is in the world: what it keeps, and the messages that put it
+  /// there.
+  InTheWorld(entered: Entered, effects: List(Effect))
+  /// The map refused the character (`map.NotJoined`); character select refuses
+  /// the play, as it does for a character with no saved place.
+  NotInTheWorld(character_id: Int, warning: String)
+}
+
 /// A player in the world: its character, its map, the run of the map that took
 /// it, which the rule watches as `Map(map, incarnation)`, its unit id, the
 /// origin of the map's clock (`Joined` carries it), its loadout and maximum
 /// health (typed, from the tables: the weapon, the abilities and the gear's
 /// properties, which the 0x262 carries as bits), its own 0x262 record
-/// (`Joined`'s unit with the gear applied, which the connection sends the players
-/// who see it), who
-/// sees it, the units its own client shows, where it stands
+/// (`Joined`'s unit, which the connection sends the players who see it), who
+/// sees it, the units its own client shows, the casts of other units its client
+/// has been sent the start of, where it stands
 /// (genesis_prime/game/movement) and whether it is camping
-/// (genesis_prime/game/camp), and its chat (genesis_prime/game/chat), which the
-/// rule keeps up to date. A player that has
+/// (genesis_prime/game/camp), its casts (genesis_prime/game/cast) and its chat
+/// (genesis_prime/game/chat), which the rule keeps up to date. A player that has
 /// just entered is not camping, has no viewers and shows no unit: the map's
 /// `Watched` and `Unwatched` keep `viewers`, the connections whose players see
 /// this one, the connection sends everything about the player's own unit to them,
@@ -174,9 +191,11 @@ pub type Entered {
     clock_origin_ms: Int,
     viewers: Set(ConnectionId),
     shown: Set(Int),
+    casts_written: Dict(Int, Int),
     gone: Set(Int),
     movement: movement.State,
     camp: camp.Camp,
+    cast: cast.State,
     chat: chat.Chat,
   )
 }
@@ -305,33 +324,16 @@ pub fn joined(
   answer answer: map.Outgoing,
   realm_id realm_id: Int,
   next_whisper next_whisper: Int,
-  tables tables: table_store.Tables,
-) -> Result(#(Entered, List(Effect)), Nil) {
+) -> Result(Joined, Nil) {
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
       case answer {
-        map.Joined(unit: map_unit, incarnation:, clock_origin_ms:) -> {
+        map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
-          let assert Ok(loadout) =
-            loadout.of(
-              tables:,
-              class_id: character.class_id,
-              faction_id: character.faction_id,
-            )
-            as "the load requires a Novice set for every class and faction a player can make"
-          let assert Ok(max_health) =
-            loadout.max_health(tables:, loadout:, level: character.level)
-            as "CreatureLevel holds a row for every level of a character"
-          let unit =
-            player_unit.with_gear(
-              record: map_unit,
-              max_health:,
-              gear: loadout.properties,
-            )
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
-          Ok(#(
-            Entered(
+          Ok(InTheWorld(
+            entered: Entered(
               character_id: character.character_id,
               map:,
               incarnation:,
@@ -342,9 +344,11 @@ pub fn joined(
               clock_origin_ms:,
               viewers: set.new(),
               shown: set.new(),
+              casts_written: dict.new(),
               gone: set.new(),
               movement: movement.entered(place:, session_epoch:),
               camp: camp.none(),
+              cast: cast.new(),
               chat: chat.new(
                 speaker: chat_tell.Speaker(
                   realm_id:,
@@ -358,7 +362,7 @@ pub fn joined(
                 next_whisper:,
               ),
             ),
-            list.flatten([
+            effects: list.flatten([
               [
                 enter_world(place: sent),
                 player_created(unit:),
@@ -373,6 +377,16 @@ pub fn joined(
                 WatchMap(map:, incarnation:),
               ],
             ]),
+          ))
+        }
+        map.NotJoined(reason:) -> {
+          let CharacterId(character_id) = character.character_id
+          Ok(NotInTheWorld(
+            character_id:,
+            warning: "the map refused the join of character "
+              <> int.to_string(character_id)
+              <> ": "
+              <> map.describe_not_joined(reason:),
           ))
         }
         map.Left

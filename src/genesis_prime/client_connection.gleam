@@ -29,6 +29,8 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/spell_go.{type SpellGo}
+import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/random.{type Random}
@@ -108,6 +110,15 @@ pub type News {
   /// The unit is gone from the viewer's sight, or its owner camped: 0x355
   /// (opcode.0x355).
   Removed
+  /// The unit started a cast: 0x7ff (opcode.0x7ff), written when the viewer's
+  /// client shows the unit, and the cast is then one the viewer knows.
+  CastStarted(start: SpellStarted)
+  /// A cast of the unit goes off: 0x7f4 (opcode.0x7f4), written for a cast the
+  /// viewer wrote the start of.
+  CastWent(go: SpellGo)
+  /// A cast of the unit ends: 0x7fe (opcode.0x7fe), written for a cast the viewer
+  /// wrote the start of, which the viewer then forgets.
+  CastFinished(cast_id: Int)
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).

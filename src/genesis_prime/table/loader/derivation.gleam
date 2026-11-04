@@ -3,6 +3,7 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/loadout
+import genesis_prime/game/spell_plan
 import genesis_prime/game/top_zone
 import genesis_prime/table/loader/store
 
@@ -12,12 +13,15 @@ import genesis_prime/table/loader/store
 ///   character list's bodies are taken from (genesis_prime/game/appearance).
 /// - The loadouts: each class and faction's Novice weapon, abilities and gear
 ///   properties, whose missing rows fail the load (genesis_prime/game/loadout).
+/// - The spell plans: the tree of casts each class's level-1 ability starts, whose
+///   missing rows, unread costs and cycles fail the load (genesis_prime/game/spell_plan).
 /// - The top zones: each WorldZone's top zone, which a cycle in the parent chain
 ///   fails (genesis_prime/game/top_zone).
 pub fn all() -> List(store.Derivation) {
   [
     appearance.derivation(),
     loadout.derivation(),
+    spell_plan.derivation(),
     top_zone.derivation(),
   ]
 }

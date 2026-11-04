@@ -20,6 +20,8 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
 import genesis_prime/message/bit_stream
+import genesis_prime/message/cast_ability
+import genesis_prime/message/cast_result
 import genesis_prime/message/chat_channel_joined
 import genesis_prime/message/chat_line
 import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
@@ -33,6 +35,11 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello
+import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_finished
+import genesis_prime/message/spell_go
+import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
@@ -211,6 +218,109 @@ pub fn send_world(
   body body: BitArray,
 ) -> Nil {
   send(game:, message_id: 0x038C, body: world_body(kind: 3, message_id:, body:))
+}
+
+/// Presses the ability held at `bag_index`, as the client's action bar does
+/// (opcode.0x9a): its own cast id, the bag index, the target (0 for none) and the
+/// press bit 1.
+pub fn press_ability(
+  game game: Game,
+  client_cast_id client_cast_id: Int,
+  bag_index bag_index: Int,
+  target target: Int,
+) -> Nil {
+  send_world(
+    game:,
+    message_id: cast_ability.message_id,
+    body: press_body(client_cast_id:, bag_index:, target:, press: 1),
+  )
+}
+
+/// The body of the client's 0x9a (opcode.0x9a): its cast id, the bag index, the
+/// target and the press bit.
+pub fn press_body(
+  client_cast_id client_cast_id: Int,
+  bag_index bag_index: Int,
+  target target: Int,
+  press press: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    cast_ability.encode(cast_ability.CastAbility(
+      client_cast_id:,
+      bag_index:,
+      target_unit_id: target,
+      press:,
+    ))
+    as "a press fits the message"
+  body
+}
+
+/// What the client's reader makes of a cast message of the server's.
+pub type CastEvent {
+  /// 0x7fc: the press with this client id was refused with this result
+  /// (opcode.0x7fc).
+  CastRefused(client_cast_id: Int, spell4_id: Int, result: Int)
+  /// 0x7fd: the press was accepted and has this server id (opcode.0x7fd).
+  CastConfirmed(client_cast_id: Int, server_cast_id: Int)
+  /// 0x7ff: a unit starts a cast, with its root and parent (opcode.0x7ff).
+  CastStarted(
+    cast_id: Int,
+    spell4_id: Int,
+    root_spell4_id: Int,
+    parent_spell4_id: Int,
+    caster_unit_id: Int,
+  )
+  /// 0x7f4: a cast goes off, in this phase (opcode.0x7f4).
+  CastWent(cast_id: Int, phase: Int)
+  /// 0x7fe: a cast ends (opcode.0x7fe).
+  CastFinished(cast_id: Int)
+}
+
+/// The cast messages among the frames, in order, each as the client's reader
+/// takes it; every other frame is skipped.
+pub fn casts_in(frames frames: List(Frame)) -> List(CastEvent) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x07FC -> {
+        let assert Ok(refused) = spell_cast_refused.decode(frame.body)
+          as "0x7fc decodes"
+        Ok(CastRefused(
+          client_cast_id: refused.client_cast_id,
+          spell4_id: refused.spell4_id,
+          result: cast_result.to_value(refused.result),
+        ))
+      }
+      0x07FD -> {
+        let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
+          as "0x7fd decodes"
+        Ok(CastConfirmed(
+          client_cast_id: confirmed.client_cast_id,
+          server_cast_id: confirmed.server_cast_id,
+        ))
+      }
+      0x07FF -> {
+        let assert Ok(started) = spell_started.decode(frame.body)
+          as "0x7ff decodes"
+        Ok(CastStarted(
+          cast_id: started.cast_id,
+          spell4_id: started.spell4_id,
+          root_spell4_id: started.root_spell4_id,
+          parent_spell4_id: started.parent_spell4_id,
+          caster_unit_id: started.caster_unit_id,
+        ))
+      }
+      0x07F4 -> {
+        let assert Ok(go) = spell_go.decode(frame.body) as "0x7f4 decodes"
+        Ok(CastWent(cast_id: go.cast_id, phase: go.phase))
+      }
+      0x07FE -> {
+        let assert Ok(finished) = spell_finished.decode(frame.body)
+          as "0x7fe decodes"
+        Ok(CastFinished(cast_id: finished.cast_id))
+      }
+      _ -> Error(Nil)
+    }
+  })
 }
 
 /// The movement command of kind 2 that puts the player at x, y, z with its

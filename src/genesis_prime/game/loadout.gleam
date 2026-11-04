@@ -48,7 +48,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
-import genesis_prime/table/spell_level
+import genesis_prime/table/spell_level.{type SpellLevel}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -321,6 +321,12 @@ fn weapon_of(
   }
 }
 
+/// Whether a SpellLevel row is a class's ability at level 1 with no
+/// prerequisite, which a character holds from the start.
+pub fn is_level_one_ability(row row: SpellLevel) -> Bool {
+  row.character_level == 1 && row.prerequisite_id == 0
+}
+
 fn abilities_of(
   tables tables: table_store.Tables,
   class_id class_id: Int,
@@ -328,9 +334,7 @@ fn abilities_of(
   let rows =
     spell_level.all(tables)
     |> list.filter(fn(row) {
-      row.class_id == class_id
-      && row.character_level == 1
-      && row.prerequisite_id == 0
+      row.class_id == class_id && is_level_one_ability(row:)
     })
   use <- bool.guard(rows == [], Error(NoAbilities(class_id:)))
   list.try_map(rows, fn(row) {

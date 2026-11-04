@@ -203,6 +203,6 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     map.Watched(by:) -> Ok(Watched(by:))
     map.Unwatched(by:) -> Ok(Unwatched(by:))
     map.Retire -> Ok(Retire)
-    map.Joined(..) | map.Left | map.Gone(..) -> Error(Nil)
+    map.Joined(..) | map.NotJoined(..) | map.Left | map.Gone(..) -> Error(Nil)
   }
 }

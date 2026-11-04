@@ -7,7 +7,7 @@
 //// whole frame in the client's wrapper 0x0244 ─▶ route(stage, OnItsOwn, id)
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
-////                                                 ─▶ Movement(message), Camp(message) or Chat(message)
+////                                                 ─▶ Movement(message), Camp(message), Chat(message) or Cast(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -26,11 +26,14 @@
 ////   unhandled.
 
 import genesis_prime/game/camp
+import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/movement
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
+import genesis_prime/message/cancel_cast
+import genesis_prime/message/cast_ability
 import genesis_prime/message/character_select_start
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/delete_character
@@ -65,6 +68,8 @@ pub type Feature {
   Camp(message: camp.Message)
   /// A chat line or a whisper (genesis_prime/game/chat).
   Chat(message: chat.Message)
+  /// The press of an ability or the cancel of a cast (genesis_prime/game/cast).
+  Cast(message: cast.Message)
 }
 
 /// Where the connection is when it takes a message.
@@ -188,6 +193,18 @@ const table = [
     send_whisper.message_id,
     InsideWorldMessage,
     Chat(chat.WhisperSent),
+    [AtWorld],
+  ),
+  Row(
+    cast_ability.message_id,
+    InsideWorldMessage,
+    Cast(cast.Pressed),
+    [AtWorld],
+  ),
+  Row(
+    cancel_cast.message_id,
+    InsideWorldMessage,
+    Cast(cast.Cancelled),
     [AtWorld],
   ),
   Row(

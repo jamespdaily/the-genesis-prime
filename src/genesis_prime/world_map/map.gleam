@@ -24,14 +24,17 @@
 ////
 //// ```
 //// connection c1                      map                                      shell
-////   Join(c1, character, place) ─▶ Asked ─▶ unit id u = next unit id; next + 1
+////   Join(c1, character, place) ─▶ Asked ─▶ loadout of its class and faction, maximum health at its level
+////                                          unit id u = next unit id; next + 1
 ////                                          unit = the character at place as unit u,
-////                                                 with the body visuals of its look and
-////                                                 the worn visuals of its Novice set
+////                                                 with the body visuals of its look, its loadout
+////                                                 (the worn set's visuals, the gear's values) and its health
 ////                                          player = (c1, unit, watch w1, sees)
 ////                                          Watch(w1, Connection(c1))           ─▶ monitors c1
-////   ◀─ Joined(0x262's record of unit, run, the map's clock origin)
+////   ◀─ Joined(0x262's record of unit, loadout, maximum health, run, the map's clock origin)
 ////                                ◀─ OwnEffect(Reply(caller, Joined(..)))
+////   ◀─ NotJoined(reason)         when the class and faction have no Novice set or the level no Base Health row:
+////                                    no unit id is given, no player kept, no watch opened
 ////                                          for each player c2 in sight, in the same step:
 ////   ◀─ Watched(by: c2)                                                        ─▶ send to c1
 ////                                          Watched(by: c1) to c2               ─▶ send to c2
@@ -106,8 +109,9 @@
 //// - **The unit** is a game-level value (genesis_prime/world_map/player_unit)
 ////   the map keeps for as long as the player is in it, standing where the
 ////   player's last `Moved` put it; the answer's 0x262 record is built from it
-////   with the map's realm. The `place` of a Join is the bounded place the client
-////   is told.
+////   with the map's realm, and the answer carries the unit's typed loadout and
+////   maximum health, which the player's connection keeps for its casts. The
+////   `place` of a Join is the bounded place the client is told.
 //// - **The incarnation** is in every `Joined`, so the joiner watches the run
 ////   of the map that holds its player, not a later one started after this
 ////   one ended.
@@ -249,14 +253,14 @@
 //// | the respawn timer fires with no one in sight | the spawn is dormant |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
 //// | the respawn timer fires after the map ended | not possible: the timer lives in the process |
-//// | a joining character's class and faction have no Novice set | the unit has its body alone and the join goes on: the player's connection refuses that one player, and the map does not crash on one character's data |
+//// | a joining character's class and faction have no Novice set, or its level has no Base Health row | the join is answered `NotJoined`, with an error line, no unit id given and no player kept: the player's connection tells its client the server failed, and the map does not crash on one character's data |
 //// | the map has given every unit id | the map crashes, which ends its run and its players' connections; the next run starts from 1 |
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run |
 //// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) |
 //// | the sweep timer fires after a restart of the map | not possible: the timer lives in the process, and a restarted map starts its own |
 
 import genesis_prime/game/appearance
-import genesis_prime/game/loadout
+import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
@@ -339,6 +343,18 @@ pub type Message {
   Moved(connection: ConnectionId, place: Place)
 }
 
+/// Why a join is refused: the data of the one character, which the load's
+/// requirements cannot rule out for a character stored with a class, a faction
+/// or a level no table holds.
+pub type NotJoined {
+  /// No Novice set holds the character's class and faction
+  /// (genesis_prime/game/loadout).
+  NoLoadout(class_id: Int, faction_id: Int)
+  /// CreatureLevel has no row for the character's level, so its health is
+  /// unknown (`loadout.max_health`).
+  NoBaseHealth(level: Int)
+}
+
 /// What a map answers and sends.
 pub type Outgoing {
   /// The player is in this run of the map as this unit, which the map keeps;
@@ -346,7 +362,16 @@ pub type Outgoing {
   /// 0x262, which its connection sends the players who see it, at its place and
   /// stamped from the map's clock; `clock_origin_ms` is the monotonic time the
   /// map started at, from which the connection stamps (`server_time`).
-  Joined(unit: UnitCreatePlayer, incarnation: Int, clock_origin_ms: Int)
+  Joined(
+    unit: UnitCreatePlayer,
+    loadout: Loadout,
+    max_health: Int,
+    incarnation: Int,
+    clock_origin_ms: Int,
+  )
+  /// The character cannot be in the map: nothing was kept, no unit id was
+  /// given and no watch was opened. An answer to a join, never a send.
+  NotJoined(reason: NotJoined)
   /// The connection's player is not in the map any more, whether it was there
   /// or not.
   Left
@@ -728,19 +753,22 @@ fn players_seeing(
   |> list.map(fn(player) { player.0 })
 }
 
-/// The players by their connection's number.
-fn players_in_order(state: State) -> List(#(ConnectionId, Player)) {
-  dict.to_list(state.players)
-  |> list.sort(fn(first, second) { compare_connections(first.0, second.0) })
-}
-
-fn compare_connections(
-  first: ConnectionId,
-  second: ConnectionId,
+/// The order of two connections by their numbers.
+pub fn compare_connections(
+  first first: ConnectionId,
+  second second: ConnectionId,
 ) -> order.Order {
   let ConnectionId(first) = first
   let ConnectionId(second) = second
   int.compare(first, second)
+}
+
+/// The players by their connection's number.
+fn players_in_order(state: State) -> List(#(ConnectionId, Player)) {
+  dict.to_list(state.players)
+  |> list.sort(fn(first, second) {
+    compare_connections(first: first.0, second: second.0)
+  })
 }
 
 fn compare_spawns(first: SpawnId, second: SpawnId) -> order.Order {
@@ -1190,31 +1218,105 @@ fn joined_new(
   place place: Place,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let #(state, unit_id) = take_unit_id(state)
-  let watch = WatchId(state.next_watch)
-  let state = State(..state, next_watch: state.next_watch + 1)
   let tables = state.settings.tables
-  let worn =
+  case gear_of(tables:, character:) {
+    Error(reason) ->
+      not_joined(state:, caller:, connection:, character:, reason:)
+    Ok(#(loadout, max_health)) -> {
+      let #(state, unit_id) = take_unit_id(state)
+      let watch = WatchId(state.next_watch)
+      let state = State(..state, next_watch: state.next_watch + 1)
+      let unit =
+        player_unit.new(
+          character:,
+          place:,
+          unit_id:,
+          body: appearance.character_body_visuals(
+            index: appearance.index(tables:),
+            character:,
+          ),
+          loadout:,
+          max_health:,
+        )
+      joined_with(state:, caller:, connection:, place:, now_ms:, unit:, watch:)
+    }
+  }
+}
+
+/// The loadout of the character's class and faction and its maximum health at
+/// its level, or why the character cannot be in the map.
+fn gear_of(
+  tables tables: table_store.Tables,
+  character character: Character,
+) -> Result(#(Loadout, Int), NotJoined) {
+  use loadout <- result.try(
     loadout.of(
       tables:,
       class_id: character.class_id,
       faction_id: character.faction_id,
     )
-    |> result.map(loadout.item_visuals)
-    |> result.unwrap([])
-  let unit =
-    player_unit.new(
-      character:,
-      place:,
-      unit_id:,
-      visuals: list.append(
-        appearance.character_body_visuals(
-          index: appearance.index(tables:),
-          character:,
+    |> result.replace_error(NoLoadout(
+      class_id: character.class_id.value,
+      faction_id: character.faction_id,
+    )),
+  )
+  loadout.max_health(tables:, loadout:, level: character.level)
+  |> result.replace_error(NoBaseHealth(level: character.level))
+  |> result.map(fn(max_health) { #(loadout, max_health) })
+}
+
+/// A join the map refuses: an error line naming the character and why, and the
+/// answer `NotJoined`. No unit id is taken and nothing is kept.
+fn not_joined(
+  state state: State,
+  caller caller: CallerId,
+  connection connection: ConnectionId,
+  character character: Character,
+  reason reason: NotJoined,
+) -> #(State, ServiceStep(Outgoing)) {
+  let CharacterId(character_id) = character.character_id
+  #(
+    state,
+    Effects([
+      log_error(
+        state:,
+        about: step.About(
+          ..step.no_one,
+          connection: Some(connection),
+          character_id: Some(character_id),
         ),
-        worn,
+        text: "the character cannot join the map: "
+          <> describe_not_joined(reason:),
       ),
-    )
+      OwnEffect(Reply(caller, NotJoined(reason:))),
+    ]),
+  )
+}
+
+/// A sentence that says why a join is refused, for the log.
+pub fn describe_not_joined(reason reason: NotJoined) -> String {
+  case reason {
+    NoLoadout(class_id:, faction_id:) ->
+      "no Novice set holds class "
+      <> int.to_string(class_id)
+      <> " and faction "
+      <> int.to_string(faction_id)
+    NoBaseHealth(level:) ->
+      "CreatureLevel has no row for level " <> int.to_string(level)
+  }
+}
+
+/// The rest of the first join, once the unit is built: its sight, its watch and
+/// its answer.
+fn joined_with(
+  state state: State,
+  caller caller: CallerId,
+  connection connection: ConnectionId,
+  place place: Place,
+  now_ms now_ms: Int,
+  unit unit: PlayerUnit,
+  watch watch: WatchId,
+) -> #(State, ServiceStep(Outgoing)) {
   let in_sight =
     list.filter(others_of(state:, connection:), fn(other) {
       sight.sees(place, player_unit.place({ other.1 }.unit))
@@ -1299,6 +1401,8 @@ fn goes_out_of_sight(
 fn answer(state state: State, unit unit: PlayerUnit) -> Outgoing {
   Joined(
     unit: player_unit.create(unit:, realm_id: state.settings.realm_id),
+    loadout: player_unit.loadout(unit:),
+    max_health: player_unit.max_health(unit:),
     incarnation: state.settings.incarnation,
     clock_origin_ms: state.started_ms,
   )

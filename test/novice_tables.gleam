@@ -22,6 +22,7 @@
 ////   of the 18 level-1 spells, each with its Spell4Base id.
 
 import genesis_prime/table/character_creation
+import genesis_prime/table/class
 import genesis_prime/table/creature_level
 import genesis_prime/table/game_formula
 import genesis_prime/table/item2
@@ -32,7 +33,11 @@ import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
+import genesis_prime/table/spell_phase
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -760,8 +765,17 @@ pub fn spell4_rows() -> List(List(Cell)) {
   })
 }
 
-/// The planted files of the tables only the loadout reads, each by its file
-/// name.
+/// The planted Spell4Base rows of the same spells: the Normal cast method and
+/// nothing else, so each spell is one cast with no cost, no cooldown and no
+/// child.
+pub fn spell4_base_rows() -> List(List(Cell)) {
+  list.map(spell4_ids_and_bases(), fn(pair) {
+    planted_table.row(spell4_base.schema, [#("ID", Integer(pair.1))])
+  })
+}
+
+/// The planted files of the tables only the loadout and the spell plans read,
+/// each by its file name.
 pub fn files() -> List(#(String, BitArray)) {
   [
     planted_table.file(item2.schema, item2_rows()),
@@ -773,6 +787,11 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(item_display.schema, item_display_rows()),
     planted_table.file(creature_level.schema, creature_level_rows()),
     planted_table.file(spell4.schema, spell4_rows()),
+    planted_table.file(spell4_base.schema, spell4_base_rows()),
+    planted_table.file(spell4_effects.schema, []),
+    planted_table.file(spell_phase.schema, []),
+    planted_table.file(spell_cool_down.schema, []),
+    planted_table.file(class.schema, []),
     planted_table.file(spell_level.schema, spell_level_rows()),
   ]
 }

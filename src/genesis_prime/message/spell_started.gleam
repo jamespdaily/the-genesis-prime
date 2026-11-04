@@ -32,13 +32,19 @@ pub type SpellStarted {
     root_spell4_id: Int,
     parent_spell4_id: Int,
     caster_unit_id: Int,
+    /// Safe by `opcode.0x7ff.caster_item_level`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_6: Int,
     primary_target_unit_id: Int,
     position: SpellPosition,
     yaw: Int,
     initial_positions: List(SpellInitialPosition),
     telegraph_positions: List(SpellTelegraphPosition),
+    /// Safe by `opcode.0x7ff.own_cast`: the client's code gives this field no
+    /// use the server needs, and that fact shows its value is safe.
     field_12: Int,
+    /// Safe by `opcode.0x7ff.activate`: the client's code gives this field no
+    /// use the server needs, and that fact shows its value is safe.
     field_13: Int,
   )
 }

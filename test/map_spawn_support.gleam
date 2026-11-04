@@ -217,6 +217,6 @@ pub fn said(message: map.Outgoing) -> String {
     map.Unwatched(by: ConnectionId(number)) ->
       "Unwatched by " <> int.to_string(number)
     map.Retire -> "Retire"
-    map.Joined(..) | map.Left -> "an answer"
+    map.Joined(..) | map.NotJoined(..) | map.Left -> "an answer"
   }
 }

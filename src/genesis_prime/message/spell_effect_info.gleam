@@ -21,6 +21,8 @@ pub type SpellEffectInfo {
     spell4_effects_id: Int,
     instance_id: Int,
     delay_ms: Int,
+    /// Safe by `opcode.0x7f4.effect_time`: the client's code gives this field
+    /// no use the server needs, and that fact shows its value is safe.
     field_4: Int,
     result: SpellEffectResult,
   )

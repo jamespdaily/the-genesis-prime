@@ -14,7 +14,11 @@ import gleam/result
 /// record: its own doc names the fact that shows its value is safe, and one
 /// with no such doc has no use the client's code shows.
 pub type SpellEffectBit {
-  SpellEffectBit(field_2: Int)
+  SpellEffectBit(
+    /// Safe by `opcode.0x7f4.effect_bit`: the client's code gives this field no
+    /// use the server needs, and that fact shows its value is safe.
+    field_2: Int,
+  )
 }
 
 /// Writes the record's fields to the stream.

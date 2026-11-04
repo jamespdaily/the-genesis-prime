@@ -1226,6 +1226,47 @@ pub fn a_player_entering_is_written_its_whole_burst_before_the_0x262_of_a_player
   login_support.stop(started)
 }
 
+pub fn a_players_press_is_answered_0x7fd_go_and_finish_and_a_player_in_sight_reads_the_same_cast_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
+    two_players_enter_one_map()
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index: 2,
+    target: 0,
+  )
+  let #(own, _) = game_client.read_kept(game: first, have: first_have, count: 3)
+  let #(seen, _) =
+    game_client.read_kept(game: second, have: second_have, count: 3)
+  let assert [
+    game_client.CastConfirmed(client_cast_id: 1, server_cast_id: cast_id),
+    game_client.CastWent(cast_id: went, phase: 0),
+    game_client.CastFinished(cast_id: finished),
+  ] = game_client.casts_in(frames: own)
+    as "opcode.0x7fd, 0x7f4 and 0x7fe: the caster's client is answered, Paralytic Surge being instant (Spell4.42352: no cast time) and starting no child"
+  assert went == cast_id && finished == cast_id
+  let assert [
+    game_client.CastStarted(
+      cast_id: seen_id,
+      root_spell4_id: root,
+      parent_spell4_id: 0,
+      caster_unit_id: 1,
+      ..,
+    ),
+    game_client.CastWent(cast_id: seen_went, phase: 0),
+    game_client.CastFinished(cast_id: seen_finished),
+  ] = game_client.casts_in(frames: seen)
+    as "opcode.0x7ff, 0x7f4 and 0x7fe: the watcher's client reads the same cast, started by unit 1 with no parent"
+  assert seen_id == cast_id && seen_went == cast_id && seen_finished == cast_id
+    as "one cast id, which no other unit's cast shares (0x140561c30)"
+  assert root == 42_352
+    as "the root is the pressed spell, Spell4 42352, Paralytic Surge, the Medic's third level-1 ability (SpellLevel 1089) at bag index 2 (opcode.0x7ff.root_parent)"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
 pub fn a_player_in_sight_is_sent_the_worn_visuals_the_player_wears_itself_test() -> Nil {
   use <- owned_test.run(60_000)
   let TwoEntered(

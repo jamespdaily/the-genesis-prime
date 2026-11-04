@@ -33,7 +33,7 @@ import gleam/string
 import owned_test
 import planted_table
 
-pub fn the_servers_tables_are_the_thirty_one_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_thirty_six_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -44,6 +44,7 @@ pub fn the_servers_tables_are_the_thirty_one_its_rules_read_test() -> Nil {
       "CharacterCustomization",
       "CharacterCustomizationLabel",
       "ChatChannel",
+      "Class",
       "Creature2",
       "Creature2ArcheType",
       "Creature2Difficulty",
@@ -67,7 +68,11 @@ pub fn the_servers_tables_are_the_thirty_one_its_rules_read_test() -> Nil {
       "ItemSlot",
       "PathMission",
       "Spell4",
+      "Spell4Base",
+      "Spell4Effects",
+      "SpellCoolDown",
       "SpellLevel",
+      "SpellPhase",
       "WorldLocation2",
       "WorldZone",
       "XpPerLevel",

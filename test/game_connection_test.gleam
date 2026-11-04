@@ -35,6 +35,7 @@
 ////   opcode.0x36), the new character selected by the client's own rule
 ////   (lua.CharacterSelection.OnLoadFromCharacter.preselect).
 
+import cast_support
 import character_support
 import character_tables
 import connection_rule_support as support
@@ -42,9 +43,10 @@ import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type News, type PeerNews, type Request, Appeared,
-  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CreatureAppeared,
-  FromHandOff, FromMap, FromSessions, FromStore, Moving, PeerNews, Removed,
-  SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved, TellPeer,
+  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CastFinished,
+  CastStarted, CastWent, CreatureAppeared, FromHandOff, FromMap, FromSessions,
+  FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer, SentBySessions,
+  TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -61,6 +63,7 @@ import genesis_prime/login/guid
 import genesis_prime/message/account_entitlements.{AccountEntitlements}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
+import genesis_prime/message/cast_result
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/chat_line
@@ -107,6 +110,11 @@ import genesis_prime/message/rename_result
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello.{ServerHello}
+import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_finished
+import genesis_prime/message/spell_go
+import genesis_prime/message/spell_position
+import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_creature
@@ -1123,6 +1131,31 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
     as "the list again, and no map is asked"
   let assert [line] = support.logs_of(step: taken, level: LogWarning)
   assert support.says(line, "no saved place")
+}
+
+pub fn a_join_the_map_refuses_hands_the_client_back_to_character_select_with_no_watch_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = joining()
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromMap(
+          map.NotJoined(reason: map.NoLoadout(class_id: 2, faction_id: 166)),
+        ),
+      ),
+    )
+  let assert [Frame(message_id: 0x0162, body:)] = heard(taken, keyed())
+    as "the play is refused as one with no saved place is (opcode.0x162.after_create): the player is in no map"
+  assert play_character_refused.decode(body)
+    == Ok(PlayCharacterRefused(result: play_refusal.Failed))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
+    as "the list again, and the client is in character select"
+  assert support.watches(taken) == []
+    as "no watch is opened on a map that holds no player of this connection"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert support.says(line, "the map refused the join of character 42")
 }
 
 pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> Nil {
@@ -3402,17 +3435,17 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   let named = list.sort(game_connection.taken_message_ids(), int.compare)
   assert named
     == [
-      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4, 0x025B,
-      0x025C, 0x0352, 0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD,
-      0x07E0,
+      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4,
+      0x025B, 0x025C, 0x0352, 0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786,
+      0x07DD, 0x07E0, 0x0801,
     ]
-    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4"
+    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, and the cast messages 0x009A and 0x0801 (opcode.0x9a, opcode.0x801)"
   assert list.sort(game_connection.carried_message_ids(), int.compare)
     == [
-      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4, 0x0637,
-      0x063A, 0x063B,
+      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4,
+      0x0637, 0x063A, 0x063B, 0x0801,
     ]
-    as "the movement, camp and chat messages are taken only with the player in the world"
+    as "the movement, camp, chat and cast messages are taken only with the player in the world"
 }
 
 pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
@@ -4531,13 +4564,20 @@ pub fn a_move_of_40_commands_is_sent_to_each_viewer_as_31_and_9_in_order_and_the
 pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x638_and_its_0x262_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = joining()
-  let assert map.Joined(unit:, incarnation:, ..) = map_answer(taken)
+  let assert map.Joined(unit:, loadout:, max_health:, incarnation:, ..) =
+    map_answer(taken)
   let #(state, _) =
     answer(
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(map.Joined(unit:, incarnation:, clock_origin_ms: 600)),
+        FromMap(map.Joined(
+          unit:,
+          loadout:,
+          max_health:,
+          incarnation:,
+          clock_origin_ms: 600,
+        )),
       ),
     )
   let moves =
@@ -5280,4 +5320,169 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     as "opcode.0x355: the creature is removed when its process says so"
   assert unit_destroyed.decode(body)
     == Ok(UnitDestroyed(unit_id: 40, field_2: 0))
+}
+
+/// 0x7ff for the cast `cast_id` of `caster`, as a caster's rule tells it:
+/// `opcode.0x7ff`'s fields with the safe values of the decode (0, 1 and 0).
+fn spell_started_of(
+  cast_id cast_id: Int,
+  caster caster: Int,
+) -> spell_started.SpellStarted {
+  let position = spell_position.SpellPosition(x: 0, y: 0, z: 0)
+  spell_started.SpellStarted(
+    cast_id:,
+    spell4_id: 32_893,
+    root_spell4_id: 32_893,
+    parent_spell4_id: 0,
+    caster_unit_id: caster,
+    field_6: 0,
+    primary_target_unit_id: caster,
+    position:,
+    yaw: 0,
+    initial_positions: [],
+    telegraph_positions: [],
+    field_12: 1,
+    field_13: 0,
+  )
+}
+
+fn spell_go_of(cast_id cast_id: Int) -> spell_go.SpellGo {
+  spell_go.SpellGo(
+    cast_id:,
+    ignore_cooldown: 0,
+    destination: spell_position.SpellPosition(x: 0, y: 0, z: 0),
+    targets: [],
+    initial_positions: [],
+    telegraph_positions: [],
+    missiles: [],
+    phase: 0,
+  )
+}
+
+pub fn a_viewer_writes_a_cast_start_only_for_a_caster_its_client_shows_and_a_go_or_finish_only_for_a_start_it_wrote_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let start = spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let #(state, taken) =
+    feed(
+      in_world(),
+      sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start:))),
+    )
+  assert support.writes(taken) == []
+    as "unit 9 is not shown, so its client could not take the cast bar (opcode.0x7ff)"
+  let #(state, _) =
+    feed(
+      state,
+      sent_by_a_peer(news_of(unit_id: 9, news: Appeared(another_unit()))),
+    )
+  let go =
+    news_of(unit_id: 9, news: CastWent(go: spell_go_of(cast_id: start.cast_id)))
+  let #(state, taken) = feed(state, sent_by_a_peer(go))
+  assert written_ids(taken) == []
+    as "a go for a start the viewer did not write is dropped (0x140561c30: the client drops a go with an unknown cast id)"
+  let #(state, taken) =
+    feed(state, sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start:))))
+  assert written_ids(taken) == [0x07FF]
+  let #(state, taken) = feed(state, sent_by_a_peer(go))
+  assert written_ids(taken) == [0x07F4]
+  let finish = news_of(unit_id: 9, news: CastFinished(cast_id: start.cast_id))
+  let #(state, taken) = feed(state, sent_by_a_peer(finish))
+  assert written_ids(taken) == [0x07FE]
+  let #(_, taken) = feed(state, sent_by_a_peer(go))
+  assert written_ids(taken) == []
+    as "the finish ends the cast for the viewer: a later go is dropped"
+}
+
+pub fn a_viewer_writes_the_finish_of_each_cast_of_a_unit_before_the_unit_is_removed_and_none_after_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let first = spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let second = spell_started_of(cast_id: 2_147_497_986, caster: 9)
+  let #(state, _) =
+    feed(
+      in_world(),
+      sent_by_a_peer(news_of(unit_id: 9, news: Appeared(another_unit()))),
+    )
+  let #(state, _) =
+    feed(
+      state,
+      sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start: second))),
+    )
+  let #(state, _) =
+    feed(
+      state,
+      sent_by_a_peer(news_of(unit_id: 9, news: CastStarted(start: first))),
+    )
+  let #(state, taken) =
+    feed(state, sent_by_a_peer(news_of(unit_id: 9, news: Removed)))
+  let finishes =
+    list.filter_map(heard(taken, keyed()), fn(frame) {
+      case frame.message_id == 0x07FE {
+        True -> {
+          let assert Ok(finished) = spell_finished.decode(frame.body)
+          Ok(finished.cast_id)
+        }
+        False -> Error(Nil)
+      }
+    })
+  assert written_ids(taken) == [0x07FE, 0x07FE, 0x0355]
+    as "the client keeps a cast that never gets its 0x7fe live (cast.no_answer), and a cast id used again restarts it (opcode.0x7ff), so each cast is finished before the unit goes"
+  assert finishes == [2_147_497_985, 2_147_497_986] as "in cast id order"
+  let #(_, taken) =
+    feed(
+      state,
+      sent_by_a_peer(news_of(
+        unit_id: 9,
+        news: CastFinished(cast_id: first.cast_id),
+      )),
+    )
+  assert written_ids(taken) == []
+    as "the viewer keeps no id of the removed unit's casts"
+}
+
+pub fn a_0x9a_in_the_world_is_taken_by_the_cast_rule_and_a_bag_index_not_held_is_answered_0x7fc_4_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let press =
+    cast_support.press_body(
+      client_cast_id: 9,
+      bag_index: 99,
+      target: 0,
+      press: 1,
+    )
+  let #(_, taken) = read(in_world(), world_message(0x009A, press))
+  let assert [Frame(message_id: 0x07FC, body:)] = heard(taken, keyed())
+    as "opcode.0x7fc: the refusal of a press"
+  assert spell_cast_refused.decode(body)
+    == Ok(spell_cast_refused.SpellCastRefused(
+      client_cast_id: 9,
+      spell4_id: 0,
+      result: cast_result.SpellUnknown,
+    ))
+    as "0x14039a040: 4 for a bag index the player does not hold"
+  assert support.unhandled_ids(taken) == []
+}
+
+pub fn a_0x801_for_a_cast_that_is_not_live_changes_nothing_and_writes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cancel =
+    cast_support.cancel_body(
+      cast_id: 2_147_497_985,
+      reason: cast_result.SpellCancelled,
+      bit: 1,
+    )
+  let #(_, taken) = read(in_world(), world_message(0x0801, cancel))
+  assert written_ids(taken) == [] && support.unhandled_ids(taken) == []
+    as "opcode.0x801: an unknown or finished id is nothing, not an unhandled message"
+}
+
+pub fn a_0x9a_outside_the_world_is_logged_as_unhandled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let press =
+    cast_support.press_body(
+      client_cast_id: 9,
+      bag_index: 0,
+      target: 0,
+      press: 1,
+    )
+  let #(_, taken) = read(in_select(), world_message(0x009A, press))
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x009A))]
+    as "the cast rows are taken with the player in the world only (genesis_prime/game/routing)"
 }
