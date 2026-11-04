@@ -87,8 +87,12 @@ fn classes() -> List(Class) {
 
 const factions = [167, 166]
 
+/// Whether a value is the source's decimal, to 1e-6. The rows hold 32-bit floats,
+/// so GameFormula 549's 3.6 is 3.5999999046 (the client's 7.1999998 at power level
+/// 2), and a sum of armor pieces differs from its decimal by about 1e-7; no value
+/// the formulas give is within 1e-6 of another a test expects.
 fn close(value value: Float, to expected: Float) -> Bool {
-  float.absolute_value(value -. expected) <. 0.001
+  float.absolute_value(value -. expected) <. 1.0e-6
 }
 
 fn weapon_of(class class: Class, faction faction: Int) -> Int {
@@ -351,13 +355,13 @@ pub fn a_changed_formula_row_changes_the_weapons_ratings_the_armors_ratings_the_
     as "0x14040df10: a quarter of 445.5 is Support Rating"
   let #(armor_slope_doubled, _) =
     warrior_in(files: files_with_formula(
-      formula: novice_tables.Formula(..formula(549), float02: 7.2),
+      formula: novice_tables.Formula(..formula(549), float02: 7.5),
     ))
   assert close(
     value: armor_slope_doubled.properties.assault_rating,
-    to: 239.0625,
+    to: 242.0625,
   )
-    as "0x14041da70: GameFormula 549 at 7.2 doubles the armor's Assault Rating to 72.0 and leaves the weapon's 167.0625"
+    as "0x14041da70: GameFormula 549 at 7.5 gives each piece 7.5 x 2 x its slot's modifier, 75.0 over the set's modifiers (1.25 + 1.25 + 1 + 0.75 + 0.75 = 5), and leaves the weapon's 167.0625"
   let #(factor_raised, _) =
     warrior_in(files: files_with_formula(
       formula: novice_tables.Formula(..formula(1265), float0: 0.5),
@@ -582,4 +586,37 @@ pub fn a_class_with_no_level_1_spell_row_or_a_createable_class_and_faction_with_
       "CharacterCreation row 359 (class 1, faction 166, start 3) is a row a player can make, and without row 478 its class and faction have no Novice set: "
       <> reason
     }
+}
+
+pub fn a_formula_with_no_value_at_the_power_level_fails_the_load_naming_the_formula_and_the_level_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let formula = fn(id) {
+    let assert Ok(row) =
+      list.find(novice_tables.formulas(), fn(planted) { planted.id == id })
+      as "the planted GameFormula row exists"
+    row
+  }
+  let reason =
+    why_the_load_fails(files: files_with_formula(
+      formula: novice_tables.Formula(..formula(549), dataint0: 5, float03: 0.5),
+    ))
+  assert string.contains(reason, "GameFormula 549")
+    && string.contains(reason, "power level 2")
+    as {
+      "0x14041da70: a negative offset (2 - 5) to the power 0.5 has no value, and the reason names the formula and the level, not an item: "
+      <> reason
+    }
+}
+
+pub fn an_items_guid_differs_for_each_character_location_and_bag_index_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert loadout.item_guid(character_number: 42, location: 1, bag_index: 5)
+    == 42 * 2_199_023_255_552 + 4_294_967_296 + 5
+    as "the guid packs the character above 41 bits, the location (9 bits) in bits 32 to 40 and the bag index (32 bits) below"
+  assert loadout.item_guid(character_number: 42, location: 0, bag_index: 256)
+    != loadout.item_guid(character_number: 42, location: 1, bag_index: 0)
+    as "a bag index of 256 is not a location of 1"
+  assert loadout.item_guid(character_number: 42, location: 4, bag_index: 0)
+    != loadout.item_guid(character_number: 43, location: 4, bag_index: 0)
+    as "another character's item has another guid"
 }

@@ -15,6 +15,7 @@
 ////   health of 735.97 is cut to 735.
 
 import character_support
+import character_tables
 import game_client.{Loadout, Sheet}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -27,11 +28,17 @@ import genesis_prime/message/shared_item.{type SharedItem, SharedItem}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/table/game_formula
+import genesis_prime/table/loader/server_table
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/player_unit
+import gleam/erlang/reference
 import gleam/list
 import gleam/option.{None, Some}
+import novice_tables
 import owned_test
 import place_support
+import planted_table
 
 fn item(location location: Int, index index: Int, id id: Int) -> SharedItem {
   SharedItem(
@@ -178,6 +185,7 @@ pub fn the_sheet_shows_the_ratings_times_a_quarter_rounded_the_health_cut_and_th
         #(7, 735.97),
         #(41, 449.6),
       ]),
+      tables: character_tables.shared(),
     )
     == Sheet(
       assault_power: 25,
@@ -186,7 +194,49 @@ pub fn the_sheet_shows_the_ratings_times_a_quarter_rounded_the_health_cut_and_th
       max_shield: 450,
     )
     as "0x14064c960: 100 x 0.25 is 25; 0x14064ca50: 41 x 0.25 = 10.25 shows 10; 0x14064a6d0: 735.97 is cut to 735; 0x14064faa0: 449.6 shows 450"
-  assert game_client.sheet(unit: unit_with(properties: []))
+  assert game_client.sheet(
+      unit: unit_with(properties: []),
+      tables: character_tables.shared(),
+    )
     == Sheet(assault_power: 0, support_power: 0, max_health: 0, max_shield: 0)
     as "a property the 0x262 does not set is 0"
+}
+
+pub fn the_sheets_power_factors_are_game_formula_1266s_two_values_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let formulas =
+    list.map(novice_tables.formulas(), fn(row) {
+      case row.id {
+        1266 -> novice_tables.Formula(..row, float0: 0.5, float01: 0.1)
+        _ -> row
+      }
+    })
+  let files =
+    list.map(character_tables.files(), fn(file) {
+      case file.0 == game_formula.schema.file {
+        True ->
+          planted_table.file(
+            game_formula.schema,
+            list.append(
+              character_tables.game_formula_rows(
+                ids: [character_tables.highest_level_formula],
+                highest: 50,
+              ),
+              list.map(formulas, novice_tables.game_formula_row),
+            ),
+          )
+        False -> file
+      }
+    })
+  use folder <- planted_table.in_folder(files)
+  let assert Ok(tables) =
+    server_table.load_under(under: reference.new(), from: folder)
+    as "the planted tables with a changed GameFormula 1266 load"
+  assert game_client.sheet(
+      unit: unit_with(properties: [#(35, 100.0), #(36, 41.0)]),
+      tables:,
+    )
+    == Sheet(assault_power: 50, support_power: 4, max_health: 0, max_shield: 0)
+    as "0x14064c960: Assault Power is 100 x the row's first value 0.5; 0x14064ca50: Support Power is 41 x its second value 0.1, 4.1 shown as 4"
+  table_store.unload(tables)
 }

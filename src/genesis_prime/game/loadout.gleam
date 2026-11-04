@@ -22,8 +22,9 @@
 ////   prerequisite, in id order, each as the Spell4Base id of its Spell4 row
 ////   (`SpellLevel.spell4Id`).
 //// - **Health** is CreatureLevel's Base Health at the character's level, rounded,
-////   plus the armor's (`player.level1_base_health`, a server rule: the client
-////   holds none for a player).
+////   plus the armor's: Jim's decision on goal 274, that gear gives health at any
+////   level (the client holds no health rule for a player,
+////   `player.level1_base_health` for level 1).
 
 import genesis_prime/game/item_property.{
   type ItemProperties, type ItemPropertyError,
@@ -291,7 +292,8 @@ pub fn of(
 }
 
 /// A player's maximum health: the Base Health of CreatureLevel's row of its
-/// level plus the gear's, rounded (`player.level1_base_health`). `Error(Nil)`
+/// level plus the gear's, rounded (Jim's decision on goal 274: gear gives health
+/// at any level). `Error(Nil)`
 /// when the table has no row for the level.
 pub fn max_health(
   tables tables: table_store.Tables,
@@ -302,4 +304,19 @@ pub fn max_health(
   |> result.map(fn(row) {
     float.round(row.unit_property_value07 +. loadout.properties.base_health)
   })
+}
+
+/// The guid of the item a character holds at a location and bag index: the
+/// character above bit 41, the location (9 bits) in bits 32 to 40 and the bag
+/// index (32 bits) below, so no two held slots of a character, and no two
+/// characters, share one. A server choice: the client keys held items by
+/// location and index and only keeps the guid (0x140569d30).
+pub fn item_guid(
+  character_number character_number: Int,
+  location location: Int,
+  bag_index bag_index: Int,
+) -> Int {
+  int.bitwise_shift_left(character_number, 41)
+  + int.bitwise_shift_left(location, 32)
+  + bag_index
 }

@@ -10,8 +10,8 @@
 ////   shield and the weapon.
 //// - The 44 Item2 rows those columns name, with their Item2Type, Item2Family,
 ////   Item2Category and ItemSlot rows.
-//// - GameFormula rows 67, 547, 548, 549, 1260, 1261, 1265, 1286 and 1288, which
-////   the item formulas read, with the client's values.
+//// - GameFormula rows 67, 547, 548, 549, 1260, 1261, 1265, 1266, 1286 and 1288, which
+////   the item formulas and the sheet's power read, with the client's values.
 //// - CreatureLevel rows 1 to 50, the levels a character can have, with their Base
 ////   Health.
 //// - The 18 SpellLevel rows of level 1 with no prerequisite and class 1's rows
@@ -378,6 +378,7 @@ pub fn formulas() -> List(Formula) {
     Formula(1260, 0, 0, 0.75, 1.25, 0.05000000074505806, 0.25),
     Formula(1261, 10_000, 250, 0.25, 1.0, 0.0, 0.0),
     Formula(1265, 0, 0, 0.25, 0.009999999776482582, 25.0, 25.0),
+    Formula(1266, 0, 0, 0.25, 0.25, 0.0, 0.0),
     Formula(1286, 50, 0, 1000.0, 0.0, 6.800000190734863, 1.0),
     Formula(1288, 0, 0, 0.0, 0.0, 132.0, 1.0),
   ]

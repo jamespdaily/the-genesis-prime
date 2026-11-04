@@ -88,6 +88,9 @@ pub type ItemPropertyError {
   /// An item whose properties the client's code gives by a branch this code does
   /// not follow (see the module's last point).
   Unread(item2_id: Int, why: String)
+  /// A GameFormula row's curve has no value at the power level: a negative
+  /// offset to a fractional power.
+  NoCurveValue(formula: Int, level: Int)
   /// A set holds two shield items, whose properties would share one property
   /// each.
   TwoShields
@@ -101,6 +104,11 @@ pub fn describe(error error: ItemPropertyError) -> String {
       "the table " <> table <> " has no row " <> int.to_string(id)
     Unread(item2_id:, why:) ->
       "the item " <> int.to_string(item2_id) <> " is not read: " <> why
+    NoCurveValue(formula:, level:) ->
+      "the curve of GameFormula "
+      <> int.to_string(formula)
+      <> " has no value at power level "
+      <> int.to_string(level)
     TwoShields -> "a set holds two shield items"
   }
 }
@@ -375,12 +383,7 @@ fn curve(
   let offset = int.to_float(level - row.dataint0)
   use power <- result.try(
     float.power(offset, row.datafloat03)
-    |> result.replace_error(Unread(
-      item2_id: level,
-      why: "GameFormula "
-        <> int.to_string(row.id)
-        <> "'s curve has no value at the power level",
-    )),
+    |> result.replace_error(NoCurveValue(formula: row.id, level:)),
   )
   Ok(
     row.datafloat0

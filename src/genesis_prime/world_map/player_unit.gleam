@@ -210,6 +210,12 @@ pub fn create(
   )
 }
 
+/// A bridge: the map builds the unit from the character alone, without the
+/// tables, so world entry applies the gear to the map's record, and the typed
+/// loadout and maximum health live in world entry's `Entered`. A map whose unit
+/// takes the loadout at its join makes this function, `stand_in_health` and the
+/// rebuild of the stats unnecessary.
+///
 /// The unit's 0x262 with the gear's values: stat 0 the maximum health, stat 20
 /// the shield, full, and the properties the gear gives, in the order of their
 /// ids. A unit whose gear holds no shield has no stat 20 and no shield

@@ -40,6 +40,9 @@ import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property
 import genesis_prime/message/world_message.{WorldMessage}
+import genesis_prime/table/game_formula
+import genesis_prime/table/id.{GameFormulaId}
+import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -830,16 +833,33 @@ pub type Sheet {
   )
 }
 
-/// The factor from a rating to a power: GameFormula 1266's first value, 0.25
-/// (0x14064c960, 0x14064ca50).
-const power_per_rating = 0.25
+/// The GameFormula row that holds the factors from a rating to a power: its
+/// first value for Assault Power (0x14064c960) and its second for Support Power
+/// (0x14064ca50).
+const power_formula = 1266
 
-/// The sheet's figures for the player a 0x262 creates: Assault Power is property
-/// 35 times the factor (0x14064c960), Support Power is property 36 times it
+/// The factor Assault Power uses when the table has no GameFormula row 1266:
+/// the client's own 0.25 (0x14064c960). Support Power has no read fallback, so a
+/// table without the row stops the bot.
+const assault_power_without_the_row = 0.25
+
+/// The sheet's figures for the player a 0x262 creates, with the client's
+/// tables: Assault Power is property 35 times GameFormula 1266's first value
+/// (0x14064c960), Support Power is property 36 times its second value
 /// (0x14064ca50), Max Health is property 7 cut to a whole number (0x14064a6d0)
 /// and Max Shields is property 41 (0x14064faa0); a property the 0x262 does not
 /// set is 0. Power and shields show rounded to the whole number.
-pub fn sheet(unit unit: UnitCreatePlayer) -> Sheet {
+pub fn sheet(
+  unit unit: UnitCreatePlayer,
+  tables tables: table_store.Tables,
+) -> Sheet {
+  let power = game_formula.get(tables:, id: GameFormulaId(power_formula))
+  let assault_factor = case power {
+    Ok(row) -> row.datafloat0
+    Error(Nil) -> assault_power_without_the_row
+  }
+  let assert Ok(support_factor) = result.map(power, fn(row) { row.datafloat01 })
+    as "the client's tables hold GameFormula row 1266, whose second value 0x14064ca50 reads"
   let property = fn(id) {
     case
       list.find(unit.tail.properties, fn(property) {
@@ -851,8 +871,8 @@ pub fn sheet(unit unit: UnitCreatePlayer) -> Sheet {
     }
   }
   Sheet(
-    assault_power: float.round(property(35) *. power_per_rating),
-    support_power: float.round(property(36) *. power_per_rating),
+    assault_power: float.round(property(35) *. assault_factor),
+    support_power: float.round(property(36) *. support_factor),
     max_health: float.truncate(property(7)),
     max_shield: float.round(property(41)),
   )

@@ -30,6 +30,7 @@
 
 import ask_support
 import character_support
+import character_tables
 import connection_rule_support as support
 import event_wait
 import game_client
@@ -383,9 +384,10 @@ pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_
     as "the Warrior's three level-1 spells (SpellLevel rows 919, 920 and 925) as their Spell4Base ids, in bag slots 0 to 2 (opcode.0x111.ability_bag)"
   assert loadout.bar == [#(0, 18_309), #(1, 37_968), #(2, 38_017)]
     as "the bar's large buttons 0 to 2 show the three abilities (opcode.0x19d)"
-  assert game_client.sheet(unit: game_client.unit_create_player_in(
-      frames: burst,
-    ))
+  assert game_client.sheet(
+      unit: game_client.unit_create_player_in(frames: burst),
+      tables: character_tables.shared(),
+    )
     == game_client.Sheet(
       assault_power: 51,
       support_power: 14,

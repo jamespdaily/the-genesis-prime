@@ -145,8 +145,11 @@ pub type Loaded {
 
 /// A player in the world: its character, its map, the run of the map that took
 /// it, which the rule watches as `Map(map, incarnation)`, its unit id, the
-/// origin of the map's clock (`Joined` carries it), its own 0x262 record
-/// (`Joined`'s unit, which the connection sends the players who see it), who
+/// origin of the map's clock (`Joined` carries it), its loadout and maximum
+/// health (typed, from the tables: the weapon, the abilities and the gear's
+/// properties, which the 0x262 carries as bits), its own 0x262 record
+/// (`Joined`'s unit with the gear applied, which the connection sends the players
+/// who see it), who
 /// sees it, the units its own client shows, where it stands
 /// (genesis_prime/game/movement) and whether it is camping
 /// (genesis_prime/game/camp), and its chat (genesis_prime/game/chat), which the
@@ -163,6 +166,8 @@ pub type Entered {
     incarnation: Int,
     unit_id: Int,
     unit: UnitCreatePlayer,
+    loadout: Loadout,
+    max_health: Int,
     clock_origin_ms: Int,
     viewers: Set(ConnectionId),
     shown: Set(Int),
@@ -329,6 +334,8 @@ pub fn joined(
               incarnation:,
               unit_id:,
               unit:,
+              loadout:,
+              max_health:,
               clock_origin_ms:,
               viewers: set.new(),
               shown: set.new(),
@@ -528,9 +535,7 @@ fn loadout_sent(
 }
 
 /// 0x111 for an item the character holds, a stack of 1 with no charges and full
-/// durability. The guid is a server choice, one per held slot of a character:
-/// the client keys held items by location and index and only keeps the guid
-/// (0x140569d30). Every value the client's code does not name is 0
+/// durability. The guid is `loadout.item_guid`. Every value the client's code does not name is 0
 /// (`opcode.0x111.shared_item_unnamed`), the lists empty.
 fn held_item(
   character_number character_number: Int,
@@ -541,7 +546,7 @@ fn held_item(
   let assert Ok(body) =
     item_added.encode(ItemAdded(
       item: SharedItem(
-        item_guid: character_number * 65_536 + location * 256 + bag_index,
+        item_guid: loadout.item_guid(character_number:, location:, bag_index:),
         field_2: 0,
         item_id:,
         location:,
@@ -570,7 +575,7 @@ fn held_item(
       ),
       reason: held_from_the_start,
     ))
-    as "an item of 18 bits, a location of 9 and a character's guid of 64 fit the message"
+    as "an item of 18 bits, a location of 9 and a guid of 64 bits, a character number below 2^23, fit the message"
   Send(Frame(message_id: item_added.message_id, body:))
 }
 

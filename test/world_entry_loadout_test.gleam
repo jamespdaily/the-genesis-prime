@@ -21,6 +21,9 @@
 ////   Base Health 736, Assault Rating 203.0625, Support Rating 55.6875, Armor
 ////   250, 200 or 150 by class, shield 450, mitigation 0.625, regeneration 0.15
 ////   and reboot 5125.
+//// - A property's float is compared exactly: the 32-bit float nearest the
+////   source's decimal (`float32.rounded`), which is what the client holds
+////   (the sums of 7.2 and 5.4 in 64 bits round to the same 32 bits).
 //// - The shield on entry is full (stat 20 equal to property 41): a server
 ////   choice, the client holding no shield rule (`regen.client`).
 
@@ -41,7 +44,7 @@ import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{
   type Character, AccountId, Character, CharacterId, NameStands,
 }
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/table/id.{ClassId, Item2Id, RaceId, Spell4BaseId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
 import gleam/float
@@ -320,10 +323,6 @@ fn property_value(
   value
 }
 
-fn close(value value: Float, to expected: Float) -> Bool {
-  float.absolute_value(value -. expected) <. 0.001
-}
-
 fn stat(player player: UnitCreatePlayer, id id: Int) -> Int {
   let assert Ok(stat) =
     list.find(player.tail.stats, fn(stat) { stat.stat_id == id })
@@ -353,15 +352,11 @@ pub fn properties_35_and_36_are_203_0625_and_55_6875_for_every_class_and_faction
       let #(frames, _) =
         entering(character: character(class: class.id, faction:, level: 1))
       let properties = player_of(frames:).tail.properties
-      assert close(
-        value: property_value(properties: properties, id: 35),
-        to: 203.0625,
-      )
+      assert property_value(properties: properties, id: 35)
+        == float32.rounded(203.0625)
         as "0x14040df10: the weapon's Assault Rating 167.0625 and the armor's 36.0"
-      assert close(
-        value: property_value(properties: properties, id: 36),
-        to: 55.6875,
-      )
+      assert property_value(properties: properties, id: 36)
+        == float32.rounded(55.6875)
         as "0x14040df10: the weapon's Support Rating 55.6875"
     })
   })
@@ -372,13 +367,11 @@ pub fn property_42_is_250_for_heavy_200_for_medium_and_150_for_light_armor_test(
   list.each(classes(), fn(class) {
     let #(frames, _) =
       entering(character: character(class: class.id, faction: 166, level: 1))
-    assert close(
-      value: property_value(
+    assert property_value(
         properties: player_of(frames:).tail.properties,
         id: 42,
-      ),
-      to: class.armor,
-    )
+      )
+      == float32.rounded(class.armor)
       as "0x14040e340: armor 40 x the category's and each slot's modifier, summed over the set"
   })
 }
@@ -389,20 +382,14 @@ pub fn property_41_is_450_and_properties_175_176_and_178_are_the_shield_items_va
     let #(frames, _) =
       entering(character: character(class: class.id, faction: 166, level: 1))
     let properties = player_of(frames:).tail.properties
-    assert close(
-      value: property_value(properties: properties, id: 41),
-      to: 450.0,
-    )
+    assert property_value(properties: properties, id: 41)
+      == float32.rounded(450.0)
       as "0x14040dbf0: ShieldCapacityMax 450"
-    assert close(
-      value: property_value(properties: properties, id: 175),
-      to: 0.625,
-    )
+    assert property_value(properties: properties, id: 175)
+      == float32.rounded(0.625)
       as "0x14040dbf0: ShieldMitigationMax 0.625"
-    assert close(
-      value: property_value(properties: properties, id: 176),
-      to: 0.15,
-    )
+    assert property_value(properties: properties, id: 176)
+      == float32.rounded(0.15)
       as "0x14040dbf0: ShieldRegenPct 0.15, in place of the unit property default 0.25 (a server choice: the item's value replaces the default, the client summing nothing)"
     assert property_value(properties: properties, id: 178) == 5125.0
       as "0x14040dbf0: ShieldRebootTime 5125, in place of the default 2500 (the same server choice)"
@@ -438,4 +425,19 @@ pub fn a_level_9_players_health_adds_the_armors_600_to_the_creature_level_rows_b
   assert stat(player:, id: 0) == 2895
     && property_value(properties: player.tail.properties, id: 7) == 2895.0
     as "player.level1_base_health: the CreatureLevel row of the level, here the planted row 9's 2295.49, and the armor's 600"
+}
+
+pub fn the_player_the_connection_keeps_holds_its_loadout_and_its_max_health_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, entered) =
+    entering(character: character(class: 2, faction: 166, level: 1))
+  assert entered.loadout.weapon == Item2Id(81_353)
+    && entered.loadout.weapon_slot == 16
+    && entered.loadout.abilities
+    == [Spell4BaseId(26_468), Spell4BaseId(25_473), Spell4BaseId(25_635)]
+    as "the typed loadout: CharacterCreation row 479's weapon in slot 16 and the Engineer's three Spell4Base ids"
+  assert entered.max_health == 736
+    as "player.level1_base_health: the typed maximum health the 0x262 carries"
+  assert entered.loadout.properties.armor == 250.0
+    as "the typed gear: the Engineer's heavy armor, 250"
 }
