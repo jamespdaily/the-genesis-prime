@@ -34,7 +34,10 @@ import unitest
 
 fn planted(base base: Int) -> Spell {
   let assert Ok(spell) =
-    spell_plan.in_plans(plans: spell_tables.plans(), base: Spell4BaseId(base))
+    spell_plan.in_plans(
+      plans: spell_tables.default_plans(),
+      base: Spell4BaseId(base),
+    )
     as "the planted class holds the ability"
   spell
 }

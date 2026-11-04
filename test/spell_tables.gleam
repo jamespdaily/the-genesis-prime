@@ -40,6 +40,7 @@
 //// - Charged Shot 34718: ChargeRelease with a thresholdTime of 8200 and the stages
 ////   of Spell4Thresholds 125, 123 and 124.
 
+import database_support
 import genesis_prime/game/spell_plan
 import genesis_prime/table/class
 import genesis_prime/table/loader/store as table_store
@@ -50,10 +51,10 @@ import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/order
+import owned_key
 import planted_table.{type Cell, Float, Integer}
 
 /// The planted rows of each table the plan reads.
@@ -1318,7 +1319,7 @@ pub fn derivation_result(
   use folder <- planted_table.in_folder(files)
   case
     table_store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: entries(),
       requirements: [],
@@ -1359,31 +1360,6 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
   ]
 }
 
-/// The plans the planted rows build, built once for the whole run: each build
-/// loads the tables, which costs memory that a test pressing many times in a
-/// parallel run cannot spare.
-pub fn plans() -> spell_plan.Plans {
-  case remembered(key: "spell_tables_plans", default: Error(Nil)) {
-    Ok(plans) -> plans
-    Error(Nil) -> {
-      let assert Ok(built) =
-        with_loaded(rows: rows(), body: fn(tables) { spell_plan.build(tables:) })
-        as "the planted spell rows build"
-      remember(key: "spell_tables_plans", plans: Ok(built))
-      built
-    }
-  }
-}
-
-@external(erlang, "persistent_term", "get")
-fn remembered(
-  key key: String,
-  default default: Result(spell_plan.Plans, Nil),
-) -> Result(spell_plan.Plans, Nil)
-
-@external(erlang, "persistent_term", "put")
-fn remember(key key: String, plans plans: Result(spell_plan.Plans, Nil)) -> Nil
-
 /// The planted tables the plan reads, loaded from these rows under a key of
 /// their own, for the body to run on; unloaded afterwards.
 pub fn with_loaded(
@@ -1394,7 +1370,7 @@ pub fn with_loaded(
   use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
     table_store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: entries(),
       requirements: [],
@@ -1404,4 +1380,17 @@ pub fn with_loaded(
   let result = body(tables)
   table_store.unload(tables)
   result
+}
+
+/// The plans the planted rows build, built once per run from one load of the
+/// planted tables that is erased after the build; every test that reads the
+/// plans of the unchanged rows takes them from here, so it puts no terms of its
+/// own. A test that changes a row loads its own (`with_loaded`).
+pub fn default_plans() -> spell_plan.Plans {
+  database_support.once("spell_tables_default_plans", fn() {
+    let assert Ok(plans) =
+      with_loaded(rows: rows(), body: fn(tables) { spell_plan.build(tables:) })
+      as "the planted spell rows build"
+    plans
+  })
 }

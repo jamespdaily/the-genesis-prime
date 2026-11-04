@@ -45,11 +45,11 @@ import genesis_prime/table/world
 import gleam/bit_array
 import gleam/crypto
 import gleam/erlang/process
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/result
+import owned_key
 import owned_test
 import planted_table.{Integer, Text, TextAt}
 import simplifile
@@ -123,7 +123,7 @@ pub fn a_table_file_that_is_missing_fails_the_load_naming_the_file_test() -> Nil
   use <- owned_test.run(5000)
   use folder <- planted_table.in_folder([])
   assert store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: [localized_text.entry()],
       requirements: [],
@@ -149,7 +149,7 @@ pub fn a_planted_table_loads_and_gives_each_row_by_id_and_nothing_for_a_gap_test
   let file =
     localized_text_file([localized_text_row(1, 7), localized_text_row(3, 9)])
   use folder <- planted_table.in_folder([#("LocalizedText", file)])
-  let key = reference.new()
+  let key = owned_key.new()
   let assert Ok(tables) =
     store.load(
       under: key,
@@ -187,14 +187,16 @@ pub fn a_loads_digest_covers_each_files_name_and_bytes_and_changes_with_either_t
     use folder <- planted_table.in_folder([#("LocalizedText", file)])
     let assert Ok(tables) =
       store.load(
-        under: reference.new(),
+        under: owned_key.new(),
         from: folder,
         entries: [localized_text.entry()],
         requirements: [],
         derivations: [],
       )
       as "a planted table loads"
-    store.digest(tables)
+    let digest = store.digest(tables)
+    store.unload(tables)
+    digest
   }
   assert load_of(file)
     == bit_array.base16_encode(
@@ -224,7 +226,7 @@ pub fn load_planted_tables_for_the_server_twice() -> Nil {
   }
   let load_under_a_key = fn() {
     store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: [localized_text.entry()],
       requirements: [],
@@ -250,7 +252,7 @@ pub fn a_failed_load_leaves_no_persistent_term_behind_test() -> Nil {
   use <- owned_test.run(5000)
   let file = localized_text_file([localized_text_row(1, 7)])
   use folder <- planted_table.in_folder([#("LocalizedText", file)])
-  let key = reference.new()
+  let key = owned_key.new()
   let loaded =
     store.load(
       under: key,
@@ -269,7 +271,7 @@ pub fn a_derivation_that_fails_fails_the_load_and_leaves_no_persistent_term_behi
   use <- owned_test.run(5000)
   let file = localized_text_file([localized_text_row(1, 7)])
   use folder <- planted_table.in_folder([#("LocalizedText", file)])
-  let key = reference.new()
+  let key = owned_key.new()
   let loaded =
     store.load(
       under: key,
@@ -331,7 +333,7 @@ pub fn a_row_another_table_requires_that_is_missing_fails_the_load_naming_both_t
     #("Creature2", creature2_file(14_610, [])),
     #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
   ])
-  let key = reference.new()
+  let key = owned_key.new()
   assert store.load(
       under: key,
       from: folder,
@@ -364,7 +366,7 @@ pub fn a_row_another_table_requires_that_is_present_loads_test() -> Nil {
   ])
   let assert Ok(tables) =
     store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: [creature2.entry(), localized_text.entry()],
       requirements: [creature2_names_a_localized_text()],
@@ -482,7 +484,7 @@ fn load_file(
 ) -> Result(store.Tables, store.LoadError) {
   use folder <- planted_table.in_folder([#(file, bytes)])
   store.load(
-    under: reference.new(),
+    under: owned_key.new(),
     from: folder,
     entries: [localized_text.entry()],
     requirements: [],
@@ -577,7 +579,7 @@ fn creature2_with(
     )
   use folder <- planted_table.in_folder([#("Creature2", file)])
   store.load(
-    under: reference.new(),
+    under: owned_key.new(),
     from: folder,
     entries: [creature2.entry()],
     requirements: [],
@@ -672,7 +674,7 @@ pub fn a_derived_value_is_built_once_from_the_loaded_tables_and_every_read_gives
   let file =
     localized_text_file([localized_text_row(1, 7), localized_text_row(3, 9)])
   use folder <- planted_table.in_folder([#("LocalizedText", file)])
-  let key = reference.new()
+  let key = owned_key.new()
   let built = process.new_subject()
   let assert Ok(tables) =
     store.load(
@@ -707,7 +709,7 @@ pub fn a_derived_value_named_like_a_table_neither_reads_nor_overwrites_the_table
   use folder <- planted_table.in_folder([
     #("Creature2", creature2_file(14_610, [])),
   ])
-  let key = reference.new()
+  let key = owned_key.new()
   let assert Ok(tables) =
     store.load(
       under: key,
@@ -738,7 +740,7 @@ pub fn a_derived_value_is_not_built_when_a_required_row_is_missing_test() -> Nil
     #("Creature2", creature2_file(14_610, [])),
     #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
   ])
-  let key = reference.new()
+  let key = owned_key.new()
   let built = process.new_subject()
   assert result.is_error(
     store.load(
@@ -762,7 +764,7 @@ pub fn a_failed_load_under_a_key_erases_the_derived_value_an_earlier_load_left_t
     #("Creature2", creature2_file(14_610, [])),
     #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
   ])
-  let key = reference.new()
+  let key = owned_key.new()
   let built = process.new_subject()
   let load = fn(entries, requirements) {
     store.load(under: key, from: folder, entries:, requirements:, derivations: [

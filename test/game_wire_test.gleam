@@ -82,7 +82,6 @@ import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import gleam/bool
@@ -98,6 +97,7 @@ import login_client
 import login_support
 import mailbox_support
 import novice_tables
+import owned_key
 import owned_test
 import pog
 import unitest
@@ -2413,7 +2413,7 @@ fn start_with_creatures() -> login_support.Started {
         folder: content_support.fixture_folder,
       )
       as "the planted world-database file imports"
-    let key = table_store.new_key()
+    let key = owned_key.new_fixture_key()
     let assert Ok(Nil) =
       content.load(
         tables: character_tables.content_tables(),

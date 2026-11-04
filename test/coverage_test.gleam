@@ -33,10 +33,10 @@ import genesis_prime/table/prerequisite
 import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4_effects
 import gleam/bit_array
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/string
+import owned_key
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -59,7 +59,7 @@ fn measured_over_planted_objectives(
   use folder <- planted_table.in_folder([#("QuestObjective", file)])
   let assert Ok(tables) =
     store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: [quest_objective.entry()],
       requirements: [],
@@ -124,7 +124,7 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
   use folder <- planted_table.in_folder([#("Prerequisite", file)])
   let assert Ok(tables) =
     store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: [prerequisite.entry()],
       requirements: [],

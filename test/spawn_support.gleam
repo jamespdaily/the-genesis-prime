@@ -5,6 +5,7 @@
 //// truncated to 52), so a test of the rule reads what the real spawn would carry
 //// without the client's tables.
 
+import database_support
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
@@ -12,6 +13,7 @@ import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/list
 import gleam/option
+import owned_key
 import place_support
 
 /// Warfare Woods, WorldZone 5967 (Quest2.10518).
@@ -68,14 +70,30 @@ pub fn beast_row(number number: Int) -> Row {
 const worlds = [22, 51, 426, 870, 990, 1061, 1387, 3460, 3461, 6009]
 
 /// A key whose terms hold these spawns for World 3460 and no spawn for every
-/// other world a test's map may run in, as the content load leaves them.
+/// other world a test's map may run in, as the content load leaves them. It is
+/// the test's own, erased when the body ends: a test with no spawns takes
+/// `key_without_spawns` and puts nothing.
 pub fn key_with(spawns spawns: List(Spawn)) -> table_store.Key {
-  let key = table_store.new_key()
+  let key = owned_key.new_fixture_key()
+  put_worlds(key:, spawns:)
+  key
+}
+
+/// The key every test with no spawns shares: the terms are put once per run and
+/// never erased, as the content load leaves them for a database with no spawn.
+pub fn key_without_spawns() -> table_store.Key {
+  database_support.once("spawn_support_key_without_spawns", fn() {
+    let key = owned_key.new_shared_key()
+    put_worlds(key:, spawns: [])
+    key
+  })
+}
+
+fn put_worlds(key key: table_store.Key, spawns spawns: List(Spawn)) -> Nil {
   list.each(worlds, fn(world_id) {
     content_spawn.put_world(key:, world_id:, spawns: case world_id {
       3460 -> spawn.world_spawns(spawns:)
       _ -> spawn.no_spawns()
     })
   })
-  key
 }

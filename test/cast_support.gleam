@@ -132,7 +132,7 @@ pub fn unbuilt() -> Spell {
 /// makes them from the planted rows (`spell_tables`, each value the client's own
 /// row), and the three planted spells by hand.
 pub fn plans() -> Plans {
-  with_spells(plans: spell_tables.plans(), spells: [
+  with_spells(plans: spell_tables.default_plans(), spells: [
     exempt(),
     blocked_only(),
     slow(),

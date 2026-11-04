@@ -83,6 +83,13 @@ if [ "$1" = test ]; then
     *"--tag serial"*) echo "Seed: 222" ;;
     *) echo "Seed: 111" ;;
   esac
+  echo "gleam $* peak_file=${GENESIS_LITERAL_PEAK_FILE:+given}" >>"$PLANT_LOG.peak"
+  # The run keeps the literal allocator's highest carriers size in the file it is
+  # given, as test/genesis_prime_test.gleam does; PLANT_LITERAL_PEAK is that many
+  # bytes, and "none" writes no file.
+  if [ -n "$GENESIS_LITERAL_PEAK_FILE" ] && [ "$PLANT_LITERAL_PEAK" != none ]; then
+    echo "${PLANT_LITERAL_PEAK:-100000000}" >"$GENESIS_LITERAL_PEAK_FILE"
+  fi
 fi
 if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
   sleep "$PLANT_GLEAM_TEST_SECONDS"
@@ -262,6 +269,11 @@ class PlantedCheckCase(unittest.TestCase):
         path = Path(str(self.log) + ".environment")
         return path.read_text() if path.exists() else ""
 
+    def peak_log(self) -> str:
+        """The gleam test commands with whether each was given the literal peak file."""
+        path = Path(str(self.log) + ".peak")
+        return path.read_text() if path.exists() else ""
+
     def commands(self) -> list[str]:
         return [line for line in self.log.read_text().splitlines() if line.strip()]
 
@@ -285,6 +297,7 @@ class Run:
     done: subprocess.CompletedProcess
     commands: list[str]
     environment: str
+    peak: str
     took: float
     marker_ran: bool
     hang: str
@@ -322,7 +335,7 @@ def shared_run(key: str, *arguments: str, client: bool = False, prepare=None, ha
         done = case.run_check(*arguments, client=client, timeout=timeout, **settings)
         took = time.monotonic() - started
         left = subprocess.run(["pgrep", "-f", hang_pattern(seconds)], capture_output=True, text=True).stdout.split() if seconds else []
-        run = Run(done, case.commands(), case.environment_log(), took, case.marker.exists(), seconds, left)
+        run = Run(done, case.commands(), case.environment_log(), case.peak_log(), took, case.marker.exists(), seconds, left)
     finally:
         if seconds:
             subprocess.run(["pkill", "-f", hang_pattern(seconds)])
@@ -889,6 +902,90 @@ class SerialTestsTest(unittest.TestCase):
 
     def test_the_fast_check_runs_no_serial_run(self):
         self.assertFalse([c for c in shared_run("fast", "fast").commands if "--tag serial" in c])
+
+
+REGION = 1024 * 1024 * 1024
+
+
+def literal_limit_percent() -> int:
+    """The share of the literal region the check allows, as the check states it."""
+    found = re.findall(r"(?m)^literal_limit_percent=(\d+)$", CHECK.read_text())
+    assert len(found) == 1, found
+    return int(found[0])
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class LiteralAreaTest(unittest.TestCase):
+    """The persistent terms of a test run live in a literal region of 1 GiB, and a
+    run that fills it dies partway (`literal_alloc: Cannot allocate`). The full
+    check reads the highest carriers size the run recorded and fails over a share
+    of the region, so the margin cannot vanish unnoticed again.
+
+    The planted `gleam test` writes PLANT_LITERAL_PEAK bytes into the file it is
+    given, as the real test run does."""
+
+    def at(self, peak: int, **settings: str) -> Run:
+        return shared_run("literal-%s-%s" % (peak, sorted(settings.items())), PLANT_LITERAL_PEAK=str(peak), **settings)
+
+    def limit(self) -> int:
+        return REGION * literal_limit_percent() // 100
+
+    def test_a_run_whose_peak_is_under_the_limit_passes_and_prints_its_share(self):
+        peak = self.limit() // 2
+        run = self.at(peak)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.done.stdout, r"(?m)^  literal-area +ok\b")
+        tenths = peak * 1000 // REGION
+        self.assertRegex(
+            run.done.stdout,
+            r"(?m)^  literal area: peak %d MiB of 1024 MiB \(%d\.%d%%\), limit %d%%$"
+            % (peak // 2**20, tenths // 10, tenths % 10, literal_limit_percent()),
+        )
+
+    def test_a_run_whose_peak_is_exactly_the_limit_passes(self):
+        run = self.at(self.limit())
+        self.assertEqual(run.done.returncode, 0, run.output)
+
+    def test_a_run_whose_peak_is_one_byte_over_the_limit_fails_the_check_naming_the_part(self):
+        run = self.at(self.limit() + 1)
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
+        self.assertIn("over the limit of %d%%" % literal_limit_percent(), run.output)
+
+    def test_a_run_that_fills_the_region_fails_the_check_with_the_part_and_the_other_parts_still_pass(self):
+        run = self.at(REGION * 99 // 100)
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: literal-area$")
+
+    def test_a_run_that_wrote_no_peak_fails_the_check_naming_the_part(self):
+        run = shared_run("literal-no-file", PLANT_LITERAL_PEAK="none")
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
+        self.assertIn("wrote no literal area peak", run.output)
+
+    def test_a_larger_region_set_through_any_erlang_flags_variable_fails_the_check_since_the_limit_is_a_share_of_the_default(self):
+        for variable in ("ERL_FLAGS", "ERL_AFLAGS", "ERL_ZFLAGS", "ELIXIR_ERL_OPTIONS"):
+            with self.subTest(variable=variable):
+                run = shared_run("literal-miscs-" + variable, **{variable: "+MIscs 4096"})
+                self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
+                self.assertIn("+MIscs", run.output)
+
+    def test_only_the_first_test_run_is_given_the_file(self):
+        run = self.at(1)
+        peak_log = [line for line in run.peak.splitlines() if line.startswith("gleam test")]
+        self.assertEqual(
+            peak_log,
+            ["gleam test -- --workers %s peak_file=given" % TEST_WORKERS, "gleam test -- --tag serial peak_file="],
+        )
+
+    def test_the_part_is_skipped_when_the_build_it_needs_failed(self):
+        def plant(case):
+            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace("build) exit 0", "build) exit 1"))
+
+        run = shared_run("literal-build-fails", prepare=plant)
+        self.assertRegex(run.done.stdout, r"(?m)^  literal-area +skipped \(a part it needs failed: gleam-build\)")
+
+    def test_the_fast_check_does_not_measure_the_area(self):
+        self.assertNotIn("literal-area", shared_run("fast", "fast").output)
 
 
 def default_workers() -> str:

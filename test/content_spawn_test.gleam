@@ -12,13 +12,13 @@
 import content_support
 import database_support
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/spawn.{Selection}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import owned_key
 import owned_test
 import spawn_support
 
@@ -60,7 +60,7 @@ pub fn the_one_query_reads_every_row_of_a_migrated_database_the_27_daguns_test()
 
 pub fn a_selections_worlds_are_put_once_and_read_back_by_world_test() -> Nil {
   use <- owned_test.run(5000)
-  let key = table_store.new_key()
+  let key = owned_key.new_fixture_key()
   let beasts =
     spawn.world_spawns(spawns: [
       spawn_support.battle_beast(number: 1, x: 0.0),
