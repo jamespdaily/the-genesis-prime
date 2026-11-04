@@ -10,7 +10,6 @@ import code_rule/syntax
 import glance
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
 
 const unsafe_externals = ["binary_to_atom", "list_to_atom", "binary_to_term"]
 
@@ -38,39 +37,9 @@ pub fn breaches(
 
 /// Each use of `atom.create`, however the atom module is imported.
 fn create_calls(file: SourceFile, module: glance.Module) -> List(Breach) {
-  let imports =
-    list.filter(module.imports, fn(definition) {
-      definition.definition.module == "gleam/erlang/atom"
-    })
-    |> list.map(fn(definition) { definition.definition })
-  let qualifiers =
-    list.filter_map(imports, fn(import_) {
-      case import_.alias {
-        None -> Ok("atom")
-        Some(glance.Named(name)) -> Ok(name)
-        Some(glance.Discarded(_)) -> Error(Nil)
-      }
-    })
-  let unqualified =
-    imports
-    |> list.flat_map(fn(import_) { import_.unqualified_values })
-    |> list.filter(fn(value) { value.name == "create" })
-    |> list.map(fn(value) { option.unwrap(value.alias, "create") })
-  syntax.references(module)
-  |> list.filter_map(fn(reference) {
-    case reference {
-      syntax.Qualified(location:, qualifier:, name: "create") ->
-        case list.contains(qualifiers, qualifier) {
-          True -> Ok(breach(file, location.start))
-          False -> Error(Nil)
-        }
-      syntax.Unqualified(location:, name:) ->
-        case list.contains(unqualified, name) {
-          True -> Ok(breach(file, location.start))
-          False -> Error(Nil)
-        }
-      syntax.Qualified(..) -> Error(Nil)
-    }
+  syntax.references_to(module:, from: ["gleam/erlang/atom"], named: ["create"])
+  |> list.map(fn(reference) {
+    breach(file, syntax.location_of(reference).start)
   })
 }
 
