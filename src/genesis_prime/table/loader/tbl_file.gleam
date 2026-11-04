@@ -375,6 +375,25 @@ pub fn place(description: Description) -> Result(List(Field), PlacementError) {
   }
 }
 
+/// Why a file's columns cannot be placed as the fields of a table with an id.
+pub type FieldsError {
+  /// The first column is not a 32-bit integer named `id`.
+  NoIdColumn
+  /// The record size is not the one the placement rule gives.
+  NotPlaced(error: PlacementError)
+}
+
+/// The fields of a table file: its columns placed in the record by `place`,
+/// when the first column is the id (`has_id_column`) and the record size is the
+/// one the rule gives.
+pub fn fields(description: Description) -> Result(List(Field), FieldsError) {
+  use <- bool.guard(
+    when: !has_id_column(description.columns),
+    return: Error(NoIdColumn),
+  )
+  place(description) |> result.map_error(NotPlaced)
+}
+
 /// The first difference between what the file says and the schema: the table's
 /// name and each column's name ignoring case (`MatchGameTableSchema`
 /// 0x1407c19f0), the column count, each column's type and the record size.
@@ -447,17 +466,9 @@ type Reader(row) {
   )
 }
 
-/// Checks the file against the schema, then decodes every record the lookup
-/// names with `decode`, and checks that each record holds the id the lookup
-/// gives it. `id` reads a row's id.
-pub fn read(
-  bytes bytes: BitArray,
-  schema schema: Schema,
-  decode decode: fn(BitArray, Strings) -> Result(row, RecordError),
-  id id: fn(row) -> Int,
-) -> Result(Table(row), FileError) {
-  use parsed <- result.try(parse(bytes))
-  use _ <- result.try(check_schema(parsed.description, schema))
+/// The record block of a parsed file split in its records and the string data
+/// that follows them.
+fn record_block(parsed: Parsed) -> Result(#(BitArray, BitArray), FileError) {
   let header = parsed.header
   let records_size = header.record_count * header.record_size
   use block <- result.try(slice(
@@ -472,12 +483,45 @@ pub fn read(
     length: records_size,
     part: RecordBlock,
   ))
-  use string_data <- result.try(slice(
+  use string_data <- result.map(slice(
     body: block,
     at: records_size,
     length: header.block_size - records_size,
     part: RecordBlock,
   ))
+  #(records, string_data)
+}
+
+/// A file's header and the bytes of its records, `record_size` bytes each and
+/// `record_count` of them, one after another in the order of the file, not of
+/// the lookup.
+pub type Records {
+  Records(description: Description, bytes: BitArray)
+}
+
+/// Reads the header, column table and record block of a file, without
+/// checking it against a schema or decoding a record; for a reader that needs
+/// only some fields of every record.
+pub fn records(bytes: BitArray) -> Result(Records, FileError) {
+  use parsed <- result.try(parse(bytes))
+  use #(records, _strings) <- result.map(record_block(parsed))
+  Records(description: parsed.description, bytes: records)
+}
+
+/// Checks the file against the schema, then decodes every record the lookup
+/// names with `decode`, and checks that each record holds the id the lookup
+/// gives it. `id` reads a row's id.
+pub fn read(
+  bytes bytes: BitArray,
+  schema schema: Schema,
+  decode decode: fn(BitArray, Strings) -> Result(row, RecordError),
+  id id: fn(row) -> Int,
+) -> Result(Table(row), FileError) {
+  use parsed <- result.try(parse(bytes))
+  use _ <- result.try(check_schema(parsed.description, schema))
+  let header = parsed.header
+  let records_size = header.record_count * header.record_size
+  use #(records, string_data) <- result.try(record_block(parsed))
   use lookup <- result.try(slice(
     body: parsed.body,
     at: header.lookup_offset,

@@ -6,7 +6,6 @@
 //// set and is not listed, because only then does the sign change a value.
 
 import genesis_prime/table/loader/tbl_file
-import genesis_prime/table_rows
 import gleam/list
 import gleam/result
 
@@ -187,36 +186,74 @@ pub fn is_unsigned(
   }
 }
 
-/// The table's 32-bit columns that hold a value with bit 31 set and are not
-/// listed, in the file's column order. A column whose every value has bit 31
-/// clear reads the same signed or unsigned, so it needs no entry.
+/// The 32-bit columns of the table file that hold a value with bit 31 set and
+/// are not listed, in the file's column order. A column whose every value has
+/// bit 31 clear reads the same signed or unsigned, so it needs no entry. The
+/// file's records are read in one pass, only the bytes that hold bit 31 of a
+/// column not yet found to hold one, and the pass stops when every unlisted
+/// column has. An error when the file is not a table file, has no 32-bit
+/// integer `id` as its first column, or has a record size the placement rule
+/// does not give.
 pub fn unlisted(
   signs signs: List(ColumnSign),
-  read read: table_rows.TableRows,
-) -> List(Unlisted) {
-  let table = read.description.table
-  list.filter(read.description.columns, fn(column) {
-    column.column_type == tbl_file.Integer32
-    && result.is_error(find(signs:, table:, column: column.name))
-    && list.any(read.rows, holds_top_bit(_, column.name))
-  })
-  |> list.map(fn(column) { Unlisted(table:, column: column.name) })
+  bytes bytes: BitArray,
+) -> Result(List(Unlisted), Nil) {
+  use tbl_file.Records(description:, bytes: records) <- result.try(
+    tbl_file.records(bytes) |> result.replace_error(Nil),
+  )
+  use fields <- result.map(
+    tbl_file.fields(description) |> result.replace_error(Nil),
+  )
+  let table = description.table
+  let candidates =
+    list.filter(fields, fn(field) {
+      field.column.column_type == tbl_file.Integer32
+      && result.is_error(find(signs:, table:, column: field.column.name))
+    })
+  let held =
+    holding_top_bit(
+      records:,
+      record_size: description.record_size,
+      pending: list.map(candidates, fn(field) { field.offset }),
+      held: [],
+    )
+  list.filter(candidates, fn(field) { list.contains(held, field.offset) })
+  |> list.map(fn(field) { Unlisted(table:, column: field.column.name) })
 }
 
-/// Whether the row's value in the column is a 32-bit integer with bit 31 set,
-/// which the table reader gives as a negative number.
-fn holds_top_bit(row: table_rows.Row, column: String) -> Bool {
-  list.any(table_rows.cells(row), fn(cell) {
-    case cell.column == column, cell.value {
-      True, table_rows.Integer32(value) -> value < 0
-      True, table_rows.Integer64(_)
-      | True, table_rows.Float32(..)
-      | True, table_rows.Boolean(_)
-      | True, table_rows.Text(_)
-      | False, _
-      -> False
+/// The offsets, among the pending ones, of the 32-bit fields that hold bit 31
+/// in some record, walking the records one after another.
+fn holding_top_bit(
+  records records: BitArray,
+  record_size record_size: Int,
+  pending pending: List(Int),
+  held held: List(Int),
+) -> List(Int) {
+  case pending, records {
+    [], _ -> held
+    _, <<record:bytes-size(record_size), rest:bits>> if record_size > 0 -> {
+      let #(found, still_pending) =
+        list.partition(pending, holds_top_bit(record, _))
+      holding_top_bit(
+        records: rest,
+        record_size:,
+        pending: still_pending,
+        held: list.append(found, held),
+      )
     }
-  })
+    _, _ -> held
+  }
+}
+
+/// Whether the 32-bit field at the offset has bit 31 set: the first bit of the
+/// field's last byte, which is its highest as the bytes are little-endian.
+fn holds_top_bit(record: BitArray, offset: Int) -> Bool {
+  let last_byte = offset + 3
+  case record {
+    <<_:bytes-size(last_byte), top:size(1), _:bits>> -> top == 1
+    _ ->
+      panic as "a placed 32-bit field ends inside its record, because the record size is the placed fields' end rounded up (tbl_file.layout), and a record is read whole"
+  }
 }
 
 /// The sentence the check prints for a column it refuses.

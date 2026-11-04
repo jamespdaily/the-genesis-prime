@@ -699,6 +699,65 @@ pub fn a_loaded_tables_32_bit_column_with_a_top_bit_value_and_no_list_entry_fail
   assert string.contains(words, "plantedMask") as "the refusal names the column"
 }
 
+/// A planted table whose 32-bit columns come after a string, at the offsets
+/// the 8-byte alignment gives: the id at 0, the string at 8, `plantedLate` at
+/// 16, `plantedEarly` at 20, `plantedSet` at 24, `plantedListed` at 28 and
+/// `plantedLow` at 32, then the 64-bit column at 40, a record of 48 bytes.
+fn scan_schema() -> Schema {
+  Schema(table: "PlantedScan", file: "PlantedScan", record_size: 0, columns: [
+    Column("ID", tbl_file.Integer32),
+    Column("plantedName", tbl_file.Utf16Text),
+    Column("plantedLate", tbl_file.Integer32),
+    Column("plantedEarly", tbl_file.Integer32),
+    Column("plantedSet", tbl_file.Integer32),
+    Column("plantedListed", tbl_file.Integer32),
+    Column("plantedLow", tbl_file.Integer32),
+    Column("plantedBig", tbl_file.Integer64),
+  ])
+}
+
+pub fn the_check_finds_a_top_bit_value_in_any_record_and_names_the_columns_in_file_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let schema = scan_schema()
+  let file =
+    planted_table.file(schema, [
+      planted_table.row(schema, [
+        #("ID", Integer(1)),
+        #("plantedName", planted_table.Text("one")),
+        #("plantedEarly", Integer(0xFFFFFFFF)),
+        #("plantedListed", Integer(0xFFFFFFFF)),
+        #("plantedLow", Integer(0x00FFFFFF)),
+        #("plantedBig", Integer(0xFFFFFFFFFFFFFFFF)),
+      ]),
+      planted_table.row(schema, [#("ID", Integer(2))]),
+      planted_table.row(schema, [
+        #("ID", Integer(3)),
+        #("plantedLate", Integer(0x80000000)),
+        #("plantedSet", Integer(0x7FFFFFFF)),
+      ]),
+    ])
+  let signs = [
+    column_sign.ColumnSign(
+      table: "PlantedScan",
+      column: "plantedListed",
+      sign: column_sign.Unsigned,
+      evidence: "planted",
+    ),
+  ]
+  use folder <- planted_table.in_folder([file])
+  use source <- planted_table.in_folder([])
+  assert table_generator.check(folder, against: source, signs:, loaded: [
+      "PlantedScan",
+    ])
+    == Error(
+      table_generator.UnlistedColumns(columns: [
+        column_sign.Unlisted(table: "PlantedScan", column: "plantedLate"),
+        column_sign.Unlisted(table: "PlantedScan", column: "plantedEarly"),
+      ]),
+    )
+    as "plantedLate holds 0x80000000 in the last record only, the lowest value with bit 31 set; plantedEarly holds 0xFFFFFFFF in the first; plantedListed has an entry; plantedSet 0x7FFFFFFF and plantedLow 0x00FFFFFF have bit 31 clear, and plantedBig is a 64-bit integer; the columns come in the file's column order, not the order the records show them"
+}
+
 pub fn a_loaded_tables_column_with_a_top_bit_value_passes_when_it_is_listed_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(
