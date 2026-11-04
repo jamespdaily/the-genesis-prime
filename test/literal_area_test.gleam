@@ -2,6 +2,7 @@
 
 import event_wait
 import gleam/int
+import gleam/list
 import gleam/result
 import gleam/string
 import literal_area
@@ -41,4 +42,31 @@ pub fn the_peak_in_the_file_never_falls_below_a_peak_it_has_shown_test() -> Nil 
   let shown = peak_in(file)
   assert literal_area.carriers_peak() >= shown
     as "the allocator's own record is never lower than what the file showed"
+}
+
+/// What a load's table term is stored under in the persistent terms, as
+/// genesis_prime/table/loader/store writes it: `{Load, {table_term, Name}}`.
+type TermName {
+  TableTerm(name: String)
+}
+
+/// A term of more than a megabyte: a list cell takes two words.
+fn megabyte_term(cells: Int) -> List(Int) {
+  list.repeat(0, cells)
+}
+
+pub fn a_planted_table_named_as_a_real_one_is_not_a_second_copy_of_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let real = #(#(1, TableTerm("Spell4Effects")), megabyte_term(80_000))
+  let planted = #(#(2, TableTerm("Spell4Effects")), megabyte_term(70_000))
+  assert literal_area.names_held_twice(in: [real, planted]) == []
+    as "a planted Spell4Effects over a megabyte (character_tables.shared_with_spell_trees) differs in size from the client's, so it is not the client's table loaded twice"
+}
+
+pub fn the_same_table_under_two_loads_is_held_twice_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let first = #(#(1, TableTerm("Creature2")), megabyte_term(70_000))
+  let second = #(#(2, TableTerm("Creature2")), megabyte_term(70_000))
+  assert literal_area.names_held_twice(in: [first, second]) == ["Creature2"]
+    as "two loads of one file hold terms of the same name and size"
 }

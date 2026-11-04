@@ -1,5 +1,6 @@
 -module(literal_area_ffi).
--export([record_peak/1, carriers_peak/0, persistent_term_memory/0, tables_held_twice/0]).
+-export([record_peak/1, carriers_peak/0, persistent_term_memory/0, tables_held_twice/0,
+         names_held_twice/1]).
 
 %% Starts a process that writes the literal allocator's highest carriers size
 %% since the VM started to File whenever it grows, as decimal digits and a line
@@ -50,10 +51,15 @@ persistent_term_memory() ->
 
 %% The names of the tables of which two persistent terms of a megabyte or more
 %% are held: a table's term is {Load, {table_term, Name}} (genesis_prime/table/
-%% loader/store), and only the client's real tables are that large (a planted
-%% table is kilobytes), so a name found twice is a real table loaded twice.
+%% loader/store). Two loads of one file hold terms of the same name and size; a
+%% planted table can pass a megabyte too (character_tables.
+%% shared_with_spell_trees' Spell4Effects), but its size is not the client's.
 tables_held_twice() ->
+    names_held_twice(persistent_term:get()).
+
+names_held_twice(Terms) ->
     Megabyte = 1024 * 1024,
-    Large = [Name || {{_Load, {table_term, Name}}, Term} <- persistent_term:get(),
-                     erts_debug:flat_size(Term) * erlang:system_info(wordsize) >= Megabyte],
-    lists:usort(Large -- lists:usort(Large)).
+    Large = [{Name, Size} || {{_Load, {table_term, Name}}, Term} <- Terms,
+                             Size <- [erts_debug:flat_size(Term) * erlang:system_info(wordsize)],
+                             Size >= Megabyte],
+    lists:usort([Name || {Name, _Size} <- Large -- lists:usort(Large)]).

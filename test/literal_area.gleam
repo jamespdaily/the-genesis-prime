@@ -37,3 +37,7 @@ pub fn persistent_term_memory() -> Int
 /// order: a real table loaded under two keys takes its bytes twice.
 @external(erlang, "literal_area_ffi", "tables_held_twice")
 pub fn tables_held_twice() -> List(String)
+
+/// `tables_held_twice` over the given keys and terms instead of the VM's.
+@external(erlang, "literal_area_ffi", "names_held_twice")
+pub fn names_held_twice(in terms: List(#(key, term))) -> List(String)
