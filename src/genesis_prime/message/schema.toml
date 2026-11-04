@@ -1538,6 +1538,18 @@ fields = [
 ]
 
 [[message]]
+id = 0x04DB
+name = "ability_hold"
+direction = "client_to_server"
+evidence = "opcode.0x4db"
+summary = "the client presses or releases the ability of a bag slot under its hold-to-continue-casting setting, which is on by default: the bag index the ability's item was added at (message 0x111 with location 4), the target unit id (0 for none) and a bit that is 1 when the button goes down and 0 when it comes up; the client makes no cast id of its own for it"
+fields = [
+  { name = "bag_index", kind = "unsigned", bits = 16, evidence = "opcode.0x4db", named_by = "opcode.0x4db" },
+  { name = "target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x4db", named_by = "opcode.0x4db" },
+  { name = "held", kind = "unsigned", bits = 1, evidence = "opcode.0x4db", named_by = "opcode.0x4db" },
+]
+
+[[message]]
 id = 0x0111
 name = "item_added"
 direction = "server_to_client"

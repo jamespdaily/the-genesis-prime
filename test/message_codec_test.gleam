@@ -40,6 +40,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
     |> list.sort(string.compare)
   assert paths
     == [
+      "src/genesis_prime/message/ability_hold.gleam",
       "src/genesis_prime/message/ability_tier.gleam",
       "src/genesis_prime/message/ability_tiers.gleam",
       "src/genesis_prime/message/account_entitlements.gleam",

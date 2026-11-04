@@ -37,7 +37,11 @@ const movement_rows = [
 
 const camp_rows = [#(0x00BF, camp.CampAsked), #(0x00C0, camp.CampOver)]
 
-const cast_rows = [#(0x009A, cast.Pressed), #(0x0801, cast.Cancelled)]
+const cast_rows = [
+  #(0x009A, cast.Pressed),
+  #(0x04DB, cast.KeyHeld),
+  #(0x0801, cast.Cancelled),
+]
 
 pub fn movement_messages_are_rows_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
   use <- owned_test.run(5000)
@@ -138,7 +142,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
   )
 }
 
-pub fn the_press_and_the_cancel_of_a_cast_are_rows_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
+pub fn the_press_the_hold_and_the_cancel_of_a_cast_are_rows_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(cast_rows, fn(row) {
     let #(id, message) = row
@@ -147,7 +151,7 @@ pub fn the_press_and_the_cancel_of_a_cast_are_rows_taken_inside_0x038c_with_the_
       as {
         "0x"
         <> int.to_base16(id)
-        <> " is a cast row in the world (opcode.0x9a, opcode.0x801)"
+        <> " is a cast row in the world (opcode.0x9a, opcode.0x4db, opcode.0x801)"
       }
     assert routing.route(AtCharacterSelect, InsideWorldMessage, id)
       == Error(Nil)

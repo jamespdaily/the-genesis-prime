@@ -18,6 +18,7 @@ import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/area.{Point}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/message/ability_hold
 import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
 import genesis_prime/message/bit_stream
@@ -260,6 +261,40 @@ pub fn press_body(
       press:,
     ))
     as "a press fits the message"
+  body
+}
+
+/// Presses (`held` 1) or releases (`held` 0) the key of the ability held at
+/// `bag_index`, as the client's action bar does under its default hold-to-continue
+/// setting (opcode.0x4db): no cast id of its own, the bag index, the target (0 for
+/// none) and the held bit.
+pub fn hold_ability(
+  game game: Game,
+  bag_index bag_index: Int,
+  target target: Int,
+  held held: Int,
+) -> Nil {
+  send_world(
+    game:,
+    message_id: ability_hold.message_id,
+    body: hold_body(bag_index:, target:, held:),
+  )
+}
+
+/// The body of the client's 0x4db (opcode.0x4db): the bag index, the target and
+/// the held bit.
+pub fn hold_body(
+  bag_index bag_index: Int,
+  target target: Int,
+  held held: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    ability_hold.encode(ability_hold.AbilityHold(
+      bag_index:,
+      target_unit_id: target,
+      held:,
+    ))
+    as "a hold fits the message"
   body
 }
 
