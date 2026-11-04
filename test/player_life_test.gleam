@@ -27,6 +27,7 @@ import genesis_prime/game/player_life.{
   Answer, OwnCombatState, OwnHealth, OwnShield, StreamTo, ToClient, ToViewers,
 }
 import genesis_prime/game/rating
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   Answered, CreatureStriker, Key, Landed, Refused, Strike,
 }
@@ -97,6 +98,7 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
       defence: defence_of(3),
       strike: attack(1),
       rolls:,
+      place: test_place(),
     )
   assert #(player_life.health(life: esper), player_life.shield(life: esper))
     == #(734, 447)
@@ -107,6 +109,7 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
       defence: defence_of(1),
       strike: attack(1),
       rolls:,
+      place: test_place(),
     )
   assert #(player_life.health(life: warrior), player_life.shield(life: warrior))
     == #(735, 448)
@@ -138,6 +141,7 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
       defence: defence_of(1),
       strike: attack(1),
       rolls:,
+      place: test_place(),
     )
   assert player_life.health(life:) == 0 as "3 against 1 health: floored at 0"
   let assert [
@@ -152,7 +156,13 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
   assert description.damage.killed == 1 && description.damage.overkill == 2
     as "the killed bit, and 2 beyond the 1 health"
   let #(_, later) =
-    player_life.struck(life:, defence: defence_of(1), strike: attack(2), rolls:)
+    player_life.struck(
+      life:,
+      defence: defence_of(1),
+      strike: attack(2),
+      rolls:,
+      place: test_place(),
+    )
   assert later
     == [
       Answer(
@@ -206,4 +216,20 @@ pub fn a_threat_from_a_unit_the_map_reported_gone_is_dropped_test() -> Nil {
     )
   assert effects == [] && player_life.fighters(life:) == []
     as "the creature ended after it sent its threat"
+}
+
+/// Where the struck player stands in these rules: any place in a world serves,
+/// since a strike that kills reads it only as the ghost's place.
+fn test_place() -> Place {
+  let assert Ok(place) =
+    start_place.place(
+      world_id: 3460,
+      world_zone_id: 0,
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+      facing: start_place.unturned,
+    )
+    as "world 3460 is a world"
+  place
 }

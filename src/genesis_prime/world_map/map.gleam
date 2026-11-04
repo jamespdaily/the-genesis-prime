@@ -658,6 +658,15 @@ fn take_unit_id(state: State) -> #(State, Int) {
   }
 }
 
+/// The unit id of the ghost of the player whose unit is `unit_id`: `unit_id_limit`
+/// plus the player's id, so it is never an id a map gives (all are below the
+/// limit), each player has one, and no map is asked for it. The server's choice:
+/// the client takes any 32-bit id for a ghost's 0x262 (`0x140096970`), and a
+/// ghost never casts, so its id need not fit the cast id's 2^20 (`0x140561c30`).
+pub fn ghost_unit_id(unit_id unit_id: Int) -> Int {
+  unit_id_limit + unit_id
+}
+
 /// A creature that did not start: an error line, and its spawn stays empty for
 /// the rest of the run, with no later creature and no one told.
 fn creature_not_started(

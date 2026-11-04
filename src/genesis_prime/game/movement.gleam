@@ -194,6 +194,13 @@ pub fn entered(
   State(place:, footing: OnTheWorld, session_epoch:, save_sequence: 0)
 }
 
+/// The movement of a player placed at `place` by the server, in the world's own
+/// frame, as the same login: its epoch and the number of its last save stay, so
+/// the next save is numbered after every earlier one (the Holocrypt).
+pub fn placed(state state: State, place place: Place) -> State {
+  State(..state, place:, footing: OnTheWorld)
+}
+
 /// The place the player last stood at in the world's own frame, with the way
 /// it faced.
 pub fn place(state state: State) -> Place {

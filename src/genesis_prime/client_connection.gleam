@@ -163,6 +163,16 @@ pub type News {
   /// The unit died: 0x88c with the dead bit (opcode.0x88c), written when the
   /// viewer's client shows the unit.
   Died
+  /// The unit came back from death: 0x88c with the dead bit clear
+  /// (opcode.0x88c), written when the viewer's client shows the unit.
+  CameBack
+  /// A player's death for the combat log: 0x247 of type 22 (opcode.0x247.death),
+  /// written when the viewer's client shows the unit. The client logs it only
+  /// for a player or a ghost, so a creature never sends it.
+  DeathLogged
+  /// A player's coming back for the combat log: 0x247 of type 23
+  /// (opcode.0x247.death), written when the viewer's client shows the unit.
+  CameBackLogged
   /// A creature runs `path`: 0x638 of kind 0, the map's time it starts at, and
   /// kind 4, the path (`movement_command.kind_4`), written when the viewer's
   /// client shows the unit; the viewer keeps the path for its picture

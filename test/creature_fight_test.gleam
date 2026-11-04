@@ -251,6 +251,9 @@ fn name_of(news: News) -> String {
     client_connection.Removed -> "0x355"
     client_connection.Appeared(..)
     | client_connection.Moving(..)
+    | client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
     | client_connection.Shield(..) -> "other"
   }
 }

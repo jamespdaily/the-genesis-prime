@@ -1474,6 +1474,28 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
   )
 }
 
+/// The caster died: each live cast ends with its timers cancelled and 0x7fe to
+/// the caster and the audience that was told its start, in cast id order; the
+/// held press, the hold and every open threshold end with it, and every other
+/// timer is cancelled. The client does not end its own casts when it dies (not
+/// read, `0x14045e740`), so the server's 0x7fe is the end its viewers see.
+pub fn died(cast cast: State) -> #(State, List(Effect)) {
+  todo as "the end of a dead caster's casts"
+}
+
+/// A cast message while the caster is dead, decoded as `take` decodes it: a press
+/// or a held 1 is refused with the 0x7fc the client's own check of a dead caster
+/// gives, and nothing changes; a 0x801 is taken as `take` takes it, which finds no
+/// live cast after `died`.
+pub fn take_while_dead(
+  cast cast: State,
+  message message: Message,
+  body body: BitArray,
+  now now: Now,
+) -> Result(#(State, List(Effect)), Refusal) {
+  todo as "a cast message of a dead caster"
+}
+
 /// The id the caster's next cast takes: the id of its next press that no live cast
 /// holds. `start` and the hold that records the cast it starts both ask this, so
 /// they name the same cast.

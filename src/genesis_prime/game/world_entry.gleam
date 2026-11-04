@@ -13,6 +13,8 @@
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 10, 0x1A0, 0x19D,
 ////                                                 0x6BC, 0x636, 0xF1, 0x61, WatchMap(map, run)
 //// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
+//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place)
+////                                                 (then Joined and NotJoined as above)
 //// ```
 ////
 //// - **The unit** is the map's: it builds the player's unit when it takes the
@@ -139,12 +141,14 @@ pub type Refusal {
 pub opaque type State {
   /// The store is asked for the character.
   Loading(character_id: CharacterId)
-  /// The map is asked to take the character at its saved place, which this
-  /// login holds as the epoch `session_epoch`.
+  /// The map is asked to take the character at `place`, with the movement it
+  /// enters with: at a play, the saved place as the login whose epoch the store
+  /// gave; at the Holocrypt, the stay's own movement placed there, so its saves
+  /// go on numbered after the earlier ones (`movement.placed`).
   Joining(
     character: Character,
     place: Place,
-    session_epoch: SessionEpoch,
+    movement: movement.State,
     map: MapId,
   )
 }
@@ -167,7 +171,8 @@ pub type Joined {
   NotInTheWorld(character_id: Int, warning: String)
 }
 
-/// A player in the world: its character, its map, the run of the map that took
+/// A player in the world: its character as the store loaded it (which a join at
+/// the Holocrypt asks the map with again), its map, the run of the map that took
 /// it, which the rule watches as `Map(map, incarnation)`, its unit id, the
 /// origin of the map's clock (`Joined` carries it), its loadout and maximum
 /// health (typed, from the tables: the weapon, the abilities and the gear's
@@ -188,6 +193,7 @@ pub type Joined {
 /// reported gone (genesis_prime/game/connection).
 pub type Entered {
   Entered(
+    character: Character,
     character_id: CharacterId,
     map: MapId,
     incarnation: Int,
@@ -325,7 +331,12 @@ pub fn loaded(
                   instance: open_world_instance,
                 )
               Join(
-                state: Joining(character:, place:, session_epoch:, map:),
+                state: Joining(
+                  character:,
+                  place:,
+                  movement: movement.entered(place:, session_epoch:),
+                  map:,
+                ),
                 effects: [
                   AskMap(
                     map:,
@@ -351,7 +362,7 @@ pub fn joined(
   next_whisper next_whisper: Int,
 ) -> Result(Joined, Nil) {
   case state {
-    Joining(character:, place:, session_epoch:, map:) -> {
+    Joining(character:, place:, movement:, map:) -> {
       case answer {
         map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
@@ -359,6 +370,7 @@ pub fn joined(
           let CharacterId(character_id_number) = character.character_id
           Ok(InTheWorld(
             entered: Entered(
+              character:,
               character_id: character.character_id,
               map:,
               incarnation:,
@@ -371,7 +383,7 @@ pub fn joined(
               shown: dict.new(),
               casts_written: dict.new(),
               gone: set.new(),
-              movement: movement.entered(place:, session_epoch:),
+              movement:,
               readiness: ClientLoading,
               life: player_life.new(
                 health: max_health,
@@ -433,6 +445,17 @@ pub fn joined(
   }
 }
 
+/// The player chose the Holocrypt and has left its map: the map of `place`'s
+/// world is asked to take it there, with the stay's movement placed at `place`.
+/// The map's answer comes back to `joined`, as at a play.
+pub fn rejoining(
+  entered entered: Entered,
+  place place: Place,
+  connection connection: ConnectionId,
+) -> #(State, List(Effect)) {
+  todo as "the join at the Holocrypt"
+}
+
 /// 0xAD with the saved world and position, and 0.0 in the last two floats.
 fn enter_world(place place: Place) -> Effect {
   let assert Ok(body) =
@@ -490,6 +513,13 @@ fn player_path(character character: Character) -> Effect {
 /// 0x636 with the value 0, the reset bit 1 and the player's unit id
 /// (vector.opcode.0x636.body).
 fn control_granted(unit_id unit_id: Int) -> Effect {
+  Send(control_granted_frame(unit_id:))
+}
+
+/// 0x636 for the unit `unit_id`, with the value 0 and the reset bit 1
+/// (vector.opcode.0x636.body): the entry burst's for the player, and a death's
+/// for its ghost and for the player again.
+pub fn control_granted_frame(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
     client_control_granted.encode(ClientControlGranted(
       echo_value: 0,
@@ -497,7 +527,7 @@ fn control_granted(unit_id unit_id: Int) -> Effect {
       unit_id:,
     ))
     as "a unit id of 32 bits fits the message"
-  Send(Frame(message_id: client_control_granted.message_id, body:))
+  Frame(message_id: client_control_granted.message_id, body:)
 }
 
 /// 0xF1 with difficulty 0, prime level 0, flags 0 and the client's own

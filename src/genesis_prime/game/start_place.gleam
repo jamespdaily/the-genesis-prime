@@ -329,6 +329,20 @@ pub fn of(
   )
 }
 
+/// The place a dead character of this faction and race comes back at when it
+/// chooses the Holocrypt in the world `world_id`: the start of its race and
+/// faction above whose row is in that world. The server's choice: neither the
+/// client nor a retail record holds a Holocrypt's place (`death.server_choices`).
+/// `Error(Nil)` when no start of the race and faction is in that world.
+pub fn holocrypt(
+  tables tables: table_store.Tables,
+  faction_id faction_id: Int,
+  race_id race_id: RaceId,
+  world_id world_id: Int,
+) -> Result(Place, Nil) {
+  todo as "the Holocrypt place"
+}
+
 /// The load's check that every row above is a WorldLocation2 row, so a client
 /// without one fails the server's start.
 pub fn requirement() -> table_store.Requirement {

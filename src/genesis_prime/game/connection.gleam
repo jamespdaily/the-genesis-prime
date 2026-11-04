@@ -303,6 +303,27 @@
 ////   (`TellTargetMoved`) and answers a strike (`TellStrikeAnswered`). A viewer writes
 ////   a creature's 0x908, 0x90a, 0x89a and 0x638 path, and a player's 0x938 shield,
 ////   for a unit it shows; its picture keeps a running creature's path.
+//// - **Death and coming back** are player_life's (its module holds the sequence
+////   and the failure table): a strike that leaves the player at 0 kills it; the
+////   connection writes the death's frames, ends the player's casts
+////   (`cast.died`), and while the player is dead takes each 0x637 as its ghost's
+////   (told to no one), refuses its presses (`cast.take_while_dead`) and takes
+////   0x15a from inside 0x038C. Wake Here writes the coming back where the body
+////   lies. The Holocrypt writes the same, then leaves the map and joins again at
+////   the Holocrypt place (`start_place.holocrypt`) with no store ask:
+////
+////   ```
+////   0x15a {P, 2, 0} ─▶ the coming back's frames and news; the unit's 0x355 to each viewer
+////                    ─▶ map run: Leave(connection)                       (LeavingMap, JoinAt(place))
+////   Left, NotRunning or EndedBeforeAnswer
+////                    ─▶ the map's watch dropped; map of place's world: Join(connection, character, place)
+////                                                                        (EnteringWorld, FromHolocrypt)
+////   Joined           ─▶ 0xAD, 0x262, .. 0x61, the watch, as a play's burst (the client's 0xAD
+////                       removes every unit and loads again, 0x1403b6de0); the stay's movement
+////                       is kept, placed there (`movement.placed`)
+////   NotJoined        ─▶ 0x0594, character select
+////   no answer        ─▶ 0x036A reason 8, as the camp's leave or a play's join
+////   ```
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
@@ -507,9 +528,11 @@ type Status {
   /// slot for this connection; the client is in character select, which holds
   /// its own state, asks the store itself and says when its answer is awaited.
   InCharacterSelect(holder: Holder, select: character_select.State)
-  /// The client asked to play a character; world entry asks the store, then
-  /// the map. A refusal hands the client back to a new character select.
-  EnteringWorld(holder: Holder, entry: world_entry.State)
+  /// The client asked to play a character, or its dead player chose the
+  /// Holocrypt (`from`); world entry asks the store, then the map, or the map
+  /// alone for the Holocrypt. A refusal hands the client back to a new character
+  /// select, after 0x0594 when it came from the world.
+  EnteringWorld(holder: Holder, entry: world_entry.State, from: EntryFrom)
   /// The player is in the world, in `entered`'s map, which the connection
   /// watches (`map_watch`).
   InWorld(holder: Holder, entered: world_entry.Entered)
@@ -520,8 +543,26 @@ type Status {
   /// The camp's place is saved and the map's run is asked to take the player
   /// out (`world_map/map.Leave`), and its answer is awaited. A connection in this
   /// status ends without a save: the place is already saved, and the map drops
-  /// a player whose connection ends.
-  LeavingMap(holder: Holder, entered: world_entry.Entered)
+  /// a player whose connection ends. `then` says what follows `Left`.
+  LeavingMap(holder: Holder, entered: world_entry.Entered, then: AfterLeave)
+}
+
+/// What follows the map's answer to a leave.
+type AfterLeave {
+  /// The camp: 0x0594 and a new character select.
+  ToCharacterSelect
+  /// The Holocrypt: the map of `place`'s world is asked to take the player there
+  /// (`world_entry.rejoining`), and its entry burst follows.
+  JoinAt(place: Place)
+}
+
+/// Where an entry into the world started, for what its refusal does.
+type EntryFrom {
+  /// A play in character select: the refusal is 0x0162 and the list again.
+  FromCharacterSelect
+  /// The Holocrypt, with the client still in the world: the refusal is 0x0594,
+  /// as the camp's leave writes, then a new character select.
+  FromHolocrypt
 }
 
 /// What a save of the player's place is for, so its answer knows what comes
@@ -949,7 +990,8 @@ fn routed(
     Ok(routing.Movement(..))
     | Ok(routing.Camp(..))
     | Ok(routing.Chat(..))
-    | Ok(routing.Cast(..)) -> misrouted(session:, now:, inner:)
+    | Ok(routing.Cast(..))
+    | Ok(routing.Life(..)) -> misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
         routing.BeforeHelloReply ->
@@ -1034,10 +1076,15 @@ fn movement_message(
   inner inner: Frame,
   message message: movement.Message,
 ) -> client_connection.Handled(Session) {
-  case movement.take(entered.movement, message, inner.body) {
-    Ok(movement.Kept(state:)) ->
+  case
+    movement.take(entered.movement, message, inner.body),
+    player_life.state(life: entered.life)
+  {
+    Ok(movement.Relayed(place:, ..)), player_life.Dead(..) ->
+      ghost_moving(session:, holder:, entered:, place:)
+    Ok(movement.Kept(state:)), _ ->
       Continue(moving(session:, holder:, entered:, state:), [])
-    Ok(movement.Reported(state:, world_zone_id:, by:)) -> {
+    Ok(movement.Reported(state:, world_zone_id:, by:)), _ -> {
       let session = moving(session:, holder:, entered:, state:)
       let top_zones = top_zone.top_zones(session.settings.tables)
       let #(session, ready) = case by, entered.readiness {
@@ -1061,7 +1108,9 @@ fn movement_message(
         chat_effects(session: with_chat(session:, chat: updated), effects:)
       Continue(session, list.append(ready, written))
     }
-    Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
+    Ok(movement.Relayed(state:, place:, commands:, unrelayed:)),
+      player_life.Alive
+    -> {
       let new_kinds =
         list.filter(unrelayed, fn(kind) {
           !set.contains(session.unrelayed_logged, kind)
@@ -1120,8 +1169,22 @@ fn movement_message(
         ]),
       )
     }
-    Error(refusal) -> end_for(session:, now:, text: movement.describe(refusal))
+    Error(refusal), _ ->
+      end_for(session:, now:, text: movement.describe(refusal))
   }
+}
+
+/// A 0x637 while the player is dead moves its ghost, the client's controlled
+/// unit (`opcode.0x1b3`): the ghost's place is kept in the life, and the body's
+/// place, the map, the viewers and the fighters are told nothing. The movement
+/// keeps the body's place, so the move sequence number does not grow.
+fn ghost_moving(
+  session session: Session,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  place place: Place,
+) -> client_connection.Handled(Session) {
+  todo as "a move of the ghost"
 }
 
 /// The session with the player's movement replaced.
@@ -1281,6 +1344,7 @@ fn foe_taken(
           ),
           strike: tell,
           rolls:,
+          place: movement.place(entered.movement),
         )
       #(Session(..session, link:), life, effects)
     }
@@ -1324,8 +1388,95 @@ fn life_effects(
           seq: session.move_seq,
         ),
       ]
+      player_life.EndCasts | player_life.GoToHolocrypt ->
+        todo as "the casts' end and the Holocrypt are carried by life_carried"
     }
   })
+}
+
+/// The player's 0x15a, taken from inside 0x038C in the world
+/// (genesis_prime/game/player_life): the life is kept and its effects carried
+/// out (`life_carried`); a body the client's reader refuses ends the connection,
+/// and any other refusal is a warning that changes nothing.
+fn life_message(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: player_life.Message,
+) -> client_connection.Handled(Session) {
+  todo as "the player's choice of how to come back"
+}
+
+/// What player_life decided, carried out in order: the frames and news as
+/// `life_effects` makes them, `EndCasts` as the cast rule's `died`, whose 0x7fe
+/// go out in its place in the order, and `GoToHolocrypt` as the leave of the map
+/// that the Holocrypt's join follows (`leaving_for_the_holocrypt`), which comes
+/// last.
+fn life_carried(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  effects effects: List(player_life.Effect),
+) -> client_connection.Handled(Session) {
+  todo as "the life's effects with the casts' end and the Holocrypt"
+}
+
+/// The Holocrypt's first step: the place is the start of the player's race and
+/// faction in its world (`start_place.holocrypt`); the player's unit is removed
+/// from its viewers, its chat groups left and its map asked to take it out, as
+/// the camp's leave does, with the Holocrypt's join to follow in place of
+/// character select (`LeavingMap` with `JoinAt`).
+fn leaving_for_the_holocrypt(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+) -> client_connection.Handled(Session) {
+  todo as "the leave of the map for the Holocrypt"
+}
+
+/// The frame of a death message to the player's own client: 0x88c, 0x247, the
+/// ghost's 0x262, 0x1b3, the ghost's 0x355 or 0x636.
+fn own_death_frame(
+  entered entered: world_entry.Entered,
+  written written: player_life.Written,
+) -> Frame {
+  todo as "a frame of the player's death"
+}
+
+/// 0x88c {unit, dead, 0, 0}: the unit died or came back (`opcode.0x88c`); the
+/// 5-bit value is not read and the 32-bit one is used only for a unit under
+/// client control that comes back, so both are 0.
+fn death_state_frame(unit_id unit_id: Int, dead dead: Bool) -> Frame {
+  todo as "0x088C"
+}
+
+/// 0x247 of type 22 when `died`, else 23, for the unit (`opcode.0x247.death`).
+fn combat_log_frame(unit_id unit_id: Int, died died: Bool) -> Frame {
+  todo as "0x0247"
+}
+
+/// The ghost's 0x262 of type 23 at `place`: the character's id, realm, name,
+/// race, class, gender and title as the player's own 0x262 has them, the values
+/// the client does not read 0 or empty, and the player's tail with the ghost's
+/// position and rotation (`0x140096970`).
+fn ghost_created_frame(
+  entered entered: world_entry.Entered,
+  place place: Place,
+) -> Frame {
+  todo as "the ghost's 0x0262"
+}
+
+/// 0x1b3 with the ghost's id, dead or not, and the server's choices: no cost,
+/// penalty, cooldown or forced release, and Wake Here and Holocrypt offered
+/// (`player_life.offered_choices`, `opcode.0x1b3`).
+fn resurrection_window_frame(
+  ghost_unit_id ghost_unit_id: Int,
+  dead dead: Bool,
+) -> Frame {
+  todo as "0x01B3"
 }
 
 /// The connections that see the player, in the order of their numbers.
@@ -1356,6 +1507,14 @@ fn own_unit_frame(
         as "a unit id and a health of 32 bits and a mask of 18 fit the message"
       Frame(message_id: player_health.message_id, body:)
     }
+    player_life.OwnDeathState(..)
+    | player_life.OwnDeathLogged
+    | player_life.OwnCameBackLogged
+    | player_life.GhostCreated(..)
+    | player_life.OwnResurrectionWindow(..)
+    | player_life.GhostRemoved
+    | player_life.ControlGiven(..) ->
+      todo as "the death's frames are own_death_frame's"
   }
 }
 
@@ -1484,6 +1643,35 @@ fn chat_message(
 /// tells and timers are carried out, the cancel ends a cast, and a refusal ends
 /// the connection.
 fn cast_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: cast.Message,
+) -> client_connection.Handled(Session) {
+  case player_life.state(life: entered.life) {
+    player_life.Dead(..) ->
+      cast_message_while_dead(session:, now:, entered:, inner:, message:)
+    player_life.Alive ->
+      cast_message_alive(session:, now:, entered:, inner:, message:)
+  }
+}
+
+/// A cast message while the player is dead (genesis_prime/game/cast
+/// `take_while_dead`): a press is refused as the client's own check of a dead
+/// caster refuses it, and nothing changes.
+fn cast_message_while_dead(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: cast.Message,
+) -> client_connection.Handled(Session) {
+  todo as "a cast message of a dead player"
+}
+
+/// A cast message of a living player, taken by the cast rule.
+fn cast_message_alive(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
@@ -1872,6 +2060,15 @@ fn world_carried(
                   chat_message(session:, now:, entered:, inner: whole, message:)
                 Ok(routing.Cast(message:)) ->
                   cast_message(session:, now:, entered:, inner: whole, message:)
+                Ok(routing.Life(message:)) ->
+                  life_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
+                    message:,
+                  )
                 Ok(routing.Hello)
                 | Ok(routing.CharacterSelect(..))
                 | Ok(routing.WorldEntry)
@@ -1995,7 +2192,10 @@ fn play_requested(
       case world_entry.take(account_id: holder.account_id, body: inner.body) {
         Ok(#(entry, effects)) ->
           carry_out(
-            session: Session(..session, status: EnteringWorld(holder:, entry:)),
+            session: Session(
+              ..session,
+              status: EnteringWorld(holder:, entry:, from: FromCharacterSelect),
+            ),
             now:,
             effects: list.map(effects, from_entry),
             written: [],
@@ -2183,11 +2383,12 @@ fn answered(
       claim_answered(session:, now:, holder:, resume:, retries:, outcome:)
     InCharacterSelect(holder:, select:) ->
       select_answered(session:, now:, holder:, select:, outcome:)
-    EnteringWorld(holder:, entry:) ->
-      entry_answered(session:, now:, holder:, entry:, outcome:)
+    EnteringWorld(holder:, entry:, from:) ->
+      entry_answered(session:, now:, holder:, entry:, from:, outcome:)
     SavingPlace(holder:, entered:, then:) ->
       save_answered(session:, now:, holder:, entered:, then:, outcome:)
-    LeavingMap(holder:, ..) -> leave_answered(session:, now:, holder:, outcome:)
+    LeavingMap(holder:, entered:, then:) ->
+      leave_answered(session:, now:, holder:, entered:, then:, outcome:)
     AwaitingHelloReply | WaitingToClaim(..) | InWorld(..) ->
       end_for(session:, now:, text: "an answer came when no ask was out")
   }
@@ -2630,6 +2831,9 @@ fn viewer_takes(
     | client_connection.CastFinished(..)
     | client_connection.Health(..)
     | client_connection.Died
+    | client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
     | client_connection.CreatureMoved(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
@@ -2757,6 +2961,10 @@ fn viewer_takes(
       )
     client_connection.Died ->
       creature_news(session:, entered:, unit_id:, news: client_connection.Died)
+    client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged ->
+      life_news(session:, entered:, unit_id:, news: news.news)
     client_connection.CreatureMoved(path:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session =
@@ -2821,6 +3029,9 @@ fn creature_news(
         shown.with_alive(picture:, unit_id:, alive: False)
       })
     client_connection.Health(dead: False, ..)
+    | client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
     | client_connection.Appeared(..)
     | client_connection.CreatureAppeared(..)
     | client_connection.Moving(..)
@@ -2850,6 +3061,19 @@ fn creature_news(
         creature_news_frames(session:, entered:, unit_id:, news:),
       )
   }
+}
+
+/// A player's news of its own death that its viewer writes for a unit its client
+/// shows: 0x88c with the dead bit clear for `CameBack`, which marks the unit alive
+/// in the picture, and 0x247 of type 22 or 23 for `DeathLogged` and
+/// `CameBackLogged`. Dropped for a unit not shown.
+fn life_news(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  news news: client_connection.News,
+) -> client_connection.Handled(Session) {
+  todo as "a viewer's write of a player's coming back and its log lines"
 }
 
 /// The frame of a creature's news, when its client still shows the creature: 0x937
@@ -2891,7 +3115,10 @@ fn creature_news_frames(
         ),
       ]
     }
-    client_connection.Appeared(..)
+    client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
+    | client_connection.Appeared(..)
     | client_connection.CreatureAppeared(..)
     | client_connection.Moving(..)
     | client_connection.Removed
@@ -2932,8 +3159,9 @@ fn held_in_the_world(status: Status) -> Option(world_entry.Entered) {
 }
 
 /// The unit of the player's own record as another player is created with it: at
-/// the place the player stands at now and stamped from the map's clock, from the
-/// origin `Joined` carried (`map.server_time`).
+/// the place the player stands at now, with its health now as stat 0, so a dead
+/// player is created dead (`0x140457bc5`), and stamped from the map's clock, from
+/// the origin `Joined` carried (`map.server_time`).
 fn appearance(
   entered entered: world_entry.Entered,
   now now: Now,
@@ -3430,7 +3658,10 @@ fn leaving_the_map(
 ) -> client_connection.Handled(Session) {
   let before = list.append(before, removes_its_unit_from_the_viewers(entered:))
   ask(
-    session: Session(..session, status: LeavingMap(holder:, entered:)),
+    session: Session(
+      ..session,
+      status: LeavingMap(holder:, entered:, then: ToCharacterSelect),
+    ),
     now:,
     request: AskMapRun(
       map: entered.map,
@@ -3450,10 +3681,19 @@ fn leave_answered(
   session session: Session,
   now now: Now,
   holder holder: Holder,
+  entered entered: world_entry.Entered,
+  then then: AfterLeave,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
-  case outcome {
-    step.Answer(FromMap(map.Left)) | step.NotRunning | step.EndedBeforeAnswer ->
+  case outcome, then {
+    step.Answer(FromMap(map.Left)), JoinAt(place:)
+    | step.NotRunning, JoinAt(place:)
+    | step.EndedBeforeAnswer, JoinAt(place:)
+    -> joining_at_the_holocrypt(session:, now:, holder:, entered:, place:)
+    step.Answer(FromMap(map.Left)), ToCharacterSelect
+    | step.NotRunning, ToCharacterSelect
+    | step.EndedBeforeAnswer, ToCharacterSelect
+    ->
       Continue(
         Session(
           ..session,
@@ -3464,7 +3704,7 @@ fn leave_answered(
           to_client(session, leave_world_frame()),
         ],
       )
-    step.NoAnswerInTime ->
+    step.NoAnswerInTime, _ ->
       told(
         session:,
         now:,
@@ -3472,18 +3712,19 @@ fn leave_answered(
         level: LogWarning,
         text: client_connection.without_answer(who: "the map", outcome:),
       )
-    step.StoppedWaiting -> stopped(session, now)
-    step.Answer(FromMap(map.Joined(..)))
-    | step.Answer(FromMap(map.NotJoined(..)))
-    | step.Answer(FromMap(map.Watched(..)))
-    | step.Answer(FromMap(map.Unwatched(..)))
-    | step.Answer(FromMap(map.Gone(..)))
-    | step.Answer(FromMap(map.Retire))
-    | step.Answer(FromMap(map.Approached(..)))
-    | step.Answer(FromMap(map.Withdrew(..)))
-    | step.Answer(FromStore(..))
-    | step.Answer(FromHandOff(..))
-    | step.Answer(FromSessions(..)) ->
+    step.StoppedWaiting, _ -> stopped(session, now)
+    step.Answer(FromMap(map.Joined(..))), _
+    | step.Answer(FromMap(map.NotJoined(..))), _
+    | step.Answer(FromMap(map.Watched(..))), _
+    | step.Answer(FromMap(map.Unwatched(..))), _
+    | step.Answer(FromMap(map.Gone(..))), _
+    | step.Answer(FromMap(map.Retire)), _
+    | step.Answer(FromMap(map.Approached(..))), _
+    | step.Answer(FromMap(map.Withdrew(..))), _
+    | step.Answer(FromStore(..)), _
+    | step.Answer(FromHandOff(..)), _
+    | step.Answer(FromSessions(..)), _
+    ->
       told(
         session:,
         now:,
@@ -3492,6 +3733,20 @@ fn leave_answered(
         text: "the answer is none the leave of the map asked for",
       )
   }
+}
+
+/// The Holocrypt's second step, after the map's leave: the map of the place's
+/// world is asked to take the player at `place` with the stay's movement
+/// (`world_entry.rejoining`), the old map's watch dropped, in `EnteringWorld`
+/// from the Holocrypt.
+fn joining_at_the_holocrypt(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  place place: Place,
+) -> client_connection.Handled(Session) {
+  todo as "the join at the Holocrypt"
 }
 
 /// The connection ends after the save it waited for: the lines the answer made,
@@ -3636,6 +3891,7 @@ fn entry_answered(
   now now: Now,
   holder holder: Holder,
   entry entry: world_entry.State,
+  from from: EntryFrom,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
@@ -3659,7 +3915,7 @@ fn entry_answered(
           carry_out(
             session: Session(
               ..session,
-              status: EnteringWorld(holder:, entry: state),
+              status: EnteringWorld(holder:, entry: state, from:),
             ),
             now:,
             effects: list.map(effects, from_entry),
@@ -3686,12 +3942,17 @@ fn entry_answered(
         Ok(world_entry.InTheWorld(entered:, effects:)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)
         Ok(world_entry.NotInTheWorld(character_id:, warning:)) ->
-          select_step(
-            session:,
-            now:,
-            holder:,
-            step: refused_play(holder:, character_id:, warning:),
-          )
+          case from {
+            FromCharacterSelect ->
+              select_step(
+                session:,
+                now:,
+                holder:,
+                step: refused_play(holder:, character_id:, warning:),
+              )
+            FromHolocrypt ->
+              holocrypt_refused(session:, holder:, character_id:, warning:)
+          }
         Error(Nil) -> entry_unasked(session, now)
       }
     step.Answer(FromStore(store.ForLogin(..)))
@@ -3715,6 +3976,18 @@ fn entry_answered(
       )
     step.StoppedWaiting -> stopped(session, now)
   }
+}
+
+/// The map refused the Holocrypt's join: a warning, the player is in no map,
+/// so 0x0594 puts the client in character select as the camp's leave does, and
+/// a new character select waits for its 0x07E0.
+fn holocrypt_refused(
+  session session: Session,
+  holder holder: Holder,
+  character_id character_id: Int,
+  warning warning: String,
+) -> client_connection.Handled(Session) {
+  todo as "a refused join at the Holocrypt"
 }
 
 /// An answer that is none world entry asked for: a bug, so the client is told
