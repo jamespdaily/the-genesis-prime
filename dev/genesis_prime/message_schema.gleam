@@ -5,6 +5,7 @@
 //// its evidence.
 
 import gleam/dict.{type Dict}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -102,6 +103,12 @@ pub type Kind {
   /// An unsigned value of `bits` bits that is below `limit`: the encoder
   /// refuses a value at or above it and the decoder fails on one.
   UnsignedBelow(bits: Int, limit: Int)
+  /// A half-precision float (IEEE 754 binary16) in 16 bits, kept as its bits
+  /// like an unsigned value, that the encoder refuses and the decoder fails on
+  /// unless the number is at least `minimum`: a negative number and one that is
+  /// not a number are below every minimum, and positive infinity is above. The
+  /// schema file writes the minimum as text, `minimum = "0.00001"`.
+  HalfFloatAtLeast(minimum: Float)
   /// A 32-bit float kept as its bits.
   Float32
   /// A wide text with a 7-bit or 15-bit count.
@@ -140,6 +147,9 @@ pub type Kind {
   /// A value of `bits` bits that is always `value`. It is no field of the
   /// type: the encoder writes it, and the decoder refuses any other value.
   Constant(bits: Int, value: Int)
+  /// One record, or one union, of the schema, written and read where the field
+  /// stands: the module of `record` writes and reads it, with no count.
+  OneRecord(record: String)
 }
 
 /// Why the schema file is not a schema.
@@ -470,6 +480,7 @@ fn check_counted_by_loop(
           ])
         Unsigned(..)
         | UnsignedBelow(..)
+        | HalfFloatAtLeast(..)
         | Float32
         | WideText
         | WideUnits
@@ -478,7 +489,8 @@ fn check_counted_by_loop(
         | Endpoint
         | RawBytes(..)
         | WholeFrame
-        | Constant(..) -> check_counted_by_loop(fields: rest, earlier_arrays:)
+        | Constant(..)
+        | OneRecord(..) -> check_counted_by_loop(fields: rest, earlier_arrays:)
       }
   }
 }
@@ -499,6 +511,7 @@ fn parse_field(
   use Nil <- result.try(case kind {
     Unsigned(..) -> Ok(Nil)
     UnsignedBelow(..)
+    | HalfFloatAtLeast(..)
     | Float32
     | WideText
     | WideUnits
@@ -513,7 +526,8 @@ fn parse_field(
     | ArrayOfFloat32(..)
     | UnsignedArrayCountedBy(..)
     | ArrayOfRecordCountedBy(..)
-    | Constant(..) -> refuse_values(table:, field: name)
+    | Constant(..)
+    | OneRecord(..) -> refuse_values(table:, field: name)
   })
   Ok(Field(
     name:,
@@ -529,6 +543,7 @@ pub fn named_values(field field: Field) -> Option(NamedValues) {
   case field.kind {
     Unsigned(values:, ..) -> values
     UnsignedBelow(..)
+    | HalfFloatAtLeast(..)
     | Float32
     | WideText
     | WideUnits
@@ -543,7 +558,8 @@ pub fn named_values(field field: Field) -> Option(NamedValues) {
     | ArrayOfFloat32(..)
     | UnsignedArrayCountedBy(..)
     | ArrayOfRecordCountedBy(..)
-    | Constant(..) -> None
+    | Constant(..)
+    | OneRecord(..) -> None
   }
 }
 
@@ -676,6 +692,23 @@ fn parse_kind(
         most: int.bitwise_shift_left(1, bits),
       ))
       Ok(UnsignedBelow(bits:, limit:))
+    }
+    "half_float_at_least" -> {
+      // The minimum is text because `tom` reads a float digit by digit with
+      // repeated multiplication, so `0.00001` becomes 1.0000000000000004e-5.
+      use text <- result.try(string_of(table:, owner: field, key: "minimum"))
+      use minimum <- result.try(
+        float.parse(text)
+        |> result.replace_error(WrongTypeOfKey(field, "minimum")),
+      )
+      Ok(HalfFloatAtLeast(minimum:))
+    }
+    "record" -> {
+      use record <- result.try(string_of(table:, owner: field, key: "record"))
+      case list.contains(record_names, record) {
+        True -> Ok(OneRecord(record:))
+        False -> Error(UnknownRecord(field:, record:))
+      }
     }
     "float32" -> Ok(Float32)
     "wide_text" -> Ok(WideText)

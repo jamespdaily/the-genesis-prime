@@ -11,6 +11,10 @@
 //// - A value that does not fit its width, or sits at or above the limit the
 ////   schema sets, is refused when written and when read; a fixed value reads
 ////   back only as itself.
+//// - A half float with a minimum keeps its 16 bits and refuses a number below
+////   the minimum, a negative one and one that is not a number, as the
+////   client's reader fails a speed below 0.00001 (`movement_command.kind_4`);
+////   positive infinity passes the client's compare.
 //// - A float32 keeps its bits, so every pattern of 32 bits round-trips
 ////   (ReadFloat 0x14006c1c0).
 //// - A wide text counts its UTF-16 units in 7 bits, or in 15 when it has more
@@ -29,6 +33,7 @@
 import genesis_prime/message/bit_stream.{type DecodeError, type Reader}
 import gleam/bit_array
 import gleam/bool
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/pair
@@ -41,6 +46,7 @@ import qcheck.{type Generator}
 type Field {
   Unsigned(bits: Int, value: Int)
   UnsignedBelow(bits: Int, limit: Int, value: Int)
+  HalfFloatAtLeast(minimum: Float, bits: Int)
   Float32(bits: Int)
   WideText(text: String)
   WideUnits(units: List(Int))
@@ -88,6 +94,11 @@ pub fn an_unsigned_value_of_any_width_reads_back_as_written_test() -> Nil {
 pub fn an_unsigned_value_below_a_limit_reads_back_as_written_test() -> Nil {
   use <- owned_test.run(60_000)
   reads_back(unsigned_below_field())
+}
+
+pub fn a_half_float_at_least_its_minimum_reads_back_as_its_bits_test() -> Nil {
+  use <- owned_test.run(60_000)
+  reads_back(half_float_at_least_field())
 }
 
 pub fn a_float32_keeps_every_pattern_of_its_32_bits_test() -> Nil {
@@ -312,6 +323,49 @@ pub fn a_value_at_or_above_the_limit_is_refused_when_written_and_when_read_test(
     as "the decoder refuses a value at or above the limit"
 }
 
+pub fn a_half_float_below_its_minimum_negative_or_not_a_number_is_refused_when_written_and_when_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use #(minimum, bits) <- qcheck.given({
+    use minimum <- qcheck.bind(half_minimum())
+    let lowest = lowest_half_bits_at_least(minimum)
+    use bits <- qcheck.map(
+      qcheck.from_generators(qcheck.bounded_int(from: 0, to: lowest - 1), [
+        qcheck.bounded_int(from: 0x8000, to: 0xFFFF),
+        qcheck.bounded_int(from: 0x7C01, to: 0x7FFF),
+      ]),
+    )
+    #(minimum, bits)
+  })
+  assert written(bit_stream.write_half_float_at_least(_, "value", bits, minimum))
+    == Error(bit_stream.ValueBelowMinimum(field: "value", minimum:, value: bits))
+    as "the encoder refuses a number below the minimum, a negative one and a number that is not one"
+  let assert Ok(body) = written(bit_stream.write_unsigned(_, "value", bits, 16))
+    as "the 16 bits are a value of the width"
+  assert bit_stream.read_half_float_at_least(
+      bit_stream.new_reader(body),
+      "value",
+      minimum,
+    )
+    == Error(bit_stream.UnexpectedValue(field: "value", value: bits))
+    as "the decoder refuses it too"
+}
+
+pub fn a_half_float_of_more_than_16_bits_does_not_fit_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert written(bit_stream.write_half_float_at_least(
+      _,
+      "value",
+      0x10000,
+      0.00001,
+    ))
+    == Error(bit_stream.ValueDoesNotFit(
+      field: "value",
+      bits: 16,
+      value: 0x10000,
+    ))
+    as "a half float is 16 bits"
+}
+
 pub fn a_constant_field_refuses_any_other_value_when_read_test() -> Nil {
   use <- owned_test.run(60_000)
   use #(bits, value, other) <- qcheck.given({
@@ -463,6 +517,8 @@ fn write(writer: bit_stream.Writer, field: Field) -> bit_stream.Writer {
       bit_stream.write_unsigned(writer, "f", value, bits)
     UnsignedBelow(bits:, limit:, value:) ->
       bit_stream.write_unsigned_below(writer, "f", value, bits, limit)
+    HalfFloatAtLeast(minimum:, bits:) ->
+      bit_stream.write_half_float_at_least(writer, "f", bits, minimum)
     Float32(bits:) -> bit_stream.write_float32_bits(writer, "f", bits)
     WideText(text:) -> bit_stream.write_wide_text(writer, "f", text)
     WideUnits(units:) -> bit_stream.write_wide_units(writer, "f", units)
@@ -581,6 +637,9 @@ fn read(
     UnsignedBelow(bits:, limit:, ..) ->
       bit_stream.read_unsigned_below(reader, "f", bits, limit)
       |> map_field(UnsignedBelow(bits:, limit:, value: _))
+    HalfFloatAtLeast(minimum:, ..) ->
+      bit_stream.read_half_float_at_least(reader, "f", minimum)
+      |> map_field(HalfFloatAtLeast(minimum:, bits: _))
     Float32(..) ->
       bit_stream.read_float32_bits(reader) |> map_field(Float32(bits: _))
     WideText(..) ->
@@ -638,6 +697,7 @@ fn map_field(
 fn any_field() -> Generator(Field) {
   qcheck.from_generators(unsigned_field(), [
     unsigned_below_field(),
+    half_float_at_least_field(),
     float32_field(),
     wide_text_field(),
     wide_units_field(),
@@ -695,6 +755,60 @@ fn unsigned_below_field() -> Generator(Field) {
   ))
   use value <- qcheck.map(qcheck.bounded_int(from: 0, to: limit - 1))
   UnsignedBelow(bits:, limit:, value:)
+}
+
+/// The minimums a half float field is given: the client's speed limit and
+/// round numbers.
+fn half_minimum() -> Generator(Float) {
+  qcheck.from_generators(qcheck.constant(0.00001), [
+    qcheck.constant(0.5),
+    qcheck.constant(1.0),
+    qcheck.constant(1000.0),
+  ])
+}
+
+/// A half float at or above its minimum, or positive infinity, which the
+/// client's compare lets through (`movement_command.kind_4`).
+fn half_float_at_least_field() -> Generator(Field) {
+  use minimum <- qcheck.bind(half_minimum())
+  use bits <- qcheck.map(qcheck.bounded_int(
+    from: lowest_half_bits_at_least(minimum),
+    to: 0x7C00,
+  ))
+  HalfFloatAtLeast(minimum:, bits:)
+}
+
+/// The least 16 bits of a positive half float that are `minimum` or more, by
+/// the format's definition (a sign bit, 5 bits of exponent and 10 of fraction):
+/// exponent 0 is the fraction times 2^-24 and any other exponent below 31 is
+/// (1024 + fraction) times 2^(exponent - 25). The positive patterns grow with
+/// their bits, so a bisection finds it.
+fn lowest_half_bits_at_least(minimum: Float) -> Int {
+  bisect(low: 0, high: 0x7BFF, at_least: minimum)
+}
+
+fn bisect(low low: Int, high high: Int, at_least minimum: Float) -> Int {
+  use <- bool.guard(when: low >= high, return: low)
+  let middle = { low + high } / 2
+  case half_value(middle) >=. minimum {
+    True -> bisect(low:, high: middle, at_least: minimum)
+    False -> bisect(low: middle + 1, high:, at_least: minimum)
+  }
+}
+
+fn half_value(bits: Int) -> Float {
+  let exponent = int.bitwise_and(int.bitwise_shift_right(bits, 10), 0x1F)
+  let fraction = int.bitwise_and(bits, 0x3FF)
+  case exponent {
+    0 -> int.to_float(fraction) *. power_of_two(-24)
+    _ -> int.to_float(1024 + fraction) *. power_of_two(exponent - 25)
+  }
+}
+
+fn power_of_two(exponent: Int) -> Float {
+  let assert Ok(value) = float.power(2.0, int.to_float(exponent))
+    as "2 to an integer power is a number"
+  value
 }
 
 fn float32_field() -> Generator(Field) {

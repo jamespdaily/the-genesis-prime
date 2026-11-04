@@ -31,6 +31,8 @@
 //// - A unit that stands still sends no 0x0638, so the bot stands still.
 
 import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_kind_4.{MovementKind4}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import gleam/bool
@@ -155,8 +157,24 @@ pub fn take_due(
 pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
   list.map(commands, fn(command) {
     case command {
+      relayed_movement.Time(data) -> movement_command.Time(data)
       relayed_movement.Platform(data) -> movement_command.Platform(data)
       relayed_movement.Position(data) -> movement_command.Position(data)
+      relayed_movement.Path(data) ->
+        movement_command.Kind4(MovementKind4(
+          points: list.map(data.points, fn(point) {
+            MovementFloatVector(
+              field_1: point.x,
+              field_2: point.y,
+              field_3: point.z,
+            )
+          }),
+          speed: data.speed,
+          path_type: data.path_type,
+          mode: data.mode,
+          field_5: 0,
+          field_6: 0,
+        ))
       relayed_movement.Velocity(data) -> movement_command.Velocity(data)
       relayed_movement.MoveAsked(data) -> movement_command.MoveAsked(data)
       relayed_movement.Rotation(data) -> movement_command.Rotation(data)

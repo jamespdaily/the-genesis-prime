@@ -427,6 +427,9 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.FallValue(..)
     | client_message.FellBelowFloor(..)
     | client_message.SendChatLine(..)
-    | client_message.SendWhisper(..) -> Plain
+    | client_message.SendWhisper(..)
+    | client_message.CastAbility(..)
+    | client_message.CancelCast(..)
+    | client_message.ChooseResurrection(..) -> Plain
   }
 }

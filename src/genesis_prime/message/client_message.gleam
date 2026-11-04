@@ -9,8 +9,11 @@
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/camp_finished.{type CampFinished}
 import genesis_prime/message/camp_request.{type CampRequest}
+import genesis_prime/message/cancel_cast.{type CancelCast}
+import genesis_prime/message/cast_ability.{type CastAbility}
 import genesis_prime/message/character_select_start.{type CharacterSelectStart}
 import genesis_prime/message/choose_realm.{type ChooseRealm}
+import genesis_prime/message/choose_resurrection.{type ChooseResurrection}
 import genesis_prime/message/client_control_echoed.{type ClientControlEchoed}
 import genesis_prime/message/client_wrapper.{type ClientWrapper}
 import genesis_prime/message/close_notice.{type CloseNotice}
@@ -68,6 +71,9 @@ pub type ClientMessage {
   FellBelowFloor(message: FellBelowFloor)
   SendChatLine(message: SendChatLine)
   SendWhisper(message: SendWhisper)
+  CastAbility(message: CastAbility)
+  CancelCast(message: CancelCast)
+  ChooseResurrection(message: ChooseResurrection)
 }
 
 /// Why a body is not a message the client sends.
@@ -142,6 +148,10 @@ pub fn decode(
     0x00FC -> decoded(body, message_id, fell_below_floor.decode, FellBelowFloor)
     0x01C3 -> decoded(body, message_id, send_chat_line.decode, SendChatLine)
     0x01D4 -> decoded(body, message_id, send_whisper.decode, SendWhisper)
+    0x009A -> decoded(body, message_id, cast_ability.decode, CastAbility)
+    0x0801 -> decoded(body, message_id, cancel_cast.decode, CancelCast)
+    0x015A ->
+      decoded(body, message_id, choose_resurrection.decode, ChooseResurrection)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -177,6 +187,9 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     FellBelowFloor(message:) -> fell_below_floor.encode(message)
     SendChatLine(message:) -> send_chat_line.encode(message)
     SendWhisper(message:) -> send_whisper.encode(message)
+    CastAbility(message:) -> cast_ability.encode(message)
+    CancelCast(message:) -> cancel_cast.encode(message)
+    ChooseResurrection(message:) -> choose_resurrection.encode(message)
   }
 }
 
@@ -210,6 +223,9 @@ pub fn message_id(message: ClientMessage) -> Int {
     FellBelowFloor(..) -> fell_below_floor.message_id
     SendChatLine(..) -> send_chat_line.message_id
     SendWhisper(..) -> send_whisper.message_id
+    CastAbility(..) -> cast_ability.message_id
+    CancelCast(..) -> cancel_cast.message_id
+    ChooseResurrection(..) -> choose_resurrection.message_id
   }
 }
 

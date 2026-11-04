@@ -11,6 +11,7 @@ import genesis_prime/message_schema.{
   type Field, type Kind, type Message, type NamedValues, type Record,
   type Schema, type Union, type Variant,
 }
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -309,15 +310,16 @@ fn union_module(union: Union) -> String {
     union.variants
     |> list.map(fn(variant) { variant.record })
     |> list.unique
-    |> list.sort(string.compare)
-    |> list.flat_map(fn(record) {
-      type_import(module: record, type_name: camel(record))
+    |> list.map(fn(record) {
+      #(record, type_import(module: record, type_name: camel(record)))
     })
   lines_to_text(
     list.flatten([
       header(head),
-      bit_stream_import(["DecodeError", "Reader", "Writer"]),
-      module_imports,
+      sorted_message_imports([
+        #("bit_stream", bit_stream_import(["DecodeError", "Reader", "Writer"])),
+        ..module_imports
+      ]),
       ["import gleam/pair", "import gleam/result", ""],
       wrap(
         "///",
@@ -373,14 +375,31 @@ fn union_module(union: Union) -> String {
         "  case kind {",
       ],
       list.flat_map(union.variants, read_arm),
-      case_arm(pattern: "_", head: "Error", arguments: [
-        "bit_stream.UnexpectedValue(field: \""
-        <> union.name
-        <> "\", value: kind)",
-      ]),
+      unexpected_kind_arm(union.name),
       ["  }", "}"],
     ]),
   )
+}
+
+/// The last arm of a union's `read`, which refuses a kind no variant has, laid
+/// out as `gleam format` lays it: on one line when it fits, else the error on
+/// the next line, else with the value's fields one to a line.
+fn unexpected_kind_arm(union_name: String) -> List(String) {
+  let inner =
+    "bit_stream.UnexpectedValue(field: \"" <> union_name <> "\", value: kind)"
+  let one = "    _ -> Error(" <> inner <> ")"
+  let next = "      Error(" <> inner <> ")"
+  case string.length(one) <= width, string.length(next) <= width {
+    True, _ -> [one]
+    False, True -> ["    _ ->", next]
+    False, False -> [
+      "    _ ->",
+      "      Error(bit_stream.UnexpectedValue(",
+      "        field: \"" <> union_name <> "\",",
+      "        value: kind,",
+      "      ))",
+    ]
+  }
 }
 
 /// The arm of a union's `read` for one variant: the kind's record reads the
@@ -636,6 +655,7 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
       case field.kind, message_schema.named_values(field:) {
         message_schema.ArrayOfRecord(record:, ..), _
         | message_schema.ArrayOfRecordCountedBy(record:, ..), _
+        | message_schema.OneRecord(record:), _
         -> Ok(#(record, camel(record)))
         _, Some(named_values) ->
           Ok(#(values_module(named_values), named_values.type_name))
@@ -645,14 +665,26 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
     |> list.unique
     |> list.sort(fn(first, second) { string.compare(first.0, second.0) })
   let module_imports =
-    list.flat_map(modules, fn(module) {
-      type_import(module: module.0, type_name: module.1)
+    list.map(modules, fn(module) {
+      #(module.0, type_import(module: module.0, type_name: module.1))
     })
   list.flatten([
-    bit_stream_import(named),
-    module_imports,
+    sorted_message_imports([
+      #("bit_stream", bit_stream_import(named)),
+      ..module_imports
+    ]),
     ["import gleam/result", ""],
   ])
+}
+
+/// The imports of message modules in the order `gleam format` keeps them: by
+/// the module's name, the bit stream module among them.
+fn sorted_message_imports(
+  imports: List(#(String, List(String))),
+) -> List(String) {
+  imports
+  |> list.sort(fn(first, second) { string.compare(first.0, second.0) })
+  |> list.flat_map(fn(entry) { entry.1 })
 }
 
 /// The import of the bit stream module with the types the code names, on one
@@ -743,6 +775,7 @@ fn kind_type(kind: Kind) -> String {
   case kind {
     message_schema.Unsigned(..)
     | message_schema.UnsignedBelow(..)
+    | message_schema.HalfFloatAtLeast(..)
     | message_schema.Float32 -> "Int"
     message_schema.WideText | message_schema.CountedWideText(..) -> "String"
     message_schema.WideUnits -> "List(Int)"
@@ -751,6 +784,7 @@ fn kind_type(kind: Kind) -> String {
     | message_schema.WholeFrame -> "BitArray"
     message_schema.Endpoint -> "Endpoint"
     message_schema.ArrayOfWideText(..) -> "List(String)"
+    message_schema.OneRecord(record:) -> camel(record)
     message_schema.ArrayOfRecord(record:, ..)
     | message_schema.ArrayOfRecordCountedBy(record:, ..) ->
       "List(" <> camel(record) <> ")"
@@ -797,6 +831,12 @@ fn write_step(field: Field, owner: String) -> List(String) {
       int.to_string(bits),
       int.to_string(limit),
     ])
+    message_schema.HalfFloatAtLeast(minimum:) -> #("write_half_float_at_least", [
+      name,
+      value,
+      float.to_string(minimum),
+    ])
+    message_schema.OneRecord(record:) -> #(record <> ".write", [value])
     message_schema.Float32 -> #("write_float32_bits", [name, value])
     message_schema.WideText -> #("write_wide_text", [name, value])
     message_schema.WideUnits -> #("write_wide_units", [name, value])
@@ -847,7 +887,11 @@ fn write_step(field: Field, owner: String) -> List(String) {
       int.to_string(bits),
     ])
   }
-  call(indent: 2, head: "|> bit_stream." <> function, arguments:, tail: "")
+  let head = case field.kind {
+    message_schema.OneRecord(..) -> "|> " <> function
+    _ -> "|> bit_stream." <> function
+  }
+  call(indent: 2, head:, arguments:, tail: "")
 }
 
 /// The `use` line that reads a field and binds it with the reader after it.
@@ -863,6 +907,12 @@ fn read_step(field: Field) -> List(String) {
       int.to_string(bits),
       int.to_string(limit),
     ])
+    message_schema.HalfFloatAtLeast(minimum:) -> #("read_half_float_at_least", [
+      "reader",
+      "\"" <> field.name <> "\"",
+      float.to_string(minimum),
+    ])
+    message_schema.OneRecord(record:) -> #(record <> ".read", ["reader"])
     message_schema.Float32 -> #("read_float32_bits", ["reader"])
     message_schema.WideText -> #("read_wide_text", ["reader"])
     message_schema.WideUnits -> #("read_wide_units", ["reader"])
@@ -914,7 +964,14 @@ fn read_step(field: Field) -> List(String) {
     _ -> "#(" <> field.name <> ", reader)"
   }
   let read =
-    use_line(pattern:, call_head: "bit_stream." <> function, arguments:)
+    use_line(
+      pattern:,
+      call_head: case field.kind {
+        message_schema.OneRecord(..) -> function
+        _ -> "bit_stream." <> function
+      },
+      arguments:,
+    )
   case message_schema.named_values(field:) {
     Some(named_values) ->
       list.append(read, [

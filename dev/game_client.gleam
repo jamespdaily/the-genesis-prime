@@ -421,7 +421,9 @@ fn last_position(
 ) -> #(Float, Float, Float) {
   case command {
     relayed_movement.Position(placed) -> standing(placed)
-    relayed_movement.Platform(_)
+    relayed_movement.Time(_)
+    | relayed_movement.Platform(_)
+    | relayed_movement.Path(_)
     | relayed_movement.Velocity(_)
     | relayed_movement.MoveAsked(_)
     | relayed_movement.Rotation(_)

@@ -18,9 +18,9 @@ import code_rule/syntax
 import genesis_prime/message_schema.{
   type Field, type Record, type Schema, type Union, ArrayOfFloat32,
   ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, ArrayOfWideText,
-  ClientToServer, Constant, CountedWideText, Endpoint, Float32, Guid, RawBytes,
-  Unsigned, UnsignedArrayCountedBy, UnsignedBelow, WholeFrame, WideText,
-  WideUnits,
+  ClientToServer, Constant, CountedWideText, Endpoint, Float32, Guid,
+  HalfFloatAtLeast, OneRecord, RawBytes, Unsigned, UnsignedArrayCountedBy,
+  UnsignedBelow, WholeFrame, WideText, WideUnits,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -112,11 +112,14 @@ fn records_reached(
   let named =
     list.flat_map(fields, fn(field) {
       case field.kind {
-        ArrayOfRecord(record:, ..) | ArrayOfRecordCountedBy(record:, ..) ->
+        ArrayOfRecord(record:, ..)
+        | ArrayOfRecordCountedBy(record:, ..)
+        | OneRecord(record:) ->
           records_of(unions:, name: record)
           |> list.filter(fn(record) { !list.contains(found, record) })
         Unsigned(..)
         | UnsignedBelow(..)
+        | HalfFloatAtLeast(..)
         | Float32
         | WideText
         | WideUnits
