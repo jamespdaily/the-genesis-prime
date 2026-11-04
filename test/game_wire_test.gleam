@@ -1186,14 +1186,35 @@ fn new_player_of_class(
 }
 
 fn two_players_enter_one_map() -> TwoEntered {
-  two_players_of_class_enter_one_map(first_class: 4)
+  two_players_enter(started: login_support.start(), first_class: 4)
 }
 
-/// As `two_players_enter_one_map`, the first player being of the class given.
+/// As `two_players_enter_one_map`, the first player being of the class given and
+/// the server holding the trees of the starting abilities of every cast method
+/// (`character_tables.shared_with_spell_trees`).
 fn two_players_of_class_enter_one_map(
   first_class first_class: Int,
 ) -> TwoEntered {
-  let started = login_support.start()
+  let started =
+    login_support.start_with(change: fn(settings) {
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..settings.game,
+          settings: game_connection.Settings(
+            ..settings.game.settings,
+            tables: character_tables.shared_with_spell_trees(),
+          ),
+        ),
+      )
+    })
+  two_players_enter(started:, first_class:)
+}
+
+fn two_players_enter(
+  started started: login_support.Started,
+  first_class first_class: Int,
+) -> TwoEntered {
   let #(first, first_character) =
     new_player_of_class(
       started:,
