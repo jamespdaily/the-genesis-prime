@@ -17,8 +17,10 @@
 ////   ◀──────────────────────────── Answered(key, Landed | Deflected | Refused) ◀─────────┘
 ////   answered: the unit's place in the round is filled
 ////   the round closes: all answered, or the deadline passed, and every earlier round of k closed
+////     the timer's effects (cancel, start) first, since the go may begin a round of its own
 ////     Went(asked, struck) ─▶ the connection calls cast.went(k, phase, struck)
 ////     Released(unit, news) for the health news held for the round's units
+////   forget(unit): the client's 0x355 for a unit drops the news held for it
 //// ```
 ////
 //// - **Selection** reads the picture of the units the client shows
@@ -52,8 +54,10 @@
 //// - **A creature's health news for a unit of an open round** is held until that round's
 ////   go is written, so the caster's client shows the number before the death or the
 ////   health bar it caused: a creature sends its answer before its news, one sender in
-////   one order. Another watcher's connection is told the news and the cast's 0x7f4 by two
-////   senders, which no order holds (a gap, which the live sitting checks).
+////   one order. A news held for a unit the client then stops showing (its 0x355) is
+////   dropped, since the unit may stand again under the same id (`forget`). Another
+////   watcher's connection is told the news and the cast's 0x7f4 by two senders, which
+////   no order holds (a gap, which the live sitting checks).
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose, Pose}
