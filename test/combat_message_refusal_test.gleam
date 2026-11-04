@@ -262,6 +262,7 @@ pub fn a_cut_press_cancel_or_resurrect_choice_is_malformed_test() -> Nil {
   list.each(
     [
       #(0x9A, "03 28 00 80 02 00 45 23 01 00 01", "opcode.0x9a"),
+      #(0x4DB, "02 00 45 23 01 00 01", "opcode.0x4db"),
       #(0x801, "04 28 00 80 06 02", "opcode.0x801"),
       #(0x15A, "01 10 00 00 02 00 00 00 00", "opcode.0x15a"),
     ],
@@ -303,6 +304,19 @@ pub fn a_whole_byte_after_a_press_is_refused_test() -> Nil {
       error: bit_stream.TrailingBytes(count: 1),
     ))
     as "a body longer than the message is not the message"
+}
+
+pub fn a_whole_byte_after_a_hold_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert client_message.decode(
+      message_id: 0x4DB,
+      body: message_support.hex("02 00 45 23 01 00 01 00"),
+    )
+    == Error(client_message.Malformed(
+      message_id: 0x4DB,
+      error: bit_stream.TrailingBytes(count: 1),
+    ))
+    as "opcode.0x4db: a body longer than the message is not the message"
 }
 
 pub fn the_three_client_messages_are_taken_by_their_numbers_test() -> Nil {

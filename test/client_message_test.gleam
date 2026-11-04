@@ -6,6 +6,7 @@
 //// - An empty body ends inside the login request's first field, a build of 32
 ////   bits (opcode.0x592).
 
+import genesis_prime/message/ability_hold.{AbilityHold}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_finished.{CampFinished}
 import genesis_prime/message/camp_request.{CampRequest}
@@ -287,6 +288,14 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         bag_index: 2,
         target_unit_id: 0x12345,
         press: 1,
+      )),
+    ),
+    #(
+      0x04DB,
+      client_message.AbilityHold(message: AbilityHold(
+        bag_index: 2,
+        target_unit_id: 0x12345,
+        held: 1,
       )),
     ),
     #(

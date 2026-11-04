@@ -6,6 +6,7 @@
 //// a body by its message's number, `encode` to write it back and `message_id`
 //// to name it. A number no such message has is reported as unknown.
 
+import genesis_prime/message/ability_hold.{type AbilityHold}
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/camp_finished.{type CampFinished}
 import genesis_prime/message/camp_request.{type CampRequest}
@@ -72,6 +73,7 @@ pub type ClientMessage {
   SendChatLine(message: SendChatLine)
   SendWhisper(message: SendWhisper)
   CastAbility(message: CastAbility)
+  AbilityHold(message: AbilityHold)
   CancelCast(message: CancelCast)
   ChooseResurrection(message: ChooseResurrection)
 }
@@ -149,6 +151,7 @@ pub fn decode(
     0x01C3 -> decoded(body, message_id, send_chat_line.decode, SendChatLine)
     0x01D4 -> decoded(body, message_id, send_whisper.decode, SendWhisper)
     0x009A -> decoded(body, message_id, cast_ability.decode, CastAbility)
+    0x04DB -> decoded(body, message_id, ability_hold.decode, AbilityHold)
     0x0801 -> decoded(body, message_id, cancel_cast.decode, CancelCast)
     0x015A ->
       decoded(body, message_id, choose_resurrection.decode, ChooseResurrection)
@@ -188,6 +191,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     SendChatLine(message:) -> send_chat_line.encode(message)
     SendWhisper(message:) -> send_whisper.encode(message)
     CastAbility(message:) -> cast_ability.encode(message)
+    AbilityHold(message:) -> ability_hold.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
     ChooseResurrection(message:) -> choose_resurrection.encode(message)
   }
@@ -224,6 +228,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     SendChatLine(..) -> send_chat_line.message_id
     SendWhisper(..) -> send_whisper.message_id
     CastAbility(..) -> cast_ability.message_id
+    AbilityHold(..) -> ability_hold.message_id
     CancelCast(..) -> cancel_cast.message_id
     ChooseResurrection(..) -> choose_resurrection.message_id
   }
