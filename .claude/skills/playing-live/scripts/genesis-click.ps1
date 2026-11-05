@@ -64,7 +64,8 @@ try {
   if ($window -eq 0) { throw 'no WildStar window' }
 
   # Bring the window forward. A process that is not the foreground one may not take the focus, so
-  # this thread's input is attached to the foreground window's thread for the call.
+  # this thread's input is attached to the foreground window's thread for the call. genesis-key.ps1
+  # holds a copy of this block (run_task stages one script, so they cannot share it); change both.
   if ([Click]::IsIconic($window)) { [Click]::ShowWindow($window, $restore) | Out-Null }
   $foreground = [Click]::GetForegroundWindow()
   if ($foreground -ne $window) {

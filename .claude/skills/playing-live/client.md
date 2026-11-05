@@ -1,10 +1,11 @@
 # The client
 
-Each script's header is its contract: what it runs on the PC, what it refuses, and the client facts it rests on. `scripts/client.sh` also runs the PowerShell scripts beside it (`genesis-start.ps1`, `genesis-input.ps1`, `genesis-click.ps1`), whose headers hold the facts of each launch, keystroke and click.
+Each script's header is its contract: what it runs on the PC, what it refuses, and the client facts it rests on. `scripts/client.sh` also runs the PowerShell scripts beside it (`genesis-start.ps1`, `genesis-input.ps1`, `genesis-click.ps1`, `genesis-key.ps1`), whose headers hold the facts of each launch, keystroke and click.
 
 ## What the scripts cannot enforce
 
 - `scripts/client.sh click <x> <y> --pc-free` (or a named target such as `enter-game`) is takeover mode, for the screens where the client reads the real cursor. Pass `--pc-free`, or set `GENESIS_PC_FREE=1`, only when Jim has said the PC is free. For a point the script does not name, or a named one that misses, read the point from a screenshot (`scripts/screenshot.sh`).
+- `scripts/client.sh key <scan> [ms] --pc-free` is takeover mode too, for keys in the world (targeting, a bar slot, movement): the client reads them by scan code only while it is in front. The same rule for `--pc-free` holds.
 - `scripts/client.sh start` refuses while any WildStar64 runs, since it may be Jim's own client; leave his client alone.
 - The client uploads its error reports to `crash.na.wildstar-online.com`, which still resolves; the PC's hosts file maps it to `0.0.0.0`. A new play PC needs the same line before its first session.
 - Save the `client.sh start` line, with the program's SHA-256, in the session folder.
@@ -20,6 +21,10 @@ Each script's header is its contract: what it runs on the PC, what it refuses, a
 7. When the report is wanted, enter the world from character select: `scripts/client.sh key enter` (a background key; it plays the first character in the list), or, for another character, the takeover click (`scripts/client.sh click enter-game --pc-free`). Wait about 15 s, then `scripts/report.sh collect <folder>`.
 8. `scripts/client-log.sh collect <folder>`.
 9. `scripts/client.sh stop`, then `scripts/report.sh remove`, then stop the server.
+
+## A fight played by hand
+
+For what the client's Lua sees second by second while a person plays (the combat flag, Actuators): `scripts/report.sh install --timeline [minutes]` before the client starts, the person starts the client and plays, then `scripts/report.sh collect --by-hand <folder>`. The report is on the PC only after a reload or a camp; the script headers say when the addon asks for one.
 
 ## A whole session without a person
 

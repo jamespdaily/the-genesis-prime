@@ -5,6 +5,24 @@
 -- 0x140185f30, 0x1404240b0).
 --
 -- The saved table holds only tables, numbers, strings and booleans (fact 0x140185f30).
+--
+-- Timeline mode, when report.sh install --timeline wrote GenesisReportTimelineMinutes (and
+-- GenesisReportInstalledAt, the PC's os.time() at the install) into GenesisReportAddons.lua: in
+-- place of the one report, arTimeline gets one entry every second (strSource "poll") and one at
+-- each UnitEnteredCombat event for the player (strSource "event", the event's flag in
+-- bEventInCombat; the Medic bar's out-of-combat look follows that event, UI/ClassResources/
+-- ClassResources.lua line 513). An entry holds nTime (os.time()), nGameTime (GameLib.GetGameTime(),
+-- the client's own clock in seconds, as UI/NCCB/NonCombatCastBar.lua line 90 reads it), and from
+-- the player unit bInCombat (Unit:IsInCombat(), fact 0x140653ed0), nResource (GetResource(1), fact
+-- 0x14064fdb0) and nMaxResource (GetMaxResource(1), fact 0x140650300); with no player unit only
+-- bPlayerUnit = false. The file is written only when the client runs OnSave (facts 0x140539640,
+-- 0x1400446d0): on a reload and when the world is torn down. This addon asks for a reload when the
+-- timeline is GenesisReportTimelineMinutes long and once the player has been out of combat for
+-- knQuietSeconds after a fight; a person's /reloadui also writes it. The restored timeline is kept
+-- and appended to after a reload of the same install; one saved by another install (its
+-- nInstalledAt is not GenesisReportInstalledAt) is dropped, so a new install starts a new timeline
+-- even when the old report file is still there. Whether closing the client's window runs OnSave is
+-- not traced, so a timeline is not relied on to survive it.
 
 require "Apollo"
 require "GameLib"
@@ -17,10 +35,13 @@ local GenesisReport =
 	tReport = {},
 	tLuaErrorEvents = {},
 	bReloadAsked = false,
+	arTimeline = {},
+	bTimelineFinished = false,
 }
 
 local knPollSeconds = 1.0
 local knReadySeconds = 10
+local knQuietSeconds = 30
 
 function GenesisReport:Init()
 	Apollo.RegisterAddon(self)
@@ -66,8 +87,16 @@ function GenesisReport:OnLuaError(tAddon, strError, bCanIgnore)
 	table.insert(self.tLuaErrorEvents, tEvent)
 end
 
+-- Whether install --timeline asked for the timeline.
+local function IsTimeline()
+	return type(GenesisReportTimelineMinutes) == "number"
+end
+
 function GenesisReport:OnLoad()
 	Apollo.RegisterEventHandler("LuaError", "OnLuaError", self)
+	if IsTimeline() then
+		Apollo.RegisterEventHandler("UnitEnteredCombat", "OnUnitEnteredCombat", self)
+	end
 	self.timerPoll = ApolloTimer.Create(knPollSeconds, true, "OnPoll", self)
 end
 
@@ -77,6 +106,20 @@ end
 function GenesisReport:OnSave(eLevel)
 	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.Account then
 		return nil
+	end
+	if IsTimeline() then
+		return
+		{
+			bTimeline = true,
+			bReported = #self.arTimeline > 0,
+			nReportedAt = os.time(),
+			nInstalledAt = NumberOrNil(GenesisReportInstalledAt),
+			nTimelineMinutes = GenesisReportTimelineMinutes,
+			nTimelineStartedAt = self.nTimelineStartedAt,
+			bTimelineFinished = self.bTimelineFinished,
+			arTimeline = self.arTimeline,
+			tLuaErrorEvents = self.tLuaErrorEvents,
+		}
 	end
 	if self.tRestored ~= nil then
 		return self.tRestored
@@ -91,6 +134,18 @@ end
 -- A report kept from before the reload is never replaced and never reloads again.
 function GenesisReport:OnRestore(eLevel, tData)
 	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.Account then
+		return
+	end
+	if IsTimeline() then
+		if type(tData) == "table" and tData.bTimeline == true and type(tData.arTimeline) == "table"
+			and NumberOrNil(tData.nInstalledAt) == NumberOrNil(GenesisReportInstalledAt) then
+			self.arTimeline = tData.arTimeline
+			self.nTimelineStartedAt = NumberOrNil(tData.nTimelineStartedAt)
+			self.bTimelineFinished = tData.bTimelineFinished == true
+			if type(tData.tLuaErrorEvents) == "table" then
+				self.tLuaErrorEvents = tData.tLuaErrorEvents
+			end
+		end
 		return
 	end
 	if type(tData) == "table" and tData.bReported == true then
@@ -168,9 +223,82 @@ function GenesisReport:SweepAddonErrors(tReport)
 	tReport.arAddonsWithoutInfo = arWithoutInfo
 end
 
+-----------------------------------------------------------------------------------------------
+-- Timeline
+-----------------------------------------------------------------------------------------------
+
+-- Appends one entry (see the header) to arTimeline and returns it. bEnteredCombat is the event's
+-- flag, nil for a poll.
+function GenesisReport:AppendTimelineEntry(strSource, bEnteredCombat)
+	local tEntry = { nTime = os.time(), strSource = strSource }
+	tEntry.nGameTime = NumberOrNil(GameLib.GetGameTime())
+	if bEnteredCombat ~= nil then
+		tEntry.bEventInCombat = bEnteredCombat and true or false
+	end
+
+	local unitPlayer = GameLib.GetPlayerUnit()
+	tEntry.bPlayerUnit = unitPlayer ~= nil
+	if unitPlayer ~= nil then
+		tEntry.bInCombat = unitPlayer:IsInCombat() and true or false
+		tEntry.nResource = NumberOrNil(unitPlayer:GetResource(1))
+		tEntry.nMaxResource = NumberOrNil(unitPlayer:GetMaxResource(1))
+	end
+	table.insert(self.arTimeline, tEntry)
+	return tEntry
+end
+
+-- The same unit test ClassResources makes (UI/ClassResources/ClassResources.lua line 371 handler).
+function GenesisReport:OnUnitEnteredCombat(unitChanged, bInCombat)
+	if self.bTimelineFinished or unitChanged ~= GameLib.GetPlayerUnit() then
+		return
+	end
+	self:AppendTimelineEntry("event", bInCombat)
+end
+
+-- One poll of the timeline. The clock starts at the first entry, which is the world's start since
+-- the client loads addons then (fact 0x140538fd0). RequestReloadUI makes the client write the file
+-- (a user addon has no ReloadUI, fact 0x1400447f0).
+function GenesisReport:OnTimelinePoll()
+	if self.bTimelineFinished then
+		self.timerPoll:Stop()
+		return
+	end
+
+	local tEntry = self:AppendTimelineEntry("poll")
+	local nNow = tEntry.nTime
+	if self.nTimelineStartedAt == nil then
+		self.nTimelineStartedAt = nNow
+	end
+
+	if nNow - self.nTimelineStartedAt >= GenesisReportTimelineMinutes * 60 then
+		self.bTimelineFinished = true
+		RequestReloadUI()
+		return
+	end
+
+	if tEntry.bInCombat then
+		self.bFoughtSinceSave = true
+		self.nQuietSince = nil
+	elseif tEntry.bPlayerUnit and self.bFoughtSinceSave then
+		if self.nQuietSince == nil then
+			self.nQuietSince = nNow
+		end
+		if nNow - self.nQuietSince >= knQuietSeconds then
+			self.bFoughtSinceSave = false
+			self.nQuietSince = nil
+			RequestReloadUI()
+		end
+	end
+end
+
 -- Fact 0x1406f6800: IsCharacterLoaded is true once every world-loading stage has passed.
 -- RequestReloadUI: a user addon has no ReloadUI (fact 0x1400447f0).
 function GenesisReport:OnPoll()
+	if IsTimeline() then
+		self:OnTimelinePoll()
+		return
+	end
+
 	if self.tRestored ~= nil then
 		self.timerPoll:Stop()
 		return
