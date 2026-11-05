@@ -353,7 +353,7 @@ class FactsCitingTest(unittest.TestCase):
         )
         self.assertEqual([r.key for r in facts.citing(0x1403EE1FE)], ["opcode.0x7fb", "0x14053f090"])
         self.assertEqual([r.key for r in facts.citing(0x14053F090)], ["opcode.0x7fb"])
-        self.assertEqual(facts.citing(0x140000001), [])
+        self.assertEqual(facts.citing(0x150000001), [])
         self.assertEqual(facts.keyed(0x14053F090).key, "0x14053f090")
 
 
@@ -369,7 +369,7 @@ class LevelsTest(unittest.TestCase):
 
 
 class SharedCallPathsTest(unittest.TestCase):
-    A, B, C = 0x140001000, 0x140002000, 0x140003000
+    A, B, C = 0x150001000, 0x150002000, 0x150003000
 
     def index(self):
         return FakeIndex(
@@ -379,7 +379,7 @@ class SharedCallPathsTest(unittest.TestCase):
                 Ref(self.A + 0x20, self.B, "call"),
                 Ref(self.A + 0x30, self.C, "jmp"),
                 Ref(self.A + 0x40, self.A, "call"),
-                Ref(self.A + 0x50, 0x140009999, "call"),
+                Ref(self.A + 0x50, 0x150009999, "call"),
                 Ref(self.A + 0x60, self.B, "rip-lea"),
             ],
         )
@@ -396,23 +396,23 @@ class SharedCallPathsTest(unittest.TestCase):
                 Ref(self.B + 0x10, self.A, "call"),
                 Ref(self.B + 0x20, self.A, "rip-lea"),
                 Ref(self.A + 0x30, self.A, "call"),
-                Ref(0x140900000, self.A, "jmp"),
-                Ref(0x140900008, self.A, "pointer"),
+                Ref(0x150900000, self.A, "jmp"),
+                Ref(0x150900008, self.A, "pointer"),
             ],
         )
         self.assertEqual(
             call_paths.reference_phrases(index, self.A),
-            ["rip-lea at 0x140002020", "call from itself at 0x140001030", "jmp from code outside .pdata at 0x140900000", "pointer at 0x140900008"],
+            ["rip-lea at 0x150002020", "call from itself at 0x150001030", "jmp from code outside .pdata at 0x150900000", "pointer at 0x150900008"],
         )
-        self.assertEqual(call_paths.reference_phrases(index, self.A, lambda root: "0x%x" % root)[0], "rip-lea at 0x140002020 in 0x140002000")
+        self.assertEqual(call_paths.reference_phrases(index, self.A, lambda root: "0x%x" % root)[0], "rip-lea at 0x150002020 in 0x150002000")
 
 
 LOGIN = 0x1400370D0
 MESSAGE_03DB = 0x140037F30
 REGISTERING = 0x14006C290
-READER_03DB = 0x140100000
+READER_03DB = 0x150100000
 WRITER_04DB = 0x140093580
-CASE_HOLDER = 0x140607D10
+CASE_HOLDER = 0x150607D10
 LOGIN_C = """undefined8 HandleLoginMessage(longlong param_1,int param_2,int param_3,uint *param_4)
 
 {
@@ -438,7 +438,7 @@ REGISTRATIONS_C = """void FUN_14006c290(void)
   (**(code **)*puVar1)(puVar1,0x4da,0xc,0,0,ReadMessage04DABody,0);
   (**(code **)*puVar1)(puVar1,0x4dc,0xc,0,0,ReadMessage04DCBody,0);
 }"""
-CASE_C = """void FUN_140607d10(longlong *param_1,undefined8 param_2,undefined4 *param_3,int param_4)
+CASE_C = """void FUN_150607d10(longlong *param_1,undefined8 param_2,undefined4 *param_3,int param_4)
 
 {
   switch(*param_3) {
@@ -491,11 +491,11 @@ class HandlerTest(unittest.TestCase):
         self.assertIn("0x140037f30 HandleMessage03DB (named for the message)", text)
 
     def test_a_case_label_of_a_message_the_client_sends_is_listed_with_its_shared_block(self):
-        # saved C of 0x140607d10 line 141: `case 0x4db:` among the labels of a switch whose group runs to `break;`
+        # saved C of FUN_140607d10 line 141: `case 0x4db:` among the labels of a switch whose group runs to `break;`
         text, found = opcode_text(login_client(self), 0x4DB)
         self.assertTrue(found)
         handled = text[text.index("handled by") :]
-        self.assertIn("0x140607d10 line ", handled)
+        self.assertIn("0x150607d10 line ", handled)
         self.assertIn("case 0x4db:", handled)
         self.assertIn("one of 3 case labels sharing a block: break;", handled)
 
@@ -517,7 +517,7 @@ class HandlerTest(unittest.TestCase):
 class ExitStatusTest(unittest.TestCase):
     def alloc_client(self, count):
         functions = {
-            0x140100000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n  pvVar1 = AllocMemory(0xfff0,0);\n}" % (0x140100000 + 0x1000 * n))
+            0x150100000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n  pvVar1 = AllocMemory(0xfff0,0);\n}" % (0x150100000 + 0x1000 * n))
             for n in range(count)
         }
         return build_client(self, functions)
@@ -539,16 +539,16 @@ class ExitStatusTest(unittest.TestCase):
 
     def test_the_label_counts_the_functions_that_pass_the_number_and_the_functions_that_compare_it(self):
         functions = {
-            0x140100000: (None, "void FUN_140100000(void)\n\n{\n  pvVar1 = AllocMemory(0xfff0,0);\n  pvVar2 = AllocMemory(0xfff0,1);\n}"),
-            0x140101000: (None, "void FUN_140101000(void)\n\n{\n  pvVar1 = AllocMemory(0xfff0,0);\n}"),
-            0x140102000: (None, "void FUN_140102000(void)\n\n{\n  switch(x) {\n    case 0xfff0:\n      return;\n  }\n}"),
+            0x150100000: (None, "void FUN_150100000(void)\n\n{\n  pvVar1 = AllocMemory(0xfff0,0);\n  pvVar2 = AllocMemory(0xfff0,1);\n}"),
+            0x150101000: (None, "void FUN_150101000(void)\n\n{\n  pvVar1 = AllocMemory(0xfff0,0);\n}"),
+            0x150102000: (None, "void FUN_150102000(void)\n\n{\n  switch(x) {\n    case 0xfff0:\n      return;\n  }\n}"),
         }
         out = io.StringIO()
         client_trace.run(build_client(self, functions), "0xfff0", 1, 20000, [], out)
         self.assertIn("(2 functions pass it as a call argument, 1 compare or switch on it)", out.getvalue())
 
     def test_a_sender_ties_the_number_to_a_message_and_exits_0(self):
-        sender = {0x140200000: (None, "void FUN_140200000(void)\n\n{\n  SendWorldMessage(param_1,0x4db,&local_28);\n}")}
+        sender = {0x150200000: (None, "void FUN_150200000(void)\n\n{\n  SendWorldMessage(param_1,0x4db,&local_28);\n}")}
         out = io.StringIO()
         self.assertEqual(client_trace.run(build_client(self, sender), "0x4db", 1, 20000, [], out), 0)
         self.assertIn("sent by", out.getvalue())
@@ -557,7 +557,7 @@ class ExitStatusTest(unittest.TestCase):
     def test_a_fact_record_for_the_opcode_ties_it_and_exits_0(self):
         record = check_facts.Record("opcode.0x7fb", "Message 0x7fb", "proof", "sure", None, None)
         out = io.StringIO()
-        self.assertEqual(client_trace.run(build_client(self, {0x140200000: (None, None)}, facts=[record]), "0x7fb", 1, 20000, [], out), 0)
+        self.assertEqual(client_trace.run(build_client(self, {0x150200000: (None, None)}, facts=[record]), "0x7fb", 1, 20000, [], out), 0)
 
     def test_a_registration_ties_it_and_exits_0(self):
         out = io.StringIO()
@@ -613,10 +613,10 @@ class MainTest(unittest.TestCase):
 
 
 class FunctionPartsTest(unittest.TestCase):
-    A, B, C = 0x140001000, 0x140002000, 0x140003000
+    A, B, C = 0x140001000, 0x150002000, 0x150003000
 
     def client(self, c_text="void FUN_140001000(void)\n\n{\n}", facts=()):
-        functions = {self.A: (None, c_text), self.B: ("Callee", "void Callee(void)\n\n{\n}"), self.C: (None, "void FUN_140003000(void)\n\n{\n}")}
+        functions = {self.A: (None, c_text), self.B: ("Callee", "void Callee(void)\n\n{\n}"), self.C: (None, "void FUN_150003000(void)\n\n{\n}")}
         return build_client(self, functions, [(self.A, self.B), (self.A, self.C), (self.C, self.B)], facts=facts)
 
     def text(self, client, function, depth=1, registrations=(), compact=False):
@@ -626,7 +626,7 @@ class FunctionPartsTest(unittest.TestCase):
         text = self.text(self.client(), self.B)
         self.assertIn("called by (2 functions):", text)
         self.assertIn("0x140001000  (call at 0x140001010)", text)
-        self.assertIn("0x140003000  (call at 0x140003018)", text)
+        self.assertIn("0x150003000  (call at 0x150003018)", text)
         self.assertIn("calls (0 functions):", text)
         self.assertIn("calls (2 functions):", self.text(self.client(), self.A))
 
@@ -668,7 +668,7 @@ class FunctionPartsTest(unittest.TestCase):
 class TrimmedOutputSaysSoTest(unittest.TestCase):
     def test_globals_with_more_than_forty_other_users_are_counted_as_left_out(self):
         # planted: 41 other functions read DAT_140c65898 (the world global), and 2 read DAT_140c636a8 (the clock)
-        starts = [0x140100000 + 0x1000 * n for n in range(43)]
+        starts = [0x150100000 + 0x1000 * n for n in range(43)]
         functions = {start: (None, "void FUN_%x(void)\n\n{\n}" % start) for start in starts}
         functions[starts[0]] = (None, "void FUN_%x(void)\n\n{\n  a = DAT_140c65898;\n  b = DAT_140c636a8;\n}" % starts[0])
         refs = [Ref(start + 0x20, 0x140C65898, "rip-data") for start in starts[1:42]] + [Ref(start + 0x20, 0x140C636A8, "rip-data") for start in starts[1:3]]
@@ -680,7 +680,7 @@ class TrimmedOutputSaysSoTest(unittest.TestCase):
 
     def senders(self, count):
         functions = {
-            0x140200000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n  SendWorldMessage(param_1,0x4db,&local_28);\n}" % (0x140200000 + 0x1000 * n))
+            0x150200000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n  SendWorldMessage(param_1,0x4db,&local_28);\n}" % (0x150200000 + 0x1000 * n))
             for n in range(count)
         }
         return build_client(self, functions)
@@ -689,26 +689,26 @@ class TrimmedOutputSaysSoTest(unittest.TestCase):
         text, _found = opcode_text(self.senders(6), 0x4DB)
         self.assertEqual(text.count("  sender "), 6)
         self.assertIn("2 senders past the first 4 are listed but not traced", text)
-        self.assertEqual(text.count("== 0x1402"), 4)
+        self.assertEqual(text.count("== 0x1502"), 4)
 
     def test_four_senders_need_no_note(self):
         text, _found = opcode_text(self.senders(4), 0x4DB)
         self.assertNotIn("not traced", text)
 
     def test_case_callees_past_the_fourth_say_they_are_not_traced(self):
-        callees = {0x140300000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n}" % (0x140300000 + 0x1000 * n)) for n in range(6)}
+        callees = {0x150300000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n}" % (0x150300000 + 0x1000 * n)) for n in range(6)}
         dispatcher = {0x1403EC6A0: ("HandleWorldMessage", "void HandleWorldMessage(void)\n\n{\n}")}
         client = build_client(self, {**callees, **dispatcher})
-        block = client_trace.CaseBlock(0x1403EC6A0, 0x1403EC700, 0x1403EE1FE, [(0x1403EE200 + 5 * n, a) for n, a in enumerate(callees)], "a jmp at 0x1403ee300")
+        block = client_trace.CaseBlock(0x1403EC6A0, 0x1503EC700, 0x1403EE1FE, [(0x1503EE200 + 5 * n, a) for n, a in enumerate(callees)], "a jmp at 0x1503ee300")
         with mock.patch.object(client_trace, "dispatch_cases", return_value=[block]):
             text, found = opcode_text(client, 0x7FB)
         self.assertTrue(found)
         self.assertIn("2 callees of the case past the first 4 are listed but not traced", text)
-        self.assertEqual(text.count("== 0x1403"), 4)
+        self.assertEqual(text.count("== 0x1503"), 4)
 
     def test_callee_bodies_past_the_sixth_at_depth_2_say_they_are_left_out(self):
         caller = 0x140001000
-        callees = {0x140400000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n}" % (0x140400000 + 0x1000 * n)) for n in range(8)}
+        callees = {0x150400000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n}" % (0x150400000 + 0x1000 * n)) for n in range(8)}
         client = build_client(self, {caller: (None, "void FUN_140001000(void)\n\n{\n}"), **callees}, [(caller, callee) for callee in callees])
         parts = client_trace.function_parts(client, caller, 2, [])
         self.assertEqual(len([p for p in parts if p.shrinkable]), 1 + client_trace.MAX_CALLEE_BODIES)
@@ -716,7 +716,7 @@ class TrimmedOutputSaysSoTest(unittest.TestCase):
 
     def test_six_callee_bodies_need_no_note(self):
         caller = 0x140001000
-        callees = {0x140400000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n}" % (0x140400000 + 0x1000 * n)) for n in range(6)}
+        callees = {0x150400000 + 0x1000 * n: (None, "void FUN_%x(void)\n\n{\n}" % (0x150400000 + 0x1000 * n)) for n in range(6)}
         client = build_client(self, {caller: (None, "void FUN_140001000(void)\n\n{\n}"), **callees}, [(caller, callee) for callee in callees])
         self.assertNotIn("left out", "\n".join(p.text for p in client_trace.function_parts(client, caller, 2, [])))
 
@@ -756,6 +756,7 @@ def _saved_c_present():
         return False
 
 
+PLANTED_SAVED_CASE_HOLDER = 0x140607D10
 needs_saved_c = unittest.skipUnless(not cs.NO_CLIENT and _saved_c_present(), "the client and its saved C are not on this machine")
 
 
@@ -780,11 +781,11 @@ class SavedClientTest(unittest.TestCase):
         self.assertIn("0x140037f30 HandleMessage03DB", text)
         self.assertIn("== 0x140037f30 HandleMessage03DB", text)
 
-    def test_message_0x4db_has_the_case_label_of_the_switch_at_0x140607d10(self):
-        # saved C of 0x140607d10 line 141: `case 0x4db:`
+    def test_message_0x4db_has_the_case_label_of_the_switch_in_fun_140607d10(self):
+        # saved C of FUN_140607d10 line 141: `case 0x4db:`
         status, text = self.report("0x4db")
         self.assertEqual(status, 0)
-        self.assertIn("0x140607d10 line 141: case 0x4db:", text)
+        self.assertIn("0x%x line 141: case 0x4db:" % PLANTED_SAVED_CASE_HOLDER, text)
 
     def test_the_number_7_is_no_message_and_exits_1_with_a_bounded_list(self):
         status, text = self.report("7")
