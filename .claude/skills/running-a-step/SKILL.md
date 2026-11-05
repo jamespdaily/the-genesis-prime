@@ -78,13 +78,13 @@ Check each finding against the code first, then fix what holds in one round. A b
 - **Logged as unhandled** is missing, not a bug: the coverage measure lists it, and its area's checklist line gets any new evidence; no issue. Build it in the step only when the step's goal fails without it.
 - **Handled, but the result differs from the evidence, or it crashed:** a bug.
 - **Handled, but no evidence says what is right:** look in the evidence first. Only when it cannot settle it is it a question for Jim, marked Waiting on Jim. A silent wrong result is a bug.
-- **An issue found in play** is the next step in the milestone's order. A milestone does not end with one open.
+- **A report from live play** is sorted first. A wrong result from a system already built is a bug and the next step. A behaviour not built yet is a dated line on the issue of the system whose planned work builds it, and no new issue. A milestone does not end with a bug open. (Creature facing was filed as its own step, #432, though the creature's fight behaviour was already planned work, 2026-11-05.)
 
 Before any fix, inside a step or not, search the closed issues and the step's own fixes for the same cause or module. Two failures with one cause, or three in one module in a milestone, stop the patching: the next step finds the root cause first and states whether a targeted fix, a stronger check or a redesign removes it, and why; the open fixes fold into it.
 
 ## The live sitting
 
-A sitting runs when the client sees or sends something new (the `playing-live` skill): an agent drives what the client driver reaches, and Jim plays the rest. The steps of one goal share one sitting: each merges on green, and the sitting runs once the goal's last step merges. A failure in it is an issue found in play and the next step; the goal stays open until the sitting passes. A replay that differs after a change meant to alter what the client receives is recorded again live (the `designing-processes` skill). A playable server is set up whenever Jim asks.
+A sitting runs when the client sees or sends something new (the `playing-live` skill): an agent drives what the client driver reaches, and Jim plays the rest. The steps of one goal share one sitting: each merges on green, and the sitting runs once the goal's last step merges. A failure in it is sorted as a report from live play (above); the goal stays open until the sitting passes. A replay that differs after a change meant to alter what the client receives is recorded again live (the `designing-processes` skill). A playable server is set up whenever Jim asks.
 
 ## Tracking
 
