@@ -32,7 +32,7 @@ fn file_named(files: List(GeneratedFile), name: String) -> GeneratedFile {
   file
 }
 
-pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_client_message_module_test() -> Nil {
+pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_client_and_server_message_modules_test() -> Nil {
   use <- owned_test.run(5000)
   let paths =
     generated()
@@ -168,6 +168,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/send_chat_line.gleam",
       "src/genesis_prime/message/send_whisper.gleam",
       "src/genesis_prime/message/server_hello.gleam",
+      "src/genesis_prime/message/server_message.gleam",
       "src/genesis_prime/message/shared_item.gleam",
       "src/genesis_prime/message/spell_cast_confirmed.gleam",
       "src/genesis_prime/message/spell_cast_refused.gleam",

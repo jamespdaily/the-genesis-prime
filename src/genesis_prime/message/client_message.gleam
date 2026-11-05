@@ -3,8 +3,9 @@
 ////
 //// Every message the client sends, by its number: a variant for each message
 //// of the schema that travels client to server or either way, `decode` to read
-//// a body by its message's number, `encode` to write it back and `message_id`
-//// to name it. A number no such message has is reported as unknown.
+//// a body by its message's number, `encode` to write it back, `message_id` to
+//// give its number and `name` to give its name in the schema. A number no such
+//// message has is reported as unknown.
 
 import genesis_prime/message/ability_hold.{type AbilityHold}
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
@@ -231,6 +232,43 @@ pub fn message_id(message: ClientMessage) -> Int {
     AbilityHold(..) -> ability_hold.message_id
     CancelCast(..) -> cancel_cast.message_id
     ChooseResurrection(..) -> choose_resurrection.message_id
+  }
+}
+
+/// The name of a message in the schema.
+pub fn name(message: ClientMessage) -> String {
+  case message {
+    Ping(..) -> "ping"
+    Pong(..) -> "pong"
+    CloseNotice(..) -> "close_notice"
+    LoginRequest(..) -> "login_request"
+    GameHelloReply(..) -> "game_hello_reply"
+    CharacterSelectStart(..) -> "character_select_start"
+    RealmSelectStart(..) -> "realm_select_start"
+    ClientWrapper(..) -> "client_wrapper"
+    WorldMessage(..) -> "world_message"
+    CreateCharacter(..) -> "create_character"
+    CreateCharacterCarrier(..) -> "create_character_carrier"
+    PlayCharacter(..) -> "play_character"
+    DeleteCharacter(..) -> "delete_character"
+    RenameCharacter(..) -> "rename_character"
+    ChooseRealm(..) -> "choose_realm"
+    ClientControlEchoed(..) -> "client_control_echoed"
+    TerrainLoaded(..) -> "terrain_loaded"
+    CampRequest(..) -> "camp_request"
+    CampFinished(..) -> "camp_finished"
+    PlayerMovement(..) -> "player_movement"
+    WorldZoneChanged(..) -> "world_zone_changed"
+    MovementSendIntervalAnswer(..) -> "movement_send_interval_answer"
+    MoveSpeedSetting(..) -> "move_speed_setting"
+    FallValue(..) -> "fall_value"
+    FellBelowFloor(..) -> "fell_below_floor"
+    SendChatLine(..) -> "send_chat_line"
+    SendWhisper(..) -> "send_whisper"
+    CastAbility(..) -> "cast_ability"
+    AbilityHold(..) -> "ability_hold"
+    CancelCast(..) -> "cancel_cast"
+    ChooseResurrection(..) -> "choose_resurrection"
   }
 }
 

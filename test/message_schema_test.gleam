@@ -13,6 +13,7 @@ import genesis_prime/message_schema.{
   UnsignedBelow, ValueNamedOther, ValuesOnOtherKind, Variant,
   VariantKindDisagrees, WrongTypeOfKey,
 }
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -81,9 +82,9 @@ pub fn a_fixed_value_is_written_by_the_encoder_and_is_no_field_of_the_type_test(
   { name = \"id\", kind = \"unsigned\", bits = 32, evidence = \"x\" },",
     ))
     as "the planted schema parses"
-  let assert [file, _record, _client_message] =
+  let assert [file, _record, _client_message, _server_message] =
     message_generator.generate(schema)
-    as "one message and one record are two modules, and the client message module is the third"
+    as "one message and one record are two modules, and the client and server message modules are the third and fourth"
   assert string.contains(
     file.text,
     "bit_stream.write_constant(\"kind\", 20, 6)",
@@ -116,9 +117,9 @@ pub fn the_reader_knows_a_value_below_a_limit_and_a_message_sent_both_ways_test(
   let assert [message] = schema.messages as "one message"
   assert message.direction == Both
     as "a message either side sends has the direction both"
-  let assert [file, _record, _client_message] =
+  let assert [file, _record, _client_message, _server_message] =
     message_generator.generate(schema)
-    as "one message and one record are two modules, and the client message module is the third"
+    as "one message and one record are two modules, and the client and server message modules are the third and fourth"
   assert string.contains(file.text, "either direction")
   assert string.contains(
     file.text,
@@ -617,4 +618,112 @@ pub fn a_module_that_sorts_before_the_bit_stream_is_imported_before_it_test() ->
     "import genesis_prime/message/aaa_record.{type AaaRecord}",
   )
     as "`gleam format` keeps imports in the order of their modules' names, so the codec writes them in that order and the full check's comparison of the generated files holds"
+}
+
+// ---- the modules that read a message by its number ----
+
+/// A planted schema of two messages that share the number 0x0010 and travel
+/// server to client, in the order given: each starts with the field `kind`, as
+/// `first_kind` and `second_kind` say, then holds a byte.
+fn two_messages_sharing_a_number(
+  first_kind first_kind: String,
+  second_kind second_kind: String,
+) -> String {
+  let message = fn(name: String, kind: String) {
+    "[[message]]\nid = 0x0010\nname = \""
+    <> name
+    <> "\"\ndirection = \"server_to_client\"\nevidence = \"x\"\nsummary = \"a planted message\"\nfields = [\n  "
+    <> kind
+    <> ",\n  { name = \"byte\", kind = \"unsigned\", bits = 8, evidence = \"x\" },\n]\n\n"
+  }
+  message("first_message", first_kind)
+  <> message("second_message", second_kind)
+  <> "[[record]]\nname = \"planted_record\"\nevidence = \"x\"\nsummary = \"a planted record\"\nfields = [\n  { name = \"id\", kind = \"unsigned\", bits = 8, evidence = \"x\" },\n]\n"
+}
+
+const open_kind =
+  "{ name = \"kind\", kind = \"unsigned\", bits = 6, evidence = \"x\" }"
+
+const kind_3 =
+  "{ name = \"kind\", kind = \"constant\", bits = 6, value = 3, evidence = \"x\" }"
+
+const kind_4 =
+  "{ name = \"kind\", kind = \"constant\", bits = 6, value = 4, evidence = \"x\" }"
+
+/// The names of the messages the server's reader tries for the number 0x0010,
+/// in the order it tries them.
+fn tried_in_order(schema: String) -> List(String) {
+  let reader = generated_file(generated(schema), "server_message")
+  ["first_message", "second_message"]
+  |> list.map(fn(name) {
+    let assert Ok(#(before, _)) = string.split_once(reader, name <> ".decode,")
+      as { "the server's reader tries " <> name }
+    #(string.length(before), name)
+  })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.map(fn(tried) { tried.1 })
+}
+
+pub fn a_message_with_a_fixed_field_is_tried_before_one_with_none_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert tried_in_order(two_messages_sharing_a_number(
+      first_kind: open_kind,
+      second_kind: kind_3,
+    ))
+    == ["second_message", "first_message"]
+    as "a message with no fixed field reads any body its layout fits, so it is tried last: the messages that check a fixed field decide which bodies are theirs"
+}
+
+pub fn messages_that_fix_their_kind_or_that_leave_it_open_are_tried_in_the_schemas_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert tried_in_order(two_messages_sharing_a_number(
+      first_kind: kind_3,
+      second_kind: kind_4,
+    ))
+    == ["first_message", "second_message"]
+    as "two that fix their kind keep the schema's order"
+  assert tried_in_order(two_messages_sharing_a_number(
+      first_kind: open_kind,
+      second_kind: open_kind,
+    ))
+    == ["first_message", "second_message"]
+    as "two that leave it open keep the schema's order"
+}
+
+/// The planted message of `schema_with`, named `name`, sent both ways so both
+/// modules that read by number import it.
+fn named_both_ways(name: String) -> List(message_generator.GeneratedFile) {
+  generated(
+    string.replace(
+      schema_with(
+        "  { name = \"number\", kind = \"unsigned\", bits = 8, evidence = \"x\" },",
+      ),
+      "client_to_server",
+      "both",
+    )
+    |> string.replace("name = \"planted\"", "name = \"" <> name <> "\""),
+  )
+}
+
+pub fn an_import_of_exactly_81_characters_is_one_line_and_one_of_82_is_split_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `gleam format` keeps an import whole when it fits in 80 characters without
+  // its closing brace, so a line of 81 with the brace stays on one line.
+  let whole =
+    "import genesis_prime/message/aaaaaaaa_bbbbbbbb_ccccc.{type AaaaaaaaBbbbbbbbCcccc}"
+  assert string.length(whole) == 81
+    as "the planted name makes the import 81 characters"
+  let reader =
+    generated_file(named_both_ways("aaaaaaaa_bbbbbbbb_ccccc"), "server_message")
+  assert string.contains(reader, whole <> "\n")
+    as "the import is one line, as `gleam format` lays it out"
+  let split =
+    "import genesis_prime/message/aaaaaa_bbbbbb_cccccc_ddd.{\n  type AaaaaaBbbbbbCcccccDdd,\n}"
+  let longer =
+    generated_file(
+      named_both_ways("aaaaaa_bbbbbb_cccccc_ddd"),
+      "server_message",
+    )
+  assert string.contains(longer, split)
+    as "an import of 82 characters is split, one type to a line"
 }

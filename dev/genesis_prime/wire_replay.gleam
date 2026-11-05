@@ -735,7 +735,8 @@ fn items_of(connection: Connection) -> List(Item) {
         }
       },
     )
-  let closing = connection.recording.closing
+  let assert Some(closing) = connection.recording.closing
+    as "a connection is read by `wire_recording.read`, which refuses a recording with no closing line"
   list.reverse([
     Item(
       sequence: closing.sequence,

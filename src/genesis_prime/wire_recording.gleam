@@ -168,10 +168,11 @@ pub type Closing {
   Closing(sequence: Int, by: Side)
 }
 
-/// A recording read whole: its header, its lines in the order written and its
-/// closing line.
+/// A recording: its header, its lines in the order written and its closing
+/// line. `read` gives the closing line always; `read_so_far` gives `None` for
+/// a recording its writer has not closed yet.
 pub type Recording {
-  Recording(header: Header, lines: List(Line), closing: Closing)
+  Recording(header: Header, lines: List(Line), closing: Option(Closing))
 }
 
 /// Why a file is not a recording that can be played.
@@ -292,6 +293,19 @@ pub fn hex(bytes bytes: BitArray) -> String {
 /// has no closing line, is `Cut`; each line's sequence number must be larger
 /// than the one before.
 pub fn read(text text: String) -> Result(Recording, ReadFailure) {
+  use recording <- result.try(read_so_far(text:))
+  case recording.closing {
+    Some(_) -> Ok(recording)
+    None -> Error(Cut(lines: 1 + list.length(recording.lines)))
+  }
+}
+
+/// The recording a file's text holds as far as its writer got: a file with no
+/// closing line yet, or whose last line is cut, is read up to its last whole
+/// line, with no closing line. A file with no whole line, a header of another
+/// format and a line that is no line of the format are refused as `read`
+/// refuses them.
+pub fn read_so_far(text text: String) -> Result(Recording, ReadFailure) {
   // Every line ends in a line feed, so what follows the last one is a line
   // the writer did not finish, or nothing.
   let pieces = string.split(text, "\n")
@@ -305,13 +319,12 @@ pub fn read(text text: String) -> Result(Recording, ReadFailure) {
         read_lines(lines: rest, number: 1, after: None, so_far: []),
       )
       case closing, unfinished {
-        Some(closing), "" -> Ok(Recording(header:, lines:, closing:))
+        Some(_), "" | None, _ -> Ok(Recording(header:, lines:, closing:))
         Some(_), _ ->
           Error(NotALine(
             line: list.length(whole),
             reason: "text follows the closing line",
           ))
-        None, _ -> Error(Cut(lines: list.length(whole)))
       }
     }
   }

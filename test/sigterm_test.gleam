@@ -22,6 +22,7 @@
 import database_support
 import genesis_prime/wire_recording.{Recording, Server}
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import owned_test
 import recording_support
@@ -70,7 +71,8 @@ fn closed_by(folder: String) -> List(wire_recording.Side) {
   list.map(names, fn(name) {
     let assert Ok(text) = simplifile.read(folder <> "/" <> name)
       as "a recording reads"
-    let assert Ok(Recording(closing:, ..)) = wire_recording.read(text)
+    let assert Ok(Recording(closing: Some(closing), ..)) =
+      wire_recording.read(text)
       as { name <> " is whole: the stop reached its process" }
     closing.by
   })

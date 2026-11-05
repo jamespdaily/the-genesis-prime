@@ -136,7 +136,7 @@ pub fn a_recorder_opens_one_file_for_each_connection_and_never_overwrites_it_tes
         realm: None,
       ),
       lines: [Took(10, at, Accepted), Wrote(11, <<1, 2>>)],
-      closing: Closing(12, Client),
+      closing: Some(Closing(12, Client)),
     ))
     as "each call appended its line, and the closing line ended the file"
   let assert Error(WriteError(path: failed, ..)) =
@@ -252,7 +252,7 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
     as "the clock was called for the client's close"
   assert process.receive(given, 0) == Error(Nil)
     as "no other input was taken, so no other call was made"
-  let assert Ok(Recording(header:, lines:, closing:)) =
+  let assert Ok(Recording(header:, lines:, closing: Some(closing))) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole"
   assert header.seed == seed_value() && header.accept_ordinal == 5
@@ -327,7 +327,7 @@ pub fn a_server_stop_ends_the_recording_from_the_servers_side_test() -> Nil {
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
   ask_support.stop(server)
-  let assert Ok(Recording(lines:, closing:, ..)) =
+  let assert Ok(Recording(lines:, closing: Some(closing), ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole: the rule stopped in time"
   let assert [Took(input: Accepted, ..), Wrote(..), Took(input: stopping, ..)] =

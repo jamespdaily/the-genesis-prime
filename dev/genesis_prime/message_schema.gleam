@@ -920,3 +920,22 @@ pub fn describe(error: SchemaError) -> String {
       type_name <> " is the values type of fields with different values"
   }
 }
+
+/// The fields the generated type of a message or record holds: every field but
+/// a constant, which the encoder writes and the decoder checks.
+pub fn held(fields: List(Field)) -> List(Field) {
+  list.filter(fields, fn(field) {
+    case field.kind {
+      Constant(..) -> False
+      _ -> True
+    }
+  })
+}
+
+/// The Gleam type the generator writes for a message, record or union of this
+/// name: the name in camel case, as `unit_create_player` is `UnitCreatePlayer`.
+pub fn type_name(name: String) -> String {
+  string.split(name, "_")
+  |> list.map(string.capitalise)
+  |> string.join("")
+}
