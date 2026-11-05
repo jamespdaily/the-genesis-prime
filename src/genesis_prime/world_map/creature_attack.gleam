@@ -20,6 +20,7 @@
 //// - **The client applies no effect itself**: the server names the effect in
 ////   0x7f4, so the server follows the table's prerequisite (`Spell4Effects.184741`).
 
+import genesis_prime/game/effect_kind
 import genesis_prime/table/id.{PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
@@ -28,9 +29,6 @@ import gleam/int
 import gleam/list
 import gleam/order
 import gleam/result
-
-/// Spell4Effects' effect type of Damage.
-const damage_effect_type = 8
 
 /// The prerequisite type of the unit's difficulty (`0x14049eeb0`).
 const difficulty_type = 179
@@ -52,7 +50,8 @@ fn damage_effects(
 ) -> List(Spell4Effects) {
   spell4_effects.all(tables)
   |> list.filter(fn(effect) {
-    effect.spell_id == spell4_id && effect.effect_type == damage_effect_type
+    effect.spell_id == spell4_id
+    && effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
   })
   |> list.sort(fn(first, second) {
     int.compare(first.order_index, second.order_index)

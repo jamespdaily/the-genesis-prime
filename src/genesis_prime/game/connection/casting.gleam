@@ -32,6 +32,7 @@ import genesis_prime/game/connection/state.{type Session, Session} as connection
 import genesis_prime/game/damage
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/prerequisite
 import genesis_prime/game/rating
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
@@ -47,6 +48,7 @@ import genesis_prime/step.{
 }
 import gleam/bool
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 
@@ -143,17 +145,41 @@ pub fn cast_due(
   }
 }
 
+/// The Vital id of Health and of Shield Capacity
+/// (`Prerequisite.prerequisiteTypeId.71`: Vital.tbl ids 1 and 3).
+const health_vital = 1
+
+const shield_vital = 3
+
 /// The player as its cast rule takes it: who it is, where it stands, what it
-/// holds, who sees it and whether it is dead.
+/// holds, who sees it, whether it is dead or in combat and its health and shield.
 fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
+  let life = entered.life
   cast.Caster(
     unit_id: entered.unit_id,
     place: movement.place(entered.movement),
     abilities: entered.loadout.abilities,
     weapon: Some(entered.loadout.weapon),
     audience: connection_state.viewer_connections(entered:),
-    dead: player_life.state(life: entered.life) == player_life.Dead,
+    dead: player_life.state(life:) == player_life.Dead,
     resources: entered.resources,
+    in_combat: player_life.in_combat(life:),
+    life_vitals: dict.from_list([
+      #(
+        health_vital,
+        prerequisite.Vital(
+          current: int.to_float(player_life.health(life:)),
+          maximum: int.to_float(player_life.max_health(life:)),
+        ),
+      ),
+      #(
+        shield_vital,
+        prerequisite.Vital(
+          current: int.to_float(player_life.shield(life:)),
+          maximum: int.to_float(player_life.max_shield(life:)),
+        ),
+      ),
+    ]),
   )
 }
 
@@ -325,6 +351,15 @@ pub fn carry_strike(
         OwnEffect(CancelTimer(timer:)),
       ])
       strike.Went(asked:, struck:), Some(entered) -> {
+        let needed =
+          cast.rolls_needed(
+            cast: entered.cast,
+            cast_id: asked.cast_id,
+            phase: asked.phase,
+            struck:,
+          )
+        let #(link, bytes) =
+          client_connection.draw(session.link, needed * prerequisite.roll_bytes)
         let #(updated, cast_effects_out) =
           cast.went(
             cast: entered.cast,
@@ -333,9 +368,10 @@ pub fn carry_strike(
             cast_id: asked.cast_id,
             phase: asked.phase,
             struck:,
+            rolls: prerequisite.rolls_of(bytes:),
           )
         cast_effects(
-          session: with_cast(session:, cast: updated),
+          session: with_cast(session: Session(..session, link:), cast: updated),
           now:,
           effects: cast_effects_out,
         )

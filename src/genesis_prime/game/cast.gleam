@@ -284,8 +284,15 @@ pub type Caster {
     /// client checks a press against (`cast.dead_player`).
     dead: Bool,
     /// The player's class resource (genesis_prime/game/class_resource), which a
-    /// press's costs and requirements are checked against and paid from.
+    /// press's costs and requirements are checked against and paid from, and whose
+    /// slots are the vitals 5 to 11 of a prerequisite.
     resources: Resources,
+    /// Whether a creature holds the player on its threat list
+    /// (genesis_prime/game/player_life), which a type 28 prerequisite reads.
+    in_combat: Bool,
+    /// The player's health (Vital 1) and shield (Vital 3), by Vital id, which a
+    /// type 71 or 73 prerequisite reads beside the class resource's slots.
+    life_vitals: Dict(Int, prerequisite.Vital),
   )
 }
 
@@ -1606,13 +1613,89 @@ fn fire(
   }
 }
 
+/// How many rolls the go of `phase` of the live cast `cast_id` may take once its
+/// round closed with `struck`: one for each type 37 condition among the gates of
+/// the Proxies that start a child and of the gains that may be given
+/// (`prerequisite.rolls_needed`). The connection draws that many from its seed and
+/// no others, so a go with no type 37 condition moves no roll. A cast that is not
+/// live takes none.
+pub fn rolls_needed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  phase phase: Int,
+  struck struck: List(Struck),
+) -> Int {
+  case dict.get(cast.casts, cast_id) {
+    Error(Nil) -> 0
+    Ok(live) -> {
+      let spell = live.spell
+      let proxies = proxies_with_targets(spell:, phase:, struck:)
+      let gates =
+        list.flat_map(proxies, fn(proxy) {
+          case proxy.condition {
+            spell_plan.GatedOnCaster(gates:) -> gates
+            spell_plan.Always | spell_plan.GatedOnTarget(..) -> []
+          }
+        })
+      let gains =
+        list.append(
+          spell_plan.gains_in_phase(spell:, phase:),
+          list.flat_map(proxies, lifted_gains),
+        )
+      int.sum(list.append(
+        list.map(gates, fn(gate) {
+          prerequisite.rolls_needed(prerequisite: gate)
+        }),
+        list.map(gains, gain_rolls_needed),
+      ))
+    }
+  }
+}
+
+/// The rolls the check of a gain's prerequisite takes; a ticking gain is not
+/// checked.
+fn gain_rolls_needed(gain: spell_plan.Gain) -> Int {
+  case gain {
+    spell_plan.TickingGain(..) | spell_plan.Gain(prerequisite: None, ..) -> 0
+    spell_plan.Gain(prerequisite: Some(gate), ..) ->
+      prerequisite.rolls_needed(prerequisite: gate)
+  }
+}
+
+/// The Proxies of the phase that have a unit to start a child on: one aimed at the
+/// caster always, one aimed at each struck unit when the round has a Hit.
+fn proxies_with_targets(
+  spell spell: Spell,
+  phase phase: Int,
+  struck struck: List(Struck),
+) -> List(Proxy) {
+  let hit = hit_units(struck:) != []
+  list.filter(spell_plan.proxies_in_phase(spell:, phase:), fn(proxy) {
+    case proxy.target {
+      spell_plan.OnCaster -> True
+      spell_plan.OnEachStruck -> hit
+    }
+  })
+}
+
+/// The gains of a Proxy's child that the go of its parent gives once (the gains the
+/// plan lifted onto the Proxy); none for a Proxy that is never started.
+fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
+  case proxy.condition {
+    spell_plan.Always | spell_plan.GatedOnCaster(..) -> proxy.gains
+    spell_plan.GatedOnTarget(..) -> []
+  }
+}
+
 /// The round of a go closed with `struck`, the units it named in the order of its
 /// selection: the go's 0x7f4 with a target info for each (target flags 0), the
 /// 0x7fb of the deflected ones, the spell's own cooldown at its first go, the
 /// Proxies of the phase (a Proxy aimed at each struck unit starts one child for each
-/// Hit unit and none for a deflect) and the finish after the last go. A cast that is
-/// no longer live, because the client ended it while the round was open, has no go
-/// and writes nothing: the hits stand.
+/// Hit unit and none for a deflect, and none for a Proxy whose gate against the
+/// caster does not pass) and the finish after the last go. A cast that is no longer
+/// live, because the client ended it while the round was open, has no go and writes
+/// nothing: the hits stand. `rolls` are the rolls the go's type 37 conditions take
+/// (`rolls_needed`), in the order the conditions are checked.
 pub fn went(
   cast cast: State,
   caster caster: Caster,
@@ -1620,6 +1703,7 @@ pub fn went(
   cast_id cast_id: Int,
   phase phase: Int,
   struck struck: List(Struck),
+  rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   released(
     taken: go(
@@ -1629,6 +1713,7 @@ pub fn went(
       cast_id:,
       phase:,
       struck:,
+      rolls:,
     ),
     caster:,
     now_ms: now.monotonic_ms,
@@ -2099,8 +2184,8 @@ fn start_cooldown(
 /// the caster and the audience, then the 0x7fb of the deflected ones (the client
 /// accepts either order and drops a miss after the finish, `cast.miss_order`), the
 /// spell's own cooldown at the go its method names, the current cast cleared as the
-/// client does, the Proxies of the phase, and the finish after the last go. A cast
-/// that is not live has no go.
+/// client does, the Proxies of the phase whose gates pass, and the finish after the
+/// last go. A cast that is not live has no go.
 fn go(
   cast cast: State,
   caster caster: Caster,
@@ -2108,6 +2193,7 @@ fn go(
   cast_id cast_id: Int,
   phase phase: Int,
   struck struck: List(Struck),
+  rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id) {
     Error(Nil) -> #(cast, [])
@@ -2153,17 +2239,20 @@ fn go(
       let live = Live(..live, gone: live.gone + 1)
       let cast =
         State(..cast, current:, casts: dict.insert(cast.casts, cast_id, live))
-      let #(cast, children) =
-        list.fold(
-          spell_plan.proxies_in_phase(spell:, phase:),
-          #(cast, []),
-          fn(so_far, proxy) {
-            let #(cast, effects) = so_far
-            let #(cast, more) =
-              children(cast:, caster:, now_ms:, live:, proxy:, struck:)
-            #(cast, list.append(effects, more))
-          },
+      let subject = subject_of(cast:, caster:)
+      let #(starting, gate_logs, rolls) =
+        proxy_gates(
+          proxies: proxies_with_targets(spell:, phase:, struck:),
+          subject:,
+          rolls:,
         )
+      let #(cast, children) =
+        list.fold(starting, #(cast, []), fn(so_far, proxy) {
+          let #(cast, effects) = so_far
+          let #(cast, more) =
+            children(cast:, caster:, now_ms:, live:, proxy:, struck:)
+          #(cast, list.append(effects, more))
+        })
       let #(cast, finished) = case
         live.gone == go_count
         && option.is_none(spell_plan.finish_after_ms(spell:))
@@ -2171,49 +2260,176 @@ fn go(
         True -> finish(cast:, cast_id:, live:, now_ms:)
         False -> #(cast, [])
       }
-      let gains = gains_given(cast:, caster:, spell:, phase:, struck:)
-      #(cast, list.flatten([going, gains, children, finished]))
+      let gains = gains_given(spell:, phase:, starting:, subject:, rolls:)
+      #(cast, list.flatten([going, gains, gate_logs, children, finished]))
+    }
+  }
+}
+
+/// What a prerequisite may read about the caster, with no roll: the live casts it is
+/// the primary target of, whether it is in combat, and its vitals: its health and
+/// shield, and the class resource's slots as Vitals 5 to 11 (Resource0 to
+/// Resource6: `Prerequisite.prerequisiteTypeId.73`, `Spell4Effects.effectType.1`).
+fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
+  let slots =
+    list.map([5, 6, 7, 8, 9, 10, 11], fn(vital) {
+      let slot = vital - 5
+      #(
+        vital,
+        prerequisite.Vital(
+          current: class_resource.value(resources: caster.resources, slot:),
+          maximum: class_resource.max(resources: caster.resources, slot:),
+        ),
+      )
+    })
+  prerequisite.Subject(
+    under: dict.values(cast.casts)
+      |> list.filter(fn(live) { live.primary_target == caster.unit_id })
+      |> list.map(fn(live) { live.spell.spell4_id }),
+    in_combat: caster.in_combat,
+    vitals: dict.merge(dict.from_list(slots), caster.life_vitals),
+    rolls: [],
+  )
+}
+
+/// The prerequisite checked against the subject with the rolls its type 37
+/// conditions take off the front of `rolls`, and the rolls left.
+fn checked(
+  prerequisite gate: prerequisite.Prerequisite,
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
+) -> #(prerequisite.Verdict, List(Int)) {
+  let #(taken, left) =
+    list.split(rolls, prerequisite.rolls_needed(prerequisite: gate))
+  #(
+    prerequisite.check(
+      prerequisite: gate,
+      subject: prerequisite.Subject(..subject, rolls: taken),
+    ),
+    left,
+  )
+}
+
+/// What a Proxy's gate gives at a go.
+type ProxyGate {
+  /// Its child starts.
+  Starts
+  /// A gate fails: the client's answer, nothing to say.
+  GateFails
+  /// The server cannot tell, and `why` says so in a debug line.
+  CannotTell(why: String)
+}
+
+/// Which of the Proxies of a go start a child, with a debug line for each that
+/// cannot be decided, and the rolls left (`proxy_gate`).
+fn proxy_gates(
+  proxies proxies: List(Proxy),
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
+) -> #(List(Proxy), List(Effect), List(Int)) {
+  let #(starting, logs, rolls) =
+    list.fold(proxies, #([], [], rolls), fn(so_far, proxy) {
+      let #(starting, logs, rolls) = so_far
+      let #(gate, rolls) = proxy_gate(proxy:, subject:, rolls:)
+      case gate {
+        Starts -> #([proxy, ..starting], logs, rolls)
+        GateFails -> #(starting, logs, rolls)
+        CannotTell(why:) -> #(
+          starting,
+          [Log(level: LogDebug, text: why), ..logs],
+          rolls,
+        )
+      }
+    })
+  #(list.reverse(starting), list.reverse(logs), rolls)
+}
+
+/// A Proxy with no gate starts. One gated on the caster starts when every gate
+/// passes against the caster, and is passed over when one fails; when none fails
+/// and one is of a type or a vital not read it does not start, with a debug line.
+/// One gated on a target prerequisite does not start, with a debug line
+/// (genesis_prime/game/spell_plan `Condition`).
+fn proxy_gate(
+  proxy proxy: Proxy,
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
+) -> #(ProxyGate, List(Int)) {
+  let child = int.to_string(proxy.spell.spell4_id.value)
+  case proxy.condition {
+    spell_plan.Always -> #(Starts, rolls)
+    spell_plan.GatedOnTarget(prerequisite_id:) -> #(
+      CannotTell(
+        why: "the Proxy to Spell4 "
+        <> child
+        <> " applies only behind target prerequisite "
+        <> int.to_string(prerequisite_id.value)
+        <> ", which is not checked, so it is not started",
+      ),
+      rolls,
+    )
+    spell_plan.GatedOnCaster(gates:) -> {
+      let #(left, verdicts) =
+        list.map_fold(gates, rolls, fn(rolls, gate) {
+          let #(verdict, left) = checked(prerequisite: gate, subject:, rolls:)
+          #(left, #(gate, verdict))
+        })
+      let not_read =
+        list.find_map(verdicts, fn(decided) {
+          case decided.1 {
+            prerequisite.NotRead(prerequisite_type:) ->
+              Ok(#(decided.0, prerequisite_type))
+            prerequisite.Passes | prerequisite.Fails -> Error(Nil)
+          }
+        })
+      let failed =
+        list.any(verdicts, fn(decided) { decided.1 == prerequisite.Fails })
+      case failed, not_read {
+        True, _ -> #(GateFails, left)
+        False, Error(Nil) -> #(Starts, left)
+        False, Ok(#(gate, prerequisite_type)) -> #(
+          CannotTell(
+            why: "the Proxy to Spell4 "
+            <> child
+            <> " is behind prerequisite "
+            <> int.to_string(prerequisite.id(prerequisite: gate).value)
+            <> " of type "
+            <> int.to_string(prerequisite_type)
+            <> ", which is not read, so it is not started",
+          ),
+          left,
+        )
+      }
     }
   }
 }
 
 /// The gains a go gives (`Gain`), and a debug line for each it cannot: the spell's
-/// own of the phase, then once each of the Proxies of the phase aimed at each
-/// struck unit when one unit was Hit. A Proxy behind a prerequisite starts no child
-/// and gives none.
+/// own of the phase, then once each of the Proxies that start a child aimed at each
+/// struck unit, which `starting` holds only when one unit was Hit.
 fn gains_given(
-  cast cast: State,
-  caster caster: Caster,
   spell spell: Spell,
   phase phase: Int,
-  struck struck: List(Struck),
+  starting starting: List(Proxy),
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
 ) -> List(Effect) {
-  let hit = hit_units(struck:) != []
-  let lifted =
-    list.flat_map(spell_plan.proxies_in_phase(spell:, phase:), fn(proxy) {
-      case proxy.target, proxy.condition {
-        spell_plan.OnEachStruck, spell_plan.Always if hit -> proxy.gains
-        spell_plan.OnEachStruck, spell_plan.Always
-        | spell_plan.OnEachStruck, spell_plan.NeedsPrerequisite(..)
-        | spell_plan.OnCaster, spell_plan.Always
-        | spell_plan.OnCaster, spell_plan.NeedsPrerequisite(..)
-        -> []
-      }
-    })
-  let under =
-    dict.values(cast.casts)
-    |> list.filter(fn(live) { live.primary_target == caster.unit_id })
-    |> list.map(fn(live) { live.spell.spell4_id })
-  let #(given, logs) =
+  let #(_, given, logs) =
     list.fold(
-      list.append(spell_plan.gains_in_phase(spell:, phase:), lifted),
-      #([], []),
+      list.append(
+        spell_plan.gains_in_phase(spell:, phase:),
+        list.flat_map(starting, lifted_gains),
+      ),
+      #(rolls, [], []),
       fn(so_far, gain) {
-        let #(given, logs) = so_far
-        case gain_verdict(gain:, under:) {
-          Given(gain: gift) -> #([gift, ..given], logs)
-          Withheld -> so_far
-          NotApplied(why:) -> #(given, [Log(level: LogDebug, text: why), ..logs])
+        let #(rolls, given, logs) = so_far
+        let #(verdict, rolls) = gain_verdict(gain:, subject:, rolls:)
+        case verdict {
+          Given(gain: gift) -> #(rolls, [gift, ..given], logs)
+          Withheld -> #(rolls, given, logs)
+          NotApplied(why:) -> #(rolls, given, [
+            Log(level: LogDebug, text: why),
+            ..logs
+          ])
         }
       },
     )
@@ -2234,38 +2450,60 @@ type GainVerdict {
   NotApplied(why: String)
 }
 
-/// The gain given, withheld for a prerequisite that fails, or not applied.
+/// The gain given, withheld for a prerequisite that fails, or not applied, and the
+/// rolls left after its prerequisite's check.
 fn gain_verdict(
   gain gain: spell_plan.Gain,
-  under under: List(Spell4Id),
-) -> GainVerdict {
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
+) -> #(GainVerdict, List(Int)) {
   let effect = int.to_string(gain.effect_id.value)
   case gain {
-    spell_plan.TickingGain(..) ->
+    spell_plan.TickingGain(..) -> #(
       NotApplied(
         why: "the ticking gain of Spell4Effects " <> effect <> " is not applied",
+      ),
+      rolls,
+    )
+    spell_plan.Gain(prerequisite: None, slot:, amount:, ..) -> #(
+      Given(gain: class_resource.Gain(slot:, amount:)),
+      rolls,
+    )
+    spell_plan.Gain(prerequisite: Some(gate), slot:, amount:, ..) -> {
+      let #(verdict, rolls) = checked(prerequisite: gate, subject:, rolls:)
+      #(
+        gate_verdict(
+          verdict:,
+          gate:,
+          effect:,
+          gift: class_resource.Gain(slot:, amount:),
+        ),
+        rolls,
       )
-    spell_plan.Gain(slot:, amount:, prerequisite:, ..) -> {
-      let gift = class_resource.Gain(slot:, amount:)
-      case prerequisite {
-        None -> Given(gain: gift)
-        Some(gate) ->
-          case prerequisite.check(prerequisite: gate, under:) {
-            prerequisite.Passes -> Given(gain: gift)
-            prerequisite.Fails -> Withheld
-            prerequisite.NotRead(prerequisite_type:) ->
-              NotApplied(
-                why: "the gain of Spell4Effects "
-                <> effect
-                <> " is behind prerequisite "
-                <> int.to_string(prerequisite.id(prerequisite: gate).value)
-                <> " of type "
-                <> int.to_string(prerequisite_type)
-                <> ", which is not read, so it is not given",
-              )
-          }
-      }
     }
+  }
+}
+
+/// What a gain's prerequisite makes of the gain.
+fn gate_verdict(
+  verdict verdict: prerequisite.Verdict,
+  gate gate: prerequisite.Prerequisite,
+  effect effect: String,
+  gift gift: class_resource.Gain,
+) -> GainVerdict {
+  case verdict {
+    prerequisite.Passes -> Given(gain: gift)
+    prerequisite.Fails -> Withheld
+    prerequisite.NotRead(prerequisite_type:) ->
+      NotApplied(
+        why: "the gain of Spell4Effects "
+        <> effect
+        <> " is behind prerequisite "
+        <> int.to_string(prerequisite.id(prerequisite: gate).value)
+        <> " of type "
+        <> int.to_string(prerequisite_type)
+        <> ", which is not read, so it is not given",
+      )
   }
 }
 
@@ -2346,7 +2584,7 @@ fn children(
 }
 
 /// One child of a Proxy: it starts at once for no delay, else after it from a timer
-/// of its own; a Proxy behind a prerequisite is not started.
+/// of its own. The Proxy's gate has passed at the go (`proxy_gates`).
 fn child(
   cast cast: State,
   caster caster: Caster,
@@ -2355,49 +2593,38 @@ fn child(
   proxy proxy: Proxy,
   primary_target primary_target: Int,
 ) -> #(State, List(Effect)) {
-  case proxy.condition {
-    spell_plan.NeedsPrerequisite(..) -> #(cast, [
-      Log(
-        level: LogDebug,
-        text: "the Proxy to Spell4 "
-          <> int.to_string(proxy.spell.spell4_id.value)
-          <> " applies only behind a prerequisite, which is not checked, so it is not started",
-      ),
-    ])
-    spell_plan.Always ->
-      case proxy.delay_ms > 0 {
-        False ->
-          start(
-            cast:,
-            caster:,
-            now_ms:,
-            spell: proxy.spell,
-            root: live.root,
-            parent: Some(live.spell.spell4_id),
-            primary_target:,
-            client_cast_id: None,
-            role: Child,
-          )
-        True -> {
-          let #(cast, timer) = new_timer(cast:)
-          #(
-            State(
-              ..cast,
-              timers: dict.insert(
-                cast.timers,
-                timer,
-                StartChild(
-                  root: live.root,
-                  parent: live.spell.spell4_id,
-                  primary_target:,
-                  proxy:,
-                ),
-              ),
+  case proxy.delay_ms > 0 {
+    False ->
+      start(
+        cast:,
+        caster:,
+        now_ms:,
+        spell: proxy.spell,
+        root: live.root,
+        parent: Some(live.spell.spell4_id),
+        primary_target:,
+        client_cast_id: None,
+        role: Child,
+      )
+    True -> {
+      let #(cast, timer) = new_timer(cast:)
+      #(
+        State(
+          ..cast,
+          timers: dict.insert(
+            cast.timers,
+            timer,
+            StartChild(
+              root: live.root,
+              parent: live.spell.spell4_id,
+              primary_target:,
+              proxy:,
             ),
-            [StartTimer(timer:, after_ms: proxy.delay_ms)],
-          )
-        }
-      }
+          ),
+        ),
+        [StartTimer(timer:, after_ms: proxy.delay_ms)],
+      )
+    }
   }
 }
 

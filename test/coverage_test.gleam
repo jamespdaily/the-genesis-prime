@@ -21,9 +21,12 @@
 
 import client_tables
 import genesis_prime/coverage/checklist
-import genesis_prime/coverage/engine.{type EngineDeclaration, EngineDeclaration}
+import genesis_prime/coverage/engine.{
+  type EngineDeclaration, EngineDeclaration, Listed,
+}
 import genesis_prime/coverage/measurement.{
-  type Measurement, type TypeLine, Measured, TypeLine, Unmeasured,
+  type Measurement, type TypeLine, Handled, Measured, NotDecoded, TypeLine,
+  Unmeasured,
 }
 import genesis_prime/coverage/sent_message
 import genesis_prime/table/creature2
@@ -35,6 +38,7 @@ import genesis_prime/table/spell4_effects
 import gleam/bit_array
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/string
 import owned_key
 import owned_test
@@ -131,7 +135,14 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
       derivations: [],
     )
     as "a planted Prerequisite table loads"
-  let measured = measurement.measure(engine_named("Prerequisites"), tables)
+  let measured =
+    measurement.measure(
+      EngineDeclaration(
+        ..engine_named("Prerequisites"),
+        starting_abilities: None,
+      ),
+      tables,
+    )
   store.unload(tables)
   assert lines(measured)
     == [#(4, 4, 0.5), #(5, 2, 0.25), #(6, 1, 0.125), #(7, 1, 0.125)]
@@ -146,16 +157,43 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
 pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
   use <- owned_test.run(10_000)
   let declared =
-    EngineDeclaration(..engine_named("Quest objectives"), handled: [7, 2])
+    EngineDeclaration(
+      ..engine_named("Quest objectives"),
+      handled: Listed(ids: [7, 2]),
+    )
   let assert Measured(types:, breaches:, ..) =
     measured_over_planted_objectives(declared, planted_types)
     as "the planted table is measured"
   assert types
     == [
-      TypeLine(type_number: 7, rows: 4, share: 0.5, handled: True),
-      TypeLine(type_number: 2, rows: 2, share: 0.25, handled: True),
-      TypeLine(type_number: 5, rows: 1, share: 0.125, handled: False),
-      TypeLine(type_number: 9, rows: 1, share: 0.125, handled: False),
+      TypeLine(
+        type_number: 7,
+        rows: 4,
+        share: 0.5,
+        status: Handled,
+        starting_abilities: 0,
+      ),
+      TypeLine(
+        type_number: 2,
+        rows: 2,
+        share: 0.25,
+        status: Handled,
+        starting_abilities: 0,
+      ),
+      TypeLine(
+        type_number: 5,
+        rows: 1,
+        share: 0.125,
+        status: NotDecoded,
+        starting_abilities: 0,
+      ),
+      TypeLine(
+        type_number: 9,
+        rows: 1,
+        share: 0.125,
+        status: NotDecoded,
+        starting_abilities: 0,
+      ),
     ]
     as "the engine declares 7 and 2, so those two are handled and 5 and 9 are not, each with the share it has without the declaration"
   assert breaches == [] as "7 and 2 are types some row uses"
@@ -164,13 +202,16 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
 pub fn a_declared_type_no_row_uses_is_a_breach_test() -> Nil {
   use <- owned_test.run(10_000)
   let declared =
-    EngineDeclaration(..engine_named("Quest objectives"), handled: [7, 99, 0])
+    EngineDeclaration(
+      ..engine_named("Quest objectives"),
+      handled: Listed(ids: [7, 99, 0]),
+    )
   let assert Measured(types:, breaches:, ..) =
     measured_over_planted_objectives(declared, planted_types)
     as "the planted table is measured"
   assert breaches == [99, 0]
     as "the rule: a declared type must be a type some row uses; no row has 99, and 0 is no type"
-  assert list.filter(types, fn(line) { line.handled })
+  assert list.filter(types, fn(line) { line.status == Handled })
     |> list.map(fn(line) { line.type_number })
     == [7]
     as "only 7 is both declared and used"
@@ -297,8 +338,14 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
     let measured = measurement.measure(declared, tables)
     case declared.source {
       engine.TableColumns(table:, columns:, ..) -> {
-        let assert Measured(types:, rows:, zero_values:, breaches:, ..) =
-          measured
+        let assert Measured(
+          types:,
+          rows:,
+          zero_values:,
+          breaches:,
+          conflicts:,
+          ..,
+        ) = measured
           as { table <> " is a table the client has, so it is measured" }
         let #(non_zero, zero) =
           counted_by_the_file(file: table, schema: schema_of(table), columns:)
@@ -316,6 +363,8 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           as { table <> ": heaviest first, ties by the lower type number" }
         assert breaches == []
           as { table <> ": every declared type is one some row uses" }
+        assert conflicts == []
+          as { table <> ": no type is both handled and listed as missing" }
       }
       engine.Cases(ids:, ..) -> {
         let assert Measured(types:, rows:, ..) = measured
@@ -338,8 +387,12 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
 
 fn quest_objectives_over(types: List(Int)) -> Measurement {
   measurement.from_values(
-    EngineDeclaration(..engine_named("Quest objectives"), handled: [7, 2]),
-    types,
+    engine: EngineDeclaration(
+      ..engine_named("Quest objectives"),
+      handled: Listed(ids: [7, 2]),
+    ),
+    values: types,
+    starting: [],
   )
 }
 
@@ -378,10 +431,10 @@ pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test()
   assert text
     == string.join(
       [
-        "| Engine | Types in use | Rows | Zero values | Types handled |",
-        "| --- | --- | --- | --- | --- |",
-        "| Quest objectives (#48) | 4 | 8 | 3 | 2 |",
-        "| Client message routing (#51) | not measured | | | |",
+        "| Engine | Types in use | Rows | Zero values | Types handled | Starting abilities' rows handled |",
+        "| --- | --- | --- | --- | --- | --- |",
+        "| Quest objectives (#48) | 4 | 8 | 3 | 2 |  |",
+        "| Client message routing (#51) | not measured | | | | |",
       ],
       "\n",
     )
@@ -410,10 +463,12 @@ pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> 
   let text =
     checklist.render([
       measurement.from_values(
-        EngineDeclaration(..engine_named("Client message routing"), handled: [
-          1,
-        ]),
-        [0, 1, 2, 0x244],
+        engine: EngineDeclaration(
+          ..engine_named("Client message routing"),
+          handled: Listed(ids: [1]),
+        ),
+        values: [0, 1, 2, 0x244],
+        starting: [],
       ),
     ])
   assert string.starts_with(text, "## Client message routing (#51)\n")
@@ -433,7 +488,9 @@ pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> 
 pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_code_take_test() -> Nil {
   use <- owned_test.run(10_000)
   let routing = engine_named("Client message routing")
-  assert list.sort(routing.handled, int.compare)
+  let assert Listed(ids: handled_ids) = routing.handled
+    as "the routing engine lists the ids its rules name"
+  assert list.sort(handled_ids, int.compare)
     == [
       0x0000, 0x0001, 0x0002, 0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB,
       0x00FC, 0x015A, 0x01C3, 0x01D4, 0x0244, 0x025B, 0x025C, 0x0352, 0x038C,
@@ -442,9 +499,14 @@ pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_co
     ]
     as "the network layer's ids 0, 1 and 2 and the wrapper 0x0244 (fact 0x140332580, fact 0x140332920), the auth rule's 0x0592, and the game rule's 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, 0x038C and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x4db, opcode.0x801), and the choice of how to come back, 0x015A (opcode.0x15a)"
   let assert Measured(types:, breaches:, ..) =
-    measurement.from_values(engine: routing, values: sent_message.all())
+    measurement.from_values(
+      engine: routing,
+      values: sent_message.all(),
+      starting: [],
+    )
     as "the routing engine is measured over the ids the client sends"
   assert breaches == [] as "every handled id is one the client sends"
-  assert list.length(list.filter(types, fn(line) { line.handled })) == 28
+  assert list.length(list.filter(types, fn(line) { line.status == Handled }))
+    == 28
     as "the 28 ids above are marked handled among the 352"
 }

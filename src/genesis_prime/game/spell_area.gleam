@@ -28,7 +28,8 @@
 ////   `Spell4ValidTargets.targetBitmask`).
 //// - **Which spells** are read: the spells of each level-1 ability's tree
 ////   (genesis_prime/game/spell_plan), its threshold stages (Spell4Thresholds) included,
-////   a Proxy behind a prerequisite excepted, since it is never started. A spell with no area row selects nobody.
+////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
+////   with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
 ////   `targetSelection` other than 1; a valid-targets bitmask other than 0 on a spell
 ////   with an area row; a hit row placed on any unit but the caster (`targetTypeFlags`
@@ -45,6 +46,7 @@ import genesis_prime/game/area.{
   InsideShapes, Placement, Rectangle, Row,
 }
 import genesis_prime/game/damage.{type Formula}
+import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_plan.{
   type Aim, type Spell, AimsAtArea, AimsAtBoth, AimsAtPrimaryTarget,
 }
@@ -247,16 +249,16 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
 }
 
 /// The spell, the stage spells a RapidTap or ChargeRelease ability casts and every
-/// spell the Proxies of any of them start, below them: a Proxy behind a prerequisite
-/// is never started (genesis_prime/game/spell_plan `NeedsPrerequisite`), so its spell
-/// is not read.
+/// spell the Proxies of any of them start, below them: a Proxy behind a target
+/// prerequisite is never started (genesis_prime/game/spell_plan `GatedOnTarget`), so
+/// its spell is not read; one behind a caster prerequisite may start, so it is.
 fn spells_of_tree(spell: Spell) -> List(Spell) {
   let stages = list.map(spell.stages, fn(stage) { stage.spell })
   let proxied =
     list.filter_map(spell.proxies, fn(proxy) {
       case proxy.condition {
-        spell_plan.Always -> Ok(proxy.spell)
-        spell_plan.NeedsPrerequisite(..) -> Error(Nil)
+        spell_plan.Always | spell_plan.GatedOnCaster(..) -> Ok(proxy.spell)
+        spell_plan.GatedOnTarget(..) -> Error(Nil)
       }
     })
   [spell, ..list.flat_map(list.append(stages, proxied), spells_of_tree)]
@@ -462,7 +464,9 @@ fn damage_effects_of(
 ) -> Result(List(DamageEffect), AreaError) {
   dict.get(effects, id)
   |> result.unwrap([])
-  |> list.filter(fn(effect) { effect.effect_type == 8 })
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
+  })
   |> list.try_map(fn(effect) {
     use formula <- result.try(
       damage.formula_of(effect:)

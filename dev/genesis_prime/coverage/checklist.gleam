@@ -3,16 +3,24 @@
 
 import genesis_prime/coverage/engine.{type EngineDeclaration}
 import genesis_prime/coverage/measurement.{
-  type Measurement, type TypeLine, Measured, Unmeasured,
+  type Measurement, type TypeLine, DecodedMissing, Handled, Measured, NotDecoded,
+  Unmeasured,
 }
 import gleam/float
 import gleam/int
 import gleam/list
 import gleam/string
 
+/// What the marks of a type line say.
+pub const legend =
+  "Marks: [x] handled by a rule of the server; [~] the client's code was read for the type and the server does not handle it (what it lacks, and the fact file's key); [ ] the client's code was not read for the type. \"In the starting abilities\": the rows of the type among the spells the 18 level-1 abilities' trees reach, gated children included."
+
 /// The Markdown of every engine's measure: a heading, the source and totals,
 /// then one line per type, heaviest first: `- [ ] type N: R rows (S%)`, with
-/// `[x]` when the engine handles the type.
+/// `[x]` when the engine handles the type and `[~]` when the client's code was
+/// read for it and the engine does not handle it, followed by what it lacks and
+/// the fact file's key. A type the starting abilities use has the rows it has
+/// among them on its line.
 pub fn render(measurements: List(Measurement)) -> String {
   measurements
   |> list.map(render_engine)
@@ -32,7 +40,14 @@ fn render_engine(measurement: Measurement) -> String {
         "\n\n",
       )
     Measured(engine:, types:, rows:, zero_values:, ..) -> {
-      let handled = list.filter(types, fn(line) { line.handled })
+      let handled = list.filter(types, fn(line) { line.status == Handled })
+      let missing =
+        list.count(types, fn(line) {
+          case line.status {
+            DecodedMissing(..) -> True
+            Handled | NotDecoded -> False
+          }
+        })
       let handled_rows =
         list.fold(handled, 0, fn(total, line) { total + line.rows })
       let summary =
@@ -56,6 +71,11 @@ fn render_engine(measurement: Measurement) -> String {
         <> " types handled ("
         <> percent(share_of(handled_rows, rows))
         <> " of rows)"
+        <> case missing {
+          0 -> ""
+          _ -> "; " <> int.to_string(missing) <> " decoded and missing"
+        }
+        <> starting_summary(types)
       string.join(
         [
           heading,
@@ -99,10 +119,43 @@ fn evidence(engine: EngineDeclaration) -> String {
   }
 }
 
+/// The starting abilities' rows the engine handles, over all of theirs, when the
+/// engine's types are used by them: `; starting abilities: H of R rows handled`.
+fn starting_summary(types: List(TypeLine)) -> String {
+  let #(handled, all) = starting_rows(types)
+  case all {
+    0 -> ""
+    _ ->
+      "; starting abilities: "
+      <> int.to_string(handled)
+      <> " of "
+      <> int.to_string(all)
+      <> " rows handled"
+  }
+}
+
+/// The rows the starting abilities hold of the handled types, and of all types.
+fn starting_rows(types: List(TypeLine)) -> #(Int, Int) {
+  list.fold(types, #(0, 0), fn(totals, line) {
+    let #(handled, all) = totals
+    case line.status {
+      Handled -> #(
+        handled + line.starting_abilities,
+        all + line.starting_abilities,
+      )
+      DecodedMissing(..) | NotDecoded -> #(
+        handled,
+        all + line.starting_abilities,
+      )
+    }
+  })
+}
+
 fn type_line(line: TypeLine) -> String {
-  let mark = case line.handled {
-    True -> "x"
-    False -> " "
+  let mark = case line.status {
+    Handled -> "x"
+    DecodedMissing(..) -> "~"
+    NotDecoded -> " "
   }
   "- ["
   <> mark
@@ -113,6 +166,18 @@ fn type_line(line: TypeLine) -> String {
   <> " ("
   <> percent(line.share)
   <> ")"
+  <> case line.starting_abilities {
+    0 -> ""
+    rows ->
+      ", "
+      <> count_of(count: rows, singular: "row", plural: "rows")
+      <> " in the starting abilities"
+  }
+  <> case line.status {
+    DecodedMissing(reason:, fact_key:) ->
+      "; decoded, not handled: " <> reason <> " (" <> fact_key <> ")"
+    Handled | NotDecoded -> ""
+  }
 }
 
 fn count_of(
@@ -139,14 +204,14 @@ fn percent(share: Float) -> String {
 }
 
 /// A Markdown table with a row per engine: the types in use, the rows, the
-/// zero values left out and the types handled. An engine whose types are not
-/// recorded is "not measured".
+/// zero values left out, the types handled and the starting abilities' rows
+/// handled. An engine whose types are not recorded is "not measured".
 pub fn totals(measurements: List(Measurement)) -> String {
   let rows =
     list.map(measurements, fn(measurement) {
       case measurement {
         Unmeasured(engine:, ..) ->
-          "| " <> engine_title(engine) <> " | not measured | | | |"
+          "| " <> engine_title(engine) <> " | not measured | | | | |"
         Measured(engine:, types:, rows:, zero_values:, ..) ->
           "| "
           <> engine_title(engine)
@@ -157,16 +222,30 @@ pub fn totals(measurements: List(Measurement)) -> String {
           <> " | "
           <> int.to_string(zero_values)
           <> " | "
-          <> int.to_string(list.count(types, fn(line) { line.handled }))
+          <> int.to_string(
+            list.count(types, fn(line) { line.status == Handled }),
+          )
+          <> " | "
+          <> starting_column(types)
           <> " |"
       }
     })
   string.join(
     [
-      "| Engine | Types in use | Rows | Zero values | Types handled |",
-      "| --- | --- | --- | --- | --- |",
+      "| Engine | Types in use | Rows | Zero values | Types handled | Starting abilities' rows handled |",
+      "| --- | --- | --- | --- | --- | --- |",
       ..rows
     ],
     "\n",
   )
+}
+
+/// `H of R` for the starting abilities' rows, or nothing for an engine they do not
+/// use.
+fn starting_column(types: List(TypeLine)) -> String {
+  let #(handled, all) = starting_rows(types)
+  case all {
+    0 -> ""
+    _ -> int.to_string(handled) <> " of " <> int.to_string(all)
+  }
 }

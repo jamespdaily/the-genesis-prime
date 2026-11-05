@@ -18,15 +18,17 @@
 ////   holds its `Proxy` children, each with the delay the effect gives after its
 ////   parent's go (`delayTime`) and the phases it fires in (`phaseFlags`: bit n is
 ////   phase n, every bit for -1, the reading `Spell4.38791` gives). A Proxy with a
-////   caster or target apply prerequisite, or with a prerequisite in its dataBits06,
-////   is kept as `NeedsPrerequisite` and not started: a Proxy's prerequisite is not
-////   checked (`Spell4.38791`: 79220 and 79229 apply only behind prerequisite 37037;
+////   target apply prerequisite is kept as `GatedOnTarget` and not started: the
+////   server checks no target-side prerequisite. A Proxy with a caster apply
+////   prerequisite, or with a prerequisite in its dataBits06, is kept as
+////   `GatedOnCaster` and started at its phase's go when each passes against the
+////   caster (`Spell4.38791`: 79220 and 79229 apply only behind prerequisite 37037;
 ////   `Spell4Effects.effectType.26.dataBits06`, a reading of the rows that no client
-////   code confirms, since the client applies no Proxy itself). Five level-1 Proxies
-////   are kept behind their dataBits06 so: 177873 (53865 to 60947, 24582), 135961
-////   (Mind Burst 32809 to 57030, 23344), 200542 (30900 to 41869, 35913), 212835
-////   (80382 to 42569, 33154) and 212838 (80382 to 80383, 32921); each of those
-////   prerequisites would fail or is of a type not read with no buff held.
+////   code confirms, since the client applies no Proxy itself; the units of a check
+////   are `Spell4Effects.prerequisiteIdTargetApply`). Five level-1 Proxies are gated
+////   by their dataBits06 so: 177873 (53865 to 60947, 24582), 135961 (Mind Burst
+////   32809 to 57030, 23344), 200542 (30900 to 41869, 35913), 212835 (80382 to
+////   42569, 33154) and 212838 (80382 to 80383, 32921).
 //// - **The gains.** A VitalModifier (`Spell4Effects.effectType.1`) of a tree gives
 ////   the caster dataBits02 points of the resource slot of its vital (6 is slot 1, 8
 ////   slot 3), behind its caster apply prerequisite, which the cast rule checks
@@ -95,6 +97,7 @@
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
 ////   target apply prerequisite.
 
+import genesis_prime/game/effect_kind
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/table/class
@@ -190,9 +193,13 @@ pub type GlobalCooldown {
 /// Whether a Proxy is started.
 pub type Condition {
   Always
-  /// The Proxy applies only behind this prerequisite, which is not checked for a
-  /// Proxy: the child is not started.
-  NeedsPrerequisite(prerequisite_id: PrerequisiteId)
+  /// The Proxy starts at its phase's go when every one of these prerequisites
+  /// passes against the caster: its caster apply prerequisite, then the one its
+  /// dataBits06 names (`Spell4Effects.effectType.26.dataBits06`).
+  GatedOnCaster(gates: List(Prerequisite))
+  /// The Proxy applies only behind this target apply prerequisite, which is not
+  /// checked: the child is not started.
+  GatedOnTarget(prerequisite_id: PrerequisiteId)
 }
 
 /// A resource gain of a spell: a VitalModifier aimed at the caster
@@ -637,9 +644,6 @@ fn thresholds_by_parent(
   })
 }
 
-/// The effect type of a Proxy (`Spell4Effects.effectType.26`).
-const proxy_effect_type = 26
-
 /// The client keeps phase rows with an order index below 32 (`0x14055e180`).
 const max_phases = 32
 
@@ -698,7 +702,8 @@ fn spell_of(
   use proxies <- result.try(
     effects
     |> list.filter(fn(effect) {
-      effect.effect_type == proxy_effect_type && effect.data_bits00 != 0
+      effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
+      && effect.data_bits00 != 0
     })
     |> list.try_map(fn(effect) {
       use target <- result.try(target_of(spell4_id:, effect:))
@@ -721,11 +726,12 @@ fn spell_of(
           })
         OnCaster -> #([], child.gains)
       }
+      use condition <- result.try(condition_of(tables:, effect:))
       Ok(Proxy(
         effect_id: Spell4EffectsId(effect.id),
         delay_ms: effect.delay_time,
         phase_flags: effect.phase_flags,
-        condition: condition_of(effect:),
+        condition:,
         target:,
         spell: Spell(..child, gains: kept),
         gains: lifted,
@@ -789,9 +795,6 @@ fn spell_of(
   ))
 }
 
-/// The effect type of a VitalModifier (`Spell4Effects.effectType.1`).
-const vital_modifier_effect_type = 1
-
 /// The gains of a spell's effects: each VitalModifier, which must aim at the
 /// caster, change vital 6 or 8, and have no target apply prerequisite; its caster
 /// apply prerequisite is read from its row.
@@ -801,7 +804,9 @@ fn gains_of(
   effects effects: List(spell4_effects.Spell4Effects),
 ) -> Result(List(Gain), PlanError) {
   effects
-  |> list.filter(fn(effect) { effect.effect_type == vital_modifier_effect_type })
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.VitalModifier
+  })
   |> list.try_map(fn(effect) {
     use slot <- result.try(case aim_of(target_flags: effect.target_flags) {
       AimsAtCaster -> gain_slot_of(spell4_id:, effect:)
@@ -820,9 +825,8 @@ fn gains_of(
     use prerequisite <- result.try(case effect.prerequisite_id_caster_apply {
       0 -> Ok(None)
       id ->
-        prerequisite_table.get(tables:, id: PrerequisiteId(id))
-        |> result.map(fn(row) { Some(prerequisite.of_row(row:)) })
-        |> result.replace_error(NoRow(table: "Prerequisite", id:))
+        prerequisite_of(tables:, id:)
+        |> result.map(Some)
     })
     let effect_id = Spell4EffectsId(effect.id)
     let amount = effect.data_bits02
@@ -1055,20 +1059,39 @@ fn target_of(
   }
 }
 
-/// A Proxy's prerequisite: its caster apply prerequisite, else its target apply
-/// one, else the one its dataBits06 names (`Spell4Effects.effectType.26.dataBits06`:
-/// a reading of the rows, since the client applies no Proxy itself).
-fn condition_of(effect effect: spell4_effects.Spell4Effects) -> Condition {
-  case
-    effect.prerequisite_id_caster_apply,
-    effect.prerequisite_id_target_apply,
-    effect.data_bits06
-  {
-    0, 0, 0 -> Always
-    0, 0, named -> NeedsPrerequisite(prerequisite_id: PrerequisiteId(named))
-    0, target, _ -> NeedsPrerequisite(prerequisite_id: PrerequisiteId(target))
-    caster, _, _ -> NeedsPrerequisite(prerequisite_id: PrerequisiteId(caster))
+/// A Proxy's condition: a target apply prerequisite, which the server does not
+/// check, else its caster apply prerequisite and the one its dataBits06 names
+/// (`Spell4Effects.effectType.26.dataBits06`: a reading of the rows, since the
+/// client applies no Proxy itself), both checked against the caster. A prerequisite
+/// the table lacks fails the load.
+fn condition_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Condition, PlanError) {
+  case effect.prerequisite_id_target_apply {
+    0 -> {
+      use gates <- result.try(
+        [effect.prerequisite_id_caster_apply, effect.data_bits06]
+        |> list.filter(fn(id) { id != 0 })
+        |> list.try_map(fn(id) { prerequisite_of(tables:, id:) }),
+      )
+      Ok(case gates {
+        [] -> Always
+        [_, ..] -> GatedOnCaster(gates:)
+      })
+    }
+    target -> Ok(GatedOnTarget(prerequisite_id: PrerequisiteId(target)))
   }
+}
+
+/// The Prerequisite row with this id as the client keeps it.
+fn prerequisite_of(
+  tables tables: table_store.Tables,
+  id id: Int,
+) -> Result(Prerequisite, PlanError) {
+  prerequisite_table.get(tables:, id: PrerequisiteId(id))
+  |> result.map(fn(row) { prerequisite.of_row(row:) })
+  |> result.replace_error(NoRow(table: "Prerequisite", id:))
 }
 
 fn global_cooldown_of(

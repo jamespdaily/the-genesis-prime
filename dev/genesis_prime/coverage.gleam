@@ -3,9 +3,12 @@
 ////
 //// `gleam run -m genesis_prime/coverage` loads the client's tables from
 //// `GENESIS_TABLE_DIR` (else `GENESIS_HOME`/tables, else
-//// `~/.genesis-prime/tables`) and prints a Markdown checklist per engine. It
-//// exits with 1 when the tables do not load or an engine declares a type no
-//// row uses.
+//// `~/.genesis-prime/tables`) and prints a Markdown checklist per engine: each
+//// type is handled, decoded and missing (with what it lacks and the fact file's
+//// key), or not decoded, beside the rows it has in the whole game and in the
+//// starting abilities' spells. It exits with 1 when the tables do not load, an
+//// engine declares a type no row uses, or an engine both handles a type and
+//// lists it as missing.
 ////
 //// It then prints the coverage of the world's spawns, a line for each world: how
 //// many start as fight creatures, how many NonPlayer rows are left out and why,
@@ -59,6 +62,8 @@ pub fn main() -> Nil {
       let spawns = spawn_coverage(tables:)
       store.unload(tables)
       io.println(checklist.totals(measurements))
+      io.println("")
+      io.println(checklist.legend)
       io.println("")
       io.println(checklist.render(measurements))
       io.println("")
@@ -118,17 +123,31 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
   }
 }
 
-/// A line for each engine that declares a type no row uses.
+/// A line for each engine that declares a type no row uses, and one for each that
+/// both handles a type and lists it as missing.
 fn breaches(measurements: List(Measurement)) -> List(String) {
-  list.filter_map(measurements, fn(measured) {
+  list.flat_map(measurements, fn(measured) {
     case measured {
-      Measured(engine:, breaches: [_, ..] as unused, ..) ->
-        Ok(
-          engine.name
-          <> " declares types no row uses: "
-          <> string.join(list.map(unused, int.to_string), ", "),
-        )
-      Measured(breaches: [], ..) | measurement.Unmeasured(..) -> Error(Nil)
+      Measured(engine:, breaches:, conflicts:, ..) ->
+        list.flatten([
+          case breaches {
+            [] -> []
+            unused -> [
+              engine.name
+              <> " declares types no row uses: "
+              <> string.join(list.map(unused, int.to_string), ", "),
+            ]
+          },
+          case conflicts {
+            [] -> []
+            both -> [
+              engine.name
+              <> " both handles and lists as missing the types: "
+              <> string.join(list.map(both, int.to_string), ", "),
+            ]
+          },
+        ])
+      measurement.Unmeasured(..) -> []
     }
   })
 }

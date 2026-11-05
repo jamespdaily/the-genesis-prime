@@ -10,16 +10,16 @@
 ////   Proxy 62204 starts at the area; 228910 (+4 behind 43811) and 228918 (+1 every
 ////   2000 ms for 8000 ms, behind 43812) in Energize 69450, on the caster.
 //// - `Spell4Effects.effectType.26.dataBits06`: five level-1 Proxies name a
-////   Prerequisite in dataBits06.
+////   Prerequisite in dataBits06, which gates them against the caster.
 //// - The design of issue 418: a gain of a child started at each struck unit is
 ////   given once per go of its parent, so the plan moves it onto the Proxy.
 
 import client_tables
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
-  type Gain, type Proxy, type Spell, Gain, NeedsPrerequisite, TickingGain,
+  type Gain, type Proxy, type Spell, Gain, TickingGain,
 }
-import genesis_prime/table/id.{PrerequisiteId, Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/loader/store as table_store
 import gleam/dict
 import gleam/int
@@ -50,6 +50,18 @@ fn read(gain: Gain) -> #(Int, Int, Int, Int, Option(Int), Option(#(Int, Int))) {
     prerequisite_id,
     ticking,
   )
+}
+
+/// The Prerequisite ids a Proxy is gated on against the caster, in order; `Error`
+/// for a Proxy with no such gate.
+fn caster_gates(proxy: Proxy) -> Result(List(Int), Nil) {
+  case proxy.condition {
+    spell_plan.GatedOnCaster(gates:) ->
+      Ok(
+        list.map(gates, fn(gate) { prerequisite.id(prerequisite: gate).value }),
+      )
+    spell_plan.Always | spell_plan.GatedOnTarget(..) -> Error(Nil)
+  }
 }
 
 /// Every Proxy in the spell's tree, its stages' trees among them.
@@ -248,9 +260,8 @@ pub fn a_proxy_whose_data_bits_06_names_a_prerequisite_is_kept_behind_it_test() 
   use <- owned_test.run(60_000)
   let assert [proxy, ..] = proxies_of(planted(relentless_strikes), 177_873)
     as "53865's Proxy 177873 to 60947"
-  assert proxy.condition
-    == NeedsPrerequisite(prerequisite_id: PrerequisiteId(24_582))
-    as "dataBits06 24582 gates the Proxy (Spell4Effects.effectType.26.dataBits06): it is not started"
+  assert caster_gates(proxy) == Ok([24_582])
+    as "dataBits06 24582 gates the Proxy against the caster (Spell4Effects.effectType.26.dataBits06): it starts only when the prerequisite passes"
 }
 
 pub fn the_five_level_one_proxies_with_a_data_bits_06_are_each_behind_it_test() -> Nil {
@@ -276,8 +287,7 @@ pub fn the_five_level_one_proxies_with_a_data_bits_06_are_each_behind_it_test() 
         as { "a level-1 tree holds Proxy " <> int.to_string(effect_id) }
       assert list.all(found, fn(proxy) {
         proxy.spell.spell4_id.value == child
-        && proxy.condition
-        == NeedsPrerequisite(prerequisite_id: PrerequisiteId(prerequisite_id))
+        && caster_gates(proxy) == Ok([prerequisite_id])
       })
         as {
           "Proxy "

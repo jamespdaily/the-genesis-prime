@@ -480,6 +480,16 @@ pub fn prerequisite_row(
   ])
 }
 
+/// The Prerequisite rows the planted Proxies name in their caster apply column,
+/// each the client's (`table_rows -- Prerequisite 17301 17302`): Quick Draw's, not
+/// under the cast 43500 and under it.
+pub fn proxy_prerequisite_rows() -> List(List(Cell)) {
+  [
+    prerequisite_row(id: 17_301, flags: 0, conditions: [#(15, 2, 0, 43_500)]),
+    prerequisite_row(id: 17_302, flags: 0, conditions: [#(15, 1, 0, 43_500)]),
+  ]
+}
+
 /// The Prerequisite rows the planted gains name, each the client's (`table_rows --
 /// Prerequisite 24581 24582 43811 43812`).
 pub fn gain_prerequisite_rows() -> List(List(Cell)) {
@@ -1752,7 +1762,10 @@ pub fn rows() -> Rows {
       class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16]),
       class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16]),
     ],
-    prerequisites: gain_prerequisite_rows(),
+    prerequisites: sorted_by_id(list.append(
+      proxy_prerequisite_rows(),
+      gain_prerequisite_rows(),
+    )),
   )
 }
 

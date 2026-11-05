@@ -70,7 +70,7 @@ pub fn a_closed_round_writes_the_go_with_a_target_info_for_each_hit_unit_and_a_0
   use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let #(_, effects) =
-    cast.went(
+    support.went(
       cast: state,
       caster: support.caster(),
       now: support.at(ms: 2260),
@@ -121,7 +121,7 @@ pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a
   use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let #(_, effects) =
-    cast.went(
+    support.went(
       cast: state,
       caster: support.caster(),
       now: support.at(ms: 2260),
@@ -180,7 +180,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
   assert support.ids(frames: support.writes(effects: ended)) == [0x07FE]
     as "its cast ends with its 0x7fe"
   let #(_, closed) =
-    cast.went(
+    support.went(
       cast: second_state,
       caster: support.caster(),
       now: support.at(ms: 2400),
@@ -190,7 +190,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
     )
   assert closed == [] as "its round closes with nothing to write"
   let #(_, going) =
-    cast.went(
+    support.went(
       cast: first_state,
       caster: support.caster(),
       now: support.at(ms: 2400),
@@ -207,7 +207,7 @@ pub fn a_struck_unit_the_client_no_longer_shows_is_still_named_in_the_go_test() 
   use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let #(_, effects) =
-    cast.went(
+    support.went(
       cast: state,
       caster: support.caster(),
       now: support.at(ms: 2260),
@@ -239,7 +239,7 @@ pub fn a_0x801_while_a_round_is_open_leaves_the_close_with_nothing_to_write_test
     )
     as "the client ends the cast with reason 6 (opcode.0x801)"
   let #(_, effects) =
-    cast.went(
+    support.went(
       cast: state,
       caster: support.caster(),
       now: support.at(ms: 2400),
@@ -255,7 +255,7 @@ pub fn a_proxy_aimed_at_the_area_starts_one_child_for_each_hit_unit_and_none_for
   use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let #(_, effects) =
-    cast.went(
+    support.went(
       cast: state,
       caster: support.caster(),
       now: support.at(ms: 2260),

@@ -173,6 +173,8 @@ pub fn caster() -> Caster {
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
     dead: False,
     resources: class_resource.new(resource: full_slot_1()),
+    in_combat: False,
+    life_vitals: dict.new(),
   )
 }
 
@@ -523,6 +525,18 @@ pub fn answered_with_no_targets(
   answered_by(state:, effects:, at: ms, struck: [])
 }
 
+/// `cast.went` for a round whose go checks no type 37 condition, so it takes no roll.
+pub fn went(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  cast_id cast_id: Int,
+  phase phase: Int,
+  struck struck: List(cast.Struck),
+) -> #(State, List(Effect)) {
+  cast.went(cast:, caster:, now:, cast_id:, phase:, struck:, rolls: [])
+}
+
 /// Each `Strike` effect replaced, in place, by what `went` gives for a round that struck
 /// these units; the effects it gives are answered the same way.
 pub fn answered_by(
@@ -531,6 +545,19 @@ pub fn answered_by(
   at ms: Int,
   struck struck: List(cast.Struck),
 ) -> #(State, List(Effect)) {
+  answered_as(caster: caster(), state:, effects:, at: ms, struck:, rolls: [])
+}
+
+/// The same for this caster, each go taking these rolls for its type 37
+/// conditions.
+pub fn answered_as(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+  struck struck: List(cast.Struck),
+  rolls rolls: List(Int),
+) -> #(State, List(Effect)) {
   list.fold(effects, #(state, []), fn(so_far, effect) {
     let #(state, done) = so_far
     case effect {
@@ -538,14 +565,15 @@ pub fn answered_by(
         let #(state, going) =
           cast.went(
             cast: state,
-            caster: caster(),
+            caster:,
             now: at(ms:),
             cast_id: asked.cast_id,
             phase: asked.phase,
             struck:,
+            rolls:,
           )
         let #(state, more) =
-          answered_by(state:, effects: going, at: ms, struck:)
+          answered_as(caster:, state:, effects: going, at: ms, struck:, rolls:)
         #(state, list.append(done, more))
       }
       cast.Send(..)
