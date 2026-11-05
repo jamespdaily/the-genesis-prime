@@ -1280,6 +1280,28 @@ fn unread_spend(cost cost: Option(Cost), emm_id emm_id: Int) -> Cost {
   UnreadSpendCost(result:, emm_id:)
 }
 
+/// The EMM id beside each of the Spell4 row's two innate costs, 0 for a cost that holds
+/// none: an id with no cost is no spend (`has_cost`), which `cost_of` refuses the press
+/// of, so the measure does not count it as a use.
+pub fn spent_emm_ids(row row: spell4.Spell4) -> List(Int) {
+  [
+    #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
+    #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
+  ]
+  |> list.map(fn(cost) {
+    case has_cost(cost_type: cost.0, amount: cost.1) {
+      True -> cost.2
+      False -> 0
+    }
+  })
+}
+
+/// Whether a Spell4 cost column pair holds a cost: a type of 0 or above 30, or an
+/// amount of 0, is none (`0x1403b3320`).
+fn has_cost(cost_type cost_type: Int, amount amount: Int) -> Bool {
+  cost_type != 0 && amount != 0 && cost_type <= 30
+}
+
 fn cost_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
@@ -1287,9 +1309,8 @@ fn cost_of(
   cost_type cost_type: Int,
   amount amount: Int,
 ) -> Result(Option(Cost), PlanError) {
+  use <- bool.guard(when: !has_cost(cost_type:, amount:), return: Ok(None))
   case cost_type, slot_of(vital_type: cost_type) {
-    0, _ -> Ok(None)
-    _, _ if amount == 0 || cost_type > 30 -> Ok(None)
     1, _ -> Ok(Some(UnheldCost(result: 44)))
     3, _ -> Ok(Some(UnheldCost(result: 176)))
     15, _ -> Ok(Some(UnheldCost(result: 167)))

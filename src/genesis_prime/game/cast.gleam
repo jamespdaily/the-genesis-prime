@@ -1393,12 +1393,7 @@ fn spend_all(
   let base = int.absolute_value(amount)
   use <- bool.guard(when: held < base, return: Error(Unpaid(result:)))
   let paid = adding(paid:, payment: Payment(slot:, amount: held))
-  Ok(
-    Paid(..paid, spent: case paid.spent {
-      None -> Some(held - base)
-      Some(_) -> paid.spent
-    }),
-  )
+  Ok(Paid(..paid, spent: option.or(paid.spent, Some(held - base))))
 }
 
 /// The payment added to what the press pays, newest first.

@@ -351,8 +351,16 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           ..,
         ) = measured
           as { table <> " is a table the client has, so it is measured" }
-        let #(non_zero, zero) =
+        let #(in_file, zero_in_file) =
           counted_by_the_file(file: table, schema: schema_of(table), columns:)
+        // Spell4.innateCostEMMId0: three rows hold an id beside no cost (45155 and
+        // 48782 with 4, 42075 with 7); the engine counts them as empty slots.
+        let beside_no_cost = case table {
+          "Spell4" -> 3
+          _ -> 0
+        }
+        let non_zero = in_file - beside_no_cost
+        let zero = zero_in_file + beside_no_cost
         assert non_zero > 0 as { table <> ": the client's file has types" }
         assert int.sum(list.map(types, fn(line) { line.rows })) == non_zero
           as {

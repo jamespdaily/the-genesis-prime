@@ -45,14 +45,24 @@ fn with_beast(
   prerequisites prerequisites: List(List(planted_table.Cell)),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
+  with_beast_spell4(
+    spell4_rows: novice_tables.creature_attack_spell4_rows(),
+    prerequisites:,
+    body:,
+  )
+}
+
+/// The same with these Spell4 rows in place of the client's row of 5649.
+fn with_beast_spell4(
+  spell4_rows spell4_rows: List(List(planted_table.Cell)),
+  prerequisites prerequisites: List(List(planted_table.Cell)),
+  body body: fn(table_store.Tables) -> a,
+) -> a {
   use folder <- planted_table.in_folder([
     planted_table.file(creature2.schema, [
       planted_table.row(creature2.schema, [#("ID", Integer(73_464))]),
     ]),
-    planted_table.file(
-      spell4.schema,
-      novice_tables.creature_attack_spell4_rows(),
-    ),
+    planted_table.file(spell4.schema, spell4_rows),
     planted_table.file(
       spell4_effects.schema,
       novice_tables.creature_attack_effect_rows(),
@@ -148,6 +158,26 @@ pub fn an_attack_effect_whose_caster_prerequisite_the_server_does_not_evaluate_f
     as "effect 184777's prerequisite 30527 is of type 180: the server would apply it to every creature or none (0x14049eeb0 evaluates type 179 only), so the start stops"
   assert string.contains(rule, "184777") && string.contains(rule, "180")
     as "the refusal names the effect and the type"
+}
+
+pub fn an_attack_spell_with_an_innate_cost_emm_id_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let spending = [
+    planted_table.row(spell4.schema, [
+      #("ID", Integer(5649)),
+      #("innateCostEMMId0", Integer(4)),
+    ]),
+  ]
+  let assert Error([Refusal(table: "creature_kind", row: RowId(0), rule:)]) =
+    with_beast_spell4(
+      spell4_rows: spending,
+      prerequisites: character_tables.prerequisite_rows(),
+      body: fn(tables) { creature_kind.select(rows: [default_row], tables:) },
+    )
+    as "Spell4.innateCostEMMId0: a spell with an EMM id chooses its effects by the points spent, which a creature's attack does not spend, so applying all its tagged damage effects would be a guess and the start stops"
+  assert string.contains(rule, "Spell4 5649")
+    && string.contains(rule, "EMM id 4")
+    as "the refusal names the spell and the id"
 }
 
 pub fn planted_rows_load_into_the_kinds_a_creature_reads_test() -> Nil {

@@ -412,8 +412,8 @@ pub fn the_spend_engine_counts_the_ids_of_both_columns_and_the_starting_abilitie
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   assert emm_rows()
-    == [#(4, 51), #(7, 47), #(10, 3), #(5, 2), #(9, 2), #(2, 1), #(11, 1)]
-    as "Spell4.innateCostEMMId0: 4 on 45 rows, 7 on 46, 5 and 9 on 2 each, 2 and 11 on 1 each; innateCostEMMId1: 4 on 6, 10 on 3, 7 on 1: 4 holds 51 rows, 7 47 and 10 3"
+    == [#(4, 49), #(7, 46), #(10, 3), #(5, 2), #(9, 2), #(2, 1), #(11, 1)]
+    as "Spell4.innateCostEMMId0: 4 on 45 rows, 7 on 46, 5 and 9 on 2 each, 2 and 11 on 1 each; innateCostEMMId1: 4 on 6, 10 on 3, 7 on 1: 4 holds 51 and 7 47, less the three rows whose id sits beside no cost (45155 and 48782 with 4, 42075 with 7, counted as empty slots), so 49, 46 and 3 for 10"
   assert starting_counts(engine: engine_named("Spend-scaled costs"))
     == [#(4, 1)]
     as "Spell4.innateCostEMMId0: of the 65 spells the 18 level-1 abilities reach only Mind Burst (32809, id 4) holds one"
