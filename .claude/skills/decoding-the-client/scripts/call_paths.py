@@ -22,7 +22,7 @@ longer list says so and stops. A leaf's own calls are not walked: nothing says w
 --up: the same walk over callers, from <function> up to a target (which functions reach this one).
     reached only as data:  each walked function with no caller that is another function, with every other
                  reference the index holds to it: a pointer in a table, a `lea` of its address, a call from
-                 itself, and a call or jmp from code outside .pdata ("called from code outside .pdata at
+                 itself, and a call or jmp from code outside .pdata ("call from code outside .pdata at
                  X"; such code is a leaf whose start the index does not give, so the walk stops there). At
                  most 50 lines.
 
@@ -158,6 +158,16 @@ def require_node(index: RefIndex, starts: set[int], address: int, role: str) -> 
     raise Refused("%s 0x%x is neither a function start nor a called leaf function: %s" % (role, address, why))
 
 
+def callee_sites(index: RefIndex, starts: set[int], at: int) -> dict[int, list[int]]:
+    """Each function that at calls or tail-jumps to (a start in starts, or a leaf), itself left out, with the
+    sites of those calls, over every .pdata range of at."""
+    found: dict[int, list[int]] = {}
+    for ref in index.sites_from(at, {"call", "jmp"}):
+        if ref.target != at and (ref.target in starts or is_leaf_address(index, ref.target)):
+            found.setdefault(ref.target, []).append(ref.source)
+    return found
+
+
 def direct_callers(index: RefIndex, at: int) -> list[int]:
     """The .pdata functions that call or tail-jump to at, itself left out."""
     return [caller for caller in index.callers(at) if caller != at]
@@ -209,18 +219,21 @@ def _print_unfollowed(index: RefIndex, names: Names, walk: Walk, on_paths: set[i
         print("  and %d more" % (len(found) - MAX_LINES), file=out)
 
 
-def _other_references(index: RefIndex, function: int) -> list[str]:
-    """What else refers to function, when no function calls it: each reference as a phrase."""
+def reference_phrases(index: RefIndex, function: int, label: Callable[[int], str] | None = None) -> list[str]:
+    """Each reference to function that is not a call or tail jmp from another function, as a phrase: a pointer
+    in a table, a `lea`, a call or jmp from itself or from code outside .pdata. label, when given, names the
+    function a reference lies in."""
     phrases = []
     for ref in index.refs_to(function):
+        root = index.pe.root_of(ref.source)
         if ref.kind in ("call", "jmp"):
-            root = index.pe.root_of(ref.source)
             if root is None:
-                phrases.append("called from code outside .pdata at 0x%x" % ref.source)
-            else:
+                phrases.append("%s from code outside .pdata at 0x%x" % (ref.kind, ref.source))
+            elif root == function:
                 phrases.append("%s from itself at 0x%x" % (ref.kind, ref.source))
         else:
-            phrases.append("%s at 0x%x" % (ref.kind, ref.source))
+            where = " in " + label(root) if label and root is not None else ""
+            phrases.append("%s at 0x%x%s" % (ref.kind, ref.source, where))
     return phrases
 
 
@@ -228,7 +241,7 @@ def _print_data_only(index: RefIndex, names: Names, walk: Walk, out) -> None:
     found = []
     for function, distance in walk.expanded.items():
         if not direct_callers(index, function):
-            found.append((distance, function, _other_references(index, function)))
+            found.append((distance, function, reference_phrases(index, function)))
     print("reached only as data or from code outside .pdata (walked functions with no calling function: %d):" % len(found), file=out)
     for _distance, function, phrases in sorted(found, key=lambda f: f[:2])[:MAX_LINES]:
         held = ", ".join(phrases[:MAX_SITES]) or "no reference at all"
@@ -248,14 +261,7 @@ def run(index: RefIndex, function: int, targets: list[int], depth: int, up: bool
     if function not in starts and not up:
         print("0x%x has no .pdata entry: its own calls are not walked" % function, file=out)
 
-    def callees(at: int) -> list[int]:
-        return [
-            r.target
-            for r in index.sites_from(at, {"call", "jmp"})
-            if r.target != at and (r.target in starts or is_leaf_address(index, r.target))
-        ]
-
-    walk = reach(lambda at: direct_callers(index, at) if up else callees(at), function, set(targets), depth)
+    walk = reach(lambda at: direct_callers(index, at) if up else list(callee_sites(index, starts, at)), function, set(targets), depth)
     if walk.paths:
         _print_paths(index, names, walk, up, out)
     else:

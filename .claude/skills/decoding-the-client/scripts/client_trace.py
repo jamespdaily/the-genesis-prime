@@ -18,30 +18,41 @@ A function prints, in this order:
                 table, a `lea`, a call from code outside .pdata), then callers' callers to --depth
     calls       its direct callees (a call or a tail jmp) with each call site, the imports, and the sites that
                 go through a pointer in memory; then their callees to --depth
-    strings     the string literals of its saved C
+    strings     the string literals of its saved C and the string symbols it names (`s_..._<address>`)
     globals     each global data address its C names that some other function also refers to (a flag or a
                 setting it shares), fewest users first, with those functions; the index finds them, so no
-                search of the saved C is needed
-    body        its saved C, cut to what is left of the bound, with the number of lines cut
+                search of the saved C is needed. A global more than 40 other functions use is a general
+                object: it is counted as left out
+    body        its saved C, cut to what is left of the bound, with the number of lines cut; at --depth 2
+                or more also the bodies of its first six callees, and the number of callees left out
 Not listed, because the index does not hold them: a call through a register or a virtual call
-(`(**(code **)(*p + 0x28))(...)`): they are in the body. The client's C names no table columns; a column read
-is known only through a fact-file record keyed Table.column that cites the function.
+(`(**(code **)(*p + 0x28))(...)`): they are in the body. The client's C names no table columns, only record
+offsets; a column read is known only through a fact-file record keyed Table.column that cites the function,
+and a function none cites says so.
 
 An opcode prints, before the functions below:
     registered  each saved-C registration line (id, record size, sizer, writer, reader): a writer means the
                 client sends the message, a reader that it receives it. The registration names no handler.
     dispatched  for each named dispatcher (a saved name of the form Handle...Message(s), and each --dispatcher)
                 whose jump table holds the opcode: the case block's address and the functions it calls.
-                A dispatcher that compares ids one by one instead of by table is not found: its record in the
-                fact file is the lead.
-    used by     each saved-C line that passes the opcode as a call argument: a Send...( call is a sender; any
-                other use may be another number that is equal (a table id).
-    then the trace of the reader, the writer, each function the case block calls and each sender, with the
-    bound shared between their bodies.
+    handled by  a function named HandleMessage<id>, and each saved-C line `case <opcode>:` or `== <opcode>` in a
+                function that is a named dispatcher, or that tests two other message ids of 0x100 or more
+                registrations name when the opcode is registered or recorded (a dispatcher that compares
+                ids one by one is found this way): the line, the case labels sharing its block, and the
+                functions the block calls.
+    sent by     each saved-C line that passes the opcode to a Send...( call.
+    equal numbers  the other saved-C lines that hold the same number as a call argument, a `case` or an `==`,
+                which nothing above ties to this message (a table id, an allocation size): the first six
+                functions, with the count.
+    then the trace of the reader, the writer, each handler, the first four functions each case block or
+    handler calls and the first four senders (the rest are listed with a note), with the bound shared
+    between their bodies.
 
 The saved C's file layout, its hash and its freshness are decompiled.py's contract; the walks of call_paths.py
 (a chain from one function to named targets) are its own question and are not repeated here.
-Exit 0 when something is printed; 1 when the input is refused or names nothing.
+Exit 0 when the report is printed and, for an opcode, something ties the number to a message: a fact record,
+a registration, a dispatch case, a handler or a sender. Exit 1 when the input is refused, and for an opcode
+nothing ties (the report is still printed, with the equal numbers under their label).
 """
 
 import argparse
@@ -77,6 +88,9 @@ MAX_CASE_CALLEES = 4
 MAX_SENDERS = 4
 MAX_CALLEE_BODIES = 6
 MAX_OTHER_USES = 6
+MAX_HANDLERS = 8
+MAX_HANDLER_BLOCK_LINES = 12
+HANDLER_OTHER_IDS = 2
 MAX_DATA_REFERENCES = 8
 MAX_GLOBALS = 12
 MAX_GLOBAL_USERS = 6
@@ -87,15 +101,17 @@ COMPACT_CALLEES = 12
 COMPACT_FACTS = 4
 SHARED_GLOBAL_LIMIT = 40
 
-_ADDRESS = re.compile(r"0x14[0-9a-f]{7}(?![0-9a-f])")
 _GLOBAL = re.compile(r"\b(?:PTR_)?DAT_(14[0-9a-f]{7})\b")
 _STRING = re.compile(r'L?"(?:[^"\\\n]|\\.)*"')
+_STRING_SYMBOL = re.compile(r"\b(?:PTR_)?[su]_\w+_14[0-9a-f]{7}\b")  # the label the project's names give a string at an address
 _REGISTRATION = re.compile(
     r"\(\*\*\(code \*\*\)\*\w+\)\(\w+,(0x[0-9a-f]+|\d+),(0x[0-9a-f]+|\d+),(\w+),(\w+),(\w+),\w+\);"
 )
 _DISPATCHER_NAME = re.compile(r"Handle\w*Messages?\w*")
 _ONE_MESSAGE_HANDLER = re.compile(r"HandleMessage[0-9A-F]{4}\w*")
 _SENDER_LINE = re.compile(r"\bSend\w*\(")
+_CALL = re.compile(r"\b([A-Za-z_]\w*)\(")
+_COMPARED_NUMBER = re.compile(r"(?:\bcase |==\s*)(0x[0-9a-f]+|[0-9]+)(?![0-9A-Za-z_])")
 _TABLE_COLUMN_KEY = re.compile(r"[A-Z][A-Za-z0-9]*\.\w+")
 
 
@@ -156,29 +172,57 @@ class Part:
     shrinkable: bool = False  # a body: cut to a share of what the other parts leave
 
 
+def _shares(costs: list[int], room: int) -> list[int | None]:
+    """What each body is given of room, by cost (its length and its newline): a body that fits in an equal
+    share of what is left is given all it needs, smallest first, and the rest of the room is shared equally by
+    the bodies that do not fit; None, for each of those, when that share is under MIN_BODY_CHARS."""
+    shares: list[int | None] = [None] * len(costs)
+    left = room
+    order = sorted(range(len(costs)), key=costs.__getitem__)
+    for taken, body in enumerate(order):
+        equal = left // (len(order) - taken)
+        if costs[body] <= equal:
+            shares[body] = costs[body]
+            left -= costs[body]
+        else:
+            if equal >= MIN_BODY_CHARS:
+                for rest in order[taken:]:
+                    shares[rest] = equal
+            break
+    return shares
+
+
+def _left_out_note(count: int, room: int) -> str:
+    return "[%d bodies left out: %d characters left for them; raise --max-chars]" % (count, max(room, 0))
+
+
 def fit(parts: list[Part], limit: int) -> str:
-    """The parts in order, joined, within limit characters. The parts that are not shrinkable come first
-    in priority; the shrinkable ones share what is left equally, each cut by trim_to, and are left out with
-    a note when their share is under MIN_BODY_CHARS. When the others alone exceed the limit, they are cut."""
-    fixed = sum(len(p.text) + 1 for p in parts if not p.shrinkable)
+    """The parts in order, joined, within limit characters, whatever they hold. The parts that are not
+    shrinkable come first in priority; the shrinkable ones (bodies) are given what is left: a body smaller than
+    an equal share keeps all of it and gives the unused rest to the others, which are cut by trim_to. A body
+    whose share is under MIN_BODY_CHARS is left out and a last line says how many; the room for that line is
+    kept, cutting the other parts when they alone fill the bound."""
+    fixed = [p.text for p in parts if not p.shrinkable]
     bodies = [p for p in parts if p.shrinkable]
-    if fixed >= limit:
-        joined = "\n".join(p.text for p in parts if not p.shrinkable)
-        omitted = "\n[%d bodies left out: the lists fill the bound; raise --max-chars]" % len(bodies) if bodies else ""
-        return trim_to(joined + omitted, limit)
-    share = (limit - fixed) // len(bodies) if bodies else 0
-    out = []
-    left_out = 0
+    if not bodies:
+        return trim_to("\n".join(fixed), limit)
+    room = limit + 1 - sum(len(text) + 1 for text in fixed)  # n joined pieces are their lengths and n - 1 newlines
+    costs = [len(p.text) + 1 for p in bodies]
+    shares = _shares(costs, room)
+    note = ""
+    if None in shares:
+        reserve = len(_left_out_note(len(bodies), room)) + 1
+        if room < reserve:
+            return trim_to("\n".join(fixed), limit - reserve) + "\n" + _left_out_note(len(bodies), room)
+        shares = _shares(costs, room - reserve)
+        note = _left_out_note(shares.count(None), room)
+    out, given = [], iter(shares)
     for part in parts:
         if not part.shrinkable:
             out.append(part.text)
-        elif share >= MIN_BODY_CHARS:
+        elif (share := next(given)) is not None:
             out.append(trim_to(part.text, share - 1))
-        else:
-            left_out += 1
-    if left_out:
-        out.append("[%d bodies left out: %d characters left for them; raise --max-chars]" % (left_out, limit - fixed))
-    return "\n".join(out)
+    return "\n".join(out + [note] if note else out)
 
 
 # ---------------------------------------------------------------- the message registration lines
@@ -227,29 +271,17 @@ def read_registrations(directory: Path) -> list[Registration]:
 
 # ---------------------------------------------------------------- the dispatch tables
 
-def first_opcode(code: list[jump_tables.Instruction], jmp_address: int) -> int | None:
-    """The message id that picks the first entry of the jump table whose `jmp` is at jmp_address, read from
-    the instruction that makes the table index (`lea eax, [rbx - 0x61]`, `sub eax, K`, `add eax, -K`, or a
-    plain register copy, which is 0); None when that instruction is none of these. code is the dispatcher's
-    listing, jump_tables.disassemble's."""
-    position = next((i for i, c in enumerate(code) if c.address == jmp_address), None)
-    if position is None:
+def first_opcode(code: list[jump_tables.Instruction], table: jump_tables.JumpTable) -> int | None:
+    """The message id that picks the first entry of the jump table, read from the instruction that last wrote
+    the table's index register before the compare that bounds it (`lea eax, [rbx - 0x61]`, `sub eax, K`,
+    `add eax, -K`, or a plain register copy, which is 0); None when that instruction is none of these, a call
+    that clobbers the register comes between, or the table's compare is unknown. code is the listing of the
+    range that holds the table's `jmp`, jump_tables.disassemble's."""
+    position = next((i for i, c in enumerate(code) if c.address == table.compare_address), None)
+    if position is None or table.index_register is None:
         return None
-    compared = None
-    for i in range(position - 1, max(0, position - jump_tables.WINDOW) - 1, -1):
-        c = code[i]
-        if c.mnemonic == "cmp" and len(c.operands) == 2 and c.operands[0] in jump_tables.FAMILY and _immediate(c.operands[1]) is not None:
-            compared = i
-            break
-    if compared is None:
-        return None
-    register = jump_tables.FAMILY[code[compared].operands[0]]
-    for i in range(compared - 1, max(0, compared - jump_tables.WINDOW) - 1, -1):
-        c = code[i]
-        if c.mnemonic in jump_tables.NO_WRITE or not c.operands or jump_tables.FAMILY.get(c.operands[0]) != register:
-            continue
-        return _table_origin(c)
-    return None
+    written = jump_tables.last_writer(code, position, table.index_register)
+    return None if written is None else _table_origin(code[written])
 
 
 def _immediate(text: str) -> int | None:
@@ -314,7 +346,7 @@ def dispatch_cases(pe, dispatcher: int, opcode: int, is_function) -> list[CaseBl
     found = []
     for table in tables:
         own = next((code for low, high, code in listings if low <= table.jmp < high), None)
-        origin = first_opcode(own, table.jmp) if own else None
+        origin = first_opcode(own, table) if own else None
         if origin is None or not 0 <= opcode - origin < len(table.targets):
             continue
         target = table.targets[opcode - origin]
@@ -337,7 +369,7 @@ class Facts:
         for key, record in records.items():
             held = set()
             for text in (record.statement, record.proof, record.gap or ""):
-                held.update(int(found, 16) for found in _ADDRESS.findall(text.lower()))
+                held.update(int(found, 16) for found in check_facts._ADDRESS_RE.findall(text))
             for address in held:
                 if key != "0x%x" % address:
                     self._citing.setdefault(address, []).append(key)
@@ -414,11 +446,7 @@ class Client:
 
     def callees(self, function: int) -> dict[int, list[int]]:
         """Target function -> call sites, for each `call` and tail `jmp` out of the function's .pdata ranges."""
-        found: dict[int, list[int]] = {}
-        for ref in self.index.sites_from(function, {"call", "jmp"}):
-            if ref.target != function and self.is_function(ref.target):
-                found.setdefault(ref.target, []).append(ref.source)
-        return found
+        return call_paths.callee_sites(self.index, self.starts, function)
 
 
 def _levels(neighbours, start: int, depth: int) -> list[list[tuple[int, int]]]:
@@ -462,20 +490,6 @@ def _listing(client: Client, function: int, up: bool, depth: int, limit: int) ->
     return lines, listed
 
 
-def _references(client: Client, function: int) -> list[str]:
-    """Every reference to the function that is not a call or tail jmp from another function."""
-    phrases = []
-    for ref in client.index.refs_to(function):
-        root = client.index.pe.root_of(ref.source)
-        if ref.kind in ("call", "jmp"):
-            if root is None:
-                phrases.append("%s from code outside .pdata at 0x%x" % (ref.kind, ref.source))
-            continue
-        where = " in " + client.label(root) if root is not None else ""
-        phrases.append("%s at 0x%x%s" % (ref.kind, ref.source, where))
-    return phrases
-
-
 def function_parts(client: Client, function: int, depth: int, registrations: list[Registration], compact: bool = False, seen: set[str] | None = None) -> list[Part]:
     """The report on one function, as parts: its facts, callers, callees, strings and body. A record whose
     key is in seen was printed already and is left out; the keys printed are added to it."""
@@ -516,7 +530,7 @@ def function_parts(client: Client, function: int, depth: int, registrations: lis
         facts.append("  (%s) %s" % (role, describe_record(client.facts.keyed(member), OTHER_RECORD_CHARS)))
     if len(shown) > MAX_FACTS:
         facts.append("  and %d more records keyed to the functions listed below" % (len(shown) - MAX_FACTS))
-    citing = [r for r in client.facts.citing(function) if (not compact or not _ADDRESS.fullmatch(r.key)) and r.key not in seen]
+    citing = [r for r in client.facts.citing(function) if (not compact or not check_facts._ADDRESS_RE.fullmatch(r.key)) and r.key not in seen]
     cap = COMPACT_FACTS if compact else MAX_FACTS
     for record in citing[:cap]:
         fresh(record)
@@ -524,10 +538,12 @@ def function_parts(client: Client, function: int, depth: int, registrations: lis
         facts.append("  (%s) %s" % (kind, describe_record(record, OTHER_RECORD_CHARS)))
     if len(citing) > cap:
         facts.append("  and %d more records cite it: %s" % (len(citing) - cap, ", ".join(r.key for r in citing[cap : cap + 12])))
+    if not any(_TABLE_COLUMN_KEY.fullmatch(r.key) for r in client.facts.citing(function)):
+        facts.append("  no table column recorded for this function (the saved C reads records by offset)")
     if len(facts) > 1:
         parts.append(Part("\n".join(facts)))
 
-    references = _references(client, function)
+    references = call_paths.reference_phrases(client.index, function, client.label)
     parts.append(Part("\n".join(["called by (%d functions):" % len(client.callers(function))] + (up_lines or ["  none"]))))
     if references:
         parts.append(Part("referenced otherwise: " + "; ".join(references[:MAX_DATA_REFERENCES]) + ("; and %d more" % (len(references) - MAX_DATA_REFERENCES) if len(references) > MAX_DATA_REFERENCES else "")))
@@ -542,7 +558,7 @@ def function_parts(client: Client, function: int, depth: int, registrations: lis
     parts.append(Part("\n".join(calls)))
 
     if text:
-        strings = list(dict.fromkeys(_STRING.findall(text)))
+        strings = list(dict.fromkeys(_STRING.findall(text) + _STRING_SYMBOL.findall(text)))
         if strings and not compact:
             clipped = [s if len(s) <= 80 else s[:77] + '..."' for s in strings[:MAX_STRINGS]]
             parts.append(Part("strings: " + "  ".join(clipped) + ("  and %d more" % (len(strings) - MAX_STRINGS) if len(strings) > MAX_STRINGS else "")))
@@ -550,12 +566,17 @@ def function_parts(client: Client, function: int, depth: int, registrations: lis
         if shared and not compact:
             parts.append(Part("\n".join(["globals the body refers to that other functions refer to too (fewest users first):"] + shared)))
         bodies = [(function, text)]
+        left_out = 0
         if depth >= 2 and not compact:
             by_site = sorted(client.callees(function).items(), key=lambda item: item[1][0])
-            bodies += [(callee, client.saved_c(callee)) for callee, _sites in by_site if client.saved_c(callee)][:MAX_CALLEE_BODIES]
+            callee_bodies = [(callee, client.saved_c(callee)) for callee, _sites in by_site if client.saved_c(callee)]
+            bodies += callee_bodies[:MAX_CALLEE_BODIES]
+            left_out = len(callee_bodies) - MAX_CALLEE_BODIES
         for owner, body in bodies:
             title = "body of %s:" % client.label(owner)
             parts.append(Part(title + "\n" + body.rstrip("\n"), shrinkable=True))
+        if left_out > 0:
+            parts.append(Part("[the bodies of %d callees past the first %d are left out]" % (left_out, MAX_CALLEE_BODIES) if left_out > 1 else "[the body of 1 callee past the first %d is left out]" % MAX_CALLEE_BODIES))
     else:
         parts.append(Part("no saved C for 0x%x (%s)" % (function, client.state.failed.get(function, "no file: a leaf function, or refresh the copy")), False))
     return parts
@@ -571,30 +592,134 @@ def _shared_globals(client: Client, function: int, text: str) -> list[str]:
     """One line per global data address in the C that some other function also refers to, the ones with the
     fewest other users first: those are a flag or a setting the function shares with a few others. A global
     with more than SHARED_GLOBAL_LIMIT other users is a general object and is left out."""
-    found = []
+    found, general = [], 0
     for address in global_addresses(text):
         others = [u for u in client.global_users(address) if u != function]
         if others and len(others) <= SHARED_GLOBAL_LIMIT:
             found.append((len(others), address, others))
+        elif others:
+            general += 1
     lines = []
     for count, address, others in sorted(found)[:MAX_GLOBALS]:
         shown = ", ".join(client.label(u) for u in others[:MAX_GLOBAL_USERS])
         lines.append("  DAT_%x: %d other function(s): %s%s" % (address, count, shown, ", and %d more" % (count - MAX_GLOBAL_USERS) if count > MAX_GLOBAL_USERS else ""))
     if len(found) > MAX_GLOBALS:
         lines.append("  and %d more globals" % (len(found) - MAX_GLOBALS))
+    if general:
+        lines.append(
+            "  %d global%s used by more than %d other functions %s left out (a general object)"
+            % (general, "" if general == 1 else "s", SHARED_GLOBAL_LIMIT, "is" if general == 1 else "are")
+        )
     return lines
 
 
 # ---------------------------------------------------------------- one message
 
+def _is_dispatcher_name(name: str | None) -> bool:
+    return bool(name) and bool(_DISPATCHER_NAME.fullmatch(name)) and not _ONE_MESSAGE_HANDLER.fullmatch(name)
+
+
 def dispatcher_addresses(client: Client, extra: list[int]) -> list[int]:
-    named = [a for a, n in client.state.names.items() if _DISPATCHER_NAME.fullmatch(n) and not _ONE_MESSAGE_HANDLER.fullmatch(n)]
+    named = [a for a, n in client.state.names.items() if _is_dispatcher_name(n)]
     return sorted(set(named) | set(extra))
 
 
+@dataclass(frozen=True)
+class Handler:
+    """A place the saved C handles one message: a function named for it, or a `case` or `==` line on its number."""
+
+    function: int
+    line: int | None  # None for a function named for the message
+    text: str  # the line's code, stripped
+    labels: int  # the case labels that share the block (0 for an `==` or a name)
+    statements: list[str]  # the block that follows the label or the `if`
+    calls: list[int]  # the functions the block calls, by name, in order
+
+
+def _number_text(opcode: int) -> str:
+    """The number as the saved C writes it: decimal below 10, else lower-case hex."""
+    return "0x%x" % opcode if opcode >= 10 else "%d" % opcode
+
+
+def compare_lines(directory: Path, opcode: int) -> list[tuple[int, int, str]]:
+    """(function address, line number, line) of each saved-C line that is a `case <number>:` or an `==` with
+    the number on either side."""
+    number = _number_text(opcode)
+    exact = re.compile(r"\bcase %s:|==\s*%s(?![0-9A-Za-z_])|(?<![0-9A-Za-z_])%s\s*==" % ((re.escape(number),) * 3))
+    return [row for row in _grep("case %s:|== %s|%s ==" % ((number,) * 3), directory) if exact.search(row[2])]
+
+
+def _block(lines: list[str], at: int) -> tuple[int, list[str]]:
+    """(the case labels that share the block, the statements of the block) of the `case` or `==` line at index
+    `at` of a function's saved C: a case's block follows its run of labels up to a `break;`, a `return`, the next
+    label or MAX_HANDLER_BLOCK_LINES; an `==` line's block is the line and the lines to the brace that closes it."""
+    label = re.compile(r"\s*(case .*:|default:)\s*$")
+    if label.match(lines[at]):
+        first = last = at
+        while first > 0 and label.match(lines[first - 1]):
+            first -= 1
+        while last + 1 < len(lines) and label.match(lines[last + 1]):
+            last += 1
+        statements: list[str] = []
+        for line in lines[last + 1 : last + 1 + MAX_HANDLER_BLOCK_LINES]:
+            if label.match(line):
+                break
+            statements.append(line.strip())
+            if statements[-1] == "break;" or statements[-1].startswith("return"):
+                break
+        return last - first + 1, statements
+    statements = [lines[at].strip()]
+    depth = lines[at].count("{") - lines[at].count("}")
+    for line in lines[at + 1 : at + MAX_HANDLER_BLOCK_LINES]:
+        if depth <= 0:
+            break
+        statements.append(line.strip())
+        depth += line.count("{") - line.count("}")
+    return 0, statements
+
+
+def _called_functions(client: Client, holder: int, statements: list[str]) -> list[int]:
+    names = _CALL.findall("\n".join(statements))
+    found = (_address_of(client, name) for name in names)
+    return list(dict.fromkeys(a for a in found if a is not None and a != holder))
+
+
+def _compared_ids(text: str) -> set[int]:
+    return {int(number, 0) for number in _COMPARED_NUMBER.findall(text)}
+
+
+def handlers(client: Client, opcode: int, registered_ids: set[int], known: bool) -> tuple[list[Handler], list[tuple[int, int, str]]]:
+    """(the handlers of the message, the compare lines that are not handlers). A function named for the message
+    (HandleMessage<id>) is a handler. A `case` or `==` line is one when its function is a dispatcher by name, or the
+    message is known (registered or recorded) and its function also tests at least HANDLER_OTHER_IDS other
+    message ids of 0x100 or more that registrations name: a number any code compares is otherwise no message."""
+    found: list[Handler] = []
+    named = re.compile(r"HandleMessage%04X\w*" % opcode)
+    for address, name in sorted(client.state.names.items()):
+        if named.fullmatch(name):
+            found.append(Handler(address, None, name, 0, [], []))
+    loose = []
+    for holder, number, text in compare_lines(client.directory, opcode):
+        saved = client.saved_c(holder)
+        if saved is None:
+            continue
+        others = {i for i in _compared_ids(saved) & registered_ids if i >= 0x100 and i != opcode}
+        if _is_dispatcher_name(client.state.names.get(holder)) or (known and len(others) >= HANDLER_OTHER_IDS):
+            labels, statements = _block(saved.split("\n"), number - 1)
+            found.append(Handler(holder, number, text.strip(), labels, statements, _called_functions(client, holder, statements)))
+        else:
+            loose.append((holder, number, text))
+    return found, loose
+
+
+def _not_traced(count: int, what: str, cap: int) -> str:
+    return "%d %s past the first %d are listed but not traced" % (count, what, cap)
+
+
 def opcode_parts(client: Client, opcode: int, depth: int, extra_dispatchers: list[int]) -> tuple[list[Part], bool]:
-    """The report on one message: its facts, registration, dispatch cases and uses, then its functions; and
-    whether the client holds anything about the message."""
+    """The report on one message: its facts, registration, dispatch cases, handlers and senders, then its
+    functions; and whether something ties the number to a message: a fact record, a registration, a dispatch
+    case, a handler or a sender. Equal numbers that nothing ties are listed under their own label."""
     parts: list[Part] = [Part("== message 0x%X (%d)" % (opcode, opcode))]
     records = client.facts.for_opcode(opcode)
     seen = {r.key for r in records}
@@ -627,35 +752,73 @@ def opcode_parts(client: Client, opcode: int, depth: int, extra_dispatchers: lis
             lines.append("  %s case at 0x%x (table jmp 0x%x), ends at %s; calls:" % (client.label(block.dispatcher), block.target, block.jmp, block.ends_at))
             lines += ["    0x%x -> %s" % (site, client.label(callee)) for site, callee in block.calls] or ["    none"]
             subjects += [callee for _site, callee in block.calls[:MAX_CASE_CALLEES]]
+            if len(block.calls) > MAX_CASE_CALLEES:
+                lines.append("    " + _not_traced(len(block.calls) - MAX_CASE_CALLEES, "callees of the case", MAX_CASE_CALLEES))
         parts.append(Part("\n".join(lines)))
     else:
-        parts.append(Part("dispatched: no jump table of a named dispatcher holds it (a dispatcher that compares ids one by one is not found; --dispatcher names another)"))
+        parts.append(Part("dispatched: no jump table of a named dispatcher holds it (a dispatcher that compares ids one by one is not found: it shows under handled by; --dispatcher names another)"))
+
+    found, loose = handlers(client, opcode, {r.opcode for r in registrations}, bool(records or mine))
+    if found:
+        lines = ["handled by (a function named for the message, or a saved-C `case` or `==` on its number in a dispatcher):"]
+        for handler in found[:MAX_HANDLERS]:
+            if handler.line is None:
+                lines.append("  %s (named for the message)" % client.label(handler.function))
+                subjects.append(handler.function)
+                continue
+            lines.append("  %s line %d: %s" % (client.label(handler.function), handler.line, handler.text))
+            if handler.labels:
+                lines.append("    one of %d case labels sharing a block: %s%s" % (handler.labels, handler.statements[0] if handler.statements else "(empty)", " ..." if len(handler.statements) > 1 else ""))
+            if handler.calls:
+                lines.append("    calls: " + ", ".join(client.label(callee) for callee in handler.calls))
+                subjects += handler.calls[:MAX_CASE_CALLEES]
+                if len(handler.calls) > MAX_CASE_CALLEES:
+                    lines.append("    " + _not_traced(len(handler.calls) - MAX_CASE_CALLEES, "calls of this handler", MAX_CASE_CALLEES))
+        if len(found) > MAX_HANDLERS:
+            lines.append("  and %d more handlers" % (len(found) - MAX_HANDLERS))
+        parts.append(Part("\n".join(lines)))
+    else:
+        parts.append(Part("handled by: no function is named HandleMessage%04X and no dispatcher's saved C tests 0x%x with `case` or `==`" % (opcode, opcode)))
 
     literal = r"[(,]0x%x[,)]" % opcode if opcode >= 10 else r"[(,]%d[,)]" % opcode
     registering = {r.registered_in for r in registrations}
     uses = [(at, number, text) for at, number, text in _grep(literal, client.directory) if at not in registering]
     senders = [u for u in uses if _SENDER_LINE.search(u[2])]
-    others = [u for u in uses if u not in senders]
-    if uses:
-        lines = ["used by (a Send...( call is a sender; another use may be an equal number that is not this message):"]
+    if senders:
+        lines = ["sent by (a Send...( call that passes the number as an argument):"]
         for at, number, text in senders:
             lines.append("  sender %s line %d: %s" % (client.label(at), number, text.strip()))
-        grouped: dict[int, list[tuple[int, str]]] = {}
-        for at, number, text in others:
-            grouped.setdefault(at, []).append((number, text.strip()))
-        for at, rows in list(grouped.items())[:MAX_OTHER_USES]:
-            lines.append("  other  %s, %d line(s), first line %d: %s" % (client.label(at), len(rows), rows[0][0], rows[0][1]))
-        if len(grouped) > MAX_OTHER_USES:
-            lines.append("  and %d more functions with other uses" % (len(grouped) - MAX_OTHER_USES))
+        sender_functions = list(dict.fromkeys(at for at, _n, _t in senders))
+        subjects += sender_functions[:MAX_SENDERS]
+        if len(sender_functions) > MAX_SENDERS:
+            lines.append("  " + _not_traced(len(sender_functions) - MAX_SENDERS, "senders", MAX_SENDERS))
         parts.append(Part("\n".join(lines)))
-        subjects += list(dict.fromkeys(at for at, _n, _t in senders))[:MAX_SENDERS]
     else:
-        parts.append(Part("used by: no saved-C line passes 0x%x as a call argument" % opcode))
+        parts.append(Part("sent by: no Send...( call passes 0x%x" % opcode))
 
+    equal: dict[int, list[tuple[int, str]]] = {}
+    for at, number, text in uses:
+        if (at, number, text) not in senders:
+            equal.setdefault(at, []).append((number, text.strip()))
+    call_arguments = len(equal)
+    comparing = len({at for at, _n, _t in loose})
+    for at, number, text in loose:
+        equal.setdefault(at, []).append((number, text.strip()))
+    if equal:
+        lines = ["equal numbers, which nothing above ties to this message (%d functions pass it as a call argument, %d compare or switch on it):" % (call_arguments, comparing)]
+        for at, rows in sorted(equal.items())[:MAX_OTHER_USES]:
+            lines.append("  other  %s, %d line(s), first line %d: %s" % (client.label(at), len(rows), min(rows)[0], min(rows)[1]))
+        if len(equal) > MAX_OTHER_USES:
+            lines.append("  and %d more functions" % (len(equal) - MAX_OTHER_USES))
+        parts.append(Part("\n".join(lines)))
+
+    tied = bool(records or mine or blocks or found or senders)
+    if not tied:
+        parts.insert(1, Part("nothing ties 0x%x to a message: no fact record, registration, dispatch case, handler or sender" % opcode))
     for function in dict.fromkeys(subjects):
         if client.saved_c(function) is not None or client.is_function(function):
             parts += function_parts(client, function, depth, registrations, compact=True, seen=seen)
-    return parts, bool(records or mine or blocks or uses)
+    return parts, tied
 
 
 def _address_of(client: Client, name: str | None) -> int | None:

@@ -237,6 +237,17 @@ pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_che
   let _files =
     pure_rules_the_check_covers(paths: [
       "src/genesis_prime/game/connection.gleam",
+      "src/genesis_prime/game/connection/casting.gleam",
+      "src/genesis_prime/game/connection/chat.gleam",
+      "src/genesis_prime/game/connection/effects.gleam",
+      "src/genesis_prime/game/connection/frames.gleam",
+      "src/genesis_prime/game/connection/life.gleam",
+      "src/genesis_prime/game/connection/login.gleam",
+      "src/genesis_prime/game/connection/movement.gleam",
+      "src/genesis_prime/game/connection/select.gleam",
+      "src/genesis_prime/game/connection/state.gleam",
+      "src/genesis_prime/game/connection/viewers.gleam",
+      "src/genesis_prime/game/connection/world.gleam",
       "src/genesis_prime/game/character_select.gleam",
       "src/genesis_prime/game/character_creation.gleam",
       "src/genesis_prime/game/character_name.gleam",
@@ -255,6 +266,17 @@ pub fn the_sessions_rule_and_the_contract_it_runs_under_hold_no_pid_monitor_or_s
       "src/genesis_prime/step.gleam",
       "src/genesis_prime/client_connection.gleam",
       "src/genesis_prime/game/connection.gleam",
+      "src/genesis_prime/game/connection/casting.gleam",
+      "src/genesis_prime/game/connection/chat.gleam",
+      "src/genesis_prime/game/connection/effects.gleam",
+      "src/genesis_prime/game/connection/frames.gleam",
+      "src/genesis_prime/game/connection/life.gleam",
+      "src/genesis_prime/game/connection/login.gleam",
+      "src/genesis_prime/game/connection/movement.gleam",
+      "src/genesis_prime/game/connection/select.gleam",
+      "src/genesis_prime/game/connection/state.gleam",
+      "src/genesis_prime/game/connection/viewers.gleam",
+      "src/genesis_prime/game/connection/world.gleam",
     ])
   hold_no_process_handle(files)
 }
