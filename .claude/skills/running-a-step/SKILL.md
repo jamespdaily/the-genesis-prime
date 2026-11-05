@@ -9,17 +9,17 @@ The coordinator (the main session) owns a step from design to merge. Builders an
 
 ## The checklist
 
-Copy this onto the step's issue. Each phase posts its progress line on the issue, naming the commit.
+Copy this onto the step's issue. Each phase posts its progress line on the issue, naming the commit. A hook posts the push, pull request, CI and merge lines and moves the card (`dev/hooks/progress_lines.py`); the coordinator writes the others.
 
 ```
 - [ ] Trace (once per milestone, up front): decoders trace every message the milestone's goals need, in parallel; each trace lands on its step's issue before that step's design starts. Line: "trace posted".
 - [ ] Design and test list posted; the step is ready (below). The coordinator approves them once. Line: "design posted".
 - [ ] Shape and its review, when the step changes processes (below). Line: "shape pushed".
-- [ ] Brief and build: one fresh implementer, or two after a shape that splits the build (below), from the brief. Line: "build pushed".
+- [ ] Brief and build: one fresh implementer, or two after a shape that splits the build (below), from the brief. Line: the hook's push line.
 - [ ] Reviews (below). Line: "reviews in".
-- [ ] Fix round (below). Line: "fix round pushed".
-- [ ] Green: the full check and CI pass with no rerun. Line: "green".
-- [ ] Merge on green; Jim's global file holds how the pull request body is written. Line: "merged".
+- [ ] Fix round (below). Line: the hook's push line.
+- [ ] Green: the full check and CI pass with no rerun. Line: the hook's CI line, attempt 1, with the builder's `./check` in its hand-back.
+- [ ] Merge on green; Jim's global file holds how the pull request body is written. Line: the hook's merge line.
 - [ ] Closing summary (below). Line: the summary itself.
 ```
 
@@ -99,7 +99,7 @@ A sitting runs when the client sees or sends something new (the `playing-live` s
 
 ## The closing summary
 
-- The step's wall time, its agents' tool calls (unique tool_use ids in their transcripts) and its fix rounds, with `python3 -I dev/step_measure.py N` for the cost.
+- The step's wall time, its agents' tool calls (unique tool_use ids in their transcripts) and its fix rounds, with the measure the merge line posted (`dev/step_measure.py N`) for the cost.
 - Each throwaway tool or workaround and the issue that owns it. For a bug fix: the choice that let the bug through and the check that now stops it.
 - The coverage measure's handled counts and the ranking's top five, before and after, and the cost per type or message handled.
 - Its notes, sorted: a missing tool or feature gets its own issue when it has its proof, else a line on the parent; a small repeat or a stale line goes on the milestone's standing cleanups issue's checklist, and a step that touches its file fixes it; anything else stays in the summary.
