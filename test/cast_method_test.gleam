@@ -704,6 +704,7 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.Died
         | client_connection.Removed
         | client_connection.CreatureMoved(..)
+        | client_connection.CreaturePlaced(..)
         | client_connection.Targeting(..)
         | client_connection.Threat(..)
         | client_connection.CombatState(..)

@@ -179,6 +179,12 @@ pub type News {
   /// client shows the unit; the viewer keeps the path for its picture
   /// (genesis_prime/game/shown).
   CreatureMoved(path: Path)
+  /// A creature that stands at `place` from monotonic time `at_ms`, though the
+  /// viewer's client may still run a path it was sent: 0x638 of kind 0, the map's
+  /// time, and kind 2 at the place with its blend bit clear, which places the unit
+  /// at once (`0x140714120` StartDuePositionSegments, `0x1400ad350`); the viewer
+  /// keeps it standing there for its picture.
+  CreaturePlaced(place: Place, at_ms: Int)
   /// The unit targets `target_unit_id` with `threat`: 0x908 (opcode.0x908).
   Targeting(target_unit_id: Int, threat: Int)
   /// The unit holds `threat` toward `other_unit_id`, 0 for none: 0x90a
