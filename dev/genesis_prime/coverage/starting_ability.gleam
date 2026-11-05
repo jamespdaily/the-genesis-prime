@@ -1,6 +1,7 @@
-//// The types the starting abilities use: the effect types and the prerequisite
-//// types of the spells the 18 level-1 abilities' trees reach, which the coverage
-//// measure shows beside each type's weight in the whole game.
+//// The types the starting abilities use: the effect types, the prerequisite
+//// types and the innate cost EMM ids of the spells the 18 level-1 abilities' trees
+//// reach, which the coverage measure shows beside each type's weight in the whole
+//// game.
 ////
 //// ```
 //// plans (genesis_prime/game/spell_plan) ─▶ every spell of every tree, once each,
@@ -21,7 +22,7 @@ import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite as prerequisite_table
-import genesis_prime/table/spell4
+import genesis_prime/table/spell4.{type Spell4}
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import gleam/dict
 import gleam/int
@@ -55,6 +56,34 @@ pub fn effect_types(
   )
 }
 
+/// The innate cost EMM id of each cost of the spells the starting abilities' trees
+/// reach, one value for each Spell4 column that holds one.
+pub fn spend_ids(tables: store.Tables) -> Result(List(Int), List(MissingRow)) {
+  case spell4_rows(tables:, spells: spells(tables:)) {
+    #(rows, []) ->
+      Ok(list.flat_map(rows, fn(row) { spell_plan.spent_emm_ids(row:) }))
+    #(_, missing) -> Error(missing)
+  }
+}
+
+/// The Spell4 row of each of these spells, and a `MissingRow` for each the table
+/// lacks.
+fn spell4_rows(
+  tables tables: store.Tables,
+  spells spells: List(Spell),
+) -> #(List(Spell4), List(MissingRow)) {
+  list.map(spells, fn(spell) {
+    let id = spell.spell4_id.value
+    spell4.get(tables:, id: Spell4Id(id))
+    |> result.replace_error(MissingRow(
+      table: "Spell4",
+      id:,
+      named_by: "a spell of a starting ability's tree",
+    ))
+  })
+  |> result.partition
+}
+
 /// The type of each condition of the prerequisites the starting abilities' trees
 /// reach, one value for each condition.
 pub fn prerequisite_types(
@@ -70,41 +99,29 @@ pub fn prerequisite_types_of(
   tables tables: store.Tables,
   spells spells: List(Spell),
 ) -> Result(List(Int), List(MissingRow)) {
-  let #(from_spells, spells_missing) =
-    list.map(spells, fn(spell) {
-      let id = spell.spell4_id.value
-      case spell4.get(tables:, id: Spell4Id(id)) {
-        Ok(row) ->
-          Ok(
-            named(table: "Spell4", id:, columns: [
-              #("prerequisiteIdRunner00", row.prerequisite_id_runner00),
-              #("prerequisiteIdRunner01", row.prerequisite_id_runner01),
-              #("prerequisiteIdCasterCast", row.prerequisite_id_caster_cast),
-              #("prerequisiteIdTargetCast", row.prerequisite_id_target_cast),
-              #(
-                "prerequisiteIdCasterPersistence",
-                row.prerequisite_id_caster_persistence,
-              ),
-              #(
-                "prerequisiteIdTargetPersistence",
-                row.prerequisite_id_target_persistence,
-              ),
-              #("prerequisiteIdAoeTarget", row.prerequisite_id_aoe_target),
-              #(
-                "prerequisiteIdAoePreferredTarget",
-                row.prerequisite_id_aoe_preferred_target,
-              ),
-            ]),
-          )
-        Error(Nil) ->
-          Error(MissingRow(
-            table: "Spell4",
-            id:,
-            named_by: "a spell of a starting ability's tree",
-          ))
-      }
+  let #(rows, spells_missing) = spell4_rows(tables:, spells:)
+  let from_spells =
+    list.map(rows, fn(row) {
+      named(table: "Spell4", id: row.id, columns: [
+        #("prerequisiteIdRunner00", row.prerequisite_id_runner00),
+        #("prerequisiteIdRunner01", row.prerequisite_id_runner01),
+        #("prerequisiteIdCasterCast", row.prerequisite_id_caster_cast),
+        #("prerequisiteIdTargetCast", row.prerequisite_id_target_cast),
+        #(
+          "prerequisiteIdCasterPersistence",
+          row.prerequisite_id_caster_persistence,
+        ),
+        #(
+          "prerequisiteIdTargetPersistence",
+          row.prerequisite_id_target_persistence,
+        ),
+        #("prerequisiteIdAoeTarget", row.prerequisite_id_aoe_target),
+        #(
+          "prerequisiteIdAoePreferredTarget",
+          row.prerequisite_id_aoe_preferred_target,
+        ),
+      ])
     })
-    |> result.partition
   let from_effects =
     list.flat_map(effects_of(tables:, spells:), fn(effect) {
       let gate = case effect_kind.kind_of(effect.effect_type) {

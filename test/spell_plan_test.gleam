@@ -105,7 +105,7 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
     as "each delay is the gap after the phase before (SpellPhase.phaseDelay)"
   list.each([0, 1, 2, 3], fn(phase) {
     let assert [hit] =
-      spell_plan.proxies_in_phase(spell: staggering.spell, phase:)
+      spell_plan.proxies_in_phase(spell: staggering.spell, phase:, spent: None)
       as {
         "phase "
         <> int.to_string(phase)

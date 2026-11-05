@@ -34,6 +34,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file.{type Schema}
 import genesis_prime/table/prerequisite
 import genesis_prime/table/quest_objective
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import gleam/bit_array
 import gleam/int
@@ -225,6 +226,7 @@ fn schema_of(table_name: String) -> Schema {
     "QuestObjective" -> quest_objective.schema
     "Spell4Effects" -> spell4_effects.schema
     "Creature2" -> creature2.schema
+    "Spell4" -> spell4.schema
     _ -> panic as { "no schema is known for the table " <> table_name }
   }
 }
@@ -233,8 +235,8 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
   use <- owned_test.run(10_000)
   let declared = engine.all()
   assert list.map(declared, fn(declaration) { declaration.area_issue })
-    == [47, 48, 49, 50, 51]
-    as "Milestone 2's area issues: prerequisites 47, quest objectives 48, spell effects 49, unit types 50, messages 51"
+    == [47, 48, 49, 50, 51, 437]
+    as "Milestone 2's area issues: prerequisites 47, quest objectives 48, spell effects 49, unit types 50, messages 51; then the spend-scaled costs' issue 437"
   assert list.map(declared, fn(declaration) { declaration.name })
     == [
       "Prerequisites",
@@ -242,8 +244,9 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
       "Spell effects",
       "Unit types",
       "Client message routing",
+      "Spend-scaled costs",
     ]
-    as "the engines' names in the milestone's table"
+    as "the engines' names in the milestone's table, then the spend-scaled costs"
   let columns =
     list.filter_map(declared, fn(declaration) {
       case declaration.source {
@@ -270,6 +273,7 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
       #("QuestObjective", ["type"]),
       #("Spell4Effects", ["effectType"]),
       #("Creature2", ["CreationTypeEnum"]),
+      #("Spell4", ["innateCostEMMId0", "innateCostEMMId1"]),
     ]
     as "the client's column names in each table's schema (game_table.schema)"
 }
@@ -347,8 +351,16 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           ..,
         ) = measured
           as { table <> " is a table the client has, so it is measured" }
-        let #(non_zero, zero) =
+        let #(in_file, zero_in_file) =
           counted_by_the_file(file: table, schema: schema_of(table), columns:)
+        // Spell4.innateCostEMMId0: three rows hold an id beside no cost (45155 and
+        // 48782 with 4, 42075 with 7); the engine counts them as empty slots.
+        let beside_no_cost = case table {
+          "Spell4" -> 3
+          _ -> 0
+        }
+        let non_zero = in_file - beside_no_cost
+        let zero = zero_in_file + beside_no_cost
         assert non_zero > 0 as { table <> ": the client's file has types" }
         assert int.sum(list.map(types, fn(line) { line.rows })) == non_zero
           as {

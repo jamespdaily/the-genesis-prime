@@ -19,6 +19,7 @@ import genesis_prime/game/spell_area
 import genesis_prime/table/id.{Spell4Id}
 import gleam/float
 import gleam/list
+import gleam/option.{None}
 import owned_test
 import unitest
 
@@ -45,7 +46,8 @@ fn casts_to_kill(
       let assert Ok(area) =
         spell_area.of_spell(areas:, spell4_id: Spell4Id(hit.0))
         as "the spell is in the areas"
-      let assert Ok(phase) = spell_area.phase(spell: area, phase: 0)
+      let assert Ok(phase) =
+        spell_area.phase(spell: area, phase: 0, spent: None)
       list.flat_map(list.repeat(Nil, hit.1), fn(_) {
         list.map(phase.damage, fn(effect) {
           Blow(

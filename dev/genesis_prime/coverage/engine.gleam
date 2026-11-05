@@ -15,11 +15,14 @@ import genesis_prime/coverage/starting_ability
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite as game_prerequisite
+import genesis_prime/game/spell_plan
+import genesis_prime/game/spend
 import genesis_prime/login/auth_connection
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite
 import genesis_prime/table/quest_objective
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -235,6 +238,39 @@ fn spell_effects() -> EngineDeclaration {
   )
 }
 
+/// The spend-scaled cost engine: the `innateCostEMMId0` and `innateCostEMMId1`
+/// columns of Spell4, the client's own column names (`game_table.schema`). Each
+/// column holds the EMM id of the cost beside it, so every non-zero value of the two
+/// is one use of an id, except one beside no cost. The client reads neither column (`Spell4.innateCostEMMId0`),
+/// so the id's meaning is the server's. An id is handled when the spend rule's decode
+/// reads it (genesis_prime/game/spend `is_read`).
+fn spend_scaled_costs() -> EngineDeclaration {
+  let unread = fn(type_number) {
+    Missing(
+      type_number:,
+      reason: "the id's meaning is not in the client; only 4 and 7 have the Psi Point layout",
+      fact_key: "Spell4.innateCostEMMId0",
+    )
+  }
+  EngineDeclaration(
+    name: "Spend-scaled costs",
+    area_issue: 437,
+    source: TableColumns(
+      table: "Spell4",
+      columns: ["innateCostEMMId0", "innateCostEMMId1"],
+      evidence: "the client's column names in Spell4.tbl (game_table.schema); the client reads neither column (fact Spell4.innateCostEMMId0). An id beside no cost (Spell4 45155 and 48782 with id 4, 42075 with id 7) is no use of an id: every press of those spells is refused 285, so each is counted as an empty slot",
+      values: fn(tables) {
+        list.flat_map(spell4.all(tables), fn(row) {
+          spell_plan.spent_emm_ids(row:)
+        })
+      },
+    ),
+    handled: Decoded(is_read: spend.is_read),
+    missing: list.map([2, 5, 9, 10, 11], unread),
+    starting_abilities: Some(starting_ability.spend_ids),
+  )
+}
+
 /// The unit type engine: the `CreationTypeEnum` column of Creature2, the
 /// client's own column name (`game_table.schema`). That the column holds the
 /// unit type is a guess: only its name says it.
@@ -301,5 +337,6 @@ pub fn all() -> List(EngineDeclaration) {
     spell_effects(),
     unit_types(),
     messages(),
+    spend_scaled_costs(),
   ]
 }

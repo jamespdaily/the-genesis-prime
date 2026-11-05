@@ -17,14 +17,19 @@
 //// - **One condition is read.** Prerequisite rows hold three; a row that keeps
 ////   a second condition (the client keeps those before the first of type 0,
 ////   `0x1404a5190`) is not evaluated, and the load refuses it as an unevaluated type.
+//// - **No spend.** A spell whose Spell4 row holds an innate cost EMM id spends and
+////   chooses its effects by the points spent (genesis_prime/game/spend), which a
+////   creature's attack has none of, so the load refuses it
+////   (`Spell4.innateCostEMMId0`).
 //// - **The client applies no effect itself**: the server names the effect in
 ////   0x7f4, so the server follows the table's prerequisite (`Spell4Effects.184741`).
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite as game_prerequisite
-import genesis_prime/table/id.{PrerequisiteId}
+import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import gleam/int
 import gleam/list
@@ -41,6 +46,9 @@ pub type Unevaluated {
   /// The prerequisite's condition is of a type other than 179, or it holds more
   /// than one condition.
   OtherType(spell4_effects_id: Int, prerequisite_id: Int, type_id: Int)
+  /// The spell's Spell4 row holds an innate cost EMM id, which would choose its
+  /// damage effects by points a creature's attack does not spend.
+  SpendsByEmmId(spell4_id: Int, emm_id: Int)
 }
 
 /// The damage effects (type 8) of the spell, in the order they take effect
@@ -60,12 +68,35 @@ fn damage_effects(
   })
 }
 
-/// The first damage effect of the spell whose caster prerequisite the server does
-/// not evaluate, or `Ok(Nil)` when it evaluates them all.
+/// An innate cost EMM id of the spell's Spell4 row, a spend a creature's attack
+/// cannot make; `Ok(Nil)` for a spell with none or with no Spell4 row.
+fn spends_nothing(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> Result(Nil, Unevaluated) {
+  case spell4.get(tables:, id: Spell4Id(spell4_id)) {
+    Error(Nil) -> Ok(Nil)
+    Ok(row) ->
+      case
+        list.find(
+          [row.innate_cost_emm_id0, row.innate_cost_emm_id1],
+          fn(emm_id) { emm_id != 0 },
+        )
+      {
+        Ok(emm_id) -> Error(SpendsByEmmId(spell4_id:, emm_id:))
+        Error(Nil) -> Ok(Nil)
+      }
+  }
+}
+
+/// The first reason the spell is not one the server applies to a creature: an
+/// innate cost EMM id, or a damage effect whose caster prerequisite it does not
+/// evaluate; `Ok(Nil)` when there is none.
 pub fn evaluated(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
 ) -> Result(Nil, Unevaluated) {
+  use Nil <- result.try(spends_nothing(tables:, spell4_id:))
   damage_effects(tables:, spell4_id:)
   |> list.try_each(fn(effect) {
     condition(tables:, effect:) |> result.replace(Nil)
@@ -162,5 +193,11 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> " of type "
       <> int.to_string(type_id)
       <> ", which the server does not evaluate (only one condition of type 179, the difficulty)"
+    SpendsByEmmId(spell4_id:, emm_id:) ->
+      "Spell4 "
+      <> int.to_string(spell4_id)
+      <> " has innate cost EMM id "
+      <> int.to_string(emm_id)
+      <> ", which chooses its effects by points a creature's attack does not spend"
   }
 }

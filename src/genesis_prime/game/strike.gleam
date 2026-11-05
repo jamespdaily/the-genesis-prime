@@ -29,6 +29,9 @@
 ////   unit (Crush's 42297), that unit's shown place; the primary target is added for an
 ////   effect aimed at it, and a unit is struck once for a go. A phase that selects no
 ////   unit has an empty round, which waits behind the cast's earlier rounds like any.
+////   A cast that spent points above its base cost (`GoAsked.spent`) strikes with the
+////   damage effects its points choose and selects the units those effects aim at
+////   (genesis_prime/game/spend).
 //// - **One round for each go.** The key of a strike is (cast, phase, unit). A round
 ////   holds a place for each selected unit, filled in the order of the selection
 ////   whatever order the answers arrive in; the go lists them in that order.
@@ -190,7 +193,7 @@ pub fn select(
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
     |> result.try(fn(area) {
-      spell_area.phase(spell: area, phase: asked.phase)
+      spell_area.phase(spell: area, phase: asked.phase, spent: asked.spent)
       |> result.map(fn(phase) { #(area, phase) })
     })
   {

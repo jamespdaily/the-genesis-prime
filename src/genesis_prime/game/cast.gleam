@@ -85,6 +85,15 @@
 //// - **A cost is paid at the accept** (`Pay`), in the step of its check: a second
 ////   press taken in the same step is checked against what the first left
 ////   (genesis_prime/game/class_resource).
+//// - **A spend of every point held** (`spell_plan.SpendAllCost`, genesis_prime/game/spend):
+////   the check is of the base cost alone, as the client's is (`0x1403b3320`), and the
+////   accept then takes every whole point the slot holds, whose new value the client is
+////   sent (`opcode.0x935`). The points above the base cost are the cast's n, fixed at
+////   the accept (at the start of a held press, which is checked and paid then), kept on
+////   the live cast, and read at each go: the go's strike (`GoAsked.spent`), gains and
+////   Proxies are the ones whose tag holds for n. A child a Proxy starts has no n and
+////   keeps every effect. A cost with an EMM id the server does not read
+////   (`spell_plan.UnreadSpendCost`) is refused with the cost's result and logged once.
 //// - **The current cast** is the client's: a cast whose spell shows a cast bar
 ////   (`spell_plan.shows_cast_bar`) is the caster's current cast from its start. Its
 ////   go clears it for a Normal cast with a cast time and no parent, and a cast
@@ -208,6 +217,7 @@
 //// | a press whose bag index the player does not hold | 0x7fc {client id, 0, 4} |
 //// | a press past the last stage of an open threshold | 0x7fc {client id, the ability, 4} |
 //// | a refusal of the client's own checks | 0x7fc with the result; nothing else changes |
+//// | a spell whose cost has an EMM id the server does not read | 0x7fc with the cost's result, a warning once for the spell on the connection; nothing is paid |
 //// | a press while one is held | 0x7fc 13 |
 //// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
 //// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
@@ -332,11 +342,19 @@ pub type Effect {
   Gain(gains: List(class_resource.Gain))
 }
 
-/// A go of a live cast that waits for its targets: which cast and phase, the spell
-/// and the cast's primary target, which a child cast on a struck unit holds as that
-/// unit and any other cast as its caster.
+/// A go of a live cast that waits for its targets: which cast and phase, the spell,
+/// the cast's primary target, which a child cast on a struck unit holds as that
+/// unit and any other cast as its caster, and the points the cast spent above its
+/// base cost, which choose the effects the go strikes with
+/// (genesis_prime/game/spend); none for a cast that spends no more than its cost.
 pub type GoAsked {
-  GoAsked(cast_id: Int, phase: Int, spell4_id: Spell4Id, primary_target: Int)
+  GoAsked(
+    cast_id: Int,
+    phase: Int,
+    spell4_id: Spell4Id,
+    primary_target: Int,
+    spent: Option(Int),
+  )
 }
 
 /// A unit a go names, from the round that closed (genesis_prime/game/strike).
@@ -409,6 +427,9 @@ type Role {
 pub type Live {
   Live(
     spell: Spell,
+    /// The points the cast spent above its base cost, fixed at its accept; none for a
+    /// spell with no spend and for a child a Proxy started.
+    spent: Option(Int),
     /// The spell the player pressed, the root of every child.
     root: Spell4Id,
     /// The spell whose Proxy started this one; none for the pressed spell.
@@ -973,7 +994,8 @@ fn press_of(
     )
   }
   case verdict(cast:, caster:, spell:, now_ms:, is_release:) {
-    Accept(payments:) -> {
+    Accept(paid:) -> {
+      let payments = paid.payments
       let cast = case client_cast_id {
         Some(_) -> cast
         None ->
@@ -983,7 +1005,7 @@ fn press_of(
             cast_id: next_cast_id(cast:, caster:),
           )
       }
-      let paid = case payments {
+      let taken = case payments {
         [] -> []
         [_, ..] -> [Pay(payments:)]
       }
@@ -999,6 +1021,7 @@ fn press_of(
             primary_target: caster.unit_id,
             client_cast_id:,
             role: Base(ability: resolution.ability),
+            spent: paid.spent,
           )
         Some(index) ->
           start(
@@ -1011,9 +1034,10 @@ fn press_of(
             primary_target: caster.unit_id,
             client_cast_id:,
             role: Stage(ability: resolution.ability, index:),
+            spent: paid.spent,
           )
       }
-      #(cast, list.append(paid, started))
+      #(cast, list.append(taken, started))
     }
     Refuse(result:) ->
       refused_hold(
@@ -1143,7 +1167,7 @@ const caster_must_be_dead = 58
 /// costs and the weapon.
 type Verdict {
   /// The press is accepted, and pays these costs at the accept.
-  Accept(payments: List(Payment))
+  Accept(paid: Paid)
   Refuse(result: cast_result.CastResult)
   /// The press is within the queue window of a cooldown's end; its costs are
   /// checked again and paid when it starts.
@@ -1210,10 +1234,17 @@ fn verdict(
         result: cast_result.from_value(result),
         why: "has an innate cost of a vital the server does not hold",
       )
-    None, Ok(payments) ->
+    None, Error(UnreadSpend(result:, emm_id:)) ->
+      NotBuilt(
+        result: cast_result.from_value(result),
+        why: "has an innate cost spent by the EMM id "
+          <> int.to_string(emm_id)
+          <> ", which the server does not read",
+      )
+    None, Ok(paid) ->
       case lacks_the_weapon(spell:, caster:), int.max(global_left, own_left) {
         True, _ -> Refuse(result: cast_result.WeaponSlot)
-        False, 0 -> Accept(payments:)
+        False, 0 -> Accept(paid:)
         False, wait_ms -> Hold(wait_ms:)
       }
   }
@@ -1290,42 +1321,91 @@ type CostRefusal {
   Unpaid(result: Int)
   /// The cost is in a vital the server does not hold.
   Unheld(result: Int)
+  /// The cost's EMM id is one the server does not read (genesis_prime/game/spend).
+  UnreadSpend(result: Int, emm_id: Int)
+}
+
+/// What an accepted press pays and the points it spent above its base cost, which are
+/// the cast's n; none when no cost of the spell spends every point held.
+type Paid {
+  Paid(payments: List(Payment), spent: Option(Int))
 }
 
 /// The spell's costs checked in order against the caster's resources, each against
 /// the slots as they stand before the press, as the client checks them
-/// (`0x1403b1de0`): the first refusal, or what the press pays.
+/// (`0x1403b1de0`): the first refusal, or what the press pays. A cost that spends
+/// every point held is checked against its base amount alone (`0x1403b3320`) and
+/// pays every whole point the slot holds; the points above the base are the spend,
+/// the first such cost's when the spell has several.
 fn costs_paid(
   costs costs: List(spell_plan.Cost),
   resources resources: Resources,
-) -> Result(List(Payment), CostRefusal) {
-  list.try_fold(costs, [], fn(payments, cost) {
-    case cost {
-      spell_plan.UnheldCost(result:) -> Error(Unheld(result:))
-      spell_plan.SlotCost(slot:, amount:, result:) -> {
-        let held =
-          float.truncate(class_resource.value(resources:, slot:))
-          |> int.absolute_value
-        case held < int.absolute_value(amount) {
-          True -> Error(Unpaid(result:))
-          False -> Ok([Payment(slot:, amount:), ..payments])
-        }
-      }
-      spell_plan.ClassVitalCost(slots: [], ..) -> Ok(payments)
-      spell_plan.ClassVitalCost(slots:, amount:, result:) ->
-        case
-          list.find(slots, fn(slot) {
-            let left =
-              class_resource.value(resources:, slot:) -. int.to_float(amount)
-            left >=. 0.0 && left <=. class_resource.max(resources:, slot:)
-          })
-        {
-          Ok(slot) -> Ok([Payment(slot:, amount:), ..payments])
-          Error(Nil) -> Error(Unpaid(result:))
-        }
-    }
+) -> Result(Paid, CostRefusal) {
+  list.try_fold(costs, Paid(payments: [], spent: None), fn(paid, cost) {
+    cost_taken(paid:, cost:, resources:)
   })
-  |> result.map(list.reverse)
+  |> result.map(fn(paid) { Paid(..paid, payments: list.reverse(paid.payments)) })
+}
+
+/// One cost checked and added to what the press pays.
+fn cost_taken(
+  paid paid: Paid,
+  cost cost: spell_plan.Cost,
+  resources resources: Resources,
+) -> Result(Paid, CostRefusal) {
+  case cost {
+    spell_plan.UnheldCost(result:) -> Error(Unheld(result:))
+    spell_plan.UnreadSpendCost(result:, emm_id:) ->
+      Error(UnreadSpend(result:, emm_id:))
+    spell_plan.SlotCost(slot:, amount:, result:) ->
+      case whole_points(resources:, slot:) < int.absolute_value(amount) {
+        True -> Error(Unpaid(result:))
+        False -> Ok(adding(paid:, payment: Payment(slot:, amount:)))
+      }
+    spell_plan.SpendAllCost(slot:, amount:, result:) ->
+      spend_all(paid:, slot:, amount:, result:, resources:)
+    spell_plan.ClassVitalCost(slots: [], ..) -> Ok(paid)
+    spell_plan.ClassVitalCost(slots:, amount:, result:) ->
+      case
+        list.find(slots, fn(slot) {
+          let left =
+            class_resource.value(resources:, slot:) -. int.to_float(amount)
+          left >=. 0.0 && left <=. class_resource.max(resources:, slot:)
+        })
+      {
+        Ok(slot) -> Ok(adding(paid:, payment: Payment(slot:, amount:)))
+        Error(Nil) -> Error(Unpaid(result:))
+      }
+  }
+}
+
+/// A cost that spends every point held: refused when the slot holds less than the
+/// base amount, else it takes every whole point and the points above the base are
+/// the spend, kept from the first such cost.
+fn spend_all(
+  paid paid: Paid,
+  slot slot: Int,
+  amount amount: Int,
+  result result: Int,
+  resources resources: Resources,
+) -> Result(Paid, CostRefusal) {
+  let held = whole_points(resources:, slot:)
+  let base = int.absolute_value(amount)
+  use <- bool.guard(when: held < base, return: Error(Unpaid(result:)))
+  let paid = adding(paid:, payment: Payment(slot:, amount: held))
+  Ok(Paid(..paid, spent: option.or(paid.spent, Some(held - base))))
+}
+
+/// The payment added to what the press pays, newest first.
+fn adding(paid paid: Paid, payment payment: Payment) -> Paid {
+  Paid(..paid, payments: [payment, ..paid.payments])
+}
+
+/// The whole points the slot holds, as an absolute value (`0x1403b3320` reads a slot
+/// as a whole number).
+fn whole_points(resources resources: Resources, slot slot: Int) -> Int {
+  float.truncate(class_resource.value(resources:, slot:))
+  |> int.absolute_value
 }
 
 /// The caster with the payments and gains among the effects taken into its
@@ -1606,6 +1686,7 @@ fn fire(
             primary_target:,
             client_cast_id: None,
             role: Child,
+            spent: None,
           )
         RepeatHeld -> #(repeat_fired(cast:, timer:), [])
         StartHeld ->
@@ -1644,12 +1725,16 @@ pub fn rolls_needed(
     Error(Nil) -> 0
     Ok(live) -> {
       let spell = live.spell
-      let proxies = proxies_with_targets(spell:, phase:, struck:)
+      let proxies =
+        proxies_with_targets(spell:, phase:, struck:, spent: live.spent)
       int.sum(list.append(
         list.map(gates_of(proxies:), fn(gate) {
           prerequisite.rolls_needed(prerequisite: gate)
         }),
-        list.map(gains_of(spell:, phase:, proxies:), gain_rolls_needed),
+        list.map(
+          gains_of(spell:, phase:, proxies:, spent: live.spent),
+          gain_rolls_needed,
+        ),
       ))
     }
   }
@@ -1671,9 +1756,10 @@ fn gains_of(
   spell spell: Spell,
   phase phase: Int,
   proxies proxies: List(Proxy),
+  spent spent: Option(Int),
 ) -> List(spell_plan.Gain) {
   list.append(
-    spell_plan.gains_in_phase(spell:, phase:),
+    spell_plan.gains_in_phase(spell:, phase:, spent:),
     list.flat_map(proxies, lifted_gains),
   )
 }
@@ -1688,15 +1774,17 @@ fn gain_rolls_needed(gain: spell_plan.Gain) -> Int {
   }
 }
 
-/// The Proxies of the phase that have a unit to start a child on: one aimed at the
-/// caster always, one aimed at each struck unit when the round has a Hit.
+/// The Proxies of the phase that the cast's n chooses and that have a unit to start a
+/// child on: one aimed at the caster always, one aimed at each struck unit when the
+/// round has a Hit.
 fn proxies_with_targets(
   spell spell: Spell,
   phase phase: Int,
   struck struck: List(Struck),
+  spent spent: Option(Int),
 ) -> List(Proxy) {
   let hit = hit_units(struck:) != []
-  list.filter(spell_plan.proxies_in_phase(spell:, phase:), fn(proxy) {
+  list.filter(spell_plan.proxies_in_phase(spell:, phase:, spent:), fn(proxy) {
     case proxy.target {
       spell_plan.OnCaster -> True
       spell_plan.OnEachStruck -> hit
@@ -1762,6 +1850,7 @@ fn asked(
         phase:,
         spell4_id: live.spell.spell4_id,
         primary_target: live.primary_target,
+        spent: live.spent,
       )),
     ])
   }
@@ -1835,6 +1924,7 @@ fn start(
   primary_target primary_target: Int,
   client_cast_id client_cast_id: Option(Int),
   role role: Role,
+  spent spent: Option(Int),
 ) -> #(State, List(Effect)) {
   let id = next_cast_id(cast:, caster:)
   let audience = caster.audience
@@ -1862,6 +1952,7 @@ fn start(
   let live =
     Live(
       spell:,
+      spent:,
       root:,
       parent:,
       primary_target:,
@@ -2270,7 +2361,12 @@ fn go(
       let subject = subject_of(cast:, caster:)
       let #(starting, gate_logs, rolls) =
         proxy_gates(
-          proxies: proxies_with_targets(spell:, phase:, struck:),
+          proxies: proxies_with_targets(
+            spell:,
+            phase:,
+            struck:,
+            spent: live.spent,
+          ),
           subject:,
           rolls:,
         )
@@ -2288,7 +2384,15 @@ fn go(
         True -> finish(cast:, cast_id:, live:, now_ms:)
         False -> #(cast, [])
       }
-      let gains = gains_given(spell:, phase:, starting:, subject:, rolls:)
+      let gains =
+        gains_given(
+          spell:,
+          phase:,
+          starting:,
+          subject:,
+          rolls:,
+          spent: live.spent,
+        )
       #(cast, list.flatten([going, gains, gate_logs, children, finished]))
     }
   }
@@ -2446,10 +2550,11 @@ fn gains_given(
   starting starting: List(Proxy),
   subject subject: prerequisite.Subject,
   rolls rolls: List(Int),
+  spent spent: Option(Int),
 ) -> List(Effect) {
   let #(_, given, logs) =
     list.fold(
-      gains_of(spell:, phase:, proxies: starting),
+      gains_of(spell:, phase:, proxies: starting, spent:),
       #(rolls, [], []),
       fn(so_far, gain) {
         let #(rolls, given, logs) = so_far
@@ -2636,6 +2741,7 @@ fn child(
         primary_target:,
         client_cast_id: None,
         role: Child,
+        spent: None,
       )
     True -> {
       let #(cast, timer) = new_timer(cast:)

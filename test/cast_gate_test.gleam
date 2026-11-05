@@ -27,6 +27,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/class_resource.{Gain}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
+import genesis_prime/game/spend
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
@@ -47,6 +48,7 @@ fn proxy(condition: spell_plan.Condition) -> Proxy {
     delay_ms: 0,
     phase_flags: 1,
     condition:,
+    tag: spend.always,
     target: spell_plan.OnCaster,
     spell: support.child(spell4_id: child_spell4_id, base: child_spell4_id),
     gains: [],
@@ -342,6 +344,7 @@ fn gain_behind(
     amount: 5,
     phase_flags: 1,
     prerequisite: Some(prerequisite),
+    tag: spend.always,
   )
 }
 
