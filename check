@@ -20,12 +20,13 @@
 # and a deleted or renamed file counts under both of its names. When there is at
 # least one and every one is in the light set (light_set below: guidance, CI's
 # workflow, the licence, .gitignore and the untested shell and Python tools under
-# dev/, apply_migrations.sh excepted), it runs only the parts of ./check fast, with ./check fast's budget, and
-# prints one `scope: light` line saying why; any other changed file, no changed
-# file, no merge base and a shallow history run every part and print a
-# `scope: every part` line with the reason. branch-current and the setup check run
-# first in either scope. CI's checkout is shallow and holds no origin/main, so CI
-# always runs every part.
+# dev/, apply_migrations.sh excepted), it runs only the parts of ./check fast,
+# with ./check fast's budget, prints one `scope: light` line saying why, and ends
+# with `check passed (scope: light)`. Every other case runs every part and prints
+# a `scope: every part` line with the reason: any other changed file, no changed
+# file, no merge base, a shallow history, a failed diff or ls-files, and CI's
+# machine (GENESIS_NO_CLIENT=1 or GITHUB_ACTIONS set), which so always runs every
+# part. branch-current and the setup check run first in either scope.
 #
 # The client scripts' integration tests take about 240 seconds, so they
 # run only when the branch changes a file under the client scripts folder since
@@ -234,29 +235,63 @@ in_light_set() {
   return 1
 }
 
+# history_is_shallow: succeeds when the repository's history is shallow.
+history_is_shallow() {
+  [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]
+}
+
+# merge_base: prints the merge base of HEAD with origin/main, or with main when
+# there is no origin/main; prints nothing when there is neither.
+merge_base() {
+  git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null
+}
+
+# changed_files BASE [PATH...]: sets changed_list to the files, one per line, that
+# the working tree changes since BASE (committed or not, deleted or renamed ones
+# under both names, untracked ones too), limited to the PATHs when there are any.
+# Fails, with changed_files_error naming the git command that failed, when git
+# cannot say.
+changed_files() {
+  local base=$1 tracked untracked
+  shift
+  if ! tracked=$(git -c core.quotePath=false diff --name-only --no-renames "$base" -- "$@" 2>&1); then
+    changed_files_error="git diff failed (${tracked%%$'\n'*})"
+    return 1
+  fi
+  if ! untracked=$(git -c core.quotePath=false ls-files --others --exclude-standard -- "$@" 2>&1); then
+    changed_files_error="git ls-files failed (${untracked%%$'\n'*})"
+    return 1
+  fi
+  changed_list=$(printf '%s\n%s\n' "$tracked" "$untracked" | sed '/^$/d')
+}
+
 # decide_scope: sets scope to light or full, and scope_why to the reason, from the
-# files the branch changes since its merge base with main (a change made but not
-# committed counts, and so does a deleted or renamed file, under both its names):
-# light only when there is at least one and every one is in the light set. Where
-# the merge base cannot be established (none, or a shallow history) the scope is
-# full.
+# files the branch changes since its merge base with main: light only when there
+# is at least one and every one is in the light set. It is full on CI's machine,
+# whose checkout is shallow anyway (GENESIS_NO_CLIENT=1, which only CI sets, or
+# GITHUB_ACTIONS), and wherever the changed files are not known: no merge base, a
+# shallow history, or a git command that failed.
 decide_scope() {
-  local base changed path count=0 first=""
+  local base path count=0 first=""
   scope=full
-  if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+  if [ "${GENESIS_NO_CLIENT:-}" = 1 ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+    scope_why="this is CI's machine (GENESIS_NO_CLIENT=1 or GITHUB_ACTIONS is set), which runs every part"
+    return
+  fi
+  if history_is_shallow; then
     scope_why="the history is shallow, so the merge base with main cannot be established"
     return
   fi
-  base=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null)
+  base=$(merge_base)
   if [ -z "$base" ]; then
     scope_why="there is no merge base with origin/main or main to find the changed files from"
     return
   fi
-  changed=$({
-    git diff --name-only --no-renames "$base"
-    git ls-files --others --exclude-standard
-  } 2>/dev/null)
-  if [ -z "$changed" ]; then
+  if ! changed_files "$base"; then
+    scope_why="$changed_files_error, so the files the branch changes are not known"
+    return
+  fi
+  if [ -z "$changed_list" ]; then
     scope_why="the branch changes no file since its merge base with main"
     return
   fi
@@ -267,7 +302,7 @@ decide_scope() {
     fi
     count=$((count + 1))
     [ -n "$first" ] || first=$path
-  done <<<"$changed"
+  done <<<"$changed_list"
   scope=light
   scope_why="the $count files the branch changes since its merge base with main (first: $first) are all guidance or tools that no other part reads"
 }
@@ -282,16 +317,18 @@ decide_integration() {
     integration_why="GENESIS_NO_CLIENT=1: there is no client on this machine"
     return
   fi
-  base=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null)
+  base=$(merge_base)
   if [ -z "$base" ]; then
     integration_run=yes
     integration_why="there is no merge base with origin/main or main to compare the client scripts with"
     return
   fi
-  changed=$({
-    git diff --name-only "$base" -- "$client_scripts"
-    git ls-files --others --exclude-standard -- "$client_scripts"
-  } 2>/dev/null | head -n 1)
+  if ! changed_files "$base" "$client_scripts"; then
+    integration_run=yes
+    integration_why="$changed_files_error, so the changes under $client_scripts are not known"
+    return
+  fi
+  changed=$(printf '%s\n' "$changed_list" | head -n 1)
   if [ -n "$changed" ]; then
     integration_run=yes
     integration_why="the branch changes $changed under $client_scripts since its merge base with main"
@@ -387,7 +424,7 @@ branch_current() {
     printf '  %-18s skipped (there is no origin/main to compare with)\n' branch-current
     return
   fi
-  if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+  if history_is_shallow; then
     printf '  %-18s skipped (the history is shallow, so whether HEAD holds origin/main cannot be established)\n' branch-current
     return
   fi
@@ -410,6 +447,7 @@ if [ "$mode" = full ]; then
   if [ "$scope" = light ]; then
     mode=fast
     parts=$fast_parts
+    scope_label=" (scope: light)"
     budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-13}
     echo "scope: light, so only the fast parts run ($fast_parts): $scope_why; CI runs every part"
   else
@@ -697,4 +735,4 @@ if [ -n "$failed" ] || [ "$hung" = yes ]; then
   echo "wall time ${elapsed}s, budget ${budget}s"
   exit 1
 fi
-echo "check passed, wall time ${elapsed}s, budget ${budget}s"
+echo "check passed${scope_label:-}, wall time ${elapsed}s, budget ${budget}s"
