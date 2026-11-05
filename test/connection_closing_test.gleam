@@ -47,7 +47,7 @@ pub fn a_close_by_the_client_that_asks_before_it_stops_is_recorded_as_the_client
   let watched = process.monitor(connection)
   let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
   let _reason = ask_support.ended(watched)
-  let assert Ok(Recording(closing:, ..)) =
+  let assert Ok(Recording(closing: Some(closing), ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole"
   assert closing.by == Client
@@ -63,7 +63,7 @@ pub fn a_stop_of_the_server_that_asks_before_it_stops_is_recorded_as_the_servers
   assert ask_support.read_bytes(client:, bytes: 1) == <<1>>
     as "the shell took the connection: the rule wrote its byte"
   ask_support.stop(server)
-  let assert Ok(Recording(closing:, ..)) =
+  let assert Ok(Recording(closing: Some(closing), ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole: the rule stopped in time"
   assert closing.by == Server as "the server's stop began the end"

@@ -1,11 +1,11 @@
 //// Writes the Gleam codec of every message, record and union in the schema:
 //// one module for each under `src/genesis_prime/message/`, with its type, and
 //// for a message `encode` and `decode`, for a record or a union `write` and
-//// `read`; and the
-//// `client_message` module, which decodes a message the client sends by its
-//// number. The text is already in `gleam format`'s layout, so a regenerated
-//// file equals the committed one byte for byte, and `mismatches` names each
-//// file that does not.
+//// `read`; and the `client_message` and `server_message` modules, which decode
+//// a message the client or the server sends by its number. The text is
+//// already in `gleam format`'s layout, so a regenerated file equals the
+//// committed one byte for byte, and `mismatches` names each file that does
+//// not.
 
 import genesis_prime/message_schema.{
   type Field, type Kind, type Message, type NamedValues, type Record,
@@ -96,8 +96,8 @@ pub fn describe_failure(failure: ReadFailure) -> String {
 }
 
 /// The files the schema generates: a module for each message, then each
-/// record, then each union, then each type of named values, then the client
-/// message module.
+/// record, then each union, then each type of named values, then the modules
+/// that read the client's and the server's messages by number.
 pub fn generate(schema: Schema) -> List(GeneratedFile) {
   list.flatten([
     list.map(schema.messages, fn(message) {
@@ -127,7 +127,11 @@ pub fn generate(schema: Schema) -> List(GeneratedFile) {
     [
       GeneratedFile(
         path: directory <> "/client_message.gleam",
-        text: client_message_module(schema.messages),
+        text: dispatch_module(schema.messages, ClientSends),
+      ),
+      GeneratedFile(
+        path: directory <> "/server_message.gleam",
+        text: dispatch_module(schema.messages, ServerSends),
       ),
     ],
   ])
@@ -161,7 +165,7 @@ pub fn mismatches(
 }
 
 fn message_module(message: Message) -> String {
-  let type_name = camel(message.name)
+  let type_name = message_schema.type_name(message.name)
   let direction = case message.direction {
     message_schema.ClientToServer -> "client to server"
     message_schema.ServerToClient -> "server to client"
@@ -182,7 +186,7 @@ fn message_module(message: Message) -> String {
         <> message.evidence
         <> "` names the message.",
     )
-  let type_doc = case held(message.fields) {
+  let type_doc = case message_schema.held(message.fields) {
     [] ->
       wrap(
         "///",
@@ -196,7 +200,7 @@ fn message_module(message: Message) -> String {
           <> ", its fields in wire order. A field named `field_N` is the Nth of the body: its own doc names the fact that shows its value is safe, and one with no such doc has no use the client's code shows.",
       )
   }
-  let unused = case held(message.fields) {
+  let unused = case message_schema.held(message.fields) {
     [] -> "_"
     _ -> ""
   }
@@ -250,7 +254,7 @@ fn message_module(message: Message) -> String {
 }
 
 fn record_module(record: Record) -> String {
-  let type_name = camel(record.name)
+  let type_name = message_schema.type_name(record.name)
   let head =
     wrap(
       "////",
@@ -296,7 +300,7 @@ fn record_module(record: Record) -> String {
 /// kind and has the record of that kind read the item, kind included. A kind
 /// no variant has is refused.
 fn union_module(union: Union) -> String {
-  let type_name = camel(union.name)
+  let type_name = message_schema.type_name(union.name)
   let head =
     wrap(
       "////",
@@ -311,7 +315,10 @@ fn union_module(union: Union) -> String {
     |> list.map(fn(variant) { variant.record })
     |> list.unique
     |> list.map(fn(record) {
-      #(record, type_import(module: record, type_name: camel(record)))
+      #(
+        record,
+        type_import(module: record, type_name: message_schema.type_name(record)),
+      )
     })
   lines_to_text(
     list.flatten([
@@ -343,7 +350,13 @@ fn union_module(union: Union) -> String {
               <> "`."
               <> named,
           ),
-          ["  " <> camel(variant.name) <> "(" <> camel(variant.record) <> ")"],
+          [
+            "  "
+            <> message_schema.type_name(variant.name)
+            <> "("
+            <> message_schema.type_name(variant.record)
+            <> ")",
+          ],
         ])
       }),
       ["}", ""],
@@ -356,7 +369,7 @@ fn union_module(union: Union) -> String {
       ["  case record {"],
       list.flat_map(union.variants, fn(variant) {
         case_arm(
-          pattern: camel(variant.name) <> "(variant)",
+          pattern: message_schema.type_name(variant.name) <> "(variant)",
           head: variant.record <> ".write",
           arguments: ["writer", "variant"],
         )
@@ -410,7 +423,9 @@ fn read_arm(variant: Variant) -> List(String) {
   let steps = [
     "reader",
     "|> " <> variant.record <> ".read",
-    "|> result.map(pair.map_first(_, " <> camel(variant.name) <> "))",
+    "|> result.map(pair.map_first(_, "
+      <> message_schema.type_name(variant.name)
+      <> "))",
   ]
   let pattern = "    " <> int.to_string(variant.tag) <> " ->"
   let one = pattern <> " " <> string.join(steps, " ")
@@ -420,49 +435,109 @@ fn read_arm(variant: Variant) -> List(String) {
   }
 }
 
-/// The module of every message the client sends: a variant for each message
-/// that travels client to server or either way, in the schema's order, and the
-/// decoder that picks a body's decoder by its message's number.
-fn client_message_module(messages: List(Message)) -> String {
+/// The side whose messages a dispatch module reads by number.
+type Side {
+  /// What the client sends: the messages that travel client to server or
+  /// either way, which the server's rules read.
+  ClientSends
+  /// What the server sends: the messages that travel server to client or
+  /// either way, which the recording dump reads back.
+  ServerSends
+}
+
+/// The words that differ between the two dispatch modules.
+type SideText {
+  SideText(
+    type_name: String,
+    sender: String,
+    head: String,
+    left_out: message_schema.Direction,
+  )
+}
+
+fn side_text(side: Side) -> SideText {
+  case side {
+    ClientSends ->
+      SideText(
+        type_name: "ClientMessage",
+        sender: "the client",
+        head: "Every message the client sends, by its number: a variant for each message of the schema that travels client to server or either way, `decode` to read a body by its message's number, `encode` to write it back, `message_id` to give its number and `name` to give its name in the schema. A number no such message has is reported as unknown.",
+        left_out: message_schema.ServerToClient,
+      )
+    ServerSends ->
+      SideText(
+        type_name: "ServerMessage",
+        sender: "the server",
+        head: "Every message the server sends, by its number, for reading back what a server wrote: a variant for each message of the schema that travels server to client or either way, `decode` to read a body by its message's number and `name` to give its name in the schema. A number several messages share is read by each in turn, the messages that fix a field of their own before those that fix none and each kind in the schema's order, and the first that reads the body is the message. A number no such message has is reported as unknown.",
+        left_out: message_schema.ClientToServer,
+      )
+  }
+}
+
+/// The module that reads every message one side sends by its number: a variant
+/// for each message that travels from that side or either way, in the schema's
+/// order, the decoder that picks a body's decoder by its message's number, and
+/// each message's name. The client's module also writes a message back and
+/// gives its number, which the server's rules use.
+fn dispatch_module(messages: List(Message), side: Side) -> String {
+  let text = side_text(side)
   let sent =
-    list.filter(messages, fn(message) {
-      message.direction != message_schema.ServerToClient
-    })
-  let head =
-    wrap(
-      "////",
-      "Every message the client sends, by its number: a variant for each message of the schema that travels client to server or either way, `decode` to read a body by its message's number, `encode` to write it back and `message_id` to name it. A number no such message has is reported as unknown.",
-    )
+    list.filter(messages, fn(message) { message.direction != text.left_out })
+  let by_number = numbered_groups(sent)
+  let shares_a_number =
+    list.any(by_number, fn(group) { list.length(group.1) > 1 })
+  let result_import = case shares_a_number {
+    True -> ["import gleam/result"]
+    False -> []
+  }
+  let bit_stream_types = case side {
+    ClientSends -> "{type DecodeError, type EncodeError}"
+    ServerSends -> "{type DecodeError}"
+  }
   // `gleam format` sorts imports by module, so bit_stream sits among the messages'.
   let module_imports =
     [
       #("bit_stream", [
-        "import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}",
+        "import genesis_prime/message/bit_stream." <> bit_stream_types,
       ]),
       ..list.map(sent, fn(message) {
         #(
           message.name,
-          type_import(module: message.name, type_name: camel(message.name)),
+          type_import(
+            module: message.name,
+            type_name: message_schema.type_name(message.name),
+          ),
         )
       })
     ]
     |> list.sort(fn(left, right) { string.compare(left.0, right.0) })
     |> list.flat_map(fn(import_) { import_.1 })
+  let error_type = text.type_name <> "Error"
+  let writing = case side {
+    ClientSends -> client_writing(sent, text.type_name)
+    ServerSends -> []
+  }
   lines_to_text(
     list.flatten([
-      header(head),
+      header(wrap("////", text.head)),
       module_imports,
+      result_import,
       [""],
-      ["/// A message the client sends, decoded: one variant for each message."],
-      ["pub type ClientMessage {"],
+      wrap(
+        "///",
+        "A message "
+          <> text.sender
+          <> " sends, decoded: one variant for each message.",
+      ),
+      ["pub type " <> text.type_name <> " {"],
       list.map(sent, fn(message) {
-        let name = camel(message.name)
+        let name = message_schema.type_name(message.name)
         "  " <> name <> "(message: " <> name <> ")"
       }),
       ["}", ""],
-      ["/// Why a body is not a message the client sends."],
-      ["pub type ClientMessageError {"],
-      ["  /// No message the client sends has this number."],
+      ["/// Why a body is not a message " <> text.sender <> " sends."],
+      ["pub type " <> error_type <> " {"],
+      ["  /// No message " <> text.sender <> " sends has this number."],
       ["  UnknownMessage(message_id: Int)"],
       ["  /// The body is not the message its number names."],
       ["  Malformed(message_id: Int, error: DecodeError)"],
@@ -474,45 +549,21 @@ fn client_message_module(messages: List(Message)) -> String {
       function_head(
         name: "decode",
         parameters: ["message_id message_id: Int", "body body: BitArray"],
-        returns: "Result(ClientMessage, ClientMessageError)",
+        returns: "Result(" <> text.type_name <> ", " <> error_type <> ")",
       ),
       ["  case message_id {"],
-      list.flat_map(sent, fn(message) {
-        case_arm(pattern: hex_id(message.id), head: "decoded", arguments: [
-          "body",
-          "message_id",
-          message.name <> ".decode",
-          camel(message.name),
-        ])
-      }),
+      list.flat_map(by_number, decode_arm),
       ["    _ -> Error(UnknownMessage(message_id:))", "  }", "}", ""],
-      wrap(
-        "///",
-        "The bytes of a message's body, or the first field that cannot be written.",
-      ),
-      function_head(
-        name: "encode",
-        parameters: ["message: ClientMessage"],
-        returns: "Result(BitArray, EncodeError)",
-      ),
-      ["  case message {"],
-      list.flat_map(sent, fn(message) {
-        case_arm(
-          pattern: camel(message.name) <> "(message:)",
-          head: message.name <> ".encode",
-          arguments: ["message"],
-        )
-      }),
-      ["  }", "}", ""],
-      ["/// The number of a message."],
-      ["pub fn message_id(message: ClientMessage) -> Int {"],
+      writing,
+      ["/// The name of a message in the schema."],
+      ["pub fn name(message: " <> text.type_name <> ") -> String {"],
       ["  case message {"],
       list.map(sent, fn(message) {
         "    "
-        <> camel(message.name)
-        <> "(..) -> "
+        <> message_schema.type_name(message.name)
+        <> "(..) -> \""
         <> message.name
-        <> ".message_id"
+        <> "\""
       }),
       ["  }", "}", ""],
       [
@@ -520,8 +571,8 @@ fn client_message_module(messages: List(Message)) -> String {
         "  body: BitArray,",
         "  message_id: Int,",
         "  decode: fn(BitArray) -> Result(message, DecodeError),",
-        "  variant: fn(message) -> ClientMessage,",
-        ") -> Result(ClientMessage, ClientMessageError) {",
+        "  variant: fn(message) -> " <> text.type_name <> ",",
+        ") -> Result(" <> text.type_name <> ", " <> error_type <> ") {",
         "  case decode(body) {",
         "    Ok(message) -> Ok(variant(message))",
         "    Error(error) -> Error(Malformed(message_id:, error:))",
@@ -530,6 +581,105 @@ fn client_message_module(messages: List(Message)) -> String {
       ],
     ]),
   )
+}
+
+/// The client's `encode` and `message_id`, which the server's rules use.
+fn client_writing(sent: List(Message), type_name: String) -> List(String) {
+  list.flatten([
+    wrap(
+      "///",
+      "The bytes of a message's body, or the first field that cannot be written.",
+    ),
+    function_head(
+      name: "encode",
+      parameters: ["message: " <> type_name],
+      returns: "Result(BitArray, EncodeError)",
+    ),
+    ["  case message {"],
+    list.flat_map(sent, fn(message) {
+      case_arm(
+        pattern: message_schema.type_name(message.name) <> "(message:)",
+        head: message.name <> ".encode",
+        arguments: ["message"],
+      )
+    }),
+    ["  }", "}", ""],
+    ["/// The number of a message."],
+    ["pub fn message_id(message: " <> type_name <> ") -> Int {"],
+    ["  case message {"],
+    list.map(sent, fn(message) {
+      "    "
+      <> message_schema.type_name(message.name)
+      <> "(..) -> "
+      <> message.name
+      <> ".message_id"
+    }),
+    ["  }", "}", ""],
+  ])
+}
+
+/// The messages by number, each number once, in the order the schema first
+/// names it. A number's messages are in the order a reader tries them: those
+/// that fix a field of their own first, since a message with no fixed field
+/// reads any body its layout fits, then the others, each kind in the schema's
+/// order.
+fn numbered_groups(messages: List(Message)) -> List(#(Int, List(Message))) {
+  list.fold(messages, [], fn(groups, message) {
+    case list.key_find(groups, message.id) {
+      Ok(found) ->
+        list.key_set(groups, message.id, list.append(found, [message]))
+      Error(Nil) -> list.append(groups, [#(message.id, [message])])
+    }
+  })
+  |> list.map(fn(group) {
+    let #(fixed, open) = list.partition(group.1, fixes_a_field)
+    #(group.0, list.append(fixed, open))
+  })
+}
+
+/// Whether the message has a field whose value the schema fixes, which its
+/// decoder checks: a field the generated type does not hold.
+fn fixes_a_field(message: Message) -> Bool {
+  list.length(message_schema.held(message.fields)) < list.length(message.fields)
+}
+
+/// The case arm that decodes a number's body: by its one message, or by each
+/// of the messages that share it in turn, the first that reads it winning.
+fn decode_arm(group: #(Int, List(Message))) -> List(String) {
+  let arguments = fn(message: Message) {
+    [
+      "body",
+      "message_id",
+      message.name <> ".decode",
+      message_schema.type_name(message.name),
+    ]
+  }
+  case group.1 {
+    [] -> []
+    [only] ->
+      case_arm(
+        pattern: hex_id(group.0),
+        head: "decoded",
+        arguments: arguments(only),
+      )
+    [first, ..others] ->
+      list.flatten([
+        ["    " <> hex_id(group.0) <> " ->"],
+        call(indent: 6, head: "decoded", arguments: arguments(first), tail: ""),
+        list.flat_map(others, fn(other) {
+          list.flatten([
+            ["      |> result.lazy_or(fn() {"],
+            call(
+              indent: 8,
+              head: "decoded",
+              arguments: arguments(other),
+              tail: "",
+            ),
+            ["      })"],
+          ])
+        }),
+      ])
+  }
 }
 
 /// A case arm `pattern -> call` as `gleam format` lays it out: on one line when
@@ -606,7 +756,7 @@ fn values_module_text(named_values: NamedValues) -> String {
             "  ///",
             "The value " <> int.to_string(value.value) <> evidence <> ".",
           ),
-          ["  " <> camel(value.name)],
+          ["  " <> message_schema.type_name(value.name)],
         ])
       }),
       ["  /// A value the schema does not name.", "  Other(Int)", "}", ""],
@@ -618,7 +768,10 @@ fn values_module_text(named_values: NamedValues) -> String {
       ),
       ["  case value {"],
       list.map(named_values.values, fn(value) {
-        "    " <> camel(value.name) <> " -> " <> int.to_string(value.value)
+        "    "
+        <> message_schema.type_name(value.name)
+        <> " -> "
+        <> int.to_string(value.value)
       }),
       ["    Other(number) -> number", "  }", "}", ""],
       ["/// The value for a number the decoder read."],
@@ -629,7 +782,10 @@ fn values_module_text(named_values: NamedValues) -> String {
       ),
       ["  case number {"],
       list.map(named_values.values, fn(value) {
-        "    " <> int.to_string(value.value) <> " -> " <> camel(value.name)
+        "    "
+        <> int.to_string(value.value)
+        <> " -> "
+        <> message_schema.type_name(value.name)
       }),
       ["    other -> Other(other)", "  }", "}"],
     ]),
@@ -663,7 +819,7 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
         message_schema.ArrayOfRecord(record:, ..), _
         | message_schema.ArrayOfRecordCountedBy(record:, ..), _
         | message_schema.OneRecord(record:), _
-        -> Ok(#(record, camel(record)))
+        -> Ok(#(record, message_schema.type_name(record)))
         _, Some(named_values) ->
           Ok(#(values_module(named_values), named_values.type_name))
         _, None -> Error(Nil)
@@ -718,14 +874,15 @@ fn type_import(
 ) -> List(String) {
   let path = "import genesis_prime/message/" <> module <> ".{"
   let item = "type " <> type_name
-  case string.length(path <> item <> "}") <= width {
+  // `gleam format` keeps the import whole when it fits without its last brace.
+  case string.length(path <> item) <= width {
     True -> [path <> item <> "}"]
     False -> [path, "  " <> item <> ",", "}"]
   }
 }
 
 fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
-  let declaration = case held(fields) {
+  let declaration = case message_schema.held(fields) {
     [] -> ["  " <> type_name]
     held_fields ->
       case list.any(held_fields, fn(field) { option.is_some(field.safe_by) }) {
@@ -791,26 +948,15 @@ fn kind_type(kind: Kind) -> String {
     | message_schema.WholeFrame -> "BitArray"
     message_schema.Endpoint -> "Endpoint"
     message_schema.ArrayOfWideText(..) -> "List(String)"
-    message_schema.OneRecord(record:) -> camel(record)
+    message_schema.OneRecord(record:) -> message_schema.type_name(record)
     message_schema.ArrayOfRecord(record:, ..)
     | message_schema.ArrayOfRecordCountedBy(record:, ..) ->
-      "List(" <> camel(record) <> ")"
+      "List(" <> message_schema.type_name(record) <> ")"
     message_schema.ArrayOfUnsigned(..)
     | message_schema.ArrayOfFloat32(..)
     | message_schema.UnsignedArrayCountedBy(..) -> "List(Int)"
     message_schema.Constant(..) -> "Int"
   }
-}
-
-/// The fields a generated type holds: every field but the constants, which the
-/// encoder writes and the decoder checks.
-fn held(fields: List(Field)) -> List(Field) {
-  list.filter(fields, fn(field) {
-    case field.kind {
-      message_schema.Constant(..) -> False
-      _ -> True
-    }
-  })
 }
 
 /// The pipeline step that writes a field of the value held in `owner`.
@@ -1018,7 +1164,8 @@ fn decode_body(fields: List(Field), type_name: String) -> List(String) {
 /// `Ok(Name(field:, ..))`, on one line when it fits. `gleam format` keeps a
 /// line of this shape whole at 81 characters, one over the width.
 fn construct(fields: List(Field), type_name: String) -> List(String) {
-  let labels = list.map(held(fields), fn(field) { field.name <> ":" })
+  let labels =
+    list.map(message_schema.held(fields), fn(field) { field.name <> ":" })
   let one = "  Ok(" <> type_name <> "(" <> string.join(labels, ", ") <> "))"
   case string.length(one) <= width + 1 {
     True -> [one]
@@ -1037,7 +1184,8 @@ fn construct_with_reader(
   fields: List(Field),
   type_name: String,
 ) -> List(String) {
-  let labels = list.map(held(fields), fn(field) { field.name <> ":" })
+  let labels =
+    list.map(message_schema.held(fields), fn(field) { field.name <> ":" })
   let one =
     "  Ok(#(" <> type_name <> "(" <> string.join(labels, ", ") <> "), reader))"
   case string.length(one) <= width + 1 {
@@ -1141,12 +1289,6 @@ fn wrap(prefix: String, text: String) -> List(String) {
 
 fn lines_to_text(lines: List(String)) -> String {
   string.join(lines, "\n") <> "\n"
-}
-
-fn camel(name: String) -> String {
-  string.split(name, "_")
-  |> list.map(string.capitalise)
-  |> string.join("")
 }
 
 fn hex_id(id: Int) -> String {

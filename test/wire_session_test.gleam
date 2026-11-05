@@ -37,6 +37,7 @@ import genesis_prime/wire_recording/recorder
 import genesis_prime/wire_replay.{Differs}
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import owned_test
 import recording_support
@@ -72,7 +73,7 @@ fn copy_of_the_session(
     fn(name) {
       let path = folder <> "/" <> name
       let assert Ok(text) = simplifile.read(path) as "a recording reads"
-      let assert Ok(Recording(header:, lines:, closing:)) =
+      let assert Ok(Recording(header:, lines:, closing: Some(closing))) =
         wire_recording.read(text)
         as "a recording is whole"
       let doubled =
@@ -104,7 +105,7 @@ fn copy_of_the_session(
 
 fn changed(path: String, change: fn(List(Line)) -> List(Line)) -> Nil {
   let assert Ok(text) = simplifile.read(path) as "the recording reads"
-  let assert Ok(Recording(header:, lines:, closing:)) =
+  let assert Ok(Recording(header:, lines:, closing: Some(closing))) =
     wire_recording.read(text)
     as "the recording is whole"
   let rewritten =
