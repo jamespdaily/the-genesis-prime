@@ -3,6 +3,7 @@
 #
 #   dev/card.sh file --title T --body-file F --milestone M --parent N [--after S] --status STATUS
 #   dev/card.sh status N STATUS
+#   dev/card.sh get N
 #   dev/card.sh move N --parent P [--after S]
 #   dev/card.sh order N --after S
 #   dev/card.sh block N --by S
@@ -37,9 +38,9 @@ option_of() {
   esac
 }
 
-# issue_field N JQ: one field of issue N (id, parent number, board item).
+# issue_field N JQ: one field of issue N (id, parent number, board item, board status).
 issue_field() {
-  gh api graphql -f query="query{repository(owner:\"$owner\",name:\"$repo\"){issue(number:$1){id parent{number id} projectItems(first:10){nodes{id project{number}}}}}}" \
+  gh api graphql -f query="query{repository(owner:\"$owner\",name:\"$repo\"){issue(number:$1){id parent{number id} projectItems(first:10){nodes{id project{number} status:fieldValueByName(name:\"Status\"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}" \
     --jq ".data.repository.issue | $2"
 }
 
@@ -107,6 +108,10 @@ case "$command" in
     [ $# -eq 2 ] || fail "usage: card.sh status N STATUS"
     set_status "$1" "$2"
     ;;
+  get)
+    [ $# -eq 1 ] || fail "usage: card.sh get N"
+    issue_field "$1" "[.projectItems.nodes[] | select(.project.number == $project_number) | .status.name][0] // empty"
+    ;;
   move)
     number=$1; shift
     after=""
@@ -140,7 +145,7 @@ case "$command" in
     gh api -X DELETE "repos/$owner/$repo/issues/$1/dependencies/blocked_by/$blocker" >/dev/null
     ;;
   *)
-    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
