@@ -37,9 +37,7 @@ pub type UnitCreateTail {
     /// Safe by `opcode.0x262.unit_fields`: the client's code gives this field
     /// no use the server needs, and that fact shows its value is safe.
     field_14: Int,
-    /// Safe by `opcode.0x262.unit_fields`: the client's code gives this field
-    /// no use the server needs, and that fact shows its value is safe.
-    field_16: Int,
+    world_object_id: Int,
     world_socket_id: Int,
     cluster_id: Int,
     /// Safe by `opcode.0x262.unit_fields`: the client's code gives this field
@@ -96,7 +94,7 @@ pub fn write(writer writer: Writer, record record: UnitCreateTail) -> Writer {
   |> bit_stream.write_constant("first_tag", 0, 2)
   |> bit_stream.write_unsigned("field_14", record.field_14, 1)
   |> bit_stream.write_constant("second_tag", 1, 2)
-  |> bit_stream.write_unsigned("field_16", record.field_16, 64)
+  |> bit_stream.write_unsigned("world_object_id", record.world_object_id, 64)
   |> bit_stream.write_unsigned("world_socket_id", record.world_socket_id, 14)
   |> bit_stream.write_constant("third_tag", 1, 2)
   |> bit_stream.write_unsigned("cluster_id", record.cluster_id, 32)
@@ -159,7 +157,10 @@ pub fn read(reader: Reader) -> Result(#(UnitCreateTail, Reader), DecodeError) {
   use reader <- result.try(bit_stream.read_constant(reader, "first_tag", 2, 0))
   use #(field_14, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
   use reader <- result.try(bit_stream.read_constant(reader, "second_tag", 2, 1))
-  use #(field_16, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(world_object_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    64,
+  ))
   use #(world_socket_id, reader) <- result.try(bit_stream.read_unsigned(
     reader,
     14,
@@ -193,7 +194,7 @@ pub fn read(reader: Reader) -> Result(#(UnitCreateTail, Reader), DecodeError) {
       tagged_by_unit_id:,
       tagged_by_group_id:,
       field_14:,
-      field_16:,
+      world_object_id:,
       world_socket_id:,
       cluster_id:,
       field_20:,

@@ -44,6 +44,9 @@ pub type PlayerFaction {
 pub type Shown {
   /// Another player's unit, which no area strikes.
   ShownPlayer
+  /// A static object the map told of (genesis_prime/world_map/static_object),
+  /// which has no fight state, so no area strikes it.
+  ShownObject
   /// A creature, as its 0x262 news gave it and its 0x638 news moved it.
   ShownCreature(
     /// Where it stands or runs: standing at the place of its 0x262 until a
@@ -88,7 +91,7 @@ pub fn candidates(
   |> list.filter_map(fn(entry) {
     let #(unit_id, shown) = entry
     case shown {
-      ShownPlayer -> Error(Nil)
+      ShownPlayer | ShownObject -> Error(Nil)
       ShownCreature(path:, alive:, hit_radius:, attackable:, ..) ->
         case
           alive
@@ -127,7 +130,7 @@ pub fn place_of(
 ) -> Result(Place, Nil) {
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(path:, ..)) -> Ok(creature_path.place_at(path:, now_ms:))
-    Ok(ShownPlayer) | Error(Nil) -> Error(Nil)
+    Ok(ShownPlayer) | Ok(ShownObject) | Error(Nil) -> Error(Nil)
   }
 }
 
@@ -139,7 +142,7 @@ pub fn life_of(
 ) -> Result(Int, Nil) {
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(life:, ..)) -> Ok(life)
-    Ok(ShownPlayer) | Error(Nil) -> Error(Nil)
+    Ok(ShownPlayer) | Ok(ShownObject) | Error(Nil) -> Error(Nil)
   }
 }
 
@@ -153,7 +156,7 @@ pub fn with_path(
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) ->
       dict.insert(picture, unit_id, ShownCreature(..creature, path:))
-    Ok(ShownPlayer) | Error(Nil) -> picture
+    Ok(ShownPlayer) | Ok(ShownObject) | Error(Nil) -> picture
   }
 }
 
@@ -167,6 +170,6 @@ pub fn with_alive(
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) ->
       dict.insert(picture, unit_id, ShownCreature(..creature, alive:))
-    Ok(ShownPlayer) | Error(Nil) -> picture
+    Ok(ShownPlayer) | Ok(ShownObject) | Error(Nil) -> picture
   }
 }

@@ -21,10 +21,14 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
+import genesis_prime/table/world
+import genesis_prime/world_map/spawn
+import genesis_prime/world_map/static_object.{type StaticObject}
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import owned_key
 import owned_test
 import unitest
@@ -78,5 +82,34 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       <> int.to_string(took)
       <> " ms"
     }
+  // `world_data.static_spawns`: 17,904 type 10, 491 type 11 and 1,178 type 32
+  // spawns, every one passing the client's checks, the 107 of types 10 and 11
+  // whose creatures have minLevel 0 and no stats among them; world 3460 holds 302
+  // type 10 and 15 type 32. Every type 32 spawn outside 3460 records a health
+  // above 0 and 3460's record none, so none is left out as dead.
+  let objects =
+    list.flat_map(world.all(tables), fn(row) {
+      dict.values(content_spawn.world(key:, world_id: row.id).objects)
+    })
+  let of_type = fn(objects: List(StaticObject), unit_type) {
+    list.count(objects, fn(object) { object.unit_type == unit_type })
+  }
+  assert list.map(spawn.object_types, of_type(objects, _))
+    == [17_904, 491, 1178]
+    as "every static spawn of the world database loads, by type"
+  let ship = dict.values(content_spawn.world(key:, world_id: 3460).objects)
+  assert list.map(spawn.object_types, of_type(ship, _)) == [302, 0, 15]
+    as "world 3460's static objects, by type"
+  assert list.all(objects, fn(object) {
+    case object.unit_type {
+      static_object.SimpleCollidable ->
+        case object.health {
+          Some(static_object.Health(value:, ..)) -> value > 0
+          None -> False
+        }
+      static_object.Simple | static_object.Platform -> True
+    }
+  })
+    as "every type 32 object is sent a health above 0, so the client does not create it dead"
   Nil
 }

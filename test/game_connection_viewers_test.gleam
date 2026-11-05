@@ -25,6 +25,7 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
@@ -34,14 +35,19 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character, ForSelect, Listed}
 import genesis_prime/table/id.{ClassId}
-import genesis_prime/world_map/map.{Left, SeenBy, UnseenBy}
+import genesis_prime/world_map/map.{
+  Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
+}
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
 import gleam/result
 import map_support
 import owned_test
+import place_support
+import spawn_support
 
 // ---- other players' units ----
 //
@@ -999,5 +1005,159 @@ pub fn messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the
     state:,
     stay: map_support.stay(count: 2),
     unit_id: game_connection_support.own_unit_id,
+  )
+}
+
+// ---- static objects ----
+//
+// Expected values: the map owns static objects and tells the connection which
+// its player sees (`ObjectsSeen`) and stops seeing (`ObjectsUnseen`), the
+// issue's "Design" artifact; the client keeps one unit per id from its 0x262 to
+// its 0x355 and ignores a 0x262 for an id it holds (`opcode.0x262`), and removes a
+// unit with a 0x355 (`opcode.0x355`), so a viewer writes a 0x262 only for an
+// object its client does not show and is not gone, and a 0x355 only for one it
+// shows.
+
+/// The 0x262 of a Holoring (Creature2 73416, a type 10 object of world 3460's
+/// start) as unit `unit_id`.
+fn object_unit(unit_id: Int) -> UnitCreateStatic {
+  static_object.create(
+    object: spawn_support.holoring(
+      number: unit_id,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+      ),
+    ),
+    unit_id:,
+    server_time_estimate_start: 0,
+  )
+}
+
+pub fn objects_seen_writes_a_0x262_for_each_object_not_shown_and_not_gone_and_nothing_twice_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Unit 9 is gone (the map's Gone of a player's unit, `MapSaysGone`): no 0x262 is
+  // written for it, so no ghost is made.
+  let #(state, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.event_of(MapSaysGone),
+    )
+  let seen =
+    game_connection_support.sent_by_the_map(
+      ObjectsSeen(units: [object_unit(20), object_unit(9), object_unit(21)]),
+    )
+  let #(state, taken) = game_connection_support.feed(state, seen)
+  let written =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+  assert list.map(written, fn(frame) { frame.message_id }) == [0x0262, 0x0262]
+    as "one 0x262 for each object not shown and not gone"
+  assert list.map(written, fn(frame) {
+      unit_create_static.decode(frame.body)
+      |> result.map(fn(unit) { unit.unit_id })
+    })
+    == [Ok(20), Ok(21)]
+    as "each is the object's own 0x262, in the notice's order"
+  let #(_, again) = game_connection_support.feed(state, seen)
+  assert support.writes(again) == []
+    as "the client already shows both: nothing is written"
+}
+
+pub fn objects_unseen_writes_a_0x355_for_each_shown_object_and_none_for_one_not_shown_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_the_map(
+        ObjectsSeen(units: [object_unit(20)]),
+      ),
+    )
+  let #(state, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(ObjectsUnseen(unit_ids: [20, 22])),
+    )
+  let assert [Frame(message_id: 0x0355, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "one 0x355, for the shown object 20 and not for 22"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 20, field_2: 0))
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(
+        ObjectsSeen(units: [object_unit(20)]),
+      ),
+    )
+  assert game_connection_support.written_ids(taken) == [0x0262]
+    as "removed, the object is created again when it is seen again"
+}
+
+pub fn an_object_notice_naming_the_players_own_unit_or_unit_0_writes_nothing_for_it_and_logs_an_error_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client makes the controlled unit of a 0x262 with unit id 0 or its own
+  // unit's id (0x1403d9760), and removes a unit with a 0x355 (0x1403d9590): the
+  // other units of the same notice are written.
+  let own = game_connection_support.own_unit_id
+  let #(state, taken) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_the_map(
+        ObjectsSeen(units: [object_unit(own), object_unit(20), object_unit(0)]),
+      ),
+    )
+  assert list.map(
+      game_connection_support.heard(taken, game_connection_support.keyed()),
+      fn(frame) {
+        unit_create_static.decode(frame.body)
+        |> result.map(fn(unit) { #(frame.message_id, unit.unit_id) })
+      },
+    )
+    == [Ok(#(0x0262, 20))]
+    as "a 0x262 for object 20 only"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 2
+    as "an error line for each of unit 0 and the player's own unit"
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(
+        ObjectsUnseen(unit_ids: [own, 20, 0]),
+      ),
+    )
+  let assert [Frame(message_id: 0x0355, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "a 0x355 for object 20 only"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 20, field_2: 0))
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 2
+    as "an error line for each of unit 0 and the player's own unit"
+}
+
+pub fn an_object_notice_for_another_stay_is_dropped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(shown, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_the_map(
+        ObjectsSeen(units: [object_unit(20)]),
+      ),
+    )
+  list.each(
+    [ObjectsSeen(units: [object_unit(21)]), ObjectsUnseen(unit_ids: [20])],
+    fn(notice) {
+      let #(_, taken) =
+        game_connection_support.feed(
+          shown,
+          game_connection_support.for_stay(
+            map_support.stay(count: 2),
+            SentByMap(notice),
+          ),
+        )
+      assert support.effects_of(taken) == []
+        as "a notice of another stay names units of another run or map"
+    },
   )
 }

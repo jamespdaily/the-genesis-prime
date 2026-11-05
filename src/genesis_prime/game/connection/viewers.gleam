@@ -51,6 +51,12 @@
 ////   none of its units, or a run of the map that gives the same unit ids again,
 ////   and is dropped. The connection names a new stay in each join's ask, and each
 ////   viewer's stay, as the map's `SeenBy` gave it, in every news it sends it.
+//// - **Static objects** are the map's own units (genesis_prime/world_map/static_object):
+////   the map tells the connection the objects its player comes to see,
+////   `ObjectsSeen` with each one's 0x262, and the ones it stops seeing,
+////   `ObjectsUnseen` with their ids. The viewer writes a 0x262 for each object
+////   not shown and not gone, shown then as `ShownObject`, and a 0x355 for each
+////   shown one, by the rules below. One sender, the map, speaks of these units.
 //// - **A creature's unit** reaches a viewer the same way, as news from the
 ////   creature's own process (`CreatureAppeared`, then `Removed`), and is shown,
 ////   removed and marked gone by the same rules: the viewer neither knows nor asks
@@ -80,7 +86,7 @@ import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
-import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
+import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_create_player.{
@@ -106,7 +112,9 @@ import gleam/option.{None, Some}
 import gleam/set
 
 /// What the map sent for the player's stay (`stay_sent`): who sees its player
-/// (`SeenBy`, `UnseenBy`), and a unit whose owner ended (`Gone`). A connection
+/// (`SeenBy`, `UnseenBy`), a unit whose owner ended (`Gone`), and the static
+/// objects its player sees (`ObjectsSeen`) and stops seeing (`ObjectsUnseen`),
+/// written as `viewer_takes` writes a unit's 0x262 and 0x355. A connection
 /// sends everything about its own unit itself: told `SeenBy(by, stay)` it keeps
 /// `by` with its stay and sends it its 0x262 at its current place, with its health
 /// now, told `UnseenBy(by)` its 0x355. The shell takes a send between steps, after
@@ -173,6 +181,56 @@ pub fn map_sent(
         ]),
       )
     }
+    map.ObjectsSeen(units:) -> {
+      let #(refused, named) =
+        list.partition(units, fn(unit) {
+          names_own_unit(entered:, unit_id: unit.unit_id)
+        })
+      let fresh =
+        list.filter(named, fn(unit) {
+          !dict.has_key(entered.shown, unit.unit_id)
+          && !set.contains(entered.gone, unit.unit_id)
+        })
+      Continue(
+        shown_changed(session:, change: fn(picture) {
+          list.fold(fresh, picture, fn(picture, unit) {
+            dict.insert(picture, unit.unit_id, ShownObject)
+          })
+        }),
+        list.append(
+          list.map(refused, fn(unit) {
+            refusal_logged(session:, unit_id: unit.unit_id)
+          }),
+          list.map(fresh, fn(unit) {
+            connection_state.to_client(
+              session,
+              connection_frames.object_created_frame(unit:),
+            )
+          }),
+        ),
+      )
+    }
+    map.ObjectsUnseen(unit_ids:) -> {
+      let #(refused, named) =
+        list.partition(unit_ids, fn(unit_id) {
+          names_own_unit(entered:, unit_id:)
+        })
+      let shown_ids = list.filter(named, dict.has_key(entered.shown, _))
+      Continue(
+        list.fold(shown_ids, session, fn(session, unit_id) {
+          unit_forgotten(session:, unit_id:)
+        }),
+        list.append(
+          list.map(refused, fn(unit_id) { refusal_logged(session:, unit_id:) }),
+          list.map(shown_ids, fn(unit_id) {
+            connection_state.to_client(
+              session,
+              connection_frames.unit_removed_frame(unit_id:),
+            )
+          }),
+        ),
+      )
+    }
   }
 }
 
@@ -213,16 +271,8 @@ pub fn viewer_takes(
     | client_connection.Shield(..) -> False
   }
   use <- bool.guard(
-    when: creates_or_removes && { unit_id == 0 || unit_id == entered.unit_id },
-    return: Continue(session, [
-      connection_state.log(
-        session:,
-        level: step.LogError,
-        text: "a unit's owner sent a 0x262 or 0x355 naming unit "
-          <> int.to_string(unit_id)
-          <> ", which is this player's own unit or none, so it is refused",
-      ),
-    ]),
+    when: creates_or_removes && names_own_unit(entered:, unit_id:),
+    return: Continue(session, [refusal_logged(session:, unit_id:)]),
   )
   case news.news {
     client_connection.Appeared(unit:) -> {
@@ -415,6 +465,31 @@ pub fn viewer_takes(
       ])
     }
   }
+}
+
+/// Whether a 0x262 or 0x355 would name unit 0 or this player's own unit: the
+/// client makes the controlled unit of a 0x262 with either id and removes a unit
+/// with a 0x355 (0x1403d9760, 0x1403d9590). `viewer_takes`, `ObjectsSeen` and
+/// `ObjectsUnseen` refuse such a unit and write nothing for it.
+fn names_own_unit(
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+) -> Bool {
+  unit_id == 0 || unit_id == entered.unit_id
+}
+
+/// The error line for a unit a 0x262 or 0x355 was refused for (`names_own_unit`).
+fn refusal_logged(
+  session session: Session,
+  unit_id unit_id: Int,
+) -> Effect(ConnectionEffect(Request)) {
+  connection_state.log(
+    session:,
+    level: step.LogError,
+    text: "a unit's owner sent a 0x262 or 0x355 naming unit "
+      <> int.to_string(unit_id)
+      <> ", which is this player's own unit or none, so it is refused",
+  )
 }
 
 /// A creature's health or death news, for a creature this client shows: its picture

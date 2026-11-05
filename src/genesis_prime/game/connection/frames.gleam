@@ -27,6 +27,7 @@ import genesis_prime/message/unit_create_ghost.{UnitCreateGhost}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
@@ -290,6 +291,13 @@ pub fn creature_created_frame(unit unit: UnitCreateCreature) -> Frame {
   let assert Ok(body) = unit_create_creature.encode(unit)
     as "a creature's values fit the message's fields: the spawn's checks hold each"
   Frame(message_id: unit_create_creature.message_id, body:)
+}
+
+/// 0x262 for a static object, as the map built it.
+pub fn object_created_frame(unit unit: UnitCreateStatic) -> Frame {
+  let assert Ok(body) = unit_create_static.encode(unit)
+    as "an object's values fit the message's fields: the spawn's checks and the table's constraints hold each"
+  Frame(message_id: unit_create_static.message_id, body:)
 }
 
 /// 0x355 for another player's unit or a creature, with its one bit 0

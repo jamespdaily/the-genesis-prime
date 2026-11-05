@@ -26,10 +26,12 @@
 import character_tables
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/game/hit.{Blow}
+import genesis_prime/game/start_place
 import genesis_prime/table/creature2_difficulty
+import genesis_prime/table/creature2_display_group_entry
 import genesis_prime/table/creature2_outfit_group_entry
 import genesis_prime/table/creature2_override_properties
-import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
@@ -40,6 +42,8 @@ import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth, NoFaction, NpcLink,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
+import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/float
 import gleam/int
@@ -49,6 +53,7 @@ import gleam/string
 import novice_tables
 import owned_key
 import owned_test
+import place_support
 import planted_table
 import rating_support
 import spawn_support
@@ -117,13 +122,13 @@ fn left_out(
 
 pub fn only_nonplayer_rows_start_and_every_other_type_is_counted_for_the_coverage_test() -> Nil {
   use <- owned_test.run(5000)
-  // 0x140649e20: type 0 is NonPlayer, 4 Door, 10 Simple (`world_data.entity_type`).
+  // 0x140649e20: type 0 is NonPlayer, 4 Door, 5 Harvest (`world_data.entity_type`).
   let selection =
     selected(rows: [
       spawn_support.beast_row(number: 1),
       spawn.Row(..spawn_support.beast_row(number: 2), entity_type: 4),
-      spawn.Row(..spawn_support.beast_row(number: 3), entity_type: 10),
-      spawn.Row(..spawn_support.beast_row(number: 4), entity_type: 10),
+      spawn.Row(..spawn_support.beast_row(number: 3), entity_type: 5),
+      spawn.Row(..spawn_support.beast_row(number: 4), entity_type: 5),
     ])
   assert started(selection) == [1] as "the NonPlayer row starts and no other"
   let assert [coverage] = selection.coverage as "one world"
@@ -131,8 +136,378 @@ pub fn only_nonplayer_rows_start_and_every_other_type_is_counted_for_the_coverag
   assert list.sort(coverage.other_types, fn(first, second) {
       int.compare(first.0, second.0)
     })
-    == [#(4, 1), #(10, 2)]
-    as "each other type counted: one Door and two Simple"
+    == [#(4, 1), #(5, 2)]
+    as "each other type counted: one Door and two Harvest"
+}
+
+// ------------------------------------------- static objects
+//
+// The rows of unit types 10 (Simple), 11 (Platform) and 32 (SimpleCollidable),
+// which load as static objects (`genesis_prime/world_map/static_object`).
+// Expected values come from these places.
+// - The trace's field table (the issue's "Client trace" of the static objects,
+//   `opcode.0x262.simple`): an object carries its row's entity type, Creature2 id,
+//   place and facing, both factions (0 included), display, outfit, quest checklist
+//   index, `active_prop_id` and WorldSocket id. Types 10 and 11 carry stat 0 and
+//   stat 10 when the row records them, truncated, and nothing else; type 32's level
+//   and health follow the creature rule (this file's creature tests: minLevel 1
+//   and Base Health 52 for the Battle Beast's row, a recorded stat truncated), the
+//   coordinator's settlement of the trace's question 1.
+// - `0x140485790` and `0x14047c210`, checks 2 and 3 of the trace: a static row whose
+//   creature the client would not load, or whose display or outfit has no row,
+//   fails the load as a creature row does, naming the rule.
+// - `0x140457a53` (check 4, opcode.0x262.simple (2)): type 32 is created dead
+//   with health 0, so such a row is left out and counted; types 10 and 11 never
+//   are, so a recorded 0 is sent as it stands.
+// - Check 11 and `world_data.entity_type`: types 2, 4, 5, 8, 9, 12, 13, 14 and 19
+//   are other units, counted by type.
+
+/// The static objects of the selection, in id order.
+fn objects_in(selection: Selection) -> List(StaticObject) {
+  dict.values(selection.worlds)
+  |> list.flat_map(fn(world) { dict.values(world.objects) })
+  |> list.sort(fn(first, second) {
+    let SpawnId(first) = first.id
+    let SpawnId(second) = second.id
+    int.compare(first, second)
+  })
+}
+
+pub fn rows_of_types_10_11_and_32_load_as_static_objects_with_every_field_of_the_trace_test() -> Nil {
+  use <- owned_test.run(5000)
+  let selection =
+    selected(rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 1),
+        entity_type: 10,
+        area_id: 5967,
+        x: 10.5,
+        y: 20.25,
+        z: -30.0,
+        rotation_x: 1.5,
+        faction_id: 0,
+        base_faction_id: 0,
+        checklist_index: 4,
+        world_object_id: 0x369123456789,
+        world_socket_id: 0x1234,
+        health: Some(442.9),
+        level: Some(3.0),
+      ),
+      spawn.Row(..spawn_support.beast_row(number: 2), entity_type: 11),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 3),
+        entity_type: 32,
+        faction_id: 1441,
+        base_faction_id: 1442,
+        health: Some(50.0),
+      ),
+    ])
+  assert selection.refusals == []
+    as "every static row passes the client's checks"
+  assert started(selection) == [] as "no static object starts a creature"
+  let at = fn(x, y, z, yaw) {
+    let assert Ok(place) =
+      start_place.place(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x:,
+        y:,
+        z:,
+        facing: start_place.Facing(yaw:, pitch: 0.0, roll: 0.0),
+      )
+      as "World 3460 is a world"
+    place
+  }
+  let origin = fn() {
+    place_support.at(world_id: 3460, world_zone_id: 0, x: 0.0, y: 0.0, z: 0.0)
+  }
+  assert objects_in(selection)
+    == [
+      StaticObject(
+        id: SpawnId(1),
+        unit_type: static_object.Simple,
+        creature_id: Creature2Id(73_464),
+        place: at(10.5, 20.25, -30.0, 1.5),
+        level: Some(3),
+        health: Some(static_object.Health(
+          value: 442,
+          source: unit_fields.Recorded,
+        )),
+        faction_id: 0,
+        base_faction_id: 0,
+        display_info_id: 26_565,
+        outfit_info_id: 0,
+        checklist_index: 4,
+        world_object_id: 0x369123456789,
+        world_socket_id: 0x1234,
+      ),
+      StaticObject(
+        id: SpawnId(2),
+        unit_type: static_object.Platform,
+        creature_id: Creature2Id(73_464),
+        place: origin(),
+        level: option.None,
+        health: option.None,
+        faction_id: 1441,
+        base_faction_id: 1441,
+        display_info_id: 26_565,
+        outfit_info_id: 0,
+        checklist_index: 0,
+        world_object_id: 0,
+        world_socket_id: 0,
+      ),
+      StaticObject(
+        id: SpawnId(3),
+        unit_type: static_object.SimpleCollidable,
+        creature_id: Creature2Id(73_464),
+        place: origin(),
+        level: Some(1),
+        health: Some(static_object.Health(
+          value: 50,
+          source: unit_fields.Recorded,
+        )),
+        faction_id: 1441,
+        base_faction_id: 1442,
+        display_info_id: 26_565,
+        outfit_info_id: 0,
+        checklist_index: 0,
+        world_object_id: 0,
+        world_socket_id: 0,
+      ),
+    ]
+    as "each object holds its row's type, creature, place, factions (0 kept), display, outfit, checklist index and world object link; types 10 and 11 the stats the row records, type 32 the creature rule's level (minLevel 1) and health"
+}
+
+pub fn a_static_row_whose_creature_has_no_row_or_is_not_loaded_by_the_client_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let selection =
+    selected(
+      rows: list.map([10, 11, 32], fn(entity_type) {
+        spawn.Row(
+          ..spawn_support.beast_row(number: entity_type),
+          entity_type:,
+          creature_id: 200_002,
+        )
+      }),
+    )
+  assert selection.refusals
+    == list.map([10, 11, 32], fn(number) {
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(number),
+        rule: "Creature2 200002 has no row",
+      )
+    })
+    as "type 10 would be an invisible unit with no report, 11 and 32 refused by the client: each fails the load"
+  list.each([10, 11, 32], fn(entity_type) {
+    let selection =
+      selected_with(
+        files: character_tables.files_with_beast_changed(changes: [
+          #("modelScale", planted_table.Float(0.0)),
+        ]),
+        rows: [
+          spawn.Row(..spawn_support.beast_row(number: 1), entity_type:),
+        ],
+      )
+    let assert [Refusal(table: "spawn", row: refusal.RowId(1), rule:)] =
+      selection.refusals
+      as "a creature the client would not load refuses the static row"
+    assert string.contains(rule, "Creature2 73464")
+      && string.contains(rule, "modelScale is not above 0")
+      as { "the rule names the creature and the client's rule: " <> rule }
+  })
+}
+
+pub fn a_static_rows_display_must_be_its_creatures_and_have_a_row_and_its_outfit_a_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let not_in_group =
+    selected(rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 1),
+        entity_type: 10,
+        display_info_id: 12_345,
+      ),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 2),
+        entity_type: 32,
+        outfit_info_id: 999,
+      ),
+    ])
+  assert not_in_group.refusals
+    == [
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(1),
+        rule: "display 12345 is not in the display group of Creature2 73464",
+      ),
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(2),
+        rule: "Creature2OutfitInfo 999 has no row",
+      ),
+    ]
+    as "a display outside the creature's group and an outfit with no row each fail the load"
+  let no_display_row =
+    selected_with(
+      files: character_tables.files_replacing(
+        schema: creature2_display_group_entry.schema,
+        rows: [
+          character_tables.group_entry_row(
+            id: 27_192,
+            group: 28_793,
+            display: 26_565,
+          ),
+          character_tables.group_entry_row(
+            id: 1,
+            group: 28_793,
+            display: 99_999,
+          ),
+        ],
+      ),
+      rows: [
+        spawn.Row(
+          ..spawn_support.beast_row(number: 3),
+          entity_type: 11,
+          display_info_id: 99_999,
+        ),
+      ],
+    )
+  assert no_display_row.refusals
+    == [
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(3),
+        rule: "Creature2DisplayInfo 99999 has no row",
+      ),
+    ]
+    as "a display in the group with no Creature2DisplayInfo row draws no model: the load fails"
+}
+
+pub fn a_type_32_objects_health_follows_the_creature_rule_and_with_0_is_left_out_test() -> Nil {
+  use <- owned_test.run(5000)
+  let row = fn(number, health) {
+    spawn.Row(..spawn_support.beast_row(number:), entity_type: 32, health:)
+  }
+  let selection =
+    selected(rows: [
+      row(1, option.None),
+      row(2, Some(50.0)),
+      row(3, Some(0.0)),
+      row(4, Some(0.9)),
+    ])
+  assert list.map(objects_in(selection), fn(object) {
+      let SpawnId(number) = object.id
+      #(number, object.level, object.health)
+    })
+    == [
+      #(
+        1,
+        Some(1),
+        Some(static_object.Health(value: 52, source: unit_fields.ClientDefault)),
+      ),
+      #(
+        2,
+        Some(1),
+        Some(static_object.Health(value: 50, source: unit_fields.Recorded)),
+      ),
+    ]
+    as "no recorded health: the client's Base Health 52 at minLevel 1, above 0; recorded: as recorded; 0 (and 0.9, which truncates to 0) left out"
+  let assert [coverage] = selection.coverage as "one world"
+  assert coverage.objects_dead == 2
+    as "the two type 32 rows the client would create dead are counted"
+}
+
+pub fn a_type_10_or_11_object_carries_only_the_stats_its_row_records_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The 107 world database spawns of types 10 and 11 whose creatures have minLevel
+  // 0 (Creature2 15187 and 13 others, CreationTypeEnum 10) record no stats, and
+  // CreatureLevel has no row 0: such a row loads, with no stat to send. The
+  // Battle Beast's row stands in, with minLevel and maxLevel 0.
+  let selection =
+    selected_with(
+      files: character_tables.files_with_beast_changed(changes: [
+        #("minLevel", planted_table.Integer(0)),
+        #("maxLevel", planted_table.Integer(0)),
+      ]),
+      rows: [
+        spawn.Row(..spawn_support.beast_row(number: 1), entity_type: 10),
+        spawn.Row(..spawn_support.beast_row(number: 2), entity_type: 11),
+        spawn.Row(
+          ..spawn_support.beast_row(number: 3),
+          entity_type: 10,
+          health: Some(0.0),
+        ),
+        spawn.Row(
+          ..spawn_support.beast_row(number: 4),
+          entity_type: 11,
+          health: Some(442.9),
+          level: Some(3.0),
+        ),
+      ],
+    )
+  assert selection.refusals == [] as "every row loads"
+  assert list.map(objects_in(selection), fn(object) {
+      let SpawnId(number) = object.id
+      #(number, object.level, object.health)
+    })
+    == [
+      #(1, option.None, option.None),
+      #(2, option.None, option.None),
+      #(
+        3,
+        option.None,
+        Some(static_object.Health(value: 0, source: unit_fields.Recorded)),
+      ),
+      #(
+        4,
+        Some(3),
+        Some(static_object.Health(value: 442, source: unit_fields.Recorded)),
+      ),
+    ]
+    as "no recorded stat: none; a recorded health or level as recorded, 0 included, since types 10 and 11 are never created dead"
+  let assert [coverage] = selection.coverage as "one world"
+  assert coverage.objects_dead == 0 as "no type 10 or 11 object is left out"
+}
+
+pub fn other_unit_types_stay_out_and_the_coverage_counts_static_objects_by_type_and_world_test() -> Nil {
+  use <- owned_test.run(5000)
+  let others = [2, 4, 5, 8, 9, 12, 13, 14, 19]
+  let selection =
+    selected(
+      rows: list.flatten([
+        list.map(others, fn(entity_type) {
+          spawn.Row(
+            ..spawn_support.beast_row(number: entity_type),
+            entity_type:,
+          )
+        }),
+        [
+          spawn.Row(..spawn_support.beast_row(number: 100), entity_type: 10),
+          spawn.Row(..spawn_support.beast_row(number: 101), entity_type: 10),
+          spawn.Row(..spawn_support.beast_row(number: 102), entity_type: 11),
+          spawn.Row(..spawn_support.beast_row(number: 103), entity_type: 32),
+          spawn.Row(
+            ..spawn_support.beast_row(number: 104),
+            entity_type: 32,
+            world_id: 22,
+          ),
+        ],
+      ]),
+    )
+  assert list.map(objects_in(selection), fn(object) { object.id })
+    == list.map([100, 101, 102, 103, 104], SpawnId)
+    as "only types 10, 11 and 32 load as objects"
+  let assert [world_22, world_3460] = selection.coverage
+    as "two worlds, in world order"
+  assert world_3460.other_types == list.map(others, fn(type_) { #(type_, 1) })
+    as "each other type counted, by type"
+  assert world_3460.objects_sent == list.zip(spawn.object_types, [2, 1, 1])
+    as "world 3460's objects sent, by type"
+  assert world_22.objects_sent == list.zip(spawn.object_types, [0, 0, 1])
+    as "world 22's"
+  assert spawn.describe_coverage(coverage: world_22)
+    == "world 22: 0 spawns start; left out: no faction 0, friendly to both 0, an NPC link 0, health 0 0; static objects sent: type 10 0, type 11 0, type 32 1, left out dead 0; other entity types: none"
+    as "the coverage line counts the static objects by type"
 }
 
 pub fn a_row_whose_creature_has_no_row_or_whose_display_is_not_its_creatures_is_refused_naming_the_rule_test() -> Nil {
@@ -410,11 +785,11 @@ pub fn a_spawn_with_no_recorded_health_has_the_base_health_of_its_own_level_not_
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(third) = dict.get(world.by_id, SpawnId(1))
   assert #(third.level, third.health, third.health_source)
-    == #(3, 132, spawn.ClientDefault)
+    == #(3, 132, unit_fields.ClientDefault)
     as "level 3: the formula at the spawn's own level"
   let assert Ok(eighth) = dict.get(world.by_id, SpawnId(2))
   assert #(eighth.level, eighth.health, eighth.health_source)
-    == #(8, 663, spawn.ClientDefault)
+    == #(8, 663, unit_fields.ClientDefault)
     as "level 8"
 }
 
@@ -441,10 +816,10 @@ pub fn a_recorded_health_is_the_spawns_health_and_maximum_whatever_the_clients_f
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(above) = dict.get(world.by_id, SpawnId(1))
   assert #(above.level, above.health, above.health_source)
-    == #(3, 442, spawn.Recorded)
+    == #(3, 442, unit_fields.Recorded)
     as "recorded 442.9 is the health, truncated as the client truncates"
   let assert Ok(below) = dict.get(world.by_id, SpawnId(2))
-  assert #(below.health, below.health_source) == #(50, spawn.Recorded)
+  assert #(below.health, below.health_source) == #(50, unit_fields.Recorded)
     as "world_data.spawn_health: a recorded health below the formula's 132 is the health too"
 }
 

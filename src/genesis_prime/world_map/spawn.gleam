@@ -21,7 +21,14 @@
 ////   unit and not a Friendly one (`0x1403ad540`), and a faction's level to a
 ////   player faction walks the faction's parents (`0x140787760`, `0x140717560`,
 ////   Faction2Relationship). Every other row is counted for the coverage measure.
-//// - **What fails the load.** A NonPlayer row whose creature has no Creature2 row,
+//// - **Static objects.** A row of entity type 10, 11 or 32 is a static object
+////   (genesis_prime/world_map/static_object), checked as a NonPlayer row is and
+////   kept whatever its faction. Types 10 and 11 carry the stats the row records
+////   and no other, since the client never creates them dead (the trace's field
+////   table); type 32 takes a creature's level and health by the rule below, and
+////   one with health 0 is left out and counted, since the client would create it
+////   dead (`0x140457a53`, opcode.0x262.simple).
+//// - **What fails the load.** A NonPlayer or static object row whose creature has no Creature2 row,
 ////   or fails the client's validity rules (`0x140485790`, `0x140483d20`), or whose
 ////   display is not in its creature's display group or has no Creature2DisplayInfo
 ////   row, or whose outfit has no Creature2OutfitInfo row: the client would drop the
@@ -89,7 +96,10 @@ import genesis_prime/world_map/creature_life.{
 }
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
-import genesis_prime/world_map/unit_fields
+import genesis_prime/world_map/static_object.{type StaticObject}
+import genesis_prime/world_map/unit_fields.{
+  type HealthSource, ClientDefault, Recorded,
+}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -120,18 +130,12 @@ pub type Row {
     outfit_info_id: Int,
     faction_id: Int,
     base_faction_id: Int,
+    checklist_index: Int,
+    world_object_id: Int,
+    world_socket_id: Int,
     health: Option(Float),
     level: Option(Float),
   )
-}
-
-/// Where a spawn's health comes from. `Recorded` is the world database's stat 0,
-/// which the 0x262 sends as property 7 too, since the client's own number for the
-/// creature is another; `ClientDefault` is the client's Base Health at the
-/// spawn's level, which a 0x262 leaves out for the client to compute.
-pub type HealthSource {
-  Recorded
-  ClientDefault
 }
 
 /// One creature's place and values, as its 0x262 carries them, so the 0x262
@@ -166,27 +170,42 @@ pub type Spawn {
 }
 
 /// The spawns that start in one world, as the persistent term of the world holds
-/// them (genesis_prime/content/spawn): by id, for a creature's start, and by
-/// cell, for a player's move. A map and a creature read it and keep no copy.
+/// them (genesis_prime/content/spawn): the creatures by id, for a creature's
+/// start, the static objects by id, and both by cell, for a player's move, so one
+/// `spawn_cell.near` finds the two. A map and a creature read it and keep no copy.
 pub type WorldSpawns {
-  WorldSpawns(by_id: Dict(SpawnId, Spawn), cells: Cells)
+  WorldSpawns(
+    by_id: Dict(SpawnId, Spawn),
+    objects: Dict(SpawnId, StaticObject),
+    cells: Cells,
+  )
 }
 
-/// The spawns as a world's term holds them: by id and by cell.
-pub fn world_spawns(spawns spawns: List(Spawn)) -> WorldSpawns {
+/// The spawns as a world's term holds them: the creatures and the static objects
+/// by id, and both by cell.
+pub fn world_spawns(
+  spawns spawns: List(Spawn),
+  objects objects: List(StaticObject),
+) -> WorldSpawns {
   WorldSpawns(
     by_id: dict.from_list(list.map(spawns, fn(spawn) { #(spawn.id, spawn) })),
-    cells: spawn_cell.index(
+    objects: dict.from_list(
+      list.map(objects, fn(object) { #(object.id, object) }),
+    ),
+    cells: spawn_cell.index(list.append(
       list.map(spawns, fn(spawn) {
         #(spawn.id, start_place.x(spawn.place), start_place.z(spawn.place))
       }),
-    ),
+      list.map(objects, fn(object) {
+        #(object.id, start_place.x(object.place), start_place.z(object.place))
+      }),
+    )),
   )
 }
 
 /// A world with no spawn.
 pub fn no_spawns() -> WorldSpawns {
-  WorldSpawns(by_id: dict.new(), cells: spawn_cell.empty())
+  WorldSpawns(by_id: dict.new(), objects: dict.new(), cells: spawn_cell.empty())
 }
 
 /// What the selection found: the spawns that start, in a `WorldSpawns` for each
@@ -215,13 +234,17 @@ pub type LeftOut {
 }
 
 /// What one world has of the client's tables' spawns, the coverage measure: how
-/// many start, how many NonPlayer rows are left out and why, and how many rows
-/// there are of every other entity type, by type.
+/// many start, how many NonPlayer rows are left out and why, how many static
+/// objects are sent, by type, and how many are left out because the client
+/// would create them dead, and how many rows there are of every other entity
+/// type, by type.
 pub type WorldCoverage {
   WorldCoverage(
     world_id: Int,
     started: Int,
     left_out: List(#(LeftOut, Int)),
+    objects_sent: List(#(static_object.UnitType, Int)),
+    objects_dead: Int,
     other_types: List(#(Int, Int)),
   )
 }
@@ -318,11 +341,13 @@ const highest_neutral_level = 7
 /// `world_data.creature_disposition`).
 const highest_hostile_level = 2
 
-/// The rows of the spawn table in, the selection out: every NonPlayer row is
-/// checked (a row that fails is a refusal, and fails the load), then the rows that
-/// start are chosen by the rule above and the rest counted, for each world; every
-/// other entity type is counted. Pure: the client's tables are the only other
-/// input, and `tables` holds the faction tables as well as the creature ones.
+/// The rows of the spawn table in, the selection out: every NonPlayer row and
+/// every static object row is checked (a row that fails is a refusal, and fails
+/// the load), then the NonPlayer rows that start are chosen by the rule above and
+/// the rest counted, and the static objects are kept but for a type 32 one the
+/// client would create dead, for each world; every other entity type is counted.
+/// Pure: the client's tables are the only other input, and `tables` holds the
+/// faction tables as well as the creature ones.
 pub fn select(
   rows rows: List(Row),
   tables tables: table_store.Tables,
@@ -330,23 +355,23 @@ pub fn select(
   kinds kinds: Kinds,
 ) -> Selection {
   let catalog = catalog(tables:)
+  let refused = fn(row: Row, error) {
+    let SpawnId(number) = row.id
+    Refused(refusal.Refusal(
+      table: "spawn",
+      row: refusal.RowId(number),
+      rule: describe(error:),
+    ))
+  }
   let #(_shared, judged) =
     list.map_fold(rows, dict.new(), fn(shared, row) {
-      case row.entity_type == non_player {
-        False -> #(shared, Other(row:))
-        True ->
+      case
+        row.entity_type == non_player,
+        static_object.unit_type_of(entity_type: row.entity_type)
+      {
+        True, _ ->
           case load_checks(catalog:, formulas:, kinds:, shared:, row:) {
-            Error(error) -> {
-              let SpawnId(number) = row.id
-              #(
-                shared,
-                Refused(refusal.Refusal(
-                  table: "spawn",
-                  row: refusal.RowId(number),
-                  rule: describe(error:),
-                )),
-              )
-            }
+            Error(error) -> #(shared, refused(row, error))
             Ok(#(checked, shared)) -> #(
               shared,
               case left_out_of(catalog:, checked:) {
@@ -355,21 +380,49 @@ pub fn select(
               },
             )
           }
+        False, Ok(unit_type) -> #(
+          shared,
+          case object_checks(catalog:, row:, unit_type:) {
+            Error(error) -> refused(row, error)
+            Ok(object) ->
+              case created_dead(object) {
+                True -> ObjectDead(row:)
+                False -> ObjectSent(row:, object:)
+              }
+          },
+        )
+        False, Error(Nil) -> #(shared, Other(row:))
       }
     })
   let started =
     list.filter_map(judged, fn(one) {
       case one {
         Started(checked:) -> Ok(checked)
-        Other(..) | Excluded(..) | Refused(..) -> Error(Nil)
+        Other(..)
+        | Excluded(..)
+        | Refused(..)
+        | ObjectSent(..)
+        | ObjectDead(..) -> Error(Nil)
+      }
+    })
+  let objects =
+    list.filter_map(judged, fn(one) {
+      case one {
+        ObjectSent(object:, ..) -> Ok(object)
+        Started(..) | Other(..) | Excluded(..) | Refused(..) | ObjectDead(..) ->
+          Error(Nil)
       }
     })
   Selection(
-    worlds: worlds_of(started, catalog.worlds),
+    worlds: worlds_of(started:, objects:, worlds: catalog.worlds),
     refusals: list.filter_map(judged, fn(one) {
       case one {
         Refused(refusal) -> Ok(refusal)
-        Other(..) | Excluded(..) | Started(..) -> Error(Nil)
+        Other(..)
+        | Excluded(..)
+        | Started(..)
+        | ObjectSent(..)
+        | ObjectDead(..) -> Error(Nil)
       }
     }),
     out_of_range_levels: list.filter_map(started, fn(checked) {
@@ -398,6 +451,23 @@ type Judged {
   Excluded(row: Row, reason: LeftOut)
   /// A NonPlayer row that starts.
   Started(checked: Checked)
+  /// A static object row that passed the client's checks: the object is sent.
+  ObjectSent(row: Row, object: StaticObject)
+  /// A static object row the client would create dead, left out.
+  ObjectDead(row: Row)
+}
+
+/// Whether the client would create the object dead: a type 32 object with health
+/// 0 (`0x140457a53`: types 10 and 11 are in the set never created dead, 32 is
+/// not, opcode.0x262.simple).
+fn created_dead(object: StaticObject) -> Bool {
+  case object.unit_type {
+    static_object.SimpleCollidable ->
+      option.map(object.health, fn(health) { health.value })
+      |> option.unwrap(0)
+      == 0
+    static_object.Simple | static_object.Platform -> False
+  }
 }
 
 /// The tables' lookups by something other than an id, built once.
@@ -1154,33 +1224,62 @@ fn has_npc_link(row: Creature2) -> Bool {
   )
 }
 
-/// The started spawns by world, each world's with its cell index, and an empty
-/// `WorldSpawns` for every other world of the client's World table.
+/// The started spawns and the static objects by world, each world's with its
+/// cell index, and an empty `WorldSpawns` for every other world of the client's
+/// World table.
 fn worlds_of(
-  started: List(Checked),
-  worlds: Set(Int),
+  started started: List(Checked),
+  objects objects: List(StaticObject),
+  worlds worlds: Set(Int),
 ) -> Dict(Int, WorldSpawns) {
-  let started_worlds =
+  let started_by_world =
     list.group(started, fn(checked) {
       start_place.world_id(checked.spawn.place)
     })
-    |> dict.map_values(fn(_world, checked) {
-      world_spawns(spawns: list.map(checked, fn(one) { one.spawn }))
-    })
-  set.fold(worlds, dict.new(), fn(found, world_id) {
-    dict.insert(found, world_id, no_spawns())
-  })
-  |> dict.merge(started_worlds)
+  let objects_by_world =
+    list.group(objects, fn(object) { start_place.world_id(object.place) })
+  set.union(
+    set.from_list(dict.keys(started_by_world)),
+    set.from_list(dict.keys(objects_by_world)),
+  )
+  |> set.fold(
+    set.fold(worlds, dict.new(), fn(found, world_id) {
+      dict.insert(found, world_id, no_spawns())
+    }),
+    fn(found, world_id) {
+      dict.insert(
+        found,
+        world_id,
+        world_spawns(
+          spawns: dict.get(started_by_world, world_id)
+            |> result.unwrap([])
+            |> list.map(fn(one) { one.spawn }),
+          objects: dict.get(objects_by_world, world_id) |> result.unwrap([]),
+        ),
+      )
+    },
+  )
 }
 
+/// The static object types in the coverage's order.
+pub const object_types = [
+  static_object.Simple,
+  static_object.Platform,
+  static_object.SimpleCollidable,
+]
+
 /// The coverage of each world that has a row, in world order: how many rows
-/// start, how many NonPlayer rows are left out and why, how many are refused, and
-/// how many rows each other entity type has.
+/// start, how many NonPlayer rows are left out and why, how many static objects
+/// are sent, by type, and left out dead, and how many rows each other entity type
+/// has. A refused row fails the load and is counted in no world.
 fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
   let by_world =
     list.group(judged, fn(one) {
       case one {
-        Other(row:) | Excluded(row:, ..) -> row.world_id
+        Other(row:)
+        | Excluded(row:, ..)
+        | ObjectSent(row:, ..)
+        | ObjectDead(row:) -> row.world_id
         Started(checked:) -> checked.row.world_id
         Refused(..) -> 0
       }
@@ -1195,7 +1294,11 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
       started: list.count(ones, fn(one) {
         case one {
           Started(..) -> True
-          Other(..) | Excluded(..) | Refused(..) -> False
+          Other(..)
+          | Excluded(..)
+          | Refused(..)
+          | ObjectSent(..)
+          | ObjectDead(..) -> False
         }
       }),
       left_out: list.map([NoFaction, FriendlyToBoth, NpcLink, Dead], fn(reason) {
@@ -1204,15 +1307,48 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
           list.count(ones, fn(one) {
             case one {
               Excluded(reason: held, ..) -> held == reason
-              Other(..) | Started(..) | Refused(..) -> False
+              Other(..)
+              | Started(..)
+              | Refused(..)
+              | ObjectSent(..)
+              | ObjectDead(..) -> False
             }
           }),
         )
       }),
+      objects_sent: list.map(object_types, fn(unit_type) {
+        #(
+          unit_type,
+          list.count(ones, fn(one) {
+            case one {
+              ObjectSent(object:, ..) -> object.unit_type == unit_type
+              Other(..)
+              | Started(..)
+              | Refused(..)
+              | Excluded(..)
+              | ObjectDead(..) -> False
+            }
+          }),
+        )
+      }),
+      objects_dead: list.count(ones, fn(one) {
+        case one {
+          ObjectDead(..) -> True
+          Other(..)
+          | Started(..)
+          | Refused(..)
+          | Excluded(..)
+          | ObjectSent(..) -> False
+        }
+      }),
       other_types: list.filter_map(ones, fn(one) {
         case one {
           Other(row:) -> Ok(row.entity_type)
-          Excluded(..) | Started(..) | Refused(..) -> Error(Nil)
+          Excluded(..)
+          | Started(..)
+          | Refused(..)
+          | ObjectSent(..)
+          | ObjectDead(..) -> Error(Nil)
         }
       })
         |> list.group(fn(entity_type) { entity_type })
@@ -1223,16 +1359,19 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
   })
 }
 
-/// The checks the client makes of one row: its creature loads and its display
-/// is one of the creature's, and its health and level are the stats' or the
-/// creature's own, the Base Health at its level for a row with no health.
-fn load_checks(
+/// What the client's checks of a row find, a NonPlayer row's or a static object
+/// row's: the creature's row and the place.
+type Drawn {
+  Drawn(creature: Creature2, place: Place)
+}
+
+/// The checks the client makes of one row, of any type it draws from a Creature2
+/// row: its creature loads, its world is one, and its display is one of the
+/// creature's and has a row and its outfit has one.
+fn client_checks(
   catalog catalog: Catalog,
-  formulas formulas: Formulas,
-  kinds kinds: Kinds,
-  shared shared: SharedCombats,
   row row: Row,
-) -> Result(#(Checked, SharedCombats), SpawnError) {
+) -> Result(Drawn, SpawnError) {
   let creature_id = Creature2Id(row.creature_id)
   use creature <- result.try(valid_creature(catalog:, creature_id:))
   use <- bool.guard(
@@ -1254,16 +1393,6 @@ fn load_checks(
     )
     |> result.replace_error(InNoWorld(world_id: row.world_id)),
   )
-  let level = case row.level {
-    Some(stat) -> float.truncate(stat)
-    None -> creature.min_level
-  }
-  use #(health, health_source) <- result.try(case row.health {
-    Some(stat) -> Ok(#(float.truncate(stat), Recorded))
-    None ->
-      base_health(catalog:, row: creature, level:)
-      |> result.map(fn(health) { #(health, ClientDefault) })
-  })
   use _in_group <- result.try(display_in_group(
     catalog:,
     creature:,
@@ -1272,6 +1401,87 @@ fn load_checks(
   use _outfit <- result.try(outfit_exists(
     catalog:,
     outfit_info_id: row.outfit_info_id,
+  ))
+  Ok(Drawn(creature:, place:))
+}
+
+/// A creature's level and health and where the health comes from: the row's
+/// stats, truncated, or the creature's own `minLevel` and its Base Health at the
+/// level for a row with none.
+fn creature_vitals(
+  catalog catalog: Catalog,
+  creature creature: Creature2,
+  row row: Row,
+) -> Result(#(Int, Int, HealthSource), SpawnError) {
+  let level = case row.level {
+    Some(stat) -> float.truncate(stat)
+    None -> creature.min_level
+  }
+  case row.health {
+    Some(stat) -> Ok(#(level, float.truncate(stat), Recorded))
+    None ->
+      base_health(catalog:, row: creature, level:)
+      |> result.map(fn(health) { #(level, health, ClientDefault) })
+  }
+}
+
+/// A static object row through the client's checks (`client_checks`): the
+/// object its 0x262 shows. Types 10 and 11 carry the stats the row records; type
+/// 32 the creature's level and health (`creature_vitals`).
+fn object_checks(
+  catalog catalog: Catalog,
+  row row: Row,
+  unit_type unit_type: static_object.UnitType,
+) -> Result(StaticObject, SpawnError) {
+  use Drawn(creature:, place:) <- result.try(client_checks(catalog:, row:))
+  use #(level, health) <- result.try(case unit_type {
+    static_object.Simple | static_object.Platform ->
+      Ok(#(
+        option.map(row.level, float.truncate),
+        option.map(row.health, fn(stat) {
+          static_object.Health(value: float.truncate(stat), source: Recorded)
+        }),
+      ))
+    static_object.SimpleCollidable ->
+      creature_vitals(catalog:, creature:, row:)
+      |> result.map(fn(vitals) {
+        let #(level, value, source) = vitals
+        #(Some(level), Some(static_object.Health(value:, source:)))
+      })
+  })
+  Ok(static_object.StaticObject(
+    id: row.id,
+    unit_type:,
+    creature_id: Creature2Id(row.creature_id),
+    place:,
+    level:,
+    health:,
+    faction_id: row.faction_id,
+    base_faction_id: row.base_faction_id,
+    display_info_id: row.display_info_id,
+    outfit_info_id: row.outfit_info_id,
+    checklist_index: row.checklist_index,
+    world_object_id: row.world_object_id,
+    world_socket_id: row.world_socket_id,
+  ))
+}
+
+/// A NonPlayer row through the client's checks (`client_checks`), with what the
+/// creature brings to a fight, shared by the spawns of one creature, level,
+/// display and faction.
+fn load_checks(
+  catalog catalog: Catalog,
+  formulas formulas: Formulas,
+  kinds kinds: Kinds,
+  shared shared: SharedCombats,
+  row row: Row,
+) -> Result(#(Checked, SharedCombats), SpawnError) {
+  let creature_id = Creature2Id(row.creature_id)
+  use Drawn(creature:, place:) <- result.try(client_checks(catalog:, row:))
+  use #(level, health, health_source) <- result.try(creature_vitals(
+    catalog:,
+    creature:,
+    row:,
   ))
   let key = #(row.creature_id, level, row.display_info_id, row.faction_id)
   use #(combat, shared) <- result.try(case dict.get(shared, key) {
@@ -1451,8 +1661,9 @@ fn times(left: Float, right: Float) -> Float {
 }
 
 /// One line of the coverage of a world, for the log at start and for the coverage
-/// tool: how many spawns start, how many NonPlayer rows are left out and why, and
-/// how many rows each other entity type has.
+/// tool: how many spawns start, how many NonPlayer rows are left out and why, how
+/// many static objects are sent, by unit type, and left out dead, and how many
+/// rows each other entity type has.
 pub fn describe_coverage(coverage coverage: WorldCoverage) -> String {
   "world "
   <> int.to_string(coverage.world_id)
@@ -1465,6 +1676,18 @@ pub fn describe_coverage(coverage coverage: WorldCoverage) -> String {
     }),
     ", ",
   )
+  <> "; static objects sent: "
+  <> string.join(
+    list.map(coverage.objects_sent, fn(entry) {
+      "type "
+      <> int.to_string(static_object.type_number(unit_type: entry.0))
+      <> " "
+      <> int.to_string(entry.1)
+    }),
+    ", ",
+  )
+  <> ", left out dead "
+  <> int.to_string(coverage.objects_dead)
   <> "; other entity types: "
   <> case coverage.other_types {
     [] -> "none"
