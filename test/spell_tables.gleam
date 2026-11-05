@@ -32,7 +32,7 @@
 //// trees (Proxy effects only):
 //// - Pulse Blast 42276 and Quick Draw 43468: Multiphase, SpellPhase rows 5390,
 ////   5391 and 5882 to 5886; Quick Draw's Proxies sit behind prerequisites 17301
-////   and 17302.
+////   and 17302 (`proxy_prerequisite_rows`).
 //// - Impale 38779: Multiphase, SpellPhase 3715 and 3716, an innate cost of type 8.
 //// - Electrocute 41276 and Discharge 58832: Channeled, the channel columns of
 ////   their Spell4 rows; Discharge proxies 80382 in every phase.

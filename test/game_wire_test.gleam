@@ -1633,20 +1633,34 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     bag_index: 0,
     target: 0,
   )
-  let quick_draw = [
-    "went k1 p0",
-    "went k1 p1",
-    "went k1 p2",
-    "went k1 p3",
-    "went k1 p4",
-    "finished k1",
-  ]
+  let child = fn(number, spell4_id) {
+    [
+      "started k"
+        <> int.to_string(number)
+        <> " "
+        <> int.to_string(spell4_id)
+        <> " root 43468 parent 43468",
+      "went k" <> int.to_string(number) <> " p0",
+      "finished k" <> int.to_string(number),
+    ]
+  }
+  let quick_draw =
+    list.flatten([
+      ["went k1 p0", "went k1 p1"],
+      child(2, 43_498),
+      ["went k1 p2"],
+      child(3, 43_499),
+      ["went k1 p3"],
+      child(4, 43_498),
+      child(5, 43_500),
+      ["went k1 p4", "finished k1"],
+    ])
   let #(own, first_have) =
-    game_client.read_kept(game: first, have: first_have, count: 7)
+    game_client.read_kept(game: first, have: first_have, count: 19)
   assert cast_support.cast_lines(frames: own) == ["confirmed k1", ..quick_draw]
-    as "Spell4.43468, Quick Draw (SpellLevel 1011): five gos, the phase indexes 0 to 4 (SpellPhase 5882 to 5886), no child (every Proxy sits behind a prerequisite) and a finish"
+    as "Spell4.43468, Quick Draw (SpellLevel 1011): five gos, the phase indexes 0 to 4 (SpellPhase 5882 to 5886), and the children whose caster apply gate passes: no cast of 43500 is live, so 17301 (type 15, comparison 2 on 43500) passes and 17302 (comparison 1) fails: 43498 by Spell4Effects 196513 in phase 1, 43499 by 196514 in phase 2, 43498 by 196515 and 43500 by 196516 in phase 3, each with its own go and finish, then Quick Draw's finish"
   let #(seen, second_have) =
-    game_client.read_kept(game: second, have: second_have, count: 7)
+    game_client.read_kept(game: second, have: second_have, count: 19)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 43468 root 43468 parent 0", ..quick_draw]
   game_client.press_ability(

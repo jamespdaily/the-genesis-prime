@@ -132,18 +132,27 @@
 ////   channelMaxTime from a timer of its own.
 //// - **A go's gains** (`Gain`) are the spell's own gains of the phase and, once
 ////   for the go and not once per unit, the gains of each Proxy of the phase aimed
-////   at each struck unit when the round has a Hit (`spell_plan.Gain`). Each is
-////   given when its prerequisite passes against the caster, which is under the
-////   spells of the caster's own live casts whose primary target it is
-////   (genesis_prime/game/prerequisite); a prerequisite of a type not read, and a
-////   ticking gain, give nothing and a debug line. A creature's cast on the player is
-////   not held here, so a prerequisite cannot find one (no kit prerequisite tests a
+////   at each struck unit when the round has a Hit and the Proxy's gate passes
+////   (`spell_plan.Gain`). Each is given when its prerequisite passes against the
+////   caster (genesis_prime/game/prerequisite): the spells of the caster's own live
+////   casts whose primary target it is, whether it is in combat, its health, shield
+////   and class resource as the vitals 1, 3 and 5 to 11, and the rolls the
+////   connection drew. A prerequisite of a type or a vital not read, and a ticking
+////   gain, give nothing and a debug line. A creature's cast on the player is not
+////   held here, so a prerequisite cannot find one (no kit prerequisite tests a
 ////   creature's spell).
+//// - **A go's rolls** are one for each type 37 condition among the gates of the
+////   Proxies that start a child and of the gains that may be given
+////   (`rolls_needed`); the connection draws that many from its seed before it calls
+////   `went`, and none when there is no such condition, so no other roll of the
+////   connection moves.
 //// - **A child cast** is the Proxy's spell cast as its own, from the caster, with
 ////   root the pressed spell and parent the spell whose Proxy fired
 ////   (`opcode.0x7ff.root_parent`), after the Proxy's delay from the parent's go;
 ////   its 0x7ff goes to the caster too. Its go and finish follow as a pressed
-////   cast's, and it starts no global cooldown (kind 3). A Proxy behind a
+////   cast's, and it starts no global cooldown (kind 3). A Proxy behind a caster
+////   apply prerequisite or one its dataBits06 names starts only when each passes
+////   against the caster at the go (`proxy_gate`); one behind a target apply
 ////   prerequisite is not started. A child's timer is its own: the parent's finish
 ////   leaves the pending children, which start 100 ms after it (Crush), and only
 ////   the player leaving the world cancels them.
