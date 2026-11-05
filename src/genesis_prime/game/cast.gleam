@@ -1186,8 +1186,7 @@ fn verdict(
 
 /// The result of the first of the spell's caster requirements the caster fails
 /// (`0x1403b1780`). A failed requirement is never waived: the waiver is a
-/// prerequisite (`spell_plan.Spell.requirement_waiver`), and the server holds no
-/// prerequisite engine.
+/// prerequisite (`spell_plan.Spell.requirement_waiver`), which is not checked.
 fn failed_requirement(
   spell spell: Spell,
   resources resources: Resources,

@@ -18,9 +18,24 @@
 ////   holds its `Proxy` children, each with the delay the effect gives after its
 ////   parent's go (`delayTime`) and the phases it fires in (`phaseFlags`: bit n is
 ////   phase n, every bit for -1, the reading `Spell4.38791` gives). A Proxy with a
-////   caster or target apply prerequisite is kept as `NeedsPrerequisite` and not
-////   started: the server holds no prerequisite engine (`Spell4.38791`: 79220 and
-////   79229 apply only behind prerequisite 37037).
+////   caster or target apply prerequisite, or with a prerequisite in its dataBits06,
+////   is kept as `NeedsPrerequisite` and not started: a Proxy's prerequisite is not
+////   checked (`Spell4.38791`: 79220 and 79229 apply only behind prerequisite 37037;
+////   `Spell4Effects.effectType.26.dataBits06`, a reading of the rows that no client
+////   code confirms, since the client applies no Proxy itself). Five level-1 Proxies
+////   are kept behind their dataBits06 so: 177873 (53865 to 60947, 24582), 135961
+////   (Mind Burst 32809 to 57030, 23344), 200542 (30900 to 41869, 35913), 212835
+////   (80382 to 42569, 33154) and 212838 (80382 to 80383, 32921); each of those
+////   prerequisites would fail or is of a type not read with no buff held.
+//// - **The gains.** A VitalModifier (`Spell4Effects.effectType.1`) of a tree gives
+////   the caster dataBits02 points of the resource slot of its vital (6 is slot 1, 8
+////   slot 3), behind its caster apply prerequisite, which the cast rule checks
+////   (genesis_prime/game/prerequisite). A child started at each struck unit gives
+////   its first phase's gains once per go of its parent, not once per unit (the
+////   design of issue 418), so the plan moves them onto the `Proxy`. A gain with a
+////   tickTime is a `TickingGain`, which the cast rule does not apply. The effect's
+////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
+////   a client frame).
 //// - **The phases** of a Multiphase spell (`Spell.CodeEnumCastMethod` 8) are the
 ////   SpellPhase rows of its owner kept by the client's rule (`0x14055e180`: order
 ////   index below 32, and index 0 or a non-zero delay), each delay the gap after
@@ -65,8 +80,8 @@
 ////   on the amount, 5 to 9 the same on the percentage of the slot's maximum, any
 ////   other never passes); type 0 is none; any other type is an
 ////   `UnreadRequirement`. The waiver (propertyFlags bit 2 with a
-////   prerequisiteIdCasterCast) is kept and never passes: the server holds no
-////   prerequisite engine.
+////   prerequisiteIdCasterCast) is kept and never passes: the waiver's prerequisite
+////   is not checked.
 //// - **No target.** None of the 18 level-1 abilities needs a target the client
 ////   picks (`Spell4TargetMechanics.targetType`), so the plan holds no range and
 ////   no target rule.
@@ -74,11 +89,14 @@
 ////   whether its caster must be alive, must be dead or may be either
 ////   (`Spell4.spell4ConditionsIdCaster`, `CasterDeath`); the row's other
 ////   conditions are not read.
-//// - **What fails the load:** a Spell4, Spell4Base, Spell4Conditions, SpellCoolDown
-////   or Class row the tree names that the tables lack, a cost of a type not read, a
-////   cycle of Proxy effects, and a channel with no pulse time.
+//// - **What fails the load:** a Spell4, Spell4Base, Spell4Conditions, SpellCoolDown,
+////   Class or Prerequisite row the tree names that the tables lack, a cost of a type
+////   not read, a cycle of Proxy effects, a channel with no pulse time, and a gain
+////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
+////   target apply prerequisite.
 
 import genesis_prime/game/loadout
+import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/table/class
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
@@ -86,6 +104,7 @@ import genesis_prime/table/id.{
   Spell4Id, SpellCoolDownId,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
@@ -171,9 +190,34 @@ pub type GlobalCooldown {
 /// Whether a Proxy is started.
 pub type Condition {
   Always
-  /// The Proxy applies only behind this prerequisite, which the server cannot
-  /// check: the child is not started.
+  /// The Proxy applies only behind this prerequisite, which is not checked for a
+  /// Proxy: the child is not started.
   NeedsPrerequisite(prerequisite_id: PrerequisiteId)
+}
+
+/// A resource gain of a spell: a VitalModifier aimed at the caster
+/// (`Spell4Effects.effectType.1`), `amount` points of resource slot `slot`, in the
+/// phases of `phase_flags`, given when its caster apply prerequisite passes or it
+/// has none.
+pub type Gain {
+  Gain(
+    effect_id: Spell4EffectsId,
+    slot: Int,
+    amount: Int,
+    phase_flags: Int,
+    prerequisite: Option(Prerequisite),
+  )
+  /// A gain each `tick_ms` for `duration_ms` (Spell4Effects.tickTime and
+  /// durationTime), which the cast rule does not apply.
+  TickingGain(
+    effect_id: Spell4EffectsId,
+    slot: Int,
+    amount: Int,
+    phase_flags: Int,
+    prerequisite: Option(Prerequisite),
+    tick_ms: Int,
+    duration_ms: Int,
+  )
 }
 
 /// Who an effect aims at (`Spell4Effects.targetFlags`), read once for the effects a
@@ -276,7 +320,7 @@ pub type Spell {
     requirements: List(Requirement),
     /// The prerequisite that would waive a failed requirement: the spell's
     /// prerequisiteIdCasterCast when its propertyFlags has bit 2 (`0x1403b1780`).
-    /// The server holds no prerequisite engine, so it never passes.
+    /// The waiver's prerequisite is not checked, so it never passes.
     requirement_waiver: Option(PrerequisiteId),
     /// The gap before each phase's go, in order; empty for a spell that is not
     /// Multiphase.
@@ -289,6 +333,9 @@ pub type Spell {
     /// The pulse times of a Channeled spell.
     channel: Option(Channel),
     proxies: List(Proxy),
+    /// The spell's own resource gains, given at its gos; none of a child started
+    /// at each struck unit, whose gains its Proxy holds.
+    gains: List(Gain),
   )
 }
 
@@ -356,6 +403,10 @@ pub type Proxy {
     /// Which unit the child cast is made on, from the effect's `targetFlags`.
     target: ProxyTarget,
     spell: Spell,
+    /// The first phase's gains of a child started at each struck unit, given once
+    /// at the go of the parent whose units it struck; none for a child on the
+    /// caster.
+    gains: List(Gain),
   )
 }
 
@@ -380,6 +431,12 @@ pub type PlanError {
   /// A RapidTap or ChargeRelease ability's thresholdTime is 0, which the client
   /// refuses a press of with 285 (`0x1403bfd60`).
   NoThresholdTime(spell4_id: Int)
+  /// A VitalModifier of a tree is aimed other than at the caster, which is not read.
+  GainAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
+  /// A VitalModifier of a tree changes a vital other than 6 or 8, which is not read.
+  GainVitalNotRead(spell4_id: Int, effect_id: Int, vital: Int)
+  /// A VitalModifier of a tree has a target apply prerequisite, which is not read.
+  GainTargetPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -423,6 +480,28 @@ pub fn describe(error error: PlanError) -> String {
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " is a RapidTap or ChargeRelease ability with a thresholdTime of 0, which the client refuses"
+    GainAimNotRead(spell4_id:, effect_id:, target_flags:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a VitalModifier effect "
+      <> int.to_string(effect_id)
+      <> " aimed by flags "
+      <> int.to_string(target_flags)
+      <> ", and only one aimed at the caster is read"
+    GainVitalNotRead(spell4_id:, effect_id:, vital:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a VitalModifier effect "
+      <> int.to_string(effect_id)
+      <> " of vital "
+      <> int.to_string(vital)
+      <> ", and only vitals 6 and 8 are read"
+    GainTargetPrerequisiteNotRead(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a VitalModifier effect "
+      <> int.to_string(effect_id)
+      <> " behind a target prerequisite, which is not read"
   }
 }
 
@@ -614,9 +693,10 @@ fn spell_of(
       ),
     ]),
   )
+  let effects = dict.get(sources.effects, spell4_id) |> result.unwrap([])
+  use gains <- result.try(gains_of(tables:, spell4_id:, effects:))
   use proxies <- result.try(
-    dict.get(sources.effects, spell4_id)
-    |> result.unwrap([])
+    effects
     |> list.filter(fn(effect) {
       effect.effect_type == proxy_effect_type && effect.data_bits00 != 0
     })
@@ -631,13 +711,21 @@ fn spell_of(
           threshold_costs: [],
         ),
       )
+      let #(lifted, kept) = case target {
+        OnEachStruck ->
+          list.partition(child.gains, fn(gain) {
+            has_flag(flags: gain.phase_flags, bit: 1)
+          })
+        OnCaster -> #([], child.gains)
+      }
       Ok(Proxy(
         effect_id: Spell4EffectsId(effect.id),
         delay_ms: effect.delay_time,
         phase_flags: effect.phase_flags,
         condition: condition_of(effect:),
         target:,
-        spell: child,
+        spell: Spell(..child, gains: kept),
+        gains: lifted,
       ))
     }),
   )
@@ -694,7 +782,83 @@ fn spell_of(
     stages:,
     channel:,
     proxies:,
+    gains:,
   ))
+}
+
+/// The effect type of a VitalModifier (`Spell4Effects.effectType.1`).
+const vital_modifier_effect_type = 1
+
+/// The gains of a spell's effects: each VitalModifier, which must aim at the
+/// caster, change vital 6 or 8, and have no target apply prerequisite; its caster
+/// apply prerequisite is read from its row.
+fn gains_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(Gain), PlanError) {
+  effects
+  |> list.filter(fn(effect) { effect.effect_type == vital_modifier_effect_type })
+  |> list.try_map(fn(effect) {
+    use slot <- result.try(case aim_of(target_flags: effect.target_flags) {
+      AimsAtCaster -> gain_slot_of(spell4_id:, effect:)
+      AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth | OtherAim(..) ->
+        Error(GainAimNotRead(
+          spell4_id:,
+          effect_id: effect.id,
+          target_flags: effect.target_flags,
+        ))
+    })
+    use Nil <- result.try(case effect.prerequisite_id_target_apply {
+      0 -> Ok(Nil)
+      _ ->
+        Error(GainTargetPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
+    })
+    use prerequisite <- result.try(case effect.prerequisite_id_caster_apply {
+      0 -> Ok(None)
+      id ->
+        prerequisite_table.get(tables:, id: PrerequisiteId(id))
+        |> result.map(fn(row) { Some(prerequisite.of_row(row:)) })
+        |> result.replace_error(NoRow(table: "Prerequisite", id:))
+    })
+    let effect_id = Spell4EffectsId(effect.id)
+    let amount = effect.data_bits02
+    let phase_flags = effect.phase_flags
+    Ok(case effect.tick_time {
+      0 -> Gain(effect_id:, slot:, amount:, phase_flags:, prerequisite:)
+      tick_ms ->
+        TickingGain(
+          effect_id:,
+          slot:,
+          amount:,
+          phase_flags:,
+          prerequisite:,
+          tick_ms:,
+          duration_ms: effect.duration_time,
+        )
+    })
+  })
+}
+
+/// The resource slot of a gain's vital: 6 (Resource1) is slot 1 and 8 (Resource3)
+/// slot 3, the innate cost types' numbering (`Spell4Effects.effectType.1`); the
+/// kit holds no other.
+fn gain_slot_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Int, PlanError) {
+  case effect.data_bits00 {
+    6 | 8 -> Ok(effect.data_bits00 - 5)
+    vital -> Error(GainVitalNotRead(spell4_id:, effect_id: effect.id, vital:))
+  }
+}
+
+/// The gains of the spell given at its go of phase `phase`.
+pub fn gains_in_phase(spell spell: Spell, phase phase: Int) -> List(Gain) {
+  let bit = int.bitwise_shift_left(1, phase)
+  list.filter(spell.gains, fn(gain) {
+    int.bitwise_and(gain.phase_flags, bit) != 0
+  })
 }
 
 /// Whether the client shows a cast bar for the spell, by its method
@@ -889,14 +1053,19 @@ fn target_of(
   }
 }
 
+/// A Proxy's prerequisite: its caster apply prerequisite, else its target apply
+/// one, else the one its dataBits06 names (`Spell4Effects.effectType.26.dataBits06`:
+/// a reading of the rows, since the client applies no Proxy itself).
 fn condition_of(effect effect: spell4_effects.Spell4Effects) -> Condition {
   case
     effect.prerequisite_id_caster_apply,
-    effect.prerequisite_id_target_apply
+    effect.prerequisite_id_target_apply,
+    effect.data_bits06
   {
-    0, 0 -> Always
-    0, target -> NeedsPrerequisite(prerequisite_id: PrerequisiteId(target))
-    caster, _ -> NeedsPrerequisite(prerequisite_id: PrerequisiteId(caster))
+    0, 0, 0 -> Always
+    0, 0, named -> NeedsPrerequisite(prerequisite_id: PrerequisiteId(named))
+    0, target, _ -> NeedsPrerequisite(prerequisite_id: PrerequisiteId(target))
+    caster, _, _ -> NeedsPrerequisite(prerequisite_id: PrerequisiteId(caster))
   }
 }
 

@@ -61,6 +61,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     stages: [],
     channel: None,
     proxies: [],
+    gains: [],
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
   )
