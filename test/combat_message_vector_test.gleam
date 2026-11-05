@@ -1,7 +1,7 @@
 //// The combat messages against bytes packed by hand from the layouts in the
 //// fact file: `opcode.0x9a`, `opcode.0x111.ability_bag`, `opcode.0x1a0`,
 //// `opcode.0x19d`, `opcode.0x262.creature` with `0x140095fb0`, `0x140096970`
-//// for the ghost, `opcode.0x7fc`, `opcode.0x7fd`, `opcode.0x7ff`,
+//// for the ghost, `opcode.0x262.simple` for a static object, `opcode.0x7fc`, `opcode.0x7fd`, `opcode.0x7ff`,
 //// `opcode.0x7f4` with `0x140094890`, `0x1400946c0` and `0x1400945e0`,
 //// `opcode.0x7fe`, `opcode.0x801`, `opcode.0x937`, `opcode.0x92f`,
 //// `opcode.0x938`, `opcode.0x88c`, `opcode.0x908`, `opcode.0x90a`,
@@ -62,18 +62,25 @@ import genesis_prime/message/spell_telegraph_position.{
   type SpellTelegraphPosition, SpellTelegraphPosition,
 }
 import genesis_prime/message/start_movement
+import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature.{UnitCreateCreature}
 import genesis_prime/message/unit_create_ghost.{UnitCreateGhost}
-import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/message/unit_create_static.{UnitCreateStatic}
+import genesis_prime/message/unit_create_tail.{
+  type UnitCreateTail, UnitCreateTail,
+}
 import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
-import genesis_prime/message/unit_stat.{UnitStat}
+import genesis_prime/message/unit_property
+import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
+import genesis_prime/world_map/static_object
+import gleam/int
 import gleam/list
 import message_support
 import owned_test
@@ -294,6 +301,169 @@ pub fn a_creature_is_created_as_type_0_with_its_row_id_and_the_players_tail_test
     encode: unit_create_creature.encode,
     decode: unit_create_creature.decode,
   )
+}
+
+/// The tail of the static objects' vectors: the creature vector's place,
+/// `stats`, `properties`, factions, world object link and outfit as given.
+fn static_tail(
+  stats stats: List(UnitStat),
+  properties properties: List(unit_property.UnitProperty),
+  faction_id faction_id: Int,
+  base_faction_id base_faction_id: Int,
+  world_object_id world_object_id: Int,
+  world_socket_id world_socket_id: Int,
+  outfit_info_id outfit_info_id: Int,
+) -> UnitCreateTail {
+  UnitCreateTail(
+    create_flags: 0,
+    stats:,
+    server_time_estimate_start: 0,
+    movement_commands: [
+      start_movement.Position(UnitPositionCommand(
+        x: 0xC3038000,
+        y: 0xC45AD000,
+        z: 0x43A6C000,
+        blends: 0,
+      )),
+      start_movement.Rotation(MovementRotation(
+        yaw: 0x3FC00000,
+        pitch: 0,
+        roll: 0,
+        blends: 0,
+      )),
+    ],
+    properties:,
+    item_visuals: [],
+    cast_id: 0,
+    faction_id:,
+    base_faction_id:,
+    tagged_by_unit_id: 0,
+    tagged_by_group_id: 0,
+    field_14: 0,
+    world_object_id:,
+    world_socket_id:,
+    cluster_id: 0,
+    field_20: 0,
+    minimap_marker_id: 0,
+    display_info_id: 26_565,
+    outfit_info_id:,
+  )
+}
+
+pub fn a_static_object_is_created_as_type_10_11_or_32_with_a_creatures_type_data_test() -> Nil {
+  use <- owned_test.run(5000)
+  // opcode.0x262.simple and 0x140095fb0: types 10, 11 and 32 read a creature's type
+  // data, the Creature2 id in 18 bits and the checklist index in 8, then the tail;
+  // its second tagged value holds the world object id in 64 bits and the
+  // WorldSocket id in 14 (opcode.0x262.unit_fields, 0x14043e900).
+  message_support.assert_codec(
+    name: "type 10: unit 0x2001, Creature2 73707, checklist 0, no stats, both factions 0, no world object",
+    body: message_support.hex(
+      "01 20 00 00 ca fa 47 00 00 00 00 00 00 40 08 00 c0 81 61 00 68 2d 62 00 60 d3 21 0e 00 00 f8 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 80 e2 33 00 00",
+    ),
+    value: UnitCreateStatic(
+      unit_id: 0x2001,
+      unit_type: static_unit_type.Simple,
+      creature_id: 73_707,
+      checklist_index: 0,
+      tail: static_tail(
+        stats: [],
+        properties: [],
+        faction_id: 0,
+        base_faction_id: 0,
+        world_object_id: 0,
+        world_socket_id: 0,
+        outfit_info_id: 0,
+      ),
+    ),
+    encode: unit_create_static.encode,
+    decode: unit_create_static.decode,
+  )
+  message_support.assert_codec(
+    name: "type 11: unit 0x2002, Creature2 72051, checklist 4, stat 10 = 1 alone, factions 1441 and 1442, world object 0x369123456789 on socket 0x1234, outfit 0x2a",
+    body: message_support.hex(
+      "02 20 00 00 cb 5c 46 04 00 41 11 00 00 00 00 00 00 00 20 04 00 e0 c0 30 00 b4 16 31 00 b0 e9 10 07 00 00 fc 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 b4 10 2d 00 00 00 00 00 00 00 00 00 00 00 00 50 e2 59 d1 48 a4 0d 00 00 8d 14 00 00 00 00 00 00 00 40 f1 19 15 00",
+    ),
+    value: UnitCreateStatic(
+      unit_id: 0x2002,
+      unit_type: static_unit_type.Platform,
+      creature_id: 72_051,
+      checklist_index: 4,
+      tail: static_tail(
+        stats: [UnitStat(stat_id: 10, value: 1)],
+        properties: [],
+        faction_id: 1441,
+        base_faction_id: 1442,
+        world_object_id: 0x369123456789,
+        world_socket_id: 0x1234,
+        outfit_info_id: 0x2A,
+      ),
+    ),
+    encode: unit_create_static.encode,
+    decode: unit_create_static.decode,
+  )
+  message_support.assert_codec(
+    name: "type 32: unit 0x2003, Creature2 73500, stats 0 = 442 and 10 = 3, Base Health 442.0 (0x43DD0000) in both words, both factions 1441",
+    body: message_support.hex(
+      "03 20 00 00 20 c7 47 00 00 02 a0 1b 00 00 a0 18 00 00 00 00 00 00 00 10 02 00 70 60 18 00 5a 8b 18 00 d8 74 88 03 00 00 fe 01 00 00 00 00 00 00 00 10 70 00 00 d0 3d 04 00 d0 3d 04 00 00 00 00 00 10 5a 84 16 00 00 00 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 a0 f8 0c 00 00",
+    ),
+    value: UnitCreateStatic(
+      unit_id: 0x2003,
+      unit_type: static_unit_type.SimpleCollidable,
+      creature_id: 73_500,
+      checklist_index: 0,
+      tail: static_tail(
+        stats: [
+          UnitStat(stat_id: 0, value: 442),
+          UnitStat(stat_id: 10, value: 3),
+        ],
+        properties: [
+          unit_property.UnitProperty(
+            property_id: 7,
+            field_2: 0x43DD0000,
+            value: 0x43DD0000,
+          ),
+        ],
+        faction_id: 1441,
+        base_faction_id: 1441,
+        world_object_id: 0,
+        world_socket_id: 0,
+        outfit_info_id: 0,
+      ),
+    ),
+    encode: unit_create_static.encode,
+    decode: unit_create_static.decode,
+  )
+}
+
+pub fn only_types_10_11_and_32_are_static_objects_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140649e20 and world_data.entity_type: the 6-bit unit type's 10 Simple, 11
+  // Platform and 32 SimpleCollidable are the types drawn from a Creature2 row and a
+  // display; every other value is another kind of unit.
+  let found =
+    int.range(from: 0, to: 64, with: [], run: fn(found, number) {
+      case static_object.unit_type_of(entity_type: number) {
+        Ok(unit_type) -> [#(number, unit_type), ..found]
+        Error(Nil) -> found
+      }
+    })
+  assert list.reverse(found)
+    == [
+      #(10, static_object.Simple),
+      #(11, static_object.Platform),
+      #(32, static_object.SimpleCollidable),
+    ]
+    as "the three unit types of a static object, and no other of the 64"
+  assert list.map([10, 11, 32, 0, 23], static_unit_type.from_value)
+    == [
+      static_unit_type.Simple,
+      static_unit_type.Platform,
+      static_unit_type.SimpleCollidable,
+      static_unit_type.Other(0),
+      static_unit_type.Other(23),
+    ]
+    as "the codec names the three; any other is Other"
 }
 
 pub fn a_ghost_is_created_as_type_23_with_a_players_data_less_three_values_test() -> Nil {

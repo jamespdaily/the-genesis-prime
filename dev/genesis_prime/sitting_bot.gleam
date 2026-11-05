@@ -610,12 +610,12 @@ pub fn events_of(frame: Frame) -> List(Event) {
   case frame.message_id {
     0x0262 -> {
       let assert Ok(created) = game_client.created_unit(body: frame.body)
-        as "0x0262 decodes as a player's or a creature's"
+        as "0x0262 decodes as a player's, a creature's or a static object's"
       case created {
         game_client.PlayerCreated(unit:) -> [
           UnitShown(unit_id: unit.unit_id, name: unit.name),
         ]
-        game_client.CreatureCreated(..) -> []
+        game_client.CreatureCreated(..) | game_client.ObjectCreated(..) -> []
       }
     }
     0x0638 -> {

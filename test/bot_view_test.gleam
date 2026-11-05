@@ -16,12 +16,15 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/float32
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/world_map/player_unit
 import gleam/dict
+import gleam/list
+import message_support
 import owned_test
 import place_support
 import unit_support
@@ -113,4 +116,47 @@ pub fn the_bots_model_of_another_player_is_created_moved_to_its_last_kind_2_posi
   let others =
     game_client.observe(others:, frame: Frame(message_id: 0x0061, body: <<>>))
   assert dict.size(others) == 1 as "any other message changes nothing"
+}
+
+pub fn the_bot_takes_a_static_objects_0x262_as_an_object_and_not_a_creature_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The vectors of `combat_message_vector_test` for types 10, 11 and 32
+  // (opcode.0x262.simple), units 0x2001 to 0x2003, each at (-131.5, -875.25,
+  // 333.5).
+  let frames =
+    list.map(
+      [
+        "01 20 00 00 ca fa 47 00 00 00 00 00 00 40 08 00 c0 81 61 00 68 2d 62 00 60 d3 21 0e 00 00 f8 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 80 e2 33 00 00",
+        "02 20 00 00 cb 5c 46 04 00 41 11 00 00 00 00 00 00 00 20 04 00 e0 c0 30 00 b4 16 31 00 b0 e9 10 07 00 00 fc 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 b4 10 2d 00 00 00 00 00 00 00 00 00 00 00 00 50 e2 59 d1 48 a4 0d 00 00 8d 14 00 00 00 00 00 00 00 40 f1 19 15 00",
+        "03 20 00 00 20 c7 47 00 00 02 a0 1b 00 00 a0 18 00 00 00 00 00 00 00 10 02 00 70 60 18 00 5a 8b 18 00 d8 74 88 03 00 00 fe 01 00 00 00 00 00 00 00 10 70 00 00 d0 3d 04 00 d0 3d 04 00 00 00 00 00 10 5a 84 16 00 00 00 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 a0 f8 0c 00 00",
+      ],
+      fn(hex) { Frame(message_id: 0x0262, body: message_support.hex(hex)) },
+    )
+  assert game_client.creatures_created_in(frames:) == []
+    as "no static object is taken as a creature"
+  assert list.map(frames, fn(frame) {
+      case game_client.created_unit(body: frame.body) {
+        Ok(game_client.ObjectCreated(unit:)) -> Ok(unit.unit_type)
+        Ok(game_client.PlayerCreated(..))
+        | Ok(game_client.CreatureCreated(..))
+        | Error(Nil) -> Error(Nil)
+      }
+    })
+    == [
+      Ok(static_unit_type.Simple),
+      Ok(static_unit_type.Platform),
+      Ok(static_unit_type.SimpleCollidable),
+    ]
+    as "each is an object of its type"
+  let others =
+    list.fold(frames, dict.new(), fn(others, frame) {
+      game_client.observe(others:, frame:)
+    })
+  assert others
+    == dict.from_list([
+      #(0x2001, #(-131.5, -875.25, 333.5)),
+      #(0x2002, #(-131.5, -875.25, 333.5)),
+      #(0x2003, #(-131.5, -875.25, 333.5)),
+    ])
+    as "the client holds each object at its kind 2 position (0x1404586e0)"
 }

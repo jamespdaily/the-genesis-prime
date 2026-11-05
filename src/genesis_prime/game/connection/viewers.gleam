@@ -51,6 +51,12 @@
 ////   none of its units, or a run of the map that gives the same unit ids again,
 ////   and is dropped. The connection names a new stay in each join's ask, and each
 ////   viewer's stay, as the map's `SeenBy` gave it, in every news it sends it.
+//// - **Static objects** are the map's own units (genesis_prime/world_map/static_object):
+////   the map tells the connection the objects its player comes to see,
+////   `ObjectsSeen` with each one's 0x262, and the ones it stops seeing,
+////   `ObjectsUnseen` with their ids. The viewer writes a 0x262 for each object
+////   not shown and not gone, shown then as `ShownObject`, and a 0x355 for each
+////   shown one, by the rules below. One sender, the map, speaks of these units.
 //// - **A creature's unit** reaches a viewer the same way, as news from the
 ////   creature's own process (`CreatureAppeared`, then `Removed`), and is shown,
 ////   removed and marked gone by the same rules: the viewer neither knows nor asks
@@ -80,7 +86,7 @@ import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
-import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
+import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_create_player.{
@@ -106,7 +112,9 @@ import gleam/option.{None, Some}
 import gleam/set
 
 /// What the map sent for the player's stay (`stay_sent`): who sees its player
-/// (`SeenBy`, `UnseenBy`), and a unit whose owner ended (`Gone`). A connection
+/// (`SeenBy`, `UnseenBy`), a unit whose owner ended (`Gone`), and the static
+/// objects its player sees (`ObjectsSeen`) and stops seeing (`ObjectsUnseen`),
+/// written as `viewer_takes` writes a unit's 0x262 and 0x355. A connection
 /// sends everything about its own unit itself: told `SeenBy(by, stay)` it keeps
 /// `by` with its stay and sends it its 0x262 at its current place, with its health
 /// now, told `UnseenBy(by)` its 0x355. The shell takes a send between steps, after
@@ -173,8 +181,40 @@ pub fn map_sent(
         ]),
       )
     }
-    map.ObjectsSeen(units: _) -> Continue(session, [])
-    map.ObjectsUnseen(unit_ids: _) -> Continue(session, [])
+    map.ObjectsSeen(units:) -> {
+      let fresh =
+        list.filter(units, fn(unit) {
+          !dict.has_key(entered.shown, unit.unit_id)
+          && !set.contains(entered.gone, unit.unit_id)
+        })
+      Continue(
+        shown_changed(session:, change: fn(picture) {
+          list.fold(fresh, picture, fn(picture, unit) {
+            dict.insert(picture, unit.unit_id, ShownObject)
+          })
+        }),
+        list.map(fresh, fn(unit) {
+          connection_state.to_client(
+            session,
+            connection_frames.object_created_frame(unit:),
+          )
+        }),
+      )
+    }
+    map.ObjectsUnseen(unit_ids:) -> {
+      let shown_ids = list.filter(unit_ids, dict.has_key(entered.shown, _))
+      Continue(
+        list.fold(shown_ids, session, fn(session, unit_id) {
+          unit_forgotten(session:, unit_id:)
+        }),
+        list.map(shown_ids, fn(unit_id) {
+          connection_state.to_client(
+            session,
+            connection_frames.unit_removed_frame(unit_id:),
+          )
+        }),
+      )
+    }
   }
 }
 

@@ -32,6 +32,7 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/unit_fields
+import gleam/option.{Some}
 import gleam/result
 
 /// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health`,
@@ -49,10 +50,12 @@ pub fn create(
     creature_id:,
     checklist_index: 0,
     tail: unit_fields.spawned_tail(
-      health:,
-      level: spawn.level,
-      max_health: spawn.health,
-      health_source: spawn.health_source,
+      health: Some(health),
+      level: Some(spawn.level),
+      base_health: unit_fields.sent_base_health(
+        max_health: spawn.health,
+        health_source: spawn.health_source,
+      ),
       standing: player_unit.standing(place: spawn.place),
       faction_id: spawn.faction_id,
       base_faction_id: spawn.base_faction_id,

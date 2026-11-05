@@ -10,10 +10,13 @@
 //// - Dominion 166 and Exile 167 are the two player factions (`start_place`).
 
 import genesis_prime/game/area.{Candidate, Point}
-import genesis_prime/game/shown.{Dominion, Exile, ShownCreature, ShownPlayer}
+import genesis_prime/game/shown.{
+  Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
+}
 import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
 import genesis_prime/world_map/creature_path
 import gleam/dict
+import gleam/list
 import owned_test
 import place_support
 
@@ -65,6 +68,23 @@ pub fn only_alive_hostile_or_neutral_creatures_other_than_the_caster_are_candida
       Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0),
     ]
     as "unit 2 is dead, 3 is a player, 4 is Friendly to Exiles (Friendly to Exiles), 7 is the caster; the Neutral unit 5 is struck"
+}
+
+pub fn a_shown_static_object_is_never_a_candidate_nor_a_creatures_place_or_life_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A server choice of the static objects' design (the issue's "Design"
+  // artifact): an object has no fight state, so no area strikes it.
+  let picture = dict.insert(picture(), 6, ShownObject)
+  list.each([Exile, Dominion], fn(faction) {
+    assert !list.any(
+      shown.candidates(picture:, faction:, caster_unit_id: 7, now_ms: 0),
+      fn(candidate) { candidate.unit_id == 6 },
+    )
+      as "the object is no candidate for either faction"
+  })
+  assert shown.place_of(picture:, unit_id: 6, now_ms: 0) == Error(Nil)
+    && shown.life_of(picture:, unit_id: 6) == Error(Nil)
+    as "an object is not a creature: no place for a child cast, no life to address"
 }
 
 pub fn the_faction_level_read_is_the_casters_own_test() -> Nil {

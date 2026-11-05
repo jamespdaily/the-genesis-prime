@@ -51,9 +51,12 @@ import genesis_prime/message/spell_threshold_ended
 import genesis_prime/message/spell_threshold_index
 import genesis_prime/message/spell_threshold_opened
 import genesis_prime/message/start_movement
+import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_combat_state
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
+import genesis_prime/message/unit_create_tail.{type UnitCreateTail}
 import genesis_prime/message/unit_death_state
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_health
@@ -702,7 +705,7 @@ pub type Others =
   Dict(Int, #(Float, Float, Float))
 
 /// What the client's view of other units holds after a message of the server:
-/// 0x262, of a player or of a creature, creates a unit at its first kind 2
+/// 0x262, of a player, a creature or a static object, creates a unit at its first kind 2
 /// position (0x1404586e0), 0x638 moves
 /// the unit it names to each kind 2 position it carries, in order, so the last
 /// is where it stands (0x140787150), a 0x638 for a unit the client does not hold
@@ -719,15 +722,17 @@ pub fn observe(others others: Others, frame frame: Frame) -> Others {
   }
 }
 
-/// The unit a 0x262 creates: a player's, or a creature's.
+/// The unit a 0x262 creates: a player's, a creature's or a static object's.
 pub type Created {
   PlayerCreated(unit: UnitCreatePlayer)
   CreatureCreated(unit: UnitCreateCreature)
+  ObjectCreated(unit: UnitCreateStatic)
 }
 
 /// The unit the body of a 0x262 creates: a player's when the body reads as one,
-/// else a creature's (the type is in the body, `opcode.0x262`), or `Error(Nil)`
-/// for a body that is neither.
+/// else a creature's, else a static object's of type 10, 11 or 32 (the type is in
+/// the body, `opcode.0x262`, `opcode.0x262.simple`), or `Error(Nil)` for a body
+/// that is none of them.
 pub fn created_unit(body body: BitArray) -> Result(Created, Nil) {
   unit_create_player.decode(body)
   |> result.map(PlayerCreated)
@@ -735,15 +740,32 @@ pub fn created_unit(body body: BitArray) -> Result(Created, Nil) {
     unit_create_creature.decode(body) |> result.map(CreatureCreated)
   })
   |> result.replace_error(Nil)
+  |> result.lazy_or(fn() { object_created(body:) })
+}
+
+/// The static object the body creates, or `Error(Nil)` for one whose type is not
+/// a static object's.
+fn object_created(body body: BitArray) -> Result(Created, Nil) {
+  use unit <- result.try(
+    unit_create_static.decode(body) |> result.replace_error(Nil),
+  )
+  case unit.unit_type {
+    static_unit_type.Simple
+    | static_unit_type.Platform
+    | static_unit_type.SimpleCollidable -> Ok(ObjectCreated(unit:))
+    static_unit_type.Other(_) -> Error(Nil)
+  }
 }
 
 fn created(others others: Others, body body: BitArray) -> Others {
   let assert Ok(unit) = created_unit(body:)
-    as "0x0262 decodes as a player's or a creature's"
+    as "0x0262 decodes as a player's, a creature's or a static object's"
   case unit {
     PlayerCreated(unit:) -> dict.insert(others, unit.unit_id, placed_at(unit:))
     CreatureCreated(unit:) ->
       dict.insert(others, unit.unit_id, placed_creature_at(creature: unit))
+    ObjectCreated(unit:) ->
+      dict.insert(others, unit.unit_id, first_position(unit.tail))
   }
 }
 
@@ -752,14 +774,19 @@ fn created(others others: Others, body body: BitArray) -> Others {
 fn placed_creature_at(
   creature creature: UnitCreateCreature,
 ) -> #(Float, Float, Float) {
-  let assert [start_movement.Position(placed), ..] =
-    creature.tail.movement_commands
+  first_position(creature.tail)
+}
+
+/// Where a 0x262's tail places its unit: the kind 2 command that is the first of
+/// its commands (0x1404586e0).
+fn first_position(tail: UnitCreateTail) -> #(Float, Float, Float) {
+  let assert [start_movement.Position(placed), ..] = tail.movement_commands
     as "0x0262 places the unit with a kind 2 command first"
   standing(placed)
 }
 
 /// The creatures the 0x262 among the messages create, in the order sent: a 0x262
-/// that is a player's is left out.
+/// that is a player's or a static object's is left out.
 pub fn creatures_created_in(
   frames frames: List(Frame),
 ) -> List(UnitCreateCreature) {
@@ -768,7 +795,8 @@ pub fn creatures_created_in(
       0x0262 ->
         case created_unit(body: frame.body) {
           Ok(CreatureCreated(unit:)) -> Ok(unit)
-          Ok(PlayerCreated(..)) | Error(Nil) -> Error(Nil)
+          Ok(PlayerCreated(..)) | Ok(ObjectCreated(..)) | Error(Nil) ->
+            Error(Nil)
         }
       _ -> Error(Nil)
     }
@@ -778,9 +806,7 @@ pub fn creatures_created_in(
 /// Where a 0x262 places its unit: the kind 2 command that is the first of its
 /// commands (0x1404586e0).
 pub fn placed_at(unit unit: UnitCreatePlayer) -> #(Float, Float, Float) {
-  let assert [start_movement.Position(placed), ..] = unit.tail.movement_commands
-    as "0x0262 places the unit with a kind 2 command first"
-  standing(placed)
+  first_position(unit.tail)
 }
 
 fn moved(others others: Others, body body: BitArray) -> Others {
@@ -824,9 +850,7 @@ fn removed(others others: Others, body body: BitArray) -> Others {
 pub fn creature_placed_at(
   unit unit: UnitCreateCreature,
 ) -> #(Float, Float, Float) {
-  let assert [start_movement.Position(placed), ..] = unit.tail.movement_commands
-    as "0x0262 places the unit with a kind 2 command first"
-  standing(placed)
+  first_position(unit.tail)
 }
 
 fn standing(

@@ -12,10 +12,12 @@
 ////
 //// - **Type data** as a creature's: the Creature2 id and the spawn's quest
 ////   checklist index (`0x140095fb0`, opcode.0x262.simple).
-//// - **Health and level** as a creature's (genesis_prime/world_map/spawn): the
-////   recorded stats, else the creature's `minLevel` and its Base Health at the
-////   level; a type 32 object with health 0 is created dead, so the load leaves one
-////   out (`0x140457a53`, opcode.0x262.simple).
+//// - **Health and level:** types 10 and 11 send stat 0 and stat 10 only as the
+////   spawn records them, since the client never creates them dead (the trace's
+////   field table, `0x140457a53`); type 32 sends both always, as a creature's
+////   (genesis_prime/world_map/spawn): the recorded stats, else the creature's
+////   `minLevel` and its Base Health at the level. A type 32 object with health 0
+////   is created dead, so the load leaves one out (opcode.0x262.simple).
 //// - **Place:** a kind 2 and a kind 14 command at the spawn's position and facing
 ////   (`player_unit.standing`, opcode.0x262.creature).
 //// - **Factions** as the spawn records them, 0 included: drawing an object reads
@@ -34,6 +36,7 @@ import genesis_prime/table/id.{type Creature2Id, Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/unit_fields.{type HealthSource}
+import gleam/option.{type Option}
 
 /// The unit type of a static object, as message 0x262 numbers it
 /// (`0x140649e20`, `world_data.entity_type`): only these three are static
@@ -59,13 +62,12 @@ pub type StaticObject {
     creature_id: Creature2Id,
     /// Where the object stands and faces, in the row's world and area.
     place: Place,
-    /// Stat 10: the row's recorded level, or the creature's `minLevel`.
-    level: Int,
-    /// Stat 0: the row's recorded health, or the creature's Base Health at
-    /// `level`.
-    health: Int,
-    /// Where `health` comes from, and so whether the 0x262 sends it as property 7.
-    health_source: HealthSource,
+    /// Stat 10, `None` for none sent: the row's recorded level, or for type 32 the
+    /// creature's `minLevel`.
+    level: Option(Int),
+    /// Stat 0, `None` for none sent: the row's recorded health, or for type 32 the
+    /// creature's Base Health at its level.
+    health: Option(Health),
     /// The faction the 0x262 sends, 0 for none.
     faction_id: Int,
     /// The base faction the 0x262 sends, 0 for none.
@@ -84,14 +86,33 @@ pub type StaticObject {
   )
 }
 
-/// The static object type of a row's entity type, or `Error(Nil)` for a type that
-/// is not one.
+/// The health an object's 0x262 sends: stat 0 at `value`, and Base Health
+/// (property 7) at it too when `source` is `Recorded`.
+pub type Health {
+  Health(value: Int, source: HealthSource)
+}
+
+/// The static object type of a row's entity type, the 0x262's unit type, or
+/// `Error(Nil)` for a type that is not one.
 pub fn unit_type_of(entity_type entity_type: Int) -> Result(UnitType, Nil) {
-  case entity_type {
-    10 -> Ok(Simple)
-    11 -> Ok(Platform)
-    32 -> Ok(SimpleCollidable)
-    _ -> Error(Nil)
+  case static_unit_type.from_value(entity_type) {
+    static_unit_type.Simple -> Ok(Simple)
+    static_unit_type.Platform -> Ok(Platform)
+    static_unit_type.SimpleCollidable -> Ok(SimpleCollidable)
+    static_unit_type.Other(_) -> Error(Nil)
+  }
+}
+
+/// The 0x262's number of the type: 10, 11 or 32.
+pub fn type_number(unit_type unit_type: UnitType) -> Int {
+  static_unit_type.to_value(wire_type(unit_type))
+}
+
+fn wire_type(unit_type: UnitType) -> static_unit_type.StaticUnitType {
+  case unit_type {
+    Simple -> static_unit_type.Simple
+    Platform -> static_unit_type.Platform
+    SimpleCollidable -> static_unit_type.SimpleCollidable
   }
 }
 
@@ -105,18 +126,18 @@ pub fn create(
   let Creature2Id(creature_id) = object.creature_id
   UnitCreateStatic(
     unit_id:,
-    unit_type: case object.unit_type {
-      Simple -> static_unit_type.Simple
-      Platform -> static_unit_type.Platform
-      SimpleCollidable -> static_unit_type.SimpleCollidable
-    },
+    unit_type: wire_type(object.unit_type),
     creature_id:,
     checklist_index: object.checklist_index,
     tail: unit_fields.spawned_tail(
-      health: object.health,
+      health: option.map(object.health, fn(health) { health.value }),
       level: object.level,
-      max_health: object.health,
-      health_source: object.health_source,
+      base_health: option.then(object.health, fn(health) {
+        unit_fields.sent_base_health(
+          max_health: health.value,
+          health_source: health.source,
+        )
+      }),
       standing: player_unit.standing(place: object.place),
       faction_id: object.faction_id,
       base_faction_id: object.base_faction_id,

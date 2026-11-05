@@ -161,8 +161,10 @@
 ////   the client holds no unit of that id then (its 0x355 went with the last viewer)
 ////   and takes a 0x262 for an id it removed (`death.creature_respawn`,
 ////   `opcode.0x262`); a creature that crashed gave its id up with its `Gone`, and the
-////   spawn's next creature takes a new one. So the ids given are at most the
-////   players that joined, the spawns that ever had a creature and the crashes. They
+////   spawn's next creature takes a new one. A static object's spawn has one id for
+////   the run too, given when a player first sees it. So the ids given are at most
+////   the players that joined, the spawns that ever had a creature or were seen as
+////   an object, and the crashes. They
 ////   stay below 2^20, since a cast id is built from its caster's unit id in the
 ////   rest of the 32 bits (`0x140561c30`): a map that has given them all crashes,
 ////   and its players' connections end.
@@ -260,9 +262,20 @@
 //// - **A creature that ends while retiring** is a clean stop, whatever the reason:
 ////   no client shows the unit.
 //// - **A map that ends** ends its creatures: each watches the run.
+//// - **Static objects** (genesis_prime/world_map/static_object) are the map's own
+////   units, with no process: their sight is decided with the creatures', from the
+////   same `spawn_cell.near`, and kept for each player (`objects`). The objects a
+////   join or a move brings into sight go to the player's connection in one
+////   `ObjectsSeen`, in spawn order, each as its 0x262 stamped with the map's
+////   server time; the ones it leaves, in one `ObjectsUnseen` of their ids. A
+////   join's `ObjectsSeen` comes after its answer and before its creatures'
+////   starts. A leave or an end sends nothing about them: the player's client
+////   leaves the world. A second join sends the objects it sees again; the
+////   connection writes none its client shows.
 ////
 //// Order, in short: every 0x262, 0x638 and 0x355 about a live unit comes from its
-//// owner's process, a player's connection or a creature, so for one viewer they
+//// owner's process, a player's connection, a creature or, for a static object,
+//// the map itself, so for one viewer they
 //// are one sender's messages and
 //// arrive in the order sent (the BEAM orders signals of one sender to one
 //// receiver); the map's `SeenBy` and `UnseenBy` to one owner are one sender's,
@@ -300,6 +313,8 @@
 //// | a `Moved` comes before the player's `Ready` | sight is decided; no ring is, and no creature is told |
 //// | a `Ready` comes twice in one stay | the second changes nothing (the connection sends one a stay) |
 //// | a player in a ring leaves, camps or its connection ends | its creatures are told `Unwatched`, which drops it from their threat lists; no `Withdrew` follows |
+//// | an `ObjectsSeen` or `ObjectsUnseen` reaches a later stay | dropped by the connection's stay envelope |
+//// | a move crosses an object's sight twice in one `Moved` batch | decided on the final place: at most one entry per object per `Moved` |
 
 import genesis_prime/game/appearance
 import genesis_prime/game/loadout.{type Loadout}
@@ -325,6 +340,7 @@ import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type WorldSpawns}
 import genesis_prime/world_map/spawn_cell
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -983,19 +999,7 @@ fn start_creature(
   spawn spawn: SpawnId,
   viewers viewers: List(#(ConnectionId, Stay)),
 ) -> #(State, Effect(ServiceEffect(Outgoing))) {
-  let #(state, unit_id) = case dict.get(state.unit_of_spawn, spawn) {
-    Ok(unit_id) -> #(state, unit_id)
-    Error(Nil) -> {
-      let #(state, unit_id) = take_unit_id(state)
-      #(
-        State(
-          ..state,
-          unit_of_spawn: dict.insert(state.unit_of_spawn, spawn, unit_id),
-        ),
-        unit_id,
-      )
-    }
-  }
+  let #(state, unit_id) = unit_of(state:, spawn:)
   let watch = WatchId(state.next_watch)
   let WatchId(life) = watch
   #(
@@ -1029,9 +1033,13 @@ fn start_creature(
   )
 }
 
-/// The spawns of the map's world the player at `place` sees: those the cell
-/// index finds near it that are within sight, exactly.
-fn spawns_in_sight(state state: State, place place: Place) -> Set(SpawnId) {
+/// What the player at `place` sees of the map's world: the creatures' spawns and
+/// the static objects the cell index finds near it, with one `near`, that are
+/// within sight, exactly.
+fn world_in_sight(
+  state state: State,
+  place place: Place,
+) -> #(Set(SpawnId), Set(SpawnId)) {
   let spawns = state.settings.spawns
   spawn_cell.near(
     cells: spawns.cells,
@@ -1039,12 +1047,87 @@ fn spawns_in_sight(state state: State, place place: Place) -> Set(SpawnId) {
     z: start_place.z(place),
     range: sight.range,
   )
-  |> list.filter(fn(id) {
-    dict.get(spawns.by_id, id)
-    |> result.map(fn(spawn) { sight.sees(place, spawn.place) })
-    |> result.unwrap(False)
+  |> list.fold(#(set.new(), set.new()), fn(found, id) {
+    let #(creatures, objects) = found
+    case dict.get(spawns.by_id, id), dict.get(spawns.objects, id) {
+      Ok(spawn), _ ->
+        case sight.sees(place, spawn.place) {
+          True -> #(set.insert(creatures, id), objects)
+          False -> found
+        }
+      Error(Nil), Ok(object) ->
+        case sight.sees(place, object.place) {
+          True -> #(creatures, set.insert(objects, id))
+          False -> found
+        }
+      Error(Nil), Error(Nil) -> found
+    }
   })
-  |> set.from_list
+}
+
+/// The notices of the static objects the player of `to` comes to see (`now`) and
+/// stops seeing after it saw `was`, at monotonic time `now_ms`: one
+/// `ObjectsSeen` of the objects entered, each as its 0x262 under its spawn's unit
+/// id for the run (taken from the counter the first time), stamped with the map's
+/// server time, and one `ObjectsUnseen` of the ids of the objects left, each in
+/// spawn order; none when a list is empty.
+fn objects_decided(
+  state state: State,
+  to player: #(ConnectionId, Player),
+  was was: Set(SpawnId),
+  now now: Set(SpawnId),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  use <- bool.guard(when: was == now, return: #(state, []))
+  let server_time_estimate_start =
+    server_time(origin_ms: state.started_ms, monotonic_ms: now_ms)
+  let #(state, entered) =
+    list.map_fold(in_order(set.difference(now, was)), state, fn(state, spawn) {
+      let #(state, unit_id) = unit_of(state:, spawn:)
+      let assert Ok(object) = dict.get(state.settings.spawns.objects, spawn)
+        as "an object in sight is an object of the map's world"
+      #(
+        state,
+        static_object.create(object:, unit_id:, server_time_estimate_start:),
+      )
+    })
+  let left =
+    list.map(in_order(set.difference(was, now)), fn(spawn) {
+      let assert Ok(unit_id) = dict.get(state.unit_of_spawn, spawn)
+        as "an object a player saw was given its unit id"
+      unit_id
+    })
+  #(
+    state,
+    list.flatten([
+      case entered {
+        [] -> []
+        units -> [notify(to: player, notice: ObjectsSeen(units:))]
+      },
+      case left {
+        [] -> []
+        unit_ids -> [notify(to: player, notice: ObjectsUnseen(unit_ids:))]
+      },
+    ]),
+  )
+}
+
+/// The spawn's unit id for the run, taken from the counter when the spawn has had
+/// none, and the map that has given it.
+fn unit_of(state state: State, spawn spawn: SpawnId) -> #(State, Int) {
+  case dict.get(state.unit_of_spawn, spawn) {
+    Ok(unit_id) -> #(state, unit_id)
+    Error(Nil) -> {
+      let #(state, unit_id) = take_unit_id(state)
+      #(
+        State(
+          ..state,
+          unit_of_spawn: dict.insert(state.unit_of_spawn, spawn, unit_id),
+        ),
+        unit_id,
+      )
+    }
+  }
 }
 
 /// The state and effects of the player of `connection` coming to see the spawns
@@ -1266,7 +1349,15 @@ fn moved(
             }
           },
         )
-      let seen = spawns_in_sight(state:, place:)
+      let #(seen, objects) = world_in_sight(state:, place:)
+      let #(state, object_effects) =
+        objects_decided(
+          state:,
+          to: #(connection, mover),
+          was: mover.objects,
+          now: objects,
+          now_ms:,
+        )
       let #(state, spawn_effects) =
         spawns_decided(
           state:,
@@ -1276,14 +1367,17 @@ fn moved(
           now: seen,
           now_ms:,
         )
-      let mover = Player(..mover, unit:, sees: mover_sees, seen:, seq:)
+      let mover =
+        Player(..mover, unit:, sees: mover_sees, seen:, objects:, seq:)
       let #(mover, ring_effects) = case mover.readiness {
         StillLoading -> #(mover, [])
         Loaded -> rings_decided(state:, connection:, player: mover)
       }
       #(
         State(..state, players: dict.insert(others, connection, mover)),
-        Effects(list.flatten([effects, spawn_effects, ring_effects])),
+        Effects(
+          list.flatten([effects, object_effects, spawn_effects, ring_effects]),
+        ),
       )
     }
   }
@@ -1449,6 +1543,7 @@ fn joined(
         connection:,
         character:,
         player: Player(..player, stay:),
+        now_ms:,
       )
     Error(Nil) ->
       joined_new(
@@ -1464,19 +1559,29 @@ fn joined(
 }
 
 /// A second join of a connection in the map: the player kept with the new
-/// join's stay, an error line, the answer built from the unit the map keeps, and
-/// for each player it sees a `SeenBy` for the joiner and one for that player,
-/// which sends the joiner its 0x262 again.
+/// join's stay, an error line, the answer built from the unit the map keeps, for
+/// each player it sees a `SeenBy` for the joiner and one for that player, which
+/// sends the joiner its 0x262 again, and an `ObjectsSeen` of the objects it sees,
+/// under their ids, at monotonic time `now_ms`.
 fn joined_again(
   state state: State,
   caller caller: CallerId,
   connection connection: ConnectionId,
   character character: Character,
   player player: Player,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let CharacterId(second_character_id) = character.character_id
   let state =
     State(..state, players: dict.insert(state.players, connection, player))
+  let #(state, objects_again) =
+    objects_decided(
+      state:,
+      to: #(connection, player),
+      was: set.new(),
+      now: player.objects,
+      now_ms:,
+    )
   let watched_again =
     others_of(state:, connection:)
     |> list.filter(fn(other) { set.contains(player.sees, other.0) })
@@ -1523,6 +1628,7 @@ fn joined_again(
           ),
           OwnEffect(Reply(caller, answer(state:, unit: player.unit))),
         ],
+        objects_again,
         watched_again,
       ]),
     ),
@@ -1675,7 +1781,15 @@ fn joined_with(
     list.flat_map(in_sight, fn(other) {
       comes_into_sight(newcomer: #(connection, player), other:)
     })
-  let seen = spawns_in_sight(state:, place:)
+  let #(seen, objects) = world_in_sight(state:, place:)
+  let #(state, object_effects) =
+    objects_decided(
+      state:,
+      to: #(connection, player),
+      was: set.new(),
+      now: objects,
+      now_ms:,
+    )
   let #(state, spawn_effects) =
     spawns_decided(
       state:,
@@ -1688,7 +1802,11 @@ fn joined_with(
   #(
     State(
       ..state,
-      players: dict.insert(players, connection, Player(..player, sees:, seen:)),
+      players: dict.insert(
+        players,
+        connection,
+        Player(..player, sees:, seen:, objects:),
+      ),
       watches: dict.insert(state.watches, watch, connection),
     ),
     Effects(
@@ -1697,6 +1815,7 @@ fn joined_with(
           Watch(watch:, target: Connection(connection)),
           OwnEffect(Reply(caller, answer(state:, unit:))),
         ],
+        object_effects,
         pairs,
         spawn_effects,
       ]),

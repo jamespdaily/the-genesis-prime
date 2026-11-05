@@ -24,6 +24,7 @@ import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The stat the client keeps a unit's health in (0x140458140).
@@ -100,15 +101,14 @@ pub fn tail(
 }
 
 /// The tail of a unit the server stands at a spawn, a creature's or a static
-/// object's: stat 0 at `health` and stat 10 at `level`, the kind 2 and kind 14
-/// commands of `standing` (`player_unit.standing`), which place it at once, Base
-/// Health at `max_health` for a recorded health (`base_health_properties`), no
-/// item visuals, and the rest as given.
+/// object's: stat 0 at `health` and stat 10 at `level`, each when given, the kind
+/// 2 and kind 14 commands of `standing` (`player_unit.standing`), which place it
+/// at once, Base Health (property 7) at `base_health` when given, no item
+/// visuals, and the rest as given.
 pub fn spawned_tail(
-  health health: Int,
-  level level: Int,
-  max_health max_health: Int,
-  health_source health_source: HealthSource,
+  health health: Option(Int),
+  level level: Option(Int),
+  base_health base_health: Option(Int),
   standing standing: #(UnitPositionCommand, MovementRotation),
   faction_id faction_id: Int,
   base_faction_id base_faction_id: Int,
@@ -120,15 +120,27 @@ pub fn spawned_tail(
 ) -> UnitCreateTail {
   let #(position, rotation) = standing
   tail(
-    stats: [
-      UnitStat(stat_id: health_stat, value: health),
-      UnitStat(stat_id: level_stat, value: level),
-    ],
+    stats: option.values([
+      option.map(health, fn(value) { UnitStat(stat_id: health_stat, value:) }),
+      option.map(level, fn(value) { UnitStat(stat_id: level_stat, value:) }),
+    ]),
     movement_commands: [
       start_movement.Position(position),
       start_movement.Rotation(rotation),
     ],
-    properties: base_health_properties(max_health:, health_source:),
+    properties: case base_health {
+      Some(value) -> {
+        let bits = float32.to_bits(int.to_float(value))
+        [
+          UnitProperty(
+            property_id: base_health_property,
+            field_2: bits,
+            value: bits,
+          ),
+        ]
+      }
+      None -> []
+    },
     item_visuals: [],
     faction_id:,
     base_faction_id:,
@@ -140,24 +152,16 @@ pub fn spawned_tail(
   )
 }
 
-/// The properties a spawned unit's 0x262 sends: Base Health at `max_health`, both
-/// words the same as the player's (`opcode.0x262.health`), for a recorded health;
-/// none for the client's own default.
-fn base_health_properties(
+/// The Base Health a spawned unit's 0x262 sends as property 7 for its maximum
+/// health: the recorded one, both words the same as the player's
+/// (`opcode.0x262.health`); none for the client's own default, which the client
+/// computes itself.
+pub fn sent_base_health(
   max_health max_health: Int,
   health_source health_source: HealthSource,
-) -> List(UnitProperty) {
+) -> Option(Int) {
   case health_source {
-    Recorded -> {
-      let bits = float32.to_bits(int.to_float(max_health))
-      [
-        UnitProperty(
-          property_id: base_health_property,
-          field_2: bits,
-          value: bits,
-        ),
-      ]
-    }
-    ClientDefault -> []
+    Recorded -> Some(max_health)
+    ClientDefault -> None
   }
 }
