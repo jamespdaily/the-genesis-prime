@@ -28,6 +28,7 @@ import genesis_prime/recorded_message.{ClientToServer, ServerToClient}
 import genesis_prime/recording_dump
 import genesis_prime/step.{type Now, Now}
 import genesis_prime/wire_recording.{Accepted, Client, Read}
+import genesis_prime/wire_recording/recorder
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -37,6 +38,7 @@ import gleam/string
 import message_support
 import owned_test
 import recording_support
+import simplifile
 import wire_replay_support as support
 
 pub fn the_dump_names_the_players_unit_and_lists_a_message_with_no_decoder_by_its_number_test() -> Nil {
@@ -409,4 +411,115 @@ pub fn a_float_field_prints_as_its_bits_and_as_the_float_they_hold_test() -> Nil
     "value: " <> int.to_string(0x420C0000) <> " (35.0)",
   )
     as "the bits as the record holds them, then the float they are"
+}
+
+// ---- a recording still being written ----
+
+/// The lines the dump prints for an auth connection that was written and not
+/// closed, with `cut` characters taken off the end of the file (a line the
+/// writer had not finished), read as the dump command reads a path; the
+/// sentences for files that did not read are none.
+fn unfinished_lines(
+  folder folder: String,
+  steps steps: List(support.Step),
+  cut cut: Int,
+  arguments arguments: List(String),
+) -> List(String) {
+  support.write(
+    folder:,
+    connections: [
+      support.Planted(
+        rule: auth_connection.rule_name,
+        seed: support.seed(1),
+        ordinal: 1,
+      ),
+    ],
+    steps:,
+  )
+  let assert Ok(names) = simplifile.read_directory(folder) as "the folder reads"
+  let assert [file] =
+    list.filter(names, string.ends_with(_, recorder.file_suffix))
+    as "one recording"
+  let path = folder <> "/" <> file
+  let assert Ok(text) = simplifile.read(path) as "the recording reads"
+  let assert Ok(Nil) = simplifile.write(path, string.drop_end(text, cut))
+    as "the recording is cut"
+  let #(connections, unread) = recording_dump.load(path:)
+  assert unread == [] as "an unfinished recording reads"
+  let assert Ok(names) = named_fields.from_schema_file()
+    as "the schema the codec is generated from reads"
+  let assert Ok(#(_, filter)) = recording_dump.parse(["any", ..arguments])
+    as "the arguments are taken"
+  recording_dump.printed(
+    entries: recording_dump.entries(connections:, names:),
+    filter:,
+  )
+}
+
+pub fn a_recording_with_no_closing_line_is_read_to_its_last_line_and_says_so_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let lines =
+    unfinished_lines(
+      folder:,
+      steps: [
+        support.In(0, at(1), Accepted),
+        support.Out(0, base_written(id: 0x0036, body: level_3_body)),
+      ],
+      cut: 0,
+      arguments: [],
+    )
+  let assert [message, last] = lines
+    as "the message is printed, then one line for the missing closing line"
+  assert word(message, 7) == "max_character_level"
+  assert word(last, 6) == "-"
+  assert word(last, 7) == "unfinished"
+  assert string.contains(last, "no closing line yet")
+}
+
+pub fn a_recording_whose_last_line_is_cut_is_unfinished_not_malformed_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let lines =
+    unfinished_lines(
+      folder:,
+      steps: [
+        support.In(0, at(1), Accepted),
+        support.Out(0, base_written(id: 0x0036, body: level_3_body)),
+        support.Out(0, base_written(id: 0x0036, body: level_3_body)),
+      ],
+      cut: 12,
+      arguments: [],
+    )
+  let assert [message, last] = lines
+    as "the whole line is printed and the cut one is not, and nothing says it is malformed"
+  assert word(message, 7) == "max_character_level"
+  assert word(last, 7) == "unfinished"
+  assert string.contains(last, "no closing line yet")
+}
+
+pub fn a_recording_with_only_its_header_prints_the_unfinished_line_alone_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let lines = unfinished_lines(folder:, steps: [], cut: 0, arguments: [])
+  let assert [last] = lines as "no message came before"
+  assert word(last, 7) == "unfinished"
+}
+
+pub fn the_unfinished_line_is_kept_under_every_filter_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let lines =
+    unfinished_lines(
+      folder:,
+      steps: [
+        support.In(0, at(1), Accepted),
+        support.Out(0, base_written(id: 0x0036, body: level_3_body)),
+      ],
+      cut: 0,
+      arguments: ["--unit", "9", "--from", "600"],
+    )
+  let assert [last] = lines
+    as "the message is filtered out and the line that says the recording is unfinished is not"
+  assert word(last, 7) == "unfinished"
 }

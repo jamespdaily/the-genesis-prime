@@ -22,7 +22,7 @@ The server runs as `dev_start` (its header) so each sitting is recorded into its
 - `gleam run -m genesis_prime/recording_dump -- <folder or .jsonl> [--from <ms>] [--to <ms>] [--unit <id>]`: the sitting as messages, one line each (its header gives the columns).
 - `gleam run -m genesis_prime/unhandled_ranking -- <folder>...`: the client's messages the server does not handle, most frequent first, with their system's group.
 
-A sitting still being recorded has no closing line, so its connections are named as not read until the server stops.
+A sitting still being recorded is read up to its last whole line, and each of its connections ends with a line saying it has no closing line yet.
 
 ## In herdr
 

@@ -219,7 +219,13 @@ pub fn exchange(name name: String, recording recording: Recording) -> Exchange {
         walk_chunks(chunks:, walk: start(game: connection_of(rule) == Ok(Game)))
       let stopped = case stopped {
         Error(stopped) -> Error(stopped)
-        Ok(Nil) -> left_over(walked:, chunks:)
+        // A recording its writer has not closed may end inside a frame whose
+        // rest is not written yet.
+        Ok(Nil) ->
+          case recording.closing {
+            None -> Ok(Nil)
+            Some(_) -> left_over(walked:, chunks:)
+          }
       }
       Exchange(opened: list.reverse(walked.opened), stopped: case stopped {
         Ok(Nil) -> None

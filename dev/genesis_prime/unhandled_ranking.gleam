@@ -22,9 +22,11 @@
 //// - **The group** is the system of the roadmap the message belongs to
 ////   (`groups`), for a message whose sender the client's code names; any
 ////   other prints `no group`.
-//// - A file that does not read (a sitting still being recorded), or a
-////   connection whose bytes stop reading, is named on standard error, and the
-////   messages read before it are counted.
+//// - A file that does not read, or a connection whose bytes stop reading, is
+////   named on standard error, and the messages read before it are counted.
+//// - A recording still being written (no closing line yet, its last line
+////   perhaps cut) is read up to its last whole line, counted, and named on
+////   standard error as having no closing line yet.
 ////
 //// It exits with 2 when no folder is given and 1 when no recording reads.
 
@@ -87,7 +89,8 @@ fn print(ranking: #(List(String), List(String))) -> Nil {
 
 /// The printed lines of the client's messages no rule names, most frequent
 /// first and by opcode among equals, and a sentence for each connection whose
-/// bytes stopped reading.
+/// bytes stopped reading, and one for each connection that has no closing line
+/// yet.
 pub fn ranking(
   connections: List(#(String, Recording)),
 ) -> #(List(String), List(String)) {
@@ -127,7 +130,15 @@ pub fn ranking(
         None -> Error(Nil)
       }
     })
-  #(list.map(ranked, line), stopped)
+  let unfinished =
+    list.filter_map(connections, fn(connection) {
+      let #(name, recording) = connection
+      case recording.closing {
+        None -> Ok(name <> " has no closing line yet")
+        Some(_) -> Error(Nil)
+      }
+    })
+  #(list.map(ranked, line), list.append(stopped, unfinished))
 }
 
 fn count(

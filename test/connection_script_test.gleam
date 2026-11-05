@@ -436,7 +436,7 @@ pub fn a_stop_while_the_shell_holds_part_of_a_read_reaches_the_rule_as_stopping_
   let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
     as "the shell took the first part and holds it"
   ask_support.stop(server)
-  let assert Ok(Recording(lines:, closing:, ..)) =
+  let assert Ok(Recording(lines:, closing: Some(closing), ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole: the rule stopped in time"
   let inputs =

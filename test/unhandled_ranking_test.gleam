@@ -164,3 +164,31 @@ pub fn a_folder_with_no_unhandled_message_ranks_nothing_test() -> Nil {
     as "a ping is the network layer's"
   assert recording_dump.load(folder).1 == [] as "the folder reads whole"
 }
+
+pub fn a_recording_with_no_closing_line_is_counted_and_named_as_unfinished_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  support.write(
+    folder:,
+    connections: [
+      support.Planted(
+        rule: game_connection.rule_name,
+        seed: support.seed(1),
+        ordinal: 1,
+      ),
+    ],
+    steps: [
+      support.In(0, at(1), Accepted),
+      support.In(0, at(2), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(0, at(3), Read(sent(id: 0x0FFF, body: <<>>))),
+    ],
+  )
+  let #(connections, unread) = recording_dump.load(folder)
+  assert unread == []
+    as "a recording still being written reads up to its last whole line"
+  let #(lines, notes) = unhandled_ranking.ranking(connections)
+  assert list.map(lines, columns) == [["2", "0x0FFF", "no group", "no decoder"]]
+    as "the messages read before the end are counted"
+  let assert [note] = notes as "one connection is unfinished"
+  assert string.contains(note, "has no closing line yet")
+}

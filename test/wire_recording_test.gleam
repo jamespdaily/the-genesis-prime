@@ -85,7 +85,7 @@ pub fn the_realm_a_rule_writes_is_in_its_header_and_reads_back_test() -> Nil {
     as "the realm's id, name, address and port, in that order"
   let closing = Closing(sequence: 2, by: Client)
   assert wire_recording.read(text <> wire_recording.encode_closing(closing))
-    == Ok(Recording(with_realm, [], closing))
+    == Ok(Recording(with_realm, [], Some(closing)))
     as "the header with its realm reads back as written"
 }
 
@@ -205,7 +205,8 @@ pub fn a_recording_of_every_kind_of_line_reads_back_as_written_test() -> Nil {
     wire_recording.encode_header(header())
     <> string.concat(list.map(written, wire_recording.encode_line))
     <> wire_recording.encode_closing(closing)
-  assert wire_recording.read(text) == Ok(Recording(header(), written, closing))
+  assert wire_recording.read(text)
+    == Ok(Recording(header(), written, Some(closing)))
     as "the header, every input kind with its outcome or number, the writes and the closing line read back as written"
 }
 
@@ -222,6 +223,24 @@ pub fn a_file_without_its_closing_line_is_cut_and_counts_its_whole_lines_test() 
     as "a header alone is a cut recording"
   assert wire_recording.read("") == Error(Cut(lines: 0))
     as "an empty file is cut before its header"
+}
+
+pub fn a_file_without_its_closing_line_reads_so_far_up_to_its_last_whole_line_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let whole_lines =
+    wire_recording.encode_header(header())
+    <> wire_recording.encode_line(Took(1, at(), Accepted))
+  let cut_line = string.drop_end(wire_recording.encode_line(Wrote(2, <<1>>)), 3)
+  assert wire_recording.read_so_far(whole_lines)
+    == Ok(Recording(header(), [Took(1, at(), Accepted)], None))
+    as "no closing line yet"
+  assert wire_recording.read_so_far(whole_lines <> cut_line)
+    == Ok(Recording(header(), [Took(1, at(), Accepted)], None))
+    as "a line the writer had not finished is not read, and is no malformed line"
+  assert wire_recording.read(whole_lines <> cut_line) == Error(Cut(lines: 2))
+    as "`read` still refuses a recording that is not closed"
+  assert wire_recording.read_so_far("") == Error(Cut(lines: 0))
+    as "a file with no whole line has no header"
 }
 
 pub fn a_file_cut_inside_a_line_is_cut_even_when_the_part_reads_as_json_test() -> Nil {
@@ -313,5 +332,5 @@ pub fn the_bytes_of_a_line_are_lower_case_hex_of_every_byte_value_test() -> Nil 
     <> text
     <> wire_recording.encode_closing(Closing(2, Server))
   assert wire_recording.read(recording)
-    == Ok(Recording(header(), [Wrote(1, every_byte)], Closing(2, Server)))
+    == Ok(Recording(header(), [Wrote(1, every_byte)], Some(Closing(2, Server))))
 }

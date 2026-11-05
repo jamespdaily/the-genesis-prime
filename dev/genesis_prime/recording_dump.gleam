@@ -14,10 +14,11 @@
 //// the schema has no message of that number, and the decoded fields as the
 //// codec's record holds them. `--from` and `--to` keep the lines whose time is
 //// within them; `--unit` keeps the lines with a field named `unit_id`, or
-//// ending in `_unit_id`, of that value. A `stopped` line is always kept.
+//// ending in `_unit_id`, of that value. A `stopped` or `unfinished` line is
+//// always kept.
 ////
 //// ```
-//// files ─▶ wire_recording.read ─▶ recorded_message.exchange (auth, game) ─▶ entries by sequence ─▶ lines
+//// files ─▶ wire_recording.read_so_far ─▶ recorded_message.exchange (auth, game) ─▶ entries by sequence ─▶ lines
 ////                                 recorded_message.read (platform login)
 //// ```
 ////
@@ -28,8 +29,12 @@
 ////   the KeyData request are ciphered under a key the recording does not hold,
 ////   and its replies have no decoder, so each such line is printed as `not
 ////   read` with its size.
-//// - **A file that does not read** (a sitting still being recorded has no
-////   closing line) is named on standard error and the others are printed; a
+//// - **A recording still being written** (a sitting's live connection has no
+////   closing line, and its last line may be cut) is read up to its last whole
+////   line and ends with an `unfinished` line saying it has no closing line
+////   yet.
+//// - **A file that does not read** is named on standard error and the others
+////   are printed; a
 ////   connection whose bytes stop reading prints its messages up to there and a
 ////   `stopped` line saying why, on the side whose bytes stopped and with `-`
 ////   for its opcode.
@@ -75,7 +80,7 @@ pub type Entry {
     /// text, and for a `stopped` line.
     message_id: Option(Int),
     /// The message's name in the schema, `unhandled`, or for a line that is
-    /// not a message, `not read` or `stopped_name`.
+    /// not a message, `not read`, `stopped_name` or `unfinished_name`.
     name: String,
     fields: String,
   )
@@ -202,9 +207,9 @@ fn read_file(file: #(String, String)) -> Result(#(String, Recording), Unread) {
   case simplifile.read(file_path) {
     Error(error) -> Error(FileNotRead(path: file_path, error:))
     Ok(text) ->
-      case wire_recording.read(text) {
+      case wire_recording.read_so_far(text) {
         Ok(recording) -> Ok(#(name, recording))
-        Error(failure) -> Error(NoWholeRecording(path: file_path, failure:))
+        Error(failure) -> Error(NotARecording(path: file_path, failure:))
       }
   }
 }
@@ -213,9 +218,9 @@ fn read_file(file: #(String, String)) -> Result(#(String, Recording), Unread) {
 pub type Unread {
   /// The file or folder does not read.
   FileNotRead(path: String, error: simplifile.FileError)
-  /// The file is no whole recording: a sitting still being recorded has no
-  /// closing line.
-  NoWholeRecording(path: String, failure: wire_recording.ReadFailure)
+  /// The file is no recording: it holds no whole line, is of another format
+  /// or holds a line that is none.
+  NotARecording(path: String, failure: wire_recording.ReadFailure)
 }
 
 /// A sentence that says which file did not read and why, for a person.
@@ -223,8 +228,8 @@ pub fn describe_unread(unread: Unread) -> String {
   case unread {
     FileNotRead(path:, error:) ->
       path <> " does not read: " <> simplifile.describe_error(error)
-    NoWholeRecording(path:, failure:) ->
-      path <> " is no whole recording: " <> inspected(failure)
+    NotARecording(path:, failure:) ->
+      path <> " is no recording: " <> inspected(failure)
   }
 }
 
@@ -297,7 +302,7 @@ fn connection_entries(
       fields:,
     )
   }
-  case recording.header.rule == sts_connection.rule_name {
+  let read = case recording.header.rule == sts_connection.rule_name {
     True -> platform_login_entries(name:, recording:, entry:)
     False -> {
       let exchange = recorded_message.exchange(name:, recording:)
@@ -316,7 +321,24 @@ fn connection_entries(
       list.append(messages, stopped_entries(exchange.stopped, recording, entry))
     }
   }
+  case recording.closing {
+    Some(_) -> read
+    None ->
+      list.append(read, [
+        entry(
+          list.length(recording.lines),
+          None,
+          0,
+          None,
+          unfinished_name,
+          "the recording has no closing line yet",
+        ),
+      ])
+  }
 }
+
+/// The name of the last line of a recording its writer has not closed.
+const unfinished_name = "unfinished"
 
 /// The name and the fields of a message: a carrier's body is the next line's
 /// frame, so its fields are left out.
@@ -477,7 +499,9 @@ fn inspected(value: value) -> String {
 /// bytes stopped reading is always kept: it is no message of a time or a unit,
 /// and a dump without it would read as a connection that ended whole.
 fn keeps(filter filter: Filter, entry entry: Entry) -> Bool {
-  entry.name == stopped_name || keeps_message(filter:, entry:)
+  entry.name == stopped_name
+  || entry.name == unfinished_name
+  || keeps_message(filter:, entry:)
 }
 
 fn keeps_message(filter filter: Filter, entry entry: Entry) -> Bool {
@@ -500,6 +524,12 @@ fn keeps_message(filter filter: Filter, entry entry: Entry) -> Bool {
   after && before && of_unit
 }
 
+/// Whether the entry is a line about the recording, not a message, so it has
+/// no opcode to print (a request of the platform login prints `sts`).
+fn has_no_opcode(entry: Entry) -> Bool {
+  entry.name == stopped_name || entry.name == unfinished_name
+}
+
 /// The printed line of an entry.
 fn text(entry: Entry) -> String {
   let direction = case entry.direction {
@@ -507,7 +537,7 @@ fn text(entry: Entry) -> String {
     Some(ServerToClient) -> "server→client"
     None -> "-"
   }
-  let opcode = case entry.message_id, entry.name == stopped_name {
+  let opcode = case entry.message_id, has_no_opcode(entry) {
     Some(message_id), _ -> client_connection.message_text(message_id:)
     None, True -> "-"
     None, False -> "sts"
