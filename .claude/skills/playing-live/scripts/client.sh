@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts the WildStar client on the PC in the person's session, types into it and closes it, without
-# moving focus: Jim may be using the PC. Only click and key <scan>, in takeover mode, take the focus.
+# moving focus: Jim may be using the PC. Only click and key <scan>, in takeover mode, take the focus and the mouse or keyboard.
 #
 #   client.sh start [--type-login]   starts the client hidden and logged in from its command line;
 #                                    with --type-login, without an account or password
