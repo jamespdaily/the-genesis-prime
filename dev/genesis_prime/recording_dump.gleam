@@ -14,7 +14,7 @@
 //// the schema has no message of that number, and the decoded fields as the
 //// codec's record holds them. `--from` and `--to` keep the lines whose time is
 //// within them; `--unit` keeps the lines with a field named `unit_id`, or
-//// ending in `_unit_id`, of that value.
+//// ending in `_unit_id`, of that value. A `stopped` line is always kept.
 ////
 //// ```
 //// files ─▶ wire_recording.read ─▶ recorded_message.exchange (auth, game) ─▶ entries by sequence ─▶ lines
@@ -31,7 +31,8 @@
 //// - **A file that does not read** (a sitting still being recorded has no
 ////   closing line) is named on standard error and the others are printed; a
 ////   connection whose bytes stop reading prints its messages up to there and a
-////   `stopped` line saying why.
+////   `stopped` line saying why, on the side whose bytes stopped and with `-`
+////   for its opcode.
 ////
 //// It exits with 2 for arguments it does not take and 1 when no recording
 //// reads.
@@ -65,14 +66,16 @@ pub type Entry {
   Entry(
     sequence: Int,
     time_ms: Int,
-    direction: Direction,
+    /// Which side wrote the bytes of the line; `None` for a `stopped` line of
+    /// a recording that gave no line to stop at.
+    direction: Option(Direction),
     connection: String,
     depth: Int,
     /// The message's number; `None` for the platform login, whose requests are
-    /// text.
+    /// text, and for a `stopped` line.
     message_id: Option(Int),
     /// The message's name in the schema, `unhandled`, or for a line that is
-    /// not a message, `not read` or `stopped`.
+    /// not a message, `not read` or `stopped_name`.
     name: String,
     fields: String,
   )
@@ -303,14 +306,14 @@ fn connection_entries(
           let #(message_name, fields) = named(opened:, names:)
           entry(
             opened.line,
-            opened.direction,
+            Some(opened.direction),
             opened.depth,
             Some(opened.message_id),
             message_name,
             fields,
           )
         })
-      list.append(messages, stopped_entries(exchange.stopped, entry))
+      list.append(messages, stopped_entries(exchange.stopped, recording, entry))
     }
   }
 }
@@ -339,15 +342,43 @@ fn named(opened opened: Opened, names names: Names) -> #(String, String) {
   }
 }
 
+/// The name of the line that says why a connection's bytes stopped reading.
+const stopped_name = "stopped"
+
+/// The line that says why the bytes stopped reading, on the side whose bytes
+/// the line of the recording holds.
 fn stopped_entries(
   stopped: Option(Failure),
-  entry: fn(Int, Direction, Int, Option(Int), String, String) -> Entry,
+  recording: Recording,
+  entry: fn(Int, Option(Direction), Int, Option(Int), String, String) -> Entry,
 ) -> List(Entry) {
   case stopped {
     None -> []
     Some(recorded_message.NotRead(line:, problem:, ..)) -> [
-      entry(line, ClientToServer, 0, None, "stopped", inspected(problem)),
+      entry(
+        line,
+        direction_of_line(recording:, line:),
+        0,
+        None,
+        stopped_name,
+        inspected(problem),
+      ),
     ]
+  }
+}
+
+/// The side that wrote the bytes of a line of the recording, from 1: the
+/// client for a read, the server for a write, and none for the header or a
+/// line that holds no bytes.
+fn direction_of_line(
+  recording recording: Recording,
+  line line: Int,
+) -> Option(Direction) {
+  case line > 0, list.first(list.drop(recording.lines, line - 1)) {
+    True, Ok(Took(input: wire_recording.Read(..), ..)) -> Some(ClientToServer)
+    True, Ok(Wrote(..)) -> Some(ServerToClient)
+    True, Ok(Took(..)) | True, Error(Nil) -> None
+    False, Ok(Took(..)) | False, Ok(Wrote(..)) | False, Error(Nil) -> None
   }
 }
 
@@ -355,7 +386,8 @@ fn stopped_entries(
 fn platform_login_entries(
   name name: String,
   recording recording: Recording,
-  entry entry: fn(Int, Direction, Int, Option(Int), String, String) -> Entry,
+  entry entry: fn(Int, Option(Direction), Int, Option(Int), String, String) ->
+    Entry,
 ) -> List(Entry) {
   let lines =
     list.index_map(recording.lines, fn(line, index) { #(index + 1, line) })
@@ -368,7 +400,7 @@ fn platform_login_entries(
             False ->
               Ok(entry(
                 numbered.0,
-                ClientToServer,
+                Some(ClientToServer),
                 0,
                 None,
                 "not read",
@@ -376,7 +408,14 @@ fn platform_login_entries(
               ))
           }
         Wrote(bytes:, ..) ->
-          Ok(entry(numbered.0, ServerToClient, 0, None, "not read", size(bytes)))
+          Ok(entry(
+            numbered.0,
+            Some(ServerToClient),
+            0,
+            None,
+            "not read",
+            size(bytes),
+          ))
         Took(..) -> Error(Nil)
       }
     })
@@ -391,7 +430,7 @@ fn platform_login_entries(
             recorded_message.Decoded(request:) ->
               entry(
                 line,
-                ClientToServer,
+                Some(ClientToServer),
                 0,
                 None,
                 "sts_request",
@@ -400,7 +439,7 @@ fn platform_login_entries(
             recorded_message.NoDecoder(protocol:, command:) ->
               entry(
                 line,
-                ClientToServer,
+                Some(ClientToServer),
                 0,
                 None,
                 "unhandled",
@@ -413,7 +452,7 @@ fn platform_login_entries(
     }
     Ok(Some(recorded_message.FramesRead(..))) | Ok(None) -> unread([])
     Error(failure) ->
-      list.append(unread([]), stopped_entries(Some(failure), entry))
+      list.append(unread([]), stopped_entries(Some(failure), recording, entry))
   }
 }
 
@@ -434,8 +473,14 @@ fn inspected(value: value) -> String {
   string.inspect(value)
 }
 
-/// Whether the filter keeps the entry.
+/// Whether the filter keeps the entry. The line that says why a connection's
+/// bytes stopped reading is always kept: it is no message of a time or a unit,
+/// and a dump without it would read as a connection that ended whole.
 fn keeps(filter filter: Filter, entry entry: Entry) -> Bool {
+  entry.name == stopped_name || keeps_message(filter:, entry:)
+}
+
+fn keeps_message(filter filter: Filter, entry entry: Entry) -> Bool {
   let after = case filter.from_ms {
     Some(from_ms) -> entry.time_ms >= from_ms
     None -> True
@@ -458,12 +503,14 @@ fn keeps(filter filter: Filter, entry entry: Entry) -> Bool {
 /// The printed line of an entry.
 fn text(entry: Entry) -> String {
   let direction = case entry.direction {
-    ClientToServer -> "client→server"
-    ServerToClient -> "server→client"
+    Some(ClientToServer) -> "client→server"
+    Some(ServerToClient) -> "server→client"
+    None -> "-"
   }
-  let opcode = case entry.message_id {
-    Some(message_id) -> client_connection.message_text(message_id:)
-    None -> "sts"
+  let opcode = case entry.message_id, entry.name == stopped_name {
+    Some(message_id), _ -> client_connection.message_text(message_id:)
+    None, True -> "-"
+    None, False -> "sts"
   }
   string.join(
     [

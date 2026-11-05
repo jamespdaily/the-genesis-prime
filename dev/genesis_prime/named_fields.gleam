@@ -13,19 +13,70 @@
 //// in `()`). A constructor whose argument count is not its type's field count
 //// is printed by position, and text this reading does not take is printed as
 //// it is.
+////
+//// A field the schema says is a float (`float32`, or an array of them) is held
+//// as its 32 bits, so its number is followed by the float those bits hold:
+////
+//// ```
+//// UnitFloatStatChanged(4097, 5, 1108082688)  ─▶ ... value: 1108082688 (35.0)
+//// ```
+////
+//// Bits that are infinity or not a number hold no float and print alone.
 
+import genesis_prime/message/float32
 import genesis_prime/message_generator.{type ReadFailure, NotASchema, NotRead}
-import genesis_prime/message_schema.{type Schema}
+import genesis_prime/message_schema.{type Kind, type Schema}
 import gleam/dict.{type Dict}
+import gleam/float
+import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
 import simplifile
 
-/// The field names of each generated message and record type, by its type
-/// name.
+/// The fields of each generated message and record type, by its type name:
+/// each field's name and how its value is shown.
 pub opaque type Names {
-  Names(by_type: Dict(String, List(String)))
+  Names(by_type: Dict(String, List(Shown)))
+}
+
+/// A field of a generated type: its name and how its value is shown.
+type Shown {
+  Shown(name: String, form: Form)
+}
+
+/// How a field's value is shown.
+type Form {
+  /// As the text of the value.
+  Plain
+  /// A number that holds a float's 32 bits: the number, then the float.
+  FloatBits
+  /// A list of numbers that each hold a float's 32 bits.
+  FloatBitsList
+}
+
+fn form_of(kind: Kind) -> Form {
+  case kind {
+    message_schema.Float32 -> FloatBits
+    message_schema.ArrayOfFloat32(..) -> FloatBitsList
+    message_schema.Unsigned(..)
+    | message_schema.UnsignedBelow(..)
+    | message_schema.HalfFloatAtLeast(..)
+    | message_schema.WideText
+    | message_schema.WideUnits
+    | message_schema.CountedWideText(..)
+    | message_schema.Guid
+    | message_schema.Endpoint
+    | message_schema.RawBytes(..)
+    | message_schema.WholeFrame
+    | message_schema.ArrayOfWideText(..)
+    | message_schema.ArrayOfRecord(..)
+    | message_schema.ArrayOfUnsigned(..)
+    | message_schema.UnsignedArrayCountedBy(..)
+    | message_schema.ArrayOfRecordCountedBy(..)
+    | message_schema.Constant(..)
+    | message_schema.OneRecord(..) -> Plain
+  }
 }
 
 /// The field names of every message and record of the schema file the codec
@@ -54,7 +105,9 @@ fn names(schema: Schema) -> Names {
   |> list.map(fn(entry) {
     #(
       message_schema.type_name(entry.0),
-      list.map(entry.1, fn(field) { field.name }),
+      list.map(entry.1, fn(field) {
+        Shown(name: field.name, form: form_of(field.kind))
+      }),
     )
   })
   |> dict.from_list
@@ -169,14 +222,51 @@ fn render(node: Node, names: Names) -> String {
     ListOf(items:) ->
       "[" <> string.join(list.map(items, render(_, names)), ", ") <> "]"
     Call(head:, arguments:) -> {
-      let rendered = list.map(arguments, render(_, names))
       let fields = dict.get(names.by_type, head) |> result.unwrap([])
-      let shown = case list.length(fields) == list.length(rendered) {
+      let shown = case list.length(fields) == list.length(arguments) {
         True ->
-          list.map2(fields, rendered, fn(field, text) { field <> ": " <> text })
-        False -> rendered
+          list.map2(fields, arguments, fn(field, argument) {
+            field.name <> ": " <> render_field(argument, field.form, names)
+          })
+        False -> list.map(arguments, render(_, names))
       }
       head <> "(" <> string.join(shown, ", ") <> ")"
     }
+  }
+}
+
+/// The text of a field's value, with the float its bits hold after each number
+/// of a float field.
+fn render_field(node: Node, form: Form, names: Names) -> String {
+  case form, node {
+    FloatBits, Word(text:) -> text <> float_after(text)
+    FloatBitsList, ListOf(items:) ->
+      "["
+      <> string.join(
+        list.map(items, fn(item) { render_field(item, FloatBits, names) }),
+        ", ",
+      )
+      <> "]"
+    FloatBits, Call(..)
+    | FloatBits, ListOf(..)
+    | FloatBitsList, Word(..)
+    | FloatBitsList, Call(..)
+    | Plain, Word(..)
+    | Plain, Call(..)
+    | Plain, ListOf(..)
+    -> render(node, names)
+  }
+}
+
+/// ` (35.0)` for the text of a number whose 32 bits hold the float 35.0, and
+/// nothing for a text that is no such number.
+fn float_after(text: String) -> String {
+  case
+    int.parse(text)
+    |> result.try(float32.bits)
+    |> result.try(float32.value)
+  {
+    Ok(held) -> " (" <> float.to_string(held) <> ")"
+    Error(Nil) -> ""
   }
 }

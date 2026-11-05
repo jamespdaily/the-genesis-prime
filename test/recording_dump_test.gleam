@@ -49,7 +49,7 @@ pub fn the_dump_names_the_players_unit_and_lists_a_message_with_no_decoder_by_it
   let entries = recording_dump.entries(connections:, names:)
   let assert Ok(created) =
     list.find(entries, fn(entry) {
-      entry.direction == ServerToClient
+      entry.direction == Some(ServerToClient)
       && entry.message_id == Some(0x0262)
       && entry.name == "unit_create_player"
     })
@@ -58,7 +58,8 @@ pub fn the_dump_names_the_players_unit_and_lists_a_message_with_no_decoder_by_it
     as "the unit is the character the client reported (verdict.txt: strName = 'Tess Renamed')"
   let assert Ok(unhandled) =
     list.find(entries, fn(entry) {
-      entry.direction == ClientToServer && entry.message_id == Some(0x023C)
+      entry.direction == Some(ClientToServer)
+      && entry.message_id == Some(0x023C)
     })
     as "the client sent 0x023C (0x1403f4900)"
   assert unhandled.name == "unhandled"
@@ -167,7 +168,7 @@ pub fn a_server_frame_cut_mid_frame_ends_the_dump_with_a_stopped_line_that_says_
   assert word(stopped, 7) == "stopped"
   assert string.contains(
     stopped,
-    "CutShort(bytes: " <> int.to_string(bit_array.byte_size(cut)) <> ")",
+    "CutShort(" <> int.to_string(bit_array.byte_size(cut)) <> ")",
   )
     as "the bytes of the frame that are there"
 }
@@ -185,7 +186,7 @@ pub fn a_client_frame_the_reader_refuses_ends_the_dump_with_a_stopped_line_that_
   assert word(stopped, 2) == "client→server"
   assert word(stopped, 6) == "-"
   assert word(stopped, 7) == "stopped"
-  assert string.contains(stopped, "LengthBelowHeader(length: 2)")
+  assert string.contains(stopped, "LengthBelowHeader(2)")
     as "a length of 2 is under the 6 bytes of a header (0x140331620)"
 }
 
@@ -201,7 +202,7 @@ pub fn a_server_frame_the_reader_refuses_ends_the_dump_with_a_stopped_line_that_
   let assert [stopped] = lines as "no message came before the refused frame"
   assert word(stopped, 2) == "server→client"
   assert word(stopped, 6) == "-"
-  assert string.contains(stopped, "LengthBelowHeader(length: 2)")
+  assert string.contains(stopped, "LengthBelowHeader(2)")
 }
 
 pub fn a_server_body_that_is_not_its_message_is_printed_as_malformed_and_the_dump_goes_on_test() -> Nil {
