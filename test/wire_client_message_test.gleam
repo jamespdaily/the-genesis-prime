@@ -34,6 +34,11 @@ import genesis_prime/message/movement_command
 import genesis_prime/message/movement_mode
 import genesis_prime/message/movement_state_flags
 import genesis_prime/message/ping.{Ping}
+import genesis_prime/recorded_message.{
+  type Received, type Unread, Bare, CutShort, Decoded, FramesRead, Inside,
+  NoDecoder, NotDecoded, NotRead, PlatformLogin, RuleNotKnown, StsMessageRefused,
+  Unread, Wrapped,
+}
 import genesis_prime/step.{type Now, Now}
 import genesis_prime/wire_recording.{type Recording, Accepted, Client, Read}
 import gleam/bit_array
@@ -43,11 +48,6 @@ import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import recording_support
-import wire_client_message.{
-  type Received, type Unread, Bare, CutShort, Decoded, FramesRead, Inside,
-  NoDecoder, NotDecoded, NotRead, PlatformLogin, RuleNotKnown, StsMessageRefused,
-  Unread, Wrapped,
-}
 import wire_replay_support as support
 
 fn at(n: Int) -> Now {
@@ -66,9 +66,9 @@ fn committed(rule: String) -> #(String, Recording) {
   #(connection.name, connection.recording)
 }
 
-fn read_committed(rule: String) -> wire_client_message.Sent {
+fn read_committed(rule: String) -> recorded_message.Sent {
   let #(name, recording) = committed(rule)
-  let assert Ok(Some(sent)) = wire_client_message.read(name, recording)
+  let assert Ok(Some(sent)) = recorded_message.read(name, recording)
     as { name <> " holds client bytes and they read" }
   sent
 }
@@ -110,7 +110,7 @@ pub fn every_client_message_in_every_wire_recording_decodes_test() -> Nil {
     let session = support.load(folder)
     list.each(session.connections, fn(connection) {
       let assert Ok(Some(_)) =
-        wire_client_message.read(connection.name, connection.recording)
+        recorded_message.read(connection.name, connection.recording)
         as {
           "every client message in "
           <> folder
@@ -127,7 +127,7 @@ pub fn every_decoded_message_encodes_back_to_the_body_the_client_sent_test() -> 
   let messages =
     list.flat_map(support.recorded_sessions(), fn(folder) {
       list.flat_map(support.load(folder).connections, fn(connection) {
-        case wire_client_message.read(connection.name, connection.recording) {
+        case recorded_message.read(connection.name, connection.recording) {
           Ok(Some(FramesRead(messages:, ..))) ->
             list.map(messages, fn(message) { #(connection.name, message) })
           Ok(Some(PlatformLogin(..))) | Ok(None) | Error(NotRead(..)) -> []
@@ -156,7 +156,7 @@ const moving_ids = [0x0637, 0x063A, 0x00D5, 0x063B, 0x00FB, 0x00FC]
 fn recorded_messages() -> List(#(String, Received)) {
   list.flat_map(support.recorded_sessions(), fn(folder) {
     list.flat_map(support.load(folder).connections, fn(connection) {
-      case wire_client_message.read(connection.name, connection.recording) {
+      case recorded_message.read(connection.name, connection.recording) {
         Ok(Some(FramesRead(messages:, ..))) ->
           list.map(messages, fn(message) { #(connection.name, message) })
         Ok(Some(PlatformLogin(..))) | Ok(None) | Error(NotRead(..)) -> []
@@ -403,7 +403,7 @@ pub fn a_login_request_with_its_last_byte_cut_fails_naming_the_connection_the_li
     planted(folder:, rule: auth_connection.rule_name, reads: [
       wrapped(id: 0x0592, body: cut, key: cipher.base_key),
     ])
-  assert wire_client_message.read(name, recording)
+  assert recorded_message.read(name, recording)
     == Error(NotRead(
       connection: name,
       line: 2,
@@ -429,7 +429,7 @@ pub fn a_login_request_with_one_extra_byte_fails_test() -> Nil {
         key: cipher.base_key,
       ),
     ])
-  assert wire_client_message.read(name, recording)
+  assert recorded_message.read(name, recording)
     == Error(NotRead(
       connection: name,
       line: 2,
@@ -457,7 +457,7 @@ pub fn a_message_with_no_decoder_is_listed_and_the_read_goes_on_test() -> Nil {
       ),
     ])
   let assert Ok(Some(FramesRead(messages:, without_decoder:))) =
-    wire_client_message.read(name, recording)
+    recorded_message.read(name, recording)
     as "a message the decoders do not know does not fail the read"
   assert without_decoder == [Unread(line: 2, message_id: 0x0FFF)]
     as "0x0FFF, which the schema holds no message of, is listed with its line"
@@ -478,10 +478,10 @@ pub fn a_wrapper_ciphered_under_another_key_does_not_read_as_the_message_test() 
       wrapped(id: 0x0592, body:, key: cipher.base_key + 1),
     ])
   let assert Ok(Some(FramesRead(messages: [login], ..))) =
-    wire_client_message.read(right_name, right)
+    recorded_message.read(right_name, right)
     as "the login request under the base key reads"
   assert login.body == body as "it is the login request"
-  assert wire_client_message.read(wrong_name, wrong)
+  assert recorded_message.read(wrong_name, wrong)
     != Ok(Some(FramesRead(messages: [login], without_decoder: [])))
     as "the deciphered frame under another key is not the login request"
 }
@@ -514,7 +514,7 @@ pub fn the_frames_after_0x058f_are_read_under_the_session_key_test() -> Nil {
       reads: [<<hello_frame:bits, select(session):bits>>],
     )
   let assert Ok(Some(FramesRead(messages:, ..))) =
-    wire_client_message.read(session_name, session_recording)
+    recorded_message.read(session_name, session_recording)
     as "the frames read under the session key"
   assert list.map(messages, fn(message) {
       client_message.message_id(message.message)
@@ -527,7 +527,7 @@ pub fn the_frames_after_0x058f_are_read_under_the_session_key_test() -> Nil {
       <<hello_frame:bits, select(base):bits>>,
     ])
   let assert Ok(Some(FramesRead(messages: after_hello, ..))) =
-    wire_client_message.read(base_name, base_recording)
+    recorded_message.read(base_name, base_recording)
     as "the frames read"
   assert list.map(after_hello, fn(message) {
       client_message.message_id(message.message)
@@ -550,7 +550,7 @@ pub fn a_recording_that_ends_inside_a_frame_fails_test() -> Nil {
     as "the frame is longer than one byte"
   let #(name, recording) =
     planted(folder:, rule: auth_connection.rule_name, reads: [cut])
-  assert wire_client_message.read(name, recording)
+  assert recorded_message.read(name, recording)
     == Error(NotRead(
       connection: name,
       line: 2,
@@ -572,11 +572,11 @@ pub fn a_clear_request_after_key_data_in_the_same_read_fails_the_read_test() -> 
     planted(folder:, rule: sts_connection.rule_name, reads: [
       <<key_data:bits, ping:bits>>,
     ])
-  assert wire_client_message.read(name, recording)
+  assert recorded_message.read(name, recording)
     == Error(NotRead(
       connection: name,
       line: 2,
-      problem: wire_client_message.ClearRequestAfterKeyData,
+      problem: recorded_message.ClearRequestAfterKeyData,
     ))
     as "the Ping after KeyData is reported"
 }
@@ -588,7 +588,7 @@ pub fn an_unknown_platform_login_command_is_listed_and_the_read_goes_on_test() -
     planted(folder:, rule: sts_connection.rule_name, reads: [
       <<"POST /Sts/Unknown STS/1.0\r\nl:0\r\n\r\n":utf8>>,
     ])
-  assert wire_client_message.read(name, recording)
+  assert recorded_message.read(name, recording)
     == Ok(
       Some(PlatformLogin(
         requests: [#(2, NoDecoder(protocol: "Sts", command: "Unknown"))],
@@ -606,7 +606,7 @@ pub fn a_connect_whose_body_is_no_connect_fails_the_read_test() -> Nil {
       <<"POST /Sts/Connect STS/1.0\r\nl:5\r\n\r\nxxxxx":utf8>>,
     ])
   let assert Error(NotRead(connection:, line: 2, problem: StsMessageRefused(_))) =
-    wire_client_message.read(name, recording)
+    recorded_message.read(name, recording)
     as "a Connect with no XML body is refused by the STS message decoder"
   assert connection == name as "the failure names the connection"
 }
@@ -616,7 +616,7 @@ pub fn a_recording_of_a_rule_that_is_no_connection_but_took_socket_bytes_fails_t
   use folder <- recording_support.in_folder
   let #(name, recording) =
     planted(folder:, rule: "genesis_prime/account_session", reads: [<<1>>])
-  assert wire_client_message.read(name, recording)
+  assert recorded_message.read(name, recording)
     == Error(NotRead(
       connection: name,
       line: 2,
@@ -629,6 +629,6 @@ pub fn a_recording_of_a_rule_that_is_no_connection_but_took_socket_bytes_fails_t
       rule: "genesis_prime/account_session",
       reads: [],
     )
-  assert wire_client_message.read(quiet_name, quiet) == Ok(None)
+  assert recorded_message.read(quiet_name, quiet) == Ok(None)
     as "a rule that took no socket read holds no client bytes"
 }

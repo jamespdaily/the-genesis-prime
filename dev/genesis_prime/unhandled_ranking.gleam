@@ -1,0 +1,175 @@
+//// Ranks the messages the client sent in recorded sittings that the server
+//// does not handle, most frequent first, to choose what to build next:
+////
+//// ```
+//// gleam run -m genesis_prime/unhandled_ranking -- <folder>...
+//// ```
+////
+//// Each folder is a sitting's (`~/.genesis-prime/sittings/<date>-<topic>`) or a
+//// committed session's. Each line is: how many times the client sent the
+//// message across the folders, its opcode, its system's group, and its name in
+//// the schema or `no decoder`.
+////
+//// ```
+//// folders ─▶ recording_dump.load ─▶ recorded_message.exchange ─▶ the client's messages
+////         ─▶ those whose id no rule names (coverage/engine.handled_client_message_ids)
+////         ─▶ counted by id ─▶ lines, most first
+//// ```
+////
+//// - **Unhandled** is the coverage measure's reading: an id no rule names, which
+////   the server logs as unhandled wherever it arrives. A carrier is handled, and
+////   the message inside it is counted on its own.
+//// - **The group** is the system of the roadmap the message belongs to, from
+////   `group_of`; an id it does not list prints `no group`.
+//// - A file that does not read (a sitting still being recorded), or a
+////   connection whose bytes stop reading, is named on standard error, and the
+////   messages read before it are counted.
+////
+//// It exits with 2 when no folder is given and 1 when no recording reads.
+
+import argv
+import genesis_prime/client_connection
+import genesis_prime/coverage/engine
+import genesis_prime/dev_exit
+import genesis_prime/login/sts_connection
+import genesis_prime/message/client_message
+import genesis_prime/recorded_message.{type Opened, ClientToServer}
+import genesis_prime/recording_dump
+import genesis_prime/wire_recording.{type Recording}
+import gleam/dict.{type Dict}
+import gleam/int
+import gleam/io
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/order
+import gleam/string
+
+/// One message the server does not handle: its number, how many times the
+/// client sent it, and its name in the schema when it has one.
+type Unhandled {
+  Unhandled(message_id: Int, count: Int, name: Option(String))
+}
+
+/// Prints the ranking of the folders the arguments name.
+pub fn main() -> Nil {
+  case argv.load().arguments {
+    [] -> {
+      io.println_error(
+        "usage: gleam run -m genesis_prime/unhandled_ranking -- <folder>...",
+      )
+      dev_exit.halt(2)
+    }
+    folders -> {
+      let loaded = list.map(folders, fn(folder) { recording_dump.load(folder) })
+      list.flat_map(loaded, fn(loaded) { loaded.1 })
+      |> list.each(fn(unread) {
+        io.println_error(recording_dump.describe_unread(unread))
+      })
+      case list.flat_map(loaded, fn(loaded) { loaded.0 }) {
+        [] -> {
+          io.println_error(
+            "no recording read from " <> string.join(folders, ", "),
+          )
+          dev_exit.halt(1)
+        }
+        connections -> print(rank(connections))
+      }
+    }
+  }
+}
+
+fn print(ranking: #(List(Unhandled), List(String))) -> Nil {
+  let #(ranked, stopped) = ranking
+  list.each(stopped, io.println_error)
+  list.each(ranked, fn(unhandled) { io.println(line(unhandled)) })
+}
+
+/// The client's messages no rule names, most frequent first and by opcode
+/// among equals, and a sentence for each connection whose bytes stopped
+/// reading.
+fn rank(
+  connections: List(#(String, Recording)),
+) -> #(List(Unhandled), List(String)) {
+  let handled = engine.handled_client_message_ids()
+  let exchanges =
+    list.filter_map(connections, fn(connection) {
+      let #(name, recording) = connection
+      case recording.header.rule == sts_connection.rule_name {
+        True -> Error(Nil)
+        False -> Ok(recorded_message.exchange(name:, recording:))
+      }
+    })
+  let counted =
+    list.flat_map(exchanges, fn(exchange) { exchange.opened })
+    |> list.filter(fn(opened) {
+      opened.direction == ClientToServer
+      && !list.contains(handled, opened.message_id)
+    })
+    |> list.fold(dict.new(), count)
+  let ranked =
+    dict.values(counted)
+    |> list.sort(fn(first, second) {
+      int.compare(second.count, first.count)
+      |> order.break_tie(int.compare(first.message_id, second.message_id))
+    })
+  let stopped =
+    list.filter_map(exchanges, fn(exchange) {
+      case exchange.stopped {
+        Some(recorded_message.NotRead(connection:, line:, problem:)) ->
+          Ok(
+            connection
+            <> " stopped reading at line "
+            <> int.to_string(line)
+            <> ": "
+            <> inspected(problem),
+          )
+        None -> Error(Nil)
+      }
+    })
+  #(ranked, stopped)
+}
+
+fn count(
+  counted: Dict(Int, Unhandled),
+  opened: Opened,
+) -> Dict(Int, Unhandled) {
+  let name = case opened.reading {
+    recorded_message.ClientSent(message:) -> Some(client_message.name(message))
+    recorded_message.ServerSent(..)
+    | recorded_message.WithoutDecoder
+    | recorded_message.Malformed(..) -> None
+  }
+  dict.upsert(counted, opened.message_id, fn(found) {
+    case found {
+      Some(found) -> Unhandled(..found, count: found.count + 1)
+      None -> Unhandled(message_id: opened.message_id, count: 1, name:)
+    }
+  })
+}
+
+/// The printed line of a ranked message.
+fn line(unhandled: Unhandled) -> String {
+  string.join(
+    [
+      string.pad_start(int.to_string(unhandled.count), 7, " "),
+      client_connection.message_text(message_id: unhandled.message_id),
+      option.unwrap(group_of(unhandled.message_id), "no group"),
+      option.unwrap(unhandled.name, "no decoder"),
+    ],
+    "  ",
+  )
+}
+
+/// The system of the roadmap a client message belongs to.
+fn group_of(message_id: Int) -> Option(String) {
+  list.key_find(groups, message_id) |> option.from_result
+}
+
+/// Each message id with its system's group.
+const groups: List(#(Int, String)) = []
+
+/// A problem as the runtime prints it, for a person reading why a connection
+/// stopped.
+fn inspected(value: value) -> String {
+  string.inspect(value)
+}

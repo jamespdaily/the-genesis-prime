@@ -10,10 +10,19 @@ The script's header covers a new play database (made empty with `createdb`) and 
 . setup_check/environment.sh
 export PGHOST=::1 PGPORT=5433 PGUSER=postgres PGDATABASE=genesis_play
 export GENESIS_GAME_ADDRESS=$GENESIS_PLAY_ADDRESS GENESIS_REALM_NAME=Genesis
-gleam run
+gleam run -m genesis_prime/dev_start -- ~/.genesis-prime/sittings/<date>-<topic>
 ```
 
 `setup_check/environment.sh` sets `GENESIS_TABLE_DIR`, the table folder the server reads.
+
+## Every sitting is recorded
+
+The server runs as `dev_start` (its header) so each sitting is recorded into its own folder under `~/.genesis-prime/sittings`, one folder per sitting, named for its date and topic. A sitting stays there and is never committed unless a step adopts it as a committed session. Read one with:
+
+- `gleam run -m genesis_prime/recording_dump -- <folder or .jsonl> [--from <ms>] [--to <ms>] [--unit <id>]`: the sitting as messages, one line each (its header gives the columns).
+- `gleam run -m genesis_prime/unhandled_ranking -- <folder>...`: the client's messages the server does not handle, most frequent first, with their system's group.
+
+A sitting still being recorded has no closing line, so its connections are named as not read until the server stops.
 
 ## In herdr
 

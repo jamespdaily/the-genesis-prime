@@ -152,13 +152,19 @@ fn messages() -> EngineDeclaration {
       evidence: "the messages the client sends, from the facts of its send paths: SendWorldMessage 0x1403f4900 (245 ids), 0x1403f4740 (58), 0x140016010 (7), 0x1400161d0 (23), the 14 ids serialised directly (0x140332920), 0x244, 0x38c and the network layer's ids 0, 1 and 2 (0x140332580): 352 ids (RegisterMessage 0x1403309a0). Each id is one row: the facts give each path's ids and send sites, not the sites of each id",
       ids: sent_message.all(),
     ),
-    handled: [
-      client_connection.shared_message_ids(),
-      auth_connection.taken_message_ids(),
-      game_connection.taken_message_ids(),
-    ]
-      |> list.flatten,
+    handled: handled_client_message_ids(),
   )
+}
+
+/// The ids of the client's messages a rule names: the shared connection code's
+/// (the network layer's and the wrapper 0x244), the auth rule's and the game
+/// rule's. A message of any other id is logged as unhandled.
+pub fn handled_client_message_ids() -> List(Int) {
+  list.flatten([
+    client_connection.shared_message_ids(),
+    auth_connection.taken_message_ids(),
+    game_connection.taken_message_ids(),
+  ])
 }
 
 /// Every engine's declaration, in the order of their area issues.
