@@ -19,8 +19,9 @@
 //// - **Unhandled** is the coverage measure's reading: an id no rule names, which
 ////   the server logs as unhandled wherever it arrives. A carrier is handled, and
 ////   the message inside it is counted on its own.
-//// - **The group** is the system of the roadmap the message belongs to, from
-////   `group_of`; an id it does not list prints `no group`.
+//// - **The group** is the system of the roadmap the message belongs to
+////   (`groups`), for a message whose sender the client's code names; any
+////   other prints `no group`.
 //// - A file that does not read (a sitting still being recorded), or a
 ////   connection whose bytes stop reading, is named on standard error, and the
 ////   messages read before it are counted.
@@ -165,8 +166,18 @@ fn group_of(message_id: Int) -> Option(String) {
   list.key_find(groups, message_id) |> option.from_result
 }
 
-/// Each message id with its system's group.
-const groups: List(#(Int, String)) = []
+/// Each message id whose sender the client's code names, with its system's
+/// group: the roadmap's systems by number and name, or the client's feature
+/// for a message no system holds.
+const groups = [
+  // The answer to 0x0636, which hands the player its unit on entering the
+  // world (opcode.0x635).
+  #(0x0635, "1 log in, enter world, move"),
+  // Sent by the cast of a creature's activate spell (0x14039c430).
+  #(0x0097, "7 quests, zones, prerequisites"),
+  // The store-catalog request (opcode.0x82d).
+  #(0x082D, "the store: no roadmap system"),
+]
 
 /// A problem as the runtime prints it, for a person reading why a connection
 /// stopped.
