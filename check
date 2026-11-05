@@ -15,6 +15,18 @@
 # reported as hung. A part that ends without writing its status fails the check
 # by name.
 #
+# The full check chooses its scope from the files the branch changes since its
+# merge base with origin/main (or main): uncommitted and untracked files count,
+# and a deleted or renamed file counts under both of its names. When there is at
+# least one and every one is in the light set (light_set below: guidance, CI's
+# workflow, the licence, .gitignore and the untested shell and Python tools under
+# dev/), it runs only the parts of ./check fast, with ./check fast's budget, and
+# prints one `scope: light` line saying why; any other changed file, no changed
+# file, no merge base and a shallow history run every part and print a
+# `scope: every part` line with the reason. branch-current and the setup check run
+# first in either scope. CI's checkout is shallow and holds no origin/main, so CI
+# always runs every part.
+#
 # The client scripts' integration tests take about 240 seconds, so they
 # run only when the branch changes a file under the client scripts folder since
 # its merge base with origin/main (or main), and then the budget is raised to
@@ -162,12 +174,94 @@ literal_limit_percent=85
 : "${PGUSER:=postgres}"
 export PGHOST PGPORT PGUSER
 
+# The parts of ./check fast, which a full check whose branch is light also runs.
+fast_parts="format gleam-build glinter code-rules"
+
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
 case "$mode" in
   full) parts="format gleam-build glinter generated-tables gleam-test literal-area message-codec migrations squirrel client-suite client-integration fact-checker" ;;
-  fast) parts="format gleam-build glinter code-rules" ;;
+  fast) parts="$fast_parts" ;;
 esac
+
+# The light set: the paths whose change no part beyond the fast parts reads. Each
+# entry is "pattern|reason". A pattern is a shell glob in which `**` crosses
+# folders; one without `**` matches only a path of its own depth, so `dev/*.sh`
+# leaves out dev/genesis_prime/. Whatever the set does not name is not light,
+# among it the fact file and the client's scripts (the fact checker and the client
+# suite read them), check and setup_check (the setup check's tests), and the
+# sources.
+light_set=(
+  "CLAUDE.md|guidance: the code rules read it, no other part does"
+  ".claude/skills/**/*.md|guidance: the code rules read it, no other part does"
+  ".claude/agents/**|guidance: the code rules read it, no other part does"
+  ".github/workflows/**|CI's workflow: only CI runs it, and CI runs every part"
+  "LICENSE|the licence text: no part reads it"
+  ".gitignore|which files git skips: no part reads it"
+  "dev/*.sh|a shell tool beside the code: no part tests it"
+  "dev/*.py|a Python tool beside the code: no part tests it"
+)
+
+# slash_count PATH: how many `/` PATH holds.
+slash_count() {
+  local slashes=${1//[!\/]/}
+  echo "${#slashes}"
+}
+
+# in_light_set PATH: succeeds when PATH matches an entry of the light set.
+in_light_set() {
+  local entry pattern
+  for entry in "${light_set[@]}"; do
+    pattern=${entry%%|*}
+    case "$pattern" in
+      *'**'*) pattern=${pattern//'**'/*} ;;
+      *) [ "$(slash_count "$1")" = "$(slash_count "$pattern")" ] || continue ;;
+    esac
+    # shellcheck disable=SC2254 # the pattern is a glob on purpose
+    case "$1" in
+      $pattern) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# decide_scope: sets scope to light or full, and scope_why to the reason, from the
+# files the branch changes since its merge base with main (a change made but not
+# committed counts, and so does a deleted or renamed file, under both its names):
+# light only when there is at least one and every one is in the light set. Where
+# the merge base cannot be established (none, or a shallow history) the scope is
+# full.
+decide_scope() {
+  local base changed path count=0 first=""
+  scope=full
+  if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+    scope_why="the history is shallow, so the merge base with main cannot be established"
+    return
+  fi
+  base=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null)
+  if [ -z "$base" ]; then
+    scope_why="there is no merge base with origin/main or main to find the changed files from"
+    return
+  fi
+  changed=$({
+    git diff --name-only --no-renames "$base"
+    git ls-files --others --exclude-standard
+  } 2>/dev/null)
+  if [ -z "$changed" ]; then
+    scope_why="the branch changes no file since its merge base with main"
+    return
+  fi
+  while IFS= read -r path; do
+    if ! in_light_set "$path"; then
+      scope_why="the branch changes $path since its merge base with main, which is not in the light set"
+      return
+    fi
+    count=$((count + 1))
+    [ -n "$first" ] || first=$path
+  done <<<"$changed"
+  scope=light
+  scope_why="the $count files the branch changes since its merge base with main (first: $first) are all guidance or tools that no other part reads"
+}
 
 # decide_integration: sets integration_run to yes or no, and integration_why to
 # the reason, from the machine (GENESIS_NO_CLIENT) and from what the branch
@@ -303,6 +397,18 @@ branch_current() {
 
 if [ "$mode" = full ]; then
   branch_current
+  decide_scope
+  if [ "$scope" = light ]; then
+    mode=fast
+    parts=$fast_parts
+    budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-13}
+    echo "scope: light, so only the fast parts run ($fast_parts): $scope_why; CI runs every part"
+  else
+    echo "scope: every part, because $scope_why"
+  fi
+fi
+
+if [ "$mode" = full ]; then
   decide_integration
   if [ "$integration_run" = yes ]; then
     if [ "$integration_budget" -gt "$budget" ]; then
