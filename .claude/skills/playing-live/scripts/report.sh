@@ -19,7 +19,9 @@
 #                                      report by its own numbers (report_xml.py --timeline: from this
 #                                      install, its entries in time order), keeps the XML and
 #                                      report.json in <folder>, and prints <folder>/timeline.txt,
-#                                      one line per entry, in place of the JSON
+#                                      one line per entry and an end line (when saved, the last
+#                                      entry's time, whether the minutes ran out: a save made mid-fight
+#                                      shows as one), in place of the JSON
 #   report.sh remove                   deletes both addons from the PC
 #
 # Needs GENESIS_PLAY_PC (user@host), read from ~/.genesis-prime/env.sh when it is there. The addon
@@ -51,7 +53,7 @@
 # compares it with the report's nInstalledAt, so a report left by an earlier install is refused.
 set -euo pipefail
 
-usage() { sed -n '5,23p' "$0" >&2; exit 2; }
+usage() { sed -n '5,26p' "$0" >&2; exit 2; }
 
 command=${1:-}
 addons=(GenesisReport)

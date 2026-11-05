@@ -15,12 +15,19 @@ by report.sh install --timeline) and prints one line per entry:
 
     <UTC time> game <seconds> <poll|event[ in|out]> combat <true|false> resource <n>/<max>
 
-A value the entry lacks prints as -. It accepts the report by its own numbers, with no client
-start time: bTimeline and bReported are true, the timeline holds entries, nInstalledAt is the
-<installed_at> (Unix seconds on the PC) of the addon installed now, so the report is from this
-install and not an earlier one, the entries' nTime never go back and none is before nInstalledAt
-or after nReportedAt (the addon's os.time() at its save). Lua errors the addons raised follow as
-lines starting "lua error".
+A value the entry lacks prints as -. Lua errors the addons raised follow as lines starting
+"lua error". The last line is
+
+    end saved <UTC nReportedAt> last entry <UTC time> finished <true|false>
+
+(finished is bTimelineFinished): a timeline saved while a fight ran has finished false and a last
+entry close to the save.
+
+It accepts the report by its own numbers, with no client start time: bTimeline and bReported are
+true, the timeline holds entries, nInstalledAt is the <installed_at> (Unix seconds on the PC) of the
+addon installed now, so the report is from this install and not an earlier one, the entries' nTime
+never go back and none is before nInstalledAt or after nReportedAt (the addon's os.time() at its
+save).
 
 Exits 1, printing nothing to standard output, on a file that is not a saved-addon document, and
 on a timeline the second form does not accept (the reason on standard error).
@@ -109,8 +116,15 @@ def check_timeline(report, installed_at):
         previous = moment
 
 
+def utc_text(unix_seconds):
+    """Unix seconds as a UTC time, 2026-11-05T00:10:39Z."""
+    return f"{datetime.datetime.fromtimestamp(unix_seconds, datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
+
+
 def timeline_lines(report):
-    """One text line per timeline entry, then one per Lua error the report holds."""
+    """One text line per timeline entry, one per Lua error the report holds, then the end line: when
+    the report was saved, the last entry's time and whether the addon's minutes ran out, so a save
+    made in the middle of a fight shows as one."""
     def shown(value):
         if value is None:
             return "-"
@@ -118,18 +132,21 @@ def timeline_lines(report):
 
     lines = []
     for entry in report["arTimeline"]:
-        moment = datetime.datetime.fromtimestamp(entry["nTime"], datetime.timezone.utc)
         source = entry.get("strSource", "-")
         if source == "event":
             source += " in" if entry.get("bEventInCombat") else " out"
         lines.append(
-            f"{moment:%Y-%m-%dT%H:%M:%SZ} game {shown(entry.get('nGameTime'))} {source} "
+            f"{utc_text(entry['nTime'])} game {shown(entry.get('nGameTime'))} {source} "
             f"combat {shown(entry.get('bInCombat'))} "
             f"resource {shown(entry.get('nResource'))}/{shown(entry.get('nMaxResource'))}"
         )
     errors = report.get("tLuaErrorEvents")
     for error in errors if isinstance(errors, list) else []:
         lines.append(f"lua error {error.get('strAddon', '-')}: {error.get('strError', '-')}")
+    lines.append(
+        f"end saved {utc_text(report['nReportedAt'])} last entry {utc_text(report['arTimeline'][-1]['nTime'])} "
+        f"finished {shown(report.get('bTimelineFinished') is True)}"
+    )
     return lines
 
 

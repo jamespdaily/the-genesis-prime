@@ -87,7 +87,7 @@ class TimelineConversionTest(unittest.TestCase):
     def test_a_timeline_report_from_this_install_is_accepted(self):
         report_xml.check_timeline(timeline_report(), INSTALLED_AT)
 
-    def test_each_entry_prints_as_one_line_and_each_lua_error_after_them(self):
+    def test_each_entry_prints_as_one_line_each_lua_error_after_them_and_the_end_line_last(self):
         self.assertEqual(
             report_xml.timeline_lines(timeline_report()),
             [
@@ -95,7 +95,16 @@ class TimelineConversionTest(unittest.TestCase):
                 "2026-11-05T00:10:39Z game 123.75 event out combat false resource 0/4",
                 "2026-11-05T00:10:40Z game - poll combat - resource -/-",
                 "lua error Some&Addon: attempt to index nil",
+                "end saved 2026-11-05T00:10:45Z last entry 2026-11-05T00:10:40Z finished false",
             ],
+        )
+
+    def test_a_timeline_whose_minutes_ran_out_says_it_finished(self):
+        report = timeline_report()
+        report["bTimelineFinished"] = True
+        self.assertEqual(
+            report_xml.timeline_lines(report)[-1],
+            "end saved 2026-11-05T00:10:45Z last entry 2026-11-05T00:10:40Z finished true",
         )
 
 
@@ -147,7 +156,8 @@ class TimelineCommandTest(unittest.TestCase):
         status, out, _ = run_main(["--timeline", path, str(INSTALLED_AT)])
         self.assertEqual(status, 0)
         self.assertEqual(out.splitlines()[0], "2026-11-05T00:10:39Z game 123.5 poll combat true resource 0/4")
-        self.assertEqual(len(out.splitlines()), 4)
+        self.assertEqual(len(out.splitlines()), 5)
+        self.assertTrue(out.splitlines()[-1].startswith("end saved "))
 
     def test_the_command_prints_nothing_and_exits_1_on_a_refused_timeline(self):
         path = self.write_report(timeline_report())
