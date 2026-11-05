@@ -306,6 +306,7 @@ import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
@@ -470,6 +471,13 @@ pub type Notice {
   /// connection of a player removes the unit from its client if it shows it, and
   /// shows it no more.
   Gone(unit_id: Int)
+  /// The player sees these static objects now, each as its 0x262 under the unit
+  /// id the map gave its spawn for the run, in spawn order: the connection writes
+  /// each one its client does not show (genesis_prime/world_map/static_object).
+  ObjectsSeen(units: List(UnitCreateStatic))
+  /// The player no longer sees the static objects of these unit ids: the
+  /// connection writes a 0x355 for each one its client shows.
+  ObjectsUnseen(unit_ids: List(Int))
 }
 
 /// A map's players, its spawns that have a creature or a failure, the spawns'
@@ -522,7 +530,8 @@ pub type SpawnState {
 /// it sees, who see it (the relation is symmetric, so a pair is in one
 /// player's `sees` exactly when it is in the other's), the spawns of the
 /// map's world it sees, whatever their creature's state (a spawn is in `seen`
-/// exactly when it is within sight of the player's place), whether it is ready,
+/// exactly when it is within sight of the player's place), the static objects
+/// it sees (`objects`, likewise), whether it is ready,
 /// the move sequence number of its place, and the hostile spawns whose ring it
 /// stands in, empty until it is ready.
 type Player {
@@ -532,6 +541,7 @@ type Player {
     watch: WatchId,
     sees: Set(ConnectionId),
     seen: Set(SpawnId),
+    objects: Set(SpawnId),
     readiness: Readiness,
     seq: Int,
     inside: Set(SpawnId),
@@ -1563,6 +1573,7 @@ fn joined_new(
           watch:,
           sees: set.new(),
           seen: set.new(),
+          objects: set.new(),
           readiness: StillLoading,
           seq: 0,
           inside: set.new(),

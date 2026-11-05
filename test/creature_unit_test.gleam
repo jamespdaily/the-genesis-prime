@@ -12,6 +12,7 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/unit_fields
 import message_support
 import owned_test
 import spawn_support
@@ -35,7 +36,7 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       place:,
       level: 1,
       health: 52,
-      health_source: spawn.ClientDefault,
+      health_source: unit_fields.ClientDefault,
       faction_id: 1441,
       base_faction_id: 1441,
       display_info_id: 26_565,
@@ -65,7 +66,7 @@ pub fn a_recorded_health_is_sent_as_stat_0_and_as_base_health_test() -> Nil {
     Spawn(
       ..spawn_support.battle_beast(number: 1, x: 0.0),
       health: 442,
-      health_source: spawn.Recorded,
+      health_source: unit_fields.Recorded,
     )
   let unit =
     creature_unit.create(

@@ -9,6 +9,7 @@ import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/static_object.{type StaticObject}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/list
@@ -59,12 +60,22 @@ pub fn standing_with(
   spawns spawns: List(Spawn),
   kinds kinds: Kinds,
 ) -> State {
+  with_objects(incarnation:, spawns:, objects: [], kinds:)
+}
+
+/// The same map with these static objects in its world too.
+pub fn with_objects(
+  incarnation incarnation: Int,
+  spawns spawns: List(Spawn),
+  objects objects: List(StaticObject),
+  kinds kinds: Kinds,
+) -> State {
   map.new(map.Settings(
     map: MapId(world_id: 3460, instance: 0),
     incarnation:,
     realm_id:,
     tables: character_tables.shared(),
-    spawns: spawn.world_spawns(spawns:),
+    spawns: spawn.world_spawns(spawns:, objects:),
     kinds:,
     numbers: spawn_support.numbers,
     idle_stop_ms:,

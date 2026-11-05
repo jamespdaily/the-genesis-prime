@@ -18,6 +18,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/string
 import map_support
 import place_support
 import spawn_support
@@ -244,6 +245,14 @@ pub fn said(message: map.Outgoing) -> String {
       "Watched by " <> int.to_string(number)
     map.Noticed(notice: map.Gone(unit_id:), ..) ->
       "Gone " <> int.to_string(unit_id)
+    map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
+      "Objects seen "
+      <> string.join(
+        list.map(units, fn(unit) { int.to_string(unit.unit_id) }),
+        " ",
+      )
+    map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
+      "Objects unseen " <> string.join(list.map(unit_ids, int.to_string), " ")
     map.Unwatched(by: ConnectionId(number))
     | map.Noticed(notice: map.UnseenBy(by: ConnectionId(number)), ..) ->
       "Unwatched by " <> int.to_string(number)

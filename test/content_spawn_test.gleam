@@ -62,10 +62,13 @@ pub fn a_selections_worlds_are_put_once_and_read_back_by_world_test() -> Nil {
   use <- owned_test.run(5000)
   let key = owned_key.new_fixture_key()
   let beasts =
-    spawn.world_spawns(spawns: [
-      spawn_support.battle_beast(number: 1, x: 0.0),
-      spawn_support.battle_beast(number: 2, x: 100.0),
-    ])
+    spawn.world_spawns(
+      spawns: [
+        spawn_support.battle_beast(number: 1, x: 0.0),
+        spawn_support.battle_beast(number: 2, x: 100.0),
+      ],
+      objects: [],
+    )
   content_spawn.put(
     key:,
     selection: Selection(

@@ -8,7 +8,7 @@
 //// a map's start ─▶ world(key, its world id) ─▶ WorldSpawns: no copy, no query
 //// ```
 ////
-//// - **The term** of a world is `WorldSpawns(by_id, cells)`, put once for every
+//// - **The term** of a world is `WorldSpawns(by_id, objects, cells)`, put once for every
 ////   row of the client's World table, empty for a world with no spawn that
 ////   starts.
 //// - **The query** is `sql/load_spawns.sql`, run by the load's own pool before
@@ -49,6 +49,9 @@ pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
         outfit_info_id: row.outfit_info_id,
         faction_id: row.faction_id,
         base_faction_id: row.base_faction_id,
+        checklist_index: row.quest_checklist_index,
+        world_object_id: row.active_prop_id,
+        world_socket_id: row.world_socket_id,
         health: row.health,
         level: row.level,
       )

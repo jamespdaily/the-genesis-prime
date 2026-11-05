@@ -1,0 +1,130 @@
+//// A static object: a world database spawn of unit type 10 (Simple), 11
+//// (Platform) or 32 (SimpleCollidable), which the client draws from a Creature2
+//// row and a display and places where its 0x262 says, and nothing more: it has
+//// no process, no fight and no use. The map owns these units
+//// (genesis_prime/world_map/map): it decides who sees each and tells the
+//// player's connection, which writes the 0x262 this module builds and the 0x355.
+////
+//// ```
+//// spawn.select (at start) ─▶ StaticObject, in its world's WorldSpawns
+//// map: a player comes into sight ─▶ create(object, unit id, server time) ─▶ ObjectsSeen
+//// ```
+////
+//// - **Type data** as a creature's: the Creature2 id and the spawn's quest
+////   checklist index (`0x140095fb0`, opcode.0x262.simple).
+//// - **Health and level** as a creature's (genesis_prime/world_map/spawn): the
+////   recorded stats, else the creature's `minLevel` and its Base Health at the
+////   level; a type 32 object with health 0 is created dead, so the load leaves one
+////   out (`0x140457a53`, opcode.0x262.simple).
+//// - **Place:** a kind 2 and a kind 14 command at the spawn's position and facing
+////   (`player_unit.standing`, opcode.0x262.creature).
+//// - **Factions** as the spawn records them, 0 included: drawing an object reads
+////   no faction (opcode.0x262.simple).
+//// - **The world object link:** the spawn's `active_prop_id` and world socket in
+////   the second tagged value, 0 and 0 for none, when the unit builds its own actor
+////   and world unit (`0x14043e900`, opcode.0x262.simple).
+//// - Every other field as every spawned unit's (`unit_fields.spawned_tail`).
+
+import genesis_prime/game/start_place.{type Place}
+import genesis_prime/message/static_unit_type
+import genesis_prime/message/unit_create_static.{
+  type UnitCreateStatic, UnitCreateStatic,
+}
+import genesis_prime/table/id.{type Creature2Id, Creature2Id}
+import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/spawn_id.{type SpawnId}
+import genesis_prime/world_map/unit_fields.{type HealthSource}
+
+/// The unit type of a static object, as message 0x262 numbers it
+/// (`0x140649e20`, `world_data.entity_type`): only these three are static
+/// objects, so no other type can be one.
+pub type UnitType {
+  /// Type 10: drawn, and walked through (`0x14038d520` is not set for it).
+  Simple
+  /// Type 11: drawn and stood on.
+  Platform
+  /// Type 32: drawn and solid, and created dead with health 0.
+  SimpleCollidable
+}
+
+/// One static object's spawn and the values its 0x262 carries, so the 0x262
+/// needs no table at run time.
+pub type StaticObject {
+  StaticObject(
+    /// The spawn table's id, the object's number for the run.
+    id: SpawnId,
+    /// The 0x262's unit type, the row's entity type.
+    unit_type: UnitType,
+    /// The object's Creature2 row.
+    creature_id: Creature2Id,
+    /// Where the object stands and faces, in the row's world and area.
+    place: Place,
+    /// Stat 10: the row's recorded level, or the creature's `minLevel`.
+    level: Int,
+    /// Stat 0: the row's recorded health, or the creature's Base Health at
+    /// `level`.
+    health: Int,
+    /// Where `health` comes from, and so whether the 0x262 sends it as property 7.
+    health_source: HealthSource,
+    /// The faction the 0x262 sends, 0 for none.
+    faction_id: Int,
+    /// The base faction the 0x262 sends, 0 for none.
+    base_faction_id: Int,
+    /// The Creature2DisplayInfo the 0x262 sends.
+    display_info_id: Int,
+    /// The Creature2OutfitInfo the 0x262 sends, 0 for none.
+    outfit_info_id: Int,
+    /// The row's quest checklist index, 0 to 255.
+    checklist_index: Int,
+    /// The row's `active_prop_id`: the 64-bit id of the world's object the unit
+    /// claims, 0 for none.
+    world_object_id: Int,
+    /// The row's WorldSocket id, sent with `world_object_id`.
+    world_socket_id: Int,
+  )
+}
+
+/// The static object type of a row's entity type, or `Error(Nil)` for a type that
+/// is not one.
+pub fn unit_type_of(entity_type entity_type: Int) -> Result(UnitType, Nil) {
+  case entity_type {
+    10 -> Ok(Simple)
+    11 -> Ok(Platform)
+    32 -> Ok(SimpleCollidable)
+    _ -> Error(Nil)
+  }
+}
+
+/// Message 0x262 for the object as unit `unit_id`, stamped with
+/// `server_time_estimate_start`, the map's server time (`map.server_time`).
+pub fn create(
+  object object: StaticObject,
+  unit_id unit_id: Int,
+  server_time_estimate_start server_time_estimate_start: Int,
+) -> UnitCreateStatic {
+  let Creature2Id(creature_id) = object.creature_id
+  UnitCreateStatic(
+    unit_id:,
+    unit_type: case object.unit_type {
+      Simple -> static_unit_type.Simple
+      Platform -> static_unit_type.Platform
+      SimpleCollidable -> static_unit_type.SimpleCollidable
+    },
+    creature_id:,
+    checklist_index: object.checklist_index,
+    tail: unit_fields.spawned_tail(
+      health: object.health,
+      level: object.level,
+      max_health: object.health,
+      health_source: object.health_source,
+      standing: player_unit.standing(place: object.place),
+      faction_id: object.faction_id,
+      base_faction_id: object.base_faction_id,
+      world_object_id: object.world_object_id,
+      world_socket_id: object.world_socket_id,
+      display_info_id: object.display_info_id,
+      outfit_info_id: object.outfit_info_id,
+      server_time_estimate_start:,
+    ),
+  )
+}

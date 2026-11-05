@@ -173,6 +173,8 @@ pub fn map_sent(
         ]),
       )
     }
+    map.ObjectsSeen(units: _) -> Continue(session, [])
+    map.ObjectsUnseen(unit_ids: _) -> Continue(session, [])
   }
 }
 

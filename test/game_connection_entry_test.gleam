@@ -215,7 +215,7 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
         tagged_by_unit_id: 0,
         tagged_by_group_id: 0,
         field_14: 0,
-        field_16: 0,
+        world_object_id: 0,
         world_socket_id: 0,
         cluster_id: 0,
         field_20: 0,

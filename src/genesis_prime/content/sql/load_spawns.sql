@@ -18,6 +18,9 @@ select
   spawn.outfit_info_id,
   spawn.faction_id,
   spawn.base_faction_id,
+  spawn.quest_checklist_index,
+  spawn.active_prop_id,
+  spawn.world_socket_id,
   health.value as health,
   level.value as level
 from spawn

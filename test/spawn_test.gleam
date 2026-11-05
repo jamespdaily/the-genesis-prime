@@ -40,6 +40,7 @@ import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth, NoFaction, NpcLink,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/float
 import gleam/int
@@ -410,11 +411,11 @@ pub fn a_spawn_with_no_recorded_health_has_the_base_health_of_its_own_level_not_
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(third) = dict.get(world.by_id, SpawnId(1))
   assert #(third.level, third.health, third.health_source)
-    == #(3, 132, spawn.ClientDefault)
+    == #(3, 132, unit_fields.ClientDefault)
     as "level 3: the formula at the spawn's own level"
   let assert Ok(eighth) = dict.get(world.by_id, SpawnId(2))
   assert #(eighth.level, eighth.health, eighth.health_source)
-    == #(8, 663, spawn.ClientDefault)
+    == #(8, 663, unit_fields.ClientDefault)
     as "level 8"
 }
 
@@ -441,10 +442,10 @@ pub fn a_recorded_health_is_the_spawns_health_and_maximum_whatever_the_clients_f
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(above) = dict.get(world.by_id, SpawnId(1))
   assert #(above.level, above.health, above.health_source)
-    == #(3, 442, spawn.Recorded)
+    == #(3, 442, unit_fields.Recorded)
     as "recorded 442.9 is the health, truncated as the client truncates"
   let assert Ok(below) = dict.get(world.by_id, SpawnId(2))
-  assert #(below.health, below.health_source) == #(50, spawn.Recorded)
+  assert #(below.health, below.health_source) == #(50, unit_fields.Recorded)
     as "world_data.spawn_health: a recorded health below the formula's 132 is the health too"
 }
 

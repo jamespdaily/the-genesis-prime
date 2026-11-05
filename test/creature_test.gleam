@@ -34,6 +34,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
 import map_support
@@ -502,7 +503,7 @@ fn recorded_beast() -> Spawn {
   Spawn(
     ..spawn_support.battle_beast(number: 1, x: 0.0),
     health: 442,
-    health_source: spawn.Recorded,
+    health_source: unit_fields.Recorded,
   )
 }
 

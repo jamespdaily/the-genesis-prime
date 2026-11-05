@@ -22,20 +22,16 @@
 ////   (`opcode.0x262.creature`); otherwise none, and the client computes each from
 ////   its tables (`0x1404585c0`).
 //// - Every other field 0 or empty, each by its record
-////   (opcode.0x262.unit_fields).
+////   (opcode.0x262.unit_fields), the tail as every spawned unit's
+////   (`unit_fields.spawned_tail`).
 
-import genesis_prime/message/float32
-import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{
   type UnitCreateCreature, UnitCreateCreature,
 }
-import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/spawn.{type Spawn, ClientDefault, Recorded}
+import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/unit_fields
-import gleam/int
 import gleam/result
 
 /// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health`,
@@ -48,24 +44,20 @@ pub fn create(
   server_time_estimate_start server_time_estimate_start: Int,
 ) -> UnitCreateCreature {
   let Creature2Id(creature_id) = spawn.creature_id
-  let #(position, rotation) = player_unit.standing(place: spawn.place)
   UnitCreateCreature(
     unit_id:,
     creature_id:,
     checklist_index: 0,
-    tail: unit_fields.tail(
-      stats: [
-        UnitStat(stat_id: unit_fields.health_stat, value: health),
-        UnitStat(stat_id: unit_fields.level_stat, value: spawn.level),
-      ],
-      movement_commands: [
-        start_movement.Position(position),
-        start_movement.Rotation(rotation),
-      ],
-      properties: base_health_properties(spawn:),
-      item_visuals: [],
+    tail: unit_fields.spawned_tail(
+      health:,
+      level: spawn.level,
+      max_health: spawn.health,
+      health_source: spawn.health_source,
+      standing: player_unit.standing(place: spawn.place),
       faction_id: spawn.faction_id,
       base_faction_id: spawn.base_faction_id,
+      world_object_id: 0,
+      world_socket_id: 0,
       display_info_id: spawn.display_info_id,
       outfit_info_id: spawn.outfit_info_id,
       server_time_estimate_start:,
@@ -77,25 +69,4 @@ pub fn create(
 pub fn health_of(unit unit: UnitCreateCreature) -> Int {
   unit_fields.stat(tail: unit.tail, stat_id: unit_fields.health_stat)
   |> result.unwrap(0)
-}
-
-/// The properties the 0x262 sends: Base Health at the spawn's health, both words
-/// the same as the player's (`opcode.0x262.health`), for a recorded health; none
-/// for the client's own default.
-fn base_health_properties(
-  spawn spawn: Spawn,
-) -> List(unit_property.UnitProperty) {
-  case spawn.health_source {
-    Recorded -> {
-      let bits = float32.to_bits(int.to_float(spawn.health))
-      [
-        UnitProperty(
-          property_id: unit_fields.base_health_property,
-          field_2: bits,
-          value: bits,
-        ),
-      ]
-    }
-    ClientDefault -> []
-  }
 }

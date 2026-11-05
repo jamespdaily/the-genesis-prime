@@ -89,7 +89,10 @@ import genesis_prime/world_map/creature_life.{
 }
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
-import genesis_prime/world_map/unit_fields
+import genesis_prime/world_map/static_object.{type StaticObject}
+import genesis_prime/world_map/unit_fields.{
+  type HealthSource, ClientDefault, Recorded,
+}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -120,18 +123,12 @@ pub type Row {
     outfit_info_id: Int,
     faction_id: Int,
     base_faction_id: Int,
+    checklist_index: Int,
+    world_object_id: Int,
+    world_socket_id: Int,
     health: Option(Float),
     level: Option(Float),
   )
-}
-
-/// Where a spawn's health comes from. `Recorded` is the world database's stat 0,
-/// which the 0x262 sends as property 7 too, since the client's own number for the
-/// creature is another; `ClientDefault` is the client's Base Health at the
-/// spawn's level, which a 0x262 leaves out for the client to compute.
-pub type HealthSource {
-  Recorded
-  ClientDefault
 }
 
 /// One creature's place and values, as its 0x262 carries them, so the 0x262
@@ -166,27 +163,42 @@ pub type Spawn {
 }
 
 /// The spawns that start in one world, as the persistent term of the world holds
-/// them (genesis_prime/content/spawn): by id, for a creature's start, and by
-/// cell, for a player's move. A map and a creature read it and keep no copy.
+/// them (genesis_prime/content/spawn): the creatures by id, for a creature's
+/// start, the static objects by id, and both by cell, for a player's move, so one
+/// `spawn_cell.near` finds the two. A map and a creature read it and keep no copy.
 pub type WorldSpawns {
-  WorldSpawns(by_id: Dict(SpawnId, Spawn), cells: Cells)
+  WorldSpawns(
+    by_id: Dict(SpawnId, Spawn),
+    objects: Dict(SpawnId, StaticObject),
+    cells: Cells,
+  )
 }
 
-/// The spawns as a world's term holds them: by id and by cell.
-pub fn world_spawns(spawns spawns: List(Spawn)) -> WorldSpawns {
+/// The spawns as a world's term holds them: the creatures and the static objects
+/// by id, and both by cell.
+pub fn world_spawns(
+  spawns spawns: List(Spawn),
+  objects objects: List(StaticObject),
+) -> WorldSpawns {
   WorldSpawns(
     by_id: dict.from_list(list.map(spawns, fn(spawn) { #(spawn.id, spawn) })),
-    cells: spawn_cell.index(
+    objects: dict.from_list(
+      list.map(objects, fn(object) { #(object.id, object) }),
+    ),
+    cells: spawn_cell.index(list.append(
       list.map(spawns, fn(spawn) {
         #(spawn.id, start_place.x(spawn.place), start_place.z(spawn.place))
       }),
-    ),
+      list.map(objects, fn(object) {
+        #(object.id, start_place.x(object.place), start_place.z(object.place))
+      }),
+    )),
   )
 }
 
 /// A world with no spawn.
 pub fn no_spawns() -> WorldSpawns {
-  WorldSpawns(by_id: dict.new(), cells: spawn_cell.empty())
+  WorldSpawns(by_id: dict.new(), objects: dict.new(), cells: spawn_cell.empty())
 }
 
 /// What the selection found: the spawns that start, in a `WorldSpawns` for each
@@ -215,13 +227,17 @@ pub type LeftOut {
 }
 
 /// What one world has of the client's tables' spawns, the coverage measure: how
-/// many start, how many NonPlayer rows are left out and why, and how many rows
-/// there are of every other entity type, by type.
+/// many start, how many NonPlayer rows are left out and why, how many static
+/// objects are sent, by type, and how many are left out because the client
+/// would create them dead, and how many rows there are of every other entity
+/// type, by type.
 pub type WorldCoverage {
   WorldCoverage(
     world_id: Int,
     started: Int,
     left_out: List(#(LeftOut, Int)),
+    objects_sent: List(#(static_object.UnitType, Int)),
+    objects_dead: Int,
     other_types: List(#(Int, Int)),
   )
 }
@@ -1165,7 +1181,10 @@ fn worlds_of(
       start_place.world_id(checked.spawn.place)
     })
     |> dict.map_values(fn(_world, checked) {
-      world_spawns(spawns: list.map(checked, fn(one) { one.spawn }))
+      world_spawns(
+        spawns: list.map(checked, fn(one) { one.spawn }),
+        objects: [],
+      )
     })
   set.fold(worlds, dict.new(), fn(found, world_id) {
     dict.insert(found, world_id, no_spawns())
@@ -1209,6 +1228,12 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
           }),
         )
       }),
+      objects_sent: [
+        #(static_object.Simple, 0),
+        #(static_object.Platform, 0),
+        #(static_object.SimpleCollidable, 0),
+      ],
+      objects_dead: 0,
       other_types: list.filter_map(ones, fn(one) {
         case one {
           Other(row:) -> Ok(row.entity_type)

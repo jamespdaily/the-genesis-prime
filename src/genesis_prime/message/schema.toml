@@ -639,7 +639,7 @@ fields = [
   { name = "first_tag", kind = "constant", bits = 2, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "field_14", kind = "unsigned", bits = 1, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
   { name = "second_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_16", kind = "unsigned", bits = 64, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
+  { name = "world_object_id", kind = "unsigned", bits = 64, evidence = "0x140096fa0", named_by = "opcode.0x262.simple" },
   { name = "world_socket_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
   { name = "third_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "cluster_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045ad90" },
@@ -1647,6 +1647,20 @@ summary = "creates a unit of type 0, a creature, in the world: the Creature2 id,
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "unit_type", kind = "constant", bits = 6, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "creature_id", kind = "unsigned", bits = 18, evidence = "0x140095fb0", named_by = "0x140095fb0" },
+  { name = "checklist_index", kind = "unsigned", bits = 8, evidence = "0x140095fb0", named_by = "0x140095fb0" },
+  { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
+]
+
+[[message]]
+id = 0x0262
+name = "unit_create_static"
+direction = "server_to_client"
+evidence = "opcode.0x262.simple"
+summary = "creates a static object in the world: a unit of type 10 (Simple), 11 (Platform) or 32 (SimpleCollidable), with a creature's type data, the Creature2 id, which the client takes the object's name, model scale and level from, and the quest checklist index, then the values of a player's create: the stats (a type 32 object created with health 0 is dead; types 10 and 11 never are), the movement commands (kind 2, the position, and kind 14, the rotation), the properties, both factions, the world object the unit claims (0 for none, when the unit builds its own) and the display info, which must be sent since with 0 no model is described"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "unit_type", kind = "unsigned", bits = 6, evidence = "0x140096fa0", named_by = "opcode.0x262.simple", values_type = "StaticUnitType", values = [ { value = 10, name = "simple", evidence = "world_data.entity_type" }, { value = 11, name = "platform", evidence = "world_data.entity_type" }, { value = 32, name = "simple_collidable", evidence = "world_data.entity_type" } ] },
   { name = "creature_id", kind = "unsigned", bits = 18, evidence = "0x140095fb0", named_by = "0x140095fb0" },
   { name = "checklist_index", kind = "unsigned", bits = 8, evidence = "0x140095fb0", named_by = "0x140095fb0" },
   { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
