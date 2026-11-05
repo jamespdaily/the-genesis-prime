@@ -226,7 +226,9 @@ fn render(node: Node, names: Names) -> String {
       let shown = case list.length(fields) == list.length(arguments) {
         True ->
           list.map2(fields, arguments, fn(field, argument) {
-            field.name <> ": " <> render_field(argument, field.form, names)
+            field.name
+            <> ": "
+            <> render_field(node: argument, form: field.form, names:)
           })
         False -> list.map(arguments, render(_, names))
       }
@@ -237,13 +239,19 @@ fn render(node: Node, names: Names) -> String {
 
 /// The text of a field's value, with the float its bits hold after each number
 /// of a float field.
-fn render_field(node: Node, form: Form, names: Names) -> String {
+fn render_field(
+  node node: Node,
+  form form: Form,
+  names names: Names,
+) -> String {
   case form, node {
     FloatBits, Word(text:) -> text <> float_after(text)
     FloatBitsList, ListOf(items:) ->
       "["
       <> string.join(
-        list.map(items, fn(item) { render_field(item, FloatBits, names) }),
+        list.map(items, fn(item) {
+          render_field(node: item, form: FloatBits, names:)
+        }),
         ", ",
       )
       <> "]"

@@ -98,7 +98,12 @@ fn wrapped(
 
 /// A frame the auth server writes, under the base key.
 fn base_written(id id: Int, body body: BitArray) -> BitArray {
-  wrapped(encrypted_frame.AuthWrapper, id:, body:, cipher: cipher.base())
+  wrapped(
+    wrapper: encrypted_frame.AuthWrapper,
+    id:,
+    body:,
+    cipher: cipher.base(),
+  )
 }
 
 /// What the dump holds of a planted connection of the rule `rule`: the steps in
@@ -258,7 +263,7 @@ pub fn the_servers_writes_after_0x058f_are_read_under_the_session_key_test() -> 
   let base = cipher.base()
   let hello =
     wrapped(
-      encrypted_frame.ClientWrapper,
+      wrapper: encrypted_frame.ClientWrapper,
       id: 0x058F,
       body: hello_body,
       cipher: base,
@@ -268,7 +273,7 @@ pub fn the_servers_writes_after_0x058f_are_read_under_the_session_key_test() -> 
     as "the session key makes a cipher"
   let level = fn(cipher) {
     wrapped(
-      encrypted_frame.GameWrapper,
+      wrapper: encrypted_frame.GameWrapper,
       id: 0x0036,
       body: level_3_body,
       cipher:,
