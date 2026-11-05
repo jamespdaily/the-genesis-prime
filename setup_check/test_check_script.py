@@ -43,6 +43,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
@@ -1257,6 +1258,40 @@ class WorkerCountTest(unittest.TestCase):
         run = shared_run("workers-3", GENESIS_TEST_WORKERS="3")
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertIn("gleam test -- --workers 3", run.commands)
+
+
+class FactFileMergeTest(unittest.TestCase):
+    """The fact file merges by union (.gitattributes): every step appends its records at
+    the end, so two branches' records would otherwise conflict on every merge."""
+
+    FACT_FILE = ".claude/skills/decoding-the-client/references/client-facts.toml"
+
+    def test_the_fact_file_merges_by_union(self):
+        result = subprocess.run(
+            ["git", "check-attr", "merge", "--", self.FACT_FILE],
+            cwd=REPOSITORY, capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(result.stdout.strip(), f"{self.FACT_FILE}: merge: union")
+
+    def test_two_branches_appending_records_merge_without_a_conflict(self):
+        base = '["a"]\nstatement = "a"\n'
+        ours = base + '\n["b"]\nstatement = "b"\n'
+        theirs = base + '\n["c"]\nstatement = "c"\n'
+        with tempfile.TemporaryDirectory() as folder:
+            files = {}
+            for name, text in (("base", base), ("ours", ours), ("theirs", theirs)):
+                files[name] = Path(folder) / name
+                files[name].write_text(text)
+            plain = subprocess.run(
+                ["git", "merge-file", "-p", str(files["ours"]), str(files["base"]), str(files["theirs"])],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(plain.returncode, 1, "without union the two appends conflict")
+            union = subprocess.run(
+                ["git", "merge-file", "-p", "--union", str(files["ours"]), str(files["base"]), str(files["theirs"])],
+                capture_output=True, text=True, check=True,
+            )
+        self.assertEqual(set(tomllib.loads(union.stdout)), {"a", "b", "c"})
 
 
 if __name__ == "__main__":
