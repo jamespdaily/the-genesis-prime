@@ -34,20 +34,20 @@ import genesis_prime/step.{
   ConnectionId, LogError, LogInfo, Map, OwnEffect, OwnEvent, Woken,
 }
 import genesis_prime/store.{Character, ForSelect, Listed}
-import genesis_prime/table/id.{ClassId, Creature2Id}
+import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
 }
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/static_object.{StaticObject}
+import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
-import gleam/option
 import gleam/result
 import map_support
 import owned_test
+import place_support
+import spawn_support
 
 // ---- other players' units ----
 //
@@ -1021,31 +1021,16 @@ pub fn messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the
 /// The 0x262 of a Holoring (Creature2 73416, a type 10 object of world 3460's
 /// start) as unit `unit_id`.
 fn object_unit(unit_id: Int) -> UnitCreateStatic {
-  let assert Ok(place) =
-    start_place.place(
-      world_id: 3460,
-      world_zone_id: 5967,
-      x: 1.0,
-      y: 2.0,
-      z: 3.0,
-      facing: start_place.unturned,
-    )
-    as "World 3460 is a world"
   static_object.create(
-    object: StaticObject(
-      id: SpawnId(unit_id),
-      unit_type: static_object.Simple,
-      creature_id: Creature2Id(73_416),
-      place:,
-      level: option.None,
-      health: option.None,
-      faction_id: 0,
-      base_faction_id: 0,
-      display_info_id: 1,
-      outfit_info_id: 0,
-      checklist_index: 0,
-      world_object_id: 0,
-      world_socket_id: 0,
+    object: spawn_support.holoring(
+      number: unit_id,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+      ),
     ),
     unit_id:,
     server_time_estimate_start: 0,
@@ -1109,6 +1094,46 @@ pub fn objects_unseen_writes_a_0x355_for_each_shown_object_and_none_for_one_not_
     )
   assert game_connection_support.written_ids(taken) == [0x0262]
     as "removed, the object is created again when it is seen again"
+}
+
+pub fn an_object_notice_naming_the_players_own_unit_or_unit_0_writes_nothing_for_it_and_logs_an_error_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client makes the controlled unit of a 0x262 with unit id 0 or its own
+  // unit's id (0x1403d9760), and removes a unit with a 0x355 (0x1403d9590): the
+  // other units of the same notice are written.
+  let own = game_connection_support.own_unit_id
+  let #(state, taken) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_the_map(
+        ObjectsSeen(units: [object_unit(own), object_unit(20), object_unit(0)]),
+      ),
+    )
+  assert list.map(
+      game_connection_support.heard(taken, game_connection_support.keyed()),
+      fn(frame) {
+        unit_create_static.decode(frame.body)
+        |> result.map(fn(unit) { #(frame.message_id, unit.unit_id) })
+      },
+    )
+    == [Ok(#(0x0262, 20))]
+    as "a 0x262 for object 20 only"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 2
+    as "an error line for each of unit 0 and the player's own unit"
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(
+        ObjectsUnseen(unit_ids: [own, 20, 0]),
+      ),
+    )
+  let assert [Frame(message_id: 0x0355, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "a 0x355 for object 20 only"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 20, field_2: 0))
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 2
+    as "an error line for each of unit 0 and the player's own unit"
 }
 
 pub fn an_object_notice_for_another_stay_is_dropped_test() -> Nil {

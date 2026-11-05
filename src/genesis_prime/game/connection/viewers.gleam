@@ -182,8 +182,12 @@ pub fn map_sent(
       )
     }
     map.ObjectsSeen(units:) -> {
+      let #(refused, named) =
+        list.partition(units, fn(unit) {
+          names_own_unit(entered:, unit_id: unit.unit_id)
+        })
       let fresh =
-        list.filter(units, fn(unit) {
+        list.filter(named, fn(unit) {
           !dict.has_key(entered.shown, unit.unit_id)
           && !set.contains(entered.gone, unit.unit_id)
         })
@@ -193,26 +197,38 @@ pub fn map_sent(
             dict.insert(picture, unit.unit_id, ShownObject)
           })
         }),
-        list.map(fresh, fn(unit) {
-          connection_state.to_client(
-            session,
-            connection_frames.object_created_frame(unit:),
-          )
-        }),
+        list.append(
+          list.map(refused, fn(unit) {
+            refusal_logged(session:, unit_id: unit.unit_id)
+          }),
+          list.map(fresh, fn(unit) {
+            connection_state.to_client(
+              session,
+              connection_frames.object_created_frame(unit:),
+            )
+          }),
+        ),
       )
     }
     map.ObjectsUnseen(unit_ids:) -> {
-      let shown_ids = list.filter(unit_ids, dict.has_key(entered.shown, _))
+      let #(refused, named) =
+        list.partition(unit_ids, fn(unit_id) {
+          names_own_unit(entered:, unit_id:)
+        })
+      let shown_ids = list.filter(named, dict.has_key(entered.shown, _))
       Continue(
         list.fold(shown_ids, session, fn(session, unit_id) {
           unit_forgotten(session:, unit_id:)
         }),
-        list.map(shown_ids, fn(unit_id) {
-          connection_state.to_client(
-            session,
-            connection_frames.unit_removed_frame(unit_id:),
-          )
-        }),
+        list.append(
+          list.map(refused, fn(unit_id) { refusal_logged(session:, unit_id:) }),
+          list.map(shown_ids, fn(unit_id) {
+            connection_state.to_client(
+              session,
+              connection_frames.unit_removed_frame(unit_id:),
+            )
+          }),
+        ),
       )
     }
   }
@@ -255,16 +271,8 @@ pub fn viewer_takes(
     | client_connection.Shield(..) -> False
   }
   use <- bool.guard(
-    when: creates_or_removes && { unit_id == 0 || unit_id == entered.unit_id },
-    return: Continue(session, [
-      connection_state.log(
-        session:,
-        level: step.LogError,
-        text: "a unit's owner sent a 0x262 or 0x355 naming unit "
-          <> int.to_string(unit_id)
-          <> ", which is this player's own unit or none, so it is refused",
-      ),
-    ]),
+    when: creates_or_removes && names_own_unit(entered:, unit_id:),
+    return: Continue(session, [refusal_logged(session:, unit_id:)]),
   )
   case news.news {
     client_connection.Appeared(unit:) -> {
@@ -457,6 +465,31 @@ pub fn viewer_takes(
       ])
     }
   }
+}
+
+/// Whether a 0x262 or 0x355 would name unit 0 or this player's own unit: the
+/// client makes the controlled unit of a 0x262 with either id and removes a unit
+/// with a 0x355 (0x1403d9760, 0x1403d9590). `viewer_takes`, `ObjectsSeen` and
+/// `ObjectsUnseen` refuse such a unit and write nothing for it.
+fn names_own_unit(
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+) -> Bool {
+  unit_id == 0 || unit_id == entered.unit_id
+}
+
+/// The error line for a unit a 0x262 or 0x355 was refused for (`names_own_unit`).
+fn refusal_logged(
+  session session: Session,
+  unit_id unit_id: Int,
+) -> Effect(ConnectionEffect(Request)) {
+  connection_state.log(
+    session:,
+    level: step.LogError,
+    text: "a unit's owner sent a 0x262 or 0x355 naming unit "
+      <> int.to_string(unit_id)
+      <> ", which is this player's own unit or none, so it is refused",
+  )
 }
 
 /// A creature's health or death news, for a creature this client shows: its picture

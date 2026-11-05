@@ -763,18 +763,10 @@ fn created(others others: Others, body body: BitArray) -> Others {
   case unit {
     PlayerCreated(unit:) -> dict.insert(others, unit.unit_id, placed_at(unit:))
     CreatureCreated(unit:) ->
-      dict.insert(others, unit.unit_id, placed_creature_at(creature: unit))
+      dict.insert(others, unit.unit_id, first_position(unit.tail))
     ObjectCreated(unit:) ->
       dict.insert(others, unit.unit_id, first_position(unit.tail))
   }
-}
-
-/// Where a creature's 0x262 places its unit: the kind 2 command that is the first
-/// of its commands (0x1404586e0).
-fn placed_creature_at(
-  creature creature: UnitCreateCreature,
-) -> #(Float, Float, Float) {
-  first_position(creature.tail)
 }
 
 /// Where a 0x262's tail places its unit: the kind 2 command that is the first of

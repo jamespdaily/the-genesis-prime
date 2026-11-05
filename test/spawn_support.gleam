@@ -20,6 +20,7 @@ import genesis_prime/world_map/creature_life.{
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/list
@@ -84,6 +85,28 @@ pub fn dagun(number number: Int, x x: Float) -> Spawn {
       hostile_to: Hostile(exile: False, dominion: True),
       attack: Attack(..beast_attack(), reach: 7.0),
     ),
+  )
+}
+
+/// The static object numbered `number` of a Holoring (Creature2 73416, a type 10
+/// object of world 3460's start, the trace's) standing at `place`: no recorded
+/// level or health, both factions 0, display 1. A test changes what it checks by
+/// record update.
+pub fn holoring(number number: Int, place place: Place) -> StaticObject {
+  StaticObject(
+    id: SpawnId(number),
+    unit_type: static_object.Simple,
+    creature_id: Creature2Id(73_416),
+    place:,
+    level: option.None,
+    health: option.None,
+    faction_id: 0,
+    base_faction_id: 0,
+    display_info_id: 1,
+    outfit_info_id: 0,
+    checklist_index: 0,
+    world_object_id: 0,
+    world_socket_id: 0,
   )
 }
 

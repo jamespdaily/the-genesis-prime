@@ -22,6 +22,7 @@ import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
 import genesis_prime/table/world
+import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object.{type StaticObject}
 import gleam/dict
 import gleam/erlang/process
@@ -93,26 +94,11 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
   let of_type = fn(objects: List(StaticObject), unit_type) {
     list.count(objects, fn(object) { object.unit_type == unit_type })
   }
-  assert list.map(
-      [
-        static_object.Simple,
-        static_object.Platform,
-        static_object.SimpleCollidable,
-      ],
-      of_type(objects, _),
-    )
+  assert list.map(spawn.object_types, of_type(objects, _))
     == [17_904, 491, 1178]
     as "every static spawn of the world database loads, by type"
   let ship = dict.values(content_spawn.world(key:, world_id: 3460).objects)
-  assert list.map(
-      [
-        static_object.Simple,
-        static_object.Platform,
-        static_object.SimpleCollidable,
-      ],
-      of_type(ship, _),
-    )
-    == [302, 0, 15]
+  assert list.map(spawn.object_types, of_type(ship, _)) == [302, 0, 15]
     as "world 3460's static objects, by type"
   assert list.all(objects, fn(object) {
     case object.unit_type {

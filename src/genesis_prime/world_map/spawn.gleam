@@ -1262,7 +1262,7 @@ fn worlds_of(
 }
 
 /// The static object types in the coverage's order.
-const object_types = [
+pub const object_types = [
   static_object.Simple,
   static_object.Platform,
   static_object.SimpleCollidable,

@@ -23,12 +23,11 @@ import genesis_prime/message/unit_create_static
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object.{
   type StaticObject, Health, StaticObject,
 }
 import genesis_prime/world_map/unit_fields
-import gleam/option.{type Option, None, Some}
+import gleam/option.{Some}
 import map_support
 import message_support
 import owned_test
@@ -36,19 +35,10 @@ import place_support
 import spawn_support
 import unit_support
 
-/// A static object at the vectors' place with these values.
-fn object(
-  unit_type unit_type: static_object.UnitType,
-  creature_id creature_id: Int,
-  level level: Option(Int),
-  health health: Option(static_object.Health),
-  faction_id faction_id: Int,
-  base_faction_id base_faction_id: Int,
-  checklist_index checklist_index: Int,
-  world_object_id world_object_id: Int,
-  world_socket_id world_socket_id: Int,
-  outfit_info_id outfit_info_id: Int,
-) -> StaticObject {
+/// The vectors' object: the support's Holoring at the vectors' place, facing the
+/// vectors' yaw of 1.5, with the vectors' display, which each vector changes by
+/// record update.
+fn vectors_object() -> StaticObject {
   let assert Ok(place) =
     start_place.place(
       world_id: 3460,
@@ -60,19 +50,8 @@ fn object(
     )
     as "World 3460 is a world"
   StaticObject(
-    id: SpawnId(1),
-    unit_type:,
-    creature_id: Creature2Id(creature_id),
-    place:,
-    level:,
-    health:,
-    faction_id:,
-    base_faction_id:,
+    ..spawn_support.holoring(number: 1, place:),
     display_info_id: 26_565,
-    outfit_info_id:,
-    checklist_index:,
-    world_object_id:,
-    world_socket_id:,
   )
 }
 
@@ -91,29 +70,18 @@ fn encoded(object: StaticObject, unit_id: Int) -> BitArray {
 pub fn a_static_object_is_created_as_the_vector_of_its_type_test() -> Nil {
   use <- owned_test.run(5000)
   let simple =
-    object(
-      unit_type: static_object.Simple,
-      creature_id: 73_707,
-      level: None,
-      health: None,
-      faction_id: 0,
-      base_faction_id: 0,
-      checklist_index: 0,
-      world_object_id: 0,
-      world_socket_id: 0,
-      outfit_info_id: 0,
-    )
+    StaticObject(..vectors_object(), creature_id: Creature2Id(73_707))
   assert encoded(simple, 0x2001)
     == message_support.hex(
       "01 20 00 00 ca fa 47 00 00 00 00 00 00 40 08 00 c0 81 61 00 68 2d 62 00 60 d3 21 0e 00 00 f8 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 80 e2 33 00 00",
     )
     as "type 10 with no recorded stats: none sent, faction 0 sent as 0, no world object"
   let platform =
-    object(
+    StaticObject(
+      ..vectors_object(),
       unit_type: static_object.Platform,
-      creature_id: 72_051,
+      creature_id: Creature2Id(72_051),
       level: Some(1),
-      health: None,
       faction_id: 1441,
       base_faction_id: 1442,
       checklist_index: 4,
@@ -127,17 +95,14 @@ pub fn a_static_object_is_created_as_the_vector_of_its_type_test() -> Nil {
     )
     as "type 11 with a recorded level alone: stat 10, checklist 4, each faction its own, the world object and its socket, outfit 0x2a"
   let recorded =
-    object(
+    StaticObject(
+      ..vectors_object(),
       unit_type: static_object.SimpleCollidable,
-      creature_id: 73_500,
+      creature_id: Creature2Id(73_500),
       level: Some(3),
       health: Some(Health(value: 442, source: unit_fields.Recorded)),
       faction_id: 1441,
       base_faction_id: 1441,
-      checklist_index: 0,
-      world_object_id: 0,
-      world_socket_id: 0,
-      outfit_info_id: 0,
     )
   assert encoded(recorded, 0x2003)
     == message_support.hex(
@@ -145,17 +110,14 @@ pub fn a_static_object_is_created_as_the_vector_of_its_type_test() -> Nil {
     )
     as "type 32 with a recorded health: stat 0 = 442 above 0, level 3, Base Health 442.0 in both words"
   let client_default =
-    object(
+    StaticObject(
+      ..vectors_object(),
       unit_type: static_object.SimpleCollidable,
-      creature_id: 73_500,
+      creature_id: Creature2Id(73_500),
       level: Some(1),
       health: Some(Health(value: 52, source: unit_fields.ClientDefault)),
       faction_id: 1441,
       base_faction_id: 1441,
-      checklist_index: 0,
-      world_object_id: 0,
-      world_socket_id: 0,
-      outfit_info_id: 0,
     )
   assert encoded(client_default, 0x2004)
     == message_support.hex(

@@ -53,6 +53,7 @@ import gleam/string
 import novice_tables
 import owned_key
 import owned_test
+import place_support
 import planted_table
 import rating_support
 import spawn_support
@@ -218,17 +219,7 @@ pub fn rows_of_types_10_11_and_32_load_as_static_objects_with_every_field_of_the
     place
   }
   let origin = fn() {
-    let assert Ok(place) =
-      start_place.place(
-        world_id: 3460,
-        world_zone_id: 0,
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-        facing: start_place.Facing(yaw: 0.0, pitch: 0.0, roll: 0.0),
-      )
-      as "World 3460 is a world"
-    place
+    place_support.at(world_id: 3460, world_zone_id: 0, x: 0.0, y: 0.0, z: 0.0)
   }
   assert objects_in(selection)
     == [
@@ -510,19 +501,9 @@ pub fn other_unit_types_stay_out_and_the_coverage_counts_static_objects_by_type_
     as "two worlds, in world order"
   assert world_3460.other_types == list.map(others, fn(type_) { #(type_, 1) })
     as "each other type counted, by type"
-  assert world_3460.objects_sent
-    == [
-      #(static_object.Simple, 2),
-      #(static_object.Platform, 1),
-      #(static_object.SimpleCollidable, 1),
-    ]
+  assert world_3460.objects_sent == list.zip(spawn.object_types, [2, 1, 1])
     as "world 3460's objects sent, by type"
-  assert world_22.objects_sent
-    == [
-      #(static_object.Simple, 0),
-      #(static_object.Platform, 0),
-      #(static_object.SimpleCollidable, 1),
-    ]
+  assert world_22.objects_sent == list.zip(spawn.object_types, [0, 0, 1])
     as "world 22's"
   assert spawn.describe_coverage(coverage: world_22)
     == "world 22: 0 spawns start; left out: no faction 0, friendly to both 0, an NPC link 0, health 0 0; static objects sent: type 10 0, type 11 0, type 32 1, left out dead 0; other entity types: none"

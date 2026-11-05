@@ -22,43 +22,13 @@ import genesis_prime/step.{
   type ServiceStep, Asked, CallerId, ConnectionId, OwnEffect, OwnEvent, Reply,
   Send, Started,
 }
-import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import gleam/list
-import gleam/option
 import map_spawn_support as spawns
 import map_support
 import owned_test
 import place_support
 import spawn_support
-
-/// A Holoring (Creature2 73416, a type 10 object of world 3460's start, the
-/// trace's) numbered `number`, `x` units along the world's x axis.
-fn holoring(number number: Int, x x: Float) -> StaticObject {
-  StaticObject(
-    id: SpawnId(number),
-    unit_type: static_object.Simple,
-    creature_id: Creature2Id(73_416),
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: spawn_support.warfare_woods,
-      x:,
-      y: 0.0,
-      z: 0.0,
-    ),
-    level: option.None,
-    health: option.None,
-    faction_id: 0,
-    base_faction_id: 0,
-    display_info_id: 1,
-    outfit_info_id: 0,
-    checklist_index: 0,
-    world_object_id: 0,
-    world_socket_id: 0,
-  )
-}
 
 /// A map with Battle Beasts at `creatures` (spawns 1 up) and Holorings at
 /// `objects` (spawns 101 up), started at `spawns.started_at_ms`.
@@ -73,7 +43,16 @@ fn started(
         spawn_support.battle_beast(number: index + 1, x:)
       }),
       objects: list.index_map(objects, fn(x, index) {
-        holoring(number: index + 101, x:)
+        spawn_support.holoring(
+          number: index + 101,
+          place: place_support.at(
+            world_id: 3460,
+            world_zone_id: spawn_support.warfare_woods,
+            x:,
+            y: 0.0,
+            z: 0.0,
+          ),
+        )
       }),
       kinds: spawns.default_kinds(),
     )
