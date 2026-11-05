@@ -1311,13 +1311,11 @@ pub type FightEvent {
   ShieldIs(unit_id: Int, shield: Int)
   /// 0x92f: the player's own health (opcode.0x92f).
   OwnHealthIs(unit_id: Int, health: Int)
-  /// 0x638 of a path: the unit's command kinds in order, and the path's last point
-  /// and speed bits when it holds one (movement_command.kind_4).
-  Moves(
-    unit_id: Int,
-    kinds: List(Int),
-    path_end: Option(#(Float, Float, Float)),
-  )
+  /// 0x638: the unit's command kinds in order, and the place the commands leave the
+  /// unit at when they hold one: a kind 4 path's last point (movement_command.kind_4),
+  /// or a kind 2 position with its blend bit clear, which places the unit at once
+  /// (`0x140714120`).
+  Moves(unit_id: Int, kinds: List(Int), ends_at: Option(#(Float, Float, Float)))
   /// 0x7f4: each target's unit with the effect ids and raw damage of its effects
   /// (opcode.0x7f4).
   Went(cast_id: Int, targets: List(#(Int, List(#(Int, Int)))))
@@ -1372,12 +1370,12 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
       0x0638 -> {
         let assert Ok(moved) = unit_movement.decode(frame.body)
           as "0x638 decodes"
-        let path_end =
-          list.find_map(moved.commands, path_end_of) |> option.from_result
+        let ends_at =
+          list.find_map(moved.commands, ends_at_of) |> option.from_result
         Ok(Moves(
           unit_id: moved.unit_id,
           kinds: list.map(moved.commands, relayed_kind),
-          path_end:,
+          ends_at:,
         ))
       }
       0x07F4 -> {
@@ -1403,8 +1401,9 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
   })
 }
 
-/// The last point of a kind 4 path command, or `Error(Nil)` for another kind.
-fn path_end_of(
+/// The last point of a kind 4 path command, or the place of a kind 2 position
+/// command with its blend bit clear, or `Error(Nil)` for another command.
+fn ends_at_of(
   command: relayed_movement.RelayedMovement,
 ) -> Result(#(Float, Float, Float), Nil) {
   case command {
@@ -1413,6 +1412,12 @@ fn path_end_of(
       use x <- result.try(float32.bits(point.x) |> result.try(float32.value))
       use y <- result.try(float32.bits(point.y) |> result.try(float32.value))
       use z <- result.try(float32.bits(point.z) |> result.try(float32.value))
+      Ok(#(x, y, z))
+    }
+    relayed_movement.Position(position) if position.blends == 0 -> {
+      use x <- result.try(float32.bits(position.x) |> result.try(float32.value))
+      use y <- result.try(float32.bits(position.y) |> result.try(float32.value))
+      use z <- result.try(float32.bits(position.z) |> result.try(float32.value))
       Ok(#(x, y, z))
     }
     _ -> Error(Nil)
@@ -1456,16 +1461,16 @@ pub fn health_of(events events: List(FightEvent), unit unit: Int) -> List(Int) {
   })
 }
 
-/// Each 0x638 of `unit` among the events: its command kinds and the last point of
-/// its path, when it holds one.
+/// Each 0x638 of `unit` among the events: its command kinds and the place its
+/// commands leave it at, when they hold one.
 pub fn moves_of(
   events events: List(FightEvent),
   unit unit: Int,
 ) -> List(#(List(Int), Option(#(Float, Float, Float)))) {
   list.filter_map(events, fn(event) {
     case event {
-      Moves(unit_id:, kinds:, path_end:) if unit_id == unit ->
-        Ok(#(kinds, path_end))
+      Moves(unit_id:, kinds:, ends_at:) if unit_id == unit ->
+        Ok(#(kinds, ends_at))
       _ -> Error(Nil)
     }
   })
