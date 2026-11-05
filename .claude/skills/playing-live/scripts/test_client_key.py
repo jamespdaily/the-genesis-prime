@@ -6,12 +6,17 @@ proves the arguments were accepted, and its absence that they were refused befor
 reached. A usage refusal exits 2; a takeover without --pc-free exits 1 with its own message.
 """
 
+import base64
 import os
+import re
+import stat
 import subprocess
 import tempfile
 import unittest
 
-CLIENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "client.sh")
+HERE = os.path.dirname(os.path.abspath(__file__))
+CLIENT = os.path.join(HERE, "client.sh")
+KEY_SCRIPT = os.path.join(HERE, "genesis-key.ps1")
 NEEDS_PC = "set GENESIS_PLAY_PC"
 NEEDS_PC_FREE = "it runs only with --pc-free or GENESIS_PC_FREE=1"
 
@@ -92,6 +97,107 @@ class ClientKeyArgumentsTest(unittest.TestCase):
         for name in ("tab", "enter"):
             with self.subTest(name=name):
                 self.assert_accepted(name)
+
+
+# Stand-ins for ssh and scp on the PATH, so no test reaches a PC: scp succeeds, and ssh answers the
+# run of the task with a finished key press and records the command it was given (the waiter it
+# runs on the PC is passed encoded, which the test decodes).
+STUB_SSH = """#!/bin/sh
+case "$*" in
+  *-EncodedCommand*) printf '%s\\n' "$*" >> "$STUB_LOG"; echo 'pressed=0xF held=1 foreground_is_client=True pid=1' ;;
+esac
+exit 0
+"""
+STUB_SCP = "#!/bin/sh\nexit 0\n"
+
+
+class ClientKeyTaskLimitTest(unittest.TestCase):
+    """The task's time limit holds the key's hold: run_task ends the task when the limit passes, and
+    an ended task never releases the key (a PowerShell process that is stopped runs no finally)."""
+
+    def waiter_limit_seconds(self, hold):
+        with tempfile.TemporaryDirectory() as root:
+            tools = os.path.join(root, "tools")
+            os.mkdir(tools)
+            for name, text in (("ssh", STUB_SSH), ("scp", STUB_SCP)):
+                path = os.path.join(tools, name)
+                with open(path, "w") as stub:
+                    stub.write(text)
+                os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
+            home = os.path.join(root, "home")
+            os.mkdir(home)
+            with open(os.path.join(home, "client.pid"), "w") as state:
+                state.write("123 133000000000000000\n")
+            log = os.path.join(root, "ssh.log")
+            env = {
+                "PATH": f"{tools}:/usr/bin:/bin",
+                "HOME": home,
+                "GENESIS_HOME": home,
+                "GENESIS_PLAY_PC": "someone@planted.invalid",
+                "STUB_LOG": log,
+            }
+            done = subprocess.run(["bash", CLIENT, "key", "0x0F", str(hold), "--pc-free"], env=env,
+                                  capture_output=True, text=True, timeout=30)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            with open(log) as recorded:
+                commands = recorded.read().splitlines()
+        self.assertEqual(len(commands), 1, commands)
+        encoded = re.search(r"-EncodedCommand (\S+)", commands[0]).group(1)
+        waiter = base64.b64decode(encoded).decode("utf-16-le")
+        return int(re.search(r"AddSeconds\((\d+)\)", waiter).group(1))
+
+    def test_the_limit_is_30_seconds_for_the_script_plus_the_hold_rounded_up_to_whole_seconds(self):
+        for hold, limit in ((50, 31), (1000, 31), (1001, 32), (10000, 40)):
+            with self.subTest(hold=hold):
+                self.assertEqual(self.waiter_limit_seconds(hold), limit)
+
+
+def without_here_string(text):
+    """The PowerShell text without its Add-Type here-string, whose C# braces are not blocks."""
+    return re.sub(r'Add-Type @".*?\n"@', "", text, flags=re.DOTALL)
+
+
+def enclosing_block(text, position):
+    """The word before the innermost brace open at position (`try`, `finally`, `while`), or None;
+    the braces of an `if (...)` are not blocks here."""
+    depth = 0
+    for index in range(position - 1, -1, -1):
+        if text[index] == "}":
+            depth += 1
+        elif text[index] == "{":
+            header = text[:index]
+            if depth == 0 and not re.search(r"\bif\s*\([^{}]*\)\s*$", header):
+                return re.search(r"(\w+)\s*(\([^{}]*\))?\s*$", header).group(1)
+            if depth > 0:
+                depth -= 1
+    return None
+
+
+class GenesisKeyReleaseTest(unittest.TestCase):
+    """genesis-key.ps1 releases the key in a finally block that covers the hold, so a throw during
+    the hold (or a stopped pipeline) cannot leave the key down. There is no PowerShell here, so the
+    tests read the script's structure."""
+
+    def setUp(self):
+        with open(KEY_SCRIPT, encoding="utf-8") as script:
+            self.text = without_here_string(script.read())
+
+    def test_the_release_is_sent_once_and_from_a_finally_block(self):
+        release = "[Key]::Send($scan, $flags -bor $releaseFlag)"
+        self.assertEqual(self.text.count(release), 1)
+        self.assertEqual(enclosing_block(self.text, self.text.index(release)), "finally")
+
+    def test_the_press_and_the_whole_hold_are_in_the_try_that_the_release_finally_follows(self):
+        press = self.text.index("[Key]::Send($scan, $flags)")
+        hold_loop = self.text.index("while ($watch.ElapsedMilliseconds -lt $hold)")
+        release = self.text.index("[Key]::Send($scan, $flags -bor $releaseFlag)")
+        self.assertEqual(enclosing_block(self.text, press), "try")
+        self.assertEqual(enclosing_block(self.text, hold_loop), "try")
+        self.assertRegex(self.text[press:release], r"\}\s*finally\s*\{[^}]*$")
+
+    def test_the_release_is_sent_only_when_the_press_went_through(self):
+        self.assertRegex(self.text, r"\$pressed = \$true")
+        self.assertRegex(self.text, r"if \(\$pressed\) \{[^}]*\$releaseFlag")
 
 
 if __name__ == "__main__":

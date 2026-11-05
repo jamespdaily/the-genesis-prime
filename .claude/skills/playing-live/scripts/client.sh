@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts the WildStar client on the PC in the person's session, types into it and closes it, without
-# moving focus: Jim may be using the PC. Only click, in takeover mode, takes the focus and the mouse.
+# moving focus: Jim may be using the PC. Only click and key <scan>, in takeover mode, take the focus.
 #
 #   client.sh start [--type-login]   starts the client hidden and logged in from its command line;
 #                                    with --type-login, without an account or password
@@ -44,7 +44,9 @@
 # GenesisKey); they are the commands that move focus: the client reads the real cursor for its
 # pointer (fact 0x1403f3790), so a posted click never reaches it, and reads in-world keys by scan
 # code only while it is in front (genesis-key.ps1's header), so a posted key never reaches them. Both
-# check their arguments and --pc-free or GENESIS_PC_FREE=1 before they touch the PC.
+# check their arguments and --pc-free or GENESIS_PC_FREE=1 before they touch the PC. The key task's
+# limit is 30 s plus the hold, and genesis-key.ps1 releases the key in a finally block, so the key is
+# up whenever the task ends, short of a kill, which the limit keeps from falling in the hold.
 set -euo pipefail
 
 usage() { sed -n '5,25p' "$0" >&2; exit 2; }
@@ -176,7 +178,9 @@ send_click() {
 send_key() {
   read_state
   printf '%s\n%s\n%s\n%s' "$pid" "$started" "$1" "$2" > "$pc_tmp/key"
-  run_task GenesisKey genesis-key.ps1 genesis-key-result.txt 30 "$pc_tmp/key"
+  # The task's limit is the 30 s every script gets plus the hold, rounded up: run_task ends a task that
+  # passes its limit, and an ended PowerShell never releases the key.
+  run_task GenesisKey genesis-key.ps1 genesis-key-result.txt $((30 + ($2 + 999) / 1000)) "$pc_tmp/key"
   case "$result" in
     pressed=*) echo "$result" ;;
     *) echo "client: $result" >&2; exit 1 ;;

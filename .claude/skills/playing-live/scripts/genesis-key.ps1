@@ -16,7 +16,9 @@
 # bytes, its union at offset 8 (the union's largest member, MOUSEINPUT, is 32 bytes), and SendInput
 # refuses any other size. The client reads its keys on its own frame, so the key is held long enough
 # for a frame to see it. When the client loses the front during the hold, the key is released at once
-# and nothing more is pressed: the key would otherwise go to another window.
+# and nothing more is pressed: the key would otherwise go to another window. The release is in a
+# finally block over the press and the hold, so any way the script ends but a kill releases the key;
+# client.sh gives the task 30 s plus the hold, so run_task never kills it during the hold.
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -90,16 +92,25 @@ try {
   }
   if ([Key]::GetForegroundWindow() -ne $window) { throw 'the window could not be brought forward' }
 
-  $error1 = [Key]::Send($scan, $flags)
-  if ($error1 -ne 0) { throw "SendInput refused the press with error $error1" }
+  # The release is in a finally block that covers the press and the hold: a throw during the hold, or
+  # a stopped pipeline, still lets the key go up. A process that is killed runs no finally, which is
+  # why client.sh gives the task its limit plus the hold.
+  $pressed = $false
   $lost = $false
+  $error2 = 0
   $watch = [Diagnostics.Stopwatch]::StartNew()
-  while ($watch.ElapsedMilliseconds -lt $hold) {
-    Start-Sleep -Milliseconds ([Math]::Min($slice, [Math]::Max(1, $hold - $watch.ElapsedMilliseconds)))
-    if ([Key]::GetForegroundWindow() -ne $window) { $lost = $true; break }
+  try {
+    $error1 = [Key]::Send($scan, $flags)
+    if ($error1 -ne 0) { throw "SendInput refused the press with error $error1" }
+    $pressed = $true
+    while ($watch.ElapsedMilliseconds -lt $hold) {
+      Start-Sleep -Milliseconds ([Math]::Min($slice, [Math]::Max(1, $hold - $watch.ElapsedMilliseconds)))
+      if ([Key]::GetForegroundWindow() -ne $window) { $lost = $true; break }
+    }
+  } finally {
+    if ($pressed) { $error2 = [Key]::Send($scan, $flags -bor $releaseFlag) }
   }
   $held = $watch.ElapsedMilliseconds
-  $error2 = [Key]::Send($scan, $flags -bor $releaseFlag)
   if ($error2 -ne 0) { throw "SendInput refused the release with error $error2" }
   if ($lost) { throw "the client lost the front after $held ms of the $hold ms hold; the key was released then" }
   $result = "pressed=0x$('{0:X}' -f $code) held=$held foreground_is_client=$([Key]::GetForegroundWindow() -eq $window) pid=$($p.Id)"
