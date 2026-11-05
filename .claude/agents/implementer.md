@@ -14,6 +14,8 @@ You build one step to its approved test list. The brief gives you the list, the 
 
 Check each expected value against its source as the `writing-tests` skill says.
 
+To read the client's code (a function, a check, an opcode), start with `.claude/skills/decoding-the-client/scripts/client_trace.py`; read the saved C by hand only for what it cannot show. (Step #403's builder read the saved C by hand 11 times, 2026-11-05.)
+
 Take each expected value from the evidence, never from the test support that builds the input. (Combat steps C and C2, 2026-11-04: spawn tests expected the very health, faction and display their support fed in.)
 
 No wall-clock waits or time bounds in the parallel suite: drive timers and the clock, and put time bounds in load runs. (Steps C and C2: a 20 ms timer race, a 100 ms bound and a 1.5 s sleep.)
