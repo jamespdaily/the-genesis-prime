@@ -34,18 +34,18 @@ import genesis_prime/store.{
   type AccountId, Account, AccountFound, AccountId, Character, CharacterCreated,
   CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
   CreateCharacter, Created, DeleteCharacter, Deleted, FindAccount, ForLogin,
-  ForMove, ForSelect, ForWorld, ListCharacters, Listed, LoadCharacter, Login,
-  LookEntry, Move, NameStands, NameTaken, NeedsRename, NewCharacter,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
-  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
-  Renamed, SavePlace, Select, Unavailable, World,
+  ForMove, ForSelect, ForWorld, HealthRefused, ListCharacters, Listed,
+  LoadCharacter, Login, LookEntry, Move, NameStands, NameTaken, NeedsRename,
+  NewCharacter, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
+  NotRenamable, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
+  RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
@@ -815,7 +815,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     == ForSelect(Listed([character]))
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
-    == ForWorld(CharacterLoaded(character, character_support.epoch(1)))
+    == ForWorld(CharacterLoaded(character, character_support.epoch(1), None))
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
 }
@@ -902,8 +902,9 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         naming: NameStands,
       ),
       character_support.epoch(1),
+      None,
     ))
-    as "the row as character_support inserted it: the saved world, zone and position come with it, and the epoch the load raised from 0 to 1"
+    as "the row as character_support inserted it: the saved world, zone and position come with it, the epoch the load raised from 0 to 1, and no saved health: a character never saved enters at full health"
   assert ask(store, World(LoadCharacter(account, CharacterId(theirs))))
     == ForWorld(NotTheAccounts)
     as "a modified client could name any id: the read is scoped by the account's id (genesis_prime/store)"
@@ -1095,7 +1096,8 @@ fn epoch_of_load(
   store.session_epoch_number(session_epoch)
 }
 
-/// Saves the place under the epoch and sequence of a login.
+/// Saves the place under the epoch and sequence of a login, with no health to
+/// keep.
 fn save(
   store store: Store,
   account account: AccountId,
@@ -1103,6 +1105,27 @@ fn save(
   epoch epoch: Int,
   sequence sequence: Int,
   place place: start_place.Place,
+) -> store.Answer {
+  save_keeping(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    sequence:,
+    place:,
+    health: None,
+  )
+}
+
+/// Saves the place under the epoch and sequence of a login, with the health.
+fn save_keeping(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  place place: start_place.Place,
+  health health: Option(Int),
 ) -> store.Answer {
   ask(
     store,
@@ -1112,8 +1135,23 @@ fn save(
       session_epoch: character_support.epoch(epoch),
       save_sequence: sequence,
       place:,
+      health:,
     )),
   )
+}
+
+/// The health the character's row holds and the saved health its next load
+/// answers with (which raises the epoch), as a pair.
+fn health_row_and_load(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+) -> #(Option(Int), Option(Int)) {
+  let row = character_support.place_row(pool: store.pool, character_id:)
+  let assert ForWorld(CharacterLoaded(saved_health:, ..)) =
+    ask(store, World(LoadCharacter(account, CharacterId(character_id))))
+    as "the account has the character"
+  #(row.health, saved_health)
 }
 
 /// A place in World 3460, zone 6009, at x, y, z (each exactly a 32-bit float)
@@ -1216,8 +1254,9 @@ pub fn a_save_stores_the_place_and_the_facing_and_the_next_load_reads_them_test(
       rotation: #(1.5, -0.25, 0.5),
       session_epoch: 1,
       save_sequence: 1,
+      health: None,
     )
-    as "the world, zone, position and facing of the save, in the row, and the login's numbers"
+    as "the world, zone, position and facing of the save, in the row, and the login's numbers; a save with no health to keep leaves none"
   let assert ForWorld(CharacterLoaded(character:, ..)) =
     ask(store, World(LoadCharacter(account, CharacterId(id))))
   assert character.place == Some(here)
@@ -1235,31 +1274,37 @@ pub fn a_save_naming_an_older_epoch_changes_nothing_and_the_newer_logins_saves_d
     place_facing(x: 11.0, y: 21.0, z: 31.0, yaw: 1.0, pitch: 0.0, roll: 0.0)
   let _first_login = epoch_of_load(store:, account:, character_id: id)
   let _second_login = epoch_of_load(store:, account:, character_id: id)
-  assert save(
+  assert save_keeping(
       store:,
       account:,
       character_id: id,
       epoch: 1,
       sequence: 1,
       place: first,
+      health: Some(400),
     )
     == ForMove(NothingSaved)
     as "the first login's epoch is 1 and the character is at 2: a save of an older login changes nothing (opcode.0x36a reason 19: the older connection was taken over)"
   assert character_support.place_row(pool: store.pool, character_id: id).position
     == #(1.5, 2.5, 3.5)
     as "the row still holds the place it was made at"
-  assert save(
+  assert character_support.place_row(pool: store.pool, character_id: id).health
+    == None
+    as "and none of the health the older login's save carried"
+  assert save_keeping(
       store:,
       account:,
       character_id: id,
       epoch: 2,
       sequence: 1,
       place: second,
+      health: Some(250),
     )
     == ForMove(PlaceSaved)
     as "the newer login's save is written"
-  assert character_support.place_row(pool: store.pool, character_id: id).position
-    == #(11.0, 21.0, 31.0)
+  let row = character_support.place_row(pool: store.pool, character_id: id)
+  assert row.position == #(11.0, 21.0, 31.0)
+  assert row.health == Some(250) as "with its health"
   stop(store)
 }
 
@@ -1272,50 +1317,59 @@ pub fn a_save_that_reaches_the_database_after_a_newer_one_of_its_login_changes_n
   let newer =
     place_facing(x: 11.0, y: 21.0, z: 31.0, yaw: 1.0, pitch: 0.0, roll: 0.0)
   let _login = epoch_of_load(store:, account:, character_id: id)
-  assert save(
+  assert save_keeping(
       store:,
       account:,
       character_id: id,
       epoch: 1,
       sequence: 2,
       place: newer,
+      health: Some(500),
     )
     == ForMove(PlaceSaved)
-  assert save(
+  assert save_keeping(
       store:,
       account:,
       character_id: id,
       epoch: 1,
       sequence: 1,
       place: older,
+      health: Some(300),
     )
     == ForMove(NothingSaved)
     as "a save cut short by a stop can still commit after the next one: the sequence it was asked under is older, so it changes nothing"
-  assert character_support.place_row(pool: store.pool, character_id: id).position
-    == #(11.0, 21.0, 31.0)
+  let row = character_support.place_row(pool: store.pool, character_id: id)
+  assert row.position == #(11.0, 21.0, 31.0)
     as "the place of the newer save stands"
-  assert save(
+  assert row.health == Some(500)
+    as "and so does its health: an older save writes neither"
+  assert save_keeping(
       store:,
       account:,
       character_id: id,
       epoch: 1,
       sequence: 2,
       place: older,
+      health: Some(300),
     )
     == ForMove(NothingSaved)
-    as "the same sequence twice is no newer"
-  assert save(
+    as "the same sequence twice is no newer, for the place and for the health"
+  assert character_support.place_row(pool: store.pool, character_id: id).health
+    == Some(500)
+  assert save_keeping(
       store:,
       account:,
       character_id: id,
       epoch: 1,
       sequence: 3,
       place: older,
+      health: Some(200),
     )
     == ForMove(PlaceSaved)
     as "a newer one is written"
-  assert character_support.place_row(pool: store.pool, character_id: id).save_sequence
-    == 3
+  let row = character_support.place_row(pool: store.pool, character_id: id)
+  assert row.save_sequence == 3
+  assert row.health == Some(200)
   stop(store)
 }
 
@@ -1376,11 +1430,121 @@ pub fn the_table_refuses_a_position_a_rotation_or_a_save_sequence_it_cannot_hold
     assert update("rotation_pitch = " <> value <> "::real")
       == Error("character_rotation_is_finite")
   })
+  assert update("health = 0") == Error("character_health_is_positive")
+    as "a saved health is above 0: a dead player saves none"
+  assert update("health = -1") == Error("character_health_is_positive")
+  assert update("health = 1") == Ok(Nil)
+    as "the least health a living player has"
+  assert update("health = null") == Ok(Nil)
+    as "NULL is nothing saved, which a check passes: the character enters at full health"
   assert update("save_sequence = -1")
     == Error("character_save_sequence_is_not_negative")
   assert update("position_y = -2048, rotation_yaw = 3.5, save_sequence = 0")
     == Ok(Nil)
     as "any finite place is held"
+  stop(store)
+}
+
+pub fn the_health_column_is_a_nullable_integer_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let assert Ok(returned) =
+    pog.query(
+      "select data_type, is_nullable from information_schema.columns where table_name = 'character' and column_name = 'health'",
+    )
+    |> pog.returning({
+      use data_type <- decode.field(0, decode.string)
+      use is_nullable <- decode.field(1, decode.string)
+      decode.success(#(data_type, is_nullable))
+    })
+    |> pog.execute(store.pool)
+    as "the catalog reads"
+  assert returned.rows == [#("integer", "YES")]
+    as "NULL is nothing saved, so existing rows need no backfill"
+  stop(store)
+}
+
+pub fn a_save_writes_the_health_with_the_place_and_the_next_load_reads_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let here =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert health_row_and_load(store:, account:, character_id: id)
+    == #(None, None)
+    as "a character never saved has no health: it enters at full health"
+  assert save_keeping(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: here,
+      health: Some(512),
+    )
+    == ForMove(PlaceSaved)
+  assert health_row_and_load(store:, account:, character_id: id)
+    == #(Some(512), Some(512))
+    as "the save wrote the health with the place, and the next login's load answers it"
+  assert save_keeping(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 1,
+      place: here,
+      health: None,
+    )
+    == ForMove(PlaceSaved)
+  assert health_row_and_load(store:, account:, character_id: id)
+    == #(None, None)
+    as "a save with no health to keep, the dead player's, clears the saved one, so the next entry is at full health"
+  stop(store)
+}
+
+pub fn a_save_with_a_health_the_table_refuses_is_answered_health_refused_and_saves_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let there =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save_keeping(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+      health: Some(0),
+    )
+    == ForMove(HealthRefused)
+    as "character_health_is_positive refused a 0 planted straight into the query: its own answer, not the place's, and the worker does not crash"
+  assert save_keeping(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+      health: Some(-5),
+    )
+    == ForMove(HealthRefused)
+  let row = character_support.place_row(pool: store.pool, character_id: id)
+  assert row.position == #(1.5, 2.5, 3.5) && row.health == None
+    as "the statement is one: the place beside the refused health was not written either"
+  assert row.save_sequence == 0 as "and the refused save took no sequence"
+  assert save_keeping(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+      health: Some(1),
+    )
+    == ForMove(PlaceSaved)
+    as "the store answers the next save"
   stop(store)
 }
 

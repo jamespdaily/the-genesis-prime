@@ -202,3 +202,29 @@ pub fn the_unit_carries_its_characters_level_as_stat_10_test() -> Nil {
   )
     as "stat 0 stays the health that keeps the unit alive (0x140457bc5)"
 }
+
+pub fn the_players_own_record_can_show_less_health_than_the_maximum_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let unit =
+    player_unit.create(
+      unit: unit_support.bare_unit(
+        character: roxo(),
+        place: place_support.live_character_place(),
+        unit_id: 1,
+        body: [],
+      ),
+      realm_id: 1,
+    )
+  let hurt = player_unit.with_health(record: unit, health: 100)
+  assert unit_fields.stat(tail: hurt.tail, stat_id: unit_fields.health_stat)
+    == Ok(100)
+    as "opcode.0x262: stat 0 is the health the client shows"
+  assert hurt.tail.properties == unit.tail.properties
+    as "property 7, Base Health, stays the maximum Unit:GetMaxHealth reads (vector.opcode.0x262.health)"
+  assert unit_fields.stat(tail: hurt.tail, stat_id: unit_fields.level_stat)
+    == unit_fields.stat(tail: unit.tail, stat_id: unit_fields.level_stat)
+    as "the other stats stand"
+  assert player_unit.with_health(record: unit, health: unit_support.bare_health)
+    == unit
+    as "at the maximum it is the record the unit creates"
+}

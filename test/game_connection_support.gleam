@@ -59,7 +59,7 @@ import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import map_support
 import message_support
@@ -395,10 +395,21 @@ pub fn joining_as(
   joining_from(in_character_select: in_select(), character:)
 }
 
-/// `in_character_select` after the store gave `character`: the map is asked.
+/// `in_character_select` after the store gave `character`, which has no saved
+/// health: the map is asked.
 pub fn joining_from(
   in_character_select in_character_select: game_connection.State,
   character character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_saved(in_character_select:, character:, saved_health: None)
+}
+
+/// `in_character_select` after the store gave `character` with the health its
+/// last save kept: the map is asked.
+pub fn joining_saved(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_health saved_health: Option(Int),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   answer(
@@ -406,7 +417,11 @@ pub fn joining_from(
     taken:,
     outcome: step.Answer(
       FromStore(
-        ForWorld(CharacterLoaded(character, character_support.epoch(1))),
+        ForWorld(CharacterLoaded(
+          character,
+          character_support.epoch(1),
+          saved_health,
+        )),
       ),
     ),
   )
@@ -500,9 +515,25 @@ pub fn entered_from(
   in_character_select in_character_select: game_connection.State,
   character character: store.Character,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  let #(state, taken) = joining_from(in_character_select:, character:)
+  entered_saved(in_character_select:, character:, saved_health: None)
+}
+
+/// `in_character_select` after the store gave `character` with the health its
+/// last save kept and the map took it: the burst is written.
+pub fn entered_saved(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_health saved_health: Option(Int),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) =
+    joining_saved(in_character_select:, character:, saved_health:)
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
+
+/// The tests' player's health at full: 736, the Engineer's level 1 maximum
+/// (`player.level1_base_health`: CreatureLevel row 1's 135.97 and the Novice
+/// armor's 600).
+pub const full_health = 736
 
 /// The connection after the map took the player: the burst is written.
 pub fn entered() -> #(game_connection.State, ConnectionStep(Request)) {
@@ -555,9 +586,19 @@ pub fn entry_place() -> Place {
   standing_at(x: 29.128599166870117, y: -853.87158203125, z: -560.18798828125)
 }
 
-/// The ask of a save of the tests' player: the account and character of the
-/// tests' connection, the epoch its load gave, the save's number and the place.
+/// The ask of a save of the tests' player at full health: the account and
+/// character of the tests' connection, the epoch its load gave, the save's
+/// number and the place, and the full health (`full_health`).
 pub fn save_asked(sequence sequence: Int, place place: Place) -> Request {
+  save_asked_keeping(sequence:, place:, health: Some(full_health))
+}
+
+/// The same with the health the save keeps: `None` for none.
+pub fn save_asked_keeping(
+  sequence sequence: Int,
+  place place: Place,
+  health health: Option(Int),
+) -> Request {
   AskStore(
     Move(SavePlace(
       account_id: AccountId(7),
@@ -565,6 +606,7 @@ pub fn save_asked(sequence sequence: Int, place place: Place) -> Request {
       session_epoch: character_support.epoch(1),
       save_sequence: sequence,
       place:,
+      health:,
     )),
   )
 }
@@ -1180,6 +1222,18 @@ pub fn holocrypt_joining() -> #(game_connection.State, ConnectionStep(Request)) 
 /// before: the player is in the world as unit 6.
 pub fn at_the_holocrypt() -> #(game_connection.State, ConnectionStep(Request)) {
   at_the_holocrypt_in(map_after_a_stay())
+}
+
+/// The Holocrypt chosen by the dead player `dead`, its leave answered `Left`
+/// and its join answered by a map that gave the player's first unit before.
+pub fn at_the_holocrypt_from(
+  dead dead: game_connection.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = read(state: dead, bytes: holocrypt())
+  let #(state, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+  let #(_, joined) = mapped(map_state: map_after_a_stay(), taken:)
+  answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
 }
 
 /// The Holocrypt's join answered by the map `map_state`.

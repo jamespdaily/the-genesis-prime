@@ -99,7 +99,7 @@ import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/result
 import log_capture
 import login_client
@@ -809,6 +809,18 @@ fn send_move(
   game_client.send_world(game:, message_id: 0x0637, body:)
 }
 
+/// The health the client is created with: stat 0 of the 0x262 among `frames`
+/// (`opcode.0x262`).
+fn health_in(frames frames: List(Frame)) -> Int {
+  let assert Ok(health) =
+    unit_fields.stat(
+      tail: game_client.unit_create_player_in(frames:).tail,
+      stat_id: unit_fields.health_stat,
+    )
+    as "the player's 0x262 holds stat 0 as an integer"
+  health
+}
+
 pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_next_login_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, port, account) = start()
@@ -824,6 +836,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
   let first = game_client.read(game:, count: burst_length())
+  let entered_health = Some(health_in(frames: first))
   assert game_client.unit_create_player_in(frames: first).tail.movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
@@ -855,8 +868,9 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
       rotation: #(1.5, -0.25, 0.5),
       session_epoch: 1,
       save_sequence: 1,
+      health: entered_health,
     )
-    as "the drop saved the place the client last sent, at the epoch its login raised and as its first save"
+    as "the drop saved the place the client last sent, at the epoch its login raised and as its first save, with the health the client was created with (stat 0 of its 0x262)"
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
   let second = game_client.read(game:, count: burst_length())
@@ -882,7 +896,39 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
       )),
     ]
     as "0x262 places the player there at once, facing the way it faced"
+  assert Some(health_in(frames: second)) == entered_health
+    as "and with the health the drop saved, the one the first login was created with"
   game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_character_saved_with_less_health_enters_with_it_in_its_own_0x262_and_a_drop_saves_it_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let character =
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let assert Ok(_) =
+    pog.query("update character set health = 100 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the row holds the health a login saved"
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: character)
+  let burst = game_client.read(game:, count: burst_length())
+  assert health_in(frames: burst) == 100
+    as "opcode.0x262: stat 0 of the player's own 0x262 is the saved health, below the level's maximum"
+  game_client.close(game:)
+  login_support.await_no_game_connection(started)
+  assert character_support.place_row(pool:, character_id: character).health
+    == Some(100)
+    as "the drop saved the health the player had: the one it entered with"
   login_support.stop(started)
 }
 
@@ -900,7 +946,8 @@ pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let _burst = game_client.read(game:, count: burst_length())
+  let burst = game_client.read(game:, count: burst_length())
+  let entered_health = Some(health_in(frames: burst))
   send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
     1.5,
     -0.25,
@@ -931,8 +978,9 @@ pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before
       rotation: #(1.5, -0.25, 0.5),
       session_epoch: 1,
       save_sequence: 1,
+      health: entered_health,
     )
-    as "the stop saved the place the client last sent, as the login's first save, before the tree ended"
+    as "the stop saved the place the client last sent, as the login's first save, before the tree ended, with the health the client was created with"
   process.kill(after.pid)
   game_client.close(game:)
 }
@@ -975,6 +1023,7 @@ pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_sa
       rotation: #(0.0, 0.0, 0.0),
       session_epoch: 1,
       save_sequence: 0,
+      health: None,
     )
     as "a crash runs no save: the row holds the place it had, and no save was made at this login's epoch (the 60 s save would have been the last)"
   assert ask_support.connections_of(started.settings.game.listener) == []

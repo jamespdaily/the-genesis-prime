@@ -126,7 +126,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
 
@@ -262,6 +262,35 @@ pub fn new(health health: Int, shield shield: Int) -> Life {
     fighters: dict.new(),
     state: Alive,
   )
+}
+
+/// A player entering the world with the health its last save kept: `saved`
+/// capped at `max_health`, or `max_health` when nothing was saved, alive and
+/// fighting no one, with a full `shield`. The cap and "nothing saved is full" are
+/// the server's choices: the client holds no saved health (the stat 0 of the
+/// player's 0x262 is the health it shows, `opcode.0x262`), and the health a
+/// player comes back with is the server's choice (`death.server_choices`).
+pub fn entering(
+  saved saved: Option(Int),
+  max_health max_health: Int,
+  shield shield: Int,
+) -> Life {
+  let health = case saved {
+    Some(saved) -> int.min(saved, max_health)
+    None -> max_health
+  }
+  Life(..new(health: max_health, shield:), health:)
+}
+
+/// The health a save keeps: the player's health now, or none while it is dead,
+/// so a player who camps or drops dead comes back at full health
+/// (`death.server_choices`). A living player holds more than 0, which the table
+/// requires of a saved health (`character_health_is_positive`).
+pub fn saved_health(life life: Life) -> Option(Int) {
+  case life.state {
+    Alive -> Some(life.health)
+    Dead -> None
+  }
 }
 
 /// A level-1 player's defence from its loadout: its deflect, critical deflect and

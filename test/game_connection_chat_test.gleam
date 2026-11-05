@@ -30,7 +30,7 @@ import genesis_prime/store.{CharacterLoaded, ForSelect, ForWorld, Listed}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Left, SeenBy}
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import message_support
 import owned_test
 import spawn_support
@@ -749,6 +749,7 @@ pub fn the_whisper_numbers_count_for_the_connections_life_across_a_camp_and_a_ne
           ForWorld(CharacterLoaded(
             game_connection_support.world_character(),
             character_support.epoch(1),
+            None,
           )),
         ),
       ),
