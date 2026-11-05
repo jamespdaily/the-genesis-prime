@@ -8,6 +8,13 @@
 #                                    a Tab (\t) or Enter (\r) in the text is posted as that key, so a
 #                                    whole login is one call: client.sh type $'<account>\t<password>\r'
 #   client.sh key tab|enter          posts WM_CHAR 0x09 or 0x0D
+#   client.sh key <scan> [ms] --pc-free  takeover mode: brings the client's window forward and holds
+#                                    the key with that hardware scan code (0xNN, or 0xE0NN for an
+#                                    extended key; NN from 01 to 7F) for ms milliseconds (a whole
+#                                    number from 1 to 10000, 50 when left out), then releases it;
+#                                    refuses without --pc-free (or GENESIS_PC_FREE=1) and fails,
+#                                    releasing the key at once, when the client loses the front
+#                                    during the hold. Tab 0x0F, 1 0x02, W 0x11, A 0x1E, Escape 0x01
 #   client.sh click <x> <y> --pc-free  takeover mode: brings the client's window forward, moves the real
 #                                    mouse to the client point (x, y) and clicks the left button there;
 #                                    refuses without --pc-free (or GENESIS_PC_FREE=1 in the environment)
@@ -33,23 +40,49 @@
 # session.sh --recover stops such a client and releases the lock.
 # type, key, click and stop act only on the process with that pid, that name and that start time, so
 # a reused pid never reaches another client; with no client recorded, type, key and click refuse.
-# click runs genesis-click.ps1 (task GenesisClick) and is the one command that moves focus: the
-# client reads the real cursor for its pointer (fact 0x1403f3790), so a posted click never reaches
-# it. It checks --pc-free or GENESIS_PC_FREE=1 before it touches the PC.
+# click runs genesis-click.ps1 (task GenesisClick) and key with a scan code runs genesis-key.ps1 (task
+# GenesisKey); they are the commands that move focus: the client reads the real cursor for its
+# pointer (fact 0x1403f3790), so a posted click never reaches it, and reads in-world keys by scan
+# code only while it is in front (genesis-key.ps1's header), so a posted key never reaches them. Both
+# check their arguments and --pc-free or GENESIS_PC_FREE=1 before they touch the PC.
 set -euo pipefail
 
-usage() { sed -n '5,19p' "$0" >&2; exit 2; }
+usage() { sed -n '5,25p' "$0" >&2; exit 2; }
 
 command=${1:-}
 case "$command" in
   start) [ $# -eq 1 ] || { [ $# -eq 2 ] && [ "$2" = --type-login ]; } || usage ;;
   type) [ $# -eq 2 ] || usage ;;
   key)
-    [ $# -eq 2 ] || usage
-    case "$2" in
-      tab) text=$'\t' ;;
-      enter) text=$'\r' ;;
-      *) usage ;;
+    case "${2:-}" in
+      tab|enter)
+        [ $# -eq 2 ] || usage
+        if [ "$2" = tab ]; then text=$'\t'; else text=$'\r'; fi ;;
+      *)
+        # Takeover: key <scan> [ms] [--pc-free]. A scan code's low byte is a make code, 01 to 7F; the
+        # high bit marks a release, which the script sends itself.
+        [[ ${2:-} =~ ^0[xX]([eE]0)?([0-7][0-9a-fA-F])$ ]] || usage
+        scan_code=$((16#${BASH_REMATCH[2]}))
+        [ "$scan_code" -ge 1 ] || usage
+        if [ -n "${BASH_REMATCH[1]}" ]; then scan_code=$((scan_code + 0xE000)); fi
+        hold=50
+        pc_free=${GENESIS_PC_FREE:-}
+        rest=("${@:3}")
+        if [ ${#rest[@]} -gt 0 ] && [ "${rest[${#rest[@]}-1]}" = --pc-free ]; then
+          pc_free=1
+          unset 'rest[${#rest[@]}-1]'
+        fi
+        if [ ${#rest[@]} -eq 1 ]; then
+          { [[ ${rest[0]} =~ ^[1-9][0-9]{0,4}$ ]] && [ "${rest[0]}" -le 10000 ]; } || usage
+          hold=${rest[0]}
+        elif [ ${#rest[@]} -gt 1 ]; then
+          usage
+        fi
+        if [ "$pc_free" != 1 ]; then
+          echo "client: key with a scan code takes the PC's focus and keyboard; it runs only with --pc-free or GENESIS_PC_FREE=1, when the PC is free" >&2
+          exit 1
+        fi
+        command=press ;;
     esac ;;
   click)
     # Points read from screenshots of the client at 3840x2160 (a 1280 screenshot's point times 3).
@@ -92,7 +125,7 @@ before_finish() {
   fi
 }
 case "$command" in
-  type|key|click|stop) lock_allows_client_use || exit 1 ;;
+  type|key|press|click|stop) lock_allows_client_use || exit 1 ;;
 esac
 if [ "$command" = start ]; then
   : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the server host the client is pointed at, an address on the PC network) in ~/.genesis-prime/env.sh}"
@@ -139,6 +172,17 @@ send_click() {
   esac
 }
 
+# Holds the key with scan code $1 (0xE000 added for an extended key) for $2 ms (takeover mode, checked above).
+send_key() {
+  read_state
+  printf '%s\n%s\n%s\n%s' "$pid" "$started" "$1" "$2" > "$pc_tmp/key"
+  run_task GenesisKey genesis-key.ps1 genesis-key-result.txt 30 "$pc_tmp/key"
+  case "$result" in
+    pressed=*) echo "$result" ;;
+    *) echo "client: $result" >&2; exit 1 ;;
+  esac
+}
+
 case "$command" in
   start)
     # run_task calls this when the start moved the person's focus: the client runs, so it is recorded.
@@ -158,6 +202,7 @@ case "$command" in
     save_state ;;
   type) send_input "$2" ;;
   key) send_input "$text" ;;
+  press) send_key "$scan_code" "$hold" ;;
   click) send_click "$2" "$3" ;;
   stop)
     read_state
