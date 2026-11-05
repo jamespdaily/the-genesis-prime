@@ -21,6 +21,10 @@ Each script's header is its contract: what it runs on the PC, what it refuses, a
 8. `scripts/client-log.sh collect <folder>`.
 9. `scripts/client.sh stop`, then `scripts/report.sh remove`, then stop the server.
 
+## A fight played by hand
+
+For what the client's Lua sees second by second while a person plays (the combat flag, Actuators): `scripts/report.sh install --timeline [minutes]` before the client starts, the person starts the client and plays, then `scripts/report.sh collect --by-hand <folder>`. The report is on the PC only after a reload or a camp; the script headers say when the addon asks for one.
+
 ## A whole session without a person
 
 `scripts/session.sh <folder>` runs the session above from the server's start to the verdict, into an empty or new folder, with no person and no focus taken; its header lists what it checks and what the folder keeps. A passing folder is committed as a dated folder under `test/wire_recording/`, where the replay tests read every folder. A failed folder also keeps `Logs` and `Errors`, which name the PC's machine: delete them before committing it. `scripts/session.sh --verdict <folder>` judges a folder with no PC, against `genesis_play`.

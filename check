@@ -86,7 +86,8 @@
 #                  its record in one psql --single-transaction
 #   squirrel       gleam run -m squirrel check, against that database
 #   client-suite   the client scripts' tests that need no Ghidra (run with
-#                  GENESIS_INTEGRATION=0, whatever the caller exported)
+#                  GENESIS_INTEGRATION=0, whatever the caller exported), then the
+#                  playing-live scripts' tests
 #   client-integration  the client scripts' tests that run the client's code on
 #                  Ghidra's emulator (GENESIS_INTEGRATION=1; skipped where
 #                  GENESIS_NO_CLIENT=1 and where the branch leaves the client
@@ -596,6 +597,12 @@ literal_area_check() {
   fi
 }
 
+# The client scripts' tests that need no Ghidra, then the playing-live scripts' tests.
+client_suite() {
+  env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py' &&
+    python3.13 -I -m unittest discover -s .claude/skills/playing-live/scripts -p 'test_*.py'
+}
+
 # The client scripts' integration tests: their own tests with
 # GENESIS_INTEGRATION=1, which opens the gate of check_support.integration_only.
 client_integration() {
@@ -661,8 +668,7 @@ case "$mode" in
   full)
     in_background gleam_chain
     in_background step migrations prepare_database
-    in_background step client-suite env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover \
-      -s .claude/skills/decoding-the-client/scripts -p 'test_*.py'
+    in_background step client-suite client_suite
     if [ "$integration_run" = yes ]; then
       in_background step client-integration client_integration
     fi

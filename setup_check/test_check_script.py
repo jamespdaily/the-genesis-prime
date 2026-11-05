@@ -52,6 +52,7 @@ HERE = Path(__file__).resolve().parent
 REPOSITORY = HERE.parent
 CHECK = REPOSITORY / "check"
 SCRIPTS = Path(".claude") / "skills" / "decoding-the-client" / "scripts"
+PLAYING_LIVE_SCRIPTS = Path(".claude") / "skills" / "playing-live" / "scripts"
 PYTHON = shutil.which("python3.13")
 
 RUNNABLE = PYTHON is not None and shutil.which("bash") is not None and CHECK.is_file()
@@ -187,6 +188,11 @@ class PlantedCheckCase(unittest.TestCase):
         scripts.mkdir(parents=True)
         for name in ("check_support.py", "query_client.py", "ghidra_env.py", "formulas_by_hand.py"):
             shutil.copyfile(REPOSITORY / SCRIPTS / name, scripts / name)
+        # The playing-live scripts' tests, which the client-suite part runs after the client scripts'.
+        live_scripts = repository / PLAYING_LIVE_SCRIPTS
+        live_scripts.mkdir(parents=True)
+        for name in ("report_xml.py", "test_report_xml.py"):
+            shutil.copyfile(REPOSITORY / PLAYING_LIVE_SCRIPTS / name, live_scripts / name)
         self.plant_integration_test(fails=False)
         tools = self.root / "tools"
         executable(tools / "gleam", GLEAM_STUB)
