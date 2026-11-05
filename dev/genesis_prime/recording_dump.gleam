@@ -79,7 +79,7 @@ pub type Entry {
 }
 
 /// Which lines to print.
-type Filter {
+pub type Filter {
   Filter(from_ms: Option(Int), to_ms: Option(Int), unit_id: Option(Int))
 }
 
@@ -111,12 +111,22 @@ pub fn main() -> Nil {
 }
 
 fn print(entries: List(Entry), filter: Filter) -> Nil {
-  entries
-  |> list.filter(keeps(filter:, entry: _))
-  |> list.each(fn(entry) { io.println(text(entry)) })
+  list.each(printed(entries:, filter:), io.println)
 }
 
-fn parse(arguments: List(String)) -> Result(#(String, Filter), Nil) {
+/// The printed lines of the entries the filter keeps.
+pub fn printed(
+  entries entries: List(Entry),
+  filter filter: Filter,
+) -> List(String) {
+  entries
+  |> list.filter(keeps(filter:, entry: _))
+  |> list.map(text)
+}
+
+/// The path and the filter the command's arguments name, `Error(Nil)` for
+/// arguments the command does not take.
+pub fn parse(arguments: List(String)) -> Result(#(String, Filter), Nil) {
   case arguments {
     [path, ..options] -> {
       use filter <- result.map(options_of(

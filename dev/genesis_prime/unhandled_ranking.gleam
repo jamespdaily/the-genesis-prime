@@ -73,24 +73,24 @@ pub fn main() -> Nil {
           )
           dev_exit.halt(1)
         }
-        connections -> print(rank(connections))
+        connections -> print(ranking(connections))
       }
     }
   }
 }
 
-fn print(ranking: #(List(Unhandled), List(String))) -> Nil {
-  let #(ranked, stopped) = ranking
+fn print(ranking: #(List(String), List(String))) -> Nil {
+  let #(lines, stopped) = ranking
   list.each(stopped, io.println_error)
-  list.each(ranked, fn(unhandled) { io.println(line(unhandled)) })
+  list.each(lines, io.println)
 }
 
-/// The client's messages no rule names, most frequent first and by opcode
-/// among equals, and a sentence for each connection whose bytes stopped
-/// reading.
-fn rank(
+/// The printed lines of the client's messages no rule names, most frequent
+/// first and by opcode among equals, and a sentence for each connection whose
+/// bytes stopped reading.
+pub fn ranking(
   connections: List(#(String, Recording)),
-) -> #(List(Unhandled), List(String)) {
+) -> #(List(String), List(String)) {
   let handled = engine.handled_client_message_ids()
   let exchanges =
     list.filter_map(connections, fn(connection) {
@@ -127,7 +127,7 @@ fn rank(
         None -> Error(Nil)
       }
     })
-  #(ranked, stopped)
+  #(list.map(ranked, line), stopped)
 }
 
 fn count(
