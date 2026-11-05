@@ -188,11 +188,10 @@ class PlantedCheckCase(unittest.TestCase):
         scripts.mkdir(parents=True)
         for name in ("check_support.py", "query_client.py", "ghidra_env.py", "formulas_by_hand.py"):
             shutil.copyfile(REPOSITORY / SCRIPTS / name, scripts / name)
-        # The playing-live scripts' tests, which the client-suite part runs after the client scripts'.
-        live_scripts = repository / PLAYING_LIVE_SCRIPTS
-        live_scripts.mkdir(parents=True)
-        for name in ("report_xml.py", "test_report_xml.py"):
-            shutil.copyfile(REPOSITORY / PLAYING_LIVE_SCRIPTS / name, live_scripts / name)
+        # The playing-live scripts' folder, whose tests the client-suite part finds by discovery, after
+        # the client scripts': one planted test stands for whatever the folder holds.
+        (repository / PLAYING_LIVE_SCRIPTS).mkdir(parents=True)
+        self.plant_playing_live_test(fails=False)
         self.plant_integration_test(fails=False)
         tools = self.root / "tools"
         executable(tools / "gleam", GLEAM_STUB)
@@ -224,6 +223,13 @@ class PlantedCheckCase(unittest.TestCase):
         with open(self.repository / path, "a") as changed:
             changed.write("\n# changed on the branch\n")
         self.git("commit", "-q", "-am", "change %s" % path)
+
+    def plant_playing_live_test(self, fails: bool) -> None:
+        body = 'self.fail("planted playing-live failure")' if fails else "pass"
+        (self.repository / PLAYING_LIVE_SCRIPTS / "test_planted_playing_live.py").write_text(
+            "import unittest\n\n\nclass PlantedPlayingLiveTest(unittest.TestCase):\n"
+            "    def test_it_ran_and_it_%s(self):\n        %s\n" % ("fails" if fails else "passes", body)
+        )
 
     def plant_integration_test(self, fails: bool) -> None:
         test = INTEGRATION_TEST % {
@@ -610,6 +616,25 @@ def part_line(output: str, part: str) -> str:
 def set_origin_main(case: PlantedCheckCase, revision: str) -> None:
     """Makes `origin/main` the planted repository's commit at `revision`, as a fetch would."""
     case.git("update-ref", "refs/remotes/origin/main", case.git("rev-parse", revision))
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class PlayingLiveSuiteTest(unittest.TestCase):
+    """The playing-live scripts' tests run in the client-suite part, found by discovery in their
+    folder, so a test added there needs no change to ./check, and one that fails fails the part."""
+
+    def failing(self) -> Run:
+        return shared_run("playing-live-fails", prepare=lambda case: case.plant_playing_live_test(fails=True))
+
+    def test_a_failing_test_in_the_playing_live_scripts_fails_the_check_by_part_name(self):
+        run = self.failing()
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"client-suite")
+        self.assertNotIn("hung", failed_line(self, run.output))
+        self.assertIn("planted playing-live failure", run.output, "the failed part's log is printed")
+
+    def test_only_the_client_suite_part_fails_for_it(self):
+        self.assertNotIn(",", failed_line(self, self.failing().output).split("FAILED:", 1)[1])
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
