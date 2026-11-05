@@ -1648,18 +1648,26 @@ pub fn no_online_character_gives_0x1d9_with_the_name_as_sent_bit_0_and_the_slot_
     as "the whisper is forgotten, so its watch's end is taken once"
 }
 
-pub fn a_name_that_fails_rule_0_gets_0x1d9_at_once_with_no_watch_test() -> Nil {
+pub fn a_name_that_breaks_rule_0_is_watched_like_any_name_nobody_holds_and_gets_0x1d9_when_the_watch_ends_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(["Abc", "Ab1 Cd", "Ab  Cd", " Ab Cd", "A B C"], fn(target) {
     let #(chat, effects) = whisper_to(a_chat(), target)
-    assert failed(effects)
+    let assert [
+      chat.Watch(target: step.CharacterNamed(folded_name:), ..),
+      chat.TellWatched(..),
+    ] = effects
+      as "the whisper goes to the watch on the folded name, as for any name; the rule is the database's, so the chat rule does not test it"
+    assert folded_name == string.lowercase(target)
+    let assert Ok(#(_, ended)) =
+      chat.watch_ended(chat, step.WatchId(first_watch + 1))
+      as "the watch is a whisper's"
+    assert failed(ended)
       == WhisperFailed(
         target_name: bit_stream.utf16_units(target),
         account: 0,
         chat_message_id: 3,
       )
-      as "no character can have a name rule 0 refuses, so no watch is made"
-    assert chat == a_chat()
+      as "opcode.0x1d9: no character holds a name the database refuses, so the answer is the one for a name nobody holds: the name as sent, bit 0 and the slot"
   })
 }
 
@@ -1946,7 +1954,7 @@ pub fn a_target_name_or_realm_that_is_not_valid_utf_16_gets_0x1d9_with_the_name_
   let lone = [0x41, 0x62, 0x20, 0xD800, 0x64]
   assert failed(whisper(chat: a_chat(), body: encoded(lone, [])).1)
     == WhisperFailed(target_name: lone, account: 0, chat_message_id: 3)
-    as "a name that is not valid UTF-16 is no character's name (rule 0), so the whisper is answered 0x1d9 with the name as sent, and the connection does not end"
+    as "a name that is not valid UTF-16 cannot be read as text, so no watch can name it: the whisper is answered 0x1d9 at once with the name as sent, and the connection does not end"
   assert failed(
       whisper(
         chat: a_chat(),

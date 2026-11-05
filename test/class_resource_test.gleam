@@ -466,47 +466,26 @@ pub fn a_class_with_no_max_row_is_refused_by_name_test() -> Nil {
     as "every playable class needs its maximum"
 }
 
-pub fn an_unknown_class_name_or_unit_is_refused_by_name_test() -> Nil {
+pub fn an_unknown_class_or_name_is_refused_by_name_test() -> Nil {
   use <- owned_test.run(5000)
   let rows =
     list.append(design_rows(), [
       Row(class_id: 6, name: "max", value: 10.0, unit: "points"),
       Row(class_id: 1, name: "decay", value: 10.0, unit: "points"),
     ])
-    |> list.map(fn(row) {
-      case row.class_id == 2 && row.name == "max" {
-        True -> Row(..row, unit: "ms")
-        False -> row
-      }
-    })
   let assert Error(refusals) = class_resource.select(rows:)
-  assert list.sort(names_of(refusals), string.compare)
-    == ["1 decay", "2 max", "6 max"]
+  assert list.sort(names_of(refusals), string.compare) == ["1 decay", "6 max"]
 }
 
-pub fn a_regen_missing_a_part_or_a_value_not_above_0_is_refused_test() -> Nil {
+pub fn a_regen_missing_a_part_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let rows =
     design_rows()
     |> list.filter(fn(row) {
       !{ row.class_id == 5 && row.name == "regen_tick_ms" }
     })
-    |> list.map(fn(row) {
-      case row.class_id, row.name {
-        4, "refill_after_combat_ms" -> Row(..row, value: 0.0)
-        7, "regen_tick_ms" -> Row(..row, value: 2.5)
-        3, "max" -> Row(..row, value: -1.0)
-        _, _ -> row
-      }
-    })
   let assert Error(refusals) = class_resource.select(rows:)
-  assert list.sort(names_of(refusals), string.compare)
-    == [
-      "3 max",
-      "4 refill_after_combat_ms",
-      "5 regen_tick_ms",
-      "7 regen_tick_ms",
-    ]
+  assert names_of(refusals) == ["5 regen_tick_ms"]
 }
 
 pub fn a_warrior_with_a_drain_row_missing_and_an_esper_without_its_empty_wait_are_refused_test() -> Nil {
@@ -520,18 +499,6 @@ pub fn a_warrior_with_a_drain_row_missing_and_an_esper_without_its_empty_wait_ar
   assert list.sort(names_of(refusals), string.compare)
     == ["1 drain_after_ms", "3 empty_after_combat_ms"]
     as "the Warrior's drain needs its amount, period, tick and wait, and the Esper its wait after combat (issue 418)"
-  let wrong =
-    list.map(design_rows(), fn(row) {
-      case row.class_id, row.name {
-        1, "drain_amount" -> Row(..row, value: 0.0)
-        1, "drain_tick_ms" -> Row(..row, unit: "points")
-        _, _ -> row
-      }
-    })
-  let assert Error(refusals) = class_resource.select(rows: wrong)
-  assert list.sort(names_of(refusals), string.compare)
-    == ["1 drain_amount", "1 drain_tick_ms"]
-    as "the existing refusals hold for the new rows: a value not above 0, a unit not the name's"
 }
 
 pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reason_test() -> Nil {
@@ -572,7 +539,7 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "class_resource_other_source_states_its_reason",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 1, 'metres', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'decay', 1, 'metres', 'server_choice', 'x')",
         "class_resource_unit_is_known",
       ),
       #(
@@ -590,6 +557,26 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
       #(
         "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 1, 'points', 'nobody', 'x')",
         "class_resource_source_is_a_content_source",
+      ),
+      #(
+        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 0, 'points', 'server_choice', 'x')",
+        "class_resource_value_is_positive",
+      ),
+      #(
+        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', -1, 'points', 'server_choice', 'x')",
+        "class_resource_value_is_positive",
+      ),
+      #(
+        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'regen_tick_ms', 2.5, 'ms', 'server_choice', 'x')",
+        "class_resource_time_is_whole_ms",
+      ),
+      #(
+        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 10, 'ms', 'server_choice', 'x')",
+        "class_resource_name_has_its_unit",
+      ),
+      #(
+        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'drain_tick_ms', 10, 'points', 'server_choice', 'x')",
+        "class_resource_name_has_its_unit",
       ),
     ],
     fn(bad) {

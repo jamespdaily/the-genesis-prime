@@ -6,7 +6,7 @@
 ////
 //// ```
 //// game_number rows ─▶ select(rows, sight range)
-////   a name missing, a name not known, a unit not the name's  ─▶ Refusal
+////   a name missing or not known                              ─▶ Refusal
 ////   leash_range ≤ aggro_range                                ─▶ Refusal
 ////   aggro_range ≥ the sight range                            ─▶ Refusal
 ////   aggro_threat ≤ 0, chase_stop_fraction outside (0, 1)     ─▶ Refusal
@@ -23,6 +23,8 @@
 //// - **The chase stop fraction** lies strictly between 0 and 1: at 0 the creature
 ////   stops at the edge of its reach, where the target's first step leaves it, and
 ////   at 1 it runs onto the target's own place.
+//// - **The unit of each name** is the table's: `game_number_name_has_its_unit`
+////   refuses a row whose unit is not its name's (migration 0014).
 //// - **Every refusal is collected**, as the other content tables' are
 ////   (genesis_prime/content); the ranges are checked once every name is there.
 
@@ -54,44 +56,39 @@ pub type GameNumbers {
   )
 }
 
-/// Each number the server reads, by name, with its unit.
+/// Each number the server reads, by name.
 const expected = [
-  #("aggro_range", "units"),
-  #("leash_range", "units"),
-  #("aggro_threat", "threat"),
-  #("chase_stop_fraction", "fraction"),
+  "aggro_range",
+  "leash_range",
+  "aggro_threat",
+  "chase_stop_fraction",
 ]
 
-/// The numbers of the rows, or every refusal: a name missing or not known, a unit
-/// that is not the name's, a leash range not above the aggro range, an aggro range
-/// not below `sight_range`, an aggro threat not above 0 and a chase stop fraction
-/// not strictly between 0 and 1.
+/// The numbers of the rows, or every refusal: a name missing or not known, a
+/// leash range not above the aggro range, an aggro range not below `sight_range`,
+/// an aggro threat not above 0 and a chase stop fraction not strictly between 0
+/// and 1.
 pub fn select(
   rows rows: List(Row),
   sight_range sight_range: Float,
 ) -> Result(GameNumbers, List(Refusal)) {
   let unknown =
     list.filter_map(rows, fn(row) {
-      case list.key_find(expected, row.name) {
-        Error(Nil) ->
+      case list.contains(expected, row.name) {
+        False ->
           Ok(refused(name: row.name, rule: "the server knows no such number"))
-        Ok(unit) if unit != row.unit ->
-          Ok(refused(
-            name: row.name,
-            rule: "its unit is " <> row.unit <> ", not " <> unit,
-          ))
-        Ok(..) -> Error(Nil)
+        True -> Error(Nil)
       }
     })
   let values =
     list.map(rows, fn(row) { #(row.name, row.value) }) |> dict.from_list
   let missing =
-    list.filter_map(expected, fn(name_and_unit) {
-      case dict.has_key(values, name_and_unit.0) {
+    list.filter_map(expected, fn(name) {
+      case dict.has_key(values, name) {
         True -> Error(Nil)
         False ->
           Ok(refused(
-            name: name_and_unit.0,
+            name:,
             rule: "the table has no such row, which the server reads",
           ))
       }

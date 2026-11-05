@@ -71,7 +71,7 @@ fn insert_rows(pool: pog.Connection) -> Nil {
   )
   run(
     pool,
-    "insert into character (character_id, account_id, session_epoch, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, look_labels, look_values, bones, needs_rename) overriding system value values (6, 4, 0, 'O''Neil Entry', 0, 1, 1, 167, 1, 0, 3460, 6009, 29.1285991668701, -853.87158203125, -560.18798828125, '{2,4,7}', '{1,2,10}', '{0,1065353216}', true)",
+    "insert into character (character_id, account_id, session_epoch, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, look_labels, look_values, bones, needs_rename) overriding system value values (6, 4, 0, 'Oneil Entry', 0, 1, 1, 167, 1, 0, 3460, 6009, 29.1285991668701, -853.87158203125, -560.18798828125, '{2,4,7}', '{1,2,10}', '{0,1065353216}', true)",
   )
 }
 
@@ -120,7 +120,7 @@ pub fn the_rows_of_the_named_accounts_written_and_applied_to_a_new_database_are_
       "4|o'brien|01|02|fedcba98-7654-3210-fedc-ba9876543210",
       "1|1|3|4|Tess Renamed|1|1|1|167|3|0|426|648|4110.71|-658.6249|-5145.48|1.5|-0.25|0.5|{}|{}|{}|false|512",
       "2|1|0|0|Nova Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true|null",
-      "6|4|0|0|O'Neil Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true|null",
+      "6|4|0|0|Oneil Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true|null",
     ]
     as "every account and character with its id, its bytes, the numbers that fence a save, the way it faces, its look, its rename mark and its saved health (none stays NULL), as inserted"
   assert rows(source) == rows(target)
@@ -170,7 +170,7 @@ pub fn the_fixture_holds_only_the_named_accounts_and_their_characters_test() -> 
   assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
   let assert Ok(text) = simplifile.read(path) as "the fixture reads"
   assert !string.contains(text, "o''brien")
-    && !string.contains(text, "O''Neil")
+    && !string.contains(text, "Oneil Entry")
     && !string.contains(text, "fedcba98")
     as "nothing of the account that was not named is in the file"
   let target = pool()
@@ -252,7 +252,7 @@ fn next_character_id(pool: pog.Connection) -> String {
   let assert [id] =
     query_texts(
       pool,
-      "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values (1, 'Next', 0, 1, 1, 167, 1, 0, 0, 0, 0, 0, 0) returning character_id::text",
+      "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values (1, 'Next Ab', 0, 1, 1, 167, 1, 0, 0, 0, 0, 0, 0) returning character_id::text",
     )
     as "the insert gives its id"
   id
@@ -263,10 +263,10 @@ pub fn a_sequence_that_is_ahead_of_the_largest_kept_id_is_restored_as_it_was_tes
   use folder <- recording_support.in_folder
   let source = pool()
   insert_account_by_sequence(source)
-  insert_character(source, "One")
-  insert_character(source, "Two")
-  insert_character(source, "Three")
-  run(source, "delete from character where name = 'Three'")
+  insert_character(source, "One Ab")
+  insert_character(source, "Two Ab")
+  insert_character(source, "Three Ab")
+  run(source, "delete from character where name = 'Three Ab'")
   let path = path_in(folder)
   assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
   let target = pool()
@@ -280,8 +280,8 @@ pub fn a_sequence_of_a_table_left_with_no_rows_is_restored_as_it_was_test() -> N
   use folder <- recording_support.in_folder
   let source = pool()
   insert_account_by_sequence(source)
-  insert_character(source, "One")
-  insert_character(source, "Two")
+  insert_character(source, "One Ab")
+  insert_character(source, "Two Ab")
   run(source, "delete from character")
   let path = path_in(folder)
   assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
@@ -313,10 +313,10 @@ pub fn the_sequences_of_other_accounts_rows_still_count_after_the_fixture_test()
     source,
     "insert into account (login_name, srp_salt, srp_verifier, game_account_id) values ('other', '\\x01'::bytea, '\\x02'::bytea, '11111111-2222-3333-4444-555555555555')",
   )
-  insert_character(source, "Mine")
+  insert_character(source, "Mine Ab")
   run(
     source,
-    "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values (2, 'Theirs', 0, 1, 1, 167, 1, 0, 0, 0, 0, 0, 0)",
+    "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values (2, 'Theirs Ab', 0, 1, 1, 167, 1, 0, 0, 0, 0, 0, 0)",
   )
   let path = path_in(folder)
   assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
@@ -325,7 +325,7 @@ pub fn the_sequences_of_other_accounts_rows_still_count_after_the_fixture_test()
   assert rows(target)
     == [
       "1|genesis|01|02|01234567-89ab-cdef-0123-456789abcdef",
-      "1|1|0|0|Mine|0|1|1|167|1|0|0|0|0|0|0|0|0|0|{}|{}|{}|false|null",
+      "1|1|0|0|Mine Ab|0|1|1|167|1|0|0|0|0|0|0|0|0|0|{}|{}|{}|false|null",
     ]
     as "only the named account's rows"
   assert next_character_id(target) == "3"

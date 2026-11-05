@@ -3,7 +3,9 @@
 //// before it sends 0x025B (LuaCreateCharacter 0x140023e90: the name by text
 //// rule 0, the CharacterCreation row and its entitlement and cost, a path up
 //// to 3), and a client that is not the real one can send anything, so the
-//// server makes them again, and the request's counts as well (opcode.0x25b,
+//// server makes them again, except the name, which the table's
+//// `character_name_follows_rule_0` holds and the store answers
+//// (genesis_prime/store), and the request's counts as well (opcode.0x25b,
 //// opcode.0x25b.counts: at most 25 labels, each once and in label-id order,
 //// the labels and values the race, sex and faction's index holds, and the bone
 //// values the race and sex have).
@@ -11,14 +13,12 @@
 //// A request that passes gives the character to make: its gender, race, class
 //// and faction are the row's, and its place is its start's
 //// (genesis_prime/game/start_place) and its level is the one its xp gives
-//// (genesis_prime/game/level). Each refusal maps to one result the client
-//// shows, in one place (`result_of`): a name that fails the rule is 10, "name
-//// length", and every other refusal is 4, "due to an error"
-//// (lua.Character.OnCreateCharacterFailed). A request the real client would not
-//// send is no player's mistake, so the caller logs each refusal but the name's.
+//// (genesis_prime/game/level). Every refusal is the result 4, "due to an error"
+//// (lua.Character.OnCreateCharacterFailed), in one place (`result_of`). A request
+//// the real client would not send is no player's mistake, so the caller logs
+//// each refusal.
 
 import genesis_prime/game/appearance
-import genesis_prime/game/character_name
 import genesis_prime/game/level
 import genesis_prime/game/start_place
 import genesis_prime/message/create_character.{type CreateCharacter}
@@ -30,7 +30,6 @@ import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The most labels a request carries: the label table's 27, less labels 26
@@ -42,8 +41,6 @@ const highest_path = 3
 
 /// Why a create request is refused.
 pub type Refusal {
-  /// The name fails the client's text rule 0.
-  NameBreaksRule
   /// The table has no CharacterCreation row with the id.
   NoSuchRow(creation_id: Int)
   /// The row's enabled column is off.
@@ -80,16 +77,12 @@ pub type Refusal {
   NoLevelForExperience(creation_id: Int, experience: Int)
 }
 
-/// Checks a request against the client's tables: the name, then the row it
-/// names, then the rest.
+/// Checks a request against the client's tables: the row it names, then the
+/// rest.
 pub fn check(
   tables tables: table_store.Tables,
   request request: CreateCharacter,
 ) -> Result(NewCharacter, Refusal) {
-  use <- bool.guard(
-    !character_name.is_valid(request.name),
-    Error(NameBreaksRule),
-  )
   case
     character_creation.get(
       tables:,
@@ -234,7 +227,6 @@ const exponent_mask = 0x7F800000
 /// The result the client shows for a refusal.
 pub fn result_of(refusal: Refusal) -> CreateResult {
   case refusal {
-    NameBreaksRule -> create_result.NameLength
     NoSuchRow(..)
     | RowDisabled(..)
     | CostumeOnlyRow(..)
@@ -252,34 +244,10 @@ pub fn result_of(refusal: Refusal) -> CreateResult {
   }
 }
 
-/// The sentence the caller logs as a warning for a refusal: none for a name
-/// that fails the rule, which a player can type, and for every other refusal
-/// the sentence of `describe`.
-pub fn warning(refusal: Refusal) -> Option(String) {
-  case refusal {
-    NameBreaksRule -> None
-    NoSuchRow(..)
-    | RowDisabled(..)
-    | CostumeOnlyRow(..)
-    | NeedsEntitlement(..)
-    | CostsCurrency(..)
-    | PathAbove3(..)
-    | TooManyLabels(..)
-    | LabelsNotIncreasing(..)
-    | LabelNotAllowed(..)
-    | LookValueNotHeld(..)
-    | WrongBoneCount(..)
-    | BoneNotFinite(..)
-    | NoStartPlace(..)
-    | NoLevelForExperience(..) -> Some(describe(refusal))
-  }
-}
-
 /// A sentence for the log that says why the request was refused, naming the
 /// creation row.
 pub fn describe(refusal: Refusal) -> String {
   case refusal {
-    NameBreaksRule -> "the name fails the client's text rule 0"
     NoSuchRow(creation_id:) -> row_text(creation_id) <> " does not exist"
     RowDisabled(creation_id:) -> row_text(creation_id) <> " is disabled"
     CostumeOnlyRow(creation_id:) -> row_text(creation_id) <> " is costume only"

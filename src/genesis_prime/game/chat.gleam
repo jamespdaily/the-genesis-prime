@@ -123,10 +123,13 @@
 ////   client's text never makes (0, 3, 7 or 8, `0x140402720`) is refused with
 ////   result 17: the client's reader takes it, but its own code does not send it.
 //// - **The target's name is folded** with `string.lowercase`, the fold of the
-////   database's unique index (migration 0005); a name that is not a full name by
-////   rule 0 gets 0x1d9 at once with no watch (`opcode.0x1d4`,
-////   genesis_prime/game/character_name). A realm name that is neither empty nor
-////   the server's own, compared without case, gets 0x1d9 (`opcode.0x1d4`).
+////   database's unique index (migration 0005), and watched like any name: a name
+////   that is no full name by rule 0 is held by no character (the table refuses
+////   it, `character_name_follows_rule_0`), so its watch ends with 0x1d9
+////   (`opcode.0x1d4`, genesis_prime/game/character_name). A name that is not valid
+////   UTF-16 cannot be folded, so it gets 0x1d9 at once with no watch. A realm name
+////   that is neither empty nor the server's own, compared without case, gets 0x1d9
+////   (`opcode.0x1d4`).
 //// - **A whisper to oneself** writes 0x1c8 and 0x1c2 in the speaker's own step,
 ////   with no watch: a server choice.
 //// - **An empty whisper** gets 0x1d9 when the target is not found, and otherwise
@@ -502,7 +505,7 @@ fn whisper_sent(
   )
   use <- bool.guard(
     when: sent.account == 1
-      || !is_a_valid_name(sent.target_name)
+      || !is_text(sent.target_name)
       || !is_the_realm(named: sent.target_realm_name, own: realm_name),
     return: #(chat, [Send(whisper_failed_frame(sent:))]),
   )
@@ -582,18 +585,16 @@ fn whisper_to_oneself(
   }
 }
 
-/// Whether the name a whisper names is a full name by rule 0: a text that is not
-/// valid UTF-16 is no character's name (`character_name`).
-fn is_a_valid_name(units: List(Int)) -> Bool {
-  bit_stream.from_utf16(units)
-  |> result.map(character_name.is_valid)
-  |> result.unwrap(or: False)
+/// Whether the units are valid UTF-16, so a name made of them can be folded and
+/// watched; one that is not is no character's name.
+fn is_text(units: List(Int)) -> Bool {
+  result.is_ok(bit_stream.from_utf16(units))
 }
 
-/// The text of units that are valid UTF-16, which `is_a_valid_name` has shown.
+/// The text of units that are valid UTF-16, which `is_text` has shown.
 fn text_of(units: List(Int)) -> String {
   let assert Ok(text) = bit_stream.from_utf16(units)
-    as "a name that passed rule 0 is valid UTF-16"
+    as "a name that passed the UTF-16 check is valid UTF-16"
   text
 }
 

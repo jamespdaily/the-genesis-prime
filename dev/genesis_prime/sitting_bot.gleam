@@ -23,9 +23,10 @@
 //// refused when the named character does not exist or has no saved place.
 ////
 //// - The bot is the account `sitting-bot` with its character `Sitting Bot`, made
-////   on the first run and used again after it (`genesis_prime/add_account`,
-////   `genesis_prime/add_character`: race 1, sex 1, class 1 and faction 167 of
-////   CharacterCreation row 466). Before it logs in, its saved place is put at
+////   on the first run and used again after it, in one transaction that leaves one
+////   of each however many runs begin together (`genesis_prime/add_account`'s
+////   credentials; race 1, sex 1, class 1 and faction 167 of CharacterCreation
+////   row 466). Before it logs in, its saved place is put at
 ////   the named character's own, in the same world and zone. Only a character of
 ////   the account `sitting-bot` is taken for the bot's or moved: a character of
 ////   that name that another account has refuses the run.
@@ -61,7 +62,6 @@
 import argv
 import game_client.{type Chatter, type Game, type HeardLine}
 import genesis_prime/add_account
-import genesis_prime/add_character/sql as character_sql
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/dev_database
 import genesis_prime/game/chat_channel.{type ChannelType}
@@ -280,61 +280,48 @@ fn place_of(
   }
 }
 
-/// The id of the bot's character, which the first call makes with its account.
+/// The id of the bot's character. One transaction makes the bot's account unless
+/// it is there (`on conflict do nothing`), takes the account's row lock, makes the
+/// character unless the account has it, and reads it, so a run that begins beside
+/// another waits at the lock and finds the character the other made. A
+/// "Sitting Bot" that another account holds breaks the name's unique index, the
+/// transaction is undone and nothing is made.
 fn bot_character(pool pool: pog.Connection) -> Result(Int, SeatFailure) {
   let bot = account()
-  use rows <- result.try(
-    sql.account_character(pool, bot.login_name, character_name)
-    |> result.map_error(database),
-  )
+  let add_account.Credentials(salt:, verifier:, game_account_id:) =
+    add_account.credentials(login_name: bot.login_name, password: bot.password)
+  let read =
+    pog.transaction(pool, fn(connection) {
+      use _ <- result.try(sql.insert_bot_account(
+        connection,
+        bot.login_name,
+        salt,
+        verifier,
+        game_account_id,
+      ))
+      use _ <- result.try(sql.lock_bot_account(connection, bot.login_name))
+      use _ <- result.try(sql.insert_bot_character(
+        connection,
+        bot.login_name,
+        character_name,
+      ))
+      sql.account_character(connection, bot.login_name, character_name)
+    })
+    |> result.map_error(fn(error) {
+      case error {
+        pog.TransactionQueryError(error) | pog.TransactionRolledBack(error) ->
+          database(error)
+      }
+    })
+  use rows <- result.try(read)
   case rows.rows {
     [row, ..] -> Ok(row.character_id)
-    [] -> {
-      use _ <- result.try(bot_account(pool:, bot:))
-      use made <- result.try(
-        character_sql.insert_character(
-          pool,
-          bot.login_name,
-          character_name,
-          1,
-          1,
-          1,
-          167,
-        )
-        |> result.map_error(database),
+    [] ->
+      Error(
+        Database(failure: dev_database.NotChanged(
+          "the bot's character has no row",
+        )),
       )
-      case made.rows {
-        [character_sql.InsertCharacterRow(character_id:)] -> Ok(character_id)
-        _ ->
-          Error(
-            Database(failure: dev_database.NotChanged(
-              "the bot's account has no row",
-            )),
-          )
-      }
-    }
-  }
-}
-
-/// The bot's account, made when the database has none.
-fn bot_account(
-  pool pool: pog.Connection,
-  bot bot: Account,
-) -> Result(Nil, SeatFailure) {
-  use found <- result.try(
-    sql.account_with_login_name(pool, bot.login_name)
-    |> result.map_error(database),
-  )
-  case found.rows {
-    [_, ..] -> Ok(Nil)
-    [] -> {
-      let #(_game_account_id, query) =
-        add_account.new_account(
-          login_name: bot.login_name,
-          password: bot.password,
-        )
-      query(pool) |> result.map_error(database) |> result.replace(Nil)
-    }
   }
 }
 

@@ -512,9 +512,19 @@ pub fn the_stores_answer_to_a_save_is_logged_by_what_it_says_test() -> Nil {
     && string.contains(text, "newer save")
     && string.contains(text, "no such character")
     as "it names the three causes the store cannot tell apart"
-  let assert [Fault(text:)] = movement.saved(PlaceRefused)
+  let assert [Fault(text:)] =
+    movement.saved(PlaceRefused(constraint: "character_position_is_finite"))
     as "no place the rule keeps breaks a check of the database: a bug"
   assert string.contains(text, "refused") && string.contains(text, "place")
+  assert string.contains(text, "character_position_is_finite")
+    as "the line names the constraint that refused it"
+  let assert [Fault(text:)] =
+    movement.saved(PlaceRefused(
+      constraint: "character_no_world_has_no_zone_or_position",
+    ))
+  assert string.contains(text, "character_no_world_has_no_zone_or_position")
+    && !string.contains(text, "character_position_is_finite")
+    as "and each refusal names its own"
   let assert [Fault(text:)] = movement.saved(HealthRefused)
     as "no living player has a health of 0 or below, which the table refuses: a bug"
   assert string.contains(text, "refused") && string.contains(text, "health")

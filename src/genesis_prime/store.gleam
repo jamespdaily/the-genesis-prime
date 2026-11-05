@@ -190,8 +190,9 @@ pub type SelectRequest {
   /// The account's characters, in the order they were created.
   ListCharacters(account_id: AccountId)
   /// Makes the character for the account unless it already has
-  /// `character_slots` characters. The name must be unique ignoring case, and
-  /// the account's creates run one at a time, both held by the database.
+  /// `character_slots` characters. The name must be a full name by the client's
+  /// text rule 0 and unique ignoring case, and the account's creates run one at
+  /// a time, all held by the database.
   CreateCharacter(
     account_id: AccountId,
     character: NewCharacter,
@@ -202,7 +203,8 @@ pub type SelectRequest {
   DeleteCharacter(account_id: AccountId, character_id: CharacterId)
   /// Gives the account's character the name and clears its rename mark, in
   /// one update, when the account has the character and it is marked. The name
-  /// must be unique ignoring case, held by the database.
+  /// must be a full name by the client's text rule 0 and unique ignoring case,
+  /// held by the database.
   RenameCharacter(
     account_id: AccountId,
     character_id: CharacterId,
@@ -254,9 +256,10 @@ pub type MoveAnswer {
   /// save's, a newer save of the same login was stored first, or the account
   /// has no such character.
   NothingSaved
-  /// The database refused the place for a check constraint it holds, which no
-  /// place the rule keeps breaks: a bug of the server's, so nothing was saved.
-  PlaceRefused
+  /// The database refused the place for the check constraint of this name,
+  /// which no place the rule keeps breaks: a bug of the server's, so nothing
+  /// was saved.
+  PlaceRefused(constraint: String)
   /// The database refused the health (`character_health_is_positive`), which
   /// the rule never asks to keep at 0 or below: a bug of the server's, so
   /// nothing was saved, neither the health nor the place beside it.
@@ -286,9 +289,14 @@ pub type CreateAnswer {
   CharacterCreated(character_id: CharacterId)
   /// Another character has the name, in any case; nothing was made.
   NameTaken
+  /// The name is no full name by the client's text rule 0, which the table's
+  /// `character_name_follows_rule_0` holds; nothing was made.
+  NameBreaksRule
   /// The account already has as many characters as its slots; nothing was
   /// made.
   NoFreeSlot
+  /// The account has no row, so no character was made for it.
+  CreateForNoSuchAccount
 }
 
 /// What the store answers a `DeleteCharacter`.
@@ -306,6 +314,10 @@ pub type RenameAnswer {
   /// Another character has the name, in any case; nothing changed, and the
   /// character is still marked.
   NewNameTaken
+  /// The name is no full name by the client's text rule 0, which the table's
+  /// `character_name_follows_rule_0` holds; nothing changed, and the character
+  /// is still marked.
+  NewNameBreaksRule
   /// The account has no such character, or it is not marked; nothing changed.
   NotRenamable
 }

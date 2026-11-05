@@ -41,9 +41,9 @@ import genesis_prime/step.{
 import genesis_prime/store.{
   AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
   CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect, ForWorld,
-  ListCharacters, Listed, LoadCharacter, LookEntry, NameTaken, NewCharacter,
-  NewNameTaken, NoFreeSlot, NoSuchCharacter, NotRenamable, NotTheAccounts,
-  Renamed, Select, Unavailable, World,
+  ListCharacters, Listed, LoadCharacter, LookEntry, NameBreaksRule, NameTaken,
+  NewCharacter, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchCharacter,
+  NotRenamable, NotTheAccounts, Renamed, Select, Unavailable, World,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import genesis_prime/world_map/map
@@ -121,12 +121,26 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
   assert support.asked(taken) == None
 }
 
-pub fn a_name_that_fails_rule_0_is_0x00dc_name_length_and_nothing_is_asked_test() -> Nil {
+pub fn a_name_that_fails_rule_0_is_asked_of_the_store_and_its_answer_is_0x00dc_name_length_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(_, taken) = creating(game_connection_support.a_create_request("Abcd"))
-  assert support.asked(taken) == None as "nothing is stored"
+  let #(state, taken) =
+    creating(game_connection_support.a_create_request("Abcd"))
+  let assert AskStore(store.Select(store.CreateCharacter(character:, ..))) =
+    game_connection_support.ask_request(taken)
+    as "the name's rule 0 is the table's, so the store is asked like any create"
+  assert character.name == "Abcd"
+  assert support.writes(taken) == []
+    as "nothing is written before the store answers"
+  let #(_, taken) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForSelect(Created(NameBreaksRule)))),
+    )
   assert create_result_of(taken).result == create_result.NameLength
     as "lua.Character.OnCreateCharacterFailed: 10"
+  assert support.logs_of(step: taken, level: LogWarning) == []
+    as "a name is a player's to mistype"
   assert !support.stops(taken)
 }
 
@@ -496,8 +510,22 @@ pub fn a_name_taken_a_name_failing_rule_0_and_a_character_that_is_not_renamable_
     )).result
     == rename_result.NameUnavailable
     as "lua.CharacterSelection.OnCharacterRenameResult: 16"
-  let #(_, taken) = renaming(11, "Abcd")
-  assert support.asked(taken) == None as "nothing is stored"
+  let #(state, taken) = renaming(11, "Abcd")
+  assert game_connection_support.ask_request(taken)
+    == AskStore(
+      store.Select(store.RenameCharacter(
+        account_id: AccountId(7),
+        character_id: CharacterId(11),
+        name: "Abcd",
+      )),
+    )
+    as "the name's rule 0 is the table's, so the store is asked like any rename"
+  let #(_, taken) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForSelect(Renamed(NewNameBreaksRule)))),
+    )
   assert character_support.rename_result_in(game_connection_support.heard(
       taken,
       game_connection_support.keyed(),

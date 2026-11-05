@@ -30,13 +30,18 @@
 ////   `QueryTimeout` answer `Unavailable`, and so does the pool not running:
 ////   pgo's checkout exits with `{noproc, {pgo_pool, checkout, _}}` then, which
 ////   the worker catches, and only that exit. A constraint the database
-////   refused is the request's to map: a create maps its name's unique index to
-////   `NameTaken`. Any other error is a bug in the query or the schema: the
-////   worker crashes with it, and the asker gets `EndedBeforeAnswer`.
+////   refused is the request's to map, by the name the schema gave it
+////   (`mapped_constraints`): a create or a rename maps its name's unique index
+////   to `NameTaken` or `NewNameTaken` and the name's rule-0 check to
+////   `NameBreaksRule` or `NewNameBreaksRule`, and a save maps the health's
+////   check to `HealthRefused`. Any other error is a bug in the query or the
+////   schema: the worker crashes with it, and the asker gets `EndedBeforeAnswer`.
 //// - **A create is one transaction.** It takes the account's row lock, so one
 ////   account's creates run one after another, and then inserts the character
 ////   unless the account already has its slots, in one statement; the name's
-////   uniqueness is the index on the ICU-folded `lower(name collate "und-x-icu")`.
+////   uniqueness is the index on the ICU-folded `lower(name collate "und-x-icu")`,
+////   and its form is the table's rule-0 check. An account that has no row is
+////   `CreateForNoSuchAccount`.
 //// - **A load is one statement.** World entry's load of a character names the
 ////   account's id as well as the character's, so another account's character
 ////   is never taken; it raises the character's `session_epoch` by one and
@@ -48,11 +53,12 @@
 ////   save of its own login, matches no row and changes nothing. It writes the
 ////   health with the place. A save that `character_health_is_positive` refuses
 ////   is `HealthRefused`; one that any other check constraint of the table
-////   refuses is `PlaceRefused`; the worker does not crash for either.
+////   refuses is `PlaceRefused` with that constraint's name; the worker does not
+////   crash for either.
 //// - **A delete and a rename are one statement each.** Both name the account's
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
-////   uniqueness is the same index as a create's.
+////   uniqueness and form are the same index and check as a create's.
 //// - **The probe.** One more kind of job, which `main` asks to know the database
 ////   answers and runs the migrations the server was built with
 ////   (genesis_prime/readiness). It runs `select 1`, and once that returns it
@@ -77,12 +83,13 @@ import genesis_prime/store.{
   type Request, type SelectAnswer, type SelectRequest, type WorldAnswer,
   type WorldRequest, Account, AccountFound, AccountId, Character,
   CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
-  CharacterRenamed, CreateCharacter, Created, DeleteCharacter, Deleted,
-  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
-  ListCharacters, Listed, LoadCharacter, Login, Move, NameStands, NameTaken,
-  NeedsRename, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
-  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
-  Renamed, SavePlace, Select, Unavailable, World,
+  CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
+  DeleteCharacter, Deleted, FindAccount, ForLogin, ForMove, ForSelect, ForWorld,
+  HealthRefused, ListCharacters, Listed, LoadCharacter, Login, Move,
+  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
+  NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter, Renamed, SavePlace,
+  Select, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, RaceId}
@@ -95,6 +102,25 @@ import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import pog
+
+/// The unique index on the ICU-folded lower-cased name (migration 0005), which a
+/// create or a rename refused is a name another character holds.
+const character_name_unique = "character_name_unique"
+
+/// The table's check that a name is a full name by the client's text rule 0
+/// (migration 0014), which a create or a rename refused is a name that breaks it.
+const character_name_follows_rule_0 = "character_name_follows_rule_0"
+
+/// The table's check that a saved health is above 0 (migration 0013).
+const character_health_is_positive = "character_health_is_positive"
+
+/// Every constraint or unique index the worker answers for by name. The schema
+/// holds each by this name, which a test reads from the catalogue.
+pub const mapped_constraints = [
+  character_name_unique,
+  character_name_follows_rule_0,
+  character_health_is_positive,
+]
 
 /// What one worker is started with: a rule's ask and how to answer it, or the
 /// probe `main` makes to know the database answers.
@@ -358,9 +384,10 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     Ok([]) -> Ok(NothingSaved)
     Ok(_) -> panic as "a character id is unique, so a save changes at most one"
     Error(Unreachable) -> Error(Nil)
-    Error(Refused(constraint: "character_health_is_positive", ..)) ->
-      Ok(HealthRefused)
-    Error(Refused(..)) -> Ok(PlaceRefused)
+    Error(Refused(constraint:, ..))
+      if constraint == character_health_is_positive
+    -> Ok(HealthRefused)
+    Error(Refused(constraint:, ..)) -> Ok(PlaceRefused(constraint:))
     Error(Unexpected(error:)) -> exit_with(error)
   }
 }
@@ -487,9 +514,10 @@ fn naming(needs_rename: Bool) -> Naming {
   NameStands
 }
 
-/// Makes the character in one transaction: the account's row lock, then the
-/// insert, which makes no row once the account has its slots. The name's unique
-/// index refusing the row is `NameTaken`.
+/// Makes the character in one transaction: the account's row lock, which finds
+/// no row for an account that does not exist, then the insert, which makes no row
+/// once the account has its slots. The name's unique index refusing the row is
+/// `NameTaken`, and its rule-0 check refusing it is `NameBreaksRule`.
 fn create_character(
   pool pool: pog.Connection,
   account_id account_id: AccountId,
@@ -499,8 +527,12 @@ fn create_character(
   let AccountId(account_id) = account_id
   let transaction = fn() {
     pog.transaction(pool, fn(connection) {
-      use _locked <- result.try(sql.lock_account(connection, account_id))
-      sql.create_character(
+      use locked <- result.try(sql.lock_account(connection, account_id))
+      use <- bool.guard(
+        locked.rows == [],
+        Ok(pog.Returned(count: 1, rows: [NoAccountRow])),
+      )
+      use made <- result.map(sql.create_character(
         connection,
         account_id,
         character.name,
@@ -522,6 +554,10 @@ fn create_character(
         start_place.facing(character.place).yaw,
         start_place.facing(character.place).pitch,
         start_place.facing(character.place).roll,
+      ))
+      pog.Returned(
+        ..made,
+        rows: list.map(made.rows, fn(row) { MadeRow(row.character_id) }),
       )
     })
     |> result.map_error(fn(error) {
@@ -532,13 +568,26 @@ fn create_character(
     })
   }
   case attempt(transaction) {
-    Ok([row]) -> Ok(CharacterCreated(CharacterId(row.character_id)))
+    Ok([MadeRow(character_id:)]) ->
+      Ok(CharacterCreated(CharacterId(character_id)))
+    Ok([NoAccountRow]) -> Ok(CreateForNoSuchAccount)
     Ok([]) -> Ok(NoFreeSlot)
     Ok(_) -> panic as "one insert of one row makes at most one character"
     Error(Unreachable) -> Error(Nil)
-    Error(Refused(constraint: "character_name_unique", ..)) -> Ok(NameTaken)
+    Error(Refused(constraint:, ..)) if constraint == character_name_unique ->
+      Ok(NameTaken)
+    Error(Refused(constraint:, ..))
+      if constraint == character_name_follows_rule_0
+    -> Ok(NameBreaksRule)
     Error(Refused(error:, ..)) | Error(Unexpected(error:)) -> exit_with(error)
   }
+}
+
+/// The one row a create's transaction gives: the character it made, or the
+/// account's lock finding no account.
+type CreateRow {
+  MadeRow(character_id: Int)
+  NoAccountRow
 }
 
 /// Deletes the account's character with the id in one statement, which names
@@ -561,8 +610,9 @@ fn delete_character(
 }
 
 /// Gives the account's marked character the name and clears the mark in one
-/// update. The name's unique index refusing the row is `NewNameTaken`;
-/// `Error(Nil)` when the database is away.
+/// update. The name's unique index refusing the row is `NewNameTaken` and its
+/// rule-0 check refusing it is `NewNameBreaksRule`; `Error(Nil)` when the
+/// database is away.
 fn rename_character(
   pool pool: pog.Connection,
   account_id account_id: AccountId,
@@ -578,7 +628,11 @@ fn rename_character(
     Ok([]) -> Ok(store.NotRenamable)
     Ok(_) -> panic as "a character id is unique, so a rename changes at most one"
     Error(Unreachable) -> Error(Nil)
-    Error(Refused(constraint: "character_name_unique", ..)) -> Ok(NewNameTaken)
+    Error(Refused(constraint:, ..)) if constraint == character_name_unique ->
+      Ok(NewNameTaken)
+    Error(Refused(constraint:, ..))
+      if constraint == character_name_follows_rule_0
+    -> Ok(NewNameBreaksRule)
     Error(Refused(error:, ..)) | Error(Unexpected(error:)) -> exit_with(error)
   }
 }

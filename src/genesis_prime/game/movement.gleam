@@ -596,8 +596,11 @@ pub fn saved(answer answer: MoveAnswer) -> List(Effect) {
         text: "a save changed nothing: a later login holds the character, a newer save of this login was stored first, or the account has no such character",
       ),
     ]
-    PlaceRefused -> [
-      Fault(text: "the database refused the place it was asked to save"),
+    PlaceRefused(constraint:) -> [
+      Fault(
+        text: "the database refused the place it was asked to save, by the constraint "
+        <> constraint,
+      ),
     ]
     HealthRefused -> [
       Fault(text: "the database refused the health it was asked to save"),

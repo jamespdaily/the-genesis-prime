@@ -4,9 +4,10 @@
 ////   seeded rows, aggro_range 10 units (no client range, `creature.ai_data`),
 ////   leash_range 55 units (the objective circle's radius, WorldLocation2 51739),
 ////   aggro_threat 1 threat (any threat above 0 shows hostile, `0x14045a950`) and
-////   chase_stop_fraction 0.5; a missing, unknown or mis-united name, a leash range
-////   not above the aggro range and an aggro range not below sight each stop the
-////   start, named.
+////   chase_stop_fraction 0.5; a missing or unknown name, a leash range not above
+////   the aggro range and an aggro range not below sight each stop the start,
+////   named, and the table refuses a name with a unit that is not its own
+////   (`game_number_name_has_its_unit`, migration 0014).
 //// - The shared pattern of the content tables (`genesis_prime/content`): every
 ////   refusal is collected and named by its table, its row and its rule.
 //// - Sight is 1024 units (`genesis_prime/world_map/sight.range`, unit.range).
@@ -52,21 +53,15 @@ pub fn the_seeded_rows_select_into_the_numbers_a_fight_reads_test() -> Nil {
     ))
 }
 
-pub fn a_missing_an_unknown_and_a_mis_united_number_are_each_refused_by_name_test() -> Nil {
+pub fn a_missing_and_an_unknown_number_are_each_refused_by_name_test() -> Nil {
   use <- owned_test.run(5000)
   let rows =
     seeded()
     |> list.filter(fn(row) { row.name != "aggro_threat" })
-    |> list.map(fn(row) {
-      case row.name {
-        "leash_range" -> Row(..row, unit: "ms")
-        _ -> row
-      }
-    })
     |> list.append([Row(name: "evade_range", value: 30.0, unit: "units")])
   let assert Error(refusals) = game_number.select(rows:, sight_range:)
-  assert names_of(refusals) == ["leash_range", "evade_range", "aggro_threat"]
-    as "one bad row shows its neighbours: the leash range in ms, the number the server knows no use of, and the missing threat"
+  assert names_of(refusals) == ["evade_range", "aggro_threat"]
+    as "one bad row shows its neighbours: the number the server knows no use of, and the missing threat"
 }
 
 pub fn a_leash_range_not_above_the_aggro_range_is_refused_test() -> Nil {
@@ -210,6 +205,14 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
       #(
         "insert into game_number (name, value, unit, source, reason) values ('aggro_range', 1, 'units', 'server_choice', 'x')",
         "game_number_pkey",
+      ),
+      #(
+        "insert into game_number (name, value, unit, source, reason) values ('leash_range', 1, 'ms', 'server_choice', 'x')",
+        "game_number_name_has_its_unit",
+      ),
+      #(
+        "insert into game_number (name, value, unit, source, reason) values ('aggro_threat', 1, 'units', 'server_choice', 'x')",
+        "game_number_name_has_its_unit",
       ),
     ],
     fn(bad) {
