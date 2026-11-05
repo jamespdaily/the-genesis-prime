@@ -130,6 +130,15 @@
 ////   spell's Proxies of that phase, and the finish, 0x7fe, comes after the last go,
 ////   at once for a spell that is not Multiphase, and for a channel at its
 ////   channelMaxTime from a timer of its own.
+//// - **A go's gains** (`Gain`) are the spell's own gains of the phase and, once
+////   for the go and not once per unit, the gains of each Proxy of the phase aimed
+////   at each struck unit when the round has a Hit (`spell_plan.Gain`). Each is
+////   given when its prerequisite passes against the caster, which is under the
+////   spells of the caster's own live casts whose primary target it is
+////   (genesis_prime/game/prerequisite); a prerequisite of a type not read, and a
+////   ticking gain, give nothing and a debug line. A creature's cast on the player is
+////   not held here, so a prerequisite cannot find one (no kit prerequisite tests a
+////   creature's spell).
 //// - **A child cast** is the Proxy's spell cast as its own, from the caster, with
 ////   root the pressed spell and parent the spell whose Proxy fired
 ////   (`opcode.0x7ff.root_parent`), after the Proxy's delay from the parent's go;
@@ -204,6 +213,7 @@ import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/hit
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/ability_hold
@@ -295,6 +305,9 @@ pub type Effect {
   /// An accepted press's costs are taken from the caster's class resource, at the
   /// accept (genesis_prime/game/class_resource `pay`).
   Pay(payments: List(Payment))
+  /// A go's resource gains are given to the caster's class resource
+  /// (genesis_prime/game/class_resource `gain`).
+  Gain(gains: List(class_resource.Gain))
 }
 
 /// A go of a live cast that waits for its targets: which cast and phase, the spell
@@ -1293,8 +1306,9 @@ fn costs_paid(
   |> result.map(list.reverse)
 }
 
-/// The caster with the payments among the effects taken from its resources, so a
-/// second press of the same step is checked against what the first left.
+/// The caster with the payments and gains among the effects taken into its
+/// resources, so a second press of the same step, such as a held press a go
+/// releases, is checked against what the first left.
 fn after_payments(
   caster caster: Caster,
   effects effects: List(Effect),
@@ -1304,6 +1318,7 @@ fn after_payments(
     resources: list.fold(effects, caster.resources, fn(resources, effect) {
       case effect {
         Pay(payments:) -> class_resource.paid(resources:, payments:)
+        Gain(gains:) -> class_resource.gain(resources:, gains:).0
         Send(..)
         | Tell(..)
         | StartTimer(..)
@@ -2156,7 +2171,106 @@ fn go(
         True -> finish(cast:, cast_id:, live:, now_ms:)
         False -> #(cast, [])
       }
-      #(cast, list.flatten([going, children, finished]))
+      let gains = gains_given(cast:, caster:, spell:, phase:, struck:)
+      #(cast, list.flatten([going, gains, children, finished]))
+    }
+  }
+}
+
+/// The gains a go gives (`Gain`), and a debug line for each it cannot: the spell's
+/// own of the phase, then once each of the Proxies of the phase aimed at each
+/// struck unit when one unit was Hit. A Proxy behind a prerequisite starts no child
+/// and gives none.
+fn gains_given(
+  cast cast: State,
+  caster caster: Caster,
+  spell spell: Spell,
+  phase phase: Int,
+  struck struck: List(Struck),
+) -> List(Effect) {
+  let hit =
+    list.any(struck, fn(one) {
+      case one {
+        Hit(..) -> True
+        Deflected(..) -> False
+      }
+    })
+  let lifted =
+    list.flat_map(spell_plan.proxies_in_phase(spell:, phase:), fn(proxy) {
+      case proxy.target, proxy.condition {
+        spell_plan.OnEachStruck, spell_plan.Always if hit -> proxy.gains
+        spell_plan.OnEachStruck, spell_plan.Always
+        | spell_plan.OnEachStruck, spell_plan.NeedsPrerequisite(..)
+        | spell_plan.OnCaster, spell_plan.Always
+        | spell_plan.OnCaster, spell_plan.NeedsPrerequisite(..)
+        -> []
+      }
+    })
+  let under =
+    dict.values(cast.casts)
+    |> list.filter(fn(live) { live.primary_target == caster.unit_id })
+    |> list.map(fn(live) { live.spell.spell4_id })
+  let #(given, logs) =
+    list.fold(
+      list.append(spell_plan.gains_in_phase(spell:, phase:), lifted),
+      #([], []),
+      fn(so_far, gain) {
+        let #(given, logs) = so_far
+        case gain_verdict(gain:, under:) {
+          Given(gain: gift) -> #([gift, ..given], logs)
+          Withheld -> so_far
+          NotApplied(why:) -> #(given, [Log(level: LogDebug, text: why), ..logs])
+        }
+      },
+    )
+  let gains = case given {
+    [] -> []
+    [_, ..] -> [Gain(gains: list.reverse(given))]
+  }
+  list.append(list.reverse(logs), gains)
+}
+
+/// What becomes of one gain of a go.
+type GainVerdict {
+  Given(gain: class_resource.Gain)
+  /// Its prerequisite fails.
+  Withheld
+  /// It cannot be given, and `why` says so in a debug line: a ticking gain, or a
+  /// prerequisite of a type not read.
+  NotApplied(why: String)
+}
+
+/// The gain given, withheld for a prerequisite that fails, or not applied.
+fn gain_verdict(
+  gain gain: spell_plan.Gain,
+  under under: List(Spell4Id),
+) -> GainVerdict {
+  let effect = int.to_string(gain.effect_id.value)
+  case gain {
+    spell_plan.TickingGain(..) ->
+      NotApplied(
+        why: "the ticking gain of Spell4Effects " <> effect <> " is not applied",
+      )
+    spell_plan.Gain(slot:, amount:, prerequisite:, ..) -> {
+      let gift = class_resource.Gain(slot:, amount:)
+      case prerequisite {
+        None -> Given(gain: gift)
+        Some(gate) ->
+          case prerequisite.check(prerequisite: gate, under:) {
+            prerequisite.Passes -> Given(gain: gift)
+            prerequisite.Fails -> Withheld
+            prerequisite.NotRead(prerequisite_type:) ->
+              NotApplied(
+                why: "the gain of Spell4Effects "
+                <> effect
+                <> " is behind prerequisite "
+                <> int.to_string(prerequisite.id(prerequisite: gate).value)
+                <> " of type "
+                <> int.to_string(prerequisite_type)
+                <> ", which is not read, so it is not given",
+              )
+          }
+      }
     }
   }
 }

@@ -5,6 +5,7 @@
 ////
 //// ```
 //// the cast rule's Pay (an accepted press)          ─▶ class_resource.pay
+//// the cast rule's Gain (a go's gains)              ─▶ class_resource.gain
 //// a timer class_resource.owns                     ─▶ class_resource.timer_fired
 //// player_life's effects: 0x88c dead                ─▶ class_resource.died
 ////                        0x88c alive               ─▶ class_resource.came_back
@@ -80,6 +81,14 @@ pub fn paid(
   payments payments: List(class_resource.Payment),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   stepped(session:, change: class_resource.pay(resources: _, payments:))
+}
+
+/// The gains a go gives (genesis_prime/game/cast `Gain`).
+pub fn gained(
+  session session: Session,
+  gains gains: List(class_resource.Gain),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  stepped(session:, change: class_resource.gain(resources: _, gains:))
 }
 
 /// A timer of the rule fired. With no player in the world to take it, it is

@@ -207,7 +207,24 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
       | cast.Strike(..)
+      | cast.Gain(..)
       | cast.Log(..) -> []
+    }
+  })
+}
+
+/// The `Gain` effects of the steps, each its list of gains, in order.
+pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast.Gain(gains:) -> Ok(gains)
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Log(..) -> Error(Nil)
     }
   })
 }
@@ -405,7 +422,8 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.CancelTimer(..)
       | cast.Strike(..)
       | cast.Log(..)
-      | cast.Pay(..) -> Error(Nil)
+      | cast.Pay(..)
+      | cast.Gain(..) -> Error(Nil)
     }
   })
 }
@@ -420,7 +438,8 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.CancelTimer(..)
       | cast.Strike(..)
       | cast.Log(..)
-      | cast.Pay(..) -> Error(Nil)
+      | cast.Pay(..)
+      | cast.Gain(..) -> Error(Nil)
     }
   })
 }
@@ -435,7 +454,8 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
       | cast.Strike(..)
-      | cast.Pay(..) -> Error(Nil)
+      | cast.Pay(..)
+      | cast.Gain(..) -> Error(Nil)
     }
   })
 }
@@ -450,7 +470,8 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.CancelTimer(..)
       | cast.Strike(..)
       | cast.Log(..)
-      | cast.Pay(..) -> Error(Nil)
+      | cast.Pay(..)
+      | cast.Gain(..) -> Error(Nil)
     }
   })
 }
@@ -465,7 +486,8 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.StartTimer(..)
       | cast.Strike(..)
       | cast.Log(..)
-      | cast.Pay(..) -> Error(Nil)
+      | cast.Pay(..)
+      | cast.Gain(..) -> Error(Nil)
     }
   })
 }
@@ -531,7 +553,8 @@ pub fn answered_by(
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
       | cast.Log(..)
-      | cast.Pay(..) -> #(state, list.append(done, [effect]))
+      | cast.Pay(..)
+      | cast.Gain(..) -> #(state, list.append(done, [effect]))
     }
   })
 }

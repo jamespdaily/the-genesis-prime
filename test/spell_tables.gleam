@@ -1063,7 +1063,7 @@ pub fn rows() -> Rows {
         kind: 3,
         global: 121,
         cost: #(0, 0),
-        more: [],
+        more: [#("spell4AoeTargetConstraintsId", area_id(70_033))],
       ),
       method_spell_row(
         id: 70_045,
@@ -1073,7 +1073,7 @@ pub fn rows() -> Rows {
         kind: 3,
         global: 121,
         cost: #(0, 0),
-        more: [],
+        more: [#("spell4AoeTargetConstraintsId", area_id(70_045))],
       ),
       method_spell_row(
         id: 70_054,
@@ -1083,7 +1083,7 @@ pub fn rows() -> Rows {
         kind: 3,
         global: 121,
         cost: #(0, 0),
-        more: [],
+        more: [#("spell4AoeTargetConstraintsId", area_id(70_054))],
       ),
       method_spell_row(
         id: 70_135,
@@ -1859,6 +1859,85 @@ pub fn with_loaded_deriving(
   let result = body(tables)
   table_store.unload(tables)
   result
+}
+
+/// The planted rows with Energize, 69450, as a level-1 ability of the Medic. The
+/// SpellLevel row 99418 is test data, not the client's: the client holds no
+/// SpellLevel row for 69450 (`table_rows -- SpellLevel spell4Id=69450`), which only
+/// 78462 reaches, by an effect of type 137. Its Spell4, Spell4Base and VitalModifier
+/// rows are the client's (`table_rows -- Spell4 69450`, `-- Spell4Base 46615`,
+/// `-- Spell4Effects spellId=69450`); its effects of types 11 and 118 and its
+/// Proxies 228915 and 228917, behind prerequisites, are not planted.
+pub fn rows_with_energize() -> Rows {
+  let rows = rows()
+  Rows(
+    ..rows,
+    spell_levels: [
+      planted_table.row(spell_level.schema, [
+        #("ID", Integer(99_418)),
+        #("classId", Integer(4)),
+        #("characterLevel", Integer(1)),
+        #("prerequisiteId", Integer(0)),
+        #("spell4Id", Integer(69_450)),
+      ]),
+      ..rows.spell_levels
+    ],
+    spell4: sorted_by_id([
+      method_spell_row(
+        id: 69_450,
+        base: 46_615,
+        cast_time: 0,
+        cooldown: 30_000,
+        kind: 3,
+        global: 0,
+        cost: #(0, 0),
+        more: [],
+      ),
+      ..rows.spell4
+    ]),
+    spell4_base: sorted_by_id([
+      planted_table.row(spell4_base.schema, [
+        #("ID", Integer(46_615)),
+        #("classIdPlayer", Integer(4)),
+        #("spell4ValidTargetId", Integer(1)),
+      ]),
+      ..rows.spell4_base
+    ]),
+    spell4_effects: sorted_by_id([
+      vital_modifier_row(
+        id: 228_910,
+        spell: 69_450,
+        vital: 6,
+        amount: 4,
+        delay: 0,
+        phases: -1,
+        prerequisite: 43_811,
+        order: 0,
+      ),
+      vital_modifier_row_with(
+        id: 228_918,
+        spell: 69_450,
+        vital: 6,
+        amount: 1,
+        delay: 0,
+        phases: -1,
+        prerequisite: 43_812,
+        order: 7,
+        more: [#("tickTime", 2000), #("durationTime", 8000)],
+      ),
+      ..rows.spell4_effects
+    ]),
+  )
+}
+
+/// The plans of `rows_with_energize`.
+pub fn plans_with_energize() -> spell_plan.Plans {
+  let assert Ok(plans) =
+    with_loaded(rows: rows_with_energize(), body: fn(tables) {
+      spell_plan.build(tables:)
+    })
+    as "the planted rows with Energize build"
+  plans
 }
 
 /// The plans the planted rows build, built once per run from one load of the
