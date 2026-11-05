@@ -3044,9 +3044,32 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
         && psi_children(frames:) == 2
       },
     )
-  let goes = game_client.go_targets_in(frames: watched)
-  assert list.all(goes, fn(go) { go.1 == [] || go.1 == [ahead] })
-    as "the Beast 10 m to the side is within the area row's 30 m all round but outside the never-drawn telegraph 2169, a rectangle 3 m wide ahead of the caster grown by the Beast's hit radius 3 (Spell4.32893.area): no go names it"
+  // The Beast ahead fights back every 1500 ms with its own attack, Spell4 5649,
+  // whose go names the caster; how many of those the watcher has read when this
+  // runs depends on how long the fight took, so only the casts of Telekinetic
+  // Strike are read here.
+  let strike_cast_ids =
+    list.filter_map(game_client.casts_in(frames: watched), fn(event) {
+      case event {
+        game_client.CastStarted(cast_id:, spell4_id: 32_893, ..) -> Ok(cast_id)
+        game_client.CastStarted(..)
+        | game_client.CastRefused(..)
+        | game_client.CastConfirmed(..)
+        | game_client.CastWent(..)
+        | game_client.ThresholdOpened(..)
+        | game_client.ThresholdIndex(..)
+        | game_client.ThresholdClosed(..)
+        | game_client.ThresholdEnded(..)
+        | game_client.CastFinished(..) -> Error(Nil)
+      }
+    })
+  let strike_goes =
+    list.filter(game_client.go_targets_in(frames: watched), fn(go) {
+      list.contains(strike_cast_ids, go.0)
+    })
+  assert strike_goes != []
+    && list.all(strike_goes, fn(go) { go.1 == [] || go.1 == [ahead] })
+    as "the Beast 10 m to the side is within the area row's 30 m all round but outside the never-drawn telegraph 2169, a rectangle 3 m wide ahead of the caster grown by the Beast's hit radius 3 (Spell4.32893.area): no go of a Telekinetic Strike names it"
   assert list.filter_map(game_client.health_in(frames: watched), fn(health) {
       case health.0 == beside {
         True -> Ok(health.1)
