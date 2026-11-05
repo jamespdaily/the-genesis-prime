@@ -186,6 +186,8 @@ pub fn full_slot_1() -> class_resource.Resource {
     start: 1000.0,
     regen: None,
     refill_after_combat_ms: None,
+    drain: None,
+    empty_after_combat_ms: None,
   )
 }
 

@@ -12,7 +12,13 @@
 //// - The client: a resource slot is a 32-bit float the server sets by 0x935
 ////   (`opcode.0x935`, `opcode.0x262.resource_stats`); the starts are the client's
 ////   texts (`LocalizedEnum.CRB_StalkerResource`).
-//// - The design's rows of migration 0011, with their names and units.
+//// - The design of issue 418 (its Design artifact's Evidence): a gain is the
+////   VitalModifier's dataBits02 into the slot of its vital (`Spell4Effects.effectType.1`),
+////   clamped to the max; the Warrior's Kinetic Energy drains 150 a second from 1.5 s
+////   after the last gain, in and out of combat (Jim's choice), ticked once a second
+////   (a server choice); the Esper's Psi Points go to 0 ten seconds after it leaves
+////   combat (a retail record).
+//// - The design's rows of migrations 0011 and 0012, with their names and units.
 
 import class_resource_support
 import content_support
@@ -20,8 +26,8 @@ import database_support
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/game/class_resource.{
-  type Effect, type Resource, type Resources, CancelTimer, Changed, Payment, Row,
-  StartTimer,
+  type Effect, type Resource, type Resources, CancelTimer, Changed, Gain,
+  Payment, Resource, Row, StartTimer,
 }
 import genesis_prime/step
 import gleam/float
@@ -69,20 +75,23 @@ fn cancelled(effects: List(Effect)) -> List(Int) {
 }
 
 fn timer_number(timer: step.TimerId) -> Int {
-  let class_resource_timer = timer
-  let assert True = class_resource.owns(timer: class_resource_timer)
+  let assert True = class_resource.owns(timer:)
     as "the rule starts only its own timers"
-  case class_resource_timer == class_resource.regen_timer {
-    True -> 1
-    False -> 2
-  }
+  let step.TimerId(number) = timer
+  number
 }
 
-/// The regen timer, numbered 1 in `started` and `cancelled`.
-const regen = 1
+/// The regen timer, numbered 4 in `started` and `cancelled`.
+const regen = 4
 
-/// The refill timer, numbered 2.
-const refill = 2
+/// The refill timer, numbered 5.
+const refill = 5
+
+/// The Warrior's drain timer, numbered 6.
+const drain = 6
+
+/// The Esper's empty timer, numbered 7.
+const empty = 7
 
 fn pay(
   resources resources: Resources,
@@ -272,6 +281,152 @@ pub fn leaving_the_world_cancels_every_timer_and_writes_nothing_test() -> Nil {
   assert left == [CancelTimer(timer: class_resource.regen_timer)]
 }
 
+// ---- issue 418: gains, the Warrior's drain and the Esper's empty ----
+
+fn gain(
+  resources resources: Resources,
+  slot slot: Int,
+  amount amount: Int,
+) -> #(Resources, List(Effect)) {
+  class_resource.gain(resources:, gains: [Gain(slot:, amount:)])
+}
+
+fn drain_fired(resources: Resources) -> #(Resources, List(Effect)) {
+  class_resource.timer_fired(resources:, timer: class_resource.drain_timer)
+}
+
+fn empty_fired(resources: Resources) -> #(Resources, List(Effect)) {
+  class_resource.timer_fired(resources:, timer: class_resource.empty_timer)
+}
+
+pub fn a_warriors_gain_of_180_from_0_is_one_change_and_starts_the_drain_wait_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, effects) = gain(resources: new(1), slot: 1, amount: 180)
+  assert effects
+    == [
+      Changed(slot: 1, value: 180.0),
+      StartTimer(timer: class_resource.drain_timer, after_ms: 1500),
+    ]
+    as "Relentless Strikes' 180 (Spell4Effects 127603 dataBits02) as one 0x935; the drain waits 1.5 s after the last gain (Jim's choice, issue 418); no drain ran, so none is cancelled"
+  assert class_resource.value(resources:, slot: 1) == 180.0
+}
+
+pub fn a_gain_is_clamped_to_the_max_test() -> Nil {
+  use <- owned_test.run(5000)
+  let resources =
+    class_resource.new(resource: Resource(..resource_of(1), start: 900.0))
+  let #(resources, effects) = gain(resources:, slot: 1, amount: 180)
+  assert changes(effects) == [#(1, 1000.0)]
+    as "900 + 180 is clamped to the Warrior's 1000 (migration 0011)"
+  assert class_resource.value(resources:, slot: 1) == 1000.0
+}
+
+pub fn a_gain_while_the_drain_waits_cancels_and_restarts_the_wait_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) = gain(resources: new(1), slot: 1, amount: 180)
+  let #(_, again) = gain(resources:, slot: 1, amount: 180)
+  assert again
+    == [
+      Changed(slot: 1, value: 360.0),
+      CancelTimer(timer: class_resource.drain_timer),
+      StartTimer(timer: class_resource.drain_timer, after_ms: 1500),
+    ]
+    as "1.5 s after the last gain: one drain timer only"
+}
+
+pub fn the_drain_takes_150_a_tick_and_stops_at_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) = gain(resources: new(1), slot: 1, amount: 180)
+  let #(resources, first) = drain_fired(resources)
+  assert first
+    == [
+      Changed(slot: 1, value: 30.0),
+      StartTimer(timer: class_resource.drain_timer, after_ms: 1000),
+    ]
+    as "150 a second (Jim's choice, issue 418), a tick each second (the server's choice): 180 - 150"
+  let #(resources, last) = drain_fired(resources)
+  assert last == [Changed(slot: 1, value: 0.0)]
+    as "30 - 150 is clamped to 0, and an empty slot ticks no more"
+  assert drain_fired(resources).1 == []
+    as "a drain timer that fires with none running changes nothing"
+}
+
+pub fn a_drain_timer_fired_after_its_cancel_changes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) = gain(resources: new(1), slot: 1, amount: 180)
+  let #(resources, left) = class_resource.left(resources:)
+  assert cancelled(left) == [drain]
+  let #(resources, late) = drain_fired(resources)
+  assert late == []
+  assert class_resource.value(resources:, slot: 1) == 180.0
+}
+
+pub fn an_esper_leaving_combat_with_3_psi_points_empties_10_seconds_later_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) =
+    class_resource.combat_changed(resources: new(3), in_combat: True)
+  let #(resources, gained) = gain(resources:, slot: 1, amount: 3)
+  assert gained == [Changed(slot: 1, value: 3.0)]
+    as "an Esper's gain starts no drain"
+  let #(resources, left) =
+    class_resource.combat_changed(resources:, in_combat: False)
+  assert started(left) == [#(empty, 10_000)]
+    as "Psi Points go to 0 ten seconds after combat (retail record, marcleoseguin.com 2014-08-13)"
+  let #(resources, emptied) = empty_fired(resources)
+  assert emptied == [Changed(slot: 1, value: 0.0)]
+  assert class_resource.value(resources:, slot: 1) == 0.0
+}
+
+pub fn an_esper_back_in_combat_during_the_wait_keeps_its_points_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) =
+    class_resource.combat_changed(resources: new(3), in_combat: True)
+  let #(resources, _) = gain(resources:, slot: 1, amount: 3)
+  let #(resources, _) =
+    class_resource.combat_changed(resources:, in_combat: False)
+  let #(resources, again) =
+    class_resource.combat_changed(resources:, in_combat: True)
+  assert again == [CancelTimer(timer: class_resource.empty_timer)]
+  let #(resources, late) = empty_fired(resources)
+  assert late == [] as "a late fire after the cancel changes nothing"
+  assert class_resource.value(resources:, slot: 1) == 3.0
+}
+
+pub fn an_esper_leaving_combat_with_0_starts_no_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) =
+    class_resource.combat_changed(resources: new(3), in_combat: True)
+  let #(_, left) = class_resource.combat_changed(resources:, in_combat: False)
+  assert left == []
+}
+
+pub fn death_cancels_the_drain_and_empty_timers_and_coming_back_sets_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(warrior, _) = gain(resources: new(1), slot: 1, amount: 180)
+  let #(warrior, died) = class_resource.died(resources: warrior)
+  assert cancelled(died) == [drain]
+  assert changes(died) == []
+  let #(warrior, late) = drain_fired(warrior)
+  assert late == [] as "a drain that fires after death changes nothing"
+  let #(_, back) = class_resource.came_back(resources: warrior)
+  assert back == [Changed(slot: 1, value: 0.0)]
+    as "back at the Warrior's start, 0 (500714)"
+  let #(esper, _) =
+    class_resource.combat_changed(resources: new(3), in_combat: True)
+  let #(esper, _) = gain(resources: esper, slot: 1, amount: 2)
+  let #(esper, _) =
+    class_resource.combat_changed(resources: esper, in_combat: False)
+  let #(esper, died) = class_resource.died(resources: esper)
+  assert cancelled(died) == [empty]
+  let #(esper, _) = empty_fired(esper)
+  assert class_resource.value(resources: esper, slot: 1) == 2.0
+  let #(esper, back) = class_resource.came_back(resources: esper)
+  assert back == [Changed(slot: 1, value: 0.0)]
+  let #(dead_again, _) = class_resource.died(resources: esper)
+  let #(_, back_again) = class_resource.came_back(resources: dead_again)
+  assert back_again == [] as "already at its start, 0: no change sent"
+}
+
 // ---- 14: the content rows ----
 
 fn names_of(refusals: List(Refusal)) -> List(String) {
@@ -337,6 +492,31 @@ pub fn a_regen_missing_a_part_or_a_value_not_above_0_is_refused_test() -> Nil {
     ]
 }
 
+pub fn a_warrior_with_a_drain_row_missing_and_an_esper_without_its_empty_wait_are_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows =
+    list.filter(design_rows(), fn(row) {
+      !{ row.class_id == 1 && row.name == "drain_after_ms" }
+      && !{ row.class_id == 3 && row.name == "empty_after_combat_ms" }
+    })
+  let assert Error(refusals) = class_resource.select(rows:)
+  assert list.sort(names_of(refusals), string.compare)
+    == ["1 drain_after_ms", "3 empty_after_combat_ms"]
+    as "the Warrior's drain needs its amount, period, tick and wait, and the Esper its wait after combat (issue 418)"
+  let wrong =
+    list.map(design_rows(), fn(row) {
+      case row.class_id, row.name {
+        1, "drain_amount" -> Row(..row, value: 0.0)
+        1, "drain_tick_ms" -> Row(..row, unit: "points")
+        _, _ -> row
+      }
+    })
+  let assert Error(refusals) = class_resource.select(rows: wrong)
+  assert list.sort(names_of(refusals), string.compare)
+    == ["1 drain_amount", "1 drain_tick_ms"]
+    as "the existing refusals hold for the new rows: a value not above 0, a unit not the name's"
+}
+
 pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reason_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
@@ -344,12 +524,12 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
     content_class_resource.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == design_rows()
-    as "migration 0011's rows, in class and name order: the design's values table"
+    as "the rows of migrations 0011 and 0012, in class and name order: the values tables of the designs of issues 403 and 418"
   assert content_support.count(
       database:,
       sql: "select count(*) from class_resource where source in ('client', 'retail_record', 'server_choice') and reason is not null",
     )
-    == 13
+    == 18
     as "each row is the client's, a retail record or a server choice and states its reason"
   assert content_support.count(
       database:,
@@ -361,8 +541,8 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
       database:,
       sql: "select count(*) from class_resource where source = 'server_choice'",
     )
-    == 3
-    as "the Medic's refill and the two ticks are the server's choices"
+    == 7
+    as "the Medic's refill, the three ticks and the Warrior's drain amount, period and wait (Jim's choices) are the server's"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {

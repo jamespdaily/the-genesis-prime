@@ -10,10 +10,15 @@
 //// a cast accepted (genesis_prime/game/cast Pay) ─▶ pay ─▶ Changed(slot, value)            ─▶ 0x935 to the player
 ////                                                 a slot that refills over time: StartTimer(regen_timer, tick)
 ////                                                 a Medic out of combat: StartTimer(refill_timer, 3000)
+//// a go's gains (genesis_prime/game/cast Gain) ─▶ gain ─▶ Changed, clamped to the max
+////                                                 a Warrior: CancelTimer(drain_timer), StartTimer(drain_timer, 1500)
 //// regen_timer ─▶ + per tick, clamped to the max ─▶ Changed; below the max again ─▶ StartTimer(regen_timer)
+//// drain_timer ─▶ - per tick, clamped to 0 ─▶ Changed; above 0 still ─▶ StartTimer(drain_timer, tick)
 //// the combat flag clears (player_life) ─▶ a Medic below its max: StartTimer(refill_timer)
-//// the combat flag sets ─▶ CancelTimer(refill_timer)
+////                                         an Esper above 0: StartTimer(empty_timer, 10000)
+//// the combat flag sets ─▶ CancelTimer(refill_timer), CancelTimer(empty_timer)
 //// refill_timer ─▶ the slot at its max ─▶ Changed
+//// empty_timer ─▶ the slot at 0 ─▶ Changed
 //// died ─▶ every timer cancelled;  came_back ─▶ the slot at its start ─▶ Changed when it moved
 //// ```
 ////
@@ -31,12 +36,21 @@
 //// - **The value** is held as the 32-bit float the client holds, so a check here and
 ////   the client's own read the same number.
 //// - **Paying** is at the accept, in the step of the cost check (genesis_prime/game/cast).
+//// - **Gaining** is at a go, by the VitalModifiers the cast rule gives
+////   (`Spell4Effects.effectType.1`): the client applies none itself, so each is the
+////   server's to apply and send, clamped to [0, max].
+//// - **The Warrior's drain** takes `drain_amount` each `drain_period_ms`, ticked
+////   each `drain_tick_ms`, from `drain_after_ms` after the last gain, in and out of
+////   combat, down to 0 (Jim's choice, migration 0012; 500714 gives no rate).
+//// - **The Esper's empty** sets the slot to 0 `empty_after_combat_ms` after it
+////   leaves combat, and combat again stops the wait (a retail record, migration
+////   0012; 500718).
 //// - **Over time** the refill ticks each `regen_tick_ms`, in and out of combat; the
 ////   Medic's slot fills to its max `refill_after_combat_ms` after it is out of
 ////   combat, from the combat flag clearing or from a payment made out of combat (the
 ////   server's choice: "regenerate while out of combat", 500710). A full slot sends
 ////   nothing.
-//// - **Death** stops both timers; **coming back** sets the slot to its start (the
+//// - **Death** stops every timer; **coming back** sets the slot to its start (the
 ////   server's choice, as health and shield come back full). The resources are not
 ////   saved: each entry starts at the start.
 
@@ -72,12 +86,23 @@ pub type Resource {
     /// How long after leaving combat the slot fills to its max; none for a class
     /// that has no such refill.
     refill_after_combat_ms: Option(Int),
+    /// The drain after a gain; none for a class whose resource does not drain.
+    drain: Option(Drain),
+    /// How long after leaving combat the slot goes to 0; none for a class whose
+    /// resource keeps its value out of combat.
+    empty_after_combat_ms: Option(Int),
   )
 }
 
 /// A refill over time: `per_tick` points each `tick_ms`.
 pub type Regen {
   Regen(per_tick: Float, tick_ms: Int)
+}
+
+/// A drain over time: `per_tick` points each `tick_ms`, from `after_ms` after the
+/// last gain.
+pub type Drain {
+  Drain(per_tick: Float, tick_ms: Int, after_ms: Int)
 }
 
 /// The resource of each playable class, by its Class id, as the load selected it.
@@ -100,10 +125,15 @@ pub type Row {
   Row(class_id: Int, name: String, value: Float, unit: String)
 }
 
-/// How a class's resource refills, which decides the rows it needs.
+/// How a class's resource changes with no press, which decides the rows it needs.
 type Refill {
-  /// Not over time in this step: the class needs only its maximum.
+  /// Never: the class needs only its maximum.
   Never
+  /// The slot drains each tick after its last gain: the amount, its period, the
+  /// tick and the wait.
+  DrainAfterGain
+  /// The slot goes to 0 a while after combat: the wait.
+  EmptyAfterCombat
   /// A regeneration each tick, in and out of combat: the amount, its period and
   /// the tick.
   OverTime
@@ -115,9 +145,9 @@ type Refill {
 /// (`0x14064fdb0`), its start (`LocalizedEnum.CRB_StalkerResource`) and how it
 /// refills (the design): Warrior, Engineer, Esper, Medic, Stalker and Spellslinger.
 const playable = [
-  #(1, #(1, Empty, Never)),
+  #(1, #(1, Empty, DrainAfterGain)),
   #(2, #(1, Empty, Never)),
-  #(3, #(1, Empty, Never)),
+  #(3, #(1, Empty, EmptyAfterCombat)),
   #(4, #(1, Full, AfterCombat)),
   #(5, #(3, Full, OverTime)),
   #(7, #(4, Full, OverTime)),
@@ -130,6 +160,11 @@ const expected = [
   #("regen_period_ms", "ms"),
   #("regen_tick_ms", "ms"),
   #("refill_after_combat_ms", "ms"),
+  #("drain_amount", "points"),
+  #("drain_period_ms", "ms"),
+  #("drain_tick_ms", "ms"),
+  #("drain_after_ms", "ms"),
+  #("empty_after_combat_ms", "ms"),
 ]
 
 /// The numbers a class's refill needs.
@@ -138,13 +173,22 @@ fn needed(refill refill: Refill) -> List(String) {
     Never -> ["max"]
     OverTime -> ["max", "regen_amount", "regen_period_ms", "regen_tick_ms"]
     AfterCombat -> ["max", "refill_after_combat_ms"]
+    DrainAfterGain -> [
+      "max",
+      "drain_amount",
+      "drain_period_ms",
+      "drain_tick_ms",
+      "drain_after_ms",
+    ]
+    EmptyAfterCombat -> ["max", "empty_after_combat_ms"]
   }
 }
 
 /// The classes' resources of the rows, or every refusal: a class that is not
 /// playable, a name not known, a unit not the name's, a number a playable class
 /// needs that has no row (its maximum, and the amount, period and tick of a refill
-/// over time or the wait of a refill after combat), a number not above 0, and a
+/// over time, the wait of a refill after combat, the amount, period, tick and wait
+/// of a drain, and the wait of an empty after combat), a number not above 0, and a
 /// time that is not a whole number of milliseconds.
 pub fn select(rows rows: List(Row)) -> Result(Classes, List(Refusal)) {
   let unknown =
@@ -235,6 +279,20 @@ fn resource_of(
       ))
     _, _, _ -> None
   }
+  let drain = case
+    value("drain_amount"),
+    value("drain_period_ms"),
+    value("drain_tick_ms"),
+    value("drain_after_ms")
+  {
+    Ok(amount), Ok(period_ms), Ok(tick_ms), Ok(after_ms) ->
+      Some(Drain(
+        per_tick: amount *. tick_ms /. period_ms,
+        tick_ms: float.truncate(tick_ms),
+        after_ms: float.truncate(after_ms),
+      ))
+    _, _, _, _ -> None
+  }
   Resource(
     slot:,
     max:,
@@ -244,6 +302,10 @@ fn resource_of(
     },
     regen:,
     refill_after_combat_ms: value("refill_after_combat_ms")
+      |> result.map(float.truncate)
+      |> option.from_result,
+    drain:,
+    empty_after_combat_ms: value("empty_after_combat_ms")
       |> result.map(float.truncate)
       |> option.from_result,
   )
@@ -258,7 +320,7 @@ fn refused(row row: Row, rule rule: String) -> Refusal {
 }
 
 /// A player's resource now: its class's, the slot's value, whether the player is in
-/// combat and alive, and which of the two timers runs.
+/// combat and alive, and which of its timers runs.
 pub opaque type Resources {
   Resources(
     resource: Resource,
@@ -267,6 +329,8 @@ pub opaque type Resources {
     alive: Bool,
     regen_running: Bool,
     refill_running: Bool,
+    drain_running: Bool,
+    empty_running: Bool,
   )
 }
 
@@ -274,6 +338,12 @@ pub opaque type Resources {
 /// `slot`.
 pub type Payment {
   Payment(slot: Int, amount: Int)
+}
+
+/// A gain the cast rule gave at a go: `amount` points into the resource slot
+/// `slot` (`Spell4Effects.effectType.1`).
+pub type Gain {
+  Gain(slot: Int, amount: Int)
 }
 
 /// What the rule asks the connection to do, in order.
@@ -292,10 +362,19 @@ pub const regen_timer = TimerId(4)
 /// The timer of the Medic's refill after combat.
 pub const refill_timer = TimerId(5)
 
+/// The timer of the Warrior's drain: its wait after a gain, then each tick.
+pub const drain_timer = TimerId(6)
+
+/// The timer of the Esper's empty after combat.
+pub const empty_timer = TimerId(7)
+
 /// Whether the timer is one of this rule's, for the connection to hand it to
 /// `timer_fired`.
 pub fn owns(timer timer: TimerId) -> Bool {
-  timer == regen_timer || timer == refill_timer
+  timer == regen_timer
+  || timer == refill_timer
+  || timer == drain_timer
+  || timer == empty_timer
 }
 
 /// A player entering the world: alive, out of combat, its slot at its start.
@@ -307,6 +386,8 @@ pub fn new(resource resource: Resource) -> Resources {
     alive: True,
     regen_running: False,
     refill_running: False,
+    drain_running: False,
+    empty_running: False,
   )
 }
 
@@ -373,6 +454,47 @@ pub fn pay(
   #(resources, list.append(list.reverse(changes), timers))
 }
 
+/// The gains of a go: a change for each one of the class's slot that moves it,
+/// clamped to [0, max], then the drain's wait restarted for a class that drains,
+/// then the timers a slot below its max starts. A dead player gains nothing.
+pub fn gain(
+  resources resources: Resources,
+  gains gains: List(Gain),
+) -> #(Resources, List(Effect)) {
+  let own =
+    list.filter(gains, fn(gain) { gain.slot == resources.resource.slot })
+  use <- bool.guard(
+    when: !resources.alive || own == [],
+    return: #(resources, []),
+  )
+  let #(resources, changes) =
+    list.fold(own, #(resources, []), fn(so_far, gain) {
+      let #(resources, changes) = so_far
+      let next =
+        clamped(resources:, value: resources.value +. int.to_float(gain.amount))
+      let changes = case next == resources.value {
+        True -> changes
+        False -> [Changed(slot: gain.slot, value: next), ..changes]
+      }
+      #(Resources(..resources, value: next), changes)
+    })
+  let #(resources, drain) = case resources.resource.drain {
+    Some(Drain(after_ms:, ..)) -> #(
+      Resources(..resources, drain_running: True),
+      list.append(
+        case resources.drain_running {
+          True -> [CancelTimer(timer: drain_timer)]
+          False -> []
+        },
+        [StartTimer(timer: drain_timer, after_ms:)],
+      ),
+    )
+    None -> #(resources, [])
+  }
+  let #(resources, timers) = refills(resources:)
+  #(resources, list.flatten([list.reverse(changes), drain, timers]))
+}
+
 /// The timers a living slot below its max starts when none of them runs: the
 /// refill over time, and the Medic's refill when out of combat.
 fn refills(resources resources: Resources) -> #(Resources, List(Effect)) {
@@ -397,27 +519,54 @@ fn refills(resources resources: Resources) -> #(Resources, List(Effect)) {
   #(resources, list.append(regen, refill))
 }
 
-/// A timer of the rule fired: a tick of the refill over time, or the Medic's refill.
-/// A timer that fires after its cancel, or after death, changes nothing.
+/// A timer of the rule fired: a tick of the refill over time, the Medic's refill, a
+/// tick of the Warrior's drain, or the Esper's empty. A timer that fires after its
+/// cancel, or after death, changes nothing.
 pub fn timer_fired(
   resources resources: Resources,
   timer timer: TimerId,
 ) -> #(Resources, List(Effect)) {
-  case timer == regen_timer, timer == refill_timer {
-    True, _ if resources.regen_running -> {
-      let resources = Resources(..resources, regen_running: False)
-      let per_tick = case resources.resource.regen {
-        Some(Regen(per_tick:, ..)) -> per_tick
-        None -> 0.0
-      }
-      changed_to(resources:, value: resources.value +. per_tick)
-    }
-    False, True if resources.refill_running ->
+  case resources.resource {
+    Resource(regen: Some(Regen(per_tick:, ..)), ..)
+      if timer == regen_timer && resources.regen_running
+    ->
+      changed_to(
+        resources: Resources(..resources, regen_running: False),
+        value: resources.value +. per_tick,
+      )
+    Resource(refill_after_combat_ms: Some(_), ..)
+      if timer == refill_timer && resources.refill_running
+    ->
       changed_to(
         resources: Resources(..resources, refill_running: False),
         value: resources.resource.max,
       )
-    _, _ -> #(resources, [])
+    Resource(drain: Some(Drain(per_tick:, tick_ms:, ..)), ..)
+      if timer == drain_timer && resources.drain_running
+    -> {
+      let #(resources, effects) =
+        changed_to(
+          resources: Resources(..resources, drain_running: False),
+          value: resources.value -. per_tick,
+        )
+      case resources.value >. 0.0 {
+        True -> #(
+          Resources(..resources, drain_running: True),
+          list.append(effects, [
+            StartTimer(timer: drain_timer, after_ms: tick_ms),
+          ]),
+        )
+        False -> #(resources, effects)
+      }
+    }
+    Resource(empty_after_combat_ms: Some(_), ..)
+      if timer == empty_timer && resources.empty_running
+    ->
+      changed_to(
+        resources: Resources(..resources, empty_running: False),
+        value: 0.0,
+      )
+    Resource(..) -> #(resources, [])
   }
 }
 
@@ -442,18 +591,44 @@ fn clamped(resources resources: Resources, value value: Float) -> Float {
 }
 
 /// The player's combat flag changed (genesis_prime/game/player_life): in combat the
-/// Medic's refill waits no longer; out of it, a slot below its max starts it.
+/// Medic's refill and the Esper's empty wait no longer; out of it, a slot below its
+/// max starts the refill, and an Esper's slot above 0 starts the empty.
 pub fn combat_changed(
   resources resources: Resources,
   in_combat in_combat: Bool,
 ) -> #(Resources, List(Effect)) {
   let resources = Resources(..resources, in_combat:)
-  case in_combat, resources.refill_running {
-    True, True -> #(Resources(..resources, refill_running: False), [
-      CancelTimer(timer: refill_timer),
-    ])
-    True, False -> #(resources, [])
-    False, _ -> refills(resources:)
+  case in_combat {
+    True -> {
+      let refill = case resources.refill_running {
+        True -> [CancelTimer(timer: refill_timer)]
+        False -> []
+      }
+      let empty = case resources.empty_running {
+        True -> [CancelTimer(timer: empty_timer)]
+        False -> []
+      }
+      #(
+        Resources(..resources, refill_running: False, empty_running: False),
+        list.append(refill, empty),
+      )
+    }
+    False -> {
+      let #(resources, refilling) = refills(resources:)
+      let #(resources, emptying) = case
+        resources.resource.empty_after_combat_ms
+      {
+        Some(after_ms)
+          if resources.alive
+          && resources.value >. 0.0
+          && !resources.empty_running
+        -> #(Resources(..resources, empty_running: True), [
+          StartTimer(timer: empty_timer, after_ms:),
+        ])
+        Some(_) | None -> #(resources, [])
+      }
+      #(resources, list.append(refilling, emptying))
+    }
   }
 }
 
@@ -482,8 +657,22 @@ pub fn left(resources resources: Resources) -> #(Resources, List(Effect)) {
     True -> [CancelTimer(timer: refill_timer)]
     False -> []
   }
+  let drain = case resources.drain_running {
+    True -> [CancelTimer(timer: drain_timer)]
+    False -> []
+  }
+  let empty = case resources.empty_running {
+    True -> [CancelTimer(timer: empty_timer)]
+    False -> []
+  }
   #(
-    Resources(..resources, regen_running: False, refill_running: False),
-    list.append(regen, refill),
+    Resources(
+      ..resources,
+      regen_running: False,
+      refill_running: False,
+      drain_running: False,
+      empty_running: False,
+    ),
+    list.flatten([regen, refill, drain, empty]),
   )
 }
