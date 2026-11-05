@@ -275,10 +275,7 @@ pub fn entering(
   max_health max_health: Int,
   shield shield: Int,
 ) -> Life {
-  let health = case saved {
-    Some(saved) -> int.min(saved, max_health)
-    None -> max_health
-  }
+  let health = int.min(option.unwrap(saved, or: max_health), max_health)
   Life(..new(health: max_health, shield:), health:)
 }
 
