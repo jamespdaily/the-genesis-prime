@@ -1,0 +1,4 @@
+# The fact file: two branches that each add records at its end merge without a conflict.
+# A record both sides added or changed comes out twice, which the fact checker refuses
+# (duplicate key), so that case is still merged by hand.
+.claude/skills/decoding-the-client/references/client-facts.toml merge=union
