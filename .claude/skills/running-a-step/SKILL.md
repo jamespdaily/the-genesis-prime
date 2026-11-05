@@ -89,6 +89,8 @@ A sitting runs when the client sees or sends something new (the `playing-live` s
 ## Tracking
 
 - Planned work lives in GitHub: one board, and a milestone with a parent issue whose sub-issues are its steps, with a measured end condition on the parent. A playable goal's done-when includes "a bot can do it".
+- **Choosing the next step:** biggest impact first, by two rankings: the types the system's content reaches that the coverage measure (`gleam run -m genesis_prime/coverage`) shows unhandled (spell effects, prerequisites; whole-game weight breaks ties), and the unhandled messages the recorded sittings send most (`gleam run -m genesis_prime/unhandled_ranking -- ~/.genesis-prime/sittings/*`). A step handles a type for every row that uses it, never for one ability. (Fight's per-ability steps #403, #418 and #419 drifted from this, 2026-11-05.)
+- **At a milestone's close** the coordinator posts on its parent the coverage measure, the ranking and each step's cost per type or message, against the milestone before. When the cost per type did not fall, the rule goes to Jim before the next milestone starts.
 - Step order is set by blocked-by links (`dev/card.sh block N --by S`), not by the sub-issue list's order. Cleanups and dev tools sit after the milestone's goal steps, unless the parent's order, with Jim's yes, places one earlier.
 - Before opening an issue, search the code and the issues under several names. A new issue states its proof the problem is real (a failing test, a measurement, a client fact or Jim's request), else it is a line on the parent. Its title states the outcome. File and move it with `dev/card.sh`: milestone, parent, blockers and status (To do, In progress, Waiting on Jim, Done).
 - A step's issue carries its test list, progress lines, dated measurements and closing summary.
@@ -99,4 +101,5 @@ A sitting runs when the client sees or sends something new (the `playing-live` s
 
 - The step's wall time, its agents' tool calls (unique tool_use ids in their transcripts) and its fix rounds, with `python3 -I dev/step_measure.py N` for the cost.
 - Each throwaway tool or workaround and the issue that owns it. For a bug fix: the choice that let the bug through and the check that now stops it.
+- The coverage measure's handled counts and the ranking's top five, before and after, and the cost per type or message handled.
 - Its notes, sorted: a missing tool or feature gets its own issue when it has its proof, else a line on the parent; a small repeat or a stale line goes on the milestone's standing cleanups issue's checklist, and a step that touches its file fixes it; anything else stays in the summary.
