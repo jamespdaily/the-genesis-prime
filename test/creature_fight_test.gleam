@@ -699,6 +699,31 @@ pub fn a_leash_in_the_millisecond_a_chase_began_still_tells_the_viewers_to_stop_
     as "the only player on the threat list is gone: the creature leashes"
   assert list.contains(said(leashed), "0x638(placed) to 5")
     as "the viewers' running path is replaced by the creature's place, home, though it is where its path began"
+  let assert [CreaturePlaced(place:, at_ms:)] =
+    list.filter(news_to(leashed, 5), fn(news) {
+      name_of(news) == "0x638(placed)"
+    })
+    as "one placement to the viewer"
+  assert x_of(place) == 0.0 && at_ms == start_ms
+    as "the place is the spawn, home, at the time of the leash"
+}
+
+pub fn a_creature_whose_path_has_ended_at_the_leash_circle_sends_no_placement_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, chased) =
+    tell(state:, at_ms: 0, message: moved(number: 2, x: 100.0, seq: 2))
+  assert x_of(creature_path.end(path: path_sent(chased))) == 55.0
+    as "the path to 96 is clipped at the leash circle, 55 from the spawn"
+  let #(_, again) =
+    tell(state:, at_ms: 5800, message: moved(number: 2, x: 100.0, seq: 3))
+  assert said(again) == []
+    as "the path ended at 5500 ms, at the circle: a replan finds nothing to run and the viewers hold no path that still runs, so nothing is sent"
 }
 
 pub fn a_leash_of_a_creature_that_stands_at_home_sends_no_path_test() -> Nil {
@@ -741,6 +766,47 @@ pub fn a_target_that_doubles_back_onto_the_runner_stops_the_viewers_runs_test() 
   let assert [CreaturePlaced(place:, at_ms:), ..] = news_to(doubled, 5)
   assert x_of(place) == 10.0 && at_ms == start_ms + 1000
     as "at the place and the time of the move"
+}
+
+pub fn a_creature_killed_while_it_runs_places_its_viewers_where_it_fell_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(_, killed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 60, 1.0)]),
+    )
+  let assert [CreaturePlaced(place:, at_ms:)] =
+    list.filter(news_to(killed, 5), fn(news) {
+      name_of(news) == "0x638(placed)"
+    })
+    as "the viewers hold a path that runs on past the corpse, so each is sent one placement"
+  assert x_of(place) == 10.0 && at_ms == start_ms + 1000
+    as "where it fell, 1 s into its run, at the time of its death"
+}
+
+pub fn a_creature_killed_standing_places_nobody_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(_, killed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 60, 1.0)]),
+    )
+  assert !list.contains(said(killed), "0x638(placed) to 5")
+    as "no path was sent, so none runs on"
 }
 
 pub fn the_next_strike_after_a_leash_finds_the_creature_at_full_health_test() -> Nil {

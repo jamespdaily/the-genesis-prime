@@ -182,7 +182,7 @@ pub type News {
   /// A creature that stands at `place` from monotonic time `at_ms`, though the
   /// viewer's client may still run a path it was sent: 0x638 of kind 0, the map's
   /// time, and kind 2 at the place with its blend bit clear, which places the unit
-  /// at once (`0x140714120` StartDuePositionSegments, `0x1400ad350`); the viewer
+  /// at once (`0x1407138f0`, `0x140714120`); the viewer
   /// keeps it standing there for its picture.
   CreaturePlaced(place: Place, at_ms: Int)
   /// The unit targets `target_unit_id` with `threat`: 0x908 (opcode.0x908).

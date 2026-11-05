@@ -1414,12 +1414,8 @@ fn ends_at_of(
       use z <- result.try(float32.bits(point.z) |> result.try(float32.value))
       Ok(#(x, y, z))
     }
-    relayed_movement.Position(position) if position.blends == 0 -> {
-      use x <- result.try(float32.bits(position.x) |> result.try(float32.value))
-      use y <- result.try(float32.bits(position.y) |> result.try(float32.value))
-      use z <- result.try(float32.bits(position.z) |> result.try(float32.value))
-      Ok(#(x, y, z))
-    }
+    relayed_movement.Position(position) if position.blends == 0 ->
+      Ok(standing(position))
     _ -> Error(Nil)
   }
 }

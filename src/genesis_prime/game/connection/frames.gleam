@@ -33,7 +33,6 @@ import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
 import genesis_prime/message/unit_movement.{UnitMovement}
-import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/step.{type Now}
 import genesis_prime/world_map/creature_path
@@ -297,9 +296,12 @@ pub fn path_frame(
 
 /// 0x638 for a creature that stands at `place` from monotonic time `at_ms`, though
 /// the client may still run a path it was sent: kind 0, the map's time, and kind 2
-/// at the place with its blend bit 0, which places the unit at once and replaces
-/// the position movement running (`0x140714120` StartDuePositionSegments: a segment
-/// made by a kind 2 with the bit clear places the unit; `0x1400ad350`).
+/// at the place with its blend bit 0. A kind 2 with its bit clear starts a new
+/// segment in the list the kind 4 path is linked into (`0x1407138f0`
+/// ApplyMoveCommandSetPosition, `movement_command.kind_4`), and the client starts
+/// due segments in order, so the unit is placed at once and the path no longer
+/// runs (`0x140714120` StartDuePositionSegments). The command is the one that
+/// puts a unit at a place in its 0x262 (`0x1400ad350` reads it).
 pub fn placed_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
@@ -308,15 +310,9 @@ pub fn placed_frame(
 ) -> Frame {
   let time =
     map.server_time(origin_ms: entered.clock_origin_ms, monotonic_ms: at_ms)
-  let vector = vector_of(place)
   unit_moved_frame(unit_id:, server_time_ms: time, commands: [
     relayed_movement.Time(MovementTime(time:)),
-    relayed_movement.Position(UnitPositionCommand(
-      x: vector.x,
-      y: vector.y,
-      z: vector.z,
-      blends: 0,
-    )),
+    relayed_movement.Position(player_unit.standing(place:).0),
   ])
 }
 
