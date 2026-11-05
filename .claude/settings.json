@@ -23,7 +23,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/progress_lines.py"
+            "command": "test -f \"$CLAUDE_PROJECT_DIR\"/dev/hooks/progress_lines.py || exit 0; python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/progress_lines.py",
+            "timeout": 300
           }
         ]
       }
@@ -34,7 +35,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/progress_lines.py"
+            "command": "test -f \"$CLAUDE_PROJECT_DIR\"/dev/hooks/progress_lines.py || exit 0; python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/progress_lines.py",
+            "timeout": 300
           }
         ]
       }
