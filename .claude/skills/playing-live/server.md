@@ -32,5 +32,6 @@ When the session runs in a herdr pane (`HERDR_ENV=1`), a server for Jim to play 
 2. `herdr pane run <pane> '<the commands above, joined by &&>'`.
 3. `herdr pane wait-output <pane> --match 'game tables and serves the STS login' --timeout 120000`: the server's ready line (`ready_line` in `src/genesis_prime.gleam`). On a timeout, `herdr pane read <pane> --source recent --lines 80` shows why.
 4. To stop it: SIGTERM to its VM, so the tree stops in order and saves, as `scripts/session.sh` does: the `beam.smp` pid among `herdr pane process-info --pane <pane>`'s `foreground_processes`, then `kill -TERM <pid>`, and check the ports are free (SKILL.md). Ctrl+C in the pane opens the VM's break menu instead. Leave the tab for the next session.
+5. A run that records a session needs the server's ports, so stop the play server by step 4 when no player is connected (no established connection on the game port), and start it again after the merge.
 
 `scripts/session.sh` starts and stops its own server.

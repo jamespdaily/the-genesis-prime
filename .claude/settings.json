@@ -4,5 +4,29 @@
       "Edit(~/Projects/the-eldan-experiment/**)",
       "Edit(//Users/jimd/Projects/the-eldan-experiment/**)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/dev/session_state.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/worktree_from_project.py"
+          }
+        ]
+      }
+    ]
   }
 }
