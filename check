@@ -20,7 +20,7 @@
 # and a deleted or renamed file counts under both of its names. When there is at
 # least one and every one is in the light set (light_set below: guidance, CI's
 # workflow, the licence, .gitignore and the untested shell and Python tools under
-# dev/), it runs only the parts of ./check fast, with ./check fast's budget, and
+# dev/, apply_migrations.sh excepted), it runs only the parts of ./check fast, with ./check fast's budget, and
 # prints one `scope: light` line saying why; any other changed file, no changed
 # file, no merge base and a shallow history run every part and print a
 # `scope: every part` line with the reason. branch-current and the setup check run
@@ -202,15 +202,24 @@ light_set=(
   "dev/*.py|a Python tool beside the code: no part tests it"
 )
 
+# The paths the light set's globs would take that are not light, as "path|reason".
+light_set_except=(
+  "dev/apply_migrations.sh|the migrations part runs it"
+)
+
 # slash_count PATH: how many `/` PATH holds.
 slash_count() {
   local slashes=${1//[!\/]/}
   echo "${#slashes}"
 }
 
-# in_light_set PATH: succeeds when PATH matches an entry of the light set.
+# in_light_set PATH: succeeds when PATH matches an entry of the light set and none
+# of light_set_except.
 in_light_set() {
   local entry pattern
+  for entry in "${light_set_except[@]}"; do
+    [ "$1" = "${entry%%|*}" ] && return 1
+  done
   for entry in "${light_set[@]}"; do
     pattern=${entry%%|*}
     case "$pattern" in

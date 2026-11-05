@@ -980,6 +980,11 @@ class LightScopeTest(unittest.TestCase):
                 )
                 self.assertEqual([part for part in parts_reported(run.output) if part != "branch-current"], EVERY_PART)
 
+    def test_a_branch_changing_only_the_migration_script_runs_every_part_since_the_migrations_part_runs_it(self):
+        run = shared_run("migration-script-only", prepare=lambda case: plant_light_changes(case, ["dev/apply_migrations.sh"]))
+        self.assertEqual([part for part in parts_reported(run.output) if part != "branch-current"], EVERY_PART)
+        self.assertIn("dev/apply_migrations.sh", scope_line(run.output))
+
     def test_an_edit_not_yet_committed_counts_as_a_change(self):
         def plant(case):
             plant_light_changes(case, ["CLAUDE.md"])
