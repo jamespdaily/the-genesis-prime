@@ -368,7 +368,8 @@ pub fn a_player_that_enters_again_shows_no_unit_and_has_none_gone_test() -> Nil 
 
 /// What an owner standing at `place` sends a viewer: the record it was entered
 /// with (the client's own 0x262 of it, `player_in`) at that place, stamped
-/// `time_ms` on the map's clock.
+/// `time_ms` on the map's clock, without its class resource: the test player is an
+/// Engineer, whose resource is stat 3 and ResourceMax property 10.
 fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
   let #(position, rotation) = player_unit.standing(place)
   let player =
@@ -377,6 +378,10 @@ fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
     ..player,
     tail: UnitCreateTail(
       ..player.tail,
+      stats: list.filter(player.tail.stats, fn(stat) { stat.stat_id != 3 }),
+      properties: list.filter(player.tail.properties, fn(property) {
+        property.property_id != 10
+      }),
       movement_commands: [
         start_movement.Position(position),
         start_movement.Rotation(rotation),
@@ -410,6 +415,35 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
     ]
     as "the viewer is sent the unit at once, from the origin the map's Joined carried: the map sends the client no unit"
   assert support.writes(taken) == []
+}
+
+pub fn a_viewers_copy_of_a_player_carries_no_class_resource_stat_or_maximum_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The player's own 0x262 holds the Engineer's Volatility as stat 3 and
+  // ResourceMax_1 as property 10 (opcode.0x262.resource_stats,
+  // UnitProperty2.ResourceMax_0); a 0x935 goes to the player only, so a viewer's
+  // copy would go stale (the step's design).
+  let own =
+    game_connection_support.player_in(game_connection_support.entered().1)
+  assert list.any(own.tail.stats, fn(stat) { stat.stat_id == 3 })
+    && list.any(own.tail.properties, fn(property) { property.property_id == 10 })
+    as "the player's own record carries the resource"
+  let #(_, taken) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(2),
+        stay: game_connection_support.viewer_stay(2),
+      )),
+    )
+  let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
+    game_connection_support.peer_tells(taken)
+  assert list.map(unit.tail.stats, fn(stat) { stat.stat_id }) == [0, 10, 20]
+    as "health, level and shield only: no stat 3"
+  assert !list.any(unit.tail.properties, fn(property) {
+    property.property_id == 10
+  })
+    as "no ResourceMax_1"
 }
 
 pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_sent_test() -> Nil {

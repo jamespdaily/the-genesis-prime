@@ -13,6 +13,12 @@
 ////   class's slot, maximum and start.
 //// - The bit stream writes each field from its lowest bit up, in field order, as
 ////   the client's reader reads it (the 0x938 vector of combat_message_vector_test).
+////
+//// Gap: no vector here is a client's or a recording's bytes. The 0x935 vector and
+//// the bytes of each 0x262 resource stat are built by hand from the schema's field
+//// order and sizes. The loadout session recorded live (`wire_recording`) shows the
+//// client taking the 0x262 with the stat and the ResourceMax property (its verdict
+//// holds no failure), but it holds no 0x935 and does not state the stat's bytes.
 
 import class_resource_support
 import game_connection_support
@@ -89,7 +95,7 @@ pub fn a_new_players_0x262_carries_its_slots_stat_in_the_float_form_at_its_start
       as "one resource stat: the slot the class's bar reads (0x14064fdb0)"
     assert stat.stat_id == stat_id
     assert stat_bytes(stat) == message_support.hex(bytes)
-      as "Warrior, Engineer and Esper start at 0.0; the Medic at 4.0 (0x40800000); the Stalker and Spellslinger at 100.0 (0x42C80000)"
+      as "Warrior, Engineer and Esper start at 0.0; the Medic at 4.0 (0x40800000); the Stalker and Spellslinger at 100.0 (0x42C80000); the bytes are built by hand from the schema (module gap)"
   })
 }
 
@@ -104,6 +110,7 @@ pub fn the_same_stat_in_the_integer_form_is_another_form_on_the_wire_test() -> N
   assert stat_bytes(integer_form) == message_support.hex("05 32 00 00 00")
     as "form 0 (bits 5 and 6 clear), then the integer 100: the client stores 0 in the slot for it (opcode.0x262.resource_stats)"
   assert stat_bytes(float_form) == message_support.hex("25 00 00 64 21")
+    as "form 1, then the float 100.0; both vectors are built by hand from the schema (module gap)"
   let assert Ok(#(read, _)) =
     unit_stat.read(bit_stream.new_reader(stat_bytes(float_form)))
   assert read == float_form as "the float form reads back as written"
@@ -147,7 +154,7 @@ pub fn a_slot_change_is_0x935_of_a_32_bit_unit_a_5_bit_stat_and_a_float_test() -
   assert unit_float_stat_changed.message_id == 0x935
     as "opcode.0x935: message 0x935 (2357)"
   message_support.assert_codec(
-    name: "opcode.0x935: unit 0x1001, stat 5 (slot 3), 35.0 (0x420C0000)",
+    name: "opcode.0x935: unit 0x1001, stat 5 (slot 3), 35.0 (0x420C0000); bytes built by hand from the schema, no recorded 0x935 (module gap)",
     body: message_support.hex("01 10 00 00 05 00 80 41 08"),
     value: UnitFloatStatChanged(
       unit_id: 0x1001,

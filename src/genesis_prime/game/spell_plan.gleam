@@ -53,15 +53,15 @@
 //// - **The costs.** A spell's two innate costs, and a stage's row's two more, each
 ////   read once into a `Cost` the cast rule checks against the caster's resources
 ////   (`0x1403b3320`, `0x1405e7980`, `Spell4CastResult.vital_cost`): types 5 to 11
-////   are resource slots 0 to 6 (result 50 + the slot; Mind Burst, type 6, is 51),
-////   16 slot 7 (177) and 27 to 29 slots 8 to 10 (327 to 329); type 18 goes to the
-////   class's slots that hold that vital, the last one's result given when none
-////   passes (Gamma Rays is 55). Health (1), shield (3) and focus (15) give their own
-////   results (44, 176, 167) and are held by no rule of the server; any other type
-////   is an `UnreadCost`.
+////   are resource slots 0 to 6 (result 50 + the slot; Mind Burst, type 6, is 51);
+////   type 18 goes to the class's slots that hold that vital, the last one's result
+////   given when none passes (Gamma Rays is 55). Health (1), shield (3), focus (15)
+////   and 16 (slot 7) give their own results (44, 176, 167, 177) and are held by no
+////   rule of the server; any other type, the client's slots 8 to 10 (types 27 to 29)
+////   among them, is an `UnreadCost`.
 //// - **The caster requirements.** A spell's two caster vital requirements
-////   (`0x1403b1780`): types 5 to 11, 16 and 27 to 29 read the same slots with the
-////   same results, compared with the value by the eval code (`0x1407a1750`: 0 to 4
+////   (`0x1403b1780`): types 5 to 11 read the same slots with the same results,
+////   compared with the value by the eval code (`0x1407a1750`: 0 to 4
 ////   on the amount, 5 to 9 the same on the percentage of the slot's maximum, any
 ////   other never passes); type 0 is none; any other type is an
 ////   `UnreadRequirement`. The waiver (propertyFlags bit 2 with a
@@ -983,6 +983,7 @@ fn cost_of(
     1, _ -> Ok(Some(UnheldCost(result: 44)))
     3, _ -> Ok(Some(UnheldCost(result: 176)))
     15, _ -> Ok(Some(UnheldCost(result: 167)))
+    16, _ -> Ok(Some(UnheldCost(result: 177)))
     _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
     18, Error(Nil) ->
       class_cost_of(tables:, base:, vital: cost_type, amount:)
@@ -992,15 +993,13 @@ fn cost_of(
 }
 
 /// The resource slot a cost or requirement type reads and the result its failure
-/// gives: 5 to 11 slots 0 to 6 (50 to 56), 16 slot 7 (177), 27 to 29 slots 8 to 10
-/// (327 to 329) (`0x1403b3320`, `0x1403b1780`).
+/// gives: 5 to 11 are slots 0 to 6 (50 to 56) (`0x1403b3320`, `0x1403b1780`). The
+/// client's types 16 and 27 to 29 read slots 7 to 10, which no class resource of
+/// the server uses.
 fn slot_of(vital_type vital_type: Int) -> Result(#(Int, Int), Nil) {
   case vital_type {
     _ if vital_type >= 5 && vital_type <= 11 ->
       Ok(#(vital_type - 5, 50 + vital_type - 5))
-    16 -> Ok(#(7, 177))
-    _ if vital_type >= 27 && vital_type <= 29 ->
-      Ok(#(vital_type - 19, 327 + vital_type - 27))
     _ -> Error(Nil)
   }
 }

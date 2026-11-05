@@ -557,6 +557,16 @@ pub fn rampage_requires_at_least_250_of_slot_1_its_stages_require_nothing_and_it
 
 /// The planted rows with Rampage's requirement of this type and eval, value 250.
 fn rampage_rows(requirement_type: Int, eval: Int) -> spell_tables.Rows {
+  rampage_rows_costing(requirement_type:, eval:, cost: #(0, 0))
+}
+
+/// The planted rows with Rampage's requirement as `rampage_rows` has it and its
+/// innate cost of this type and amount.
+fn rampage_rows_costing(
+  requirement_type requirement_type: Int,
+  eval eval: Int,
+  cost cost: #(Int, Int),
+) -> spell_tables.Rows {
   let rows = spell_tables.rows()
   spell_tables.Rows(
     ..rows,
@@ -570,7 +580,7 @@ fn rampage_rows(requirement_type: Int, eval: Int) -> spell_tables.Rows {
             cooldown: 8000,
             kind: 0,
             global: 103,
-            cost: #(0, 0),
+            cost:,
             more: [
               #("thresholdTime", 4000),
               #("casterInnateRequirement0", requirement_type),
@@ -627,6 +637,54 @@ pub fn a_requirement_of_a_vital_the_server_does_not_read_fails_the_load_test() -
       requirement_type: 1,
     ))
     as "type 1 is health (0x1403b1780), which no requirement check of the server reads"
+}
+
+pub fn a_requirement_of_a_slot_the_step_does_not_hold_fails_the_load_each_named_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x1403b1780 reads types 16 and 27 to 29 as slots 7 to 10; the server holds
+  // the resource of slots 0 to 6 only, so a requirement of another slot is not read.
+  list.each([16, 27, 28, 29], fn(requirement_type) {
+    assert spell_tables.with_loaded(
+        rows: rampage_rows(requirement_type, 2),
+        body: fn(tables) { spell_plan.build(tables:) },
+      )
+      == Error(spell_plan.UnreadRequirement(
+        spell4_id: 58_524,
+        requirement_type:,
+      ))
+      as { "requirement type " <> int.to_string(requirement_type) }
+  })
+}
+
+pub fn a_cost_of_a_slot_the_step_does_not_hold_fails_the_load_each_named_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x1403b3320 reads types 27 to 29 as slots 8 to 10 (results 327 to 329), which
+  // the server's class resources do not use: the load refuses them.
+  list.each([27, 28, 29], fn(cost_type) {
+    assert spell_tables.with_loaded(
+        rows: rampage_rows_costing(requirement_type: 0, eval: 0, cost: #(
+          cost_type,
+          5,
+        )),
+        body: fn(tables) { spell_plan.build(tables:) },
+      )
+      == Error(spell_plan.UnreadCost(spell4_id: 58_524, cost_type:))
+      as { "cost type " <> int.to_string(cost_type) }
+  })
+}
+
+pub fn a_cost_of_type_16_is_refused_177_as_a_vital_no_rule_of_the_server_holds_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(plans) =
+    spell_tables.with_loaded(
+      rows: rampage_rows_costing(requirement_type: 0, eval: 0, cost: #(16, 5)),
+      body: fn(tables) { spell_plan.build(tables:) },
+    )
+    as "a cost of type 16 builds"
+  let assert Ok(rampage) =
+    spell_plan.in_plans(plans:, base: Spell4BaseId(37_968))
+  assert rampage.costs == [spell_plan.UnheldCost(result: 177)]
+    as "0x1403b3320: type 16 gives 177 (Spell4CastResult.vital_cost); it reads slot 7, which no class resource of the server uses"
 }
 
 pub fn the_costs_of_impale_and_electrocute_give_the_results_of_their_vital_slots_test() -> Nil {

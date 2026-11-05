@@ -9,8 +9,12 @@
 -- whether it starts full or empty are the client's own, and stay in code.
 --
 -- The client holds no player's maximum and no refill rate
--- (`UnitProperty2.ResourceMax_0`), so each comes from a retail record or is the
--- server's choice, and says so.
+-- (`UnitProperty2.ResourceMax_0`), so each comes from the client's own bar, a
+-- retail record or is the server's choice, and says so. The `client` source is
+-- the client's display: a value its UI draws (the Esper's 5 pips, the Medic's 4
+-- nodes) that no client table holds.
+
+insert into content_source (name) values ('client');
 
 create table class_resource (
   class_id integer not null,
@@ -44,9 +48,9 @@ insert into class_resource (class_id, name, value, unit, source, reason) values
    'Kinetic Energy: the client draws the Warrior bar in 3 sections to 1000, marks every 250 (ClassResources.lua); wildstaronline-archive Warrior page, Wayback 20210918201349'),
   (2, 'max', 100, 'points', 'retail_record',
    'Volatility: Tenton Hammer Engineer guide, "You can reach a maximum of 100 Volatility"'),
-  (3, 'max', 5, 'points', 'server_choice',
+  (3, 'max', 5, 'points', 'client',
    'Psi Points: the client draws 5 pips and Mind Burst''s tooltip lists 1PP to 5PP; it holds no maximum (UnitProperty2.ResourceMax_0)'),
-  (4, 'max', 4, 'points', 'server_choice',
+  (4, 'max', 4, 'points', 'client',
    'Actuators: the client draws 4 nodes; it holds no maximum (UnitProperty2.ResourceMax_0)'),
   (4, 'refill_after_combat_ms', 3000, 'ms', 'server_choice',
    'Jim''s choice at the step''s design: retail says only "quickly restore to a full four charges" out of combat (wildstaronline-archive Medic page, Wayback 20210918192013)'),

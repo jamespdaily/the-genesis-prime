@@ -6,9 +6,9 @@
 //// ```
 //// the cast rule's Pay (an accepted press)          ─▶ class_resource.pay
 //// a timer class_resource.owns                     ─▶ class_resource.timer_fired
-//// player_life's step: alive ─▶ dead                ─▶ class_resource.died
-////                     dead ─▶ alive                ─▶ class_resource.came_back
-////                     the combat flag set or clear ─▶ class_resource.combat_changed
+//// player_life's effects: 0x88c dead                ─▶ class_resource.died
+////                        0x88c alive               ─▶ class_resource.came_back
+////                        0x89a, the combat flag    ─▶ class_resource.combat_changed
 //// the stay left (camp, Holocrypt)                 ─▶ class_resource.left
 //// Changed(slot, value) ─▶ 0x935 to the player's own client only (the server's
 //// choice: a viewer's client shows no other unit's class resource)
@@ -19,7 +19,7 @@ import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
-import genesis_prime/game/player_life.{type Life}
+import genesis_prime/game/player_life
 import genesis_prime/game/world_entry
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type TimerId, CancelTimer, OwnEffect,
@@ -29,16 +29,16 @@ import gleam/list
 import gleam/option.{None, Some}
 
 /// The session with the player's resources changed by the rule's step `change`,
-/// and the connection's effects for what the step decided. With no player in the
-/// world nothing changes.
+/// and the connection's effects for what the step decided. With no player the
+/// client holds in the world (a save and a leave take no send) nothing changes.
 fn stepped(
   session session: Session,
   change change: fn(class_resource.Resources) ->
     #(class_resource.Resources, List(class_resource.Effect)),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  case connection_state.entered_of(session.status) {
+  case connection_state.held_in_the_world(session.status) {
     None -> #(session, [])
-    Some(entered) -> {
+    Some(#(_, entered)) -> {
       let #(resources, effects) = change(entered.resources)
       let session =
         connection_state.with_entered(session:, change: fn(entered) {
@@ -93,43 +93,44 @@ pub fn resource_due(
   Continue(session, effects)
 }
 
-/// What a step of the player's life did to the resource, from the life before it
-/// to the life the session holds now: a death, a coming back, or the combat flag
-/// set or cleared.
-pub fn life_changed(
+/// What the effects of a step of the player's life did to the resource, in the
+/// order player_life gave them: the death and the coming back (0x88c) and the
+/// combat flag (0x89a) the player's own client is written.
+pub fn life_effects(
   session session: Session,
-  before before: Life,
+  effects effects: List(player_life.Effect),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  case connection_state.entered_of(session.status) {
-    None -> #(session, [])
-    Some(entered) -> {
-      let after = entered.life
-      case player_life.state(life: before), player_life.state(life: after) {
-        player_life.Alive, player_life.Dead ->
-          stepped(session:, change: fn(resources) {
-            class_resource.died(resources:)
-          })
-        player_life.Dead, player_life.Alive ->
-          stepped(session:, change: fn(resources) {
-            class_resource.came_back(resources:)
-          })
-        player_life.Alive, player_life.Alive
-        | player_life.Dead, player_life.Dead
-        ->
-          case
-            player_life.in_combat(life: before)
-            == player_life.in_combat(life: after)
-          {
-            True -> #(session, [])
-            False ->
-              stepped(session:, change: class_resource.combat_changed(
-                resources: _,
-                in_combat: player_life.in_combat(life: after),
-              ))
-          }
-      }
+  list.fold(effects, #(session, []), fn(so_far, effect) {
+    let #(session, written) = so_far
+    let apply = fn(change) {
+      let #(session, more) = stepped(session:, change:)
+      #(session, list.append(written, more))
     }
-  }
+    case effect {
+      player_life.ToClient(written:) ->
+        case written {
+          player_life.OwnDeathState(dead: True) ->
+            apply(fn(resources) { class_resource.died(resources:) })
+          player_life.OwnDeathState(dead: False) ->
+            apply(fn(resources) { class_resource.came_back(resources:) })
+          player_life.OwnCombatState(in_combat:) ->
+            apply(class_resource.combat_changed(resources: _, in_combat:))
+          player_life.OwnShield(..)
+          | player_life.OwnHealth(..)
+          | player_life.OwnDeathLogged
+          | player_life.OwnCameBackLogged
+          | player_life.GhostCreated(..)
+          | player_life.OwnResurrectionWindow(..)
+          | player_life.GhostRemoved
+          | player_life.ControlGiven(..) -> so_far
+        }
+      player_life.ToViewers(..)
+      | player_life.Answer(..)
+      | player_life.StreamTo(..)
+      | player_life.EndCasts
+      | player_life.GoToHolocrypt -> so_far
+    }
+  })
 }
 
 /// The player leaves its stay in the world: the rule's timers are cancelled.

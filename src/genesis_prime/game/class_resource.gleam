@@ -26,7 +26,8 @@
 ////   (`LocalizedEnum.CRB_StalkerResource`).
 //// - **The maximum and the refill** are content rows the client lacks
 ////   (`UnitProperty2.ResourceMax_0`), each with its source (migration 0011): the
-////   load refuses a playable class with no maximum (`select`).
+////   load refuses a playable class with no maximum, and the Medic, Stalker and
+////   Spellslinger with a row of their refill missing (`select`).
 //// - **The value** is held as the 32-bit float the client holds, so a check here and
 ////   the client's own read the same number.
 //// - **Paying** is at the accept, in the step of the cost check (genesis_prime/game/cast).
@@ -99,16 +100,27 @@ pub type Row {
   Row(class_id: Int, name: String, value: Float, unit: String)
 }
 
+/// How a class's resource refills, which decides the rows it needs.
+type Refill {
+  /// Not over time in this step: the class needs only its maximum.
+  Never
+  /// A regeneration each tick, in and out of combat: the amount, its period and
+  /// the tick.
+  OverTime
+  /// The slot fills to its maximum a while after combat: the wait.
+  AfterCombat
+}
+
 /// The playable classes, by Class id, with the slot each one's bar reads
-/// (`0x14064fdb0`) and its start (`LocalizedEnum.CRB_StalkerResource`): Warrior,
-/// Engineer, Esper, Medic, Stalker and Spellslinger.
+/// (`0x14064fdb0`), its start (`LocalizedEnum.CRB_StalkerResource`) and how it
+/// refills (the design): Warrior, Engineer, Esper, Medic, Stalker and Spellslinger.
 const playable = [
-  #(1, #(1, Empty)),
-  #(2, #(1, Empty)),
-  #(3, #(1, Empty)),
-  #(4, #(1, Full)),
-  #(5, #(3, Full)),
-  #(7, #(4, Full)),
+  #(1, #(1, Empty, Never)),
+  #(2, #(1, Empty, Never)),
+  #(3, #(1, Empty, Never)),
+  #(4, #(1, Full, AfterCombat)),
+  #(5, #(3, Full, OverTime)),
+  #(7, #(4, Full, OverTime)),
 ]
 
 /// Each number the rule reads, by name, with its unit.
@@ -120,13 +132,20 @@ const expected = [
   #("refill_after_combat_ms", "ms"),
 ]
 
-/// The parts of a refill over time, which a row holds all of or none of.
-const regen_names = ["regen_amount", "regen_period_ms", "regen_tick_ms"]
+/// The numbers a class's refill needs.
+fn needed(refill refill: Refill) -> List(String) {
+  case refill {
+    Never -> ["max"]
+    OverTime -> ["max", "regen_amount", "regen_period_ms", "regen_tick_ms"]
+    AfterCombat -> ["max", "refill_after_combat_ms"]
+  }
+}
 
 /// The classes' resources of the rows, or every refusal: a class that is not
-/// playable, a name not known, a unit not the name's, a playable class with no
-/// max, a refill with a part missing, a number not above 0, and a time that is not
-/// a whole number of milliseconds.
+/// playable, a name not known, a unit not the name's, a number a playable class
+/// needs that has no row (its maximum, and the amount, period and tick of a refill
+/// over time or the wait of a refill after combat), a number not above 0, and a
+/// time that is not a whole number of milliseconds.
 pub fn select(rows rows: List(Row)) -> Result(Classes, List(Refusal)) {
   let unknown =
     list.filter_map(rows, fn(row) {
@@ -149,39 +168,30 @@ pub fn select(rows rows: List(Row)) -> Result(Classes, List(Refusal)) {
   let by_class = list.group(rows, fn(row) { row.class_id })
   let missing =
     list.flat_map(playable, fn(class) {
-      let named = dict.get(by_class, class.0) |> result.unwrap([])
-      let has = fn(name) { list.any(named, fn(row) { row.name == name }) }
-      let max = case has("max") {
-        True -> []
-        False -> [
-          refused(
-            row: Row(class_id: class.0, name: "max", value: 0.0, unit: "points"),
-            rule: "the table has no such row, which every playable class needs",
-          ),
-        ]
-      }
-      let regen = case list.any(regen_names, has), list.all(regen_names, has) {
-        True, False ->
-          list.filter_map(regen_names, fn(name) {
-            case has(name) {
-              True -> Error(Nil)
-              False ->
-                Ok(refused(
-                  row: Row(class_id: class.0, name:, value: 0.0, unit: ""),
-                  rule: "a refill over time needs its amount, period and tick",
-                ))
-            }
-          })
-        True, True | False, _ -> []
-      }
-      list.append(max, regen)
+      let #(class_id, #(_, _, refill)) = class
+      let named = dict.get(by_class, class_id) |> result.unwrap([])
+      list.filter_map(needed(refill:), fn(name) {
+        case list.any(named, fn(row) { row.name == name }) {
+          True -> Error(Nil)
+          False ->
+            Ok(refused(
+              row: Row(
+                class_id:,
+                name:,
+                value: 0.0,
+                unit: list.key_find(expected, name) |> result.unwrap(""),
+              ),
+              rule: "the table has no such row, which this class needs",
+            ))
+        }
+      })
     })
   case list.append(unknown, missing) {
     [_, ..] as refusals -> Error(refusals)
     [] ->
       Ok(Classes(
         by_class: list.map(playable, fn(class) {
-          let #(class_id, #(slot, start)) = class
+          let #(class_id, #(slot, start, _)) = class
           let named = dict.get(by_class, class_id) |> result.unwrap([])
           #(class_id, resource_of(named:, slot:, start:))
         })

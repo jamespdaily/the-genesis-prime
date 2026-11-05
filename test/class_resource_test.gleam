@@ -23,7 +23,6 @@ import genesis_prime/game/class_resource.{
   type Effect, type Resource, type Resources, CancelTimer, Changed, Payment, Row,
   StartTimer,
 }
-import genesis_prime/message/float32
 import genesis_prime/step
 import gleam/float
 import gleam/list
@@ -166,8 +165,8 @@ pub fn spell_power_refills_25_each_12_seconds_a_tick_a_second_in_and_out_of_comb
   assert changes(paid) == [#(4, 75.0)]
   assert started(paid) == [#(regen, 1000)]
   let #(resources, first) = tick(resources)
-  assert changes(first) == [#(4, float32.rounded(75.0 +. 25.0 /. 12.0))]
-    as "25 each 12 seconds is 25/12 a second, held as the client's 32-bit float"
+  assert changes(first) == [#(4, 77.08333587646484)]
+    as "25 each 12 seconds is 25/12 a second: 75 and 25/12 is 77.0833..., and the nearest 32-bit float, the form the client holds (0x429A2AAB), is 77.08333587646484"
   let #(resources, _) =
     class_resource.combat_changed(resources:, in_combat: True)
   let resources =
@@ -348,16 +347,22 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
     as "migration 0011's rows, in class and name order: the design's values table"
   assert content_support.count(
       database:,
-      sql: "select count(*) from class_resource where source in ('retail_record', 'server_choice') and reason is not null",
+      sql: "select count(*) from class_resource where source in ('client', 'retail_record', 'server_choice') and reason is not null",
     )
     == 13
-    as "each row is a retail record or a server choice and states its reason"
+    as "each row is the client's, a retail record or a server choice and states its reason"
+  assert content_support.count(
+      database:,
+      sql: "select count(*) from class_resource where source = 'client' and class_id in (3, 4) and name = 'max'",
+    )
+    == 2
+    as "the Esper's 5 pips and the Medic's 4 nodes are what the client draws, so the client is their source"
   assert content_support.count(
       database:,
       sql: "select count(*) from class_resource where source = 'server_choice'",
     )
-    == 5
-    as "the Esper's and Medic's maxima, the Medic's refill and the two ticks are the server's choices"
+    == 3
+    as "the Medic's refill and the two ticks are the server's choices"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {

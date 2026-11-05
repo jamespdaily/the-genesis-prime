@@ -317,3 +317,24 @@ pub fn a_playable_class_with_no_max_row_stops_the_load_naming_it_test() -> Nil {
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
     == [#("class_resource", refusal.RowName("3 max"))]
 }
+
+pub fn a_class_missing_the_rows_of_its_refill_stops_the_load_naming_each_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  change(
+    database,
+    "delete from class_resource where (class_id = 4 and name = 'refill_after_combat_ms') or (class_id = 5 and name like 'regen%') or (class_id = 7 and name = 'regen_amount')",
+  )
+  let #(loaded, _key) = load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "the Medic's refill, the Stalker's and the Spellslinger's regeneration each need their rows (the design's values table): a class that would never refill stops the start"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [
+      #("class_resource", refusal.RowName("4 refill_after_combat_ms")),
+      #("class_resource", refusal.RowName("5 regen_amount")),
+      #("class_resource", refusal.RowName("5 regen_period_ms")),
+      #("class_resource", refusal.RowName("5 regen_tick_ms")),
+      #("class_resource", refusal.RowName("7 regen_amount")),
+    ]
+    as "each missing row is named by its class and number"
+}

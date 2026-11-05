@@ -110,7 +110,7 @@ pub fn foe_taken(
     connection_state.with_entered(session:, change: fn(entered) {
       world_entry.Entered(..entered, life:)
     })
-  life_carried(session:, now:, holder:, effects:, before: entered.life)
+  life_carried(session:, now:, holder:, effects:)
 }
 
 /// What player_life decided, as the connection's effects: its own unit's messages
@@ -183,7 +183,6 @@ pub fn life_message(
         now:,
         holder:,
         effects:,
-        before: entered.life,
       )
     Error(refusal) ->
       case refusal {
@@ -208,9 +207,9 @@ pub fn life_message(
   }
 }
 
-/// What player_life decided, carried out in order, then what the step did to the
-/// class resource from the life `before` it (`resource.life_changed`): the frames
-/// and news as `life_effects` makes them, `EndCasts` as the cast rule's `died`, whose 0x7fe
+/// What player_life decided, carried out in order, then what its death, coming
+/// back and combat flag did to the class resource (`resource.life_effects`): the
+/// frames and news as `life_effects` makes them, `EndCasts` as the cast rule's `died`, whose 0x7fe
 /// go out in its place in the order, and `GoToHolocrypt` as the leave of the map
 /// that the Holocrypt's join follows (`leaving_for_the_holocrypt`), which comes
 /// last.
@@ -219,7 +218,6 @@ fn life_carried(
   now now: Now,
   holder holder: Holder,
   effects effects: List(player_life.Effect),
-  before before: player_life.Life,
 ) -> client_connection.Handled(Session) {
   let #(session, written, to_the_holocrypt) =
     list.fold(effects, #(session, [], False), fn(so_far, effect) {
@@ -254,7 +252,7 @@ fn life_carried(
       }
     })
   let #(session, resource_written) =
-    connection_resource.life_changed(session:, before:)
+    connection_resource.life_effects(session:, effects:)
   let written = list.append(written, resource_written)
   case to_the_holocrypt, connection_state.entered_of(session.status) {
     True, Some(entered) ->
