@@ -664,14 +664,14 @@ fn tried_in_order(schema: String) -> List(String) {
   |> list.map(fn(tried) { tried.1 })
 }
 
-pub fn a_message_that_fixes_its_first_field_is_tried_before_one_that_leaves_it_open_test() -> Nil {
+pub fn a_message_with_a_fixed_field_is_tried_before_one_with_none_test() -> Nil {
   use <- owned_test.run(5000)
   assert tried_in_order(two_messages_sharing_a_number(
       first_kind: open_kind,
       second_kind: kind_3,
     ))
     == ["second_message", "first_message"]
-    as "a message with an open first field reads any body whose bytes fit its layout, so it is tried last: the messages that check their kind first decide which bodies are theirs"
+    as "a message with no fixed field reads any body its layout fits, so it is tried last: the messages that check a fixed field decide which bodies are theirs"
 }
 
 pub fn messages_that_fix_their_kind_or_that_leave_it_open_are_tried_in_the_schemas_order_test() -> Nil {

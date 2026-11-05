@@ -2,9 +2,10 @@
 //// one module for each under `src/genesis_prime/message/`, with its type, and
 //// for a message `encode` and `decode`, for a record or a union `write` and
 //// `read`; and the `client_message` and `server_message` modules, which decode
-//// a message the client or the server sends by its number. The text is already in `gleam format`'s layout, so a regenerated
-//// file equals the committed one byte for byte, and `mismatches` names each
-//// file that does not.
+//// a message the client or the server sends by its number. The text is
+//// already in `gleam format`'s layout, so a regenerated file equals the
+//// committed one byte for byte, and `mismatches` names each file that does
+//// not.
 
 import genesis_prime/message_schema.{
   type Field, type Kind, type Message, type NamedValues, type Record,
@@ -467,7 +468,7 @@ fn side_text(side: Side) -> SideText {
       SideText(
         type_name: "ServerMessage",
         sender: "the server",
-        head: "Every message the server sends, by its number, for reading back what a server wrote: a variant for each message of the schema that travels server to client or either way, `decode` to read a body by its message's number and `name` to give its name in the schema. A number several messages share is read by each in the schema's order, and the first that reads the body is the message. A number no such message has is reported as unknown.",
+        head: "Every message the server sends, by its number, for reading back what a server wrote: a variant for each message of the schema that travels server to client or either way, `decode` to read a body by its message's number and `name` to give its name in the schema. A number several messages share is read by each in turn, the messages that fix a field of their own before those that fix none and each kind in the schema's order, and the first that reads the body is the message. A number no such message has is reported as unknown.",
         left_out: message_schema.ClientToServer,
       )
   }
@@ -618,7 +619,10 @@ fn client_writing(sent: List(Message), type_name: String) -> List(String) {
 }
 
 /// The messages by number, each number once, in the order the schema first
-/// names it, with its messages in the schema's order.
+/// names it. A number's messages are in the order a reader tries them: those
+/// that fix a field of their own first, since a message with no fixed field
+/// reads any body its layout fits, then the others, each kind in the schema's
+/// order.
 fn numbered_groups(messages: List(Message)) -> List(#(Int, List(Message))) {
   list.fold(messages, [], fn(groups, message) {
     case list.key_find(groups, message.id) {
@@ -627,6 +631,16 @@ fn numbered_groups(messages: List(Message)) -> List(#(Int, List(Message))) {
       Error(Nil) -> list.append(groups, [#(message.id, [message])])
     }
   })
+  |> list.map(fn(group) {
+    let #(fixed, open) = list.partition(group.1, fixes_a_field)
+    #(group.0, list.append(fixed, open))
+  })
+}
+
+/// Whether the message has a field whose value the schema fixes, which its
+/// decoder checks: a field the generated type does not hold.
+fn fixes_a_field(message: Message) -> Bool {
+  list.length(message_schema.held(message.fields)) < list.length(message.fields)
 }
 
 /// The case arm that decodes a number's body: by its one message, or by each
@@ -945,8 +959,6 @@ fn kind_type(kind: Kind) -> String {
   }
 }
 
-/// The fields a generated type holds: every field but the constants, which the
-/// encoder writes and the decoder checks.
 /// The pipeline step that writes a field of the value held in `owner`.
 fn write_step(field: Field, owner: String) -> List(String) {
   let name = "\"" <> field.name <> "\""

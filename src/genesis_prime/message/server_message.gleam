@@ -5,8 +5,10 @@
 //// server wrote: a variant for each message of the schema that travels server
 //// to client or either way, `decode` to read a body by its message's number
 //// and `name` to give its name in the schema. A number several messages share
-//// is read by each in the schema's order, and the first that reads the body is
-//// the message. A number no such message has is reported as unknown.
+//// is read by each in turn, the messages that fix a field of their own before
+//// those that fix none and each kind in the schema's order, and the first that
+//// reads the body is the message. A number no such message has is reported as
+//// unknown.
 
 import genesis_prime/message/ability_tiers.{type AbilityTiers}
 import genesis_prime/message/account_entitlements.{type AccountEntitlements}
@@ -216,10 +218,10 @@ pub fn decode(
         )
       })
       |> result.lazy_or(fn() {
-        decoded(body, message_id, unit_create_static.decode, UnitCreateStatic)
+        decoded(body, message_id, unit_create_ghost.decode, UnitCreateGhost)
       })
       |> result.lazy_or(fn() {
-        decoded(body, message_id, unit_create_ghost.decode, UnitCreateGhost)
+        decoded(body, message_id, unit_create_static.decode, UnitCreateStatic)
       })
     0x019B -> decoded(body, message_id, unit_is_player.decode, UnitIsPlayer)
     0x06BC -> decoded(body, message_id, player_path.decode, PlayerPath)
