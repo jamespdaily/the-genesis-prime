@@ -167,7 +167,7 @@ def _sites(index: RefIndex, caller: int, callee: int) -> list:
     return [r for r in index.refs_to(callee) if r.kind in ("call", "jmp") and index.pe.root_of(r.source) == caller]
 
 
-def _hop(index: RefIndex, caller: int, callee: int) -> str:
+def hop_description(index: RefIndex, caller: int, callee: int) -> str:
     """The call sites of one hop, each with the chained chunk of the caller it lies in, when it is not
     the caller's first range."""
     ranges = index.pe.root_ranges(caller)
@@ -185,8 +185,8 @@ def _print_paths(index: RefIndex, names: Names, walk: Walk, up: bool, out) -> No
         print("path %d, %d %s:" % (number, len(chain) - 1, "step" if len(chain) == 2 else "steps"), file=out)
         print("  " + names.label(chain[0]), file=out)
         for before, after in zip(chain, chain[1:]):
-            hop = _hop(index, after, before) if up else _hop(index, before, after)
-            print("  %s %s  (%s)" % ("<-" if up else "->", names.label(after), hop), file=out)
+            shown = hop_description(index, after, before) if up else hop_description(index, before, after)
+            print("  %s %s  (%s)" % ("<-" if up else "->", names.label(after), shown), file=out)
     if walk.truncated:
         print("%d paths listed; more exist: narrow the targets or lower --depth" % MAX_PATHS, file=out)
 

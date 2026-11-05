@@ -227,7 +227,7 @@ def _u32(pe: ClientPE, va: int) -> int:
     return int.from_bytes(pe.read(va, 4), "little")
 
 
-def _merged(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+def merged_ranges(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
     out: list[tuple[int, int]] = []
     for low, high in sorted(ranges):
         if out and out[-1][1] == low:
@@ -240,7 +240,7 @@ def _merged(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
 def read_function(pe: ClientPE, function_start: int) -> list[JumpTable]:
     """Every indirect `jmp REG64` in the function's .pdata ranges, read."""
     tables = []
-    for low, high in _merged(pe.root_ranges(function_start)):
+    for low, high in merged_ranges(pe.root_ranges(function_start)):
         if not INDIRECT_JMP_BYTES.search(pe.read(low, high - low)):
             continue
         code = disassemble(pe, low, high)
