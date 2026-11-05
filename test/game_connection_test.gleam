@@ -53,7 +53,8 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/coverage/sent_message
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
-import genesis_prime/game/connection.{Settings} as game_connection
+import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/strike_tell
 import genesis_prime/game_settings.{GameSettings}

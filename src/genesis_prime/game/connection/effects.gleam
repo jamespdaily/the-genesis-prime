@@ -137,7 +137,12 @@ pub fn carry_out(
           )
       }
     [Asks(request:), ..] ->
-      connection_state.ask(session:, now:, request:, before: list.reverse(written))
+      connection_state.ask(
+        session:,
+        now:,
+        request:,
+        before: list.reverse(written),
+      )
   }
 }
 

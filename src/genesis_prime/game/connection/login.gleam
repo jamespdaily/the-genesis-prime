@@ -48,8 +48,8 @@ import genesis_prime/game/character_select
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/state.{
   type Resume, type Session, AwaitingHelloReply, ClaimingSession, EnteringWorld,
-  InCharacterSelect, InWorld, LeavingMap, ResumeSelect, ResumeWorld,
-  SavingPlace, Session, TakingSessionKey, WaitingToClaim,
+  InCharacterSelect, InWorld, LeavingMap, ResumeSelect, ResumeWorld, SavingPlace,
+  Session, TakingSessionKey, WaitingToClaim,
 } as connection_state
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{

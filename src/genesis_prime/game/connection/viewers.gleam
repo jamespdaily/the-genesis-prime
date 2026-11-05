@@ -276,7 +276,11 @@ pub fn viewer_takes(
       Continue(session, [
         connection_state.to_client(
           session,
-          connection_frames.unit_moved_frame(unit_id:, server_time_ms:, commands:),
+          connection_frames.unit_moved_frame(
+            unit_id:,
+            server_time_ms:,
+            commands:,
+          ),
         ),
       ])
     }
@@ -360,12 +364,13 @@ pub fn viewer_takes(
         shown_changed(session:, change: fn(picture) {
           shown.with_path(picture:, unit_id:, path:)
         })
-      Continue(session, case
-        connection_frames.path_frame(entered:, unit_id:, path:)
-      {
-        Some(frame) -> [connection_state.to_client(session, frame)]
-        None -> []
-      })
+      Continue(
+        session,
+        case connection_frames.path_frame(entered:, unit_id:, path:) {
+          Some(frame) -> [connection_state.to_client(session, frame)]
+          None -> []
+        },
+      )
     }
     client_connection.Targeting(target_unit_id:, threat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))

@@ -187,8 +187,8 @@ pub const save_timer = TimerId(2)
 
 /// A message in the game wrapper under the cipher the connection holds.
 pub fn to_client(
-  session: Session,
-  inner: Frame,
+  session session: Session,
+  inner inner: Frame,
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(
     Write(client_connection.wrapped(GameWrapper, inner, session.cipher)),
@@ -203,7 +203,7 @@ pub fn notice(
 ) -> Effect(ConnectionEffect(Request)) {
   let assert Ok(body) = disconnect_notice.encode(DisconnectNotice(reason:))
     as "a reason is within 5 bits"
-  to_client(session, Frame(disconnect_notice.message_id, body))
+  to_client(session:, inner: Frame(disconnect_notice.message_id, body))
 }
 
 /// Where the connection stands when a message of the client's reaches it:
@@ -507,7 +507,9 @@ pub fn end_with(
 /// account again with the player in the world. A connection already in
 /// `SavingPlace` holds the player too, but its save is out, so its end saves
 /// nothing more; in `LeavingMap` the place is already saved.
-pub fn holds_a_player(status: Status) -> Option(#(Holder, world_entry.Entered)) {
+pub fn holds_a_player(
+  status: Status,
+) -> Option(#(Holder, world_entry.Entered)) {
   case status {
     InWorld(holder:, entered:)
     | ClaimingSession(holder:, resume: ResumeWorld(entered:), ..)
@@ -543,7 +545,10 @@ pub fn told(
 
 /// The server is stopping while an ask is out: the client is told, with no
 /// log line, since a stop is no failure.
-pub fn stopped(session: Session, now: Now) -> client_connection.Handled(Session) {
+pub fn stopped(
+  session session: Session,
+  now now: Now,
+) -> client_connection.Handled(Session) {
   end_with(
     session:,
     now:,

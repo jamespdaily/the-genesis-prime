@@ -386,7 +386,8 @@ fn movement_line(
   case effect {
     movement.Fault(text:) ->
       connection_state.log(session:, level: step.LogError, text:)
-    movement.Note(text:) -> connection_state.log(session:, level: LogInfo, text:)
+    movement.Note(text:) ->
+      connection_state.log(session:, level: LogInfo, text:)
   }
 }
 
