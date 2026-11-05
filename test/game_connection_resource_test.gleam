@@ -10,9 +10,11 @@
 import cast_support
 import character_tables
 import connection_rule_support as support
+import game_client
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
@@ -28,6 +30,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId}
+import gleam/int
 import gleam/list
 import owned_test
 
@@ -163,6 +166,211 @@ pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_wri
       UnitFloatStatChanged(unit_id:, stat_id: 5, value: float32.to_bits(72.0)),
     ]
     as "the refill's tick, a timer of the connection: +7"
+}
+
+/// A step of the connection at the monotonic time `ms`.
+fn at(
+  state state: game_connection.State,
+  ms ms: Int,
+  event event: step.Event(
+    step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+  ),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  game_connection.step(state, support.input_at_ms(ms:, event:))
+}
+
+/// The step, and each strike it and the steps after it tell a creature answered as
+/// landed at `ms`, in order.
+fn landing(
+  state state: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  list.fold(
+    game_connection_support.strikes_told(taken),
+    #(state, [taken]),
+    fn(so_far, strike) {
+      let #(state, steps) = so_far
+      let #(state, answered) =
+        at(state:, ms:, event: game_connection_support.landed(key: strike.1))
+      let #(state, more) = landing(state:, ms:, taken: answered)
+      #(state, list.append(steps, more))
+    },
+  )
+}
+
+/// The cast rule's timers the steps start, due from `ms`, less those they cancel.
+fn cast_timers(
+  steps steps: List(ConnectionStep(Request)),
+  ms ms: Int,
+) -> List(#(Int, TimerId)) {
+  let effects = list.flat_map(steps, support.effects_of)
+  let cancelled =
+    list.filter_map(effects, fn(effect) {
+      case effect {
+        OwnEffect(CancelTimer(timer:)) -> Ok(timer)
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      OwnEffect(StartTimer(timer:, after_ms:)) ->
+        case cast.owns(timer:) && !list.contains(cancelled, timer) {
+          True -> Ok(#(ms + after_ms, timer))
+          False -> Error(Nil)
+        }
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The cast rule's timers fired in time order up to `until_ms`, with every strike
+/// landing: the connection and every step taken.
+fn casts_run(
+  state state: game_connection.State,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+  steps steps: List(ConnectionStep(Request)),
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  case
+    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
+  {
+    [#(due, timer), ..rest] if due <= until_ms -> {
+      let #(state, fired) =
+        at(state:, ms: due, event: OwnEvent(TimerFired(timer:)))
+      let #(state, more) = landing(state:, ms: due, taken: fired)
+      casts_run(
+        state:,
+        pending: list.append(rest, cast_timers(steps: more, ms: due)),
+        until_ms:,
+        steps: list.append(steps, more),
+      )
+    }
+    _ -> #(state, steps)
+  }
+}
+
+/// A press of the bag index at `ms`, and the cast timers it leads to up to
+/// `until_ms`, each strike landing.
+fn pressed_until(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  client_cast_id client_cast_id: Int,
+  ms ms: Int,
+  until_ms until_ms: Int,
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  let #(state, pressed) =
+    at(
+      state:,
+      ms:,
+      event: OwnEvent(
+        step.Read(game_connection_support.world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id:,
+            bag_index:,
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  let #(state, steps) = landing(state:, ms:, taken: pressed)
+  casts_run(state:, pending: cast_timers(steps:, ms:), until_ms:, steps:)
+}
+
+fn all_changes(
+  steps: List(ConnectionStep(Request)),
+) -> List(UnitFloatStatChanged) {
+  list.flat_map(steps, changes_written)
+}
+
+/// Relentless Strikes and Rampage, the Warrior's (Spell4Base 18309 and 37968).
+const relentless_strikes_base = 18_309
+
+const rampage_base = 37_968
+
+pub fn a_warriors_relentless_strikes_on_a_beast_fills_kinetic_energy_and_rampage_then_casts_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(state, unit_id, strikes_index) =
+    entered_with_trees(class_id: 1, ability: relentless_strikes_base)
+  let #(_, _, rampage_index) =
+    entered_with_trees(class_id: 1, ability: rampage_base)
+  let #(state, _) =
+    at(
+      state:,
+      ms: 1000,
+      event: game_connection_support.beast_appears(unit_id: 40),
+    )
+  let #(state, first) =
+    pressed_until(
+      state:,
+      bag_index: strikes_index,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 1749,
+    )
+  assert all_changes(first)
+    == [
+      UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(180.0)),
+    ]
+    as "the first tap's stage spell 70033 strikes the Beast 3 m ahead and gives +180 Kinetic Energy (Spell4Effects 127603), one 0x935 of stat 3 (slot 1) to the Warrior's own client"
+  let #(state, second) =
+    pressed_until(
+      state:,
+      bag_index: strikes_index,
+      client_cast_id: 2,
+      ms: 1750,
+      until_ms: 2499,
+    )
+  assert all_changes(second)
+    == [
+      UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(360.0)),
+    ]
+    as "the second tap's 70045 strikes it again: 360"
+  let #(_, rampage) =
+    pressed_until(
+      state:,
+      bag_index: rampage_index,
+      client_cast_id: 3,
+      ms: 2500,
+      until_ms: 2500,
+    )
+  let frames =
+    list.flat_map(rampage, fn(taken) {
+      game_connection_support.heard(taken, game_connection_support.keyed())
+    })
+  let events = game_client.casts_in(frames:)
+  assert list.any(events, fn(event) {
+      case event {
+        game_client.CastConfirmed(client_cast_id: 3, ..) -> True
+        game_client.CastRefused(..)
+        | game_client.CastConfirmed(..)
+        | game_client.CastStarted(..)
+        | game_client.CastWent(..)
+        | game_client.ThresholdOpened(..)
+        | game_client.ThresholdIndex(..)
+        | game_client.ThresholdClosed(..)
+        | game_client.ThresholdEnded(..)
+        | game_client.CastFinished(..) -> False
+      }
+    })
+    && !list.any(events, fn(event) {
+      case event {
+        game_client.CastRefused(..) -> True
+        game_client.CastConfirmed(..)
+        | game_client.CastStarted(..)
+        | game_client.CastWent(..)
+        | game_client.ThresholdOpened(..)
+        | game_client.ThresholdIndex(..)
+        | game_client.ThresholdClosed(..)
+        | game_client.ThresholdEnded(..)
+        | game_client.CastFinished(..) -> False
+      }
+    })
+    as "Rampage needs at least 250 of slot 1 (0x1403b1780, Spell4 58524): at 360 it is accepted with 0x7fd, not refused 51"
 }
 
 /// Gamma Rays, the Medic's first ability that costs Actuators (Spell4Base 16322,

@@ -6956,6 +6956,12 @@ proof = "Spell4Effects all rows (`gleam run -m genesis_prime/table_rows -- Spell
 grade = "fairly sure"
 gap = "The other dataBits of a Proxy (dataBits03 1.0, dataBits04 1 or -1, dataBits05 60 or 1 or 1000) are not read; they look like a chance, a target choice and a time. Whether retail sent a triggered spell as its own 0x7ff, or folded its effects into the parent's go, needs a retail recording."
 
+["Spell4Effects.effectType.26.dataBits06"]
+statement = "A Proxy effect's dataBits06, when it is not 0, names a Prerequisite id that gates the Proxy, as the apply prerequisite columns do. In the level-1 trees five Proxies hold one, each with no apply prerequisite: 177873 in 53865 (to 60947, dataBits06 24582), 135961 in Mind Burst 32809 (to 57030, 23344), 200542 in 30900 (to 41869, 35913), 212835 in 80382 (to 42569, 33154) and 212838 in 80382 (to 80383, 32921)."
+proof = "Rows (`gleam run -m genesis_prime/table_rows -- Spell4Effects effectType=26` and `-- Prerequisite`, counted by scratch db06.py): of the 16,929 Proxy rows, 470 hold a dataBits06 other than 0, and every one of the 470 is the ID of a Prerequisite row; 23 of them hold an apply prerequisite too. The five level-1 Proxies by a walk of SpellLevel's level-1 abilities through Proxy dataBits00 and Spell4Thresholds (scratch walk). Row 24582 is the same row that gates 147972, the +200 Kinetic Energy beside 177873 in 53865."
+grade = "guess"
+gap = "Read from the rows only: the client applies no Proxy itself (`Spell4Effects.effectType.26`), so no client code reads dataBits06 for one, and nothing shows whether the gate is on the caster or the target, or what retail did when it failed. A retail recording of Discharge, which 212838 gates, would show it."
+
 ["opcode.0x7ff.root_parent"]
 statement = "Message 0x7ff's root and parent Spell4 ids are kept with the cast. A non-zero parent marks a triggered (child) cast: the go's test of whether the cast is its caster's current cast takes that path for a child, a ChargeRelease child's first go starts the parent spell's cooldowns instead of its own, and when a threshold cast (PressHold, RapidTap, ChargeRelease) of the player's ends, the parent's threshold state is cleared (the cast's own spell's when the parent is 0). The root is read only for threshold casts, as the key of the threshold lookup. For a Normal cast neither changes what the client shows. A child cast whose caster is the player sent as 0x7ff starts no global cooldown for the nine abilities' children, whose global cooldown kind is 3."
 proof = "HandleSpellStart 0x1405a51a0 (saved C) copies 0x7ff's fields into the cast record (spell id, root, parent at its first three words). InitCast 0x14053d1f0: 0x14053d210 add rcx, 0x68; 0x14053d232 call 0x14053d550, which copies the record word by word (0x14053d554 mov eax, dword ptr [rdx + 0x4]; 0x14053d55a mov eax, dword ptr [rdx + 0x8]). Readers of the parent (cast offset 0x70): ApplySpellGo 0x14053e5a0 (saved C, the 'parent != 0' term of the current-cast test; castMethod 7 -> 0x1403acd90 of the parent, then StartSpellCooldowns 0x14046b1e0), 0x14053e1b0 (parent, else the spell id at 0x130, to 0x1403bef30 with 1, for castMethods 2, 6, 7 when the player is the caster). Reader of the root (cast offset 0x6c): 0x140546e60 passes it to 0x1403bfb60 for castMethods 2, 6, 7. Global cooldown kinds: StartGlobalCooldown 0x14046afc0 acts only for kinds 0 and 1; Spell4 30900, 38780, 38781, 42297, 34775, 35886, 30436 have globalCooldownEnum 3."
@@ -8221,10 +8227,58 @@ grade = "fairly sure"
 gap = "That dataBits00 uses the innate cost numbering rests on the names (Resource1 for the Esper's Psi Points, the Warrior's Kinetic Energy) and on CheckInnateCost's mapping, not on server code. dataBits05 (-1.0 on the Stalker passives' vital 8 rows) and dataBits09 are not read."
 
 ["Prerequisite.prerequisiteTypeId.15"]
-statement = "Prerequisite type 15 tests a buff of the spell in its value: comparison 1 passes when the unit holds it, 2 when it does not. Rampage's waiver 19750 (comparison 1, Overdrive 42908) passes in Overdrive; Relentless Strikes' 180 Kinetic Energy (24581, comparison 2, 42908) applies outside Overdrive; Energize's +4 (43811, comparison 2, Power Cadence 58999) and its ticking +1 (43812, comparison 1) exclude each other. Type 28 with comparison 1 is 'in combat' (failure texts 558197 and PrerequisiteType 28's 78875 'You must be in combat'); type 59 compares the stack count of the buff in objectId (33154, 32921: 42569 against 2)."
-proof = "`gleam run -m genesis_prime/table_rows -- Prerequisite` rows 19750, 24581, 24582, 24604, 43811, 43812, 37067, 903, 33154, 32921 (printed by scratch prereq.py); `-- PrerequisiteType` 15 (78863 'Spell requirements not met'), 28 (78875), 59; spell names by `-- Spell4`. Proxy dataBits06 names the prerequisite: 80382's Proxies 212835 (dataBits06 33154) and 212838 (32921)."
+statement = "Prerequisite type 15: the unit is under the spell in the condition's value, that is, it is a target of a live cast of that Spell4 id (any caster's). Comparison 1 passes when such a cast is found, 2 when none is; any other comparison fails, and no unit fails. The condition's objectId is not read, so row 43811's objectId0 732 plays no part, and value 0 is no special case (it matches no cast: comparison 1 fails, 2 passes). It does not test the unit's own cast (that is type 191). Type 279 is the same test on the unit and the second unit of the check, passing only when both pass. The rows read so: 19750 (Rampage's waiver) passes under Overdrive 42908; 24581 (Relentless Strikes' 180 Kinetic Energy) passes when not under 42908, its second condition dropped because its type is 0; 24582 passes when not under 42908 nor 60947 and under 59208; 43811 (Energize's +4) passes when not under Power Cadence 58999, 43812 (its +1) when under it."
+proof = "Listing (llvm-objdump of WildStar64.exe): EvaluatePrerequisiteCondition 0x1404a2100 jumps by the table at image + 0x4a4848 (0x1404a2149), whose entry for type 15 is 0x1404a2a62: 0x1404a2a62 mov r9d, [rsi+0xc] (value); 0x1404a2a66 mov r8d, [rsi+4] (comparison); 0x1404a2a6a mov rdx, [rdx] (the check's first unit); call 0x1404a4ec0; the condition's 8 (objectId) is not loaded. Type 279 (saved C 0x1404a2100.c, hash 5c0332ef738ce6d5, case 0x117; listing 0x1404a2a79-0x1404a2aaa): the same call on unit [rdx] and then [rbx+8], result 1 only when both are non-zero. PrerequisiteUnitUnderSpell 0x1404a4ec0: 0x1404a4ed0 test rdx, rdx -> 0; 0x1404a4ee7 mov rbx, [rdx+0x15c8]; loop 0x1404a4f00 mov rcx, [rbx+0x38]; call [rax+8]; cmp eax, ebp (value); je found; mov rbx, [rbx+0x18]; then dec esi (comparison 1 -> found), dec esi (2 -> sete on found = 0), else 0. The unit's 0x15c8 list is the cast target nodes InitCastTargetNode 0x140717990 links (node 0x38 = the cast, node 0x18 = next in the unit's list). The cast's vtable 0x140b6c608 (set by the cast constructor 0x14053c500, which CreateCast 0x140561780 calls) has slot 8 = 0x1402f61d0 (read from the client's bytes by scratch vt.py): mov eax, [rcx+0x130]; ret. InitCast 0x14053d1f0 (saved C, hash 5c0332ef738ce6d5) sets cast 0x130 = word 0 of the spell record, which FillSpellRecord 0x140568540 copies from Spell4 row word 0, the ID. The check's first unit: entry 0x14049bf10 (slot 0x18 of the prerequisite class, as CheckCasterVitalRequirements 0x1403b1780 calls it with the caster) puts its unit, or the player when none, in units[0] (saved C line 30). Rows: `gleam run -m genesis_prime/table_rows -- Prerequisite 24581 24582 43811 43812 19750`."
+grade = "fairly sure"
+gap = "When a target node leaves the unit's 0x15c8 list (when its cast ends, or when the cast's effects on that unit end) was not read, so whether 'under the spell' lasts exactly as long as the buff the player sees is open. Reading the unlink of node 0x10/0x18 (the target node's destructor or the cast's end) settles it."
+
+["Prerequisite.prerequisiteTypeId.28"]
+statement = "Prerequisite type 28 with comparison 1 is 'in combat'."
+proof = "Failure texts 558197 and PrerequisiteType 28's 78875 'You must be in combat' (`gleam run -m genesis_prime/table_rows -- PrerequisiteType 28`); rows 37067, 903 (`-- Prerequisite 37067 903`)."
 grade = "guess"
-gap = "Read from paired rows and names, not from the client's prerequisite evaluator (param_4 slot 0x18 in CheckCasterVitalRequirements 0x1403b1780). Reading its cases 15, 28 and 59 and the comparison codes settles it."
+gap = "Read from names, not from case 0x1c of EvaluatePrerequisiteCondition 0x1404a2100, which reads the unit's 0x2ac; reading that case settles it."
+
+["Prerequisite.prerequisiteTypeId.59"]
+statement = "Prerequisite type 59 compares the stack count of the buff in objectId with the value (rows 33154, 32921: 42569 against 2)."
+proof = "`gleam run -m genesis_prime/table_rows -- Prerequisite 33154 32921`; Proxy dataBits06 names the prerequisite: 80382's Proxies 212835 (dataBits06 33154) and 212838 (32921)."
+grade = "guess"
+gap = "Read from rows and names, not from case 0x3b of EvaluatePrerequisiteCondition 0x1404a2100, which calls 0x1404a4f60 with (unit, comparison, objectId, value); reading that function settles it."
+
+["Prerequisite.flags"]
+statement = "A Prerequisite row's conditions are read in order and stop at the first whose type is 0: that condition and every later one are dropped, whatever their comparison or value (row 24581's second condition, comparison 2 and value 60947, is never tested). The row passes when all kept conditions pass, or, with flags bit 0 set, when any does; a row with no kept condition passes (bit 0 clear) or fails (bit 0 set), and a prerequisite id with no row fails. Other flags bits are not read by the check. Evaluation stops at the first condition that decides the result."
+proof = "Saved C (hash 8eb22adb6de47956): FillPrerequisiteRecord 0x1404a5190 copies row word 0 (ID) to record 0 and word 1 (flags) to record 4, then for i = 0..2 returns when row word 2+i (prerequisiteTypeId_i) is 0, else stores a 16-byte condition {type, comparison = word 5+i, objectId = word 8+i, value = word 11+i} at record 8+8i. LoadPrerequisites 0x1404a5240 builds one record per Prerequisite row in a map keyed by ID. EvaluatePrerequisite 0x1404a1ca0: id not in the map -> 0; AND when (record byte 4 & 1) == 0; for each non-null condition up to 3 it calls EvaluatePrerequisiteCondition 0x1404a2100 and, unless the debug-trace flag (evaluator 0x6c) is set, breaks on the first 0 (AND) or non-zero (OR); the result is the AND (start 1) or OR (start 0) of the results gathered. Rows: `gleam run -m genesis_prime/table_rows -- Prerequisite 24581 24582 43811 43812 19750` (all flags 0)."
+grade = "sure"
+
+["0x1404a2100"]
+statement = "Tests one prerequisite condition {type, comparison, objectId, value} against the check's units, by its type. A type of 0 or above 295 fails, and so does each type from 1 to 295 that has no case (17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284). Type 11 tests another prerequisite by the condition's objectId, inverted when the comparison is 2."
+proof = "Listing: 0x1404a2111 xor ebp, ebp (the result); 0x1404a2120 dec eax; cmp eax, 0x126; ja 0x1404a4817 (return ebp). Jump table at image + 0x4a4848 (read by scratch jt.py): the entries for 17, 21, 32 and 284 are 0x1404a4802, the common exit, which returns ebp; the missing types are the case labels absent from saved C 0x1404a2100.c (hash 5c0332ef738ce6d5, 271 cases). Case 0xb: EvaluatePrerequisite 0x1404a1ca0 on param_3[2], result inverted when param_3[1] == 2."
+grade = "sure"
+name = "EvaluatePrerequisiteCondition"
+
+["0x1404a1ca0"]
+statement = "Evaluates a prerequisite by its Prerequisite id: the AND of its conditions, or their OR when its flags bit 0 is set; an id with no row fails. See Prerequisite.flags."
+proof = "As Prerequisite.flags. Listing: 0x1404a1d33 test byte [rbp+4], 1 (the record's flags, AND when clear); 0x1404a1d55 test r8, r8 (no condition left ends the loop); 0x1404a1d60 call 0x1404a2100; 0x1404a1d6b cmp dword [rsi+0x6c], 0 (debug trace: no early stop); 0x1404a1d80 cmp ebx, 3."
+grade = "sure"
+name = "EvaluatePrerequisite"
+
+["0x1404a5190"]
+statement = "Makes a prerequisite's record from its Prerequisite row: the id, the flags and up to three conditions, stopping at the first condition whose type is 0. See Prerequisite.flags."
+proof = "As Prerequisite.flags. Listing: 0x1404a51d0 cmp dword [rbx], 0 (the row's prerequisiteTypeId_i); 0x1404a51d3 je 0x1404a521e (return, no later condition made); 0x1404a5219 cmp esi, 3."
+grade = "sure"
+name = "FillPrerequisiteRecord"
+
+["0x1404a5240"]
+statement = "Loads every Prerequisite row into the evaluator's map, keyed by the row's ID."
+proof = "Saved C 0x1404a5240.c (hash 8eb22adb6de47956): row count from the Prerequisite table (0x140225760 loads DB\\Prerequisite.tbl), a 0x20-byte record per row filled by FillPrerequisiteRecord 0x1404a5190, inserted into the map at evaluator 8 under the record's word 0."
+grade = "sure"
+name = "LoadPrerequisites"
+
+["0x1404a4ec0"]
+statement = "Prerequisite types 15 and 279: whether a unit is a target of a live cast of a Spell4 id, by comparison 1 (is) or 2 (is not). See Prerequisite.prerequisiteTypeId.15."
+proof = "As Prerequisite.prerequisiteTypeId.15."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.15: when a target node leaves the unit's list is not read."
+name = "PrerequisiteUnitUnderSpell"
 
 ["0x1405c8ec0"]
 statement = "Refreshes an action bar shortcut's usable state. For an ability shortcut (types 3, 4 and 13) it finds the ability item by its Spell4Base id and runs the press check without sending (CastAbilityBagSpell with validate-only 1) into the shortcut's own result list, in collect-all mode: the list's failures are cleared and its collect flag set, so every check's refusal is recorded, not only the first. It then hands the list to the shortcut's display step (ShortcutShowCastResults). Items (type 1) and other kinds run the same check through ValidateCast with their own spell. The ability bar's greyed look comes only from this check; the ActionBarFrame Lua sets no usable state."

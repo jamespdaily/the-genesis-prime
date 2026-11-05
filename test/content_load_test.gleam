@@ -303,6 +303,8 @@ pub fn the_load_puts_each_playable_classs_resource_in_a_term_test() -> Nil {
       start: 100.0,
       regen: option.Some(class_resource.Regen(per_tick: 7.0, tick_ms: 1000)),
       refill_after_combat_ms: option.None,
+      drain: option.None,
+      empty_after_combat_ms: option.None,
     )
     as "the design: Suit Power in slot 3, 100, full at the start, +7 each second"
 }
@@ -310,7 +312,10 @@ pub fn the_load_puts_each_playable_classs_resource_in_a_term_test() -> Nil {
 pub fn a_playable_class_with_no_max_row_stops_the_load_naming_it_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(database, "delete from class_resource where class_id = 3")
+  change(
+    database,
+    "delete from class_resource where class_id = 3 and name = 'max'",
+  )
   let #(loaded, _key) = load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "a playable class with no maximum stops the start (the design, test 14)"

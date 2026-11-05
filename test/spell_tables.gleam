@@ -41,6 +41,13 @@
 ////   1073 to 1075. Shred's two Proxies, 38767 and 39467, each hold one Physical
 ////   damage effect aimed at the area (Spell4Effects 83788 and 86439: parameters
 ////   12 0.0967 and 10 4.22).
+//// - The gains (`Spell4Effects.effectType.1`): 56858 (+1 of vital 6) in 30900;
+////   Relentless Strikes' stage spells 70033, 70045 and 70054 proxy 53865 at the
+////   area (177057, 177099, 177122), which holds 127603 (+180, behind 24581),
+////   147972 (+200, behind 24582) and the Proxy 177873 to 60947, whose dataBits06
+////   names 24582 (`Spell4Effects.effectType.26.dataBits06`); 60947's own effect,
+////   147971 of type 17, is not planted. The Prerequisite rows 24581, 24582, 43811
+////   and 43812 (`gain_prerequisite_rows`).
 //// - Charged Shot 34718: ChargeRelease with a thresholdTime of 8200 and the stages
 ////   of Spell4Thresholds 125, 123 and 124.
 
@@ -48,6 +55,7 @@ import database_support
 import genesis_prime/game/spell_plan
 import genesis_prime/table/class
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -81,6 +89,7 @@ pub type Rows {
     spell_phases: List(List(Cell)),
     spell_cool_downs: List(List(Cell)),
     classes: List(List(Cell)),
+    prerequisites: List(List(Cell)),
   )
 }
 
@@ -176,6 +185,7 @@ fn property_flags(id: Int) -> Int {
     58_591 -> 0x4000102
     41_438 -> 0x4000103
     34_355 -> 0x3
+    69_450 -> 0x1
     42_297 | 30_436 -> 0x100
     32_812 -> 0x4100003
     38_791 -> 0x4000003
@@ -190,7 +200,7 @@ fn property_flags(id: Int) -> Int {
     34_720 | 38_779 -> 0x4000003
     34_722 | 36_691 -> 0x3
     37_302 -> 0x4220002
-    80_382 -> 0x100000
+    80_382 | 53_865 -> 0x100000
     43_498 | 43_499 -> 0x4000000
     70_033 | 70_045 | 70_054 | 70_135 | 71_392 | 71_393 | 71_394 -> 0x4000002
     _ -> 0
@@ -200,11 +210,14 @@ fn property_flags(id: Int) -> Int {
 /// Spell4.spell4ConditionsIdCaster of the planted rows and of the novice tables'
 /// spells, as `table_rows -- Spell4 <id>` prints it
 /// (`Spell4.spell4ConditionsIdCaster`): 43 for the abilities and most stages, 1
-/// for 34355, the creature attack 5649 and most children, 4 for 30900 and 42297.
+/// for 34355, the creature attack 5649 and most children, 4 for 30900 and 42297,
+/// and none (0) for 60947.
 pub fn caster_conditions(id: Int) -> Int {
   case id {
     30_900 | 42_297 -> 4
+    60_947 -> 0
     25_190
+    | 53_865
     | 30_436
     | 34_355
     | 34_775
@@ -359,6 +372,132 @@ pub fn proxy_behind_prerequisite(
   ])
 }
 
+/// A Spell4Effects row of a VitalModifier (type 1) aimed at the caster: the vital
+/// (dataBits00) and the amount (dataBits01 and dataBits02, which hold the same
+/// number in every starting-kit row), its delay, phases and caster prerequisite
+/// (`Spell4Effects.effectType.1`).
+pub fn vital_modifier_row(
+  id id: Int,
+  spell spell: Int,
+  vital vital: Int,
+  amount amount: Int,
+  delay delay: Int,
+  phases phases: Int,
+  prerequisite prerequisite: Int,
+  order order: Int,
+) -> List(Cell) {
+  vital_modifier_row_with(
+    id:,
+    spell:,
+    vital:,
+    amount:,
+    delay:,
+    phases:,
+    prerequisite:,
+    order:,
+    more: [],
+  )
+}
+
+/// The same with more columns set, such as `tickTime`, `durationTime` or
+/// `targetFlags`.
+pub fn vital_modifier_row_with(
+  id id: Int,
+  spell spell: Int,
+  vital vital: Int,
+  amount amount: Int,
+  delay delay: Int,
+  phases phases: Int,
+  prerequisite prerequisite: Int,
+  order order: Int,
+  more more: List(#(String, Int)),
+) -> List(Cell) {
+  let set = list.map(more, fn(column) { column.0 })
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(spell)),
+    #("effectType", Integer(1)),
+    #("delayTime", Integer(delay)),
+    #("phaseFlags", Integer(phases)),
+    #("dataBits00", Integer(vital)),
+    #("dataBits01", Integer(amount)),
+    #("dataBits02", Integer(amount)),
+    #("prerequisiteIdCasterApply", Integer(prerequisite)),
+    #("orderIndex", Integer(order)),
+    ..list.append(
+      case list.contains(set, "targetFlags") {
+        True -> []
+        False -> [#("targetFlags", Integer(1))]
+      },
+      list.map(more, fn(column) { #(column.0, Integer(column.1)) }),
+    )
+  ])
+}
+
+/// A Proxy effect aimed at the caster whose dataBits06 names a prerequisite
+/// (`Spell4Effects.effectType.26.dataBits06`), with no apply prerequisite.
+pub fn proxy_by_data_bits06(
+  id id: Int,
+  spell spell: Int,
+  phases phases: Int,
+  data data: Int,
+  prerequisite prerequisite: Int,
+  order order: Int,
+) -> List(Cell) {
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(spell)),
+    #("targetFlags", Integer(1)),
+    #("effectType", Integer(26)),
+    #("phaseFlags", Integer(phases)),
+    #("dataBits00", Integer(data)),
+    #("dataBits06", Integer(prerequisite)),
+    #("orderIndex", Integer(order)),
+  ])
+}
+
+/// A Prerequisite row: its id, flags and conditions as (type, comparison,
+/// objectId, value).
+pub fn prerequisite_row(
+  id id: Int,
+  flags flags: Int,
+  conditions conditions: List(#(Int, Int, Int, Int)),
+) -> List(Cell) {
+  planted_table.row(prerequisite.schema, [
+    #("ID", Integer(id)),
+    #("flags", Integer(flags)),
+    ..list.flatten(
+      list.index_map(conditions, fn(condition, index) {
+        let number = int.to_string(index)
+        [
+          #("prerequisiteTypeId" <> number, Integer(condition.0)),
+          #("prerequisiteComparisonId" <> number, Integer(condition.1)),
+          #("objectId" <> number, Integer(condition.2)),
+          #("value" <> number, Integer(condition.3)),
+        ]
+      }),
+    )
+  ])
+}
+
+/// The Prerequisite rows the planted gains name, each the client's (`table_rows --
+/// Prerequisite 24581 24582 43811 43812`).
+pub fn gain_prerequisite_rows() -> List(List(Cell)) {
+  [
+    prerequisite_row(id: 24_581, flags: 0, conditions: [
+      #(15, 2, 0, 42_908),
+      #(0, 2, 0, 60_947),
+    ]),
+    prerequisite_row(id: 24_582, flags: 0, conditions: [
+      #(15, 2, 0, 42_908),
+      #(15, 2, 0, 60_947),
+      #(15, 1, 0, 59_208),
+    ]),
+    prerequisite_row(id: 43_811, flags: 0, conditions: [#(15, 2, 732, 58_999)]),
+    prerequisite_row(id: 43_812, flags: 0, conditions: [#(15, 1, 0, 58_999)]),
+  ]
+}
+
 /// A SpellPhase row of an owner: its delay, flags and place in the owner's order.
 pub fn phase_row(
   id id: Int,
@@ -468,6 +607,26 @@ pub fn rows() -> Rows {
       },
     ),
     spell4: [
+      spell4_row(
+        id: 53_865,
+        base: 35_316,
+        cast_time: 0,
+        cooldown: 0,
+        range: 99.0,
+        cost: #(0, 0),
+        kind: 3,
+        global: 100,
+      ),
+      spell4_row(
+        id: 60_947,
+        base: 39_233,
+        cast_time: 0,
+        cooldown: 0,
+        range: 0.0,
+        cost: #(0, 0),
+        kind: 3,
+        global: 0,
+      ),
       spell4_row(
         id: 58_591,
         base: 38_017,
@@ -904,7 +1063,7 @@ pub fn rows() -> Rows {
         kind: 3,
         global: 121,
         cost: #(0, 0),
-        more: [],
+        more: [#("spell4AoeTargetConstraintsId", area_id(70_033))],
       ),
       method_spell_row(
         id: 70_045,
@@ -914,7 +1073,7 @@ pub fn rows() -> Rows {
         kind: 3,
         global: 121,
         cost: #(0, 0),
-        more: [],
+        more: [#("spell4AoeTargetConstraintsId", area_id(70_045))],
       ),
       method_spell_row(
         id: 70_054,
@@ -924,7 +1083,7 @@ pub fn rows() -> Rows {
         kind: 3,
         global: 121,
         cost: #(0, 0),
-        more: [],
+        more: [#("spell4AoeTargetConstraintsId", area_id(70_054))],
       ),
       method_spell_row(
         id: 70_135,
@@ -969,6 +1128,8 @@ pub fn rows() -> Rows {
     ]
       |> list.sort(by_id),
     spell4_base: [
+      base_row(id: 35_316, method: 0, weapon: 0, bar: 0, class: 1),
+      base_row(id: 39_233, method: 0, weapon: 0, bar: 0, class: 1),
       base_row(id: 38_017, method: 0, weapon: 0, bar: 0, class: 1),
       base_row(id: 25_635, method: 0, weapon: 1, bar: 0, class: 2),
       base_row(id: 25_473, method: 1, weapon: 1, bar: 1, class: 2),
@@ -1020,15 +1181,73 @@ pub fn rows() -> Rows {
     ]
       |> list.sort(by_id),
     spell4_effects: [
-      effect_row(
+      vital_modifier_row(
         id: 56_858,
         spell: 30_900,
-        type_: 1,
-        target_flags: 1,
+        vital: 6,
+        amount: 1,
         delay: 10,
         phases: 1,
-        data: 6,
+        prerequisite: 0,
         order: 0,
+      ),
+      vital_modifier_row(
+        id: 127_603,
+        spell: 53_865,
+        vital: 6,
+        amount: 180,
+        delay: 10,
+        phases: 1,
+        prerequisite: 24_581,
+        order: 0,
+      ),
+      vital_modifier_row(
+        id: 147_972,
+        spell: 53_865,
+        vital: 6,
+        amount: 200,
+        delay: 10,
+        phases: 1,
+        prerequisite: 24_582,
+        order: 1,
+      ),
+      proxy_by_data_bits06(
+        id: 177_873,
+        spell: 53_865,
+        phases: -1,
+        data: 60_947,
+        prerequisite: 24_582,
+        order: 2,
+      ),
+      effect_row(
+        id: 177_057,
+        spell: 70_033,
+        type_: 26,
+        target_flags: 4,
+        delay: 0,
+        phases: 1,
+        data: 53_865,
+        order: 1,
+      ),
+      effect_row(
+        id: 177_099,
+        spell: 70_045,
+        type_: 26,
+        target_flags: 4,
+        delay: 0,
+        phases: 1,
+        data: 53_865,
+        order: 1,
+      ),
+      effect_row(
+        id: 177_122,
+        spell: 70_054,
+        type_: 26,
+        target_flags: 4,
+        delay: 0,
+        phases: 1,
+        data: 53_865,
+        order: 1,
       ),
       effect_row(
         id: 62_007,
@@ -1533,6 +1752,7 @@ pub fn rows() -> Rows {
       class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16]),
       class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16]),
     ],
+    prerequisites: gain_prerequisite_rows(),
   )
 }
 
@@ -1583,6 +1803,7 @@ fn entries() -> List(table_store.Entry) {
     telegraph_damage.entry(),
     spell_phase.entry(),
     spell_cool_down.entry(),
+    prerequisite.entry(),
     class.entry(),
   ]
 }
@@ -1605,6 +1826,7 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell_phase.schema, rows.spell_phases),
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),
+    planted_table.file(prerequisite.schema, rows.prerequisites),
   ]
 }
 
@@ -1637,6 +1859,85 @@ pub fn with_loaded_deriving(
   let result = body(tables)
   table_store.unload(tables)
   result
+}
+
+/// The planted rows with Energize, 69450, as a level-1 ability of the Medic. The
+/// SpellLevel row 99418 is test data, not the client's: the client holds no
+/// SpellLevel row for 69450 (`table_rows -- SpellLevel spell4Id=69450`), which only
+/// 78462 reaches, by an effect of type 137. Its Spell4, Spell4Base and VitalModifier
+/// rows are the client's (`table_rows -- Spell4 69450`, `-- Spell4Base 46615`,
+/// `-- Spell4Effects spellId=69450`); its effects of types 11 and 118 and its
+/// Proxies 228915 and 228917, behind prerequisites, are not planted.
+pub fn rows_with_energize() -> Rows {
+  let rows = rows()
+  Rows(
+    ..rows,
+    spell_levels: [
+      planted_table.row(spell_level.schema, [
+        #("ID", Integer(99_418)),
+        #("classId", Integer(4)),
+        #("characterLevel", Integer(1)),
+        #("prerequisiteId", Integer(0)),
+        #("spell4Id", Integer(69_450)),
+      ]),
+      ..rows.spell_levels
+    ],
+    spell4: sorted_by_id([
+      method_spell_row(
+        id: 69_450,
+        base: 46_615,
+        cast_time: 0,
+        cooldown: 30_000,
+        kind: 3,
+        global: 0,
+        cost: #(0, 0),
+        more: [],
+      ),
+      ..rows.spell4
+    ]),
+    spell4_base: sorted_by_id([
+      planted_table.row(spell4_base.schema, [
+        #("ID", Integer(46_615)),
+        #("classIdPlayer", Integer(4)),
+        #("spell4ValidTargetId", Integer(1)),
+      ]),
+      ..rows.spell4_base
+    ]),
+    spell4_effects: sorted_by_id([
+      vital_modifier_row(
+        id: 228_910,
+        spell: 69_450,
+        vital: 6,
+        amount: 4,
+        delay: 0,
+        phases: -1,
+        prerequisite: 43_811,
+        order: 0,
+      ),
+      vital_modifier_row_with(
+        id: 228_918,
+        spell: 69_450,
+        vital: 6,
+        amount: 1,
+        delay: 0,
+        phases: -1,
+        prerequisite: 43_812,
+        order: 7,
+        more: [#("tickTime", 2000), #("durationTime", 8000)],
+      ),
+      ..rows.spell4_effects
+    ]),
+  )
+}
+
+/// The plans of `rows_with_energize`.
+pub fn plans_with_energize() -> spell_plan.Plans {
+  let assert Ok(plans) =
+    with_loaded(rows: rows_with_energize(), body: fn(tables) {
+      spell_plan.build(tables:)
+    })
+    as "the planted rows with Energize build"
+  plans
 }
 
 /// The plans the planted rows build, built once per run from one load of the

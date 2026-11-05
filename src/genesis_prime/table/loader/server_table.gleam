@@ -87,6 +87,9 @@ import gleam/erlang/reference.{type Reference}
 /// - GameFormula and UnitProperty2: the hit rule's rating formulas and a player's
 ///   bases (genesis_prime/game/rating); with CreatureLevel and the creature tables, a
 ///   creature's defence (genesis_prime/world_map/spawn).
+/// - Prerequisite: the gate of a spell's resource gains (genesis_prime/game/spell_plan)
+///   and the caster prerequisite of a creature attack's damage effects, which the
+///   content load reads (genesis_prime/world_map/creature_attack).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -118,6 +121,7 @@ pub fn entries() -> List(store.Entry) {
     item_display_source_entry.entry(),
     item_slot.entry(),
     path_mission.entry(),
+    prerequisite.entry(),
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),
@@ -144,14 +148,11 @@ pub fn entries() -> List(store.Entry) {
 ///   (genesis_prime/world_map/spawn).
 /// - World: the worlds a map can run in, each of which gets a term of its spawns
 ///   (genesis_prime/world_map/spawn).
-/// - Prerequisite: the caster prerequisite of a creature attack's damage effects
-///   (genesis_prime/world_map/creature_attack).
 fn content_entries() -> List(store.Entry) {
   [
     creature2_outfit_info.entry(),
     faction2.entry(),
     faction2_relationship.entry(),
-    prerequisite.entry(),
     world.entry(),
   ]
 }

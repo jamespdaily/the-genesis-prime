@@ -1,16 +1,21 @@
 //// The classes' resources the tests' connections are made with: the rows of
-//// migration 0011, as the step's design gives them (issue 403, the Design
-//// artifact's values table), selected as the content load selects them. A test's
+//// migrations 0011 and 0012, as the steps' designs give them (issues 403 and 418,
+//// their Design artifacts' values), selected as the content load selects them. A test's
 //// expected values name the design or the client, never this module.
 
 import genesis_prime/game/class_resource.{type Classes, type Resource, Row}
 import genesis_prime/table/id.{ClassId}
 
-/// The rows of migration 0011.
+/// The rows of migrations 0011 and 0012, in class and name order.
 pub fn rows() -> List(class_resource.Row) {
   [
+    Row(class_id: 1, name: "drain_after_ms", value: 1500.0, unit: "ms"),
+    Row(class_id: 1, name: "drain_amount", value: 150.0, unit: "points"),
+    Row(class_id: 1, name: "drain_period_ms", value: 1000.0, unit: "ms"),
+    Row(class_id: 1, name: "drain_tick_ms", value: 1000.0, unit: "ms"),
     Row(class_id: 1, name: "max", value: 1000.0, unit: "points"),
     Row(class_id: 2, name: "max", value: 100.0, unit: "points"),
+    Row(class_id: 3, name: "empty_after_combat_ms", value: 10_000.0, unit: "ms"),
     Row(class_id: 3, name: "max", value: 5.0, unit: "points"),
     Row(class_id: 4, name: "max", value: 4.0, unit: "points"),
     Row(class_id: 4, name: "refill_after_combat_ms", value: 3000.0, unit: "ms"),
@@ -28,7 +33,7 @@ pub fn rows() -> List(class_resource.Row) {
 /// The rows selected.
 pub fn classes() -> Classes {
   let assert Ok(classes) = class_resource.select(rows: rows())
-    as "migration 0011's rows select"
+    as "the migrations' rows select"
   classes
 }
 

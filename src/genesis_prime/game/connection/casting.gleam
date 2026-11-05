@@ -176,8 +176,9 @@ fn carry_cast(
 
 /// The connection's effects for what the cast rule decided, with the session as
 /// they leave it: a write, a tell of news to a viewer in the run of the player's
-/// map, a timer or a log line, a press's costs paid from the class resource
-/// (genesis_prime/game/connection/resource), and a go asked, which selects and strikes its targets
+/// map, a timer or a log line, a press's costs paid from the class resource and a
+/// go's gains given to it (genesis_prime/game/connection/resource), and a go asked,
+/// which selects and strikes its targets
 /// (`strike_begins`). A tell with no player in the world is dropped.
 pub fn cast_effects(
   session session: Session,
@@ -211,6 +212,7 @@ pub fn cast_effects(
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
+      cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
     }
     #(session, list.append(done, more))
   })
