@@ -17,7 +17,7 @@
 //// that request (`listed`, `created`), which refuses one while no such ask is
 //// out. A second 0x07E0 while the
 //// store is asked is the game connection's to hold, with the client's other
-//// frames (test/game_connection_test.gleam).
+//// frames (test/game_connection_select_test.gleam).
 
 import character_support
 import character_tables

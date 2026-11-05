@@ -1,0 +1,1190 @@
+//// What the game connection's rule tests share (`genesis_prime/game/connection`):
+//// the settings, the client's messages built by `game_client`, and the inputs
+//// that bring a connection to each stage, from the hello to a player in the
+//// world, its camp, its fight and its death.
+
+import cast_support
+import character_support
+import character_tables
+import connection_rule_support as support
+import game_client
+import genesis_prime/account_session.{Claim, Claimed, TakenOver}
+import genesis_prime/client_connection.{
+  type Answer, type Message, type News, type PeerNews, type Request, Appeared,
+  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CreatureAppeared,
+  ForStay, FromHandOff, FromMap, FromSessions, FromStore, Moving, PeerNews,
+  Removed, SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved, TellPeer,
+}
+import genesis_prime/connection/cipher.{type Cipher}
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike_tell
+import genesis_prime/game_settings.{GameSettings}
+import genesis_prime/hand_off.{Holder, NoHolder, Taken}
+import genesis_prime/login/guid
+import genesis_prime/message/create_character.{CreateCharacter}
+import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_reason
+import genesis_prime/message/movement_command
+import genesis_prime/message/movement_mode.{MovementMode}
+import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_state_flags.{MovementStateFlags}
+import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/relayed_movement
+import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_create_player.{
+  type UnitCreatePlayer, UnitCreatePlayer,
+}
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/step.{
+  type ConnectionEvent, type ConnectionStep, type Event, type Outcome, CallerId,
+  ConnectionId, EndedBeforeAnswer, Map, NoAnswerInTime, NotRunning, OwnEffect,
+  OwnEvent, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
+}
+import genesis_prime/store.{
+  AccountId, Character, CharacterId, CharacterLoaded, ForMove, ForSelect,
+  ForWorld, Listed, Move, NameStands, NotTheAccounts, PlaceSaved, SavePlace,
+  Unavailable,
+}
+import genesis_prime/table/id.{ClassId, RaceId, Spell4Id}
+import genesis_prime/world_map/creature_kind.{Kind, Kinds}
+import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy}
+import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/spawn
+import genesis_prime/world_map/stay.{type Stay}
+import gleam/dict
+import gleam/int
+import gleam/list
+import gleam/option.{Some}
+import gleam/result
+import map_support
+import message_support
+import place_support
+import spawn_support
+
+/// What the tests' game connections are made with: a realm id and a
+/// character limit the hello and the list must carry, the number of character
+/// slots a create is told, the client's tables and a deadline.
+pub fn settings() -> game_connection.Settings {
+  Settings(
+    realm_id: 5,
+    max_characters: 9,
+    game: GameSettings(camp_countdown_ms: 12_345, character_slots: 3),
+    realm_name: "Test Realm",
+    tables: character_tables.shared(),
+    ask_deadline_ms: 4000,
+    rate: support.roomy(),
+  )
+}
+
+/// The 16 bytes the client shows as its session key: 01 .. 10, as in the
+/// client's vector (vector.opcode.0x58f.body), the wire bytes of the GUID
+/// `support.guid_of(1)` the hand-off is asked for.
+pub fn session_key() -> BitArray {
+  guid.to_wire(support.guid_of(1))
+}
+
+pub fn holder() -> hand_off.Holder {
+  Holder(
+    account_id: AccountId(7),
+    login_name: "jim",
+    game_account_id: support.guid_of(0x11),
+  )
+}
+
+pub fn base() -> Cipher {
+  cipher.base()
+}
+
+pub fn keyed() -> Cipher {
+  game_client.session_cipher(session_key: session_key())
+}
+
+/// The system time every answer of the tests carries, as a FILETIME.
+pub const filetime = 133_900_000_000_000_000
+
+pub fn feed(
+  state state: game_connection.State,
+  event event: Event(ConnectionEvent(Message, Answer)),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  game_connection.step(state, support.input_at(filetime:, event:))
+}
+
+pub fn read(
+  state state: game_connection.State,
+  bytes bytes: BitArray,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  feed(state:, event: step.OwnEvent(step.Read(bytes)))
+}
+
+pub fn answer(
+  state state: game_connection.State,
+  taken taken: ConnectionStep(Request),
+  outcome outcome: Outcome(Answer),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Some(ask) = support.asked(taken) as "the step ends in an ask"
+  feed(state:, event: step.OwnEvent(step.Answered(ask: ask.ask, outcome:)))
+}
+
+/// A connection the server has accepted, made with these settings; the step
+/// is the hello.
+pub fn accepted(
+  settings: game_connection.Settings,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  feed(
+    state: game_connection.new(settings),
+    event: step.OwnEvent(step.Accepted(
+      ConnectionId(1),
+      support.peer,
+      support.seed(1),
+    )),
+  )
+}
+
+pub fn connected() -> game_connection.State {
+  accepted(settings()).0
+}
+
+/// What the client sends first: 0x058F, under the base key.
+pub fn hello_reply() -> BitArray {
+  game_client.hello_reply(session_key: session_key(), account_name: "jim")
+}
+
+/// A message of the client's under the session key.
+pub fn keyed_message(
+  message_id message_id: Int,
+  body body: BitArray,
+) -> BitArray {
+  game_client.client_bytes(message_id:, body:, cipher: keyed())
+}
+
+pub fn select_start() -> BitArray {
+  keyed_message(message_id: 0x07E0, body: <<>>)
+}
+
+/// 0x038C carrying the store-catalog request, as the client sends it after
+/// 0x07E0 (opcode.0x82d: the value 0x13, then a 14-bit value in two bytes).
+pub fn store_request() -> BitArray {
+  keyed_message(
+    message_id: 0x038C,
+    body: game_client.world_body(kind: 0x13, message_id: 0x082D, body: <<
+      0x34,
+      0x12,
+    >>),
+  )
+}
+
+pub fn activity() -> BitArray {
+  keyed_message(message_id: 0x0241, body: <<>>)
+}
+
+/// The connection after the hand-off held the key: Sessions asked to claim
+/// the account.
+pub fn claiming() -> #(game_connection.State, ConnectionStep(Request)) {
+  claiming_from(connected())
+}
+
+/// `fresh`, a connection the server has accepted, after the hand-off held the
+/// key: Sessions asked to claim the account.
+pub fn claiming_from(
+  fresh: game_connection.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = read(state: fresh, bytes: hello_reply())
+  answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
+  )
+}
+
+/// The claim the connection asks Sessions: its account and its id.
+pub fn claim_ask() -> Request {
+  AskSessions(Claim(account: AccountId(7), connection: ConnectionId(1)))
+}
+
+/// Sessions' answer to the claim in `taken`.
+pub fn claimed(
+  state state: game_connection.State,
+  taken taken: ConnectionStep(Request),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed)))
+}
+
+/// The connection after Sessions answered the claim: in character select,
+/// nothing asked.
+pub fn in_select() -> game_connection.State {
+  in_select_from(connected())
+}
+
+/// `fresh`, a connection the server has accepted, after Sessions answered the
+/// claim: in character select, nothing asked.
+pub fn in_select_from(fresh: game_connection.State) -> game_connection.State {
+  let #(state, taken) = claiming_from(fresh)
+  claimed(state:, taken:).0
+}
+
+/// The connection after 0x07E0, with its ask to the store.
+pub fn listing() -> #(game_connection.State, ConnectionStep(Request)) {
+  read(state: in_select(), bytes: select_start())
+}
+
+/// The connection after the store's rows, the list written.
+pub fn listed(
+  characters characters: List(store.Character),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = listing()
+  answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromStore(ForSelect(Listed(characters:)))),
+  )
+}
+
+/// Every message the step writes, as the client reads it: each in a 0x3DC
+/// wrapper, opened under `cipher`.
+pub fn heard(
+  taken taken: ConnectionStep(Request),
+  cipher cipher: Cipher,
+) -> List(Frame) {
+  list.map(support.written_frames(taken), game_client.in_the_game_wrapper(
+    _,
+    cipher,
+  ))
+}
+
+/// The one 0x036A the step writes, under `cipher`, with the connection ended.
+pub fn disconnect(
+  taken taken: ConnectionStep(Request),
+  cipher cipher: Cipher,
+) -> disconnect_reason.DisconnectReason {
+  let assert [Frame(message_id: 0x036A, body:)] = heard(taken:, cipher:)
+    as "one 0x036A in its wrapper, under the cipher the connection holds"
+  let assert Ok(DisconnectNotice(reason:)) = disconnect_notice.decode(body)
+    as "0x036A decodes"
+  assert support.stops(taken) as "the connection ends after 0x036A"
+  reason
+}
+
+pub fn ask_request(taken: ConnectionStep(Request)) -> Request {
+  let assert Some(ask) = support.asked(taken) as "the step ends in an ask"
+  ask.request
+}
+
+/// A stored character whose gender is 2 or 3, which no CharacterCustomization
+/// row has, so its entry holds no body visuals whatever its race
+/// (`character_customization.all` below shows it).
+pub fn character(
+  id id: Int,
+  name name: String,
+  seed seed: Int,
+) -> store.Character {
+  Character(
+    character_id: CharacterId(id),
+    name:,
+    gender: 2 + seed % 2,
+    race_id: RaceId(1 + seed % 30),
+    class_id: ClassId(1 + seed % 20),
+    faction_id: 166 - seed % 2,
+    level: 10 + seed,
+    path: seed % 4,
+    place: Some(place_support.at(
+      world_id: 1000 + seed,
+      world_zone_id: 2000 + seed,
+      x: 1.5,
+      y: 2.5,
+      z: 3.5,
+    )),
+    look: [],
+    bones: [],
+    naming: NameStands,
+  )
+}
+
+/// What each effect of a step is, in order: the bytes of a write are not
+/// compared here, only what kind of effect leaves and when.
+pub fn kinds(taken: ConnectionStep(Request)) -> List(String) {
+  list.map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Write(..)) -> "write"
+      step.Log(..) -> "log"
+      step.Stop -> "stop"
+      OwnEffect(..) | step.Watch(..) | step.Unwatch(..) -> "other"
+    }
+  })
+}
+
+/// A create request for CharacterCreation row 466 with a path of 2 and the
+/// look of labels 2 and 22 (the Exile face of CharacterCustomization row 604).
+pub fn a_create_request(name: String) -> create_character.CreateCharacter {
+  CreateCharacter(
+    ..character_support.create_request(name),
+    path: 2,
+    customisation_labels: [2, 22],
+    customisation_values: [1, 2],
+  )
+}
+
+/// The bytes of a create request as the client sends it: the whole frame of
+/// 0x025B as the body of 0x025C (opcode.0x25c), under the session key.
+pub fn create_message(request: create_character.CreateCharacter) -> BitArray {
+  let assert Ok(body) = create_character.encode(request)
+    as "the request encodes"
+  let assert Ok(plain) = frame.encode(0x025B, body) as "0x025B frames"
+  keyed_message(message_id: 0x025C, body: plain)
+}
+
+pub fn play_message(character_id: Int) -> BitArray {
+  let assert Ok(body) = play_character.encode(PlayCharacter(character_id:))
+    as "0x07DD encodes"
+  keyed_message(message_id: 0x07DD, body:)
+}
+
+/// The connection after 0x07DD for the character, with its ask to the store.
+pub fn playing(
+  character_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  playing_from(in_character_select: in_select(), character_id:)
+}
+
+/// `in_character_select` after 0x07DD for the character, with its ask to the
+/// store.
+pub fn playing_from(
+  in_character_select in_character_select: game_connection.State,
+  character_id character_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  read(state: in_character_select, bytes: play_message(character_id))
+}
+
+/// A Dominion human male, class 2, who stands in World 3460 at the place of
+/// WorldLocation2 row 51596 (the Novice start): its body is the look of
+/// CharacterCustomization row 10 (labels 21 = 2 and 2 = 1, display 137 on slot
+/// 25), and it has the 48 bone values race 1, sex 0 carries
+/// (opcode.0x25b.counts).
+pub fn world_character() -> store.Character {
+  Character(
+    character_id: CharacterId(42),
+    name: "Ab Cd",
+    gender: 0,
+    race_id: RaceId(1),
+    class_id: ClassId(2),
+    faction_id: 166,
+    level: 1,
+    path: 3,
+    place: Some(place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z: -560.18798828125,
+    )),
+    look: character_tables.row_10_look(),
+    bones: character_support.bones(48),
+    naming: NameStands,
+  )
+}
+
+/// The connection after the store gave `character`: the map is asked.
+pub fn joining_as(
+  character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_from(in_character_select: in_select(), character:)
+}
+
+/// `in_character_select` after the store gave `character`: the map is asked.
+pub fn joining_from(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = playing_from(in_character_select:, character_id: 42)
+  answer(
+    state:,
+    taken:,
+    outcome: step.Answer(
+      FromStore(
+        ForWorld(CharacterLoaded(character, character_support.epoch(1))),
+      ),
+    ),
+  )
+}
+
+/// The connection after the store gave the character: the map is asked.
+pub fn joining() -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_as(world_character())
+}
+
+/// The tests' map: the world the tests' character is saved in, and its one
+/// open instance.
+pub fn camp_map() -> MapId {
+  MapId(world_id: 3460, instance: 0)
+}
+
+/// The run of the tests' map.
+pub const incarnation = 77
+
+/// A map of the tests' realm and tables, as the server starts one for the tests'
+/// connections, with four other connections joined, so the next join is unit 5.
+pub fn map_with_four_players() -> map.State {
+  map_run_with_four_players(incarnation)
+}
+
+/// The same as the run `run` of the tests' map.
+pub fn map_run_with_four_players(run: Int) -> map.State {
+  let state =
+    map.new(map.Settings(
+      map: camp_map(),
+      incarnation: run,
+      realm_id: settings().realm_id,
+      tables: settings().tables,
+      spawns: spawn.no_spawns(),
+      kinds: Kinds(
+        default: Kind(
+          respawn_ms: 60_000,
+          attack_spell4_id: Spell4Id(5649),
+          attack_interval_ms: 1500,
+        ),
+        by_creature: dict.new(),
+      ),
+      numbers: spawn_support.numbers,
+      idle_stop_ms: 60_000,
+      sweep_ms: 10_000,
+    ))
+  list.fold([2, 3, 4, 5], state, fn(state, other) {
+    let assert Some(place) = world_character().place
+      as "the tests' character has a saved place"
+    let #(state, _) =
+      map.step(
+        state,
+        support.input(
+          OwnEvent(step.Asked(
+            caller: CallerId(other),
+            message: Join(
+              connection: ConnectionId(other),
+              character: world_character(),
+              place:,
+              stay: viewer_stay(other),
+            ),
+          )),
+        ),
+      )
+    state
+  })
+}
+
+/// The map's answer to the join the connection asked, which the real map gives:
+/// the ask is stepped through a map of the tests' realm and tables with four
+/// other players (`mapped`).
+pub fn map_answer(taken: ConnectionStep(Request)) -> map.Outgoing {
+  mapped(map_state: map_with_four_players(), taken:).1
+}
+
+/// The map's answer to a join of the tests' player, for the tests that need an
+/// answer and read nothing in it.
+pub fn a_join_answer() -> map.Outgoing {
+  map_answer(joining().1)
+}
+
+/// The connection after the map took `character`: the burst is written.
+pub fn entered_as(
+  character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_from(in_character_select: in_select(), character:)
+}
+
+/// `in_character_select` after the map took `character`: the burst is written.
+pub fn entered_from(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = joining_from(in_character_select:, character:)
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
+/// The connection after the map took the player: the burst is written.
+pub fn entered() -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_as(world_character())
+}
+
+/// The connection in the world, with its burst taken.
+pub fn in_world() -> game_connection.State {
+  entered().0
+}
+
+/// The 0x262 among the burst, decoded.
+pub fn player_in(taken: ConnectionStep(Request)) -> UnitCreatePlayer {
+  game_client.unit_create_player_in(frames: heard(taken:, cipher: keyed()))
+}
+
+/// A world message as the client sends it: inside 0x038C, whose first byte is
+/// the 5-bit value 3 of SendWorldMessage (opcode.0x38c), under the session key.
+pub fn world_message(
+  message_id message_id: Int,
+  body body: BitArray,
+) -> BitArray {
+  keyed_message(
+    message_id: 0x038C,
+    body: game_client.world_body(kind: 3, message_id:, body:),
+  )
+}
+
+pub fn move_message(message_id: Int) -> BitArray {
+  keyed_message(message_id:, body: <<0, 0, 0, 0>>)
+}
+
+/// 0x637 holding `commands`, as the client writes it, under the session key.
+pub fn moves_message(
+  commands: List(movement_command.MovementCommand),
+) -> BitArray {
+  world_message(
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: 0x1234, commands:),
+  )
+}
+
+/// A place in World 3460, zone 6009, as `world_character()` has.
+pub fn standing_at(x x: Float, y y: Float, z z: Float) -> Place {
+  place_support.at(world_id: 3460, world_zone_id: 6009, x:, y:, z:)
+}
+
+/// Where `world_character()` is saved: the place of WorldLocation2 row 51596.
+pub fn entry_place() -> Place {
+  standing_at(x: 29.128599166870117, y: -853.87158203125, z: -560.18798828125)
+}
+
+/// The ask of a save of the tests' player: the account and character of the
+/// tests' connection, the epoch its load gave, the save's number and the place.
+pub fn save_asked(sequence sequence: Int, place place: Place) -> Request {
+  AskStore(
+    Move(SavePlace(
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      save_sequence: sequence,
+      place:,
+    )),
+  )
+}
+
+/// The store's answer that a place was saved.
+pub fn place_saved() -> Outcome(Answer) {
+  step.Answer(FromStore(ForMove(PlaceSaved)))
+}
+
+/// The connection after the client moved the player to x, y, z.
+pub fn moved_to(
+  state state: game_connection.State,
+  x x: Float,
+  y y: Float,
+  z z: Float,
+) -> game_connection.State {
+  read(state:, bytes: moves_message([game_client.position_command(x:, y:, z:)])).0
+}
+
+/// The outcomes in which a store ask gets no answer, for a save.
+pub fn no_answers() -> List(Outcome(Answer)) {
+  [
+    step.Answer(FromStore(Unavailable)),
+    NotRunning,
+    NoAnswerInTime,
+    EndedBeforeAnswer,
+  ]
+}
+
+/// A message the client's code never sends, with what makes it so.
+pub fn refused_messages() -> List(#(BitArray, String)) {
+  [
+    #(
+      world_message(message_id: 0x063B, body: <<3, 0, 0, 0>>),
+      "a move speed setting above 2",
+    ),
+    ..refused_moves()
+  ]
+}
+
+/// A 0x637 the client's code never sends, with what makes it so
+/// (`movement_command.position_bound` and the commands' records).
+pub fn refused_moves() -> List(#(BitArray, String)) {
+  let not_a_number = 0x7FC00000
+  let infinity = 0x7F800000
+  let position_of = fn(x, y, z) {
+    movement_command.Position(UnitPositionCommand(x:, y:, z:, blends: 0))
+  }
+  let zero = 0
+  let one = 0x3F800000
+  [
+    #(
+      moves_message([position_of(not_a_number, one, one)]),
+      "a position that is not a number",
+    ),
+    #(moves_message([position_of(one, infinity, one)]), "a height of infinity"),
+    #(moves_message([position_of(zero, 0xFF800000, zero)]), "minus infinity"),
+    #(
+      moves_message([game_client.position_command(x: 0.0, y: -2048.5, z: 0.0)]),
+      "a height below -2048",
+    ),
+    #(
+      moves_message([
+        movement_command.Rotation(MovementRotation(
+          yaw: one,
+          pitch: not_a_number,
+          roll: one,
+          blends: 0,
+        )),
+      ]),
+      "a rotation that is not a number",
+    ),
+    #(
+      moves_message([
+        movement_command.StateFlags(MovementStateFlags(flags: 0x40000)),
+      ]),
+      "state flags above 0x3ffff",
+    ),
+    #(
+      moves_message([movement_command.Mode(MovementMode(mode: 2))]),
+      "a mode other than 0, 1 and 3",
+    ),
+    #(
+      moves_message([
+        game_client.position_command(x: 99.0, y: 99.0, z: 99.0),
+        position_of(one, not_a_number, one),
+      ]),
+      "a refused command after a good one, of which nothing is kept",
+    ),
+  ]
+}
+
+/// The answers a save never gets: those of another group of asks.
+pub fn answers_to_other_asks() -> List(Outcome(Answer)) {
+  [
+    step.Answer(FromStore(ForSelect(Listed([])))),
+    step.Answer(FromStore(ForWorld(NotTheAccounts))),
+    step.Answer(FromHandOff(NoHolder)),
+    step.Answer(FromSessions(Claimed)),
+    step.Answer(FromMap(a_join_answer())),
+  ]
+}
+
+pub fn taken_over() -> Event(ConnectionEvent(Message, Answer)) {
+  OwnEvent(Woken(message: SentBySessions(message: TakenOver)))
+}
+
+/// A connection in character select with its list shown, which Sessions' end
+/// finds with state to keep.
+pub fn in_select_with_a_list() -> game_connection.State {
+  listed(characters: []).0
+}
+
+/// The connection `held` after Sessions ended and the wait ran out: the claim
+/// is out again.
+pub fn claiming_again(
+  held: game_connection.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, _) = feed(state: held, event: WatchEnded(WatchId(1)))
+  let #(state, taken) = feed(state:, event: OwnEvent(TimerFired(TimerId(1))))
+  assert ask_request(taken) == claim_ask()
+  #(state, taken)
+}
+
+/// 0xBF inside 0x038C: one bit, 1 to start a camp and 0 to cancel it
+/// (opcode.0xbf).
+pub fn camp_request_message(start: Bool) -> BitArray {
+  world_message(message_id: 0x00BF, body: case start {
+    True -> <<1>>
+    False -> <<0>>
+  })
+}
+
+/// 0xC0 inside 0x038C: its body is empty (opcode.0xc0).
+pub fn camp_finished_message() -> BitArray {
+  world_message(message_id: 0x00C0, body: <<>>)
+}
+
+/// The connection with the player's camp running, its 0x92 written.
+pub fn camping() -> game_connection.State {
+  read(state: in_world(), bytes: camp_request_message(True)).0
+}
+
+/// The connection after 0xC0 of a running camp: the save is asked.
+pub fn saving_the_camp() -> #(game_connection.State, ConnectionStep(Request)) {
+  read(state: camping(), bytes: camp_finished_message())
+}
+
+/// The connection after the camp's save was answered: the map's run is asked
+/// to let the player leave.
+pub fn leaving_the_map() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = saving_the_camp()
+  answer(state:, taken:, outcome: place_saved())
+}
+
+/// The ask of the player's leave: the run of the map that took the player, 77
+/// (`incarnation`), with the connection's id.
+pub fn leave_asked() -> Request {
+  AskMapRun(
+    map: camp_map(),
+    incarnation:,
+    message: Leave(connection: ConnectionId(1)),
+  )
+}
+
+/// The connection after the map answered `Left`: 0x594 is written and the
+/// client is in character select.
+pub fn camped_out() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = leaving_the_map()
+  answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+}
+
+/// The messages the step writes, as the client reads them.
+pub fn written_ids(taken: ConnectionStep(Request)) -> List(Int) {
+  list.map(heard(taken:, cipher: keyed()), fn(frame) { frame.message_id })
+}
+
+/// The map's answer to the ask in the step, from the map's rule: `map_state`
+/// takes the ask's message as the map's caller 1 and answers it.
+pub fn mapped(
+  map_state map_state: map.State,
+  taken taken: ConnectionStep(Request),
+) -> #(map.State, map.Outgoing) {
+  let message = case ask_request(taken) {
+    AskMap(message:, ..) | AskMapRun(message:, ..) -> message
+    AskStore(..)
+    | AskHandOff(..)
+    | AskSessions(..)
+    | TellMoved(..)
+    | client_connection.TellReady(..)
+    | TellPeer(..)
+    | client_connection.TellStrike(..)
+    | client_connection.TellTargetMoved(..)
+    | client_connection.TellStrikeAnswered(..)
+    | TellChat(..) ->
+      panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
+  }
+  let #(map_state, mapped) =
+    map.step(
+      map_state,
+      support.input(OwnEvent(step.Asked(caller: CallerId(1), message:))),
+    )
+  let assert [#(CallerId(1), outgoing)] = support.replies(mapped)
+    as "the map answers the ask once, to its caller"
+  #(map_state, outgoing)
+}
+
+/// A message for the stay `stay` of the tests' player.
+pub fn for_stay(
+  stay stay: Stay,
+  sent sent: client_connection.StaySent,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  OwnEvent(Woken(ForStay(stay:, sent:)))
+}
+
+/// The same message as `event`, a message for the tests' player's first stay, for
+/// its second: the stay of its next join, after a camp or the Holocrypt.
+pub fn in_second_stay(
+  event: Event(ConnectionEvent(Message, Answer)),
+) -> Event(ConnectionEvent(Message, Answer)) {
+  let assert OwnEvent(Woken(ForStay(sent:, ..))) = event
+    as "a message for a stay"
+  for_stay(stay: map_support.stay(count: 2), sent:)
+}
+
+/// A notice of the map to the connection, for the tests' player's first stay.
+pub fn sent_by_the_map(
+  notice: map.Notice,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  for_stay(stay: own_stay(), sent: SentByMap(notice))
+}
+
+/// The stay of the tests' player's first join: the connection's first.
+pub fn own_stay() -> Stay {
+  map_support.stay(count: 1)
+}
+
+/// The stay of the player of connection `viewer`, as the map's `SeenBy` names it:
+/// its `viewer`th, so each viewer's is its own.
+pub fn viewer_stay(viewer: Int) -> Stay {
+  map_support.stay(count: viewer)
+}
+
+/// News of the unit `unit_id` as its owner sends it to the tests' player.
+pub fn news_of(unit_id unit_id: Int, news news: News) -> PeerNews {
+  PeerNews(unit_id:, news:)
+}
+
+/// News of the tests' player's unit as its connection sends it to a viewer.
+pub fn told(news news: News) -> PeerNews {
+  PeerNews(unit_id: own_unit_id, news:)
+}
+
+/// A move of the unit `unit_id`, stamped `server_time_ms`.
+pub fn moving(
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(relayed_movement.RelayedMovement),
+) -> PeerNews {
+  news_of(unit_id:, news: Moving(server_time_ms:, commands:))
+}
+
+/// A send of another player's connection to the connection, for the tests'
+/// player's first stay.
+pub fn sent_by_a_peer(
+  news: PeerNews,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  for_stay(stay: own_stay(), sent: SentByPeer(news))
+}
+
+/// Another player's unit: the tests' player's own record, as unit 9.
+pub fn another_unit() -> UnitCreatePlayer {
+  UnitCreatePlayer(..player_in(entered().1), unit_id: 9, name: "Zed Other")
+}
+
+pub fn moved_unit_commands() -> List(relayed_movement.RelayedMovement) {
+  [
+    relayed_movement.Position(UnitPositionCommand(
+      x: 0x3F800000,
+      y: 0x40000000,
+      z: 0xC0400000,
+      blends: 1,
+    )),
+    relayed_movement.Mode(MovementMode(mode: 3)),
+  ]
+}
+
+/// What can reach a viewer about the unit 9, from the unit's owner or the map.
+pub type Step {
+  Appears
+  Moves
+  Removes
+  MapSaysGone
+}
+
+pub fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
+  case step {
+    Appears ->
+      sent_by_a_peer(news_of(unit_id: 9, news: Appeared(unit: another_unit())))
+    Moves ->
+      sent_by_a_peer(moving(
+        unit_id: 9,
+        server_time_ms: 7,
+        commands: moved_unit_commands(),
+      ))
+    Removes -> sent_by_a_peer(news_of(unit_id: 9, news: Removed))
+    MapSaysGone -> sent_by_the_map(map.Gone(unit_id: 9))
+  }
+}
+
+/// The tells of a step to the connections of other players: the viewer's
+/// number and the news, in the order of the viewers' numbers.
+pub fn peer_tells(taken: ConnectionStep(Request)) -> List(#(Int, PeerNews)) {
+  list.map(peer_tells_for(taken), fn(tell) { #(tell.0, tell.2) })
+}
+
+/// The same, each with the stay it is told for.
+pub fn peer_tells_for(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, Stay, PeerNews)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Connection(ConnectionId(viewer)),
+        request: TellPeer(stay:, news:),
+      )) -> Ok(#(viewer, stay, news))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+}
+
+/// The tells of a step to the map: where each goes and what it says.
+pub fn told_the_map(
+  taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  list.filter(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(to: Map(..), ..)) -> True
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+}
+
+/// The state after the map told the connection that these connections see its
+/// player.
+pub fn watched_by(
+  state state: game_connection.State,
+  viewers viewers: List(Int),
+) -> game_connection.State {
+  list.fold(viewers, state, fn(state, viewer) {
+    feed(
+      state:,
+      event: sent_by_the_map(SeenBy(
+        by: ConnectionId(viewer),
+        stay: viewer_stay(viewer),
+      )),
+    ).0
+  })
+}
+
+/// The tests' player's unit id: the map's fifth.
+pub const own_unit_id = 5
+
+pub fn zone_group(top_zone_id: Int) -> step.Address {
+  step.ZoneChannel(map: camp_map(), incarnation:, top_zone_id:)
+}
+
+pub fn terrain_loaded_message(world_zone_id: Int) -> BitArray {
+  let assert Ok(body) = terrain_loaded.encode(TerrainLoaded(world_zone_id:))
+  world_message(message_id: terrain_loaded.message_id, body:)
+}
+
+/// The Medic of level 1 in the world, who presses Paralytic Surge at bag index 2.
+pub fn medic_in_world() -> game_connection.State {
+  entered_as(Character(..world_character(), class_id: ClassId(4))).0
+}
+
+/// The 0x262 news of a Beast, as its process sends it, standing 3 m ahead of the
+/// Medic, who stands at the place the tests' character is saved at and faces -z.
+pub fn beast_appears(
+  unit_id unit_id: Int,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z: -563.18798828125,
+    )
+  let beast = spawn_support.beast_at(number: 1, place:)
+  sent_by_a_peer(news_of(
+    unit_id:,
+    news: CreatureAppeared(
+      unit: creature_unit.create(
+        spawn: beast,
+        unit_id:,
+        health: 52,
+        server_time_estimate_start: 0,
+      ),
+      life: 4,
+      place:,
+      hit_radius: beast.combat.hit_radius,
+      attackable: beast.combat.attackable,
+    ),
+  ))
+}
+
+/// A press of Paralytic Surge.
+pub fn press_paralytic_surge(
+  state state: game_connection.State,
+  client_cast_id client_cast_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  read(
+    state:,
+    bytes: world_message(
+      message_id: 0x009A,
+      body: cast_support.press_body(
+        client_cast_id:,
+        bag_index: 2,
+        target: 0,
+        press: 1,
+      ),
+    ),
+  )
+}
+
+/// The strikes a step tells the creatures, as the creature's unit and the strike's key.
+pub fn strikes_told(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, strike_tell.Key)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Creature(unit_id:, ..),
+        request: client_connection.TellStrike(tell:),
+      )) -> Ok(#(unit_id, tell.key))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The creature's answer that a strike landed, as the connection is sent it.
+/// A creature's answer that the strike of `key` landed, for the tests' player's
+/// first stay.
+pub fn landed(
+  key key: strike_tell.Key,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  for_stay(
+    stay: own_stay(),
+    sent: client_connection.SentByTarget(answered: strike_tell.Answered(
+      key:,
+      outcome: strike_tell.Landed(descriptions: []),
+    )),
+  )
+}
+
+/// The creature that fights the tests' player: unit 7 of life 3 in the tests' run.
+pub fn fighter() -> step.Address {
+  step.Creature(map: camp_map(), incarnation:, unit_id: 7, life: 3)
+}
+
+/// A creature's tell of its fight, for the tests' player's first stay.
+pub fn foe(
+  fight: strike_tell.Fight,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  for_stay(stay: own_stay(), sent: client_connection.SentByFoe(fight:))
+}
+
+/// The tells of a step to creatures, as the creature's unit and the request.
+pub fn told_creatures(taken: ConnectionStep(Request)) -> List(#(Int, Request)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(to: step.Creature(unit_id:, ..), request:)) ->
+        Ok(#(unit_id, request))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The sequence numbers of the step's tells of a move to the map.
+pub fn moves_told(taken: ConnectionStep(Request)) -> List(Int) {
+  list.map(told_the_map(taken), fn(effect) {
+    let assert OwnEffect(step.Tell(request: TellMoved(seq:, ..), ..)) = effect
+      as "the step tells the map a move"
+    seq
+  })
+}
+
+pub fn a_move(x: Float) -> BitArray {
+  moves_message([game_client.position_command(x:, y: 2.5, z: 3.5)])
+}
+
+/// A creature's strike, of the Beast's offence (12 Physical), on `unit_id`.
+pub fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
+  foe(
+    strike_tell.Attacks(tell: strike_tell.Strike(
+      key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id:),
+      from: fighter(),
+      striker: strike_tell.CreatureStriker,
+      offence: spawn_support.beast_attack().offence,
+    )),
+  )
+}
+
+/// The connection camped out of the world from `state`: the camp, its save and the
+/// map's `Left`, back in character select.
+pub fn camp_from(state: game_connection.State) -> game_connection.State {
+  let #(state, _) = read(state:, bytes: camp_request_message(True))
+  let #(state, taken) = read(state:, bytes: camp_finished_message())
+  let #(state, taken) = answer(state:, taken:, outcome: place_saved())
+  answer(state:, taken:, outcome: step.Answer(FromMap(Left))).0
+}
+
+/// The frames of these ids, decoded by `decode`.
+pub fn decoded(
+  frames: List(Frame),
+  id: Int,
+  decode: fn(BitArray) -> Result(a, b),
+) -> List(a) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == id {
+      True -> decode(frame.body) |> result.replace_error(Nil)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// A creature's strike on the tests' player that kills it at once: the Beast's
+/// strike with its blow raised to 100000, a blow no creature of the client strikes,
+/// so a test reaches the death in one step. What the death writes does not read
+/// the blow.
+pub fn a_killing_strike() -> Event(ConnectionEvent(Message, Answer)) {
+  let offence = spawn_support.beast_attack().offence
+  foe(
+    strike_tell.Attacks(tell: strike_tell.Strike(
+      key: strike_tell.Key(
+        cast_id: 2_147_500_001,
+        phase: 0,
+        unit_id: own_unit_id,
+      ),
+      from: fighter(),
+      striker: strike_tell.CreatureStriker,
+      offence: spawn_support.dealing(offence:, damage: 100_000),
+    )),
+  )
+}
+
+/// `state`, fought by the Beast 7 and struck dead: the state, and the step of the
+/// killing strike.
+pub fn killed(
+  state: game_connection.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, _) =
+    feed(state:, event: foe(strike_tell.Threatened(unit_id: 7, life: 3)))
+  feed(state:, event: a_killing_strike())
+}
+
+/// The tests' player in the world, seen by connection 2, struck dead.
+pub fn dead_in_world() -> #(game_connection.State, ConnectionStep(Request)) {
+  killed(watched_by(state: in_world(), viewers: [2]))
+}
+
+/// 0x15a for the unit, the choice and the value, inside 0x038C.
+pub fn choice_message(
+  unit_id unit_id: Int,
+  choice choice: Int,
+  value value: Int,
+) -> BitArray {
+  world_message(
+    message_id: 0x015A,
+    body: message_support.choice_body(unit_id:, choice:, value:),
+  )
+}
+
+/// Wake Here, as the Death addon sends it: the player's own unit, 1 and 0.
+pub fn wake_here() -> BitArray {
+  choice_message(unit_id: own_unit_id, choice: 1, value: 0)
+}
+
+/// The Holocrypt, as the Death addon sends it: the player's own unit, 2 and 0.
+pub fn holocrypt() -> BitArray {
+  choice_message(unit_id: own_unit_id, choice: 2, value: 0)
+}
+
+/// A map of the tests' realm that took the tests' player once and let it leave,
+/// so its next join is unit 6, as the real map gives a new id to each join.
+pub fn map_after_a_stay() -> map.State {
+  let #(map_state, _) =
+    mapped(map_state: map_with_four_players(), taken: joining().1)
+  let #(map_state, left) = mapped(map_state:, taken: leaving_the_map().1)
+  assert left == Left
+  map_state
+}
+
+/// The tests' player dead, after choosing the Holocrypt: the leave asked.
+pub fn holocrypt_chosen() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, _) = dead_in_world()
+  read(state:, bytes: holocrypt())
+}
+
+/// The Holocrypt's leave answered `Left`: the join at the Holocrypt place asked.
+pub fn holocrypt_joining() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = holocrypt_chosen()
+  answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+}
+
+/// The Holocrypt's join answered by a map that gave the player's first unit
+/// before: the player is in the world as unit 6.
+pub fn at_the_holocrypt() -> #(game_connection.State, ConnectionStep(Request)) {
+  at_the_holocrypt_in(map_after_a_stay())
+}
+
+/// The Holocrypt's join answered by the map `map_state`.
+pub fn at_the_holocrypt_in(
+  map_state: map.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = holocrypt_joining()
+  let #(_, joined) = mapped(map_state:, taken:)
+  answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+}
