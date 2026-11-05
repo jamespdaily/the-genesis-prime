@@ -385,6 +385,8 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               | client_connection.Health(..)
               | client_connection.Died
               | client_connection.CastMissed(..)
+              | client_connection.CastTargetsRemoved(..)
+              | client_connection.CastStackRemoved(..)
               | client_connection.Removed
               | client_connection.CreatureMoved(..)
               | client_connection.CreaturePlaced(..)

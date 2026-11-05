@@ -8,6 +8,10 @@
 //// - **Damage** (8) hits the units it aims at (`Spell.CodeEnumSpellEffectType.damage`).
 //// - **VitalModifier** (1) changes a vital of its unit, which gives the caster a
 ////   resource (`Spell4Effects.effectType.1`).
+//// - **Fluff** (17) gives its spell a life on a unit, shown as a buff
+////   (`Spell4Effects.effectType.17`).
+//// - **ForceRemove** (80) takes spells already on a unit off it
+////   (`Spell4Effects.effectType.80`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -19,6 +23,12 @@ pub type Kind {
   Proxy
   Damage
   VitalModifier
+  /// A Fluff effect (17): gives its spell a life on the unit it aims at, which
+  /// shows as a buff (`Spell4Effects.effectType.17`).
+  Fluff
+  /// A SpellForceRemove effect (80): takes casts off the unit it aims at
+  /// (`Spell4Effects.effectType.80`).
+  ForceRemove
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -36,7 +46,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
 /// Whether some rule reads the effect type: the coverage measure's "handled".
 pub fn is_read(effect_type effect_type: Int) -> Bool {
   case kind_of(effect_type:) {
-    Proxy | Damage | VitalModifier -> True
+    Proxy | Damage | VitalModifier | Fluff | ForceRemove -> True
     Unread(..) -> False
   }
 }

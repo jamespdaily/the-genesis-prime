@@ -20,6 +20,7 @@
 ////   (percentage of the maximum, in 32-bit floats; 0 of 0 is not a number, which
 ////   is equal and nothing else) and `.73` (the current value cut toward zero).
 
+import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{
   type Subject, AtLeast, AtMost, Equal, Fails, Greater, Less, NeverRelation,
   NotEqual, NotRead, Passes, Subject, Vital,
@@ -88,7 +89,15 @@ fn check(
   row: prerequisite_table.Prerequisite,
   under: List(Int),
 ) -> prerequisite.Verdict {
-  check_of(row, Subject(..bare(), under: list.map(under, Spell4Id)))
+  check_of(
+    row,
+    Subject(
+      ..bare(),
+      under: list.map(under, fn(spell4_id) {
+        lasting.Held(spell4_id: Spell4Id(spell4_id), caster: 0, count: 0)
+      }),
+    ),
+  )
 }
 
 // ---- 11 ----

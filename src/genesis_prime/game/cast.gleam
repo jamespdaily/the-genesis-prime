@@ -238,6 +238,7 @@ import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/hit
+import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
@@ -395,6 +396,9 @@ pub type Due {
     primary_target: Int,
     proxy: Proxy,
   )
+  /// The earliest node of the lingering cast `cast_id` ends: its units' 0x811, or
+  /// the finish when no node is left.
+  NodesEnd(cast_id: Int)
   /// The held press starts.
   StartHeld
   /// The ability the player holds down casts again: its cooldowns have ended.
@@ -446,6 +450,25 @@ pub type Live {
     /// Whether this cast's finish closes the ability's threshold: a release, and the
     /// last tap.
     closes_threshold: Bool,
+    /// The nodes the cast's gos left on units, by unit id: a later go on the same
+    /// unit sets its node again (`opcode.0x7f4.instance_count`).
+    nodes: Dict(Int, lasting.Node),
+  )
+}
+
+/// A cast whose last go has gone and whose nodes still have life left: its 0x7fe
+/// waits until the last node ends, because the client ends no buff on time
+/// (`cast.target_node_end`). `State` keeps it by cast id until a `NodesEnd` timer
+/// ends its nodes, a removal takes them off, or the caster dies.
+pub type Lingering {
+  Lingering(
+    spell: Spell,
+    /// The connections told of the cast's start, which its 0x811 and 0x7fe go to.
+    audience: Set(ConnectionId),
+    /// The monotonic time the cast started at: a removal takes the oldest cast
+    /// first, and the cast id wraps, so the age is this.
+    started_ms: Int,
+    nodes: Dict(Int, lasting.Node),
   )
 }
 
@@ -496,6 +519,9 @@ pub opaque type State {
     /// The monotonic time each Spell4's own cooldown ends at.
     cooldown_ends_ms: Dict(Int, Int),
     casts: Dict(Int, Live),
+    /// The casts whose last go has gone and whose nodes still have life left, by
+    /// cast id.
+    lingering: Dict(Int, Lingering),
     /// The caster's current cast, which a press is refused against (13).
     current: Option(Int),
     /// The open thresholds, by the Spell4 id of the ability.
@@ -531,6 +557,7 @@ pub fn new() -> State {
     global_cooldown_ends_ms: None,
     cooldown_ends_ms: dict.new(),
     casts: dict.new(),
+    lingering: dict.new(),
     current: None,
     thresholds: dict.new(),
     timers: dict.new(),
@@ -1608,6 +1635,7 @@ fn end_live_cast(
         Go(cast_id: waiting, ..) | Finish(cast_id: waiting) ->
           waiting == cast_id
         StartChild(..)
+        | NodesEnd(..)
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
@@ -1688,6 +1716,7 @@ fn fire(
             role: Child,
             spent: None,
           )
+        NodesEnd(cast_id:) -> nodes_ended(cast:, cast_id:, now_ms:)
         RepeatHeld -> #(repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
@@ -1856,6 +1885,18 @@ fn asked(
   }
 }
 
+/// The earliest node of the lingering cast `cast_id` has ended: the nodes whose
+/// life is over are dropped; none left gives the finish frames (0x7fe to the caster
+/// and `CastFinished` to the audience), else 0x811 for the ended units and the timer
+/// again at the next end. A cast that no longer lingers has no frame.
+fn nodes_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  todo as "shape commit: the end of a lingering cast's nodes"
+}
+
 /// The player left the world with casts live: every timer is cancelled and
 /// nothing is written.
 pub fn left(cast cast: State) -> #(State, List(Effect)) {
@@ -1863,6 +1904,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
     State(
       ..cast,
       casts: dict.new(),
+      lingering: dict.new(),
       timers: dict.new(),
       held: None,
       holding: None,
@@ -1964,6 +2006,7 @@ fn start(
         Child | Base(..) -> None
       },
       closes_threshold: closes_threshold(role:),
+      nodes: dict.new(),
     )
   let global_ends = case spell.global_cooldown.starts_for_ms {
     Some(wait_ms) -> Some(now_ms + wait_ms)
@@ -2222,8 +2265,12 @@ fn close_threshold(
           case due {
             WindowEnd(spell4_id:) | ChargeLevel(spell4_id:, ..) ->
               spell4_id == key
-            Go(..) | Finish(..) | StartChild(..) | StartHeld | RepeatHeld ->
-              False
+            Go(..)
+            | Finish(..)
+            | StartChild(..)
+            | NodesEnd(..)
+            | StartHeld
+            | RepeatHeld -> False
           }
         })
       let cast = State(..cast, thresholds: dict.delete(cast.thresholds, key))
@@ -2422,7 +2469,13 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
   prerequisite.Subject(
     under: dict.values(cast.casts)
       |> list.filter(fn(live) { live.primary_target == caster.unit_id })
-      |> list.map(fn(live) { live.spell.spell4_id }),
+      |> list.map(fn(live) {
+        lasting.Held(
+          spell4_id: live.spell.spell4_id,
+          caster: caster.unit_id,
+          count: 0,
+        )
+      }),
     in_combat: caster.in_combat,
     vitals: dict.merge(dict.from_list(held), caster.life_vitals),
     difficulty: None,

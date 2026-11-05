@@ -34,7 +34,9 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_missed.{type SpellMissed}
+import genesis_prime/message/spell_stack_removed.{type SpellStackRemoved}
 import genesis_prime/message/spell_started.{type SpellStarted}
+import genesis_prime/message/spell_targets_removed.{type SpellTargetsRemoved}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/random.{type Random}
@@ -154,6 +156,12 @@ pub type News {
   /// Some targets of a cast of the unit were missed: 0x7fb (opcode.0x7fb), written for
   /// a cast the viewer wrote the start of, after its 0x7f4.
   CastMissed(missed: SpellMissed)
+  /// A cast of the unit is taken off some units, which ends its effects there:
+  /// 0x811 (opcode.0x811), written for a cast the viewer wrote the start of.
+  CastTargetsRemoved(removed: SpellTargetsRemoved)
+  /// A cast of the unit loses one stack on a unit: 0x813 (opcode.0x813), written
+  /// for a cast the viewer wrote the start of.
+  CastStackRemoved(removed: SpellStackRemoved)
   /// A cast of the unit ends: 0x7fe (opcode.0x7fe), written for a cast the viewer
   /// wrote the start of, which the viewer then forgets.
   CastFinished(cast_id: Int)

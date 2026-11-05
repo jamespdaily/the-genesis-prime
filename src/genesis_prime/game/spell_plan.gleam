@@ -105,6 +105,7 @@
 ////   held with an emmComparison other than 0 or 1.
 
 import genesis_prime/game/effect_kind
+import genesis_prime/game/lasting
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spend
@@ -354,6 +355,43 @@ pub type Spell {
     /// The spell's own resource gains, given at its gos; none of a child started
     /// at each struck unit, whose gains its Proxy holds.
     gains: List(Gain),
+    /// The Fluff effects that give the spell a life on a unit.
+    lasting: List(Lasting),
+    /// The SpellForceRemove effects that take casts off a unit.
+    removes: List(ForceRemove),
+  )
+}
+
+/// A Fluff effect (`Spell4Effects.effectType.17`) of a spell: it names the unit it
+/// aims at in the go's target info and gives the spell a life there, from its
+/// `row`, in the phases of `phase_flags`, when its caster apply prerequisite passes
+/// or it has none, and when its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend). Its dataBits need no handling.
+pub type Lasting {
+  Lasting(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    aim: Aim,
+    row: lasting.LastingRow,
+    prerequisite: Option(Prerequisite),
+    tag: spend.Tag,
+  )
+}
+
+/// A SpellForceRemove effect (`Spell4Effects.effectType.80`) of a spell: it takes
+/// `count` stacks of the casts `selector` names off the unit it aims at, in the
+/// phases of `phase_flags`, when its caster apply prerequisite passes or it has
+/// none, and when its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend).
+pub type ForceRemove {
+  ForceRemove(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    aim: Aim,
+    selector: lasting.Selector,
+    count: Int,
+    prerequisite: Option(Prerequisite),
+    tag: spend.Tag,
   )
 }
 
@@ -470,6 +508,10 @@ pub type PlanError {
   /// An effect of a spell that spends every point held holds an emmComparison other
   /// than 0 or 1, which chooses nothing (`Spell4Effects.emmComparison`).
   SpendComparisonNotRead(spell4_id: Int, effect_id: Int, comparison: Int)
+  /// A SpellForceRemove effect of a tree has a dataBits00 other than 1, 2 or 3,
+  /// which names no group, Spell4 or Spell4Base to take off
+  /// (`Spell4Effects.effectType.80`).
+  ForceRemoveSelectorNotRead(spell4_id: Int, effect_id: Int, selector: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -543,6 +585,14 @@ pub fn describe(error error: PlanError) -> String {
       <> " of emmComparison "
       <> int.to_string(comparison)
       <> ", and only 0 and 1 are read"
+    ForceRemoveSelectorNotRead(spell4_id:, effect_id:, selector:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a SpellForceRemove effect "
+      <> int.to_string(effect_id)
+      <> " of selector "
+      <> int.to_string(selector)
+      <> ", and only 1, 2 and 3 are read"
   }
 }
 
@@ -797,38 +847,42 @@ fn spell_of(
   let phases = dict.get(sources.phases, spell4_id) |> result.unwrap([])
   use delays <- result.try(phase_delays(phases:, method:, spell4_id:))
   use channel <- result.try(channel_of(row:, method:))
-  Ok(Spell(
-    spell4_id: Spell4Id(spell4_id),
-    spell4_base_id: Spell4BaseId(row.spell4_base_id_base_spell),
-    method:,
-    cast_time_ms: row.cast_time,
-    cooldown_ms: row.spell_cool_down,
-    cooldown_start: cooldown_start_of(method:, phases:),
-    cooldown_phase: cooldown_phase_of(method:, phases:),
-    cast_bar: cast_bar_of(method:, row:, base:),
-    free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
-    ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
-      || has_flag(flags: row.property_flags, bit: 0x1),
-    weapon: weapon_of(base.weapon_slot),
-    caster_death:,
-    global_cooldown:,
-    costs:,
-    requirements:,
-    requirement_waiver: case
-      has_flag(flags: row.property_flags, bit: 0x4),
-      row.prerequisite_id_caster_cast
-    {
-      True, prerequisite if prerequisite != 0 ->
-        Some(PrerequisiteId(prerequisite))
-      True, _ | False, _ -> None
-    },
-    phase_delays_ms: delays,
-    threshold_ms: row.threshold_time,
-    stages:,
-    channel:,
-    proxies:,
-    gains:,
-  ))
+  Ok(
+    Spell(
+      spell4_id: Spell4Id(spell4_id),
+      spell4_base_id: Spell4BaseId(row.spell4_base_id_base_spell),
+      method:,
+      cast_time_ms: row.cast_time,
+      cooldown_ms: row.spell_cool_down,
+      cooldown_start: cooldown_start_of(method:, phases:),
+      cooldown_phase: cooldown_phase_of(method:, phases:),
+      cast_bar: cast_bar_of(method:, row:, base:),
+      free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
+      ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
+        || has_flag(flags: row.property_flags, bit: 0x1),
+      weapon: weapon_of(base.weapon_slot),
+      caster_death:,
+      global_cooldown:,
+      costs:,
+      requirements:,
+      requirement_waiver: case
+        has_flag(flags: row.property_flags, bit: 0x4),
+        row.prerequisite_id_caster_cast
+      {
+        True, prerequisite if prerequisite != 0 ->
+          Some(PrerequisiteId(prerequisite))
+        True, _ | False, _ -> None
+      },
+      phase_delays_ms: delays,
+      threshold_ms: row.threshold_time,
+      stages:,
+      channel:,
+      proxies:,
+      gains:,
+      lasting: [],
+      removes: [],
+    ),
+  )
 }
 
 /// The gains of a spell's effects: each VitalModifier, which must aim at the

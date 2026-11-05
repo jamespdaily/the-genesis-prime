@@ -44,6 +44,7 @@
 ////   caster-side prerequisites only, where the second unit is the caster too
 ////   (`Spell4Effects.prerequisiteIdTargetApply`).
 
+import genesis_prime/game/lasting
 import genesis_prime/message/float32
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4Id, PrerequisiteId, Spell4Id,
@@ -186,8 +187,10 @@ pub type Vital {
 /// What a check may read about its subject, the check's first unit.
 pub type Subject {
   Subject(
-    /// The Spell4 ids of the live casts the subject is a target of.
-    under: List(Spell4Id),
+    /// What the casts of the subject's first unit hold on it: the nodes of live and
+    /// lingering casts, and a live cast whose primary target it is with count 0
+    /// (genesis_prime/game/lasting `Held`).
+    under: List(lasting.Held),
     /// Whether the subject is in combat.
     in_combat: Bool,
     /// The vitals the server holds for the subject, by Vital id; a vital left out
@@ -400,8 +403,8 @@ fn condition_check(
 ) -> #(List(Int), Verdict) {
   case condition {
     TargetOfLiveCast(comparison:, spell4_id:) -> #(rolls, case comparison {
-      Found -> verdict_of(list.contains(subject.under, spell4_id))
-      NotFound -> verdict_of(!list.contains(subject.under, spell4_id))
+      Found -> verdict_of(is_under(subject:, spell4_id:))
+      NotFound -> verdict_of(!is_under(subject:, spell4_id:))
       OtherComparison(..) -> Fails
     })
     InCombat(comparison:) -> #(rolls, case comparison {
@@ -444,6 +447,11 @@ fn condition_check(
     NoCase -> #(rolls, Fails)
     Unread(prerequisite_type:) -> #(rolls, NotRead(prerequisite_type:))
   }
+}
+
+/// Whether a cast of the Spell4 holds a node on the subject.
+fn is_under(subject subject: Subject, spell4_id spell4_id: Spell4Id) -> Bool {
+  list.any(subject.under, fn(held) { held.spell4_id == spell4_id })
 }
 
 fn verdict_of(holds: Bool) -> Verdict {

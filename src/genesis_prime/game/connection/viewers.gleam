@@ -257,6 +257,8 @@ pub fn viewer_takes(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTargetsRemoved(..)
+    | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
     | client_connection.Health(..)
     | client_connection.Died
@@ -379,6 +381,20 @@ pub fn viewer_takes(
       Continue(session, [
         connection_state.to_client(session, cast.missed_frame(missed:)),
       ])
+    }
+    client_connection.CastTargetsRemoved(removed:) -> {
+      use <- bool.guard(
+        when: !dict.has_key(entered.casts_written, removed.cast_id),
+        return: Continue(session, []),
+      )
+      todo as "shape commit: the viewer writes 0x811 for a cast it wrote"
+    }
+    client_connection.CastStackRemoved(removed:) -> {
+      use <- bool.guard(
+        when: !dict.has_key(entered.casts_written, removed.cast_id),
+        return: Continue(session, []),
+      )
+      todo as "shape commit: the viewer writes 0x813 for a cast it wrote"
     }
     client_connection.CastFinished(cast_id:) -> {
       use <- bool.guard(
@@ -541,6 +557,8 @@ fn creature_news(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTargetsRemoved(..)
+    | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
@@ -619,6 +637,8 @@ fn life_news(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTargetsRemoved(..)
+    | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
     | client_connection.Health(..)
     | client_connection.Died
