@@ -41,7 +41,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
 import genesis_prime/content
 import genesis_prime/game/cast
-import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
@@ -997,7 +997,7 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
         ..settings,
         game: server.Served(
           ..game,
-          settings: game_connection.Settings(
+          settings: connection_state.Settings(
             ..game.settings,
             game: GameSettings(
               ..game.settings.game,
@@ -1222,7 +1222,7 @@ fn two_players_of_class_enter_one_map(
         ..settings,
         game: server.Served(
           ..settings.game,
-          settings: game_connection.Settings(
+          settings: connection_state.Settings(
             ..settings.game.settings,
             tables: character_tables.shared_with_spell_trees(),
           ),
@@ -2680,7 +2680,7 @@ fn world_with_beasts(
       ..settings,
       game: server.Served(
         ..settings.game,
-        settings: game_connection.Settings(..settings.game.settings, tables:),
+        settings: connection_state.Settings(..settings.game.settings, tables:),
       ),
       world: server.World(
         ..settings.world,
@@ -3360,7 +3360,7 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
   // The smoke test of the whole server: the aggro and the chase come at the
   // move, with no tick to wait for. The strike, the shield and the leash are driven
   // with the creature's timers in the test of both rules together
-  // (game_connection_test, `a_beasts_aggro_strike_and_leash_...`).
+  // (game_connection_fight_test, `a_beasts_aggro_strike_and_leash_...`).
   let started = world_with_a_dagun()
   let #(game, own, dagun, have) =
     a_ready_medic(started:, number: 1, character_name: "Zed Qu")

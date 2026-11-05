@@ -8,6 +8,7 @@ import client_tables
 import genesis_prime/client_archive
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/login/auth_connection
 import genesis_prime/login/recorded_realm
 import genesis_prime/login/sts_connection
@@ -313,7 +314,7 @@ fn session_settings(
     game: wire_replay.serve_from(
       server.Served(
         ..settings.game,
-        settings: game_connection.Settings(
+        settings: connection_state.Settings(
           ..servers.game.settings,
           tables: client_tables.shared(),
         ),

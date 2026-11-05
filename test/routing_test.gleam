@@ -120,7 +120,20 @@ pub fn every_message_id_is_in_one_row_test() -> Nil {
 
 pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
   use <- owned_test.run(5000)
-  let path = "src/genesis_prime/game/connection.gleam"
+  use path <- list.each([
+    "src/genesis_prime/game/connection.gleam",
+    "src/genesis_prime/game/connection/casting.gleam",
+    "src/genesis_prime/game/connection/chat.gleam",
+    "src/genesis_prime/game/connection/effects.gleam",
+    "src/genesis_prime/game/connection/frames.gleam",
+    "src/genesis_prime/game/connection/life.gleam",
+    "src/genesis_prime/game/connection/login.gleam",
+    "src/genesis_prime/game/connection/movement.gleam",
+    "src/genesis_prime/game/connection/select.gleam",
+    "src/genesis_prime/game/connection/state.gleam",
+    "src/genesis_prime/game/connection/viewers.gleam",
+    "src/genesis_prime/game/connection/world.gleam",
+  ])
   let imported =
     syntax.imported_modules(SourceFile(path:, text: source.read(path)))
   list.each(
@@ -134,7 +147,9 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
     fn(name) {
       assert !list.contains(imported, "genesis_prime/message/" <> name)
         as {
-          "the connection decodes "
+          "the connection ("
+          <> path
+          <> ") decodes "
           <> name
           <> ", which is its feature's dispatch (genesis_prime/game/routing)"
         }

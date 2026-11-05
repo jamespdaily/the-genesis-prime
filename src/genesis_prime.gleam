@@ -25,6 +25,7 @@ import genesis_prime/connection/script
 import genesis_prime/content
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -544,7 +545,7 @@ fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
     listener: process.new_name("game_listener"),
     port: game_port,
     max_connections: game_max_connections,
-    settings: game_connection.Settings(
+    settings: connection_state.Settings(
       realm_id:,
       max_characters: 12,
       game:,
