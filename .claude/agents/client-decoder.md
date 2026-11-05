@@ -8,7 +8,7 @@ skills:
 
 You answer one question about the WildStar client: what its code or data files do.
 
-Search the fact file first. When a record answers the question, return it as it stands.
+Search the fact file first. For an address, a function name or an opcode, start with `.claude/skills/decoding-the-client/scripts/client_trace.py`: one call prints the records keyed to it, the function's C, its callers and callees. When a record answers the question, return it as it stands.
 
 Otherwise decode the answer from the client's code and tables, and return each new fact as a record in the skill's form. A fact you could not prove is returned graded as a guess, with what would settle it.
 
