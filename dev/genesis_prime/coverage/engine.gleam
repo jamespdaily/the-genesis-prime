@@ -130,16 +130,6 @@ fn prerequisites() -> EngineDeclaration {
         fact_key: "Prerequisite.prerequisiteTypeId.43",
       ),
       Missing(
-        type_number: 50,
-        reason: "needs the spells each unit lies under, by caster, which a lasting effect on a unit gives",
-        fact_key: "Prerequisite.prerequisiteTypeId.50",
-      ),
-      Missing(
-        type_number: 59,
-        reason: "needs the stack count of a spell on a unit, which a lasting effect on a unit gives",
-        fact_key: "Prerequisite.prerequisiteTypeId.59",
-      ),
-      Missing(
         type_number: 108,
         reason: "needs a creature's facing, which the creature's fight behaviour holds",
         fact_key: "Prerequisite.prerequisiteTypeId.108",
@@ -214,19 +204,9 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
-        type_number: 17,
-        reason: "needs a lifetime for a spell on a unit, which shows as a buff (0x07F4's target info, 0x0811, 0x0813)",
-        fact_key: "Spell4Effects.effectType.17",
-      ),
-      Missing(
         type_number: 73,
         reason: "needs the cooldowns the server keeps for a unit changed by the effect, for the running ones and for the new ones while it lasts",
         fact_key: "Spell4Effects.effectType.73",
-      ),
-      Missing(
-        type_number: 80,
-        reason: "needs the spells on a unit ended, which lasting effects on a unit give (0x0811, 0x0813)",
-        fact_key: "Spell4Effects.effectType.80",
       ),
       Missing(
         type_number: 90,

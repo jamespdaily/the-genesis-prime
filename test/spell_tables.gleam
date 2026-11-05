@@ -64,6 +64,8 @@ import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_group_list
+import genesis_prime/table/spell4_stack_group
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell4_valid_targets
@@ -93,6 +95,8 @@ pub type Rows {
     spell_cool_downs: List(List(Cell)),
     classes: List(List(Cell)),
     prerequisites: List(List(Cell)),
+    spell4_group_lists: List(List(Cell)),
+    spell4_stack_groups: List(List(Cell)),
   )
 }
 
@@ -1775,6 +1779,8 @@ pub fn rows() -> Rows {
         waiver_prerequisite_rows(),
       ]),
     ),
+    spell4_group_lists: [],
+    spell4_stack_groups: [],
   )
 }
 
@@ -1824,6 +1830,8 @@ fn entries() -> List(table_store.Entry) {
     spell4_base.entry(),
     spell4_conditions.entry(),
     spell4_effects.entry(),
+    spell4_group_list.entry(),
+    spell4_stack_group.entry(),
     spell4_thresholds.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_valid_targets.entry(),
@@ -1843,6 +1851,8 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell4_base.schema, rows.spell4_base),
     planted_table.file(spell4_conditions.schema, spell4_conditions_rows()),
     planted_table.file(spell4_effects.schema, rows.spell4_effects),
+    planted_table.file(spell4_group_list.schema, rows.spell4_group_lists),
+    planted_table.file(spell4_stack_group.schema, rows.spell4_stack_groups),
     planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
     planted_table.file(
       spell4_aoe_target_constraints.schema,

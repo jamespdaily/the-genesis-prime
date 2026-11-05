@@ -25,10 +25,8 @@ import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_result
-import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
-import genesis_prime/message/spell_started
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_death_state.{UnitDeathState}
@@ -60,30 +58,6 @@ import owned_test
 import place_support
 import spawn_support
 
-/// 0x7ff for the cast `cast_id` of `caster`, as a caster's rule tells it:
-/// `opcode.0x7ff`'s fields with the safe values of the decode (0, 1 and 0).
-fn spell_started_of(
-  cast_id cast_id: Int,
-  caster caster: Int,
-) -> spell_started.SpellStarted {
-  let position = spell_position.SpellPosition(x: 0, y: 0, z: 0)
-  spell_started.SpellStarted(
-    cast_id:,
-    spell4_id: 32_893,
-    root_spell4_id: 32_893,
-    parent_spell4_id: 0,
-    caster_unit_id: caster,
-    field_6: 0,
-    primary_target_unit_id: caster,
-    position:,
-    yaw: 0,
-    initial_positions: [],
-    telegraph_positions: [],
-    field_12: 1,
-    field_13: 0,
-  )
-}
-
 fn spell_go_of(cast_id cast_id: Int) -> spell_go.SpellGo {
   spell_go.SpellGo(
     cast_id:,
@@ -99,7 +73,8 @@ fn spell_go_of(cast_id cast_id: Int) -> spell_go.SpellGo {
 
 pub fn a_viewer_writes_a_cast_start_only_for_a_caster_its_client_shows_and_a_go_or_finish_only_for_a_start_it_wrote_test() -> Nil {
   use <- owned_test.run(10_000)
-  let start = spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let start =
+    game_connection_support.spell_started_of(cast_id: 2_147_497_985, caster: 9)
   let #(state, taken) =
     game_connection_support.feed(
       game_connection_support.in_world(),
@@ -167,8 +142,10 @@ pub fn a_viewer_writes_a_cast_start_only_for_a_caster_its_client_shows_and_a_go_
 
 pub fn a_viewer_writes_the_finish_of_each_cast_of_a_unit_before_the_unit_is_removed_and_none_after_test() -> Nil {
   use <- owned_test.run(10_000)
-  let first = spell_started_of(cast_id: 2_147_497_985, caster: 9)
-  let second = spell_started_of(cast_id: 2_147_497_986, caster: 9)
+  let first =
+    game_connection_support.spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let second =
+    game_connection_support.spell_started_of(cast_id: 2_147_497_986, caster: 9)
   let #(state, _) =
     game_connection_support.feed(
       game_connection_support.in_world(),
@@ -202,18 +179,10 @@ pub fn a_viewer_writes_the_finish_of_each_cast_of_a_unit_before_the_unit_is_remo
       )),
     )
   let finishes =
-    list.filter_map(
-      game_connection_support.heard(taken, game_connection_support.keyed()),
-      fn(frame) {
-        case frame.message_id == 0x07FE {
-          True -> {
-            let assert Ok(finished) = spell_finished.decode(frame.body)
-            Ok(finished.cast_id)
-          }
-          False -> Error(Nil)
-        }
-      },
-    )
+    cast_support.finished_ids(game_connection_support.heard(
+      taken,
+      game_connection_support.keyed(),
+    ))
   assert game_connection_support.written_ids(taken) == [0x07FE, 0x07FE, 0x0355]
     as "the client keeps a cast that never gets its 0x7fe live (cast.no_answer), and a cast id used again restarts it (opcode.0x7ff), so each cast is finished before the unit goes"
   assert finishes == [2_147_497_985, 2_147_497_986] as "in cast id order"

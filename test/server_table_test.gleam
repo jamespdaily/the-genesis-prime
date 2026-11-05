@@ -33,7 +33,7 @@ import gleam/string
 import owned_test
 import planted_table
 
-pub fn the_servers_tables_are_the_forty_four_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_forty_six_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -73,6 +73,8 @@ pub fn the_servers_tables_are_the_forty_four_its_rules_read_test() -> Nil {
       "Spell4Base",
       "Spell4Conditions",
       "Spell4Effects",
+      "Spell4GroupList",
+      "Spell4StackGroup",
       "Spell4Telegraph",
       "Spell4Thresholds",
       "Spell4ValidTargets",
@@ -85,7 +87,7 @@ pub fn the_servers_tables_are_the_forty_four_its_rules_read_test() -> Nil {
       "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, and the prerequisites that gate a spell's resource gains and a creature attack's effects"
+    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, and the prerequisites that gate a spell's resource gains and a creature attack's effects"
 }
 
 /// Runs a function of this module in a fresh node, which must return.

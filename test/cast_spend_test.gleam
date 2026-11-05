@@ -23,6 +23,7 @@ import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast.{type GoAsked}
 import genesis_prime/game/class_resource.{type Resources, Payment, Resource}
+import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
@@ -183,9 +184,9 @@ pub fn the_payment_of_every_point_leaves_0_and_is_one_change_of_the_psi_points_t
 
 /// Mind Burst with the Proxies' gates the client's rows hold replaced: 135961 by none
 /// and 230116 by this one, so a test of the choice by n is not stopped by a gate the
-/// server cannot read. The client's 23344 is type 50 (the spells a unit lies under by
-/// caster), which no rule of the server reads, and its 44174 holds two type 15
-/// conditions on spells a lasting effect gives. Each Proxy keeps the tag of its row.
+/// caster fails: the client's 23344 asks for a cast of 57027, the AMP Reckful, and
+/// 44174 holds two type 15 conditions on spells a lasting effect gives. Each Proxy
+/// keeps the tag of its row.
 fn mind_burst_with_gate(gate gate: prerequisite.Prerequisite) -> Spell {
   let mind_burst = mind_burst_spell()
   Spell(
@@ -285,22 +286,98 @@ pub fn the_gate_of_a_proxy_that_n_does_not_choose_is_not_checked_test() -> Nil {
     as "230116 holds the only gate and applies from 3 Psi Points: below it no gate is checked, so no roll is drawn (Spell4Effects.emmComparison)"
 }
 
-pub fn the_clients_gate_of_135961_is_reached_only_at_5_points_test() -> Nil {
+/// The client's gate 23344 on the Proxy 135961 asks for the AMP Reckful's spell 57027
+/// cast by the caster itself (type 50, `Prerequisite.prerequisiteTypeId.50`;
+/// EldanAugmentation 340). A caster that holds no such cast fails it: the crit buff
+/// 57030 does not start at any point, and the gate leaves no debug line, since the
+/// server reads type 50.
+pub fn a_5_point_mind_burst_without_the_reckful_amp_starts_no_crit_buff_test() -> Nil {
   use <- owned_test.run(60_000)
-  let lines = fn(points) {
-    debug_lines(
-      effects: pressed_and_gone(spell: mind_burst_spell(), points:, rolls: []),
+  let crit_buff_started = fn(points) {
+    list.count(
+      started(
+        effects: pressed_and_gone(spell: mind_burst_spell(), points:, rolls: []),
+      ),
+      fn(spell4_id) { spell4_id == 57_030 },
     )
   }
+  assert list.map([1, 2, 3, 4, 5], crit_buff_started) == [0, 0, 0, 0, 0]
+    as "Prerequisite 23344 fails: the caster holds no cast of 57027 (the issue's evidence: EldanAugmentation 340)"
   let crit_gate_lines = fn(points) {
-    list.count(lines(points), fn(line) {
-      string.contains(line, "Spell4 57030")
-      && string.contains(line, "prerequisite 23344")
-      && string.contains(line, "type 50")
-    })
+    list.count(
+      debug_lines(
+        effects: pressed_and_gone(spell: mind_burst_spell(), points:, rolls: []),
+      ),
+      fn(line) { string.contains(line, "prerequisite 23344") },
+    )
   }
-  assert list.map([1, 2, 3, 4, 5], crit_gate_lines) == [0, 0, 0, 0, 1]
-    as "Prerequisite 23344 is type 50, which the server does not read, so the Proxy 135961 chosen at 5 Psi Points leaves one debug line and is not started; below 5 it is not chosen and its gate is not reached"
+  assert list.map([1, 2, 3, 4, 5], crit_gate_lines) == [0, 0, 0, 0, 0]
+    as "type 50 is read, so its gate decides and says nothing"
+}
+
+pub fn a_5_point_mind_burst_with_the_reckful_amp_held_starts_the_crit_buff_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A planted spell 57027 on bag index 11 whose go gives the caster a node that
+  // lasts until removed, as the AMP's lasting effect does.
+  let amp =
+    Spell(..support.child(spell4_id: 57_027, base: 3), lasting: [
+      spell_plan.Lasting(
+        effect_id: id.Spell4EffectsId(1),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtCaster,
+        row: lasting.LastingRow(
+          delay_ms: 0,
+          duration_ms: 0,
+          until_removed: True,
+        ),
+        condition: spell_plan.Always,
+        tag: spend.always,
+      ),
+    ])
+  let plans =
+    support.with_spells(plans: plans_with(spell: mind_burst_spell()), spells: [
+      amp,
+    ])
+  let caster = cast.Caster(..caster_holding(points: 5), in_combat: True)
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag_index: 11,
+      target: 0,
+      at: 500,
+    )
+  let #(state, _) =
+    support.answered_as(
+      caster:,
+      state:,
+      effects: raw,
+      at: 500,
+      struck: [],
+      rolls: [],
+    )
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: mind_burst,
+      target: 0,
+      at: 1000,
+    )
+  let #(_, effects) =
+    support.answered_as(
+      caster:,
+      state:,
+      effects: raw,
+      at: 1000,
+      struck: [],
+      rolls: [],
+    )
+  assert list.count(started(effects:), fn(spell4_id) { spell4_id == 57_030 })
+    == 1
+    as "with a cast of 57027 by the caster on it, gate 23344 passes and 57030 starts (Prerequisite.prerequisiteTypeId.50)"
 }
 
 // ---- 7 to 9: what the costs check ----

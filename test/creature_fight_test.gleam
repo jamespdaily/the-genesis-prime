@@ -279,6 +279,8 @@ fn name_of(news: News) -> String {
     | client_connection.CameBack
     | client_connection.DeathLogged
     | client_connection.CameBackLogged
+    | client_connection.CastTargetsRemoved(..)
+    | client_connection.CastStackRemoved(..)
     | client_connection.Shield(..) -> "other"
   }
 }

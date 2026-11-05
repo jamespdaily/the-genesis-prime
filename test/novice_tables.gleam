@@ -37,6 +37,8 @@ import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_group_list
+import genesis_prime/table/spell4_stack_group
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell4_valid_targets
@@ -1029,6 +1031,8 @@ pub fn spell_tree_files() -> List(#(String, BitArray)) {
         |> list.sort(by_id),
     ),
     planted_table.file(spell4_effects.schema, rows.spell4_effects),
+    planted_table.file(spell4_group_list.schema, rows.spell4_group_lists),
+    planted_table.file(spell4_stack_group.schema, rows.spell4_stack_groups),
     planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
     planted_table.file(
       spell4_aoe_target_constraints.schema,
@@ -1061,6 +1065,8 @@ pub fn files() -> List(#(String, BitArray)) {
       spell_tables.spell4_conditions_rows(),
     ),
     planted_table.file(spell4_effects.schema, spell4_effects_rows()),
+    planted_table.file(spell4_group_list.schema, []),
+    planted_table.file(spell4_stack_group.schema, []),
     planted_table.file(
       spell4_aoe_target_constraints.schema,
       spell4_aoe_target_constraints_rows(),

@@ -13,7 +13,6 @@ import genesis_prime/client_connection.{
   TellMoved,
 }
 import genesis_prime/connection/frame.{Frame}
-import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell
@@ -41,9 +40,7 @@ import genesis_prime/step.{
   type ConnectionStep, ConnectionId, LogError, LogWarning, Map, NoAnswerInTime,
   OwnEffect, Unwatch, Watch, WatchEnded, WatchId,
 }
-import genesis_prime/store.{AccountId, Character, ListCharacters, Select}
-import genesis_prime/table/id.{ClassId}
-import genesis_prime/table/loader/store as table_store
+import genesis_prime/store.{AccountId, ListCharacters, Select}
 import genesis_prime/world_map/map.{Join, Left, SeenBy}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/unit_fields
@@ -386,33 +383,16 @@ pub fn a_dead_players_press_of_an_ability_with_the_dead_bit_is_refused_57_and_st
     && !support.stops(taken)
 }
 
-/// The Medic of these tables in the world, the Beast unit 40 shown before it.
-fn medic_of(tables: table_store.Tables) -> game_connection.State {
-  let fresh =
-    game_connection_support.accepted(
-      Settings(..game_connection_support.settings(), tables:),
-    ).0
-  let #(medic, _) =
-    game_connection_support.entered_from(
-      game_connection_support.in_select_from(fresh),
-      Character(
-        ..game_connection_support.world_character(),
-        class_id: ClassId(4),
-      ),
-    )
-  game_connection_support.feed(
-    medic,
-    game_connection_support.beast_appears(unit_id: 40),
-  ).0
-}
-
 pub fn a_dead_players_press_of_an_ability_without_the_dead_bit_is_taken_as_the_livings_test() -> Nil {
   use <- owned_test.run(60_000)
   // A test whose first use loads a set of planted tables of its own: the
   // deadline is a hang guard, the load alone can take most of 10 s.
   // The client checks only bit 0 of the caster row: without it, it sends the
   // press of a dead caster (cast.dead_player); the planted row 43 lacks it.
-  let living = medic_of(character_tables.shared_with_row_43_for_the_dead())
+  let living =
+    game_connection_support.medic_with_beast_in_world(
+      character_tables.shared_with_row_43_for_the_dead(),
+    )
   let #(dead, _) = game_connection_support.killed(living)
   let #(_, alive_press) =
     game_connection_support.press_paralytic_surge(
