@@ -864,6 +864,257 @@ class FastModeTest(unittest.TestCase):
         self.assertRegex(failed_line(self, run.output), r"gleam-build")
 
 
+def commit_new_file(case: PlantedCheckCase, path: str) -> None:
+    """A commit on the branch that adds the file at path (from the repository's folder),
+    or changes it when the planted repository has it."""
+    case.settle()
+    target = case.repository / path
+    if target.exists():
+        case.commit_change(path)
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# added on the branch\n")
+    case.git("add", path)
+    case.git("commit", "-q", "-m", "add %s" % path)
+
+
+def parts_reported(output: str) -> list[str]:
+    """The parts the summary lists, in order, whether they ran or were skipped."""
+    return re.findall(r"^\s+([a-z-]+)\s+(?:ok|FAILED|skipped)\b", output, re.MULTILINE)
+
+
+def scope_line(output: str) -> str:
+    """The one line that says which scope the run took."""
+    lines = [line for line in output.splitlines() if line.startswith("scope: ")]
+    return lines[0] if len(lines) == 1 else "\n".join(lines)
+
+
+# The full check's parts, in the order ./check prints them after branch-current.
+EVERY_PART = [
+    "format", "gleam-build", "glinter", "generated-tables", "gleam-test", "literal-area",
+    "message-codec", "migrations", "squirrel", "client-suite", "client-integration", "fact-checker",
+]
+QUICK_PARTS = ["format", "gleam-build", "glinter", "code-rules"]
+
+# Files that guidance and untested tools are made of (the issue's light set), one per entry.
+LIGHT_FILES = [
+    "CLAUDE.md",
+    ".claude/skills/writing-tests/SKILL.md",
+    ".claude/skills/designing-processes/structure.md",
+    ".claude/agents/implementer.md",
+    ".github/workflows/check.yml",
+    "LICENSE",
+    ".gitignore",
+    "dev/card.sh",
+    "dev/step_measure.py",
+]
+
+
+def plant_light_changes(case: PlantedCheckCase, paths=LIGHT_FILES) -> None:
+    for path in paths:
+        commit_new_file(case, path)
+
+
+# A `git` that fails the one command PLANT_GIT_FAILS names (diff, ls-files) and runs the real one otherwise.
+GIT_STUB = """#!/bin/sh
+for argument in "$@"; do
+  if [ -n "$PLANT_GIT_FAILS" ] && [ "$argument" = "$PLANT_GIT_FAILS" ]; then
+    echo "planted git failure" >&2
+    exit 128
+  fi
+done
+exec "%s" "$@"
+"""
+
+
+def plant_failing_git(case: PlantedCheckCase) -> None:
+    executable(case.root / "tools" / "git", GIT_STUB % shutil.which("git"))
+
+
+def scoped_run(key: str, prepare, *arguments: str, **settings: str) -> Run:
+    """A planted full check on a machine with the client, where the scope is chosen
+    (CI's machine, with GENESIS_NO_CLIENT=1, always runs every part)."""
+    return shared_run(key, *arguments, client=True, prepare=prepare, **settings)
+
+
+def without_branch_current(output: str) -> list[str]:
+    return [part for part in parts_reported(output) if part != "branch-current"]
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class LightScopeTest(unittest.TestCase):
+    """When every file the branch changes since its merge base with main is guidance
+    or a tool no part tests, the full check runs the fast parts and says so; any other
+    changed file, or none at all, runs every part. The merge base is the one the
+    client scripts' integration tests use. CI's machine always runs every part."""
+
+    def light(self) -> Run:
+        return scoped_run("light-only", plant_light_changes)
+
+    def assert_every_part(self, run: Run, named: str = "") -> None:
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(without_branch_current(run.output), EVERY_PART, run.output)
+        line = scope_line(run.output)
+        self.assertRegex(line, r"^scope: every part\b", run.output)
+        self.assertIn(named, line, "the scope line says why")
+
+    def assert_light(self, run: Run) -> None:
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(without_branch_current(run.output), QUICK_PARTS, run.output)
+        self.assertRegex(scope_line(run.output), r"^scope: light\b", run.output)
+
+    def test_a_branch_changing_only_light_files_runs_the_fast_parts_and_no_other(self):
+        run = self.light()
+        self.assert_light(run)
+        self.assertFalse([c for c in run.commands if c.startswith(("psql", "python3.13"))], run.commands)
+        self.assertEqual([c for c in run.commands if re.fullmatch(r"gleam test( -- --workers \d+)?", c)], [])
+
+    def test_a_branch_changing_only_light_files_says_the_scope_and_why(self):
+        line = scope_line(self.light().output)
+        self.assertIn("merge base", line, "it names what the files were compared with")
+        self.assertTrue(any(path in line for path in LIGHT_FILES), "and a file that made it light:\n" + line)
+
+    def test_the_last_line_names_a_light_scope(self):
+        self.assertRegex(self.light().output, r"(?m)^check passed \(scope: light\), wall time \d+s, budget \d+s$")
+
+    def test_the_last_line_of_a_run_of_every_part_does_not_name_a_scope(self):
+        run = scoped_run("light-and-other", self.plant_light_and_other)
+        self.assertRegex(run.output, r"(?m)^check passed, wall time \d+s, budget \d+s$")
+
+    def test_the_setup_check_and_the_branch_current_part_still_run_on_a_light_branch(self):
+        run = self.light()
+        self.assertIn("setup check passed", run.output)
+        self.assertIn("branch-current", run.output)
+
+    @staticmethod
+    def plant_light_and_other(case: PlantedCheckCase) -> None:
+        commit_new_file(case, "CLAUDE.md")
+        commit_new_file(case, "src/planted.gleam")
+
+    def test_one_light_file_and_one_other_file_run_every_part(self):
+        self.assert_every_part(scoped_run("light-and-other", self.plant_light_and_other), "src/planted.gleam")
+
+    def test_a_branch_changing_nothing_runs_every_part(self):
+        self.assert_every_part(scoped_run("changing-nothing", lambda case: case.settle()), "no file")
+
+    def test_a_file_under_the_skills_folder_that_is_not_markdown_is_not_light(self):
+        for path in (
+            ".claude/skills/decoding-the-client/references/client-facts.toml",
+            ".claude/skills/decoding-the-client/scripts/seed.py",
+        ):
+            with self.subTest(path=path):
+                run = scoped_run("not-light " + path, lambda case, path=path: plant_light_changes(case, ["CLAUDE.md", path]))
+                self.assert_every_part(run, path)
+
+    def test_the_check_script_and_its_tests_and_the_compiled_tools_under_dev_are_not_light(self):
+        for path in ("check", "setup_check/test_check_script.py", "dev/planted.gleam", "dev/genesis_prime/planted.sh"):
+            with self.subTest(path=path):
+                run = scoped_run("not-light " + path, lambda case, path=path: plant_light_changes(case, ["CLAUDE.md", path]))
+                self.assert_every_part(run, path)
+
+    def test_a_branch_changing_only_the_migration_script_runs_every_part_since_the_migrations_part_runs_it(self):
+        run = scoped_run("migration-script-only", lambda case: plant_light_changes(case, ["dev/apply_migrations.sh"]))
+        self.assert_every_part(run, "dev/apply_migrations.sh")
+
+    def test_an_edit_not_yet_committed_counts_as_a_change(self):
+        def plant(case):
+            plant_light_changes(case, ["CLAUDE.md"])
+            (case.repository / "src" / "planted.gleam").write_text("// not committed\n")
+
+        self.assert_every_part(scoped_run("light-and-untracked", plant), "src/planted.gleam")
+
+    def test_a_file_deleted_on_the_branch_counts_as_a_change(self):
+        def plant(case):
+            commit_new_file(case, "CLAUDE.md")
+            case.git("rm", "-q", "test/code_rule/planted_test.gleam")
+            case.git("commit", "-q", "-m", "delete a file that is not light")
+
+        self.assert_every_part(scoped_run("light-and-deleted", plant), "test/code_rule/planted_test.gleam")
+
+    def test_a_branch_deleting_only_a_light_file_is_light(self):
+        def plant(case):
+            case.settle()
+            case.git("rm", "-q", ".gitignore")
+            case.git("commit", "-q", "-m", "delete a light file")
+
+        self.assert_light(scoped_run("light-deleted", plant))
+
+    def test_a_file_renamed_from_a_path_that_is_not_light_to_one_that_is_runs_every_part(self):
+        # Git's rename detection would list only the new name, which is light.
+        def plant(case):
+            case.settle()
+            case.git("mv", "test/code_rule/planted_test.gleam", "dev/planted_test.sh")
+            case.git("commit", "-q", "-m", "rename into the light set")
+
+        self.assert_every_part(scoped_run("light-renamed", plant), "test/code_rule/planted_test.gleam")
+
+    def test_a_light_path_with_a_space_in_it_is_light(self):
+        run = scoped_run("light-with-space", lambda case: plant_light_changes(case, [".claude/skills/writing-tests/extra notes.md"]))
+        self.assert_light(run)
+
+    def test_a_path_with_a_space_in_it_that_is_not_light_is_named_whole(self):
+        run = scoped_run("other-with-space", lambda case: plant_light_changes(case, ["CLAUDE.md", "src/my file.gleam"]))
+        self.assert_every_part(run, "src/my file.gleam")
+
+    def test_without_a_merge_base_every_part_runs(self):
+        def plant(case):
+            plant_light_changes(case, ["CLAUDE.md"])
+            case.git("branch", "-q", "-m", "main", "trunk")
+
+        self.assert_every_part(scoped_run("light-no-main", plant), "merge base")
+
+    def test_a_shallow_repository_runs_every_part_since_its_merge_base_cannot_be_established(self):
+        def plant(case):
+            plant_light_changes(case, ["CLAUDE.md"])
+            make_the_repository_shallow(case)
+
+        self.assert_every_part(scoped_run("light-shallow", plant), "shallow")
+
+    def test_the_machine_of_ci_runs_every_part_on_a_light_branch(self):
+        # GENESIS_NO_CLIENT=1 is what CI sets; GITHUB_ACTIONS is what its runner sets.
+        for key, run in (
+            ("light-no-client", shared_run("light-no-client", prepare=plant_light_changes)),
+            ("light-github-actions", scoped_run("light-github-actions", plant_light_changes, GITHUB_ACTIONS="true")),
+        ):
+            with self.subTest(key=key):
+                self.assert_every_part(run, "CI")
+
+    def test_the_merge_base_is_with_origin_main_when_there_is_one(self):
+        # origin/main is at the first commit, while the local main has moved on with a
+        # change that is not light, and the branch adds a light file after it: against
+        # origin/main the branch changes src, against main it would change CLAUDE.md alone.
+        def plant(case):
+            case.settle()
+            case.git("checkout", "-q", "main")
+            commit_new_file(case, "src/planted.gleam")
+            set_origin_main(case, "main~1")
+            case.git("checkout", "-q", "feature")
+            case.git("reset", "-q", "--hard", "main")
+            commit_new_file(case, "CLAUDE.md")
+
+        self.assert_every_part(scoped_run("light-origin-main", plant), "src/planted.gleam")
+
+    def test_a_git_diff_that_fails_runs_every_part_and_says_so(self):
+        # What git diff would have listed is src/planted.gleam; ls-files alone lists a light file.
+        def plant(case):
+            plant_failing_git(case)
+            commit_new_file(case, "src/planted.gleam")
+            (case.repository / "CLAUDE.md").write_text("# not committed\n")
+
+        run = scoped_run("light-diff-fails", plant, PLANT_GIT_FAILS="diff")
+        self.assert_every_part(run, "git diff")
+
+    def test_a_git_ls_files_that_fails_runs_every_part_and_says_so(self):
+        # What git ls-files would have listed is src/planted.gleam; diff alone lists a light file.
+        def plant(case):
+            plant_failing_git(case)
+            commit_new_file(case, "CLAUDE.md")
+            (case.repository / "src" / "planted.gleam").write_text("// not committed\n")
+
+        run = scoped_run("light-ls-files-fails", plant, PLANT_GIT_FAILS="ls-files")
+        self.assert_every_part(run, "git ls-files")
+
+
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class SeedTest(unittest.TestCase):
     """The seeds of the test runs are printed whether the check passes or fails, so
