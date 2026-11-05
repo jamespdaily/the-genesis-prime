@@ -29,7 +29,7 @@ From design to merge the step runs without Jim, except for the four decisions CL
 
 ## Design and test list
 
-Read the client's evidence, CLAUDE.md, then the code the step touches. For a change the client sees, trace the client's code from the step's messages to the visible goal: each check on that path becomes a test, and a field with no known meaning needs the client's code to show its value is safe. Weigh at least two options, asking first what most projects use; measure when costs differ, else take the simplest.
+Read the client's evidence, CLAUDE.md, then the code the step touches. For a change the client sees, trace the client's code from the step's messages to the visible goal: each check on that path becomes a test, and a field with no known meaning needs the client's code to show its value is safe. Weigh at least two options, asking first what most projects use; measure when costs differ, else take the simplest. Read the-eldan-experiment's code for the same flow, and write what it did, or the search that found nothing, in the Design's "Eldan" paragraph; its facts count only once the client confirms them.
 
 A step's working detail goes in Markdown artifacts on its issue, named "Client trace", "Design" or "Review", each edited in place and kept. Once the step merges they are history, and nothing enforced lives only there.
 
