@@ -1,9 +1,13 @@
 //// Prerequisite rows for tests that check a prerequisite
 //// (`genesis_prime/game/prerequisite`), built as the client's table holds them.
 
-import genesis_prime/game/prerequisite.{type Prerequisite}
+import genesis_prime/game/lasting
+import genesis_prime/game/prerequisite.{type Prerequisite, type Subject, Subject}
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/prerequisite as prerequisite_table
+import gleam/dict
 import gleam/list
+import gleam/option.{type Option, None}
 
 /// A Prerequisite row with these conditions, as (type, comparison, objectId,
 /// value), and these flags.
@@ -47,4 +51,30 @@ pub fn single(
   condition condition: #(Int, Int, Int, Int),
 ) -> Prerequisite {
   prerequisite.of_row(row: row(id:, flags: 0, conditions: [condition]))
+}
+
+/// A subject holding these nodes (spell, caster, stack count), whose second unit is
+/// `second_unit`, out of combat, with no vital, difficulty or roll.
+pub fn holding(
+  held held: List(#(Int, Int, Int)),
+  second_unit second_unit: Option(Int),
+) -> Subject {
+  Subject(
+    under: list.map(held, fn(node) {
+      lasting.Held(spell4_id: Spell4Id(node.0), caster: node.1, count: node.2)
+    }),
+    second_unit:,
+    in_combat: False,
+    vitals: dict.new(),
+    rolls: [],
+    difficulty: None,
+  )
+}
+
+/// The row checked against the subject.
+pub fn check(
+  row row: prerequisite_table.Prerequisite,
+  subject subject: Subject,
+) -> prerequisite.Verdict {
+  prerequisite.check(prerequisite: prerequisite.of_row(row:), subject:)
 }

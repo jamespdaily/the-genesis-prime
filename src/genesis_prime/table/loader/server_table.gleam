@@ -44,6 +44,8 @@ import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_group_list
+import genesis_prime/table/spell4_stack_group
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell4_valid_targets
@@ -81,6 +83,9 @@ import gleam/erlang/reference.{type Reference}
 ///   SpellPhase, SpellCoolDown and Class: the tree of casts each of those abilities
 ///   starts, the stages of a RapidTap or ChargeRelease one, and whether its caster
 ///   may be dead (genesis_prime/game/spell_plan).
+/// - Spell4GroupList and Spell4StackGroup: the spell groups a Spell4Effects type 80 row
+///   removes by and the stack group and cap of a spell that lasts on a unit
+///   (genesis_prime/game/spell_plan).
 /// - Spell4, Spell4AoeTargetConstraints, Spell4Telegraph, TelegraphDamage,
 ///   Spell4ValidTargets and Spell4Effects: what each spell strikes, its area, hit
 ///   shapes and damage effects (genesis_prime/game/spell_area).
@@ -127,6 +132,8 @@ pub fn entries() -> List(store.Entry) {
     spell4_base.entry(),
     spell4_conditions.entry(),
     spell4_effects.entry(),
+    spell4_group_list.entry(),
+    spell4_stack_group.entry(),
     spell4_telegraph.entry(),
     spell4_thresholds.entry(),
     spell4_valid_targets.entry(),

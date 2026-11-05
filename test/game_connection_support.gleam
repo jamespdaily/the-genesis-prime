@@ -34,6 +34,8 @@ import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/spell_position
+import genesis_prime/message/spell_started
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
@@ -50,6 +52,7 @@ import genesis_prime/store.{
   Unavailable,
 }
 import genesis_prime/table/id.{ClassId, RaceId, Spell4Id}
+import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy}
@@ -986,6 +989,19 @@ pub fn medic_in_world() -> game_connection.State {
   entered_as(Character(..world_character(), class_id: ClassId(4))).0
 }
 
+/// The Medic of these tables in the world, the Beast unit 40 shown before it.
+pub fn medic_with_beast_in_world(
+  tables tables: store_tables.Tables,
+) -> game_connection.State {
+  let fresh = accepted(Settings(..settings(), tables:)).0
+  let #(medic, _) =
+    entered_from(
+      in_character_select: in_select_from(fresh),
+      character: Character(..world_character(), class_id: ClassId(4)),
+    )
+  feed(state: medic, event: beast_appears(unit_id: 40)).0
+}
+
 /// The 0x262 news of a Beast, as its process sends it, standing 3 m ahead of the
 /// Medic, who stands at the place the tests' character is saved at and faces -z.
 pub fn beast_appears(
@@ -1243,4 +1259,28 @@ pub fn at_the_holocrypt_in(
   let #(state, taken) = holocrypt_joining()
   let #(_, joined) = mapped(map_state:, taken:)
   answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+}
+
+/// 0x7ff for the cast `cast_id` of `caster`, as a caster's rule tells it:
+/// `opcode.0x7ff`'s fields with the safe values of the decode (0, 1 and 0).
+pub fn spell_started_of(
+  cast_id cast_id: Int,
+  caster caster: Int,
+) -> spell_started.SpellStarted {
+  let position = spell_position.SpellPosition(x: 0, y: 0, z: 0)
+  spell_started.SpellStarted(
+    cast_id:,
+    spell4_id: 32_893,
+    root_spell4_id: 32_893,
+    parent_spell4_id: 0,
+    caster_unit_id: caster,
+    field_6: 0,
+    primary_target_unit_id: caster,
+    position:,
+    yaw: 0,
+    initial_positions: [],
+    telegraph_positions: [],
+    field_12: 1,
+    field_13: 0,
+  )
 }

@@ -50,7 +50,9 @@ import genesis_prime/message/spell_cast_refused.{type SpellCastRefused}
 import genesis_prime/message/spell_finished.{type SpellFinished}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_missed.{type SpellMissed}
+import genesis_prime/message/spell_stack_removed.{type SpellStackRemoved}
 import genesis_prime/message/spell_started.{type SpellStarted}
+import genesis_prime/message/spell_targets_removed.{type SpellTargetsRemoved}
 import genesis_prime/message/spell_threshold_closed.{type SpellThresholdClosed}
 import genesis_prime/message/spell_threshold_ended.{type SpellThresholdEnded}
 import genesis_prime/message/spell_threshold_index.{type SpellThresholdIndex}
@@ -119,6 +121,8 @@ pub type ServerMessage {
   SpellGo(message: SpellGo)
   SpellMissed(message: SpellMissed)
   SpellFinished(message: SpellFinished)
+  SpellTargetsRemoved(message: SpellTargetsRemoved)
+  SpellStackRemoved(message: SpellStackRemoved)
   SpellThresholdClosed(message: SpellThresholdClosed)
   SpellThresholdEnded(message: SpellThresholdEnded)
   SpellThresholdOpened(message: SpellThresholdOpened)
@@ -257,6 +261,15 @@ pub fn decode(
     0x07F4 -> decoded(body, message_id, spell_go.decode, SpellGo)
     0x07FB -> decoded(body, message_id, spell_missed.decode, SpellMissed)
     0x07FE -> decoded(body, message_id, spell_finished.decode, SpellFinished)
+    0x0811 ->
+      decoded(
+        body,
+        message_id,
+        spell_targets_removed.decode,
+        SpellTargetsRemoved,
+      )
+    0x0813 ->
+      decoded(body, message_id, spell_stack_removed.decode, SpellStackRemoved)
     0x0814 ->
       decoded(
         body,
@@ -356,6 +369,8 @@ pub fn name(message: ServerMessage) -> String {
     SpellGo(..) -> "spell_go"
     SpellMissed(..) -> "spell_missed"
     SpellFinished(..) -> "spell_finished"
+    SpellTargetsRemoved(..) -> "spell_targets_removed"
+    SpellStackRemoved(..) -> "spell_stack_removed"
     SpellThresholdClosed(..) -> "spell_threshold_closed"
     SpellThresholdEnded(..) -> "spell_threshold_ended"
     SpellThresholdOpened(..) -> "spell_threshold_opened"

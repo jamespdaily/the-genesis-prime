@@ -1961,6 +1961,28 @@ fields = [
 ]
 
 [[message]]
+id = 0x0811
+name = "spell_targets_removed"
+direction = "server_to_client"
+evidence = "opcode.0x811"
+summary = "a cast is taken off some units: the cast id and the units; the client finds the cast (an unknown id drops the message) and destroys its target node on each unit it holds, which ends every effect the cast holds there and the unit's buff for the spell, and destroys the cast too when it has no target left and its cast method is not Channeled, ChanneledField, Multiphase or 10"
+fields = [
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x811", named_by = "opcode.0x811" },
+  { name = "unit_ids", kind = "array", count_bits = 32, element = "unsigned", element_bits = 32, evidence = "opcode.0x811", named_by = "opcode.0x811" },
+]
+
+[[message]]
+id = 0x0813
+name = "spell_stack_removed"
+direction = "server_to_client"
+evidence = "opcode.0x813"
+summary = "one stack fewer of a cast on a unit: the cast id and the unit; the client finds the cast and its target node on the unit (either missing drops the message), lowers the node's instance count by 1, and the unit's buff for the spell loses one stack and goes at 0; the cast's effects on the unit stay"
+fields = [
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x813", named_by = "opcode.0x813" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x813", named_by = "opcode.0x813" },
+]
+
+[[message]]
 id = 0x0814
 name = "spell_threshold_closed"
 direction = "server_to_client"
