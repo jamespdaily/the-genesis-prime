@@ -19,8 +19,10 @@
 -- 0x1400446d0): on a reload and when the world is torn down. This addon asks for a reload when the
 -- timeline is GenesisReportTimelineMinutes long and once the player has been out of combat for
 -- knQuietSeconds after a fight; a person's /reloadui also writes it. The restored timeline is kept
--- and appended to after a reload. Whether closing the client's window runs OnSave is not traced,
--- so a timeline is not relied on to survive it.
+-- and appended to after a reload of the same install; one saved by another install (its
+-- nInstalledAt is not GenesisReportInstalledAt) is dropped, so a new install starts a new timeline
+-- even when the old report file is still there. Whether closing the client's window runs OnSave is
+-- not traced, so a timeline is not relied on to survive it.
 
 require "Apollo"
 require "GameLib"
@@ -135,7 +137,8 @@ function GenesisReport:OnRestore(eLevel, tData)
 		return
 	end
 	if IsTimeline() then
-		if type(tData) == "table" and tData.bTimeline == true and type(tData.arTimeline) == "table" then
+		if type(tData) == "table" and tData.bTimeline == true and type(tData.arTimeline) == "table"
+			and NumberOrNil(tData.nInstalledAt) == NumberOrNil(GenesisReportInstalledAt) then
 			self.arTimeline = tData.arTimeline
 			self.nTimelineStartedAt = NumberOrNil(tData.nTimelineStartedAt)
 			self.bTimelineFinished = tData.bTimelineFinished == true
