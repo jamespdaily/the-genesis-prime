@@ -95,7 +95,7 @@ A sitting runs when the client sees or sends something new (the `playing-live` s
 - Before opening an issue, search the code and the issues under several names. A new issue states its proof the problem is real (a failing test, a measurement, a client fact or Jim's request), else it is a line on the parent. Its title states the outcome. File and move it with `dev/card.sh`: milestone, parent, blockers and status (To do, In progress, Waiting on Jim, Done).
 - A step's issue carries its test list, progress lines, dated measurements and closing summary.
 - A change to guidance (CLAUDE.md, a skill, an agent) needs no issue: its pull request names the milestone's parent issue.
-- The session is cleared at each merge with no builder mid-work. A hand-off names only what is in flight outside GitHub.
+- The session is cleared at each merge with no builder mid-work. The session-start state block (`dev/session_state.sh`) shows what runs, so a hand-off is the parent's newest "Where it stands" comment and one line naming the milestone.
 
 ## The closing summary
 
