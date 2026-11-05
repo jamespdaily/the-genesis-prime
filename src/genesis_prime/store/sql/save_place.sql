@@ -1,4 +1,9 @@
--- Saves where a character stands: its world, zone, position and facing, only
+-- Saves where a character stands: its world, zone, position and facing, and the
+-- health it has, in one statement, so the place and the health are saved
+-- together or not at all. The health is $13 when $14 is true, and NULL (no
+-- health to keep, as when the player is dead and comes back at full health)
+-- when it is false, since squirrel cannot type a parameter that may be NULL.
+-- It writes only
 -- while the character is still held by the login that made the save, that is
 -- while its `session_epoch` is still the one that login raised it to
 -- (load_character.sql), and only when the save is newer than the last one stored
@@ -18,7 +23,8 @@ set
   rotation_yaw = $9,
   rotation_pitch = $10,
   rotation_roll = $11,
-  save_sequence = $12
+  save_sequence = $12,
+  health = case when $14 then $13::int end
 where character_id = $1 and account_id = $2 and session_epoch = $3
   and save_sequence < $12
 returning character_id;

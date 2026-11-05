@@ -28,6 +28,7 @@ import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import pog
@@ -190,7 +191,7 @@ fn account_statement(row: sql.AccountsNamedRow) -> String {
 }
 
 fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
-  "insert into character (character_id, account_id, session_epoch, save_sequence, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, rotation_yaw, rotation_pitch, rotation_roll, look_labels, look_values, bones, needs_rename) overriding system value values ("
+  "insert into character (character_id, account_id, session_epoch, save_sequence, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, rotation_yaw, rotation_pitch, rotation_roll, look_labels, look_values, bones, needs_rename, health) overriding system value values ("
   <> string.join(
     [
       int.to_string(row.character_id),
@@ -216,6 +217,7 @@ fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
       integers(row.look_values),
       integers(row.bones),
       bool(row.needs_rename),
+      optional_integer(row.health),
     ],
     ", ",
   )
@@ -254,6 +256,14 @@ fn bytes(value: BitArray) -> String {
 /// column's 32 bits widened, so writing it back gives the same 32 bits.
 fn real(value: Float) -> String {
   "'" <> float.to_string(value) <> "'::real"
+}
+
+/// A nullable `integer` column's value: its number, or NULL when there is none.
+fn optional_integer(value: Option(Int)) -> String {
+  case value {
+    Some(value) -> int.to_string(value)
+    None -> "null"
+  }
 }
 
 fn integers(values: List(Int)) -> String {

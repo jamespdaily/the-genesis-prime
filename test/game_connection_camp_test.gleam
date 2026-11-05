@@ -398,6 +398,7 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
           ForWorld(CharacterLoaded(
             game_connection_support.world_character(),
             character_support.epoch(1),
+            None,
           )),
         ),
       ),

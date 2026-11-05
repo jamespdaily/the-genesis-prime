@@ -23,7 +23,7 @@ import genesis_prime/table/loader/store as table_store
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{type Option, Some}
 import gleam/result
 import place_support
 import pog
@@ -92,8 +92,9 @@ pub fn try_insert_at_level(
   })
 }
 
-/// The place a character's row holds, with the numbers that fence a save: its
-/// epoch and the sequence of the last save stored.
+/// The place and the health a character's row holds, with the numbers that fence
+/// a save: its epoch and the sequence of the last save stored. `health` is
+/// `None` for NULL, nothing saved.
 pub type PlaceRow {
   PlaceRow(
     world_id: Int,
@@ -102,11 +103,12 @@ pub type PlaceRow {
     rotation: #(Float, Float, Float),
     session_epoch: Int,
     save_sequence: Int,
+    health: Option(Int),
   )
 }
 
-/// What the character's row holds of where it stands and of the login that
-/// saved, read straight from the database.
+/// What the character's row holds of where it stands, of its health and of the
+/// login that saved, read straight from the database.
 pub fn place_row(
   pool pool: pog.Connection,
   character_id character_id: Int,
@@ -122,6 +124,7 @@ pub fn place_row(
     use roll <- decode.field(7, decode.float)
     use session_epoch <- decode.field(8, decode.int)
     use save_sequence <- decode.field(9, decode.int)
+    use health <- decode.field(10, decode.optional(decode.int))
     decode.success(PlaceRow(
       world_id:,
       world_zone_id:,
@@ -129,11 +132,12 @@ pub fn place_row(
       rotation: #(yaw, pitch, roll),
       session_epoch:,
       save_sequence:,
+      health:,
     ))
   }
   let assert Ok(returned) =
     pog.query(
-      "select world_id, world_zone_id, position_x::float8, position_y::float8, position_z::float8, rotation_yaw::float8, rotation_pitch::float8, rotation_roll::float8, session_epoch, save_sequence from character where character_id = $1",
+      "select world_id, world_zone_id, position_x::float8, position_y::float8, position_z::float8, rotation_yaw::float8, rotation_pitch::float8, rotation_roll::float8, session_epoch, save_sequence, health from character where character_id = $1",
     )
     |> pog.parameter(pog.int(character_id))
     |> pog.returning(decoder)

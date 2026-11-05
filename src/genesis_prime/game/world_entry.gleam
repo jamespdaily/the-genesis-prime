@@ -19,9 +19,13 @@
 ////
 //// - **The unit** is the map's: it builds the player's unit when it takes the
 ////   player (genesis_prime/world_map/map), with the loadout and the maximum
-////   health, and answers 0x262's record, which `joined` sends as it is, and the
-////   typed loadout and maximum health, which `Entered` keeps. The place the map
-////   is given, and 0xAD and 0x262 carry, is bounded (below).
+////   health, and answers 0x262's record, which `joined` sends with the health
+////   the player enters at as stat 0, and the typed loadout and maximum health,
+////   which `Entered` keeps. A play enters at the health its last save kept,
+////   capped at the maximum, and at full health when none was kept; the
+////   Holocrypt's join enters at full health (`player_life.entering`; the
+////   server's choice). The place the map is given, and 0xAD and 0x262 carry, is
+////   bounded (below).
 //// - **The order** is the client's: 0xAD first; 0x262 before 0x19B; 0x19B
 ////   before the loadout, 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
@@ -121,7 +125,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
 
@@ -153,11 +157,15 @@ pub opaque type State {
   /// The map is asked to take the character at `place`, with the movement it
   /// enters with: at a play, the saved place as the login whose epoch the store
   /// gave; at the Holocrypt, the stay's own movement placed there, so its saves
-  /// go on numbered after the earlier ones (`movement.placed`).
+  /// go on numbered after the earlier ones (`movement.placed`). `saved_health`
+  /// is the health the character's last save kept, which a play enters at
+  /// (`player_life.entering`) and the Holocrypt's join does not have: it enters
+  /// at full health.
   Joining(
     character: Character,
     place: Place,
     movement: movement.State,
+    saved_health: Option(Int),
     map: MapId,
     stay: Stay,
     readiness: Readiness,
@@ -338,7 +346,7 @@ pub fn loaded(
               <> int.to_string(character_id)
               <> ", which the account does not have",
           )
-        store.CharacterLoaded(character:, session_epoch:) ->
+        store.CharacterLoaded(character:, session_epoch:, saved_health:) ->
           case character.place {
             None ->
               Refused(
@@ -353,6 +361,7 @@ pub fn loaded(
                   character:,
                   place:,
                   movement: movement.entered(place:, session_epoch:),
+                  saved_health:,
                   connection:,
                   stay:,
                   readiness: ClientLoading,
@@ -377,14 +386,33 @@ pub fn joined(
   classes classes: class_resource.Classes,
 ) -> Result(Joined, Nil) {
   case state {
-    Joining(character:, place:, movement:, map:, stay:, readiness:) -> {
+    Joining(
+      character:,
+      place:,
+      movement:,
+      saved_health:,
+      map:,
+      stay:,
+      readiness:,
+    ) -> {
       case answer {
         map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
           let assert Ok(resource) =
             class_resource.of_class(classes:, class_id: character.class_id)
             as "character creation makes only playable classes, and the content load refuses a table with no resource for one"
+          let life =
+            player_life.entering(
+              saved: saved_health,
+              max_health:,
+              shield: full_shield(unit:),
+            )
           let unit = player_unit.with_resource(record: unit, resource:)
+          let unit =
+            player_unit.with_health(
+              record: unit,
+              health: player_life.health(life:),
+            )
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
           Ok(InTheWorld(
@@ -406,10 +434,7 @@ pub fn joined(
               gone: set.new(),
               movement:,
               readiness:,
-              life: player_life.new(
-                health: max_health,
-                shield: full_shield(unit:),
-              ),
+              life:,
               resources: class_resource.new(resource:),
               camp: camp.none(),
               cast: cast.new(),
@@ -481,6 +506,7 @@ pub fn rejoining(
     character: entered.character,
     place:,
     movement: movement.placed(state: entered.movement, place:),
+    saved_health: None,
     connection:,
     stay:,
     readiness: GhostLoading,
@@ -494,23 +520,35 @@ fn joining(
   character character: Character,
   place place: Place,
   movement movement: movement.State,
+  saved_health saved_health: Option(Int),
   connection connection: ConnectionId,
   stay stay: Stay,
   readiness readiness: Readiness,
 ) -> #(State, List(Effect)) {
   let map =
     MapId(world_id: start_place.world_id(place), instance: open_world_instance)
-  #(Joining(character:, place:, movement:, map:, stay:, readiness:), [
-    AskMap(
+  #(
+    Joining(
+      character:,
+      place:,
+      movement:,
+      saved_health:,
       map:,
-      message: map.Join(
-        connection:,
-        character:,
-        place: start_place.within_the_worlds_box(place),
-        stay:,
-      ),
+      stay:,
+      readiness:,
     ),
-  ])
+    [
+      AskMap(
+        map:,
+        message: map.Join(
+          connection:,
+          character:,
+          place: start_place.within_the_worlds_box(place),
+          stay:,
+        ),
+      ),
+    ],
+  )
 }
 
 /// 0xAD with the saved world and position, and 0.0 in the last two floats.

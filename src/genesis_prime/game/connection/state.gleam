@@ -12,6 +12,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/movement
+import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{type GameSettings}
@@ -416,6 +417,7 @@ pub fn saving(
       state: entered.movement,
       account_id: holder.account_id,
       character_id: entered.character_id,
+      health: player_life.saved_health(life: entered.life),
     )
   ask_within(
     session: Session(

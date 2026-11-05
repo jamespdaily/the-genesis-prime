@@ -24,7 +24,7 @@
 //// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
 ////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
 //// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id)
-////     CharacterLoaded(row, epoch)                                 ─▶ map MapId(world, 0): Join(connection, row, place)
+////     CharacterLoaded(row, epoch, health)                         ─▶ map MapId(world, 0): Join(connection, row, place)
 ////       Joined(unit record)    ◀─ 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1, 0x61; watches the map (watch 2)
 ////     NotTheAccounts, or no place ◀─ 0x3DC{0x0162 refused}       ─▶ store: ListCharacters(account)
 ////       Characters(rows)       ◀─ 0x0036, 0x0117, as above
@@ -33,12 +33,12 @@
 ////                                 (genesis_prime/game/movement); 0x635 is logged as unhandled
 //// 0x244{0x038C{0xBF 1}}        ─▶ in the world, the camp runs  ◀─ 0x3DC{0x0092 countdown, cancel 0, bonuses 0}
 //// 0x244{0x038C{0xBF 0}}        ─▶ the camp is cleared; nothing is written
-//// 0x244{0x038C{0xC0}}          ─▶ camp finished; the save timer is cancelled  ─▶ store: SavePlace(account, character, epoch, sequence, place)
+//// 0x244{0x038C{0xC0}}          ─▶ camp finished; the save timer is cancelled  ─▶ store: SavePlace(account, character, epoch, sequence, place, health)
 ////     answered, whatever it is   ─▶ map run (map, incarnation): Leave(connection)
 ////       Left, NotRunning or EndedBeforeAnswer ◀─ 0x3DC{0x0594 bit 1, reason 0}; the map watch is dropped;
 ////                                the connection is in character select again
 //// 0x244{0x07E0}                ─▶ the list, as at login: 0x0036, 0x0117 (no new claim)
-//// every 60 s (save timer)      ─▶ store: SavePlace(account, character, epoch, sequence, place)
+//// every 60 s (save timer)      ─▶ store: SavePlace(account, character, epoch, sequence, place, health)
 //// the map ends (watch 2)       ─▶ store: SavePlace   ◀─ 0x3DC{0x036A reason 8}; the connection ends
 //// 0x244{0x038C{kind, inner}}  ─▶ the inner message logged as unhandled under its own id,
 ////                                 but the player's movement and camp messages in the world

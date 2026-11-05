@@ -481,11 +481,12 @@ pub fn while_dead_every_0x637_is_dropped_and_after_coming_back_a_move_moves_the_
     as "a body the client's reader would refuse ends the connection, as for the living"
   assert support.says(line:, words: "does not decode")
     && game_connection_support.ask_request(malformed)
-    == game_connection_support.save_asked(
-      1,
-      game_connection_support.entry_place(),
+    == game_connection_support.save_asked_keeping(
+      sequence: 1,
+      place: game_connection_support.entry_place(),
+      health: None,
     )
-    as "the body's place is saved before the end: where it fell"
+    as "a dead player's save keeps no health (death.server_choices); the body's place is saved before the end: where it fell"
   let #(state, _) =
     game_connection_support.read(state, game_connection_support.wake_here())
   let #(_, moved) =
@@ -520,12 +521,16 @@ pub fn a_ghosts_0x637_the_clients_code_never_sends_ends_the_connection_after_sav
     let assert [_] = support.logs_of(step: taken, level: LogError)
       as { what <> ": one error line says what the client sent" }
     assert game_connection_support.ask_request(taken)
-      == game_connection_support.save_asked(
-        1,
-        game_connection_support.entry_place(),
+      == game_connection_support.save_asked_keeping(
+        sequence: 1,
+        place: game_connection_support.entry_place(),
+        health: None,
       )
       && support.writes(taken) == []
-      as { what <> ": the place the body lies at is saved, nothing written" }
+      as {
+        what
+        <> ": the place the body lies at is saved with no health (death.server_choices), nothing written"
+      }
   })
 }
 
@@ -596,11 +601,12 @@ pub fn a_0x15a_the_rule_refuses_writes_nothing_and_logs_a_warning_and_one_the_cl
     as "a body the client's reader would refuse ends the connection"
   assert support.says(line:, words: "does not decode")
     && game_connection_support.ask_request(malformed)
-    == game_connection_support.save_asked(
-      1,
-      game_connection_support.entry_place(),
+    == game_connection_support.save_asked_keeping(
+      sequence: 1,
+      place: game_connection_support.entry_place(),
+      health: None,
     )
-    as "after the save of the place, as any end in the world"
+    as "a dead player's save keeps no health (death.server_choices); after the save of the place, as any end in the world"
 }
 
 pub fn a_second_choice_is_refused_unchanged_test() -> Nil {
@@ -920,11 +926,12 @@ pub fn the_map_ending_while_the_player_is_dead_saves_where_the_body_lies_and_end
   let #(state, taken) =
     game_connection_support.feed(state, WatchEnded(WatchId(2)))
   assert game_connection_support.ask_request(taken)
-    == game_connection_support.save_asked(
-      1,
-      game_connection_support.entry_place(),
+    == game_connection_support.save_asked_keeping(
+      sequence: 1,
+      place: game_connection_support.entry_place(),
+      health: None,
     )
-    as "the body's place: where it fell"
+    as "a dead player's save keeps no health (death.server_choices); the body's place: where it fell"
   assert support.writes(taken) == [] && !support.stops(taken)
   let #(_, ended) =
     game_connection_support.answer(

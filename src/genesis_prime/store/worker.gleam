@@ -45,9 +45,10 @@
 //// - **A save is one statement.** It names the account's id, the character's,
 ////   the epoch the saving login was told and the save's own sequence number, so
 ////   a save from an older login, or one that reaches the database after a newer
-////   save of its own login, matches no row and changes nothing. A save that a
-////   check constraint of the table refuses is `PlaceRefused`, and the worker
-////   does not crash for it.
+////   save of its own login, matches no row and changes nothing. It writes the
+////   health with the place. A save that `character_health_is_positive` refuses
+////   is `HealthRefused`; one that any other check constraint of the table
+////   refuses is `PlaceRefused`; the worker does not crash for either.
 //// - **A delete and a rename are one statement each.** Both name the account's
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
@@ -77,18 +78,18 @@ import genesis_prime/store.{
   type WorldRequest, Account, AccountFound, AccountId, Character,
   CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
   CharacterRenamed, CreateCharacter, Created, DeleteCharacter, Deleted,
-  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, ListCharacters, Listed,
-  LoadCharacter, Login, Move, NameStands, NameTaken, NeedsRename, NewNameTaken,
-  NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved,
-  PlaceRefused, PlaceSaved, RenameCharacter, Renamed, SavePlace, Select,
-  Unavailable, World,
+  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
+  ListCharacters, Listed, LoadCharacter, Login, Move, NameStands, NameTaken,
+  NeedsRename, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
+  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
+  Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, RaceId}
 import gleam/bool
 import gleam/erlang/process.{type Name}
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -312,8 +313,10 @@ fn world(
 /// Runs one of the player's movement's requests: a save is one statement that
 /// names the account, the character, the epoch and the save's sequence
 /// (save_place.sql), answering `PlaceSaved` when it changed a row and
-/// `NothingSaved` when it matched none, and `PlaceRefused` when a check of the
-/// table refused the place; `Error(Nil)` when the database is away.
+/// `NothingSaved` when it matched none, `HealthRefused` when the table's
+/// `character_health_is_positive` refused the health and `PlaceRefused` when
+/// another check of the table refused the place; `Error(Nil)` when the database
+/// is away.
 fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
   let SavePlace(
     account_id: AccountId(account_id),
@@ -321,8 +324,15 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     session_epoch:,
     save_sequence:,
     place:,
+    health:,
   ) = request
   let facing = start_place.facing(place)
+  // squirrel cannot type a parameter that may be NULL (save_place.sql): the
+  // health goes as a number and whether to keep it.
+  let #(health, keeps_health) = case health {
+    Some(health) -> #(health, True)
+    None -> #(0, False)
+  }
   case
     attempt(fn() {
       sql.save_place(
@@ -339,6 +349,8 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
         facing.pitch,
         facing.roll,
         save_sequence,
+        health,
+        keeps_health,
       )
     })
   {
@@ -346,6 +358,8 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     Ok([]) -> Ok(NothingSaved)
     Ok(_) -> panic as "a character id is unique, so a save changes at most one"
     Error(Unreachable) -> Error(Nil)
+    Error(Refused(constraint: "character_health_is_positive", ..)) ->
+      Ok(HealthRefused)
     Error(Refused(..)) -> Ok(PlaceRefused)
     Error(Unexpected(error:)) -> exit_with(error)
   }
@@ -405,6 +419,7 @@ fn load_character(
           naming: naming(row.needs_rename),
         ),
         session_epoch: epoch,
+        saved_health: row.health,
       )
     }
     [] -> NotTheAccounts
