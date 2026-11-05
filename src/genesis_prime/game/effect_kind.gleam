@@ -39,6 +39,8 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     26 -> Proxy
     8 -> Damage
     1 -> VitalModifier
+    17 -> Fluff
+    80 -> ForceRemove
     other -> Unread(effect_type: other)
   }
 }

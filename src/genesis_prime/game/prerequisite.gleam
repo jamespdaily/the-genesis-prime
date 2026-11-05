@@ -21,6 +21,14 @@
 ////   has the unit as a target, and by comparison 2 when none has; any other
 ////   comparison fails, and its objectId is not read
 ////   (`Prerequisite.prerequisiteTypeId.15`, `0x1404a4ec0`).
+//// - **Type 50** passes, by comparison 1, when a live cast of the Spell4 in its value,
+////   whose caster is the check's second unit, holds a node on the unit, and by
+////   comparison 2 when none does; any other comparison fails. With no second unit,
+////   comparison 2 passes and any other fails, and a second unit 0 or a value 0 matches
+////   no cast. Its objectId is not read (`Prerequisite.prerequisiteTypeId.50`).
+//// - **Type 59** compares the stack count on the unit of the Spell4 in its objectId
+////   with the value: the sum of the instance counts of the casts that hold a node on
+////   the unit, 0 when none does (`Prerequisite.prerequisiteTypeId.59`).
 //// - **Type 28** passes, by comparison 1, when the unit is in combat and by
 ////   comparison 2 when it is not; any other comparison fails
 ////   (`Prerequisite.prerequisiteTypeId.28`).
@@ -42,7 +50,7 @@
 ////   (`0x1404a2100`).
 //// - **The units:** a check's first unit is its subject, and this module checks
 ////   caster-side prerequisites only, where the second unit is the caster too
-////   (`Spell4Effects.prerequisiteIdTargetApply`).
+////   (`Spell4Effects.prerequisiteIdTargetApply`): the subject's `second_unit`.
 
 import genesis_prime/game/lasting
 import genesis_prime/message/float32
@@ -131,6 +139,12 @@ type Condition {
   /// Type 15: whether a live cast of the Spell4 has the unit as a target
   /// (`Prerequisite.prerequisiteTypeId.15`).
   TargetOfLiveCast(comparison: Comparison, spell4_id: Spell4Id)
+  /// Type 50: whether a cast of the Spell4 by the check's second unit holds a node on
+  /// the unit (`Prerequisite.prerequisiteTypeId.50`).
+  UnderCastBy(comparison: Comparison, spell4_id: Spell4Id)
+  /// Type 59: the stack count of the Spell4 on the unit against the value
+  /// (`Prerequisite.prerequisiteTypeId.59`).
+  StackCount(relation: Relation, spell4_id: Spell4Id, value: Int)
   /// Type 28: whether the unit is in combat
   /// (`Prerequisite.prerequisiteTypeId.28`).
   InCombat(comparison: Comparison)
@@ -191,6 +205,10 @@ pub type Subject {
     /// lingering casts, and a live cast whose primary target it is with count 0
     /// (genesis_prime/game/lasting `Held`).
     under: List(lasting.Held),
+    /// The check's second unit: the unit id of the caster for the caster-side checks
+    /// of this module (`Spell4Effects.prerequisiteIdTargetApply`); none when the check
+    /// has no second unit.
+    second_unit: Option(Int),
     /// Whether the subject is in combat.
     in_combat: Bool,
     /// The vitals the server holds for the subject, by Vital id; a vital left out
@@ -211,6 +229,7 @@ pub type Subject {
 pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
   Subject(
     under: [],
+    second_unit: None,
     in_combat: False,
     vitals: dict.new(),
     difficulty: Some(difficulty),
@@ -291,6 +310,17 @@ fn condition_of(
         spell4_id: Spell4Id(value),
       )
     28 -> InCombat(comparison: comparison_of(comparison))
+    50 ->
+      UnderCastBy(
+        comparison: comparison_of(comparison),
+        spell4_id: Spell4Id(value),
+      )
+    59 ->
+      StackCount(
+        relation: relation_of(code: comparison),
+        spell4_id: Spell4Id(object_id),
+        value:,
+      )
     37 -> Roll(relation: relation_of(code: comparison), value:)
     71 ->
       VitalPercent(
@@ -324,6 +354,8 @@ pub fn is_read(type_id type_id: Int) -> Bool {
   case condition_of(type_id:, comparison: 0, object_id: 0, value: 0) {
     Unread(..) -> False
     TargetOfLiveCast(..)
+    | UnderCastBy(..)
+    | StackCount(..)
     | InCombat(..)
     | Roll(..)
     | VitalPercent(..)
@@ -345,6 +377,8 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
     case condition {
       Roll(..) -> True
       TargetOfLiveCast(..)
+      | UnderCastBy(..)
+      | StackCount(..)
       | InCombat(..)
       | VitalPercent(..)
       | VitalCurrent(..)
@@ -407,6 +441,26 @@ fn condition_check(
       NotFound -> verdict_of(!is_under(subject:, spell4_id:))
       OtherComparison(..) -> Fails
     })
+    UnderCastBy(comparison:, spell4_id:) -> #(rolls, case comparison {
+      Found -> verdict_of(is_under_cast_by(subject:, spell4_id:))
+      NotFound -> verdict_of(!is_under_cast_by(subject:, spell4_id:))
+      OtherComparison(..) -> Fails
+    })
+    StackCount(relation:, spell4_id:, value:) -> #(
+      rolls,
+      verdict_of(compare(
+        relation:,
+        measured: int.sum(
+          list.filter_map(subject.under, fn(held) {
+            case held.spell4_id == spell4_id {
+              True -> Ok(held.count)
+              False -> Error(Nil)
+            }
+          }),
+        ),
+        value:,
+      )),
+    )
     InCombat(comparison:) -> #(rolls, case comparison {
       Found -> verdict_of(subject.in_combat)
       NotFound -> verdict_of(!subject.in_combat)
@@ -452,6 +506,23 @@ fn condition_check(
 /// Whether a cast of the Spell4 holds a node on the subject.
 fn is_under(subject subject: Subject, spell4_id spell4_id: Spell4Id) -> Bool {
   list.any(subject.under, fn(held) { held.spell4_id == spell4_id })
+}
+
+/// Whether a cast of the Spell4 by the subject's second unit holds a node on the
+/// subject: with no second unit, a second unit 0 or a Spell4 0 none does
+/// (`Prerequisite.prerequisiteTypeId.50`).
+fn is_under_cast_by(
+  subject subject: Subject,
+  spell4_id spell4_id: Spell4Id,
+) -> Bool {
+  case subject.second_unit {
+    None | Some(0) -> False
+    Some(second_unit) ->
+      spell4_id.value != 0
+      && list.any(subject.under, fn(held) {
+        held.spell4_id == spell4_id && held.caster == second_unit
+      })
+  }
 }
 
 fn verdict_of(holds: Bool) -> Verdict {

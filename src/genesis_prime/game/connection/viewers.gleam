@@ -410,14 +410,21 @@ pub fn viewer_takes(
         when: !dict.has_key(entered.casts_written, removed.cast_id),
         return: Continue(session, []),
       )
-      todo as "shape commit: the viewer writes 0x811 for a cast it wrote"
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          cast.targets_removed_frame(removed:),
+        ),
+      ])
     }
     client_connection.CastStackRemoved(removed:) -> {
       use <- bool.guard(
         when: !dict.has_key(entered.casts_written, removed.cast_id),
         return: Continue(session, []),
       )
-      todo as "shape commit: the viewer writes 0x813 for a cast it wrote"
+      Continue(session, [
+        connection_state.to_client(session, cast.stack_removed_frame(removed:)),
+      ])
     }
     client_connection.CastFinished(cast_id:) -> {
       use <- bool.guard(

@@ -66,6 +66,11 @@
 //// | A viewer leaves sight | the 0x7fe of each cast it wrote comes before the 0x355 | | |
 
 import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id}
+import gleam/bool
+import gleam/int
+import gleam/list
+import gleam/order
+import gleam/pair
 
 /// How long a node stays on its unit.
 pub type Life {
@@ -101,7 +106,28 @@ pub fn life_of(
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
   go_ms go_ms: Int,
 ) -> Life {
-  todo as "shape commit: the life of a node"
+  use <- bool.guard(
+    when: list.any(effects, fn(row) { row.until_removed }),
+    return: UntilRemoved,
+  )
+  let longest =
+    list.fold(effects, 0, fn(longest, row) {
+      int.max(longest, lifetime_of(row:, longer_of_delay_and_duration:))
+    })
+  use <- bool.guard(when: longest <= 0, return: NoLife)
+  EndsAt(ms: go_ms + longest)
+}
+
+/// One effect's lifetime from the go: its delay plus durationTime, or the larger of
+/// the two (`opcode.0x7f4.effect_time`).
+fn lifetime_of(
+  row row: LastingRow,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+) -> Int {
+  case longer_of_delay_and_duration {
+    True -> int.max(row.delay_ms, row.duration_ms)
+    False -> row.delay_ms + row.duration_ms
+  }
 }
 
 /// What a cast holds on a unit as a prerequisite reads it: the Spell4 it casts,
@@ -164,7 +190,49 @@ pub fn removals(
   count count: Int,
   unit_id unit_id: Int,
 ) -> List(Removal) {
-  todo as "shape commit: what a removal takes off"
+  oldest_first(holds:, unit_id:, matching: fn(hold) {
+    case selector {
+      Group(spell_group_id:) -> list.contains(hold.groups, spell_group_id)
+      Spell(spell4_id:) -> hold.spell4_id == spell4_id
+      Base(spell4_base_id:) -> hold.base == spell4_base_id
+    }
+  })
+  |> list.fold(#([], count), fn(so_far, hold) {
+    let #(removals, remaining) = so_far
+    case remaining <= 0 {
+      True -> so_far
+      False ->
+        case hold.node.count <= remaining {
+          True -> #(
+            [NodeOff(cast_id: hold.cast_id, unit_id:), ..removals],
+            remaining - hold.node.count,
+          )
+          False -> #(
+            list.append(
+              list.repeat(StackOff(cast_id: hold.cast_id, unit_id:), remaining),
+              removals,
+            ),
+            0,
+          )
+        }
+    }
+  })
+  |> pair.first
+  |> list.reverse
+}
+
+/// The holds on the unit that `matching` accepts, oldest first (the start, then the
+/// cast id).
+fn oldest_first(
+  holds holds: List(Hold),
+  unit_id unit_id: Int,
+  matching matching: fn(Hold) -> Bool,
+) -> List(Hold) {
+  list.filter(holds, fn(hold) { hold.node.unit_id == unit_id && matching(hold) })
+  |> list.sort(fn(first, second) {
+    int.compare(first.started_ms, second.started_ms)
+    |> order.break_tie(int.compare(first.cast_id, second.cast_id))
+  })
 }
 
 /// The holds a new cast of `spell4_id` with `stack` pushes off the unit `unit_id`
@@ -181,5 +249,14 @@ pub fn pushed_off(
   stack stack: Stack,
   unit_id unit_id: Int,
 ) -> List(Removal) {
-  todo as "shape commit: what a new cast at the stack cap pushes off"
+  let #(matching, room) = case stack.cap >= 1 && stack.group_id != 0 {
+    True -> #(
+      fn(hold: Hold) { hold.stack.group_id == stack.group_id },
+      stack.cap - 1,
+    )
+    False -> #(fn(hold: Hold) { hold.spell4_id == spell4_id }, 0)
+  }
+  let same = oldest_first(holds:, unit_id:, matching:)
+  list.take(same, int.max(0, list.length(same) - room))
+  |> list.map(fn(hold) { NodeOff(cast_id: hold.cast_id, unit_id:) })
 }

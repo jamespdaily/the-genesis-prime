@@ -156,9 +156,29 @@
 ////   server choice, since the client applies no Proxy itself
 ////   (`Spell4Effects.effectType.26.dataBits06`). A gain that asks to be "not under"
 ////   a spell this same go starts is given (`cast_gate_test`).
+//// - **A go's lasting effects** (genesis_prime/game/lasting): each Fluff (17) and
+////   SpellForceRemove (80) effect of the phase whose gate against the caster passes
+////   is listed in the target info of each unit its targetFlags aim at, with the
+////   effect's delay, a result bit, the instance count 1 and the lifetime 0 the client
+////   works out itself; a unit the round did not strike gets an info of its own
+////   (`opcode.0x7f4.target_info`, `opcode.0x7f4.effect_time`). A Fluff effect gives
+////   the unit a node of the cast that lives as long as its longest effect, kept on the
+////   live cast; a type 80 effect takes the matching nodes of the caster's casts off the
+////   unit, oldest cast first, each written 0x811 (`opcode.0x811`); and a cast that
+////   gives a unit a node it holds none on takes off the caster's oldest casts of its
+////   stack at the stack's cap (Jim's server rule, `Spell4StackGroup.server_rule`).
+//// - **A cast that lingers** is one whose last go has gone while a node of it still
+////   has life: every step of its end runs (the current cast cleared, a channel's
+////   cooldown, a stage's threshold closed) and only its 0x7fe waits, since the client
+////   ends no buff on time (`cast.target_node_end`). A timer of the rule ends the
+////   nodes as their time runs out, 0x811 for the units whose node ends and the 0x7fe
+////   with the last. A lingering cast holds its id until then.
+//// - **A unit that leaves the caster's sight** takes its nodes with it on the client
+////   (`0x1404550d0`), so the rule drops them too and a lingering cast left with no node
+////   ends with its 0x7fe (`unit_removed`).
 //// - **A go's rolls** are one for each type 37 condition among the gates of the
-////   Proxies that start a child and of the gains that may be given
-////   (`rolls_needed`); the connection draws that many from its seed before it calls
+////   Proxies that start a child, of the gains that may be given and of the lasting
+////   effects of the phase (`rolls_needed`); the connection draws that many from its seed before it calls
 ////   `went`, and none when there is no such condition, so no other roll of the
 ////   connection moves.
 //// - **A child cast** is the Proxy's spell cast as its own, from the caster, with
@@ -233,6 +253,13 @@
 //// | the answer of a store ask comes after a timer's due time | the timer is taken after the answer: the go and finish are late by the ask, never lost |
 //// | a viewer is told a go or finish of a cast it did not write | dropped (genesis_prime/game/connection) |
 //// | the audience's connection has ended | the tell is dropped by the shell |
+//// | a go lists a lasting effect, the last go leaves a node with life | the cast lingers with no 0x7fe; the timer of its earliest ending node starts |
+//// | a lingering cast's timer fires with no node ended, or after a removal took the cast off | nothing is written; the timer starts again for the nodes left, or finds no cast |
+//// | two nodes of a lingering cast end at the same time | one 0x811 naming both units |
+//// | a removal and a lingering cast's timer in one step | the removal first; the timer finds nothing |
+//// | the caster dies with a lingering cast | its 0x7fe to the caster and the audience, with the live casts' (server choice: the client has no death path) |
+//// | the caster leaves with a lingering cast | every timer is cancelled and nothing is written; each viewer's 0x355 ends the cast on its client |
+//// | a unit holding a node of a cast leaves the caster's sight | the node is dropped with no frame; a lingering cast left with no node ends with its 0x7fe |
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -251,6 +278,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
+import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
@@ -259,9 +287,15 @@ import genesis_prime/message/spell_go.{type SpellGo, SpellGo}
 import genesis_prime/message/spell_miss.{SpellMiss}
 import genesis_prime/message/spell_missed.{type SpellMissed, SpellMissed}
 import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
+import genesis_prime/message/spell_stack_removed.{
+  type SpellStackRemoved, SpellStackRemoved,
+}
 import genesis_prime/message/spell_started.{type SpellStarted, SpellStarted}
 import genesis_prime/message/spell_target_info.{
   type SpellTargetInfo, SpellTargetInfo,
+}
+import genesis_prime/message/spell_targets_removed.{
+  type SpellTargetsRemoved, SpellTargetsRemoved,
 }
 import genesis_prime/message/spell_threshold_closed.{SpellThresholdClosed}
 import genesis_prime/message/spell_threshold_index.{SpellThresholdIndex}
@@ -270,7 +304,9 @@ import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, LogDebug, LogInfo,
   LogWarning, TimerId,
 }
-import genesis_prime/table/id.{type Item2Id, type Spell4BaseId, type Spell4Id}
+import genesis_prime/table/id.{
+  type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
+}
 import genesis_prime/world_map/map
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -1701,7 +1737,7 @@ fn fire(
         Finish(cast_id:) ->
           case dict.get(cast.casts, cast_id) {
             Error(Nil) -> #(cast, [])
-            Ok(live) -> finish(cast:, cast_id:, live:, now_ms:)
+            Ok(live) -> finish_or_linger(cast:, cast_id:, live:, now_ms:)
           }
         StartChild(root:, parent:, proxy:, primary_target:) ->
           start(
@@ -1756,16 +1792,39 @@ pub fn rolls_needed(
       let spell = live.spell
       let proxies =
         proxies_with_targets(spell:, phase:, struck:, spent: live.spent)
-      int.sum(list.append(
-        list.map(gates_of(proxies:), fn(gate) {
+      int.sum(
+        list.flatten([
+          list.map(gates_of(proxies:), fn(gate) {
+            prerequisite.rolls_needed(prerequisite: gate)
+          }),
+          list.map(
+            gains_of(spell:, phase:, proxies:, spent: live.spent),
+            gain_rolls_needed,
+          ),
+          list.map(
+            spell_plan.lasting_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
+          list.map(
+            spell_plan.removes_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
+        ]),
+      )
+    }
+  }
+}
+
+/// The rolls the check of a condition's gates takes.
+fn condition_rolls_needed(condition: spell_plan.Condition) -> Int {
+  case condition {
+    spell_plan.GatedOnCaster(gates:) ->
+      int.sum(
+        list.map(gates, fn(gate) {
           prerequisite.rolls_needed(prerequisite: gate)
         }),
-        list.map(
-          gains_of(spell:, phase:, proxies:, spent: live.spent),
-          gain_rolls_needed,
-        ),
-      ))
-    }
+      )
+    spell_plan.Always | spell_plan.GatedOnTarget(..) -> 0
   }
 }
 
@@ -1894,22 +1953,196 @@ fn nodes_ended(
   cast_id cast_id: Int,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  todo as "shape commit: the end of a lingering cast's nodes"
+  case dict.get(cast.lingering, cast_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(lingering) -> {
+      let #(ended, kept) =
+        dict.to_list(lingering.nodes)
+        |> list.partition(fn(entry) {
+          life_over(life: { entry.1 }.life, now_ms:)
+        })
+      case ended, kept {
+        [], _ -> rearmed(cast:, cast_id:, now_ms:)
+        _, [] -> #(
+          stopped_lingering(cast:, cast_id:),
+          finished_effects(cast_id:, audience: lingering.audience),
+        )
+        _, [_, ..] -> {
+          let lingering = Lingering(..lingering, nodes: dict.from_list(kept))
+          let cast =
+            State(
+              ..cast,
+              lingering: dict.insert(cast.lingering, cast_id, lingering),
+            )
+          let #(cast, armed) = rearmed(cast:, cast_id:, now_ms:)
+          #(
+            cast,
+            list.append(
+              targets_removed_effects(
+                cast_id:,
+                unit_ids: sorted_units(ended),
+                audience: lingering.audience,
+              ),
+              armed,
+            ),
+          )
+        }
+      }
+    }
+  }
+}
+
+/// Whether a node's life is over at the time: it ended, or it never had one.
+fn life_over(life life: lasting.Life, now_ms now_ms: Int) -> Bool {
+  case life {
+    lasting.EndsAt(ms:) -> ms <= now_ms
+    lasting.NoLife -> True
+    lasting.UntilRemoved -> False
+  }
+}
+
+/// The unit ids of nodes, in unit id order.
+fn sorted_units(nodes: List(#(Int, lasting.Node))) -> List(Int) {
+  list.map(nodes, fn(entry) { entry.0 }) |> list.sort(int.compare)
+}
+
+/// The earliest time a node of the lingering cast ends at, none when every node
+/// lasts until it is removed.
+fn earliest_end(nodes nodes: Dict(Int, lasting.Node)) -> Option(Int) {
+  list.filter_map(dict.values(nodes), fn(node) {
+    case node.life {
+      lasting.EndsAt(ms:) -> Ok(ms)
+      lasting.NoLife | lasting.UntilRemoved -> Error(Nil)
+    }
+  })
+  |> list.sort(int.compare)
+  |> list.first
+  |> option.from_result
+}
+
+/// The lingering cast's `NodesEnd` timer, started for its earliest ending node; none
+/// when no node ends by time.
+fn arm_nodes_end(
+  cast cast: State,
+  cast_id cast_id: Int,
+  nodes nodes: Dict(Int, lasting.Node),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case earliest_end(nodes:) {
+    None -> #(cast, [])
+    Some(ends_ms) -> {
+      let #(cast, timer) = new_timer(cast:)
+      #(
+        State(
+          ..cast,
+          timers: dict.insert(cast.timers, timer, NodesEnd(cast_id:)),
+        ),
+        [StartTimer(timer:, after_ms: int.max(0, ends_ms - now_ms))],
+      )
+    }
+  }
+}
+
+/// The lingering cast's `NodesEnd` timer cancelled and started again for the nodes
+/// it holds now.
+fn rearmed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, cancels) = cancel_nodes_end(cast:, cast_id:)
+  case dict.get(cast.lingering, cast_id) {
+    Error(Nil) -> #(cast, cancels)
+    Ok(lingering) -> {
+      let #(cast, armed) =
+        arm_nodes_end(cast:, cast_id:, nodes: lingering.nodes, now_ms:)
+      #(cast, list.append(cancels, armed))
+    }
+  }
+}
+
+/// The `NodesEnd` timers of the cast cancelled.
+fn cancel_nodes_end(
+  cast cast: State,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  cancel_timers(cast:, matching: fn(due) {
+    case due {
+      NodesEnd(cast_id: waiting) -> waiting == cast_id
+      Go(..)
+      | Finish(..)
+      | StartChild(..)
+      | StartHeld
+      | RepeatHeld
+      | WindowEnd(..)
+      | ChargeLevel(..) -> False
+    }
+  })
+}
+
+/// The cast no longer lingers: its entry is dropped and its timer forgotten. The
+/// timer's cancel is left out, since a timer that fires finds no cast and does nothing.
+fn stopped_lingering(cast cast: State, cast_id cast_id: Int) -> State {
+  State(
+    ..cast,
+    lingering: dict.delete(cast.lingering, cast_id),
+    timers: dict.filter(cast.timers, fn(_, due) { due != NodesEnd(cast_id:) }),
+  )
 }
 
 /// A unit the caster's client shows is removed from it (a 0x355 for a unit it was
 /// shown): the client destroys that unit's nodes then (`0x1404550d0`), so the
-/// unit's nodes are dropped from the live and lingering casts; a lingering cast left
-/// with no node sends its finish and is dropped. This bounds the casts that linger,
-/// so the caster's cast ids (`mint`) cannot run out. The body returns the state
-/// unchanged and writes nothing: callers hold the same signature the rule will
-/// keep.
+/// unit's nodes are dropped from the live and lingering casts, and nothing is
+/// written for them; a lingering cast left with no node sends its finish and is
+/// dropped, and one that keeps nodes has its `NodesEnd` timer started again. This
+/// bounds the casts that linger by the units in sight, so the caster's cast ids
+/// (`mint`) cannot run out.
 pub fn unit_removed(
   cast cast: State,
   unit_id unit_id: Int,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  #(cast, [])
+  let cast =
+    State(
+      ..cast,
+      casts: dict.map_values(cast.casts, fn(_, live) {
+        Live(..live, nodes: dict.delete(live.nodes, unit_id))
+      }),
+    )
+  dict.to_list(cast.lingering)
+  |> list.filter(fn(entry) { dict.has_key({ entry.1 }.nodes, unit_id) })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.fold(#(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let #(cast_id, lingering) = entry
+    let nodes = dict.delete(lingering.nodes, unit_id)
+    case dict.is_empty(nodes) {
+      True -> {
+        let #(cast, cancels) = cancel_nodes_end(cast:, cast_id:)
+        #(
+          stopped_lingering(cast:, cast_id:),
+          list.flatten([
+            effects,
+            cancels,
+            finished_effects(cast_id:, audience: lingering.audience),
+          ]),
+        )
+      }
+      False -> {
+        let cast =
+          State(
+            ..cast,
+            lingering: dict.insert(
+              cast.lingering,
+              cast_id,
+              Lingering(..lingering, nodes:),
+            ),
+          )
+        let #(cast, armed) = rearmed(cast:, cast_id:, now_ms:)
+        #(cast, list.append(effects, armed))
+      }
+    }
+  })
 }
 
 /// The player left the world with casts live: every timer is cancelled and
@@ -1951,18 +2184,27 @@ pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
         )
       #(cast, list.append(effects, more))
     })
+  // A lingering cast ends with its 0x7fe when its caster dies: the server's choice,
+  // since the client has no path that ends a buff on a unit's death
+  // (`cast.target_node_end`).
+  let lingering_ended =
+    dict.to_list(cast.lingering)
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    |> list.flat_map(fn(entry) {
+      finished_effects(cast_id: entry.0, audience: { entry.1 }.audience)
+    })
   let #(cast, cancelled) = left(cast:)
-  #(cast, list.append(ended, cancelled))
+  #(cast, list.flatten([ended, lingering_ended, cancelled]))
 }
 
-/// The id the caster's next cast takes: the id of its next press that no live cast
-/// holds. `start` and the hold that records the cast it starts both ask this, so
+/// The id the caster's next cast takes: the id of its next press that no live or
+/// lingering cast holds (the client keeps a lingering cast until its 0x7fe). `start` and the hold that records the cast it starts both ask this, so
 /// they name the same cast.
 fn next_cast_id(cast cast: State, caster caster: Caster) -> Int {
   mint(
     unit_id: caster.unit_id,
     number: cast.presses,
-    live: dict.keys(cast.casts),
+    live: list.append(dict.keys(cast.casts), dict.keys(cast.lingering)),
   )
 }
 
@@ -2378,25 +2620,6 @@ fn go(
     Error(Nil) -> #(cast, [])
     Ok(live) -> {
       let spell = live.spell
-      let go_message =
-        go_message(cast_id:, phase:, place: caster.place, struck:)
-      let missed = missed_message(cast_id:, struck:)
-      let going =
-        list.flatten([
-          [Send(frame: went_frame(go: go_message))],
-          list.map(map.sorted_connections(live.audience), fn(viewer) {
-            Tell(to: viewer, news: client_connection.CastWent(go: go_message))
-          }),
-          case missed {
-            Some(missed) -> [
-              Send(frame: missed_frame(missed:)),
-              ..list.map(map.sorted_connections(live.audience), fn(viewer) {
-                Tell(to: viewer, news: client_connection.CastMissed(missed:))
-              })
-            ]
-            None -> []
-          },
-        ])
       let go_count = list.length(spell_plan.go_times_ms(spell:))
       let cast = case spell.cooldown_start {
         spell_plan.AtFirstGo if live.gone == 0 ->
@@ -2432,6 +2655,45 @@ fn go(
           subject:,
           rolls:,
         )
+      let #(gains, rolls) =
+        gains_given(
+          spell:,
+          phase:,
+          starting:,
+          subject:,
+          rolls:,
+          spent: live.spent,
+        )
+      let #(applied, lasting_logs, _) =
+        lasting_applied(spell:, phase:, spent: live.spent, subject:, rolls:)
+      let aimed = aimed_at(applied:, caster:, live:, struck:)
+      let go_message =
+        go_message(
+          cast_id:,
+          phase:,
+          place: caster.place,
+          struck:,
+          listed: aimed.units,
+        )
+      let missed = missed_message(cast_id:, struck:)
+      let going =
+        list.flatten([
+          [Send(frame: went_frame(go: go_message))],
+          list.map(map.sorted_connections(live.audience), fn(viewer) {
+            Tell(to: viewer, news: client_connection.CastWent(go: go_message))
+          }),
+          case missed {
+            Some(missed) -> [
+              Send(frame: missed_frame(missed:)),
+              ..list.map(map.sorted_connections(live.audience), fn(viewer) {
+                Tell(to: viewer, news: client_connection.CastMissed(missed:))
+              })
+            ]
+            None -> []
+          },
+        ])
+      let #(cast, removed) = removed_by_go(cast:, aimed:)
+      let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
       let #(cast, children) =
         list.fold(starting, #(cast, []), fn(so_far, proxy) {
           let #(cast, effects) = so_far
@@ -2443,25 +2705,556 @@ fn go(
         live.gone == go_count
         && option.is_none(spell_plan.finish_after_ms(spell:))
       {
-        True -> finish(cast:, cast_id:, live:, now_ms:)
+        True ->
+          case dict.get(cast.casts, cast_id) {
+            Ok(live) -> finish_or_linger(cast:, cast_id:, live:, now_ms:)
+            Error(Nil) -> #(cast, [])
+          }
         False -> #(cast, [])
       }
-      let gains =
-        gains_given(
-          spell:,
-          phase:,
-          starting:,
-          subject:,
-          rolls:,
-          spent: live.spent,
-        )
-      #(cast, list.flatten([going, gains, gate_logs, children, finished]))
+      #(
+        cast,
+        list.flatten([
+          going,
+          removed,
+          given,
+          gains,
+          gate_logs,
+          lasting_logs,
+          children,
+          finished,
+        ]),
+      )
     }
   }
 }
 
+/// The Fluff and SpellForceRemove effects of a go that apply, after their gates
+/// against the caster.
+type Applied {
+  Applied(
+    lasting: List(spell_plan.Lasting),
+    removes: List(spell_plan.ForceRemove),
+  )
+}
+
+/// The Fluff and SpellForceRemove effects of the phase whose gates pass against the
+/// caster, a debug line for each that cannot be decided, and the rolls left. Their
+/// gates are checked after the Proxies' and the gains', in that order
+/// (`rolls_needed`).
+fn lasting_applied(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
+) -> #(Applied, List(Effect), List(Int)) {
+  let #(lasting, logs, rolls) =
+    applying(
+      rows: spell_plan.lasting_in_phase(spell:, phase:, spent:),
+      condition: fn(row: spell_plan.Lasting) { row.condition },
+      what: fn(row: spell_plan.Lasting) {
+        "the Fluff effect " <> int.to_string(row.effect_id.value)
+      },
+      subject:,
+      rolls:,
+    )
+  let #(removes, more_logs, rolls) =
+    applying(
+      rows: spell_plan.removes_in_phase(spell:, phase:, spent:),
+      condition: fn(row: spell_plan.ForceRemove) { row.condition },
+      what: fn(row: spell_plan.ForceRemove) {
+        "the SpellForceRemove effect " <> int.to_string(row.effect_id.value)
+      },
+      subject:,
+      rolls:,
+    )
+  #(Applied(lasting:, removes:), list.append(logs, more_logs), rolls)
+}
+
+/// The rows whose condition lets them apply, in order, with a debug line for each
+/// the server cannot decide, and the rolls left.
+fn applying(
+  rows rows: List(row),
+  condition condition: fn(row) -> spell_plan.Condition,
+  what what: fn(row) -> String,
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
+) -> #(List(row), List(Effect), List(Int)) {
+  let #(applying, logs, rolls) =
+    list.fold(rows, #([], [], rolls), fn(so_far, row) {
+      let #(applying, logs, rolls) = so_far
+      let #(gate, rolls) =
+        condition_gate(
+          condition: condition(row),
+          subject:,
+          rolls:,
+          what: what(row),
+          outcome: "so it is not applied",
+        )
+      case gate {
+        Starts -> #([row, ..applying], logs, rolls)
+        GateFails -> #(applying, logs, rolls)
+        CannotTell(why:) -> #(
+          applying,
+          [Log(level: LogDebug, text: why), ..logs],
+          rolls,
+        )
+      }
+    })
+  #(list.reverse(applying), list.reverse(logs), rolls)
+}
+
+/// What a go lists on one unit beside the damage it struck: the effect and its delay.
+type Listed {
+  Listed(effect_id: Spell4EffectsId, delay_ms: Int)
+}
+
+/// The units a go's applied effects aim at, each with the Fluff rows that give it a
+/// node and the effects listed on it, and the type 80 rows with their unit.
+type Aimed {
+  Aimed(
+    /// The units in the order they are listed, with what is listed on each.
+    units: List(#(Int, List(Listed))),
+    /// Each Fluff row with the unit it aims at.
+    lasting: List(#(spell_plan.Lasting, Int)),
+    /// Each type 80 row with the unit it aims at.
+    removes: List(#(spell_plan.ForceRemove, Int)),
+  )
+}
+
+/// The units an effect aims at (`Spell4Effects.targetFlags`): the caster, the cast's
+/// primary target, the units the round Hit, or the target and those.
+fn units_aimed_at(
+  aim aim: spell_plan.Aim,
+  caster caster: Caster,
+  primary_target primary_target: Int,
+  struck struck: List(Struck),
+) -> List(Int) {
+  case aim {
+    spell_plan.AimsAtCaster -> [caster.unit_id]
+    spell_plan.AimsAtPrimaryTarget -> [primary_target]
+    spell_plan.AimsAtArea -> hit_units(struck:)
+    spell_plan.AimsAtBoth -> list.unique([primary_target, ..hit_units(struck:)])
+    spell_plan.OtherAim(..) -> []
+  }
+}
+
+fn aimed_at(
+  applied applied: Applied,
+  caster caster: Caster,
+  live live: Live,
+  struck struck: List(Struck),
+) -> Aimed {
+  let lasting =
+    list.flat_map(applied.lasting, fn(row) {
+      list.map(
+        units_aimed_at(
+          aim: row.aim,
+          caster:,
+          primary_target: live.primary_target,
+          struck:,
+        ),
+        fn(unit_id) { #(row, unit_id) },
+      )
+    })
+  let removes =
+    list.flat_map(applied.removes, fn(row) {
+      list.map(
+        units_aimed_at(
+          aim: row.aim,
+          caster:,
+          primary_target: live.primary_target,
+          struck:,
+        ),
+        fn(unit_id) { #(row, unit_id) },
+      )
+    })
+  let listed =
+    list.append(
+      list.map(lasting, fn(entry) {
+        #(
+          entry.1,
+          Listed(effect_id: entry.0.effect_id, delay_ms: entry.0.row.delay_ms),
+        )
+      }),
+      list.map(removes, fn(entry) {
+        #(entry.1, Listed(effect_id: entry.0.effect_id, delay_ms: 0))
+      }),
+    )
+  let units =
+    list.fold(listed, [], fn(units: List(#(Int, List(Listed))), entry) {
+      case list.key_find(units, entry.0) {
+        Ok(on_unit) ->
+          list.key_set(units, entry.0, list.append(on_unit, [entry.1]))
+        Error(Nil) -> list.append(units, [#(entry.0, [entry.1])])
+      }
+    })
+  Aimed(units:, lasting:, removes:)
+}
+
+/// The type 80 effects of a go taken off the units they aim at, in order: each takes
+/// the matching casts of the caster off the unit, oldest first, and writes 0x811 or
+/// 0x813 for each (`opcode.0x811`, `opcode.0x813`).
+fn removed_by_go(
+  cast cast: State,
+  aimed aimed: Aimed,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.removes, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let #(row, unit_id) = entry
+    let removals =
+      lasting.removals(
+        holds: holds_on(cast:, unit_id:),
+        selector: row.selector,
+        count: row.count,
+        unit_id:,
+      )
+    let #(cast, more) = apply_removals(cast:, removals:)
+    #(cast, list.append(effects, more))
+  })
+}
+
+/// The nodes a go gives: each unit a Fluff row aims at gets a node of count 1 whose
+/// life is its rows' longest (`lasting.life_of`), kept with the cast. A unit the cast
+/// holds no node on yet makes a new cast on it, which pushes the caster's oldest casts
+/// of its stack off at the cap (Jim's rule, `lasting.pushed_off`); a later go of the
+/// same cast sets the node again (`opcode.0x7f4.instance_count`).
+fn nodes_given(
+  cast cast: State,
+  cast_id cast_id: Int,
+  aimed aimed: Aimed,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.casts, cast_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(live) -> {
+      let nodes =
+        list.unique(list.map(aimed.lasting, fn(entry) { entry.1 }))
+        |> list.filter_map(fn(unit_id) {
+          node_of(spell: live.spell, aimed:, unit_id:, now_ms:)
+        })
+      let #(cast, pushed) =
+        list.fold(nodes, #(cast, []), fn(so_far, node) {
+          pushed_by(so_far:, cast_id:, live:, node:)
+        })
+      let kept = case dict.get(cast.casts, cast_id) {
+        Ok(current) -> current
+        Error(Nil) -> live
+      }
+      let live =
+        Live(
+          ..kept,
+          nodes: list.fold(nodes, kept.nodes, fn(nodes, node) {
+            dict.insert(nodes, node.unit_id, node)
+          }),
+        )
+      #(State(..cast, casts: dict.insert(cast.casts, cast_id, live)), pushed)
+    }
+  }
+}
+
+/// The node a go gives one unit: its Fluff rows' longest life; none when no row has
+/// one.
+fn node_of(
+  spell spell: Spell,
+  aimed aimed: Aimed,
+  unit_id unit_id: Int,
+  now_ms now_ms: Int,
+) -> Result(lasting.Node, Nil) {
+  let rows =
+    list.filter_map(aimed.lasting, fn(entry) {
+      case entry.1 == unit_id {
+        True -> Ok(entry.0.row)
+        False -> Error(Nil)
+      }
+    })
+  let life =
+    lasting.life_of(
+      effects: rows,
+      longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+      go_ms: now_ms,
+    )
+  case life {
+    lasting.NoLife -> Error(Nil)
+    lasting.EndsAt(..) | lasting.UntilRemoved ->
+      Ok(lasting.Node(unit_id:, count: 1, life:))
+  }
+}
+
+/// A node the go gives a unit its cast holds none on yet makes a new cast on that
+/// unit, which pushes the caster's oldest casts of its stack off the unit at the cap
+/// (Jim's rule, `lasting.pushed_off`); a unit the cast holds a node on already is a
+/// later go of the same cast, which pushes nothing.
+fn pushed_by(
+  so_far so_far: #(State, List(Effect)),
+  cast_id cast_id: Int,
+  live live: Live,
+  node node: lasting.Node,
+) -> #(State, List(Effect)) {
+  use <- bool.guard(
+    when: dict.has_key(live.nodes, node.unit_id),
+    return: so_far,
+  )
+  let #(cast, effects) = so_far
+  let removals =
+    lasting.pushed_off(
+      holds: list.filter(holds_on(cast:, unit_id: node.unit_id), fn(hold) {
+        hold.cast_id != cast_id
+      }),
+      spell4_id: live.spell.spell4_id,
+      stack: live.spell.stack,
+      unit_id: node.unit_id,
+    )
+  let #(cast, more) = apply_removals(cast:, removals:)
+  #(cast, list.append(effects, more))
+}
+
+/// What the live and lingering casts hold on the unit, as removals and stacking read
+/// it.
+fn holds_on(cast cast: State, unit_id unit_id: Int) -> List(lasting.Hold) {
+  let live =
+    list.filter_map(dict.to_list(cast.casts), fn(entry) {
+      let #(cast_id, live) = entry
+      dict.get(live.nodes, unit_id)
+      |> result.map(fn(node) {
+        hold_of(cast_id:, spell: live.spell, started_ms: live.started_ms, node:)
+      })
+    })
+  let lingering =
+    list.filter_map(dict.to_list(cast.lingering), fn(entry) {
+      let #(cast_id, lingering) = entry
+      dict.get(lingering.nodes, unit_id)
+      |> result.map(fn(node) {
+        hold_of(
+          cast_id:,
+          spell: lingering.spell,
+          started_ms: lingering.started_ms,
+          node:,
+        )
+      })
+    })
+  list.append(live, lingering)
+}
+
+fn hold_of(
+  cast_id cast_id: Int,
+  spell spell: Spell,
+  started_ms started_ms: Int,
+  node node: lasting.Node,
+) -> lasting.Hold {
+  lasting.Hold(
+    cast_id:,
+    spell4_id: spell.spell4_id,
+    base: spell.spell4_base_id,
+    groups: spell.groups,
+    stack: spell.stack,
+    started_ms:,
+    node:,
+  )
+}
+
+/// What a removal does to the casts, in order: a cast that loses its whole node on a
+/// unit is written 0x811 and keeps no node there, one that loses a stack is written
+/// 0x813 and keeps its node one count lower. A lingering cast left with no node is
+/// dropped, and, when its cast method is one the client keeps with no target
+/// (Channeled, ChanneledField, Multiphase or 10), ends with its 0x7fe after the 0x811
+/// (`opcode.0x811`).
+fn apply_removals(
+  cast cast: State,
+  removals removals: List(lasting.Removal),
+) -> #(State, List(Effect)) {
+  list.fold(removals, #(cast, []), fn(so_far, removal) {
+    let #(cast, effects) = so_far
+    let #(cast, more) = case removal {
+      lasting.NodeOff(cast_id:, unit_id:) -> node_off(cast:, cast_id:, unit_id:)
+      lasting.StackOff(cast_id:, unit_id:) ->
+        stack_off(cast:, cast_id:, unit_id:)
+    }
+    #(cast, list.append(effects, more))
+  })
+}
+
+fn node_off(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.casts, cast_id), dict.get(cast.lingering, cast_id) {
+    Ok(live), _ -> #(
+      State(
+        ..cast,
+        casts: dict.insert(
+          cast.casts,
+          cast_id,
+          Live(..live, nodes: dict.delete(live.nodes, unit_id)),
+        ),
+      ),
+      targets_removed_effects(
+        cast_id:,
+        unit_ids: [unit_id],
+        audience: live.audience,
+      ),
+    )
+    Error(Nil), Ok(lingering) ->
+      lingering_node_off(cast:, cast_id:, lingering:, unit_id:)
+    Error(Nil), Error(Nil) -> #(cast, [])
+  }
+}
+
+/// A lingering cast loses its node on a unit: 0x811 for the unit; a cast left with no
+/// node is dropped, with its 0x7fe after the 0x811 when the client keeps a cast of its
+/// method with no target.
+fn lingering_node_off(
+  cast cast: State,
+  cast_id cast_id: Int,
+  lingering lingering: Lingering,
+  unit_id unit_id: Int,
+) -> #(State, List(Effect)) {
+  let nodes = dict.delete(lingering.nodes, unit_id)
+  let removed =
+    targets_removed_effects(
+      cast_id:,
+      unit_ids: [unit_id],
+      audience: lingering.audience,
+    )
+  case dict.is_empty(nodes) {
+    True -> {
+      let #(cast, cancels) = cancel_nodes_end(cast:, cast_id:)
+      let ends = case keeps_without_target(method: lingering.spell.method) {
+        True -> finished_effects(cast_id:, audience: lingering.audience)
+        False -> []
+      }
+      #(
+        stopped_lingering(cast:, cast_id:),
+        list.flatten([removed, cancels, ends]),
+      )
+    }
+    False -> #(
+      State(
+        ..cast,
+        lingering: dict.insert(
+          cast.lingering,
+          cast_id,
+          Lingering(..lingering, nodes:),
+        ),
+      ),
+      removed,
+    )
+  }
+}
+
+/// Whether the client keeps a cast that has no target left, so its end must be
+/// written (`opcode.0x811`: cast methods 1, 3, 8 and 10).
+fn keeps_without_target(method method: spell_plan.CastMethod) -> Bool {
+  case method {
+    spell_plan.Channeled
+    | spell_plan.ChanneledField
+    | spell_plan.Multiphase
+    | spell_plan.OtherMethod(10) -> True
+    spell_plan.Normal
+    | spell_plan.PressHold
+    | spell_plan.ClientSideInteraction
+    | spell_plan.RapidTap
+    | spell_plan.ChargeRelease
+    | spell_plan.Transactional
+    | spell_plan.OtherMethod(..) -> False
+  }
+}
+
+/// A cast loses one stack on a unit: 0x813 and its node one count lower. A node's
+/// count is the 1 of an application, so a removal reaches this only for a node whose
+/// count is higher (`opcode.0x7f4.instance_count`, `opcode.0x813`).
+fn stack_off(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+) -> #(State, List(Effect)) {
+  let lower = fn(nodes: Dict(Int, lasting.Node)) {
+    dict.map_values(nodes, fn(unit, node) {
+      case unit == unit_id {
+        True -> lasting.Node(..node, count: int.max(0, node.count - 1))
+        False -> node
+      }
+    })
+  }
+  let audience = case
+    dict.get(cast.casts, cast_id),
+    dict.get(cast.lingering, cast_id)
+  {
+    Ok(live), _ -> Ok(live.audience)
+    Error(Nil), Ok(lingering) -> Ok(lingering.audience)
+    Error(Nil), Error(Nil) -> Error(Nil)
+  }
+  case audience {
+    Error(Nil) -> #(cast, [])
+    Ok(audience) -> #(
+      State(
+        ..cast,
+        casts: dict.map_values(cast.casts, fn(id, live) {
+          case id == cast_id {
+            True -> Live(..live, nodes: lower(live.nodes))
+            False -> live
+          }
+        }),
+        lingering: dict.map_values(cast.lingering, fn(id, lingering) {
+          case id == cast_id {
+            True -> Lingering(..lingering, nodes: lower(lingering.nodes))
+            False -> lingering
+          }
+        }),
+      ),
+      stack_removed_effects(cast_id:, unit_id:, audience:),
+    )
+  }
+}
+
+/// 0x811 for the units, to the caster and told to the audience.
+fn targets_removed_effects(
+  cast_id cast_id: Int,
+  unit_ids unit_ids: List(Int),
+  audience audience: Set(ConnectionId),
+) -> List(Effect) {
+  let removed = SpellTargetsRemoved(cast_id:, unit_ids:)
+  [
+    Send(frame: targets_removed_frame(removed:)),
+    ..list.map(map.sorted_connections(audience), fn(viewer) {
+      Tell(to: viewer, news: client_connection.CastTargetsRemoved(removed:))
+    })
+  ]
+}
+
+/// 0x813 for the unit, to the caster and told to the audience.
+fn stack_removed_effects(
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+  audience audience: Set(ConnectionId),
+) -> List(Effect) {
+  let removed = SpellStackRemoved(cast_id:, unit_id:)
+  [
+    Send(frame: stack_removed_frame(removed:)),
+    ..list.map(map.sorted_connections(audience), fn(viewer) {
+      Tell(to: viewer, news: client_connection.CastStackRemoved(removed:))
+    })
+  ]
+}
+
+/// 0x7fe to the caster and told to the audience.
+fn finished_effects(
+  cast_id cast_id: Int,
+  audience audience: Set(ConnectionId),
+) -> List(Effect) {
+  [
+    Send(frame: finished_frame(cast_id:)),
+    ..list.map(map.sorted_connections(audience), fn(viewer) {
+      Tell(to: viewer, news: client_connection.CastFinished(cast_id:))
+    })
+  ]
+}
+
 /// What a prerequisite may read about the caster, with no roll: the live casts it is
-/// the primary target of, whether it is in combat, and its vitals: its health and
+/// the primary target of and what the live and lingering casts hold on it, whether it
+/// is in combat, and its vitals: its health and
 /// shield, and the one class resource slot it holds as Vital 5 to 11 (slots 0 to 6,
 /// `0x1403b3320`: the cost check reads Vitals 5 to 11 as the caster's resource slots
 /// 0 to 6; the getter type 71 and 73 call is not read case by case, so the same
@@ -2490,11 +3283,37 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
           caster: caster.unit_id,
           count: 0,
         )
-      }),
+      })
+      |> list.append(nodes_held(cast:, caster:)),
+    second_unit: Some(caster.unit_id),
     in_combat: caster.in_combat,
     vitals: dict.merge(dict.from_list(held), caster.life_vitals),
     difficulty: None,
     rolls: [],
+  )
+}
+
+/// What the live and lingering casts hold on the caster's own unit, as a
+/// prerequisite reads it.
+fn nodes_held(cast cast: State, caster caster: Caster) -> List(lasting.Held) {
+  let held = fn(spell: Spell, nodes: Dict(Int, lasting.Node)) {
+    case dict.get(nodes, caster.unit_id) {
+      Ok(node) ->
+        Ok(lasting.Held(
+          spell4_id: spell.spell4_id,
+          caster: caster.unit_id,
+          count: node.count,
+        ))
+      Error(Nil) -> Error(Nil)
+    }
+  }
+  list.append(
+    list.filter_map(dict.values(cast.casts), fn(live) {
+      held(live.spell, live.nodes)
+    }),
+    list.filter_map(dict.values(cast.lingering), fn(lingering) {
+      held(lingering.spell, lingering.nodes)
+    }),
   )
 }
 
@@ -2560,16 +3379,33 @@ fn proxy_gate(
   subject subject: prerequisite.Subject,
   rolls rolls: List(Int),
 ) -> #(ProxyGate, List(Int)) {
-  let child = int.to_string(proxy.spell.spell4_id.value)
-  case proxy.condition {
+  condition_gate(
+    condition: proxy.condition,
+    subject:,
+    rolls:,
+    what: "the Proxy to Spell4 " <> int.to_string(proxy.spell.spell4_id.value),
+    outcome: "so it is not started",
+  )
+}
+
+/// What a condition gives at a go: `what` names the effect in a debug line and
+/// `outcome` says what follows when the server cannot decide.
+fn condition_gate(
+  condition condition: spell_plan.Condition,
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
+  what what: String,
+  outcome outcome: String,
+) -> #(ProxyGate, List(Int)) {
+  case condition {
     spell_plan.Always -> #(Starts, rolls)
     spell_plan.GatedOnTarget(prerequisite_id:) -> #(
       CannotTell(
-        why: "the Proxy to Spell4 "
-        <> child
+        why: what
         <> " applies only behind target prerequisite "
         <> int.to_string(prerequisite_id.value)
-        <> ", which is not checked, so it is not started",
+        <> ", which is not checked, "
+        <> outcome,
       ),
       rolls,
     )
@@ -2594,13 +3430,13 @@ fn proxy_gate(
         False, Error(Nil) -> #(Starts, left)
         False, Ok(#(gate, prerequisite_type)) -> #(
           CannotTell(
-            why: "the Proxy to Spell4 "
-            <> child
+            why: what
             <> " is behind prerequisite "
             <> int.to_string(prerequisite.id(prerequisite: gate).value)
             <> " of type "
             <> int.to_string(prerequisite_type)
-            <> ", which is not read, so it is not started",
+            <> ", which is not read, "
+            <> outcome,
           ),
           left,
         )
@@ -2619,8 +3455,8 @@ fn gains_given(
   subject subject: prerequisite.Subject,
   rolls rolls: List(Int),
   spent spent: Option(Int),
-) -> List(Effect) {
-  let #(_, given, logs) =
+) -> #(List(Effect), List(Int)) {
+  let #(rolls, given, logs) =
     list.fold(
       gains_of(spell:, phase:, proxies: starting, spent:),
       #(rolls, [], []),
@@ -2641,7 +3477,7 @@ fn gains_given(
     [] -> []
     [_, ..] -> [Gain(gains: list.reverse(given))]
   }
-  list.append(list.reverse(logs), gains)
+  #(list.append(list.reverse(logs), gains), rolls)
 }
 
 /// What becomes of one gain of a go.
@@ -2843,6 +3679,22 @@ fn finish(
   live live: Live,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  let #(cast, closed) = finish_steps(cast:, cast_id:, live:, now_ms:)
+  #(
+    cast,
+    list.append(finished_effects(cast_id:, audience: live.audience), closed),
+  )
+}
+
+/// Every step of a live cast's end but its 0x7fe: the cast is no longer live nor the
+/// caster's current cast, a channel starts its cooldown (`0x14053e1b0`), and a stage
+/// that closes its ability's threshold does that, with what the close writes.
+fn finish_steps(
+  cast cast: State,
+  cast_id cast_id: Int,
+  live live: Live,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
   let cast =
     State(
       ..cast,
@@ -2867,18 +3719,54 @@ fn finish(
     | spell_plan.OtherMethod(..), _
     -> cast
   }
-  let ended = [
-    Send(frame: finished_frame(cast_id:)),
-    ..list.map(map.sorted_connections(live.audience), fn(viewer) {
-      Tell(to: viewer, news: client_connection.CastFinished(cast_id:))
-    })
-  ]
   case live.stage_of, live.closes_threshold {
-    Some(ability), True -> {
-      let #(cast, closed) = close_threshold(cast:, ability:, now_ms:)
-      #(cast, list.append(ended, closed))
+    Some(ability), True -> close_threshold(cast:, ability:, now_ms:)
+    Some(_), False | None, True | None, False -> #(cast, [])
+  }
+}
+
+/// A live cast that has gone for the last time ends, or lingers when a node of it
+/// still has life: every step of its end runs, and only its 0x7fe waits until its
+/// last node ends (`cast.target_node_end`). A node whose life is over when the cast
+/// starts to linger is written 0x811 at once.
+fn finish_or_linger(
+  cast cast: State,
+  cast_id cast_id: Int,
+  live live: Live,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(ended, kept) =
+    dict.to_list(live.nodes)
+    |> list.partition(fn(entry) { life_over(life: { entry.1 }.life, now_ms:) })
+  case kept {
+    [] -> finish(cast:, cast_id:, live:, now_ms:)
+    [_, ..] -> {
+      let #(cast, closed) = finish_steps(cast:, cast_id:, live:, now_ms:)
+      let lingering =
+        Lingering(
+          spell: live.spell,
+          audience: live.audience,
+          started_ms: live.started_ms,
+          nodes: dict.from_list(kept),
+        )
+      let cast =
+        State(
+          ..cast,
+          lingering: dict.insert(cast.lingering, cast_id, lingering),
+        )
+      let #(cast, armed) =
+        arm_nodes_end(cast:, cast_id:, nodes: lingering.nodes, now_ms:)
+      let expired = case ended {
+        [] -> []
+        [_, ..] ->
+          targets_removed_effects(
+            cast_id:,
+            unit_ids: sorted_units(ended),
+            audience: live.audience,
+          )
+      }
+      #(cast, list.flatten([expired, armed, closed]))
     }
-    Some(_), False | None, True | None, False -> #(cast, ended)
   }
 }
 
@@ -2944,19 +3832,32 @@ fn go_message(
   phase phase: Int,
   place place: Place,
   struck struck: List(Struck),
+  listed listed: List(#(Int, List(Listed))),
 ) -> SpellGo {
-  SpellGo(
-    cast_id:,
-    ignore_cooldown: 0,
-    destination: position_of(place:),
-    targets: list.filter_map(struck, fn(one) {
+  let hits =
+    list.filter_map(struck, fn(one) {
       case one {
         Hit(unit_id:, descriptions:) -> Ok(#(unit_id, descriptions))
         Deflected(..) -> Error(Nil)
       }
     })
+  let unstruck =
+    list.filter(listed, fn(entry) {
+      result.is_error(list.key_find(hits, entry.0))
+    })
+    |> list.map(fn(entry) { #(entry.0, []) })
+  SpellGo(
+    cast_id:,
+    ignore_cooldown: 0,
+    destination: position_of(place:),
+    targets: list.append(hits, unstruck)
       |> list.index_map(fn(hit, index) {
-        target_info(index:, unit_id: hit.0, descriptions: hit.1)
+        target_info(
+          index:,
+          unit_id: hit.0,
+          descriptions: hit.1,
+          listed: list.key_find(listed, hit.0) |> result.unwrap([]),
+        )
       }),
     initial_positions: [],
     telegraph_positions: [],
@@ -3086,7 +3987,7 @@ pub fn creature_went(
   place place: Place,
   struck struck: List(Struck),
 ) -> SpellGo {
-  go_message(cast_id:, phase: 0, place:, struck:)
+  go_message(cast_id:, phase: 0, place:, struck:, listed: [])
 }
 
 /// 0x7fb for the units a creature's go missed, or none (`missed_message`).
@@ -3121,6 +4022,22 @@ pub fn finished_frame(cast_id cast_id: Int) -> Frame {
   Frame(message_id: spell_finished.message_id, body:)
 }
 
+/// 0x0811 for a cast taken off some units, written by the caster's rule and by each
+/// viewer's connection the same way (`opcode.0x811`).
+pub fn targets_removed_frame(removed removed: SpellTargetsRemoved) -> Frame {
+  let assert Ok(body) = spell_targets_removed.encode(removed)
+    as "a cast id of 32 bits and at most a few unit ids of 32 fit the message"
+  Frame(message_id: spell_targets_removed.message_id, body:)
+}
+
+/// 0x0813 for a cast that loses one stack on a unit, written by the caster's rule and
+/// by each viewer's connection the same way (`opcode.0x813`).
+pub fn stack_removed_frame(removed removed: SpellStackRemoved) -> Frame {
+  let assert Ok(body) = spell_stack_removed.encode(removed)
+    as "a cast id and a unit id of 32 bits fit the message"
+  Frame(message_id: spell_stack_removed.message_id, body:)
+}
+
 /// A sentence that says what the client sent that is refused, for the log.
 pub fn describe(refusal refusal: Refusal) -> String {
   case refusal {
@@ -3145,6 +4062,7 @@ fn target_info(
   index index: Int,
   unit_id unit_id: Int,
   descriptions descriptions: List(hit.Description),
+  listed listed: List(Listed),
 ) -> SpellTargetInfo {
   SpellTargetInfo(
     unit_id:,
@@ -3159,17 +4077,28 @@ fn target_info(
       True -> combat_result.Critical
       False -> combat_result.Hit
     },
-    effects: list.index_map(descriptions, fn(description, effect_index) {
-      SpellEffectInfo(
-        spell4_effects_id: description.spell4_effects_id,
-        instance_id: effect_index + 1,
-        delay_ms: description.delay_ms,
-        field_4: 0,
-        result: spell_effect_result.Damage(SpellEffectDamage(
-          description: description.damage,
-        )),
-      )
-    }),
+    effects: list.append(
+      list.index_map(descriptions, fn(description, effect_index) {
+        SpellEffectInfo(
+          spell4_effects_id: description.spell4_effects_id,
+          instance_id: effect_index + 1,
+          delay_ms: description.delay_ms,
+          field_4: 0,
+          result: spell_effect_result.Damage(SpellEffectDamage(
+            description: description.damage,
+          )),
+        )
+      }),
+      list.index_map(listed, fn(effect, effect_index) {
+        SpellEffectInfo(
+          spell4_effects_id: effect.effect_id.value,
+          instance_id: list.length(descriptions) + effect_index + 1,
+          delay_ms: effect.delay_ms,
+          field_4: 0,
+          result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+        )
+      }),
+    ),
   )
 }
 

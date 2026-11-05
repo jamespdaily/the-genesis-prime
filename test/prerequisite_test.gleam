@@ -71,6 +71,7 @@ fn row_43812() -> prerequisite_table.Prerequisite {
 fn bare() -> Subject {
   Subject(
     under: [],
+    second_unit: None,
     in_combat: False,
     vitals: dict.new(),
     rolls: [],
@@ -178,12 +179,12 @@ pub fn an_unread_type_is_not_read_and_a_type_with_no_client_case_fails_test() ->
   use <- owned_test.run(5000)
   assert check(
       prerequisite_support.row(id: 1, flags: 0, conditions: [
-        #(59, 1, 42_569, 2),
+        #(43, 1, 0, 1),
       ]),
       [],
     )
-    == NotRead(prerequisite_type: 59)
-    as "type 59 has a case in the client (0x1404a2100, Prerequisite.prerequisiteTypeId.59) that the server does not read"
+    == NotRead(prerequisite_type: 43)
+    as "type 43 (the quest log) has a case in the client (0x1404a2100, Prerequisite.prerequisiteTypeId.43) that the server does not read"
   assert check(
       prerequisite_support.row(id: 1, flags: 0, conditions: [#(17, 1, 0, 0)]),
       [],
@@ -497,11 +498,11 @@ pub fn the_types_the_server_decides_are_those_is_read_names_test() -> Nil {
       prerequisite.is_read(type_id:)
     })
     == [
-      0, 15, 17, 21, 28, 32, 37, 45, 57, 58, 71, 72, 73, 75, 132, 144, 156, 157,
-      158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284, 296, 297,
-      298, 299, 300,
+      0, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 132, 144,
+      156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
+      296, 297, 298, 299, 300,
     ]
-    as "the types the server reads (15, 28, 37, 71, 73, 179) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
+    as "the types the server reads (15, 28, 37, 50, 59, 71, 73, 179) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
 }
 
 fn types_up_to_300() -> List(Int) {

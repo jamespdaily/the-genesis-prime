@@ -38,6 +38,19 @@
 ////   tickTime is a `TickingGain`, which the cast rule does not apply. The effect's
 ////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
 ////   a client frame).
+//// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`) of a tree
+////   is a `Lasting` row: the unit its targetFlags aim at, its delay, durationTime and
+////   flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
+////   SpellForceRemove effect (`Spell4Effects.effectType.80`) is a `ForceRemove` row:
+////   dataBits00 picks a spell group (1), a Spell4 (2) or a Spell4Base (3) by
+////   dataBits01, which must name a row, and the count of stacks is read only where
+////   dataBits03 and dataBits04 agree. Each is applied when its caster apply
+////   prerequisite passes against the caster, and one behind a target apply
+////   prerequisite is not applied. Unlike a Proxy's, their dataBits06 is no
+////   prerequisite. A `Spell` also holds its spell groups (`Spell4.spell4GroupListId`)
+////   and its stack group with the group's cap (`Spell4.spell4StackGroupId`,
+////   `Spell4StackGroup.stackCap`), and whether its lifetimes take the larger of delay
+////   and duration (`Spell4.propertyFlags` 0x2000).
 //// - **The phases** of a Multiphase spell (`Spell.CodeEnumCastMethod` 8) are the
 ////   SpellPhase rows of its owner kept by the client's rule (`0x14055e180`: order
 ////   index below 32, and index 0 or a non-zero delay), each delay the gap after
@@ -102,7 +115,11 @@
 ////   not read, a cycle of Proxy effects, a channel with no pulse time, a gain
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
 ////   target apply prerequisite, and an effect of a spell that spends every point
-////   held with an emmComparison other than 0 or 1.
+////   held with an emmComparison other than 0 or 1; a Fluff or SpellForceRemove effect
+////   aimed other than at the caster, the primary target or the area; a type 80
+////   effect with a dataBits00 other than 1 to 3, naming no group, Spell4 or
+////   Spell4Base, or whose dataBits03 and dataBits04 differ; and a Spell4GroupList or
+////   Spell4StackGroup row a spell names that the tables lack.
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting
@@ -113,7 +130,7 @@ import genesis_prime/table/class
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
   ClassId, PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId,
-  Spell4Id, SpellCoolDownId,
+  Spell4Id, Spell4StackGroupId, SpellCoolDownId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -121,6 +138,8 @@ import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_group_list
+import genesis_prime/table/spell4_stack_group
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
@@ -374,8 +393,9 @@ pub type Spell {
 
 /// A Fluff effect (`Spell4Effects.effectType.17`) of a spell: it names the unit it
 /// aims at in the go's target info and gives the spell a life there, from its
-/// `row`, in the phases of `phase_flags`, when its caster apply prerequisite passes
-/// or it has none, and when its `tag` holds for the points the cast spent
+/// `row`, in the phases of `phase_flags`, when its `condition` holds (its caster
+/// apply prerequisite against the caster; one behind a target apply prerequisite is
+/// not applied), and when its `tag` holds for the points the cast spent
 /// (genesis_prime/game/spend). Its dataBits need no handling.
 pub type Lasting {
   Lasting(
@@ -383,16 +403,15 @@ pub type Lasting {
     phase_flags: Int,
     aim: Aim,
     row: lasting.LastingRow,
-    prerequisite: Option(Prerequisite),
+    condition: Condition,
     tag: spend.Tag,
   )
 }
 
 /// A SpellForceRemove effect (`Spell4Effects.effectType.80`) of a spell: it takes
 /// `count` stacks of the casts `selector` names off the unit it aims at, in the
-/// phases of `phase_flags`, when its caster apply prerequisite passes or it has
-/// none, and when its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend).
+/// phases of `phase_flags`, when its `condition` holds (as a Fluff effect's does), and
+/// when its `tag` holds for the points the cast spent (genesis_prime/game/spend).
 pub type ForceRemove {
   ForceRemove(
     effect_id: Spell4EffectsId,
@@ -400,7 +419,7 @@ pub type ForceRemove {
     aim: Aim,
     selector: lasting.Selector,
     count: Int,
-    prerequisite: Option(Prerequisite),
+    condition: Condition,
     tag: spend.Tag,
   )
 }
@@ -531,6 +550,9 @@ pub type PlanError {
     data_bits03: Int,
     data_bits04: Int,
   )
+  /// A Fluff or SpellForceRemove effect of a tree is aimed by a flag value that is
+  /// not read (`Spell4Effects.targetFlags`).
+  LastingAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -622,6 +644,14 @@ pub fn describe(error error: PlanError) -> String {
       <> " differs from its dataBits04 "
       <> int.to_string(data_bits04)
       <> ", and only a row where they agree is read"
+    LastingAimNotRead(spell4_id:, effect_id:, target_flags:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Fluff or SpellForceRemove effect "
+      <> int.to_string(effect_id)
+      <> " aimed by flags "
+      <> int.to_string(target_flags)
+      <> ", which are not read"
   }
 }
 
@@ -654,6 +684,8 @@ type Sources {
     effects: Dict(Int, List(spell4_effects.Spell4Effects)),
     phases: Dict(Int, List(Phase)),
     thresholds: Dict(Int, List(spell4_thresholds.Spell4Thresholds)),
+    /// The spell group ids of each Spell4GroupList row, by the row's id.
+    group_lists: Dict(Int, List(Int)),
   )
 }
 
@@ -671,6 +703,7 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
       effects: effects_by_spell(tables:),
       phases: phases_by_owner(tables:),
       thresholds: thresholds_by_parent(tables:),
+      group_lists: group_lists_by_id(tables:),
     )
   spell_level.all(tables)
   |> list.filter(loadout.is_level_one_ability)
@@ -739,6 +772,18 @@ fn phases_by_owner(
       Phase(delay_ms: phase.phase_delay, flags: phase.phase_flags)
     })
   })
+}
+
+/// The spell group ids each Spell4GroupList row names, by the row's id: its
+/// spellGroupId00 to 31 values that are not 0.
+fn group_lists_by_id(
+  tables tables: table_store.Tables,
+) -> Dict(Int, List(Int)) {
+  spell4_group_list.all(tables)
+  |> list.map(fn(row) {
+    #(row.id, list.filter(group_ids_of(row:), fn(group) { group != 0 }))
+  })
+  |> dict.from_list
 }
 
 /// The Spell4Thresholds rows of each spell, by order index
@@ -813,6 +858,10 @@ fn spell_of(
   let effects = dict.get(sources.effects, spell4_id) |> result.unwrap([])
   use Nil <- result.try(spend_tags_read(spell4_id:, costs:, effects:))
   use gains <- result.try(gains_of(tables:, spell4_id:, effects:))
+  use lasting <- result.try(lasting_of(tables:, spell4_id:, effects:))
+  use removes <- result.try(removes_of(tables:, sources:, spell4_id:, effects:))
+  use groups <- result.try(groups_of(sources:, row:))
+  use stack <- result.try(stack_of(tables:, row:))
   use proxies <- result.try(
     effects
     |> list.filter(fn(effect) {
@@ -876,48 +925,46 @@ fn spell_of(
   let phases = dict.get(sources.phases, spell4_id) |> result.unwrap([])
   use delays <- result.try(phase_delays(phases:, method:, spell4_id:))
   use channel <- result.try(channel_of(row:, method:))
-  Ok(
-    Spell(
-      spell4_id: Spell4Id(spell4_id),
-      spell4_base_id: Spell4BaseId(row.spell4_base_id_base_spell),
-      method:,
-      cast_time_ms: row.cast_time,
-      cooldown_ms: row.spell_cool_down,
-      cooldown_start: cooldown_start_of(method:, phases:),
-      cooldown_phase: cooldown_phase_of(method:, phases:),
-      cast_bar: cast_bar_of(method:, row:, base:),
-      free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
-      ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
-        || has_flag(flags: row.property_flags, bit: 0x1),
-      longer_of_delay_and_duration: has_flag(
-        flags: row.property_flags,
-        bit: 0x2000,
-      ),
-      weapon: weapon_of(base.weapon_slot),
-      caster_death:,
-      global_cooldown:,
-      costs:,
-      requirements:,
-      requirement_waiver: case
-        has_flag(flags: row.property_flags, bit: 0x4),
-        row.prerequisite_id_caster_cast
-      {
-        True, prerequisite if prerequisite != 0 ->
-          Some(PrerequisiteId(prerequisite))
-        True, _ | False, _ -> None
-      },
-      phase_delays_ms: delays,
-      threshold_ms: row.threshold_time,
-      stages:,
-      channel:,
-      proxies:,
-      gains:,
-      groups: [],
-      stack: lasting.Stack(group_id: 0, cap: 0),
-      lasting: [],
-      removes: [],
+  Ok(Spell(
+    spell4_id: Spell4Id(spell4_id),
+    spell4_base_id: Spell4BaseId(row.spell4_base_id_base_spell),
+    method:,
+    cast_time_ms: row.cast_time,
+    cooldown_ms: row.spell_cool_down,
+    cooldown_start: cooldown_start_of(method:, phases:),
+    cooldown_phase: cooldown_phase_of(method:, phases:),
+    cast_bar: cast_bar_of(method:, row:, base:),
+    free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
+    ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
+      || has_flag(flags: row.property_flags, bit: 0x1),
+    longer_of_delay_and_duration: has_flag(
+      flags: row.property_flags,
+      bit: 0x2000,
     ),
-  )
+    weapon: weapon_of(base.weapon_slot),
+    caster_death:,
+    global_cooldown:,
+    costs:,
+    requirements:,
+    requirement_waiver: case
+      has_flag(flags: row.property_flags, bit: 0x4),
+      row.prerequisite_id_caster_cast
+    {
+      True, prerequisite if prerequisite != 0 ->
+        Some(PrerequisiteId(prerequisite))
+      True, _ | False, _ -> None
+    },
+    phase_delays_ms: delays,
+    threshold_ms: row.threshold_time,
+    stages:,
+    channel:,
+    proxies:,
+    gains:,
+    groups:,
+    stack:,
+    lasting:,
+    removes:,
+  ))
 }
 
 /// The gains of a spell's effects: each VitalModifier, which must aim at the
@@ -972,6 +1019,181 @@ fn gains_of(
         )
     })
   })
+}
+
+/// The Fluff effects of a spell: each aimed at a unit the plan reads, with the
+/// columns that give its node a life (`Spell4Effects.effectType.17`).
+fn lasting_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(Lasting), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.Fluff
+  })
+  |> list.try_map(fn(effect) {
+    use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
+    use condition <- result.try(applied_when(tables:, effect:))
+    Ok(Lasting(
+      effect_id: Spell4EffectsId(effect.id),
+      phase_flags: effect.phase_flags,
+      aim:,
+      row: lasting.LastingRow(
+        delay_ms: effect.delay_time,
+        duration_ms: effect.duration_time,
+        until_removed: has_flag(flags: effect.flags, bit: 2),
+      ),
+      condition:,
+      tag: tag_of(effect:),
+    ))
+  })
+}
+
+/// The SpellForceRemove effects of a spell (`Spell4Effects.effectType.80`): dataBits00
+/// picks what is removed (1 a spell group, 2 a Spell4, 3 a Spell4Base) by dataBits01,
+/// which must name a row; the count of stacks is read only where dataBits03 and
+/// dataBits04 agree.
+fn removes_of(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(ForceRemove), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.ForceRemove
+  })
+  |> list.try_map(fn(effect) {
+    use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
+    use selector <- result.try(selector_of(
+      tables:,
+      sources:,
+      spell4_id:,
+      effect:,
+    ))
+    use Nil <- result.try(case effect.data_bits03 == effect.data_bits04 {
+      True -> Ok(Nil)
+      False ->
+        Error(ForceRemoveCountsDiffer(
+          spell4_id:,
+          effect_id: effect.id,
+          data_bits03: effect.data_bits03,
+          data_bits04: effect.data_bits04,
+        ))
+    })
+    use condition <- result.try(applied_when(tables:, effect:))
+    Ok(ForceRemove(
+      effect_id: Spell4EffectsId(effect.id),
+      phase_flags: effect.phase_flags,
+      aim:,
+      selector:,
+      count: effect.data_bits03,
+      condition:,
+      tag: tag_of(effect:),
+    ))
+  })
+}
+
+/// The aim of a Fluff or SpellForceRemove effect: the caster, the primary target, the
+/// area or both of those; any other flag value fails the load.
+fn lasting_aim_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Aim, PlanError) {
+  case aim_of(target_flags: effect.target_flags) {
+    OtherAim(flags:) ->
+      Error(LastingAimNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        target_flags: flags,
+      ))
+    AimsAtCaster -> Ok(AimsAtCaster)
+    AimsAtPrimaryTarget -> Ok(AimsAtPrimaryTarget)
+    AimsAtArea -> Ok(AimsAtArea)
+    AimsAtBoth -> Ok(AimsAtBoth)
+  }
+}
+
+/// The selector of a type 80 row, whose dataBits01 must name a spell group (one that
+/// some Spell4GroupList row holds), a Spell4 or a Spell4Base the tables have.
+fn selector_of(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(lasting.Selector, PlanError) {
+  let named = effect.data_bits01
+  case effect.data_bits00 {
+    1 ->
+      case list.any(dict.values(sources.group_lists), list.contains(_, named)) {
+        True -> Ok(lasting.Group(spell_group_id: named))
+        False -> Error(NoRow(table: "Spell4GroupList", id: named))
+      }
+    2 ->
+      spell4.get(tables:, id: Spell4Id(named))
+      |> result.map(fn(_) { lasting.Spell(spell4_id: Spell4Id(named)) })
+      |> result.replace_error(NoRow(table: "Spell4", id: named))
+    3 ->
+      spell4_base.get(tables:, id: Spell4BaseId(named))
+      |> result.map(fn(_) { lasting.Base(spell4_base_id: Spell4BaseId(named)) })
+      |> result.replace_error(NoRow(table: "Spell4Base", id: named))
+    selector ->
+      Error(ForceRemoveSelectorNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        selector:,
+      ))
+  }
+}
+
+/// When a Fluff or SpellForceRemove effect applies: its caster apply prerequisite
+/// passes against the caster, and a target apply prerequisite leaves it unapplied
+/// (the server checks no target-side prerequisite). Unlike a Proxy's, its dataBits06
+/// is no prerequisite.
+fn applied_when(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Condition, PlanError) {
+  case
+    effect.prerequisite_id_target_apply,
+    effect.prerequisite_id_caster_apply
+  {
+    0, 0 -> Ok(Always)
+    0, caster ->
+      prerequisite_of(tables:, id: caster)
+      |> result.map(fn(gate) { GatedOnCaster(gates: [gate]) })
+    target, _ -> Ok(GatedOnTarget(prerequisite_id: PrerequisiteId(target)))
+  }
+}
+
+/// The spell groups of a spell: the group ids of its Spell4GroupList row, none for
+/// the id 0; a row the tables lack fails the load.
+fn groups_of(
+  sources sources: Sources,
+  row row: spell4.Spell4,
+) -> Result(List(Int), PlanError) {
+  case row.spell4_group_list_id {
+    0 -> Ok([])
+    list_id ->
+      dict.get(sources.group_lists, list_id)
+      |> result.replace_error(NoRow(table: "Spell4GroupList", id: list_id))
+  }
+}
+
+/// The spell's stack group and its cap (Spell4StackGroup.stackCap): no group, cap 0
+/// for the id 0; a row the tables lack fails the load.
+fn stack_of(
+  tables tables: table_store.Tables,
+  row row: spell4.Spell4,
+) -> Result(lasting.Stack, PlanError) {
+  case row.spell4_stack_group_id {
+    0 -> Ok(lasting.Stack(group_id: 0, cap: 0))
+    group_id ->
+      spell4_stack_group.get(tables:, id: Spell4StackGroupId(group_id))
+      |> result.map(fn(group) { lasting.Stack(group_id:, cap: group.stack_cap) })
+      |> result.replace_error(NoRow(table: "Spell4StackGroup", id: group_id))
+  }
 }
 
 /// The tag an effect row holds on the points a cast spent: its emmComparison and
@@ -1630,6 +1852,32 @@ pub fn tree(
   ]
 }
 
+/// The Fluff effects of the spell that apply in phase `phase`, those whose tag holds
+/// for the points the cast spent.
+pub fn lasting_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(Lasting) {
+  list.filter(spell.lasting, fn(lasting) {
+    has_flag(flags: lasting.phase_flags, bit: int.bitwise_shift_left(1, phase))
+    && spend.applies(tag: lasting.tag, spent:)
+  })
+}
+
+/// The SpellForceRemove effects of the spell that apply in phase `phase`, those
+/// whose tag holds for the points the cast spent.
+pub fn removes_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(ForceRemove) {
+  list.filter(spell.removes, fn(remove) {
+    has_flag(flags: remove.phase_flags, bit: int.bitwise_shift_left(1, phase))
+    && spend.applies(tag: remove.tag, spent:)
+  })
+}
+
 /// The Proxies of the spell that fire in phase `phase`, those whose tag holds for
 /// the points the cast spent (genesis_prime/game/spend `applies`).
 pub fn proxies_in_phase(
@@ -1641,4 +1889,42 @@ pub fn proxies_in_phase(
     has_flag(flags: proxy.phase_flags, bit: int.bitwise_shift_left(1, phase))
     && spend.applies(tag: proxy.tag, spent:)
   })
+}
+
+/// The spellGroupId00 to 31 columns of a Spell4GroupList row, in order.
+fn group_ids_of(row row: spell4_group_list.Spell4GroupList) -> List(Int) {
+  [
+    row.spell_group_id00,
+    row.spell_group_id01,
+    row.spell_group_id02,
+    row.spell_group_id03,
+    row.spell_group_id04,
+    row.spell_group_id05,
+    row.spell_group_id06,
+    row.spell_group_id07,
+    row.spell_group_id08,
+    row.spell_group_id09,
+    row.spell_group_id10,
+    row.spell_group_id11,
+    row.spell_group_id12,
+    row.spell_group_id13,
+    row.spell_group_id14,
+    row.spell_group_id15,
+    row.spell_group_id16,
+    row.spell_group_id17,
+    row.spell_group_id18,
+    row.spell_group_id19,
+    row.spell_group_id20,
+    row.spell_group_id21,
+    row.spell_group_id22,
+    row.spell_group_id23,
+    row.spell_group_id24,
+    row.spell_group_id25,
+    row.spell_group_id26,
+    row.spell_group_id27,
+    row.spell_group_id28,
+    row.spell_group_id29,
+    row.spell_group_id30,
+    row.spell_group_id31,
+  ]
 }
