@@ -913,11 +913,12 @@ pub fn a_cancel_of_a_cast_holding_nodes_lets_them_linger_test() -> Nil {
     as "the node of the go at 1000 ends at 9000: the 0x7fe"
 }
 
-pub fn a_later_go_that_lists_a_unit_with_no_life_replaces_its_node_test() -> Nil {
+pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> Nil {
   use <- owned_test.run(5000)
-  // Phase 0's Fluff lasts until removed, phase 1's has no life: the second go sets the
-  // node again with its own life (opcode.0x7f4.instance_count), so no node is left and
-  // the cast ends with its last go instead of lingering for good.
+  // opcode.0x7f4.instance_count: a later go of the same cast keeps the node's effects
+  // and adds the go's; Spell4Effects.effectType.17: the node's life is the longest. So
+  // the phase 1 go, whose Fluff has no life, leaves the until-removed node, and the cast
+  // lingers after its last go.
   let plans =
     plans_of([
       channel(
@@ -950,11 +951,64 @@ pub fn a_later_go_that_lists_a_unit_with_no_life_replaces_its_node_test() -> Nil
     ])
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
-  assert support.finished_ids(support.writes(effects:)) == []
-    as "the first go leaves an until-removed node"
-  let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
+  let #(state, steps) = support.run_timers(state:, effects:, from_ms: 1000)
   let assert [#(2000, last)] = steps
-  assert support.finished_ids(support.writes(effects: last)) == [id]
-    as "the last go lists the caster with no life: the old node is replaced, so the cast finishes"
+  assert support.finished_ids(support.writes(effects: last)) == []
+    as "the last go leaves the earlier node: the cast lingers and writes no 0x7fe"
+  assert support.started_timers(effects: last) == []
+    as "the node lasts until removed: no timer"
+  let #(_, removal) =
+    press(
+      plans: support.with_spells(plans:, spells: [
+        remover(
+          spell4_id: 301,
+          base: 1,
+          selector: lasting.Spell(Spell4Id(101)),
+          count: 1,
+          condition: Always,
+        ),
+      ]),
+      state:,
+      bag: bag_of_base_1,
+      at: 3000,
+    )
+  assert support.removed_targets(support.writes(effects: removal))
+    == [#(started_id(effects:), [7])]
+    as "the node is still held: a removal takes it off"
+}
+
+pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A Fluff of 5 s in both phases, gos at 1000 and 2000: the node of the first go would
+  // end at 6000; the later go arms its effect again from 2000, so it ends at 7000.
+  let plans =
+    plans_of([
+      channel(
+        lasting: [
+          fluff(
+            id: 1,
+            aim: spell_plan.AimsAtCaster,
+            duration_ms: 5000,
+            until_removed: False,
+          ),
+        ],
+        channel: spell_plan.Channel(
+          initial_delay_ms: 0,
+          max_time_ms: 1000,
+          pulse_time_ms: 1000,
+        ),
+      ),
+    ])
+  let #(state, effects) =
+    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+  let id = started_id(effects:)
+  assert list.map(support.started_timers(effects:), fn(timer) { timer.1 })
+    == [1000, 5000]
+    as "the later go's timer and the first node's end, 5 s from the go"
+  let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
+  assert list.map(steps, fn(step) {
+      #(step.0, support.finished_ids(support.writes(effects: step.1)))
+    })
+    == [#(2000, []), #(7000, [id])]
+    as "the first go's timer for 6000 is replaced: the one 0x7fe is at 7000 (opcode.0x7f4.instance_count)"
 }

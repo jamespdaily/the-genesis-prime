@@ -21,6 +21,7 @@ import genesis_prime/game/lasting.{
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/list
+import gleam/option.{None, Some}
 import owned_test
 
 // ---- the life of a node ----
@@ -95,6 +96,110 @@ pub fn the_longest_effect_decides_the_life_test() -> Nil {
     == EndsAt(ms: 9000)
 }
 
+// ---- a later go on a unit the cast holds a node on ----
+
+fn timed(duration_ms duration_ms: Int) -> lasting.LastingRow {
+  LastingRow(delay_ms: 0, duration_ms:, until_removed: False)
+}
+
+fn until_removed() -> lasting.LastingRow {
+  LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+}
+
+/// The node the first go at 1000 gives the unit 7 from these effects.
+fn first_node(effects effects: List(lasting.LastingRow)) -> lasting.Node {
+  let assert Ok(node) =
+    lasting.given(
+      held: None,
+      unit_id: 7,
+      count: 1,
+      effects:,
+      longer_of_delay_and_duration: False,
+      go_ms: 1000,
+    )
+    as "the effects give the node a life"
+  node
+}
+
+fn later_go(
+  held held: lasting.Node,
+  effects effects: List(lasting.LastingRow),
+  count count: Int,
+) -> Result(lasting.Node, Nil) {
+  lasting.given(
+    held: Some(held),
+    unit_id: 7,
+    count:,
+    effects:,
+    longer_of_delay_and_duration: False,
+    go_ms: 2000,
+  )
+}
+
+pub fn a_first_go_gives_a_node_the_life_of_its_longest_effect_and_none_without_a_life_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert first_node(effects: [timed(duration_ms: 3000), timed(duration_ms: 500)]).life
+    == EndsAt(ms: 4000)
+  assert lasting.given(
+      held: None,
+      unit_id: 7,
+      count: 1,
+      effects: [timed(duration_ms: 0)],
+      longer_of_delay_and_duration: False,
+      go_ms: 1000,
+    )
+    == Error(Nil)
+    as "no effect has a life: no node"
+}
+
+pub fn an_earlier_until_removed_effect_keeps_the_node_through_a_later_go_with_no_life_test() -> Nil {
+  use <- owned_test.run(5000)
+  // opcode.0x7f4.instance_count: a later go keeps the node's effects and adds the go's;
+  // Spell4Effects.effectType.17: the node's life is the longest of them.
+  let node = first_node(effects: [until_removed()])
+  let assert Ok(later) =
+    later_go(held: node, effects: [timed(duration_ms: 0)], count: 1)
+  assert later.life == UntilRemoved
+}
+
+pub fn a_timed_node_is_re_timed_from_the_later_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  let node = first_node(effects: [timed(duration_ms: 3000)])
+  assert node.life == EndsAt(ms: 4000)
+  let assert Ok(later) =
+    later_go(held: node, effects: [timed(duration_ms: 3000)], count: 1)
+  assert later.life == EndsAt(ms: 5000)
+    as "each effect is armed again for its first lifetime from the later go at 2000"
+}
+
+pub fn an_earlier_timed_effect_still_held_is_re_armed_and_can_outlast_the_new_ones_test() -> Nil {
+  use <- owned_test.run(5000)
+  let node = first_node(effects: [timed(duration_ms: 8000)])
+  let assert Ok(later) =
+    later_go(held: node, effects: [timed(duration_ms: 3000)], count: 1)
+  assert later.life == EndsAt(ms: 10_000)
+    as "the 8 s effect, held at 2000, is armed again for 8 s: 10000, beyond the new 3 s effect's 5000"
+}
+
+pub fn an_effect_whose_lifetime_ended_before_the_later_go_has_left_the_node_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The 500 ms effect ended at 1500: its timer fired and it left the node (0x1405d6b30).
+  let node = first_node(effects: [timed(duration_ms: 500)])
+  let assert Ok(later) =
+    later_go(held: node, effects: [timed(duration_ms: 3000)], count: 1)
+  assert later.life == EndsAt(ms: 5000)
+  assert later.effects == [timed(duration_ms: 3000)]
+}
+
+pub fn a_later_go_sets_the_count_outright_test() -> Nil {
+  use <- owned_test.run(5000)
+  let node = first_node(effects: [until_removed()])
+  let assert Ok(later) = later_go(held: node, effects: [], count: 3)
+  assert later.count == 3
+  let assert Ok(again) = later_go(held: later, effects: [], count: 1)
+  assert again.count == 1
+}
+
 // ---- what a type 80 row takes off ----
 
 /// A hold of a cast on unit 7 with this many stacks.
@@ -110,7 +215,7 @@ fn hold(
     groups: [51],
     stack: Stack(group_id: 1450, cap: 2),
     started_ms:,
-    node: Node(unit_id: 7, count:, life: UntilRemoved),
+    node: Node(unit_id: 7, count:, life: UntilRemoved, effects: [], armed_ms: 0),
   )
 }
 

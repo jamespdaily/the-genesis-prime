@@ -25,6 +25,11 @@
 //// - **A node's life** is its longest effect's: delay plus durationTime, the
 ////   larger of the two for the spells whose record flag 0x10000000 is set, never
 ////   ending for Spell4Effects flags bit 2 (`opcode.0x7f4.effect_time`).
+//// - **A later go of the same cast on a unit** keeps the node's effects, arms each again
+////   for its first lifetime from that go, adds the go's effects and sets the count
+////   outright: the node's life is the longest of them, so an earlier effect that lasts
+////   until removed keeps the node and a go whose effects have no life never drops or
+////   shortens it (`given`, `opcode.0x7f4.instance_count`).
 //// - **The client ends no buff on time**: only 0x7fe, 0x811 and 0x813 end one, so
 ////   the server holds a cast's 0x7fe while a node has life left and sends the end
 ////   itself (`cast.target_node_end`).
@@ -69,6 +74,7 @@ import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id}
 import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/pair
 
@@ -83,9 +89,16 @@ pub type Life {
 }
 
 /// A cast's hold on one unit: the node the client keeps for it, with the stacks
-/// the cast gave there and the life of its effects.
+/// the cast gave there, the life of its effects, the effects it holds and the time
+/// they were last armed from (the cast's latest go on the unit).
 pub type Node {
-  Node(unit_id: Int, count: Int, life: Life)
+  Node(
+    unit_id: Int,
+    count: Int,
+    life: Life,
+    effects: List(LastingRow),
+    armed_ms: Int,
+  )
 }
 
 /// The columns of one Fluff row that give a node its life: the effect's delay and
@@ -127,6 +140,39 @@ fn lifetime_of(
   case longer_of_delay_and_duration {
     True -> int.max(row.delay_ms, row.duration_ms)
     False -> row.delay_ms + row.duration_ms
+  }
+}
+
+/// The node a go gives a unit, from the node the cast already holds there (`held`) and
+/// the effects the go lists for the unit. A later go of the same cast keeps the node's
+/// effects, re-arms each for its first lifetime from this go, adds the go's effects and
+/// sets the count outright; the node's life is the longest of them, so an earlier
+/// effect that lasts until removed keeps the node and a go whose effects have no life
+/// never drops or shortens it. An effect whose lifetime ended before this go has left
+/// the node and is not re-armed. A unit that is left with no effect that has a life
+/// holds no node (`opcode.0x7f4.instance_count`, `Spell4Effects.effectType.17`).
+pub fn given(
+  held held: Option(Node),
+  unit_id unit_id: Int,
+  count count: Int,
+  effects effects: List(LastingRow),
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+  go_ms go_ms: Int,
+) -> Result(Node, Nil) {
+  let earlier = case held {
+    Some(node) ->
+      list.filter(node.effects, fn(row) {
+        row.until_removed
+        || node.armed_ms + lifetime_of(row:, longer_of_delay_and_duration:)
+        > go_ms
+      })
+    None -> []
+  }
+  let all = list.append(earlier, effects)
+  case life_of(effects: all, longer_of_delay_and_duration:, go_ms:) {
+    NoLife -> Error(Nil)
+    EndsAt(..) as life | UntilRemoved as life ->
+      Ok(Node(unit_id:, count:, life:, effects: all, armed_ms: go_ms))
   }
 }
 

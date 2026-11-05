@@ -2967,10 +2967,11 @@ fn removed_by_go(
   })
 }
 
-/// The nodes a go gives, one for each unit a Fluff row aims at: count 1 and its rows'
-/// longest life, which sets the unit's node of the cast again as a later go does on the
-/// client (`opcode.0x7f4.instance_count`); a unit whose rows give no life holds no node
-/// of the cast afterwards.
+/// The nodes a go gives, one for each unit a Fluff row aims at: count 1 and the longest
+/// life of its rows with the effects the cast's node on the unit already holds
+/// (`lasting.given`: a later go keeps and re-arms them, as on the client,
+/// `opcode.0x7f4.instance_count`); a unit left with no effect that has a life holds no
+/// node of the cast.
 fn nodes_given(
   cast cast: State,
   cast_id cast_id: Int,
@@ -2983,7 +2984,16 @@ fn nodes_given(
       let given =
         list.unique(list.map(aimed.lasting, fn(entry) { entry.1 }))
         |> list.map(fn(unit_id) {
-          #(unit_id, node_of(spell: live.spell, aimed:, unit_id:, now_ms:))
+          #(
+            unit_id,
+            node_of(
+              spell: live.spell,
+              held: dict.get(live.nodes, unit_id) |> option.from_result,
+              aimed:,
+              unit_id:,
+              now_ms:,
+            ),
+          )
         })
       let #(cast, pushed) =
         list.fold(given, #(cast, []), fn(so_far, entry) {
@@ -3008,10 +3018,11 @@ fn nodes_given(
   }
 }
 
-/// The node a go gives one unit: its Fluff rows' longest life; none when no row has
-/// one.
+/// The node a go gives one unit from the node its cast holds there and the Fluff rows
+/// the go lists for it (`lasting.given`); none when no effect has a life.
 fn node_of(
   spell spell: Spell,
+  held held: Option(lasting.Node),
   aimed aimed: Aimed,
   unit_id unit_id: Int,
   now_ms now_ms: Int,
@@ -3023,17 +3034,14 @@ fn node_of(
         False -> Error(Nil)
       }
     })
-  let life =
-    lasting.life_of(
-      effects: rows,
-      longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
-      go_ms: now_ms,
-    )
-  case life {
-    lasting.NoLife -> Error(Nil)
-    lasting.EndsAt(..) | lasting.UntilRemoved ->
-      Ok(lasting.Node(unit_id:, count: 1, life:))
-  }
+  lasting.given(
+    held:,
+    unit_id:,
+    count: 1,
+    effects: rows,
+    longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+    go_ms: now_ms,
+  )
 }
 
 /// A node the go gives a unit its cast holds none on yet makes a new cast on that
