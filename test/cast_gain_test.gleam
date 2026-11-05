@@ -234,7 +234,7 @@ fn mind_burst_held_behind_the_go(
     )
   let assert [cast.Strike(asked:)] = fired as "the go is asked"
   let #(_, effects) =
-    cast.went(
+    support.went(
       cast: state,
       caster:,
       now: support.at(ms: 2250),

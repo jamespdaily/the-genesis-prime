@@ -258,7 +258,7 @@ pub fn pulse_blast_goes_at_0_and_1250_ms_starts_its_child_in_phase_1_and_finishe
     as "SpellPhase 5390 and 5391: Pulse Blast's phases at the running sums 0 and 1250 ms; Spell4Effects 95881 (phaseFlags 2) proxies 37302 in phase 1; SpellPhase 2820 to 2823: 37302's phases at 0, 1, 1 and 1 ms after its start; each Multiphase cast finishes after its last go (the design's sequence)"
 }
 
-pub fn quick_draw_goes_in_5_phases_and_starts_no_proxy_behind_a_prerequisite_test() -> Nil {
+pub fn quick_draw_goes_in_5_phases_and_starts_the_proxies_whose_caster_gate_passes_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.quick_draw, at: 1000)
@@ -268,15 +268,33 @@ pub fn quick_draw_goes_in_5_phases_and_starts_no_proxy_behind_a_prerequisite_tes
       #(1000, "7fd k1"),
       #(1000, "7f4 k1 p0"),
       #(1366, "7f4 k1 p1"),
+      #(1366, "7ff k2 43498 root 43468 parent 43468"),
+      #(1366, "7f4 k2 p0"),
+      #(1366, "7fe k2"),
       #(1566, "7f4 k1 p2"),
+      #(1566, "7ff k3 43499 root 43468 parent 43468"),
+      #(1566, "7f4 k3 p0"),
+      #(1566, "7fe k3"),
       #(1766, "7f4 k1 p3"),
+      #(1766, "7ff k4 43498 root 43468 parent 43468"),
+      #(1766, "7f4 k4 p0"),
+      #(1766, "7fe k4"),
+      #(1766, "7ff k5 43500 root 43468 parent 43468"),
+      #(1766, "7f4 k5 p0"),
+      #(1766, "7fe k5"),
       #(2000, "7f4 k1 p4"),
       #(2000, "7fe k1"),
     ]
-    as "SpellPhase 5882 to 5886: delays 0, 366, 200, 200 and 234, so gos at 0, 366, 566, 766 and 1000 ms with the phase index as the byte (opcode.0x7f4.phase); Spell4Effects 196513 to 196522: every Proxy has prerequisite 17301 or 17302, so none starts (Spell4Effects.effectType.26)"
+    as "SpellPhase 5882 to 5886: delays 0, 366, 200, 200 and 234, so gos at 0, 366, 566, 766 and 1000 ms with the phase index as the byte (opcode.0x7f4.phase). Spell4Effects 196513 to 196522 have type 26 effects aimed at the caster behind caster apply 17301 (type 15, comparison 2 on 43500: the caster is not under cast 43500) or 17302 (comparison 1: it is); no cast of 43500 is live at a go, so 17301's start and 17302's do not: phase 1 (phaseFlags 2) starts 43498 by 196513, phase 2 (4) 43499 by 196514 and phase 3 (8) 43498 by 196515 and 43500 by 196516; phases 0 and 4 hold only 196522 (17302) and effect 196521 (type 80), which start nothing"
   assert list.flat_map(steps, fn(step) { started_by_viewer(effects: step.1) })
-    == [#(43_468, 43_468, 0)]
-    as "no child is started, so the viewers are told only Quick Draw's own start"
+    == [
+      #(43_468, 43_468, 0),
+      #(43_498, 43_468, 43_468),
+      #(43_499, 43_468, 43_468),
+      #(43_498, 43_468, 43_468),
+      #(43_500, 43_468, 43_468),
+    ]
+    as "the viewers are told Quick Draw's own start and each child the gates let start"
 }
 
 // ------------------------------------------------------------ the current cast

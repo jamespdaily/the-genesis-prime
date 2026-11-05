@@ -1,10 +1,20 @@
 //// What each engine declares: its name, the area that builds it, where the
-//// client's data names the types it handles, and the types it handles. The
+//// client's data names the types it handles, how the types it handles are told,
+//// and the types the client's code was read for that it does not handle. The
 //// coverage measure reads these declarations.
+////
+//// A rule that decodes its type once for its dispatch (genesis_prime/game/effect_kind,
+//// genesis_prime/game/prerequisite) hands the measure that decode: a type is
+//// handled when the decode does not give its unread case, so a rule and the
+//// measure cannot disagree. An engine with no such decode lists the ids its rules
+//// name.
 
 import genesis_prime/client_connection
 import genesis_prime/coverage/sent_message
+import genesis_prime/coverage/starting_ability
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/effect_kind
+import genesis_prime/game/prerequisite as game_prerequisite
 import genesis_prime/login/auth_connection
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
@@ -12,6 +22,7 @@ import genesis_prime/table/prerequisite
 import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4_effects
 import gleam/list
+import gleam/option.{type Option, None, Some}
 
 /// Where the types an engine must handle are found in the client.
 pub type Source {
@@ -30,6 +41,25 @@ pub type Source {
   CasesNotRecorded(evidence: String, needed: String)
 }
 
+/// How an engine tells the types it handles.
+pub type Handling {
+  /// The ids its rules name. Every one must be a type some row uses.
+  Listed(ids: List(Int))
+  /// The rule's own decode: `is_read` says whether the rule handles a type.
+  Decoded(is_read: fn(Int) -> Bool)
+}
+
+/// A type the client's code was read for and the engine does not handle.
+pub type Missing {
+  Missing(
+    type_number: Int,
+    /// What the engine lacks to handle it, in plain words.
+    reason: String,
+    /// The fact file's key of the client's reading of the type.
+    fact_key: String,
+  )
+}
+
 /// One engine's declaration.
 pub type EngineDeclaration {
   EngineDeclaration(
@@ -38,9 +68,26 @@ pub type EngineDeclaration {
     /// The number of the GitHub issue of the engine's area.
     area_issue: Int,
     source: Source,
-    /// The types the engine handles. Every one must be a type some row uses.
-    handled: List(Int),
+    handled: Handling,
+    /// The types read from the client and not handled. A type is never both.
+    missing: List(Missing),
+    /// The type values the level-1 abilities' trees use, when the engine's
+    /// types are those of spells, or the rows the trees name that the tables lack.
+    starting_abilities: Option(
+      fn(store.Tables) -> Result(List(Int), List(starting_ability.MissingRow)),
+    ),
   )
+}
+
+/// Whether the engine handles the type.
+pub fn handles(
+  engine engine: EngineDeclaration,
+  type_number type_number: Int,
+) -> Bool {
+  case engine.handled {
+    Listed(ids:) -> list.contains(ids, type_number)
+    Decoded(is_read:) -> is_read(type_number)
+  }
 }
 
 /// The prerequisite engine. A Prerequisite row holds up to three conditions,
@@ -48,7 +95,8 @@ pub type EngineDeclaration {
 /// of the three columns is one use of a type. The column names are the client's
 /// (`game_table.schema`); each names a PrerequisiteType row, and the client's
 /// handler of type 71 is fact 0x1404a4e48. No fact records the code that reads
-/// the three columns.
+/// the three columns. A type is handled when the prerequisite rule's decode reads
+/// it (genesis_prime/game/prerequisite `is_read`).
 fn prerequisites() -> EngineDeclaration {
   EngineDeclaration(
     name: "Prerequisites",
@@ -71,7 +119,35 @@ fn prerequisites() -> EngineDeclaration {
         })
       },
     ),
-    handled: [],
+    handled: Decoded(is_read: game_prerequisite.is_read),
+    missing: [
+      Missing(
+        type_number: 43,
+        reason: "needs the player's quest log and its done marks",
+        fact_key: "Prerequisite.prerequisiteTypeId.43",
+      ),
+      Missing(
+        type_number: 50,
+        reason: "needs the spells each unit lies under, by caster, which a lasting effect on a unit gives",
+        fact_key: "Prerequisite.prerequisiteTypeId.50",
+      ),
+      Missing(
+        type_number: 59,
+        reason: "needs the stack count of a spell on a unit, which a lasting effect on a unit gives",
+        fact_key: "Prerequisite.prerequisiteTypeId.59",
+      ),
+      Missing(
+        type_number: 108,
+        reason: "needs a creature's facing, which the creature's fight behaviour holds",
+        fact_key: "Prerequisite.prerequisiteTypeId.108",
+      ),
+      Missing(
+        type_number: 116,
+        reason: "needs a unit's stealth, which no effect the server reads sets",
+        fact_key: "Prerequisite.prerequisiteTypeId.116",
+      ),
+    ],
+    starting_abilities: Some(starting_ability.prerequisite_types),
   )
 }
 
@@ -90,13 +166,16 @@ fn quest_objectives() -> EngineDeclaration {
         list.map(quest_objective.all(tables), fn(row) { row.type_ })
       },
     ),
-    handled: [],
+    handled: Listed(ids: []),
+    missing: [],
+    starting_abilities: None,
   )
 }
 
 /// The spell effect engine: the `effectType` column of Spell4Effects, the
 /// client's own column name (`game_table.schema`). No fact records the code that
-/// reads the column.
+/// reads the column. A type is handled when the effect rule's decode reads it
+/// (genesis_prime/game/effect_kind `is_read`).
 fn spell_effects() -> EngineDeclaration {
   EngineDeclaration(
     name: "Spell effects",
@@ -109,7 +188,50 @@ fn spell_effects() -> EngineDeclaration {
         list.map(spell4_effects.all(tables), fn(row) { row.effect_type })
       },
     ),
-    handled: [],
+    handled: Decoded(is_read: effect_kind.is_read),
+    missing: [
+      Missing(
+        type_number: 3,
+        reason: "needs a unit other than the player's moved by force, which 0x0638 carries",
+        fact_key: "Spell4Effects.effectType.3",
+      ),
+      Missing(
+        type_number: 4,
+        reason: "needs a crowd control state on a unit and its end (0x087F, 0x0880), which a lasting effect on a unit holds",
+        fact_key: "Spell4Effects.effectType.4",
+      ),
+      Missing(
+        type_number: 11,
+        reason: "needs a unit's property changed and sent (0x093A), which a lasting effect on a unit holds",
+        fact_key: "Spell4Effects.effectType.11",
+      ),
+      Missing(
+        type_number: 14,
+        reason: "needs a trigger on a unit that casts a spell, which a lasting effect on a unit holds",
+        fact_key: "Spell4Effects.effectType.14",
+      ),
+      Missing(
+        type_number: 17,
+        reason: "needs a lifetime for a spell on a unit, which shows as a buff (0x07F4's target info, 0x0811, 0x0813)",
+        fact_key: "Spell4Effects.effectType.17",
+      ),
+      Missing(
+        type_number: 73,
+        reason: "needs the cooldowns the server keeps for a unit changed by the effect, for the running ones and for the new ones while it lasts",
+        fact_key: "Spell4Effects.effectType.73",
+      ),
+      Missing(
+        type_number: 80,
+        reason: "needs the spells on a unit ended, which lasting effects on a unit give (0x0811, 0x0813)",
+        fact_key: "Spell4Effects.effectType.80",
+      ),
+      Missing(
+        type_number: 90,
+        reason: "needs an ability's charges changed and sent (0x0914)",
+        fact_key: "Spell4Effects.effectType.90",
+      ),
+    ],
+    starting_abilities: Some(starting_ability.effect_types),
   )
 }
 
@@ -128,7 +250,9 @@ fn unit_types() -> EngineDeclaration {
         list.map(creature2.all(tables), fn(row) { row.creation_type_enum })
       },
     ),
-    handled: [],
+    handled: Listed(ids: []),
+    missing: [],
+    starting_abilities: None,
   )
 }
 
@@ -152,7 +276,9 @@ fn messages() -> EngineDeclaration {
       evidence: "the messages the client sends, from the facts of its send paths: SendWorldMessage 0x1403f4900 (245 ids), 0x1403f4740 (58), 0x140016010 (7), 0x1400161d0 (23), the 14 ids serialised directly (0x140332920), 0x244, 0x38c and the network layer's ids 0, 1 and 2 (0x140332580): 352 ids (RegisterMessage 0x1403309a0). Each id is one row: the facts give each path's ids and send sites, not the sites of each id",
       ids: sent_message.all(),
     ),
-    handled: handled_client_message_ids(),
+    handled: Listed(ids: handled_client_message_ids()),
+    missing: [],
+    starting_abilities: None,
   )
 }
 

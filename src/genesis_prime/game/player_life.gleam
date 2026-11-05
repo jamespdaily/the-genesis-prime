@@ -558,3 +558,18 @@ pub fn health(life life: Life) -> Int {
 pub fn shield(life life: Life) -> Int {
   life.shield
 }
+
+/// The player's full health.
+pub fn max_health(life life: Life) -> Int {
+  life.max_health
+}
+
+/// The player's full shield.
+pub fn max_shield(life life: Life) -> Int {
+  life.max_shield
+}
+
+/// Whether the player is in combat: a creature holds it on its threat list.
+pub fn in_combat(life life: Life) -> Bool {
+  !dict.is_empty(life.fighters)
+}

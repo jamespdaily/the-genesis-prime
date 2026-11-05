@@ -430,11 +430,11 @@ pub fn the_phases_channel_and_threshold_of_each_method_are_read_from_the_rows_te
     as "Spell4.43468: the channel columns hold values, but only a Channeled spell keeps them (Spell4.channelPulseTime)"
   assert list.all(quick_draw.proxies, fn(proxy) {
     case proxy.condition {
-      spell_plan.NeedsPrerequisite(..) -> True
-      Always -> False
+      spell_plan.GatedOnCaster(..) -> True
+      Always | spell_plan.GatedOnTarget(..) -> False
     }
   })
-    as "Spell4Effects 196513 to 196522: every Proxy of Quick Draw sits behind prerequisite 17301 or 17302"
+    as "Spell4Effects 196513 to 196522: every Proxy of Quick Draw sits behind its caster apply prerequisite 17301 or 17302"
   assert planted(base: 23_161).cooldown_start == AtFirstGo
     as "SpellPhase 3715 and 3716: flags 0 and 0x180, no 0x200"
   let discharge = planted(base: 38_201)

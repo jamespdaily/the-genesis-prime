@@ -384,7 +384,7 @@ pub fn two_presses_accepted_in_one_step_cannot_spend_one_payment_test() -> Nil {
   // The go's round closes and clears the current cast: the held press and then
   // the hold's press are both taken in this one step, against 40 Suit Power.
   let #(_, effects) =
-    cast.went(
+    support.went(
       cast: state,
       caster:,
       now: support.at(ms: 2250),

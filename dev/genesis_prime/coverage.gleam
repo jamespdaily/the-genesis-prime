@@ -3,9 +3,13 @@
 ////
 //// `gleam run -m genesis_prime/coverage` loads the client's tables from
 //// `GENESIS_TABLE_DIR` (else `GENESIS_HOME`/tables, else
-//// `~/.genesis-prime/tables`) and prints a Markdown checklist per engine. It
-//// exits with 1 when the tables do not load or an engine declares a type no
-//// row uses.
+//// `~/.genesis-prime/tables`) and prints a Markdown checklist per engine: each
+//// type is handled, decoded and missing (with what it lacks and the fact file's
+//// key), or not decoded, beside the rows it has in the whole game and in the
+//// starting abilities' spells. It exits with 1 when the tables do not load, an
+//// engine declares a type no row uses, an engine both handles a type and
+//// lists it as missing, or a starting ability's tree names a Spell4 or Prerequisite
+//// row the tables lack.
 ////
 //// It then prints the coverage of the world's spawns, a line for each world: how
 //// many start as fight creatures, how many NonPlayer rows are left out and why,
@@ -20,6 +24,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
+import genesis_prime/coverage/starting_ability
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
 import genesis_prime/game/rating
@@ -59,6 +64,8 @@ pub fn main() -> Nil {
       let spawns = spawn_coverage(tables:)
       store.unload(tables)
       io.println(checklist.totals(measurements))
+      io.println("")
+      io.println(checklist.legend)
       io.println("")
       io.println(checklist.render(measurements))
       io.println("")
@@ -118,17 +125,43 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
   }
 }
 
-/// A line for each engine that declares a type no row uses.
-fn breaches(measurements: List(Measurement)) -> List(String) {
-  list.filter_map(measurements, fn(measured) {
+/// A line for each engine that declares a type no row uses, one for each that
+/// both handles a type and lists it as missing, and one for each that names a row
+/// of a starting ability's tree the client's tables lack.
+pub fn breaches(measurements: List(Measurement)) -> List(String) {
+  list.flat_map(measurements, fn(measured) {
     case measured {
-      Measured(engine:, breaches: [_, ..] as unused, ..) ->
-        Ok(
-          engine.name
-          <> " declares types no row uses: "
-          <> string.join(list.map(unused, int.to_string), ", "),
-        )
-      Measured(breaches: [], ..) | measurement.Unmeasured(..) -> Error(Nil)
+      Measured(engine:, breaches:, conflicts:, missing_rows:, ..) ->
+        list.flatten([
+          case breaches {
+            [] -> []
+            unused -> [
+              engine.name
+              <> " declares types no row uses: "
+              <> string.join(list.map(unused, int.to_string), ", "),
+            ]
+          },
+          case conflicts {
+            [] -> []
+            both -> [
+              engine.name
+              <> " both handles and lists as missing the types: "
+              <> string.join(list.map(both, int.to_string), ", "),
+            ]
+          },
+          case missing_rows {
+            [] -> []
+            lacking -> [
+              engine.name
+              <> " reaches rows the client's tables lack: "
+              <> string.join(
+                list.map(lacking, fn(row) { starting_ability.describe(row) }),
+                "; ",
+              ),
+            ]
+          },
+        ])
+      measurement.Unmeasured(..) -> []
     }
   })
 }
