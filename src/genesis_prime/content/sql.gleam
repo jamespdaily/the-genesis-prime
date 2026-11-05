@@ -8,6 +8,50 @@ import gleam/dynamic/decode
 import gleam/option.{type Option}
 import pog
 
+/// A row you get from running the `load_class_resources` query
+/// defined in `./src/genesis_prime/content/sql/load_class_resources.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadClassResourcesRow {
+  LoadClassResourcesRow(class_id: Int, name: String, value: Float, unit: String)
+}
+
+/// Every row of the class_resource table in class and name order: the one query the
+/// load makes of the table at start (genesis_prime/content/class_resource). The
+/// checks run on these rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_class_resources(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadClassResourcesRow), pog.QueryError) {
+  let decoder = {
+    use class_id <- decode.field(0, decode.int)
+    use name <- decode.field(1, decode.string)
+    use value <- decode.field(2, decode.float)
+    use unit <- decode.field(3, decode.string)
+    decode.success(LoadClassResourcesRow(class_id:, name:, value:, unit:))
+  }
+
+  "-- Every row of the class_resource table in class and name order: the one query the
+-- load makes of the table at start (genesis_prime/content/class_resource). The
+-- checks run on these rows, not in SQL.
+select
+  class_id,
+  name,
+  value,
+  unit
+from class_resource
+order by class_id, name;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_creature_kinds` query
 /// defined in `./src/genesis_prime/content/sql/load_creature_kinds.sql`.
 ///

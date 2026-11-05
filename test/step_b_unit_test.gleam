@@ -25,12 +25,12 @@ import genesis_prime/message/unit_create_player.{
 }
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/character_creation
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
@@ -82,8 +82,8 @@ fn step_b(
       tail: UnitCreateTail(
         create_flags: 0,
         stats: [
-          UnitStat(stat_id: 0, value: stand_in),
-          UnitStat(stat_id: 10, value: character.level),
+          unit_fields.integer_stat(stat_id: 0, value: stand_in),
+          unit_fields.integer_stat(stat_id: 10, value: character.level),
         ],
         server_time_estimate_start: 0,
         movement_commands: [
@@ -112,7 +112,7 @@ fn step_b(
   let gear = set.properties
   let shield_stats = case gear.shield {
     Some(Shield(capacity_max:, ..)) -> [
-      UnitStat(stat_id: 20, value: float.round(capacity_max)),
+      unit_fields.integer_stat(stat_id: 20, value: float.round(capacity_max)),
     ]
     None -> []
   }
@@ -146,8 +146,8 @@ fn step_b(
       ..record.tail,
       stats: list.flatten([
         [
-          UnitStat(stat_id: 0, value: max_health),
-          UnitStat(stat_id: 10, value: character.level),
+          unit_fields.integer_stat(stat_id: 0, value: max_health),
+          unit_fields.integer_stat(stat_id: 10, value: character.level),
         ],
         shield_stats,
       ]),

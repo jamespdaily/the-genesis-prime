@@ -41,6 +41,8 @@ import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
+import genesis_prime/message/unit_stat_float.{UnitStatFloat}
+import genesis_prime/message/unit_stat_value
 import genesis_prime/step.{
   CancelTimer, ConnectionId, EndedBeforeAnswer, LogError, LogInfo, LogWarning,
   Map, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, Sessions, StartTimer,
@@ -51,6 +53,7 @@ import genesis_prime/store.{
   Listed, LoadCharacter, NotTheAccounts, Unavailable, World,
 }
 import genesis_prime/world_map/map.{Join}
+import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -148,7 +151,7 @@ pub fn message_0xad_carries_the_saved_world_and_position_and_0_in_its_last_two_f
     as "opcode.0xad: World 3460 and the position of WorldLocation2 row 51596 as 32-bit floats (29.1286, -853.8716 and -560.1880 are 0x41E9075F, 0xC45577C8 and 0xC40C0C08); the fourth and fifth floats are never read, 0.0 (opcode.0xad.last_floats)"
 }
 
-pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body_and_bones_and_nothing_else_test() -> Nil {
+pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body_and_bones_its_class_resource_and_nothing_else_test() -> Nil {
   use <- owned_test.run(10_000)
   assert game_connection_support.player_in(game_connection_support.entered().1)
     == UnitCreatePlayer(
@@ -171,9 +174,15 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
       tail: UnitCreateTail(
         create_flags: 0,
         stats: [
-          UnitStat(stat_id: 0, value: 736),
-          UnitStat(stat_id: 10, value: 1),
-          UnitStat(stat_id: 20, value: 450),
+          unit_fields.integer_stat(stat_id: 0, value: 736),
+          unit_fields.integer_stat(stat_id: 10, value: 1),
+          unit_fields.integer_stat(stat_id: 20, value: 450),
+          // The Engineer's Volatility, slot 1: stat 3 in the float form at 0.0, its
+          // start (472510, opcode.0x262.resource_stats).
+          UnitStat(
+            stat_id: 3,
+            value: unit_stat_value.Float(UnitStatFloat(value: 0)),
+          ),
         ],
         server_time_estimate_start: 0,
         movement_commands: [
@@ -192,6 +201,9 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
         ],
         properties: [
           UnitProperty(property_id: 7, field_2: 0x44380000, value: 0x44380000),
+          // ResourceMax_1 (UnitProperty2.ResourceMax_0) at 100.0, the Engineer's
+          // maximum (the design: Tenton Hammer's Engineer guide).
+          UnitProperty(property_id: 10, field_2: 0x42C80000, value: 0x42C80000),
           UnitProperty(property_id: 35, field_2: 0x434B1000, value: 0x434B1000),
           UnitProperty(property_id: 36, field_2: 0x425EC000, value: 0x425EC000),
           UnitProperty(property_id: 41, field_2: 0x43E10000, value: 0x43E10000),

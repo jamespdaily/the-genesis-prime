@@ -449,6 +449,7 @@ pub fn entry_answered(
           answer:,
           realm_id: session.settings.realm_id,
           next_whisper: session.next_whisper,
+          classes: session.settings.class_resources,
         )
       {
         Ok(world_entry.InTheWorld(entered:, effects:)) ->

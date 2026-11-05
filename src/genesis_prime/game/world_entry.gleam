@@ -38,7 +38,10 @@
 ////   draws nothing: the worn set is drawn by the item visuals the map's unit
 ////   carries in its 0x262 (genesis_prime/world_map/player_unit,
 ////   `opcode.0x262.worn_visuals`). The unit's 0x262 also carries the gear's
-////   health, shield and properties (`player_unit.create`).
+////   health, shield and properties (`player_unit.create`), and the player's own
+////   carries its class resource's slot at its start and the slot's maximum
+////   (`player_unit.with_resource`, genesis_prime/game/class_resource), which the
+////   player then holds.
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
 ////   floats, which neither entry path reads (opcode.0xad.last_floats). The
 ////   position, here and in 0x262, is bounded to the box the client bounds a
@@ -83,6 +86,7 @@ import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
+import genesis_prime/game/class_resource
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -111,6 +115,7 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/dict.{type Dict}
@@ -219,6 +224,7 @@ pub type Entered {
     movement: movement.State,
     readiness: Readiness,
     life: player_life.Life,
+    resources: class_resource.Resources,
     camp: camp.Camp,
     cast: cast.State,
     strike: strike.State,
@@ -368,12 +374,17 @@ pub fn joined(
   answer answer: map.Outgoing,
   realm_id realm_id: Int,
   next_whisper next_whisper: Int,
+  classes classes: class_resource.Classes,
 ) -> Result(Joined, Nil) {
   case state {
     Joining(character:, place:, movement:, map:, stay:, readiness:) -> {
       case answer {
         map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
+          let assert Ok(resource) =
+            class_resource.of_class(classes:, class_id: character.class_id)
+            as "character creation makes only playable classes, and the content load refuses a table with no resource for one"
+          let unit = player_unit.with_resource(record: unit, resource:)
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
           Ok(InTheWorld(
@@ -399,6 +410,7 @@ pub fn joined(
                 health: max_health,
                 shield: full_shield(unit:),
               ),
+              resources: class_resource.new(resource:),
               camp: camp.none(),
               cast: cast.new(),
               strike: strike.new(),

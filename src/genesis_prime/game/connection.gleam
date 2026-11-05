@@ -141,11 +141,13 @@ import genesis_prime/connection/hello
 import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
+import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/login as connection_login
 import genesis_prime/game/connection/movement as connection_movement
+import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type Ending, type Session, type Status, AwaitingHelloReply, Busy,
@@ -853,16 +855,19 @@ fn stay_sent(
   }
 }
 
-/// A timer fired that is not the save timer's: a cast's, or the claim's.
+/// A timer fired that is not the save timer's: a cast's, a strike's, the class
+/// resource's, or the claim's.
 fn other_timer_fired(
   session session: Session,
   now now: Now,
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
-  case cast.owns(timer), strike.owns(timer) {
-    True, _ -> connection_casting.cast_due(session:, now:, timer:)
-    False, True -> connection_casting.strike_due(session:, now:)
-    False, False -> connection_login.claim_wait_over(session:, now:, timer:)
+  case cast.owns(timer), strike.owns(timer), class_resource.owns(timer:) {
+    True, _, _ -> connection_casting.cast_due(session:, now:, timer:)
+    False, True, _ -> connection_casting.strike_due(session:, now:)
+    False, False, True -> connection_resource.resource_due(session:, timer:)
+    False, False, False ->
+      connection_login.claim_wait_over(session:, now:, timer:)
   }
 }
 

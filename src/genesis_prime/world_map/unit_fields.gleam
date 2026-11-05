@@ -22,10 +22,12 @@ import genesis_prime/message/unit_create_tail.{
 import genesis_prime/message/unit_position_command.{type UnitPositionCommand}
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
+import genesis_prime/message/unit_stat_float.{UnitStatFloat}
+import genesis_prime/message/unit_stat_integer.{UnitStatInteger}
+import genesis_prime/message/unit_stat_value
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/result
 
 /// The stat the client keeps a unit's health in (0x140458140).
 pub const health_stat = 0
@@ -51,13 +53,53 @@ pub type HealthSource {
   ClientDefault
 }
 
-/// The value of a stat of a unit's tail, `Error(Nil)` for a stat it does not hold.
+/// The value of a stat of a unit's tail in the integer form, `Error(Nil)` for a
+/// stat it does not hold in that form.
 pub fn stat(
   tail tail: UnitCreateTail,
   stat_id stat_id: Int,
 ) -> Result(Int, Nil) {
-  list.find(tail.stats, fn(stat) { stat.stat_id == stat_id })
-  |> result.map(fn(stat) { stat.value })
+  list.find_map(tail.stats, fn(stat) {
+    case stat.stat_id == stat_id, stat.value {
+      True, unit_stat_value.Integer(UnitStatInteger(value:)) -> Ok(value)
+      True, unit_stat_value.Float(..) | False, _ -> Error(Nil)
+    }
+  })
+}
+
+/// A stat of a new unit in the integer form (form 0), the form health, level and
+/// shield are read in (0x140096230, 0x140458140).
+pub fn integer_stat(stat_id stat_id: Int, value value: Int) -> UnitStat {
+  UnitStat(stat_id:, value: unit_stat_value.Integer(UnitStatInteger(value:)))
+}
+
+/// The stat that sets resource slot `slot` (0 to 7) of a new unit: stat slot + 2,
+/// kept by the client only in the float form (`opcode.0x262.resource_stats`), and
+/// the stat a 0x935 names to change it (`opcode.0x935`).
+pub fn resource_stat_id(slot slot: Int) -> Int {
+  slot + 2
+}
+
+/// The stat of resource slot `slot` at `value`, in the float form
+/// (`opcode.0x262.resource_stats`).
+pub fn resource_stat(slot slot: Int, value value: Float) -> UnitStat {
+  UnitStat(
+    stat_id: resource_stat_id(slot:),
+    value: unit_stat_value.Float(UnitStatFloat(value: float32.to_bits(value))),
+  )
+}
+
+/// The UnitProperty2 id of resource slot `slot`'s maximum, ResourceMax_n: 9 to 15
+/// for slots 0 to 6, 38 for 7, and 50, 52 and 54 for 8 to 10
+/// (`UnitProperty2.ResourceMax_0`, `0x140466360`).
+pub fn resource_max_property(slot slot: Int) -> Int {
+  case slot {
+    7 -> 38
+    8 -> 50
+    9 -> 52
+    10 -> 54
+    _ -> 9 + slot
+  }
 }
 
 /// The record after a unit's type data: the stats, the movement commands that
@@ -121,8 +163,10 @@ pub fn spawned_tail(
   let #(position, rotation) = standing
   tail(
     stats: option.values([
-      option.map(health, fn(value) { UnitStat(stat_id: health_stat, value:) }),
-      option.map(level, fn(value) { UnitStat(stat_id: level_stat, value:) }),
+      option.map(health, fn(value) {
+        integer_stat(stat_id: health_stat, value:)
+      }),
+      option.map(level, fn(value) { integer_stat(stat_id: level_stat, value:) }),
     ]),
     movement_commands: [
       start_movement.Position(position),

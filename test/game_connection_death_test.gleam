@@ -36,7 +36,6 @@ import genesis_prime/message/unit_create_ghost
 import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_health.{UnitHealth}
-import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, LogError, LogWarning, Map, NoAnswerInTime,
@@ -47,6 +46,7 @@ import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map.{Join, Left, SeenBy}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None}
 import map_support
@@ -319,7 +319,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
     == [UnitHealth(unit_id: 9, health: 736, dead: 0)]
     as "full health, 736 (player.level1_base_health)"
   assert game_connection_support.decoded(back, 0x0938, unit_stat_changed.decode)
-    == [UnitStatChanged(unit_id: 9, stat_id: 20, value: 450)]
+    == [UnitStatChanged(unit_id: 9, value: 450)]
     as "the full shield, 450 (player.level1_gear_properties)"
   assert game_connection_support.decoded(back, 0x088C, unit_death_state.decode)
     == [UnitDeathState(unit_id: 9, dead: 0, field_3: 0, field_4: 0)]
@@ -641,11 +641,7 @@ pub fn wake_here_writes_the_coming_back_in_the_clients_order_where_the_body_lies
       unit_stat_changed.decode,
     )
     == [
-      UnitStatChanged(
-        unit_id: game_connection_support.own_unit_id,
-        stat_id: 20,
-        value: 450,
-      ),
+      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 450),
     ]
     as "the full shield"
   assert game_connection_support.decoded(
@@ -1006,7 +1002,10 @@ pub fn a_viewer_that_arrives_while_the_player_is_dead_gets_its_0x262_with_health
     game_connection_support.peer_tells(taken)
   assert unit_id == game_connection_support.own_unit_id
     as "the body, not the ghost"
-  assert list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 0))
+  assert list.contains(
+    unit.tail.stats,
+    unit_fields.integer_stat(stat_id: 0, value: 0),
+  )
     as "stat 0, the health, is 0: the client creates the body dead"
 }
 
@@ -1031,9 +1030,15 @@ pub fn a_viewer_that_arrives_after_a_hit_gets_the_players_shield_and_health_now_
     )
   let assert [#(3, PeerNews(news: Appeared(unit:), ..))] =
     game_connection_support.peer_tells(taken)
-  assert list.contains(unit.tail.stats, UnitStat(stat_id: 20, value: 448))
+  assert list.contains(
+    unit.tail.stats,
+    unit_fields.integer_stat(stat_id: 20, value: 448),
+  )
     as "stat 20, the shield, as the hit left it (opcode.0x938)"
-  assert list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 735))
+  assert list.contains(
+    unit.tail.stats,
+    unit_fields.integer_stat(stat_id: 0, value: 735),
+  )
     as "stat 0, the health, as the hit left it"
 }
 
@@ -1047,7 +1052,7 @@ pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
     )
   assert list.contains(
     game_connection_support.player_in(entry).tail.stats,
-    UnitStat(stat_id: 0, value: 736),
+    unit_fields.integer_stat(stat_id: 0, value: 736),
   )
     as "the new entry's 0x262 carries full health"
   let #(_, struck) =
@@ -1065,11 +1070,7 @@ pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
       unit_stat_changed.decode,
     )
     == [
-      UnitStatChanged(
-        unit_id: game_connection_support.own_unit_id,
-        stat_id: 20,
-        value: 448,
-      ),
+      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 448),
     ]
     && game_connection_support.decoded(
       game_connection_support.heard(struck, game_connection_support.keyed()),

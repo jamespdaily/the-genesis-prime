@@ -22,6 +22,11 @@
 ////   server choice: the client sums nothing, `player.level1_gear_properties`). A
 ////   unit whose gear holds no shield has no stat 20 and no shield properties.
 //// - **Level:** stat 10 is the character's level (0x140458140).
+//// - **Class resource:** the player's own record gains its class's resource
+////   slot at its start, as stat slot + 2 in the float form, and the slot's
+////   ResourceMax property at its maximum (`with_resource`,
+////   `opcode.0x262.resource_stats`, `UnitProperty2.ResourceMax_0`): the client
+////   holds 0 of each, with a maximum of 0, until the server sends them.
 //// - **Place:** the unit's own place, which the map is given with the join
 ////   (the saved place, bounded to the box the client bounds a unit's position
 ////   to): a kind 2 movement command at its position, with its bit clear, which
@@ -42,6 +47,7 @@
 //// - Every other field 0 or empty, each by its record
 ////   (opcode.0x262.player_fields, opcode.0x262.unit_fields).
 
+import genesis_prime/game/class_resource.{type Resource}
 import genesis_prime/game/item_property.{Shield}
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/start_place.{type Place}
@@ -54,11 +60,11 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/world_map/unit_fields
 import gleam/float
@@ -167,7 +173,7 @@ pub fn create(
   let gear = loadout.properties
   let shield_stats = case gear.shield {
     Some(Shield(capacity_max:, ..)) -> [
-      UnitStat(
+      unit_fields.integer_stat(
         stat_id: unit_fields.shield_stat,
         value: float.round(capacity_max),
       ),
@@ -218,8 +224,14 @@ pub fn create(
     tail: unit_fields.tail(
       stats: list.flatten([
         [
-          UnitStat(stat_id: unit_fields.health_stat, value: max_health),
-          UnitStat(stat_id: unit_fields.level_stat, value: character.level),
+          unit_fields.integer_stat(
+            stat_id: unit_fields.health_stat,
+            value: max_health,
+          ),
+          unit_fields.integer_stat(
+            stat_id: unit_fields.level_stat,
+            value: character.level,
+          ),
         ],
         shield_stats,
       ]),
@@ -236,6 +248,38 @@ pub fn create(
       display_info_id: 0,
       outfit_info_id: 0,
       server_time_estimate_start: 0,
+    ),
+  )
+}
+
+/// The player's 0x262 record with its class's resource, as its own client is
+/// created with it: the stat of the resource's slot at its start, in the float form
+/// (`opcode.0x262.resource_stats`), and the slot's ResourceMax property at its
+/// maximum, base and value alike, since a player's maximum is 0 until the server
+/// sends it (`UnitProperty2.ResourceMax_0`, `0x1404584b0`, `0x1405e75d0`).
+pub fn with_resource(
+  record record: UnitCreatePlayer,
+  resource resource: Resource,
+) -> UnitCreatePlayer {
+  let bits = float32.to_bits(resource.max)
+  UnitCreatePlayer(
+    ..record,
+    tail: UnitCreateTail(
+      ..record.tail,
+      stats: list.append(record.tail.stats, [
+        unit_fields.resource_stat(slot: resource.slot, value: resource.start),
+      ]),
+      properties: [
+          UnitProperty(
+            property_id: unit_fields.resource_max_property(slot: resource.slot),
+            field_2: bits,
+            value: bits,
+          ),
+          ..record.tail.properties
+        ]
+        |> list.sort(fn(first, second) {
+          int.compare(first.property_id, second.property_id)
+        }),
     ),
   )
 }

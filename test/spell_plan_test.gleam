@@ -19,7 +19,7 @@ import genesis_prime/game/spell_plan.{
   type Spell, Always, AtFirstGo, AtLastGo, Channel, Channeled, ChargeRelease,
   GlobalCooldown, Multiphase, Normal, NotAtAGo, PrimaryWeapon, RapidTap,
 }
-import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
+import genesis_prime/table/id.{ClassId, PrerequisiteId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
@@ -57,7 +57,7 @@ pub fn telekinetic_strike_takes_1250_ms_has_a_global_cooldown_of_1000_ms_that_bl
   assert spell.global_cooldown
     == GlobalCooldown(refused_while_running: True, starts_for_ms: Some(1000))
     as "kind 0 is refused while the global cooldown runs and starts it (0x1403b14c0, 0x14046afc0); SpellCoolDown row 213 is 1000 ms"
-  assert spell.unpayable_cost == None
+  assert spell.costs == [] && spell.requirements == []
   assert spell.phase_delays_ms == []
   let assert [proxy] = spell.proxies
     as "Spell4Effects 62204 is the one Proxy; 62159, the damage, starts no cast"
@@ -116,13 +116,17 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
   })
 }
 
-pub fn a_cost_the_unit_cannot_pay_gives_the_result_of_its_resource_slot_test() -> Nil {
+pub fn a_cost_reads_its_resource_slot_and_the_result_of_that_slot_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert planted(base: 19_019).unpayable_cost == Some(51)
-    as "Spell4CastResult.vital_cost: Mind Burst, type 6 (Resource1), gives 51"
+  assert planted(base: 19_019).costs
+    == [spell_plan.SlotCost(slot: 1, amount: 1, result: 51)]
+    as "Spell4CastResult.vital_cost: Mind Burst, type 6 (Resource1) of 1, slot 1, gives 51 (0x1403b3320)"
   let gamma_rays = planted(base: 16_322)
-  assert gamma_rays.unpayable_cost == Some(55)
-    as "Spell4CastResult.vital_cost: Gamma Rays, type 18, with Class 4's slots 1 to 5 holding vital 18, gives 50 + the last, 55"
+  assert gamma_rays.costs
+    == [
+      spell_plan.ClassVitalCost(slots: [1, 2, 3, 4, 5], amount: 2, result: 55),
+    ]
+    as "Spell4CastResult.vital_cost: Gamma Rays, type 18 of 2, with Class 4's slots 1 to 5 holding vital 18, gives 50 + the last, 55 (0x1405e7980)"
   assert gamma_rays.weapon == PrimaryWeapon
   assert list.length(gamma_rays.proxies) == 2
     as "Spell4.29874: Proxies to 34775 and 35886"
@@ -401,10 +405,10 @@ pub fn a_cost_in_a_stage_row_gives_the_result_of_its_vital_test() -> Nil {
   let assert Ok(charged_shot) =
     spell_plan.in_plans(plans:, base: Spell4BaseId(20_684))
   let assert Ok(last) = spell_plan.stage_at(spell: charged_shot, index: 2)
-  assert last.unpayable_cost == Some(167)
-    as "Spell4CastResult.vital_cost: a cost of 5 in vital 15 (Focus) of a unit that holds none gives 167; row 124's own value is 0, which passes"
+  assert last.costs == [spell_plan.UnheldCost(result: 167)]
+    as "Spell4CastResult.vital_cost: a cost of 5 in vital 15 (Focus), which no rule of the server holds, gives 167; row 124's own value is 0, which passes"
   assert list.all(planted(base: 20_684).stages, fn(stage) {
-    stage.spell.unpayable_cost == None
+    stage.spell.costs == []
   })
     as "Spell4Thresholds 124 holds Focus with the value 0"
 }
@@ -528,11 +532,110 @@ pub fn a_channeled_spell_with_no_pulse_time_fails_the_load_naming_the_spell_test
   assert string.contains(table_store.describe(error), "58832")
 }
 
+pub fn rampage_requires_at_least_250_of_slot_1_its_stages_require_nothing_and_its_waiver_is_kept_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rampage = planted(base: 37_968)
+  assert rampage.requirements
+    == [
+      spell_plan.Requirement(
+        slot: 1,
+        measure: spell_plan.Amount,
+        comparison: spell_plan.AtLeast,
+        value: 250,
+        result: 51,
+      ),
+    ]
+    as "Spell4.casterInnateRequirement0: Rampage 58524 has type 6 (slot 1), value 250, eval 2 (at least), failing with 51 (0x1403b1780, 0x1407a1750)"
+  assert rampage.requirement_waiver == Some(PrerequisiteId(19_750))
+    as "propertyFlags 0x4100006 has bit 2, so prerequisiteIdCasterCast 19750 would waive it (0x1403b1780)"
+  assert list.map(rampage.stages, fn(stage) { stage.spell.requirements })
+    == [[], [], []]
+    as "a requirement of type 0 is none: the stages 66987, 71125 and 71126 carry none (Spell4.casterInnateRequirement0)"
+  assert planted(base: 19_102).requirement_waiver == None
+    as "Telekinetic Strike's propertyFlags 0x4000002 lack bit 2"
+}
+
+/// The planted rows with Rampage's requirement of this type and eval, value 250.
+fn rampage_rows(requirement_type: Int, eval: Int) -> spell_tables.Rows {
+  let rows = spell_tables.rows()
+  spell_tables.Rows(
+    ..rows,
+    spell4: list.map(rows.spell4, fn(row) {
+      case row {
+        [planted_table.Integer(58_524), ..] ->
+          spell_tables.method_spell_row(
+            id: 58_524,
+            base: 37_968,
+            cast_time: 0,
+            cooldown: 8000,
+            kind: 0,
+            global: 103,
+            cost: #(0, 0),
+            more: [
+              #("thresholdTime", 4000),
+              #("casterInnateRequirement0", requirement_type),
+              #("casterInnateRequirementValue0", 250),
+              #("casterInnateRequirementEval0", eval),
+            ],
+          )
+        _ -> row
+      }
+    }),
+  )
+}
+
+pub fn each_eval_code_reads_as_compare_by_eval_does_and_above_4_on_the_percentage_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x1407a1750: 0 and 5 equal, 1 and 6 greater, 2 and 7 at least, 3 and 8 less, 4
+  // and 9 at most, any other false; 0x1403b1780: above 4 on the percentage.
+  let expected = [
+    #(0, spell_plan.Amount, spell_plan.Equal),
+    #(1, spell_plan.Amount, spell_plan.Greater),
+    #(2, spell_plan.Amount, spell_plan.AtLeast),
+    #(3, spell_plan.Amount, spell_plan.Less),
+    #(4, spell_plan.Amount, spell_plan.AtMost),
+    #(5, spell_plan.PercentOfMax, spell_plan.Equal),
+    #(6, spell_plan.PercentOfMax, spell_plan.Greater),
+    #(7, spell_plan.PercentOfMax, spell_plan.AtLeast),
+    #(8, spell_plan.PercentOfMax, spell_plan.Less),
+    #(9, spell_plan.PercentOfMax, spell_plan.AtMost),
+    #(10, spell_plan.PercentOfMax, spell_plan.NeverPasses(eval: 10)),
+  ]
+  list.each(expected, fn(case_) {
+    let #(eval, measure, comparison) = case_
+    let assert Ok(plans) =
+      spell_tables.with_loaded(rows: rampage_rows(6, eval), body: fn(tables) {
+        spell_plan.build(tables:)
+      })
+      as "the planted rows build"
+    let assert Ok(rampage) =
+      spell_plan.in_plans(plans:, base: Spell4BaseId(37_968))
+    let assert [requirement] = rampage.requirements
+    assert requirement.measure == measure
+      && requirement.comparison == comparison
+      as { "eval " <> int.to_string(eval) }
+  })
+}
+
+pub fn a_requirement_of_a_vital_the_server_does_not_read_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert spell_tables.with_loaded(rows: rampage_rows(1, 2), body: fn(tables) {
+      spell_plan.build(tables:)
+    })
+    == Error(spell_plan.UnreadRequirement(
+      spell4_id: 58_524,
+      requirement_type: 1,
+    ))
+    as "type 1 is health (0x1403b1780), which no requirement check of the server reads"
+}
+
 pub fn the_costs_of_impale_and_electrocute_give_the_results_of_their_vital_slots_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert planted(base: 23_161).unpayable_cost == Some(53)
+  assert planted(base: 23_161).costs
+    == [spell_plan.SlotCost(slot: 3, amount: 35, result: 53)]
     as "Spell4.38779: an innate cost of type 8 (Resource3) of 35 gives 53"
-  assert planted(base: 25_473).unpayable_cost == Some(51)
+  assert planted(base: 25_473).costs
+    == [spell_plan.SlotCost(slot: 1, amount: 8, result: 51)]
     as "Spell4.41276: type 6 (Resource1) of 8 gives 51"
 }
 

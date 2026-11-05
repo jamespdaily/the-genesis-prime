@@ -16,17 +16,21 @@ import character_tables
 import database_support
 import genesis_prime
 import genesis_prime/content
+import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/class_resource
 import genesis_prime/migration
 import genesis_prime/readiness
+import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/string
 import log_capture
 import mailbox_support
@@ -279,4 +283,37 @@ pub fn a_missing_and_an_unknown_game_number_stop_the_load_each_named_test() -> N
       #("game_number", refusal.RowName("leash_range")),
     ]
     as "each refusal names the table and the number by its name"
+}
+
+pub fn the_load_puts_each_playable_classs_resource_in_a_term_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = load(database:)
+  assert loaded == Ok(Nil)
+  let assert Ok(stalker) =
+    class_resource.of_class(
+      classes: content_class_resource.classes(key:),
+      class_id: ClassId(5),
+    )
+    as "migration 0011 holds the Stalker's rows"
+  assert stalker
+    == class_resource.Resource(
+      slot: 3,
+      max: 100.0,
+      start: 100.0,
+      regen: option.Some(class_resource.Regen(per_tick: 7.0, tick_ms: 1000)),
+      refill_after_combat_ms: option.None,
+    )
+    as "the design: Suit Power in slot 3, 100, full at the start, +7 each second"
+}
+
+pub fn a_playable_class_with_no_max_row_stops_the_load_naming_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  change(database, "delete from class_resource where class_id = 3")
+  let #(loaded, _key) = load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a playable class with no maximum stops the start (the design, test 14)"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [#("class_resource", refusal.RowName("3 max"))]
 }

@@ -851,7 +851,7 @@ pub fn every_other_end_with_the_player_in_the_world_saves_first_test() -> Nil {
     #(
       game_connection_support.feed(
         game_connection_support.in_world(),
-        OwnEvent(TimerFired(TimerId(4))),
+        OwnEvent(TimerFired(TimerId(999))),
       ),
       "a timer the rule did not start",
     ),

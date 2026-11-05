@@ -549,6 +549,12 @@ pub fn fighters(life life: Life) -> List(#(Int, Int)) {
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
+/// Whether the player's combat flag is set: some creature fights it
+/// (`opcode.0x89a`).
+pub fn in_combat(life life: Life) -> Bool {
+  !dict.is_empty(life.fighters)
+}
+
 /// The player's health.
 pub fn health(life life: Life) -> Int {
   life.health

@@ -10,6 +10,7 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_select
+import genesis_prime/game/class_resource
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
@@ -57,6 +58,10 @@ pub type Settings {
     /// How fast the client may send its frames
     /// (`genesis_prime/client_connection.Bucket`).
     rate: Bucket,
+    /// Each playable class's resource, from the content load
+    /// (genesis_prime/content/class_resource), which a player entering the world
+    /// starts with.
+    class_resources: class_resource.Classes,
   )
 }
 

@@ -72,13 +72,19 @@
 ////   conditions are not checked); 13 while the
 ////   caster's current cast is live (below); 14 while the global cooldown has more
 ////   than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
-////   more than 500 ms left (`0x1403b14c0`); 169 for a spell that needs the weapon
-////   when slot 16 holds none (`0x1403afb10`); 50 + the class's resource slot for
-////   a cost the unit cannot pay, since a new unit holds 0 of every resource
-////   (`Spell4CastResult.vital_cost`); and 285 for a spell whose method is not one
-////   of Normal, Multiphase, Channeled, RapidTap and ChargeRelease
-////   (`Spell.CodeEnumCastMethod`). A cost and a method not built are each logged
-////   once on the connection for the coverage measure.
+////   more than 500 ms left (`0x1403b14c0`); a caster requirement's result when the
+////   caster's resource fails it, never waived (`0x1403b1780`, `Rampage` 51 below
+////   250 Kinetic Energy); 50 + the resource slot for a cost the caster's class
+////   resource cannot pay (`0x1403b3320`, `0x1405e7980`,
+////   `Spell4CastResult.vital_cost`); 169 for a spell that needs the weapon when
+////   slot 16 holds none (`0x1403afb10`); and 285 for a spell whose method is not
+////   one of Normal, Multiphase, Channeled, RapidTap and ChargeRelease
+////   (`Spell.CodeEnumCastMethod`). A cost in a vital the server does not hold and
+////   a method not built are each logged once on the connection for the coverage
+////   measure. The caster's checks run in the client's order (`Verdict`).
+//// - **A cost is paid at the accept** (`Pay`), in the step of its check: a second
+////   press taken in the same step is checked against what the first left
+////   (genesis_prime/game/class_resource).
 //// - **The current cast** is the client's: a cast whose spell shows a cast bar
 ////   (`spell_plan.shows_cast_bar`) is the caster's current cast from its start. Its
 ////   go clears it for a Normal cast with a cast time and no parent, and a cast
@@ -196,6 +202,7 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/hit
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
@@ -231,6 +238,7 @@ import genesis_prime/table/id.{type Item2Id, type Spell4BaseId, type Spell4Id}
 import genesis_prime/world_map/map
 import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -265,6 +273,9 @@ pub type Caster {
     /// Whether the player is dead (genesis_prime/game/player_life), which the
     /// client checks a press against (`cast.dead_player`).
     dead: Bool,
+    /// The player's class resource (genesis_prime/game/class_resource), which a
+    /// press's costs and requirements are checked against and paid from.
+    resources: Resources,
   )
 }
 
@@ -281,6 +292,9 @@ pub type Effect {
   /// (genesis_prime/game/strike) and, when the round closes, answers with `went`.
   /// The go's 0x7f4 waits for that answer.
   Strike(asked: GoAsked)
+  /// An accepted press's costs are taken from the caster's class resource, at the
+  /// accept (genesis_prime/game/class_resource `pay`).
+  Pay(payments: List(Payment))
 }
 
 /// A go of a live cast that waits for its targets: which cast and phase, the spell
@@ -545,6 +559,7 @@ fn released(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(cast, effects) = taken
+  let caster = after_payments(caster:, effects:)
   case cast.held {
     Some(Held(client_cast_id:, resolution:, until: CastClears)) ->
       case cast.current {
@@ -774,6 +789,7 @@ fn continued(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(cast, effects) = taken
+  let caster = after_payments(caster:, effects:)
   case cast.holding {
     Some(Holding(ability:, repeat_timer: None, last_cast:)) -> {
       let #(cast, more) =
@@ -922,7 +938,7 @@ fn press_of(
     )
   }
   case verdict(cast:, caster:, spell:, now_ms:, is_release:) {
-    Accept -> {
+    Accept(payments:) -> {
       let cast = case client_cast_id {
         Some(_) -> cast
         None ->
@@ -932,7 +948,11 @@ fn press_of(
             cast_id: next_cast_id(cast:, caster:),
           )
       }
-      case resolution.stage {
+      let paid = case payments {
+        [] -> []
+        [_, ..] -> [Pay(payments:)]
+      }
+      let #(cast, started) = case resolution.stage {
         None ->
           start(
             cast:,
@@ -958,6 +978,7 @@ fn press_of(
             role: Stage(ability: resolution.ability, index:),
           )
       }
+      #(cast, list.append(paid, started))
     }
     Refuse(result:) ->
       refused_hold(
@@ -1081,18 +1102,22 @@ fn is_release(resolution resolution: Resolution) -> Bool {
 const caster_must_be_dead = 58
 
 /// What the client's checks make of a press, in its order: the caster's death, a
-/// press held already and the method, then CheckCastCaster's own (`0x1403afb10`):
-/// the current cast, the cost, the cooldowns, and the weapon last.
+/// press held already and the method, then CheckCastCaster's own in its order
+/// (`0x1403afb10.order`): the current cast, the cooldowns (a press within the queue
+/// window passing as the client's 317 does), the caster requirements, the innate
+/// costs and the weapon.
 type Verdict {
-  Accept
+  /// The press is accepted, and pays these costs at the accept.
+  Accept(payments: List(Payment))
   Refuse(result: cast_result.CastResult)
-  /// The press is within the queue window of a cooldown's end.
+  /// The press is within the queue window of a cooldown's end; its costs are
+  /// checked again and paid when it starts.
   Hold(wait_ms: Int)
   /// The caster's current cast has 500 ms or less left: the press waits for the go
   /// or finish that clears it, which is the server's choice (`cast.press_queue`).
   HoldForCast
   /// The spell waits for a later step: its method is not built, or its cost needs
-  /// a resource the server does not hold. It is refused, and logged once.
+  /// a vital the server does not hold. It is refused, and logged once.
   NotBuilt(result: cast_result.CastResult, why: String)
 }
 
@@ -1129,28 +1154,166 @@ fn verdict(
       Some(_) | None -> Refuse(result: cast_result.SpellAlreadyCasting)
     },
   )
-  use <- bool.guard(
-    when: option.is_some(spell.unpayable_cost),
-    return: NotBuilt(
-      result: cast_result.from_value(option.unwrap(spell.unpayable_cost, 0)),
-      why: "has an innate cost of a resource the server does not hold",
-    ),
-  )
   let #(global_left, own_left) = cooldown_left_ms(cast:, spell:, now_ms:)
-  case global_left > queue_window_ms, own_left > queue_window_ms {
-    True, _ -> Refuse(result: cast_result.SpellGlobalCooldown)
-    False, True -> Refuse(result: cast_result.SpellCooldown)
-    False, False -> {
-      use <- bool.guard(
-        when: lacks_the_weapon(spell:, caster:),
-        return: Refuse(result: cast_result.WeaponSlot),
+  use <- bool.guard(
+    when: global_left > queue_window_ms,
+    return: Refuse(result: cast_result.SpellGlobalCooldown),
+  )
+  use <- bool.guard(
+    when: own_left > queue_window_ms,
+    return: Refuse(result: cast_result.SpellCooldown),
+  )
+  case
+    failed_requirement(spell:, resources: caster.resources),
+    costs_paid(costs: spell.costs, resources: caster.resources)
+  {
+    Some(result), _ -> Refuse(result: cast_result.from_value(result))
+    None, Error(Unpaid(result:)) ->
+      Refuse(result: cast_result.from_value(result))
+    None, Error(Unheld(result:)) ->
+      NotBuilt(
+        result: cast_result.from_value(result),
+        why: "has an innate cost of a vital the server does not hold",
       )
-      case int.max(global_left, own_left) {
-        0 -> Accept
-        wait_ms -> Hold(wait_ms:)
+    None, Ok(payments) ->
+      case lacks_the_weapon(spell:, caster:), int.max(global_left, own_left) {
+        True, _ -> Refuse(result: cast_result.WeaponSlot)
+        False, 0 -> Accept(payments:)
+        False, wait_ms -> Hold(wait_ms:)
       }
-    }
   }
+}
+
+/// The result of the first of the spell's caster requirements the caster fails
+/// (`0x1403b1780`). A failed requirement is never waived: the waiver is a
+/// prerequisite (`spell_plan.Spell.requirement_waiver`), and the server holds no
+/// prerequisite engine.
+fn failed_requirement(
+  spell spell: Spell,
+  resources resources: Resources,
+) -> Option(Int) {
+  list.find_map(spell.requirements, fn(requirement) {
+    case meets(requirement:, resources:) {
+      True -> Error(Nil)
+      False -> Ok(requirement.result)
+    }
+  })
+  |> option.from_result
+}
+
+/// Whether the caster's slot meets the requirement: its amount, or its percentage
+/// of its maximum, compared with the value by the eval (`0x1403b1780`,
+/// `0x1407a1750`). The client divides by a maximum of 0 as a float: a slot above 0
+/// is then infinitely many percent, and one at 0 is no number, which every
+/// comparison fails.
+fn meets(
+  requirement requirement: spell_plan.Requirement,
+  resources resources: Resources,
+) -> Bool {
+  let current = class_resource.value(resources:, slot: requirement.slot)
+  let max = class_resource.max(resources:, slot: requirement.slot)
+  let value = int.to_float(requirement.value)
+  case requirement.measure, max == 0.0 {
+    spell_plan.Amount, _ ->
+      compares(comparison: requirement.comparison, current:, value:)
+    spell_plan.PercentOfMax, False ->
+      compares(
+        comparison: requirement.comparison,
+        current: current *. 100.0 /. max,
+        value:,
+      )
+    spell_plan.PercentOfMax, True ->
+      current >. 0.0
+      && case requirement.comparison {
+        spell_plan.Greater | spell_plan.AtLeast -> True
+        spell_plan.Equal
+        | spell_plan.Less
+        | spell_plan.AtMost
+        | spell_plan.NeverPasses(..) -> False
+      }
+  }
+}
+
+/// CompareByEval (`0x1407a1750`): the current value against the requirement's.
+fn compares(
+  comparison comparison: spell_plan.Comparison,
+  current current: Float,
+  value value: Float,
+) -> Bool {
+  case comparison {
+    spell_plan.Equal -> current == value
+    spell_plan.Greater -> current >. value
+    spell_plan.AtLeast -> current >=. value
+    spell_plan.Less -> current <. value
+    spell_plan.AtMost -> current <=. value
+    spell_plan.NeverPasses(..) -> False
+  }
+}
+
+/// Why a press's costs are not paid.
+type CostRefusal {
+  /// The caster's slot holds too little: refused with the cost's result.
+  Unpaid(result: Int)
+  /// The cost is in a vital the server does not hold.
+  Unheld(result: Int)
+}
+
+/// The spell's costs checked in order against the caster's resources, each against
+/// the slots as they stand before the press, as the client checks them
+/// (`0x1403b1de0`): the first refusal, or what the press pays.
+fn costs_paid(
+  costs costs: List(spell_plan.Cost),
+  resources resources: Resources,
+) -> Result(List(Payment), CostRefusal) {
+  list.try_fold(costs, [], fn(payments, cost) {
+    case cost {
+      spell_plan.UnheldCost(result:) -> Error(Unheld(result:))
+      spell_plan.SlotCost(slot:, amount:, result:) -> {
+        let held =
+          float.truncate(class_resource.value(resources:, slot:))
+          |> int.absolute_value
+        case held < int.absolute_value(amount) {
+          True -> Error(Unpaid(result:))
+          False -> Ok([Payment(slot:, amount:), ..payments])
+        }
+      }
+      spell_plan.ClassVitalCost(slots: [], ..) -> Ok(payments)
+      spell_plan.ClassVitalCost(slots:, amount:, result:) ->
+        case
+          list.find(slots, fn(slot) {
+            let left =
+              class_resource.value(resources:, slot:) -. int.to_float(amount)
+            left >=. 0.0 && left <=. class_resource.max(resources:, slot:)
+          })
+        {
+          Ok(slot) -> Ok([Payment(slot:, amount:), ..payments])
+          Error(Nil) -> Error(Unpaid(result:))
+        }
+    }
+  })
+  |> result.map(list.reverse)
+}
+
+/// The caster with the payments among the effects taken from its resources, so a
+/// second press of the same step is checked against what the first left.
+fn after_payments(
+  caster caster: Caster,
+  effects effects: List(Effect),
+) -> Caster {
+  Caster(
+    ..caster,
+    resources: list.fold(effects, caster.resources, fn(resources, effect) {
+      case effect {
+        Pay(payments:) -> class_resource.paid(resources:, payments:)
+        Send(..)
+        | Tell(..)
+        | StartTimer(..)
+        | CancelTimer(..)
+        | Log(..)
+        | Strike(..) -> resources
+      }
+    }),
+  )
 }
 
 /// What is left of the global cooldown, when it refuses the spell, and of the

@@ -32,6 +32,7 @@
 
 import character_support
 import character_tables
+import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -50,6 +51,7 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId, Spell4BaseId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
@@ -159,6 +161,7 @@ fn entering(
       ),
       realm_id: 1,
       next_whisper: 1,
+      classes: class_resource_support.classes(),
     )
     as "the map's answer to the join is the one world entry asked for"
   let frames =
@@ -365,10 +368,9 @@ fn property_value(
 }
 
 fn stat(player player: UnitCreatePlayer, id id: Int) -> Int {
-  let assert Ok(stat) =
-    list.find(player.tail.stats, fn(stat) { stat.stat_id == id })
-    as { "0x262 holds stat " <> int.to_string(id) }
-  stat.value
+  let assert Ok(value) = unit_fields.stat(tail: player.tail, stat_id: id)
+    as { "0x262 holds stat " <> int.to_string(id) <> " as an integer" }
+  value
 }
 
 pub fn property_7_and_stat_0_are_736_for_every_class_and_faction_test() -> Nil {
