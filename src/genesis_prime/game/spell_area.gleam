@@ -23,6 +23,11 @@
 ////   twin, and a unit must also be within the area row's range. A spell with no
 ////   telegraph row (42297) is read by its area row's range and arc alone. Kick is a
 ////   cone from 1 to 7 m over 100 degrees (`Spell4.58591.area`).
+//// - **The points a cast spent.** A damage effect keeps its row's tag
+////   (`Spell4Effects.emmComparison`, genesis_prime/game/spend), and `phase` keeps
+////   only the effects and Proxies whose tag holds for the points the cast spent above
+////   its base cost, then works out `selects_area` and `strikes_primary_target` from
+////   what is left. A cast with no spend keeps every effect.
 //// - **Closest first.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`).
@@ -50,6 +55,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_plan.{
   type Aim, type Spell, AimsAtArea, AimsAtBoth, AimsAtPrimaryTarget,
 }
+import genesis_prime/game/spend
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
   Spell4EffectsId, Spell4ValidTargetsId, TelegraphDamageId,
@@ -70,7 +76,8 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// A damage effect of a spell: its row, damage type and delay, the phases it fires
-/// in, who it aims at and the formula its value is worked out by.
+/// in, who it aims at, the formula its value is worked out by and the tag that
+/// chooses it by the points the cast spent (genesis_prime/game/spend).
 pub type DamageEffect {
   DamageEffect(
     effect_id: Spell4EffectsId,
@@ -80,10 +87,12 @@ pub type DamageEffect {
     aim: Aim,
     formula: Formula,
     threat_multiplier: Float,
+    tag: spend.Tag,
   )
 }
 
-/// What one phase of a spell strikes.
+/// What one phase of a spell strikes, for a cast that spent a given number of
+/// points (`phase`).
 pub type PhaseStrike {
   PhaseStrike(
     /// The damage effects that fire in the phase and aim at the area or the cast's
@@ -98,8 +107,8 @@ pub type PhaseStrike {
   )
 }
 
-/// A spell's area: its row, the hit shapes of its telegraphs and each phase's
-/// strike.
+/// A spell's area: its row, the hit shapes of its telegraphs and the effects its
+/// phases strike with, which `phase` chooses from by the points a cast spent.
 pub type SpellArea {
   SpellArea(
     spell4_id: Spell4Id,
@@ -108,8 +117,11 @@ pub type SpellArea {
     /// The hit shapes placed on the caster: the never-drawn twins, else the drawn
     /// rows. Empty for a spell with no telegraph row.
     shapes: List(Placement),
-    /// One entry for each go of the spell, in phase order.
-    phases: List(PhaseStrike),
+    /// Every damage effect of the spell, each with its tag.
+    damage: List(DamageEffect),
+    /// The spell as the plan holds it, whose Proxies aimed at each struck unit
+    /// make a phase select the area.
+    spell: Spell,
   )
 }
 
@@ -297,23 +309,32 @@ fn area_of(
     None -> Ok(Nil)
   })
   use shapes <- result.try(hit_shapes_of(tables:, links:, id:))
-  use effects <- result.try(damage_effects_of(effects:, id:))
-  let phases =
+  use damage <- result.try(damage_effects_of(effects:, id:))
+  let area =
+    SpellArea(
+      spell4_id: spell.spell4_id,
+      row: area_row,
+      shapes:,
+      damage:,
+      spell:,
+    )
+  // A phase that selects units at some n, every effect chosen being the widest, must
+  // have an area row.
+  let selects =
     int.range(
       from: 0,
-      to: int.max(1, list.length(spell.phase_delays_ms)),
+      to: phase_count(spell: area),
       with: [],
       run: fn(found, phase) { [phase, ..found] },
     )
-    |> list.reverse
-    |> list.map(fn(phase) { phase_of(spell:, effects:, phase:) })
-  use Nil <- result.try(
-    case area_row, list.any(phases, fn(phase) { phase.selects_area }) {
-      None, True -> Error(NoAreaRow(spell4_id: id))
-      _, _ -> Ok(Nil)
-    },
-  )
-  Ok(SpellArea(spell4_id: spell.spell4_id, row: area_row, shapes:, phases:))
+    |> list.any(fn(phase) {
+      phase_of(spell: area, phase:, spent: None).selects_area
+    })
+  use Nil <- result.try(case area_row, selects {
+    None, True -> Error(NoAreaRow(spell4_id: id))
+    _, _ -> Ok(Nil)
+  })
+  Ok(area)
 }
 
 /// A spell with an area row whose base names valid targets takes only the alive:
@@ -503,19 +524,24 @@ fn damage_effects_of(
       aim:,
       formula:,
       threat_multiplier: effect.threat_multiplier,
+      tag: spell_plan.tag_of(effect:),
     ))
   })
 }
 
+/// What the spell's phase strikes with the effects a cast that spent `spent` points
+/// chooses (genesis_prime/game/spend `applies`); the flags are worked out from the
+/// effects and Proxies that are left.
 fn phase_of(
-  spell spell: Spell,
-  effects effects: List(DamageEffect),
+  spell spell: SpellArea,
   phase phase: Int,
+  spent spent: Option(Int),
 ) -> PhaseStrike {
   let bit = int.bitwise_shift_left(1, phase)
   let firing =
-    list.filter(effects, fn(effect) {
+    list.filter(spell.damage, fn(effect) {
       spell_plan.has_flag(flags: effect.phase_flags, bit:)
+      && spend.applies(tag: effect.tag, spent:)
     })
   let strikes = fn(aims) {
     list.any(firing, fn(effect) { list.contains(aims, effect.aim) })
@@ -525,9 +551,10 @@ fn phase_of(
       list.contains([AimsAtPrimaryTarget, AimsAtArea, AimsAtBoth], effect.aim)
     }),
     selects_area: strikes([AimsAtArea, AimsAtBoth])
-      || list.any(spell_plan.proxies_in_phase(spell:, phase:), fn(proxy) {
-      proxy.target == spell_plan.OnEachStruck
-    }),
+      || list.any(
+      spell_plan.proxies_in_phase(spell: spell.spell, phase:, spent:),
+      fn(proxy) { proxy.target == spell_plan.OnEachStruck },
+    ),
     strikes_primary_target: strikes([AimsAtPrimaryTarget, AimsAtBoth]),
   )
 }
@@ -555,11 +582,24 @@ pub fn inside(spell spell: SpellArea) -> Inside {
   }
 }
 
-/// What the spell's go of `phase` strikes, or `Error(Nil)` for a phase the spell
-/// has none of.
+/// How many gos the spell has, one for each phase of a Multiphase spell and one for
+/// any other.
+pub fn phase_count(spell spell: SpellArea) -> Int {
+  int.max(1, list.length(spell.spell.phase_delays_ms))
+}
+
+/// What the spell's go of `phase` strikes when the cast spent `spent` points above
+/// the base cost, or `Error(Nil)` for a phase the spell has none of: only the damage
+/// effects and Proxies whose tag holds for n are kept, and the area flags follow from
+/// them. A cast with no n keeps every effect.
 pub fn phase(
   spell spell: SpellArea,
   phase phase: Int,
+  spent spent: Option(Int),
 ) -> Result(PhaseStrike, Nil) {
-  list.drop(spell.phases, phase) |> list.first
+  use <- bool.guard(
+    when: phase < 0 || phase >= phase_count(spell:),
+    return: Error(Nil),
+  )
+  Ok(phase_of(spell:, phase:, spent:))
 }

@@ -194,6 +194,8 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
   }
   assert missing_of("Spell effects") == [3, 4, 11, 14, 17, 73, 80, 90]
     as "the trace's effect types of the starting abilities that no rule reads: forced move 3, crowd control 4, property modifier 11, proc 14, lasting effect 17, cooldown change 73, forced removal 80 and charges 90"
+  assert missing_of("Spend-scaled costs") == [2, 5, 9, 10, 11]
+    as "the innate cost EMM ids besides 4 and 7 that the rows hold"
   assert missing_of("Prerequisites") == [43, 50, 59, 108, 116]
     as "the trace's prerequisite types the server cannot decide yet: quest log 43, spell by caster 50, stack count 59, facing 108 and stealth 116"
 }
@@ -368,4 +370,51 @@ pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
     )
   })
     as "the tool's breaches, which end it with exit 1, name the row"
+}
+
+// ---- the spend-scaled costs ----
+
+pub fn the_innate_cost_emm_ids_the_measure_handles_are_4_and_7_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert handled_over(
+      engine: engine_named("Spend-scaled costs"),
+      types: numbers(from: 1, to: 30),
+    )
+    == [4, 7]
+    as "the server reads ids 4 and 7 as a spend of every point held (Spell4.innateCostEMMId0); every other id is an unread spend"
+}
+
+pub fn the_other_emm_ids_are_decoded_and_missing_with_the_reason_and_the_fact_key_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let declared = engine_named("Spend-scaled costs")
+  assert list.map(declared.missing, fn(missing) { missing.type_number })
+    |> list.sort(int.compare)
+    == [2, 5, 9, 10, 11]
+    as "Spell4.innateCostEMMId0: the ids the rows hold besides 4 and 7 are 2, 5, 9, 10 and 11"
+  list.each(declared.missing, fn(missing) {
+    assert missing.reason
+      == "the id's meaning is not in the client; only 4 and 7 have the Psi Point layout"
+    assert missing.fact_key == "Spell4.innateCostEMMId0"
+  })
+}
+
+/// The rows of each innate cost EMM id in both columns of Spell4, as the measure
+/// gives them, heaviest first.
+fn emm_rows() -> List(#(Int, Int)) {
+  let tables = client_tables.every_table()
+  let assert Measured(types:, ..) =
+    measurement.measure(engine_named("Spend-scaled costs"), tables)
+    as "the engine's source is a table"
+  list.map(types, fn(line) { #(line.type_number, line.rows) })
+}
+
+pub fn the_spend_engine_counts_the_ids_of_both_columns_and_the_starting_abilities_hold_4_once_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  assert emm_rows()
+    == [#(4, 51), #(7, 47), #(10, 3), #(5, 2), #(9, 2), #(2, 1), #(11, 1)]
+    as "Spell4.innateCostEMMId0: 4 on 45 rows, 7 on 46, 5 and 9 on 2 each, 2 and 11 on 1 each; innateCostEMMId1: 4 on 6, 10 on 3, 7 on 1: 4 holds 51 rows, 7 47 and 10 3"
+  assert starting_counts(engine: engine_named("Spend-scaled costs"))
+    == [#(4, 1)]
+    as "Spell4.innateCostEMMId0: of the 65 spells the 18 level-1 abilities reach only Mind Burst (32809, id 4) holds one"
 }

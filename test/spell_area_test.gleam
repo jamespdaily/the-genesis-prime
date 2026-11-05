@@ -21,9 +21,10 @@ import genesis_prime/game/spell_area.{
   TelegraphNotOnCaster, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
-import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/game/spend.{EqualTo}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/result
 import owned_test
 import spell_tables
@@ -55,7 +56,7 @@ pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() ->
       ),
     ]
     as "Spell4.58591.area: telegraph 168, a cone 1 to 7 m over 100 degrees, flag 0x200 so it does not grow"
-  let assert Ok(phase) = spell_area.phase(spell: kicked, phase: 0)
+  let assert Ok(phase) = spell_area.phase(spell: kicked, phase: 0, spent: None)
   assert phase.selects_area as "Spell4Effects.targetFlags 4 aims at the area"
   let assert [effect] = phase.damage
   assert effect.aim == spell_plan.AimsAtArea
@@ -186,13 +187,18 @@ pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and
     as "Spell4.58591.area: 1 to 7 m over 100 degrees"
   let assert Ok(crush) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(32_812))
-  let assert Ok(phase) = spell_area.phase(spell: crush, phase: 0)
+  let assert Ok(phase) = spell_area.phase(spell: crush, phase: 0, spent: None)
   assert phase.selects_area && phase.damage == []
     as "Crush's first spell has only a Proxy on its area: it selects and strikes nothing itself (Spell4.32812.area)"
   let assert Ok(stagger) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(38_780))
-  assert list.length(stagger.phases) == 4
-    && list.all(stagger.phases, fn(phase) { phase.selects_area })
+  assert spell_area.phase_count(spell: stagger) == 4
+    && list.all([0, 1, 2, 3], fn(phase) {
+      let assert Ok(strike) =
+        spell_area.phase(spell: stagger, phase:, spent: None)
+        as "each of its four phases is one it holds"
+      strike.selects_area
+    })
     as "Stagger's 38780 selects at each of its four phases (Spell4.38791.area)"
   let assert Ok(surge) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(42_352))
@@ -287,7 +293,7 @@ pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_planted_t
     as "Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124 name the stage spells and Spell4Effects 83782, 177158, 177171, 177498, 182203 and 182204 start their Proxies: each is cast, so each is in the areas; the planted rows hold no damage effect or Proxy at the area for the others"
   let assert Ok(proxy) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(39_467))
-  let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0)
+  let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0, spent: None)
   assert phase.selects_area
     && list.map(phase.damage, fn(effect) { effect.aim })
     == [spell_plan.AimsAtArea]
@@ -306,9 +312,96 @@ pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_clients_t
     as "a stage spell with no damage and no Proxy aimed at the area is cast, so it is in the areas, with no area row"
   let assert Ok(proxy) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(39_467))
-  let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0)
+  let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0, spent: None)
   assert phase.selects_area
     && list.map(phase.damage, fn(effect) { effect.aim })
     == [spell_plan.AimsAtArea]
     as "Spell4Effects 86439: the stage's Proxy 39467 holds one damage effect aimed at the area (targetFlags 4)"
+}
+
+// ---- a spell with an innate cost EMM id chooses its damage by n ----
+
+/// The area of Mind Burst in the planted rows with its spend, its damage effects as
+/// (emmComparison, emmValue, targetFlags).
+fn mind_burst_area(
+  damage damage: List(#(Int, Int, Int)),
+) -> spell_area.SpellArea {
+  let assert Ok(areas) =
+    spell_tables.with_loaded_deriving(
+      rows: spell_tables.rows_with_mind_burst_spend(
+        emm_id: 4,
+        cost: #(6, 1),
+        damage:,
+      ),
+      derivations: [spell_plan.derivation()],
+      body: fn(tables) { spell_area.build(tables:) },
+    )
+    as "the planted Mind Burst builds its areas"
+  let assert Ok(area) = spell_area.of_spell(areas:, spell4_id: Spell4Id(32_809))
+    as "Mind Burst is in the areas"
+  area
+}
+
+fn damage_of(
+  area area: spell_area.SpellArea,
+  spent spent: option.Option(Int),
+) -> List(spell_area.DamageEffect) {
+  let assert Ok(phase) = spell_area.phase(spell: area, phase: 0, spent:)
+    as "Mind Burst has one phase"
+  phase.damage
+}
+
+pub fn mind_burst_tags_its_five_damage_effects_with_their_emm_columns_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let area = mind_burst_area(damage: spell_tables.mind_burst_damage)
+  assert list.map(damage_of(area:, spent: None), fn(effect) {
+      #(effect.effect_id, effect.tag)
+    })
+    == [
+      #(Spell4EffectsId(61_993), EqualTo(value: 0)),
+      #(Spell4EffectsId(61_994), EqualTo(value: 1)),
+      #(Spell4EffectsId(61_995), EqualTo(value: 2)),
+      #(Spell4EffectsId(61_996), EqualTo(value: 3)),
+      #(Spell4EffectsId(61_997), EqualTo(value: 4)),
+    ]
+    as "Spell4.32809: 61993 to 61997 hold emmComparison 0 and emmValue 0 to 4"
+}
+
+pub fn a_phase_with_n_holds_only_the_damage_effects_n_chooses_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let area = mind_burst_area(damage: spell_tables.mind_burst_damage)
+  list.each([0, 1, 2, 3, 4], fn(spent) {
+    assert list.map(damage_of(area:, spent: Some(spent)), fn(effect) {
+        effect.effect_id.value
+      })
+      == [61_993 + spent]
+      as "Spell4Effects.emmComparison 0: the effect whose emmValue equals n applies and no other"
+  })
+}
+
+pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // One damage effect aimed at the cast's target at n 0 and one aimed at the area
+  // from n 1 (Spell4Effects.targetFlags 2 and 4).
+  let area = mind_burst_area(damage: [#(0, 0, 2), #(1, 1, 4)])
+  let flags = fn(spent) {
+    let assert Ok(phase) =
+      spell_area.phase(spell: area, phase: 0, spent: Some(spent))
+      as "Mind Burst has one phase"
+    #(phase.selects_area, phase.strikes_primary_target)
+  }
+  assert flags(0) == #(False, True)
+    as "Spell4Effects.emmComparison: at n 0 only the effect aimed at the target is chosen, so the phase selects no area"
+  assert flags(1) == #(True, False)
+    as "from n 1 only the area-aimed effect is chosen, so the phase strikes no primary target"
+  let assert Ok(all) = spell_area.phase(spell: area, phase: 0, spent: None)
+  assert #(all.selects_area, all.strikes_primary_target) == #(True, True)
+    as "a cast with no n chooses nothing, so both flags hold as for every effect"
+  let only_from_1 = mind_burst_area(damage: [#(1, 1, 4)])
+  let assert Ok(none_at_0) =
+    spell_area.phase(spell: only_from_1, phase: 0, spent: Some(0))
+  assert none_at_0.damage == []
+    && !none_at_0.selects_area
+    && !none_at_0.strikes_primary_target
+    as "the only area-aimed effect is excluded at n 0, so the phase selects no area"
 }

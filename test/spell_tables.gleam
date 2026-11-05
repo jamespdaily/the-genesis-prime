@@ -11,8 +11,11 @@
 ////   (`Spell4.32893`).
 //// - Mind Burst, 32809 (class 3, base 19019): an innate cost of type 6 (Resource1,
 ////   the Esper's Psi Points) of 1, kind 0, row 104 (1250 ms) (`Spell4CastResult.vital_cost`).
+////   `rows` holds it without its EMM id and effects; `rows_with_mind_burst_spend`
+////   holds them as the client's rows do (`Spell4.32809`).
 //// - Crush, 32812 (class 3, base 19022): cooldown 35000, kind 3, and one Proxy,
-////   100 ms after the go, to 42297 (`Spell4.32812`).
+////   100 ms after the go, to 42297, with the stray emmComparison 0 and emmValue 4
+////   (`Spell4.32812`).
 //// - Gamma Rays, 29874 (class 4, base 16322): a cost of type 18 (Actuator) of 2,
 ////   weapon slot 1, castTime 1250, kind 0, row 159 (1250 ms), and Proxies to
 ////   34775 and 35886; Class 4's slots 1 to 5 hold vital 18
@@ -210,11 +213,11 @@ fn property_flags(id: Int) -> Int {
 /// Spell4.spell4ConditionsIdCaster of the planted rows and of the novice tables'
 /// spells, as `table_rows -- Spell4 <id>` prints it
 /// (`Spell4.spell4ConditionsIdCaster`): 43 for the abilities and most stages, 1
-/// for 34355, the creature attack 5649 and most children, 4 for 30900 and 42297,
-/// and none (0) for 60947.
+/// for 34355, the creature attack 5649, 57030 and most children, 4 for 30900, 42297
+/// and 87353, and none (0) for 60947.
 pub fn caster_conditions(id: Int) -> Int {
   case id {
-    30_900 | 42_297 -> 4
+    30_900 | 42_297 | 87_353 -> 4
     60_947 -> 0
     25_190
     | 53_865
@@ -232,6 +235,7 @@ pub fn caster_conditions(id: Int) -> Int {
     | 43_499
     | 43_500
     | 5649
+    | 57_030
     | 70_033
     | 70_045
     | 70_054
@@ -1259,16 +1263,18 @@ pub fn rows() -> Rows {
         data: 53_865,
         order: 1,
       ),
-      effect_row(
-        id: 62_007,
-        spell: 32_812,
-        type_: 26,
-        target_flags: 4,
-        delay: 100,
-        phases: 1,
-        data: 42_297,
-        order: 0,
-      ),
+      planted_table.row(spell4_effects.schema, [
+        #("ID", Integer(62_007)),
+        #("spellId", Integer(32_812)),
+        #("targetFlags", Integer(4)),
+        #("effectType", Integer(26)),
+        #("delayTime", Integer(100)),
+        #("phaseFlags", Integer(1)),
+        #("dataBits00", Integer(42_297)),
+        #("emmComparison", Integer(0)),
+        #("emmValue", Integer(4)),
+        #("orderIndex", Integer(0)),
+      ]),
       damage_effect_row(
         id: 62_159,
         spell: 32_893,
@@ -1950,6 +1956,188 @@ pub fn rows_with_energize() -> Rows {
       ..rows.spell4_effects
     ]),
   )
+}
+
+/// The Mind Burst damage effects of the client's rows (`table_rows -- Spell4Effects
+/// spellId=32809`): 61993 to 61997, each of emmComparison 0 and emmValue 0 to 4, aimed
+/// at the area (targetFlags 4).
+pub const mind_burst_damage = [
+  #(0, 0, 4),
+  #(0, 1, 4),
+  #(0, 2, 4),
+  #(0, 3, 4),
+  #(0, 4, 4),
+]
+
+/// The planted rows with Mind Burst as the client's rows hold its spend (Spell4 32809:
+/// innateCostEMMId0 4 on a cost of type 6 and 1, `Spell4.32809`), with `emm_id` and
+/// `cost` as a test changes them: its damage effects 61993 onwards, one for each of
+/// `damage` as (emmComparison, emmValue, targetFlags), the Fluff 95008 of type 17,
+/// the Proxy 135961 to 57030 (emmComparison 0, emmValue 4, dataBits06 23344) and the
+/// Proxy 230116 to 87353 (emmComparison 1, emmValue 2, caster apply prerequisite
+/// 44174). The two children's Spell4 and Spell4Base rows and the two prerequisites
+/// are the client's too (`table_rows -- Spell4 57030 87353`, `-- Prerequisite 23344
+/// 44174`); their own effects are not planted.
+pub fn rows_with_mind_burst_spend(
+  emm_id emm_id: Int,
+  cost cost: #(Int, Int),
+  damage damage: List(#(Int, Int, Int)),
+) -> Rows {
+  let rows = rows()
+  Rows(
+    ..rows,
+    spell4: sorted_by_id([
+      method_spell_row(
+        id: 32_809,
+        base: 19_019,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 0,
+        global: 104,
+        cost:,
+        more: [
+          #("innateCostEMMId0", emm_id),
+          #("spell4AoeTargetConstraintsId", area_id(32_809)),
+        ],
+      ),
+      method_spell_row(
+        id: 57_030,
+        base: 36_649,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 0,
+        cost: #(0, 0),
+        more: [],
+      ),
+      method_spell_row(
+        id: 87_353,
+        base: 62_440,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 100,
+        cost: #(0, 0),
+        more: [],
+      ),
+      ..planted_table.without(rows: rows.spell4, ids: [32_809])
+    ]),
+    spell4_base: sorted_by_id([
+      base_row(id: 36_649, method: 0, weapon: 0, bar: 0, class: 3),
+      base_row(id: 62_440, method: 0, weapon: 0, bar: 0, class: 3),
+      ..rows.spell4_base
+    ]),
+    spell4_effects: sorted_by_id(
+      list.flatten([
+        list.index_map(damage, fn(tag, index) {
+          mind_burst_damage_row(
+            id: 61_993 + index,
+            comparison: tag.0,
+            value: tag.1,
+            target_flags: tag.2,
+            order: index,
+          )
+        }),
+        [
+          planted_table.row(spell4_effects.schema, [
+            #("ID", Integer(95_008)),
+            #("spellId", Integer(32_809)),
+            #("targetFlags", Integer(1)),
+            #("effectType", Integer(17)),
+            #("phaseFlags", Integer(-1)),
+            #("orderIndex", Integer(5)),
+          ]),
+          planted_table.row(spell4_effects.schema, [
+            #("ID", Integer(135_961)),
+            #("spellId", Integer(32_809)),
+            #("targetFlags", Integer(1)),
+            #("effectType", Integer(26)),
+            #("phaseFlags", Integer(-1)),
+            #("dataBits00", Integer(57_030)),
+            #("dataBits06", Integer(23_344)),
+            #("emmComparison", Integer(0)),
+            #("emmValue", Integer(4)),
+            #("orderIndex", Integer(6)),
+          ]),
+          planted_table.row(spell4_effects.schema, [
+            #("ID", Integer(230_116)),
+            #("spellId", Integer(32_809)),
+            #("targetFlags", Integer(1)),
+            #("effectType", Integer(26)),
+            #("phaseFlags", Integer(-1)),
+            #("dataBits00", Integer(87_353)),
+            #("prerequisiteIdCasterApply", Integer(44_174)),
+            #("emmComparison", Integer(1)),
+            #("emmValue", Integer(2)),
+            #("orderIndex", Integer(8)),
+          ]),
+        ],
+        rows.spell4_effects,
+      ]),
+    ),
+    prerequisites: sorted_by_id([
+      prerequisite_row(id: 23_344, flags: 0, conditions: [#(50, 1, 0, 57_027)]),
+      prerequisite_row(id: 44_174, flags: 1, conditions: [
+        #(15, 1, 0, 87_333),
+        #(15, 1, 0, 87_334),
+      ]),
+      ..rows.prerequisites
+    ]),
+  )
+}
+
+/// One Mind Burst damage effect: Magic damage (damageType 3) of phase 1 with the
+/// multiplier 1.0 and the formula the row of its emmValue holds (`table_rows --
+/// Spell4Effects spellId=32809`), with the emm columns given.
+fn mind_burst_damage_row(
+  id id: Int,
+  comparison comparison: Int,
+  value value: Int,
+  target_flags target_flags: Int,
+  order order: Int,
+) -> List(Cell) {
+  let parameters = case value {
+    0 -> #(0.25949999690055847, 13.850000381469727)
+    1 -> #(0.5195000171661377, 27.690000534057617)
+    2 -> #(0.7788000106811523, 41.540000915527344)
+    3 -> #(1.0379999876022339, 55.38999938964844)
+    _ -> #(1.2979999780654907, 69.2300033569336)
+  }
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(32_809)),
+    #("targetFlags", Integer(target_flags)),
+    #("effectType", Integer(8)),
+    #("damageType", Integer(3)),
+    #("flags", Integer(1)),
+    #("dataBits00", Integer(1_065_353_216)),
+    #("emmComparison", Integer(comparison)),
+    #("emmValue", Integer(value)),
+    #("parameterType00", Integer(12)),
+    #("parameterType01", Integer(10)),
+    #("parameterValue00", Float(parameters.0)),
+    #("parameterValue01", Float(parameters.1)),
+    #("phaseFlags", Integer(1)),
+    #("orderIndex", Integer(order)),
+  ])
+}
+
+/// The plans of the rows with Mind Burst's spend as the client's rows hold it,
+/// built once per run like `default_plans`.
+pub fn plans_with_mind_burst_spend() -> spell_plan.Plans {
+  database_support.once("spell_tables_plans_with_mind_burst_spend", fn() {
+    let assert Ok(plans) =
+      with_loaded(
+        rows: rows_with_mind_burst_spend(
+          emm_id: 4,
+          cost: #(6, 1),
+          damage: mind_burst_damage,
+        ),
+        body: fn(tables) { spell_plan.build(tables:) },
+      )
+      as "the planted rows with Mind Burst's spend build"
+    plans
+  })
 }
 
 /// The plans of `rows_with_energize`.

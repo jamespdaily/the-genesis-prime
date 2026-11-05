@@ -18,15 +18,19 @@
 ////   (`Spell4ValidTargets.targetBitmask`, `0x1403ad540`).
 
 import area_tables
+import cast_support as support
+import class_resource_support
 import client_tables
 import genesis_prime/client_connection
 import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast.{type GoAsked, GoAsked}
+import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/damage
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/shown.{Exile, ShownCreature, ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
+import genesis_prime/game/spend
 import genesis_prime/game/strike.{
   type Attacker, type Effect, type Selection, type State, Aimed, Attacker,
   Selection,
@@ -39,11 +43,14 @@ import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
 import genesis_prime/world_map/creature_path
 import gleam/dict
+import gleam/int
 import gleam/list
+import gleam/option.{None}
 import map_support
 import owned_test
 import place_support
 import rating_support
+import spell_tables
 import unitest
 
 fn at(ms ms: Int) -> step.Now {
@@ -78,11 +85,18 @@ fn damage_effect() -> spell_area.DamageEffect {
     aim: AimsAtArea,
     formula: damage.Formula(multiplier: 1.0, base: 0, parameters: []),
     threat_multiplier: 1.0,
+    tag: spend.always,
   )
 }
 
 fn asked(cast_id cast_id: Int, phase phase: Int) -> GoAsked {
-  GoAsked(cast_id:, phase:, spell4_id: Spell4Id(58_591), primary_target: 7)
+  GoAsked(
+    cast_id:,
+    phase:,
+    spell4_id: Spell4Id(58_591),
+    primary_target: 7,
+    spent: None,
+  )
 }
 
 fn selection(
@@ -273,6 +287,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         damage.Parameter(kind: 10, value: 8.14),
       ]),
       threat_multiplier: 1.0,
+      tag: spend.always,
     )
   let telekinetic_strike =
     DamageEffect(
@@ -286,6 +301,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         damage.Parameter(kind: 10, value: 18.0),
       ]),
       threat_multiplier: 2.0,
+      tag: spend.always,
     )
   let #(_, effects) =
     strike.begin(
@@ -854,6 +870,7 @@ pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test()
         phase: 0,
         spell4_id: Spell4Id(58_591),
         primary_target: 20,
+        spent: None,
       ),
       attacker: attacker(),
       picture: picture(),
@@ -875,6 +892,7 @@ pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
         phase: 0,
         spell4_id: Spell4Id(1),
         primary_target: 7,
+        spent: None,
       ),
       attacker: attacker(),
       picture: picture(),
@@ -914,6 +932,7 @@ pub fn crushs_second_spell_strikes_up_to_four_within_4_m_of_the_struck_foe_and_t
         phase: 0,
         spell4_id: Spell4Id(42_297),
         primary_target: 21,
+        spent: None,
       ),
       attacker: attacker(),
       picture: around_the_foe,
@@ -948,6 +967,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
           phase:,
           spell4_id: Spell4Id(38_780),
           primary_target: 7,
+          spent: None,
         ),
         attacker: attacker(),
         picture: close_by,
@@ -966,6 +986,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
         phase: 0,
         spell4_id: Spell4Id(38_781),
         primary_target: 22,
+        spent: None,
       ),
       attacker: attacker(),
       picture: close_by,
@@ -975,4 +996,129 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
   assert child.units == [Aimed(unit_id: 22, life: 4)]
     && list.length(child.blows) == 1
     as "38781 damages its own target, the unit it was started on (Spell4Effects 83829: targetFlags 2)"
+}
+
+// ---- a spell with an innate cost EMM id strikes with the effects its n chooses ----
+
+/// The areas of the planted rows with Mind Burst's spend as the client's rows hold it
+/// (`spell_tables.rows_with_mind_burst_spend`).
+fn mind_burst_areas() -> spell_area.Areas {
+  let assert Ok(areas) =
+    spell_tables.with_loaded_deriving(
+      rows: spell_tables.rows_with_mind_burst_spend(
+        emm_id: 4,
+        cost: #(6, 1),
+        damage: spell_tables.mind_burst_damage,
+      ),
+      derivations: [spell_plan.derivation()],
+      body: fn(tables) { spell_area.build(tables:) },
+    )
+    as "the planted Mind Burst builds its areas"
+  areas
+}
+
+/// The go the cast rule asks for when an Esper holding `points` Psi Points presses
+/// Mind Burst (bag index 2).
+fn mind_burst_go(points points: Int) -> GoAsked {
+  let assert Ok(mind_burst) =
+    spell_plan.in_plans(
+      plans: spell_tables.plans_with_mind_burst_spend(),
+      base: id.Spell4BaseId(19_019),
+    )
+    as "the planted Esper holds Mind Burst"
+  let resources =
+    class_resource.new(
+      resource: Resource(
+        ..class_resource_support.resource_of(3),
+        start: int.to_float(points),
+      ),
+    )
+  let #(_, effects) =
+    support.pressed_raw_in(
+      plans: support.with_spells(plans: support.plans(), spells: [mind_burst]),
+      state: cast.new(),
+      caster: support.caster_holding(resources:),
+      bag_index: 2,
+      target: 0,
+      at: 1000,
+    )
+  let assert [asked] =
+    list.filter_map(effects, fn(effect) {
+      case effect {
+        cast.Strike(asked:) -> Ok(asked)
+        cast.Send(..)
+        | cast.Tell(..)
+        | cast.StartTimer(..)
+        | cast.CancelTimer(..)
+        | cast.Log(..)
+        | cast.Pay(..)
+        | cast.Gain(..) -> Error(Nil)
+      }
+    })
+    as "Mind Burst has no cast time: its go is asked at the accept"
+  asked
+}
+
+pub fn mind_burst_at_p_points_strikes_with_only_the_damage_effect_of_p_minus_1_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let areas = mind_burst_areas()
+  list.each([1, 2, 3, 4, 5], fn(points) {
+    let chosen =
+      strike.select(
+        asked: mind_burst_go(points:),
+        attacker: attacker(),
+        picture: dict.new(),
+        areas:,
+        now_ms: 0,
+      )
+    assert list.map(chosen.blows, fn(blow) { blow.effect_id })
+      == [Spell4EffectsId(61_992 + points)]
+      as "Spell4.32809: p Psi Points apply the damage effect of emmValue p - 1, 61993 to 61997, and no other"
+  })
+}
+
+pub fn a_3_point_mind_burst_tells_its_creature_only_effect_61995_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let picture = dict.from_list([#(21, foe_at(x: 0.0, z: -3.0))])
+  let chosen =
+    strike.select(
+      asked: mind_burst_go(points: 3),
+      attacker: attacker(),
+      picture:,
+      areas: mind_burst_areas(),
+      now_ms: 0,
+    )
+  assert list.map(chosen.units, fn(aimed) { aimed.unit_id }) == [21]
+    as "Spell4.32809.area: row 345 takes the foe 3 m away"
+  let #(_, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection: chosen,
+      attacker: attacker(),
+      formulas: rating_support.formulas(),
+      entropy: entropy(rolls: [#(0, 0, 0)]),
+      now: at(ms: 1000),
+    )
+  let assert [strike.TellStrike(tell: strike_tell.Strike(offence:, ..), ..)] =
+    tells(effects:)
+    as "one strike for the one foe"
+  assert list.map(offence.blows, fn(blow) { blow.spell4_effects_id })
+    == [61_995]
+    as "Spell4.32809 at 3 Psi Points (n 2): the creature answers with a description of 61995 alone, so the 0x7f4 names no other of 61993 to 61997"
+}
+
+pub fn a_go_with_no_n_strikes_with_every_damage_effect_the_spell_holds_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let go = mind_burst_go(points: 3)
+  let chosen =
+    strike.select(
+      asked: GoAsked(..go, spent: None),
+      attacker: attacker(),
+      picture: dict.new(),
+      areas: mind_burst_areas(),
+      now_ms: 0,
+    )
+  assert list.map(chosen.blows, fn(blow) { blow.effect_id.value })
+    == [61_993, 61_994, 61_995, 61_996, 61_997]
+    as "Spell4Effects.emmComparison: a cast with no n chooses nothing, so none of the five is left out"
 }

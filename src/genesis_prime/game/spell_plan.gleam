@@ -76,6 +76,12 @@
 ////   and 16 (slot 7) give their own results (44, 176, 167, 177) and are held by no
 ////   rule of the server; any other type, the client's slots 8 to 10 (types 27 to 29)
 ////   among them, is an `UnreadCost`.
+//// - **The spend.** A cost's Spell4 EMM id (`Spell4.innateCostEMMId0`, genesis_prime/game/spend)
+////   of 4 or 7 on a slot cost makes it a `SpendAllCost`, which takes every point the
+////   slot holds; any other id, one on a cost that is not a slot cost and one on no
+////   cost are an `UnreadSpendCost`. Each gain, Proxy and (in genesis_prime/game/spell_area)
+////   damage effect keeps its row's tag (`Spell4Effects.emmComparison`), and the cast
+////   rule chooses by it with the points spent.
 //// - **The caster requirements.** A spell's two caster vital requirements
 ////   (`0x1403b1780`): types 5 to 11 read the same slots with the same results,
 ////   compared with the value by the eval code (`0x1407a1750`: 0 to 4
@@ -93,13 +99,15 @@
 ////   conditions are not read.
 //// - **What fails the load:** a Spell4, Spell4Base, Spell4Conditions, SpellCoolDown,
 ////   Class or Prerequisite row the tree names that the tables lack, a cost of a type
-////   not read, a cycle of Proxy effects, a channel with no pulse time, and a gain
+////   not read, a cycle of Proxy effects, a channel with no pulse time, a gain
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
-////   target apply prerequisite.
+////   target apply prerequisite, and an effect of a spell that spends every point
+////   held with an emmComparison other than 0 or 1.
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite.{type Prerequisite}
+import genesis_prime/game/spend
 import genesis_prime/table/class
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
@@ -205,7 +213,8 @@ pub type Condition {
 /// A resource gain of a spell: a VitalModifier aimed at the caster
 /// (`Spell4Effects.effectType.1`), `amount` points of resource slot `slot`, in the
 /// phases of `phase_flags`, given when its caster apply prerequisite passes or it
-/// has none.
+/// has none, and when its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend).
 pub type Gain {
   Gain(
     effect_id: Spell4EffectsId,
@@ -213,6 +222,7 @@ pub type Gain {
     amount: Int,
     phase_flags: Int,
     prerequisite: Option(Prerequisite),
+    tag: spend.Tag,
   )
   /// A gain each `tick_ms` for `duration_ms` (Spell4Effects.tickTime and
   /// durationTime), which the cast rule does not apply.
@@ -222,6 +232,7 @@ pub type Gain {
     amount: Int,
     phase_flags: Int,
     prerequisite: Option(Prerequisite),
+    tag: spend.Tag,
     tick_ms: Int,
     duration_ms: Int,
   )
@@ -360,6 +371,15 @@ pub type Cost {
   /// A cost in a vital no rule of the server holds (health, shield or focus):
   /// refused with `result`, and logged once.
   UnheldCost(result: Int)
+  /// A slot cost whose Spell4 EMM id the server reads as a spend of every point
+  /// held (genesis_prime/game/spend `AllHeld`): refused with `result` when the slot
+  /// holds fewer whole points than the base `amount`, else it takes every whole
+  /// point held, and the points above `amount` are the cast's n.
+  SpendAllCost(slot: Int, amount: Int, result: Int)
+  /// A cost with an EMM id no rule reads, on a cost that is not a slot cost, or on no
+  /// cost at all: refused with `result` (the cost's own, 285 for no cost), and logged
+  /// once.
+  UnreadSpendCost(result: Int, emm_id: Int)
 }
 
 /// One caster vital requirement (`0x1403b1780`): resource slot `slot`, or its
@@ -407,6 +427,9 @@ pub type Proxy {
     /// Spell4Effects.phaseFlags: bit n is phase n; -1 every phase.
     phase_flags: Int,
     condition: Condition,
+    /// The Proxy starts when its tag holds for the points the cast spent
+    /// (genesis_prime/game/spend).
+    tag: spend.Tag,
     /// Which unit the child cast is made on, from the effect's `targetFlags`.
     target: ProxyTarget,
     spell: Spell,
@@ -444,6 +467,9 @@ pub type PlanError {
   GainVitalNotRead(spell4_id: Int, effect_id: Int, vital: Int)
   /// A VitalModifier of a tree has a target apply prerequisite, which is not read.
   GainTargetPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
+  /// An effect of a spell that spends every point held holds an emmComparison other
+  /// than 0 or 1, which chooses nothing (`Spell4Effects.emmComparison`).
+  SpendComparisonNotRead(spell4_id: Int, effect_id: Int, comparison: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -509,6 +535,14 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a VitalModifier effect "
       <> int.to_string(effect_id)
       <> " behind a target prerequisite, which is not read"
+    SpendComparisonNotRead(spell4_id:, effect_id:, comparison:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " spends every point held and has an effect "
+      <> int.to_string(effect_id)
+      <> " of emmComparison "
+      <> int.to_string(comparison)
+      <> ", and only 0 and 1 are read"
   }
 }
 
@@ -678,9 +712,9 @@ fn spell_of(
   use caster_death <- result.try(caster_death_of(tables:, row:))
   use costs <- result.try(
     costs_of(tables:, row:, base:, costs: [
-      #(row.innate_cost_type0, row.innate_cost0),
-      #(row.innate_cost_type1, row.innate_cost1),
-      ..threshold_costs
+      #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
+      #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
+      ..list.map(threshold_costs, fn(cost) { #(cost.0, cost.1, 0) })
     ]),
   )
   use requirements <- result.try(
@@ -698,6 +732,7 @@ fn spell_of(
     ]),
   )
   let effects = dict.get(sources.effects, spell4_id) |> result.unwrap([])
+  use Nil <- result.try(spend_tags_read(spell4_id:, costs:, effects:))
   use gains <- result.try(gains_of(tables:, spell4_id:, effects:))
   use proxies <- result.try(
     effects
@@ -732,6 +767,7 @@ fn spell_of(
         delay_ms: effect.delay_time,
         phase_flags: effect.phase_flags,
         condition:,
+        tag: tag_of(effect:),
         target:,
         spell: Spell(..child, gains: kept),
         gains: lifted,
@@ -831,8 +867,9 @@ fn gains_of(
     let effect_id = Spell4EffectsId(effect.id)
     let amount = effect.data_bits02
     let phase_flags = effect.phase_flags
+    let tag = tag_of(effect:)
     Ok(case effect.tick_time {
-      0 -> Gain(effect_id:, slot:, amount:, phase_flags:, prerequisite:)
+      0 -> Gain(effect_id:, slot:, amount:, phase_flags:, prerequisite:, tag:)
       tick_ms ->
         TickingGain(
           effect_id:,
@@ -840,11 +877,48 @@ fn gains_of(
           amount:,
           phase_flags:,
           prerequisite:,
+          tag:,
           tick_ms:,
           duration_ms: effect.duration_time,
         )
     })
   })
+}
+
+/// The tag an effect row holds on the points a cast spent: its emmComparison and
+/// emmValue (`Spell4Effects.emmComparison`).
+pub fn tag_of(effect effect: spell4_effects.Spell4Effects) -> spend.Tag {
+  spend.tag_of(comparison: effect.emm_comparison, value: effect.emm_value)
+}
+
+/// A spell that spends every point held has an n, which each of its effects' tags
+/// chooses by, so each must be one the rule reads (emmComparison 0 or 1). A spell
+/// with no such cost chooses nothing and its tags are not looked at.
+fn spend_tags_read(
+  spell4_id spell4_id: Int,
+  costs costs: List(Cost),
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(Nil, PlanError) {
+  let spends =
+    list.any(costs, fn(cost) {
+      case cost {
+        SpendAllCost(..) -> True
+        SlotCost(..)
+        | ClassVitalCost(..)
+        | UnheldCost(..)
+        | UnreadSpendCost(..) -> False
+      }
+    })
+  use <- bool.guard(when: !spends, return: Ok(Nil))
+  case list.find(effects, fn(effect) { !spend.tag_is_read(tag_of(effect:)) }) {
+    Ok(effect) ->
+      Error(SpendComparisonNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        comparison: effect.emm_comparison,
+      ))
+    Error(Nil) -> Ok(Nil)
+  }
 }
 
 /// The resource slot of a gain's vital: 6 (Resource1) is slot 1 and 8 (Resource3)
@@ -860,10 +934,16 @@ fn gain_slot_of(
   }
 }
 
-/// The gains of the spell given at its go of phase `phase`.
-pub fn gains_in_phase(spell spell: Spell, phase phase: Int) -> List(Gain) {
+/// The gains of the spell given at its go of phase `phase`, those whose tag holds
+/// for the points the cast spent (genesis_prime/game/spend `applies`).
+pub fn gains_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(Gain) {
   list.filter(spell.gains, fn(gain) {
     has_flag(flags: gain.phase_flags, bit: int.bitwise_shift_left(1, phase))
+    && spend.applies(tag: gain.tag, spent:)
   })
 }
 
@@ -1149,19 +1229,55 @@ fn caster_death_of(
   }
 }
 
-/// The spell's innate costs, as (vital type, amount): the Spell4 row's two, then
-/// the two of the Spell4Thresholds row for a stage; a type of 0 or above 30, or an
-/// amount of 0, is none (`0x1403b3320`).
+/// The spell's innate costs, as (vital type, amount, EMM id): the Spell4 row's two,
+/// then the two of the Spell4Thresholds row for a stage, which hold no EMM id; a type
+/// of 0 or above 30, or an amount of 0, is none (`0x1403b3320`), unless the cost has
+/// an EMM id (`spent_by`).
 fn costs_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
   base base: spell4_base.Spell4Base,
-  costs costs: List(#(Int, Int)),
+  costs costs: List(#(Int, Int, Int)),
 ) -> Result(List(Cost), PlanError) {
   list.try_map(costs, fn(cost) {
-    cost_of(tables:, row:, base:, cost_type: cost.0, amount: cost.1)
+    use fixed <- result.map(cost_of(
+      tables:,
+      row:,
+      base:,
+      cost_type: cost.0,
+      amount: cost.1,
+    ))
+    spent_by(cost: fixed, emm_id: cost.2)
   })
   |> result.map(option.values)
+}
+
+/// The cost as its Spell4 EMM id spends it (genesis_prime/game/spend): a slot cost
+/// with an id read as a spend of every point held becomes a `SpendAllCost`; any other
+/// cost with an id, or no cost with one, is an `UnreadSpendCost` with the result the
+/// cost gives, or 285 when there is none (`Spell4.innateCostEMMId0`: three rows hold
+/// an id with no cost, and a cost has no result of its own to give).
+fn spent_by(cost cost: Option(Cost), emm_id emm_id: Int) -> Option(Cost) {
+  case spend.spend_of(emm_id:), cost {
+    None, cost -> cost
+    Some(spend.AllHeld), Some(SlotCost(slot:, amount:, result:)) ->
+      Some(SpendAllCost(slot:, amount:, result:))
+    Some(spend.AllHeld), other -> Some(unread_spend(cost: other, emm_id:))
+    Some(spend.Unread(emm_id:)), other ->
+      Some(unread_spend(cost: other, emm_id:))
+  }
+}
+
+fn unread_spend(cost cost: Option(Cost), emm_id emm_id: Int) -> Cost {
+  let result = case cost {
+    Some(SlotCost(result:, ..))
+    | Some(SpendAllCost(result:, ..))
+    | Some(ClassVitalCost(result:, ..))
+    | Some(UnheldCost(result:))
+    | Some(UnreadSpendCost(result:, ..)) -> result
+    None -> 285
+  }
+  UnreadSpendCost(result:, emm_id:)
 }
 
 fn cost_of(
@@ -1404,9 +1520,15 @@ pub fn tree(
   ]
 }
 
-/// The Proxies of the spell that fire in phase `phase`.
-pub fn proxies_in_phase(spell spell: Spell, phase phase: Int) -> List(Proxy) {
+/// The Proxies of the spell that fire in phase `phase`, those whose tag holds for
+/// the points the cast spent (genesis_prime/game/spend `applies`).
+pub fn proxies_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(Proxy) {
   list.filter(spell.proxies, fn(proxy) {
     has_flag(flags: proxy.phase_flags, bit: int.bitwise_shift_left(1, phase))
+    && spend.applies(tag: proxy.tag, spent:)
   })
 }

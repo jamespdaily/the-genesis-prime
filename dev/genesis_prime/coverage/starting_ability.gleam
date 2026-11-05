@@ -1,6 +1,7 @@
-//// The types the starting abilities use: the effect types and the prerequisite
-//// types of the spells the 18 level-1 abilities' trees reach, which the coverage
-//// measure shows beside each type's weight in the whole game.
+//// The types the starting abilities use: the effect types, the prerequisite
+//// types and the innate cost EMM ids of the spells the 18 level-1 abilities' trees
+//// reach, which the coverage measure shows beside each type's weight in the whole
+//// game.
 ////
 //// ```
 //// plans (genesis_prime/game/spell_plan) ─▶ every spell of every tree, once each,
@@ -53,6 +54,29 @@ pub fn effect_types(
     effects_of(tables:, spells: spells(tables:))
     |> list.map(fn(effect) { effect.effect_type }),
   )
+}
+
+/// The innate cost EMM id of each cost of the spells the starting abilities' trees
+/// reach, one value for each Spell4 column that holds one.
+pub fn spend_ids(tables: store.Tables) -> Result(List(Int), List(MissingRow)) {
+  let #(found, missing) =
+    list.map(spells(tables:), fn(spell) {
+      let id = spell.spell4_id.value
+      case spell4.get(tables:, id: Spell4Id(id)) {
+        Ok(row) -> Ok([row.innate_cost_emm_id0, row.innate_cost_emm_id1])
+        Error(Nil) ->
+          Error(MissingRow(
+            table: "Spell4",
+            id:,
+            named_by: "a spell of a starting ability's tree",
+          ))
+      }
+    })
+    |> result.partition
+  case missing {
+    [] -> Ok(list.filter(list.flatten(found), fn(emm_id) { emm_id != 0 }))
+    _ -> Error(missing)
+  }
 }
 
 /// The type of each condition of the prerequisites the starting abilities' trees

@@ -27,6 +27,7 @@ import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
 import genesis_prime/table/id.{Spell4Id}
 import gleam/list
+import gleam/option.{None}
 import owned_test
 
 /// 2^31 + 7 x 2^11: the caster 7's first cast id.
@@ -58,6 +59,7 @@ pub fn a_go_with_damage_asks_for_its_targets_and_writes_nothing_until_the_round_
       phase: 0,
       spell4_id: Spell4Id(32_893),
       primary_target: 7,
+      spent: None,
     )),
   )
     as "the go asks the connection for its targets, with the caster as the primary target"
