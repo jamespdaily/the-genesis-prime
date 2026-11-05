@@ -80,11 +80,13 @@ pub fn a_spell_with_no_telegraph_row_is_read_by_its_area_row_test() -> Nil {
 
 pub fn an_area_row_that_selects_in_another_order_than_closest_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert area_tables.built(
+  let assert Error(SelectionNotClosest(spell4_id:, target_selection: 3)) =
+    area_tables.built(
       kick: area_tables.Kick(..area_tables.kick(), target_selection: 3),
     )
-    == Error(SelectionNotClosest(spell4_id: 58_591, target_selection: 3))
     as "Spell4AoeTargetConstraints.targetSelection: only Closest (1) is built"
+  assert list.contains([58_591, 70_033, 70_045, 70_054], spell4_id)
+    as "the refusal names a spell of row 640: Kick 58591 and Relentless Strikes' stage spells 70033, 70045 and 70054 share it (Spell4.58591.area)"
 }
 
 pub fn a_spell_whose_valid_targets_hold_a_bit_fails_the_load_test() -> Nil {
@@ -269,19 +271,20 @@ pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_planted_t
       body: fn(tables) { spell_area.build(tables:) },
     )
     as "the planted trees build their areas"
-  assert area_rows_held(areas:, spells: [39_467])
-    == all_held(spells: [39_467], row: True)
-    as "Spell4Effects 86439: the stage's Proxy 39467 strikes, aimed at the area (targetFlags 4), so it holds Spell4 39467's area row 694"
+  let with_row = [39_467, 70_045, 70_054]
+  assert area_rows_held(areas:, spells: with_row)
+    == all_held(spells: with_row, row: True)
+    as "Spell4Effects 86439: the stage's Proxy 39467 strikes, aimed at the area (targetFlags 4), so it holds Spell4 39467's area row 694; Relentless Strikes' stage spells 70045 and 70054 proxy 53865 at the area (177099, 177122, targetFlags 4), so they hold their row 640"
   let without_row =
     list.append(
       stage_spells_that_only_start_others,
       list.filter(stage_spells_that_strike, fn(spell4_id) {
-        spell4_id != 39_467
+        !list.contains(with_row, spell4_id)
       }),
     )
   assert area_rows_held(areas:, spells: without_row)
     == all_held(spells: without_row, row: False)
-    as "Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124 name the stage spells and Spell4Effects 83782, 177158, 177171, 177498, 182203 and 182204 start their Proxies: each is cast, so each is in the areas; the planted rows hold no damage effect or area row for any but 39467"
+    as "Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124 name the stage spells and Spell4Effects 83782, 177158, 177171, 177498, 182203 and 182204 start their Proxies: each is cast, so each is in the areas; the planted rows hold no damage effect or Proxy at the area for the others"
   let assert Ok(proxy) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(39_467))
   let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0)
