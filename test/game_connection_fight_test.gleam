@@ -35,6 +35,7 @@ import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
@@ -728,6 +729,46 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
     commands
   assert time == support.now_ms
     as "kind 0's time is the map's time the path starts at: its monotonic start, 1000, less the origin the tests' map took, 0 (map.server_time)"
+}
+
+pub fn a_viewer_writes_a_creature_placed_while_it_ran_as_kind_0_then_kind_2_with_the_blend_bit_clear_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    game_connection_support.feed(
+      game_connection_support.medic_in_world(),
+      game_connection_support.beast_appears(unit_id: 40),
+    )
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 10.0,
+      y: 0.0,
+      z: 0.0,
+    )
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      beast_news(
+        unit_id: 40,
+        news: client_connection.CreaturePlaced(place:, at_ms: support.now_ms),
+      ),
+    )
+  let assert [Frame(message_id: 0x0638, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+  let assert Ok(UnitMovement(unit_id: 40, commands:, ..)) =
+    unit_movement.decode(body)
+  assert commands
+    == [
+      relayed_movement.Time(movement_time.MovementTime(time: support.now_ms)),
+      relayed_movement.Position(UnitPositionCommand(
+        x: float32.to_bits(10.0),
+        y: 0,
+        z: 0,
+        blends: 0,
+      )),
+    ]
+    as "kind 0, the time of the placing, then kind 2 at the place with its bit clear, which places the unit at once (0x140714120)"
 }
 
 pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -> Nil {

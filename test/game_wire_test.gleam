@@ -3058,9 +3058,32 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
         && psi_children(frames:) == 2
       },
     )
-  let goes = game_client.go_targets_in(frames: watched)
-  assert list.all(goes, fn(go) { go.1 == [] || go.1 == [ahead] })
-    as "the Beast 10 m to the side is within the area row's 30 m all round but outside the never-drawn telegraph 2169, a rectangle 3 m wide ahead of the caster grown by the Beast's hit radius 3 (Spell4.32893.area): no go names it"
+  // The Beast ahead fights back every 1500 ms with its own attack, Spell4 5649,
+  // whose go names the caster; how many of those the watcher has read when this
+  // runs depends on how long the fight took, so only the casts of Telekinetic
+  // Strike are read here.
+  let strike_cast_ids =
+    list.filter_map(game_client.casts_in(frames: watched), fn(event) {
+      case event {
+        game_client.CastStarted(cast_id:, spell4_id: 32_893, ..) -> Ok(cast_id)
+        game_client.CastStarted(..)
+        | game_client.CastRefused(..)
+        | game_client.CastConfirmed(..)
+        | game_client.CastWent(..)
+        | game_client.ThresholdOpened(..)
+        | game_client.ThresholdIndex(..)
+        | game_client.ThresholdClosed(..)
+        | game_client.ThresholdEnded(..)
+        | game_client.CastFinished(..) -> Error(Nil)
+      }
+    })
+  let strike_goes =
+    list.filter(game_client.go_targets_in(frames: watched), fn(go) {
+      list.contains(strike_cast_ids, go.0)
+    })
+  assert strike_goes != []
+    && list.all(strike_goes, fn(go) { go.1 == [] || go.1 == [ahead] })
+    as "the Beast 10 m to the side is within the area row's 30 m all round but outside the never-drawn telegraph 2169, a rectangle 3 m wide ahead of the caster grown by the Beast's hit radius 3 (Spell4.32893.area): no go of a Telekinetic Strike names it"
   assert list.filter_map(game_client.health_in(frames: watched), fn(health) {
       case health.0 == beside {
         True -> Ok(health.1)
@@ -3359,8 +3382,9 @@ fn read_fight(
   #(game_client.fight_in(frames:), have)
 }
 
-/// Whether a path of `unit` among the events ends at z.
-fn a_path_ends_at(
+/// Whether a 0x638 of `unit` among the events leaves it at z: a path's end, or the
+/// place a leash in the instant of the chase puts it at.
+fn leaves_unit_at(
   events events: List(game_client.FightEvent),
   unit unit: Int,
   z z: Float,
@@ -3400,11 +3424,11 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
     )
     && list.contains(fight, game_client.InCombat(unit_id: own, in_combat: True))
     as "both 0x89a: the Dagun's and the bot's own"
-  let assert [#(kinds, path_end), ..] =
+  let assert [#(kinds, ends_at), ..] =
     game_client.moves_of(events: fight, unit: dagun)
     as "the Dagun runs"
   assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
-  assert path_end == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
+  assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
     as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
   game_client.close(game:)
   login_support.stop(started)
@@ -3640,7 +3664,7 @@ pub fn a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test() -> 
   game_client.close(game: fighter)
   let #(seen, _) =
     read_fight(game: watcher, have: watcher_have, found: fn(events) {
-      a_path_ends_at(events:, unit: dagun, z: dagun_z)
+      leaves_unit_at(events:, unit: dagun, z: dagun_z)
     })
   assert list.contains(
       seen,

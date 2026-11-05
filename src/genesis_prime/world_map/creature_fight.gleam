@@ -61,6 +61,13 @@
 ////   (`movement_command.kind_4`, `0x1405b45e0`), planned again only when the target is
 ////   beyond reach of the current path's end, and clipped at the leash circle
 ////   (genesis_prime/world_map/creature_path).
+//// - **A path that ends in standing is replaced.** A new path that is no distance
+////   to run (the leash in the instant a chase began, a target that doubled back
+////   onto the creature, a death) is sent as 0x638 of kind 2 at the creature's place with its
+////   blend bit clear, which places the unit at once (`0x1407138f0`, `0x140714120`), but
+////   only while the path last sent is still being run; a creature that has stood
+////   since its path ended sends nothing. A death mid-path places the viewers where
+////   the creature fell the same way.
 //// - **Reach** is the attack spell's `targetMaxRange` plus the creature's hit radius,
 ////   centre to centre (a server choice; genesis_prime/world_map/creature_life `Attack`).
 //// - **One strike round at a time.** The attack interval is never below the strike
@@ -980,11 +987,24 @@ fn chase_to(
       speed: fighter.attack.run_speed,
       now_ms:,
     )
-  case path {
-    Running(..) -> #(State(..state, path:), [
-      ToViewers(client_connection.CreatureMoved(path:)),
-    ])
-    Standing(..) -> #(State(..state, path:), [])
+  #(State(..state, path:), path_news(was: state.path, now: path, now_ms:))
+}
+
+/// What the viewers are told of the creature's new path: a running path as 0x638 of
+/// kind 4, and a standing one as 0x638 of kind 2 only when the path they were last
+/// sent is still being run, since a client left running it would run on from a
+/// creature that stands. A creature that has stood since its path ended says nothing.
+fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
+  case now, was {
+    Running(..), _ -> [ToViewers(client_connection.CreatureMoved(path: now))]
+    Standing(at:), Running(..) ->
+      case creature_path.arrives_ms(path: was, now_ms:) > now_ms {
+        True -> [
+          ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
+        ]
+        False -> []
+      }
+    Standing(..), Standing(..) -> []
   }
 }
 
@@ -1017,10 +1037,7 @@ fn leash(
       now_ms:,
     )
   let #(state, home) = generation(state)
-  let moved = case path {
-    Running(..) -> [ToViewers(client_connection.CreatureMoved(path:))]
-    Standing(..) -> []
-  }
+  let moved = path_news(was: state.path, now: path, now_ms:)
   #(
     State(..state, status: Returning(home:), path:),
     list.flatten([
@@ -1053,14 +1070,16 @@ fn leash(
   )
 }
 
-/// The creature died: out of combat (0x89a 0), each threatened player told
-/// `Released`, an open round's cast finished, and its path frozen where it fell.
+/// The creature died: its path frozen where it fell and its viewers placed there
+/// when they still run it, out of combat (0x89a 0), each threatened player told
+/// `Released`, and an open round's cast finished.
 fn killed(
   state state: State,
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let here = creature_path.place_at(path: state.path, now_ms:)
+  let placed = path_news(was: state.path, now: Standing(at: here), now_ms:)
   let state = State(..state, path: Standing(at: here))
   case state.status {
     Fighting(threat:, round:, ..) -> {
@@ -1074,6 +1093,7 @@ fn killed(
       #(
         State(..state, status: Resting),
         list.flatten([
+          placed,
           finished,
           [ToViewers(client_connection.CombatState(in_combat: False))],
           list.map(map.sorted_by_connection(threat), fn(entry) {
@@ -1086,7 +1106,7 @@ fn killed(
         ]),
       )
     }
-    Resting | Returning(..) -> #(State(..state, status: Resting), [])
+    Resting | Returning(..) -> #(State(..state, status: Resting), placed)
   }
 }
 

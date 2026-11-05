@@ -24,7 +24,7 @@
 import connection_rule_support as support
 import genesis_prime/client_connection.{
   type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
-  CreatureMoved, Health, PeerNews, Targeting, Threat,
+  CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
 }
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/start_place
@@ -265,6 +265,7 @@ fn name_of(news: News) -> String {
     CombatState(in_combat: True) -> "0x89a(1)"
     CombatState(in_combat: False) -> "0x89a(0)"
     CreatureMoved(..) -> "0x638"
+    CreaturePlaced(..) -> "0x638(placed)"
     CastStarted(..) -> "0x7ff"
     CastWent(..) -> "0x7f4"
     client_connection.CastMissed(..) -> "0x7fb"
@@ -676,6 +677,136 @@ pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and
     )
   assert said(refused) == ["Refused(Returning) to 2"]
     as "walking home the creature takes no strike"
+}
+
+/// The leash's path home is the client's only way to stop a creature it was told
+/// to run: a 0x638 replaces the unit's position movement (`movement_command.kind_4`).
+/// A leash in the millisecond the chase began finds the creature still at home, with
+/// no distance to walk, yet its viewers hold a path that runs away from it.
+pub fn a_leash_in_the_millisecond_a_chase_began_still_tells_the_viewers_to_stop_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, chased) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  assert list.contains(said(chased), "0x638 to 5")
+    as "the chase is sent to the viewers: they now run the creature toward x = 26"
+  let #(_, leashed) =
+    tell(state:, at_ms: 0, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    as "the only player on the threat list is gone: the creature leashes"
+  assert list.contains(said(leashed), "0x638(placed) to 5")
+    as "the viewers' running path is replaced by the creature's place, home, though it is where its path began"
+  let assert [CreaturePlaced(place:, at_ms:)] =
+    list.filter(news_to(leashed, 5), fn(news) {
+      name_of(news) == "0x638(placed)"
+    })
+    as "one placement to the viewer"
+  assert x_of(place) == 0.0 && at_ms == start_ms
+    as "the place is the spawn, home, at the time of the leash"
+}
+
+pub fn a_creature_whose_path_has_ended_at_the_leash_circle_sends_no_placement_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, chased) =
+    tell(state:, at_ms: 0, message: moved(number: 2, x: 100.0, seq: 2))
+  assert x_of(creature_path.end(path: path_sent(chased))) == 55.0
+    as "the path to 96 is clipped at the leash circle, 55 from the spawn"
+  let #(_, again) =
+    tell(state:, at_ms: 5800, message: moved(number: 2, x: 100.0, seq: 3))
+  assert said(again) == []
+    as "the path ended at 5500 ms, at the circle: a replan finds nothing to run and the viewers hold no path that still runs, so nothing is sent"
+}
+
+pub fn a_leash_of_a_creature_that_stands_at_home_sends_no_path_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  assert !list.contains(said(aggro), "0x638 to 5")
+    as "5 is within reach 8 of the spawn: the creature stays at home"
+  let #(_, leashed) =
+    tell(state:, at_ms: 700, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    as "the only player on the threat list is gone: the creature leashes"
+  assert !list.contains(said(leashed), "0x638 to 5")
+    && !list.contains(said(leashed), "0x638(placed) to 5")
+    as "no path was sent, so none runs and nothing is sent to replace one"
+}
+
+/// The chase is replanned when the target is beyond reach of the path's end. A
+/// target that doubles back to the place the creature has run to leaves nothing to
+/// run, but the viewers still run the earlier path on to its end.
+pub fn a_target_that_doubles_back_onto_the_runner_stops_the_viewers_runs_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, chased) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let assert Running(to:, ..) = path_sent(chased)
+  assert x_of(to) == 26.0
+    as "the path runs from the spawn to 30 - 0.5 x 8, at 10 units a second"
+  let #(_, doubled) =
+    tell(state:, at_ms: 1000, message: moved(number: 2, x: 10.0, seq: 2))
+  assert said(doubled) == ["0x638(placed) to 2", "0x638(placed) to 5"]
+    as "1 s into the run the creature is at 10, where the target now is: the viewers are told to stand it there"
+  let assert [CreaturePlaced(place:, at_ms:), ..] = news_to(doubled, 5)
+  assert x_of(place) == 10.0 && at_ms == start_ms + 1000
+    as "at the place and the time of the move"
+}
+
+pub fn a_creature_killed_while_it_runs_places_its_viewers_where_it_fell_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(_, killed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 60, 1.0)]),
+    )
+  let assert [CreaturePlaced(place:, at_ms:)] =
+    list.filter(news_to(killed, 5), fn(news) {
+      name_of(news) == "0x638(placed)"
+    })
+    as "the viewers hold a path that runs on past the corpse, so each is sent one placement"
+  assert x_of(place) == 10.0 && at_ms == start_ms + 1000
+    as "where it fell, 1 s into its run, at the time of its death"
+}
+
+pub fn a_creature_killed_standing_places_nobody_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(_, killed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 60, 1.0)]),
+    )
+  assert !list.contains(said(killed), "0x638(placed) to 5")
+    as "no path was sent, so none runs on"
 }
 
 pub fn the_next_strike_after_a_leash_finds_the_creature_at_full_health_test() -> Nil {
