@@ -9,7 +9,7 @@ A client fact is decoded once and saved as a record in one fact file, `reference
 
 ## Every decode
 
-- Search the fact file first, then the saved C ([decompiled-c.md](decompiled-c.md)), and only then ask the query process ([query-process.md](query-process.md)).
+- Search the fact file first; for an address, a function name or an opcode, run `python3.13 -I scripts/client_trace.py <subject>`, which returns the function's saved C, callers, callees, strings, shared globals and records in one call. Then search the saved C ([decompiled-c.md](decompiled-c.md)) for what it does not show, and only then ask the query process ([query-process.md](query-process.md)).
 - A record is keyed by address, opcode, table column, enum or Lua function, with a plain statement, its proof and a grade (sure, fairly sure, guess). `scripts/check_facts.py` names the fields and checks them.
 - A statement says what the client does in the game's or the message's terms: arguments, fields, types, values. Registers, stack and struct offsets and vtables go in the proof.
 - A grade says how the fact was read. Sure: the instructions or rows were read, and the proof names them or the test that checks them. Fairly sure: read, with a named gap. Guess: not read, with what would settle it.
