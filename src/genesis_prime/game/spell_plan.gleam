@@ -327,6 +327,10 @@ pub type Spell {
     /// Whether a press of this spell is never refused 13 for a live cast:
     /// Spell4.propertyFlags 0x10 or 0x1 (`Spell4.propertyFlags`).
     ignores_casting: Bool,
+    /// Whether an effect's lifetime is the larger of its delay and durationTime
+    /// rather than their sum: Spell4.propertyFlags 0x2000, the spell record's flag
+    /// 0x10000000 (`opcode.0x7f4.effect_time`, `0x140568540`).
+    longer_of_delay_and_duration: Bool,
     weapon: WeaponSlot,
     /// Whether the caster must be alive or dead to cast it.
     caster_death: CasterDeath,
@@ -885,6 +889,10 @@ fn spell_of(
       free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
       ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
         || has_flag(flags: row.property_flags, bit: 0x1),
+      longer_of_delay_and_duration: has_flag(
+        flags: row.property_flags,
+        bit: 0x2000,
+      ),
       weapon: weapon_of(base.weapon_slot),
       caster_death:,
       global_cooldown:,

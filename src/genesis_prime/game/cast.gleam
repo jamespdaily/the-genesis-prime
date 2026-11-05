@@ -1897,6 +1897,21 @@ fn nodes_ended(
   todo as "shape commit: the end of a lingering cast's nodes"
 }
 
+/// A unit the caster's client shows is removed from it (a 0x355 for a unit it was
+/// shown): the client destroys that unit's nodes then (`0x1404550d0`), so the
+/// unit's nodes are dropped from the live and lingering casts; a lingering cast left
+/// with no node sends its finish and is dropped. This bounds the casts that linger,
+/// so the caster's cast ids (`mint`) cannot run out. The body returns the state
+/// unchanged and writes nothing: callers hold the same signature the rule will
+/// keep.
+pub fn unit_removed(
+  cast cast: State,
+  unit_id unit_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  #(cast, [])
+}
+
 /// The player left the world with casts live: every timer is cancelled and
 /// nothing is written.
 pub fn left(cast cast: State) -> #(State, List(Effect)) {

@@ -48,6 +48,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     cast_bar: spell_plan.HidesCastBar,
     free_while_live: False,
     ignores_casting: False,
+    longer_of_delay_and_duration: False,
     weapon: NoWeaponNeeded,
     caster_death: spell_plan.CannotBeDead,
     global_cooldown: GlobalCooldown(

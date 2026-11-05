@@ -91,14 +91,14 @@ pub type LastingRow {
 }
 
 /// The life of a node from the effects a go lists for its unit: each effect's
-/// delay plus durationTime, counted from `go_ms`, the larger of the two for a
-/// spell whose `property_flags` have bit 0x2000 (the spell record's flag
-/// 0x10000000, `0x140568540`); `UntilRemoved` when any effect has flags bit 2; the
-/// longest effect decides; `NoLife` when none has a lifetime
-/// (`opcode.0x7f4.effect_time`).
+/// delay plus durationTime, counted from `go_ms`, the larger of the two instead of
+/// their sum when `longer_of_delay_and_duration` (a spell whose propertyFlags have
+/// bit 0x2000, the spell record's flag 0x10000000, `0x140568540`);
+/// `UntilRemoved` when any effect has flags bit 2; the longest effect decides;
+/// `NoLife` when none has a lifetime (`opcode.0x7f4.effect_time`).
 pub fn life_of(
   effects effects: List(LastingRow),
-  property_flags property_flags: Int,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
   go_ms go_ms: Int,
 ) -> Life {
   todo as "shape commit: the life of a node"
