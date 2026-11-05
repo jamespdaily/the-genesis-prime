@@ -93,6 +93,16 @@ class SizeBoundTest(unittest.TestCase):
         self.assertIn("lines cut", fitted)
 
 
+class GlobalAddressesTest(unittest.TestCase):
+    def test_each_global_is_listed_once_in_order_of_first_use(self):
+        # the world global 0x140c65898, the clock 0x140c636a8 and the network object 0x140c65808 (fact file records)
+        text = "if (DAT_140c65898 == 0) { x = DAT_140c636a8; y = DAT_140c65898; z = PTR_DAT_140c65808; }"
+        self.assertEqual(client_trace.global_addresses(text), [0x140C65898, 0x140C636A8, 0x140C65808])
+
+    def test_other_names_are_not_globals(self):
+        self.assertEqual(client_trace.global_addresses("FUN_140093580(local_28, PTR_FUN_140b69230); undefined DAT_1;"), [])
+
+
 class RegistrationTest(unittest.TestCase):
     def test_a_message_the_client_receives_has_a_reader_and_no_writer(self):
         # saved C of 0x14006c290, line 662

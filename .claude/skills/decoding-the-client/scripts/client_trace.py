@@ -8,8 +8,8 @@ the saved C current (decompiled.py check). It reads only: the saved C (decompile
 
 The input is an address (0x hex from 0x140000000 up, a function start or a called leaf), a function name as the
 saved C carries it, or an opcode (0x hex up to 0xFFFF, or decimal). --depth is 1 to 4, default 1: how many
-levels of callers and callees are listed, and, from 2, whether the bodies of the callees one level down are
-included. --max-chars is the size bound, default 24000: everything the report prints fits in it.
+levels of callers and callees are listed, and, from 2, whether the bodies of the first six callees (by call
+site) are included. --max-chars is the size bound, default 24000: everything the report prints fits in it.
 
 A function prints, in this order:
     facts       the fact file's record keyed to it (statement, grade, gap), the records keyed to the callers and
@@ -19,6 +19,9 @@ A function prints, in this order:
     calls       its direct callees (a call or a tail jmp) with each call site, the imports, and the sites that
                 go through a pointer in memory; then their callees to --depth
     strings     the string literals of its saved C
+    globals     each global data address its C names that some other function also refers to (a flag or a
+                setting it shares), fewest users first, with those functions; the index finds them, so no
+                search of the saved C is needed
     body        its saved C, cut to what is left of the bound, with the number of lines cut
 Not listed, because the index does not hold them: a call through a register or a virtual call
 (`(**(code **)(*p + 0x28))(...)`): they are in the body. The client's C names no table columns; a column read
@@ -75,13 +78,17 @@ MAX_SENDERS = 4
 MAX_CALLEE_BODIES = 6
 MAX_OTHER_USES = 6
 MAX_DATA_REFERENCES = 8
+MAX_GLOBALS = 12
+MAX_GLOBAL_USERS = 6
 FIRST_RECORD_CHARS = 1500
 OTHER_RECORD_CHARS = 240
 COMPACT_CALLERS = 6
 COMPACT_CALLEES = 12
 COMPACT_FACTS = 4
+SHARED_GLOBAL_LIMIT = 40
 
 _ADDRESS = re.compile(r"0x14[0-9a-f]{7}(?![0-9a-f])")
+_GLOBAL = re.compile(r"\b(?:PTR_)?DAT_(14[0-9a-f]{7})\b")
 _STRING = re.compile(r'L?"(?:[^"\\\n]|\\.)*"')
 _REGISTRATION = re.compile(
     r"\(\*\*\(code \*\*\)\*\w+\)\(\w+,(0x[0-9a-f]+|\d+),(0x[0-9a-f]+|\d+),(\w+),(\w+),(\w+),\w+\);"
@@ -397,6 +404,11 @@ class Client:
             raise Refused(str(refused)) from refused
         return subject.value
 
+    def global_users(self, address: int) -> list[int]:
+        """The functions whose code refers to the data at address (`mov`, `lea` or compare through rip), by address."""
+        users = {self.index.pe.root_of(r.source) for r in self.index.refs_to(address) if r.kind in ("rip-data", "rip-lea")}
+        return sorted(u for u in users if u is not None)
+
     def callers(self, function: int) -> dict[int, list[int]]:
         return {caller: sites for caller, sites in self.index.callers(function).items() if caller != function}
 
@@ -534,6 +546,9 @@ def function_parts(client: Client, function: int, depth: int, registrations: lis
         if strings and not compact:
             clipped = [s if len(s) <= 80 else s[:77] + '..."' for s in strings[:MAX_STRINGS]]
             parts.append(Part("strings: " + "  ".join(clipped) + ("  and %d more" % (len(strings) - MAX_STRINGS) if len(strings) > MAX_STRINGS else "")))
+        shared = _shared_globals(client, function, text)
+        if shared and not compact:
+            parts.append(Part("\n".join(["globals the body refers to that other functions refer to too (fewest users first):"] + shared)))
         bodies = [(function, text)]
         if depth >= 2 and not compact:
             by_site = sorted(client.callees(function).items(), key=lambda item: item[1][0])
@@ -546,6 +561,30 @@ def function_parts(client: Client, function: int, depth: int, registrations: lis
     return parts
 
 
+def global_addresses(text: str) -> list[int]:
+    """The addresses of the global data (`DAT_<address>`, `PTR_DAT_<address>`) a function's saved C names, each
+    once, in order of first use."""
+    return list(dict.fromkeys(int(found, 16) for found in _GLOBAL.findall(text)))
+
+
+def _shared_globals(client: Client, function: int, text: str) -> list[str]:
+    """One line per global data address in the C that some other function also refers to, the ones with the
+    fewest other users first: those are a flag or a setting the function shares with a few others. A global
+    with more than SHARED_GLOBAL_LIMIT other users is a general object and is left out."""
+    found = []
+    for address in global_addresses(text):
+        others = [u for u in client.global_users(address) if u != function]
+        if others and len(others) <= SHARED_GLOBAL_LIMIT:
+            found.append((len(others), address, others))
+    lines = []
+    for count, address, others in sorted(found)[:MAX_GLOBALS]:
+        shown = ", ".join(client.label(u) for u in others[:MAX_GLOBAL_USERS])
+        lines.append("  DAT_%x: %d other function(s): %s%s" % (address, count, shown, ", and %d more" % (count - MAX_GLOBAL_USERS) if count > MAX_GLOBAL_USERS else ""))
+    if len(found) > MAX_GLOBALS:
+        lines.append("  and %d more globals" % (len(found) - MAX_GLOBALS))
+    return lines
+
+
 # ---------------------------------------------------------------- one message
 
 def dispatcher_addresses(client: Client, extra: list[int]) -> list[int]:
@@ -553,8 +592,9 @@ def dispatcher_addresses(client: Client, extra: list[int]) -> list[int]:
     return sorted(set(named) | set(extra))
 
 
-def opcode_parts(client: Client, opcode: int, depth: int, extra_dispatchers: list[int]) -> list[Part]:
-    """The report on one message: its facts, registration, dispatch cases and uses, then its functions."""
+def opcode_parts(client: Client, opcode: int, depth: int, extra_dispatchers: list[int]) -> tuple[list[Part], bool]:
+    """The report on one message: its facts, registration, dispatch cases and uses, then its functions; and
+    whether the client holds anything about the message."""
     parts: list[Part] = [Part("== message 0x%X (%d)" % (opcode, opcode))]
     records = client.facts.for_opcode(opcode)
     seen = {r.key for r in records}
@@ -615,7 +655,7 @@ def opcode_parts(client: Client, opcode: int, depth: int, extra_dispatchers: lis
     for function in dict.fromkeys(subjects):
         if client.saved_c(function) is not None or client.is_function(function):
             parts += function_parts(client, function, depth, registrations, compact=True, seen=seen)
-    return parts
+    return parts, bool(records or mine or blocks or uses)
 
 
 def _address_of(client: Client, name: str | None) -> int | None:
@@ -644,13 +684,14 @@ def open_client(env) -> Client:
 def run(client: Client, text: str, depth: int, max_chars: int, dispatchers: list[str], out) -> int:
     subject = parse_subject(text)
     extra = [client.resolve(parse_subject(d)) for d in dispatchers]
+    found = True
     if subject.kind == "opcode":
-        parts = opcode_parts(client, subject.value, depth, extra)
+        parts, found = opcode_parts(client, subject.value, depth, extra)
     else:
         function = client.resolve(subject)
         parts = function_parts(client, function, depth, read_registrations(client.directory))
     print(fit(parts, max_chars), file=out)
-    return 0
+    return 0 if found else 1
 
 
 def _bounded(low: int, high: int):
