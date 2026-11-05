@@ -151,6 +151,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
+import gleam/set.{type Set}
 import gleam/string
 
 /// How a spell is cast (`Spell.CodeEnumCastMethod`, Spell4Base.castMethod).
@@ -686,6 +687,8 @@ type Sources {
     thresholds: Dict(Int, List(spell4_thresholds.Spell4Thresholds)),
     /// The spell group ids of each Spell4GroupList row, by the row's id.
     group_lists: Dict(Int, List(Int)),
+    /// Every spell group id some Spell4GroupList row holds.
+    known_groups: Set(Int),
   )
 }
 
@@ -698,12 +701,14 @@ type Phase {
 /// derivation's body, and the function a test of a missing row or a cycle runs
 /// on planted tables.
 pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
+  let group_lists = group_lists_by_id(tables:)
   let sources =
     Sources(
       effects: effects_by_spell(tables:),
       phases: phases_by_owner(tables:),
       thresholds: thresholds_by_parent(tables:),
-      group_lists: group_lists_by_id(tables:),
+      group_lists:,
+      known_groups: set.from_list(list.flatten(dict.values(group_lists))),
     )
   spell_level.all(tables)
   |> list.filter(loadout.is_level_one_ability)
@@ -889,7 +894,11 @@ fn spell_of(
           })
         OnCaster -> #([], child.gains)
       }
-      use condition <- result.try(condition_of(tables:, effect:))
+      use condition <- result.try(condition_of(
+        tables:,
+        effect:,
+        data_bits06_names_a_gate: True,
+      ))
       Ok(Proxy(
         effect_id: Spell4EffectsId(effect.id),
         delay_ms: effect.delay_time,
@@ -1034,7 +1043,11 @@ fn lasting_of(
   })
   |> list.try_map(fn(effect) {
     use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
-    use condition <- result.try(applied_when(tables:, effect:))
+    use condition <- result.try(condition_of(
+      tables:,
+      effect:,
+      data_bits06_names_a_gate: False,
+    ))
     Ok(Lasting(
       effect_id: Spell4EffectsId(effect.id),
       phase_flags: effect.phase_flags,
@@ -1082,7 +1095,11 @@ fn removes_of(
           data_bits04: effect.data_bits04,
         ))
     })
-    use condition <- result.try(applied_when(tables:, effect:))
+    use condition <- result.try(condition_of(
+      tables:,
+      effect:,
+      data_bits06_names_a_gate: False,
+    ))
     Ok(ForceRemove(
       effect_id: Spell4EffectsId(effect.id),
       phase_flags: effect.phase_flags,
@@ -1126,17 +1143,17 @@ fn selector_of(
   let named = effect.data_bits01
   case effect.data_bits00 {
     1 ->
-      case list.any(dict.values(sources.group_lists), list.contains(_, named)) {
+      case set.contains(sources.known_groups, named) {
         True -> Ok(lasting.Group(spell_group_id: named))
         False -> Error(NoRow(table: "Spell4GroupList", id: named))
       }
     2 ->
       spell4.get(tables:, id: Spell4Id(named))
-      |> result.map(fn(_) { lasting.Spell(spell4_id: Spell4Id(named)) })
+      |> result.replace(lasting.Spell(spell4_id: Spell4Id(named)))
       |> result.replace_error(NoRow(table: "Spell4", id: named))
     3 ->
       spell4_base.get(tables:, id: Spell4BaseId(named))
-      |> result.map(fn(_) { lasting.Base(spell4_base_id: Spell4BaseId(named)) })
+      |> result.replace(lasting.Base(spell4_base_id: Spell4BaseId(named)))
       |> result.replace_error(NoRow(table: "Spell4Base", id: named))
     selector ->
       Error(ForceRemoveSelectorNotRead(
@@ -1144,26 +1161,6 @@ fn selector_of(
         effect_id: effect.id,
         selector:,
       ))
-  }
-}
-
-/// When a Fluff or SpellForceRemove effect applies: its caster apply prerequisite
-/// passes against the caster, and a target apply prerequisite leaves it unapplied
-/// (the server checks no target-side prerequisite). Unlike a Proxy's, its dataBits06
-/// is no prerequisite.
-fn applied_when(
-  tables tables: table_store.Tables,
-  effect effect: spell4_effects.Spell4Effects,
-) -> Result(Condition, PlanError) {
-  case
-    effect.prerequisite_id_target_apply,
-    effect.prerequisite_id_caster_apply
-  {
-    0, 0 -> Ok(Always)
-    0, caster ->
-      prerequisite_of(tables:, id: caster)
-      |> result.map(fn(gate) { GatedOnCaster(gates: [gate]) })
-    target, _ -> Ok(GatedOnTarget(prerequisite_id: PrerequisiteId(target)))
   }
 }
 
@@ -1245,6 +1242,22 @@ fn gain_slot_of(
   }
 }
 
+/// The rows that apply in phase `phase`: bit n of their `phase_flags` is phase n (every
+/// bit for -1), and their tag holds for the points the cast spent
+/// (genesis_prime/game/spend `applies`).
+fn in_phase(
+  rows rows: List(row),
+  phase_flags phase_flags: fn(row) -> Int,
+  tag tag: fn(row) -> spend.Tag,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(row) {
+  list.filter(rows, fn(row) {
+    has_flag(flags: phase_flags(row), bit: int.bitwise_shift_left(1, phase))
+    && spend.applies(tag: tag(row), spent:)
+  })
+}
+
 /// The gains of the spell given at its go of phase `phase`, those whose tag holds
 /// for the points the cast spent (genesis_prime/game/spend `applies`).
 pub fn gains_in_phase(
@@ -1252,10 +1265,13 @@ pub fn gains_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(Gain) {
-  list.filter(spell.gains, fn(gain) {
-    has_flag(flags: gain.phase_flags, bit: int.bitwise_shift_left(1, phase))
-    && spend.applies(tag: gain.tag, spent:)
-  })
+  in_phase(
+    rows: spell.gains,
+    phase_flags: fn(gain) { gain.phase_flags },
+    tag: fn(gain) { gain.tag },
+    phase:,
+    spent:,
+  )
 }
 
 /// Whether the client shows a cast bar for the spell, by its method
@@ -1450,19 +1466,27 @@ fn target_of(
   }
 }
 
-/// A Proxy's condition: a target apply prerequisite, which the server does not
-/// check, else its caster apply prerequisite and the one its dataBits06 names
-/// (`Spell4Effects.effectType.26.dataBits06`: a reading of the rows, since the
-/// client applies no Proxy itself), both checked against the caster. A prerequisite
+/// An effect's condition: a target apply prerequisite, which the server does not
+/// check, else its caster apply prerequisite and, for a Proxy (`names_a_gate`), the one
+/// its dataBits06 names (`Spell4Effects.effectType.26.dataBits06`: a reading of the
+/// rows, since the client applies no Proxy itself), checked against the caster. The
+/// dataBits06 of a Fluff or SpellForceRemove effect is no prerequisite. A prerequisite
 /// the table lacks fails the load.
 fn condition_of(
   tables tables: table_store.Tables,
   effect effect: spell4_effects.Spell4Effects,
+  data_bits06_names_a_gate names_a_gate: Bool,
 ) -> Result(Condition, PlanError) {
   case effect.prerequisite_id_target_apply {
     0 -> {
       use gates <- result.try(
-        [effect.prerequisite_id_caster_apply, effect.data_bits06]
+        [
+          effect.prerequisite_id_caster_apply,
+          ..case names_a_gate {
+            True -> [effect.data_bits06]
+            False -> []
+          }
+        ]
         |> list.filter(fn(id) { id != 0 })
         |> list.try_map(fn(id) { prerequisite_of(tables:, id:) }),
       )
@@ -1859,10 +1883,13 @@ pub fn lasting_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(Lasting) {
-  list.filter(spell.lasting, fn(lasting) {
-    has_flag(flags: lasting.phase_flags, bit: int.bitwise_shift_left(1, phase))
-    && spend.applies(tag: lasting.tag, spent:)
-  })
+  in_phase(
+    rows: spell.lasting,
+    phase_flags: fn(lasting) { lasting.phase_flags },
+    tag: fn(lasting) { lasting.tag },
+    phase:,
+    spent:,
+  )
 }
 
 /// The SpellForceRemove effects of the spell that apply in phase `phase`, those
@@ -1872,10 +1899,13 @@ pub fn removes_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(ForceRemove) {
-  list.filter(spell.removes, fn(remove) {
-    has_flag(flags: remove.phase_flags, bit: int.bitwise_shift_left(1, phase))
-    && spend.applies(tag: remove.tag, spent:)
-  })
+  in_phase(
+    rows: spell.removes,
+    phase_flags: fn(remove) { remove.phase_flags },
+    tag: fn(remove) { remove.tag },
+    phase:,
+    spent:,
+  )
 }
 
 /// The Proxies of the spell that fire in phase `phase`, those whose tag holds for
@@ -1885,10 +1915,13 @@ pub fn proxies_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(Proxy) {
-  list.filter(spell.proxies, fn(proxy) {
-    has_flag(flags: proxy.phase_flags, bit: int.bitwise_shift_left(1, phase))
-    && spend.applies(tag: proxy.tag, spent:)
-  })
+  in_phase(
+    rows: spell.proxies,
+    phase_flags: fn(proxy) { proxy.phase_flags },
+    tag: fn(proxy) { proxy.tag },
+    phase:,
+    spent:,
+  )
 }
 
 /// The spellGroupId00 to 31 columns of a Spell4GroupList row, in order.

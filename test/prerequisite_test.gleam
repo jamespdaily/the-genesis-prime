@@ -79,20 +79,13 @@ fn bare() -> Subject {
   )
 }
 
-fn check_of(
-  row: prerequisite_table.Prerequisite,
-  subject: Subject,
-) -> prerequisite.Verdict {
-  prerequisite.check(prerequisite: prerequisite.of_row(row:), subject:)
-}
-
 fn check(
   row: prerequisite_table.Prerequisite,
   under: List(Int),
 ) -> prerequisite.Verdict {
-  check_of(
-    row,
-    Subject(
+  prerequisite_support.check(
+    row: row,
+    subject: Subject(
       ..bare(),
       under: list.map(under, fn(spell4_id) {
         lasting.Held(spell4_id: Spell4Id(spell4_id), caster: 0, count: 0)
@@ -283,19 +276,25 @@ pub fn type_28_passes_in_combat_by_comparison_1_and_out_of_it_by_comparison_2_te
     prerequisite_support.row(id: 903, flags: 0, conditions: [#(28, code, 0, 0)])
   }
   assert #(
-      check_of(comparison(1), in_combat),
-      check_of(comparison(2), in_combat),
+      prerequisite_support.check(row: comparison(1), subject: in_combat),
+      prerequisite_support.check(row: comparison(2), subject: in_combat),
     )
     == #(Passes, Fails)
     as "Prerequisite.prerequisiteTypeId.28: in combat, comparison 1 passes and 2 fails"
-  assert #(check_of(comparison(1), bare()), check_of(comparison(2), bare()))
+  assert #(
+      prerequisite_support.check(row: comparison(1), subject: bare()),
+      prerequisite_support.check(row: comparison(2), subject: bare()),
+    )
     == #(Fails, Passes)
     as "out of combat the reverse"
-  assert check_of(comparison(3), in_combat) == Fails
+  assert prerequisite_support.check(row: comparison(3), subject: in_combat)
+    == Fails
     as "any other comparison fails"
-  assert check_of(
-      prerequisite_support.row(id: 1, flags: 0, conditions: [#(28, 1, 24, 7)]),
-      in_combat,
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 1, flags: 0, conditions: [
+        #(28, 1, 24, 7),
+      ]),
+      subject: in_combat,
     )
     == Passes
     as "the objectId and the value are not read (24 conditions hold an objectId and 26 a value)"
@@ -305,7 +304,12 @@ pub fn type_37_compares_its_roll_with_the_value_by_the_comparison_test() -> Nil 
   use <- owned_test.run(5000)
   let chance =
     prerequisite_support.row(id: 4585, flags: 0, conditions: [#(37, 6, 0, 50)])
-  let rolled = fn(roll) { check_of(chance, Subject(..bare(), rolls: [roll])) }
+  let rolled = fn(roll) {
+    prerequisite_support.check(
+      row: chance,
+      subject: Subject(..bare(), rolls: [roll]),
+    )
+  }
   assert #(rolled(49), rolled(50), rolled(51)) == #(Passes, Passes, Fails)
     as "row 4585: comparison 6, value 50, so a roll of 50 or less passes: a chance of value / 100"
   assert prerequisite.rolls_needed(prerequisite: prerequisite.of_row(
@@ -329,11 +333,20 @@ pub fn each_type_37_condition_takes_a_roll_of_its_own_in_order_test() -> Nil {
     ])
   assert prerequisite.rolls_needed(prerequisite: prerequisite.of_row(row: both))
     == 2
-  assert check_of(both, Subject(..bare(), rolls: [10, 95])) == Passes
+  assert prerequisite_support.check(
+      row: both,
+      subject: Subject(..bare(), rolls: [10, 95]),
+    )
+    == Passes
     as "Prerequisite.prerequisiteTypeId.37: the client draws each time a condition is tested: 10 is at most 50 and 95 at least 90"
-  assert check_of(both, Subject(..bare(), rolls: [95, 10])) == Fails
+  assert prerequisite_support.check(
+      row: both,
+      subject: Subject(..bare(), rolls: [95, 10]),
+    )
+    == Fails
     as "the first roll is the first condition's"
-  assert check_of(both, bare()) == NotRead(prerequisite_type: 37)
+  assert prerequisite_support.check(row: both, subject: bare())
+    == NotRead(prerequisite_type: 37)
     as "no roll given is a roll the server does not have"
 }
 
@@ -364,20 +377,26 @@ pub fn type_71_compares_the_vitals_percentage_of_its_maximum_test() -> Nil {
     ])
   }
   assert list.map([1, 2, 3, 4, 5, 6], fn(code) {
-      check_of(comparison(code), held(50.0, 100.0))
+      prerequisite_support.check(
+        row: comparison(code),
+        subject: held(50.0, 100.0),
+      )
     })
     == [Passes, Fails, Fails, Passes, Fails, Passes]
     as "0x1404a4e30: 50 of 100 is 50 percent, equal to the value 50 under 1, 4 and 6 and under no other"
-  assert check_of(
-      prerequisite_support.row(id: 1, flags: 0, conditions: [#(71, 3, 6, 33)]),
-      held(1.0, 3.0),
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 1, flags: 0, conditions: [
+        #(71, 3, 6, 33),
+      ]),
+      subject: held(1.0, 3.0),
     )
     == Passes
     as "1 of 3 is 33.333332 percent in 32-bit floats, above 33"
-  assert check_of(comparison(1), held(0.0, 0.0)) == Passes
+  assert prerequisite_support.check(row: comparison(1), subject: held(0.0, 0.0))
+    == Passes
     as "0x1404a4e30: 0 of 0 is not a number, which counts as equal"
   assert list.map([2, 3, 4, 5, 6], fn(code) {
-      check_of(comparison(code), held(0.0, 0.0))
+      prerequisite_support.check(row: comparison(code), subject: held(0.0, 0.0))
     })
     == [Fails, Fails, Fails, Fails, Fails]
     as "and fails every other comparison"
@@ -395,11 +414,14 @@ pub fn type_73_compares_the_current_value_cut_toward_zero_test() -> Nil {
       #(73, code, 6, value),
     ])
   }
-  assert check_of(comparison(1, 99), held) == Passes
+  assert prerequisite_support.check(row: comparison(1, 99), subject: held)
+    == Passes
     as "Prerequisite.prerequisiteTypeId.73: 99.9 is cut to 99, equal to 99"
-  assert check_of(comparison(1, 100), held) == Fails
+  assert prerequisite_support.check(row: comparison(1, 100), subject: held)
+    == Fails
     as "it is not rounded to 100"
-  assert check_of(comparison(4, 100), held) == Fails
+  assert prerequisite_support.check(row: comparison(4, 100), subject: held)
+    == Fails
     as "row 11153's comparison 4 on 100: 99 is not at least 100"
 }
 
@@ -414,7 +436,7 @@ pub fn type_71_with_something_held_of_a_zero_maximum_is_beyond_every_value_test(
     prerequisite_support.row(id: 1, flags: 0, conditions: [#(71, code, 6, 100)])
   }
   assert list.map([1, 2, 3, 4, 5, 6], fn(code) {
-      check_of(comparison(code), held)
+      prerequisite_support.check(row: comparison(code), subject: held)
     })
     == [Fails, Passes, Passes, Passes, Fails, Fails]
     as "0x1404a4e30: 5 of 0 is 500 over 0, positive infinity in 32-bit floats, above the value 100 under 2, 3 and 4 and under no other"
@@ -431,25 +453,34 @@ pub fn type_179_compares_the_units_difficulty_with_the_object_id_not_the_value_t
     ])
   }
   assert list.map([1, 2, 3, 4, 5, 6], fn(code) {
-      check_of(comparison(code), of_difficulty(6))
+      prerequisite_support.check(
+        row: comparison(code),
+        subject: of_difficulty(6),
+      )
     })
     == [Passes, Fails, Fails, Passes, Fails, Passes]
     as "0x14049eeb0: difficulty 6 against the objectId 6 is equal, at least and at most"
   assert list.map([1, 2, 3, 4, 5, 6], fn(code) {
-      check_of(comparison(code), of_difficulty(7))
+      prerequisite_support.check(
+        row: comparison(code),
+        subject: of_difficulty(7),
+      )
     })
     == [Fails, Passes, Passes, Passes, Fails, Fails]
     as "difficulty 7 is above the objectId 6, whatever the value 99 holds"
   assert list.map([0, 7], fn(code) {
-      check_of(comparison(code), of_difficulty(6))
+      prerequisite_support.check(
+        row: comparison(code),
+        subject: of_difficulty(6),
+      )
     })
     == [Fails, Fails]
     as "0x1404a2090: a comparison other than 1 to 6 fails"
-  assert check_of(
-      prerequisite_support.row(id: 30_527, flags: 0, conditions: [
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 30_527, flags: 0, conditions: [
         #(179, 4, 7, 0),
       ]),
-      of_difficulty(6),
+      subject: of_difficulty(6),
     )
     == Fails
     as "row 30527 (at least 7) fails a creature of difficulty 6"
@@ -457,11 +488,11 @@ pub fn type_179_compares_the_units_difficulty_with_the_object_id_not_the_value_t
 
 pub fn type_179_with_no_difficulty_held_is_not_read_test() -> Nil {
   use <- owned_test.run(5000)
-  assert check_of(
-      prerequisite_support.row(id: 30_526, flags: 0, conditions: [
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 30_526, flags: 0, conditions: [
         #(179, 6, 6, 0),
       ]),
-      bare(),
+      subject: bare(),
     )
     == NotRead(prerequisite_type: 179)
     as "a subject with no unit difficulty, a player's, leaves type 179 to the client"
@@ -469,24 +500,28 @@ pub fn type_179_with_no_difficulty_held_is_not_read_test() -> Nil {
 
 pub fn a_vital_the_server_does_not_hold_is_not_read_test() -> Nil {
   use <- owned_test.run(5000)
-  assert check_of(
-      prerequisite_support.row(id: 1, flags: 0, conditions: [#(73, 1, 15, 0)]),
-      bare(),
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 1, flags: 0, conditions: [
+        #(73, 1, 15, 0),
+      ]),
+      subject: bare(),
     )
     == NotRead(prerequisite_type: 73)
     as "no vital is held, so type 73 cannot read vital 15 (Focus), which no rule of the server holds"
-  assert check_of(
-      prerequisite_support.row(id: 1, flags: 0, conditions: [#(71, 1, 1, 100)]),
-      bare(),
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 1, flags: 0, conditions: [
+        #(71, 1, 1, 100),
+      ]),
+      subject: bare(),
     )
     == NotRead(prerequisite_type: 71)
     as "type 71 of Health with none held"
-  assert check_of(
-      prerequisite_support.row(id: 1, flags: 1, conditions: [
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 1, flags: 1, conditions: [
         #(73, 1, 15, 0),
         #(28, 2, 0, 0),
       ]),
-      bare(),
+      subject: bare(),
     )
     == Passes
     as "under OR a passing condition decides the row whatever an unread vital would give"

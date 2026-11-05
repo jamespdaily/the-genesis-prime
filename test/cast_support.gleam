@@ -20,6 +20,9 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
+import genesis_prime/message/spell_finished
+import genesis_prime/message/spell_stack_removed
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, ConnectionId, Now,
 }
@@ -420,6 +423,25 @@ pub fn cancelled(
   )
 }
 
+/// The client's 0x801 at the time, taken by the rule with these plans.
+pub fn cancelled_in(
+  plans plans: Plans,
+  state state: State,
+  cast_id cast_id: Int,
+  reason reason: CastResult,
+  bit bit: Int,
+  at ms: Int,
+) -> Result(#(State, List(Effect)), cast.Refusal) {
+  cast.take(
+    cast: state,
+    message: cast.Cancelled,
+    body: cancel_body(cast_id:, reason:, bit:),
+    caster: caster(),
+    plans:,
+    now: at(ms:),
+  )
+}
+
 /// What the client is written, in order.
 pub fn writes(effects effects: List(Effect)) -> List(Frame) {
   list.filter_map(effects, fn(effect) {
@@ -433,6 +455,53 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.Pay(..)
       | cast.Gain(..) -> Error(Nil)
     }
+  })
+}
+
+/// The frames of the effects written to the client that carry this message id.
+pub fn frames_of(
+  message_id message_id: Int,
+  effects effects: List(Effect),
+) -> List(Frame) {
+  list.filter(writes(effects:), fn(frame) { frame.message_id == message_id })
+}
+
+/// The cast id of a 0x7fe frame.
+pub fn finished_cast_id(frame: Frame) -> Int {
+  let assert Ok(finished) = spell_finished.decode(frame.body)
+    as "a 0x7fe the rule wrote decodes"
+  finished.cast_id
+}
+
+/// The cast ids of the 0x7fe frames among the frames, in order.
+pub fn finished_ids(frames: List(Frame)) -> List(Int) {
+  list.filter(frames, fn(frame) {
+    frame.message_id == spell_finished.message_id
+  })
+  |> list.map(finished_cast_id)
+}
+
+/// The 0x811 frames among the frames, each as the cast id and the unit ids.
+pub fn removed_targets(frames: List(Frame)) -> List(#(Int, List(Int))) {
+  list.filter(frames, fn(frame) {
+    frame.message_id == spell_targets_removed.message_id
+  })
+  |> list.map(fn(frame) {
+    let assert Ok(removed) = spell_targets_removed.decode(frame.body)
+      as "a 0x811 the rule wrote decodes"
+    #(removed.cast_id, removed.unit_ids)
+  })
+}
+
+/// The 0x813 frames among the frames, each as the cast id and the unit id.
+pub fn removed_stacks(frames: List(Frame)) -> List(#(Int, Int)) {
+  list.filter(frames, fn(frame) {
+    frame.message_id == spell_stack_removed.message_id
+  })
+  |> list.map(fn(frame) {
+    let assert Ok(removed) = spell_stack_removed.decode(frame.body)
+      as "a 0x813 the rule wrote decodes"
+    #(removed.cast_id, removed.unit_id)
   })
 }
 

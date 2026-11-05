@@ -71,6 +71,7 @@ import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4_conditions
+import genesis_prime/table/spell4_effects
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
@@ -129,6 +130,30 @@ pub fn shared_with_row_43_for_the_dead() -> store.Tables {
         #(1, 225),
         #(4, 0),
         #(43, 1248),
+      ]),
+    ))
+  })
+}
+
+/// The planted tables with a Fluff effect (type 17, aimed at the units the area
+/// strikes, flags bit 2: until removed) added to Paralytic Surge 42352: test data, since
+/// no starting ability's planted effect puts a lasting effect on a creature. Loaded once
+/// under a key of its own.
+pub fn shared_with_a_lasting_effect() -> store.Tables {
+  database_support.once("character_tables_lasting_effect", fn() {
+    load_files(files_replacing(
+      schema: spell4_effects.schema,
+      rows: spell_tables.sorted_by_id([
+        planted_table.row(spell4_effects.schema, [
+          #("ID", Integer(96_126)),
+          #("spellId", Integer(42_352)),
+          #("targetFlags", Integer(4)),
+          #("effectType", Integer(17)),
+          #("phaseFlags", Integer(-1)),
+          #("flags", Integer(2)),
+          #("orderIndex", Integer(1)),
+        ]),
+        ..novice_tables.spell4_effects_rows()
       ]),
     ))
   })

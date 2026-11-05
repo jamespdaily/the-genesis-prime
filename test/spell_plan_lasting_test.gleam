@@ -434,7 +434,7 @@ pub fn power_charge_holds_its_fluff_and_80383_removes_3_stacks_of_it_test() -> N
     ]
     as "Spell4Effects 96819: type 17, targetFlags 1, flags 2 (trace §4)"
   assert power_charge.stack == Stack(group_id: 1450, cap: 2)
-    as "Spell4 42569 names stack group 1450, whose stackCap is 2 (Spell4StackGroup.server_rule)"
+    as "Spell4 42569 names stack group 1450, whose stackCap is 2 (Spell4StackGroup.stackCap)"
   let assert Ok(actuator_build) =
     list.find(tree, fn(spell) { spell.spell4_id == Spell4Id(80_383) })
     as "80383 is in Discharge's tree"

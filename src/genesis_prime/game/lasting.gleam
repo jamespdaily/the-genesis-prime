@@ -40,12 +40,12 @@
 ////   `opcode.0x813`, `Spell4Effects.effectType.80`). The oldest first and the
 ////   choice of 0x813 for a stack are the server's: no client code reads a type 80
 ////   row.
-//// - **Stacking is the server's rule** (Jim's): each caster keeps at most the
+//// - **Stacking is the server's rule** (Jim's decision): each caster keeps at most the
 ////   stack group's cap of its own casts of the group on a unit, and a new cast at
 ////   the cap takes that caster's oldest off the unit with 0x811, as a removal does;
 ////   a cap of 0 keeps one cast per spell. The client reads the group only at load
-////   and in tooltips (`Spell4.spell4StackGroupId`, `Spell4StackGroup.stackCap`,
-////   `Spell4StackGroup.server_rule`).
+////   and in tooltips, and the rows give the cap but no rule for a cast at it
+////   (`Spell4.spell4StackGroupId`, `Spell4StackGroup.stackCap`).
 //// - **A cast left with no node** gets the finish 0x7fe after its 0x811 when its
 ////   cast method is 1, 3, 8 or 10, since the client keeps such a cast
 ////   (`opcode.0x811`).
@@ -239,10 +239,10 @@ fn oldest_first(
 /// when it gives the unit a node with life, from `holds`, the caster's own live and
 /// lingering holds on that unit: with a cap of 1 or more, the holds of the same
 /// stack group beyond the cap less one, oldest `started_ms` first, each a
-/// `NodeOff`; with a cap of 0, those of the same spell. This is Jim's server rule:
-/// the client reads a stack group only at load and in tooltips, and the rows give
-/// the cap but no rule for a cast at it (`Spell4.spell4StackGroupId`,
-/// `Spell4StackGroup.stackCap`, `Spell4StackGroup.server_rule`).
+/// `NodeOff`; with a cap of 0, those of the same spell. This is Jim's decision, the
+/// server's rule: the client reads a stack group only at load and in tooltips, and the
+/// rows give the cap but no rule for a cast at it (`Spell4.spell4StackGroupId`,
+/// `Spell4StackGroup.stackCap`).
 pub fn pushed_off(
   holds holds: List(Hold),
   spell4_id spell4_id: Spell4Id,

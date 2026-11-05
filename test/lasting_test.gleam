@@ -10,7 +10,7 @@
 //// - `Spell4Effects.effectType.80`: the selector (1 a spell group, 2 a Spell4, 3 a
 ////   Spell4Base) and the count of stacks removed; the oldest first is the server's
 ////   choice.
-//// - Jim's stacking rule (`Spell4StackGroup.server_rule`, `Spell4StackGroup.stackCap`):
+//// - Jim's decision on stacking (`Spell4StackGroup.stackCap`):
 ////   a caster keeps at most the group's cap of its own casts of the group on a
 ////   unit, and a new one at the cap takes the oldest off; a cap of 0 keeps one per
 ////   spell.

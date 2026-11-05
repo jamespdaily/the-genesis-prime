@@ -24,7 +24,6 @@ import genesis_prime/message/cast_result.{
 }
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
-import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/step.{ConnectionId, LogDebug}
@@ -350,10 +349,7 @@ fn cast_id_of(frame: Frame) -> Int {
       let assert Ok(go) = spell_go.decode(frame.body)
       go.cast_id
     }
-    _ -> {
-      let assert Ok(finished) = spell_finished.decode(frame.body)
-      finished.cast_id
-    }
+    _ -> support.finished_cast_id(frame)
   }
 }
 

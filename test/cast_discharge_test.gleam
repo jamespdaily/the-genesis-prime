@@ -18,7 +18,6 @@ import genesis_prime/game/spell_plan.{type Plans, Spell}
 import genesis_prime/message/spell_effect_info.{type SpellEffectInfo}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
-import genesis_prime/message/spell_targets_removed
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/list
 import owned_test
@@ -86,19 +85,6 @@ fn listed(effects effects: List(Effect), effect_id effect_id: Int) -> Int {
   })
 }
 
-fn removed(effects effects: List(Effect)) -> List(#(Int, List(Int))) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_targets_removed.message_id {
-      True -> {
-        let assert Ok(removed) = spell_targets_removed.decode(frame.body)
-          as "a 0x811 the rule wrote decodes"
-        Ok(#(removed.cast_id, removed.unit_ids))
-      }
-      False -> Error(Nil)
-    }
-  })
-}
-
 pub fn discharge_shows_power_charge_1_then_2_then_the_third_pulse_turns_the_stacks_into_an_actuator_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
@@ -120,7 +106,8 @@ pub fn discharge_shows_power_charge_1_then_2_then_the_third_pulse_turns_the_stac
     as "pulse 1 starts Power Charge: its go lists Fluff 96819 for the caster"
   assert listed(effects: second.1, effect_id: 96_819) == 1
     as "pulse 2 starts the second (gate 33154 passes at 1 stack)"
-  assert removed(effects: first.1) == [] && removed(effects: second.1) == []
+  assert support.removed_targets(support.writes(effects: first.1)) == []
+    && support.removed_targets(support.writes(effects: second.1)) == []
   assert started_spells(first.1) == [80_382, 42_569]
   assert started_spells(second.1) == [80_382, 42_569]
   assert started_spells(third.1) == [80_382, 80_383, 42_568]
@@ -128,7 +115,7 @@ pub fn discharge_shows_power_charge_1_then_2_then_the_third_pulse_turns_the_stac
   assert listed(effects: third.1, effect_id: 96_819) == 0
   let first_charge = started_ids_of(effects: first.1, spell4_id: 42_569)
   let second_charge = started_ids_of(effects: second.1, spell4_id: 42_569)
-  assert removed(effects: third.1)
+  assert support.removed_targets(support.writes(effects: third.1))
     == list.map(list.append(first_charge, second_charge), fn(id) { #(id, [7]) })
     as "80383 takes both Power Charge casts off the caster, oldest first: one 0x811 each (opcode.0x811)"
   assert list.any(support.gains(effects: third.1), fn(gains) {

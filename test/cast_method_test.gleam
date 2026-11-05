@@ -26,7 +26,6 @@ import genesis_prime/message/cast_result.{
 }
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
-import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_threshold_closed
@@ -63,10 +62,7 @@ fn cast_id_of(frame: Frame) -> Result(Int, Nil) {
       let assert Ok(go) = spell_go.decode(frame.body)
       Ok(go.cast_id)
     }
-    0x07FE -> {
-      let assert Ok(finished) = spell_finished.decode(frame.body)
-      Ok(finished.cast_id)
-    }
+    0x07FE -> Ok(support.finished_cast_id(frame))
     _ -> Error(Nil)
   }
 }
@@ -118,10 +114,7 @@ fn line(frame frame: Frame, label label: fn(Int) -> String) -> String {
       let assert Ok(go) = spell_go.decode(frame.body)
       "7f4 " <> label(go.cast_id) <> " p" <> int.to_string(go.phase)
     }
-    0x07FE -> {
-      let assert Ok(finished) = spell_finished.decode(frame.body)
-      "7fe " <> label(finished.cast_id)
-    }
+    0x07FE -> "7fe " <> label(support.finished_cast_id(frame))
     0x0816 -> {
       let assert Ok(opened) = spell_threshold_opened.decode(frame.body)
       string.join(

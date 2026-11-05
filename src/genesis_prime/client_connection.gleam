@@ -157,8 +157,10 @@ pub type News {
   /// a cast the viewer wrote the start of, after its 0x7f4.
   CastMissed(missed: SpellMissed)
   /// A cast of the unit is taken off some units, which ends its effects there:
-  /// 0x811 (opcode.0x811), written for a cast the viewer wrote the start of.
-  CastTargetsRemoved(removed: SpellTargetsRemoved)
+  /// 0x811 (opcode.0x811), written for a cast the viewer wrote the start of. With
+  /// `destroyed`, the client destroys the cast with it (no target left and a cast
+  /// method other than 1, 3, 8 and 10), so the viewer forgets it.
+  CastTargetsRemoved(removed: SpellTargetsRemoved, destroyed: Bool)
   /// A cast of the unit loses one stack on a unit: 0x813 (opcode.0x813), written
   /// for a cast the viewer wrote the start of.
   CastStackRemoved(removed: SpellStackRemoved)

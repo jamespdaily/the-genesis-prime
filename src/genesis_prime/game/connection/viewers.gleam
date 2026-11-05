@@ -78,7 +78,7 @@
 ////   the viewer does not show is dropped by it.
 
 import genesis_prime/client_connection.{type Request, Continue}
-import genesis_prime/connection/frame.{Frame}
+import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
@@ -387,60 +387,46 @@ pub fn viewer_takes(
         [connection_state.to_client(session, cast.started_frame(start:))],
       )
     }
-    client_connection.CastWent(go:) -> {
-      use <- bool.guard(
-        when: !dict.has_key(entered.casts_written, go.cast_id),
-        return: Continue(session, []),
+    client_connection.CastWent(go:) ->
+      written_cast_frame(
+        session:,
+        entered:,
+        cast_id: go.cast_id,
+        frame: cast.went_frame(go:),
+        forgetting: False,
       )
-      Continue(session, [
-        connection_state.to_client(session, cast.went_frame(go:)),
-      ])
-    }
-    client_connection.CastMissed(missed:) -> {
-      use <- bool.guard(
-        when: !dict.has_key(entered.casts_written, missed.cast_id),
-        return: Continue(session, []),
+    client_connection.CastMissed(missed:) ->
+      written_cast_frame(
+        session:,
+        entered:,
+        cast_id: missed.cast_id,
+        frame: cast.missed_frame(missed:),
+        forgetting: False,
       )
-      Continue(session, [
-        connection_state.to_client(session, cast.missed_frame(missed:)),
-      ])
-    }
-    client_connection.CastTargetsRemoved(removed:) -> {
-      use <- bool.guard(
-        when: !dict.has_key(entered.casts_written, removed.cast_id),
-        return: Continue(session, []),
+    client_connection.CastTargetsRemoved(removed:, destroyed:) ->
+      written_cast_frame(
+        session:,
+        entered:,
+        cast_id: removed.cast_id,
+        frame: cast.targets_removed_frame(removed:),
+        forgetting: destroyed,
       )
-      Continue(session, [
-        connection_state.to_client(
-          session,
-          cast.targets_removed_frame(removed:),
-        ),
-      ])
-    }
-    client_connection.CastStackRemoved(removed:) -> {
-      use <- bool.guard(
-        when: !dict.has_key(entered.casts_written, removed.cast_id),
-        return: Continue(session, []),
+    client_connection.CastStackRemoved(removed:) ->
+      written_cast_frame(
+        session:,
+        entered:,
+        cast_id: removed.cast_id,
+        frame: cast.stack_removed_frame(removed:),
+        forgetting: False,
       )
-      Continue(session, [
-        connection_state.to_client(session, cast.stack_removed_frame(removed:)),
-      ])
-    }
-    client_connection.CastFinished(cast_id:) -> {
-      use <- bool.guard(
-        when: !dict.has_key(entered.casts_written, cast_id),
-        return: Continue(session, []),
+    client_connection.CastFinished(cast_id:) ->
+      written_cast_frame(
+        session:,
+        entered:,
+        cast_id:,
+        frame: cast.finished_frame(cast_id:),
+        forgetting: True,
       )
-      Continue(
-        connection_state.with_entered(session:, change: fn(entered) {
-          world_entry.Entered(
-            ..entered,
-            casts_written: dict.delete(entered.casts_written, cast_id),
-          )
-        }),
-        [connection_state.to_client(session, cast.finished_frame(cast_id:))],
-      )
-    }
     client_connection.Health(health:, dead:) ->
       creature_news(
         session:,
@@ -679,6 +665,33 @@ fn life_news(
     | client_connection.CombatState(..)
     | client_connection.Shield(..) -> Continue(session, [])
   }
+}
+
+/// A frame about a cast, written only for a cast whose start this viewer wrote, which
+/// it then forgets when `forgetting`: the client drops a message that names a cast it
+/// does not hold.
+fn written_cast_frame(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  cast_id cast_id: Int,
+  frame frame: Frame,
+  forgetting forgetting: Bool,
+) -> client_connection.Handled(Session) {
+  use <- bool.guard(
+    when: !dict.has_key(entered.casts_written, cast_id),
+    return: Continue(session, []),
+  )
+  let session = case forgetting {
+    True ->
+      connection_state.with_entered(session:, change: fn(entered) {
+        world_entry.Entered(
+          ..entered,
+          casts_written: dict.delete(entered.casts_written, cast_id),
+        )
+      })
+    False -> session
+  }
+  Continue(session, [connection_state.to_client(session, frame)])
 }
 
 /// 0x7fe for each cast of the unit that this client was sent the start of and no
