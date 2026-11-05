@@ -98,6 +98,27 @@ pub fn failure_of(error error: pog.QueryError) -> Failure {
   }
 }
 
+/// Why a transaction did not commit.
+pub type TransactionFailure(error) {
+  /// The work gave this error, so the transaction was rolled back.
+  Undone(error: error)
+  /// The pool had no connection to run it on.
+  NoConnection
+}
+
+/// Runs `work` in one transaction on the pool `db`, whose connection may stay
+/// checked out for `deadline_ms` in all, and commits when `work` gives `Ok`. The
+/// work runs its queries on `db`, as outside a transaction. `pog.transaction`
+/// is not used because its checkout is dropped by the pool after 5,000 ms
+/// whatever the transaction has left to do, and pog has no option for another
+/// deadline; a tool whose transaction grows with its file names its own.
+@external(erlang, "dev_database_ffi", "transaction")
+pub fn transaction(
+  db db: pog.Connection,
+  deadline_ms deadline_ms: Int,
+  work work: fn(pog.Connection) -> Result(value, error),
+) -> Result(value, TransactionFailure(error))
+
 /// A sentence that says why a query failed; `change` is what the tool tried,
 /// as in "add the account".
 pub fn describe(failure failure: Failure, change change: String) -> String {

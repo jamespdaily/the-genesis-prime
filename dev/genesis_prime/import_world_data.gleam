@@ -27,6 +27,9 @@
 ////   to the database, which refuses it. A refusal is reported under its
 ////   constraint's name with the failing `source_row`, read from the error's
 ////   detail, and nothing is written (the transaction rolls back).
+//// - **The transaction's deadline is sized for the file** (`transaction_deadline_ms`):
+////   the pool drops a connection held past its deadline, and the default of 5,000
+////   ms is shorter than the whole world database's transaction.
 //// - **It is idempotent.** A second run of the same file changes nothing, and
 ////   prints the counts inserted, changed, removed and unchanged.
 
@@ -367,37 +370,55 @@ fn stats_of(
   })
 }
 
+/// How long the import's transaction may keep its connection for this many rows:
+/// each statement it runs is allowed pog's own query timeout, 5,000 ms. Each
+/// batch runs four statements (the spawns, the savepoint, the stats, the
+/// release of the savepoint), and two more end the import (the delete of the
+/// removed rows and the record of the import). The transaction grows with the
+/// file, so a deadline that did not would end it under load.
+pub fn transaction_deadline_ms(rows rows: Int) -> Int {
+  let batches = { rows + batch_size - 1 } / batch_size
+  { batches * 4 + 2 } * query_timeout_ms
+}
+
+/// What a query is allowed, in milliseconds (pog's default).
+const query_timeout_ms = 5000
+
 /// Writes the records in one transaction.
 fn write_spawns(
   db db: pog.Connection,
   records records: List(SpawnRecord),
   sha256 sha256: String,
 ) -> Result(Counts, Failure) {
-  pog.transaction(db, fn(tx) {
-    use batches <- result.try(
-      list.sized_chunk(records, batch_size)
-      |> list.try_fold(Counts(0, 0, 0, 0, 0, 0), fn(counts, batch) {
-        write_batch(tx:, batch:, counts:)
-      }),
-    )
-    let ids = list.map(records, fn(record) { record.source_row })
-    use removed <- result.try(
-      sql.delete_removed_spawns(tx, ids) |> result.map_error(database_failure),
-    )
-    use _recorded <- result.map(
-      sql.record_import(tx, "spawn.tsv", sha256, list.length(records))
-      |> result.map_error(database_failure),
-    )
-    Counts(
-      ..batches,
-      removed: first_of(removed.rows, fn(row) { row.removed }),
-      unchanged: list.length(records) - batches.inserted - batches.changed,
-    )
-  })
+  dev_database.transaction(
+    db:,
+    deadline_ms: transaction_deadline_ms(rows: list.length(records)),
+    work: fn(tx) {
+      use batches <- result.try(
+        list.sized_chunk(records, batch_size)
+        |> list.try_fold(Counts(0, 0, 0, 0, 0, 0), fn(counts, batch) {
+          write_batch(tx:, batch:, counts:)
+        }),
+      )
+      let ids = list.map(records, fn(record) { record.source_row })
+      use removed <- result.try(
+        sql.delete_removed_spawns(tx, ids) |> result.map_error(database_failure),
+      )
+      use _recorded <- result.map(
+        sql.record_import(tx, "spawn.tsv", sha256, list.length(records))
+        |> result.map_error(database_failure),
+      )
+      Counts(
+        ..batches,
+        removed: first_of(removed.rows, fn(row) { row.removed }),
+        unchanged: list.length(records) - batches.inserted - batches.changed,
+      )
+    },
+  )
   |> result.map_error(fn(error) {
     case error {
-      pog.TransactionRolledBack(failure) -> failure
-      pog.TransactionQueryError(error) -> database_failure(error)
+      dev_database.Undone(failure) -> failure
+      dev_database.NoConnection -> Database(dev_database.DatabaseDown)
     }
   })
 }
