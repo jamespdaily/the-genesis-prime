@@ -98,12 +98,23 @@ pub fn failure_of(error error: pog.QueryError) -> Failure {
   }
 }
 
+/// How long a checkout of a connection, and a query, is allowed when none names
+/// another: 5,000 ms, pgo's deadline for a checkout (`pgo_pool.erl`, `TIMEOUT`)
+/// and pog's timeout for a query (`pog.timeout`'s doc).
+pub const default_timeout_ms = 5000
+
 /// Why a transaction did not commit.
 pub type TransactionFailure(error) {
   /// The work gave this error, so the transaction was rolled back.
   Undone(error: error)
   /// The pool had no connection to run it on.
   NoConnection
+  /// `begin`, `commit` or the rollback failed, as pog's own transaction
+  /// reports it.
+  Failed(error: pog.QueryError)
+  /// The connection is a single connection (pog's callback gives one), which
+  /// has no checkout to give a deadline.
+  NotAPool
 }
 
 /// Runs `work` in one transaction on the pool `db`, whose connection may stay

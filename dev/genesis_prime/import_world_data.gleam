@@ -378,11 +378,8 @@ fn stats_of(
 /// file, so a deadline that did not would end it under load.
 pub fn transaction_deadline_ms(rows rows: Int) -> Int {
   let batches = { rows + batch_size - 1 } / batch_size
-  { batches * 4 + 2 } * query_timeout_ms
+  { batches * 4 + 2 } * dev_database.default_timeout_ms
 }
-
-/// What a query is allowed, in milliseconds (pog's default).
-const query_timeout_ms = 5000
 
 /// Writes the records in one transaction.
 fn write_spawns(
@@ -419,6 +416,11 @@ fn write_spawns(
     case error {
       dev_database.Undone(failure) -> failure
       dev_database.NoConnection -> Database(dev_database.DatabaseDown)
+      dev_database.Failed(error) -> database_failure(error)
+      dev_database.NotAPool ->
+        Database(dev_database.NotChanged(
+          "the import needs a pool of connections, not one connection",
+        ))
     }
   })
 }
