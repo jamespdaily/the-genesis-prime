@@ -11,8 +11,9 @@
 #                                      left out) puts the addon in timeline mode, for a fight a
 #                                      person plays by hand
 #   report.sh collect [--by-hand] <folder>
-#                                      copies the report back into <folder>, converts it to
-#                                      <folder>/report.json and prints it; refuses, copying nothing,
+#                                      copies the report back into <folder> (a name that does not
+#                                      start with --), converts it to <folder>/report.json and
+#                                      prints it; refuses, copying nothing,
 #                                      a report that is unfinished or was captured before the client
 #                                      that client.sh recorded started. --by-hand is for a timeline
 #                                      session the person started, with no client.pid: it accepts the
@@ -53,7 +54,7 @@
 # compares it with the report's nInstalledAt, so a report left by an earlier install is refused.
 set -euo pipefail
 
-usage() { sed -n '5,26p' "$0" >&2; exit 2; }
+usage() { sed -n '5,27p' "$0" >&2; exit 2; }
 
 command=${1:-}
 addons=(GenesisReport)
@@ -81,7 +82,9 @@ case "$command" in
       by_hand=yes
       set -- collect "$3"
     fi
-    [ $# -eq 2 ] || usage ;;
+    [ $# -eq 2 ] || usage
+    # A folder that starts with -- is a flag in the wrong place (collect --by-hand with no folder).
+    [[ $2 != --* ]] || usage ;;
   remove) [ $# -eq 1 ] || usage ;;
   *) usage ;;
 esac
