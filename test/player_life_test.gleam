@@ -39,6 +39,7 @@ import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/float
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
@@ -492,4 +493,63 @@ fn test_place() -> Place {
     )
     as "world 3460 is a world"
   place
+}
+
+pub fn a_player_enters_at_the_health_saved_capped_at_the_maximum_and_at_full_when_none_was_saved_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let entered = fn(saved) {
+    player_life.entering(saved:, max_health: 736, shield: 450)
+  }
+  let below = entered(Some(500))
+  assert player_life.health(life: below) == 500
+    && player_life.max_health(life: below) == 736
+    as "a saved health below the maximum is the health, and the maximum stays the level's"
+  assert player_life.shield(life: below) == 450
+    && player_life.max_shield(life: below) == 450
+    as "the shield enters full"
+  assert player_life.health(life: entered(Some(736))) == 736 as "at the maximum"
+  assert player_life.health(life: entered(Some(737))) == 736
+    as "above it, a planted row: the maximum"
+  assert player_life.health(life: entered(Some(1_000_000))) == 736
+  assert player_life.health(life: entered(None)) == 736
+    as "nothing saved: full, as before"
+  assert player_life.fighters(life: below) == []
+    && !player_life.in_combat(life: below)
+    && player_life.saved_health(life: below) == Some(500)
+    as "alive, fighting no one"
+  let #(struck, _) =
+    player_life.struck(
+      life: below,
+      defence: defence_of(1),
+      strike: attack(1),
+      rolls:,
+      place: test_place(),
+    )
+  assert player_life.health(life: struck) == 499
+    as "Armor 250: the shield takes 2 and the health 1, from 500"
+}
+
+pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(hurt, _) =
+    player_life.struck(
+      life: player_life.new(health: 736, shield: 450),
+      defence: defence_of(1),
+      strike: attack(1),
+      rolls:,
+      place: test_place(),
+    )
+  assert player_life.saved_health(life: hurt) == Some(735)
+    as "the health now, which the table requires above 0 (character_health_is_positive)"
+  let #(dead, _) =
+    player_life.struck(
+      life: player_life.new(health: 1, shield: 0),
+      defence: defence_of(1),
+      strike: attack(1),
+      rolls:,
+      place: test_place(),
+    )
+  assert player_life.health(life: dead) == 0
+  assert player_life.saved_health(life: dead) == None
+    as "a dead player keeps none: it comes back at full health (death.server_choices)"
 }

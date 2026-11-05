@@ -21,6 +21,9 @@
 ////   replace the unit property defaults (0.25, 2500) rather than add to them (a
 ////   server choice: the client sums nothing, `player.level1_gear_properties`). A
 ////   unit whose gear holds no shield has no stat 20 and no shield properties.
+//// - **Health now:** the player's own record carries the health it enters with
+////   as stat 0, which can be below the maximum (`with_health`,
+////   `opcode.0x262`); property 7 stays the maximum.
 //// - **Level:** stat 10 is the character's level (0x140458140).
 //// - **Class resource:** the player's own record gains its class's resource
 ////   slot at its start, as stat slot + 2 in the float form, and the slot's
@@ -248,6 +251,33 @@ pub fn create(
       display_info_id: 0,
       outfit_info_id: 0,
       server_time_estimate_start: 0,
+    ),
+  )
+}
+
+/// The player's 0x262 record with `health` as its stat 0, the health the client
+/// shows (`opcode.0x262`: stat 0 is the unit's health), and property 7 (Base
+/// Health, the maximum Unit:GetMaxHealth reads) as `create` wrote it
+/// (`vector.opcode.0x262.health`). `create` writes the maximum health; a player
+/// who enters with less is created with what it has.
+pub fn with_health(
+  record record: UnitCreatePlayer,
+  health health: Int,
+) -> UnitCreatePlayer {
+  UnitCreatePlayer(
+    ..record,
+    tail: UnitCreateTail(
+      ..record.tail,
+      stats: list.map(record.tail.stats, fn(stat) {
+        case stat.stat_id == unit_fields.health_stat {
+          True ->
+            unit_fields.integer_stat(
+              stat_id: unit_fields.health_stat,
+              value: health,
+            )
+          False -> stat
+        }
+      }),
     ),
   )
 }

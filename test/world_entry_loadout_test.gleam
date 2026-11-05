@@ -55,7 +55,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import map_support
 import novice_tables
 import owned_test
@@ -136,6 +136,7 @@ fn entering(
       answer: store.CharacterLoaded(
         character:,
         session_epoch: character_support.epoch(1),
+        saved_health: None,
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),

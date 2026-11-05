@@ -5,6 +5,7 @@
 ////
 
 import gleam/dynamic/decode
+import gleam/option.{type Option}
 import pog
 
 /// A row you get from running the `create_character` query
@@ -391,11 +392,13 @@ pub type LoadCharacterRow {
     look_values: List(Int),
     bones: List(Int),
     needs_rename: Bool,
+    health: Option(Int),
   )
 }
 
 /// The account's character with this id, as the world's entry needs it: the
-/// same columns as the list, with the saved place, and the character taken by
+/// same columns as the list, with the saved place and the saved health (NULL
+/// when none was saved), and the character taken by
 /// this login: `session_epoch` is raised by one in the same statement, with
 /// `save_sequence` back to 0 for the new login, and the new epoch returned, so
 /// the login that read the character is the one that holds that epoch, and a
@@ -434,6 +437,7 @@ pub fn load_character(
     use look_values <- decode.field(18, decode.list(decode.int))
     use bones <- decode.field(19, decode.list(decode.int))
     use needs_rename <- decode.field(20, decode.bool)
+    use health <- decode.field(21, decode.optional(decode.int))
     decode.success(LoadCharacterRow(
       character_id:,
       session_epoch:,
@@ -456,11 +460,13 @@ pub fn load_character(
       look_values:,
       bones:,
       needs_rename:,
+      health:,
     ))
   }
 
   "-- The account's character with this id, as the world's entry needs it: the
--- same columns as the list, with the saved place, and the character taken by
+-- same columns as the list, with the saved place and the saved health (NULL
+-- when none was saved), and the character taken by
 -- this login: `session_epoch` is raised by one in the same statement, with
 -- `save_sequence` back to 0 for the new login, and the new epoch returned, so
 -- the login that read the character is the one that holds that epoch, and a
@@ -492,7 +498,8 @@ returning
   look_labels,
   look_values,
   bones,
-  needs_rename;
+  needs_rename,
+  health;
 "
   |> pog.query
   |> pog.parameter(pog.int(character_id))
@@ -599,7 +606,12 @@ pub type SavePlaceRow {
   SavePlaceRow(character_id: Int)
 }
 
-/// Saves where a character stands: its world, zone, position and facing, only
+/// Saves where a character stands: its world, zone, position and facing, and the
+/// health it has, in one statement, so the place and the health are saved
+/// together or not at all. The health is $13 when $14 is true, and NULL (no
+/// health to keep, as when the player is dead and comes back at full health)
+/// when it is false, since squirrel cannot type a parameter that may be NULL.
+/// It writes only
 /// while the character is still held by the login that made the save, that is
 /// while its `session_epoch` is still the one that login raised it to
 /// (load_character.sql), and only when the save is newer than the last one stored
@@ -626,14 +638,21 @@ pub fn save_place(
   arg_9: Float,
   arg_10: Float,
   arg_11: Float,
-  save_sequence: Int,
+  arg_12: Int,
+  arg_13: Int,
+  arg_14: Bool,
 ) -> Result(pog.Returned(SavePlaceRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
     decode.success(SavePlaceRow(character_id:))
   }
 
-  "-- Saves where a character stands: its world, zone, position and facing, only
+  "-- Saves where a character stands: its world, zone, position and facing, and the
+-- health it has, in one statement, so the place and the health are saved
+-- together or not at all. The health is $13 when $14 is true, and NULL (no
+-- health to keep, as when the player is dead and comes back at full health)
+-- when it is false, since squirrel cannot type a parameter that may be NULL.
+-- It writes only
 -- while the character is still held by the login that made the save, that is
 -- while its `session_epoch` is still the one that login raised it to
 -- (load_character.sql), and only when the save is newer than the last one stored
@@ -653,7 +672,8 @@ set
   rotation_yaw = $9,
   rotation_pitch = $10,
   rotation_roll = $11,
-  save_sequence = $12
+  save_sequence = $12,
+  health = case when $14 then $13::int end
 where character_id = $1 and account_id = $2 and session_epoch = $3
   and save_sequence < $12
 returning character_id;
@@ -670,7 +690,9 @@ returning character_id;
   |> pog.parameter(pog.float(arg_9))
   |> pog.parameter(pog.float(arg_10))
   |> pog.parameter(pog.float(arg_11))
-  |> pog.parameter(pog.int(save_sequence))
+  |> pog.parameter(pog.int(arg_12))
+  |> pog.parameter(pog.int(arg_13))
+  |> pog.parameter(pog.bool(arg_14))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

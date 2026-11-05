@@ -164,13 +164,18 @@ pub type MoveRequest {
   /// character, and only when `save_sequence` is above the last one stored for
   /// that login. A login numbers its saves from 1, in the order it asks them,
   /// so a save that reaches the database after a newer one of its own changes
-  /// nothing. The account's id is in the statement, as for a load.
+  /// nothing. The account's id is in the statement, as for a load. The
+  /// character's `health` is written by the same statement: `Some` the health
+  /// the player has, `None` when there is none to keep (a dead player), which
+  /// leaves nothing saved, so the next entry is at full health. A health the
+  /// table refuses, 0 or below, is `HealthRefused`.
   SavePlace(
     account_id: AccountId,
     character_id: CharacterId,
     session_epoch: SessionEpoch,
     save_sequence: Int,
     place: Place,
+    health: Option(Int),
   )
 }
 
@@ -228,9 +233,14 @@ pub type Answer {
 /// What the store answers world entry.
 pub type WorldAnswer {
   /// The account's character, taken by this login, whose `session_epoch` is
-  /// `session_epoch` after the raise. Asking again takes the character again
-  /// and raises it again.
-  CharacterLoaded(character: Character, session_epoch: SessionEpoch)
+  /// `session_epoch` after the raise, and the health its last save kept
+  /// (`saved_health`: `None` when none was saved). Asking again takes the
+  /// character again and raises it again.
+  CharacterLoaded(
+    character: Character,
+    session_epoch: SessionEpoch,
+    saved_health: Option(Int),
+  )
   /// The account has no character with the id.
   NotTheAccounts
 }
@@ -247,6 +257,10 @@ pub type MoveAnswer {
   /// The database refused the place for a check constraint it holds, which no
   /// place the rule keeps breaks: a bug of the server's, so nothing was saved.
   PlaceRefused
+  /// The database refused the health (`character_health_is_positive`), which
+  /// the rule never asks to keep at 0 or below: a bug of the server's, so
+  /// nothing was saved, neither the health nor the place beside it.
+  HealthRefused
 }
 
 /// What the store answers character select, one variant for each of its
