@@ -371,3 +371,31 @@ pub fn a_stat_the_schema_refuses_is_reported_under_its_constraint_with_the_row_o
     as "the stat's constraint, and the row of the file its spawn came from, not a question mark"
   assert written == 0 as "nothing is written"
 }
+
+pub fn the_transaction_waits_for_every_statement_of_the_whole_world_database_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Evidence: the import of the whole world database (77,794 rows, in 16
+  // batches) on an idle machine's Postgres 18, every statement logged
+  // (`log_min_duration_statement = 0`), ran 66 statements in its transaction,
+  // which lasted 3.73 s from `begin` to `commit`. A pool drops the connection
+  // of a transaction that outlives its checkout deadline, 5,000 ms when the
+  // checkout names none (`pgo_pool.erl`, `TIMEOUT`), as `pog.transaction`'s
+  // does; a loaded machine took longer and the import failed with a timeout.
+  // A statement's own allowance is pog's query timeout, 5,000 ms (`pog.timeout`).
+  let whole_world_database_rows = 77_794
+  let statements_of_the_whole_world_database = 66
+  let pog_query_timeout_ms = 5000
+  assert import_world_data.transaction_deadline_ms(
+      rows: whole_world_database_rows,
+    )
+    >= statements_of_the_whole_world_database * pog_query_timeout_ms
+    as "every statement of the whole world database keeps a query's timeout"
+  assert import_world_data.transaction_deadline_ms(
+      rows: whole_world_database_rows,
+    )
+    > import_world_data.transaction_deadline_ms(rows: 27)
+    as "a bigger file waits longer"
+  assert import_world_data.transaction_deadline_ms(rows: 27)
+    >= 6 * pog_query_timeout_ms
+    as "the planted file's batch (4 statements) and the 2 that close the import"
+}
