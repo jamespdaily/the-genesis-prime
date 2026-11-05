@@ -15,7 +15,6 @@
 
 import content_support
 import database_support
-import genesis_prime/dev_database
 import genesis_prime/digest
 import genesis_prime/import_world_data.{
   type Counts, BadField, Counts, FileRefused, RepeatedId, RowRefused,
@@ -385,7 +384,7 @@ pub fn the_transaction_waits_for_every_statement_of_the_whole_world_database_tes
   // A statement's own allowance is pog's query timeout, 5,000 ms (`pog.timeout`).
   let whole_world_database_rows = 77_794
   let statements_of_the_whole_world_database = 66
-  let pog_query_timeout_ms = dev_database.default_timeout_ms
+  let pog_query_timeout_ms = 5000
   assert import_world_data.transaction_deadline_ms(
       rows: whole_world_database_rows,
     )
