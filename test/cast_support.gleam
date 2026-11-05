@@ -13,6 +13,7 @@ import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/class_resource
+import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AtFirstGo, GlobalCooldown, NoWeaponNeeded, Normal,
   Spell,
@@ -62,6 +63,8 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     channel: None,
     proxies: [],
     gains: [],
+    groups: [],
+    stack: lasting.Stack(group_id: 0, cap: 0),
     lasting: [],
     removes: [],
     cooldown_start: AtFirstGo,

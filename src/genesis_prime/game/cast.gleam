@@ -456,9 +456,9 @@ pub type Live {
   )
 }
 
-/// A cast whose last go has gone and whose nodes still have life left: its 0x7fe
-/// waits until the last node ends, because the client ends no buff on time
-/// (`cast.target_node_end`). `State` keeps it by cast id until a `NodesEnd` timer
+/// A cast whose last go has gone and whose nodes still have life left: only its
+/// 0x7fe waits until the last node ends, because the client ends no buff on time
+/// (`cast.target_node_end`); every other step of its finish has run. `State` keeps it by cast id until a `NodesEnd` timer
 /// ends its nodes, a removal takes them off, or the caster dies.
 pub type Lingering {
   Lingering(

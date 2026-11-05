@@ -355,6 +355,12 @@ pub type Spell {
     /// The spell's own resource gains, given at its gos; none of a child started
     /// at each struck unit, whose gains its Proxy holds.
     gains: List(Gain),
+    /// The spell groups the spell belongs to (Spell4GroupList's spellGroupId values
+    /// of `Spell4.spell4GroupListId`), which a type 80 row selects by.
+    groups: List(Int),
+    /// The spell's stack group and its cap (`Spell4.spell4StackGroupId`,
+    /// `Spell4StackGroup.stackCap`).
+    stack: lasting.Stack,
     /// The Fluff effects that give the spell a life on a unit.
     lasting: List(Lasting),
     /// The SpellForceRemove effects that take casts off a unit.
@@ -512,6 +518,15 @@ pub type PlanError {
   /// which names no group, Spell4 or Spell4Base to take off
   /// (`Spell4Effects.effectType.80`).
   ForceRemoveSelectorNotRead(spell4_id: Int, effect_id: Int, selector: Int)
+  /// A SpellForceRemove effect of a tree has a dataBits03 that differs from its
+  /// dataBits04: which is the count of stacks is not settled
+  /// (`Spell4Effects.effectType.80`).
+  ForceRemoveCountsDiffer(
+    spell4_id: Int,
+    effect_id: Int,
+    data_bits03: Int,
+    data_bits04: Int,
+  )
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -593,6 +608,16 @@ pub fn describe(error error: PlanError) -> String {
       <> " of selector "
       <> int.to_string(selector)
       <> ", and only 1, 2 and 3 are read"
+    ForceRemoveCountsDiffer(spell4_id:, effect_id:, data_bits03:, data_bits04:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a SpellForceRemove effect "
+      <> int.to_string(effect_id)
+      <> " whose dataBits03 "
+      <> int.to_string(data_bits03)
+      <> " differs from its dataBits04 "
+      <> int.to_string(data_bits04)
+      <> ", and only a row where they agree is read"
   }
 }
 
@@ -879,6 +904,8 @@ fn spell_of(
       channel:,
       proxies:,
       gains:,
+      groups: [],
+      stack: lasting.Stack(group_id: 0, cap: 0),
       lasting: [],
       removes: [],
     ),

@@ -30,13 +30,22 @@
 ////   itself (`cast.target_node_end`).
 //// - **A cast that lingers** holds its nodes after its last go and ends them when
 ////   their time runs out: 0x811 for the units whose node ends, or the finish 0x7fe
-////   when no node is left. A node of flags bit 2 never ends by time.
+////   when no node is left. A node of flags bit 2 never ends by time. Every other
+////   step of the finish runs when the cast starts to linger (the current cast
+////   cleared, a Channeled or Multiphase cooldown started, a stage's threshold
+////   closed, a held repeat ended); only the 0x7fe waits.
 //// - **A removal** takes the first `count` stacks of the matching casts on the
 ////   unit, oldest cast first: a cast that loses its whole count is 0x811 for the
 ////   unit, one that keeps some is one 0x813 for each stack lost (`opcode.0x811`,
 ////   `opcode.0x813`, `Spell4Effects.effectType.80`). The oldest first and the
 ////   choice of 0x813 for a stack are the server's: no client code reads a type 80
 ////   row.
+//// - **Stacking is the server's rule** (Jim's): each caster keeps at most the
+////   stack group's cap of its own casts of the group on a unit, and a new cast at
+////   the cap takes that caster's oldest off the unit with 0x811, as a removal does;
+////   a cap of 0 keeps one cast per spell. The client reads the group only at load
+////   and in tooltips (`Spell4.spell4StackGroupId`, `Spell4StackGroup.stackCap`,
+////   `Spell4StackGroup.server_rule`).
 //// - **A cast left with no node** gets the finish 0x7fe after its 0x811 when its
 ////   cast method is 1, 3, 8 or 10, since the client keeps such a cast
 ////   (`opcode.0x811`).
@@ -114,14 +123,24 @@ pub type Selector {
   Base(spell4_base_id: Spell4BaseId)
 }
 
-/// A cast's node on one unit as a removal reads it: the cast, the spell it casts
-/// with the Spell4Base and spell groups the selector tests, and the node.
+/// A spell's stack group and the most casts of the group one caster keeps on a
+/// unit (`Spell4.spell4StackGroupId`, `Spell4StackGroup.stackCap`). A cap of 0
+/// keeps one cast per spell.
+pub type Stack {
+  Stack(group_id: Int, cap: Int)
+}
+
+/// A cast's node on one unit as removals and stacking read it: the cast, the spell
+/// it casts with the Spell4Base, spell groups and stack the rules test, when it
+/// started (its age: cast ids wrap, so they do not give it), and the node.
 pub type Hold {
   Hold(
     cast_id: Int,
     spell4_id: Spell4Id,
-    spell4_base_id: Spell4BaseId,
-    spell_group_ids: List(Int),
+    base: Spell4BaseId,
+    groups: List(Int),
+    stack: Stack,
+    started_ms: Int,
     node: Node,
   )
 }
@@ -135,11 +154,10 @@ pub type Removal {
 }
 
 /// What a type 80 row with `selector` and `count` takes off the unit `unit_id`,
-/// from `holds` given oldest cast first: each matching hold on the unit loses its
+/// from `holds`, oldest `started_ms` first: each matching hold on the unit loses its
 /// whole count while `count` stacks remain to take (`NodeOff`), and the cast that
 /// `count` ends inside loses one `StackOff` for each stack left to take. Oldest
-/// first is the server's choice (the cast id wraps, so its age is the caller's
-/// order).
+/// first is the server's choice.
 pub fn removals(
   holds holds: List(Hold),
   selector selector: Selector,
@@ -147,4 +165,21 @@ pub fn removals(
   unit_id unit_id: Int,
 ) -> List(Removal) {
   todo as "shape commit: what a removal takes off"
+}
+
+/// The holds a new cast of `spell4_id` with `stack` pushes off the unit `unit_id`
+/// when it gives the unit a node with life, from `holds`, the caster's own live and
+/// lingering holds on that unit: with a cap of 1 or more, the holds of the same
+/// stack group beyond the cap less one, oldest `started_ms` first, each a
+/// `NodeOff`; with a cap of 0, those of the same spell. This is Jim's server rule:
+/// the client reads a stack group only at load and in tooltips, and the rows give
+/// the cap but no rule for a cast at it (`Spell4.spell4StackGroupId`,
+/// `Spell4StackGroup.stackCap`, `Spell4StackGroup.server_rule`).
+pub fn pushed_off(
+  holds holds: List(Hold),
+  spell4_id spell4_id: Spell4Id,
+  stack stack: Stack,
+  unit_id unit_id: Int,
+) -> List(Removal) {
+  todo as "shape commit: what a new cast at the stack cap pushes off"
 }
