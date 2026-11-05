@@ -87,7 +87,6 @@ COMPACT_CALLEES = 12
 COMPACT_FACTS = 4
 SHARED_GLOBAL_LIMIT = 40
 
-_ADDRESS = re.compile(r"0x14[0-9a-f]{7}(?![0-9a-f])")
 _GLOBAL = re.compile(r"\b(?:PTR_)?DAT_(14[0-9a-f]{7})\b")
 _STRING = re.compile(r'L?"(?:[^"\\\n]|\\.)*"')
 _REGISTRATION = re.compile(
@@ -227,29 +226,17 @@ def read_registrations(directory: Path) -> list[Registration]:
 
 # ---------------------------------------------------------------- the dispatch tables
 
-def first_opcode(code: list[jump_tables.Instruction], jmp_address: int) -> int | None:
-    """The message id that picks the first entry of the jump table whose `jmp` is at jmp_address, read from
-    the instruction that makes the table index (`lea eax, [rbx - 0x61]`, `sub eax, K`, `add eax, -K`, or a
-    plain register copy, which is 0); None when that instruction is none of these. code is the dispatcher's
-    listing, jump_tables.disassemble's."""
-    position = next((i for i, c in enumerate(code) if c.address == jmp_address), None)
-    if position is None:
+def first_opcode(code: list[jump_tables.Instruction], table: jump_tables.JumpTable) -> int | None:
+    """The message id that picks the first entry of the jump table, read from the instruction that last wrote
+    the table's index register before the compare that bounds it (`lea eax, [rbx - 0x61]`, `sub eax, K`,
+    `add eax, -K`, or a plain register copy, which is 0); None when that instruction is none of these, a call
+    that clobbers the register comes between, or the table's compare is unknown. code is the listing of the
+    range that holds the table's `jmp`, jump_tables.disassemble's."""
+    position = next((i for i, c in enumerate(code) if c.address == table.compare_address), None)
+    if position is None or table.index_register is None:
         return None
-    compared = None
-    for i in range(position - 1, max(0, position - jump_tables.WINDOW) - 1, -1):
-        c = code[i]
-        if c.mnemonic == "cmp" and len(c.operands) == 2 and c.operands[0] in jump_tables.FAMILY and _immediate(c.operands[1]) is not None:
-            compared = i
-            break
-    if compared is None:
-        return None
-    register = jump_tables.FAMILY[code[compared].operands[0]]
-    for i in range(compared - 1, max(0, compared - jump_tables.WINDOW) - 1, -1):
-        c = code[i]
-        if c.mnemonic in jump_tables.NO_WRITE or not c.operands or jump_tables.FAMILY.get(c.operands[0]) != register:
-            continue
-        return _table_origin(c)
-    return None
+    written = jump_tables.last_writer(code, position, table.index_register)
+    return None if written is None else _table_origin(code[written])
 
 
 def _immediate(text: str) -> int | None:
@@ -314,7 +301,7 @@ def dispatch_cases(pe, dispatcher: int, opcode: int, is_function) -> list[CaseBl
     found = []
     for table in tables:
         own = next((code for low, high, code in listings if low <= table.jmp < high), None)
-        origin = first_opcode(own, table.jmp) if own else None
+        origin = first_opcode(own, table) if own else None
         if origin is None or not 0 <= opcode - origin < len(table.targets):
             continue
         target = table.targets[opcode - origin]
@@ -337,7 +324,7 @@ class Facts:
         for key, record in records.items():
             held = set()
             for text in (record.statement, record.proof, record.gap or ""):
-                held.update(int(found, 16) for found in _ADDRESS.findall(text.lower()))
+                held.update(int(found, 16) for found in check_facts._ADDRESS_RE.findall(text))
             for address in held:
                 if key != "0x%x" % address:
                     self._citing.setdefault(address, []).append(key)
@@ -414,11 +401,7 @@ class Client:
 
     def callees(self, function: int) -> dict[int, list[int]]:
         """Target function -> call sites, for each `call` and tail `jmp` out of the function's .pdata ranges."""
-        found: dict[int, list[int]] = {}
-        for ref in self.index.sites_from(function, {"call", "jmp"}):
-            if ref.target != function and self.is_function(ref.target):
-                found.setdefault(ref.target, []).append(ref.source)
-        return found
+        return call_paths.callee_sites(self.index, self.starts, function)
 
 
 def _levels(neighbours, start: int, depth: int) -> list[list[tuple[int, int]]]:
@@ -462,20 +445,6 @@ def _listing(client: Client, function: int, up: bool, depth: int, limit: int) ->
     return lines, listed
 
 
-def _references(client: Client, function: int) -> list[str]:
-    """Every reference to the function that is not a call or tail jmp from another function."""
-    phrases = []
-    for ref in client.index.refs_to(function):
-        root = client.index.pe.root_of(ref.source)
-        if ref.kind in ("call", "jmp"):
-            if root is None:
-                phrases.append("%s from code outside .pdata at 0x%x" % (ref.kind, ref.source))
-            continue
-        where = " in " + client.label(root) if root is not None else ""
-        phrases.append("%s at 0x%x%s" % (ref.kind, ref.source, where))
-    return phrases
-
-
 def function_parts(client: Client, function: int, depth: int, registrations: list[Registration], compact: bool = False, seen: set[str] | None = None) -> list[Part]:
     """The report on one function, as parts: its facts, callers, callees, strings and body. A record whose
     key is in seen was printed already and is left out; the keys printed are added to it."""
@@ -516,7 +485,7 @@ def function_parts(client: Client, function: int, depth: int, registrations: lis
         facts.append("  (%s) %s" % (role, describe_record(client.facts.keyed(member), OTHER_RECORD_CHARS)))
     if len(shown) > MAX_FACTS:
         facts.append("  and %d more records keyed to the functions listed below" % (len(shown) - MAX_FACTS))
-    citing = [r for r in client.facts.citing(function) if (not compact or not _ADDRESS.fullmatch(r.key)) and r.key not in seen]
+    citing = [r for r in client.facts.citing(function) if (not compact or not check_facts._ADDRESS_RE.fullmatch(r.key)) and r.key not in seen]
     cap = COMPACT_FACTS if compact else MAX_FACTS
     for record in citing[:cap]:
         fresh(record)
@@ -527,7 +496,7 @@ def function_parts(client: Client, function: int, depth: int, registrations: lis
     if len(facts) > 1:
         parts.append(Part("\n".join(facts)))
 
-    references = _references(client, function)
+    references = call_paths.reference_phrases(client.index, function, client.label)
     parts.append(Part("\n".join(["called by (%d functions):" % len(client.callers(function))] + (up_lines or ["  none"]))))
     if references:
         parts.append(Part("referenced otherwise: " + "; ".join(references[:MAX_DATA_REFERENCES]) + ("; and %d more" % (len(references) - MAX_DATA_REFERENCES) if len(references) > MAX_DATA_REFERENCES else "")))

@@ -27,6 +27,8 @@ class JumpTable:
     case_count: int
     default: int | None
     targets: list[int]  # one per switch value, in order
+    compare_address: int | None = None  # the `cmp IDX, imm` that bounds the index
+    index_register: str | None = None  # the register family that compare tests (FAMILY's values)
 
 
 _LEGACY = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi"]
@@ -107,18 +109,20 @@ def _memory(operand: str):
     return registers, scaled, displacement
 
 
-def _writes(instruction: Instruction, family: str) -> bool:
+def writes(instruction: Instruction, family: str) -> bool:
+    """Whether the instruction writes the register family: its first operand is that register and it is not a
+    compare, test or jump, or it is an `xchg` with it."""
     ops = instruction.operands
     if ops and instruction.mnemonic not in NO_WRITE and FAMILY.get(ops[0]) == family:
         return True
     return instruction.mnemonic == "xchg" and len(ops) == 2 and FAMILY.get(ops[1]) == family
 
 
-def _last_writer(code: list[Instruction], position: int, family: str) -> int | None:
-    """The nearest instruction before position that writes the register family;
+def last_writer(code: list[Instruction], position: int, family: str) -> int | None:
+    """The index in code of the nearest instruction before position that writes the register family;
     None when a call that clobbers it, or the window's end, comes first."""
     for i in range(position - 1, max(0, position - WINDOW) - 1, -1):
-        if _writes(code[i], family):
+        if writes(code[i], family):
             return i
         if code[i].mnemonic == "call" and family in VOLATILE:
             return None
@@ -135,15 +139,16 @@ def _integer(text: str) -> int | None:
 def _analyse(pe: ClientPE, code: list[Instruction], position: int) -> JumpTable:
     jmp = code[position]
     try:
-        case_count, default, targets = _read_table(pe, code, position)
+        case_count, default, targets, compare_at, index_register = _read_table(pe, code, position)
     except _NotFound as reason:
         return JumpTable(jmp.address, False, str(reason), 0, None, [])
-    return JumpTable(jmp.address, True, None, case_count, default, targets)
+    return JumpTable(jmp.address, True, None, case_count, default, targets, code[compare_at].address, index_register)
 
 
-def _read_table(pe: ClientPE, code: list[Instruction], position: int) -> tuple[int, int, list[int]]:
+def _read_table(pe: ClientPE, code: list[Instruction], position: int) -> tuple[int, int, list[int], int, str]:
+    """(case count, default, targets, the compare's position in code, the register that compare tests)."""
     register = FAMILY[code[position].operands[0]]
-    add_at = _last_writer(code, position, register)
+    add_at = last_writer(code, position, register)
     if add_at is None:
         raise _NotFound("no write to jump register found")
     add = code[add_at]
@@ -152,7 +157,7 @@ def _read_table(pe: ClientPE, code: list[Instruction], position: int) -> tuple[i
     first, second = FAMILY[add.operands[0]], FAMILY[add.operands[1]]
     load = None
     for loaded, base in ((first, second), (second, first)):
-        load_at = _last_writer(code, add_at, loaded)
+        load_at = last_writer(code, add_at, loaded)
         if load_at is None:
             continue
         ins = code[load_at]
@@ -164,7 +169,7 @@ def _read_table(pe: ClientPE, code: list[Instruction], position: int) -> tuple[i
     if load is None:
         raise _NotFound("no `mov r32, dword ptr [BASE + IDX*4 + disp]` feeding the add")
     load_at, base, index, displacement = load
-    base_at = _last_writer(code, load_at, base)
+    base_at = last_writer(code, load_at, base)
     if base_at is None:
         raise _NotFound("base register write not found")
     lea = code[base_at]
@@ -173,14 +178,14 @@ def _read_table(pe: ClientPE, code: list[Instruction], position: int) -> tuple[i
     table_rva = displacement & 0xFFFFFFFF
 
     bound_register, index_rva, stop = index, None, load_at
-    byte_at = _last_writer(code, load_at, index)
+    byte_at = last_writer(code, load_at, index)
     if byte_at is not None:
         ins = code[byte_at]
         if ins.mnemonic == "movzx" and len(ins.operands) == 2 and "byte ptr" in ins.operands[1]:
             memory = _memory(ins.operands[1])
             if memory and not memory[1] and len(memory[0]) == 2:
                 families = [FAMILY[r] for r in memory[0]]
-                if base in families and families.count(base) == 1 and _last_writer(code, byte_at, base) == base_at:
+                if base in families and families.count(base) == 1 and last_writer(code, byte_at, base) == base_at:
                     bound_register = families[1 - families.index(base)]
                     index_rva = memory[2] & 0xFFFFFFFF
                     stop = byte_at
@@ -192,7 +197,7 @@ def _read_table(pe: ClientPE, code: list[Instruction], position: int) -> tuple[i
                 and _integer(ins.operands[1]) is not None:
             compare_at = i
             break
-        if _writes(ins, bound_register):
+        if writes(ins, bound_register):
             break
     if compare_at is None:
         raise _NotFound("no `cmp IDX, imm` found for the index register")
@@ -220,7 +225,7 @@ def _read_table(pe: ClientPE, code: list[Instruction], position: int) -> tuple[i
             targets = [base_va + _u32(pe, base_va + table_rva + 4 * k) for k in range(case_count)]
     except ValueError as error:
         raise _NotFound("table not readable: %s" % error) from error
-    return case_count, default, targets
+    return case_count, default, targets, compare_at, bound_register
 
 
 def _u32(pe: ClientPE, va: int) -> int:
