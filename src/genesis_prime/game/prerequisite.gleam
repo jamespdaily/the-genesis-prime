@@ -6,7 +6,7 @@
 ////
 //// ```
 //// Prerequisite row ─▶ of_row: the conditions kept up to the first type 0, AND or OR
-//// a Subject: the casts it is under, in combat, its vitals, its rolls
+//// a Subject: the casts it is under, in combat, its vitals, its difficulty, its rolls
 ////                  ─▶ check ─▶ Passes | Fails | NotRead(type)
 //// ```
 ////
@@ -33,6 +33,9 @@
 ////   (`Prerequisite.prerequisiteTypeId.71`, `0x1404a4e30`).
 //// - **Type 73** compares the vital the objectId names, cut to a whole number
 ////   toward zero, with the value (`Prerequisite.prerequisiteTypeId.73`).
+//// - **Type 179** compares the unit's difficulty with the condition's objectId, not
+////   its value, by comparisons 1 to 6; only a creature's side holds a difficulty,
+////   so a subject with none gives `NotRead` (`0x14049eeb0`, `of_difficulty`).
 //// - **A vital the server does not hold** is `NotRead`, as is a type the client
 ////   decides and the server does not read.
 //// - **A type with no case** in the client, 0 or one above 295, fails
@@ -51,6 +54,8 @@ import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/order
 
 /// A Prerequisite row as the client keeps it: its id, whether any condition is
 /// enough (flags bit 0), and its conditions up to the first of type 0.
@@ -91,16 +96,27 @@ pub fn compare(
   measured measured: Int,
   value value: Int,
 ) -> Bool {
-  let measured = unsigned(measured)
-  let value = unsigned(value)
-  case relation {
-    Equal -> measured == value
-    NotEqual -> measured != value
-    Greater -> measured > value
-    AtLeast -> measured >= value
-    Less -> measured < value
-    AtMost -> measured <= value
-    NeverRelation(..) -> False
+  holds(relation:, ordering: int.compare(unsigned(measured), unsigned(value)))
+}
+
+/// Whether a measured number that orders as `ordering` against the value stands in
+/// `relation` to it.
+fn holds(relation relation: Relation, ordering ordering: order.Order) -> Bool {
+  case relation, ordering {
+    Equal, order.Eq -> True
+    NotEqual, order.Lt | NotEqual, order.Gt -> True
+    Greater, order.Gt -> True
+    AtLeast, order.Gt | AtLeast, order.Eq -> True
+    Less, order.Lt -> True
+    AtMost, order.Lt | AtMost, order.Eq -> True
+    Equal, _
+    | NotEqual, _
+    | Greater, _
+    | AtLeast, _
+    | Less, _
+    | AtMost, _
+    | NeverRelation(..), _
+    -> False
   }
 }
 
@@ -126,6 +142,9 @@ type Condition {
   /// Type 73: the vital's current value, cut to a whole number, against the
   /// value (`Prerequisite.prerequisiteTypeId.73`).
   VitalCurrent(relation: Relation, vital: Int, value: Int)
+  /// Type 179: the unit's difficulty against the objectId
+  /// (`Prerequisite.prerequisiteTypeId.179`, `0x14049eeb0`).
+  Difficulty(relation: Relation, object_id: Int)
   /// A type the client's check has no case for (`0x1404a2100`): it fails.
   NoCase
   /// A type the client decides and the server does not read.
@@ -174,9 +193,25 @@ pub type Subject {
     /// The vitals the server holds for the subject, by Vital id; a vital left out
     /// is not held.
     vitals: Dict(Int, Vital),
+    /// The subject's difficulty, which only a creature's side holds: `None` for a
+    /// player, so type 179 is not read for it (`0x14049eeb0`).
+    difficulty: Option(Int),
     /// The rolls for the type 37 conditions of the check, one for each, in the
     /// order the conditions are tested (`rolls_needed`).
     rolls: List(Int),
+  )
+}
+
+/// A subject that holds only this difficulty: under no cast, out of combat, with
+/// no vital and no roll. A creature's side checks the prerequisites of its
+/// attack's effects against it (genesis_prime/world_map/creature_attack).
+pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
+  Subject(
+    under: [],
+    in_combat: False,
+    vitals: dict.new(),
+    difficulty: Some(difficulty),
+    rolls: [],
   )
 }
 
@@ -266,6 +301,7 @@ fn condition_of(
         vital: object_id,
         value:,
       )
+    179 -> Difficulty(relation: relation_of(code: comparison), object_id:)
     _ ->
       case
         type_id < 1
@@ -289,6 +325,7 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | Roll(..)
     | VitalPercent(..)
     | VitalCurrent(..)
+    | Difficulty(..)
     | NoCase -> True
   }
 }
@@ -308,6 +345,7 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | InCombat(..)
       | VitalPercent(..)
       | VitalCurrent(..)
+      | Difficulty(..)
       | NoCase
       | Unread(..) -> False
     }
@@ -398,6 +436,11 @@ fn condition_check(
         Error(Nil) -> NotRead(prerequisite_type: 73)
       },
     )
+    Difficulty(relation:, object_id:) -> #(rolls, case subject.difficulty {
+      Some(difficulty) ->
+        verdict_of(compare(relation:, measured: difficulty, value: object_id))
+      None -> NotRead(prerequisite_type: 179)
+    })
     NoCase -> #(rolls, Fails)
     Unread(prerequisite_type:) -> #(rolls, NotRead(prerequisite_type:))
   }
@@ -443,13 +486,5 @@ fn floats_compare(
   measured measured: Float,
   value value: Float,
 ) -> Bool {
-  case relation {
-    Equal -> measured == value
-    NotEqual -> measured != value
-    Greater -> measured >. value
-    AtLeast -> measured >=. value
-    Less -> measured <. value
-    AtMost -> measured <=. value
-    NeverRelation(..) -> False
-  }
+  holds(relation:, ordering: float.compare(measured, value))
 }

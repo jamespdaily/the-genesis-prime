@@ -1385,6 +1385,25 @@ pub fn stage_at(spell spell: Spell, index index: Int) -> Result(Spell, Nil) {
   |> result.map(fn(stage) { stage.spell })
 }
 
+/// The spell, the stage spells a RapidTap or ChargeRelease ability casts and the
+/// spell of each Proxy that `started` accepts, below them, each with its own tree
+/// the same way.
+pub fn tree(
+  spell spell: Spell,
+  started started: fn(Proxy) -> Bool,
+) -> List(Spell) {
+  let stages = list.map(spell.stages, fn(stage) { stage.spell })
+  let proxied =
+    list.filter(spell.proxies, started)
+    |> list.map(fn(proxy) { proxy.spell })
+  [
+    spell,
+    ..list.flat_map(list.append(stages, proxied), fn(below) {
+      tree(spell: below, started:)
+    })
+  ]
+}
+
 /// The Proxies of the spell that fire in phase `phase`.
 pub fn proxies_in_phase(spell spell: Spell, phase phase: Int) -> List(Proxy) {
   list.filter(spell.proxies, fn(proxy) {

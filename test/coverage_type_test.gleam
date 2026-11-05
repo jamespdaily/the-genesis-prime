@@ -4,8 +4,8 @@
 //// and their sources:
 //// - The types the server reads: effect types 1 (VitalModifier), 8 (Damage) and
 ////   26 (Proxy), which `Spell4Effects.effectType.1`, `Spell.CodeEnumSpellEffectType.damage`
-////   and `Spell4Effects.effectType.26` name, and prerequisite types 15, 28, 37, 71
-////   and 73 (`Prerequisite.prerequisiteTypeId.N`); a type the client's condition
+////   and `Spell4Effects.effectType.26` name, and prerequisite types 15, 28, 37, 71,
+////   73 and 179 (`Prerequisite.prerequisiteTypeId.N`); a type the client's condition
 ////   check has no case for fails in the client and in the server (`0x1404a2100`).
 //// - The starting abilities' counts are the issue's measured walk of 2026-11-05 over
 ////   SpellLevel (level 1, no prerequisite), Spell4, Spell4Effects, Spell4Thresholds
@@ -15,18 +15,24 @@
 ////   (`Spell4Effects.effectType.N`, `Prerequisite.prerequisiteTypeId.N`).
 
 import client_tables
+import genesis_prime/coverage
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
   type EngineDeclaration, EngineDeclaration, Listed, Missing,
 }
 import genesis_prime/coverage/measurement.{Handled, Measured}
-import genesis_prime/coverage/starting_ability
+import genesis_prime/coverage/starting_ability.{MissingRow}
+import genesis_prime/game/spell_plan.{Spell}
+import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/loader/store
 import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/string
 import owned_test
+import planted_table
 import simplifile
+import spell_tables
 import unitest
 
 fn engine_named(name: String) -> EngineDeclaration {
@@ -67,7 +73,7 @@ pub fn the_effect_types_the_measure_handles_are_1_8_and_26_test() -> Nil {
     as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), Damage 8 and Proxy 26 (Spell4Effects.effectType.26); every other type is unread"
 }
 
-pub fn the_prerequisite_types_the_measure_handles_are_the_five_read_and_those_with_no_case_test() -> Nil {
+pub fn the_prerequisite_types_the_measure_handles_are_the_six_read_and_those_with_no_case_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Prerequisites"),
@@ -75,9 +81,9 @@ pub fn the_prerequisite_types_the_measure_handles_are_the_five_read_and_those_wi
     )
     == [
       15, 17, 21, 28, 32, 37, 45, 57, 58, 71, 72, 73, 75, 132, 144, 156, 157,
-      158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284,
+      158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
     ]
-    as "the server reads 15, 28, 37, 71 and 73, and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+    as "the server reads 15, 28, 37, 71, 73 and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
 }
 
 // ---- the starting abilities' column ----
@@ -253,4 +259,113 @@ pub fn the_checklist_marks_handled_missing_and_undecoded_types_with_the_starting
     "| Quest objectives (#48) | 4 | 8 | 3 | 1 | 2 of 4 |",
   )
     as "the totals row carries the starting abilities' rows handled"
+}
+
+// ---- rows a starting ability's tree names that the tables lack ----
+
+/// The planted rows with Energize's Spell4 row (69450, a level-1 ability of the
+/// Medic) naming this Prerequisite id in its runner column, which the plan's load
+/// does not read.
+fn rows_naming(prerequisite_id prerequisite_id: Int) -> spell_tables.Rows {
+  let rows = spell_tables.rows_with_energize()
+  spell_tables.Rows(
+    ..rows,
+    spell4: spell_tables.sorted_by_id([
+      spell_tables.method_spell_row(
+        id: 69_450,
+        base: 46_615,
+        cast_time: 0,
+        cooldown: 30_000,
+        kind: 3,
+        global: 0,
+        cost: #(0, 0),
+        more: [#("prerequisiteIdRunner00", prerequisite_id)],
+      ),
+      ..planted_table.without(rows.spell4, ids: [69_450])
+    ]),
+  )
+}
+
+fn with_trees_loaded(
+  rows rows: spell_tables.Rows,
+  body body: fn(store.Tables) -> a,
+) -> a {
+  spell_tables.with_loaded_deriving(
+    rows:,
+    derivations: [spell_plan.derivation()],
+    body:,
+  )
+}
+
+pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let lacking =
+    MissingRow(
+      table: "Prerequisite",
+      id: 77_777,
+      named_by: "Spell4 69450 column prerequisiteIdRunner00",
+    )
+  assert with_trees_loaded(
+      rows: rows_naming(prerequisite_id: 77_777),
+      body: fn(tables) { starting_ability.prerequisite_types(tables) },
+    )
+    == Error([lacking])
+    as "Spell4 69450 names Prerequisite 77777 in prerequisiteIdRunner00 and the table has no such row: it is reported with the row and the column, not left out of the starting abilities' types"
+  assert with_trees_loaded(
+      rows: rows_naming(prerequisite_id: 43_811),
+      body: starting_ability.prerequisite_types,
+    )
+    == with_trees_loaded(
+      rows: spell_tables.rows_with_energize(),
+      body: starting_ability.prerequisite_types,
+    )
+    as "a row the table holds, 43811, which Energize's effect 228910 already names, counts once however many columns name it"
+}
+
+pub fn a_spell_of_the_tree_the_spell4_table_lacks_is_a_missing_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert with_trees_loaded(rows: spell_tables.rows(), body: fn(tables) {
+      let assert [spell, ..] = starting_ability.spells(tables:)
+        as "the planted abilities hold spells"
+      starting_ability.prerequisite_types_of(tables:, spells: [
+        Spell(..spell, spell4_id: Spell4Id(123_456)),
+      ])
+    })
+    == Error([
+      MissingRow(
+        table: "Spell4",
+        id: 123_456,
+        named_by: "a spell of a starting ability's tree",
+      ),
+    ])
+    as "a spell of a tree with no Spell4 row is reported, not skipped"
+}
+
+pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let measured =
+    with_trees_loaded(
+      rows: rows_naming(prerequisite_id: 77_777),
+      body: fn(tables) {
+        measurement.measure(engine_named("Prerequisites"), tables)
+      },
+    )
+  let assert Measured(missing_rows:, ..) = measured
+    as "the Prerequisite table is a source"
+  assert missing_rows
+    == [
+      MissingRow(
+        table: "Prerequisite",
+        id: 77_777,
+        named_by: "Spell4 69450 column prerequisiteIdRunner00",
+      ),
+    ]
+    as "the measure keeps the missing row"
+  assert list.any(coverage.breaches([measured]), fn(line) {
+    string.contains(
+      line,
+      "Prerequisites reaches rows the client's tables lack: Prerequisite 77777, named by Spell4 69450 column prerequisiteIdRunner00, is not in the client's tables",
+    )
+  })
+    as "the tool's breaches, which end it with exit 1, name the row"
 }

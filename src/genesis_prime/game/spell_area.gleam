@@ -253,15 +253,12 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
 /// prerequisite is never started (genesis_prime/game/spell_plan `GatedOnTarget`), so
 /// its spell is not read; one behind a caster prerequisite may start, so it is.
 fn spells_of_tree(spell: Spell) -> List(Spell) {
-  let stages = list.map(spell.stages, fn(stage) { stage.spell })
-  let proxied =
-    list.filter_map(spell.proxies, fn(proxy) {
-      case proxy.condition {
-        spell_plan.Always | spell_plan.GatedOnCaster(..) -> Ok(proxy.spell)
-        spell_plan.GatedOnTarget(..) -> Error(Nil)
-      }
-    })
-  [spell, ..list.flat_map(list.append(stages, proxied), spells_of_tree)]
+  spell_plan.tree(spell:, started: fn(proxy) {
+    case proxy.condition {
+      spell_plan.Always | spell_plan.GatedOnCaster(..) -> True
+      spell_plan.GatedOnTarget(..) -> False
+    }
+  })
 }
 
 /// The Spell4Telegraph rows of each spell, in table order, grouped once.

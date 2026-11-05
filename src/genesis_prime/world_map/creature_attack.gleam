@@ -12,15 +12,16 @@
 ////
 //// - **Type 179** compares the unit's difficulty with the condition's object id,
 ////   unsigned: 1 equal, 2 not equal, 3 above, 4 at least, 5 below, 6 at most
-////   (`0x14049eeb0`). A creature's difficulty is its Creature2 row's
-////   (`0x14045ba40`).
-//// - **One condition is read.** Prerequisite rows hold three; a row whose second or
-////   third condition is set is not evaluated, and the load refuses it as an
-////   unevaluated type.
+////   (`0x14049eeb0`, decoded and checked by genesis_prime/game/prerequisite). A
+////   creature's difficulty is its Creature2 row's (`0x14045ba40`).
+//// - **One condition is read.** Prerequisite rows hold three; a row that keeps
+////   a second condition (the client keeps those before the first of type 0,
+////   `0x1404a5190`) is not evaluated, and the load refuses it as an unevaluated type.
 //// - **The client applies no effect itself**: the server names the effect in
 ////   0x7f4, so the server follows the table's prerequisite (`Spell4Effects.184741`).
 
 import genesis_prime/game/effect_kind
+import genesis_prime/game/prerequisite as game_prerequisite
 import genesis_prime/table/id.{PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
@@ -78,32 +79,36 @@ pub fn applying(
   difficulty difficulty: Int,
 ) -> Result(List(Spell4Effects), Unevaluated) {
   damage_effects(tables:, spell4_id:)
-  |> list.try_map(fn(effect) {
-    condition(tables:, effect:)
-    |> result.map(fn(found) {
-      case found {
-        Unconditional -> #(effect, True)
-        Difficulty(comparison:, object_id:) -> #(
-          effect,
-          compares(comparison:, value: difficulty, object_id:),
-        )
-      }
-    })
+  |> list.try_fold([], fn(applying, effect) {
+    use found <- result.try(condition(tables:, effect:))
+    case found {
+      Unconditional -> Ok([effect, ..applying])
+      Gated(prerequisite:) ->
+        case
+          game_prerequisite.check(
+            prerequisite:,
+            subject: game_prerequisite.of_difficulty(difficulty:),
+          )
+        {
+          game_prerequisite.Passes -> Ok([effect, ..applying])
+          game_prerequisite.Fails -> Ok(applying)
+          game_prerequisite.NotRead(prerequisite_type:) ->
+            Error(OtherType(
+              spell4_effects_id: effect.id,
+              prerequisite_id: game_prerequisite.id(prerequisite:).value,
+              type_id: prerequisite_type,
+            ))
+        }
+    }
   })
-  |> result.map(fn(judged) {
-    list.filter_map(judged, fn(one) {
-      case one.1 {
-        True -> Ok(one.0)
-        False -> Error(Nil)
-      }
-    })
-  })
+  |> result.map(list.reverse)
 }
 
 /// An effect's caster prerequisite as the server evaluates it.
 type Condition {
   Unconditional
-  Difficulty(comparison: Int, object_id: Int)
+  /// A row whose one kept condition is of type 179.
+  Gated(prerequisite: game_prerequisite.Prerequisite)
 }
 
 fn condition(
@@ -120,42 +125,23 @@ fn condition(
           prerequisite_id: id,
         )),
       )
-      case
-        row.prerequisite_type_id0,
-        row.prerequisite_type_id1,
-        row.prerequisite_type_id2
-      {
-        type_id, 0, 0 if type_id == difficulty_type ->
-          Ok(Difficulty(
-            comparison: row.prerequisite_comparison_id0,
-            object_id: row.object_id0,
-          ))
-        type_id, _, _ ->
+      case game_prerequisite.condition_types(row:) {
+        [type_id] if type_id == difficulty_type ->
+          Ok(Gated(prerequisite: game_prerequisite.of_row(row:)))
+        [type_id, ..] ->
           Error(OtherType(
             spell4_effects_id: effect.id,
             prerequisite_id: id,
             type_id:,
           ))
+        [] ->
+          Error(OtherType(
+            spell4_effects_id: effect.id,
+            prerequisite_id: id,
+            type_id: 0,
+          ))
       }
     }
-  }
-}
-
-/// The comparison of the unit's value with the object id, unsigned
-/// (`0x14049eeb0`, `0x1404a2090`); an unknown comparison fails.
-fn compares(
-  comparison comparison: Int,
-  value value: Int,
-  object_id object_id: Int,
-) -> Bool {
-  case comparison {
-    1 -> value == object_id
-    2 -> value != object_id
-    3 -> value > object_id
-    4 -> value >= object_id
-    5 -> value < object_id
-    6 -> value <= object_id
-    _ -> False
   }
 }
 

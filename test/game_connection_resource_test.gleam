@@ -5,7 +5,9 @@
 //// is slot n, `opcode.0x262.resource_stats`), the client's row
 //// (`table_rows -- Spell4 38779`: Impale costs 35 of type 8, slot 3) and the step's
 //// design (issue 403: the Stalker's 100 Suit Power, +7 each second, paid at the
-//// accept).
+//// accept). The seed's draws are those of `genesis_prime/random` (each draw takes
+//// whole 32-byte blocks of HMAC-SHA256 of the seed), and a strike's rolls are 12
+//// bytes (`hit.roll_bytes`).
 
 import cast_support
 import character_tables
@@ -18,12 +20,14 @@ import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/hit
 import genesis_prime/game/loadout
 import genesis_prime/game/strike_tell
 import genesis_prime/message/float32
 import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
 }
+import genesis_prime/random
 import genesis_prime/step.{
   type ConnectionStep, type TimerId, CancelTimer, OwnEffect, OwnEvent,
   StartTimer, TimerFired, Unwatch, Watch,
@@ -514,4 +518,106 @@ pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> N
   assert changes_written(late) == []
   assert support.effects_of(late) == []
     as "a timer of a player no longer in the world is dropped"
+}
+
+/// The rolls of the strikes the steps tell creatures, in order.
+fn strike_rolls(steps: List(ConnectionStep(Request))) -> List(hit.Rolls) {
+  list.flat_map(steps, fn(taken) {
+    list.filter_map(support.effects_of(taken), fn(effect) {
+      case effect {
+        OwnEffect(step.Tell(
+          to: step.Creature(..),
+          request: client_connection.TellStrike(tell:),
+        )) ->
+          case tell.striker {
+            strike_tell.PlayerStriker(rolls:, ..) -> Ok(rolls)
+            strike_tell.CreatureStriker -> Error(Nil)
+          }
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+  })
+}
+
+/// The rolls of `count` strikes that each take `hit.roll_bytes` of the seed in turn:
+/// a connection that draws nothing else (`random.bytes` of the connection's seed,
+/// which the tests give 1: `game_connection_support.accepted`).
+fn rolls_of_the_seed(count count: Int) -> List(hit.Rolls) {
+  let #(_, rolls) =
+    list.fold(
+      list.repeat(Nil, count),
+      #(random.new(seed: support.seed(1)), []),
+      fn(so_far, _) {
+        let #(source, rolls) = so_far
+        let #(source, bytes) = random.bytes(source, hit.roll_bytes)
+        let assert Ok(next) = hit.rolls_of(bytes:)
+          as "the draw is the 12 bytes of a strike's rolls"
+        #(source, [next, ..rolls])
+      },
+    )
+  list.reverse(rolls)
+}
+
+/// The press of Paralytic Surge (bag index 2 of the Medic) at `ms`.
+fn surge_at(
+  state state: game_connection.State,
+  ms ms: Int,
+  client_cast_id client_cast_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  at(
+    state:,
+    ms:,
+    event: OwnEvent(
+      step.Read(game_connection_support.world_message(
+        message_id: 0x009A,
+        body: cast_support.press_body(
+          client_cast_id:,
+          bag_index: 2,
+          target: 0,
+          press: 1,
+        ),
+      )),
+    ),
+  )
+}
+
+pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_follow_the_last_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(state, _) =
+    at(
+      state: game_connection_support.medic_in_world(),
+      ms: 1000,
+      event: game_connection_support.beast_appears(unit_id: 40),
+    )
+  let #(state, first) = surge_at(state:, ms: 1000, client_cast_id: 1)
+  let assert [#(40, key)] = game_connection_support.strikes_told(first)
+    as "the press strikes the Beast"
+  let #(state, landed) =
+    at(state:, ms: 1100, event: game_connection_support.landed(key:))
+  assert list.any(
+    game_client.casts_in(frames: game_connection_support.heard(
+      landed,
+      game_connection_support.keyed(),
+    )),
+    fn(event) {
+      case event {
+        game_client.CastWent(..) -> True
+        game_client.CastRefused(..)
+        | game_client.CastConfirmed(..)
+        | game_client.CastStarted(..)
+        | game_client.ThresholdOpened(..)
+        | game_client.ThresholdIndex(..)
+        | game_client.ThresholdClosed(..)
+        | game_client.ThresholdEnded(..)
+        | game_client.CastFinished(..) -> False
+      }
+    },
+  )
+    as "the answer closes the round and the cast's go is written (0x7f4); no gate of Paralytic Surge is of type 37"
+  let #(_, second) = surge_at(state:, ms: 9000, client_cast_id: 2)
+  assert game_connection_support.strikes_told(second) != []
+    as "the second press strikes the Beast too"
+  assert strike_rolls([first, second]) == rolls_of_the_seed(count: 2)
+    as "each strike takes the next 12 bytes of the seed: the go between them drew none, which a draw of a roll (4 bytes, a block of the seed) would shift"
 }

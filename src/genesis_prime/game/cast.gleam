@@ -136,11 +136,17 @@
 ////   (`spell_plan.Gain`). Each is given when its prerequisite passes against the
 ////   caster (genesis_prime/game/prerequisite): the spells of the caster's own live
 ////   casts whose primary target it is, whether it is in combat, its health, shield
-////   and class resource as the vitals 1, 3 and 5 to 11, and the rolls the
-////   connection drew. A prerequisite of a type or a vital not read, and a ticking
-////   gain, give nothing and a debug line. A creature's cast on the player is not
+////   and the class resource slot it holds as the vitals 1, 3 and 5 to 11, and the
+////   rolls the connection drew. A prerequisite of a type or a vital not read, and a
+////   ticking gain, give nothing and a debug line. A creature's cast on the player is not
 ////   held here, so a prerequisite cannot find one (no kit prerequisite tests a
 ////   creature's spell).
+//// - **A go's gates read the caster as it stood before the go's own effects.** The
+////   gates of its Proxies and of its gains see the live casts with this go counted,
+////   but not the children the go starts and not the cast's removal at its finish: a
+////   server choice, since the client applies no Proxy itself
+////   (`Spell4Effects.effectType.26.dataBits06`). A gain that asks to be "not under"
+////   a spell this same go starts is given (`cast_gate_test`).
 //// - **A go's rolls** are one for each type 37 condition among the gates of the
 ////   Proxies that start a child and of the gains that may be given
 ////   (`rolls_needed`); the connection draws that many from its seed before it calls
@@ -1639,26 +1645,37 @@ pub fn rolls_needed(
     Ok(live) -> {
       let spell = live.spell
       let proxies = proxies_with_targets(spell:, phase:, struck:)
-      let gates =
-        list.flat_map(proxies, fn(proxy) {
-          case proxy.condition {
-            spell_plan.GatedOnCaster(gates:) -> gates
-            spell_plan.Always | spell_plan.GatedOnTarget(..) -> []
-          }
-        })
-      let gains =
-        list.append(
-          spell_plan.gains_in_phase(spell:, phase:),
-          list.flat_map(proxies, lifted_gains),
-        )
       int.sum(list.append(
-        list.map(gates, fn(gate) {
+        list.map(gates_of(proxies:), fn(gate) {
           prerequisite.rolls_needed(prerequisite: gate)
         }),
-        list.map(gains, gain_rolls_needed),
+        list.map(gains_of(spell:, phase:, proxies:), gain_rolls_needed),
       ))
     }
   }
+}
+
+/// The caster gates of these Proxies, in the order `proxy_gates` checks them.
+fn gates_of(proxies proxies: List(Proxy)) -> List(prerequisite.Prerequisite) {
+  list.flat_map(proxies, fn(proxy) {
+    case proxy.condition {
+      spell_plan.GatedOnCaster(gates:) -> gates
+      spell_plan.Always | spell_plan.GatedOnTarget(..) -> []
+    }
+  })
+}
+
+/// The gains of a go, in the order `gains_given` checks them: the spell's own of
+/// the phase, then those of each of these Proxies.
+fn gains_of(
+  spell spell: Spell,
+  phase phase: Int,
+  proxies proxies: List(Proxy),
+) -> List(spell_plan.Gain) {
+  list.append(
+    spell_plan.gains_in_phase(spell:, phase:),
+    list.flat_map(proxies, lifted_gains),
+  )
 }
 
 /// The rolls the check of a gain's prerequisite takes; a ticking gain is not
@@ -2248,6 +2265,8 @@ fn go(
       let live = Live(..live, gone: live.gone + 1)
       let cast =
         State(..cast, current:, casts: dict.insert(cast.casts, cast_id, live))
+      // The subject is read once here, before the children start and before the
+      // finish: every gate of this go decides on the state before the go's own effects.
       let subject = subject_of(cast:, caster:)
       let #(starting, gate_logs, rolls) =
         proxy_gates(
@@ -2277,26 +2296,32 @@ fn go(
 
 /// What a prerequisite may read about the caster, with no roll: the live casts it is
 /// the primary target of, whether it is in combat, and its vitals: its health and
-/// shield, and the class resource's slots as Vitals 5 to 11 (Resource0 to
-/// Resource6: `Prerequisite.prerequisiteTypeId.73`, `Spell4Effects.effectType.1`).
+/// shield, and the one class resource slot it holds as Vital 5 to 11 (slots 0 to 6,
+/// `0x1403b3320`: the cost check reads Vitals 5 to 11 as the caster's resource slots
+/// 0 to 6; the getter type 71 and 73 call is not read case by case, so the same
+/// mapping is taken for it). A slot the class does not hold is no vital, so a
+/// prerequisite of it is not read. A player holds no difficulty.
 fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
-  let slots =
-    list.map([5, 6, 7, 8, 9, 10, 11], fn(vital) {
-      let slot = vital - 5
+  let slot = class_resource.slot(resources: caster.resources)
+  let held = case slot >= 0 && slot <= 6 {
+    True -> [
       #(
-        vital,
+        slot + 5,
         prerequisite.Vital(
           current: class_resource.value(resources: caster.resources, slot:),
           maximum: class_resource.max(resources: caster.resources, slot:),
         ),
-      )
-    })
+      ),
+    ]
+    False -> []
+  }
   prerequisite.Subject(
     under: dict.values(cast.casts)
       |> list.filter(fn(live) { live.primary_target == caster.unit_id })
       |> list.map(fn(live) { live.spell.spell4_id }),
     in_combat: caster.in_combat,
-    vitals: dict.merge(dict.from_list(slots), caster.life_vitals),
+    vitals: dict.merge(dict.from_list(held), caster.life_vitals),
+    difficulty: None,
     rolls: [],
   )
 }
@@ -2424,10 +2449,7 @@ fn gains_given(
 ) -> List(Effect) {
   let #(_, given, logs) =
     list.fold(
-      list.append(
-        spell_plan.gains_in_phase(spell:, phase:),
-        list.flat_map(starting, lifted_gains),
-      ),
+      gains_of(spell:, phase:, proxies: starting),
       #(rolls, [], []),
       fn(so_far, gain) {
         let #(rolls, given, logs) = so_far

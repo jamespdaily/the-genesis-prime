@@ -10,7 +10,12 @@
 ////   vital 6, value 100), 33154 (type 59, which the server does not read) and 5734
 ////   (type 108 in a target apply column, `Spell4Effects.prerequisiteIdTargetApply`),
 ////   copied as `table_rows -- Prerequisite <id>` prints them.
-//// - The design of the step: a Proxy's caster-side gates are checked at its
+//// - The client's code: `0x1403b3320` (Vitals 5 to 11 are the caster's resource
+////   slots 0 to 6) and `0x14049eeb0` (type 179 reads the unit's difficulty, which a
+////   player does not hold here).
+//// - The design of the step: a gate decides on the state before the go's own
+////   effects (the casts as they stood before its children start and before its
+////   finish), a Proxy's caster-side gates are checked at its
 ////   phase's go with the caster as subject, a Proxy with a target apply
 ////   prerequisite is not started, and a prerequisite of a type or a vital not read
 ////   leaves one debug line (`Spell4Effects.effectType.26.dataBits06`).
@@ -435,5 +440,95 @@ pub fn a_gain_behind_a_vital_the_server_does_not_hold_is_not_given_and_leaves_a_
   let effects = pressed(spell: focus, caster: support.caster(), rolls: [])
   assert support.gains(effects:) == []
     as "Vital 15 (Focus) is held by no rule of the server: the prerequisite is not read, so no gain is given"
+  assert list.length(debug_lines(effects)) == 1 as "and one debug line says so"
+}
+
+// ---- the order within a go ----
+
+pub fn a_gain_behind_a_type_15_prerequisite_reads_the_casts_as_they_stood_before_the_go_starts_its_children_test() -> Nil {
+  use <- owned_test.run(5000)
+  let not_under_the_child =
+    spell_with(proxies: [proxy(spell_plan.Always)], gains: [
+      gain_behind(
+        prerequisite: prerequisite_support.single(id: 1, condition: #(
+          15,
+          2,
+          0,
+          child_spell4_id,
+        )),
+      ),
+    ])
+  let effects =
+    pressed(spell: not_under_the_child, caster: support.caster(), rolls: [])
+  assert children_started(effects) == 1
+    as "the Proxy starts its child 99 at the go, aimed at the caster"
+  assert support.gains(effects:) == [[Gain(slot: 1, amount: 5)]]
+    as "a server choice: a gate decides on the state before the go, so the child 99 the same go starts does not yet target the caster and 'not under 99' (type 15, comparison 2) passes"
+}
+
+pub fn a_gain_behind_a_type_15_prerequisite_reads_the_casts_as_they_stood_before_the_go_finishes_the_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  let under_its_own_cast =
+    spell_with(proxies: [], gains: [
+      gain_behind(
+        prerequisite: prerequisite_support.single(id: 1, condition: #(
+          15,
+          1,
+          0,
+          1,
+        )),
+      ),
+    ])
+  assert support.gains(
+      effects: pressed(
+        spell: under_its_own_cast,
+        caster: support.caster(),
+        rolls: [],
+      ),
+    )
+    == [[Gain(slot: 1, amount: 5)]]
+    as "a server choice: the last go's gate decides before its finish, so the live cast of Spell4 1 (the spell itself, aimed at the caster) still targets the caster and 'under 1' (type 15, comparison 1) passes"
+}
+
+pub fn a_gain_behind_a_resource_slot_the_class_does_not_hold_is_not_given_and_leaves_a_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert class_resource.slot(resources: support.caster().resources) == 1
+    as "the planted caster's class holds slot 1 (Vital 6, Resource1) only"
+  list.each([#(73, 5), #(73, 7), #(71, 11)], fn(condition) {
+    let spell =
+      spell_with(proxies: [], gains: [
+        gain_behind(
+          prerequisite: prerequisite_support.single(id: 1, condition: #(
+            condition.0,
+            1,
+            condition.1,
+            0,
+          )),
+        ),
+      ])
+    let effects = pressed(spell:, caster: support.caster(), rolls: [])
+    assert support.gains(effects:) == []
+      as "0x1403b3320: Vitals 5 to 11 read the caster's resource slots 0 to 6; a slot the class does not hold is not read, not 0 of 0, so even 'equal to 0' gives no gain"
+    assert list.length(debug_lines(effects)) == 1
+      as "and one debug line says so"
+  })
+}
+
+pub fn a_gain_behind_the_units_difficulty_is_not_given_to_a_player_and_leaves_a_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  let spell =
+    spell_with(proxies: [], gains: [
+      gain_behind(
+        prerequisite: prerequisite_support.single(id: 30_527, condition: #(
+          179,
+          4,
+          7,
+          0,
+        )),
+      ),
+    ])
+  let effects = pressed(spell:, caster: support.caster(), rolls: [])
+  assert support.gains(effects:) == []
+    as "0x14049eeb0: type 179 reads the unit's difficulty, which only a creature's side supplies; a player's subject holds none, so the prerequisite is not read"
   assert list.length(debug_lines(effects)) == 1 as "and one debug line says so"
 }

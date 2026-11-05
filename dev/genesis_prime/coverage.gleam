@@ -7,8 +7,9 @@
 //// type is handled, decoded and missing (with what it lacks and the fact file's
 //// key), or not decoded, beside the rows it has in the whole game and in the
 //// starting abilities' spells. It exits with 1 when the tables do not load, an
-//// engine declares a type no row uses, or an engine both handles a type and
-//// lists it as missing.
+//// engine declares a type no row uses, an engine both handles a type and
+//// lists it as missing, or a starting ability's tree names a Spell4 or Prerequisite
+//// row the tables lack.
 ////
 //// It then prints the coverage of the world's spawns, a line for each world: how
 //// many start as fight creatures, how many NonPlayer rows are left out and why,
@@ -23,6 +24,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
+import genesis_prime/coverage/starting_ability
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
 import genesis_prime/game/rating
@@ -123,12 +125,13 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
   }
 }
 
-/// A line for each engine that declares a type no row uses, and one for each that
-/// both handles a type and lists it as missing.
-fn breaches(measurements: List(Measurement)) -> List(String) {
+/// A line for each engine that declares a type no row uses, one for each that
+/// both handles a type and lists it as missing, and one for each that names a row
+/// of a starting ability's tree the client's tables lack.
+pub fn breaches(measurements: List(Measurement)) -> List(String) {
   list.flat_map(measurements, fn(measured) {
     case measured {
-      Measured(engine:, breaches:, conflicts:, ..) ->
+      Measured(engine:, breaches:, conflicts:, missing_rows:, ..) ->
         list.flatten([
           case breaches {
             [] -> []
@@ -144,6 +147,17 @@ fn breaches(measurements: List(Measurement)) -> List(String) {
               engine.name
               <> " both handles and lists as missing the types: "
               <> string.join(list.map(both, int.to_string), ", "),
+            ]
+          },
+          case missing_rows {
+            [] -> []
+            lacking -> [
+              engine.name
+              <> " reaches rows the client's tables lack: "
+              <> string.join(
+                list.map(lacking, fn(row) { starting_ability.describe(row) }),
+                "; ",
+              ),
             ]
           },
         ])

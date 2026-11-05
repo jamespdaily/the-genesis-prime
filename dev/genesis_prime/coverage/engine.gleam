@@ -72,8 +72,10 @@ pub type EngineDeclaration {
     /// The types read from the client and not handled. A type is never both.
     missing: List(Missing),
     /// The type values the level-1 abilities' trees use, when the engine's
-    /// types are those of spells.
-    starting_abilities: Option(fn(store.Tables) -> List(Int)),
+    /// types are those of spells, or the rows the trees name that the tables lack.
+    starting_abilities: Option(
+      fn(store.Tables) -> Result(List(Int), List(starting_ability.MissingRow)),
+    ),
   )
 }
 

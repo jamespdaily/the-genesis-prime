@@ -66,11 +66,9 @@ fn caster_gates(proxy: Proxy) -> Result(List(Int), Nil) {
 
 /// Every Proxy in the spell's tree, its stages' trees among them.
 fn proxies_in(spell: Spell) -> List(Proxy) {
-  list.flatten([
-    spell.proxies,
-    list.flat_map(spell.proxies, fn(proxy) { proxies_in(proxy.spell) }),
-    list.flat_map(spell.stages, fn(stage) { proxies_in(stage.spell) }),
-  ])
+  list.flat_map(spell_plan.tree(spell:, started: fn(_) { True }), fn(below) {
+    below.proxies
+  })
 }
 
 /// The Proxies of the effect id in the ability's tree.

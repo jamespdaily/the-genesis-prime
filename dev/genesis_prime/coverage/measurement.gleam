@@ -1,6 +1,7 @@
 //// An engine's declaration set against what the client's data requires.
 
 import genesis_prime/coverage/engine.{type EngineDeclaration}
+import genesis_prime/coverage/starting_ability.{type MissingRow}
 import genesis_prime/coverage/type_count
 import genesis_prime/table/loader/store
 import gleam/bool
@@ -48,6 +49,9 @@ pub type Measurement {
     breaches: List(Int),
     /// The types the engine both handles and lists as missing.
     conflicts: List(Int),
+    /// The rows the starting abilities' trees name that the tables lack: the
+    /// starting abilities' column is then empty and the measure fails.
+    missing_rows: List(MissingRow),
   )
   /// The engine's types are not recorded; `needed` says what must be.
   Unmeasured(engine: EngineDeclaration, needed: String)
@@ -61,15 +65,23 @@ pub fn measure(
   engine engine: EngineDeclaration,
   tables tables: store.Tables,
 ) -> Measurement {
-  let starting = case engine.starting_abilities {
-    Some(values) -> values(tables)
-    None -> []
+  let #(starting, missing_rows) = case engine.starting_abilities {
+    Some(values) ->
+      case values(tables) {
+        Ok(found) -> #(found, [])
+        Error(missing) -> #([], missing)
+      }
+    None -> #([], [])
   }
-  case engine.source {
+  let measured = case engine.source {
     engine.TableColumns(values:, ..) ->
       from_values(engine:, values: values(tables), starting:)
     engine.Cases(ids:, ..) -> from_values(engine:, values: ids, starting:)
     engine.CasesNotRecorded(needed:, ..) -> Unmeasured(engine:, needed:)
+  }
+  case measured {
+    Measured(..) -> Measured(..measured, missing_rows:)
+    Unmeasured(..) -> measured
   }
 }
 
@@ -99,14 +111,9 @@ fn measured(
 ) -> Measurement {
   let count = type_count.count(values:, zero:)
   let in_starting =
-    list.fold(starting, dict.new(), fn(counts, type_number) {
-      dict.upsert(counts, type_number, fn(found) {
-        case found {
-          Some(so_far) -> so_far + 1
-          None -> 1
-        }
-      })
-    })
+    type_count.count(values: starting, zero:).types
+    |> list.map(fn(counted) { #(counted.type_number, counted.rows) })
+    |> dict.from_list
   let types =
     list.map(count.types, fn(counted) {
       TypeLine(
@@ -143,6 +150,7 @@ fn measured(
     zero_values: count.zero_values,
     breaches: list.append(unused_handled, unused_missing),
     conflicts:,
+    missing_rows: [],
   )
 }
 

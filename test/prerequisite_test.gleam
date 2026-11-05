@@ -11,6 +11,8 @@
 ////   passes when a live cast of the value's Spell4 targets the unit, 2 when none
 ////   does, any other fails), and `0x1404a2100` (a type with no case, such as 17,
 ////   fails).
+//// - The unit's difficulty, type 179 (`0x14049eeb0`): compared with the condition's
+////   objectId, not its value, and read only where the subject holds a difficulty.
 //// - The client's comparison `0x1404a2090` (1 equal, 2 not equal, 3 greater, 4 at
 ////   least, 5 less, 6 at most, unsigned 32-bit; any other fails) and its types
 ////   `Prerequisite.prerequisiteTypeId.28` (in combat: comparison 1 in, 2 out),
@@ -27,6 +29,7 @@ import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import owned_test
 import prerequisite_support
 
@@ -62,9 +65,16 @@ fn row_43812() -> prerequisite_table.Prerequisite {
   ])
 }
 
-/// A subject under no cast, out of combat, holding no vital, with no roll.
+/// A subject under no cast, out of combat, holding no vital and no difficulty,
+/// with no roll.
 fn bare() -> Subject {
-  Subject(under: [], in_combat: False, vitals: dict.new(), rolls: [])
+  Subject(
+    under: [],
+    in_combat: False,
+    vitals: dict.new(),
+    rolls: [],
+    difficulty: None,
+  )
 }
 
 fn check_of(
@@ -383,6 +393,70 @@ pub fn type_73_compares_the_current_value_cut_toward_zero_test() -> Nil {
     as "row 11153's comparison 4 on 100: 99 is not at least 100"
 }
 
+pub fn type_71_with_something_held_of_a_zero_maximum_is_beyond_every_value_test() -> Nil {
+  use <- owned_test.run(5000)
+  let held =
+    Subject(
+      ..bare(),
+      vitals: dict.from_list([#(6, Vital(current: 5.0, maximum: 0.0))]),
+    )
+  let comparison = fn(code) {
+    prerequisite_support.row(id: 1, flags: 0, conditions: [#(71, code, 6, 100)])
+  }
+  assert list.map([1, 2, 3, 4, 5, 6], fn(code) {
+      check_of(comparison(code), held)
+    })
+    == [Fails, Passes, Passes, Passes, Fails, Fails]
+    as "0x1404a4e30: 5 of 0 is 500 over 0, positive infinity in 32-bit floats, above the value 100 under 2, 3 and 4 and under no other"
+}
+
+pub fn type_179_compares_the_units_difficulty_with_the_object_id_not_the_value_test() -> Nil {
+  use <- owned_test.run(5000)
+  let of_difficulty = fn(difficulty) {
+    Subject(..bare(), difficulty: Some(difficulty))
+  }
+  let comparison = fn(code) {
+    prerequisite_support.row(id: 30_526, flags: 0, conditions: [
+      #(179, code, 6, 99),
+    ])
+  }
+  assert list.map([1, 2, 3, 4, 5, 6], fn(code) {
+      check_of(comparison(code), of_difficulty(6))
+    })
+    == [Passes, Fails, Fails, Passes, Fails, Passes]
+    as "0x14049eeb0: difficulty 6 against the objectId 6 is equal, at least and at most"
+  assert list.map([1, 2, 3, 4, 5, 6], fn(code) {
+      check_of(comparison(code), of_difficulty(7))
+    })
+    == [Fails, Passes, Passes, Passes, Fails, Fails]
+    as "difficulty 7 is above the objectId 6, whatever the value 99 holds"
+  assert list.map([0, 7], fn(code) {
+      check_of(comparison(code), of_difficulty(6))
+    })
+    == [Fails, Fails]
+    as "0x1404a2090: a comparison other than 1 to 6 fails"
+  assert check_of(
+      prerequisite_support.row(id: 30_527, flags: 0, conditions: [
+        #(179, 4, 7, 0),
+      ]),
+      of_difficulty(6),
+    )
+    == Fails
+    as "row 30527 (at least 7) fails a creature of difficulty 6"
+}
+
+pub fn type_179_with_no_difficulty_held_is_not_read_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert check_of(
+      prerequisite_support.row(id: 30_526, flags: 0, conditions: [
+        #(179, 6, 6, 0),
+      ]),
+      bare(),
+    )
+    == NotRead(prerequisite_type: 179)
+    as "a subject with no unit difficulty, a player's, leaves type 179 to the client"
+}
+
 pub fn a_vital_the_server_does_not_hold_is_not_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert check_of(
@@ -415,10 +489,10 @@ pub fn the_types_the_server_decides_are_those_is_read_names_test() -> Nil {
     })
     == [
       0, 15, 17, 21, 28, 32, 37, 45, 57, 58, 71, 72, 73, 75, 132, 144, 156, 157,
-      158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284, 296, 297, 298,
-      299, 300,
+      158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284, 296, 297,
+      298, 299, 300,
     ]
-    as "the types the server reads (15, 28, 37, 71, 73) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
+    as "the types the server reads (15, 28, 37, 71, 73, 179) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
 }
 
 fn types_up_to_300() -> List(Int) {

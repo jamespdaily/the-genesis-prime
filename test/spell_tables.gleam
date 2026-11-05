@@ -1762,11 +1762,20 @@ pub fn rows() -> Rows {
       class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16]),
       class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16]),
     ],
-    prerequisites: sorted_by_id(list.append(
-      proxy_prerequisite_rows(),
-      gain_prerequisite_rows(),
-    )),
+    prerequisites: sorted_by_id(
+      list.flatten([
+        proxy_prerequisite_rows(),
+        gain_prerequisite_rows(),
+        waiver_prerequisite_rows(),
+      ]),
+    ),
   )
+}
+
+/// The Prerequisite row Rampage's caster cast column names, the client's
+/// (`table_rows -- Prerequisite 19750`): type 15, comparison 1, value 42908.
+fn waiver_prerequisite_rows() -> List(List(Cell)) {
+  [prerequisite_row(id: 19_750, flags: 0, conditions: [#(15, 1, 0, 42_908)])]
 }
 
 /// Every planted row holds its ID in its first cell.
