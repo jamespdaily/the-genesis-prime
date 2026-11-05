@@ -290,3 +290,44 @@ pub fn the_five_level_one_proxies_with_a_data_bits_06_are_each_behind_it_test() 
     },
   )
 }
+
+/// Every gain a spell's tree holds under a Proxy aimed at each struck unit, as the
+/// flags it fires in and whether it sits below a cast that is already started for
+/// each struck unit: a gain lifted onto the Proxy is not below one, a gain left on
+/// that cast or lifted from a Proxy under it is.
+fn gains_under_each_struck(
+  spell spell: Spell,
+  under under: Bool,
+) -> List(#(Bool, Int)) {
+  let own = case under {
+    True -> list.map(spell.gains, fn(gain) { #(True, gain.phase_flags) })
+    False -> []
+  }
+  let below =
+    list.flat_map(spell.proxies, fn(proxy) {
+      let each_struck = under || proxy.target == spell_plan.OnEachStruck
+      list.append(
+        list.map(proxy.gains, fn(gain) { #(under, gain.phase_flags) }),
+        gains_under_each_struck(spell: proxy.spell, under: each_struck),
+      )
+    })
+  let staged =
+    list.flat_map(spell.stages, fn(stage) {
+      gains_under_each_struck(spell: stage.spell, under:)
+    })
+  list.flatten([own, below, staged])
+}
+
+pub fn every_gain_under_an_each_struck_proxy_is_in_phase_0_and_one_level_deep_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let plans = spell_plan.plans(tables: client_tables.shared())
+  let gains =
+    list.flat_map(dict.values(plans), fn(spell) {
+      gains_under_each_struck(spell:, under: False)
+    })
+  assert gains != []
+    as "Relentless Strikes and Telekinetic Strike hold such gains"
+  assert list.all(gains, fn(gain) { gain == #(False, 1) })
+    as "Spell4Effects.phaseFlags of every VitalModifier under a Proxy aimed at each struck unit in the level-1 trees is 1 (phase 0), and none sits below a cast already started for each struck unit: lifting by phase 0 moves each whole, none is lost to a later phase, and none stays on a child that casts once per unit"
+}

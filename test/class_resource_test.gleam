@@ -392,6 +392,23 @@ pub fn an_esper_back_in_combat_during_the_wait_keeps_its_points_test() -> Nil {
   assert class_resource.value(resources:, slot: 1) == 3.0
 }
 
+pub fn an_esper_gaining_out_of_combat_starts_the_empty_wait_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, first) = gain(resources: new(3), slot: 1, amount: 1)
+  assert first
+    == [
+      Changed(slot: 1, value: 1.0),
+      StartTimer(timer: class_resource.empty_timer, after_ms: 10_000),
+    ]
+    as "Psi Points go to 0 ten seconds after combat (retail record, marcleoseguin.com 2014-08-13), also for points gained after the combat flag cleared"
+  let #(resources, second) = gain(resources:, slot: 1, amount: 1)
+  assert second == [Changed(slot: 1, value: 2.0)]
+    as "a gain does not restart a running wait: no second start, no cancel"
+  let #(resources, emptied) = empty_fired(resources)
+  assert emptied == [Changed(slot: 1, value: 0.0)]
+  assert class_resource.value(resources:, slot: 1) == 0.0
+}
+
 pub fn an_esper_leaving_combat_with_0_starts_no_timer_test() -> Nil {
   use <- owned_test.run(5000)
   let #(resources, _) =

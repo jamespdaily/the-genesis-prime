@@ -711,6 +711,9 @@ fn spell_of(
           threshold_costs: [],
         ),
       )
+      // Every gain under a Proxy aimed at each struck unit in the client's level-1
+      // trees fires in phase 0 only (`spell_plan_gain_test` reads them all), so
+      // lifting by phase 0 loses none to a later phase.
       let #(lifted, kept) = case target {
         OnEachStruck ->
           list.partition(child.gains, fn(gain) {
@@ -855,9 +858,8 @@ fn gain_slot_of(
 
 /// The gains of the spell given at its go of phase `phase`.
 pub fn gains_in_phase(spell spell: Spell, phase phase: Int) -> List(Gain) {
-  let bit = int.bitwise_shift_left(1, phase)
   list.filter(spell.gains, fn(gain) {
-    int.bitwise_and(gain.phase_flags, bit) != 0
+    has_flag(flags: gain.phase_flags, bit: int.bitwise_shift_left(1, phase))
   })
 }
 
@@ -1362,8 +1364,7 @@ pub fn stage_at(spell spell: Spell, index index: Int) -> Result(Spell, Nil) {
 
 /// The Proxies of the spell that fire in phase `phase`.
 pub fn proxies_in_phase(spell spell: Spell, phase phase: Int) -> List(Proxy) {
-  let bit = int.bitwise_shift_left(1, phase)
   list.filter(spell.proxies, fn(proxy) {
-    int.bitwise_and(proxy.phase_flags, bit) != 0
+    has_flag(flags: proxy.phase_flags, bit: int.bitwise_shift_left(1, phase))
   })
 }

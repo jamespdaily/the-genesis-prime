@@ -2188,13 +2188,7 @@ fn gains_given(
   phase phase: Int,
   struck struck: List(Struck),
 ) -> List(Effect) {
-  let hit =
-    list.any(struck, fn(one) {
-      case one {
-        Hit(..) -> True
-        Deflected(..) -> False
-      }
-    })
+  let hit = hit_units(struck:) != []
   let lifted =
     list.flat_map(spell_plan.proxies_in_phase(spell:, phase:), fn(proxy) {
       case proxy.target, proxy.condition {
@@ -2319,6 +2313,16 @@ fn clears_current(
   clears_whichever || clears_itself
 }
 
+/// The units a round Hit, in the round's order; a deflect is none of them.
+fn hit_units(struck struck: List(Struck)) -> List(Int) {
+  list.filter_map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, ..) -> Ok(unit_id)
+      Deflected(..) -> Error(Nil)
+    }
+  })
+}
+
 /// A Proxy of a go: a Proxy aimed at the area starts one child for each Hit unit of
 /// the round and none for a deflect, any other starts one on the caster.
 fn children(
@@ -2331,13 +2335,7 @@ fn children(
 ) -> #(State, List(Effect)) {
   let targets = case proxy.target {
     spell_plan.OnCaster -> [caster.unit_id]
-    spell_plan.OnEachStruck ->
-      list.filter_map(struck, fn(one) {
-        case one {
-          Hit(unit_id:, ..) -> Ok(unit_id)
-          Deflected(..) -> Error(Nil)
-        }
-      })
+    spell_plan.OnEachStruck -> hit_units(struck:)
   }
   list.fold(targets, #(cast, []), fn(so_far, primary_target) {
     let #(cast, effects) = so_far

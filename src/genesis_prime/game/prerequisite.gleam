@@ -22,9 +22,10 @@
 ////   `NotRead`, which decides the row only when no read condition does.
 
 import genesis_prime/table/id.{
-  type PrerequisiteId, type Spell4Id, PrerequisiteId,
+  type PrerequisiteId, type Spell4Id, PrerequisiteId, Spell4Id,
 }
 import genesis_prime/table/prerequisite as prerequisite_table
+import gleam/bool
 import gleam/list
 
 /// A Prerequisite row as the client keeps it: its id, whether any condition is
@@ -33,10 +34,25 @@ pub opaque type Prerequisite {
   Prerequisite(id: PrerequisiteId, any: Bool, conditions: List(Condition))
 }
 
-/// One condition: its PrerequisiteType, comparison and value. The objectId is not
-/// kept: no type the server reads reads it.
+/// One condition as the client's check reads it, decoded once from its
+/// PrerequisiteType, comparison and value. The objectId is not kept: no type the
+/// server reads reads it.
 type Condition {
-  Condition(type_id: Int, comparison: Int, value: Int)
+  /// Type 15: whether a live cast of the Spell4 has the unit as a target
+  /// (`Prerequisite.prerequisiteTypeId.15`).
+  TargetOfLiveCast(comparison: Comparison, spell4_id: Spell4Id)
+  /// A type the client's check has no case for (`0x1404a2100`): it fails.
+  NoCase
+  /// A type the client decides and the server does not read.
+  Unread(prerequisite_type: Int)
+}
+
+/// A comparison of a type 15 condition: 1 passes when a live cast is found, 2 when
+/// none is, any other fails (`0x1404a4ec0`).
+type Comparison {
+  Found
+  NotFound
+  OtherComparison(comparison: Int)
 }
 
 /// What a check of a prerequisite gives.
@@ -49,7 +65,7 @@ pub type Verdict {
 }
 
 /// The types from 1 to 295 that have no case in the client's condition check
-/// (`0x1404a2100`): a condition of one fails.
+/// (`0x1404a2100`).
 const types_without_a_case = [
   17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202,
   247, 249, 257, 258, 274, 282, 284,
@@ -66,24 +82,44 @@ const under_spell_type = 15
 pub fn of_row(row row: prerequisite_table.Prerequisite) -> Prerequisite {
   let conditions =
     [
-      Condition(
-        type_id: row.prerequisite_type_id0,
-        comparison: row.prerequisite_comparison_id0,
-        value: row.value0,
-      ),
-      Condition(
-        type_id: row.prerequisite_type_id1,
-        comparison: row.prerequisite_comparison_id1,
-        value: row.value1,
-      ),
-      Condition(
-        type_id: row.prerequisite_type_id2,
-        comparison: row.prerequisite_comparison_id2,
-        value: row.value2,
-      ),
+      #(row.prerequisite_type_id0, row.prerequisite_comparison_id0, row.value0),
+      #(row.prerequisite_type_id1, row.prerequisite_comparison_id1, row.value1),
+      #(row.prerequisite_type_id2, row.prerequisite_comparison_id2, row.value2),
     ]
-    |> list.take_while(fn(condition) { condition.type_id != 0 })
+    |> list.take_while(fn(condition) { condition.0 != 0 })
+    |> list.map(fn(condition) {
+      condition_of(
+        type_id: condition.0,
+        comparison: condition.1,
+        value: condition.2,
+      )
+    })
   Prerequisite(id: PrerequisiteId(row.id), any: row.flags % 2 != 0, conditions:)
+}
+
+fn condition_of(
+  type_id type_id: Int,
+  comparison comparison: Int,
+  value value: Int,
+) -> Condition {
+  use <- bool.lazy_guard(when: type_id == under_spell_type, return: fn() {
+    TargetOfLiveCast(
+      comparison: case comparison {
+        1 -> Found
+        2 -> NotFound
+        other -> OtherComparison(comparison: other)
+      },
+      spell4_id: Spell4Id(value),
+    )
+  })
+  case
+    type_id < 1
+    || type_id > highest_type
+    || list.contains(types_without_a_case, type_id)
+  {
+    True -> NoCase
+    False -> Unread(prerequisite_type: type_id)
+  }
 }
 
 /// The prerequisite's Prerequisite id.
@@ -119,23 +155,14 @@ fn condition_check(
   condition condition: Condition,
   under under: List(Spell4Id),
 ) -> Verdict {
-  let type_id = condition.type_id
-  case type_id == under_spell_type {
-    True -> {
-      let found = list.any(under, fn(spell) { spell.value == condition.value })
-      case condition.comparison, found {
-        1, True | 2, False -> Passes
-        _, _ -> Fails
+  case condition {
+    TargetOfLiveCast(comparison:, spell4_id:) ->
+      case comparison, list.contains(under, spell4_id) {
+        Found, True | NotFound, False -> Passes
+        Found, False | NotFound, True -> Fails
+        OtherComparison(..), True | OtherComparison(..), False -> Fails
       }
-    }
-    False ->
-      case
-        type_id < 1
-        || type_id > highest_type
-        || list.contains(types_without_a_case, type_id)
-      {
-        True -> Fails
-        False -> NotRead(prerequisite_type: type_id)
-      }
+    NoCase -> Fails
+    Unread(prerequisite_type:) -> NotRead(prerequisite_type:)
   }
 }

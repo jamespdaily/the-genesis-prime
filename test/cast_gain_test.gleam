@@ -12,9 +12,12 @@
 //// The bag indices are `cast_support.abilities`'.
 
 import cast_support as support
+import class_resource_support
 import genesis_prime/game/cast
-import genesis_prime/game/class_resource.{Gain}
+import genesis_prime/game/class_resource.{Gain, Payment}
 import genesis_prime/game/spell_plan.{Spell}
+import genesis_prime/message/cast_result
+import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
@@ -177,4 +180,89 @@ pub fn a_gain_whose_prerequisite_fails_is_not_given_test() -> Nil {
     as "the stage spell struck the foe and started its child"
   assert support.gains(effects: every) == []
     as "a cast of Overdrive 42908, live until 2000, has the Warrior as its target: 24581's comparison 2 on 42908 fails, so the +180 is not given"
+}
+
+// ---- a press held behind a go meets the go's gain ----
+
+/// An Esper holding no Psi Points presses Telekinetic Strike (bag index 0, a bar of
+/// 1250 ms) at 1000 and Mind Burst (bag index 2) at 1800, 450 ms before the go, which
+/// holds it until the go clears the current cast; the go at 2250 strikes `struck`.
+/// What the go's step gives: its payments, gains and 0x7fc results.
+fn mind_burst_held_behind_the_go(
+  struck struck: List(cast.Struck),
+) -> #(List(class_resource.Payment), List(List(class_resource.Gain)), List(Int)) {
+  let caster =
+    support.caster_holding(
+      resources: class_resource.new(
+        resource: class_resource_support.resource_of(3),
+      ),
+    )
+  let take = fn(state, body, at) {
+    let assert Ok(taken) =
+      cast.take(
+        cast: state,
+        message: cast.Pressed,
+        body:,
+        caster:,
+        plans: support.plans(),
+        now: support.at(ms: at),
+      )
+      as "taken"
+    taken
+  }
+  let #(state, started) =
+    take(
+      cast.new(),
+      support.press_body(client_cast_id: 8, bag_index: 0, target: 0, press: 1),
+      1000,
+    )
+  let #(state, held) =
+    take(
+      state,
+      support.press_body(client_cast_id: 9, bag_index: 2, target: 0, press: 1),
+      1800,
+    )
+  assert support.writes(effects: held) == []
+    as "450 ms of the bar are left: the press is held for the go, not refused"
+  let assert [#(go_timer, _)] = support.started_timers(effects: started)
+  let #(state, fired) =
+    cast.timer_fired(
+      cast: state,
+      timer: go_timer,
+      caster:,
+      now: support.at(ms: 2250),
+    )
+  let assert [cast.Strike(asked:)] = fired as "the go is asked"
+  let #(_, effects) =
+    cast.went(
+      cast: state,
+      caster:,
+      now: support.at(ms: 2250),
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck:,
+    )
+  #(
+    support.payments(effects:),
+    support.gains(effects:),
+    list.filter_map(support.writes(effects:), fn(frame) {
+      case frame.message_id == spell_cast_refused.message_id {
+        True -> {
+          let assert Ok(refused) = spell_cast_refused.decode(frame.body)
+            as "0x7fc decodes"
+          Ok(cast_result.to_value(refused.result))
+        }
+        False -> Error(Nil)
+      }
+    }),
+  )
+}
+
+pub fn a_press_held_behind_a_go_is_checked_against_the_bar_with_that_gos_gain_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert mind_burst_held_behind_the_go(struck: hits([10]))
+    == #([Payment(slot: 1, amount: 1)], [[Gain(slot: 1, amount: 1)]], [])
+    as "Spell4.32809 costs 1 Psi Point (Spell4CastResult.vital_cost) and 0 Psi Points are refused 51 (CasterVitalCostResource1); Telekinetic Strike's go struck a foe and gave +1 (56858), so the held Mind Burst is accepted and pays it"
+  assert mind_burst_held_behind_the_go(struck: []) == #([], [], [51])
+    as "a go that struck nobody gives no Psi Point, so the held Mind Burst meets 0 and is refused 51"
 }

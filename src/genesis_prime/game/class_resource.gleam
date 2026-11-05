@@ -456,7 +456,7 @@ pub fn pay(
 
 /// The gains of a go: a change for each one of the class's slot that moves it,
 /// clamped to [0, max], then the drain's wait restarted for a class that drains,
-/// then the timers a slot below its max starts. A dead player gains nothing.
+/// then the timers a living slot starts (`refills`). A dead player gains nothing.
 pub fn gain(
   resources resources: Resources,
   gains gains: List(Gain),
@@ -495,28 +495,46 @@ pub fn gain(
   #(resources, list.flatten([list.reverse(changes), drain, timers]))
 }
 
-/// The timers a living slot below its max starts when none of them runs: the
-/// refill over time, and the Medic's refill when out of combat.
+/// The timers a living slot starts when none of them runs: below its max, the
+/// refill over time and the Medic's refill when out of combat; above 0 and out of
+/// combat, the Esper's empty wait.
 fn refills(resources resources: Resources) -> #(Resources, List(Effect)) {
-  use <- bool.guard(
-    when: !resources.alive || resources.value >=. resources.resource.max,
-    return: #(resources, []),
-  )
-  let #(resources, regen) = case resources.resource.regen {
-    Some(Regen(tick_ms:, ..)) if !resources.regen_running -> #(
-      Resources(..resources, regen_running: True),
-      [StartTimer(timer: regen_timer, after_ms: tick_ms)],
-    )
-    Some(..) | None -> #(resources, [])
+  use <- bool.guard(when: !resources.alive, return: #(resources, []))
+  let #(resources, below_max) = case
+    resources.value >=. resources.resource.max
+  {
+    True -> #(resources, [])
+    False -> {
+      let #(resources, regen) = case resources.resource.regen {
+        Some(Regen(tick_ms:, ..)) if !resources.regen_running -> #(
+          Resources(..resources, regen_running: True),
+          [StartTimer(timer: regen_timer, after_ms: tick_ms)],
+        )
+        Some(..) | None -> #(resources, [])
+      }
+      let #(resources, refill) = case
+        resources.resource.refill_after_combat_ms
+      {
+        Some(after_ms) if !resources.in_combat && !resources.refill_running -> #(
+          Resources(..resources, refill_running: True),
+          [StartTimer(timer: refill_timer, after_ms:)],
+        )
+        Some(..) | None -> #(resources, [])
+      }
+      #(resources, list.append(regen, refill))
+    }
   }
-  let #(resources, refill) = case resources.resource.refill_after_combat_ms {
-    Some(after_ms) if !resources.in_combat && !resources.refill_running -> #(
-      Resources(..resources, refill_running: True),
-      [StartTimer(timer: refill_timer, after_ms:)],
-    )
-    Some(..) | None -> #(resources, [])
+  let #(resources, emptying) = case resources.resource.empty_after_combat_ms {
+    Some(after_ms)
+      if !resources.in_combat
+      && resources.value >. 0.0
+      && !resources.empty_running
+    -> #(Resources(..resources, empty_running: True), [
+      StartTimer(timer: empty_timer, after_ms:),
+    ])
+    Some(_) | None -> #(resources, [])
   }
-  #(resources, list.append(regen, refill))
+  #(resources, list.append(below_max, emptying))
 }
 
 /// A timer of the rule fired: a tick of the refill over time, the Medic's refill, a
@@ -571,7 +589,7 @@ pub fn timer_fired(
 }
 
 /// The slot set to `value`, clamped to [0, max] and held as a 32-bit float: a
-/// change when it moved, then the timers a slot below its max starts.
+/// change when it moved, then the timers a living slot starts (`refills`).
 fn changed_to(
   resources resources: Resources,
   value value: Float,
@@ -591,8 +609,8 @@ fn clamped(resources resources: Resources, value value: Float) -> Float {
 }
 
 /// The player's combat flag changed (genesis_prime/game/player_life): in combat the
-/// Medic's refill and the Esper's empty wait no longer; out of it, a slot below its
-/// max starts the refill, and an Esper's slot above 0 starts the empty.
+/// Medic's refill and the Esper's empty wait no longer; out of it, `refills` starts
+/// them.
 pub fn combat_changed(
   resources resources: Resources,
   in_combat in_combat: Bool,
@@ -613,22 +631,7 @@ pub fn combat_changed(
         list.append(refill, empty),
       )
     }
-    False -> {
-      let #(resources, refilling) = refills(resources:)
-      let #(resources, emptying) = case
-        resources.resource.empty_after_combat_ms
-      {
-        Some(after_ms)
-          if resources.alive
-          && resources.value >. 0.0
-          && !resources.empty_running
-        -> #(Resources(..resources, empty_running: True), [
-          StartTimer(timer: empty_timer, after_ms:),
-        ])
-        Some(_) | None -> #(resources, [])
-      }
-      #(resources, list.append(refilling, emptying))
-    }
+    False -> refills(resources:)
   }
 }
 
