@@ -264,6 +264,7 @@ pub fn viewer_takes(
     | client_connection.DeathLogged
     | client_connection.CameBackLogged
     | client_connection.CreatureMoved(..)
+    | client_connection.CreaturePlaced(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
@@ -421,6 +422,23 @@ pub fn viewer_takes(
         },
       )
     }
+    client_connection.CreaturePlaced(place:, at_ms:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session =
+        shown_changed(session:, change: fn(picture) {
+          shown.with_path(
+            picture:,
+            unit_id:,
+            path: creature_path.Standing(at: place),
+          )
+        })
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.placed_frame(entered:, unit_id:, place:, at_ms:),
+        ),
+      ])
+    }
     client_connection.Targeting(target_unit_id:, threat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let assert Ok(body) =
@@ -525,6 +543,7 @@ fn creature_news(
     | client_connection.CastMissed(..)
     | client_connection.CastFinished(..)
     | client_connection.CreatureMoved(..)
+    | client_connection.CreaturePlaced(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
@@ -604,6 +623,7 @@ fn life_news(
     | client_connection.Health(..)
     | client_connection.Died
     | client_connection.CreatureMoved(..)
+    | client_connection.CreaturePlaced(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)

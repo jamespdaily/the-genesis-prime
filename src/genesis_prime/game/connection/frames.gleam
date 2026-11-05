@@ -294,6 +294,28 @@ pub fn path_frame(
   }
 }
 
+/// 0x638 for a creature that stands at `place` from monotonic time `at_ms`, though
+/// the client may still run a path it was sent: kind 0, the map's time, and kind 2
+/// at the place with its blend bit 0. A kind 2 with its bit clear starts a new
+/// segment in the list the kind 4 path is linked into (`0x1407138f0`
+/// ApplyMoveCommandSetPosition, `movement_command.kind_4`), and the client starts
+/// due segments in order, so the unit is placed at once and the path no longer
+/// runs (`0x140714120` StartDuePositionSegments). The command is the one that
+/// puts a unit at a place in its 0x262 (`0x1400ad350` reads it).
+pub fn placed_frame(
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  place place: Place,
+  at_ms at_ms: Int,
+) -> Frame {
+  let time =
+    map.server_time(origin_ms: entered.clock_origin_ms, monotonic_ms: at_ms)
+  unit_moved_frame(unit_id:, server_time_ms: time, commands: [
+    relayed_movement.Time(MovementTime(time:)),
+    relayed_movement.Position(player_unit.standing(place:).0),
+  ])
+}
+
 fn vector_of(place: Place) -> movement_float_vector.MovementFloatVector {
   MovementFloatVector(
     x: float32.to_bits(start_place.x(place)),

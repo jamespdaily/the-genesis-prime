@@ -3368,8 +3368,9 @@ fn read_fight(
   #(game_client.fight_in(frames:), have)
 }
 
-/// Whether a path of `unit` among the events ends at z.
-fn a_path_ends_at(
+/// Whether a 0x638 of `unit` among the events leaves it at z: a path's end, or the
+/// place a leash in the instant of the chase puts it at.
+fn leaves_unit_at(
   events events: List(game_client.FightEvent),
   unit unit: Int,
   z z: Float,
@@ -3409,11 +3410,11 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
     )
     && list.contains(fight, game_client.InCombat(unit_id: own, in_combat: True))
     as "both 0x89a: the Dagun's and the bot's own"
-  let assert [#(kinds, path_end), ..] =
+  let assert [#(kinds, ends_at), ..] =
     game_client.moves_of(events: fight, unit: dagun)
     as "the Dagun runs"
   assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
-  assert path_end == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
+  assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
     as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
   game_client.close(game:)
   login_support.stop(started)
@@ -3649,7 +3650,7 @@ pub fn a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test() -> 
   game_client.close(game: fighter)
   let #(seen, _) =
     read_fight(game: watcher, have: watcher_have, found: fn(events) {
-      a_path_ends_at(events:, unit: dagun, z: dagun_z)
+      leaves_unit_at(events:, unit: dagun, z: dagun_z)
     })
   assert list.contains(
       seen,

@@ -395,6 +395,7 @@ pub fn creature_news_frames(
     | client_connection.CastMissed(..)
     | client_connection.CastFinished(..)
     | client_connection.CreatureMoved(..)
+    | client_connection.CreaturePlaced(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
