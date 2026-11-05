@@ -678,6 +678,28 @@ pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and
     as "walking home the creature takes no strike"
 }
 
+/// The leash's path home is the client's only way to stop a creature it was told
+/// to run: a 0x638 replaces the unit's position movement (`movement_command.kind_4`).
+/// A leash in the millisecond the chase began finds the creature still at home, with
+/// no distance to walk, yet its viewers hold a path that runs away from it.
+pub fn a_leash_in_the_millisecond_a_chase_began_still_tells_the_viewers_to_stop_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, chased) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  assert list.contains(said(chased), "0x638 to 5")
+    as "the chase is sent to the viewers: they now run the creature toward x = 26"
+  let #(_, leashed) =
+    tell(state:, at_ms: 0, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    as "the only player on the threat list is gone: the creature leashes"
+  assert list.contains(said(leashed), "0x638 to 5")
+    as "the viewers' running path is replaced, though the creature is where its path began"
+}
+
 pub fn the_next_strike_after_a_leash_finds_the_creature_at_full_health_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
