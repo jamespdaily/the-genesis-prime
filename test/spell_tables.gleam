@@ -748,7 +748,13 @@ pub fn rows() -> Rows {
         kind: 0,
         global: 103,
         cost: #(0, 0),
-        more: [#("thresholdTime", 4000)],
+        more: [
+          #("thresholdTime", 4000),
+          #("casterInnateRequirement0", 6),
+          #("casterInnateRequirementValue0", 250),
+          #("casterInnateRequirementEval0", 2),
+          #("prerequisiteIdCasterCast", 19_750),
+        ],
       ),
       method_spell_row(
         id: 66_987,

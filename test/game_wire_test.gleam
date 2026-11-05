@@ -92,6 +92,7 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
@@ -3520,10 +3521,9 @@ fn coming_back_in(frames frames: List(Frame)) -> List(Frame) {
 /// The stat of the player's own 0x262.
 fn entry_stat(entry entry: List(Frame), stat_id stat_id: Int) -> Int {
   let player = game_client.unit_create_player_in(frames: entry)
-  let assert Ok(stat) =
-    list.find(player.tail.stats, fn(stat) { stat.stat_id == stat_id })
-    as "the player's 0x262 holds the stat"
-  stat.value
+  let assert Ok(value) = unit_fields.stat(tail: player.tail, stat_id:)
+    as "the player's 0x262 holds the stat as an integer"
+  value
 }
 
 pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_over_the_wire_and_the_spellslinger_by_the_holocrypt_test() -> Nil {

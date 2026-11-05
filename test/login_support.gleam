@@ -6,6 +6,7 @@
 
 import ask_support
 import character_tables
+import class_resource_support
 import connection_rule_support as support
 import database_support
 import envoy
@@ -126,6 +127,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       tables: character_tables.shared(),
       ask_deadline_ms: 5000,
       rate: support.roomy(),
+      class_resources: class_resource_support.classes(),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

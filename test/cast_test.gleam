@@ -19,9 +19,8 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result.{
-  CasterCannotBeDead, CasterVitalCostResource1, CasterVitalCostResource5,
-  IllegalSpellCast, Other, SpellAlreadyCasting, SpellCancelled, SpellCooldown,
-  SpellGlobalCooldown, SpellUnknown, WeaponSlot,
+  CasterCannotBeDead, IllegalSpellCast, Other, SpellAlreadyCasting,
+  SpellCancelled, SpellCooldown, SpellGlobalCooldown, SpellUnknown, WeaponSlot,
 }
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
@@ -239,6 +238,24 @@ pub fn a_spell_that_needs_the_weapon_is_refused_169_when_slot_16_holds_none_test
     )
   assert accepted(effects:)
     as "Kick needs no weapon (Spell4Base 38017: weaponSlot 0)"
+}
+
+pub fn a_press_that_lacks_the_weapon_and_meets_a_live_cast_is_refused_13_not_169_test() -> Nil {
+  use <- owned_test.run(5000)
+  let unarmed = cast.Caster(..support.caster(), weapon: None)
+  let #(state, _) =
+    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+  let #(_, effects) =
+    support.pressed_by(
+      state:,
+      caster: unarmed,
+      bag_index: 7,
+      target: 0,
+      at: 1100,
+    )
+  assert list.map(support.writes(effects:), refusal_result)
+    == [SpellAlreadyCasting]
+    as "0x1403afb10 checks the current cast (line 87) before the weapon (line 689), so Electrocute (weapon slot 1, propertyFlags 0x4000042: no casting exemption) is refused 13 during Telekinetic Strike's cast"
 }
 
 pub fn with_500_ms_or_less_of_a_cooldown_left_the_press_is_held_and_starts_when_it_ends_test() -> Nil {
@@ -614,22 +631,8 @@ pub fn the_spells_own_cooldown_runs_from_its_first_go_not_from_the_accept_test()
     as "400 ms left is within the queue window: held until 7000"
 }
 
-pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_non_normal_ability_285_logged_once_test() -> Nil {
+pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
   use <- owned_test.run(5000)
-  assert refused_with(state: cast.new(), bag_index: 2, target: 0, at: 1000)
-    == SpellCastRefused(
-      client_cast_id: 9,
-      spell4_id: 32_809,
-      result: CasterVitalCostResource1,
-    )
-    as "Spell4CastResult.vital_cost: 1 Psi Point of a unit that holds none gives 51"
-  assert refused_with(state: cast.new(), bag_index: 6, target: 0, at: 1000)
-    == SpellCastRefused(
-      client_cast_id: 9,
-      spell4_id: 29_874,
-      result: CasterVitalCostResource5,
-    )
-    as "Spell4CastResult.vital_cost: 2 Actuators of a Medic that holds none gives 55"
   let #(state, first) =
     support.pressed(
       state: cast.new(),
@@ -648,7 +651,8 @@ pub fn mind_burst_and_gamma_rays_are_refused_with_the_short_vital_results_and_a_
         | cast.Tell(..)
         | cast.StartTimer(..)
         | cast.CancelTimer(..)
-        | cast.Strike(..) -> False
+        | cast.Strike(..)
+        | cast.Pay(..) -> False
       }
     })
   }

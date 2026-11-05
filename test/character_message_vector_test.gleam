@@ -57,7 +57,7 @@ import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/message/unit_stat.{UnitStat}
+import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
 import message_support
@@ -628,7 +628,7 @@ pub fn a_player_with_health_and_base_health_is_the_clients_912_bits_test() -> Ni
       ..minimal_player(),
       tail: UnitCreateTail(
         ..minimal_player().tail,
-        stats: [UnitStat(stat_id: 0, value: 136)],
+        stats: [unit_fields.integer_stat(stat_id: 0, value: 136)],
         properties: [
           UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
         ],

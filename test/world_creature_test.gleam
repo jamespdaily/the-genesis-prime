@@ -28,7 +28,6 @@ import genesis_prime/client_connection.{
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
-import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/world_map/creature
@@ -36,6 +35,7 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
+import genesis_prime/world_map/unit_fields
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
 import gleam/list
@@ -199,8 +199,14 @@ pub fn a_creature_is_started_when_a_player_sees_its_spawn_found_by_its_address_a
     as "the creature stands under the unit id after the player's, which is 1"
   assert creature.creature_id == 73_464
     as "it is the spawn's Creature2 row, which the client refuses unless it loaded it"
-  assert list.contains(creature.tail.stats, UnitStat(stat_id: 0, value: 52))
-    && list.contains(creature.tail.stats, UnitStat(stat_id: 10, value: 1))
+  assert list.contains(
+      creature.tail.stats,
+      unit_fields.integer_stat(stat_id: 0, value: 52),
+    )
+    && list.contains(
+      creature.tail.stats,
+      unit_fields.integer_stat(stat_id: 10, value: 1),
+    )
     as "stat 0 is Base Health 52.6205 truncated, and stat 10 the level"
   assert creature.tail.faction_id == 1441
     && creature.tail.base_faction_id == 1441
@@ -464,7 +470,10 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
       wanted: appearance,
     )
   assert again.unit_id == first.unit_id
-    && list.contains(again.tail.stats, UnitStat(stat_id: 0, value: 52))
+    && list.contains(
+      again.tail.stats,
+      unit_fields.integer_stat(stat_id: 0, value: 52),
+    )
     as "death.creature_respawn: the same unit id, at full health, after the kind's respawn time"
 }
 
@@ -514,7 +523,10 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
         case appearance(message) {
           Ok(unit) ->
             case
-              list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 52))
+              list.contains(
+                unit.tail.stats,
+                unit_fields.integer_stat(stat_id: 0, value: 52),
+              )
             {
               True -> Ok(unit)
               False -> Error(Nil)

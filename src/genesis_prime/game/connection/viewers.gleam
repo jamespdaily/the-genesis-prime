@@ -80,9 +80,11 @@
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/life as connection_life
+import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -93,7 +95,6 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
-import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/step.{
@@ -148,7 +149,7 @@ pub fn map_sent(
         ),
       )
     map.Gone(unit_id:) -> {
-      let #(life, released) = player_life.released(life: entered.life, unit_id:)
+      let #(life, by_life) = player_life.released(life: entered.life, unit_id:)
       let session =
         marked_gone(
           session: connection_state.with_entered(session:, change: fn(entered) {
@@ -157,12 +158,10 @@ pub fn map_sent(
           unit_id:,
         )
       let released =
-        connection_life.life_effects(
-          session:,
-          now:,
-          entered:,
-          effects: released,
-        )
+        connection_life.life_effects(session:, now:, entered:, effects: by_life)
+      let #(session, resource_written) =
+        connection_resource.life_effects(session:, effects: by_life)
+      let released = list.append(released, resource_written)
       use <- bool.guard(
         when: !dict.has_key(entered.shown, unit_id),
         return: Continue(session, released),
@@ -633,8 +632,10 @@ fn finishes_of_forgotten_casts(
 /// The unit of the player's own record as another player is created with it: at
 /// the place the player stands at now, with its health now as stat 0, so a dead
 /// player is created dead (`0x140457bc5`), and its shield now as stat 20
-/// (`opcode.0x938`), and stamped from the map's clock, from
-/// the origin `Joined` carried (`map.server_time`).
+/// (`opcode.0x938`), without its class resource: the stat and the ResourceMax
+/// property of the player's own 0x262 are left out, since a 0x935 goes to the
+/// player alone (`opcode.0x262.resource_stats`), and stamped from the map's clock,
+/// from the origin `Joined` carried (`map.server_time`).
 fn appearance(
   entered entered: world_entry.Entered,
   now now: Now,
@@ -647,16 +648,25 @@ fn appearance(
     )
   let health = player_life.health(life: entered.life)
   let shield = player_life.shield(life: entered.life)
+  let slot = class_resource.slot(resources: entered.resources)
+  let resource_stat = unit_fields.resource_stat_id(slot:)
+  let resource_max = unit_fields.resource_max_property(slot:)
   UnitCreatePlayer(
     ..unit,
     tail: UnitCreateTail(
       ..unit.tail,
-      stats: list.map(unit.tail.stats, fn(stat) {
+      stats: list.filter_map(unit.tail.stats, fn(stat) {
         case stat.stat_id {
-          id if id == unit_fields.health_stat -> UnitStat(..stat, value: health)
-          id if id == unit_fields.shield_stat -> UnitStat(..stat, value: shield)
-          _ -> stat
+          id if id == unit_fields.health_stat ->
+            Ok(unit_fields.integer_stat(stat_id: id, value: health))
+          id if id == unit_fields.shield_stat ->
+            Ok(unit_fields.integer_stat(stat_id: id, value: shield))
+          id if id == resource_stat -> Error(Nil)
+          _ -> Ok(stat)
         }
+      }),
+      properties: list.filter(unit.tail.properties, fn(property) {
+        property.property_id != resource_max
       }),
     ),
   )

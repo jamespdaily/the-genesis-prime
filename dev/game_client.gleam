@@ -1356,11 +1356,8 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
       }
       0x0938 -> {
         let assert Ok(changed) = unit_stat_changed.decode(frame.body)
-          as "0x938 decodes"
-        case changed.stat_id {
-          20 -> Ok(ShieldIs(unit_id: changed.unit_id, shield: changed.value))
-          _ -> Error(Nil)
-        }
+          as "0x938 decodes: the server sends it only for stat 20"
+        Ok(ShieldIs(unit_id: changed.unit_id, shield: changed.value))
       }
       0x092F -> {
         let assert Ok(health) = player_health.decode(frame.body)

@@ -43,6 +43,7 @@ import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/movement as connection_movement
+import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, JoinAt, Session} as connection_state
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/hit
@@ -206,8 +207,9 @@ pub fn life_message(
   }
 }
 
-/// What player_life decided, carried out in order: the frames and news as
-/// `life_effects` makes them, `EndCasts` as the cast rule's `died`, whose 0x7fe
+/// What player_life decided, carried out in order, then what its death, coming
+/// back and combat flag did to the class resource (`resource.life_effects`): the
+/// frames and news as `life_effects` makes them, `EndCasts` as the cast rule's `died`, whose 0x7fe
 /// go out in its place in the order, and `GoToHolocrypt` as the leave of the map
 /// that the Holocrypt's join follows (`leaving_for_the_holocrypt`), which comes
 /// last.
@@ -249,6 +251,9 @@ fn life_carried(
           }
       }
     })
+  let #(session, resource_written) =
+    connection_resource.life_effects(session:, effects:)
+  let written = list.append(written, resource_written)
   case to_the_holocrypt, connection_state.entered_of(session.status) {
     True, Some(entered) ->
       leaving_for_the_holocrypt(

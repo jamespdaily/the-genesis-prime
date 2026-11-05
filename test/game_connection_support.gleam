@@ -6,6 +6,7 @@
 import cast_support
 import character_support
 import character_tables
+import class_resource_support
 import connection_rule_support as support
 import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
@@ -77,6 +78,7 @@ pub fn settings() -> game_connection.Settings {
     tables: character_tables.shared(),
     ask_deadline_ms: 4000,
     rate: support.roomy(),
+    class_resources: class_resource_support.classes(),
   )
 }
 

@@ -1,6 +1,6 @@
 //// The frames the game connection's rule writes about units
 //// (genesis_prime/game/connection): the player's own unit, its death and its
-//// ghost, the combat log, a unit's shield, combat state, move, path, creation
+//// ghost, the combat log, a unit's shield, class resource, combat state, move, path, creation
 //// and removal, and the leave of the world.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -31,6 +31,7 @@ import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
+import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/step.{type Now}
@@ -179,16 +180,31 @@ pub fn combat_state_frame(
   Frame(message_id: unit_combat_state.message_id, body:)
 }
 
-/// 0x938 of stat 20: the unit's shield (`opcode.0x938`).
+/// 0x938 of stat 20: the unit's shield (`opcode.0x938`), the one stat the server
+/// sends by it (`opcode.0x938.resource_stats`).
 pub fn shield_frame(unit_id unit_id: Int, shield shield: Int) -> Frame {
   let assert Ok(body) =
-    unit_stat_changed.encode(UnitStatChanged(
-      unit_id:,
-      stat_id: unit_fields.shield_stat,
-      value: shield,
-    ))
+    unit_stat_changed.encode(UnitStatChanged(unit_id:, value: shield))
     as "a unit id, a stat and a value fit the message"
   Frame(message_id: unit_stat_changed.message_id, body:)
+}
+
+/// 0x935 of the stat of resource slot `slot`: the unit's slot now holds `value`,
+/// the only message after a unit's creation that sets a resource slot
+/// (`opcode.0x935`, `opcode.0x938.resource_stats`).
+pub fn resource_frame(
+  unit_id unit_id: Int,
+  slot slot: Int,
+  value value: Float,
+) -> Frame {
+  let assert Ok(body) =
+    unit_float_stat_changed.encode(UnitFloatStatChanged(
+      unit_id:,
+      stat_id: unit_fields.resource_stat_id(slot:),
+      value: float32.to_bits(value),
+    ))
+    as "a unit id of 32 bits, a stat of slot 0 to 7 plus 2 and a float fit the message"
+  Frame(message_id: unit_float_stat_changed.message_id, body:)
 }
 
 /// 0x0594 with the bit set and reason 0: the client leaves the world and

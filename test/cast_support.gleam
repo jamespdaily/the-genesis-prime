@@ -12,6 +12,7 @@ import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AtFirstGo, GlobalCooldown, NoWeaponNeeded, Normal,
   Spell,
@@ -52,7 +53,9 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
       refused_while_running: False,
       starts_for_ms: None,
     ),
-    unpayable_cost: None,
+    costs: [],
+    requirements: [],
+    requirement_waiver: None,
     phase_delays_ms: [],
     threshold_ms: 0,
     stages: [],
@@ -158,7 +161,7 @@ pub fn ability(base base: Int) -> Spell {
 }
 
 /// The player 7 with the abilities above and its weapon, seen by the connections
-/// 2 and 3, standing at the live character's place.
+/// 2 and 3, standing at the live character's place, holding `full_slot_1`.
 pub fn caster() -> Caster {
   let place = place_support.live_character_place()
   cast.Caster(
@@ -168,7 +171,42 @@ pub fn caster() -> Caster {
     weapon: Some(Item2Id(81_351)),
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
     dead: False,
+    resources: class_resource.new(resource: full_slot_1()),
   )
+}
+
+/// A planted resource of 1000 points in slot 1, full: it meets every level-1 cost
+/// and requirement of slot 1 (Mind Burst's 1, Electrocute's 8, Gamma Rays' 2,
+/// Rampage's at least 250), so a test that is not about resources is not refused
+/// for one, and holds nothing in slot 3 (Impale's 35).
+pub fn full_slot_1() -> class_resource.Resource {
+  class_resource.Resource(
+    slot: 1,
+    max: 1000.0,
+    start: 1000.0,
+    regen: None,
+    refill_after_combat_ms: None,
+  )
+}
+
+/// The caster holding `resources` in place of `full_slot_1`.
+pub fn caster_holding(resources resources: class_resource.Resources) -> Caster {
+  cast.Caster(..caster(), resources:)
+}
+
+/// What the presses of a step paid, in order.
+pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
+  list.flat_map(effects, fn(effect) {
+    case effect {
+      cast.Pay(payments:) -> payments
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Log(..) -> []
+    }
+  })
 }
 
 /// The input time: a monotonic time, the system time 0.
@@ -232,12 +270,12 @@ pub fn key_in(
   answered_with_no_targets(state:, effects:, at: ms)
 }
 
-/// The plans with Mind Burst (bag index 2) costless: it costs 1 Psi Point, which a
-/// new unit holds none of (`Spell4CastResult.vital_cost`), and a test of the
-/// repeat is not about that refusal. Every other value is the client's row.
+/// The plans with Mind Burst (bag index 2) costless: it costs 1 Psi Point
+/// (`Spell4CastResult.vital_cost`), and a test of the repeat is not about paying it.
+/// Every other value is the client's row.
 pub fn plans_with_costless_mind_burst() -> Plans {
   with_spells(plans: plans(), spells: [
-    Spell(..ability(base: 19_019), unpayable_cost: None),
+    Spell(..ability(base: 19_019), costs: []),
   ])
 }
 
@@ -363,7 +401,8 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
       | cast.Strike(..)
-      | cast.Log(..) -> Error(Nil)
+      | cast.Log(..)
+      | cast.Pay(..) -> Error(Nil)
     }
   })
 }
@@ -377,7 +416,8 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
       | cast.Strike(..)
-      | cast.Log(..) -> Error(Nil)
+      | cast.Log(..)
+      | cast.Pay(..) -> Error(Nil)
     }
   })
 }
@@ -391,7 +431,8 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.Tell(..)
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
-      | cast.Strike(..) -> Error(Nil)
+      | cast.Strike(..)
+      | cast.Pay(..) -> Error(Nil)
     }
   })
 }
@@ -405,7 +446,8 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.Tell(..)
       | cast.CancelTimer(..)
       | cast.Strike(..)
-      | cast.Log(..) -> Error(Nil)
+      | cast.Log(..)
+      | cast.Pay(..) -> Error(Nil)
     }
   })
 }
@@ -419,7 +461,8 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.Tell(..)
       | cast.StartTimer(..)
       | cast.Strike(..)
-      | cast.Log(..) -> Error(Nil)
+      | cast.Log(..)
+      | cast.Pay(..) -> Error(Nil)
     }
   })
 }
@@ -484,7 +527,8 @@ pub fn answered_by(
       | cast.Tell(..)
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
-      | cast.Log(..) -> #(state, list.append(done, [effect]))
+      | cast.Log(..)
+      | cast.Pay(..) -> #(state, list.append(done, [effect]))
     }
   })
 }

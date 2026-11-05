@@ -27,6 +27,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/area.{Pose}
 import genesis_prime/game/cast
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
 import genesis_prime/game/movement
@@ -152,6 +153,7 @@ fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
     weapon: Some(entered.loadout.weapon),
     audience: connection_state.viewer_connections(entered:),
     dead: player_life.state(life: entered.life) == player_life.Dead,
+    resources: entered.resources,
   )
 }
 
@@ -174,7 +176,8 @@ fn carry_cast(
 
 /// The connection's effects for what the cast rule decided, with the session as
 /// they leave it: a write, a tell of news to a viewer in the run of the player's
-/// map, a timer or a log line, and a go asked, which selects and strikes its targets
+/// map, a timer or a log line, a press's costs paid from the class resource
+/// (genesis_prime/game/connection/resource), and a go asked, which selects and strikes its targets
 /// (`strike_begins`). A tell with no player in the world is dropped.
 pub fn cast_effects(
   session session: Session,
@@ -207,6 +210,7 @@ pub fn cast_effects(
       cast.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
+      cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
     }
     #(session, list.append(done, more))
   })

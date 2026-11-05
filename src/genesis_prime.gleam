@@ -23,6 +23,7 @@ import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
 import genesis_prime/content
+import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
@@ -290,7 +291,7 @@ pub fn settings(
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
     login: login(),
-    game: game(tables),
+    game: game(tables:, spawns:),
   )
 }
 
@@ -535,8 +536,13 @@ fn login() -> server.Login {
 /// opcode.0x117), the game settings from the environment
 /// (genesis_prime/game_settings, which stops the server at start with the
 /// reason when a variable's value is refused), the game tables and each ask
-/// given 5 s. Recording is off; the dev start changes it.
-fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
+/// given 5 s, and each playable class's resource the content load put under
+/// `spawns`'s key (genesis_prime/content/class_resource). Recording is off; the
+/// dev start changes it.
+fn game(
+  tables tables: store.Tables,
+  spawns spawns: store.Key,
+) -> server.Served(game_connection.Settings) {
   let game = case game_settings.from_environment(envoy.get) {
     Ok(game) -> game
     Error(refusal) -> panic as game_settings.describe(refusal)
@@ -553,6 +559,7 @@ fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
       tables:,
       ask_deadline_ms:,
       rate: game_rate(),
+      class_resources: content_class_resource.classes(key: spawns),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

@@ -14,9 +14,11 @@
 //// stated where they are asserted.
 
 import cast_support as support
+import class_resource_support
 import genesis_prime/client_connection.{CastFinished, CastStarted}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan.{AtFirstGo, Spell}
 import genesis_prime/message/cast_result.{
   type CastResult, CasterVitalCostResource1, CasterVitalCostResource3,
@@ -33,7 +35,6 @@ import genesis_prime/message/spell_threshold_opened
 import genesis_prime/step.{type TimerId, ConnectionId, LogDebug}
 import gleam/int
 import gleam/list
-import gleam/option.{None}
 import gleam/string
 import owned_test
 
@@ -366,7 +367,7 @@ pub fn discharge_pulses_3_times_each_starting_80382_and_finishes_at_1250_ms_test
 pub fn electrocute_pulses_6_times_and_finishes_with_its_last_pulse_test() -> Nil {
   use <- owned_test.run(10_000)
   assert support.ability(base: 25_473).spell4_id.value == 41_276
-  let costless = Spell(..support.ability(base: 25_473), unpayable_cost: None)
+  let costless = Spell(..support.ability(base: 25_473), costs: [])
   let plans = support.with_spells(plans: support.plans(), spells: [costless])
   let #(state, pressed) =
     support.pressed_in(
@@ -823,7 +824,7 @@ pub fn a_0x801_naming_no_open_threshold_is_a_debug_line_and_no_change_test() -> 
 
 // ------------------------------------------------------------------- refusals
 
-pub fn the_four_costed_abilities_are_refused_with_their_slots_and_logged_once_each_test() -> Nil {
+pub fn the_four_costed_abilities_are_refused_with_their_slots_by_a_caster_that_holds_none_and_nothing_is_logged_test() -> Nil {
   use <- owned_test.run(10_000)
   let costed = [
     #(support.impale, "7fc 38779 ", CasterVitalCostResource3),
@@ -831,15 +832,27 @@ pub fn the_four_costed_abilities_are_refused_with_their_slots_and_logged_once_ea
     #(2, "7fc 32809 ", CasterVitalCostResource1),
     #(6, "7fc 29874 ", CasterVitalCostResource5),
   ]
+  // A Warrior at its start: 0 Kinetic Energy in slot 1, and nothing in slot 3.
+  let empty =
+    support.caster_holding(
+      resources: class_resource.new(
+        resource: class_resource_support.resource_of(1),
+      ),
+    )
   list.each(costed, fn(ability) {
-    let #(state, first) =
-      press(state: cast.new(), bag_index: ability.0, at: 1000)
+    let #(_, first) =
+      support.pressed_by(
+        state: cast.new(),
+        caster: empty,
+        bag_index: ability.0,
+        target: 0,
+        at: 1000,
+      )
     assert refusal_line_with_logs(effects: first)
       == ability.1 <> result_value(ability.2)
-      as "Spell4CastResult.vital_cost and Jim's decision on 366: a unit holds none of a class resource, so Impale (type 8: 53), Electrocute (type 6: 51), Mind Burst (type 6: 51) and Gamma Rays (type 18: 55) are refused with the client's own result"
-    assert count_logs(effects: first) == 1 as "logged for the coverage measure"
-    let #(_, second) = press(state:, bag_index: ability.0, at: 2000)
-    assert count_logs(effects: second) == 0 as "once on the connection"
+      as "Spell4CastResult.vital_cost: Impale (type 8: 53), Electrocute (type 6: 51), Mind Burst (type 6: 51) and Gamma Rays (type 18: 55) are refused with the client's own result (0x1403b3320, 0x1405e7980)"
+    assert count_logs(effects: first) == 0
+      as "a cost the caster cannot pay is the client's own refusal, not a cost the server does not hold"
   })
 }
 
@@ -851,7 +864,8 @@ fn count_logs(effects effects: List(cast.Effect)) -> Int {
       | cast.Tell(..)
       | cast.StartTimer(..)
       | cast.Strike(..)
-      | cast.CancelTimer(..) -> False
+      | cast.CancelTimer(..)
+      | cast.Pay(..) -> False
     }
   })
   |> list.length

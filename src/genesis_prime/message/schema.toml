@@ -652,11 +652,38 @@ fields = [
 [[record]]
 name = "unit_stat"
 evidence = "0x140458140"
-summary = "one stat of a new unit, in the integer form: stat 0 is the unit's health"
+summary = "one stat of a new unit: its id, then its value in the form the stat is read in; stat 0 is the unit's health, and stats 2 to 9 set resource slots 0 to 7 only in the float form"
 fields = [
-  { name = "stat_id", kind = "unsigned", bits = 5, evidence = "0x140458140", named_by = "0x140458140" },
-  { name = "form", kind = "constant", bits = 2, value = 0, evidence = "0x140458140", named_by = "0x140458140" },
-  { name = "value", kind = "unsigned", bits = 32, evidence = "0x140458140", named_by = "0x140458140" },
+  { name = "stat_id", kind = "unsigned", bits = 5, evidence = "0x140096230", named_by = "0x140458140" },
+  { name = "value", kind = "record", record = "unit_stat_value", evidence = "0x140096230", named_by = "0x140096230" },
+]
+
+[[union]]
+name = "unit_stat_value"
+evidence = "0x140096230"
+summary = "the value of one stat of a new unit: the form in 2 bits picks how it is written, 0 a 32-bit integer and 1 a 32-bit float; the server writes no form 2 (two integers), and form 3 refuses the message"
+tag_bits = 2
+variants = [
+  { tag = 0, name = "integer", record = "unit_stat_integer", named_by = "0x140096230" },
+  { tag = 1, name = "float", record = "unit_stat_float", named_by = "0x140080c60" },
+]
+
+[[record]]
+name = "unit_stat_integer"
+evidence = "0x140096230"
+summary = "a stat's value in the integer form (form 0): the form a unit's health, level and shield are read in"
+fields = [
+  { name = "form", kind = "constant", bits = 2, value = 0, evidence = "0x140096230", named_by = "0x140096230" },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "0x14007ab50", named_by = "0x140458140" },
+]
+
+[[record]]
+name = "unit_stat_float"
+evidence = "0x140080c60"
+summary = "a stat's value in the float form (form 1): the only form a resource stat (2 to 9) is kept in"
+fields = [
+  { name = "form", kind = "constant", bits = 2, value = 1, evidence = "0x140096230", named_by = "0x140096230" },
+  { name = "value", kind = "float32", evidence = "0x140080c60", named_by = "opcode.0x262.resource_stats" },
 ]
 
 [[record]]
@@ -2007,11 +2034,23 @@ id = 0x0938
 name = "unit_stat_changed"
 direction = "server_to_client"
 evidence = "opcode.0x938"
-summary = "a unit's stat changed, as an integer: stat 20 is the shield, 22 the absorption and 10 the level, and stat 0 (health) is not taken here"
+summary = "a unit's stat changed, as an integer: stat 20 is the shield, 22 the absorption and 10 the level, and stat 0 (health) is not taken here; the server writes it only for stat 20, since for stats 2 to 9 it sets the resource slot to 0 (0x935 sets those)"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
-  { name = "stat_id", kind = "unsigned", bits = 5, evidence = "opcode.0x938", named_by = "opcode.0x938" },
+  { name = "shield_stat", kind = "constant", bits = 5, value = 20, evidence = "opcode.0x938", named_by = "opcode.0x938.resource_stats" },
   { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
+]
+
+[[message]]
+id = 0x0935
+name = "unit_float_stat_changed"
+direction = "server_to_client"
+evidence = "opcode.0x935"
+summary = "a unit's stat changed, as a float: the only message after a unit's creation that sets its resource slots, stat n + 2 setting slot n for stats 2 to 9; the client applies it with an integer of 0, so stats read as integers (10, 20, 22) are never sent this way"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x1400975b0", named_by = "opcode.0x935" },
+  { name = "stat_id", kind = "unsigned", bits = 5, evidence = "0x1400975b0", named_by = "opcode.0x935" },
+  { name = "value", kind = "float32", evidence = "0x1400975b0", named_by = "opcode.0x935" },
 ]
 
 [[message]]

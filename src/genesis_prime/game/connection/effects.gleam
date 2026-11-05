@@ -11,6 +11,7 @@ import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
+import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Camped, Session} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/strike
@@ -147,8 +148,8 @@ pub fn carry_out(
 }
 
 /// What the player leaves behind as it leaves its stay in the world, by its camp
-/// or the Holocrypt: its chat groups, its casts and its strikes are left, and the
-/// save timer cancelled; the session keeps the chat's next whisper number, which
+/// or the Holocrypt: its chat groups, its casts and its strikes are left, its
+/// class resource's timers and the save timer cancelled; the session keeps the chat's next whisper number, which
 /// counts for the connection's life.
 pub fn world_left(
   session session: Session,
@@ -169,6 +170,7 @@ pub fn world_left(
         now:,
         effects: strike.left(strike: entered.strike).1,
       ).1,
+      connection_resource.left(session:, entered:),
       [OwnEffect(CancelTimer(timer: connection_state.save_timer))],
     ]),
   )

@@ -30,10 +30,10 @@ import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{Some}
 import message_support
@@ -77,7 +77,7 @@ pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
         ..unit,
         tail: UnitCreateTail(
           ..unit.tail,
-          stats: [UnitStat(stat_id: 0, value: 136)],
+          stats: [unit_fields.integer_stat(stat_id: 0, value: 136)],
           movement_commands: list.take(unit.tail.movement_commands, 1),
           properties: list.take(unit.tail.properties, 1),
         ),
@@ -163,7 +163,10 @@ pub fn the_unit_holds_the_maximum_health_it_was_made_with_as_stat_0_and_base_hea
       ),
       realm_id: 1,
     )
-  assert list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 777))
+  assert list.contains(
+    unit.tail.stats,
+    unit_fields.integer_stat(stat_id: 0, value: 777),
+  )
     as "0x140458140: stat 0 is the unit's health; it is above 0, so the creation check (0x140457bc5) does not create the unit dead"
   assert list.contains(
     unit.tail.properties,
@@ -188,8 +191,14 @@ pub fn the_unit_carries_its_characters_level_as_stat_10_test() -> Nil {
       ),
       realm_id: 1,
     )
-  assert list.contains(unit.tail.stats, UnitStat(stat_id: 10, value: 3))
+  assert list.contains(
+    unit.tail.stats,
+    unit_fields.integer_stat(stat_id: 10, value: 3),
+  )
     as "0x140458140: stat 10, in the integer form, is the unit's level; a unit created without it is level 1 (0x1404543c1), so a level 3 character needs it"
-  assert list.contains(unit.tail.stats, UnitStat(stat_id: 0, value: 136))
+  assert list.contains(
+    unit.tail.stats,
+    unit_fields.integer_stat(stat_id: 0, value: 136),
+  )
     as "stat 0 stays the health that keeps the unit alive (0x140457bc5)"
 }

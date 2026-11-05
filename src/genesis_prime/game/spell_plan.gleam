@@ -50,14 +50,23 @@
 ////   `0x14053e5a0`). The global one is the row `spellCoolDownIdGlobal` names, in
 ////   effect only for kinds 0 and 1 and a non-zero row (`0x14046afc0`); kinds 0
 ////   and 2 are refused while it runs (`0x1403b14c0`).
-//// - **The cost.** An ability with an innate cost the unit cannot pay is refused
-////   with 50 + the resource slot: types 5 to 11 are slots 0 to 6 (Mind Burst,
-////   type 6, is 51), and type 18 goes to the class's slots, the last one holding
-////   that vital giving the result and none passing (Gamma Rays is 55)
-////   (`0x1403b3320`, `0x1405e7980`, `Spell4CastResult.vital_cost`). A stage's row
-////   holds two more costs, checked the same way. Every resource a new unit holds
-////   is 0 (`0x140454380`). Health (1), shield (3), focus (15) and 16 give their own
-////   results (44, 176, 167, 177); any other type is an `UnreadCost`.
+//// - **The costs.** A spell's two innate costs, and a stage's row's two more, each
+////   read once into a `Cost` the cast rule checks against the caster's resources
+////   (`0x1403b3320`, `0x1405e7980`, `Spell4CastResult.vital_cost`): types 5 to 11
+////   are resource slots 0 to 6 (result 50 + the slot; Mind Burst, type 6, is 51);
+////   type 18 goes to the class's slots that hold that vital, the last one's result
+////   given when none passes (Gamma Rays is 55). Health (1), shield (3), focus (15)
+////   and 16 (slot 7) give their own results (44, 176, 167, 177) and are held by no
+////   rule of the server; any other type, the client's slots 8 to 10 (types 27 to 29)
+////   among them, is an `UnreadCost`.
+//// - **The caster requirements.** A spell's two caster vital requirements
+////   (`0x1403b1780`): types 5 to 11 read the same slots with the same results,
+////   compared with the value by the eval code (`0x1407a1750`: 0 to 4
+////   on the amount, 5 to 9 the same on the percentage of the slot's maximum, any
+////   other never passes); type 0 is none; any other type is an
+////   `UnreadRequirement`. The waiver (propertyFlags bit 2 with a
+////   prerequisiteIdCasterCast) is kept and never passes: the server holds no
+////   prerequisite engine.
 //// - **No target.** None of the 18 level-1 abilities needs a target the client
 ////   picks (`Spell4TargetMechanics.targetType`), so the plan holds no range and
 ////   no target rule.
@@ -259,9 +268,16 @@ pub type Spell {
     /// Whether the caster must be alive or dead to cast it.
     caster_death: CasterDeath,
     global_cooldown: GlobalCooldown,
-    /// The 0x7fc result of a press the caster cannot pay the innate cost of,
-    /// when the spell has a cost (`Spell4CastResult.vital_cost`).
-    unpayable_cost: Option(Int),
+    /// The innate costs a press pays, in the client's order: the Spell4 row's two,
+    /// then a stage's Spell4Thresholds row's two (`0x1403b3320`).
+    costs: List(Cost),
+    /// The caster vital requirements a press is checked against
+    /// (`0x1403b1780`).
+    requirements: List(Requirement),
+    /// The prerequisite that would waive a failed requirement: the spell's
+    /// prerequisiteIdCasterCast when its propertyFlags has bit 2 (`0x1403b1780`).
+    /// The server holds no prerequisite engine, so it never passes.
+    requirement_waiver: Option(PrerequisiteId),
     /// The gap before each phase's go, in order; empty for a spell that is not
     /// Multiphase.
     phase_delays_ms: List(Int),
@@ -274,6 +290,57 @@ pub type Spell {
     channel: Option(Channel),
     proxies: List(Proxy),
   )
+}
+
+/// One innate cost of a spell, as the client's check reads its type
+/// (`0x1403b3320`).
+pub type Cost {
+  /// `amount` points of resource slot `slot`: refused with `result` when the slot,
+  /// as a whole number, holds less (both as absolute values).
+  SlotCost(slot: Int, amount: Int, result: Int)
+  /// `amount` points of a vital the class mechanic finds among the class's slots,
+  /// `slots` in order: it passes at the first slot whose value less `amount` lies
+  /// between 0 and the slot's maximum, else is refused with `result`, the last such
+  /// slot's; with no such slot it passes and pays nothing (`0x1405e7980`).
+  ClassVitalCost(slots: List(Int), amount: Int, result: Int)
+  /// A cost in a vital no rule of the server holds (health, shield or focus):
+  /// refused with `result`, and logged once.
+  UnheldCost(result: Int)
+}
+
+/// One caster vital requirement (`0x1403b1780`): resource slot `slot`, or its
+/// percentage of its maximum, compared with `value`; refused with `result`.
+pub type Requirement {
+  Requirement(
+    slot: Int,
+    measure: Measure,
+    comparison: Comparison,
+    value: Int,
+    result: Int,
+  )
+}
+
+/// What a requirement compares: the slot's amount (evals 0 to 4) or its
+/// percentage of its maximum (above 4) (`0x1403b1780`).
+pub type Measure {
+  Amount
+  PercentOfMax
+}
+
+/// How a requirement compares, by its eval code (`0x1407a1750`).
+pub type Comparison {
+  /// 0 and 5.
+  Equal
+  /// 1 and 6.
+  Greater
+  /// 2 and 7.
+  AtLeast
+  /// 3 and 8.
+  Less
+  /// 4 and 9.
+  AtMost
+  /// Any other code, which never passes.
+  NeverPasses(eval: Int)
 }
 
 /// One Proxy effect of a spell: the effect row that names the child, when the
@@ -304,6 +371,9 @@ pub type PlanError {
   /// A spell's innate cost is of a type whose check the client's code was not
   /// read for (`0x1403b3320`).
   UnreadCost(spell4_id: Int, cost_type: Int)
+  /// A spell's caster vital requirement is of a type whose vital the server does
+  /// not read (`0x1403b1780`).
+  UnreadRequirement(spell4_id: Int, requirement_type: Int)
   /// A Channeled spell's channelPulseTime is 0, which gives no count of gos
   /// (`0x14053d1f0`).
   ChannelWithoutPulse(spell4_id: Int)
@@ -339,6 +409,12 @@ pub fn describe(error error: PlanError) -> String {
       <> " has an innate cost of type "
       <> int.to_string(cost_type)
       <> ", which the client's check was not read for"
+    UnreadRequirement(spell4_id:, requirement_type:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a caster vital requirement of type "
+      <> int.to_string(requirement_type)
+      <> ", whose vital the server does not read"
     ChannelWithoutPulse(spell4_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -517,11 +593,25 @@ fn spell_of(
   )
   use global_cooldown <- result.try(global_cooldown_of(tables:, row:))
   use caster_death <- result.try(caster_death_of(tables:, row:))
-  use unpayable_cost <- result.try(
-    unpayable_cost_of(tables:, row:, base:, costs: [
+  use costs <- result.try(
+    costs_of(tables:, row:, base:, costs: [
       #(row.innate_cost_type0, row.innate_cost0),
       #(row.innate_cost_type1, row.innate_cost1),
       ..threshold_costs
+    ]),
+  )
+  use requirements <- result.try(
+    requirements_of(spell4_id:, requirements: [
+      #(
+        row.caster_innate_requirement0,
+        row.caster_innate_requirement_eval0,
+        row.caster_innate_requirement_value0,
+      ),
+      #(
+        row.caster_innate_requirement1,
+        row.caster_innate_requirement_eval1,
+        row.caster_innate_requirement_value1,
+      ),
     ]),
   )
   use proxies <- result.try(
@@ -589,7 +679,16 @@ fn spell_of(
     weapon: weapon_of(base.weapon_slot),
     caster_death:,
     global_cooldown:,
-    unpayable_cost:,
+    costs:,
+    requirements:,
+    requirement_waiver: case
+      has_flag(flags: row.property_flags, bit: 0x4),
+      row.prerequisite_id_caster_cast
+    {
+      True, prerequisite if prerequisite != 0 ->
+        Some(PrerequisiteId(prerequisite))
+      True, _ | False, _ -> None
+    },
     phase_delays_ms: delays,
     threshold_ms: row.threshold_time,
     stages:,
@@ -856,73 +955,129 @@ fn caster_death_of(
   }
 }
 
-/// The result of the first of the spell's innate costs, as (vital type, amount),
-/// that a unit holding nothing cannot pay: the Spell4 row's two, then the two of
-/// the Spell4Thresholds row for a stage.
-fn unpayable_cost_of(
+/// The spell's innate costs, as (vital type, amount): the Spell4 row's two, then
+/// the two of the Spell4Thresholds row for a stage; a type of 0 or above 30, or an
+/// amount of 0, is none (`0x1403b3320`).
+fn costs_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
   base base: spell4_base.Spell4Base,
   costs costs: List(#(Int, Int)),
-) -> Result(Option(Int), PlanError) {
-  list.try_fold(costs, None, fn(found, cost) {
-    case found {
-      Some(_) -> Ok(found)
-      None -> cost_result(tables:, row:, base:, cost_type: cost.0, cost: cost.1)
-    }
+) -> Result(List(Cost), PlanError) {
+  list.try_map(costs, fn(cost) {
+    cost_of(tables:, row:, base:, cost_type: cost.0, amount: cost.1)
   })
+  |> result.map(option.values)
 }
 
-fn cost_result(
+fn cost_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
   base base: spell4_base.Spell4Base,
   cost_type cost_type: Int,
-  cost cost: Int,
-) -> Result(Option(Int), PlanError) {
-  case cost_type {
-    0 -> Ok(None)
-    _ if cost == 0 || cost_type > 30 -> Ok(None)
-    1 -> Ok(Some(44))
-    3 -> Ok(Some(176))
-    15 -> Ok(Some(167))
-    16 -> Ok(Some(177))
-    slot if slot >= 5 && slot <= 11 -> Ok(Some(50 + slot - 5))
-    18 -> class_cost_result(tables:, base:, vital: cost_type)
-    _ -> Error(UnreadCost(spell4_id: row.id, cost_type:))
+  amount amount: Int,
+) -> Result(Option(Cost), PlanError) {
+  case cost_type, slot_of(vital_type: cost_type) {
+    0, _ -> Ok(None)
+    _, _ if amount == 0 || cost_type > 30 -> Ok(None)
+    1, _ -> Ok(Some(UnheldCost(result: 44)))
+    3, _ -> Ok(Some(UnheldCost(result: 176)))
+    15, _ -> Ok(Some(UnheldCost(result: 167)))
+    16, _ -> Ok(Some(UnheldCost(result: 177)))
+    _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
+    18, Error(Nil) ->
+      class_cost_of(tables:, base:, vital: cost_type, amount:)
+      |> result.map(Some)
+    _, Error(Nil) -> Error(UnreadCost(spell4_id: row.id, cost_type:))
   }
 }
 
-/// The class mechanic's check of a cost in a vital that has no fixed slot: the
-/// last of the class's slots holding the vital gives 50 + its number (177 for
-/// slot 7), and a class with no slot for it passes (`0x1405e7980`).
-fn class_cost_result(
+/// The resource slot a cost or requirement type reads and the result its failure
+/// gives: 5 to 11 are slots 0 to 6 (50 to 56) (`0x1403b3320`, `0x1403b1780`). The
+/// client's types 16 and 27 to 29 read slots 7 to 10, which no class resource of
+/// the server uses.
+fn slot_of(vital_type vital_type: Int) -> Result(#(Int, Int), Nil) {
+  case vital_type {
+    _ if vital_type >= 5 && vital_type <= 11 ->
+      Ok(#(vital_type - 5, 50 + vital_type - 5))
+    _ -> Error(Nil)
+  }
+}
+
+/// The class mechanic's cost in a vital that has no fixed slot: the class's slots
+/// holding the vital, in order, and the last one's result, 50 + its number (177
+/// for slot 7) (`0x1405e7980`).
+fn class_cost_of(
   tables tables: table_store.Tables,
   base base: spell4_base.Spell4Base,
   vital vital: Int,
-) -> Result(Option(Int), PlanError) {
+  amount amount: Int,
+) -> Result(Cost, PlanError) {
   use class_row <- result.try(
     class.get(tables:, id: ClassId(base.class_id_player))
     |> result.replace_error(NoRow(table: "Class", id: base.class_id_player)),
   )
-  let slots = [
-    class_row.vital_enum_resource00,
-    class_row.vital_enum_resource01,
-    class_row.vital_enum_resource02,
-    class_row.vital_enum_resource03,
-    class_row.vital_enum_resource04,
-    class_row.vital_enum_resource05,
-    class_row.vital_enum_resource06,
-    class_row.vital_enum_resource07,
-  ]
-  let matching =
-    list.index_map(slots, fn(slot_vital, slot) { #(slot, slot_vital) })
+  let slots =
+    [
+      class_row.vital_enum_resource00,
+      class_row.vital_enum_resource01,
+      class_row.vital_enum_resource02,
+      class_row.vital_enum_resource03,
+      class_row.vital_enum_resource04,
+      class_row.vital_enum_resource05,
+      class_row.vital_enum_resource06,
+      class_row.vital_enum_resource07,
+    ]
+    |> list.index_map(fn(slot_vital, slot) { #(slot, slot_vital) })
     |> list.filter(fn(pair) { pair.1 == vital })
     |> list.map(fn(pair) { pair.0 })
-  case list.last(matching) {
-    Error(Nil) -> Ok(None)
-    Ok(7) -> Ok(Some(177))
-    Ok(slot) -> Ok(Some(50 + slot))
+  Ok(
+    ClassVitalCost(slots:, amount:, result: case list.last(slots) {
+      Ok(7) -> 177
+      Ok(slot) -> 50 + slot
+      Error(Nil) -> 0
+    }),
+  )
+}
+
+/// The spell's caster vital requirements, as (type, eval, value): type 0 is none
+/// (`0x1403b1780`).
+fn requirements_of(
+  spell4_id spell4_id: Int,
+  requirements requirements: List(#(Int, Int, Int)),
+) -> Result(List(Requirement), PlanError) {
+  list.try_map(requirements, fn(requirement) {
+    let #(requirement_type, eval, value) = requirement
+    case requirement_type, slot_of(vital_type: requirement_type) {
+      0, _ -> Ok(None)
+      _, Ok(#(slot, result)) ->
+        Ok(
+          Some(Requirement(
+            slot:,
+            measure: case eval > 4 {
+              True -> PercentOfMax
+              False -> Amount
+            },
+            comparison: comparison_of(eval:),
+            value:,
+            result:,
+          )),
+        )
+      _, Error(Nil) -> Error(UnreadRequirement(spell4_id:, requirement_type:))
+    }
+  })
+  |> result.map(option.values)
+}
+
+/// How an eval code compares (`0x1407a1750`).
+fn comparison_of(eval eval: Int) -> Comparison {
+  case eval {
+    0 | 5 -> Equal
+    1 | 6 -> Greater
+    2 | 7 -> AtLeast
+    3 | 8 -> Less
+    4 | 9 -> AtMost
+    other -> NeverPasses(eval: other)
   }
 }
 

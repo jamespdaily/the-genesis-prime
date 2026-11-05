@@ -5,7 +5,9 @@
 //// truncated to 52), so a test of the rule reads what the real spawn would carry
 //// without the client's tables.
 
+import class_resource_support
 import database_support
+import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
@@ -268,6 +270,7 @@ fn put_worlds(
   respawn_ms respawn_ms: Int,
 ) -> Nil {
   content_game_number.put(key:, numbers:)
+  content_class_resource.put(key:, classes: class_resource_support.classes())
   content_creature_kind.put(
     key:,
     kinds: Kinds(

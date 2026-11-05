@@ -3,13 +3,15 @@
 //// formulas, message layouts, client facts); `spawn` is the first content table
 //// (genesis_prime/content/spawn), `creature_kind` the second
 //// (genesis_prime/content/creature_kind), `game_number` the third
-//// (genesis_prime/content/game_number), and every later one follows the same pattern.
+//// (genesis_prime/content/game_number), `class_resource` the fourth
+//// (genesis_prime/content/class_resource), and every later one follows the same
+//// pattern.
 //// The kinds are selected before the spawns, since a spawn's attack is its kind's
 //// spell.
 ////
 //// - **Where a row comes from.** Every content table has `source` (a row of the
 ////   `content_source` table: `world_database`, `retail_record`, `server_choice`,
-////   `game_master`), `source_row` (the row's id in its source file) and `reason`,
+////   `game_master`, `client`), `source_row` (the row's id in its source file) and `reason`,
 ////   and the checks that a world-database row names its source row and any other
 ////   row states its reason (migration 0008).
 //// - **How rows get in.** A world-database row comes through the import tool
@@ -71,10 +73,12 @@
 //// | several rows are refused | every refusal is logged, then the start stops |
 //// | a query fails | the start stops with the database's reason |
 
+import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/class_resource
 import genesis_prime/game/rating
 import genesis_prime/migration.{type Migration}
 import genesis_prime/readiness
@@ -176,6 +180,20 @@ fn read(
       )
     }),
   )
+  use class_rows <- result.try(
+    content_class_resource.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_class_resource.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
+  let classes = class_resource.select(rows: class_rows)
+  let class_refusals = case classes {
+    Ok(..) -> []
+    Error(refusals) -> refusals
+  }
   let numbers = game_number.select(rows: number_rows, sight_range: sight.range)
   let number_refusals = case numbers {
     Ok(..) -> []
@@ -204,7 +222,14 @@ fn read(
         coverage: [],
       )
   }
-  case list.flatten([selection.refusals, kind_refusals, number_refusals]) {
+  case
+    list.flatten([
+      selection.refusals,
+      kind_refusals,
+      number_refusals,
+      class_refusals,
+    ])
+  {
     [] -> {
       list.each(selection.coverage, fn(coverage) {
         runtime.log(
@@ -221,6 +246,10 @@ fn read(
       }
       case numbers {
         Ok(numbers) -> content_game_number.put(key:, numbers:)
+        Error(..) -> Nil
+      }
+      case classes {
+        Ok(classes) -> content_class_resource.put(key:, classes:)
         Error(..) -> Nil
       }
       Ok(Nil)

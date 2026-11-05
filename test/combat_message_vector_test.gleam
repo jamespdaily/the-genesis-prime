@@ -75,11 +75,12 @@ import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property
-import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
+import genesis_prime/message/unit_stat.{type UnitStat}
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/world_map/static_object
+import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
 import message_support
@@ -263,8 +264,8 @@ pub fn a_creature_is_created_as_type_0_with_its_row_id_and_the_players_tail_test
       tail: UnitCreateTail(
         create_flags: 0,
         stats: [
-          UnitStat(stat_id: 0, value: 52),
-          UnitStat(stat_id: 10, value: 1),
+          unit_fields.integer_stat(stat_id: 0, value: 52),
+          unit_fields.integer_stat(stat_id: 10, value: 1),
         ],
         server_time_estimate_start: 0,
         movement_commands: [
@@ -390,7 +391,7 @@ pub fn a_static_object_is_created_as_type_10_11_or_32_with_a_creatures_type_data
       creature_id: 72_051,
       checklist_index: 4,
       tail: static_tail(
-        stats: [UnitStat(stat_id: 10, value: 1)],
+        stats: [unit_fields.integer_stat(stat_id: 10, value: 1)],
         properties: [],
         faction_id: 1441,
         base_faction_id: 1442,
@@ -414,8 +415,8 @@ pub fn a_static_object_is_created_as_type_10_11_or_32_with_a_creatures_type_data
       checklist_index: 0,
       tail: static_tail(
         stats: [
-          UnitStat(stat_id: 0, value: 442),
-          UnitStat(stat_id: 10, value: 3),
+          unit_fields.integer_stat(stat_id: 0, value: 442),
+          unit_fields.integer_stat(stat_id: 10, value: 3),
         ],
         properties: [
           unit_property.UnitProperty(
@@ -661,7 +662,7 @@ pub fn a_stat_change_is_a_unit_a_stat_in_5_bits_and_a_value_test() -> Nil {
   message_support.assert_codec(
     name: "opcode.0x938: unit id, stat 20 (shield) in 5 bits, value 123 in 32",
     body: message_support.hex("01 10 00 00 74 0f 00 00 00"),
-    value: UnitStatChanged(unit_id: 0x1001, stat_id: 20, value: 123),
+    value: UnitStatChanged(unit_id: 0x1001, value: 123),
     encode: unit_stat_changed.encode,
     decode: unit_stat_changed.decode,
   )
