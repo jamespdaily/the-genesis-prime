@@ -241,6 +241,24 @@ pub fn a_spell_that_needs_the_weapon_is_refused_169_when_slot_16_holds_none_test
     as "Kick needs no weapon (Spell4Base 38017: weaponSlot 0)"
 }
 
+pub fn a_press_that_lacks_the_weapon_and_meets_a_live_cast_is_refused_13_not_169_test() -> Nil {
+  use <- owned_test.run(5000)
+  let unarmed = cast.Caster(..support.caster(), weapon: None)
+  let #(state, _) =
+    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+  let #(_, effects) =
+    support.pressed_by(
+      state:,
+      caster: unarmed,
+      bag_index: 7,
+      target: 0,
+      at: 1100,
+    )
+  assert list.map(support.writes(effects:), refusal_result)
+    == [SpellAlreadyCasting]
+    as "0x1403afb10 checks the current cast (line 87) before the weapon (line 689), so Electrocute (weapon slot 1, propertyFlags 0x4000042: no casting exemption) is refused 13 during Telekinetic Strike's cast"
+}
+
 pub fn with_500_ms_or_less_of_a_cooldown_left_the_press_is_held_and_starts_when_it_ends_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =

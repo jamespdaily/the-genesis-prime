@@ -1080,9 +1080,9 @@ fn is_release(resolution resolution: Resolution) -> Bool {
 /// whose caster row asks for a dead one (`Spell4.spell4ConditionsIdCaster`).
 const caster_must_be_dead = 58
 
-/// What the client's checks make of a press, in its order: the caster's (its death,
-/// a press held already, the weapon, the current cast), the cost, then the
-/// cooldowns.
+/// What the client's checks make of a press, in its order: the caster's death, a
+/// press held already and the method, then CheckCastCaster's own (`0x1403afb10`):
+/// the current cast, the cost, the cooldowns, and the weapon last.
 type Verdict {
   Accept
   Refuse(result: cast_result.CastResult)
@@ -1123,10 +1123,6 @@ fn verdict(
     ),
   )
   use <- bool.guard(
-    when: lacks_the_weapon(spell:, caster:),
-    return: Refuse(result: cast_result.WeaponSlot),
-  )
-  use <- bool.guard(
     when: casting(cast) && !spell.ignores_casting,
     return: case time_left_of_current_cast(cast:, now_ms:) {
       Some(left_ms) if left_ms <= queue_window_ms -> HoldForCast
@@ -1144,11 +1140,16 @@ fn verdict(
   case global_left > queue_window_ms, own_left > queue_window_ms {
     True, _ -> Refuse(result: cast_result.SpellGlobalCooldown)
     False, True -> Refuse(result: cast_result.SpellCooldown)
-    False, False ->
+    False, False -> {
+      use <- bool.guard(
+        when: lacks_the_weapon(spell:, caster:),
+        return: Refuse(result: cast_result.WeaponSlot),
+      )
       case int.max(global_left, own_left) {
         0 -> Accept
         wait_ms -> Hold(wait_ms:)
       }
+    }
   }
 }
 
