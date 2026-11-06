@@ -39,10 +39,9 @@
 //// - **Each landed state is its own control**, with its own timer and its own 0x880: two
 ////   players' states, or one caster's two states of a kind, are held side by side, and
 ////   the creature acts again when none is held (`cc_state.instance_id`).
-//// - **A control's timer** is numbered 4n + 1 from n = 1 (5, 9, 13 ...), where n is the
-////   control's number for the creature's life: the corpse timer is 1 and the fight's are
-////   4g + 2, 4g + 3 and 4g + 4 (genesis_prime/world_map/creature), so none meets
-////   another. A timer that fires for a control already gone finds none and writes
+//// - **A control's timer** is the creature's rule's to number (genesis_prime/world_map/creature
+////   `control_timer`): one for each control's number, which is never used twice in a
+////   creature's life. A timer that fires for a control already gone finds none and writes
 ////   nothing.
 ////
 //// What happens at each failure point of a state:
@@ -61,14 +60,14 @@ import genesis_prime/game/strike_tell.{
   type ControlLanded, type Tell, ControlLanded,
 }
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
-import genesis_prime/step.{type Address, type LogLevel, type TimerId, TimerId}
+import genesis_prime/step.{type Address, type LogLevel}
 import genesis_prime/world_map/creature_life.{type InterruptArmor}
 import gleam/list
 
 /// One state a creature holds: the state, the cast it came from (the strike's cast id,
 /// which its 0x880 names), the instance id the caster's go gave it, the address of the
 /// caster's connection, the monotonic time it ends at, and its number for the
-/// creature's life, which its timer is made from (`timer_id`).
+/// creature's life, which its timer is made from.
 pub type Control {
   Control(
     number: Int,
@@ -90,8 +89,10 @@ pub opaque type State {
 pub type Effect {
   /// News of the creature's own unit for each viewer: its 0x87f or 0x880.
   ToViewers(news: News)
-  StartTimer(timer: TimerId, after_ms: Int)
-  CancelTimer(timer: TimerId)
+  /// A timer for the control of this number, which the creature's rule makes an id of
+  /// (genesis_prime/world_map/creature): it fires `ended`.
+  StartTimer(control: Int, after_ms: Int)
+  CancelTimer(control: Int)
   Log(level: LogLevel, text: String)
 }
 
@@ -112,29 +113,26 @@ pub fn holds(state state: State) -> Bool {
   state.controls != []
 }
 
-/// The strike's states land on a creature that `alive` after the strike and has
-/// `armor`: with no armor each becomes a control ending `delay_ms` plus `duration_ms`
-/// after `now_ms`, with a timer and its 0x87f (unit, state, instance id); with any
-/// armor none lands, and the first time the creature logs that the armor rules are not
-/// built. A dead creature takes none and logs nothing.
+/// The strike's states land on a living creature that has `armor`: with no armor each
+/// becomes a control ending `delay_ms` plus `duration_ms` after `now_ms`, with a timer and
+/// its 0x87f (unit, state, instance id); with any armor none lands, and the first time
+/// the creature logs that the armor rules are not built. The creature's rule asks only
+/// for a creature the strike left alive.
 pub fn land(
   state state: State,
   tell tell: Tell,
   armor armor: InterruptArmor,
-  alive alive: Bool,
   now_ms now_ms: Int,
 ) -> Landing {
-  case alive, armor {
-    False, _ -> Landing(state:, landed: [], effects: [])
-    True, creature_life.NoArmor -> {
-      let #(state, landed, effects) =
-        list.fold(tell.controls, #(state, [], []), fn(so_far, told) {
-          let #(state, landed, effects) = so_far
-          let hold_ms = told.delay_ms + told.duration_ms
+  case armor {
+    creature_life.NoArmor -> {
+      let #(state, held) =
+        list.map_fold(over: tell.controls, from: state, with: fn(state, told) {
+          let hold_ms = told.row.delay_ms + told.row.duration_ms
           let control =
             Control(
               number: state.next_number,
-              state: told.state,
+              state: told.row.state,
               cast_id: tell.key.cast_id,
               instance_id: told.instance_id,
               caster: tell.from,
@@ -146,30 +144,22 @@ pub fn land(
               controls: list.append(state.controls, [control]),
               next_number: state.next_number + 1,
             ),
-            [
-              ControlLanded(tell: told, ends_at_ms: control.ends_at_ms),
-              ..landed
-            ],
-            [
-              StartTimer(
-                timer: timer_id(number: control.number),
-                after_ms: hold_ms,
-              ),
+            #(ControlLanded(tell: told, ends_at_ms: control.ends_at_ms), [
               ToViewers(client_connection.CrowdControlApplied(
-                state: told.state,
+                state: told.row.state,
                 instance_id: told.instance_id,
               )),
-              ..effects
-            ],
+              StartTimer(control: control.number, after_ms: hold_ms),
+            ]),
           )
         })
       Landing(
         state:,
-        landed: list.reverse(landed),
-        effects: list.reverse(effects),
+        landed: list.map(held, fn(one) { one.0 }),
+        effects: list.flat_map(held, fn(one) { one.1 }),
       )
     }
-    True, creature_life.Armor(..) | True, creature_life.InfiniteArmor ->
+    creature_life.Armor(..) | creature_life.InfiniteArmor ->
       case state.logged_armor {
         True -> Landing(state:, landed: [], effects: [])
         False ->
@@ -215,23 +205,7 @@ pub fn died(state state: State) -> #(State, List(Effect)) {
   #(
     State(..state, controls: []),
     list.map(state.controls, fn(control) {
-      CancelTimer(timer: timer_id(number: control.number))
+      CancelTimer(control: control.number)
     }),
   )
-}
-
-/// The timer of the control numbered `number`: 4 times it plus 1, so a number from 1
-/// gives 5, 9, 13 and none meets the corpse timer's 1 or a fight timer.
-fn timer_id(number number: Int) -> TimerId {
-  TimerId(4 * number + 1)
-}
-
-/// The number of the control a timer is for, or `Error(Nil)` for a timer that is not a
-/// control's (the corpse timer's 1, a fight timer, or a number below 5).
-pub fn number_of(timer timer: TimerId) -> Result(Int, Nil) {
-  let TimerId(id) = timer
-  case id >= 5 && id % 4 == 1 {
-    True -> Ok({ id - 1 } / 4)
-    False -> Error(Nil)
-  }
 }

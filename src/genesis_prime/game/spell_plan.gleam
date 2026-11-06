@@ -1999,6 +1999,24 @@ pub fn tree(
   ]
 }
 
+/// The units an effect aimed by `aim` reaches (`Spell4Effects.targetFlags`): the caster,
+/// the cast's primary target, the units of the area, or the primary target and those.
+/// One rule for the cast's lasting rows and the strike's crowd-control states.
+pub fn units_aimed_at(
+  aim aim: Aim,
+  caster caster: Int,
+  primary_target primary_target: Int,
+  area area: List(Int),
+) -> List(Int) {
+  case aim {
+    AimsAtCaster -> [caster]
+    AimsAtPrimaryTarget -> [primary_target]
+    AimsAtArea -> area
+    AimsAtBoth -> list.unique([primary_target, ..area])
+    OtherAim(..) -> []
+  }
+}
+
 /// The Fluff effects of the spell that apply in phase `phase`, those whose tag holds
 /// for the points the cast spent.
 pub fn lasting_in_phase(

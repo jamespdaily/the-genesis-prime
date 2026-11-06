@@ -2931,13 +2931,12 @@ fn units_aimed_at(
   primary_target primary_target: Int,
   struck struck: List(Struck),
 ) -> List(Int) {
-  case aim {
-    spell_plan.AimsAtCaster -> [caster.unit_id]
-    spell_plan.AimsAtPrimaryTarget -> [primary_target]
-    spell_plan.AimsAtArea -> hit_units(struck:)
-    spell_plan.AimsAtBoth -> list.unique([primary_target, ..hit_units(struck:)])
-    spell_plan.OtherAim(..) -> []
-  }
+  spell_plan.units_aimed_at(
+    aim:,
+    caster: caster.unit_id,
+    primary_target:,
+    area: hit_units(struck:),
+  )
 }
 
 /// Each row with each unit its aim names.
@@ -3000,7 +2999,7 @@ fn aimed_at(
           entry.1,
           Listed(
             effect_id: Spell4EffectsId(entry.0.tell.effect_id),
-            delay_ms: entry.0.tell.delay_ms,
+            delay_ms: entry.0.tell.row.delay_ms,
             instance_id: Some(entry.0.tell.instance_id),
           ),
         )
@@ -3031,7 +3030,7 @@ fn states_logged(
   list.fold(aimed.controls, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
     let #(landed, unit_id) = entry
-    let state = landed.tell.state
+    let state = landed.tell.row.state
     let #(cast, timer) = new_timer(cast:)
     #(
       State(
@@ -3126,11 +3125,12 @@ fn removed_by_go(
   })
 }
 
-/// The nodes a go gives, one for each unit a Fluff row aims at: count 1 and the longest
-/// life of its rows with the effects the cast's node on the unit already holds
-/// (`lasting.given`: a later go keeps and re-arms them, as on the client,
-/// `opcode.0x7f4.instance_count`); a unit left with no effect that has a life holds no
-/// node of the cast.
+/// The nodes a go gives, one for each unit a Fluff row aims at or a crowd-control state
+/// landed on: count 1 and the longest life of its rows with the effects the cast's node on
+/// the unit already holds (`lasting.given`: a later go keeps and re-arms them, as on the
+/// client, `opcode.0x7f4.instance_count`), and at least until the time the creature
+/// holds each state, which no later go moves; a unit left with no effect that has a life
+/// and no state holds no node of the cast.
 fn nodes_given(
   cast cast: State,
   cast_id cast_id: Int,
@@ -3198,30 +3198,25 @@ fn node_of(
   now_ms now_ms: Int,
 ) -> Result(lasting.Node, Nil) {
   let rows =
-    list.append(
-      list.filter_map(aimed.lasting, fn(entry) {
-        case entry.1 == unit_id {
-          True -> Ok(entry.0.row)
-          False -> Error(Nil)
-        }
-      }),
-      list.filter_map(aimed.controls, fn(entry) {
-        case entry.1 == unit_id {
-          True ->
-            Ok(lasting.LastingRow(
-              delay_ms: 0,
-              duration_ms: entry.0.ends_at_ms - now_ms,
-              until_removed: False,
-            ))
-          False -> Error(Nil)
-        }
-      }),
-    )
+    list.filter_map(aimed.lasting, fn(entry) {
+      case entry.1 == unit_id {
+        True -> Ok(entry.0.row)
+        False -> Error(Nil)
+      }
+    })
+  let held_until_ms =
+    list.filter_map(aimed.controls, fn(entry) {
+      case entry.1 == unit_id {
+        True -> Ok(entry.0.ends_at_ms)
+        False -> Error(Nil)
+      }
+    })
   lasting.given(
     held:,
     unit_id:,
     count: 1,
     effects: rows,
+    held_until_ms:,
     longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
     go_ms: now_ms,
   )

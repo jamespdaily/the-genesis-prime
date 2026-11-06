@@ -40,9 +40,9 @@
 ////   creature it puts on a fight finds it, ordered with the moves its connection
 ////   tells (genesis_prime/world_map/creature_fight).
 
+import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/step.{type Address}
 import genesis_prime/world_map/stay.{type Stay}
 
@@ -77,21 +77,14 @@ pub type ControlLanded {
   ControlLanded(tell: ControlTell, ends_at_ms: Int)
 }
 
-/// One CCStateSet effect a strike puts on the unit (genesis_prime/game/crowd_control
-/// `Row`), with the instance id the caster gave it for the go: the state, the
-/// delay before and the duration of the effect in milliseconds, and the Interrupt
-/// Armor it removes (dataBits03). The cast id is the strike's key's. The creature
-/// holds the state from the tell until the delay and duration have passed and
-/// sends the state's 0x87f and 0x880 with this instance id (`cc_state.instance_id`).
+/// One CCStateSet effect a strike puts on the unit: its Spell4Effects id, the instance
+/// id the caster gave it for the go, and its row (genesis_prime/game/crowd_control
+/// `Row`: the state, the delay before and the duration of the effect in milliseconds,
+/// and the Interrupt Armor it removes). The cast id is the strike's key's. The creature
+/// holds the state from the tell until the delay and duration have passed and sends the
+/// state's 0x87f and 0x880 with this instance id (`cc_state.instance_id`).
 pub type ControlTell {
-  ControlTell(
-    effect_id: Int,
-    state: CrowdControlState,
-    instance_id: Int,
-    delay_ms: Int,
-    duration_ms: Int,
-    armor_removed: Int,
-  )
+  ControlTell(effect_id: Int, instance_id: Int, row: crowd_control.Row)
 }
 
 /// Who strikes, with what the struck unit's owner needs of it.

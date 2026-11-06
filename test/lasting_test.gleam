@@ -21,7 +21,7 @@ import genesis_prime/game/lasting.{
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import owned_test
 
 // ---- the life of a node ----
@@ -114,6 +114,7 @@ fn first_node(effects effects: List(lasting.LastingRow)) -> lasting.Node {
       unit_id: 7,
       count: 1,
       effects:,
+      held_until_ms: [],
       longer_of_delay_and_duration: False,
       go_ms: 1000,
     )
@@ -131,6 +132,7 @@ fn later_go(
     unit_id: 7,
     count:,
     effects:,
+    held_until_ms: [],
     longer_of_delay_and_duration: False,
     go_ms: 2000,
   )
@@ -145,6 +147,7 @@ pub fn a_first_go_gives_a_node_the_life_of_its_longest_effect_and_none_without_a
       unit_id: 7,
       count: 1,
       effects: [timed(duration_ms: 0)],
+      held_until_ms: [],
       longer_of_delay_and_duration: False,
       go_ms: 1000,
     )
@@ -215,7 +218,14 @@ fn hold(
     groups: [51],
     stack: Stack(group_id: 1450, cap: 2),
     started_ms:,
-    node: Node(unit_id: 7, count:, life: UntilRemoved, effects: [], armed_ms: 0),
+    node: Node(
+      unit_id: 7,
+      count:,
+      life: UntilRemoved,
+      effects: [],
+      armed_ms: 0,
+      held_until_ms: None,
+    ),
   )
 }
 
@@ -485,4 +495,83 @@ pub fn the_cast_ids_listed_are_the_ones_pushed_off_in_age_order_test() -> Nil {
       },
     )
     == [10, 20, 30]
+}
+
+// ---- a crowd-control state's own end ----
+//
+// A state ends when its creature says (`cc_state.end`), so its time is kept apart from the
+// effects a later go arms again from itself (`opcode.0x7f4.instance_count`).
+
+/// The node of unit 7 at a go at `go_ms` that adds these effects and holds the states
+/// until these times, from the node `held` the cast has there.
+fn with_states(
+  held held: Option(lasting.Node),
+  effects effects: List(lasting.LastingRow),
+  until until: List(Int),
+  go_ms go_ms: Int,
+) -> Result(lasting.Node, Nil) {
+  lasting.given(
+    held:,
+    unit_id: 7,
+    count: 1,
+    effects:,
+    held_until_ms: until,
+    longer_of_delay_and_duration: False,
+    go_ms:,
+  )
+}
+
+pub fn a_node_for_a_state_alone_lives_until_the_states_end_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(node) =
+    with_states(held: None, effects: [], until: [4000], go_ms: 1000)
+    as "a state is a reason for a node"
+  assert node.life == EndsAt(ms: 4000)
+  assert with_states(held: None, effects: [], until: [900], go_ms: 1000)
+    == Error(Nil)
+    as "a state that ended before the go gives no node"
+}
+
+pub fn a_later_go_arms_its_effects_again_but_not_the_state_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(first) =
+    with_states(held: None, effects: [], until: [4000], go_ms: 1000)
+    as "a node held until 4000"
+  let assert Ok(second) =
+    with_states(
+      held: Some(first),
+      effects: [timed(duration_ms: 100)],
+      until: [],
+      go_ms: 2000,
+    )
+    as "the later go adds a 100 ms effect"
+  assert second.life == EndsAt(ms: 4000)
+    as "the node ends at the state's 4000 and not at 2000 + 3000, which re-arming it would give"
+  let assert Ok(longer) =
+    with_states(
+      held: Some(first),
+      effects: [timed(duration_ms: 5000)],
+      until: [],
+      go_ms: 2000,
+    )
+    as "a later go with a longer effect"
+  assert longer.life == EndsAt(ms: 7000)
+    as "the node lasts as long as its longest effect, at least until the state"
+}
+
+pub fn a_node_with_an_until_removed_effect_outlasts_the_state_and_the_latest_state_counts_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(removed) =
+    with_states(
+      held: None,
+      effects: [until_removed()],
+      until: [4000],
+      go_ms: 1000,
+    )
+    as "an effect that lasts until removed"
+  assert removed.life == UntilRemoved
+  let assert Ok(two) =
+    with_states(held: None, effects: [], until: [3000, 4500], go_ms: 1000)
+    as "two states"
+  assert two.life == EndsAt(ms: 4500) as "the latest of the states held decides"
 }

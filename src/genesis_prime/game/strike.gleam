@@ -124,13 +124,14 @@ pub type Aimed {
 }
 
 /// What a go strikes: the units, nearest first with the primary target after the
-/// area's, the damage each is struck with and the crowd-control states each is told
-/// by the aim of its row. A spell with no damage effect and no state in the phase
+/// area's, which of them the area selected, the damage each is struck with and the
+/// crowd-control states each is told by the aim of its row. A spell with no damage effect and no state in the phase
 /// selects units and tells none of them.
 pub type Selection {
   Selection(
     asked: GoAsked,
     units: List(Aimed),
+    area: List(Int),
     blows: List(spell_area.DamageEffect),
     controls: List(spell_plan.CrowdControl),
   )
@@ -201,7 +202,7 @@ pub fn select(
   areas areas: Areas,
   now_ms now_ms: Int,
 ) -> Selection {
-  let empty = Selection(asked:, units: [], blows: [], controls: [])
+  let empty = Selection(asked:, units: [], area: [], blows: [], controls: [])
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
     |> result.try(fn(area) {
@@ -236,6 +237,7 @@ pub fn select(
           shown.life_of(picture:, unit_id:)
           |> result.map(fn(life) { Aimed(unit_id:, life:) })
         }),
+        area: from_area,
         blows: phase.damage,
         controls: phase.controls,
       )
@@ -348,7 +350,8 @@ pub fn begin(
 }
 
 /// The crowd-control states each selected unit is told: each row of the phase to
-/// the units its aim names (the primary target, the area's units or both), each with
+/// the units its aim names (the primary target, the units the area selected, or both:
+/// a primary target outside the area is told only by a row aimed at it), each with
 /// the next instance id of the caster's own count
 /// (genesis_prime/game/crowd_control `instance_id`, `controls_told`), the delay,
 /// duration and armor of its row, and the state. A phase with no state tells none.
@@ -358,58 +361,37 @@ fn controls_told(
   attacker attacker: Attacker,
 ) -> #(State, List(#(Int, List(strike_tell.ControlTell)))) {
   let #(strike, told) =
-    list.fold(selection.units, #(strike, []), fn(so_far, aimed) {
-      let #(strike, told) = so_far
+    list.map_fold(over: selection.units, from: strike, with: fn(strike, aimed) {
       let rows =
         list.filter(selection.controls, fn(row) {
-          reaches(
-            aim: row.aim,
-            unit_id: aimed.unit_id,
-            primary_target: selection.asked.primary_target,
+          list.contains(
+            spell_plan.units_aimed_at(
+              aim: row.aim,
+              caster: attacker.unit_id,
+              primary_target: selection.asked.primary_target,
+              area: selection.area,
+            ),
+            aimed.unit_id,
           )
         })
-      case rows {
-        [] -> so_far
-        [_, ..] -> {
-          let #(strike, controls) =
-            list.fold(rows, #(strike, []), fn(inner, row) {
-              let #(strike, controls) = inner
-              let count = strike.controls_told + 1
-              #(State(..strike, controls_told: count), [
-                strike_tell.ControlTell(
-                  effect_id: row.effect_id.value,
-                  state: row.row.state,
-                  instance_id: crowd_control.instance_id(
-                    caster_unit_id: attacker.unit_id,
-                    count:,
-                  ),
-                  delay_ms: row.row.delay_ms,
-                  duration_ms: row.row.duration_ms,
-                  armor_removed: row.row.armor_removed,
-                ),
-                ..controls
-              ])
-            })
-          #(strike, [#(aimed.unit_id, list.reverse(controls)), ..told])
-        }
-      }
+      let #(strike, controls) =
+        list.map_fold(over: rows, from: strike, with: fn(strike, row) {
+          let count = strike.controls_told + 1
+          #(
+            State(..strike, controls_told: count),
+            strike_tell.ControlTell(
+              effect_id: row.effect_id.value,
+              instance_id: crowd_control.instance_id(
+                caster_unit_id: attacker.unit_id,
+                count:,
+              ),
+              row: row.row,
+            ),
+          )
+        })
+      #(strike, #(aimed.unit_id, controls))
     })
-  #(strike, list.reverse(told))
-}
-
-/// Whether a state aimed by `aim` is told to the unit: one aimed at the primary target
-/// to that unit alone, one aimed at the area or at both to every unit the go selected
-/// (the damage effects, too, are told to each selected unit).
-fn reaches(
-  aim aim: spell_plan.Aim,
-  unit_id unit_id: Int,
-  primary_target primary_target: Int,
-) -> Bool {
-  case aim {
-    spell_plan.AimsAtPrimaryTarget -> unit_id == primary_target
-    spell_plan.AimsAtArea | spell_plan.AimsAtBoth -> True
-    spell_plan.AimsAtCaster | spell_plan.OtherAim(..) -> False
-  }
+  #(strike, list.filter(told, fn(entry) { entry.1 != [] }))
 }
 
 fn offence_of(

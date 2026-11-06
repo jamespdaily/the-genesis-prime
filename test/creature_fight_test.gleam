@@ -22,6 +22,7 @@
 //// - The threatMultiplier of Spell4Effects 125182 is 2.0 (the client's row).
 
 import connection_rule_support as support
+import crowd_control_support
 import genesis_prime/client_connection.{
   type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
   CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
@@ -42,7 +43,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature.{type State, Settings}
-import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_life
@@ -1420,19 +1420,6 @@ pub fn a_player_that_stops_seeing_the_creature_is_told_its_release_for_the_stay_
 // A crowd-control state: the creature does not act until it ends
 // (`genesis_prime/world_map/creature_control`, `cc_state.end`).
 
-/// Stagger's Stun, Spell4Effects 83827: durationTime 2500, delayTime 0, state 0
-/// (`table_rows -- Spell4Effects 83827`), with this instance id.
-fn stagger_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
-  strike_tell.ControlTell(
-    effect_id: 83_827,
-    state: crowd_control_state.Stun,
-    instance_id:,
-    delay_ms: 0,
-    duration_ms: 2500,
-    armor_removed: 1,
-  )
-}
-
 /// A strike of the player of connection `number` that carries these states and no
 /// damage.
 fn controlling(
@@ -1460,7 +1447,7 @@ pub fn a_stunned_creature_starts_no_attack_until_the_state_ends_and_then_attacks
       state:,
       at_ms: 100,
       message: controlling(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
     )
   assert list.contains(said(stunned), "0x87f to 2")
@@ -1493,7 +1480,7 @@ pub fn a_stunned_creature_starts_no_chase_and_a_running_one_stops_where_it_stand
       state:,
       at_ms: 500,
       message: controlling(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
     )
   let assert [CreaturePlaced(place:, ..)] =
@@ -1529,7 +1516,7 @@ pub fn a_stunned_creature_whose_threat_is_gone_leashes_but_starts_the_walk_home_
       state:,
       at_ms: 500,
       message: controlling(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
     )
   let #(state, leashed) =
@@ -1562,7 +1549,7 @@ pub fn two_players_stuns_hold_the_creature_until_the_later_one_ends_test() -> Ni
       state:,
       at_ms: 100,
       message: controlling(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
     )
   let #(state, second) =
@@ -1570,7 +1557,7 @@ pub fn two_players_stuns_hold_the_creature_until_the_later_one_ends_test() -> Ni
       state:,
       at_ms: 700,
       message: controlling(number: 5, cast_id: 2, controls: [
-        stagger_stun(instance_id: 49_153),
+        crowd_control_support.stagger_stun(instance_id: 49_153),
       ]),
     )
   assert list.count(said(first), fn(line) { line == "0x87f to 2" }) == 1
@@ -1602,17 +1589,6 @@ pub fn two_players_stuns_hold_the_creature_until_the_later_one_ends_test() -> Ni
 // only with the server's 0x880 (`cc_state.end`); a creature with Interrupt Armor takes
 // none and logs one line (Design 445 section 3); the client clears every state at a
 // death, so none is ended then (`cc_state.end`).
-
-fn kick_knockdown(instance_id instance_id: Int) -> strike_tell.ControlTell {
-  strike_tell.ControlTell(
-    effect_id: 140_382,
-    state: crowd_control_state.Knockdown,
-    instance_id:,
-    delay_ms: 166,
-    duration_ms: 3000,
-    armor_removed: 1,
-  )
-}
 
 /// A strike of the player of connection `number` that carries these states and
 /// kills with its damage.
@@ -1662,7 +1638,7 @@ fn control_timers(
   taken: ServiceStep(creature.Outgoing),
 ) -> List(#(step.TimerId, Int)) {
   list.filter(timers(taken), fn(started) {
-    creature_control.number_of(timer: started.0) != Error(Nil)
+    creature.control_of(timer: started.0) != Error(Nil)
   })
 }
 
@@ -1685,19 +1661,7 @@ fn timers_cancelled(
 }
 
 fn log_lines(taken: ServiceStep(creature.Outgoing)) -> List(String) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      step.Log(line:) -> Ok(line.text)
-      OwnEffect(step.Send(..))
-      | OwnEffect(step.Reply(..))
-      | OwnEffect(step.StartCreature(..))
-      | OwnEffect(StartServiceTimer(..))
-      | OwnEffect(step.CancelServiceTimer(..))
-      | step.Watch(..)
-      | step.Unwatch(..)
-      | step.Stop -> Error(Nil)
-    }
-  })
+  list.map(support.logs(taken), fn(line) { line.text })
 }
 
 pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f_and_the_answer_names_it_test() -> Nil {
@@ -1707,7 +1671,7 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
       state: armored(armor: creature_life.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
-        kick_knockdown(instance_id: 28_673),
+        crowd_control_support.kick_knockdown(instance_id: 28_673),
       ]),
     )
   let applied =
@@ -1720,7 +1684,7 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
   assert landed_in(taken)
     == [
       strike_tell.ControlLanded(
-        tell: kick_knockdown(instance_id: 28_673),
+        tell: crowd_control_support.kick_knockdown(instance_id: 28_673),
         ends_at_ms: 14_166,
       ),
     ]
@@ -1741,7 +1705,7 @@ pub fn a_creature_with_armor_above_0_or_infinite_takes_no_state_and_logs_one_lin
           state: armored(armor:),
           at_ms: 1000,
           message: controlling(number: 2, cast_id: 1, controls: [
-            stagger_stun(instance_id: 28_673),
+            crowd_control_support.stagger_stun(instance_id: 28_673),
           ]),
         )
       assert landed_in(first) == [] && state_news(first, 2) == []
@@ -1754,7 +1718,7 @@ pub fn a_creature_with_armor_above_0_or_infinite_takes_no_state_and_logs_one_lin
           state:,
           at_ms: 2000,
           message: controlling(number: 2, cast_id: 2, controls: [
-            stagger_stun(instance_id: 28_674),
+            crowd_control_support.stagger_stun(instance_id: 28_674),
           ]),
         )
       assert log_lines(second) == []
@@ -1770,7 +1734,7 @@ pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_b
       state: armored(armor: creature_life.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 77, controls: [
-        kick_knockdown(instance_id: 28_673),
+        crowd_control_support.kick_knockdown(instance_id: 28_673),
       ]),
     )
   assert list.map(state_news(taken, 2), name_of) == ["0x87f"]
@@ -1797,8 +1761,8 @@ pub fn two_states_of_one_kind_from_one_caster_are_held_separately_and_two_ending
       state: armored(armor: creature_life.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
-        stagger_stun(instance_id: 28_674),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_674),
       ]),
     )
   assert list.length(state_news(taken, 2)) == 2
@@ -1822,7 +1786,7 @@ pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instanc
       state: armored(armor: creature_life.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
     )
   let #(state, second) =
@@ -1830,7 +1794,7 @@ pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instanc
       state:,
       at_ms: 1500,
       message: controlling(number: 3, cast_id: 2, controls: [
-        stagger_stun(instance_id: 40_961),
+        crowd_control_support.stagger_stun(instance_id: 40_961),
       ]),
     )
   assert list.map(state_news(first, 5), name_of) == ["0x87f"]
@@ -1851,7 +1815,7 @@ pub fn a_creature_that_dies_stunned_sends_no_0x880_and_a_timer_after_death_write
       state: armored(armor: creature_life.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
     )
   let #(state, killed) =
@@ -1877,7 +1841,7 @@ pub fn a_strike_that_kills_the_creature_lands_no_state_and_one_on_a_corpse_is_re
       state: armored(armor: creature_life.NoArmor),
       at_ms: 1000,
       message: killing(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
     )
   assert landed_in(killed) == [] && state_news(killed, 5) == []
@@ -1887,7 +1851,7 @@ pub fn a_strike_that_kills_the_creature_lands_no_state_and_one_on_a_corpse_is_re
       state:,
       at_ms: 1100,
       message: controlling(number: 2, cast_id: 2, controls: [
-        stagger_stun(instance_id: 28_674),
+        crowd_control_support.stagger_stun(instance_id: 28_674),
       ]),
     )
   assert said(corpse) == ["Refused(Dead) to 2"] && !creature.controlled(state:)
@@ -1901,7 +1865,7 @@ pub fn a_viewer_arriving_while_a_state_is_held_is_not_told_it_and_a_new_creature
       state: armored(armor: creature_life.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
-        stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
     )
   let #(_, arrived) =
@@ -1915,4 +1879,39 @@ pub fn a_viewer_arriving_while_a_state_is_held_is_not_told_it_and_a_new_creature
     as "the creature's 0x262 does not carry a state: a viewer that arrives mid-state is not told (a gap)"
   assert !creature.controlled(state: beast(viewers: []))
     as "a creature that crashed is started again from its spawn with no state"
+}
+
+pub fn a_deflected_stun_only_strike_lands_no_state_and_sends_no_0x87f_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A deflected unit is named in the go's 0x7fb, not in a target info, so the client is
+  // given no effect for it: the creature takes no state either (`opcode.0x7fb`). A
+  // deflect roll of 0 is under the Beast's chance of 0.016.
+  let assert creature.Strike(tell: sent) =
+    controlling(number: 2, cast_id: 1, controls: [
+      crowd_control_support.stagger_stun(instance_id: 28_673),
+    ])
+    as "a strike"
+  let assert PlayerStriker(unit_id:, place:, seq:, stay:, ..) = sent.striker
+    as "a player's strike"
+  let deflected =
+    creature.Strike(
+      tell: Strike(
+        ..sent,
+        striker: PlayerStriker(
+          unit_id:,
+          place:,
+          seq:,
+          stay:,
+          rolls: Rolls(crit: 0.5, deflect: 0.0, glance: 0.5),
+        ),
+      ),
+    )
+  let #(state, taken) =
+    tell(state: beast(viewers: [2]), at_ms: 0, message: deflected)
+  assert said(taken) == ["Deflected to 2"]
+    as "the answer is Deflected and nothing is sent to the viewers"
+  assert !creature.controlled(state:)
+    && control_timers(taken) == []
+    && state_news(taken, 2) == []
+    && landed_in(taken) == []
 }

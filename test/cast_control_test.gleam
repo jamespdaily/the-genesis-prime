@@ -17,9 +17,11 @@
 ////   its sight first (`cast.unit_removed`).
 
 import cast_support as support
+import crowd_control_support
 import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan
-import genesis_prime/game/strike_tell.{ControlLanded, ControlTell}
+import genesis_prime/game/spend
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_entry
@@ -31,6 +33,7 @@ import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/list
 import owned_test
 
@@ -43,24 +46,6 @@ fn kick_plans() -> spell_plan.Plans {
 }
 
 const bag_of_base_3 = 11
-
-/// The instance id the caster, unit 7, gave its first state: unit id x 4096 + 1.
-const instance_id = 28_673
-
-/// A Kick Knockdown that landed on a creature at the time the creature held it until.
-fn landed(ends_at_ms ends_at_ms: Int) -> strike_tell.ControlLanded {
-  ControlLanded(
-    tell: ControlTell(
-      effect_id: 140_382,
-      state: Knockdown,
-      instance_id:,
-      delay_ms: 166,
-      duration_ms: 3000,
-      armor_removed: 1,
-    ),
-    ends_at_ms:,
-  )
-}
 
 /// Kick pressed at 1000 whose round closed at `go_ms` having struck unit 20, which took
 /// the Knockdown until `ends_at_ms`.
@@ -78,7 +63,9 @@ fn kicked(
       at: 1000,
     )
   support.answered_by(state:, effects:, at: go_ms, struck: [
-    cast.Hit(unit_id: 20, descriptions: [], controls: [landed(ends_at_ms:)]),
+    cast.Hit(unit_id: 20, descriptions: [], controls: [
+      crowd_control_support.kick_landed(ends_at_ms:),
+    ]),
   ])
 }
 
@@ -120,7 +107,7 @@ pub fn a_go_lists_a_state_the_creature_took_with_the_instance_id_its_strike_gave
     == [
       SpellEffectInfo(
         spell4_effects_id: 140_382,
-        instance_id:,
+        instance_id: 28_673,
         delay_ms: 166,
         field_4: 0,
         result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
@@ -220,4 +207,63 @@ pub fn a_unit_that_left_the_casters_sight_gets_no_end_entry_test() -> Nil {
       logged(effects:)
     })
   assert ended == [] as "and a timer that fires late writes nothing"
+}
+
+pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A Multiphase spell: its first go lands the Knockdown, held until 4000, and its
+  // second go, at 2000, adds a Fluff effect of 100 ms. `lasting.given` arms the Fluff
+  // effect again from the second go, but the state ends when the creature says.
+  let phased =
+    spell_plan.Spell(
+      ..support.child(spell4_id: 58_591, base: 3),
+      method: spell_plan.Multiphase,
+      phase_delays_ms: [0, 1000],
+      lasting: [
+        spell_plan.Lasting(
+          effect_id: Spell4EffectsId(9),
+          phase_flags: 2,
+          aim: spell_plan.AimsAtArea,
+          row: lasting.LastingRow(
+            delay_ms: 0,
+            duration_ms: 100,
+            until_removed: False,
+          ),
+          condition: spell_plan.Always,
+          tag: spend.always,
+        ),
+      ],
+    )
+  let plans = support.with_spells(plans: support.plans(), spells: [phased])
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let #(state, first) =
+    support.answered_by(state:, effects: pressed, at: 1000, struck: [
+      cast.Hit(unit_id: 20, descriptions: [], controls: [
+        crowd_control_support.kick_landed(ends_at_ms: 4000),
+      ]),
+    ])
+  let assert [#(go, 1000)] =
+    list.filter(support.started_timers(effects: first), fn(started) {
+      started.1 == 1000
+    })
+    as "the second go waits 1000 ms"
+  let #(state, going) = support.fired_raw(state:, timer: go, at: 2000)
+  let #(_, second) =
+    support.answered_by(state:, effects: going, at: 2000, struck: [
+      cast.Hit(unit_id: 20, descriptions: [], controls: []),
+    ])
+  let afters =
+    list.map(support.started_timers(effects: second), fn(started) { started.1 })
+  assert list.contains(afters, 2000)
+    as "the node ends at the state's 4000, 2000 ms after the second go"
+  assert !list.contains(afters, 3000)
+    as "and not at 2000 + 3000, which re-arming the state as an effect would give"
 }

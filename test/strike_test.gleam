@@ -21,6 +21,7 @@ import area_tables
 import cast_support as support
 import class_resource_support
 import client_tables
+import crowd_control_support
 import genesis_prime/client_connection
 import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast.{type GoAsked, GoAsked}
@@ -109,6 +110,7 @@ fn selection(
   Selection(
     asked:,
     units: list.map(units, fn(unit_id) { Aimed(unit_id:, life: 3) }),
+    area: units,
     blows: case damaging {
       True -> [damage_effect()]
       False -> []
@@ -312,6 +314,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
       selection: Selection(
         asked: asked(cast_id: 5, phase: 0),
         units: [strike.Aimed(unit_id: 10, life: 3)],
+        area: [10],
         blows: [paralytic_surge, telekinetic_strike],
         controls: [],
       ),
@@ -981,6 +984,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
       )
     assert list.map(chosen.units, fn(aimed) { aimed.unit_id })
       == [21, 22, 23, 24, 25]
+      && chosen.area == [21, 22, 23, 24, 25]
       && chosen.blows == []
       as "Spell4.38791.area: 38780 picks its 5 nearest ahead within its 8 m cone (90 degrees, twin 2189) at each of its four phases and strikes nobody itself (its Proxy starts 38781 on each)"
   })
@@ -1151,17 +1155,6 @@ fn stun_row(aim aim: spell_plan.Aim) -> spell_plan.CrowdControl {
   )
 }
 
-fn told_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
-  strike_tell.ControlTell(
-    effect_id: 100_836,
-    state: crowd_control_state.Stun,
-    instance_id:,
-    delay_ms: 0,
-    duration_ms: 3250,
-    armor_removed: 1,
-  )
-}
-
 /// A selection of these units, with no damage and Gate's Stun aimed so.
 fn stunning(
   asked asked: GoAsked,
@@ -1190,8 +1183,9 @@ pub fn a_stun_with_no_damage_is_told_to_each_unit_with_the_next_instance_ids_of_
     strike.TellStrike(unit_id: 11, tell: second, ..),
   ] = tells(effects:)
     as "each unit is told, though the phase has no damage"
-  assert first.controls == [told_stun(instance_id: 28_673)]
-    && second.controls == [told_stun(instance_id: 28_674)]
+  assert first.controls
+    == [crowd_control_support.gate_stun(instance_id: 28_673)]
+    && second.controls == [crowd_control_support.gate_stun(instance_id: 28_674)]
     as "unit 7's first and second state: 7 x 4096 + 1 and + 2, each unit its own"
   assert first.offence.blows == []
   assert went(effects:) == [] as "the round waits for the creatures' answers"
@@ -1206,7 +1200,8 @@ pub fn a_stun_with_no_damage_is_told_to_each_unit_with_the_next_instance_ids_of_
       now_ms: 1100,
     )
   let assert [strike.TellStrike(tell: third, ..)] = tells(effects: later)
-  assert third.controls == [told_stun(instance_id: 28_675)]
+  assert third.controls
+    == [crowd_control_support.gate_stun(instance_id: 28_675)]
     as "the count goes on from one go to the next"
 }
 
@@ -1229,8 +1224,8 @@ pub fn two_casters_instance_ids_for_one_creature_differ_test() -> Nil {
   }
   let first = told_by(attacker())
   let second = told_by(Attacker(..attacker(), unit_id: 8))
-  assert first == [told_stun(instance_id: 28_673)]
-    && second == [told_stun(instance_id: 32_769)]
+  assert first == [crowd_control_support.gate_stun(instance_id: 28_673)]
+    && second == [crowd_control_support.gate_stun(instance_id: 32_769)]
     as "7 x 4096 + 1 and 8 x 4096 + 1: no id is shared, and none is 0"
 }
 
@@ -1249,10 +1244,10 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
     )
   let assert [strike.TellStrike(unit_id: 11, tell:, ..)] = tells(effects:)
     as "only the primary target is told"
-  assert tell.controls == [told_stun(instance_id: 28_673)]
+  assert tell.controls == [crowd_control_support.gate_stun(instance_id: 28_673)]
   let landed =
     strike_tell.ControlLanded(
-      tell: told_stun(instance_id: 28_673),
+      tell: crowd_control_support.gate_stun(instance_id: 28_673),
       ends_at_ms: 4250,
     )
   let #(_, closed) =
@@ -1270,4 +1265,38 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
       ]),
     ]
     as "the go names the states that landed, as the creature answered them"
+}
+
+pub fn a_state_aimed_at_the_area_does_not_reach_a_primary_target_outside_it_but_one_aimed_at_both_does_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Unit 10 is inside the area and unit 11, the cast's target, is appended outside it
+  // (`strike.select` adds the primary target for a damage effect aimed at it).
+  let goes = GoAsked(..asked(cast_id: 5, phase: 0), primary_target: 11)
+  let told_to = fn(aim) {
+    let #(_, effects) =
+      begun(
+        state: strike.new(),
+        selection: Selection(
+          ..stunning(asked: goes, units: [10, 11], aim:),
+          area: [10],
+        ),
+        now_ms: 1000,
+      )
+    list.filter_map(tells(effects:), fn(effect) {
+      case effect {
+        strike.TellStrike(unit_id:, ..) -> Ok(unit_id)
+        strike.StartTimer(..)
+        | strike.CancelTimer(..)
+        | strike.Went(..)
+        | strike.Released(..)
+        | strike.Log(..) -> Error(Nil)
+      }
+    })
+  }
+  assert told_to(AimsAtArea) == [10]
+    as "Spell4Effects.targetFlags 4 aims at the units the area selected"
+  assert told_to(spell_plan.AimsAtBoth) == [10, 11]
+    as "targetFlags 6 aims at the area's units and the cast's target"
+  assert told_to(spell_plan.AimsAtPrimaryTarget) == [11]
+    as "targetFlags 2 aims at the cast's target alone"
 }

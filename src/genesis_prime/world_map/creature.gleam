@@ -367,7 +367,7 @@ pub fn step(
         }
       }
     OwnEvent(ServiceTimerFired(timer:)) ->
-      case creature_control.number_of(timer:), fight_timer(timer:) {
+      case control_of(timer:), fight_timer(timer:) {
         Ok(number), _ -> control_ended(state:, number:, now_ms:)
         Error(Nil), Ok(timer) ->
           fought_alone(
@@ -492,7 +492,6 @@ fn controls_after(
               state: state.control,
               tell:,
               armor: state.body.combat.interrupt_armor,
-              alive: True,
               now_ms:,
             )
           let state = State(..state, control: landing.state)
@@ -532,11 +531,14 @@ fn carried(
   list.flat_map(effects, fn(effect) {
     case effect {
       creature_control.ToViewers(news:) -> to_viewers(state:, news:)
-      creature_control.StartTimer(timer:, after_ms:) -> [
-        OwnEffect(step.StartServiceTimer(timer:, after_ms:)),
+      creature_control.StartTimer(control:, after_ms:) -> [
+        OwnEffect(step.StartServiceTimer(
+          timer: control_timer(control:),
+          after_ms:,
+        )),
       ]
-      creature_control.CancelTimer(timer:) -> [
-        OwnEffect(step.CancelServiceTimer(timer:)),
+      creature_control.CancelTimer(control:) -> [
+        OwnEffect(step.CancelServiceTimer(timer: control_timer(control:))),
       ]
       creature_control.Log(level:, text:) -> [
         step.Log(line: step.LogLine(
@@ -671,13 +673,28 @@ fn fighter_of(state state: State) -> Fighter {
 /// tick, the strike deadline and the walk home, by generation, so none is the
 /// corpse timer's 1 and a timer of an old generation is never the new one's. The
 /// ids 1 above a multiple of 4 are the corpse timer's (1) and the controls' (5, 9, 13
-/// ...: genesis_prime/world_map/creature_control `timer_id`), so no two timers of a
-/// creature share an id.
+/// ...: `control_timer`), so no two timers of a creature share an id.
 fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
   case timer {
     AttackTick(generation:) -> TimerId(4 * generation + 2)
     StrikeDeadline(generation:) -> TimerId(4 * generation + 3)
     HomeArrival(generation:) -> TimerId(4 * generation + 4)
+  }
+}
+
+/// The timer id of the control numbered `control`: 1 above 4 times it, from 5 (5, 9, 13
+/// ...), so none is the corpse timer's 1 or a fight timer's.
+fn control_timer(control control: Int) -> step.TimerId {
+  TimerId(4 * control + 1)
+}
+
+/// The number of the control a timer id is for, or `Error(Nil)` for one that is not a
+/// control's: the corpse timer's 1, a fight timer or any other. For a test.
+pub fn control_of(timer timer: step.TimerId) -> Result(Int, Nil) {
+  let TimerId(number) = timer
+  case number >= 5 && number % 4 == 1 {
+    True -> Ok({ number - 1 } / 4)
+    False -> Error(Nil)
   }
 }
 

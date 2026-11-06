@@ -15,6 +15,7 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_kind_26.{MovementKind26}
@@ -22,6 +23,8 @@ import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
+import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -1194,4 +1197,59 @@ pub fn an_object_notice_for_another_stay_is_dropped_test() -> Nil {
         as "a notice of another stay names units of another run or map"
     },
   )
+}
+
+pub fn a_shown_units_crowd_control_news_is_written_as_0x87f_and_0x880_and_none_for_a_unit_not_shown_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Unit 9 is shown by `Appears`; unit 77 is not. The states' news comes from the
+  // creature that owns the unit, for the viewer's stay (`opcode.0x87f`, `opcode.0x880`).
+  let #(shown, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.event_of(Appears),
+    )
+  let news_of = fn(unit_id, news) {
+    game_connection_support.for_stay(
+      game_connection_support.own_stay(),
+      SentByPeer(PeerNews(unit_id:, news:)),
+    )
+  }
+  let applied =
+    client_connection.CrowdControlApplied(
+      state: crowd_control_state.Knockdown,
+      instance_id: 28_673,
+    )
+  let ended =
+    client_connection.CrowdControlEnded(
+      state: crowd_control_state.Knockdown,
+      cast_id: 2_147_500_000,
+      instance_id: 28_673,
+    )
+  let #(_, taken) = game_connection_support.feed(shown, news_of(9, applied))
+  let assert [Frame(message_id: 0x087F, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "opcode.0x87f"
+  assert unit_cc_state_applied.decode(body)
+    == Ok(UnitCcStateApplied(
+      unit_id: 9,
+      state: crowd_control_state.Knockdown,
+      instance_id: 28_673,
+    ))
+  let #(_, taken) = game_connection_support.feed(shown, news_of(9, ended))
+  let assert [Frame(message_id: 0x0880, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "opcode.0x880"
+  assert unit_cc_state_ended.decode(body)
+    == Ok(UnitCcStateEnded(
+      unit_id: 9,
+      state: crowd_control_state.Knockdown,
+      cast_id: 2_147_500_000,
+      instance_id: 28_673,
+      keeps_flag_4_entries: 0,
+    ))
+  list.each([applied, ended], fn(news) {
+    let #(_, taken) = game_connection_support.feed(shown, news_of(77, news))
+    assert support.writes(taken) == []
+      as "a unit the viewer's client does not show is written nothing"
+  })
 }

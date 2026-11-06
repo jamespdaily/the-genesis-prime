@@ -365,7 +365,7 @@ pub fn step(
         Returning(..) | Resting | Fighting(..) -> #(state, [])
       }
     Killed -> killed(state:, fighter:, now_ms:)
-    Controlled -> stopped(state:, now_ms:)
+    Controlled -> stand_still(state:, now_ms:)
     ControlEnded -> resumed(state:, fighter:, now_ms:)
     StoodAgain -> {
       let state =
@@ -1054,21 +1054,14 @@ fn leash(
     }
     None -> #(state, [])
   }
-  let here = creature_path.place_at(path: state.path, now_ms:)
-  let path = case fighter.controlled {
-    True -> Standing(at: here)
-    False ->
-      creature_path.straight(
-        from: here,
-        to: fighter.home,
-        speed: fighter.attack.run_speed,
-        now_ms:,
-      )
-  }
   let #(state, home) = generation(state)
-  let moved = path_news(was: state.path, now: path, now_ms:)
+  let state = State(..state, status: Returning(home:))
+  let #(state, walked) = case fighter.controlled {
+    True -> #(state, [])
+    False -> walk_home(state:, fighter:, home:, now_ms:)
+  }
   #(
-    State(..state, status: Returning(home:), path:),
+    state,
     list.flatten([
       closed,
       list.map(entries, fn(entry) {
@@ -1081,7 +1074,7 @@ fn leash(
         ToViewers(client_connection.CombatState(in_combat: False)),
         RestoreHealth,
       ],
-      moved,
+      walked,
       list.map(entries, fn(entry) {
         ToPlayer(
           to: entry.0,
@@ -1089,17 +1082,49 @@ fn leash(
           told: Released(unit_id: fighter.unit_id),
         )
       }),
-      case fighter.controlled {
-        True -> []
-        False -> [
-          StartTimer(
-            timer: HomeArrival(home),
-            after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
-          ),
-        ]
-      },
     ]),
   )
+}
+
+/// The path home from where the creature stands, sent as 0x638 (or placed, when the path
+/// it ran ends in standing), with the home timer of generation `home` for its arrival.
+/// The leash starts it, or `ControlEnded` does when a state held the creature at the
+/// leash.
+fn walk_home(
+  state state: State,
+  fighter fighter: Fighter,
+  home home: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  let path =
+    creature_path.straight(
+      from: here,
+      to: fighter.home,
+      speed: fighter.attack.run_speed,
+      now_ms:,
+    )
+  #(
+    State(..state, path:),
+    list.append(path_news(was: state.path, now: path, now_ms:), [
+      StartTimer(
+        timer: HomeArrival(home),
+        after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
+      ),
+    ]),
+  )
+}
+
+/// The creature stands where it is: the path it runs stops, and its viewers are placed
+/// there when they still run it (0x638 of kind 2). A death does it, and so does a state
+/// that takes hold.
+fn stand_still(
+  state state: State,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  let placed = path_news(was: state.path, now: Standing(at: here), now_ms:)
+  #(State(..state, path: Standing(at: here)), placed)
 }
 
 /// The creature died: its path frozen where it fell and its viewers placed there
@@ -1110,9 +1135,7 @@ fn killed(
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let here = creature_path.place_at(path: state.path, now_ms:)
-  let placed = path_news(was: state.path, now: Standing(at: here), now_ms:)
-  let state = State(..state, path: Standing(at: here))
+  let #(state, placed) = stand_still(state:, now_ms:)
   case state.status {
     Fighting(threat:, round:, ..) -> {
       let finished = case round {
@@ -1142,15 +1165,6 @@ fn killed(
   }
 }
 
-/// A state took hold of the creature: the path it runs stops where it stands, and its
-/// viewers are placed there when they still run it (0x638 of kind 2, as `killed`
-/// does). The fight's status and threat are unchanged.
-fn stopped(state state: State, now_ms now_ms: Int) -> #(State, List(Effect)) {
-  let here = creature_path.place_at(path: state.path, now_ms:)
-  let placed = path_news(was: state.path, now: Standing(at: here), now_ms:)
-  #(State(..state, path: Standing(at: here)), placed)
-}
-
 /// The last state ended: a Fighting creature chases its target again from where it
 /// stands (its attack tick went on), and a Returning one that stands away from home
 /// starts the walk its leash could not, with its home timer.
@@ -1161,25 +1175,7 @@ fn resumed(
 ) -> #(State, List(Effect)) {
   case state.status {
     Fighting(..) -> chase(state:, fighter:, now_ms:)
-    Returning(home:) -> {
-      let here = creature_path.place_at(path: state.path, now_ms:)
-      let path =
-        creature_path.straight(
-          from: here,
-          to: fighter.home,
-          speed: fighter.attack.run_speed,
-          now_ms:,
-        )
-      #(
-        State(..state, path:),
-        list.append(path_news(was: state.path, now: path, now_ms:), [
-          StartTimer(
-            timer: HomeArrival(home),
-            after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
-          ),
-        ]),
-      )
-    }
+    Returning(home:) -> walk_home(state:, fighter:, home:, now_ms:)
     Resting -> #(state, [])
   }
 }
