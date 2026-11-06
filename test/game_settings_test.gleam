@@ -173,3 +173,45 @@ pub fn slots_below_2_or_above_14_or_not_a_whole_number_are_refused_with_their_va
       most: 14,
     ))
 }
+
+pub fn the_development_commands_are_off_unset_and_on_only_for_1_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert game_settings.from_environment(environment([]))
+    == Ok(GameSettings(..game_settings.defaults(), dev_commands: False))
+    as "the module's doc comment: unset is 0, off, so production, which does not set it, runs no development command"
+  assert !game_settings.defaults().dev_commands
+  assert game_settings.from_environment(
+      environment([#("GENESIS_DEV_COMMANDS", "0")]),
+    )
+    == Ok(GameSettings(..game_settings.defaults(), dev_commands: False))
+    as "0 is off"
+  assert game_settings.from_environment(
+      environment([#("GENESIS_DEV_COMMANDS", "1")]),
+    )
+    == Ok(GameSettings(..game_settings.defaults(), dev_commands: True))
+    as "1 is on, and changes no other setting"
+}
+
+pub fn a_development_commands_value_of_2_or_x_refuses_the_start_with_its_variable_and_range_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert game_settings.from_environment(
+      environment([#("GENESIS_DEV_COMMANDS", "2")]),
+    )
+    == Error(OutOfRange(
+      variable: "GENESIS_DEV_COMMANDS",
+      value: 2,
+      least: 0,
+      most: 1,
+    ))
+    as "the module's doc comment: a whole number outside 0 to 1 is refused with the range, so a typo never turns the commands on"
+  assert game_settings.from_environment(
+      environment([#("GENESIS_DEV_COMMANDS", "x")]),
+    )
+    == Error(NotAWholeNumber(
+      variable: "GENESIS_DEV_COMMANDS",
+      value: "x",
+      least: 0,
+      most: 1,
+    ))
+    as "a value that is not a whole number is refused with the range"
+}

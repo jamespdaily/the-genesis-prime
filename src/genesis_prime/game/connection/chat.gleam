@@ -16,22 +16,40 @@
 ////   and leaves them in the step that starts the camp's leave, so a new entry
 ////   joins again (genesis_prime/game/chat has the sequences, the refusals and
 ////   the failure table).
+//// - **A development summon** (genesis_prime/game/dev_command): a `!summon` line
+////   with the setting on is answered by the chat's 0x1c2, then the connection
+////   asks the player's map to start the creature and waits in `Summoning`;
+////   the answer is told to the player only when it is a refusal, as one System
+////   line.
+////
+//// ```
+//// InWorld ─ !summon id ─▶ 0x1c2, AskMapRun(Summon) ─▶ Summoning ─ answer ─▶ InWorld
+////                                                               Summoned: nothing
+////                                                               otherwise: one System line
+//// ```
 
 import genesis_prime/client_connection.{
-  type Answer, type Request, Continue, TellChat,
+  type Answer, type Request, AskMapRun, Continue, FromMap, TellChat,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
-import genesis_prime/game/connection/state.{type Session, Session} as connection_state
+import genesis_prime/game/connection/state.{
+  type Session, AwaitingHelloReply, ClaimingSession, EnteringWorld,
+  InCharacterSelect, InWorld, LeavingMap, SavingPlace, Session, Summoning,
+  TakingSessionKey, WaitingToClaim,
+} as connection_state
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome, LogWarning,
   OwnEffect, Unwatch, Watch,
 }
 import genesis_prime/table/id.{type Creature2Id}
+import genesis_prime/world_map/map
+import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -80,13 +98,42 @@ pub fn chat_message(
 /// client's frames held, as in a save, and the shell takes no other input
 /// until the outcome. A status other than `InWorld` cannot have taken the line,
 /// so it is a bug that ends the connection.
-pub fn summoning(
+fn summoning(
   session session: Session,
   now now: Now,
   creature2_id creature2_id: Creature2Id,
   before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
-  todo as "InWorld: status Summoning, ask AskMapRun(entered.map, entered.incarnation, map.Summon(connection, creature2_id)) after before; any other status: end_for"
+  case session.status {
+    InWorld(holder:, entered:) ->
+      connection_state.ask(
+        session: Session(..session, status: Summoning(holder:, entered:)),
+        now:,
+        request: AskMapRun(
+          map: entered.map,
+          incarnation: entered.incarnation,
+          message: map.Summon(
+            connection: client_connection.connection(session.link),
+            creature_id: creature2_id,
+          ),
+        ),
+        before:,
+      )
+    Summoning(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | EnteringWorld(..)
+    | ClaimingSession(..)
+    | WaitingToClaim(..)
+    | InCharacterSelect(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "a summon was asked while the player was not in the world",
+      )
+  }
 }
 
 /// The outcome of the summon ask. `Summoned` writes nothing: the creature sent
@@ -105,7 +152,50 @@ pub fn summon_answered(
   entered entered: world_entry.Entered,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
-  todo as "status back to InWorld; Summoned: nothing; NotSummoned and the outcomes with no answer: chat.system_line_frame; StoppedWaiting: stopped; a foreign answer: told"
+  let session = Session(..session, status: InWorld(holder:, entered:))
+  case outcome {
+    step.Answer(FromMap(map.Summoned(..))) -> Continue(session, [])
+    step.Answer(FromMap(map.NotSummoned(reason:))) ->
+      not_summoned(session:, because: not_summoned_text(reason:))
+    step.NotRunning | step.EndedBeforeAnswer | step.NoAnswerInTime ->
+      not_summoned(
+        session:,
+        because: client_connection.without_answer(who: "the map", outcome:),
+      )
+    step.StoppedWaiting -> connection_state.stopped(session, now)
+    step.Answer(FromMap(..))
+    | step.Answer(client_connection.FromStore(..))
+    | step.Answer(client_connection.FromHandOff(..))
+    | step.Answer(client_connection.FromSessions(..)) ->
+      connection_state.told(
+        session:,
+        now:,
+        reason: LostUserServer,
+        level: step.LogError,
+        text: "the answer is none a summon asked for",
+      )
+  }
+}
+
+/// The System line that tells the player no creature came, with why.
+fn not_summoned(
+  session session: Session,
+  because because: String,
+) -> client_connection.Handled(Session) {
+  Continue(session, [
+    connection_state.to_client(
+      session,
+      chat.system_line_frame(text: "not summoned: " <> because),
+    ),
+  ])
+}
+
+/// Why the map refused a summon, in words for the player.
+fn not_summoned_text(reason reason: map.NotSummoned) -> String {
+  case reason {
+    map.NoPlayerHere -> "the player is not in the map"
+    map.CreatureRefused(refusal:) -> spawn.describe_refusal(refusal:)
+  }
 }
 
 /// What another player's connection told this one about chat

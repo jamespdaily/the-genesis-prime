@@ -31,7 +31,7 @@ import genesis_prime/message/chat_format_kind_2
 import genesis_prime/message/chat_format_kind_3
 import genesis_prime/message/chat_format_navigation_point
 import genesis_prime/message/chat_format_quest_id
-import genesis_prime/message/chat_line.{ChatLine}
+import genesis_prime/message/chat_line.{type ChatLine, ChatLine}
 import genesis_prime/message/chat_line_accepted.{ChatLineAccepted}
 import genesis_prime/message/chat_result.{ChatResult}
 import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
@@ -40,7 +40,7 @@ import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
-import genesis_prime/table/id.{ChatChannelId}
+import genesis_prime/table/id.{ChatChannelId, Creature2Id}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/int
 import gleam/list
@@ -110,6 +110,16 @@ fn take(
   body body: BitArray,
   viewers viewers: List(Int),
 ) -> #(Chat, List(chat.Effect)) {
+  take_with(message:, chat:, body:, viewers:, dev_commands: False)
+}
+
+fn take_with(
+  message message: chat.Message,
+  chat chat: Chat,
+  body body: BitArray,
+  viewers viewers: List(Int),
+  dev_commands dev_commands: Bool,
+) -> #(Chat, List(chat.Effect)) {
   let assert Ok(taken) =
     chat.take(
       chat:,
@@ -119,7 +129,7 @@ fn take(
       realm_name: "Test Realm",
       connection: ConnectionId(1),
       tables: character_tables.shared(),
-      dev_commands: False,
+      dev_commands:,
     )
     as "the body decodes"
   taken
@@ -892,6 +902,251 @@ pub fn every_0x1c3_gets_exactly_one_answer_test() -> Nil {
   assert list.length(frames_of(effects)) == 1
     as "and no other message to the client"
 }
+
+// ---- the development commands ----
+//
+// Expected values: the setting, the `!` grammar and the answers' texts are the
+// design's choices (a test tool, the client has no commands); the System line's
+// channel and fields are `chat.system_line` (ChatChannel row 2, flags 8) and
+// `opcode.0x1c8`; the one 0x1c2 for each 0x1c3 is `opcode.0x1c3` and
+// `opcode.0x1c2`.
+
+/// A line on Say with `text`, slot 1, from a speaker with viewers 7 and 8.
+fn say_taken(
+  text text: String,
+  dev_commands dev_commands: Bool,
+) -> List(chat.Effect) {
+  take_with(
+    message: chat.LineSent,
+    chat: a_chat(),
+    body: body(
+      type_id: 4,
+      channel_id: 0,
+      text: bit_stream.utf16_units(text),
+      formats: [],
+      message_id: 1,
+    ),
+    viewers: [7, 8],
+    dev_commands:,
+  ).1
+}
+
+/// The 0x1c8 of a refused command line, decoded: the effects are the 0x1c2 and
+/// then that one line.
+fn system_line_of(effects: List(chat.Effect)) -> ChatLine {
+  let assert [first, second] = frames_of(effects)
+    as "the 0x1c2 and one system line"
+  assert first.message_id == chat_line_accepted.message_id
+  assert second.message_id == chat_line.message_id
+  let assert Ok(line) = chat_line.decode(second.body)
+  line
+}
+
+fn system_line_with(text: String) -> ChatLine {
+  ChatLine(
+    channel_type: 2,
+    channel_id: 0,
+    gm: 0,
+    from_self: 0,
+    auto_response: 0,
+    sender_realm_id: 0,
+    sender_character_id: 0,
+    sender_name: "",
+    sender_realm_name: "",
+    presence_state: 0,
+    text: bit_stream.utf16_units(text),
+    formats: [],
+    cross_faction: 0,
+    field_14: 0,
+    unit_id: 0,
+    premium_tier: 0,
+  )
+}
+
+pub fn with_the_setting_off_a_summon_line_is_a_say_line_and_nothing_is_asked_test() -> Nil {
+  use <- owned_test.run(5000)
+  let effects = say_taken(text: "!summon 75048", dev_commands: False)
+  assert accepted(effects).chat_message_id == 1
+    as "opcode.0x1c2: the speaker's own line is shown by the accept"
+  assert said_to(effects) == [7, 8]
+    as "the design: with the setting off a `!` line is a Say line as any other, told to each viewer"
+  let assert [#(_, Said(line:, ..)), ..] = tells_of(effects)
+  assert line.text == bit_stream.utf16_units("!summon 75048")
+    && line.channel_type == chat_channel.Say
+  assert !list.any(effects, fn(effect) {
+    case effect {
+      chat.AskSummon(..) -> True
+      chat.Send(..)
+      | chat.Tell(..)
+      | chat.TellWatched(..)
+      | chat.UnknownZone(..)
+      | chat.Watch(..)
+      | chat.Unwatch(..)
+      | chat.JoinGroup(..)
+      | chat.LeaveGroup(..)
+      | chat.Unhandled(..) -> False
+    }
+  })
+    as "nothing is asked of the map"
+}
+
+pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_the_summon_last_test() -> Nil {
+  use <- owned_test.run(5000)
+  let effects = say_taken(text: "!summon 75048", dev_commands: True)
+  let assert [chat.Send(frame:), chat.AskSummon(creature2_id:)] = effects
+    as "the 0x1c2, then the ask last: the connection's ask ends the step"
+  assert accepted([chat.Send(frame:)])
+    == ChatLineAccepted(
+      chat_message_id: 1,
+      gm: 0,
+      name: "Ab Cd",
+      realm_name: "",
+      unit_id: 5,
+      premium_tier: 0,
+    )
+    as "opcode.0x1c2: the same answer as for a said line, so the client shows the line it typed"
+  assert creature2_id == Creature2Id(75_048)
+  assert tells_of(effects) == []
+    as "the design: the line is told to no viewer, so a command is not said aloud"
+}
+
+pub fn an_unknown_bang_command_answers_one_system_line_and_is_told_to_no_viewer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let effects = say_taken(text: "!teleport 75048", dev_commands: True)
+  assert system_line_of(effects) == system_line_with("unknown command")
+    as "chat.system_line: a 0x1c8 on channel type 2 with no speaker; the design's text"
+  assert tells_of(effects) == []
+  let assert [chat.Send(frame:), ..] = effects
+  assert accepted([chat.Send(frame:)]).chat_message_id == 1
+    as "opcode.0x1c2: answered first, with the line's slot"
+}
+
+pub fn a_summon_with_no_number_or_a_bad_one_answers_its_usage_as_one_system_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(["!summon", "!summon x", "!summon 1 2", "!summon -1"], fn(text) {
+    let effects = say_taken(text:, dev_commands: True)
+    assert system_line_of(effects)
+      == system_line_with("!summon takes one Creature2 id, as !summon 75048")
+      as "chat.system_line: the design's usage line, as a System line"
+    assert tells_of(effects) == []
+  })
+}
+
+pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting_on_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([5, 8], fn(type_id) {
+    let #(_, effects) =
+      take_with(
+        message: chat.LineSent,
+        chat: a_chat(),
+        body: body(
+          type_id:,
+          channel_id: 0,
+          text: bit_stream.utf16_units("!summon 75048"),
+          formats: [],
+          message_id: 1,
+        ),
+        viewers: [7, 8],
+        dev_commands: True,
+      )
+    assert said_to(effects) == [7, 8]
+      as "the design: a command is a line on Say only; a yell or an emote that starts with `!` is said"
+    assert list.length(frames_of(effects)) == 1
+  })
+}
+
+pub fn the_system_line_is_the_same_whatever_the_refused_text_is_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert chat.system_line_frame(text: "unknown command").message_id
+    == chat_line.message_id
+  let assert Ok(line) =
+    chat_line.decode(chat.system_line_frame(text: "ü ✓").body)
+  assert line == system_line_with("ü ✓")
+    as "chat.system_line: type 2, id 0, no realm, character, name, unit, GM mark, format or cross-faction bit; the text is the units as given"
+}
+
+pub fn every_0x1c3_with_a_bang_line_gets_exactly_one_0x1c2_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let generator =
+    qcheck.tuple4(
+      qcheck.bool(),
+      qcheck.from_generators(qcheck.return("summon 75048"), [
+        qcheck.return("summon"),
+        qcheck.return("summon x"),
+        qcheck.return("summon 1 2"),
+        qcheck.return("Summon 7"),
+        qcheck.return("teleport 1"),
+        qcheck.return(" summon 1"),
+        qcheck.return(""),
+      ]),
+      qcheck.generic_list(
+        qcheck.from_generators(qcheck.bounded_int(from: 0x20, to: 0x7E), [
+          qcheck.bounded_int(from: 0x30, to: 0x39),
+          qcheck.bounded_int(from: 0xD7F0, to: 0xE010),
+        ]),
+        qcheck.bounded_int(from: 0, to: 3),
+      ),
+      qcheck.bounded_int(from: 1, to: 3),
+    )
+  use #(dev_commands, word, tail, message_id) <- qcheck.given(generator)
+  let #(_, effects) =
+    take_with(
+      message: chat.LineSent,
+      chat: a_chat(),
+      body: body(
+        type_id: 4,
+        channel_id: 0,
+        text: [0x21, ..list.append(bit_stream.utf16_units(word), tail)],
+        formats: [],
+        message_id:,
+      ),
+      viewers: [7],
+      dev_commands:,
+    )
+  let frames = frames_of(effects)
+  assert list.length(
+      list.filter(frames, fn(frame) {
+        frame.message_id == chat_line_accepted.message_id
+      }),
+    )
+    == 1
+    as "opcode.0x1c2: every 0x1c3 with a `!` line gets exactly one 0x1c2, command or not, whatever follows the bang"
+  assert list.all(frames, fn(frame) {
+    frame.message_id == chat_line_accepted.message_id
+    || frame.message_id == chat_line.message_id
+  })
+    as "and no refusal 0x1d3: the only other message is a command's system line"
+}
+
+pub fn a_bang_line_with_chat_message_id_0_is_refused_not_run_as_a_command_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    take_with(
+      message: chat.LineSent,
+      chat: a_chat(),
+      body: body(
+        type_id: 4,
+        channel_id: 0,
+        text: bit_stream.utf16_units("!summon 75048"),
+        formats: [],
+        message_id: 0,
+      ),
+      viewers: [7],
+      dev_commands: True,
+    )
+  assert refused(effects)
+    == ChatResult(
+      channel_type: 4,
+      channel_id: 0,
+      result: InvalidMessageText,
+      chat_message_id: 0,
+    )
+    as "0x140405cb0: the client's chat message ids start at 1, so a line with slot 0 is refused with result 17 whatever its text, and no command is run"
+  assert list.length(frames_of(effects)) == 1
+    as "the refusal is the only message: no 0x1c2, no system line"
+}
+
+// ---- the planted rows ----
 
 // ---- the planted rows ----
 

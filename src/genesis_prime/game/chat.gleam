@@ -739,15 +739,21 @@ fn line_sent(
 /// is carried out (`AskSummon`) or refused with one system line
 /// (`system_line_frame` of `dev_command.describe`).
 fn command_line(text text: List(Int)) -> List(Effect) {
-  todo as "parse the text: Ok(Summon(id)) is [AskSummon(id)], an Error is [Send(system_line_frame(describe))]"
+  case dev_command.parse(text:) {
+    Ok(dev_command.Summon(creature2_id:)) -> [AskSummon(creature2_id:)]
+    Error(refusal) -> [
+      Send(system_line_frame(text: dev_command.describe(refusal:))),
+    ]
+  }
 }
 
 /// 0x1c8 as a system line: a line of the client's System channel (row 2 of
 /// ChatChannel, type 2, which the client makes itself with id 0 and shows in its
-/// chat window's default channels, `0x140404ee0`, `ChatChannel.flags`), with
+/// chat window, `0x140404ee0`, `ChatChannel.flags`, `chat.system_line`), with
 /// `text` and no speaker: no realm, character, name or unit, no GM mark, no
-/// format and no cross-faction colour, so the client shows the text alone
-/// (`opcode.0x1c8`). A server choice for the development commands' answers.
+/// format and no cross-faction colour, so the line shows the channel's name and
+/// then the text (`opcode.0x1c8`, `chat.system_line`). A server choice for the
+/// development commands' answers.
 pub fn system_line_frame(text text: String) -> Frame {
   let assert Ok(body) =
     chat_line.encode(ChatLine(

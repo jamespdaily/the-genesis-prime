@@ -51,11 +51,11 @@ import genesis_prime/store.{
   ForWorld, Listed, Move, NameStands, NotTheAccounts, PlaceSaved, SavePlace,
   Unavailable,
 }
-import genesis_prime/table/id.{ClassId, RaceId, Spell4Id}
+import genesis_prime/table/id.{ClassId, Creature2Id, RaceId, Spell4Id}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy}
+import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/stay.{type Stay}
@@ -88,6 +88,13 @@ pub fn settings() -> game_connection.Settings {
     class_resources: class_resource_support.classes(),
     numbers: spawn_support.numbers,
   )
+}
+
+/// The same settings with the development chat commands on
+/// (`genesis_prime/game/dev_command`).
+pub fn settings_with_dev_commands() -> game_connection.Settings {
+  let settings = settings()
+  Settings(..settings, game: GameSettings(..settings.game, dev_commands: True))
 }
 
 /// The 16 bytes the client shows as its session key: 01 .. 10, as in the
@@ -552,6 +559,31 @@ pub fn entered() -> #(game_connection.State, ConnectionStep(Request)) {
 /// The connection in the world, with its burst taken.
 pub fn in_world() -> game_connection.State {
   entered().0
+}
+
+/// The connection in the world, with its burst taken, made with the
+/// development chat commands on.
+pub fn in_world_with_dev_commands() -> game_connection.State {
+  entered_from(
+    in_character_select: in_select_from(
+      accepted(settings_with_dev_commands()).0,
+    ),
+    character: world_character(),
+  ).0
+}
+
+/// The ask of a `!summon` line of the tests' player: the run of the map that
+/// took the player, 77 (`incarnation`), with the connection's id and the
+/// Creature2 id.
+pub fn summon_asked(creature2_id creature2_id: Int) -> Request {
+  AskMapRun(
+    map: camp_map(),
+    incarnation:,
+    message: Summon(
+      connection: ConnectionId(1),
+      creature_id: Creature2Id(creature2_id),
+    ),
+  )
 }
 
 /// The 0x262 among the burst, decoded.
