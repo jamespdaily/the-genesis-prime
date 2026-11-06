@@ -957,35 +957,46 @@ fn answered_strike(
 ) -> #(State, List(Effect)) {
   case state.status {
     Fighting(round: Some(round), ..) if round.key == answered.key -> {
-      let unit_id = answered.key.unit_id
-      let #(struck, ends_target, target_dead) = case answered.outcome {
-        strike_tell.Landed(descriptions:, ..) -> {
-          let killed =
-            list.any(descriptions, fn(description) {
-              description.damage.killed == 1
-            })
-          #([cast.Hit(unit_id:, descriptions:, controls: [])], killed, killed)
-        }
-        strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
-        strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
-        strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
-      }
+      let #(struck, ends_target, target_dead) = answer_of(answered:)
       let #(state, closed) = round_closed(state:, round:, struck:, now_ms:)
       let cancel = CancelTimer(timer: StrikeDeadline(round.deadline))
-      case ends_target {
-        False -> #(state, [cancel, ..closed])
-        True -> {
-          let state = case target_dead {
-            True -> State(..state, near: set.delete(state.near, round.target))
-            False -> state
-          }
-          let #(state, released) =
-            released(state:, fighter:, by: round.target, now_ms:)
-          #(state, list.flatten([[cancel], closed, released]))
-        }
+      use <- bool.guard(
+        when: !ends_target,
+        return: #(state, [cancel, ..closed]),
+      )
+      let near = case target_dead {
+        True -> set.delete(state.near, round.target)
+        False -> state.near
       }
+      let #(state, released) =
+        released(
+          state: State(..state, near:),
+          fighter:,
+          by: round.target,
+          now_ms:,
+        )
+      #(state, list.flatten([[cancel], closed, released]))
     }
     Fighting(..) | Resting | Returning(..) -> #(state, [])
+  }
+}
+
+/// What the target's answer was: what struck for the round's go, whether the entry
+/// ends (a kill or a refusal), and whether the target is dead (a kill or a `Dead`
+/// refusal).
+fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
+  let unit_id = answered.key.unit_id
+  case answered.outcome {
+    strike_tell.Landed(descriptions:, ..) -> {
+      let killed =
+        list.any(descriptions, fn(description) {
+          description.damage.killed == 1
+        })
+      #([cast.Hit(unit_id:, descriptions:, controls: [])], killed, killed)
+    }
+    strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
+    strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
+    strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
   }
 }
 
