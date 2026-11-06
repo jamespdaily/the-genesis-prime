@@ -2,39 +2,38 @@
 # dev/play_service/update.sh:
 #
 #   git archive <sha> | tar -x -C <context>
-#   podman build --secret id=github_token,env=GH_TOKEN \
-#     --build-arg REVISION=<sha> -t genesis-play:<sha> -f release/Containerfile <context>
+#   podman build --build-arg REVISION=<sha> -t genesis-play:<sha> \
+#     -f release/Containerfile <context>
 #
 # Three stages, each a layer the next build reuses while its inputs stand:
 #   otp      the patched OTP, built by setup_check/build_patched_otp.sh; keyed by
-#            .tool-versions, the script and the patches
-#   build    gleam and rebar3 (release/fetch_release.sh checks each download's
-#            digest), the dependencies, then release/build
+#            .tool-versions, the scripts and the patches
+#   build    gleam and rebar3, the dependencies, then release/build
 #   runtime  the shipment, the patched OTP, psql and the migration script
 #
-# The image holds none of the client's files, no table and no secret: the
-# client's tables are mounted at /tables, the recordings at /sittings, and the
-# database's address and password and the game address come in as environment
-# variables when the container starts. The GitHub token of the build is a build
-# secret, mounted for one RUN and never written to a layer.
+# Every download is a public release asset fetched by release/fetch_release.sh,
+# which checks its digest; the build holds no GitHub login. The image holds none
+# of the client's files, no table and no secret: the client's tables are mounted
+# at /tables, the recordings at /sittings, and the database's address and
+# password and the game address come in as environment variables when the
+# container starts.
 
 ARG DEBIAN=docker.io/library/debian:trixie-slim
 
 FROM ${DEBIAN} AS otp
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential ca-certificates gh libncurses-dev libssl-dev patch perl \
+      build-essential ca-certificates curl jq libncurses-dev libssl-dev patch perl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /repository
 COPY .tool-versions ./
+COPY release/fetch_release.sh release/
 COPY setup_check/build_patched_otp.sh setup_check/sha256.sh setup_check/
 COPY setup_check/*.patch setup_check/
-RUN --mount=type=secret,id=github_token \
-    GH_TOKEN="$(cat /run/secrets/github_token)" GENESIS_OTP_DIR=/opt/otp \
-    setup_check/build_patched_otp.sh
+RUN GENESIS_OTP_DIR=/opt/otp setup_check/build_patched_otp.sh
 
 FROM ${DEBIAN} AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential ca-certificates gh libncurses-dev libssl-dev \
+      build-essential ca-certificates curl jq libncurses-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=otp /opt/otp /opt/otp
 ENV PATH=/opt/otp/bin:/opt/tools:$PATH
@@ -42,9 +41,7 @@ WORKDIR /repository
 COPY .tool-versions ./
 COPY setup_check/sha256.sh setup_check/
 COPY release/fetch_release.sh release/
-RUN --mount=type=secret,id=github_token \
-    set -eu; \
-    export GH_TOKEN="$(cat /run/secrets/github_token)"; \
+RUN set -eu; \
     mkdir -p /opt/tools /tmp/fetched; \
     gleam=$(awk '$1 == "gleam" { print $2 }' .tool-versions); \
     rebar=$(awk '$1 == "rebar" { print $2 }' .tool-versions); \

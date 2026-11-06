@@ -16,9 +16,12 @@
 //// - The scripted client's login (`login_client`, `game_client`), written from
 ////   the fact file's records, which is what puts a connection on each listener.
 
+import character_tables
 import content_support
 import database_support
+import event_wait
 import game_client
+import genesis_prime
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -30,10 +33,12 @@ import genesis_prime/wire_recording/fixture
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import login_client
 import login_support
 import login_vectors as vector
+import mug
 import owned_test
 import pog
 import recording_support
@@ -235,4 +240,67 @@ pub fn a_sitting_whose_account_the_database_lacks_is_refused_test() -> Nil {
       sitting.FixtureNotSaved(fixture.NoSuchAccount(login_name: "nobody")),
     )
     as "the fixture's own refusal of an account the database has none of"
+}
+
+pub fn the_servers_start_records_a_connection_when_the_record_directory_is_set_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
+  let shared = database_support.shared()
+  let database = database_support.new_database(on: shared)
+  let _inserted =
+    content_support.psql(
+      database:,
+      sql: "insert into account (login_name, srp_salt, srp_verifier, game_account_id) values ('genesis', '\\x01'::bytea, '\\x02'::bytea, '01234567-89ab-cdef-0123-456789abcdef')",
+    )
+  let sitting_folder = folder <> "/sitting"
+  let started =
+    login_support.start_on(shared:, database:, change: fn(settings) {
+      genesis_prime.with_sitting(
+        settings:,
+        tables: character_tables.shared(),
+        database: pool_config(shared, database),
+        read: planted_environment([
+          #("GENESIS_RECORD_DIR", sitting_folder),
+          #("GENESIS_PLAY_ACCOUNT", "genesis"),
+        ]),
+      )
+    })
+  let client = login_client.connect(login_support.ports(started).sts_port)
+  // The connection is recorded once the listener has accepted it.
+  event_wait.until("the connection's recording is made", fn() {
+    simplifile.read_directory(sitting_folder)
+    |> result.map(list.any(_, string.ends_with(_, ".jsonl")))
+    |> result.unwrap(False)
+  })
+  let _closed = mug.shutdown(client)
+  // The tree's stop ends the connection, so its file has its closing line.
+  login_support.stop(started)
+  let assert Ok(names) = simplifile.read_directory(sitting_folder)
+    as "the server's start made the sitting's folder"
+  assert list.contains(names, fixture.file_name)
+    as "the fixture of the play account was saved before the first connection"
+  let recordings = list.filter(names, string.ends_with(_, ".jsonl"))
+  assert list.length(recordings) == 1
+    as "the one connection made was recorded, into the folder GENESIS_RECORD_DIR named"
+  let assert [name] = recordings
+  let assert Ok(text) = simplifile.read(sitting_folder <> "/" <> name)
+    as "the recording reads"
+  let assert Ok(Recording(header:, ..)) = wire_recording.read(text)
+    as "the recording is whole"
+  assert header.rule == sts_connection.rule_name as "it is the STS connection's"
+}
+
+pub fn the_servers_start_records_nothing_when_the_record_directory_is_not_set_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let settings = login_support.servers_settings()
+  let shared = database_support.shared()
+  let database = database_support.new_database(on: shared)
+  assert genesis_prime.with_sitting(
+      settings:,
+      tables: character_tables.shared(),
+      database: pool_config(shared, database),
+      read: planted_environment([]),
+    )
+    == settings
+    as "the settings are the server's own, with no recorder on any listener"
 }

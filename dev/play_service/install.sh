@@ -27,10 +27,16 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib.sh
 . "$here/lib.sh"
 
+# say MESSAGE: the log's line, which an operator reading standard output also sees.
+say() {
+  log "$*"
+  if [ ! -t 1 ]; then printf '%s\n' "$*"; fi
+}
+
 for tool in podman gh git psql pg_dump openssl; do
   command -v "$tool" >/dev/null || { echo "install: $tool is not installed" >&2; exit 1; }
 done
-gh auth status >/dev/null 2>&1 || { echo "install: gh is not logged in (update.sh reads check runs and gives the build its token)" >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "install: gh is not logged in (update.sh reads the commits' check runs)" >&2; exit 1; }
 
 mkdir -p "$home"
 touch "$home/env.sh"
@@ -40,7 +46,7 @@ if ! grep -q '^export GENESIS_PLAY_PGPASSWORD=' "$home/env.sh"; then
     echo "# The play Postgres container's password (dev/play_service), read by the play service and the playing-live scripts."
     echo "export GENESIS_PLAY_PGPASSWORD=$(openssl rand -hex 16)"
   } >>"$home/env.sh"
-  log "made GENESIS_PLAY_PGPASSWORD in $home/env.sh"
+  say "made GENESIS_PLAY_PGPASSWORD in $home/env.sh"
 fi
 load_environment
 
@@ -51,7 +57,7 @@ done
 remote=$(git -C "$here" remote get-url origin)
 repository=$(printf '%s\n' "$remote" | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##')
 printf 'remote=%s\nrepository=%s\n' "'$remote'" "'$repository'" >"$state/config.sh"
-log "scripts installed in $state/bin; main is read from $remote"
+say "scripts installed in $state/bin; main is read from $remote"
 
 machine_up || { echo "install: the Podman machine could not be started" >&2; exit 1; }
 ensure_postgres
@@ -70,15 +76,15 @@ counts() {
 
 tables_in_pod=$(container_psql -c "select count(*) from information_schema.tables where table_schema = 'public'")
 if [ "$tables_in_pod" = 0 ]; then
-  log "the container's $play_database is empty; seeding it from the local $play_database"
-  log "local before:  $(counts local_psql)"
-  log "container before:  $(counts container_psql)"
+  say "the container's $play_database is empty; seeding it from the local $play_database"
+  say "local before:  $(counts local_psql)"
+  say "container before:  $(counts container_psql)"
   PGPASSWORD= pg_dump -h "${GENESIS_SEED_PGHOST:-::1}" -p "${GENESIS_SEED_PGPORT:-5433}" -U postgres -d "$play_database" --no-owner --no-privileges |
     container_psql --single-transaction -f - >/dev/null
-  log "local after:   $(counts local_psql)"
-  log "container after:   $(counts container_psql)"
+  say "local after:   $(counts local_psql)"
+  say "container after:   $(counts container_psql)"
 else
-  log "the container's $play_database holds $tables_in_pod tables; not seeded"
+  say "the container's $play_database holds $tables_in_pod tables; not seeded"
 fi
 
 plist=$HOME/Library/LaunchAgents/com.genesis-prime.play-service.plist
@@ -103,4 +109,4 @@ EOF
 domain=gui/$(id -u)
 launchctl bootout "$domain/com.genesis-prime.play-service" 2>/dev/null || true
 launchctl bootstrap "$domain" "$plist"
-log "launchd agent loaded: $plist"
+say "launchd agent loaded: $plist"

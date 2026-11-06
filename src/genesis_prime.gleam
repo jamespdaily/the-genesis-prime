@@ -69,12 +69,32 @@ pub fn main() -> Nil {
 pub fn run(change change: fn(server.Settings) -> server.Settings) -> Nil {
   let #(tables, count) = load_tables()
   let spawns = load_content(tables:)
-  let settings = settings(tables:, spawns:)
-  let settings = case sitting.record_folder(envoy.get) {
+  let settings =
+    with_sitting(
+      settings: settings(tables:, spawns:),
+      tables:,
+      database: pool(),
+      read: envoy.get,
+    )
+  start(settings: change(settings), tables: count)
+}
+
+/// The settings, with each STS, auth and game connection recorded on the wire
+/// when `read` gives GENESIS_RECORD_DIR (genesis_prime/sitting), and as they are
+/// when it does not. The fixture is saved from a pool of its own on `database`,
+/// whose name is not the settings' pool's. A sitting that cannot begin stops the
+/// program with the reason.
+pub fn with_sitting(
+  settings settings: server.Settings,
+  tables tables: store.Tables,
+  database database: pog.Config,
+  read read: fn(String) -> Result(String, Nil),
+) -> server.Settings {
+  case sitting.record_folder(read:) {
     None -> settings
     Some(folder) -> {
       let assert Ok(Nil) =
-        sitting.begin(folder:, database: pool(), read: envoy.get)
+        sitting.begin(folder:, database:, read:)
         |> result.map_error(sitting.describe)
         as "the sitting could not begin"
       sitting.recorded(
@@ -85,7 +105,6 @@ pub fn run(change change: fn(server.Settings) -> server.Settings) -> Nil {
       )
     }
   }
-  start(settings: change(settings), tables: count)
 }
 
 /// Loads the content tables (genesis_prime/content) into the server's own

@@ -43,11 +43,16 @@ case "$1 $2" in
   "container inspect")
     name=${@: -1}
     case "$*" in
+      *RestartCount*) cat "$PLANT/server_status" 2>/dev/null || echo "running 0 0" ;;
       *genesis.revision*) cat "$PLANT/server_state" 2>/dev/null ;;
       *) if [ -e "$PLANT/running_$name" ]; then echo true; else echo false; fi ;;
     esac
     exit 0 ;;
   "image exists") [ -e "$PLANT/image_$3" ]; exit $? ;;
+  "image prune") exit 0 ;;
+  "images "*) cat "$PLANT/images_list" 2>/dev/null; exit 0 ;;
+  "rmi "*) exit 0 ;;
+  "logs "*) cat "$PLANT/server_log" 2>/dev/null; exit 0 ;;
   "exec "*)
     refused=$(cat "$PLANT/pg_isready_refusals" 2>/dev/null || echo 0)
     if [ "$refused" -gt 0 ]; then
@@ -62,6 +67,15 @@ case "$1 $2" in
   "build "*) exit "$(cat "$PLANT/build_status" 2>/dev/null || echo 0)" ;;
 esac
 case "$*" in
+  *"run -d --replace --name genesis-play "*)
+    if [ -e "$PLANT/crash_${@: -1}" ]; then
+      echo "exited 1 5" > "$PLANT/server_status"
+      echo "panic: planted crash" > "$PLANT/server_log"
+    else
+      rm -f "$PLANT/server_status"
+      echo "the server loaded 46 game tables and serves the STS login on port 6600" > "$PLANT/server_log"
+    fi
+    exit 0 ;;
   *"--entrypoint /bin/sh"*) cat "$PLANT/image_files" 2>/dev/null; exit 0 ;;
   *"--entrypoint /migrate/dev/apply_migrations.sh"*) exit "$(cat "$PLANT/migrate_status" 2>/dev/null || echo 0)" ;;
 esac
@@ -207,6 +221,13 @@ class Planted:
     def update(self, script: str | None = None) -> subprocess.CompletedProcess:
         return self.run("/bin/bash", script or os.path.join(PLAY_SERVICE, "update.sh"))
 
+    def log_text(self) -> str:
+        try:
+            with open(os.path.join(self.home, "play-service.log")) as file:
+                return file.read()
+        except FileNotFoundError:
+            return ""
+
     def calls(self) -> list[str]:
         try:
             with open(os.path.join(self.plant, "calls.log")) as file:
@@ -256,12 +277,13 @@ class UpdaterTest(unittest.TestCase):
         self.assertTrue(0 <= build < listing < migrate < replace, calls)
         self.assertIn(f"-t genesis-play:{NEW_COMMIT}", calls[build])
         self.assertIn(f"--build-arg REVISION={NEW_COMMIT}", calls[build])
-        self.assertIn("--secret id=github_token,env=GH_TOKEN", calls[build], "the token reaches the build as a secret")
+        self.assertNotIn("--secret", calls[build], "the build holds no GitHub login")
+        self.assertEqual([c for c in calls if c.startswith("gh auth")], [], "no token is asked for")
         self.assertIn(f"genesis-play:{NEW_COMMIT} genesis_play", calls[migrate])
         self.assertIn("--entrypoint /migrate/dev/apply_migrations.sh", calls[migrate])
         server = calls[replace]
         for expected in (
-            "--restart=on-failure", "--memory 3g", "-p 6600:6600", "-p 23115:23115", "-p 24000:24000",
+            "--restart=on-failure:5", "--memory 3g", "-p 6600:6600", "-p 23115:23115", "-p 24000:24000",
             "-v " + os.path.join(self.planted.home, "tables") + ":/tables:ro",
             f"--label genesis.revision={NEW_COMMIT}", "--label genesis.address=10.0.0.5",
             "-e GENESIS_GAME_ADDRESS=10.0.0.5", "-e PGHOST=genesis-play-postgres", "-e PGPASSWORD ",
@@ -320,6 +342,128 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(len([c for c in self.planted.calls() if c.startswith("gh api")]), asked, "no second question to GitHub")
         self.assert_nothing_built_migrated_or_replaced()
 
+    def test_a_new_image_that_exits_is_replaced_by_the_last_good_one_and_the_log_says_why(self):
+        self.green()
+        deployed(self.planted, OLD_COMMIT)
+        self.planted.touch(f"image_genesis-play:{OLD_COMMIT}")
+        self.planted.touch(f"crash_genesis-play:{NEW_COMMIT}")
+        done = self.planted.update()
+        self.assertEqual(done.returncode, 1, done.stderr)
+        runs = self.planted.server_runs()
+        self.assertEqual(len(runs), 2, self.planted.calls())
+        self.assertTrue(runs[0].endswith(f"genesis-play:{NEW_COMMIT}"), runs[0])
+        self.assertTrue(runs[1].endswith(f"genesis-play:{OLD_COMMIT}"), runs[1])
+        self.assertIn(f"--label genesis.revision={OLD_COMMIT}", runs[1])
+        log = self.planted.log_text()
+        self.assertIn(f"{NEW_COMMIT} did not come up", log)
+        self.assertIn("exit code 1", log)
+        self.assertIn("panic: planted crash", log, "the container's last lines are in the log")
+        self.assertIn(f"putting back {OLD_COMMIT}", log)
+        self.assertIn(f"{OLD_COMMIT} is back up", log)
+
+    def test_a_commit_that_did_not_come_up_is_not_tried_again(self):
+        self.green()
+        deployed(self.planted, OLD_COMMIT)
+        self.planted.touch(f"image_genesis-play:{OLD_COMMIT}")
+        self.planted.touch(f"crash_genesis-play:{NEW_COMMIT}")
+        self.planted.update()
+        runs_before = len(self.planted.server_runs())
+        deployed(self.planted, OLD_COMMIT)
+        again = self.planted.update()
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(len(self.planted.server_runs()), runs_before, "no second deploy of the failed commit")
+
+    def test_a_new_image_that_exits_with_no_earlier_revision_to_put_back_is_logged_and_left(self):
+        self.green()
+        self.planted.touch(f"crash_genesis-play:{NEW_COMMIT}")
+        done = self.planted.update()
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertEqual(len(self.planted.server_runs()), 1, self.planted.calls())
+        self.assertIn("no earlier revision came up to put back", self.planted.log_text())
+
+    def test_a_container_that_restarts_itself_after_a_crash_does_not_count_as_up(self):
+        self.green()
+        deployed(self.planted, OLD_COMMIT)
+        self.planted.touch(f"image_genesis-play:{OLD_COMMIT}")
+        # The restart policy brought it back: it runs, but has restarted and says no ready line.
+        self.planted.bin = planted_programs(
+            PODMAN.replace('echo "exited 1 5"', 'echo "running 1 2"')
+        )
+        self.planted.touch(f"crash_genesis-play:{NEW_COMMIT}")
+        done = self.planted.update()
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("restarted 2 times", self.planted.log_text())
+
+    def test_a_server_that_says_no_ready_line_in_time_is_not_up(self):
+        self.green()
+        env = self.planted.environment()
+        env["GENESIS_PLAY_UP_ATTEMPTS"] = "3"
+        self.planted.bin = planted_programs(
+            PODMAN.replace('echo "the server loaded 46 game tables and serves the STS login on port 6600"', 'echo "loading"')
+        )
+        env["PATH"] = f"{self.planted.bin}:/usr/bin:/bin"
+        done = subprocess.run(
+            ["/bin/bash", os.path.join(PLAY_SERVICE, "update.sh")], env=env, capture_output=True, text=True, timeout=60
+        )
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("said no ready line in 3 asks", self.planted.log_text())
+
+    def test_a_deploy_that_came_up_removes_dangling_images_and_every_image_but_the_running_and_the_last_good(self):
+        self.green()
+        deployed(self.planted, OLD_COMMIT)
+        self.planted.touch(f"image_genesis-play:{OLD_COMMIT}")
+        self.planted.set(
+            "images_list",
+            "\n".join(f"localhost/genesis-play:{tag}" for tag in (NEW_COMMIT, OLD_COMMIT, "c" * 40, "trial-1")) + "\n",
+        )
+        self.assertEqual(self.planted.update().returncode, 0)
+        calls = self.planted.calls()
+        self.assertGreaterEqual(self.planted.index_of("podman image prune --force"), 0, calls)
+        removed = [c for c in calls if c.startswith("podman rmi ")]
+        self.assertCountEqual(
+            removed,
+            [f"podman rmi localhost/genesis-play:{tag}" for tag in (OLD_COMMIT, "c" * 40, "trial-1")],
+            "the commit running and the last good one (the same, once it came up) stay",
+        )
+        self.assertGreater(self.planted.index_of("podman rmi"), self.planted.index_of("podman run -d --replace"))
+
+    def test_nothing_is_pruned_when_the_new_image_did_not_come_up_until_the_old_one_is_back(self):
+        self.green()
+        deployed(self.planted, OLD_COMMIT)
+        self.planted.touch(f"image_genesis-play:{OLD_COMMIT}")
+        self.planted.touch(f"crash_genesis-play:{NEW_COMMIT}")
+        self.planted.set(
+            "images_list",
+            "\n".join(f"localhost/genesis-play:{tag}" for tag in (NEW_COMMIT, OLD_COMMIT)) + "\n",
+        )
+        self.planted.update()
+        removed = [c for c in self.planted.calls() if c.startswith("podman rmi ")]
+        self.assertEqual(removed, [f"podman rmi localhost/genesis-play:{NEW_COMMIT}"], "only the failed image goes, after the old one is back")
+
+    def test_a_changed_address_whose_container_does_not_come_up_fails_the_update_and_says_so(self):
+        deployed(self.planted, OLD_COMMIT, address="10.0.0.4")
+        self.planted.set("main_commit", OLD_COMMIT)
+        self.planted.touch(f"crash_genesis-play:{OLD_COMMIT}")
+        done = self.planted.update()
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("did not come up", self.planted.log_text())
+
+    def test_the_same_decision_is_written_to_the_log_once_however_many_runs_make_it(self):
+        self.planted.set(f"checks_{NEW_COMMIT}.json", checks(("in_progress", None)))
+        for _ in range(3):
+            self.assertEqual(self.planted.update().returncode, 0)
+        waiting = [line for line in self.planted.log_text().splitlines() if "has not passed or has not finished" in line]
+        self.assertEqual(len(waiting), 1, self.planted.log_text())
+        self.green()
+        self.assertEqual(self.planted.update().returncode, 0)
+        self.assertIn("building", self.planted.log_text(), "a new decision is written")
+
+    def test_a_held_live_lock_is_written_to_the_log_once_across_runs(self):
+        os.makedirs(os.path.join(self.planted.home, "live.lock"))
+        for _ in range(3):
+            self.planted.update()
+        self.assertEqual(self.planted.log_text().count("a live session holds"), 1, self.planted.log_text())
+
     def test_a_main_that_cannot_be_read_does_nothing(self):
         self.green()
         self.planted.touch("ls_remote_fails")
@@ -369,7 +513,8 @@ class UpdaterTest(unittest.TestCase):
         done = self.planted.update()
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.planted.calls(), [], "no call to Podman, git or GitHub while a live session holds the lock")
-        self.assertIn("live.lock", done.stdout)
+        self.assertIn("live.lock", self.planted.log_text())
+        self.assertEqual(done.stdout, "", "a line is written to the log only, which is not standard output off a terminal")
 
     def test_a_live_lock_taken_during_the_build_leaves_the_server_unreplaced(self):
         self.green()
@@ -379,6 +524,20 @@ class UpdaterTest(unittest.TestCase):
         )
         done = self.planted.update()
         self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.planted.server_runs(), [], self.planted.calls())
+        self.assertEqual([c for c in self.planted.calls() if "apply_migrations" in c], [], "nothing is migrated while a session holds the lock")
+
+    def test_a_live_lock_taken_during_the_migration_leaves_the_server_unreplaced(self):
+        self.green()
+        self.planted.bin = planted_programs(
+            PODMAN.replace(
+                '*"--entrypoint /migrate/dev/apply_migrations.sh"*) exit',
+                '*"--entrypoint /migrate/dev/apply_migrations.sh"*) mkdir -p "$GENESIS_HOME/live.lock"; exit',
+            )
+        )
+        done = self.planted.update()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertGreaterEqual(self.planted.index_of("podman run --rm --network genesis-play"), 0, "the migration ran")
         self.assertEqual(self.planted.server_runs(), [], self.planted.calls())
 
     def test_a_held_service_skips_everything(self):
@@ -392,10 +551,32 @@ class UpdaterTest(unittest.TestCase):
         self.green()
         lock = os.path.join(self.planted.state, "update.lock")
         os.makedirs(lock)
-        Planted.write(os.path.join(lock, "pid"), str(os.getpid()))
+        Planted.write(os.path.join(lock, "owner"), str(os.getpid()))
         done = self.planted.update()
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.planted.calls(), [])
+
+    def test_an_update_lock_with_no_owner_yet_is_held_for_a_minute_and_then_taken_over(self):
+        self.green()
+        lock = os.path.join(self.planted.state, "update.lock")
+        os.makedirs(lock)
+        young = self.planted.update()
+        self.assertEqual(young.returncode, 0, young.stderr)
+        self.assertEqual(self.planted.calls(), [], "its taker may still be writing the owner")
+        old = __import__("time").time() - 120
+        os.utime(lock, (old, old))
+        self.assertEqual(self.planted.update().returncode, 0)
+        self.assertEqual(len(self.planted.server_runs()), 1, self.planted.calls())
+
+    def test_a_second_run_cannot_take_over_while_a_takeover_is_going(self):
+        self.green()
+        lock = os.path.join(self.planted.state, "update.lock")
+        os.makedirs(lock)
+        Planted.write(os.path.join(lock, "owner"), "999999")
+        os.makedirs(lock + ".takeover")
+        done = self.planted.update()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.planted.calls(), [], "another run is taking the stale lock over")
 
     def test_an_update_lock_whose_owner_is_gone_is_taken_over(self):
         self.green()
@@ -403,7 +584,7 @@ class UpdaterTest(unittest.TestCase):
         os.makedirs(lock)
         gone = subprocess.Popen(["/bin/sh", "-c", "exit 0"])
         gone.wait()
-        Planted.write(os.path.join(lock, "pid"), str(gone.pid))
+        Planted.write(os.path.join(lock, "owner"), str(gone.pid))
         self.assertEqual(self.planted.update().returncode, 0)
         self.assertEqual(len(self.planted.server_runs()), 1, self.planted.calls())
 
@@ -469,7 +650,7 @@ class UpdaterTest(unittest.TestCase):
         done = self.planted.update()
         self.assertEqual(done.returncode, 1, done.stdout)
         self.assertEqual(self.planted.server_runs(), [])
-        self.assertIn("migrations", done.stdout)
+        self.assertIn("migrations", self.planted.log_text())
 
     def test_a_commit_whose_image_is_already_built_is_not_built_again(self):
         self.green()
