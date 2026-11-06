@@ -89,6 +89,7 @@ pub type Rows {
   Rows(
     spell_levels: List(List(Cell)),
     spell4: List(List(Cell)),
+    spell4_conditions: List(List(Cell)),
     spell4_base: List(List(Cell)),
     spell4_effects: List(List(Cell)),
     spell4_thresholds: List(List(Cell)),
@@ -133,6 +134,7 @@ fn spell4_row(
     #("propertyFlags", Integer(property_flags(id))),
     #("spell4AoeTargetConstraintsId", Integer(area_id(id))),
     #("spell4ConditionsIdCaster", Integer(caster_conditions(id))),
+    #("spellCastStealthChange", Integer(stealth_change(id))),
   ])
 }
 
@@ -192,6 +194,19 @@ pub fn sorted_by_id(rows: List(List(Cell))) -> List(List(Cell)) {
   list.sort(rows, by_id)
 }
 
+/// Spell4.spellCastStealthChange of the planted rows, as `table_rows -- Spell4 <id>`
+/// prints it (`Spell4.spellCastStealthChange`): 1 on the Stalker's attacks (Shred and its
+/// Proxies, Impale, Stagger and its Multiphase child), 2 on the Stealth toggle and its
+/// spells, Tactical Retreat, Stagger's phase spell 38781 and the other classes' 53865 and
+/// 87353, and 0 on every other planted spell.
+fn stealth_change(id: Int) -> Int {
+  case id {
+    38_765 | 38_766 | 38_767 | 39_467 | 38_779 | 38_780 | 38_791 -> 1
+    46_073 | 38_784 | 38_913 | 38_781 | 53_865 | 87_353 -> 2
+    _ -> 0
+  }
+}
+
 /// Spell4.propertyFlags of the planted rows, as `table_rows -- Spell4 <id>` prints
 /// them (`Spell4.propertyFlags`): 0x1 makes a press ignore a live cast.
 fn property_flags(id: Int) -> Int {
@@ -213,6 +228,7 @@ fn property_flags(id: Int) -> Int {
     58_524 -> 0x4100006
     34_718 -> 0x4100402
     34_720 | 38_779 -> 0x4000003
+    38_784 | 38_913 -> 0x400
     34_722 | 36_691 -> 0x3
     37_302 -> 0x4220002
     80_382 | 53_865 -> 0x100000
@@ -255,16 +271,22 @@ pub fn caster_conditions(id: Int) -> Int {
     | 71_392
     | 71_393
     | 71_394
-    | 80_382 -> 1
+    | 80_382
+    | 46_073
+    | 38_784
+    | 38_783
+    | 38_913
+    | 38_914 -> 1
     _ -> 43
   }
 }
 
 /// The planted Spell4Conditions rows the planted spells name, each the client's
 /// (`table_rows -- Spell4Conditions`): 1 (mask 225, value 0) and 43 (mask 1249,
-/// value 0), each with the dead bit, and 4 (mask 0), with none.
+/// value 0), each with the dead bit, 15 (mask 129, the target row of the Stealth
+/// spells) and 4 (mask 0), with none.
 pub fn spell4_conditions_rows() -> List(List(Cell)) {
-  spell4_conditions_rows_of(masks: [#(1, 225), #(4, 0), #(43, 1249)])
+  spell4_conditions_rows_of(masks: [#(1, 225), #(4, 0), #(15, 129), #(43, 1249)])
 }
 
 /// Spell4Conditions rows, each its id and its conditionMask, with value 0.
@@ -610,6 +632,7 @@ pub fn method_spell_row(
     #("spellCoolDownIdGlobal", Integer(global)),
     #("propertyFlags", Integer(property_flags(id))),
     #("spell4ConditionsIdCaster", Integer(caster_conditions(id))),
+    #("spellCastStealthChange", Integer(stealth_change(id))),
     ..list.map(more, fn(column) { #(column.0, Integer(column.1)) })
   ])
 }
@@ -626,6 +649,7 @@ fn class_row(id id: Int, slots slots: List(Int)) -> List(Cell) {
 /// The planted rows of the abilities above and their children.
 pub fn rows() -> Rows {
   Rows(
+    spell4_conditions: spell4_conditions_rows(),
     spell_levels: list.map(
       [
         #(647, 3, 32_893),
@@ -1933,7 +1957,7 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell_level.schema, rows.spell_levels),
     planted_table.file(spell4.schema, rows.spell4),
     planted_table.file(spell4_base.schema, rows.spell4_base),
-    planted_table.file(spell4_conditions.schema, spell4_conditions_rows()),
+    planted_table.file(spell4_conditions.schema, rows.spell4_conditions),
     planted_table.file(spell4_effects.schema, rows.spell4_effects),
     planted_table.file(spell4_group_list.schema, rows.spell4_group_lists),
     planted_table.file(spell4_stack_group.schema, rows.spell4_stack_groups),
@@ -2329,6 +2353,64 @@ pub fn plans_with_energize() -> spell_plan.Plans {
   plans
 }
 
+/// Telekinetic Strike's Spell4Base, whose tree the planted rows hold, which the plan
+/// tests of one effect type add a row to.
+const strike_base = 19_102
+
+/// The plan of Telekinetic Strike built from these planted rows, or why the build fails:
+/// each call loads the planted tables once, so a test that needs it asks for it once.
+pub fn planned_strike(
+  rows rows: Rows,
+) -> Result(spell_plan.Spell, spell_plan.PlanError) {
+  with_loaded(rows:, body: fn(tables) {
+    case spell_plan.build(tables:) {
+      Ok(plans) -> {
+        let assert Ok(spell) =
+          spell_plan.in_plans(plans:, base: id.Spell4BaseId(strike_base))
+          as "the plans hold Telekinetic Strike"
+        Ok(spell)
+      }
+      Error(error) -> Error(error)
+    }
+  })
+}
+
+/// The planted rows with this Spell4Effects row added; its spell is Telekinetic Strike
+/// when the row says so.
+pub fn rows_with_effect(effect effect: List(Cell)) -> Rows {
+  let rows = rows()
+  Rows(..rows, spell4_effects: sorted_by_id([effect, ..rows.spell4_effects]))
+}
+
+/// A planted Spell4 row with one column set.
+pub fn with_column(
+  row row: List(Cell),
+  name name: String,
+  cell cell: Cell,
+) -> List(Cell) {
+  list.zip(spell4.schema.columns, row)
+  |> list.map(fn(pair) {
+    case pair.0.name == name {
+      True -> cell
+      False -> pair.1
+    }
+  })
+}
+
+/// The planted rows with Telekinetic Strike's Spell4 row changed in one column.
+pub fn rows_with_strike(name name: String, cell cell: Cell) -> Rows {
+  let rows = rows()
+  Rows(
+    ..rows,
+    spell4: list.map(rows.spell4, fn(row) {
+      case row {
+        [Integer(32_893), ..] -> with_column(row:, name:, cell:)
+        other -> other
+      }
+    }),
+  )
+}
+
 /// The plans the planted rows build, built once per run from one load of the
 /// planted tables that is erased after the build; every test that reads the
 /// plans of the unchanged rows takes them from here, so it puts no terms of its
@@ -2338,6 +2420,238 @@ pub fn default_plans() -> spell_plan.Plans {
     let assert Ok(plans) =
       with_loaded(rows: rows(), body: fn(tables) { spell_plan.build(tables:) })
       as "the planted spell rows build"
+    plans
+  })
+}
+
+/// A Spell4Effects row of the Stalker's Stealth tree as the client holds it: aimed at
+/// the caster (targetFlags 1), in phase 1, of this type and order, behind this caster
+/// apply prerequisite, with the data columns and flags the row sets
+/// (`table_rows -- Spell4Effects spellId=46073`, `spellId=38784`, `spellId=38783`).
+fn stealth_tree_row(
+  id id: Int,
+  spell spell: Int,
+  type_ type_: Int,
+  order order: Int,
+  gate gate: Int,
+  columns columns: List(#(String, Int)),
+) -> List(Cell) {
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(spell)),
+    #("targetFlags", Integer(1)),
+    #("effectType", Integer(type_)),
+    #("phaseFlags", Integer(1)),
+    #("orderIndex", Integer(order)),
+    #("prerequisiteIdCasterApply", Integer(gate)),
+    ..list.map(columns, fn(column) { #(column.0, Integer(column.1)) })
+  ])
+}
+
+/// The row of a Proxy to a spell, as 46073's two hold them: dataBits03 1.0 as 32 float
+/// bits, dataBits04 1 and dataBits05 60.
+fn stealth_proxy_row(
+  id id: Int,
+  spell spell: Int,
+  child child: Int,
+  order order: Int,
+  gate gate: Int,
+) -> List(Cell) {
+  stealth_tree_row(id:, spell:, type_: 26, order:, gate:, columns: [
+    #("dataBits00", child),
+    #("dataBits03", 1_065_353_216),
+    #("dataBits04", 1),
+    #("dataBits05", 60),
+  ])
+}
+
+/// A type 80 row that force-removes one stack of the Spell4 `removed`
+/// (dataBits00 2, dataBits02 1, dataBits03 and dataBits04 1, dataBits06 3).
+fn stealth_remove_row(
+  id id: Int,
+  spell spell: Int,
+  removed removed: Int,
+  order order: Int,
+) -> List(Cell) {
+  stealth_tree_row(id:, spell:, type_: 80, order:, gate: 0, columns: [
+    #("dataBits00", 2),
+    #("dataBits01", removed),
+    #("dataBits02", 1),
+    #("dataBits03", 1),
+    #("dataBits04", 1),
+    #("dataBits06", 3),
+  ])
+}
+
+/// A type 73 row that changes the cooldown group 182 (dataBits00 3) by operation 3 and
+/// the float 1000.0 (bits 1148846080).
+fn stealth_cooldown_row(
+  id id: Int,
+  spell spell: Int,
+  order order: Int,
+  gate gate: Int,
+) -> List(Cell) {
+  stealth_tree_row(id:, spell:, type_: 73, order:, gate:, columns: [
+    #("dataBits00", 3),
+    #("dataBits01", 182),
+    #("dataBits02", 3),
+    #("dataBits03", 1_148_846_080),
+  ])
+}
+
+/// The planted rows with the Stalker's Stealth toggle as a level-1 ability of the
+/// Stalker. The SpellLevel row 99421 is test data, not the client's: the client holds no
+/// SpellLevel row for 46073, which Class 5 names as its first innate active ability
+/// (`table_rows -- Class 5`). Its Spell4, Spell4Base and Spell4Effects rows are the
+/// client's:
+/// - 46073 (base 30075, cooldown 25000 and groups 182 and 248, global cooldown kind 3 on
+///   115) with Proxies 107792 to 38784 behind 7050 (type 116, comparison 2) and 107793
+///   to 38783 behind 8127 (comparison 1), and 107795, which force-removes 38913;
+/// - 38784 (base 23166, stack group 173 of cap 1) with its Stealth effect 83834 behind
+///   16152 (dataBits02 0), its twin 95774 behind 16153 (dataBits02 1) and 159128, a cooldown
+///   effect on group 182 behind 390;
+/// - 38783 (base 23165, value 0) with 83832, which force-removes 38784, 83833, which
+///   force-removes 38914, and 159130;
+/// - 38913 and 38914, Tactical Retreat, as rows only: no tree of theirs is planted.
+/// What is left out: the columns that name a prerequisite of the cast, a spell group or
+/// a runner, and 38784's effects that need an AMP (the proc 178239, the Proxy 208380 and
+/// the type 81 row 91018). Prerequisite 7050, 8127, 16152, 16153 and 390 are the client's
+/// (`table_rows -- Prerequisite 7050 8127 16152 16153 390`).
+pub fn rows_with_stealth() -> Rows {
+  let rows = rows()
+  let toggle = fn(id, base, cooldown, global, more) {
+    method_spell_row(
+      id:,
+      base:,
+      cast_time: 0,
+      cooldown:,
+      kind: 3,
+      global:,
+      cost: #(0, 0),
+      more: [#("spell4ConditionsIdTarget", 15), ..more],
+    )
+  }
+  Rows(
+    ..rows,
+    spell_levels: sorted_by_id([
+      planted_table.row(spell_level.schema, [
+        #("ID", Integer(99_421)),
+        #("classId", Integer(5)),
+        #("characterLevel", Integer(1)),
+        #("prerequisiteId", Integer(0)),
+        #("spell4Id", Integer(46_073)),
+      ]),
+      ..rows.spell_levels
+    ]),
+    spell4: sorted_by_id(
+      list.append(rows.spell4, [
+        toggle(46_073, 30_075, 25_000, 115, [
+          #("spellCoolDownId00", 182),
+          #("spellCoolDownId02", 248),
+          #("spell4StackGroupId", 2),
+        ]),
+        toggle(38_784, 23_166, 0, 100, [#("spell4StackGroupId", 173)]),
+        toggle(38_783, 23_165, 0, 100, [#("spell4StackGroupId", 2)]),
+        toggle(38_913, 23_282, 0, 100, [#("spell4StackGroupId", 173)]),
+        toggle(38_914, 23_283, 0, 100, []),
+      ]),
+    ),
+    spell4_base: sorted_by_id(list.append(
+      rows.spell4_base,
+      list.map([30_075, 23_166, 23_165, 23_282, 23_283], fn(id) {
+        base_row(id:, method: 0, weapon: 0, bar: 0, class: 5)
+      }),
+    )),
+    spell4_effects: sorted_by_id(
+      list.append(rows.spell4_effects, [
+        stealth_proxy_row(
+          id: 107_792,
+          spell: 46_073,
+          child: 38_784,
+          order: 0,
+          gate: 7050,
+        ),
+        stealth_proxy_row(
+          id: 107_793,
+          spell: 46_073,
+          child: 38_783,
+          order: 1,
+          gate: 8127,
+        ),
+        stealth_remove_row(
+          id: 107_795,
+          spell: 46_073,
+          removed: 38_913,
+          order: 3,
+        ),
+        stealth_tree_row(
+          id: 83_834,
+          spell: 38_784,
+          type_: 83,
+          order: 0,
+          gate: 16_152,
+          columns: [#("flags", 2)],
+        ),
+        stealth_tree_row(
+          id: 95_774,
+          spell: 38_784,
+          type_: 83,
+          order: 2,
+          gate: 16_153,
+          columns: [#("flags", 2), #("dataBits02", 1)],
+        ),
+        stealth_cooldown_row(id: 159_128, spell: 38_784, order: 3, gate: 390),
+        stealth_remove_row(id: 83_832, spell: 38_783, removed: 38_784, order: 0),
+        stealth_remove_row(id: 83_833, spell: 38_783, removed: 38_914, order: 1),
+        stealth_cooldown_row(id: 159_130, spell: 38_783, order: 2, gate: 0),
+      ]),
+    ),
+    spell_cool_downs: sorted_by_id(
+      list.append(rows.spell_cool_downs, [
+        planted_table.row(spell_cool_down.schema, [
+          #("ID", Integer(100)),
+          #("cooldownTime", Integer(1500)),
+        ]),
+        planted_table.row(spell_cool_down.schema, [
+          #("ID", Integer(182)),
+          #("cooldownTime", Integer(25_000)),
+        ]),
+        planted_table.row(spell_cool_down.schema, [
+          #("ID", Integer(248)),
+          #("cooldownTime", Integer(350)),
+        ]),
+      ]),
+    ),
+    prerequisites: sorted_by_id(
+      list.append(rows.prerequisites, [
+        prerequisite_row(id: 7050, flags: 0, conditions: [#(116, 2, 0, 28_455)]),
+        prerequisite_row(id: 8127, flags: 0, conditions: [#(116, 1, 0, 28_455)]),
+        prerequisite_row(id: 16_152, flags: 0, conditions: [#(50, 2, 0, 59_389)]),
+        prerequisite_row(id: 16_153, flags: 0, conditions: [#(50, 1, 0, 59_389)]),
+        prerequisite_row(id: 390, flags: 0, conditions: [#(28, 2, 0, 0)]),
+      ]),
+    ),
+    spell4_stack_groups: [
+      planted_table.row(spell4_stack_group.schema, [
+        #("ID", Integer(2)),
+        #("stackTypeEnum", Integer(4)),
+      ]),
+      planted_table.row(spell4_stack_group.schema, [
+        #("ID", Integer(173)),
+        #("stackCap", Integer(1)),
+      ]),
+    ],
+  )
+}
+
+/// The plans of `rows_with_stealth`, built once per run.
+pub fn plans_with_stealth() -> spell_plan.Plans {
+  database_support.once("spell_tables_plans_with_stealth", fn() {
+    let assert Ok(plans) =
+      with_loaded(rows: rows_with_stealth(), body: fn(tables) {
+        spell_plan.build(tables:)
+      })
+      as "the planted rows with the Stalker's Stealth toggle build"
     plans
   })
 }

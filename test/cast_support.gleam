@@ -21,6 +21,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
+import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_stack_removed
@@ -78,6 +79,9 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     cooldown_groups: [],
     cooldown_modifiers: [],
     controls: [],
+    stealth: [],
+    remove_stealth: [],
+    stealth_change: spell_plan.EndsStealth,
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
   )
@@ -260,7 +264,8 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.Gain(..)
       | cast.Log(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> []
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> []
     }
   })
 }
@@ -278,7 +283,8 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.Pay(..)
       | cast.Log(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -498,7 +504,8 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -509,6 +516,16 @@ pub fn frames_of(
   effects effects: List(Effect),
 ) -> List(Frame) {
   list.filter(writes(effects:), fn(frame) { frame.message_id == message_id })
+}
+
+/// The cast id of the first press the effects confirm: the server's id in its 0x7fd.
+pub fn pressed_id(effects effects: List(Effect)) -> Int {
+  let assert [frame, ..] =
+    frames_of(message_id: spell_cast_confirmed.message_id, effects:)
+    as "a press was confirmed"
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
+    as "a 0x7fd the rule wrote decodes"
+  confirmed.server_cast_id
 }
 
 /// The cast id of a 0x7fe frame.
@@ -563,7 +580,8 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -581,7 +599,8 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -599,7 +618,8 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -617,7 +637,8 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -712,7 +733,8 @@ pub fn answered_as(
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> #(state, list.append(done, [effect]))
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
   })
 }

@@ -335,6 +335,8 @@ fn counted_namings(
         | effect_kind.PropertyModifier
         | effect_kind.ForcedMove
         | effect_kind.CooldownModifier
+        | effect_kind.Stealth
+        | effect_kind.RemoveStealth
         | effect_kind.Unread(..) -> []
       }
       named(table: "Spell4Effects", id: effect.id, columns: [

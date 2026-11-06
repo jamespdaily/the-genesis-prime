@@ -1067,7 +1067,8 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.Pay(..)
         | cast.Gain(..)
         | cast.PropertyStarts(..)
-        | cast.PropertyEnds(..) -> Error(Nil)
+        | cast.PropertyEnds(..)
+        | cast.StealthChanged(..) -> Error(Nil)
       }
     })
     as "Mind Burst has no cast time: its go is asked at the accept"

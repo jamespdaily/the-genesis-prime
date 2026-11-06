@@ -37,9 +37,7 @@ pub fn life_effects(
         ),
       ]
       player_life.ToViewers(news:) ->
-        list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
-          connection_state.news_to(entered:, viewer:, news:)
-        })
+        connection_state.news_to_viewers(entered:, news:)
       player_life.Answer(to:, answered:) -> [
         OwnEffect(step.Tell(
           to:,
@@ -59,7 +57,9 @@ pub fn life_effects(
         OwnEffect(StartTimer(timer:, after_ms:)),
       ]
       player_life.CancelTimer(timer:) -> [OwnEffect(CancelTimer(timer:))]
-      player_life.EndCasts | player_life.GoToHolocrypt -> []
+      player_life.DamageTaken
+      | player_life.EndCasts
+      | player_life.GoToHolocrypt -> []
     }
   })
 }

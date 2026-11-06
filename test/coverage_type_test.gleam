@@ -81,27 +81,27 @@ fn handled_over(
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_73_and_80_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_73_80_83_and_84_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Spell effects"),
       types: numbers(from: 1, to: 200),
     )
-    == [1, 3, 4, 8, 11, 17, 26, 73, 80]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) and SpellForceRemove 80 (Spell4Effects.effectType.80); every other type is unread"
+    == [1, 3, 4, 8, 11, 17, 26, 73, 80, 83, 84]
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), Stealth 83 (Spell4Effects.effectType.83) and RemoveStealth 84 (Spell4Effects.effectType.84) for the rows aimed at the caster; every other type is unread"
 }
 
-pub fn the_prerequisite_types_the_measure_handles_are_the_eight_read_and_those_with_no_case_test() -> Nil {
+pub fn the_prerequisite_types_the_measure_handles_are_the_nine_read_and_those_with_no_case_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Prerequisites"),
       types: numbers(from: 1, to: 295),
     )
     == [
-      15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 132, 144, 156,
-      157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
+      15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 116, 132, 144,
+      156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
     ]
-    as "the server reads 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 71, 73 and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+    as "the server reads 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 71, 73, 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116) and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
 }
 
 // ---- the starting abilities' column ----
@@ -211,8 +211,8 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
     as "the trace's effect types of the starting abilities that no rule reads: proc 14 and charges 90; forced move 3, property modifier 11 and cooldown change 73 are read for the rows aimed at the caster and listed as partial"
   assert missing_of("Spend-scaled costs") == [2, 5, 9, 10, 11]
     as "the innate cost EMM ids besides 4 and 7 that the rows hold"
-  assert missing_of("Prerequisites") == [43, 108, 116]
-    as "the trace's prerequisite types the server cannot decide: quest log 43, facing 108 and stealth 116"
+  assert missing_of("Prerequisites") == [43, 108]
+    as "the trace's prerequisite types the server cannot decide: quest log 43 and facing 108; stealth 116 is read"
 }
 
 pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
@@ -267,7 +267,7 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
     as "no row uses 99, so listing it as partial is a declaration no data supports"
 }
 
-pub fn the_effect_types_3_11_and_73_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+pub fn the_effect_types_3_11_73_83_and_84_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(facts) =
     simplifile.read(
@@ -292,14 +292,28 @@ pub fn the_effect_types_3_11_and_73_are_partial_with_a_reason_and_a_fact_key_the
         reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
         fact_key: "Spell4Effects.effectType.73",
       ),
+      Missing(
+        type_number: 83,
+        reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
+        fact_key: "Spell4Effects.effectType.83",
+      ),
+      Missing(
+        type_number: 84,
+        reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
+        fact_key: "Spell4Effects.effectType.84",
+      ),
     ]
   assert has_record(facts:, key: "Spell4Effects.effectType.3")
   assert has_record(facts:, key: "Spell4Effects.effectType.11")
   assert has_record(facts:, key: "Spell4Effects.effectType.73")
+  assert has_record(facts:, key: "Spell4Effects.effectType.83")
+  assert has_record(facts:, key: "Spell4Effects.effectType.84")
   assert engine.handles(engine: declared, type_number: 3)
     && engine.handles(engine: declared, type_number: 11)
     && engine.handles(engine: declared, type_number: 73)
-    as "types 3, 11 and 73 are handled, with the gap"
+    && engine.handles(engine: declared, type_number: 83)
+    && engine.handles(engine: declared, type_number: 84)
+    as "types 3, 11, 73, 83 and 84 are handled, with the gap"
 }
 
 pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
@@ -504,6 +518,123 @@ pub fn the_clients_522_type_73_rows_count_488_handled_and_34_not_test() -> Nil {
       unread_rows: 34,
     )
     as "targetFlags 1 in 480 rows and 3 in 8 include the caster (488 handled); 2 in 30 rows and 4 in 4 aim only at others (34 not handled)"
+}
+
+/// The measure of planted type 83 or 84 rows beside a type 8 row, for the line of the
+/// type given, each row as (targetFlags, durationTime): Spell4Effects.targetFlags bit 1 is
+/// the caster, and the plan reads a Stealth or RemoveStealth row aimed at the caster alone
+/// and, for a Stealth row, with no delayTime or durationTime.
+fn measured_stealth_rows(
+  type_ type_: Int,
+  rows rows: List(#(Int, Int)),
+) -> measurement.Measurement {
+  let row = fn(id, type_, flags, duration) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", planted_table.Integer(id)),
+      #("effectType", planted_table.Integer(type_)),
+      #("targetFlags", planted_table.Integer(flags)),
+      #("durationTime", planted_table.Integer(duration)),
+    ])
+  }
+  use folder <- planted_table.in_folder([
+    planted_table.file(
+      spell4_effects.schema,
+      list.append(
+        list.index_map(rows, fn(planted, index) {
+          row(index + 1, type_, planted.0, planted.1)
+        }),
+        [row(99, 8, 4, 0)],
+      ),
+    ),
+  ])
+  let assert Ok(tables) =
+    store.load(
+      under: owned_key.new(),
+      from: folder,
+      entries: [spell4_effects.entry()],
+      requirements: [],
+      derivations: [],
+    )
+    as "a planted Spell4Effects table loads"
+  let measured =
+    measurement.measure(
+      EngineDeclaration(
+        ..engine_named("Spell effects"),
+        starting_abilities: None,
+      ),
+      tables,
+    )
+  store.unload(tables)
+  measured
+}
+
+pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Planted: four type 83 rows, flags 1, 2, 4 and 1 with a durationTime of 8000, and one
+  // type 8 row.
+  let assert Measured(types:, ..) =
+    measured_stealth_rows(type_: 83, rows: [
+      #(1, 0),
+      #(2, 0),
+      #(4, 0),
+      #(1, 8000),
+    ])
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 83 })
+  assert line.rows == 4
+  assert line.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
+      fact_key: "Spell4Effects.effectType.83",
+      unread_rows: 3,
+    )
+    as "two of the four rows aim only at others and the timed one is refused by the plan: three are not read"
+}
+
+pub fn the_type_84_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Planted: two type 84 rows, flags 1 and 2, and one type 8 row. A RemoveStealth row's
+  // durationTime is not a timed stealth and the plan does not refuse it.
+  let assert Measured(types:, ..) =
+    measured_stealth_rows(type_: 84, rows: [#(1, 5000), #(2, 0)])
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 84 })
+  assert line.rows == 2
+  assert line.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
+      fact_key: "Spell4Effects.effectType.84",
+      unread_rows: 1,
+    )
+    as "one of the two rows aims only at others and is not read"
+}
+
+pub fn the_clients_74_type_83_rows_count_51_not_read_and_its_9_type_84_rows_4_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let assert Measured(types:, ..) =
+    measurement.measure(
+      engine_named("Spell effects"),
+      client_tables.every_table(),
+    )
+    as "the engine's source is a table"
+  let assert Ok(stealth) = list.find(types, fn(line) { line.type_number == 83 })
+  assert stealth.rows == 74
+    as "table_rows -- Spell4Effects effectType=83: 74 rows"
+  assert stealth.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
+      fact_key: "Spell4Effects.effectType.83",
+      unread_rows: 51,
+    )
+    as "23 of the 74 rows are read: targetFlags 1 is the caster in 63 rows, 2 in 7 and 4 in 4 aim only at others (11), 38 of the caster rows hold a durationTime or delayTime, and 2 more of the untimed ones hold a target apply prerequisite (`table_rows -- Spell4Effects effectType=83`, columns targetFlags, delayTime, durationTime and prerequisiteIdTargetApply): 11 + 38 + 2 = 51"
+  let assert Ok(remove) = list.find(types, fn(line) { line.type_number == 84 })
+  assert remove.rows == 9 as "table_rows -- Spell4Effects effectType=84: 9 rows"
+  assert remove.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
+      fact_key: "Spell4Effects.effectType.84",
+      unread_rows: 4,
+    )
+    as "targetFlags 1 in 5 rows is the caster; 2 in 3 rows and 4 in 1 aim only at others"
 }
 
 pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missing_type_a_breach_test() -> Nil {
@@ -1329,7 +1460,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_22_of_26_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_24_of_26_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1342,14 +1473,14 @@ pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_22_of_26_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 9 | 113 of 114 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 11 | 113 of 114 |",
   )
-    as "114 effect rows are left, 1 of them not handled (Deja Vu's type 90); the whole-game columns are the walk's of 2026-11-05"
+    as "114 effect rows are left, 1 of them not handled (Deja Vu's type 90); the whole-game columns are the walk's of 2026-11-05, with types 83 and 84 handled beside the nine"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 9 | 22 of 26 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 10 | 24 of 26 |",
   )
-    as "26 conditions are left, 4 of them not handled (type 108 twice, type 116 twice)"
+    as "26 conditions are left, 2 of them not handled (type 108 twice); type 116 is read (Prerequisite.prerequisiteTypeId.116)"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {

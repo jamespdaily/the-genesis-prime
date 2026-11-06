@@ -194,7 +194,8 @@ pub fn life_message(
 
 /// What player_life decided, carried out in order, then what its death, coming
 /// back and combat flag did to the class resource (`resource.life_effects`): the
-/// frames and news as `life_effects` makes them, `EndCasts` as the cast rule's `died`, whose 0x7fe
+/// frames and news as `life_effects` makes them, `DamageTaken` as the cast rule's
+/// `damage_taken`, `EndCasts` as the cast rule's `died`, whose 0x7fe
 /// go out in its place in the order, and `GoToHolocrypt` as the leave of the map
 /// that the Holocrypt's join follows (`leaving_for_the_holocrypt`), which comes
 /// last.
@@ -212,12 +213,24 @@ fn life_carried(
         Some(entered) ->
           case effect {
             player_life.EndCasts -> {
-              let #(updated, ended) = cast.died(cast: entered.cast, now:)
               let #(session, more) =
-                connection_casting.cast_effects(
-                  session: connection_casting.with_cast(session:, cast: updated),
+                cast_carried(
+                  session:,
                   now:,
-                  effects: ended,
+                  taken: cast.died(cast: entered.cast, now:),
+                )
+              #(session, list.append(written, more), to_the_holocrypt)
+            }
+            player_life.DamageTaken -> {
+              let #(session, more) =
+                cast_carried(
+                  session:,
+                  now:,
+                  taken: cast.damage_taken(
+                    cast: entered.cast,
+                    caster: connection_casting.caster_of(entered:),
+                    now:,
+                  ),
                 )
               #(session, list.append(written, more), to_the_holocrypt)
             }
@@ -254,6 +267,21 @@ fn life_carried(
       )
     True, None | False, _ -> Continue(session, written)
   }
+}
+
+/// A step of the cast rule that the player's life asked for: the rule's new state kept
+/// in the session, and its effects carried out.
+fn cast_carried(
+  session session: Session,
+  now now: Now,
+  taken taken: #(cast.State, List(cast.Effect)),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let #(updated, effects) = taken
+  connection_casting.cast_effects(
+    session: connection_casting.with_cast(session:, cast: updated),
+    now:,
+    effects:,
+  )
 }
 
 /// The Holocrypt's first step: the place is the start of the player's race and

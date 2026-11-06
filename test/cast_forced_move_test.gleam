@@ -116,6 +116,7 @@ fn changes_a_property(effect effect: cast.Effect) -> Bool {
     | cast.Log(..)
     | cast.Strike(..)
     | cast.Pay(..)
+    | cast.StealthChanged(..)
     | cast.Gain(..) -> False
   }
 }
@@ -205,7 +206,8 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
         | cast.Pay(..)
         | cast.Gain(..)
         | cast.PropertyStarts(..)
-        | cast.PropertyEnds(..) -> Error(Nil)
+        | cast.PropertyEnds(..)
+        | cast.StealthChanged(..) -> Error(Nil)
       }
     })
   assert cast.rolls_needed(

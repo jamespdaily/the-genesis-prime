@@ -66,7 +66,7 @@ fn row_43812() -> prerequisite_table.Prerequisite {
   ])
 }
 
-/// A subject under no cast, out of combat, holding no vital and no difficulty,
+/// A subject under no cast, out of combat, holding no vital, difficulty or stealth,
 /// with no roll.
 fn bare() -> Subject {
   Subject(
@@ -76,6 +76,7 @@ fn bare() -> Subject {
     vitals: dict.new(),
     rolls: [],
     difficulty: None,
+    stealthed: None,
   )
 }
 
@@ -533,11 +534,11 @@ pub fn the_types_the_server_decides_are_those_is_read_names_test() -> Nil {
       prerequisite.is_read(type_id:)
     })
     == [
-      0, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 132, 144,
-      156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
-      296, 297, 298, 299, 300,
+      0, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 116, 132,
+      144, 156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282,
+      284, 296, 297, 298, 299, 300,
     ]
-    as "the types the server reads (15, 28, 37, 50, 59, 71, 73, 179) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
+    as "the types the server reads (15, 28, 37, 50, 59, 71, 73, 116, 179; Prerequisite.prerequisiteTypeId.116) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
 }
 
 fn types_up_to_300() -> List(Int) {

@@ -318,7 +318,8 @@ fn name_of(news: News) -> String {
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.Shield(..)
-    | client_connection.PropertiesChanged(..) -> "other"
+    | client_connection.PropertiesChanged(..)
+    | client_connection.Stealth(..) -> "other"
     client_connection.CrowdControlApplied(..) -> "0x87f"
     client_connection.CrowdControlEnded(..) -> "0x880"
     client_connection.InterruptArmor(armor:) ->

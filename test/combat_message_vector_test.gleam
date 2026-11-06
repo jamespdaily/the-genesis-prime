@@ -5,8 +5,8 @@
 //// `opcode.0x7f4` with `0x140094890`, `0x1400946c0` and `0x1400945e0`,
 //// `opcode.0x7fe`, `opcode.0x801`, `opcode.0x937`, `opcode.0x92f`,
 //// `opcode.0x938`, `opcode.0x88c`, `opcode.0x908`, `opcode.0x90a`,
-//// `opcode.0x89a`, `opcode.0x1b3`, `opcode.0x15a`, `opcode.0x247.death` and
-//// `movement_command.kind_4` with `movement_command.kind_0`. Each vector was
+//// `opcode.0x89a`, `opcode.0x1b3`, `opcode.0x15a`, `opcode.0x247.death`,
+//// `opcode.0x8f5`, `opcode.0x247.type24` and `movement_command.kind_4` with `movement_command.kind_0`. Each vector was
 //// packed by a script that follows the bit stream's rule, the least
 //// significant bit of the first byte first, field by field with the widths the
 //// facts give, and shares no code with the codec; its tail of a unit's create
@@ -30,6 +30,7 @@ import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
+import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/item_added.{ItemAdded}
@@ -80,6 +81,7 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
+import genesis_prime/message/unit_stealth.{UnitStealth}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/world_map/static_object
@@ -133,6 +135,8 @@ pub fn the_message_numbers_are_the_clients_test() -> Nil {
     as "opcode.0x1b3: message 0x1b3 (435)"
   assert choose_resurrection.message_id == 0x15A
     as "opcode.0x15a: message 0x15a (346)"
+  assert unit_stealth.message_id == 0x8F5
+    as "opcode.0x8f5: message 0x8f5 (2293)"
   assert combat_log.message_id == 0x247 as "opcode.0x247: message 0x247 (583)"
 }
 
@@ -791,6 +795,58 @@ pub fn a_combat_log_death_and_resurrection_are_a_type_in_6_bits_and_a_unit_test(
     body: message_support.hex("57 00 04 00 00"),
     value: CombatLog(
       entry: combat_log_entry.Resurrect(CombatLogResurrect(unit_id: 0x1001)),
+    ),
+    encode: combat_log.encode,
+    decode: combat_log.decode,
+  )
+}
+
+pub fn a_unit_stealth_is_a_unit_id_in_32_bits_and_the_stealthed_bit_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The reader 0x14007c340 reads a 32-bit value and one bit (opcode.0x8f5); the bytes are
+  // packed by hand, the unit id 0x1001 little-endian, then the bit.
+  message_support.assert_codec(
+    name: "opcode.0x8f5: unit id 0x1001 in 32 bits, stealthed bit 1",
+    body: message_support.hex("01 10 00 00 01"),
+    value: UnitStealth(unit_id: 0x1001, stealthed: 1),
+    encode: unit_stealth.encode,
+    decode: unit_stealth.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0x8f5: unit id 0x1001 in 32 bits, stealthed bit 0",
+    body: message_support.hex("01 10 00 00 00"),
+    value: UnitStealth(unit_id: 0x1001, stealthed: 0),
+    encode: unit_stealth.encode,
+    decode: unit_stealth.decode,
+  )
+}
+
+pub fn a_combat_log_stealth_is_a_type_in_6_bits_a_unit_and_the_exiting_bit_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Entry type 24 uses the same reader 0x14007c340 (opcode.0x247.type24): the type 24
+  // (0x18) in 6 bits, the unit id 0x1001 in 32 and the exiting bit at bit 38. The bytes
+  // are packed by hand like the death entry's: its type 22 is 0x56 with the unit's two low
+  // bits in bits 6 and 7, and type 24 makes it 0x58.
+  message_support.assert_codec(
+    name: "opcode.0x247.type24: type 24 in 6 bits, unit id in 32, exiting bit 0",
+    body: message_support.hex("58 00 04 00 00"),
+    value: CombatLog(
+      entry: combat_log_entry.Stealth(CombatLogStealth(
+        unit_id: 0x1001,
+        exiting: 0,
+      )),
+    ),
+    encode: combat_log.encode,
+    decode: combat_log.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0x247.type24: type 24 in 6 bits, unit id in 32, exiting bit 1",
+    body: message_support.hex("58 00 04 00 40"),
+    value: CombatLog(
+      entry: combat_log_entry.Stealth(CombatLogStealth(
+        unit_id: 0x1001,
+        exiting: 1,
+      )),
     ),
     encode: combat_log.encode,
     decode: combat_log.decode,

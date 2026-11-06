@@ -21,7 +21,6 @@ import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{
   type Modifier, type Source, Modifier, Source,
 }
-import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
@@ -103,15 +102,6 @@ fn press(
   )
 }
 
-fn started_id(effects effects: List(Effect)) -> Int {
-  let assert [frame, ..] =
-    support.frames_of(message_id: spell_cast_confirmed.message_id, effects:)
-    as "a press was confirmed"
-  let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
-    as "a 0x7fd the rule wrote decodes"
-  confirmed.server_cast_id
-}
-
 fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
   Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
 }
@@ -133,6 +123,7 @@ fn change_of(effect effect: Effect) -> Result(Change, Nil) {
     | cast.Log(..)
     | cast.Strike(..)
     | cast.Pay(..)
+    | cast.StealthChanged(..)
     | cast.Gain(..) -> Error(Nil)
   }
 }
@@ -194,7 +185,7 @@ pub fn a_go_lists_a_modifier_aimed_at_the_caster_and_its_node_lives_for_the_row_
     == [135_954]
   assert support.finished_ids(support.writes(effects:)) == []
     as "the node has life, so the 0x7fe waits (cast.target_node_end)"
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   let finishes =
     list.filter(fired, fn(step) {
@@ -212,7 +203,7 @@ pub fn a_modifier_with_no_delay_starts_at_the_go_and_ends_after_its_duration_tes
     plans_of([holder(spell4_id: 57_030, base: 3, modifiers: [crit_row()])])
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let source = source_of(cast_id: id, effect_id: 135_954)
   assert starts(effects:) == [#(source, crit_modifier())]
     as "a row with no delay starts in the go's own step"
@@ -229,7 +220,7 @@ pub fn a_modifier_with_a_delay_starts_after_it_and_ends_after_its_duration_test(
     plans_of([holder(spell4_id: 34_355, base: 3, modifiers: [falling_row()])])
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let source = source_of(cast_id: id, effect_id: 67_777)
   assert starts(effects:) == []
     as "nothing starts at the go: the row waits its delay"
@@ -319,7 +310,7 @@ pub fn a_later_go_of_the_cast_arms_its_modifier_again_from_that_go_test() -> Nil
   use <- owned_test.run(5000)
   let #(state, effects) =
     press(plans: two_gos(), state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let source = source_of(cast_id: id, effect_id: 135_954)
   assert list.map(starts(effects:), fn(start) { start.0 }) == [source]
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
@@ -351,7 +342,7 @@ pub fn a_type_80_removal_of_the_cast_ends_its_modifiers_and_cancels_their_timers
     ])
   let #(state, first) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects: first)
+  let id = support.pressed_id(effects: first)
   let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert ends(effects: removal) == [source_of(cast_id: id, effect_id: 135_954)]
     as "taking the cast's node off the caster ends its modifier at once"
@@ -384,7 +375,7 @@ pub fn a_node_that_ends_by_time_ends_its_modifiers_and_cancels_their_timers_test
     ])
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let source = source_of(cast_id: id, effect_id: 67_777)
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   assert timeline(fired:) == [#(1180, "start", source), #(1400, "end", source)]
@@ -397,7 +388,7 @@ pub fn the_caster_dying_ends_every_modifier_still_pending_test() -> Nil {
     plans_of([holder(spell4_id: 34_355, base: 3, modifiers: [falling_row()])])
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let #(_, ended) = cast.died(cast: state, now: support.at(ms: 1100))
   assert ends(effects: ended) == [source_of(cast_id: id, effect_id: 67_777)]
     as "the modifier had not started, and its end is told: the properties hold none, so it changes nothing"

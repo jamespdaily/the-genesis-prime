@@ -149,6 +149,7 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
     ToViewers(client_connection.Shield(shield: 447)),
     ToClient(OwnHealth(health: 734)),
     ToViewers(client_connection.Health(health: 734, dead: False)),
+    player_life.DamageTaken,
     Answer(
       to:,
       answered: Answered(
@@ -159,7 +160,7 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
     StartTimer(timer: TimerId(9), after_ms: 2500),
     StartTimer(timer: TimerId(8), after_ms: 500),
   ] = esper_effects
-    as "0x938 stat 20 to the player and its viewers, 0x92f to the player, 0x937 to the viewers, then the answer, then the shield's reboot and, the player out of combat and below its maximum, the health tick"
+    as "0x938 stat 20 to the player and its viewers, 0x92f to the player, 0x937 to the viewers, then the damage taken that ends a stealth, then the answer, then the shield's reboot and, the player out of combat and below its maximum, the health tick"
   assert to == beast() as "the answer goes to the striker's address"
   assert description.damage.raw_damage == 12
     && description.damage.absorbed == 7
@@ -182,6 +183,7 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
   let assert [
     ToClient(OwnHealth(health: 0)),
     ToViewers(client_connection.Health(health: 0, dead: True)),
+    player_life.DamageTaken,
     Answer(
       answered: Answered(
         outcome: Landed(descriptions: [description], controls: []),
@@ -191,7 +193,7 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
     ),
     ..
   ] = effects
-    as "no shield to change: 0x92f and 0x937 at 0, then the answer, then the death"
+    as "no shield to change: 0x92f and 0x937 at 0, then the damage taken, then the answer, then the death"
   assert description.damage.killed == 1 && description.damage.overkill == 2
     as "the killed bit, and 2 beyond the 1 health"
   let #(_, later) =
@@ -312,6 +314,7 @@ fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
         ToClient(..)
         | ToViewers(..)
         | StreamTo(..)
+        | player_life.DamageTaken
         | EndCasts
         | GoToHolocrypt
         | StartTimer(..)

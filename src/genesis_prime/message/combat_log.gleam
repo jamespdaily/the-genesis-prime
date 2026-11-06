@@ -4,10 +4,10 @@
 //// Message 0x0247 (combat_log), server to client: a combat log entry: the type
 //// in 6 bits picks the entry's layout, and the client's reader fails a type
 //// above 35; the schema holds types 1 (crowd-control state), 2 (state break),
-//// 22 (death) and 23 (resurrect), and a spell hit's line is made by the client
-//// from its damage description. Its fields are listed in `schema.toml` with
-//// the client's evidence, and the fact file's `opcode.0x247` names the
-//// message.
+//// 22 (death), 23 (resurrect) and 24 (stealth), and a spell hit's line is made
+//// by the client from its damage description. Its fields are listed in
+//// `schema.toml` with the client's evidence, and the fact file's
+//// `opcode.0x247` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/combat_log_entry.{type CombatLogEntry}

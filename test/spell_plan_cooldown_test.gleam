@@ -34,7 +34,6 @@ import genesis_prime/game/spend
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
-import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell_cool_down
 import gleam/list
@@ -47,8 +46,6 @@ import unitest
 /// Telekinetic Strike's Spell4 and base, whose tree the planted rows hold
 /// (`spell_tables`).
 const strike = 32_893
-
-const strike_base = 19_102
 
 /// A type 73 row of a planted spell aimed by `target_flags`, in every phase, with these
 /// columns beside its id, spell and type: the selector 0 on base 20684 and operation 0
@@ -81,71 +78,22 @@ fn cooldown_row(
   )
 }
 
-fn planned(
-  rows rows: spell_tables.Rows,
-) -> Result(PlannedSpell, spell_plan.PlanError) {
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    case spell_plan.build(tables:) {
-      Ok(plans) -> {
-        let assert Ok(spell) =
-          spell_plan.in_plans(plans:, base: Spell4BaseId(strike_base))
-          as "the plans hold Telekinetic Strike"
-        Ok(spell)
-      }
-      Error(error) -> Error(error)
-    }
-  })
-}
-
-fn with_row(row row: List(Cell)) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
-  spell_tables.Rows(
-    ..rows,
-    spell4_effects: spell_tables.sorted_by_id([row, ..rows.spell4_effects]),
-  )
-}
-
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.CooldownModifier) {
-  let assert Ok(spell) = planned(rows: with_row(row:))
+  let assert Ok(spell) =
+    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
   spell.cooldown_modifiers
 }
 
 fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
-  let assert Error(error) = planned(rows: with_row(row:)) as "the build fails"
+  let assert Error(error) =
+    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
+    as "the build fails"
   error
 }
 
 fn selector_of(row row: List(Cell)) -> cooldown.Selector {
   let assert [modifier] = modifiers_of(row:)
   modifier.modifier.selector
-}
-
-fn with_column(
-  row row: List(Cell),
-  name name: String,
-  cell cell: Cell,
-) -> List(Cell) {
-  list.zip(spell4.schema.columns, row)
-  |> list.map(fn(pair) {
-    case pair.0.name == name {
-      True -> cell
-      False -> pair.1
-    }
-  })
-}
-
-/// The planted rows with Telekinetic Strike's Spell4 row changed in one column.
-fn rows_with_strike(name name: String, cell cell: Cell) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
-  spell_tables.Rows(
-    ..rows,
-    spell4: list.map(rows.spell4, fn(row) {
-      case row {
-        [Integer(32_893), ..] -> with_column(row:, name:, cell:)
-        other -> other
-      }
-    }),
-  )
 }
 
 // ---- the rows of the plan ----
@@ -354,9 +302,9 @@ pub fn the_rows_of_a_phase_are_those_whose_phase_flags_name_it_test() -> Nil {
   use <- owned_test.run(60_000)
   // phaseFlags bit n is phase n (`Spell4Effects.phaseFlags`).
   let assert Ok(spell) =
-    planned(
-      rows: with_row(
-        row: cooldown_row(id: 99_088, target_flags: 1, columns: [
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
+        effect: cooldown_row(id: 99_088, target_flags: 1, columns: [
           #("phaseFlags", Integer(2)),
         ]),
       ),
@@ -377,14 +325,19 @@ pub fn a_spell_holds_the_cooldown_groups_its_row_names_test() -> Nil {
   use <- owned_test.run(60_000)
   // The kit's Charged Shot 34718 holds the group 133 (`table_rows -- Spell4 34718`); the
   // planted Telekinetic Strike names 133 and 134, with rows for both.
-  let rows = rows_with_strike(name: "spellCoolDownId00", cell: Integer(133))
+  let rows =
+    spell_tables.rows_with_strike(name: "spellCoolDownId00", cell: Integer(133))
   let rows =
     spell_tables.Rows(
       ..rows,
       spell4: list.map(rows.spell4, fn(row) {
         case row {
           [Integer(32_893), ..] ->
-            with_column(row:, name: "spellCoolDownId02", cell: Integer(134))
+            spell_tables.with_column(
+              row:,
+              name: "spellCoolDownId02",
+              cell: Integer(134),
+            )
           other -> other
         }
       }),
@@ -399,17 +352,18 @@ pub fn a_spell_holds_the_cooldown_groups_its_row_names_test() -> Nil {
         ]),
       ]),
     )
-  let assert Ok(spell) = planned(rows:)
+  let assert Ok(spell) = spell_tables.planned_strike(rows:)
   assert spell.cooldown_groups == [133, 134]
     as "the non-zero of spellCoolDownId00 to 02, in column order (0x14055e180 lines 898-913)"
-  let assert Ok(without) = planned(rows: spell_tables.rows())
+  let assert Ok(without) =
+    spell_tables.planned_strike(rows: spell_tables.rows())
   assert without.cooldown_groups == [] as "a column holding 0 names no group"
 }
 
 pub fn a_cooldown_group_with_no_spellcooldown_row_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Error(error) =
-    planned(rows: rows_with_strike(
+    spell_tables.planned_strike(rows: spell_tables.rows_with_strike(
       name: "spellCoolDownId01",
       cell: Integer(999),
     ))
