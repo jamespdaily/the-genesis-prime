@@ -78,6 +78,10 @@ pub type LeftOut {
     spells: List(Int),
     effects: List(#(Int, Int)),
   )
+  /// A Proc effect of a reached spell whose kind the plan does not read
+  /// (genesis_prime/game/spell_plan `proc_read`): the row is not handled, and the spell
+  /// it casts is not counted.
+  ProcKindNotRead(spell4_id: Int, effect_id: Int, kind: Int, casts: Int)
   /// A class innate slot (1 or 2) behind a gate a level-1 character cannot open: the
   /// slot's active and passive spells are not counted.
   InnateSlotClosed(
@@ -116,9 +120,43 @@ pub fn left_out(
   use slots <- result.map(closed_innate_slots(tables:, gates:))
   list.flatten([
     closed,
+    procs_not_read(tables:, spells: reached),
     slots,
     runner_columns_only(tables:, spells: reached, rows:),
   ])
+}
+
+/// The Proc effects of the reached spells whose kind the plan does not read, in effect id
+/// order, each with the spell it would cast.
+fn procs_not_read(
+  tables tables: store.Tables,
+  spells spells: List(Spell),
+) -> List(LeftOut) {
+  let by_spell = spell_plan.effects_by_spell(tables:)
+  list.flat_map(spells, fn(spell) {
+    dict.get(by_spell, spell_id(spell))
+    |> result.unwrap([])
+    |> list.filter_map(fn(effect) {
+      case
+        effect_kind.kind_of(effect.effect_type),
+        spell_plan.proc_read(spell4_id: spell_id(spell), effect:)
+      {
+        effect_kind.Proc, Error(spell_plan.ProcKindNotRead(kind:, ..)) ->
+          Ok(#(
+            effect.id,
+            ProcKindNotRead(
+              spell4_id: spell_id(spell),
+              effect_id: effect.id,
+              kind:,
+              casts: effect.data_bits01,
+            ),
+          ))
+        _, _ -> Error(Nil)
+      }
+    })
+  })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.map(fn(found) { found.1 })
 }
 
 /// The innate slots 1 and 2 of every Class row whose gate a level-1 character cannot
@@ -289,6 +327,16 @@ pub fn describe_left_out(left_out left_out: LeftOut) -> String {
       )
       <> "): "
       <> level_one_gate.describe(gate:, closed: why)
+    ProcKindNotRead(spell4_id:, effect_id:, kind:, casts:) ->
+      "Proc effect "
+      <> int.to_string(effect_id)
+      <> " of Spell4 "
+      <> int.to_string(spell4_id)
+      <> " is of kind "
+      <> int.to_string(kind)
+      <> ", which the plan does not read, so the Spell4 "
+      <> int.to_string(casts)
+      <> " it casts is not counted"
     InnateSlotClosed(class_id:, slot:, active:, passive:, gate:, why:) ->
       "Class "
       <> int.to_string(class_id)
@@ -321,6 +369,23 @@ pub fn effect_types(
   use spells <- result.map(spells(tables:))
   effects_of(tables:, spells:)
   |> list.map(fn(effect) { effect.effect_type })
+}
+
+/// How many Spell4Effects rows of the type, among the spells the starting abilities' trees
+/// reach, the plan does not read (genesis_prime/game/spell_plan `effect_row_read`): a Proc
+/// row of a kind it skips is one. The starting abilities' column counts them as not handled.
+pub fn unread_effect_rows(
+  tables tables: store.Tables,
+  type_number type_number: Int,
+) -> Int {
+  level_one_gate.load(tables:)
+  |> result.map(fn(gates) {
+    effects_of(tables:, spells: reached_spells(tables:, gates:))
+    |> list.count(fn(effect) {
+      effect.effect_type == type_number && !spell_plan.effect_row_read(effect:)
+    })
+  })
+  |> result.unwrap(0)
 }
 
 /// The innate cost EMM id of each cost of the spells the starting abilities' trees

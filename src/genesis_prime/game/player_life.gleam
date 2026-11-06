@@ -640,23 +640,35 @@ fn blow_taken(life life: Life, lowered lowered: Bool) -> #(Life, List(Effect)) {
 
 /// The player at 0 dies where its body lies, `place`: it is dead with its ghost
 /// there, it fights no one, and the death's messages go out in the client's order:
-/// 0x88c and 0x89a to it and its viewers, its casts ended, 0x247 type 22, then
-/// for its own client the ghost's 0x262, 0x1b3 and 0x636.
+/// 0x88c and 0x89a to it and its viewers, the combat left when it had a fighter, its casts
+/// ended, 0x247 type 22, then for its own client the ghost's 0x262, 0x1b3 and 0x636.
 fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
   let #(life, cancels) = stopped(life:)
-  #(Life(..life, fighters: dict.new(), state: Dead), [
-    ToClient(OwnDeathState(dead: True)),
-    ToViewers(client_connection.Died),
-    ToClient(OwnCombatState(in_combat: False)),
-    ToViewers(client_connection.CombatState(in_combat: False)),
-    EndCasts,
-    ToClient(OwnDeathLogged),
-    ToViewers(client_connection.DeathLogged),
-    ToClient(GhostCreated(place:)),
-    ToClient(OwnResurrectionWindow(dead: True)),
-    ToClient(ControlGiven(to: ControlGhost)),
-    ..cancels
-  ])
+  let combat_left = case in_combat(life:) {
+    True -> [CombatLeft]
+    False -> []
+  }
+  #(
+    Life(..life, fighters: dict.new(), state: Dead),
+    list.flatten([
+      [
+        ToClient(OwnDeathState(dead: True)),
+        ToViewers(client_connection.Died),
+        ToClient(OwnCombatState(in_combat: False)),
+        ToViewers(client_connection.CombatState(in_combat: False)),
+      ],
+      combat_left,
+      [
+        EndCasts,
+        ToClient(OwnDeathLogged),
+        ToViewers(client_connection.DeathLogged),
+        ToClient(GhostCreated(place:)),
+        ToClient(OwnResurrectionWindow(dead: True)),
+        ToClient(ControlGiven(to: ControlGhost)),
+      ],
+      cancels,
+    ]),
+  )
 }
 
 /// What the client's 0x15a does, decoded at the edge: a choice offered, for the
@@ -832,6 +844,7 @@ pub fn released(
     True -> [
       ToClient(OwnCombatState(in_combat: False)),
       ToViewers(client_connection.CombatState(in_combat: False)),
+      CombatLeft,
     ]
     False -> []
   }

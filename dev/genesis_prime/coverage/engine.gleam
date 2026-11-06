@@ -26,7 +26,6 @@ import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/result
 
 /// Where the types an engine must handle are found in the client.
 pub type Source {
@@ -82,6 +81,9 @@ pub type EngineDeclaration {
     /// those rows are counted as not handled. `no_unread_rows` for an engine whose
     /// partial types leave no row out whole.
     unread_rows: fn(store.Tables, Int) -> Int,
+    /// How many of the starting abilities' rows of a type no rule reads, which the
+    /// starting abilities' column counts as not handled.
+    unread_starting_rows: fn(store.Tables, Int) -> Int,
     /// The types read from the client and not handled. A type is never both.
     missing: List(Missing),
     /// The type values the level-1 abilities' trees use, when the engine's
@@ -140,6 +142,7 @@ fn prerequisites() -> EngineDeclaration {
     handled: Decoded(is_read: game_prerequisite.is_read),
     partial: [],
     unread_rows: no_unread_rows,
+    unread_starting_rows: no_unread_rows,
     missing: [
       Missing(
         type_number: 43,
@@ -169,55 +172,20 @@ fn quest_objectives() -> EngineDeclaration {
     handled: Listed(ids: []),
     partial: [],
     unread_rows: no_unread_rows,
+    unread_starting_rows: no_unread_rows,
     missing: [],
     starting_abilities: None,
   )
 }
 
-/// The rows of the effect type that the effect rule does not read (genesis_prime/game/effect_kind
-/// `is_row_read`): the type 3, type 11, type 73, type 83 and type 84 rows aimed only at other
-/// units, and the Stealth and RemoveStealth rows the plan refuses (`refused_by_the_plan`).
+/// The rows of the effect type that the effect rule does not read
+/// (genesis_prime/game/spell_plan `effect_row_read`): the type 3, type 11, type 73, type 83,
+/// type 84 and type 14 rows aimed only at other units, and the Stealth, RemoveStealth and
+/// Proc rows the plan refuses or skips.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   list.count(spell4_effects.all(tables), fn(row) {
-    row.effect_type == type_number
-    && {
-      !effect_kind.is_row_read(
-        effect_type: row.effect_type,
-        target_flags: row.target_flags,
-      )
-      || refused_by_the_plan(row:)
-    }
+    row.effect_type == type_number && !spell_plan.effect_row_read(effect: row)
   })
-}
-
-/// Whether the plan refuses a Stealth or RemoveStealth row, by the plan's own check
-/// (genesis_prime/game/spell_plan `stealth_read`, `stealth_on_the_caster`): a row aimed other
-/// than at the caster alone or behind a target prerequisite, and a Stealth row with a
-/// delayTime or durationTime (timed stealth) or a dataBits02 the plan has no case for.
-fn refused_by_the_plan(row row: spell4_effects.Spell4Effects) -> Bool {
-  case effect_kind.kind_of(row.effect_type) {
-    effect_kind.Stealth ->
-      result.is_error(spell_plan.stealth_read(
-        spell4_id: row.spell_id,
-        effect: row,
-      ))
-    effect_kind.RemoveStealth ->
-      result.is_error(spell_plan.stealth_on_the_caster(
-        spell4_id: row.spell_id,
-        effect: row,
-      ))
-    effect_kind.Proxy
-    | effect_kind.Damage
-    | effect_kind.VitalModifier
-    | effect_kind.Fluff
-    | effect_kind.ForceRemove
-    | effect_kind.CrowdControl
-    | effect_kind.PropertyModifier
-    | effect_kind.ForcedMove
-    | effect_kind.CooldownModifier
-    | effect_kind.Proc
-    | effect_kind.Unread(..) -> False
-  }
 }
 
 /// The spell effect engine: the `effectType` column of Spell4Effects, the
@@ -238,6 +206,9 @@ fn spell_effects() -> EngineDeclaration {
     ),
     handled: Decoded(is_read: effect_kind.is_read),
     unread_rows: unread_effect_rows,
+    unread_starting_rows: fn(tables, type_number) {
+      starting_ability.unread_effect_rows(tables:, type_number:)
+    },
     partial: [
       Missing(
         type_number: 3,
@@ -248,6 +219,11 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 11,
         reason: "rows, or parts of rows, aimed at another unit: the next step",
         fact_key: "Spell4Effects.effectType.11",
+      ),
+      Missing(
+        type_number: 14,
+        reason: "kinds other than entering and leaving stealth, leaving combat and dying, and rows with a chance, a filter, a gate, another unit or a delay, which the plan refuses",
+        fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
         type_number: 73,
@@ -266,11 +242,6 @@ fn spell_effects() -> EngineDeclaration {
       ),
     ],
     missing: [
-      Missing(
-        type_number: 14,
-        reason: "needs a trigger on a unit that casts a spell, which a lasting effect on a unit holds",
-        fact_key: "Spell4Effects.effectType.14",
-      ),
       Missing(
         type_number: 90,
         reason: "needs an ability's charges changed and sent (0x0914)",
@@ -311,6 +282,7 @@ fn spend_scaled_costs() -> EngineDeclaration {
     handled: Decoded(is_read: spend.is_read),
     partial: [],
     unread_rows: no_unread_rows,
+    unread_starting_rows: no_unread_rows,
     missing: list.map([2, 5, 9, 10, 11], unread),
     starting_abilities: Some(starting_ability.spend_ids),
   )
@@ -334,6 +306,7 @@ fn unit_types() -> EngineDeclaration {
     handled: Listed(ids: []),
     partial: [],
     unread_rows: no_unread_rows,
+    unread_starting_rows: no_unread_rows,
     missing: [],
     starting_abilities: None,
   )
@@ -362,6 +335,7 @@ fn messages() -> EngineDeclaration {
     handled: Listed(ids: handled_client_message_ids()),
     partial: [],
     unread_rows: no_unread_rows,
+    unread_starting_rows: no_unread_rows,
     missing: [],
     starting_abilities: None,
   )

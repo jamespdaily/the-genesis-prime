@@ -1262,12 +1262,16 @@ const cooldown_at_last_phase_flag = 0x200
 
 /// The chain of spells from the pressed ability to `spell4_id`, which fails as a
 /// `ProxyCycle` naming the whole chain when `spell4_id` is already on it: a Proxy or a
-/// Proc effect that leads back to a spell on the way would start it for ever. A stub.
+/// Proc effect that leads back to a spell on the way would start it for ever.
 pub fn chain_extended(
   chain chain: List(Int),
   spell4_id spell4_id: Int,
 ) -> Result(List(Int), PlanError) {
-  Ok(list.append(chain, [spell4_id]))
+  let chain = list.append(chain, [spell4_id])
+  case list.contains(list.take(chain, list.length(chain) - 1), spell4_id) {
+    True -> Error(ProxyCycle(chain:))
+    False -> Ok(chain)
+  }
 }
 
 fn spell_of(
@@ -1986,22 +1990,146 @@ fn procs_of(
   effects effects: List(spell4_effects.Spell4Effects),
   chain chain: List(Int),
 ) -> Result(List(ProcRow), PlanError) {
-  let _ = #(tables, sources, spell4_id, effects, chain)
-  Ok([])
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.Proc
+  })
+  |> list.try_fold([], fn(found, effect) {
+    case proc_read(spell4_id:, effect:) {
+      Error(ProcKindNotRead(..)) -> Ok(found)
+      Error(error) -> Error(error)
+      Ok(reading) -> {
+        use condition <- result.try(condition_of(
+          tables:,
+          effect:,
+          data_bits06_names_a_gate: False,
+        ))
+        use spell <- result.try(
+          spell_of(
+            tables:,
+            sources:,
+            spell4_id: effect.data_bits01,
+            chain:,
+            threshold_costs: [],
+          ),
+        )
+        Ok([
+          ProcRow(
+            effect_id: Spell4EffectsId(effect.id),
+            phase_flags: effect.phase_flags,
+            trigger: reading.trigger,
+            spell:,
+            window_ms: reading.window_ms,
+            count: reading.count,
+            row: lasting_row_of(effect:),
+            condition:,
+            tag: tag_of(effect:),
+          ),
+          ..found
+        ])
+      }
+    }
+  })
+  |> result.map(list.reverse)
 }
+
+/// 1.0 as the 32 float bits a Proc row's chance column (dataBits02) holds.
+const chance_of_one_bits = 1_065_353_216
 
 /// What a Proc row says without a table: its trigger and its limit, or why it is not
 /// read. A row of a kind the server does not read is `ProcKindNotRead`, which the load
-/// skips; any other error fails the load, naming the first column the plan does not read.
+/// skips; any other error fails the load, naming the first column the plan does not read:
+/// targetFlags other than the caster, a chance other than 1.0 (no roll is drawn), a unit
+/// bit of the event's other unit (4) or beyond the five the texts name, a window or count
+/// that is not above 0, a gate, a filter, a target apply or persistence prerequisite and
+/// a delay (`Spell4Effects.effectType.14.dataBits03`, `.limits`, `.prerequisites`,
+/// `.dataBits07`, `.lifetime`).
 pub fn proc_read(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(ProcReading, PlanError) {
-  Error(ProcKindNotRead(
-    spell4_id:,
-    effect_id: effect.id,
-    kind: effect.data_bits00,
-  ))
+  use trigger <- result.try(case effect.data_bits00 {
+    217 -> Ok(EnteredStealth)
+    218 -> Ok(LeftStealth)
+    44 -> Ok(LeftCombat)
+    0 -> Ok(Died)
+    kind -> Error(ProcKindNotRead(spell4_id:, effect_id: effect.id, kind:))
+  })
+  let unit_bits = effect.data_bits03
+  let refusals = [
+    #("targetFlags", effect.target_flags, effect.target_flags != 1),
+    #(
+      "dataBits02",
+      effect.data_bits02,
+      effect.data_bits02 != chance_of_one_bits,
+    ),
+    #(
+      "dataBits03",
+      unit_bits,
+      int.bitwise_and(unit_bits, 4) != 0 || unit_bits >= 32 || unit_bits < 0,
+    ),
+    #("dataBits04", effect.data_bits04, effect.data_bits04 <= 0),
+    #("dataBits05", effect.data_bits05, effect.data_bits05 <= 0),
+    #("dataBits06", effect.data_bits06, effect.data_bits06 != 0),
+    #("dataBits07", effect.data_bits07, effect.data_bits07 != 0),
+    #("dataBits08", effect.data_bits08, effect.data_bits08 != 0),
+    #("dataBits09", effect.data_bits09, effect.data_bits09 != 0),
+    #(
+      "prerequisiteIdTargetApply",
+      effect.prerequisite_id_target_apply,
+      effect.prerequisite_id_target_apply != 0,
+    ),
+    #(
+      "prerequisiteIdCasterPersistence",
+      effect.prerequisite_id_caster_persistence,
+      effect.prerequisite_id_caster_persistence != 0,
+    ),
+    #(
+      "prerequisiteIdTargetPersistence",
+      effect.prerequisite_id_target_persistence,
+      effect.prerequisite_id_target_persistence != 0,
+    ),
+    #("delayTime", effect.delay_time, effect.delay_time != 0),
+  ]
+  case list.find(refusals, fn(refusal) { refusal.2 }) {
+    Ok(#(column, value, _)) ->
+      Error(ProcNotRead(spell4_id:, effect_id: effect.id, column:, value:))
+    Error(Nil) ->
+      Ok(ProcReading(
+        trigger:,
+        window_ms: effect.data_bits04,
+        count: effect.data_bits05,
+      ))
+  }
+}
+
+/// Whether the plan reads this effect row: its type is read for its aim
+/// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth or Proc row, the plan does
+/// not refuse or skip it (`stealth_read`, `stealth_on_the_caster`, `proc_read`). The
+/// coverage measure counts the other rows as not read, so it and the plan cannot disagree.
+pub fn effect_row_read(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  effect_kind.is_row_read(
+    effect_type: effect.effect_type,
+    target_flags: effect.target_flags,
+  )
+  && case effect_kind.kind_of(effect.effect_type) {
+    effect_kind.Stealth ->
+      result.is_ok(stealth_read(spell4_id: effect.spell_id, effect:))
+    effect_kind.RemoveStealth ->
+      result.is_ok(stealth_on_the_caster(spell4_id: effect.spell_id, effect:))
+    effect_kind.Proc ->
+      result.is_ok(proc_read(spell4_id: effect.spell_id, effect:))
+    effect_kind.Proxy
+    | effect_kind.Damage
+    | effect_kind.VitalModifier
+    | effect_kind.Fluff
+    | effect_kind.ForceRemove
+    | effect_kind.CrowdControl
+    | effect_kind.PropertyModifier
+    | effect_kind.ForcedMove
+    | effect_kind.CooldownModifier
+    | effect_kind.Unread(..) -> True
+  }
 }
 
 /// What the spell does to the caster's stealth, from the spell's spellCastStealthChange:

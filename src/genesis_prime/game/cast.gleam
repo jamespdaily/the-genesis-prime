@@ -476,6 +476,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/set.{type Set}
 
@@ -950,16 +951,147 @@ fn settled(
   #(after, list.flatten([effects, moved, fired]))
 }
 
-/// The procs held when an input's own work is done fire for each of its events, in the
-/// order given; a stub.
+/// The procs held when an input's own work is done fire for each of the input's events,
+/// in the order given (the input's own event, then its stealth change); within an event, in
+/// source order, the cast id and then the effect id, which is row order for one holder. A
+/// proc whose node the input took off is not held, and one the input applied is.
 fn procs_fired(
   cast cast: State,
   caster caster: Caster,
   now now: Now,
   triggers triggers: List(spell_plan.Trigger),
 ) -> #(State, List(Effect)) {
-  let _ = #(caster, now, triggers)
-  #(cast, [])
+  use <- bool.guard(when: dict.is_empty(cast.procs), return: #(cast, []))
+  list.fold(triggers, #(cast, []), fn(so_far, trigger) {
+    let #(cast, effects) = so_far
+    dict.to_list(cast.procs)
+    |> list.filter(fn(entry) { { entry.1 }.row.trigger == trigger })
+    |> list.sort(fn(first, second) {
+      int.compare({ first.0 }.cast_id, { second.0 }.cast_id)
+      |> order.break_tie(int.compare(
+        { first.0 }.effect_id.value,
+        { second.0 }.effect_id.value,
+      ))
+    })
+    |> list.fold(#(cast, effects), fn(so_far, entry) {
+      let #(cast, effects) = so_far
+      let #(cast, more) =
+        proc_fired(
+          cast:,
+          caster:,
+          now_ms: now.monotonic_ms,
+          source: entry.0,
+          held: entry.1,
+        )
+      #(cast, list.append(effects, more))
+    })
+  })
+}
+
+/// One held proc's trigger happened: it casts its spell at the caster unless it fired
+/// `count` times already in the last `window_ms` (a fire exactly `window_ms` ago is
+/// outside the window), or the spell's caster condition refuses the caster's life
+/// (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`), which writes a debug line
+/// and records no fire. The cast starts as a child of the holder's spell does: the
+/// holder's spell is its root and parent, no 0x7fd, and the caster is its primary target.
+fn proc_fired(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  source source: unit_properties.Source,
+  held held: HeldProc,
+) -> #(State, List(Effect)) {
+  let row = held.row
+  let recent =
+    list.filter(held.fires_ms, fn(fired_ms) {
+      fired_ms > now_ms - row.window_ms
+    })
+  use <- bool.guard(when: list.length(recent) >= row.count, return: #(cast, []))
+  case holder_of(cast:, cast_id: source.cast_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(holder) ->
+      proc_cast(cast:, caster:, now_ms:, source:, row:, recent:, holder:)
+  }
+}
+
+/// The cast of a proc that fires: refused for a caster of a life its spell's caster
+/// condition does not allow, else recorded as a fire and started.
+fn proc_cast(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  source source: unit_properties.Source,
+  row row: spell_plan.ProcRow,
+  recent recent: List(Int),
+  holder holder: Holder,
+) -> #(State, List(Effect)) {
+  let spell = row.spell
+  let refused = case spell.caster_death {
+    spell_plan.CannotBeDead -> caster.dead
+    spell_plan.MustBeDead -> !caster.dead
+    spell_plan.AliveOrDead -> False
+  }
+  use <- bool.guard(
+    when: refused,
+    return: #(cast, [
+      Log(
+        level: LogDebug,
+        text: "the Proc effect "
+          <> int.to_string(row.effect_id.value)
+          <> " of Spell4 "
+          <> int.to_string(holder.spell.spell4_id.value)
+          <> " does not cast Spell4 "
+          <> int.to_string(spell.spell4_id.value)
+          <> ", whose caster condition refuses a caster that is "
+          <> case caster.dead {
+          True -> "dead"
+          False -> "alive"
+        },
+      ),
+    ]),
+  )
+  let cast =
+    State(
+      ..cast,
+      procs: dict.insert(
+        cast.procs,
+        source,
+        HeldProc(row:, fires_ms: [now_ms, ..recent]),
+      ),
+    )
+  start(
+    cast:,
+    caster:,
+    now_ms:,
+    spell:,
+    root: holder.spell.spell4_id,
+    parent: Some(holder.spell.spell4_id),
+    primary_target: caster.unit_id,
+    client_cast_id: None,
+    role: Child,
+    spent: None,
+    reserved: [],
+  )
+}
+
+/// The Proc rows of a go that applied, each held by the cast `cast_id` from this go on;
+/// a row the cast already holds keeps its fires, as a later go of the same cast is the
+/// same node.
+fn procs_held(
+  cast cast: State,
+  cast_id cast_id: Int,
+  applied applied: Applied,
+) -> State {
+  State(
+    ..cast,
+    procs: list.fold(applied.procs, cast.procs, fn(held, row) {
+      let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+      case dict.has_key(held, source) {
+        True -> held
+        False -> dict.insert(held, source, HeldProc(row:, fires_ms: []))
+      }
+    }),
+  )
 }
 
 /// A step's result with the held press started when the step cleared the current
@@ -2336,6 +2468,10 @@ pub fn rolls_needed(
             ),
             fn(row) { condition_rolls_needed(row.condition) },
           ),
+          list.map(
+            spell_plan.procs_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
         ]),
       )
     }
@@ -3218,6 +3354,7 @@ type Aside {
     lingering: Option(Lingering),
     timers: List(#(TimerId, Due)),
     stealth: List(#(unit_properties.Source, spell_plan.Breaks)),
+    procs: List(#(unit_properties.Source, HeldProc)),
   )
 }
 
@@ -3242,6 +3379,9 @@ fn passive_set_aside(cast cast: State) -> #(State, Option(Aside)) {
       let #(stealth, others) =
         dict.to_list(cast.stealth)
         |> list.partition(fn(entry) { { entry.0 }.cast_id == id })
+      let #(procs, other_procs) =
+        dict.to_list(cast.procs)
+        |> list.partition(fn(entry) { { entry.0 }.cast_id == id })
       case live, lingering {
         None, None -> #(cast, None)
         _, _ -> #(
@@ -3251,8 +3391,9 @@ fn passive_set_aside(cast cast: State) -> #(State, Option(Aside)) {
             lingering: dict.delete(cast.lingering, id),
             timers: dict.from_list(rest),
             stealth: dict.from_list(others),
+            procs: dict.from_list(other_procs),
           ),
-          Some(Aside(id:, live:, lingering:, timers:, stealth:)),
+          Some(Aside(id:, live:, lingering:, timers:, stealth:, procs:)),
         )
       }
     }
@@ -3263,7 +3404,7 @@ fn passive_set_aside(cast cast: State) -> #(State, Option(Aside)) {
 fn passive_restored(cast cast: State, aside aside: Option(Aside)) -> State {
   case aside {
     None -> cast
-    Some(Aside(id:, live:, lingering:, timers:, stealth:)) ->
+    Some(Aside(id:, live:, lingering:, timers:, stealth:, procs:)) ->
       State(
         ..cast,
         casts: case live {
@@ -3276,6 +3417,7 @@ fn passive_restored(cast cast: State, aside aside: Option(Aside)) -> State {
         },
         timers: dict.merge(cast.timers, dict.from_list(timers)),
         stealth: dict.merge(cast.stealth, dict.from_list(stealth)),
+        procs: dict.merge(cast.procs, dict.from_list(procs)),
         passive: Some(id),
       )
   }
@@ -3894,6 +4036,7 @@ fn go(
           now_ms:,
         )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
+      let cast = procs_held(cast:, cast_id:, applied:)
       let #(cast, modifying) = modifiers_armed(cast:, cast_id:, aimed:)
       let #(cast, cooldowns) =
         cooldowns_armed(
@@ -4046,6 +4189,7 @@ type Applied {
     cooldowns: List(spell_plan.CooldownModifier),
     stealth: List(spell_plan.StealthRow),
     remove_stealth: List(spell_plan.RemoveStealthRow),
+    procs: List(spell_plan.ProcRow),
   )
 }
 
@@ -4141,6 +4285,17 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
+  let #(procs, proc_logs, rolls) =
+    gated(
+      rows: spell_plan.procs_in_phase(spell:, phase:, spent:),
+      condition: fn(row: spell_plan.ProcRow) { row.condition },
+      what: fn(row: spell_plan.ProcRow) {
+        "the Proc effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
   #(
     Applied(
       lasting:,
@@ -4150,6 +4305,7 @@ fn lasting_applied(
       cooldowns:,
       stealth:,
       remove_stealth:,
+      procs:,
     ),
     list.flatten([
       logs,
@@ -4159,6 +4315,7 @@ fn lasting_applied(
       cooldown_logs,
       stealth_logs,
       remove_stealth_logs,
+      proc_logs,
     ]),
     rolls,
   )
@@ -4182,6 +4339,7 @@ type Aimed {
     modifiers: List(#(spell_plan.PropertyModifier, Int)),
     cooldowns: List(#(spell_plan.CooldownModifier, Int, Bool)),
     stealth: List(#(spell_plan.StealthRow, Int)),
+    procs: List(#(spell_plan.ProcRow, Int)),
     controls: List(#(strike_tell.ControlLanded, Int)),
   )
 }
@@ -4254,9 +4412,20 @@ fn aimed_at(
       )
     })
   let stealth = list.map(applied.stealth, fn(row) { #(row, caster.unit_id) })
+  let procs = list.map(applied.procs, fn(row) { #(row, caster.unit_id) })
   let listed =
     list.flatten([
       list.map(stealth, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.row.delay_ms,
+            instance_id: None,
+          ),
+        )
+      }),
+      list.map(procs, fn(entry) {
         #(
           entry.1,
           Listed(
@@ -4331,7 +4500,16 @@ fn aimed_at(
         Error(Nil) -> list.append(units, [#(entry.0, [entry.1])])
       }
     })
-  Aimed(units:, lasting:, removes:, modifiers:, cooldowns:, stealth:, controls:)
+  Aimed(
+    units:,
+    lasting:,
+    removes:,
+    modifiers:,
+    cooldowns:,
+    stealth:,
+    procs:,
+    controls:,
+  )
 }
 
 /// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
@@ -4711,7 +4889,7 @@ fn effects_ended(
         )
       }
     })
-  #(stealth_dropped(cast:, cast_id:), effects)
+  #(procs_dropped(cast: stealth_dropped(cast:, cast_id:), cast_id:), effects)
 }
 
 /// The stealth sources of the cast `cast_id` dropped, as its node leaves the caster: the
@@ -4722,6 +4900,15 @@ fn stealth_dropped(cast cast: State, cast_id cast_id: Int) -> State {
     stealth: dict.filter(cast.stealth, fn(source, _) {
       source.cast_id != cast_id
     }),
+  )
+}
+
+/// The Proc rows of the cast `cast_id` dropped, as its node leaves the caster: a proc is
+/// held as long as the node that holds it.
+fn procs_dropped(cast cast: State, cast_id cast_id: Int) -> State {
+  State(
+    ..cast,
+    procs: dict.filter(cast.procs, fn(source, _) { source.cast_id != cast_id }),
   )
 }
 
@@ -4829,6 +5016,7 @@ fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
       list.map(aimed.modifiers, fn(entry) { entry.1 }),
       list.map(aimed.cooldowns, fn(entry) { entry.1 }),
       list.map(aimed.stealth, fn(entry) { entry.1 }),
+      list.map(aimed.procs, fn(entry) { entry.1 }),
       list.map(aimed.controls, fn(entry) { entry.1 }),
     ]),
   )
@@ -4864,6 +5052,12 @@ fn node_of(
         }
       }),
       list.filter_map(aimed.stealth, fn(entry) {
+        case entry.1 == unit_id {
+          True -> Ok(entry.0.row)
+          False -> Error(Nil)
+        }
+      }),
+      list.filter_map(aimed.procs, fn(entry) {
         case entry.1 == unit_id {
           True -> Ok(entry.0.row)
           False -> Error(Nil)

@@ -35,6 +35,9 @@ pub type TypeLine {
     /// The rows of the type among the starting abilities' spells; 0 for an engine
     /// the starting abilities do not use.
     starting_abilities: Int,
+    /// How many of those rows no rule reads, which the starting abilities' column counts as
+    /// not handled.
+    starting_unread: Int,
   )
 }
 
@@ -79,11 +82,24 @@ pub fn measure(
     None -> #([], [])
   }
   let unread = engine.unread_rows(tables, _)
+  let unread_starting = engine.unread_starting_rows(tables, _)
   let measured = case engine.source {
     engine.TableColumns(values:, ..) ->
-      from_values_reading(engine:, values: values(tables), starting:, unread:)
+      from_values_reading(
+        engine:,
+        values: values(tables),
+        starting:,
+        unread:,
+        unread_starting:,
+      )
     engine.Cases(ids:, ..) ->
-      from_values_reading(engine:, values: ids, starting:, unread:)
+      from_values_reading(
+        engine:,
+        values: ids,
+        starting:,
+        unread:,
+        unread_starting:,
+      )
     engine.CasesNotRecorded(needed:, ..) -> Unmeasured(engine:, needed:)
   }
   case measured {
@@ -101,7 +117,13 @@ pub fn from_values(
   values values: List(Int),
   starting starting: List(Int),
 ) -> Measurement {
-  from_values_reading(engine:, values:, starting:, unread: fn(_) { 0 })
+  from_values_reading(
+    engine:,
+    values:,
+    starting:,
+    unread: fn(_) { 0 },
+    unread_starting: fn(_) { 0 },
+  )
 }
 
 /// The same, with `unread` giving how many rows of a partial type no rule reads.
@@ -110,11 +132,19 @@ fn from_values_reading(
   values values: List(Int),
   starting starting: List(Int),
   unread unread: fn(Int) -> Int,
+  unread_starting unread_starting: fn(Int) -> Int,
 ) -> Measurement {
   case engine.source {
     engine.CasesNotRecorded(needed:, ..) -> Unmeasured(engine:, needed:)
     engine.TableColumns(..) ->
-      measured(engine:, values:, starting:, zero: type_count.EmptySlot, unread:)
+      measured(
+        engine:,
+        values:,
+        starting:,
+        zero: type_count.EmptySlot,
+        unread:,
+        unread_starting:,
+      )
     engine.Cases(..) ->
       measured(
         engine:,
@@ -122,6 +152,7 @@ fn from_values_reading(
         starting:,
         zero: type_count.ATypeLikeAnyOther,
         unread:,
+        unread_starting:,
       )
   }
 }
@@ -132,6 +163,7 @@ fn measured(
   starting starting: List(Int),
   zero zero: type_count.ZeroMeans,
   unread unread: fn(Int) -> Int,
+  unread_starting unread_starting: fn(Int) -> Int,
 ) -> Measurement {
   let count = type_count.count(values:, zero:)
   let in_starting =
@@ -140,14 +172,20 @@ fn measured(
     |> dict.from_list
   let types =
     list.map(count.types, fn(counted) {
+      let starting_rows =
+        dict.get(in_starting, counted.type_number)
+        |> option.from_result
+        |> option.unwrap(0)
       TypeLine(
         type_number: counted.type_number,
         rows: counted.rows,
         share: counted.share,
         status: status_of(engine:, type_number: counted.type_number, unread:),
-        starting_abilities: dict.get(in_starting, counted.type_number)
-          |> option.from_result
-          |> option.unwrap(0),
+        starting_abilities: starting_rows,
+        starting_unread: case starting_rows {
+          0 -> 0
+          _ -> unread_starting(counted.type_number)
+        },
       )
     })
   let used = fn(declared) {

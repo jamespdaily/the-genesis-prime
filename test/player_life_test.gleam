@@ -235,15 +235,58 @@ pub fn the_first_threat_sets_the_combat_flag_and_the_last_release_clears_it_test
     as "the flag is already on: the second fighter only starts its stream"
   assert player_life.fighters(life:) == [#(7, 3), #(9, 4)]
   let #(life, one_left) = player_life.released(life:, unit_id: 7)
-  assert one_left == [] as "a fighter is left: the flag stays on"
+  assert one_left == []
+    as "a fighter is left: the flag stays on, and no combat is left"
   let #(life, last) = player_life.released(life:, unit_id: 9)
   assert last
     == [
       ToClient(OwnCombatState(in_combat: False)),
       ToViewers(client_connection.CombatState(in_combat: False)),
+      player_life.CombatLeft,
     ]
-    as "the last release clears 0x89a: no client timer does"
+    as "the last release clears 0x89a: no client timer does; the combat left follows the flag's news (Spell4Effects.effectType.14.dataBits00.0_44, kind 44 'leaves combat')"
   assert player_life.fighters(life:) == [] as "no stream after the release"
+}
+
+pub fn a_release_of_a_unit_that_is_no_fighter_is_no_combat_left_test() -> Nil {
+  use <- owned_test.run(5000)
+  let life = player_life.new(health: 736, shield: 450, regeneration:)
+  let #(_, effects) = player_life.released(life:, unit_id: 7)
+  assert effects == []
+    as "the combat flag was off and stays off: nothing is left"
+}
+
+pub fn a_death_with_no_fighter_is_no_combat_left_and_a_death_with_one_is_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let life = player_life.new(health: 1, shield: 0, regeneration:)
+  let #(_, alone) =
+    player_life.struck(
+      life:,
+      defence: defence_of(1),
+      strike: attack(1),
+      rolls:,
+      place: test_place(),
+    )
+  assert !list.contains(alone, player_life.CombatLeft)
+    as "a player whose flag is already off leaves no combat when it dies"
+  let #(fighting, _) =
+    player_life.threatened(life:, unit_id: 7, creature_life: 3, gone: set.new())
+  let #(_, with_fighter) =
+    player_life.struck(
+      life: fighting,
+      defence: defence_of(1),
+      strike: attack(1),
+      rolls:,
+      place: test_place(),
+    )
+  let combat_flag =
+    list.take_while(with_fighter, fn(effect) { effect != player_life.EndCasts })
+  assert list.last(combat_flag) == Ok(player_life.CombatLeft)
+    as "a player with a fighter leaves combat as it dies, right after the flag's news and before its casts end"
+  assert list.count(with_fighter, fn(effect) {
+      effect == player_life.CombatLeft
+    })
+    == 1
 }
 
 pub fn a_threat_from_a_unit_the_map_reported_gone_is_dropped_test() -> Nil {
@@ -367,6 +410,7 @@ pub fn a_player_at_0_dies_ends_its_casts_and_sees_its_ghost_and_the_window_in_th
       ToViewers(client_connection.Died),
       ToClient(OwnCombatState(in_combat: False)),
       ToViewers(client_connection.CombatState(in_combat: False)),
+      player_life.CombatLeft,
       EndCasts,
       ToClient(OwnDeathLogged),
       ToViewers(client_connection.DeathLogged),
