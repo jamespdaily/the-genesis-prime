@@ -75,6 +75,7 @@ import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/erlang/process.{type Subject}
 import gleam/float
 import gleam/list
 import gleam/option.{type Option}
@@ -87,9 +88,18 @@ import mug
 const wait_ms = 5000
 
 /// A connection that has sent 0x58F: the socket and the cipher the session
-/// key made.
+/// key made, and `kept`, a mailbox of the process that made the connection,
+/// where `read` leaves the bytes it read beyond the count it was asked for, so
+/// the next read of any kind starts there however the socket's reads were
+/// split. Only the process that made the connection reads it.
 pub type Game {
-  Game(socket: mug.Socket, cipher: Cipher)
+  Game(socket: mug.Socket, cipher: Cipher, kept: Subject(BitArray))
+}
+
+/// A connection over `socket` whose messages come under `cipher`, with nothing
+/// kept from an earlier read.
+pub fn new(socket socket: mug.Socket, cipher cipher: Cipher) -> Game {
+  Game(socket:, cipher:, kept: process.new_subject())
 }
 
 /// The cipher the client keys from the session key right after sending 0x58F
@@ -184,7 +194,7 @@ fn answer_hello(
   let assert Ok(Nil) =
     mug.send(socket, hello_reply(session_key:, account_name:))
     as "the server closed the connection before 0x58F"
-  Game(socket:, cipher: session_cipher(session_key:))
+  new(socket:, cipher: session_cipher(session_key:))
 }
 
 /// Connects, reads the hello and answers it.
@@ -579,16 +589,25 @@ pub fn moves_body(
 }
 
 /// Reads until `count` messages have arrived from the server, each opened from
-/// its 0x3DC wrapper under the session cipher, in order.
+/// its 0x3DC wrapper under the session cipher, in order. The bytes read beyond
+/// them stay with the connection for the next read, so what a test reads does
+/// not depend on how many messages one socket read held.
 pub fn read(game game: Game, count count: Int) -> List(Frame) {
-  let assert Ok(outers) =
-    frame_reader.read(have: <<>>, count:, next: fn() {
-      mug.receive(game.socket, timeout_milliseconds: wait_ms)
-    })
-    as "the game server did not write the messages"
-  assert list.length(outers) == count
-    as "the game server wrote no more messages than the test reads"
-  list.map(outers, in_the_game_wrapper(_, game.cipher))
+  let #(frames, rest) = read_kept(game:, have: <<>>, count:)
+  case rest {
+    <<>> -> Nil
+    _ -> process.send(game.kept, rest)
+  }
+  frames
+}
+
+/// What `read` left on the connection, in front of `have`, which the caller
+/// holds from its own earlier reads. Nothing is left after this.
+fn with_kept(game game: Game, have have: BitArray) -> BitArray {
+  case process.receive(game.kept, 0) {
+    Ok(kept) -> <<kept:bits, have:bits>>
+    Error(Nil) -> have
+  }
 }
 
 /// Reads the next message the server wrote, still inside its 0x3DC wrapper (or
@@ -608,7 +627,7 @@ fn outers_kept(
   count count: Int,
 ) -> #(List(Frame), BitArray) {
   let assert Ok(kept) =
-    frame_reader.read_kept(have:, count:, next: fn() {
+    frame_reader.read_kept(have: with_kept(game:, have:), count:, next: fn() {
       mug.receive(game.socket, timeout_milliseconds: wait_ms)
     })
     as "the game server did not write the messages"
@@ -637,9 +656,13 @@ pub fn read_kept(
 /// kept, so the next read starts where the stream is. For a client that walks
 /// among other players and does not read what it is sent.
 pub fn drain(game game: Game, have have: BitArray) -> BitArray {
+  drained(game:, have: with_kept(game:, have:))
+}
+
+fn drained(game game: Game, have have: BitArray) -> BitArray {
   case mug.receive(game.socket, timeout_milliseconds: 0) {
     Ok(more) ->
-      drain(game:, have: whole_messages_dropped(<<have:bits, more:bits>>))
+      drained(game:, have: whole_messages_dropped(<<have:bits, more:bits>>))
     Error(mug.Timeout) -> whole_messages_dropped(have)
     Error(error) ->
       panic as {
@@ -660,7 +683,8 @@ pub fn poll(
   have have: BitArray,
   wait_ms wait_ms: Int,
 ) -> Result(#(List(Frame), BitArray), mug.Error) {
-  let assert Ok(#(held, rest)) = frame_reader.decode(received: have)
+  let assert Ok(#(held, rest)) =
+    frame_reader.decode(received: with_kept(game:, have:))
     as "the server wrote bytes that are frames"
   case held {
     [_, ..] -> Ok(#(opened(game:, outers: held), rest))
