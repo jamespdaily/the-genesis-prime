@@ -83,6 +83,7 @@ import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
+import genesis_prime/message/unit_stealth
 import genesis_prime/message/whisper_failed
 import genesis_prime/readiness
 import genesis_prime/server
@@ -102,6 +103,7 @@ import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/otp/system
 import gleam/result
 import log_capture
 import login_client
@@ -3412,9 +3414,20 @@ const dagun_z = -20.0
 
 /// A world with one Dagun at x 1.5, z -20.
 fn world_with_a_dagun() -> login_support.Started {
+  world_with_a_dagun_on(tables: character_tables.shared())
+}
+
+/// The same with the game tables given.
+fn world_with_a_dagun_on(
+  tables tables: table_store.Tables,
+) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
     server.Settings(
       ..settings,
+      game: server.Served(
+        ..settings.game,
+        settings: connection_state.Settings(..settings.game.settings, tables:),
+      ),
       world: server.World(
         ..settings.world,
         spawns: spawn_support.key_in(
@@ -3540,6 +3553,183 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
   assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
   assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
     as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The Medic's ability bag index of Paralytic Surge, the one the planted Stealth
+/// effect is added to (`character_tables.shared_with_stealth`).
+const paralytic_surge_index = 2
+
+/// The stealth changes among the frames, each the unit and its stealthed bit, in
+/// order (opcode.0x8f5).
+fn stealth_changes_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == unit_stealth.message_id {
+      True -> {
+        let assert Ok(change) = unit_stealth.decode(frame.body)
+          as "0x8f5 decodes"
+        Ok(#(change.unit_id, change.stealthed))
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// Pings and reads all the server wrote for the connection after what the test sent
+/// has crossed the map and the creature: the connection takes what was sent (the
+/// first pong), the map and then the Dagun's creature (life 2, the first player's
+/// watch) each take what was sent to them before, and the second pong follows all
+/// that the creature told the connection. The frames of both reads.
+fn read_after_the_map_and_the_creature_took_it(
+  game game: game_client.Game,
+  have have: BitArray,
+  started started: login_support.Started,
+  dagun dagun: Int,
+  pongs pongs: #(Int, Int),
+) -> #(List(Frame), BitArray) {
+  let #(first, have) =
+    game_client.read_until_pong(game:, have:, number: pongs.0)
+  let assert Ok(run) =
+    world_map_registry.find_or_start(
+      started.settings.world.maps,
+      MapId(world_id: 1387, instance: 0),
+      deadline_ms: ask_support.monotonic_ms() + ask_support.event_wait_ms,
+    )
+  let assert Ok(creature) =
+    creature_registry.find(
+      started.settings.world.creatures,
+      map: MapId(world_id: 1387, instance: 0),
+      incarnation: run.incarnation,
+      unit_id: dagun,
+      life: 2,
+    )
+    as "the Dagun runs under its address"
+  let _map_took_it = system.get_state(run.pid)
+  let _creature_took_it = system.get_state(creature)
+  let #(second, have) =
+    game_client.read_until_pong(game:, have:, number: pongs.1)
+  #(list.append(first, second), have)
+}
+
+pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_stealth_again_inside_it_is_targeted_and_chased_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // A Medic of the planted tables whose Paralytic Surge, at bag index 2, holds a
+  // Stealth effect: a first press enters stealth and a second ends it
+  // (`character_tables.shared_with_stealth`). The Stalker's own toggle, Spell4.46073,
+  // has a cooldown of 1000 ms out of combat (Spell4Effects 159128: dataBits03 is the
+  // float 1000.0), so a second press a moment later is refused 15, and a test of the
+  // whole server may not wait for it.
+  let started =
+    world_with_a_dagun_on(tables: character_tables.shared_with_stealth())
+  let #(game, own, dagun, have) =
+    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+  game_client.press_ability(
+    game:,
+    client_cast_id: 1,
+    bag_index: paralytic_surge_index,
+    target: 0,
+  )
+  let #(entered, have) =
+    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+      stealth_changes_in(frames:) != []
+    })
+  assert stealth_changes_in(frames: entered) == [#(own, 1)]
+    as "opcode.0x8f5: the press enters stealth"
+  // Into the ring: 9 units from the Dagun, beyond its reach of 7.
+  walk_to(game:, z: dagun_z +. 9.0, clock: 100)
+  let #(walked, have) =
+    read_after_the_map_and_the_creature_took_it(
+      game:,
+      have:,
+      started:,
+      dagun:,
+      pongs: #(1, 2),
+    )
+  let walked = game_client.fight_in(frames: walked)
+  assert !list.contains(
+      walked,
+      game_client.Targeted(unit_id: dagun, target_unit_id: own, threat: 1),
+    )
+    && !list.contains(
+      walked,
+      game_client.InCombat(unit_id: dagun, in_combat: True),
+    )
+    && !list.contains(
+      walked,
+      game_client.InCombat(unit_id: own, in_combat: True),
+    )
+    && game_client.moves_of(events: walked, unit: dagun) == []
+    as "Jim's decision on issue 483 (option A): the stealthed bot stands in no ring, so the Dagun sends no 0x908 or 0x89a and does not run"
+  // The Medic turns its back on the Dagun first: its Paralytic Surge would strike the
+  // Dagun, whose threat would aggro it whatever the stealth does.
+  face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(1.5, dagun_z +. 9.0), target: #(
+      1.5,
+      dagun_z,
+    ))
+      +. 3.1415927,
+    clock: 200,
+  )
+  game_client.press_ability(
+    game:,
+    client_cast_id: 2,
+    bag_index: paralytic_surge_index,
+    target: 0,
+  )
+  let #(fight, _) =
+    read_fight(game:, have:, found: fn(events) {
+      game_client.moves_of(events:, unit: dagun) != []
+      && list.contains(
+        events,
+        game_client.InCombat(unit_id: own, in_combat: True),
+      )
+    })
+  assert list.contains(
+    fight,
+    game_client.Targeted(unit_id: dagun, target_unit_id: own, threat: 1),
+  )
+    as "leaving stealth inside the ring aggroes as a walk-in does: 0x908 with the aggro threat 1"
+  let assert [#(kinds, ends_at), ..] =
+    game_client.moves_of(events: fight, unit: dagun)
+    as "the Dagun runs"
+  assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
+  assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
+    as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_landed_blow_ends_the_stealth_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // The same Medic as above, with the planted Stealth effect copied from the
+  // Stalker's 83834 (dataBits02 0: damage taken ends it).
+  let started =
+    world_with_a_dagun_on(tables: character_tables.shared_with_stealth())
+  let #(game, own, dagun, have) =
+    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+  walk_to(game:, z: dagun_z +. 9.0, clock: 100)
+  let #(_, have) =
+    read_fight(game:, have:, found: fn(events) {
+      list.contains(events, game_client.InCombat(unit_id: own, in_combat: True))
+    })
+  game_client.press_ability(
+    game:,
+    client_cast_id: 1,
+    bag_index: paralytic_surge_index,
+    target: 0,
+  )
+  let #(frames, _) =
+    game_client.read_until(game:, have:, within_ms: 20_000, found: fn(frames) {
+      list.length(stealth_changes_in(frames:)) >= 2
+    })
+  assert stealth_changes_in(frames:) == [#(own, 1), #(own, 0)]
+    as "opcode.0x8f5: the press enters stealth, and the Dagun, which keeps fighting the bot it already had on its threat list, strikes it: Spell4Effects.effectType.83 (83834, dataBits02 0) ends the stealth on the damage taken"
+  assert list.any(game_client.go_targets_in(frames:), fn(go) {
+    cast.caster_of(cast_id: go.0) == dagun && list.contains(go.1, own)
+  })
+    as "the Dagun's strike names the bot: it keeps fighting a player it already had on its threat list (opcode.0x7f4)"
   game_client.close(game:)
   login_support.stop(started)
 }
