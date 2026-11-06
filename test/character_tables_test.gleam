@@ -12,14 +12,16 @@ import genesis_prime/table/character_customization_label
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   CharacterCreationId, CharacterCustomizationId, CharacterCustomizationLabelId,
-  GameFormulaId, WorldLocation2Id,
+  GameFormulaId, RaceId, WorldLocation2Id,
 }
+import genesis_prime/table/race
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
+import gleam/result
 import owned_test
 import rating_support
 import spawn_support
@@ -151,6 +153,19 @@ pub fn the_planted_level_rows_are_the_clients_game_formula_and_xp_per_level_rows
   assert list.length(xp_per_level.all(planted))
     == list.length(character_tables.min_xp_for_level())
     as "the planted table holds exactly the records the level rule reads"
+}
+
+pub fn the_planted_race_rows_are_the_clients_hit_radius_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let radii = fn(tables) {
+    list.map(character_tables.player_races, fn(id) {
+      race.get(tables:, id: RaceId(id))
+      |> result.map(fn(row) { row.hit_radius })
+    })
+  }
+  assert radii(character_tables.shared()) == radii(client_tables.shared())
+    as "Race: the planted rows of the eight player races hold the real hitRadius (1.2)"
 }
 
 pub fn the_planted_objective_circles_are_the_clients_world_location2_rows_test() -> Nil {

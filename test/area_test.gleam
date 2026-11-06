@@ -1,15 +1,15 @@
 //// Which units an area strikes (`genesis_prime/game/area`), on the numbers of the
 //// client's rows. Expected values come from these places.
 //// - Kick: area row 640 (5 units, 0 to 8 m, 180 degrees) and the cone of telegraph
-////   168 (1 to 7 m over 100 degrees, flag 0x200: it does not grow by a unit's hit
-////   radius) (`Spell4.58591.area`).
+////   168 (1 to 7 m over 100 degrees) (`Spell4.58591.area`).
 //// - Telekinetic Strike: area row 345 (5 units, 30 m, 360 degrees) and the rectangle
 ////   of telegraph 2169 (3 wide, 29 long, 1 m ahead) (`Spell4.32893.area`).
 //// - Zap: area row 411 (5 units, 25 m, 360 degrees) and the twin rectangle 2837,
-////   3.5 wide and 24 long, 1 m ahead, with no flag 0x200: its half width 1.75 grows by
-////   the struck unit's hit radius to 4.75 (`Spell4.41438.area`). That the unit's hit
-////   circle overlapping the shape is what grows it is the server's choice, from the
-////   client's drawn sizing (`0x14054da10`), not a client rule.
+////   3.5 wide and 24 long, 1 m ahead: its half width 1.75 grows by the struck unit's
+////   hit radius to 4.75 (`Spell4.41438.area`). That the unit's hit circle overlapping
+////   the shape is what counts, for every shape whatever its flag 0x200, is Jim's
+////   decision, from the client's drawn sizing (`0x14054da10`), not a client rule
+////   (`unit.hit_radius`).
 //// - Crush: area row 404 selects 1 unit (`Spell4.32812.area`).
 //// - The Virtual Battle Beast's hit radius is 3.0 (`Creature2.73464`).
 //// - Facing: the unit faces (-sin yaw, -cos yaw), so a unit at distance d at the
@@ -21,8 +21,8 @@
 //// - Crush's 42297 has no telegraph row, so its area row alone decides (`Spell4.32812.area`).
 
 import genesis_prime/game/area.{
-  type Candidate, type Inside, type Point, Box, Candidate, Cone, InsideRow,
-  InsideShapes, Placement, Point, Pose, Rectangle, Row,
+  type Candidate, type Inside, type Point, Box, Candidate, Circle, Cone,
+  InsideRow, InsideShapes, Placement, Point, Pose, Rectangle, Row,
 }
 import gleam/float
 import gleam/list
@@ -43,7 +43,6 @@ fn kick_cone() -> Inside {
       ahead: 0.0,
       aside: 0.0,
       turn_degrees: 0.0,
-      grows_by_hit_radius: False,
     ),
   ])
 }
@@ -85,11 +84,14 @@ pub fn kick_strikes_a_unit_inside_its_drawn_cone_and_not_one_outside_it_test() -
     )
   }
   assert by(6.9, 0.0) == [1] as "the cone ends at 7 m (Spell4.58591.area)"
-  assert by(7.1, 0.0) == []
-    as "7.1 m is past the cone, though the Beast's hit radius is 3"
+  assert by(7.1, 0.0) == [1]
+    as "7.1 m is past the cone's 7 m, but the Beast's hit radius of 3 reaches it (a unit's radius counts for every shape)"
+  assert by(10.1, 0.0) == []
+    as "10.1 m is past the cone's 7 m by more than the Beast's hit radius of 3"
   assert by(5.0, 49.0) == [1] as "the cone is 100 degrees, 50 each side"
-  assert by(5.0, 51.0) == []
-  assert by(0.5, 0.0) == [] as "the cone starts at 1 m"
+  assert by(5.0, 51.0) == [] as "the cone's angle does not grow"
+  assert by(0.5, 0.0) == [1]
+    as "the cone starts at 1 m, but the Beast's hit radius of 3 reaches back to it"
 }
 
 pub fn a_spell_with_no_telegraph_is_struck_within_its_area_rows_range_and_arc_test() -> Nil {
@@ -118,7 +120,6 @@ pub fn crushs_twin_cone_strikes_a_beast_2_m_ahead_because_the_hit_circle_reaches
         ahead: 0.0,
         aside: 0.0,
         turn_degrees: 0.0,
-        grows_by_hit_radius: True,
       ),
     ])
   assert struck(
@@ -141,7 +142,6 @@ pub fn a_unit_inside_the_telegraph_but_beyond_the_area_rows_range_is_not_struck_
         ahead: 0.0,
         aside: 0.0,
         turn_degrees: 0.0,
-        grows_by_hit_radius: True,
       ),
     ])
   let by = fn(distance) {
@@ -165,7 +165,6 @@ pub fn paralytic_surge_strikes_a_unit_in_its_box_only_in_its_cone_only_or_in_bot
       ahead: 9.3,
       aside: 0.0,
       turn_degrees: 45.0,
-      grows_by_hit_radius: False,
     )
   let cone =
     Placement(
@@ -173,18 +172,20 @@ pub fn paralytic_surge_strikes_a_unit_in_its_box_only_in_its_cone_only_or_in_bot
       ahead: 0.0,
       aside: 0.0,
       turn_degrees: 0.0,
-      grows_by_hit_radius: False,
     )
   let row =
     Row(min_range: 0.0, max_range: 15.0, degrees: 180.0, target_count: 5)
   // The box is a square turned 45 degrees about its centre, 9.3 m ahead: its corner
   // nearest the caster is 9.3 - 5.66 = 3.64 m ahead and its farthest 14.96 m; the
-  // cone reaches 10.75 m within 31.25 degrees of the facing.
+  // cone reaches 10.75 m within 31.25 degrees of the facing. The units have no body
+  // (hit radius 0), so that only the shapes' own geometry is read; a Beast's hit
+  // radius of 3 would grow both shapes.
+  let point_unit = fn(unit_id, at) { Candidate(unit_id:, at:, hit_radius: 0.0) }
   let candidates = [
-    beast(1, at(distance: 2.0, degrees: 0.0, yaw: 0.0)),
-    beast(2, at(distance: 9.3, degrees: 0.0, yaw: 0.0)),
-    beast(3, at(distance: 14.0, degrees: 0.0, yaw: 0.0)),
-    beast(4, at(distance: 12.0, degrees: 40.0, yaw: 0.0)),
+    point_unit(1, at(distance: 2.0, degrees: 0.0, yaw: 0.0)),
+    point_unit(2, at(distance: 9.3, degrees: 0.0, yaw: 0.0)),
+    point_unit(3, at(distance: 14.0, degrees: 0.0, yaw: 0.0)),
+    point_unit(4, at(distance: 12.0, degrees: 40.0, yaw: 0.0)),
   ]
   assert struck(candidates:, row:, inside: InsideShapes([box])) == [2, 3]
     as "the box alone holds the unit in both and the unit 14 m ahead, past the cone's 10.75 m: Spell4.42352.area, telegraph 2888"
@@ -207,7 +208,6 @@ pub fn a_unit_behind_telekinetic_strike_is_struck_by_the_area_row_and_not_by_its
         ahead: 1.0,
         aside: 0.0,
         turn_degrees: 0.0,
-        grows_by_hit_radius: True,
       ),
     ])
   assert struck(candidates: behind, row:, inside: InsideRow) == [1]
@@ -269,7 +269,7 @@ pub fn turning_half_a_turn_moves_kicks_strike_to_the_beast_behind_test() -> Nil 
   })
 }
 
-pub fn zaps_rectangle_grows_by_the_hit_radius_and_kicks_cone_does_not_test() -> Nil {
+pub fn zaps_rectangle_and_kicks_cone_both_grow_by_the_hit_radius_test() -> Nil {
   use <- owned_test.run(5000)
   let zap_row =
     Row(min_range: 0.0, max_range: 25.0, degrees: 360.0, target_count: 5)
@@ -280,7 +280,6 @@ pub fn zaps_rectangle_grows_by_the_hit_radius_and_kicks_cone_does_not_test() -> 
         ahead: 1.0,
         aside: 0.0,
         turn_degrees: 0.0,
-        grows_by_hit_radius: True,
       ),
     ])
   let to_the_side = fn(side) { [beast(1, Point(x: side, z: -10.0))] }
@@ -292,8 +291,50 @@ pub fn zaps_rectangle_grows_by_the_hit_radius_and_kicks_cone_does_not_test() -> 
       row: kick_row(),
       inside: kick_cone(),
     )
-    == []
-    as "Kick's cone has flag 0x200, so the Beast's hit radius adds nothing"
+    == [1]
+    as "Kick's cone has flag 0x200, which only stops its drawing growing: the Beast's hit radius of 3 still reaches it from 7.1 m"
+}
+
+pub fn a_unit_just_outside_a_shape_by_less_than_its_hit_radius_is_struck_and_by_more_is_not_test() -> Nil {
+  use <- owned_test.run(5000)
+  let row =
+    Row(min_range: 0.0, max_range: 30.0, degrees: 360.0, target_count: 5)
+  let placed = fn(shape, ahead) {
+    InsideShapes([
+      Placement(shape:, ahead:, aside: 0.0, turn_degrees: 0.0),
+    ])
+  }
+  let struck_at = fn(inside, x, z) {
+    struck(candidates: [beast(1, Point(x:, z:))], row:, inside:) == [1]
+  }
+  // The Beast's hit radius is 3.0 (Creature2.73464); a unit is struck when that
+  // radius touches the shape, so each edge reaches 3 m further out. Each pair
+  // stands 0.1 m inside and 0.1 m outside the grown edge. The unit faces -z.
+  let circle = placed(Circle(radius: 5.0), 0.0)
+  assert struck_at(circle, 7.9, 0.0) as "a circle of 5 m reaches 8 m"
+  assert !struck_at(circle, 8.1, 0.0)
+  let rectangle = placed(Rectangle(width: 2.0, length: 10.0), 0.0)
+  assert struck_at(rectangle, 3.9, -5.0)
+    as "a strip 2 m wide reaches 1 + 3 m aside"
+  assert !struck_at(rectangle, 4.1, -5.0)
+  assert struck_at(rectangle, 0.0, -12.9)
+    as "a strip 10 m long reaches 13 m ahead"
+  assert !struck_at(rectangle, 0.0, -13.1)
+  assert struck_at(rectangle, 0.0, 2.9) as "and 3 m behind its start"
+  assert !struck_at(rectangle, 0.0, 3.1)
+  let box = placed(Box(width: 4.0, length: 6.0), 10.0)
+  assert struck_at(box, 4.9, -10.0) as "a box 4 m wide reaches 2 + 3 m aside"
+  assert !struck_at(box, 5.1, -10.0)
+  assert struck_at(box, 0.0, -15.9)
+    as "a box 6 m long centred 10 m ahead reaches 3 + 3 m either side of its centre"
+  assert !struck_at(box, 0.0, -16.1)
+  assert struck_at(box, 0.0, -4.1)
+  assert !struck_at(box, 0.0, -3.9)
+  let cone = placed(Cone(inner: 4.0, outer: 10.0, degrees: 90.0), 0.0)
+  assert struck_at(cone, 0.0, -12.9) as "a cone to 10 m reaches 13 m"
+  assert !struck_at(cone, 0.0, -13.1)
+  assert struck_at(cone, 0.0, -1.1) as "a cone from 4 m reaches back to 1 m"
+  assert !struck_at(cone, 0.0, -0.9)
 }
 
 pub fn a_unit_straight_ahead_of_any_facing_is_at_bearing_zero_test() -> Nil {

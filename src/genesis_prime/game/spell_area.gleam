@@ -21,7 +21,9 @@
 ////   still selects and strikes (Gate's 30436, Stagger's 38780).
 //// - **Who is inside** is the telegraph's shape capped by the area row: the never-drawn
 ////   twin rows (flag 0x40) are the hit shapes, or the drawn rows where a spell has no
-////   twin, and a unit must also be within the area row's range. A spell with no
+////   twin, less the drawn rows with bit 0x20 (the picture of a child spell's beam,
+////   `TelegraphDamage.telegraphDamageFlags.0x20.rows`) unless every drawn row has it,
+////   and a unit must also be within the area row's range. A spell with no
 ////   telegraph row (42297) is read by its area row's range and arc alone. Kick is a
 ////   cone from 1 to 7 m over 100 degrees (`Spell4.58591.area`).
 //// - **The points a cast spent.** A damage effect keeps its row's tag
@@ -120,7 +122,8 @@ pub type SpellArea {
     /// The area row, `None` for a spell with no `Spell4AoeTargetConstraints` row.
     row: Option(Row),
     /// The hit shapes placed on the caster: the never-drawn twins, else the drawn
-    /// rows. Empty for a spell with no telegraph row.
+    /// rows without bit 0x20 (all of them when each has it). Empty for a spell with no
+    /// telegraph row.
     shapes: List(Placement),
     /// Every damage effect of the spell, each with its tag.
     damage: List(DamageEffect),
@@ -401,8 +404,11 @@ fn area_row_of(
 }
 
 /// The telegraph rows of the spell that say who is hit: the never-drawn twins (flag
-/// 0x40), or the rows drawn when it has none. The phases a row fires in are not
-/// read, so a spell's shapes hold for each of its gos.
+/// 0x40), or the rows drawn when it has none, less the drawn rows with bit 0x20, which
+/// are pictures of another spell's hit shape (a spell's own copy of its child's beam),
+/// unless every drawn row has it: then they are all kept
+/// (`TelegraphDamage.telegraphDamageFlags.0x20.rows`). The phases a row fires in are
+/// not read, so a spell's shapes hold for each of its gos.
 fn hit_shapes_of(
   tables tables: table_store.Tables,
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
@@ -427,10 +433,20 @@ fn hit_shapes_of(
       spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
     })
   let chosen = case twins {
-    [] ->
-      list.filter(rows, fn(row) {
-        !spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x100)
-      })
+    [] -> {
+      let drawn =
+        list.filter(rows, fn(row) {
+          !spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x100)
+        })
+      case
+        list.filter(drawn, fn(row) {
+          !spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x20)
+        })
+      {
+        [] -> drawn
+        own -> own
+      }
+    }
     twins -> twins
   }
   list.try_map(chosen, fn(row) { placement_of(id:, row:) })
@@ -472,10 +488,6 @@ fn placement_of(
     ahead: row.z_position_offset,
     aside: row.x_position_offset,
     turn_degrees: row.rotation_degrees,
-    grows_by_hit_radius: !spell_plan.has_flag(
-      flags: row.telegraph_damage_flags,
-      bit: 0x200,
-    ),
   ))
 }
 

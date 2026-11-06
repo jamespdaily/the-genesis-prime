@@ -13,8 +13,9 @@
 ////   and Item2, Item2Category, Item2Family, Item2Type, ItemSlot, Spell4,
 ////   SpellLevel and CreatureLevel (the Novice loadout,
 ////   `genesis_prime/game/loadout`), with ItemDisplay and ItemDisplaySourceEntry
-////   (what a worn item is drawn with, `genesis_prime/game/worn_visual`) are the
-////   ones a rule reads today.
+////   (what a worn item is drawn with, `genesis_prime/game/worn_visual`), and Race
+////   (a player's hit radius, `genesis_prime/game/hit_radius`) are the ones a rule
+////   reads today.
 //// - The load: one file for each table of the list and no other is read, the
 ////   rows the rules follow are required, and a missing row fails the load. The
 ////   load runs in a fresh node, since it is under the server's own key, which
@@ -33,7 +34,7 @@ import gleam/string
 import owned_test
 import planted_table
 
-pub fn the_servers_tables_are_the_forty_six_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_forty_seven_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -68,6 +69,7 @@ pub fn the_servers_tables_are_the_forty_six_its_rules_read_test() -> Nil {
       "ItemSlot",
       "PathMission",
       "Prerequisite",
+      "Race",
       "Spell4",
       "Spell4AoeTargetConstraints",
       "Spell4Base",

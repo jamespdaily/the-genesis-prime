@@ -28,7 +28,10 @@
 ////   shape, which the server chooses to read as the outer radius and the half
 ////   extents grown by the unit's hit radius, and a cone's inner radius shrunk by it
 ////   but not below 0, as the client sizes a drawn shape by the viewer's own radius
-////   (`0x14054d170` case 4, `0x14054da10`). A row with flag 0x200 does not grow. The
+////   (`0x14054d170` case 4, `0x14054da10`). Every shape grows, whatever flag 0x200
+////   says: that flag only stops the drawn shape growing by the viewer's radius, and
+////   the client tests no unit against a shape (`unit.hit_radius`); that a struck
+////   unit's body counts is the server's choice. A cone's angle is not grown. The
 ////   direction of a row's turn is not read; every shape built so far has none.
 //// - **Distance and order** are horizontal, from centre to centre; the vertical
 ////   range is -1 for every row and the shapes lie on the ground
@@ -72,7 +75,7 @@ pub type Shape {
 }
 
 /// A shape placed on the caster: where it lies against the caster's place and
-/// facing, and whether the struck unit's hit radius grows it.
+/// facing. The struck unit's hit radius grows it.
 pub type Placement {
   Placement(
     shape: Shape,
@@ -83,8 +86,6 @@ pub type Placement {
     aside: Float,
     /// The turn of the shape off the caster's facing, in degrees.
     turn_degrees: Float,
-    /// False for a row with flag 0x200, whose size does not grow.
-    grows_by_hit_radius: Bool,
   )
 }
 
@@ -180,10 +181,7 @@ fn in_shape(
   centre centre: Pose,
   placement placement: Placement,
 ) -> Bool {
-  let grown = case placement.grows_by_hit_radius {
-    True -> candidate.hit_radius
-    False -> 0.0
-  }
+  let grown = candidate.hit_radius
   let facing_x = float.negate(maths.sin(centre.yaw))
   let facing_z = float.negate(maths.cos(centre.yaw))
   let origin =
