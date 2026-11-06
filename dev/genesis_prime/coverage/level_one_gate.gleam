@@ -14,12 +14,14 @@
 ////   condition's value on the unit (`Prerequisite.prerequisiteTypeId.15`,
 ////   `Prerequisite.prerequisiteTypeId.50`). When that Spell4 is the spell of an AMP
 ////   (`EldanAugmentation.spell4IdAugment`) and AMPs are offered at a level above 1
-////   (`LevelUpUnlock` row 26, `LevelUpUnlock.level`), a level-1 character holds no
-////   such cast: the gate is closed. Comparison 2 asks that no such cast exist, which
+////   (`LevelUpUnlock.26`, the AMP System unlock), a level-1 character holds no such
+////   cast: the gate is closed. Comparison 2 asks that no such cast exist, which
 ////   holds.
 //// - **Type 1** compares the unit's level for formulas with the condition's value
-////   (`0x1404a2100` case 1 reads the two words `0x1403b5030` reads) by the
-////   comparison's relation (`0x1404a2090`); a condition level 1 fails is closed.
+////   by the comparison's relation (`Prerequisite.prerequisiteTypeId.1`,
+////   `0x1404a2090`); a condition level 1 fails is closed.
+//// - **An OR row with no kept condition** fails (`0x1404a1ca0`): closed. An AND row
+////   with none passes.
 //// - **Any other condition** is open: the measure has no evidence that it cannot
 ////   pass at level 1.
 
@@ -54,6 +56,8 @@ pub type Closed {
   NeedsAmp(spell4_id: Int, eldan_augmentation_id: Int, level: Int)
   /// A condition of type 1 whose comparison a level-1 character fails.
   FailsAtLevelOne(comparison: Int, value: Int)
+  /// An OR row that holds no condition, which fails.
+  EmptyOrRow
 }
 
 /// The gates' evidence: each AMP's spell with its EldanAugmentation id, and the
@@ -113,7 +117,11 @@ pub fn row_closed(
     })
   case prerequisite.is_any(row:) {
     False -> list.find_map(verdicts, fn(verdict) { verdict })
-    True -> result.try(result.all(verdicts), list.first)
+    True ->
+      case verdicts {
+        [] -> Ok(EmptyOrRow)
+        [_, ..] -> result.try(result.all(verdicts), list.first)
+      }
   }
 }
 
@@ -165,6 +173,7 @@ pub fn describe(gate gate: Int, closed closed: Closed) -> String {
       <> " (LevelUpUnlock "
       <> int.to_string(amp_unlock_id)
       <> "), which a level-1 character does not hold"
+    EmptyOrRow -> prefix <> " is an OR row with no condition, which fails"
     FailsAtLevelOne(comparison:, value:) ->
       prefix
       <> " holds a level condition "

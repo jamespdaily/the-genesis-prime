@@ -792,6 +792,10 @@ pub fn an_or_gate_is_closed_only_when_every_condition_is_and_an_and_gate_when_on
     ])
     == Ok(needs_amp())
     as "an AND row passes only when every condition does"
+  assert closed_by(flags: 1, conditions: []) == Ok(level_one_gate.EmptyOrRow)
+    as "an OR row with no kept condition fails (0x1404a1ca0), so a Proxy behind it never starts"
+  assert closed_by(flags: 0, conditions: []) == Error(Nil)
+    as "an AND row with no kept condition passes"
 }
 
 pub fn an_amp_spell_condition_can_open_when_the_amp_unlock_is_offered_at_level_1_test() -> Nil {
@@ -1100,13 +1104,14 @@ fn rows_naming_41834(column column: String) -> spell_tables.Rows {
 
 pub fn a_prerequisite_only_the_runner_columns_name_is_not_counted_and_is_listed_test() -> Nil {
   use <- owned_test.run(10_000)
-  let assert #(types, Ok(left)) =
+  let assert #(types, Ok(left), report) =
     with_trees_loaded(
       rows: rows_naming_41834(column: "prerequisiteIdRunner01"),
       body: fn(tables) {
         #(
           starting_ability.prerequisite_types(tables),
           starting_ability.left_out(tables:),
+          coverage.left_out_report(tables:),
         )
       },
     )
@@ -1123,17 +1128,14 @@ pub fn a_prerequisite_only_the_runner_columns_name_is_not_counted_and_is_listed_
       ),
     ]
     as "the runner column alone names 41834: it is listed with the column and its two conditions"
-  let line =
-    starting_ability.describe_left_out(left_out: {
-      let assert [part] = left as "one part is left out"
-      part
-    })
-  assert string.contains(line, "Prerequisite 41834 (2 conditions)")
-    as "the line names the prerequisite and its conditions"
-  assert string.contains(line, "Spell4 69450 column prerequisiteIdRunner01")
-    as "the line names the column"
-  assert string.contains(line, "prompt on the ability button")
-    as "the line says why a runner column is not counted"
+  let assert [part] = left as "one part is left out"
+  let sentence =
+    "Prerequisite 41834 (2 conditions) is named only by Spell4 69450 column prerequisiteIdRunner01: the client reads a runner column only to show a prompt on the ability button (Spell4.prerequisiteIdRunner00)"
+  assert starting_ability.describe_left_out(left_out: part) == sentence
+    as "the sentence names the prerequisite, its conditions, the column and why a runner column is not counted"
+  assert report
+    == "Starting abilities, left out of the counts above:\n- " <> sentence
+    as "the measure prints the heading and one line for each part left out"
 }
 
 pub fn a_runner_column_naming_a_row_the_table_lacks_is_not_a_missing_row_test() -> Nil {
@@ -1325,6 +1327,46 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     })
   })
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
+}
+
+pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_22_of_26_conditions_handled_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.every_table()
+  let totals =
+    checklist.totals(
+      list.map(
+        [engine_named("Spell effects"), engine_named("Prerequisites")],
+        fn(declared) { measurement.measure(declared, tables) },
+      ),
+    )
+  assert string.contains(
+    totals,
+    "| Spell effects (#49) | 133 | 131200 | 18 | 9 | 113 of 114 |",
+  )
+    as "114 effect rows are left, 1 of them not handled (Deja Vu's type 90); the whole-game columns are the walk's of 2026-11-05"
+  assert string.contains(
+    totals,
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 9 | 22 of 26 |",
+  )
+    as "26 conditions are left, 4 of them not handled (type 108 twice, type 116 twice)"
+}
+
+pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(facts) =
+    simplifile.read(
+      ".claude/skills/decoding-the-client/references/client-facts.toml",
+    )
+    as "the fact file is in the repository"
+  assert has_record(facts:, key: "Spell4.prerequisiteIdRunner00")
+    as "the runner columns' prompt, which the measure leaves out"
+  assert has_record(facts:, key: "LevelUpUnlock.26")
+    as "the AMP System unlock whose level the gates read"
+  assert has_record(facts:, key: "Prerequisite.prerequisiteTypeId.1")
+    as "the level condition a level-1 character can fail"
+  assert has_record(facts:, key: "EldanAugmentation.spell4IdAugment")
+    as "the spell an AMP adds"
 }
 
 // ---- the spend-scaled costs ----

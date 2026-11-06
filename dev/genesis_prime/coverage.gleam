@@ -91,7 +91,7 @@ pub fn main() -> Nil {
 
 /// A line for each part of the starting abilities' trees the counts leave out, with
 /// why, so a reader can audit the starting abilities' column.
-fn left_out_report(tables tables: store.Tables) -> String {
+pub fn left_out_report(tables tables: store.Tables) -> String {
   case starting_ability.left_out(tables:) {
     Error(missing) ->
       "Starting abilities, left out of the counts above: not listed, "

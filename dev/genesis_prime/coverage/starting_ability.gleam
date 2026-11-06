@@ -15,8 +15,8 @@
 ////
 //// - **Runner columns:** `prerequisiteIdRunner00` and `prerequisiteIdRunner01` of
 ////   Spell4 are read by the client only to show a prompt on the ability button
-////   (`Spell4.prerequisiteIdRunner00`), so a Prerequisite only they name is not
-////   counted.
+////   (`Spell4.prerequisiteIdRunner00`, `0x1405c8600`), so a Prerequisite only they
+////   name is not counted.
 //// - **A gate a level-1 character cannot open** leaves out the Proxy's child and
 ////   every spell below it, whatever that child's own rows hold.
 //// - A prerequisite reached by several columns counts once; a type counts once for
@@ -414,15 +414,9 @@ fn reached_spells(
   tables tables: store.Tables,
   gates gates: level_one_gate.Gates,
 ) -> List(Spell) {
-  walk(tables:, started: fn(proxy) {
+  let started = fn(proxy) {
     result.is_error(level_one_gate.closed_by(gates:, tables:, proxy:))
-  })
-}
-
-fn walk(
-  tables tables: store.Tables,
-  started started: fn(spell_plan.Proxy) -> Bool,
-) -> List(Spell) {
+  }
   dict.values(spell_plan.plans(tables:))
   |> list.flat_map(fn(ability) { spell_plan.tree(spell: ability, started:) })
   |> list.fold(dict.new(), fn(found, spell) {
