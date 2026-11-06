@@ -20,7 +20,10 @@
 ////   mitigation 1234, never below 0 (`0x140464240`).
 //// - **A player's bases** are the UnitProperty2 default of BaseCritChance (102),
 ////   CriticalHitSeverityMultiplier (127) and BaseAvoidReduceChance (104); a
-////   Novice's ratings for each are 0 (`player.level1_gear_properties`).
+////   Novice's ratings for each are 0 (`player.level1_gear_properties`). The
+////   regeneration properties a player has no item for are read here too, as the
+////   same kind of default: HealthRegenMultiplier (8) and ShieldTickTime (177)
+////   (`UnitProperty2.176`).
 
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId, UnitProperty2Id}
@@ -55,6 +58,10 @@ pub type Formulas {
     player_base_crit_severity: Float,
     /// UnitProperty2 104's default, a player's BaseAvoidReduceChance.
     player_base_strikethrough: Float,
+    /// UnitProperty2 8's default, a player's HealthRegenMultiplier.
+    player_health_regen_multiplier: Float,
+    /// UnitProperty2 177's default, a player's ShieldTickTime in milliseconds.
+    player_shield_tick_ms: Int,
   )
 }
 
@@ -110,7 +117,7 @@ pub fn mitigation_fraction(
 
 /// The formulas as a value the tables' load builds once, under the tables' key
 /// (genesis_prime/table/loader/store `derived`): the GameFormula rows and the
-/// three UnitProperty2 defaults. A missing row fails the load.
+/// five UnitProperty2 defaults. A missing row fails the load.
 pub fn derivation() -> table_store.Derivation {
   table_store.derivation(key: formulas_key, build: fn(tables) {
     build(tables:) |> result.map_error(fn(error) { describe(error:) })
@@ -155,7 +162,9 @@ pub fn build(
   use player_base_crit_chance <- result.try(default(102))
   use player_base_crit_severity <- result.try(default(127))
   use player_base_strikethrough <- result.try(default(104))
-  Ok(Formulas(
+  use player_health_regen_multiplier <- result.try(default(8))
+  use player_shield_tick_ms <- result.map(default(177))
+  Formulas(
     crit_chance:,
     crit_severity:,
     deflect_chance:,
@@ -167,7 +176,9 @@ pub fn build(
     player_base_crit_chance:,
     player_base_crit_severity:,
     player_base_strikethrough:,
-  ))
+    player_health_regen_multiplier:,
+    player_shield_tick_ms: float.round(player_shield_tick_ms),
+  )
 }
 
 /// The formulas the tables' load built.

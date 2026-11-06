@@ -14,11 +14,12 @@ import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Camped, Session} as connection_state
 import genesis_prime/game/movement
+import genesis_prime/game/player_life
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
 import genesis_prime/step.{
-  type ConnectionEffect, type Effect, type Now, CancelTimer, LogWarning,
-  OwnEffect, StartTimer, Watch,
+  type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
+  LogWarning, OwnEffect, StartTimer, Watch,
 }
 import genesis_prime/store
 import genesis_prime/world_map/map_id.{type MapId}
@@ -38,6 +39,8 @@ pub type Decided {
   WatchesMap(map: MapId, incarnation: Int)
   /// Start the timer that saves the player's place (`save_timer`).
   StartsSaveTimer
+  /// Start a timer of the player's life (genesis_prime/game/player_life).
+  StartsTimer(timer: TimerId, after_ms: Int)
   /// What the chat decided: writes, tells, watches and group joins.
   Chats(effects: List(chat.Effect))
   /// The player leaves the world for character select: the save timer is
@@ -69,6 +72,7 @@ pub fn from_entry(effect: world_entry.Effect) -> Decided {
       Asks(request: AskStore(store.World(request)))
     world_entry.AskMap(map:, message:) -> Asks(request: AskMap(map:, message:))
     world_entry.WatchMap(map:, incarnation:) -> WatchesMap(map:, incarnation:)
+    world_entry.StartTimer(timer:, after_ms:) -> StartsTimer(timer:, after_ms:)
   }
 }
 
@@ -111,6 +115,11 @@ pub fn carry_out(
         written: list.append(list.reverse(converted), written),
       )
     }
+    [StartsTimer(timer:, after_ms:), ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        OwnEffect(StartTimer(timer:, after_ms:)),
+        ..written
+      ])
     [StartsSaveTimer, ..rest] ->
       carry_out(session:, now:, effects: rest, written: [
         start_save_timer(),
@@ -149,7 +158,7 @@ pub fn carry_out(
 
 /// What the player leaves behind as it leaves its stay in the world, by its camp
 /// or the Holocrypt: its chat groups, its casts and its strikes are left, its
-/// class resource's timers and the save timer cancelled; the session keeps the chat's next whisper number, which
+/// class resource's and its life's regeneration timers and the save timer cancelled; the session keeps the chat's next whisper number, which
 /// counts for the connection's life.
 pub fn world_left(
   session session: Session,
@@ -171,6 +180,9 @@ pub fn world_left(
         effects: strike.left(strike: entered.strike).1,
       ).1,
       connection_resource.left(session:, entered:),
+      list.map(player_life.left(life: entered.life), fn(timer) {
+        OwnEffect(CancelTimer(timer:))
+      }),
       [OwnEffect(CancelTimer(timer: connection_state.save_timer))],
     ]),
   )

@@ -33,14 +33,17 @@ import place_support
 /// Warfare Woods, WorldZone 5967 (Quest2.10518).
 pub const warfare_woods = 5967
 
-/// The game numbers migration 0010 seeds: an aggro range of 10, a leash range of
-/// 55, an aggro threat of 1 and a chase stop fraction of 0.5.
+/// The game numbers migrations 0010 and 0015 seed: an aggro range of 10, a leash
+/// range of 55, an aggro threat of 1, a chase stop fraction of 0.5, a health regen
+/// fraction of 0.025 and a health regen tick of 500 ms.
 pub const numbers: GameNumbers =
   GameNumbers(
     aggro_range: 10.0,
     leash_range: 55.0,
     aggro_threat: 1.0,
     chase_stop_fraction: 0.5,
+    health_regen_fraction: 0.025,
+    health_regen_tick_ms: 500,
     interrupt_armor_refill_ms: 10_000,
   )
 

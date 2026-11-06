@@ -11,6 +11,10 @@
 ////   (`TellTargetMoved`) and answers a strike (`TellStrikeAnswered`). A viewer writes
 ////   a creature's 0x908, 0x90a, 0x89a and 0x638 path, and a player's 0x938 shield,
 ////   for a unit it shows; its picture keeps a running creature's path.
+//// - **Regeneration** is player_life's too: its health and shield timers (ids 8 and
+////   9) are the connection's own timers, started and cancelled by the rule's
+////   effects, handed back to the rule as `regeneration_due`, and cancelled at the
+////   leave of the stay (`effects.world_left`).
 //// - **Death and coming back** are player_life's (its module holds the sequence
 ////   and the failure table): a strike that leaves the player at 0 kills it; the
 ////   connection writes the death's frames, ends the player's casts
@@ -55,7 +59,8 @@ import genesis_prime/game/strike_tell
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/step.{
-  type ConnectionEffect, type Effect, type Now, LogWarning, OwnEffect,
+  type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
+  LogWarning, OwnEffect, StartTimer,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -150,9 +155,34 @@ pub fn life_effects(
           seq: session.move_seq,
         ),
       ]
+      player_life.StartTimer(timer:, after_ms:) -> [
+        OwnEffect(StartTimer(timer:, after_ms:)),
+      ]
+      player_life.CancelTimer(timer:) -> [OwnEffect(CancelTimer(timer:))]
       player_life.EndCasts | player_life.GoToHolocrypt -> []
     }
   })
+}
+
+/// A regeneration timer of the player's life fired (genesis_prime/game/player_life):
+/// the tick's news to the player and its viewers, and the next tick's timer. With no
+/// player the client holds in the world (a save or a leave is on) it is dropped.
+pub fn regeneration_due(
+  session session: Session,
+  now now: Now,
+  timer timer: TimerId,
+) -> client_connection.Handled(Session) {
+  case connection_state.held_in_the_world(session.status) {
+    Some(#(_, entered)) -> {
+      let #(life, effects) = player_life.timer_fired(life: entered.life, timer:)
+      let session =
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(..entered, life:)
+        })
+      Continue(session, life_effects(session:, now:, entered:, effects:))
+    }
+    None -> Continue(session, [])
+  }
 }
 
 /// The player's 0x15a, taken from inside 0x038C in the world
@@ -240,7 +270,9 @@ fn life_carried(
             player_life.ToClient(..)
             | player_life.ToViewers(..)
             | player_life.Answer(..)
-            | player_life.StreamTo(..) -> #(
+            | player_life.StreamTo(..)
+            | player_life.StartTimer(..)
+            | player_life.CancelTimer(..) -> #(
               session,
               list.append(
                 written,

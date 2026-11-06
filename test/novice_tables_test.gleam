@@ -204,7 +204,7 @@ pub fn the_planted_formulas_levels_and_spells_are_the_clients_test() -> Nil {
     assert get(planted) == get(real)
       as "GameFormula: the planted rating row has the real row's columns the hit rule reads"
   })
-  list.each([102, 104, 127], fn(id) {
+  list.each([8, 102, 104, 127, 177], fn(id) {
     let get = fn(tables) {
       let assert Ok(row) = unit_property2.get(tables:, id: UnitProperty2Id(id))
         as "the property exists"

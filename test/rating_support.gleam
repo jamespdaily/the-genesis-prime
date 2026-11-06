@@ -23,6 +23,8 @@ pub fn formulas() -> Formulas {
     player_base_crit_chance: 0.0,
     player_base_crit_severity: 1.5,
     player_base_strikethrough: 0.0,
+    player_health_regen_multiplier: 1.0,
+    player_shield_tick_ms: 500,
   )
 }
 
