@@ -181,6 +181,23 @@ pub fn the_display_and_the_outfit_of_a_summon_are_the_first_entries_of_the_creat
     as "the first entry of the outfit group, by id"
 }
 
+pub fn a_summon_whose_first_outfit_has_no_creature2_outfit_info_row_is_refused_not_crashed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x140485790: the client's checks of a spawn need a Creature2OutfitInfo row
+  // for the row's outfit. The outfit group's entry names outfit 71, which has
+  // no row.
+  let files =
+    character_tables.files_with_beast_changed(changes: [
+      #("creature2OutfitGroupId", Integer(7)),
+    ])
+    |> planted_table.replacing(
+      schema: creature2_outfit_group_entry.schema,
+      rows: [outfit_entry(id: 1, outfit: 71)],
+    )
+  assert summoned_over(files:, creature_id: beast)
+    == Error(spawn.FailsTheChecks(spawn.NoOutfitRow(outfit_info_id: 71)))
+}
+
 fn display_row(id id: Int) -> List(planted_table.Cell) {
   planted_table.row(creature2_display_info.schema, [
     #("ID", Integer(id)),
