@@ -81,14 +81,14 @@ fn handled_over(
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_26_73_80_83_and_84_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_18_26_73_80_81_83_84_and_145_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Spell effects"),
       types: numbers(from: 1, to: 200),
     )
-    == [1, 3, 4, 8, 11, 14, 17, 26, 73, 80, 83, 84]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster; every other type is unread"
+    == [1, 3, 4, 8, 11, 14, 17, 18, 26, 73, 80, 81, 83, 84, 145]
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster; every other type is unread"
 }
 
 pub fn the_prerequisite_types_the_measure_handles_are_the_sixteen_read_and_those_with_no_case_test() -> Nil {
@@ -284,7 +284,16 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
     as "no row uses 99, so listing it as partial is a declaration no data supports"
 }
 
-pub fn the_effect_types_3_11_14_73_83_and_84_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+const lasting_gap =
+  "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies"
+
+const signal_gap =
+  "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies; the script a signal stands for is not in the client"
+
+const conversion_gap =
+  "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
+
+pub fn the_effect_types_3_11_14_17_18_73_80_81_83_84_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(facts) =
     simplifile.read(
@@ -310,9 +319,29 @@ pub fn the_effect_types_3_11_14_73_83_and_84_are_partial_with_a_reason_and_a_fac
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
+        type_number: 17,
+        reason: lasting_gap,
+        fact_key: "Spell4Effects.effectType.17",
+      ),
+      Missing(
+        type_number: 18,
+        reason: lasting_gap,
+        fact_key: "Spell4Effects.effectType.18",
+      ),
+      Missing(
         type_number: 73,
         reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
         fact_key: "Spell4Effects.effectType.73",
+      ),
+      Missing(
+        type_number: 80,
+        reason: lasting_gap,
+        fact_key: "Spell4Effects.effectType.80",
+      ),
+      Missing(
+        type_number: 81,
+        reason: signal_gap,
+        fact_key: "Spell4Effects.effectType.81",
       ),
       Missing(
         type_number: 83,
@@ -324,20 +353,35 @@ pub fn the_effect_types_3_11_14_73_83_and_84_are_partial_with_a_reason_and_a_fac
         reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
       ),
+      Missing(
+        type_number: 145,
+        reason: conversion_gap,
+        fact_key: "Spell4Effects.effectType.145",
+      ),
     ]
   assert has_record(facts:, key: "Spell4Effects.effectType.3")
   assert has_record(facts:, key: "Spell4Effects.effectType.11")
   assert has_record(facts:, key: "Spell4Effects.effectType.14")
+  assert has_record(facts:, key: "Spell4Effects.effectType.17")
+  assert has_record(facts:, key: "Spell4Effects.effectType.18")
   assert has_record(facts:, key: "Spell4Effects.effectType.73")
+  assert has_record(facts:, key: "Spell4Effects.effectType.80")
+  assert has_record(facts:, key: "Spell4Effects.effectType.81")
   assert has_record(facts:, key: "Spell4Effects.effectType.83")
   assert has_record(facts:, key: "Spell4Effects.effectType.84")
+  assert has_record(facts:, key: "Spell4Effects.effectType.145")
   assert engine.handles(engine: declared, type_number: 3)
     && engine.handles(engine: declared, type_number: 11)
     && engine.handles(engine: declared, type_number: 14)
     && engine.handles(engine: declared, type_number: 73)
     && engine.handles(engine: declared, type_number: 83)
     && engine.handles(engine: declared, type_number: 84)
-    as "types 3, 11, 14, 73, 83 and 84 are handled, with the gap"
+    && engine.handles(engine: declared, type_number: 17)
+    && engine.handles(engine: declared, type_number: 18)
+    && engine.handles(engine: declared, type_number: 80)
+    && engine.handles(engine: declared, type_number: 81)
+    && engine.handles(engine: declared, type_number: 145)
+    as "types 3, 11, 14, 17, 18, 73, 80, 81, 83, 84 and 145 are handled, with the gap"
 }
 
 pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
@@ -1879,4 +1923,121 @@ pub fn the_clients_3498_proc_rows_count_43_read_and_the_stalkers_5_of_its_7_reac
     as "the report names the row, its holder, its kind and the spell it casts"
   assert string.contains(report, "Proc effect 178239 of Spell4 38784")
     && string.contains(report, "kind 16")
+}
+
+// ---- the lasting effects (types 17, 18, 80 and 81) and the conversions (145) ----
+
+/// The measure of the effect types over these planted rows of one type, each as
+/// (targetFlags, prerequisiteIdTargetApply).
+fn measured_rows_of(
+  effect_type effect_type: Int,
+  rows rows: List(#(Int, Int)),
+) -> measurement.Measurement {
+  let row = fn(id, planted: #(Int, Int)) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", planted_table.Integer(id)),
+      #("effectType", planted_table.Integer(effect_type)),
+      #("targetFlags", planted_table.Integer(planted.0)),
+      #("prerequisiteIdTargetApply", planted_table.Integer(planted.1)),
+    ])
+  }
+  use folder <- planted_table.in_folder([
+    planted_table.file(
+      spell4_effects.schema,
+      list.index_map(rows, fn(planted, index) { row(index + 1, planted) }),
+    ),
+  ])
+  let assert Ok(tables) =
+    store.load(
+      under: owned_key.new(),
+      from: folder,
+      entries: [spell4_effects.entry()],
+      requirements: [],
+      derivations: [],
+    )
+    as "a planted Spell4Effects table loads"
+  let measured =
+    measurement.measure(
+      EngineDeclaration(
+        ..engine_named("Spell effects"),
+        starting_abilities: None,
+      ),
+      tables,
+    )
+  store.unload(tables)
+  measured
+}
+
+pub fn a_lasting_row_aimed_by_other_flags_or_behind_a_target_prerequisite_is_counted_as_not_read_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Planted per type: flags 1 (read), 6 (read), 3 (the plan refuses the aim), 7 (the same),
+  // 1 behind target apply prerequisite 11311 (not applied) and 3 behind one (both).
+  let rows = [#(1, 0), #(6, 0), #(3, 0), #(7, 0), #(1, 11_311), #(3, 11_311)]
+  list.each(
+    [
+      #(17, lasting_gap),
+      #(18, lasting_gap),
+      #(80, lasting_gap),
+      #(81, signal_gap),
+    ],
+    fn(planted) {
+      let assert Measured(types:, ..) =
+        measured_rows_of(effect_type: planted.0, rows:)
+        as "the engine's source is a table"
+      let assert Ok(line) =
+        list.find(types, fn(line) { line.type_number == planted.0 })
+      assert line.rows == 6
+      assert line.status
+        == HandledWithGap(
+          reason: planted.1,
+          fact_key: "Spell4Effects.effectType." <> int.to_string(planted.0),
+          unread_rows: 4,
+        )
+        as "Spell4Effects.targetFlags 1, 2, 4 and 6 are read and 3 and 7 are not; an effect behind a target apply prerequisite is not applied: 4 of the 6 rows are not read"
+    },
+  )
+}
+
+pub fn a_conversion_row_aimed_only_at_another_unit_is_counted_as_not_read_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Measured(types:, ..) =
+    measured_rows_of(effect_type: 145, rows: [#(1, 0), #(2, 0)])
+    as "the engine's source is a table"
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 145 })
+  assert line.status
+    == HandledWithGap(
+      reason: conversion_gap,
+      fact_key: "Spell4Effects.effectType.145",
+      unread_rows: 1,
+    )
+    as "Spell4Effects.effectType.145: a row aimed at the caster is read, one aimed only at another unit is not"
+}
+
+pub fn the_clients_rows_of_types_18_81_and_145_count_14_634_and_0_not_read_and_17_and_80_375_and_290_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let assert Measured(types:, ..) =
+    measurement.measure(
+      engine_named("Spell effects"),
+      client_tables.every_table(),
+    )
+    as "the engine's source is a table"
+  let counted = fn(type_number) {
+    let assert Ok(line) =
+      list.find(types, fn(line) { line.type_number == type_number })
+      as "the type is in use"
+    let assert HandledWithGap(unread_rows:, ..) = line.status
+      as "the type is handled with a gap"
+    #(line.rows, unread_rows, line.starting_abilities, line.starting_unread)
+  }
+  assert counted(18) == #(531, 14, 1, 0)
+    as "table_rows -- Spell4Effects effectType=18: 531 rows, 5 aimed by flags 3 or 7 and 9 behind a target apply prerequisite; 109482 is the one starting row, aimed at the caster with no prerequisite"
+  assert counted(81) == #(5262, 634, 1, 1)
+    as "effectType=81: 5,262 rows, 84 aimed by flags other than 1, 2, 4 and 6 and 555 behind a target apply prerequisite, 5 of them both; 91018 is the one starting row, behind prerequisite 11311"
+  assert counted(145) == #(6, 0, 1, 0)
+    as "effectType=145: 6 rows, all aimed at the caster; 229304 is the one starting row"
+  assert counted(17).0 == 10_790 && counted(17).1 == 375
+    as "effectType=17: 10,790 rows, 375 aimed by other flags or behind a target apply prerequisite"
+  assert counted(80).0 == 2294 && counted(80).1 == 290
+    as "effectType=80: 2,294 rows, 290 aimed by other flags or behind a target apply prerequisite"
 }

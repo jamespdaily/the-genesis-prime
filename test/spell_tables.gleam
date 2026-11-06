@@ -1855,9 +1855,10 @@ pub fn rows() -> Rows {
 }
 
 /// The UnitProperty2 defaults of the properties the server's rules and plans name, the
-/// client's (`table_rows -- UnitProperty2 7 8 35 36 41 42 100 102 104 127 134 175
-/// 177`): BaseHealth 1.0, HealthRegenMultiplier 1.0, AssaultRating 0.0, SupportRating
-/// 0.0, ShieldCapacityMax 0.0, Armor 0.0, MoveSpeedMultiplier 1.0, BaseCritChance 0.0,
+/// client's (`table_rows -- UnitProperty2 7 8 35 36 41 42 47 60 100 102 104 127 134
+/// 175 177`): BaseHealth 1.0, HealthRegenMultiplier 1.0, AssaultRating 0.0, SupportRating
+/// 0.0, ShieldCapacityMax 0.0, Armor 0.0, RatingCritSeverityIncrease 0.0,
+/// RatingMultiHitAmount 0.0, MoveSpeedMultiplier 1.0, BaseCritChance 0.0,
 /// BaseAvoidReduceChance 0.0, CriticalHitSeverityMultiplier 1.5,
 /// FallingDamageMultiplier 1.0, ShieldMitigationMax 0.0 and ShieldTickTime 500.0.
 pub fn unit_property_defaults() -> List(#(Int, Float)) {
@@ -1868,6 +1869,8 @@ pub fn unit_property_defaults() -> List(#(Int, Float)) {
     #(36, 0.0),
     #(41, 0.0),
     #(42, 0.0),
+    #(47, 0.0),
+    #(60, 0.0),
     #(100, 1.0),
     #(102, 0.0),
     #(104, 0.0),

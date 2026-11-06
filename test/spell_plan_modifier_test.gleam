@@ -149,9 +149,10 @@ pub fn a_negative_multiplier_and_amounts_are_read_from_their_signed_bits_test() 
         #("dataBits04", Integer(1_108_082_688)),
       ]),
     )
-  assert row.modifier.multiplier == -1.0
-  assert row.modifier.flat == -2.5
-  assert row.modifier.per_level == 35.0
+  let assert Modifier(multiplier:, flat:, per_level:, ..) = row.modifier
+  assert multiplier == -1.0
+  assert flat == -2.5
+  assert per_level == 35.0
 }
 
 pub fn a_coefficient_that_is_an_infinity_or_not_a_number_fails_the_load_test() -> Nil {
