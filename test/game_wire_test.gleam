@@ -3989,6 +3989,84 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
   login_support.stop(started)
 }
 
+pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_home_and_waking_in_the_ring_is_aggroed_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Jim's live report: a creature that killed a player kept attacking the body. A
+  // creature leashes at the death (0x90a 0, 0x89a (C, 0)) and, standing at its spawn, its
+  // home timer fires at once, so a body left in the creature's near set was aggroed
+  // again in the same instant. A server choice (the Design of issue 496): a dead unit is
+  // struck by nothing (`Spell4ValidTargets.targetBitmask`), so the Dagun rests, and a
+  // player that wakes inside its ring is aggroed as a walk-in is.
+  let started = world_with_a_lethal_dagun()
+  let #(game, own, dagun, have) =
+    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+  // Into the ring and within the Dagun's reach: it strikes from home and never runs, so
+  // its home timer after the kill has no walk to wait for.
+  walk_to(game:, z: dagun_z +. 5.0, clock: 100)
+  let #(died, have) =
+    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+      list.contains(game_client.deaths_in(frames:), #(own, True))
+      && list.any(frames, fn(frame) { frame.message_id == 0x0636 })
+      && list.contains(
+        game_client.fight_in(frames:),
+        game_client.InCombat(unit_id: dagun, in_combat: False),
+      )
+    })
+  assert list.contains(
+    game_client.fight_in(frames: died),
+    game_client.Threatens(unit_id: dagun, other_unit_id: own, threat: 0),
+  )
+    as "opcode.0x90a: the Dagun erases the body's threat when it leashes"
+  let #(settled, have) =
+    read_after_the_map_and_the_creature_took_it(
+      game:,
+      have:,
+      started:,
+      dagun:,
+      pongs: #(1, 2),
+    )
+  let after_the_leash =
+    list.drop(
+      list.drop_while(
+        game_client.fight_in(frames: list.append(died, settled)),
+        fn(event) {
+          event != game_client.InCombat(unit_id: dagun, in_combat: False)
+        },
+      ),
+      1,
+    )
+  assert list.all(after_the_leash, fn(event) {
+    case event {
+      game_client.Targeted(unit_id:, ..)
+      | game_client.Started(caster_unit_id: unit_id, ..) -> unit_id != dagun
+      game_client.Went(cast_id:, ..) -> cast.caster_of(cast_id:) != dagun
+      game_client.Moves(unit_id:, ..) -> unit_id != dagun
+      game_client.Threatens(..)
+      | game_client.InCombat(..)
+      | game_client.ShieldIs(..)
+      | game_client.InterruptArmorIs(..)
+      | game_client.OwnHealthIs(..)
+      | game_client.HealthIs(..) -> True
+    }
+  })
+    as "after the Dagun's leash and its home timer the Dagun names no target, starts no cast, strikes and runs nowhere: the body is in no ring"
+  choose(game:, own:, choice: 1)
+  let #(woke, _) =
+    read_fight(game:, have:, found: fn(events) {
+      list.contains(
+        events,
+        game_client.Targeted(unit_id: dagun, target_unit_id: own, threat: 1),
+      )
+    })
+  assert list.contains(
+    woke,
+    game_client.Targeted(unit_id: dagun, target_unit_id: own, threat: 1),
+  )
+    as "0x908: the bot that woke inside the ring is aggroed with the aggro threat 1, as a walk-in"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
 pub fn a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test() -> Nil {
   use <- owned_test.run(120_000)
   let started = world_with_a_dagun()
