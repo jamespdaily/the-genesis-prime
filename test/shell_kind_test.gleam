@@ -31,7 +31,15 @@ const sources = [
   "genesis_prime/step/watch.gleam",
   "genesis_prime/world_map/map_id.gleam",
   "genesis_prime/world_map/spawn_id.gleam",
+  "genesis_prime/world_map/spawn_source.gleam",
   "genesis_prime/world_map/stay.gleam",
+  "genesis_prime/game/start_place.gleam",
+  "genesis_prime/message/float32.gleam",
+  "genesis_prime/table/id.gleam",
+  "genesis_prime/table/loader/store.gleam",
+  "genesis_prime/table/loader/tbl_file.gleam",
+  "genesis_prime/table/world_location2.gleam",
+  "genesis_prime_tbl_file_ffi.erl",
   "genesis_prime/wire_recording.gleam",
   "genesis_prime/wire_recording/recorder.gleam",
   "genesis_prime/service.gleam",
@@ -50,7 +58,7 @@ const sources = [
 /// The packages the shells import, found in `build/packages`.
 const packages = [
   "gleam_stdlib", "gleam_erlang", "gleam_otp", "gleam_crypto", "gleam_json",
-  "simplifile", "filepath",
+  "simplifile", "filepath", "gleam_community_maths", "gleam_yielder",
 ]
 
 pub fn a_rule_that_answers_a_caller_does_not_compile_against_the_connection_shell_test() -> Nil {
