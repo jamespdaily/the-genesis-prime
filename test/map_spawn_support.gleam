@@ -19,6 +19,7 @@ import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None}
 import gleam/string
 import map_support
 import place_support
@@ -409,13 +410,32 @@ pub fn life(
 }
 
 /// A development summon of Creature2 `creature_id` by connection `connection`'s
-/// player, asked by caller `caller`, at time `at_ms`.
+/// player, asked by caller `caller`, at time `at_ms`, with no level.
 pub fn summon(
   state state: State,
   at_ms at_ms: Int,
   caller caller: Int,
   connection connection: Int,
   creature_id creature_id: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  summon_at_level(
+    state:,
+    at_ms:,
+    caller:,
+    connection:,
+    creature_id:,
+    level: None,
+  )
+}
+
+/// A development summon as `summon` is, at `level` when there is one.
+pub fn summon_at_level(
+  state state: State,
+  at_ms at_ms: Int,
+  caller caller: Int,
+  connection connection: Int,
+  creature_id creature_id: Int,
+  level level: Option(Int),
 ) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state:,
@@ -425,6 +445,7 @@ pub fn summon(
       message: map.Summon(
         connection: ConnectionId(connection),
         creature_id: id.Creature2Id(creature_id),
+        level:,
       ),
     )),
   )

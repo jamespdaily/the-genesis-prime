@@ -24,14 +24,21 @@
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import gleam/option.{type Option}
 
-/// What a run-only spawn is made from: a creature and the place it stands at,
-/// as the player who summoned it stands (position and facing). Its display,
+/// What a run-only spawn is made from: a creature, the level it stands at if the
+/// summon named one (else its own minLevel), and the place it stands at, as the
+/// player who summoned it stands (position and facing). Its display,
 /// outfit and factions are worked out from the creature's Creature2 row
 /// (genesis_prime/world_map/spawn `summoned`), so the same value gives the same
 /// spawn in the map and in the creature's start.
 pub type Summoned {
-  Summoned(id: SpawnId, creature_id: Creature2Id, place: Place)
+  Summoned(
+    id: SpawnId,
+    creature_id: Creature2Id,
+    level: Option(Int),
+    place: Place,
+  )
 }
 
 /// The spawn a creature is started at.

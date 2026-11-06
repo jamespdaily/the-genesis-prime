@@ -29,7 +29,7 @@ import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{RunOnly, Summoned}
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/set
 import map_spawn_support as spawns
 import map_support
@@ -99,9 +99,10 @@ pub fn a_summon_starts_the_creature_at_the_players_place_and_facing_for_the_play
     == RunOnly(Summoned(
       id: SpawnId(-1),
       creature_id: Creature2Id(dagun),
+      level: Some(1),
       place: standing(),
     ))
-    as "the first run-only id, the creature asked for, and the asking player's place with its facing"
+    as "the first run-only id, the creature asked for, the Dagun's minLevel 1 (Creature2.73465) the summon had no level to replace, and the asking player's place with its facing"
   assert creature.unit_id == 4
     as "the unit id after the three players', so none is a player's"
   assert creature.viewers
@@ -196,6 +197,61 @@ pub fn a_player_moving_into_and_out_of_sight_of_a_summoned_creature_is_told_watc
     as "a player that joins in sight of it is told to it as a join near a stored spawn is"
 }
 
+pub fn a_summon_at_a_level_starts_the_creature_at_that_level_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    spawns.summon_at_level(
+      state: three_players(),
+      at_ms: 6000,
+      caller: 50,
+      connection: 1,
+      creature_id: dagun,
+      level: Some(3),
+    )
+  let #(_, creature) = the_start(taken)
+  assert creature.spawn
+    == RunOnly(Summoned(
+      id: SpawnId(-1),
+      creature_id: Creature2Id(dagun),
+      level: Some(3),
+      place: standing(),
+    ))
+    as "the level asked for goes with the run-only spawn to the creature's start, which builds the spawn again from it"
+  let assert Ok(run_spawn) = map.run_spawn(state:, spawn: SpawnId(-1))
+    as "the map keeps the spawn the summon made"
+  assert run_spawn.level == 3 as "stat 10 is the level the summon named"
+}
+
+pub fn a_level_with_no_creature_level_row_is_refused_naming_it_and_starts_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    spawns.summon_at_level(
+      state: three_players(),
+      at_ms: 6000,
+      caller: 50,
+      connection: 1,
+      creature_id: dagun,
+      level: Some(51),
+    )
+  assert support.replies(taken)
+    == [
+      #(
+        CallerId(50),
+        map.NotSummoned(
+          map.CreatureRefused(spawn.NoCreatureLevelRow(level: 51)),
+        ),
+      ),
+    ]
+    as "the answer is at once, naming the level the tables hold no CreatureLevel row for (the planted tables hold rows 1 to 50 and 101)"
+  assert spawns.starts(taken) == [] && spawns.timers(taken) == []
+  assert map.run_spawn(state:, spawn: SpawnId(-1)) == Error(Nil)
+    as "nothing was kept"
+  let #(_, next) = summoned_dagun(state:)
+  let #(_, creature) = the_start(next)
+  assert creature.unit_id == 4
+    as "a refusal takes no run-only id and no unit id"
+}
+
 pub fn a_creature2_id_with_no_row_is_refused_and_starts_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, taken) =
@@ -229,6 +285,7 @@ pub fn a_creature2_id_with_no_row_is_refused_and_starts_nothing_test() -> Nil {
     == RunOnly(Summoned(
       id: SpawnId(-1),
       creature_id: Creature2Id(dagun),
+      level: Some(1),
       place: standing(),
     ))
     as "a refusal takes no run-only id and no unit id"
@@ -501,6 +558,7 @@ pub fn a_summon_stands_at_the_place_the_map_holds_for_the_player_after_its_moves
     == RunOnly(Summoned(
       id: SpawnId(-1),
       creature_id: Creature2Id(dagun),
+      level: Some(1),
       place: elsewhere,
     ))
     as "the place the player last moved to, with its facing"
