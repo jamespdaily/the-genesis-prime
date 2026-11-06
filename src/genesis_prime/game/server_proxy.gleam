@@ -54,7 +54,7 @@
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
-import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
+import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -112,10 +112,11 @@ pub fn select(
   tables tables: table_store.Tables,
   plans plans: Plans,
 ) -> Result(ServerProxies, List(Refusal)) {
+  let sources = spell_plan.sources_of(tables:)
   let #(by_base, refusals) =
     list.fold(rows, #(dict.new(), []), fn(so_far, row) {
       let #(by_base, refusals) = so_far
-      case planned_of(row:, tables:, plans:) {
+      case planned_of(row:, tables:, sources:, plans:) {
         Ok(one) -> #(
           dict.upsert(by_base, row.spell4_base_id, fn(held) {
             list.append(result.unwrap(option.to_result(held, Nil), []), [one])
@@ -149,6 +150,7 @@ fn name_of(row row: Row) -> String {
 fn planned_of(
   row row: Row,
   tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
   plans plans: Plans,
 ) -> Result(Planned, NotPlanned) {
   use ability <- result.try(
@@ -164,7 +166,7 @@ fn planned_of(
     Ok(host) -> [ability.spell4_id.value, host.spell.spell4_id.value]
     Error(Nil) -> [ability.spell4_id.value]
   }
-  spell_plan.child_of(tables:, spell4_id: Spell4Id(row.spell4_id), chain:)
+  spell_plan.spell_alone(tables:, sources:, spell4_id: row.spell4_id, chain:)
   |> result.map(fn(spell) { Planned(phase: row.phase, spell:) })
   |> result.map_error(fn(error) { CannotPlan(error:) })
 }

@@ -29,15 +29,17 @@ import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
-  AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget, Always, Lasting, OnCaster,
-  OnEachStruck, ShieldHeal, TickingShieldHeal,
+  AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget, Always,
+  Applied, Held, Lasting, LeftOut, PlannedLasting, PlannedShieldHeal, ReadByArea,
+  ShieldHeal, TickingShieldHeal,
 }
 import genesis_prime/game/spend
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
+import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/set
+import gleam/result
 import owned_test
 import spell_tables
 import unitest
@@ -85,18 +87,22 @@ fn onslaught_row() -> Spell4Effects {
   )
 }
 
-/// The condition of every row: none, since each row's gate is read from the tables.
-fn no_gate(_effect: Spell4Effects) -> Result(spell_plan.Condition, a) {
-  Ok(Always)
-}
-
+/// The heals the plan lists for these rows read in a spell nothing starts on each struck
+/// unit (`spell_plan.read_row`: `Applied` and `Held` rows are in the spell's list).
 fn heals_of(
   effects effects: List(Spell4Effects),
 ) -> List(spell_plan.ShieldHeal) {
-  let assert Ok(heals) =
-    spell_plan.shield_heals_in(spell4_id: 69_450, effects:, condition: no_gate)
-    as "the rows are read"
-  heals
+  spell_tables.read_rows(effects:, place: spell_tables.pressed)
+  |> list.filter_map(fn(reading) {
+    case reading {
+      Ok(Applied(PlannedShieldHeal(heal:)))
+      | Ok(Held(PlannedShieldHeal(heal:))) -> Ok(heal)
+      Ok(Applied(..)) | Ok(Held(..)) | Ok(LeftOut(..)) | Ok(ReadByArea) ->
+        Error(Nil)
+      Error(error) ->
+        panic as { "the row is refused: " <> spell_plan.describe(error:) }
+    }
+  })
 }
 
 fn heal_ids(heals heals: List(spell_plan.ShieldHeal)) -> List(Int) {
@@ -139,33 +145,28 @@ pub fn a_heal_shields_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on
     )
   assert heal.aim == AimsAtPrimaryTarget
     as "targetFlags 2 is the primary target, which the target of a cast on the caster is"
-  assert spell_plan.proxy_heals_read(
-      spell4_id: 69_450,
-      proxy_effect_id: 228_915,
-      target: OnCaster,
-      heals: [heal],
+  assert spell_tables.read_row(
+      effect: heal_aimed_at(flags: 2),
+      place: spell_tables.pressed,
     )
-    == Ok(Nil)
+    == Ok(Applied(PlannedShieldHeal(heal)))
     as "a child a Proxy aimed at the caster starts is cast on the caster: spell_plan.target_of starts flags 1 and 2 there"
 }
 
 pub fn a_heal_shields_row_aimed_at_the_primary_target_of_a_child_on_each_struck_unit_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
-  let assert Ok(heal) =
-    spell_plan.shield_heal_of(
-      spell4_id: 60_718,
+  let on_each_struck =
+    spell_tables.started_on_each_struck(
+      spell4_id: 69_450,
+      proxy_effect_id: 228_915,
+    )
+  assert spell_tables.read_row(
       effect: Spell4Effects(
         ..heal_aimed_at(flags: 2),
         id: 146_893,
         spell_id: 60_718,
       ),
-      condition: Always,
-    )
-  assert spell_plan.proxy_heals_read(
-      spell4_id: 69_450,
-      proxy_effect_id: 228_915,
-      target: OnEachStruck,
-      heals: [heal],
+      place: on_each_struck,
     )
     == Error(spell_plan.ShieldHealOnStruckUnit(
       spell4_id: 69_450,
@@ -173,19 +174,11 @@ pub fn a_heal_shields_row_aimed_at_the_primary_target_of_a_child_on_each_struck_
       effect_id: 146_893,
     ))
     as "the child's primary target is a struck unit, and a shield heal on one is not built"
-  let assert Ok(on_the_caster) =
-    spell_plan.shield_heal_of(
-      spell4_id: 60_718,
-      effect: heal_aimed_at(flags: 1),
-      condition: Always,
+  assert spell_tables.read_row(
+      effect: Spell4Effects(..heal_aimed_at(flags: 1), spell_id: 60_718),
+      place: on_each_struck,
     )
-  assert spell_plan.proxy_heals_read(
-      spell4_id: 69_450,
-      proxy_effect_id: 228_915,
-      target: OnEachStruck,
-      heals: [on_the_caster],
-    )
-    == Ok(Nil)
+    |> result.is_ok
     as "a row that includes the caster heals the caster, whichever unit the child is cast on"
 }
 
@@ -284,42 +277,42 @@ pub fn a_shield_overload_row_aimed_at_the_area_is_a_lasting_row_on_each_struck_u
       ),
       duration_time: 4000,
     )
-  let assert Ok(lasting) =
-    spell_plan.lasting_in(
-      spell4_id: 60_796,
-      effects: [meltdown],
-      condition: no_gate,
-    )
-  assert lasting
-    == [
-      Lasting(
-        effect_id: Spell4EffectsId(147_229),
-        phase_flags: -1,
-        aim: AimsAtArea,
-        row: LastingRow(delay_ms: 0, duration_ms: 4000, until_removed: False),
-        condition: Always,
-        tag: spend.EqualTo(value: 0),
-      ),
-    ]
-    as "row 147229: aimed at the area, 4000 ms, no delay"
-  let assert Ok(left_out) =
-    spell_plan.lasting_in(
-      spell4_id: 60_796,
+  assert spell_tables.read_rows(
       effects: [
+        meltdown,
         Spell4Effects(..meltdown, id: 1, target_flags: 1),
         Spell4Effects(..meltdown, id: 2, target_flags: 2),
       ],
-      condition: no_gate,
+      place: spell_tables.pressed,
     )
-  assert left_out == []
-    as "35 rows aim at the caster or the primary target, whose shield hold at 0 is not built"
+    == [
+      Ok(
+        Applied(
+          PlannedLasting(Lasting(
+            effect_id: Spell4EffectsId(147_229),
+            phase_flags: -1,
+            aim: AimsAtArea,
+            row: LastingRow(
+              delay_ms: 0,
+              duration_ms: 4000,
+              until_removed: False,
+            ),
+            condition: Always,
+            tag: spend.EqualTo(value: 0),
+          )),
+        ),
+      ),
+      Ok(LeftOut(why: AimedAtOtherUnits)),
+      Ok(LeftOut(why: AimedAtOtherUnits)),
+    ]
+    as "row 147229: aimed at the area, 4000 ms, no delay; 35 rows aim at the caster or the primary target, whose shield hold at 0 is not built"
 }
 
-pub fn the_measure_counts_a_heal_on_the_primary_target_of_a_struck_unit_child_as_not_read_test() -> Nil {
+pub fn a_heal_in_a_struck_unit_child_is_refused_by_place_test() -> Nil {
   use <- owned_test.run(5000)
   // Row 205411 of Spell4 78280 is aimed at the primary target (flags 2); Proxy 137988 of
   // Spell4 57685 starts 78280 on each unit its area strikes (flags 4), and the plan fails
-  // the load on the shape (`proxy_heals_read`), so the measure counts the row as not read.
+  // the load on the shape, so the measure counts the row as not read.
   let proxy =
     Spell4Effects(
       ..spell_tables.blank_effect(
@@ -333,21 +326,39 @@ pub fn the_measure_counts_a_heal_on_the_primary_target_of_a_struck_unit_child_as
   let heal =
     Spell4Effects(..heal_aimed_at(flags: 2), id: 205_411, spell_id: 78_280)
   let struck = spell_plan.struck_unit_children(effects: [proxy, heal])
-  assert struck == set.from_list([78_280])
-    as "only the Proxy's child is made on each struck unit"
-  assert !spell_plan.effect_row_read(effect: heal, struck_children: struck)
-  assert spell_plan.effect_row_read(
+  assert dict.to_list(struck)
+    == [
+      #(
+        78_280,
+        spell_plan.StruckBy(spell4_id: 57_685, proxy_effect_id: 137_988),
+      ),
+    ]
+    as "only the Proxy's child is made on each struck unit, by the Proxy that starts it"
+  let place =
+    spell_tables.started_on_each_struck(
+      spell4_id: 57_685,
+      proxy_effect_id: 137_988,
+    )
+  assert spell_tables.read_row(effect: heal, place:)
+    == Error(spell_plan.ShieldHealOnStruckUnit(
+      spell4_id: 57_685,
+      proxy_effect_id: 137_988,
+      effect_id: 205_411,
+    ))
+    as "the row's spell is made on each struck unit, whose shield a heal on the primary target is not built for"
+  assert !spell_tables.measure_reads(effect: heal, place:)
+  assert result.is_ok(spell_tables.read_row(
     effect: heal,
-    struck_children: spell_plan.struck_unit_children(effects: [
-      Spell4Effects(..proxy, target_flags: 1),
-    ]),
-  )
-    as "the same row under a Proxy aimed at the caster is read"
-  assert spell_plan.effect_row_read(
-    effect: Spell4Effects(..heal, target_flags: 1),
-    struck_children: struck,
-  )
+    place: spell_tables.pressed,
+  ))
+    as "the same row under a Proxy aimed at the caster is read: no spell is made on each struck unit"
+  let assert Ok(Applied(PlannedShieldHeal(on_the_caster))) =
+    spell_tables.read_row(
+      effect: Spell4Effects(..heal, target_flags: 1),
+      place:,
+    )
     as "a row that includes the caster heals the caster in a struck child too"
+  assert on_the_caster.aim == AimsAtCaster
 }
 
 // ---- the kinds ----

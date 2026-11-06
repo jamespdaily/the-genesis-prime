@@ -18,6 +18,9 @@ pub type Status {
   /// fact file's key of the client's reading, and how many of the type's rows no rule
   /// reads (they are not handled).
   HandledWithGap(reason: String, fact_key: String, unread_rows: Int)
+  /// A rule of the engine handles the type, and some of its rows no rule reads, but the
+  /// engine states no gap for it: the measure stops on it.
+  HandledWithUnstatedGap(unread_rows: Int)
   /// The client's code was read for the type and the engine does not handle it:
   /// what it lacks and the fact file's key of the reading.
   DecodedMissing(reason: String, fact_key: String)
@@ -82,11 +85,16 @@ pub fn measure(
       }
     None -> #([], [])
   }
-  let unread = engine.unread_rows(tables, _)
+  let unread_by_type = engine.unread_rows(tables)
+  let unread = fn(type_number) { count_of(unread_by_type, type_number) }
   // A walk the tables cannot finish has no starting rows either, and `missing_rows`
   // below reports it, so a count it cannot make is 0.
+  let unread_starting_by_type = case engine.starting_abilities {
+    Some(..) -> engine.unread_starting_rows(tables) |> result.unwrap(dict.new())
+    None -> dict.new()
+  }
   let unread_starting = fn(type_number) {
-    engine.unread_starting_rows(tables, type_number) |> result.unwrap(0)
+    count_of(unread_starting_by_type, type_number)
   }
   let measured = case engine.source {
     engine.TableColumns(values:, ..) ->
@@ -111,6 +119,10 @@ pub fn measure(
     Measured(..) -> Measured(..measured, missing_rows:)
     Unmeasured(..) -> measured
   }
+}
+
+fn count_of(counts: dict.Dict(Int, Int), type_number: Int) -> Int {
+  result.unwrap(dict.get(counts, type_number), 0)
 }
 
 /// Measures one engine over the type values of its source, one value per row
@@ -233,14 +245,14 @@ fn measured(
 /// Whether a rule handles the type, with a gap or without.
 pub fn is_handled(status status: Status) -> Bool {
   case status {
-    Handled | HandledWithGap(..) -> True
+    Handled | HandledWithGap(..) | HandledWithUnstatedGap(..) -> True
     DecodedMissing(..) | NotDecoded -> False
   }
 }
 
 /// Where the type stands: handled when the engine handles it, with its gap when the
-/// engine lists it as partial, else decoded and missing when the engine lists it so,
-/// else not decoded.
+/// engine lists it as partial (or, with rows no rule reads and no gap stated, with an
+/// unstated gap), else decoded and missing when the engine lists it so, else not decoded.
 fn status_of(
   engine engine: EngineDeclaration,
   type_number type_number: Int,
@@ -259,7 +271,11 @@ fn status_of(
           fact_key: partial.fact_key,
           unread_rows: unread(type_number),
         )
-      Error(Nil) -> Handled
+      Error(Nil) ->
+        case unread(type_number) {
+          0 -> Handled
+          unread_rows -> HandledWithUnstatedGap(unread_rows:)
+        }
     },
   )
   case

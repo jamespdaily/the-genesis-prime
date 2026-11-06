@@ -58,6 +58,7 @@
 //// naming a row the table lacks.
 
 import database_support
+import genesis_prime/coverage/effect_row
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
@@ -85,6 +86,7 @@ import genesis_prime/table/telegraph_damage
 import genesis_prime/table/unit_property2
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/order
 import owned_key
 import planted_table.{type Cell, Float, Integer}
@@ -2115,6 +2117,80 @@ pub fn with_loaded_deriving(
   let result = body(tables)
   table_store.unload(tables)
   result
+}
+
+/// The effect ids of the rows a spell's own lists hold, in no order: its gains, lasting
+/// rows, removes, controls, property changes, forced moves, cooldown changes, stealth
+/// rows, shield heals, procs and Proxies (the rows of its children are theirs).
+pub fn listed_effect_ids(spell spell: spell_plan.Spell) -> List(Int) {
+  list.flatten([
+    list.map(spell.gains, fn(gain) { gain.effect_id.value }),
+    list.map(spell.lasting, fn(lasting) { lasting.effect_id.value }),
+    list.map(spell.removes, fn(remove) { remove.effect_id.value }),
+    list.map(spell.controls, fn(control) { control.effect_id.value }),
+    list.map(spell.modifiers, fn(modifier) { modifier.effect_id.value }),
+    list.map(spell.forced_moves, fn(move) { move.effect_id.value }),
+    list.map(spell.cooldown_modifiers, fn(modifier) { modifier.effect_id.value }),
+    list.map(spell.stealth, fn(stealth) { stealth.effect_id.value }),
+    list.map(spell.remove_stealth, fn(remove) { remove.effect_id.value }),
+    list.map(spell.shield_heals, fn(heal) { heal.effect_id.value }),
+    list.map(spell.procs, fn(proc) { proc.effect_id.value }),
+    list.map(spell.proxies, fn(proxy) { proxy.effect_id.value }),
+  ])
+}
+
+/// The place of a spell no Proxy starts on each struck unit and that spends nothing.
+pub const pressed = spell_plan.RowPlace(struck_by: None, spends_all: False)
+
+/// The place of a spell the Proxy effect `proxy_effect_id` of Spell4 `spell4_id` starts on
+/// each unit its area strikes.
+pub fn started_on_each_struck(
+  spell4_id spell4_id: Int,
+  proxy_effect_id proxy_effect_id: Int,
+) -> spell_plan.RowPlace {
+  spell_plan.RowPlace(
+    struck_by: Some(spell_plan.StruckBy(spell4_id:, proxy_effect_id:)),
+    spends_all: False,
+  )
+}
+
+/// What the plan makes of each of these effect rows in a place (`spell_plan.read_row`), over
+/// the planted tables, in the order given.
+pub fn read_rows(
+  effects effects: List(spell4_effects.Spell4Effects),
+  place place: spell_plan.RowPlace,
+) -> List(Result(spell_plan.RowReading, spell_plan.PlanError)) {
+  with_loaded(rows: rows(), body: fn(tables) {
+    let spell_groups = spell_plan.spell_groups(tables:)
+    list.map(effects, fn(effect) {
+      spell_plan.read_row(tables:, spell_groups:, place:, effect:)
+    })
+  })
+}
+
+/// What the plan makes of one effect row in a place (`spell_plan.read_row`), over the
+/// planted tables.
+pub fn read_row(
+  effect effect: spell4_effects.Spell4Effects,
+  place place: spell_plan.RowPlace,
+) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
+  let assert [reading] = read_rows(effects: [effect], place:)
+  reading
+}
+
+/// Whether the coverage measure counts the row read in a place, over the planted tables.
+pub fn measure_reads(
+  effect effect: spell4_effects.Spell4Effects,
+  place place: spell_plan.RowPlace,
+) -> Bool {
+  with_loaded(rows: rows(), body: fn(tables) {
+    effect_row.is_read(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place:,
+      effect:,
+    )
+  })
 }
 
 /// The planted rows with Energize, 69450, as the Medic's innate: Class row 4 names it in

@@ -11,9 +11,12 @@
 ////   placed on the caster (targetTypeFlags 1), flag 0x200, drawn while casting.
 //// - Spell4Effects: one Physical damage effect aimed at the area (targetFlags 4).
 
+import genesis_prime/coverage/effect_row
 import genesis_prime/game/spell_area.{type AreaError, type Areas}
 import genesis_prime/game/spell_plan
 import genesis_prime/message/float32
+import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/telegraph_damage
 import gleam/int
@@ -40,6 +43,8 @@ pub type Kick {
     telegraph_flags: List(Int),
     /// Spell4Effects.dataBits00 of the damage effect: its multiplier as 32 float bits.
     multiplier_bits: Int,
+    /// The formula's parameters of the damage effect as (type, value) pairs.
+    parameters: List(#(Int, Float)),
   )
 }
 
@@ -53,6 +58,7 @@ pub fn kick() -> Kick {
     effect_target_flags: 4,
     telegraph_flags: [0x200],
     multiplier_bits: float32.to_bits(1.0),
+    parameters: [],
   )
 }
 
@@ -70,7 +76,7 @@ fn kick_rows(kick kick: Kick) -> spell_tables.Rows {
         target_flags: kick.effect_target_flags,
         delay: 166,
         multiplier_bits: kick.multiplier_bits,
-        parameters: [],
+        parameters: kick.parameters,
       ),
       ..rows.spell4_effects
     ]),
@@ -120,4 +126,20 @@ pub fn built(kick kick: Kick) -> Result(Areas, AreaError) {
     derivations: [spell_plan.derivation()],
     body: fn(tables) { spell_area.build(tables:) },
   )
+}
+
+/// Whether the coverage measure counts Kick's damage effect, row 1, read: the plan's
+/// decision about the row in a spell nothing starts on each struck unit, over the planted
+/// tables (`genesis_prime/coverage/effect_row`).
+pub fn read_by_the_measure(kick kick: Kick) -> Bool {
+  spell_tables.with_loaded(rows: kick_rows(kick:), body: fn(tables) {
+    let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(1))
+      as "the planted Kick holds its damage effect, row 1"
+    effect_row.is_read(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place: spell_tables.pressed,
+      effect: row,
+    )
+  })
 }

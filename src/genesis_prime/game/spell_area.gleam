@@ -497,48 +497,50 @@ fn damage_effects_of(
   |> list.filter(fn(effect) {
     effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
   })
-  |> list.try_map(fn(effect) {
-    use formula <- result.try(
-      damage.formula_of(effect:)
-      |> result.replace_error(MultiplierNotFinite(
-        spell4_id: id,
-        effect_id: effect.id,
-        bits: effect.data_bits00,
-      )),
-    )
-    let aim = spell_plan.aim_of(target_flags: effect.target_flags)
-    use Nil <- result.try(case aim {
-      spell_plan.OtherAim(flags:) ->
-        Error(AimNotRead(
-          spell4_id: id,
-          effect_id: effect.id,
-          target_flags: flags,
-        ))
-      spell_plan.AimsAtCaster
-      | spell_plan.AimsAtPrimaryTarget
-      | AimsAtArea
-      | AimsAtBoth -> Ok(Nil)
-    })
-    use Nil <- result.try(case damage.unread(formula:) {
-      Some(damage.Unread(parameter_kind:)) ->
-        Error(FormulaNotRead(
-          spell4_id: id,
-          effect_id: effect.id,
-          parameter_kind:,
-        ))
-      None -> Ok(Nil)
-    })
-    Ok(DamageEffect(
-      effect_id: Spell4EffectsId(effect.id),
-      damage_type: effect.damage_type,
-      delay_ms: effect.delay_time,
-      phase_flags: effect.phase_flags,
-      aim:,
-      formula:,
-      threat_multiplier: effect.threat_multiplier,
-      tag: spell_plan.tag_of(effect:),
-    ))
+  |> list.try_map(fn(effect) { damage_row_of(spell4_id: id, effect:) })
+}
+
+/// One damage row (effect type 8) of the spell `spell4_id` as a damage effect, or the error
+/// that fails the area load: its dataBits00 must be a finite 32-bit float, its targetFlags
+/// one the rule aims by (1, 2, 4 or 6) and its formula must read only the parameter types a
+/// player's value reads (genesis_prime/game/damage `unread`). The area load and the coverage
+/// measure both read a row through it.
+pub fn damage_row_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(DamageEffect, AreaError) {
+  use formula <- result.try(
+    damage.formula_of(effect:)
+    |> result.replace_error(MultiplierNotFinite(
+      spell4_id:,
+      effect_id: effect.id,
+      bits: effect.data_bits00,
+    )),
+  )
+  let aim = spell_plan.aim_of(target_flags: effect.target_flags)
+  use Nil <- result.try(case aim {
+    spell_plan.OtherAim(flags:) ->
+      Error(AimNotRead(spell4_id:, effect_id: effect.id, target_flags: flags))
+    spell_plan.AimsAtCaster
+    | spell_plan.AimsAtPrimaryTarget
+    | AimsAtArea
+    | AimsAtBoth -> Ok(Nil)
   })
+  use Nil <- result.map(case damage.unread(formula:) {
+    Some(damage.Unread(parameter_kind:)) ->
+      Error(FormulaNotRead(spell4_id:, effect_id: effect.id, parameter_kind:))
+    None -> Ok(Nil)
+  })
+  DamageEffect(
+    effect_id: Spell4EffectsId(effect.id),
+    damage_type: effect.damage_type,
+    delay_ms: effect.delay_time,
+    phase_flags: effect.phase_flags,
+    aim:,
+    formula:,
+    threat_multiplier: effect.threat_multiplier,
+    tag: spell_plan.tag_of(effect:),
+  )
 }
 
 /// What the spell's phase strikes with the effects a cast that spent `spent` points

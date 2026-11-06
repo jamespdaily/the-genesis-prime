@@ -4799,7 +4799,7 @@ fn aimed_at(
 /// every gate of the go (`subject_of`). A row's units are those its aim names
 /// (`units_aimed_at`) and only the caster is healed: the plan reads a row aimed at the
 /// primary target only in a spell cast on the caster
-/// (genesis_prime/game/spell_plan `proxy_heals_read`), and the server gives no other unit
+/// (genesis_prime/game/spell_plan `read_row`), and the server gives no other unit
 /// a shield.
 fn healed_by(
   applied applied: Applied,
