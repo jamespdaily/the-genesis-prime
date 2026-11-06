@@ -24,17 +24,17 @@ import genesis_prime/client_connection
 import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
-  Answer, ControlBody, ControlGhost, ControlGiven, EndCasts, GhostCreated,
-  GhostRemoved, GoToHolocrypt, OwnCameBackLogged, OwnCombatState, OwnDeathLogged,
-  OwnDeathState, OwnHealth, OwnResurrectionWindow, OwnShield, StreamTo, ToClient,
-  ToViewers,
+  Answer, CancelTimer, ControlBody, ControlGhost, ControlGiven, EndCasts,
+  GhostCreated, GhostRemoved, GoToHolocrypt, OwnCameBackLogged, OwnCombatState,
+  OwnDeathLogged, OwnDeathState, OwnHealth, OwnResurrectionWindow, OwnShield,
+  Regeneration, ShieldRegeneration, StartTimer, StreamTo, ToClient, ToViewers,
 }
 import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   Answered, CreatureStriker, Key, Landed, Refused, Strike,
 }
-import genesis_prime/step
+import genesis_prime/step.{TimerId}
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/float
@@ -44,6 +44,21 @@ import gleam/set
 import message_support
 import owned_test
 import spawn_support
+
+/// The numbers the player regenerates by: the planted ones of
+/// `player_life_regeneration_test`, which this file's rules do not read.
+const regeneration =
+  Regeneration(
+    health_fraction: 0.025,
+    health_multiplier: 1.0,
+    health_tick_ms: 500,
+    shield: Some(
+      ShieldRegeneration(percent: 0.25, reboot_ms: 2500, tick_ms: 500),
+    ),
+  )
+
+/// The shield's regeneration timer: the connection's free id 9.
+const shield_timer = TimerId(9)
 
 /// The Beast that strikes: unit 7, life 3.
 fn beast() -> step.Address {
@@ -100,7 +115,7 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
   use <- owned_test.run(60_000)
   let #(esper, esper_effects) =
     player_life.struck(
-      life: player_life.new(health: 736, shield: 450),
+      life: player_life.new(health: 736, shield: 450, regeneration:),
       defence: defence_of(3),
       strike: attack(1),
       rolls:,
@@ -111,7 +126,7 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
     as "Armor 150: 12 mitigated to 5, the shield takes 3, the health 2"
   let #(warrior, _) =
     player_life.struck(
-      life: player_life.new(health: 736, shield: 450),
+      life: player_life.new(health: 736, shield: 450, regeneration:),
       defence: defence_of(1),
       strike: attack(1),
       rolls:,
@@ -129,8 +144,10 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
       to:,
       answered: Answered(outcome: Landed(descriptions: [description]), ..),
     ),
+    StartTimer(timer: TimerId(9), after_ms: 2500),
+    StartTimer(timer: TimerId(8), after_ms: 500),
   ] = esper_effects
-    as "0x938 stat 20 to the player and its viewers, 0x92f to the player, 0x937 to the viewers, then the answer"
+    as "0x938 stat 20 to the player and its viewers, 0x92f to the player, 0x937 to the viewers, then the answer, then the shield's reboot and, the player out of combat and below its maximum, the health tick"
   assert to == beast() as "the answer goes to the striker's address"
   assert description.damage.raw_damage == 12
     && description.damage.absorbed == 7
@@ -143,7 +160,7 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
   use <- owned_test.run(60_000)
   let #(life, effects) =
     player_life.struck(
-      life: player_life.new(health: 1, shield: 0),
+      life: player_life.new(health: 1, shield: 0, regeneration:),
       defence: defence_of(1),
       strike: attack(1),
       rolls:,
@@ -185,7 +202,7 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
 
 pub fn the_first_threat_sets_the_combat_flag_and_the_last_release_clears_it_test() -> Nil {
   use <- owned_test.run(5000)
-  let life = player_life.new(health: 736, shield: 450)
+  let life = player_life.new(health: 736, shield: 450, regeneration:)
   let #(life, first) =
     player_life.threatened(life:, unit_id: 7, creature_life: 3, gone: set.new())
   assert first
@@ -216,7 +233,7 @@ pub fn a_threat_from_a_unit_the_map_reported_gone_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   let #(life, effects) =
     player_life.threatened(
-      life: player_life.new(health: 736, shield: 450),
+      life: player_life.new(health: 736, shield: 450, regeneration:),
       unit_id: 7,
       creature_life: 3,
       gone: set.from_list([7]),
@@ -266,7 +283,7 @@ fn struck_until_dead(
 fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
   let #(life, _) =
     player_life.threatened(
-      life: player_life.new(health: 736, shield: 450),
+      life: player_life.new(health: 736, shield: 450, regeneration:),
       unit_id: 7,
       creature_life: 3,
       gone: set.new(),
@@ -281,7 +298,9 @@ fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
         | ToViewers(..)
         | StreamTo(..)
         | EndCasts
-        | GoToHolocrypt -> True
+        | GoToHolocrypt
+        | StartTimer(..)
+        | CancelTimer(..) -> True
       }
     })
       |> list.drop(1),
@@ -335,8 +354,9 @@ pub fn a_player_at_0_dies_ends_its_casts_and_sees_its_ghost_and_the_window_in_th
       ToClient(GhostCreated(place: test_place())),
       ToClient(OwnResurrectionWindow(dead: True)),
       ToClient(ControlGiven(to: ControlGhost)),
+      CancelTimer(timer: shield_timer),
     ]
-    as "0x88c (P, 1) and 0x89a (P, 0) to the player and its viewers, its casts ended, 0x247 type 22 to both, then for its own client alone the ghost's 0x262 at the body's place, 0x1b3 and 0x636 for the ghost"
+    as "0x88c (P, 1) and 0x89a (P, 0) to the player and its viewers, its casts ended, 0x247 type 22 to both, then for its own client alone the ghost's 0x262 at the body's place, 0x1b3 and 0x636 for the ghost, and the shield's regeneration timer, armed by the earlier blows, cancelled"
   assert player_life.state(life:) == player_life.Dead
     && player_life.fighters(life:) == []
     as "dead, and fighting no one: its fighters stream nothing more"
@@ -409,7 +429,7 @@ pub fn a_choice_for_another_unit_one_not_offered_a_nonzero_value_or_one_while_al
     == Error(player_life.NonzeroValue(value: 5))
     as "the Death addon always sends 0"
   assert chosen(
-      player_life.new(health: 736, shield: 450),
+      player_life.new(health: 736, shield: 450, regeneration:),
       message_support.choice_body(unit_id: own_unit, choice: 1, value: 0),
     )
     == Error(player_life.NotDead)
@@ -498,7 +518,7 @@ fn test_place() -> Place {
 pub fn a_player_enters_at_the_health_saved_capped_at_the_maximum_and_at_full_when_none_was_saved_test() -> Nil {
   use <- owned_test.run(10_000)
   let entered = fn(saved) {
-    player_life.entering(saved:, max_health: 736, shield: 450)
+    player_life.entering(saved:, max_health: 736, shield: 450, regeneration:).0
   }
   let below = entered(Some(500))
   assert player_life.health(life: below) == 500
@@ -533,7 +553,7 @@ pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -
   use <- owned_test.run(10_000)
   let #(hurt, _) =
     player_life.struck(
-      life: player_life.new(health: 736, shield: 450),
+      life: player_life.new(health: 736, shield: 450, regeneration:),
       defence: defence_of(1),
       strike: attack(1),
       rolls:,
@@ -543,7 +563,7 @@ pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -
     as "the health now, which the table requires above 0 (character_health_is_positive)"
   let #(dead, _) =
     player_life.struck(
-      life: player_life.new(health: 1, shield: 0),
+      life: player_life.new(health: 1, shield: 0, regeneration:),
       defence: defence_of(1),
       strike: attack(1),
       rolls:,

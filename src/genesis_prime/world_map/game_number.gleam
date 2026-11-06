@@ -9,7 +9,8 @@
 ////   a name missing or not known                              ─▶ Refusal
 ////   leash_range ≤ aggro_range                                ─▶ Refusal
 ////   aggro_range ≥ the sight range                            ─▶ Refusal
-////   otherwise ─▶ GameNumbers, read by every map and creature of the run
+////   otherwise ─▶ GameNumbers, read by every map and creature of the run, and by
+////                a player's connection for its health regeneration
 //// ```
 ////
 //// - **The aggro range** lies inside sight, so a creature whose ring a player enters
@@ -24,6 +25,12 @@
 ////   target of none is no fight; at a fraction of 0 the creature stops at the edge
 ////   of its reach, where the target's first step leaves it, and at 1 it runs onto
 ////   the target's own place.
+//// - **The health regeneration** is the server's choice (text 149418 says only
+////   "slowly out of combat"). Its fraction lies strictly between 0 and 1, so a tick
+////   adds part of the maximum and never all of it, and its tick is a whole number of
+////   milliseconds of at least 1, since a tick of 0 would fire again at once, each
+////   held by the table (`game_number_health_regen_fraction_is_between_0_and_1`,
+////   `game_number_health_regen_tick_ms_is_a_whole_positive_ms`, migration 0015).
 //// - **The unit of each name** is the table's: `game_number_name_has_its_unit`, a
 ////   foreign key to `game_number_name`, refuses a row whose unit is not its name's
 ////   and a name nobody listed (migration 0014).
@@ -55,6 +62,11 @@ pub type GameNumbers {
     /// The share of its reach a creature stops short of its target by, so one step
     /// of the target keeps it in reach.
     chase_stop_fraction: Float,
+    /// The share of its maximum health a player regenerates each health tick out
+    /// of combat, before HealthRegenMultiplier.
+    health_regen_fraction: Float,
+    /// The time between a player's health ticks, in milliseconds.
+    health_regen_tick_ms: Int,
   )
 }
 
@@ -64,6 +76,8 @@ const expected = [
   "leash_range",
   "aggro_threat",
   "chase_stop_fraction",
+  "health_regen_fraction",
+  "health_regen_tick_ms",
 ]
 
 /// The numbers of the rows, or every refusal: a name missing or not known, a
@@ -111,6 +125,8 @@ fn ranges_checked(
       leash_range: value("leash_range"),
       aggro_threat: value("aggro_threat"),
       chase_stop_fraction: value("chase_stop_fraction"),
+      health_regen_fraction: value("health_regen_fraction"),
+      health_regen_tick_ms: float.round(value("health_regen_tick_ms")),
     )
   let checks = [
     #(

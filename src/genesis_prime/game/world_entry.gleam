@@ -24,7 +24,8 @@
 ////   which `Entered` keeps. A play enters at the health its last save kept,
 ////   capped at the maximum, and at full health when none was kept; the
 ////   Holocrypt's join enters at full health (`player_life.entering`; the
-////   server's choice). The place the map is given, and 0xAD and 0x262 carry, is
+////   server's choice). A play that enters below its maximum health starts the
+////   health tick (genesis_prime/game/player_life), the one timer entry starts. The place the map is given, and 0xAD and 0x262 carry, is
 ////   bounded (below).
 //// - **The order** is the client's: 0xAD first; 0x262 before 0x19B; 0x19B
 ////   before the loadout, 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
@@ -94,6 +95,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
@@ -117,6 +119,7 @@ import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, CharacterId,
 }
 import genesis_prime/table/id.{type Spell4BaseId}
+import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
@@ -142,6 +145,9 @@ pub type Effect {
   /// Watch the run of the map that took the player: its end comes back to the
   /// connection's rule.
   WatchMap(map: MapId, incarnation: Int)
+  /// Start a timer of the player's life (genesis_prime/game/player_life): a player
+  /// that enters below its maximum health starts regenerating.
+  StartTimer(timer: step.TimerId, after_ms: Int)
 }
 
 /// Why the client's request to play is refused: its body is one the client's
@@ -253,6 +259,22 @@ pub type Readiness {
   /// the Holocrypt place the join gave, and its next move is taken.
   GhostLoading
   ClientReady
+}
+
+/// The entry's effect for what the player's life asked at entry: the timer it
+/// starts. Entry cancels no timer, and the life's other effects are its fights'.
+fn life_effect(effect effect: player_life.Effect) -> Result(Effect, Nil) {
+  case effect {
+    player_life.StartTimer(timer:, after_ms:) ->
+      Ok(StartTimer(timer:, after_ms:))
+    player_life.CancelTimer(..)
+    | player_life.ToClient(..)
+    | player_life.ToViewers(..)
+    | player_life.Answer(..)
+    | player_life.StreamTo(..)
+    | player_life.EndCasts
+    | player_life.GoToHolocrypt -> Error(Nil)
+  }
 }
 
 /// The shield a player enters the world with: the stat 20 its client was told in
@@ -384,6 +406,8 @@ pub fn joined(
   realm_id realm_id: Int,
   next_whisper next_whisper: Int,
   classes classes: class_resource.Classes,
+  numbers numbers: GameNumbers,
+  formulas formulas: Formulas,
 ) -> Result(Joined, Nil) {
   case state {
     Joining(
@@ -401,11 +425,16 @@ pub fn joined(
           let assert Ok(resource) =
             class_resource.of_class(classes:, class_id: character.class_id)
             as "character creation makes only playable classes, and the content load refuses a table with no resource for one"
-          let life =
+          let #(life, life_effects) =
             player_life.entering(
               saved: saved_health,
               max_health:,
               shield: full_shield(unit:),
+              regeneration: player_life.regeneration(
+                numbers:,
+                formulas:,
+                shield: loadout.properties.shield,
+              ),
             )
           let unit = player_unit.with_resource(record: unit, resource:)
           let unit =
@@ -466,6 +495,7 @@ pub fn joined(
                 entered_world(),
                 WatchMap(map:, incarnation:),
               ],
+              list.filter_map(life_effects, life_effect),
             ]),
           ))
         }

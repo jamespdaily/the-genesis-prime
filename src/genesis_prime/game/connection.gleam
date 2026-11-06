@@ -157,6 +157,7 @@ import genesis_prime/game/connection/state.{
 } as connection_state
 import genesis_prime/game/connection/viewers as connection_viewers
 import genesis_prime/game/connection/world as connection_world
+import genesis_prime/game/player_life
 import genesis_prime/game/routing
 import genesis_prime/game/strike
 import genesis_prime/hand_off.{SessionKey, Take}
@@ -856,17 +857,24 @@ fn stay_sent(
 }
 
 /// A timer fired that is not the save timer's: a cast's, a strike's, the class
-/// resource's, or the claim's.
+/// resource's, the player's regeneration's, or the claim's.
 fn other_timer_fired(
   session session: Session,
   now now: Now,
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
-  case cast.owns(timer), strike.owns(timer), class_resource.owns(timer:) {
-    True, _, _ -> connection_casting.cast_due(session:, now:, timer:)
-    False, True, _ -> connection_casting.strike_due(session:, now:)
-    False, False, True -> connection_resource.resource_due(session:, timer:)
-    False, False, False ->
+  case
+    cast.owns(timer),
+    strike.owns(timer),
+    class_resource.owns(timer:),
+    player_life.owns(timer:)
+  {
+    True, _, _, _ -> connection_casting.cast_due(session:, now:, timer:)
+    False, True, _, _ -> connection_casting.strike_due(session:, now:)
+    False, False, True, _ -> connection_resource.resource_due(session:, timer:)
+    False, False, False, True ->
+      connection_life.regeneration_due(session:, now:, timer:)
+    False, False, False, False ->
       connection_login.claim_wait_over(session:, now:, timer:)
   }
 }

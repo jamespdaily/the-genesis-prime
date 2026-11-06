@@ -159,6 +159,27 @@ pub fn shared_with_a_lasting_effect() -> store.Tables {
   })
 }
 
+/// The planted tables with UnitProperty2 rows 8 (HealthRegenMultiplier) at 2.0 and
+/// 177 (ShieldTickTime) at 750.0 in place of their defaults 1.0 and 500.0: test
+/// data, so a test can tell the regeneration reads them from the table. Loaded once
+/// under a key of its own.
+pub fn shared_with_other_regeneration_defaults() -> store.Tables {
+  database_support.once("character_tables_regeneration_defaults", fn() {
+    load_files(files_replacing(
+      schema: unit_property2.schema,
+      rows: list.map(
+        [#(8, 2.0), #(102, 0.0), #(104, 0.0), #(127, 1.5), #(177, 750.0)],
+        fn(property) {
+          planted_table.row(unit_property2.schema, [
+            #("ID", Integer(property.0)),
+            #("defaultValue", Float(property.1)),
+          ])
+        },
+      ),
+    ))
+  })
+}
+
 /// The planted tables with the Novice start's WorldLocation2 row (51596) in
 /// World 0, which is no World row, in place of World 3460. Loaded once under a
 /// key of its own.
@@ -591,12 +612,15 @@ fn files_with_looks(
     ),
     planted_table.file(
       unit_property2.schema,
-      list.map([#(102, 0.0), #(104, 0.0), #(127, 1.5)], fn(property) {
-        planted_table.row(unit_property2.schema, [
-          #("ID", Integer(property.0)),
-          #("defaultValue", Float(property.1)),
-        ])
-      }),
+      list.map(
+        [#(8, 1.0), #(102, 0.0), #(104, 0.0), #(127, 1.5), #(177, 500.0)],
+        fn(property) {
+          planted_table.row(unit_property2.schema, [
+            #("ID", Integer(property.0)),
+            #("defaultValue", Float(property.1)),
+          ])
+        },
+      ),
     ),
     planted_table.file(
       xp_per_level.schema,

@@ -32,6 +32,8 @@ fn seeded() -> List(Row) {
     Row(name: "aggro_range", value: 10.0, unit: "units"),
     Row(name: "aggro_threat", value: 1.0, unit: "threat"),
     Row(name: "chase_stop_fraction", value: 0.5, unit: "fraction"),
+    Row(name: "health_regen_fraction", value: 0.025, unit: "fraction"),
+    Row(name: "health_regen_tick_ms", value: 500.0, unit: "ms"),
     Row(name: "leash_range", value: 55.0, unit: "units"),
   ]
 }
@@ -52,6 +54,8 @@ pub fn the_seeded_rows_select_into_the_numbers_a_fight_reads_test() -> Nil {
       leash_range: 55.0,
       aggro_threat: 1.0,
       chase_stop_fraction: 0.5,
+      health_regen_fraction: 0.025,
+      health_regen_tick_ms: 500,
     ))
 }
 
@@ -80,6 +84,24 @@ pub fn a_leash_range_not_above_the_aggro_range_is_refused_test() -> Nil {
     as "a creature at home with a player in its ring would leash at once"
 }
 
+pub fn a_missing_health_regeneration_number_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(5000)
+  let without = fn(name) { list.filter(seeded(), fn(row) { row.name != name }) }
+  list.each(["health_regen_fraction", "health_regen_tick_ms"], fn(name) {
+    let assert Error(refusals) =
+      game_number.select(rows: without(name), sight_range:)
+      as "a player's health tick reads the row: a missing one stops the start"
+    assert refusals
+      == [
+        Refusal(
+          table: "game_number",
+          row: RowName(name),
+          rule: "the table has no such row, which the server reads",
+        ),
+      ]
+  })
+}
+
 pub fn an_aggro_range_not_below_sight_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let rows =
@@ -96,18 +118,19 @@ pub fn an_aggro_range_not_below_sight_is_refused_test() -> Nil {
   assert string.contains(refused.rule, "1024")
 }
 
-pub fn a_migrated_database_holds_the_four_seeded_numbers_test() -> Nil {
+pub fn a_migrated_database_holds_the_six_seeded_numbers_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
     content_game_number.rows(db: content_support.connect(database:))
     as "the query ran"
-  assert rows == seeded() as "migration 0010's four rows, in name order"
+  assert rows == seeded()
+    as "migration 0010's four rows and migration 0015's two, in name order"
   assert content_support.count(
       database:,
       sql: "select count(*) from game_number where source = 'server_choice' and reason is not null",
     )
-    == 4
+    == 6
     as "each is a server choice that states its reason"
 }
 
@@ -192,6 +215,30 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "update game_number set value = 1 where name = 'chase_stop_fraction'",
         "game_number_chase_stop_fraction_is_between_0_and_1",
       ),
+      #(
+        "update game_number set value = 0 where name = 'health_regen_fraction'",
+        "game_number_health_regen_fraction_is_between_0_and_1",
+      ),
+      #(
+        "update game_number set value = 1 where name = 'health_regen_fraction'",
+        "game_number_health_regen_fraction_is_between_0_and_1",
+      ),
+      #(
+        "update game_number set value = 0 where name = 'health_regen_tick_ms'",
+        "game_number_health_regen_tick_ms_is_a_whole_positive_ms",
+      ),
+      #(
+        "update game_number set value = 500.4 where name = 'health_regen_tick_ms'",
+        "game_number_health_regen_tick_ms_is_a_whole_positive_ms",
+      ),
+      #(
+        "update game_number set unit = 'units' where name = 'health_regen_fraction'",
+        "game_number_name_has_its_unit",
+      ),
+      #(
+        "update game_number set unit = 'fraction' where name = 'health_regen_tick_ms'",
+        "game_number_name_has_its_unit",
+      ),
     ],
     fn(bad) {
       let assert Error(failed) =
@@ -216,6 +263,8 @@ pub fn the_numbers_put_under_a_key_are_read_back_test() -> Nil {
       leash_range: 55.0,
       aggro_threat: 1.0,
       chase_stop_fraction: 0.5,
+      health_regen_fraction: 0.025,
+      health_regen_tick_ms: 500,
     )
   content_game_number.put(key:, numbers:)
   assert content_game_number.numbers(key:) == numbers
