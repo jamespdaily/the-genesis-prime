@@ -8,8 +8,8 @@ import connection_rule_support as support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, CreatureAppeared, FromMap, FromStore,
-  Removed, TellPeer,
+  type Answer, type Message, type Request, CreatureAppeared, ForStay, FromMap,
+  FromStore, PeerNews, Removed, SentByPeer, TellPeer,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/chat_channel
@@ -20,17 +20,22 @@ import genesis_prime/message/chat_line
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
+import genesis_prime/message/unit_position_command
 import genesis_prime/message/whisper_failed
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
+import genesis_prime/server
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
   EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent,
   StoppedWaiting, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{CharacterLoaded, ForSelect, ForWorld, Listed}
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, Spell4Id}
+import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{
   CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
@@ -38,8 +43,11 @@ import genesis_prime/world_map/map.{
 import genesis_prime/world_map/spawn.{
   FailsTheChecks, NoCreatureRow, NoFaction, WouldNotStart,
 }
+import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source.{RunOnly}
 import gleam/list
 import gleam/option.{None, Some}
+import map_spawn_support
 import message_support
 import owned_test
 import spawn_support
@@ -1037,6 +1045,10 @@ pub fn a_refused_creature_answers_one_system_line_naming_the_reason_test() -> Ni
         CreatureRefused(WouldNotStart(Creature2Id(75_048), NoFaction)),
         "not summoned: Creature2 75048 would not start as a spawn: no faction",
       ),
+      #(
+        map.CreatureNotStarted(reason: "the creature supervisor is not running"),
+        "not summoned: the creature did not start",
+      ),
     ],
     fn(row) {
       let #(state, taken) = summoning()
@@ -1134,4 +1146,139 @@ pub fn a_connection_that_ends_while_the_summon_is_asked_still_saves_the_player_t
       game_connection_support.entry_place(),
     )
     as "the player is in the world while the creature starts, so its place is saved as in InWorld"
+}
+
+// ---- the whole summon: the connection, the map and the creature ----
+
+pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_place_and_the_player_sees_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The three rules chained, each fed what the one before sent, as the shells
+  // carry it. Expected values: the creature stands where the client moved the
+  // player (0x637's position, x 1.5, y 2.5, z 3.5, which the connection tells
+  // the map), as Creature2 73465, the Virtual Defense Dagun (faction 1442,
+  // display 26578, `Creature2.73465`); the player's client is written one 0x262
+  // (opcode.0x262) and the map's answer writes nothing.
+  let select =
+    game_connection_support.in_select_from(
+      game_connection_support.accepted(
+        game_connection_support.settings_with_dev_commands(),
+      ).0,
+    )
+  let #(joining, joining_taken) =
+    game_connection_support.joining_from(
+      in_character_select: select,
+      character: game_connection_support.world_character(),
+    )
+  let #(map_state, join_answer) =
+    game_connection_support.mapped(
+      map_state: game_connection_support.map_with_four_players(),
+      taken: joining_taken,
+    )
+  let #(state, _) =
+    game_connection_support.answer(
+      state: joining,
+      taken: joining_taken,
+      outcome: step.Answer(FromMap(join_answer)),
+    )
+  let standing = game_connection_support.standing_at(x: 1.5, y: 2.5, z: 3.5)
+  let #(state, moved) =
+    game_connection_support.read(state, game_connection_support.a_move(1.5))
+  assert game_connection_support.moves_told(moved) == [1]
+  let #(map_state, _) =
+    map.step(
+      map_state,
+      support.input(
+        OwnEvent(
+          step.Told(message: map.Moved(
+            connection: ConnectionId(1),
+            place: standing,
+            seq: 1,
+          )),
+        ),
+      ),
+    )
+  let #(state, asked) =
+    game_connection_support.read(state, chat_line_message(4, "!summon 73465"))
+  assert game_connection_support.ask_request(asked)
+    == game_connection_support.summon_asked(73_465)
+    as "the line asks the player's map run, as one"
+  let assert client_connection.AskMapRun(message:, ..) =
+    game_connection_support.ask_request(asked)
+  let #(map_state, summoned) =
+    map.step(
+      map_state,
+      support.input(OwnEvent(step.Asked(caller: step.CallerId(1), message:))),
+    )
+  let assert [#(_, start)] = map_spawn_support.starts(summoned)
+    as "the map starts one creature"
+  let assert RunOnly(summoned: made) = start.spawn as "as a run-only spawn"
+  assert made
+    == spawn_source.Summoned(
+      id: SpawnId(-1),
+      creature_id: Creature2Id(73_465),
+      place: standing,
+    )
+    as "at the place the player stands at"
+  assert list.any(start.viewers, fn(viewer) { viewer.0 == ConnectionId(1) })
+    as "the player sees the place, so it is a viewer"
+  let #(_, settled) =
+    map_spawn_support.start_settled(state: map_state, at_ms: 6000, spawn: -1)
+  let assert [#(_, answer)] = support.replies(settled)
+  let assert Summoned(unit_id:) = answer
+  assert unit_id == start.unit_id
+  let #(state, answered) =
+    game_connection_support.answer(
+      state:,
+      taken: asked,
+      outcome: step.Answer(FromMap(answer)),
+    )
+  assert support.writes(answered) == []
+  // The creature, started from the summon as the server builds it.
+  let assert Ok(built) =
+    spawn.summoned(checks: spawn_support.summon_checks(), summoned: made)
+    as "the creature's start rebuilds the spawn the map checked"
+  let #(_, started) =
+    creature.step(
+      creature.new(creature.Settings(
+        creature: start,
+        spawn: built,
+        kind: Kind(
+          respawn_ms: 60_000,
+          attack_spell4_id: Spell4Id(5649),
+          attack_interval_ms: 1500,
+        ),
+        numbers: spawn_support.numbers,
+      )),
+      support.input(OwnEvent(step.Started)),
+    )
+  let appeared =
+    list.filter_map(support.effects_of(started), fn(effect) {
+      case effect {
+        OwnEffect(step.Send(to: step.Connection(ConnectionId(1)), message:)) ->
+          Ok(server.creature_message(outgoing: message))
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+  let assert [message] = appeared as "the creature sends the player its 0x262"
+  let #(_, written) =
+    game_connection_support.feed(state:, event: OwnEvent(Woken(message)))
+  assert game_connection_support.written_ids(written) == [0x0262]
+    as "opcode.0x262: the player's client is shown the creature"
+  let assert ForStay(
+    sent: SentByPeer(PeerNews(news: CreatureAppeared(unit:, ..), ..)),
+    ..,
+  ) = message
+  assert unit.unit_id == unit_id && unit.creature_id == 73_465
+  assert unit.tail.faction_id == 1442 && unit.tail.display_info_id == 26_578
+  assert list.contains(
+    unit.tail.movement_commands,
+    start_movement.Position(unit_position_command.UnitPositionCommand(
+      x: 0x3FC00000,
+      y: 0x40200000,
+      z: 0x40600000,
+      blends: 0,
+    )),
+  )
+    as "at the player's place: 1.5, 2.5 and 3.5 as 32-bit floats"
 }

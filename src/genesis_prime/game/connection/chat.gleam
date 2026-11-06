@@ -195,6 +195,7 @@ fn not_summoned_text(reason reason: map.NotSummoned) -> String {
   case reason {
     map.NoPlayerHere -> "the player is not in the map"
     map.CreatureRefused(refusal:) -> spawn.describe_refusal(refusal:)
+    map.CreatureNotStarted(..) -> "the creature did not start"
   }
 }
 
