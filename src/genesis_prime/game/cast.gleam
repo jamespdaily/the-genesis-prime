@@ -82,14 +82,24 @@
 ////   (`Spell.CodeEnumCastMethod`). A cost in a vital the server does not hold and
 ////   a method not built are each logged once on the connection for the coverage
 ////   measure. The caster's checks run in the client's order (`Verdict`).
-//// - **A cost is paid at the accept** (`Pay`), in the step of its check: a second
-////   press taken in the same step is checked against what the first left
-////   (genesis_prime/game/class_resource).
+//// - **A cost is checked at the accept and paid at the cast's first go** (`Pay`): the
+////   client checks a cost only before it sends a press, lowers no resource itself and
+////   shows only what 0x935 says, so when to pay is the server's
+////   (`Spell4.innateCost0.timing`), and a retail video shows the Actuators of Gamma
+////   Rays dropping when its beams go off. The accept checks the costs against the slot
+////   less what the live casts have reserved (`unreserved`) and keeps them on its live
+////   cast (`Live.reserved`); the first go pays them before its gains and gates, as one
+////   0x935. A cast that ends before its first go (a 0x801, death, leaving) pays
+////   nothing, and its reservation ends with it. A spell whose first go is at once, or
+////   that has no go of its own, pays at its accept, in the step of its check
+////   (`pays_at_accept`). A second press taken in the same step is checked against what
+////   the first left (genesis_prime/game/class_resource).
 //// - **A spend of every point held** (`spell_plan.SpendAllCost`, genesis_prime/game/spend):
 ////   the check is of the base cost alone, as the client's is (`0x1403b3320`), and the
-////   accept then takes every whole point the slot holds, whose new value the client is
-////   sent (`opcode.0x935`). The points above the base cost are the cast's n, fixed at
-////   the accept (at the start of a held press, which is checked and paid then), kept on
+////   accept then reserves every whole point the slot holds less the reserved, which the
+////   first go takes and whose new value the client is sent (`opcode.0x935`). The points
+////   above the base cost are the cast's n, fixed at the accept (at the start of a held
+////   press, which is checked and reserved then), kept on
 ////   the live cast, and read at each go: the go's strike (`GoAsked.spent`), gains and
 ////   Proxies are the ones whose tag holds for n. A child a Proxy starts has no n and
 ////   keeps every effect. A cost with an EMM id the server does not read
@@ -253,6 +263,10 @@
 //// | a press past the last stage of an open threshold | 0x7fc {client id, the ability, 4} |
 //// | a refusal of the client's own checks | 0x7fc with the result; nothing else changes |
 //// | a spell whose cost has an EMM id the server does not read | 0x7fc with the cost's result, a warning once for the spell on the connection; nothing is paid |
+//// | a cast with a cost ends before its first go: a 0x801, the caster's death or leaving | nothing is paid and nothing is sent for the cost; its reservation ends with the cast |
+//// | a press needs points that a live cast has reserved | 0x7fc with the cost's result, as for a slot that holds too little |
+//// | the slot holds less than a live cast reserved when its first go comes (the Esper's empty, the Warrior's drain) | the go pays what the slot holds, down to 0 |
+//// | a 0x801 ends a cast while the round of its first go is open | the round's answer finds no live cast: no go, nothing paid, the hits stand |
 //// | a press while one is held | 0x7fc 13 |
 //// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
 //// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
@@ -396,8 +410,9 @@ pub type Effect {
   /// (genesis_prime/game/strike) and, when the round closes, answers with `went`.
   /// The go's 0x7f4 waits for that answer.
   Strike(asked: GoAsked)
-  /// An accepted press's costs are taken from the caster's class resource, at the
-  /// accept (genesis_prime/game/class_resource `pay`).
+  /// A cast's costs are taken from the caster's class resource, at its first go, or
+  /// at the accept of a spell that goes at once (genesis_prime/game/class_resource
+  /// `pay`).
   Pay(payments: List(Payment))
   /// A go's resource gains are given to the caster's class resource
   /// (genesis_prime/game/class_resource `gain`).
@@ -521,6 +536,9 @@ pub type Live {
     /// The points the cast spent above its base cost, fixed at its accept; none for a
     /// spell with no spend and for a child a Proxy started.
     spent: Option(Int),
+    /// The costs the accept checked and the cast's first go pays: empty once paid,
+    /// for a cast whose accept paid them (`pays_at_accept`) and for a child.
+    reserved: List(Payment),
     /// The spell the player pressed, the root of every child.
     root: Spell4Id,
     /// The spell whose Proxy started this one; none for the pressed spell.
@@ -1118,9 +1136,10 @@ fn press_of(
             cast_id: next_cast_id(cast:, caster:),
           )
       }
-      let taken = case payments {
-        [] -> []
-        [_, ..] -> [Pay(payments:)]
+      let #(taken, reserved) = case pays_at_accept(spell:), payments {
+        _, [] -> #([], [])
+        True, [_, ..] -> #([Pay(payments:)], [])
+        False, [_, ..] -> #([], payments)
       }
       let #(cast, started) = case resolution.stage {
         None ->
@@ -1135,6 +1154,7 @@ fn press_of(
             client_cast_id:,
             role: Base(ability: resolution.ability),
             spent: paid.spent,
+            reserved:,
           )
         Some(index) ->
           start(
@@ -1148,6 +1168,7 @@ fn press_of(
             client_cast_id:,
             role: Stage(ability: resolution.ability, index:),
             spent: paid.spent,
+            reserved:,
           )
       }
       #(cast, list.append(taken, started))
@@ -1279,7 +1300,8 @@ const caster_must_be_dead = 58
 /// window passing as the client's 317 does), the caster requirements, the innate
 /// costs and the weapon.
 type Verdict {
-  /// The press is accepted, and pays these costs at the accept.
+  /// The press is accepted, and its cast pays these costs at its first go (at the
+  /// accept when it goes at once).
   Accept(paid: Paid)
   Refuse(result: cast_result.CastResult)
   /// The press is within the queue window of a cooldown's end; its costs are
@@ -1337,7 +1359,10 @@ fn verdict(
   )
   case
     failed_requirement(spell:, resources: caster.resources),
-    costs_paid(costs: spell.costs, resources: caster.resources)
+    costs_paid(
+      costs: spell.costs,
+      resources: unreserved(cast:, resources: caster.resources),
+    )
   {
     Some(result), _ -> Refuse(result: cast_result.from_value(result))
     None, Error(Unpaid(result:)) ->
@@ -1519,6 +1544,27 @@ fn adding(paid paid: Paid, payment payment: Payment) -> Paid {
 fn whole_points(resources resources: Resources, slot slot: Int) -> Int {
   float.truncate(class_resource.value(resources:, slot:))
   |> int.absolute_value
+}
+
+/// Whether a press's costs are paid at its accept: a cast whose first go is at once
+/// and a cast with no go of its own (a charge held until its release) have no later
+/// moment to pay at. Any other cast reserves its costs at the accept and pays them
+/// at its first go.
+fn pays_at_accept(spell spell: Spell) -> Bool {
+  case spell_plan.go_times_ms(spell:) {
+    [] | [0, ..] -> True
+    [_, ..] -> False
+  }
+}
+
+/// The caster's resources less what the live casts have reserved: what a press's
+/// costs are checked against, so a second press cannot be accepted on points a first
+/// cast will pay at its go.
+fn unreserved(cast cast: State, resources resources: Resources) -> Resources {
+  class_resource.paid(
+    resources:,
+    payments: list.flat_map(dict.values(cast.casts), fn(live) { live.reserved }),
+  )
 }
 
 /// The caster with the payments and gains among the effects taken into its
@@ -1813,6 +1859,7 @@ fn fire(
             client_cast_id: None,
             role: Child,
             spent: None,
+            reserved: [],
           )
         NodesEnd(cast_id:) -> nodes_ended(cast:, cast_id:, now_ms:)
         StateEnd(spell4_id:, unit_id:, state:) -> #(cast, [
@@ -2424,6 +2471,7 @@ fn start(
   client_cast_id client_cast_id: Option(Int),
   role role: Role,
   spent spent: Option(Int),
+  reserved reserved: List(Payment),
 ) -> #(State, List(Effect)) {
   let id = next_cast_id(cast:, caster:)
   let audience = caster.audience
@@ -2449,6 +2497,7 @@ fn start(
     Live(
       spell:,
       spent:,
+      reserved:,
       root:,
       parent:,
       primary_target:,
@@ -2810,6 +2859,14 @@ fn go(
     Error(Nil) -> #(cast, [])
     Ok(live) -> {
       let spell = live.spell
+      // The first go pays what the accept reserved, before the gains and gates of
+      // this go (the server's choice: the order at one go is not recorded).
+      let paying = case live.reserved {
+        [] -> []
+        [_, ..] -> [Pay(payments: live.reserved)]
+      }
+      let live = Live(..live, reserved: [])
+      let caster = after_payments(caster:, effects: paying)
       let go_count = list.length(spell_plan.go_times_ms(spell:))
       let cast = case spell.cooldown_start {
         spell_plan.AtFirstGo if live.gone == 0 ->
@@ -2922,6 +2979,7 @@ fn go(
       #(
         cast,
         list.flatten([
+          paying,
           going,
           logged,
           removed,
@@ -4057,6 +4115,7 @@ fn child(
         client_cast_id: None,
         role: Child,
         spent: None,
+        reserved: [],
       )
     True -> {
       let #(cast, _, start) =

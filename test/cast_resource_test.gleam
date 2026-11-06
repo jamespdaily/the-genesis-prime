@@ -11,8 +11,9 @@
 //// - The client's rows (`table_rows -- Spell4 38779 41276 32809 29874 58524`):
 ////   Impale 35 of type 8, Electrocute 8 of type 6, Mind Burst 1 of type 6, Gamma
 ////   Rays 2 of type 18 (the Medic's slots 1 to 5), Rampage slot 1 at least 250.
-//// - The step's design (issue 403): the classes' maxima and starts, and Jim's answer
-////   that a cost is paid at the accept.
+//// - The step's design (issue 403): the classes' maxima and starts. A cost is paid at
+////   the cast's first go, which is the accept for a spell that goes at once
+////   (`cast_cost_timing_test`).
 //// The bag indices are `cast_support.abilities`'.
 
 import cast_support as support
@@ -60,7 +61,8 @@ fn refusal_results(frames: List(Frame)) -> List(CastResult) {
 }
 
 /// What a press of the bag index by a caster holding `resources` gives: the
-/// refusals written and the payments taken.
+/// refusals written and the payments taken, at the accept or at the go the press
+/// leads to (a cost is paid at the cast's first go, `cast_cost_timing_test`).
 fn press(
   resources resources: Resources,
   bag_index bag_index: Int,
@@ -73,7 +75,7 @@ fn press_in(
   resources resources: Resources,
   bag_index bag_index: Int,
 ) -> #(List(Int), List(class_resource.Payment)) {
-  let #(_, effects) =
+  let #(state, effects) =
     support.pressed_raw_in(
       plans:,
       state: cast.new(),
@@ -81,6 +83,12 @@ fn press_in(
       bag_index:,
       target: 0,
       at: 1000,
+    )
+  let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
+  let effects =
+    list.append(
+      effects,
+      list.flat_map(steps, fn(step: #(Int, List(cast.Effect))) { step.1 }),
     )
   #(
     list.map(refusal_results(support.writes(effects:)), cast_result.to_value),
@@ -94,7 +102,7 @@ pub fn impale_is_accepted_with_35_suit_power_and_paid_and_refused_53_at_34_test(
   use <- owned_test.run(5000)
   assert press(resources: holding(5, 100.0), bag_index: support.impale)
     == #([], [Payment(slot: 3, amount: 35)])
-    as "0x1403b3320: slot 3 at 100 holds 35; the cost is paid at the accept (Jim's answer, Q5)"
+    as "0x1403b3320: slot 3 at 100 holds 35; Impale's first phase is at 0 ms, so its cost is paid at the accept (cast_cost_timing_test)"
   assert press(resources: holding(5, 35.0), bag_index: support.impale)
     == #([], [Payment(slot: 3, amount: 35)])
   assert press(resources: holding(5, 34.9), bag_index: support.impale)

@@ -13,9 +13,10 @@
 ////   refused with the cost's result.
 //// - `Spell4.32812`: Crush has no EMM id; its Proxy 62007 holds a stray (0, 4) and
 ////   still starts.
-//// - The cast rule's doc comment: a cost is paid at the accept, in the step of its
-////   check, so a second press taken in the same step is checked against what the
-////   first left; a held press is checked when it starts.
+//// - The cast rule's doc comment: a cost is paid at the cast's first go, which is the
+////   accept for a spell that goes at once (Mind Burst here), so a second press taken
+////   in the same step is checked against what the first left; a held press is
+////   checked when it starts.
 //// The bag index 2 is Mind Burst, with the plan of `spell_tables.plans_with_mind_burst_spend`.
 
 import cast_support as support

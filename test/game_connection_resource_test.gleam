@@ -1,11 +1,12 @@
 //// The class resource on the game connection (`genesis_prime/game/connection/resource`):
-//// a press's cost paid at its accept and written to the player's own client as
+//// a cast's cost paid at its first go and written to the player's own client as
 //// 0x935, and the refill's timer run by the connection. Expected values come from
 //// the client (`opcode.0x935`: a 32-bit unit, a 5-bit stat, a float; stat n + 2
 //// is slot n, `opcode.0x262.resource_stats`), the client's row
 //// (`table_rows -- Spell4 38779`: Impale costs 35 of type 8, slot 3) and the step's
-//// design (issue 403: the Stalker's 100 Suit Power, +7 each second, paid at the
-//// accept). The seed's draws are those of `genesis_prime/random` (each draw takes
+//// design (issue 403: the Stalker's 100 Suit Power, +7 each second) and its
+//// Impale, which goes at once and pays at its accept, and Gamma Rays (a cast time of
+//// 1250 ms), which pays at its go (`Spell4.innateCost0.timing`). The seed's draws are those of `genesis_prime/random` (each draw takes
 //// whole 32-byte blocks of HMAC-SHA256 of the seed), and a strike's rolls are 12
 //// bytes (`hit.roll_bytes`).
 
@@ -23,6 +24,7 @@ import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/hit
 import genesis_prime/game/loadout
 import genesis_prime/game/strike_tell
+import genesis_prime/message/cast_result
 import genesis_prime/message/float32
 import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
@@ -159,7 +161,7 @@ pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_wri
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 5, value: float32.to_bits(65.0)),
     ]
-    as "100 less 35, paid at the accept, as 0x935 of stat 5 (slot 3) to the player's own client"
+    as "100 less 35, paid at the accept of a spell that goes at once, as 0x935 of stat 5 (slot 3) to the player's own client"
   let #(_, ticked) =
     game_connection_support.feed(
       state,
@@ -392,13 +394,29 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
     )
   assert resource_timers_started(threatened) == []
     as "a Medic starts nothing while it is full"
-  let #(state, pressed) = press(state:, bag_index:)
-  assert changes_written(pressed)
+  let #(state, pressed) =
+    pressed_until(
+      state:,
+      bag_index:,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 1000,
+    )
+  assert all_changes(pressed) == []
+    as "Spell4.innateCost0.timing: the press takes no Actuator and sends no 0x935"
+  let #(state, going) =
+    casts_run(
+      state:,
+      pending: cast_timers(steps: pressed, ms: 1000),
+      until_ms: 2250,
+      steps: [],
+    )
+  assert all_changes(going)
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(2.0)),
     ]
-    as "4 Actuators less Gamma Rays' 2, as 0x935 of stat 3 (slot 1)"
-  assert resource_timers_started(pressed) == []
+    as "Gamma Rays' go, 1250 ms after the press, pays: 4 Actuators less 2, as 0x935 of stat 3 (slot 1)"
+  assert list.flat_map(going, resource_timers_started) == []
     as "in combat the Medic's refill waits (500710: regenerate while out of combat)"
   let #(state, released) =
     game_connection_support.feed(
@@ -436,7 +454,14 @@ pub fn a_player_killed_and_brought_back_gets_each_slot_at_its_start_in_one_0x935
       state,
       game_connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
     )
-  let #(state, _) = press(state:, bag_index:)
+  let #(state, _) =
+    pressed_until(
+      state:,
+      bag_index:,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 2250,
+    )
   let #(state, killed) =
     game_connection_support.feed(
       state,
@@ -488,10 +513,17 @@ pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> N
   use <- owned_test.run(30_000)
   let #(state, _, bag_index) =
     entered_with_trees(class_id: 4, ability: gamma_rays_base)
-  let #(state, pressed) = press(state:, bag_index:)
-  assert resource_timers_started(pressed)
+  let #(state, pressed) =
+    pressed_until(
+      state:,
+      bag_index:,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 2250,
+    )
+  assert list.flat_map(pressed, resource_timers_started)
     == [#(class_resource.refill_timer, 3000)]
-    as "out of combat the Medic's payment starts the refill (the server's choice)"
+    as "out of combat the Medic's payment, at the go, starts the refill (the server's choice)"
   let #(state, camp_asked) =
     game_connection_support.read(
       state:,
@@ -620,4 +652,42 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
     as "the second press strikes the Beast too"
   assert strike_rolls([first, second]) == rolls_of_the_seed(count: 2)
     as "each strike takes the next 12 bytes of the seed: the go between them drew none, which a draw of a roll (4 bytes, a block of the seed) would shift"
+}
+
+pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_leaves_the_actuators_and_writes_no_0x935_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(state, unit_id, bag_index) =
+    entered_with_trees(class_id: 4, ability: gamma_rays_base)
+  let #(state, pressed) =
+    pressed_until(
+      state:,
+      bag_index:,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 1000,
+    )
+  let #(state, cancelled) =
+    at(
+      state:,
+      ms: 1500,
+      event: OwnEvent(
+        step.Read(game_connection_support.world_message(
+          message_id: 0x0801,
+          body: cast_support.cancel_body(
+            cast_id: cast.cast_id(unit_id:, number: 0),
+            reason: cast_result.from_value(11),
+            bit: 1,
+          ),
+        )),
+      ),
+    )
+  let #(_, later) =
+    casts_run(
+      state:,
+      pending: cast_timers(steps: pressed, ms: 1000),
+      until_ms: 5000,
+      steps: [],
+    )
+  assert all_changes(list.append([cancelled], later)) == []
+    as "opcode.0x801 (reason 11, the jump): the cast ends before its go at 2250, so the Actuators stay at 4 and no 0x935 is written"
 }
