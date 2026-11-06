@@ -245,11 +245,14 @@ import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/table/class
 import genesis_prime/table/id.{
-  type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
-  type UnitProperty2Id, ClassId, PrerequisiteId, Spell4BaseId,
-  Spell4ConditionsId, Spell4EffectsId, Spell4Id, Spell4StackGroupId,
-  SpellCoolDownId, UnitProperty2Id,
+  type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
+  type Spell4Id, type UnitProperty2Id, ClassId, ItemDisplayId, PrerequisiteId,
+  Spell4BaseId, Spell4ConditionsId, Spell4EffectsId, Spell4Id,
+  Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
 }
+import genesis_prime/table/item2_type
+import genesis_prime/table/item_display
+import genesis_prime/table/item_slot
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -2126,49 +2129,61 @@ fn modifiers_of(
     )
   })
   |> list.try_map(fn(effect) {
-    use change <- result.try(case effect_kind.kind_of(effect.effect_type) {
-      effect_kind.DisguiseOutfit ->
-        disguise_of(tables:, spell4_id:, effect:)
-        |> result.map(LookChange)
-      effect_kind.PropertyConversion ->
-        conversion_of(tables:, spell4_id:, effect:)
-        |> result.map(PropertyChange)
-      effect_kind.PropertyModifier
-      | effect_kind.Proxy
-      | effect_kind.Damage
-      | effect_kind.VitalModifier
-      | effect_kind.Fluff
-      | effect_kind.ForceRemove
-      | effect_kind.CrowdControl
-      | effect_kind.ForcedMove
-      | effect_kind.CooldownModifier
-      | effect_kind.Stealth
-      | effect_kind.RemoveStealth
-      | effect_kind.ShieldHeal
-      | effect_kind.ShieldOverload
-      | effect_kind.InterruptArmor
-      | effect_kind.Proc
-      | effect_kind.Scale
-      | effect_kind.RavelSignal
-      | effect_kind.Unread(..) ->
-        change_of(tables:, spell4_id:, effect:)
-        |> result.map(PropertyChange)
-    })
     use condition <- result.try(condition_of(
       tables:,
       effect:,
       data_bits06_names_a_gate: False,
     ))
-    Ok(PropertyModifier(
-      effect_id: Spell4EffectsId(effect.id),
-      phase_flags: effect.phase_flags,
-      change:,
-      row: lasting_row_of(effect:),
-      condition:,
-      tag: tag_of(effect:),
-      armor: None,
-    ))
+    modifier_of(tables:, spell4_id:, effect:, condition:)
   })
+}
+
+/// One UnitPropertyModifier, UnitPropertyConversion or DisguiseOutfit row as a
+/// `PropertyModifier` that holds the caster `condition` it was given, or the error
+/// that fails the load (`modifiers_of`).
+pub fn modifier_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  condition condition: Condition,
+) -> Result(PropertyModifier, PlanError) {
+  use change <- result.map(case effect_kind.kind_of(effect.effect_type) {
+    effect_kind.DisguiseOutfit ->
+      disguise_of(tables:, spell4_id:, effect:)
+      |> result.map(LookChange)
+    effect_kind.PropertyConversion ->
+      conversion_of(tables:, spell4_id:, effect:)
+      |> result.map(PropertyChange)
+    effect_kind.PropertyModifier
+    | effect_kind.Proxy
+    | effect_kind.Damage
+    | effect_kind.VitalModifier
+    | effect_kind.Fluff
+    | effect_kind.ForceRemove
+    | effect_kind.CrowdControl
+    | effect_kind.ForcedMove
+    | effect_kind.CooldownModifier
+    | effect_kind.Stealth
+    | effect_kind.RemoveStealth
+    | effect_kind.ShieldHeal
+    | effect_kind.ShieldOverload
+    | effect_kind.InterruptArmor
+    | effect_kind.Proc
+    | effect_kind.Scale
+    | effect_kind.RavelSignal
+    | effect_kind.Unread(..) ->
+      change_of(tables:, spell4_id:, effect:)
+      |> result.map(PropertyChange)
+  })
+  PropertyModifier(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    change:,
+    row: lasting_row_of(effect:),
+    condition:,
+    tag: tag_of(effect:),
+    armor: None,
+  )
 }
 
 /// A DisguiseOutfit row's change (`Spell4Effects.effectType.112`): dataBits02 is an
@@ -2178,11 +2193,66 @@ fn modifiers_of(
 /// neither display `NamesNoDisplay`, a display with no ItemDisplay, Item2Type or ItemSlot
 /// row `NoRow` and a type with no slot `DisplayHasNoSlot`. dataBits03 is not read.
 fn disguise_of(
-  tables _tables: table_store.Tables,
-  spell4_id _spell4_id: Int,
-  effect _effect: spell4_effects.Spell4Effects,
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
 ) -> Result(look.Disguise, PlanError) {
-  panic as "shape: #494"
+  let refused = fn(reason) {
+    Error(DisguiseNotRead(spell4_id:, effect_id: effect.id, reason:))
+  }
+  use <- bool.guard(
+    when: effect.data_bits00 != 0 || effect.data_bits08 != 0,
+    return: refused(OutfitNeedsMessage0x905),
+  )
+  let displays =
+    list.filter([effect.data_bits01, effect.data_bits02], fn(display) {
+      display != 0
+    })
+  use <- bool.guard(when: displays == [], return: refused(NamesNoDisplay))
+  use shown <- result.map(
+    list.try_map(displays, fn(display) {
+      use item_slot <- result.map(display_slot(
+        tables:,
+        spell4_id:,
+        effect:,
+        display:,
+      ))
+      look.Shown(item_slot:, display: ItemDisplayId(display))
+    }),
+  )
+  look.Disguise(shown:)
+}
+
+/// The ItemSlot an ItemDisplay is worn in: its row's item type's itemSlotId, which
+/// must name an ItemSlot row (`0x140466d20`: the slot of an item visual is an ItemSlot
+/// id). A missing row fails the load, and an item type with itemSlotId 0 has no slot.
+fn display_slot(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  display display: Int,
+) -> Result(ItemSlotId, PlanError) {
+  use row <- result.try(
+    item_display.get(tables:, id: ItemDisplayId(display))
+    |> result.replace_error(NoRow(table: "ItemDisplay", id: display)),
+  )
+  let item_type = item_display.item2_type_id(row)
+  use item_type_row <- result.try(
+    item2_type.get(tables:, id: item_type)
+    |> result.replace_error(NoRow(table: "Item2Type", id: item_type.value)),
+  )
+  let slot = item2_type.item_slot_id(item_type_row)
+  use <- bool.guard(
+    when: slot.value == 0,
+    return: Error(DisguiseNotRead(
+      spell4_id:,
+      effect_id: effect.id,
+      reason: DisplayHasNoSlot(item_display_id: display),
+    )),
+  )
+  item_slot.get(tables:, id: slot)
+  |> result.replace(slot)
+  |> result.replace_error(NoRow(table: "ItemSlot", id: slot.value))
 }
 
 /// The ModifyInterruptArmor effects of a spell that reach the caster, each with its caster

@@ -52,8 +52,7 @@
 ////   (`Spell4Effects.effectType.145`).
 //// - **DisguiseOutfit** (112) changes the look of the unit it aims at for its time; the
 ////   client has no class for it, so a look changes only by the server's 0x933 or 0x905
-////   (`Spell4Effects.effectType.112`). No rule reads it: `is_read` and `is_row_read` give
-////   False.
+////   (`Spell4Effects.effectType.112`); the server reads the rows aimed at the caster.
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -131,8 +130,8 @@ pub type Kind {
   /// the caster (`is_row_read`).
   PropertyConversion
   /// A DisguiseOutfit effect (112): changes the look of the unit it aims at
-  /// (`Spell4Effects.effectType.112`). No rule reads it: `is_read` and `is_row_read` give
-  /// False for it.
+  /// (`Spell4Effects.effectType.112`). A row is read when its targetFlags include the
+  /// caster (`is_row_read`).
   DisguiseOutfit
   /// A type no rule reads.
   Unread(effect_type: Int)
@@ -165,7 +164,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
 }
 
 /// Whether some rule reads the effect type: the coverage measure's "handled". A
-/// PropertyModifier, PropertyConversion, ForcedMove or CooldownModifier counts as read for
+/// PropertyModifier, PropertyConversion, DisguiseOutfit, ForcedMove or CooldownModifier counts as read for
 /// its rows aimed at the caster, which `is_row_read` tells apart from the others.
 pub fn is_read(effect_type effect_type: Int) -> Bool {
   case kind_of(effect_type:) {
@@ -186,14 +185,15 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | PropertyConversion
     | ShieldHeal
     | ShieldOverload
-    | InterruptArmor -> True
-    DisguiseOutfit | Unread(..) -> False
+    | InterruptArmor
+    | DisguiseOutfit -> True
+    Unread(..) -> False
   }
 }
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
 /// type `is_read` for, except that a PropertyModifier, PropertyConversion, ForcedMove,
-/// CooldownModifier, Stealth, RemoveStealth or Proc row is read only when its flags
+/// CooldownModifier, Stealth, RemoveStealth, Proc or DisguiseOutfit row is read only when its flags
 /// include the caster (bit 1, `Spell4Effects.targetFlags`), a ShieldHeal or InterruptArmor
 /// row when they include the caster or are the primary target alone (2), and a
 /// ShieldOverload row only when they are the area alone (4); a row aimed at other units
@@ -211,7 +211,8 @@ pub fn is_row_read(
     | CooldownModifier
     | Stealth
     | RemoveStealth
-    | Proc -> int.bitwise_and(target_flags, 1) == 1
+    | Proc
+    | DisguiseOutfit -> int.bitwise_and(target_flags, 1) == 1
     ShieldHeal | InterruptArmor ->
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
@@ -223,6 +224,6 @@ pub fn is_row_read(
     | CrowdControl
     | Scale
     | RavelSignal -> True
-    DisguiseOutfit | Unread(..) -> False
+    Unread(..) -> False
   }
 }
