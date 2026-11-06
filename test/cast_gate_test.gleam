@@ -1,7 +1,8 @@
 //// The gates a go checks against the caster (`genesis_prime/game/cast`): a Proxy
 //// behind a caster apply prerequisite or one named by its dataBits06 starts its
-//// child only when the gate passes, one behind a target apply prerequisite never
-//// starts, a gain behind a prerequisite of a vital reads the caster's vitals, and
+//// child only when the gate passes, one the plan keeps unchecked behind a target apply
+//// prerequisite (`GatedOnTarget`) never starts (a Proxy's target gate that the plan
+//// decodes is `cast_position_test`'s), a gain behind a prerequisite of a vital reads the caster's vitals, and
 //// a type 37 condition takes a roll only when one is checked. Expected values come
 //// from these places, each named at its assertion:
 //// - The client's rows: Prerequisite 903 (`Prerequisite.prerequisiteTypeId.28`,
@@ -16,7 +17,7 @@
 //// - The design of the step: a gate decides on the state before the go's own
 ////   effects (the casts as they stood before its children start and before its
 ////   finish), a Proxy's caster-side gates are checked at its
-////   phase's go with the caster as subject, a Proxy with a target apply
+////   phase's go with the caster as subject, a Proxy kept unchecked behind a target apply
 ////   prerequisite is not started, and a prerequisite of a type or a vital not read
 ////   leaves one debug line (`Spell4Effects.effectType.26.dataBits06`).
 //// The bag index 8 is the exempt spell, which these tests replace with a spell of no
@@ -205,7 +206,7 @@ pub fn a_gate_of_a_type_the_server_does_not_read_starts_nothing_and_leaves_one_d
     as "one line names the child, the prerequisite and its type"
 }
 
-pub fn a_proxy_behind_a_target_apply_prerequisite_is_not_started_test() -> Nil {
+pub fn a_proxy_kept_unchecked_behind_a_target_apply_prerequisite_is_not_started_test() -> Nil {
   use <- owned_test.run(5000)
   let spell =
     spell_with(

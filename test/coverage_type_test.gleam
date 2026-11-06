@@ -91,17 +91,18 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_73_80_83_and_84
     as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), Stealth 83 (Spell4Effects.effectType.83) and RemoveStealth 84 (Spell4Effects.effectType.84) for the rows aimed at the caster; every other type is unread"
 }
 
-pub fn the_prerequisite_types_the_measure_handles_are_the_nine_read_and_those_with_no_case_test() -> Nil {
+pub fn the_prerequisite_types_the_measure_handles_are_the_ten_read_and_those_with_no_case_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Prerequisites"),
       types: numbers(from: 1, to: 295),
     )
     == [
-      15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 116, 132, 144,
-      156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
+      15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 108, 116, 132,
+      144, 156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282,
+      284,
     ]
-    as "the server reads 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 71, 73, 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116) and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+    as "the server reads 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 71, 73, 108 (where the second unit stands around the first, Prerequisite.prerequisiteTypeId.108), 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116) and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
 }
 
 // ---- the starting abilities' column ----
@@ -227,8 +228,8 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
     as "the trace's effect types of the starting abilities that no rule reads: proc 14 and charges 90; forced move 3, property modifier 11 and cooldown change 73 are read for the rows aimed at the caster and listed as partial"
   assert missing_of("Spend-scaled costs") == [2, 5, 9, 10, 11]
     as "the innate cost EMM ids besides 4 and 7 that the rows hold"
-  assert missing_of("Prerequisites") == [43, 108]
-    as "the trace's prerequisite types the server cannot decide: quest log 43 and facing 108; stealth 116 is read"
+  assert missing_of("Prerequisites") == [43]
+    as "the trace's prerequisite types the server cannot decide: quest log 43; stealth 116 and position 108 are read"
 }
 
 pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
@@ -1579,7 +1580,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_58_of_72_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_60_of_72_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1597,9 +1598,9 @@ pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_58_of_72_co
     as "190 effect rows are left, 21 of them not handled (types 14 x7, 90 x4, 112 x2, 118 x2, and 18, 24, 29, 52, 81 and 145 once); the whole-game columns are the walk's of 2026-11-05, with types 83 and 84 handled beside the nine"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 10 | 58 of 72 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 11 | 60 of 72 |",
   )
-    as "72 conditions are left, 14 of them not handled (types 11 x3, 64, 108, 109, 243 and 250 twice, and 129 once); type 116 is read (Prerequisite.prerequisiteTypeId.116)"
+    as "72 conditions are left, 12 of them not handled (types 11 x3, 64, 109, 243 and 250 twice, and 129 once); types 108 and 116 are read (Prerequisite.prerequisiteTypeId.116)"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {

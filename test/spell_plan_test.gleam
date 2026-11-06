@@ -431,7 +431,9 @@ pub fn the_phases_channel_and_threshold_of_each_method_are_read_from_the_rows_te
   assert list.all(quick_draw.proxies, fn(proxy) {
     case proxy.condition {
       spell_plan.GatedOnCaster(..) -> True
-      Always | spell_plan.GatedOnTarget(..) -> False
+      Always
+      | spell_plan.GatedOnTarget(..)
+      | spell_plan.GatedOnCasterAndTarget(..) -> False
     }
   })
     as "Spell4Effects 196513 to 196522: every Proxy of Quick Draw sits behind its caster apply prerequisite 17301 or 17302"

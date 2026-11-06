@@ -101,7 +101,9 @@ pub fn closed_by(
         row_closed(gates:, row:)
         |> result.map(fn(why) { #(prerequisite_id.value, why) })
       })
-    spell_plan.Always | spell_plan.GatedOnTarget(..) -> Error(Nil)
+    spell_plan.Always
+    | spell_plan.GatedOnTarget(..)
+    | spell_plan.GatedOnCasterAndTarget(..) -> Error(Nil)
   }
 }
 

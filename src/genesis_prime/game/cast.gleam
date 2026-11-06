@@ -258,8 +258,14 @@
 ////   its 0x7ff goes to the caster too. Its go and finish follow as a pressed
 ////   cast's, and it starts no global cooldown (kind 3). A Proxy behind a caster
 ////   apply prerequisite or one its dataBits06 names starts only when each passes
-////   against the caster at the go (`proxy_gate`); one behind a target apply
-////   prerequisite is not started. A child's timer is its own: the parent's finish
+////   against the caster at the go (`proxy_gates`). One behind a target apply
+////   prerequisite as well starts a child on a unit only when that prerequisite passes
+////   too, for each unit separately (`children`, `target_gate`): the target first and
+////   the caster second (`Spell4Effects.prerequisiteIdTargetApply`), the struck unit as
+////   the caster's picture shows it when the round closes (`went`'s `poses`; a unit it no
+////   longer shows decides nothing and leaves a debug line), or the caster on its own
+////   point for a Proxy aimed at it. The target gate takes no roll. A child's timer is
+////   its own: the parent's finish
 ////   leaves the pending children, which start 100 ms after it (Crush), and only
 ////   the player leaving the world cancels them.
 //// - **A RapidTap threshold** opens with the first tap's 0x816 and lasts the
@@ -356,6 +362,7 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/area
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/cooldown
 import genesis_prime/game/hit
@@ -2045,7 +2052,7 @@ pub fn rolls_needed(
       int.sum(
         list.flatten([
           list.map(proxies, fn(proxy) {
-            condition_rolls_needed(proxy.condition)
+            condition_rolls_needed(caster_side(condition: proxy.condition))
           }),
           list.map(
             gains_of(spell:, phase:, proxies:, spent: live.spent),
@@ -2103,7 +2110,9 @@ fn condition_rolls_needed(condition: spell_plan.Condition) -> Int {
           prerequisite.rolls_needed(prerequisite: gate)
         }),
       )
-    spell_plan.Always | spell_plan.GatedOnTarget(..) -> 0
+    spell_plan.Always
+    | spell_plan.GatedOnTarget(..)
+    | spell_plan.GatedOnCasterAndTarget(..) -> 0
   }
 }
 
@@ -2154,7 +2163,7 @@ fn proxies_with_targets(
 fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
   case proxy.condition {
     spell_plan.Always | spell_plan.GatedOnCaster(..) -> proxy.gains
-    spell_plan.GatedOnTarget(..) -> []
+    spell_plan.GatedOnTarget(..) | spell_plan.GatedOnCasterAndTarget(..) -> []
   }
 }
 
@@ -2165,8 +2174,11 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// Hit unit and none for a deflect, and none for a Proxy whose gate against the
 /// caster does not pass) and the finish after the last go. A cast that is no longer
 /// live, because the client ended it while the round was open, has no go and writes
-/// nothing: the hits stand. `rolls` are the rolls the go's type 37 conditions take
-/// (`rolls_needed`), in the order the conditions are checked.
+/// nothing: the hits stand. `poses` are the Hit units' ground points and yaws as the
+/// caster's picture holds them when the round closes, by unit id, which a Proxy's target
+/// gate reads (`children`); a Hit unit with none is not shown any more. `rolls` are the
+/// rolls the go's type 37 conditions take (`rolls_needed`), in the order the conditions
+/// are checked.
 pub fn went(
   cast cast: State,
   caster caster: Caster,
@@ -2174,6 +2186,7 @@ pub fn went(
   cast_id cast_id: Int,
   phase phase: Int,
   struck struck: List(Struck),
+  poses poses: Dict(Int, area.Pose),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   use <- settled(cast:)
@@ -2185,6 +2198,7 @@ pub fn went(
       cast_id:,
       phase:,
       struck:,
+      poses:,
       rolls:,
     ),
     caster:,
@@ -3243,6 +3257,7 @@ fn go(
   cast_id cast_id: Int,
   phase phase: Int,
   struck struck: List(Struck),
+  poses poses: Dict(Int, area.Pose),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id) {
@@ -3344,7 +3359,16 @@ fn go(
         list.fold(starting, #(cast, []), fn(so_far, proxy) {
           let #(cast, effects) = so_far
           let #(cast, more) =
-            children(cast:, caster:, now_ms:, live:, proxy:, struck:)
+            children(
+              cast:,
+              caster:,
+              now_ms:,
+              live:,
+              proxy:,
+              struck:,
+              subject:,
+              poses:,
+            )
           #(cast, list.append(effects, more))
         })
       let #(cast, stealth) =
@@ -4523,7 +4547,10 @@ fn finished_effects(
 /// `0x1403b3320`: the cost check reads Vitals 5 to 11 as the caster's resource slots
 /// 0 to 6; the getter type 71 and 73 call is not read case by case, so the same
 /// mapping is taken for it). A slot the class does not hold is no vital, so a
-/// prerequisite of it is not read. A player holds no difficulty.
+/// prerequisite of it is not read. A player holds no difficulty. The caster stands on its
+/// own point, facing its own yaw, for both units of a type 108 condition
+/// (`Spell4Effects.prerequisiteIdTargetApply`: the caster is both units of a caster-side
+/// check).
 fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
   let slot = class_resource.slot(resources: caster.resources)
   let held = case slot >= 0 && slot <= 6 {
@@ -4538,6 +4565,7 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     ]
     False -> []
   }
+  let pose = area.pose_of(place: caster.place)
   prerequisite.Subject(
     under: dict.values(cast.casts)
       |> list.filter(fn(live) { live.primary_target == caster.unit_id })
@@ -4555,6 +4583,8 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     difficulty: None,
     stealthed: Some(stealthed(cast:)),
     rolls: [],
+    positions: prerequisite.Placed(first: pose, second: pose),
+    seen: prerequisite.WholeUnit,
   )
 }
 
@@ -4598,6 +4628,21 @@ type ProxyGate {
   CannotTell(why: String)
 }
 
+/// A Proxy's condition as its go checks it against the caster: a Proxy behind a target gate
+/// as well passes here on its caster gates alone, and `children` checks its target gate
+/// for each unit its child would be made on.
+fn caster_side(
+  condition condition: spell_plan.Condition,
+) -> spell_plan.Condition {
+  case condition {
+    spell_plan.GatedOnCasterAndTarget(caster:, ..) ->
+      spell_plan.GatedOnCaster(gates: caster)
+    spell_plan.Always
+    | spell_plan.GatedOnCaster(..)
+    | spell_plan.GatedOnTarget(..) -> condition
+  }
+}
+
 /// Which of the Proxies of a go start a child, with a debug line for each that
 /// cannot be decided, and the rolls left (`gated`).
 fn proxy_gates(
@@ -4607,7 +4652,7 @@ fn proxy_gates(
 ) -> #(List(Proxy), List(Effect), List(Int)) {
   gated(
     rows: proxies,
-    condition: fn(proxy: Proxy) { proxy.condition },
+    condition: fn(proxy: Proxy) { caster_side(condition: proxy.condition) },
     what: fn(proxy: Proxy) {
       "the Proxy to Spell4 " <> int.to_string(proxy.spell.spell4_id.value)
     },
@@ -4669,6 +4714,16 @@ fn condition_gate(
         why: what
         <> " applies only behind target prerequisite "
         <> int.to_string(prerequisite_id.value)
+        <> ", which is not checked, "
+        <> outcome,
+      ),
+      rolls,
+    )
+    spell_plan.GatedOnCasterAndTarget(target:, ..) -> #(
+      CannotTell(
+        why: what
+        <> " applies only behind target prerequisite "
+        <> int.to_string(prerequisite.id(prerequisite: target).value)
         <> ", which is not checked, "
         <> outcome,
       ),
@@ -4858,7 +4913,7 @@ fn clears_current(
 }
 
 /// The units a round Hit, in the round's order; a deflect is none of them.
-fn hit_units(struck struck: List(Struck)) -> List(Int) {
+pub fn hit_units(struck struck: List(Struck)) -> List(Int) {
   list.filter_map(struck, fn(one) {
     case one {
       Hit(unit_id:, ..) -> Ok(unit_id)
@@ -4868,7 +4923,9 @@ fn hit_units(struck struck: List(Struck)) -> List(Int) {
 }
 
 /// A Proxy of a go: a Proxy aimed at the area starts one child for each Hit unit of
-/// the round and none for a deflect, any other starts one on the caster.
+/// the round and none for a deflect, any other starts one on the caster. A Proxy behind a
+/// target gate starts a child on a unit only when the gate passes against that unit, once
+/// for each unit, with no roll (`target_gate`).
 fn children(
   cast cast: State,
   caster caster: Caster,
@@ -4876,6 +4933,8 @@ fn children(
   live live: Live,
   proxy proxy: Proxy,
   struck struck: List(Struck),
+  subject subject: prerequisite.Subject,
+  poses poses: Dict(Int, area.Pose),
 ) -> #(State, List(Effect)) {
   let targets = case proxy.target {
     spell_plan.OnCaster -> [caster.unit_id]
@@ -4883,10 +4942,66 @@ fn children(
   }
   list.fold(targets, #(cast, []), fn(so_far, primary_target) {
     let #(cast, effects) = so_far
-    let #(cast, more) =
-      child(cast:, caster:, now_ms:, live:, proxy:, primary_target:)
-    #(cast, list.append(effects, more))
+    case target_gate(proxy:, caster:, primary_target:, subject:, poses:) {
+      Starts -> {
+        let #(cast, more) =
+          child(cast:, caster:, now_ms:, live:, proxy:, primary_target:)
+        #(cast, list.append(effects, more))
+      }
+      GateFails -> #(cast, effects)
+      CannotTell(why:) -> #(
+        cast,
+        list.append(effects, [Log(level: LogDebug, text: why)]),
+      )
+    }
   })
+}
+
+/// What a Proxy's target gate gives for the unit its child would be made on. The gate's
+/// first unit is that unit and its second the caster
+/// (`Spell4Effects.prerequisiteIdTargetApply`): a struck unit as the caster's picture
+/// shows it (`of_struck`, so a unit with no pose leaves a type 108 condition not read), or
+/// the caster for a Proxy aimed at it, which stands on its own point, as `subject` has it.
+/// A Proxy with no target gate starts.
+fn target_gate(
+  proxy proxy: Proxy,
+  caster caster: Caster,
+  primary_target primary_target: Int,
+  subject subject: prerequisite.Subject,
+  poses poses: Dict(Int, area.Pose),
+) -> ProxyGate {
+  case proxy.condition {
+    spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
+      let gate_subject = case proxy.target {
+        spell_plan.OnCaster -> subject
+        spell_plan.OnEachStruck ->
+          prerequisite.of_struck(
+            first: option.from_result(dict.get(poses, primary_target)),
+            second: area.pose_of(place: caster.place),
+            second_unit: caster.unit_id,
+          )
+      }
+      case prerequisite.check(prerequisite: target, subject: gate_subject) {
+        prerequisite.Passes -> Starts
+        prerequisite.Fails -> GateFails
+        prerequisite.NotRead(prerequisite_type:) ->
+          CannotTell(
+            why: "the Proxy to Spell4 "
+            <> int.to_string(proxy.spell.spell4_id.value)
+            <> " on unit "
+            <> int.to_string(primary_target)
+            <> " is behind target prerequisite "
+            <> int.to_string(prerequisite.id(prerequisite: target).value)
+            <> " of type "
+            <> int.to_string(prerequisite_type)
+            <> ", which is not read, so it is not started",
+          )
+      }
+    }
+    spell_plan.Always
+    | spell_plan.GatedOnCaster(..)
+    | spell_plan.GatedOnTarget(..) -> Starts
+  }
 }
 
 /// One child of a Proxy: it starts at once for no delay, else after it from a timer

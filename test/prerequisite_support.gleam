@@ -4,6 +4,7 @@
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject, Subject}
 import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/dict
 import gleam/list
@@ -50,7 +51,53 @@ pub fn single(
   id id: Int,
   condition condition: #(Int, Int, Int, Int),
 ) -> Prerequisite {
-  prerequisite.of_row(row: row(id:, flags: 0, conditions: [condition]))
+  prerequisite_of(row: row(id:, flags: 0, conditions: [condition]))
+}
+
+/// The prerequisite of a row that holds no type 108 condition, which would need a
+/// PositionalRequirement row (`prerequisite_of_arcs`); a row that does is a mistake of the
+/// test.
+pub fn prerequisite_of(
+  row row: prerequisite_table.Prerequisite,
+) -> Prerequisite {
+  prerequisite_of_arcs(row:, arcs: [])
+}
+
+/// The prerequisite of a row, whose type 108 conditions find their PositionalRequirement
+/// rows among `arcs`, as the client's table holds them (`table_rows -- PositionalRequirement
+/// 53`); a row that names none is a mistake of the test.
+pub fn prerequisite_of_arcs(
+  row row: prerequisite_table.Prerequisite,
+  arcs arcs: List(positional_requirement.PositionalRequirement),
+) -> Prerequisite {
+  let assert Ok(prerequisite) =
+    prerequisite.of_row_with(row:, find_arc: fn(id) {
+      list.find(arcs, fn(arc) { arc.id == id })
+    })
+    as "the row's type 108 conditions name the arcs given"
+  prerequisite
+}
+
+/// A PositionalRequirement row: its id, angleCenter, angleRange and flags.
+pub fn arc_row(
+  id id: Int,
+  center center: Int,
+  range range: Int,
+  flags flags: Int,
+) -> positional_requirement.PositionalRequirement {
+  positional_requirement.PositionalRequirement(
+    id:,
+    angle_center: center,
+    angle_range: range,
+    flags:,
+  )
+}
+
+/// Row 53 of the client's PositionalRequirement table: the 140 degrees behind the first
+/// unit (`table_rows -- PositionalRequirement 53`: angleCenter 180, angleRange 140,
+/// flags 0).
+pub fn behind_arc() -> positional_requirement.PositionalRequirement {
+  arc_row(id: 53, center: 180, range: 140, flags: 0)
 }
 
 /// A subject holding these nodes (spell, caster, stack count), whose second unit is
@@ -69,6 +116,8 @@ pub fn holding(
     rolls: [],
     difficulty: None,
     stealthed: None,
+    positions: prerequisite.NotPlaced,
+    seen: prerequisite.WholeUnit,
   )
 }
 
@@ -77,5 +126,5 @@ pub fn check(
   row row: prerequisite_table.Prerequisite,
   subject subject: Subject,
 ) -> prerequisite.Verdict {
-  prerequisite.check(prerequisite: prerequisite.of_row(row:), subject:)
+  prerequisite.check(prerequisite: prerequisite_of(row:), subject:)
 }

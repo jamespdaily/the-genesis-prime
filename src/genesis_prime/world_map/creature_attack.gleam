@@ -157,8 +157,11 @@ fn condition(
         )),
       )
       case game_prerequisite.condition_types(row:) {
-        [type_id] if type_id == difficulty_type ->
-          Ok(Gated(prerequisite: game_prerequisite.of_row(row:)))
+        [type_id] if type_id == difficulty_type -> {
+          let assert Ok(prerequisite) = game_prerequisite.of_row(row:, tables:)
+            as "a row of one type 179 condition names no PositionalRequirement"
+          Ok(Gated(prerequisite:))
+        }
         [type_id, ..] ->
           Error(OtherType(
             spell4_effects_id: effect.id,

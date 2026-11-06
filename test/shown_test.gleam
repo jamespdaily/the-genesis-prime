@@ -9,10 +9,11 @@
 ////   (`Spell4ValidTargets.targetBitmask`, `Spell4Effects.targetFlags`).
 //// - Dominion 166 and Exile 167 are the two player factions (`start_place`).
 
-import genesis_prime/game/area.{Candidate, Point}
+import genesis_prime/game/area.{Candidate, Point, Pose}
 import genesis_prime/game/shown.{
   Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
 }
+import genesis_prime/game/start_place
 import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
 import genesis_prime/world_map/creature_path
 import gleam/dict
@@ -116,4 +117,85 @@ pub fn a_creature_marked_dead_by_its_news_is_no_longer_a_candidate_test() -> Nil
     )
     == [Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0)]
     as "a Died news sets alive false (opcode.0x88c)"
+}
+
+// ---- a creature's pose, for a position condition ----
+
+/// A creature standing at x and z that its 0x262 gave the yaw 0.7 (the kind 14 yaw of its
+/// create message, which nothing turns afterwards: `creature.facing`).
+fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
+  let place =
+    start_place.turned(
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x:,
+        y: 0.0,
+        z:,
+      ),
+      facing: start_place.Facing(yaw: 0.7, pitch: 0.0, roll: 0.0),
+    )
+  ShownCreature(
+    path: creature_path.Standing(at: place),
+    life: 4,
+    alive: True,
+    hit_radius: 3.0,
+    attackable: both,
+  )
+}
+
+pub fn a_standing_creatures_pose_is_its_place_and_the_yaw_of_its_0x262_test() -> Nil {
+  use <- owned_test.run(5000)
+  let picture = dict.from_list([#(1, facing_creature(x: 10.0, z: -20.0))])
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 0)
+    == Ok(Pose(at: Point(x: 10.0, z: -20.0), yaw: 0.7))
+}
+
+pub fn a_running_creatures_pose_is_where_its_path_puts_it_with_the_yaw_its_path_does_not_turn_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A path of kind 4 moves a creature without turning it (`creature.facing`): from (0, 0)
+  // to (0, -20) at 10 a second from 1000 ms, the creature faces its 0x262's yaw all along.
+  let assert ShownCreature(path: standing, ..) as from =
+    facing_creature(x: 0.0, z: 0.0)
+  let start = creature_path.end(path: standing)
+  let picture =
+    dict.from_list([
+      #(
+        1,
+        ShownCreature(
+          ..from,
+          path: creature_path.Running(
+            from: start,
+            to: start_place.moved(place: start, x: 0.0, y: 0.0, z: -20.0),
+            started_ms: 1000,
+            speed: 10.0,
+          ),
+        ),
+      ),
+    ])
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 1000)
+    == Ok(Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.7))
+    as "at its start"
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 2000)
+    == Ok(Pose(at: Point(x: 0.0, z: -10.0), yaw: 0.7))
+    as "10 units along after a second, still facing 0.7"
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 9000)
+    == Ok(Pose(at: Point(x: 0.0, z: -20.0), yaw: 0.7))
+    as "at its end"
+}
+
+pub fn a_unit_that_is_not_a_shown_creature_has_no_pose_test() -> Nil {
+  use <- owned_test.run(5000)
+  let picture =
+    dict.from_list([
+      #(1, facing_creature(x: 10.0, z: -20.0)),
+      #(2, ShownPlayer),
+      #(3, ShownObject),
+    ])
+  assert shown.pose_of(picture:, unit_id: 2, now_ms: 0) == Error(Nil)
+  assert shown.pose_of(picture:, unit_id: 3, now_ms: 0) == Error(Nil)
+  assert shown.pose_of(picture:, unit_id: 99, now_ms: 0) == Error(Nil)
+  assert shown.poses_of(picture:, unit_ids: [1, 2, 3, 99], now_ms: 0)
+    == dict.from_list([#(1, Pose(at: Point(x: 10.0, z: -20.0), yaw: 0.7))])
+    as "the poses of the units asked for that are shown creatures, and no other"
 }

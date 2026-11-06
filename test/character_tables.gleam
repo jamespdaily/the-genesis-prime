@@ -31,6 +31,8 @@
 ////   to 168, 174, 177, 189, 219, 1441 and 1442 with their parents, the
 ////   Faction2Relationship rows among them (684, 691, 726, 944 and 2943 to 2948),
 ////   no Creature2OutfitInfo row, and the World rows the tests' maps run in.
+//// - PositionalRequirement: no row, since no planted spell has a Proxy behind a type 108
+////   condition; the real tables hold the arcs.
 //// - Prerequisite: the creature attack's rows (`prerequisite_rows`) and the rows
 ////   the planted spells' gains name (`spell_tables.gain_prerequisite_rows`) and
 ////   their Proxies' caster apply columns (`spell_tables.proxy_prerequisite_rows`).
@@ -69,6 +71,7 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
+import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
@@ -751,6 +754,7 @@ fn files_with_looks(
         ]),
       ),
     ),
+    planted_table.file(positional_requirement.schema, []),
     ..novice_tables.files()
   ])
 }

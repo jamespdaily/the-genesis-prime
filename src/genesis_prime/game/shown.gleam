@@ -21,10 +21,13 @@
 //// - **A running creature** is where its last path puts it at the time of the go
 ////   (genesis_prime/world_map/creature_path `place_at`), by the same function the
 ////   creature reads its own place with.
+//// - **A creature's pose** (`pose_of`) is that place's ground point with the yaw of its
+////   0x262, which no path turns, so a position condition judges a creature by what its
+////   client shows (`creature.facing`: kind 4 paths move a creature without turning it).
 //// - **A creature's life** is the number of the map's watch it was started under,
 ////   which is part of its address (genesis_prime/step `Creature`).
 
-import genesis_prime/game/area.{type Candidate, Candidate}
+import genesis_prime/game/area.{type Candidate, type Pose, Candidate}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/world_map/creature_life.{type Attackable}
 import genesis_prime/world_map/creature_path.{type Path}
@@ -32,6 +35,7 @@ import genesis_prime/world_map/spawn
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/result
 
 /// The player faction of a caster, which picks the faction a creature may be
 /// attacked by.
@@ -132,6 +136,33 @@ pub fn place_of(
     Ok(ShownCreature(path:, ..)) -> Ok(creature_path.place_at(path:, now_ms:))
     Ok(ShownPlayer) | Ok(ShownObject) | Error(Nil) -> Error(Nil)
   }
+}
+
+/// The ground point and yaw of a shown creature at monotonic time `now_ms`, or `Error(Nil)`
+/// for a unit that is not shown or not a creature: where its path puts it, facing as its
+/// 0x262 gave it, which no path turns (`creature.facing`: a position path moves a creature
+/// without turning it). This is the one place a shown creature's facing is read.
+pub fn pose_of(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  now_ms now_ms: Int,
+) -> Result(Pose, Nil) {
+  place_of(picture:, unit_id:, now_ms:)
+  |> result.map(fn(place) { area.pose_of(place:) })
+}
+
+/// The poses of the shown creatures among the units, by unit id; a unit that is not a shown
+/// creature has none.
+pub fn poses_of(
+  picture picture: Picture,
+  unit_ids unit_ids: List(Int),
+  now_ms now_ms: Int,
+) -> Dict(Int, Pose) {
+  list.filter_map(unit_ids, fn(unit_id) {
+    pose_of(picture:, unit_id:, now_ms:)
+    |> result.map(fn(pose) { #(unit_id, pose) })
+  })
+  |> dict.from_list
 }
 
 /// The creature's life, for its address, or `Error(Nil)` for a unit that is not a

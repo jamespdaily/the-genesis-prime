@@ -19,8 +19,12 @@
 ////   holds its `Proxy` children, each with the delay the effect gives after its
 ////   parent's go (`delayTime`) and the phases it fires in (`phaseFlags`: bit n is
 ////   phase n, every bit for -1, the reading `Spell4.38791` gives). A Proxy with a
-////   target apply prerequisite is kept as `GatedOnTarget` and not started: the
-////   server checks no target-side prerequisite. A Proxy with a caster apply
+////   target apply prerequisite is kept as `GatedOnCasterAndTarget`, with its caster
+////   gates and the target gate decoded: the cast rule starts its child on a struck unit
+////   when the caster gates pass against the caster and the target gate passes against
+////   that unit (`Spell4Effects.prerequisiteIdTargetApply`: the struck unit first, the
+////   caster second; Impale's four Proxies, 83818, 83819, 85673 and 85682, pick 39426 or
+////   39427 by 38585 or 38587 and 5734 or 5735). A Proxy with a caster apply
 ////   prerequisite, or with a prerequisite in its dataBits06, is kept as
 ////   `GatedOnCaster` and started at its phase's go when each passes against the
 ////   caster (`Spell4.38791`: 79220 and 79229 apply only behind prerequisite 37037;
@@ -276,9 +280,15 @@ pub type Condition {
   /// passes against the caster: its caster apply prerequisite, then the one its
   /// dataBits06 names (`Spell4Effects.effectType.26.dataBits06`).
   GatedOnCaster(gates: List(Prerequisite))
-  /// The Proxy applies only behind this target apply prerequisite, which is not
-  /// checked: the child is not started.
+  /// The effect applies only behind this target apply prerequisite, which is not
+  /// checked: the effect is not applied. Only an effect that is not a Proxy has it.
   GatedOnTarget(prerequisite_id: PrerequisiteId)
+  /// The Proxy starts its child on a unit when every one of these caster gates passes
+  /// against the caster and the target gate passes against that unit, the struck unit for
+  /// a Proxy aimed at the area and the caster for one aimed at the caster
+  /// (`Spell4Effects.prerequisiteIdTargetApply`). The caster gates are its caster apply
+  /// prerequisite, then the one its dataBits06 names.
+  GatedOnCasterAndTarget(caster: List(Prerequisite), target: Prerequisite)
 }
 
 /// A resource gain of a spell: a VitalModifier aimed at the caster
@@ -1265,11 +1275,7 @@ fn spell_of(
           })
         OnCaster -> #([], child.gains)
       }
-      use condition <- result.try(condition_of(
-        tables:,
-        effect:,
-        data_bits06_names_a_gate: True,
-      ))
+      use condition <- result.try(proxy_condition_of(tables:, effect:))
       Ok(Proxy(
         effect_id: Spell4EffectsId(effect.id),
         delay_ms: effect.delay_time,
@@ -2321,17 +2327,11 @@ fn condition_of(
 ) -> Result(Condition, PlanError) {
   case effect.prerequisite_id_target_apply {
     0 -> {
-      use gates <- result.try(
-        [
-          effect.prerequisite_id_caster_apply,
-          ..case names_a_gate {
-            True -> [effect.data_bits06]
-            False -> []
-          }
-        ]
-        |> list.filter(fn(id) { id != 0 })
-        |> list.try_map(fn(id) { prerequisite_of(tables:, id:) }),
-      )
+      use gates <- result.try(caster_gates_of(
+        tables:,
+        effect:,
+        data_bits06_names_a_gate: names_a_gate,
+      ))
       Ok(case gates {
         [] -> Always
         [_, ..] -> GatedOnCaster(gates:)
@@ -2341,14 +2341,59 @@ fn condition_of(
   }
 }
 
+/// A Proxy's condition: its caster gates as `condition_of` reads them and, behind a target
+/// apply prerequisite, that prerequisite decoded too, which the cast rule checks against
+/// each unit the child is made on (`GatedOnCasterAndTarget`).
+fn proxy_condition_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Condition, PlanError) {
+  case effect.prerequisite_id_target_apply {
+    0 -> condition_of(tables:, effect:, data_bits06_names_a_gate: True)
+    target -> {
+      use caster <- result.try(caster_gates_of(
+        tables:,
+        effect:,
+        data_bits06_names_a_gate: True,
+      ))
+      use target <- result.try(prerequisite_of(tables:, id: target))
+      Ok(GatedOnCasterAndTarget(caster:, target:))
+    }
+  }
+}
+
+/// The prerequisites a row is gated on against the caster: its caster apply prerequisite
+/// and, for a Proxy, the one its dataBits06 names, in that order.
+fn caster_gates_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+  data_bits06_names_a_gate names_a_gate: Bool,
+) -> Result(List(Prerequisite), PlanError) {
+  [
+    effect.prerequisite_id_caster_apply,
+    ..case names_a_gate {
+      True -> [effect.data_bits06]
+      False -> []
+    }
+  ]
+  |> list.filter(fn(id) { id != 0 })
+  |> list.try_map(fn(id) { prerequisite_of(tables:, id:) })
+}
+
 /// The Prerequisite row with this id as the client keeps it.
 fn prerequisite_of(
   tables tables: table_store.Tables,
   id id: Int,
 ) -> Result(Prerequisite, PlanError) {
   prerequisite_table.get(tables:, id: PrerequisiteId(id))
-  |> result.map(fn(row) { prerequisite.of_row(row:) })
   |> result.replace_error(NoRow(table: "Prerequisite", id:))
+  |> result.try(fn(row) {
+    prerequisite.of_row(row:, tables:)
+    |> result.map_error(fn(error) {
+      let prerequisite.MissingRow(table:, id:) = error
+      NoRow(table:, id:)
+    })
+  })
 }
 
 fn global_cooldown_of(
