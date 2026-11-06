@@ -4426,7 +4426,9 @@ fn lasting_applied(
       ),
       condition: fn(row: spell_plan.PropertyModifier) { row.condition },
       what: fn(row: spell_plan.PropertyModifier) {
-        "the UnitPropertyModifier or UnitPropertyConversion effect "
+        "the "
+        <> modifier_kind_named(row:)
+        <> " effect "
         <> int.to_string(row.effect_id.value)
       },
       outcome: "so it is not applied",
@@ -4855,6 +4857,17 @@ fn heal_description(amount amount: Int) -> SpellDamageDescription {
     damage_type: damage_type.HealShields,
     hits: [],
   )
+}
+
+/// What the row's effect type is called in a log line.
+fn modifier_kind_named(row row: spell_plan.PropertyModifier) -> String {
+  case row.armor, row.change {
+    Some(..), _ -> "ModifyInterruptArmor"
+    None, spell_plan.AbsorbChange(..) -> "Absorption"
+    None, spell_plan.LookChange(..) -> "DisguiseOutfit"
+    None, spell_plan.PropertyChange(..) ->
+      "UnitPropertyModifier or UnitPropertyConversion"
+  }
 }
 
 /// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
