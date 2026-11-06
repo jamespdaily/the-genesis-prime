@@ -115,7 +115,34 @@
 ////                                  entered, Live: Approached(c, unit, place, seq) ─▶
 ////                                  left, Live:    Withdrew(c) ──────────────────▶
 ////                                  inside before and after, or outside: nothing
-//// a creature starts             each ready player in its ring: Approached, after the start effects
+//// a creature starts             each ready, unstealthed player in its ring: Approached,
+////                               after the start effects
+////
+//// connection c                  map                                          creature
+////   StealthChanged(c, s)      ─▶ Told ─▶ c not in the map: error line, nothing changes
+////                                         s as held: nothing
+////                                         else c's stealth = s; c still loading: nothing more
+////                                         c ready, s True: the rings it stands in are now none:
+////                                           Withdrew(c), each Live spawn it was in, in spawn
+////                                           order ─────────────────────────▶ near without c;
+////                                                                            threat list kept
+////                                         c ready, s False: the rings it stands in now:
+////                                           Approached(c, unit, place, seq, stay), each Live
+////                                           spawn, in spawn order ─────────▶ may aggro, as a walk-in
+//// ```
+////
+//// Where a stealthed player's rings are decided, in order (the connection tells
+//// `Moved`, `Ready` and `StealthChanged` from one process, so the map takes them in
+//// the order the connection decided them):
+////
+//// ```
+//// StealthChanged(c, True), then Moved into a ring   ─▶ no Approached: c stands in no ring
+//// Moved into a ring, then StealthChanged(c, True)   ─▶ Approached, then Withdrew: the creature
+////                                                      aggroed c first and keeps c on its threat list
+//// StealthChanged(c, True), then Ready(c)            ─▶ nothing at Ready; leaving stealth then
+////                                                      sends Approached to each ring c stands in
+//// a creature starts, restarts or respawns, or a summon starts, with c stealthed in its ring
+////                                                   ─▶ no Approached: `inside` holds no ring for c
 //// ```
 ////
 //// - **A player is not ready until its client's first 0xF2 of the stay**
@@ -129,6 +156,30 @@
 ////   creature has no ring.
 //// - **Only Live creatures are told.** A retiring, waiting or failed spawn's ring is
 ////   kept in `inside` and told when its creature starts.
+//// - **A stealthed player stands in no ring** (server choice, `StealthChanged`; the
+////   client holds no rule, `UnitProperty2.stealth_detection`). A creature is told
+////   `Withdrew` when the player enters stealth and `Approached` when it leaves
+////   stealth inside the ring, and a creature that is fighting the player keeps it on
+////   its threat list, since `Withdrew` touches only the creature's `near`
+////   (genesis_prime/world_map/creature_fight). A player's stealth is the connection's
+////   to decide; the map holds a copy, told one way and in the connection's order.
+//// - **A `StealthChanged` from a connection not in the map** changes nothing and is
+////   logged as an error, as for a `Moved`; one of a value the map already holds sends
+////   nothing. A player that left and joined again starts `NotStealthed`: its camp
+////   clears its stealth with no `StealthChanged` (genesis_prime/game/cast `left`), and
+////   its `Leave` removes the player with its copy.
+//// - **When a stealth tell is late, out of order or lost to a death:**
+////   - A `StealthChanged` is decided on the state the connection had when it sent it,
+////     and cannot cross a `Moved` or a `Ready` of the same connection.
+////   - A creature's home timer or corpse timer that fires before the `Withdrew`
+////     reaches it aggroes the player: the stealth tell is one hop behind, as any move is.
+////   - A `Withdrew` or `Approached` for a creature that died before it is dropped; the
+////     spawn keeps `inside`, which `approaches_at_start` reads at the creature's next start.
+////   - An `Approached` that reaches a creature after the player's `Unwatched` is no
+////     aggro: the player is not a viewer in that stay.
+////   - A player whose connection ends while stealthed in a ring is removed as any
+////     player is: its creatures are sent `Unwatched`, and no `Withdrew` follows.
+////   - A map that dies ends every connection in it; no stealth copy outlives it.
 ////
 //// What a connection does with them is its own (genesis_prime/game/connection):
 //// told `SeenBy(v, stay)`, it sends v its 0x262 at its current place, then its
@@ -461,6 +512,13 @@ pub type Message {
   /// entered again and has not moved is told to creatures with it, not with an
   /// earlier stay's lower one. A tell.
   Ready(connection: ConnectionId, seq: Int)
+  /// The connection's player entered stealth (`stealthed` True) or left it, as its
+  /// cast rule decided (genesis_prime/game/cast `StealthChanged`). A tell. A
+  /// stealthed player stands in no creature's ring, so no creature is told
+  /// `Approached` for it, and one that held it in its ring is told `Withdrew`
+  /// (a server choice: the client holds no rule, `UnitProperty2.stealth_detection`).
+  /// Taken only from a connection that is in the map.
+  StealthChanged(connection: ConnectionId, stealthed: Bool)
   /// A development command of the connection's player: start `creature_id` as a
   /// run-only spawn at the place and facing the map holds for the player, and
   /// show it to the players who see that place. An ask, answered `Summoned` or
@@ -625,8 +683,9 @@ pub type SpawnState {
 /// map's world it sees, whatever their creature's state (a spawn is in `seen`
 /// exactly when it is within sight of the player's place), the static objects
 /// it sees (`objects`, likewise), whether it is ready,
-/// the move sequence number of its place, and the hostile spawns whose ring it
-/// stands in, empty until it is ready.
+/// the move sequence number of its place, the hostile spawns whose ring it
+/// stands in, empty until it is ready and while it is stealthed, and whether it is
+/// stealthed, as its connection last told.
 type Player {
   Player(
     stay: Stay,
@@ -638,7 +697,15 @@ type Player {
     readiness: Readiness,
     seq: Int,
     inside: Set(SpawnId),
+    stealth: Stealth,
   )
+}
+
+/// Whether a player is stealthed, as its connection last told (`StealthChanged`):
+/// a connection that never told is `NotStealthed`, as a new cast state is.
+type Stealth {
+  NotStealthed
+  Stealthed
 }
 
 /// A summon whose creature's start has no outcome yet: the connection that asked
@@ -784,14 +851,17 @@ pub fn step(
       moved(state:, connection:, place:, seq:, now_ms: input.now.monotonic_ms)
     OwnEvent(Told(message: Ready(connection:, seq:))) ->
       ready(state:, connection:, seq:)
+    OwnEvent(Told(message: StealthChanged(connection:, stealthed:))) ->
+      stealth_changed(state:, connection:, stealthed:)
     OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:))) ->
       summoned(state:, caller:, connection:, creature_id:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
+    | OwnEvent(Asked(message: StealthChanged(..), ..))
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..)))
     | OwnEvent(Told(message: Summon(..))) ->
-      panic as "a map is asked Join, Leave and Summon and told Moved and Ready only"
+      panic as "a map is asked Join, Leave and Summon and told Moved, Ready and StealthChanged only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
@@ -1748,6 +1818,21 @@ fn ready(
   }
 }
 
+/// The player of `connection` entered stealth or left it. A connection not in the
+/// map is an error line and changes nothing, as for `Moved`; a value the map
+/// already holds changes nothing and sends nothing. A change is kept, and a ready
+/// player's rings are decided again (`rings_decided`): entering stealth sends
+/// `Withdrew` to each Live creature whose ring held the player, and leaving it
+/// sends `Approached` to each Live creature whose ring holds it, in spawn order. A
+/// player still loading is only marked: `ready` decides its rings.
+fn stealth_changed(
+  state _state: State,
+  connection _connection: ConnectionId,
+  stealthed _stealthed: Bool,
+) -> #(State, ServiceStep(Outgoing)) {
+  panic as "shape: #483"
+}
+
 /// The rings the ready `player` of `connection` stands in at its place, against
 /// the ones it stood in (`inside`): `Approached` to each Live creature whose ring it
 /// entered and `Withdrew` to each whose ring it left, in the order of the spawns,
@@ -1782,13 +1867,13 @@ fn rings_decided(
 
 /// The spawns hostile to the player's faction whose ring holds its place: within
 /// the aggro range of the spawn's place, in three dimensions, found through the cell
-/// index for the stored spawns and by a scan of the run-only ones. A stealthed player
-/// stands in a ring as any other and its creatures are told `Approached`: this map does
-/// not hold the player's stealth. What a creature does about a player it cannot see is
-/// not decided and waits on Jim's decision; this function is where it would go, with the
-/// player's stealth told one way beside `Moved`, so that a ring would hold only the
-/// players a creature can see.
+/// index for the stored spawns and by a scan of the run-only ones. A player that
+/// `in_rings` refuses, a stealthed one, stands in no ring. That is Jim's decision of
+/// 2026-11-06 (option A): a creature does not aggro a stealthed player it is not
+/// already fighting, so the map leaves it out of every creature's ring; the client
+/// holds no rule for it (`UnitProperty2.stealth_detection`).
 fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
+  use <- bool.guard(when: !in_rings(player:), return: set.new())
   let spawns = state.settings.spawns
   let place = player_unit.place(player.unit)
   let range = state.settings.numbers.aggro_range
@@ -1814,6 +1899,15 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
       False -> found
     }
   })
+}
+
+/// Whether the player can stand in a creature's ring: it is ready and not
+/// stealthed. `rings_holding` reads it; a summon's ring entry reads it the same way.
+fn in_rings(player player: Player) -> Bool {
+  case player.readiness, player.stealth {
+    Loaded, NotStealthed -> True
+    Loaded, Stealthed | StillLoading, _ -> False
+  }
 }
 
 /// Whether the place is in the spawn's ring for a player of the faction: the
@@ -2042,6 +2136,7 @@ fn joined_new(
           readiness: StillLoading,
           seq: 0,
           inside: set.new(),
+          stealth: NotStealthed,
         ),
       )
     }
