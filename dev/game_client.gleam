@@ -1268,7 +1268,7 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
     list.filter(frames, fn(frame) { frame.message_id == item_added.message_id })
     |> list.map(fn(frame) {
       let assert Ok(added) = item_added.decode(frame.body) as "0x0111 decodes"
-      added.item
+      added.held_item.item
     })
   let weapon =
     list.find(items, fn(item) { item.location == 0 && item.bag_index == 16 })

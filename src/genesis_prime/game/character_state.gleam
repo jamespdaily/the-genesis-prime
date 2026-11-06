@@ -7,108 +7,84 @@
 //// Character.level  ─▶ XpPerLevel row with that ID ─▶ experience (minXpForLevel)
 //// Character.class  ─▶ Class row ─▶ item_proficiencies (startingItemProficiencies)
 //// the client's start values ─▶ costume index -1, input key set 3, action set 0
-//// every other field          ─▶ 0 or empty (the server's choices below)
+//// every other field          ─▶ 0 or empty
 //// ```
 ////
 //// - **Experience** is the least experience of the saved level, so the client's
 ////   progress shows the level the character is (`opcode.0x25e.safe_body`,
-////   GetLevelForExperience `0x140029820`). No experience beyond it is saved.
+////   GetLevelForExperience `0x140029820`). The server saves no experience
+////   beyond the level. A level with no XpPerLevel row has no frame (`Error(Nil)`),
+////   which world entry refuses before the map is asked: a level above the
+////   highest or 0 is not a level the client's table holds.
 //// - **Item proficiencies** are the class's `Class.startingItemProficiencies`; the
 ////   client's proficiency test fails every ItemProficiency row with a mask when
-////   the mask is 0 (`0x1403ca2b0`).
+////   the mask is 0 (`0x1403ca2b0`). The load requires a Class row for each
+////   playable class (`requirements`).
 //// - **The start values** are the client's own for a new game object: costume
 ////   index -1 (the value 0 would make the first costume slot the active one),
 ////   input key set 3, action set 0 (a value of 4 or more empties the action bar)
 ////   (`0x1403e1400`, `opcode.0x25e.safe_body`).
-//// - **Server choices of 0 or empty**, until the system that holds each is built.
-////   Each is the client's value for a character with none of it:
-////   - the items, equipment, vendors, levels and currency system fills the held
-////     items (world entry sends them one by one in 0x111), the 15 currencies, the
-////     money trade limit, the rest experience and the gear score;
-////   - the player and account system fills the elder points, the periodic elder
-////     points, the attribute points, the bonus AMP power, the bonus ability tier
-////     points, the unlocked AMPs (the client's list holds at most 54, so the list
-////     it fills is capped there) and the character entitlements;
-////   - the quests, zones and prerequisites system fills the reputations and the
-////     bind point;
-////   - the spells system fills the pets a player has summoned;
-////   - the crafting and gathering system fills the supply satchel;
-////   - the instances, matching and PvP system fills the PvP flag time left, and
-////     the server is not a PvP server until it does;
-////   - the matching word has no use the client's code shows, and stays 0
-////     (`opcode.0x25e.safe_body`).
+//// - **Sent as 0 or empty**, each the client's value for a character with none of
+////   it (`opcode.0x25e.safe_body`): the held items (world entry sends them in
+////   0x111), the 15 currencies, the money trade limit, the rest experience, the
+////   elder points, the periodic elder points, the attribute points, the bonus AMP
+////   power, the bonus ability tier points, no unlocked AMPs (the client's list
+////   holds at most 54), no reputations, no pets, the bind point, the PvP flag time
+////   left (0 is no flag), the supply satchel, the gear score, no PvP server, no
+////   character entitlements and the matching word, which the client's code gives
+////   no use.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/class_resource
 import genesis_prime/message/player_character_state.{PlayerCharacterState}
 import genesis_prime/message/reputation_list.{ReputationList}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/class
-import genesis_prime/table/id.{XpPerLevelId}
+import genesis_prime/table/id.{ClassId, XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
-import gleam/int
+import gleam/list
 import gleam/result
 
-/// Why a character has no 0x025E: a row of the client's tables the server's load
-/// does not require is missing. The character is not entered.
-pub type Refusal {
-  /// No XpPerLevel row has the character's level as its ID.
-  NoExperienceRow(level: Int)
-  /// No Class row has the character's class.
-  NoClassRow(class_id: Int)
+/// The load's check that the Class rows 0x025E reads exist, so a client without
+/// one fails the server's start: a row for each playable class.
+pub fn requirements() -> List(table_store.Requirement) {
+  [
+    table_store.Requirement(
+      from_table: "the server's playable classes",
+      column: "Class id",
+      to_table: "Class",
+      missing: fn(tables) {
+        list.filter(class_resource.playable_class_ids(), fn(class_id) {
+          result.is_error(class.get(tables:, id: ClassId(class_id)))
+        })
+      },
+    ),
+  ]
 }
 
-/// A sentence that says why a character has no 0x025E, for the log.
-pub fn describe(refusal refusal: Refusal) -> String {
-  case refusal {
-    NoExperienceRow(level:) ->
-      "no XpPerLevel row has the character's level "
-      <> int.to_string(level)
-      <> " as its ID"
-    NoClassRow(class_id:) ->
-      "no Class row has the character's class " <> int.to_string(class_id)
-  }
-}
-
-/// The least experience of a level a character can be (`XpPerLevel`, by the
-/// level as the ID), which the client takes as the character's experience.
-fn experience(
-  tables tables: table_store.Tables,
-  character character: Character,
-) -> Result(Int, Refusal) {
-  xp_per_level.get(tables:, id: XpPerLevelId(character.level))
-  |> result.map(fn(row) { row.min_xp_for_level })
-  |> result.replace_error(NoExperienceRow(level: character.level))
-}
-
-/// The item proficiencies of the character's class, from its Class row.
-fn item_proficiencies(
-  tables tables: table_store.Tables,
-  character character: Character,
-) -> Result(Int, Refusal) {
-  class.get(tables:, id: character.class_id)
-  |> result.map(fn(row) { row.starting_item_proficiencies })
-  |> result.replace_error(NoClassRow(class_id: character.class_id.value))
-}
-
-/// 0x025E for the character at its level and class: the experience and the item
-/// proficiencies the tables give, the client's start values, and every other
-/// field 0 or empty.
+/// 0x025E for the character at its level and class: the least experience of the
+/// level (`Error(Nil)` for a level with no XpPerLevel row), the class's item
+/// proficiencies, the client's start values, and every other field 0 or empty.
 pub fn frame(
   tables tables: table_store.Tables,
   character character: Character,
-) -> Result(Frame, Refusal) {
-  use experience <- result.try(experience(tables:, character:))
-  use item_proficiencies <- result.map(item_proficiencies(tables:, character:))
+) -> Result(Frame, Nil) {
+  use level_row <- result.map(xp_per_level.get(
+    tables:,
+    id: XpPerLevelId(character.level),
+  ))
+  let assert Ok(class_row) = class.get(tables:, id: character.class_id)
+    as "character creation makes only playable classes, and the load requires a Class row for each"
   let assert Ok(body) =
     player_character_state.encode(
       PlayerCharacterState(
         held_items: [],
         currencies: <<0:size(960)>>,
         money_trade_limit: 0,
-        experience:,
+        experience: level_row.min_xp_for_level,
         rest_experience: 0,
-        item_proficiencies:,
+        item_proficiencies: class_row.starting_item_proficiencies,
         elder_points: 0,
         periodic_elder_points: 0,
         active_action_set: 0,

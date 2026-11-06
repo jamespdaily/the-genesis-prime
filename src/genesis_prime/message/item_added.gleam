@@ -9,7 +9,7 @@
 //// evidence, and the fact file's `opcode.0x111.ability_bag` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
-import genesis_prime/message/shared_item.{type SharedItem}
+import genesis_prime/message/held_item.{type HeldItem}
 import gleam/result
 
 /// The message's number.
@@ -19,23 +19,21 @@ pub const message_id = 0x0111
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type ItemAdded {
-  ItemAdded(item: SharedItem, reason: Int)
+  ItemAdded(held_item: HeldItem)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
 /// written.
 pub fn encode(message: ItemAdded) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> shared_item.write(message.item)
-  |> bit_stream.write_unsigned("reason", message.reason, 6)
+  |> held_item.write(message.held_item)
   |> bit_stream.finish
 }
 
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(ItemAdded, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(item, reader) <- result.try(shared_item.read(reader))
-  use #(reason, reader) <- result.try(bit_stream.read_unsigned(reader, 6))
+  use #(held_item, reader) <- result.try(held_item.read(reader))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(ItemAdded(item:, reason:))
+  Ok(ItemAdded(held_item:))
 }

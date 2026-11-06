@@ -457,7 +457,7 @@ direction = "server_to_client"
 evidence = "opcode.0x25e"
 summary = "the player character's own state on entering the world, sent once right after message 0x19B has set the player: held items, currencies, experience, points, reputations, pets, settings, unlocked AMPs, the supply satchel and entitlements; its handler then raises CharacterCreated, which the class resource bar and about 25 other addons wait for; the unlocked AMPs are at most 54, the cap the client's other writer of the list applies, since the handler copies the count it reads into room for 56"
 fields = [
-  { name = "held_items", kind = "array", count_bits = 32, element = "held_item_with_reason", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "held_items", kind = "array", count_bits = 32, element = "held_item", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
   { name = "currencies", kind = "raw_bytes", count = 120, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
   { name = "money_trade_limit", kind = "unsigned", bits = 64, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
   { name = "experience", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
@@ -481,15 +481,6 @@ fields = [
   { name = "is_pvp_server", kind = "unsigned", bits = 1, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
   { name = "field_23", kind = "unsigned", bits = 32, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
   { name = "character_entitlements", kind = "array", count_bits = 32, element = "character_entitlement", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
-]
-
-[[record]]
-name = "held_item_with_reason"
-evidence = "0x14008cee0"
-summary = "one held item of message 0x25E, the body of message 0x111: the shared item record and its 6-bit reason"
-fields = [
-  { name = "item", kind = "record", record = "shared_item", evidence = "0x14008cee0", named_by = "opcode.0x111.ability_bag" },
-  { name = "reason", kind = "unsigned", bits = 6, evidence = "0x14008cee0", named_by = "opcode.0x111.ability_bag" },
 ]
 
 [[record]]
@@ -1662,6 +1653,14 @@ name = "item_added"
 direction = "server_to_client"
 evidence = "opcode.0x111.ability_bag"
 summary = "adds an item the player holds; an item at location 4 is an ability, whose item id is its Spell4Base id and whose bag index is the slot a press names, and the client adds the base to the ability book; the reason is 6 bits, and 49 adds without raising the book's change"
+fields = [
+  { name = "held_item", kind = "record", record = "held_item", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+]
+
+[[record]]
+name = "held_item"
+evidence = "opcode.0x111.ability_bag"
+summary = "one held item as messages 0x111 and 0x25E carry it: the shared item record and its 6-bit reason"
 fields = [
   { name = "item", kind = "record", record = "shared_item", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "reason", kind = "unsigned", bits = 6, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },

@@ -155,6 +155,12 @@ const playable = [
   #(7, #(4, Full, OverTime)),
 ]
 
+/// The Class ids of the playable classes: Warrior, Engineer, Esper, Medic, Stalker
+/// and Spellslinger.
+pub fn playable_class_ids() -> List(Int) {
+  list.map(playable, fn(class) { class.0 })
+}
+
 /// Each number the rule reads, by name. The table holds each name's unit, a
 /// value above 0 and a whole number of milliseconds for a time
 /// (`class_resource_name_has_its_unit`, `class_resource_value_is_positive` and

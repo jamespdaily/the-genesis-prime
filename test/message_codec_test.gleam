@@ -108,7 +108,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/game_hello_reply.gleam",
       "src/genesis_prime/message/game_server_handoff.gleam",
       "src/genesis_prime/message/held_entitlement.gleam",
-      "src/genesis_prime/message/held_item_with_reason.gleam",
+      "src/genesis_prime/message/held_item.gleam",
       "src/genesis_prime/message/innate_index_chosen.gleam",
       "src/genesis_prime/message/innate_index_set.gleam",
       "src/genesis_prime/message/item_added.gleam",

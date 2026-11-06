@@ -33,6 +33,7 @@ import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
 import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
+import genesis_prime/message/held_item.{HeldItem}
 import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/message/item_added.{ItemAdded}
@@ -180,7 +181,7 @@ pub fn an_ability_is_a_shared_item_at_location_4_and_a_reason_test() -> Nil {
     body: message_support.hex(
       "08 07 06 05 04 03 02 01 18 17 16 15 14 13 12 11 6c 5a 10 10 00 00 00 08 01 00 00 10 01 00 00 c0 b9 b1 a9 a1 99 91 89 09 02 00 00 c0 ba b2 aa a2 9a 92 8a 02 00 00 fe 09 03 00 00 88 0b 04 00 00 10 04 00 00 18 04 00 00 68 24 00 00 80 24 00 00 80 43 01 00 00 44 01 00 00 9a 57 55 30 00 00 80 30 00 00 40 44 03 00 00 00 b1 00 00 00 31",
     ),
-    value: ItemAdded(
+    value: ItemAdded(held_item: HeldItem(
       item: SharedItem(
         item_guid: 0x0102030405060708,
         field_2: 0x1112131415161718,
@@ -210,7 +211,7 @@ pub fn an_ability_is_a_shared_item_at_location_4_and_a_reason_test() -> Nil {
         field_27: 0xB1,
       ),
       reason: 49,
-    ),
+    )),
     encode: item_added.encode,
     decode: item_added.decode,
   )

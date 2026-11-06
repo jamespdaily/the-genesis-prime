@@ -15,45 +15,20 @@
 //// the machine; the others run on the planted rows, which hold the same values
 //// (`character_tables_test`).
 
+import cast_support
 import character_tables
 import client_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/message/player_character_state.{type PlayerCharacterState}
 import genesis_prime/message/reputation_list.{ReputationList}
-import genesis_prime/store.{type Character, Character, CharacterId, NameStands}
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/store.{type Character}
 import genesis_prime/table/loader/store as table_store
 import gleam/bit_array
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
 import owned_test
-import place_support
 import unitest
 import world_entry_support
-
-fn character(class class: Int, level level: Int) -> Character {
-  Character(
-    character_id: CharacterId(42),
-    name: "Ab Cd",
-    gender: 0,
-    race_id: RaceId(1),
-    class_id: ClassId(class),
-    faction_id: 166,
-    level:,
-    path: 3,
-    place: Some(place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 29.0,
-      y: -853.0,
-      z: -560.0,
-    )),
-    look: [],
-    bones: [],
-    naming: NameStands,
-  )
-}
 
 fn frames(
   tables tables: table_store.Tables,
@@ -61,10 +36,6 @@ fn frames(
 ) -> List(Frame) {
   let #(effects, _) = world_entry_support.entry(tables:, character:)
   world_entry_support.frames_of(effects:)
-}
-
-fn ids(frames frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
 }
 
 /// The one 0x25E among the frames, decoded.
@@ -85,9 +56,9 @@ pub fn the_entry_writes_0x25e_once_right_after_0x19b_before_the_loadout_for_ever
   use <- owned_test.run(60_000)
   list.each(classes, fn(class) {
     let sent =
-      ids(frames: frames(
+      cast_support.ids(frames: frames(
         tables: character_tables.shared(),
-        character: character(class:, level: 1),
+        character: world_entry_support.character(class:, faction: 166, level: 1),
       ))
     assert sent
       == [
@@ -128,7 +99,7 @@ pub fn the_experience_is_the_least_experience_of_the_saved_level_on_the_real_row
     let state =
       state_of(frames: frames(
         tables: client_tables.shared(),
-        character: character(class: 2, level:),
+        character: world_entry_support.character(class: 2, faction: 166, level:),
       ))
     assert state.experience == minimum
       as {
@@ -157,7 +128,11 @@ pub fn the_item_proficiencies_are_the_classs_starting_item_proficiencies_on_the_
       let state =
         state_of(frames: frames(
           tables: client_tables.shared(),
-          character: character(class:, level: 1),
+          character: world_entry_support.character(
+            class:,
+            faction: 166,
+            level: 1,
+          ),
         ))
       assert state.item_proficiencies == mask
         as {
@@ -176,7 +151,7 @@ pub fn the_costume_key_set_and_action_set_are_the_clients_start_values_and_every
     let state =
       state_of(frames: frames(
         tables: character_tables.shared(),
-        character: character(class:, level: 1),
+        character: world_entry_support.character(class:, faction: 166, level: 1),
       ))
     assert state.costume_index == 0xFFFFFFFF
       as "opcode.0x25e.safe_body: -1, the value the client starts with"

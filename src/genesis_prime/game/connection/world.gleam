@@ -460,6 +460,7 @@ pub fn entry_answered(
           answer:,
           connection: client_connection.connection(session.link),
           stay:,
+          tables: session.settings.tables,
         )
       {
         Ok(world_entry.Join(state:, effects:)) ->
@@ -492,7 +493,6 @@ pub fn entry_answered(
           classes: session.settings.class_resources,
           numbers: session.settings.numbers,
           defaults: unit_properties.defaults(tables: session.settings.tables),
-          tables: session.settings.tables,
         )
       {
         Ok(world_entry.InTheWorld(entered:, effects:)) ->

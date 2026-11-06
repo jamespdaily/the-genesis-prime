@@ -12,6 +12,8 @@
 
 import game_connection_support
 import genesis_prime/message/player_character_state
+import genesis_prime/store
+import genesis_prime/table/id.{ClassId}
 import gleam/list
 import owned_test
 
@@ -25,10 +27,15 @@ pub fn a_second_entry_from_character_select_sends_0x25e_again_once_test() -> Nil
   assert count_of_0x25e(ids: game_connection_support.written_ids(first_taken))
     == 1
     as "opcode.0x25e.entry_order: the first entry sends it once"
+  let medic =
+    store.Character(
+      ..game_connection_support.world_character(),
+      class_id: ClassId(4),
+    )
   let #(_, second_taken) =
     game_connection_support.entered_from(
       in_character_select: game_connection_support.camp_from(first),
-      character: game_connection_support.world_character(),
+      character: medic,
     )
   let second = game_connection_support.written_ids(second_taken)
   assert count_of_0x25e(ids: second) == 1
@@ -39,6 +46,18 @@ pub fn a_second_entry_from_character_select_sends_0x25e_again_once_test() -> Nil
     |> list.take(2)
     == [0x019B, 0x025E]
     as "right after 0x19B"
+  let assert [state] =
+    game_connection_support.decoded(
+      game_connection_support.heard(
+        second_taken,
+        game_connection_support.keyed(),
+      ),
+      player_character_state.message_id,
+      player_character_state.decode,
+    )
+    as "the second entry's one 0x25E decodes"
+  assert state.item_proficiencies == 260
+    as "Class row 4 (Medic): startingItemProficiencies 260, the second character's own and not the first's Engineer 66"
 }
 
 pub fn the_holocrypts_rejoin_in_the_same_game_object_sends_no_second_0x25e_test() -> Nil {

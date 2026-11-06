@@ -20,7 +20,7 @@
 
 import genesis_prime/message/bit_stream
 import genesis_prime/message/character_entitlement.{CharacterEntitlement}
-import genesis_prime/message/held_item_with_reason.{HeldItemWithReason}
+import genesis_prime/message/held_item.{HeldItem}
 import genesis_prime/message/player_character_state.{PlayerCharacterState}
 import genesis_prime/message/player_pet.{PlayerPet}
 import genesis_prime/message/reputation.{Reputation}
@@ -204,30 +204,105 @@ fn item() -> SharedItem {
   )
 }
 
-pub fn a_body_with_every_list_filled_round_trips_and_each_list_is_counted_in_its_own_width_test() -> Nil {
+/// The width of one held item in a list: the shared item's 776 bits (the fixed
+/// widths of the schema's `shared_item` record, with its three small counts and
+/// its 6-bit constant) and the 6-bit reason.
+const item_bits = 782
+
+/// The widths of one reputation (a 14-bit Faction2 id and a 32-bit float), one pet
+/// (a 32-bit unit id and values of 18, 5 and 5 bits) and one unlocked AMP:
+/// `opcode.0x25e`.
+const reputation_bits = 46
+
+const pet_bits = 60
+
+const amp_bits = 16
+
+pub fn one_entry_in_each_list_is_counted_and_written_at_its_element_widths_test() -> Nil {
   use <- owned_test.run(5000)
   let body =
     PlayerCharacterState(
       ..minimal(),
-      held_items: [HeldItemWithReason(item: item(), reason: 49)],
+      experience: 1710,
+      held_items: [HeldItem(item: item(), reason: 49)],
+      reputations: ReputationList(field_1: 0, reputations: [
+        Reputation(faction_id: 166, value: 0x4000_0000),
+      ]),
+      pets: [PlayerPet(unit_id: 77, field_2: 0x20001, field_3: 17, field_4: 18)],
+      unlocked_amps: [54],
+      character_entitlements: [
+        CharacterEntitlement(entitlement_id: 0x2001, count: 5),
+      ],
+    )
+  // Each list's entries push the fields after it later by their widths.
+  let after_items = item_bits
+  let after_reputations = after_items + reputation_bits
+  let after_pets = after_reputations + pet_bits
+  let after_amps = after_pets + amp_bits
+  let expected =
+    packed(bits: 10_720, fields: [
+      Placed(offset: 0, bits: 32, value: 1),
+      Placed(offset: 32, bits: 64, value: 0x1234),
+      Placed(offset: 32 + 128, bits: 18, value: 4321),
+      Placed(offset: 32 + 146, bits: 9, value: 4),
+      Placed(offset: 32 + 155, bits: 32, value: 2),
+      Placed(offset: 32 + 187, bits: 32, value: 1),
+      Placed(offset: 32 + 411, bits: 32, value: 0x3F80_0000),
+      Placed(offset: 32 + 776, bits: 6, value: 49),
+      Placed(offset: 1056 + after_items, bits: 32, value: 1710),
+      Placed(offset: 1281 + after_items, bits: 16, value: 1),
+      Placed(offset: 1297 + after_items, bits: 14, value: 166),
+      Placed(offset: 1297 + after_items + 14, bits: 32, value: 0x4000_0000),
+      Placed(offset: 1297 + after_reputations, bits: 32, value: 1),
+      Placed(offset: 1329 + after_reputations, bits: 32, value: 77),
+      Placed(offset: 1329 + after_reputations + 32, bits: 18, value: 0x20001),
+      Placed(offset: 1329 + after_reputations + 50, bits: 5, value: 17),
+      Placed(offset: 1329 + after_reputations + 55, bits: 5, value: 18),
+      Placed(offset: 1329 + after_pets, bits: 32, value: 3),
+      Placed(offset: 1377 + after_pets, bits: 32, value: 0xFFFFFFFF),
+      Placed(offset: 1473 + after_pets, bits: 6, value: 1),
+      Placed(offset: 1479 + after_pets, bits: 16, value: 54),
+      Placed(offset: 9736 + after_amps, bits: 32, value: 1),
+      Placed(offset: 9768 + after_amps, bits: 14, value: 0x2001),
+      Placed(offset: 9768 + after_amps + 14, bits: 32, value: 5),
+    ])
+  assert player_character_state.encode(body) == Ok(expected)
+    as "opcode.0x25e: each list's count in its own width (32, 16, 32, 6 and 32 bits) and each entry at its element's width"
+  assert player_character_state.decode(expected) == Ok(body)
+    as "and read back from them"
+}
+
+pub fn lists_of_several_entries_round_trip_test() -> Nil {
+  use <- owned_test.run(5000)
+  let body =
+    PlayerCharacterState(
+      ..minimal(),
+      held_items: [
+        HeldItem(item: item(), reason: 49),
+        HeldItem(item: item(), reason: 1),
+      ],
       reputations: ReputationList(field_1: 0, reputations: [
         Reputation(faction_id: 166, value: 0x3F80_0000),
         Reputation(faction_id: 0x3FFF, value: 0xBF80_0000),
       ]),
-      pets: [PlayerPet(unit_id: 77, field_2: 0x3FFFF, field_3: 31, field_4: 31)],
+      pets: [
+        PlayerPet(unit_id: 77, field_2: 0x3FFFF, field_3: 31, field_4: 31),
+        PlayerPet(unit_id: 78, field_2: 1, field_3: 1, field_4: 1),
+      ],
       unlocked_amps: [1, 54, 0xFFFF],
       character_entitlements: [
         CharacterEntitlement(entitlement_id: 0x3FFF, count: 0xFFFF_FFFF),
+        CharacterEntitlement(entitlement_id: 1, count: 1),
       ],
     )
   let assert Ok(bytes) = player_character_state.encode(body)
-    as "a body with every list filled encodes"
+    as "a body with several entries in every list encodes"
   assert player_character_state.decode(bytes) == Ok(body)
     as "opcode.0x25e: it reads back as written"
-  let assert Ok(without_lists) = player_character_state.encode(minimal())
-    as "the smallest body encodes"
-  assert bit_array.byte_size(bytes) > bit_array.byte_size(without_lists)
-    as "the lists add their elements to the 9,768 bits"
+}
+
+pub fn a_body_that_ends_inside_the_last_field_is_a_decode_error_test() -> Nil {
+  use <- owned_test.run(5000)
   assert player_character_state.decode(zeros(count: 1220))
     == Error(bit_stream.EndOfData)
     as "opcode.0x25e.safe_body: a body of 1,220 bytes ends inside the last field, where the reader fails"

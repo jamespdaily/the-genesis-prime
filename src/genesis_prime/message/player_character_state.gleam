@@ -14,7 +14,7 @@
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/character_entitlement.{type CharacterEntitlement}
-import genesis_prime/message/held_item_with_reason.{type HeldItemWithReason}
+import genesis_prime/message/held_item.{type HeldItem}
 import genesis_prime/message/player_pet.{type PlayerPet}
 import genesis_prime/message/reputation_list.{type ReputationList}
 import gleam/result
@@ -27,7 +27,7 @@ pub const message_id = 0x025E
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type PlayerCharacterState {
   PlayerCharacterState(
-    held_items: List(HeldItemWithReason),
+    held_items: List(HeldItem),
     currencies: BitArray,
     money_trade_limit: Int,
     experience: Int,
@@ -64,7 +64,7 @@ pub fn encode(message: PlayerCharacterState) -> Result(BitArray, EncodeError) {
     "held_items",
     message.held_items,
     32,
-    held_item_with_reason.write,
+    held_item.write,
   )
   |> bit_stream.write_raw_bytes("currencies", message.currencies, 120)
   |> bit_stream.write_unsigned(
@@ -137,7 +137,7 @@ pub fn decode(body: BitArray) -> Result(PlayerCharacterState, DecodeError) {
   use #(held_items, reader) <- result.try(bit_stream.read_array(
     reader,
     32,
-    held_item_with_reason.read,
+    held_item.read,
   ))
   use #(currencies, reader) <- result.try(bit_stream.read_raw_bytes(reader, 120))
   use #(money_trade_limit, reader) <- result.try(bit_stream.read_unsigned(
