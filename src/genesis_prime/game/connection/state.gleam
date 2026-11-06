@@ -395,6 +395,19 @@ pub fn news_to_viewers(
   })
 }
 
+/// The tell of `request` to the run of the player's map, which no answer follows
+/// (`step.Tell`): the player's move, its readiness or its stealth, each of which the
+/// map takes in the order this connection sent it.
+pub fn tells_the_map(
+  entered entered: world_entry.Entered,
+  request request: Request,
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(
+    to: step.Map(map: entered.map, incarnation: entered.incarnation),
+    request:,
+  ))
+}
+
 /// The session with the player it holds in the world changed by `change`: the
 /// player in the world, or in the world and waiting to claim again, where a send
 /// is taken. A status that takes no send, since the shell takes none while an ask

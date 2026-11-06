@@ -15,6 +15,7 @@ import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{type State, Join, Leave, Moved, Watched}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -81,6 +82,14 @@ pub fn started_with(
       kinds:,
     )
   feed(state:, at_ms: started_at_ms, event: OwnEvent(Started))
+}
+
+/// A map with these spawns, started, on the default kinds.
+pub fn started_with_spawns(spawns spawns: List(Spawn)) -> State {
+  let state =
+    map_support.standing_with(incarnation: 1, spawns:, kinds: default_kinds())
+  let #(state, _) = feed(state:, at_ms: started_at_ms, event: OwnEvent(Started))
+  state
 }
 
 /// A join of connection `connection` at `x`, at time `at_ms`.
@@ -230,6 +239,18 @@ pub fn creature_sends(
   })
 }
 
+/// What the step tells creatures of the rings, by the creature's unit id and what
+/// it says (`Approached by 1`, `Withdrew by 1`), in the order sent.
+pub fn ring_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+  creature_sends(taken)
+  |> list.filter(fn(sent) {
+    case sent.1 {
+      "Approached by " <> _ | "Withdrew by " <> _ -> True
+      _ -> False
+    }
+  })
+}
+
 /// What the step sends to players' connections, by the connection's number and
 /// what it says, in connection order.
 pub fn player_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
@@ -301,6 +322,26 @@ pub fn ready(
     at_ms:,
     event: OwnEvent(
       Told(message: map.Ready(connection: ConnectionId(connection), seq: 0)),
+    ),
+  )
+}
+
+/// The connection's tell that its player entered stealth (`stealthed` True) or left
+/// it, at time `at_ms`.
+pub fn stealth(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+  stealthed stealthed: Bool,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(
+      Told(message: map.StealthChanged(
+        connection: ConnectionId(connection),
+        stealthed:,
+      )),
     ),
   )
 }

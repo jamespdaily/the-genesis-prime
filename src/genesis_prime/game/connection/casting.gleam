@@ -21,6 +21,33 @@
 ////   or the one strike timer, `strike.strike_timer`, fires for its deadline, and the
 ////   closed round is the cast rule's `went`. A viewer writes a creature's health and
 ////   death (`Health`, `Died`) for a creature it shows, whatever its own casts.
+//// - **Stealth** is the cast rule's (genesis_prime/game/cast): its `StealthChanged` is
+////   carried out as the owner's 0x8f5, the viewers' news, and last a tell to the run of
+////   the player's map, so the map keeps the player out of every creature's ring
+////   (genesis_prime/world_map/map `StealthChanged`). The connection tells the map `Moved`,
+////   `Ready` and `StealthChanged` from its own process, so the map takes them in the order
+////   the connection decided them:
+////
+////   ```
+////   connection (cast rule)                         map                           creature
+////   a toggle press, a landed blow on 83834 or a death moves the stealth
+////     StealthChanged(s) ─▶ 0x8f5 {owner, s}         ─▶ the owner's client
+////                       ─▶ Tell(each viewer, Stealth(s))
+////                       ─▶ Tell(map, TellStealthChanged(connection, s))
+////                                                    ─▶ a change: Withdrew(connection) when s,
+////                                                       Approached when not s ─────────────▶ near
+////   ```
+////
+////   - The tell goes once per change: the cast rule emits only on a change, so a repeat is
+////     never sent. A player with no map to tell (no player in the world) tells none.
+////   - A camp or the Holocrypt clears the stealth in the cast state with no
+////     `StealthChanged`, so no tell follows; the map's `Leave` removes the player with its
+////     copy, and the next stay starts unstealthed on both sides.
+////   - A connection that ends while stealthed tells nothing: the map's watch removes the
+////     player and sends its creatures `Unwatched`.
+////   - A tell the map takes after the connection's `Leave` is an error line in the map and
+////     changes nothing; the connection sends none, and a map that is not running is
+////     the tell's dropped send, as for `Moved`.
 //// - **Persistence** is checked at the end of each input of a player in the world
 ////   (`persisted`, called by the connection's two places that settle an input: the
 ////   frames it takes and everything else), and the casts it ends are written after what
@@ -246,8 +273,8 @@ fn carry_cast(
 
 /// The connection's effects for what the cast rule decided, with the session as
 /// they leave it: a write, a tell of news to a viewer in the run of the player's
-/// map, a timer or a log line, a stealth change written to the player and told to its
-/// viewers, a press's costs paid from the class resource and a
+/// map, a timer or a log line, a stealth change written to the player, told to its
+/// viewers and last to the player's map, a press's costs paid from the class resource and a
 /// go's gains given to it (genesis_prime/game/connection/resource), and a go asked,
 /// which selects and strikes its targets
 /// (`strike_begins`). A tell with no player in the world is dropped.
@@ -304,6 +331,18 @@ pub fn cast_effects(
             entered:,
             news: client_connection.Stealth(stealthed:),
           ),
+          // The map keeps a stealthed player out of every creature's ring: Jim's
+          // decision, a server choice. Told last, after the owner's 0x8f5 and the
+          // viewers' news.
+          [
+            connection_state.tells_the_map(
+              entered:,
+              request: client_connection.TellStealthChanged(
+                connection: client_connection.connection(session.link),
+                stealthed:,
+              ),
+            ),
+          ],
         ]),
       )
       cast.StealthChanged(..), None -> #(session, [])
