@@ -36,7 +36,7 @@
 //// chooses.
 
 import genesis_prime/world_map/map_id.{type MapId}
-import genesis_prime/world_map/spawn_id.{type SpawnId}
+import genesis_prime/world_map/spawn_source.{type SpawnSource}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/option.{type Option, None}
 
@@ -304,8 +304,11 @@ pub type CreatureStart {
     /// the run, so the address `Creature(map, incarnation, unit_id, life)` is
     /// one creature process and no other.
     life: Int,
-    /// The spawn it stands at (genesis_prime/world_map/spawn), by its id.
-    spawn_id: SpawnId,
+    /// The spawn it stands at (genesis_prime/world_map/spawn): a stored spawn by
+    /// its id, or the run-only spawn a development command made, which the start
+    /// carries whole since no stored term holds it
+    /// (genesis_prime/world_map/spawn_source).
+    spawn: SpawnSource,
     /// The monotonic time the map's clock started at, from which the creature
     /// stamps its 0x262 (genesis_prime/world_map/map `server_time`).
     clock_origin_ms: Int,

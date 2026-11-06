@@ -81,6 +81,8 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       | map.Joined(..)
       | map.NotJoined(..)
       | map.Left
+      | map.Summoned(..)
+      | map.NotSummoned(..)
       | map.Watched(..)
       | map.Unwatched(..)
       | map.Retire
@@ -171,6 +173,8 @@ pub fn objects_creatures_and_players_share_one_id_space_test() -> Nil {
         case reply.1 {
           map.Joined(unit:, ..) -> Ok(unit.unit_id)
           map.NotJoined(..)
+          | map.Summoned(..)
+          | map.NotSummoned(..)
           | map.Left
           | map.Noticed(..)
           | map.Watched(..)

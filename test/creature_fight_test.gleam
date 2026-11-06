@@ -49,8 +49,9 @@ import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path.{Running}
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/spawn.{Spawn}
+import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/int
@@ -83,7 +84,21 @@ fn beast_with(
   viewers viewers: List(Int),
   armor armor: creature_life.InterruptArmor,
 ) -> State {
-  let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
+  beast_from(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+    viewers:,
+    armor:,
+  )
+}
+
+/// A Beast started at this source's spawn, `Started` taken.
+fn beast_from(
+  source source: spawn_source.SpawnSource,
+  spawn spawn: Spawn,
+  viewers viewers: List(Int),
+  armor armor: creature_life.InterruptArmor,
+) -> State {
   let state =
     creature.new(Settings(
       creature: CreatureStart(
@@ -91,7 +106,7 @@ fn beast_with(
         incarnation: 1,
         unit_id: unit,
         life:,
-        spawn_id: SpawnId(1),
+        spawn: source,
         clock_origin_ms: 5000,
         viewers: list.map(viewers, fn(viewer) {
           #(ConnectionId(viewer), stay_of(viewer))
@@ -444,6 +459,37 @@ pub fn a_viewer_entering_the_ring_is_targeted_the_creature_enters_combat_and_the
     as "the threat goes for the player's stay as the creature holds it, so the connection drops one of an earlier stay"
   assert list.map(timers(aggro), fn(timer) { timer.1 }) == [1500]
     as "the attack tick starts at the kind's interval"
+}
+
+pub fn a_summoned_creature_aggroes_the_first_player_that_approaches_it_and_strikes_with_5649_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The summoned creature is a run-only spawn: only its respawn differs from a
+  // stored one's, so the first `Approached` the map tells it (from the ring held
+  // at its start) leads to the same aggro and the same attack tick.
+  let spawn = spawn_support.battle_beast(number: -1, x: 0.0)
+  let state =
+    beast_from(
+      source: spawn_source.RunOnly(spawn_source.Summoned(
+        id: SpawnId(-1),
+        creature_id: spawn.creature_id,
+        place: spawn.place,
+      )),
+      spawn:,
+      viewers: [2],
+      armor: creature_life.NoArmor,
+    )
+  let #(state, aggro) =
+    tell(state:, at_ms: 0, message: approached(number: 2, x: 5.0, seq: 1))
+  assert said(aggro)
+    == ["0x908(20, 1) to 2", "0x89a(1) to 2", "Threatened(7, 3) to 2"]
+    as "the player is targeted and threatened as for a stored spawn's creature"
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert said(ticked) == ["0x7ff to 2", "Attacks to 2"]
+  let assert [CastStarted(start:)] = news_to(ticked, 2)
+  assert start.spell4_id == 5649
+    && start.caster_unit_id == 7
+    && start.primary_target_unit_id == 20
+    as "the kind's attack spell, cast by the creature on the approaching player"
 }
 
 pub fn a_player_that_is_not_a_viewer_is_not_aggroed_test() -> Nil {

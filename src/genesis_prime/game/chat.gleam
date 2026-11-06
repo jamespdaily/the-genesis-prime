@@ -67,6 +67,11 @@
 //// - **Channels the client holds.** It makes Say, Yell, Emote, Whisper and
 ////   AccountWhisper itself, each with id 0, and Zone only by 0x1bc, so a line
 ////   names a held channel or is refused (`0x140404ee0`, `ChatChannel.flags`).
+//// - **A `!` line on Say is a development command** when the setting
+////   `dev_commands` is on (genesis_prime/game/dev_command): the speaker's slot is
+////   answered with its 0x1c2, nothing is told to the viewers, and the command is
+////   carried out or answered with a system line (`system_line_frame`); with the
+////   setting off it is a Say line as any other. A server choice, for testing.
 //// - **No 0x1bc for a channel the client makes itself**: it would print a join
 ////   again (`opcode.0x1bc`, `0x140404ee0`).
 //// - **The zone channel's name** is the top zone 0x1da last gave, set before
@@ -211,6 +216,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_name
 import genesis_prime/game/chat_channel.{type ChannelType}
 import genesis_prime/game/chat_tell.{type Line, type Speaker, type Tell, Line}
+import genesis_prime/game/dev_command
 import genesis_prime/game/top_zone.{type TopZones}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
@@ -228,7 +234,7 @@ import genesis_prime/message/send_whisper.{type SendWhisper}
 import genesis_prime/message/whisper_failed.{WhisperFailed}
 import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
-import genesis_prime/table/id.{ChatChannelId}
+import genesis_prime/table/id.{type Creature2Id, ChatChannelId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -273,6 +279,11 @@ pub type Effect {
   /// The channel is one the server does not build: the rule logs it as
   /// unhandled once per channel on a connection.
   Unhandled(channel_type: ChannelType)
+  /// A `!summon` line of the player: the connection asks the player's map to
+  /// start the creature (genesis_prime/world_map/map `Summon`) and writes the
+  /// system line of its answer (`system_line_frame`). The rule gives it last
+  /// among the effects of a line, since the ask ends the step.
+  AskSummon(creature2_id: Creature2Id)
 }
 
 /// Why a chat message is refused so that the connection ends: the client's own
@@ -449,9 +460,11 @@ fn zone_joined_frame() -> Frame {
 
 /// What one chat message of the client does: its body is decoded and the line or
 /// the whisper is answered, told to its readers or refused. `viewers` are the
-/// connections whose players see this one, `realm_name` the server's own, and
-/// `tables` the client's ChatChannel rows. A body the client's reader would
-/// refuse is the refusal that ends the connection.
+/// connections whose players see this one, `realm_name` the server's own,
+/// `tables` the client's ChatChannel rows, and `dev_commands` whether a Say line
+/// that starts with `!` is a development command
+/// (genesis_prime/game/dev_command). A body the client's reader would refuse is
+/// the refusal that ends the connection.
 pub fn take(
   chat chat: Chat,
   message message: Message,
@@ -460,9 +473,10 @@ pub fn take(
   realm_name realm_name: String,
   connection connection: ConnectionId,
   tables tables: table_store.Tables,
+  dev_commands dev_commands: Bool,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
   case message {
-    LineSent -> line_sent(chat:, body:, viewers:, tables:)
+    LineSent -> line_sent(chat:, body:, viewers:, tables:, dev_commands:)
     WhisperSent -> whisper_sent(chat:, body:, realm_name:, connection:)
   }
 }
@@ -648,6 +662,7 @@ fn line_sent(
   body body: BitArray,
   viewers viewers: Set(ConnectionId),
   tables tables: table_store.Tables,
+  dev_commands dev_commands: Bool,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
   use sent <- result.map(
     send_chat_line.decode(body)
@@ -655,6 +670,10 @@ fn line_sent(
     |> result.map_error(NotDecoded),
   )
   let channel_type = chat_channel.from_id(id: sent.channel_type)
+  let is_command =
+    dev_commands
+    && channel_type == chat_channel.Say
+    && dev_command.is_command(text: sent.text)
   case checked(chat:, sent:, channel_type:, tables:) {
     Error(Refused(result:, unhandled:)) -> #(chat, [
       Send(chat_result_frame(
@@ -667,6 +686,10 @@ fn line_sent(
         True -> [Unhandled(channel_type:)]
         False -> []
       }
+    ])
+    Ok(Say) if is_command -> #(chat, [
+      Send(accepted_frame(chat:, chat_message_id: sent.chat_message_id)),
+      ..command_line(text: sent.text)
     ])
     Ok(reach) -> {
       let line =
@@ -709,6 +732,55 @@ fn line_sent(
     }
   }
 }
+
+/// What a `!` line on Say does when the setting is on: nothing is told to the
+/// players who see the speaker, the speaker's slot is answered by the 0x1c2 the
+/// caller writes (every 0x1c3 gets one answer, `opcode.0x1c2`), and the command
+/// is carried out (`AskSummon`) or refused with one system line
+/// (`system_line_frame` of `dev_command.describe`).
+fn command_line(text text: List(Int)) -> List(Effect) {
+  case dev_command.parse(text:) {
+    Ok(dev_command.Summon(creature2_id:)) -> [AskSummon(creature2_id:)]
+    Error(refusal) -> [
+      Send(system_line_frame(text: dev_command.describe(refusal:))),
+    ]
+  }
+}
+
+/// 0x1c8 as a system line: a line of the client's System channel (row 2 of
+/// ChatChannel, type 2, which the client makes itself with id 0 and shows in its
+/// chat window, `0x140404ee0`, `ChatChannel.flags`, `chat.system_line`), with
+/// `text` and no speaker: no realm, character, name or unit, no GM mark, no
+/// format and no cross-faction colour, so the line shows the channel's name and
+/// then the text (`opcode.0x1c8`, `chat.system_line`). A server choice for the
+/// development commands' answers.
+pub fn system_line_frame(text text: String) -> Frame {
+  let assert Ok(body) =
+    chat_line.encode(ChatLine(
+      channel_type: system_channel_type,
+      channel_id: 0,
+      gm: 0,
+      from_self: 0,
+      auto_response: 0,
+      sender_realm_id: 0,
+      sender_character_id: 0,
+      sender_name: "",
+      sender_realm_name: "",
+      presence_state: 0,
+      text: bit_stream.utf16_units(text),
+      formats: [],
+      cross_faction: 0,
+      field_14: 0,
+      unit_id: 0,
+      premium_tier: 0,
+    ))
+    as "a text of a development command's answer and zeros fit the message"
+  Frame(message_id: chat_line.message_id, body:)
+}
+
+/// The ChatChannel row of the System channel, the type of a system line
+/// (`ChatChannel.flags`: row 2 `System`, flags 8).
+const system_channel_type = 2
 
 /// A line the rule refuses, with the result the client is answered with, and
 /// whether the channel is one the server does not build.

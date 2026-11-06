@@ -8,29 +8,46 @@ import connection_rule_support as support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, CreatureAppeared, FromMap, FromStore,
-  Removed, TellPeer,
+  type Answer, type Message, type Request, CreatureAppeared, ForStay, FromMap,
+  FromStore, PeerNews, Removed, SentByPeer, TellPeer,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
+import genesis_prime/game/connection as game_connection
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
+import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
+import genesis_prime/message/unit_position_command
 import genesis_prime/message/whisper_failed
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
+import genesis_prime/server
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, LogError,
-  OwnEffect, OwnEvent, Unwatch, Watch, WatchEnded, WatchId, Woken,
+  type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
+  EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent,
+  StoppedWaiting, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{CharacterLoaded, ForSelect, ForWorld, Listed}
+import genesis_prime/table/id.{Creature2Id, Spell4Id}
+import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/map.{Left, SeenBy}
+import genesis_prime/world_map/map.{
+  CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
+}
+import genesis_prime/world_map/spawn.{
+  FailsTheChecks, NoCreatureRow, NoFaction, WouldNotStart,
+}
+import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source.{RunOnly}
 import gleam/list
 import gleam/option.{None, Some}
+import map_spawn_support
 import message_support
 import owned_test
 import spawn_support
@@ -858,4 +875,410 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     as "opcode.0x355: the creature is removed when its process says so"
   assert unit_destroyed.decode(body)
     == Ok(UnitDestroyed(unit_id: 40, field_2: 0))
+}
+
+// ---- the development summon ----
+//
+// Expected values: the setting, the `!` grammar and the answers' texts are the
+// design's choices (a test tool for the play container); the 0x1c2 for
+// each 0x1c3 is `opcode.0x1c2`; a system line is `chat.system_line` (ChatChannel
+// row 2, flags 8) as a 0x1c8 (`opcode.0x1c8`); the ask is the map's `Summon`
+// to the run that took the player, with the settings' deadline, 4000 ms.
+
+/// The connection with the development commands on, after the player said a
+/// summon of Commander Durek (Creature2 75048): the map is asked.
+fn summoning() -> #(game_connection.State, ConnectionStep(Request)) {
+  game_connection_support.read(
+    game_connection_support.in_world_with_dev_commands(),
+    chat_line_message(4, "!summon 75048"),
+  )
+}
+
+/// The text of each system line the step writes, in order.
+fn system_lines(taken: ConnectionStep(Request)) -> List(String) {
+  list.filter_map(
+    game_connection_support.heard(taken, game_connection_support.keyed()),
+    fn(frame) {
+      case frame.message_id == chat_line.message_id {
+        False -> Error(Nil)
+        True -> {
+          let assert Ok(line) = chat_line.decode(frame.body)
+          assert line.channel_type == 2 && line.channel_id == 0
+            as "chat.system_line: channel type 2"
+          assert line.sender_name == "" && line.unit_id == 0
+            as "chat.system_line: no speaker"
+          let assert Ok(text) = bit_stream.from_utf16(line.text)
+          Ok(text)
+        }
+      }
+    },
+  )
+}
+
+/// Whether the connection takes the next line the player says: it is in the
+/// world, so the line is answered and nothing is asked.
+fn goes_on_in_the_world(state: game_connection.State) -> Bool {
+  let #(_, taken) =
+    game_connection_support.read(state, chat_line_message(4, "Hello"))
+  game_connection_support.written_ids(taken) == [0x01C2]
+  && support.asked(taken) == None
+  && !support.stops(taken)
+}
+
+pub fn with_the_setting_off_a_summon_line_is_said_and_nothing_is_asked_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    game_connection_support.watched_by(game_connection_support.in_world(), [
+      2,
+      3,
+    ])
+  let #(_, taken) =
+    game_connection_support.read(state, chat_line_message(4, "!summon 75048"))
+  assert game_connection_support.written_ids(taken) == [0x01C2]
+    as "opcode.0x1c2: the speaker's own line"
+  assert list.map(chat_tells(taken), fn(told) { told.0 })
+    == [step.Connection(ConnectionId(2)), step.Connection(ConnectionId(3))]
+    as "the design: with the setting off a `!` line is a Say line, told to each viewer"
+  assert support.asked(taken) == None as "nothing is asked of the map"
+}
+
+pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_the_map_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    game_connection_support.watched_by(
+      game_connection_support.in_world_with_dev_commands(),
+      [2, 3],
+    )
+  let #(_, taken) =
+    game_connection_support.read(state, chat_line_message(4, "!summon 75048"))
+  assert game_connection_support.written_ids(taken) == [0x01C2]
+    as "opcode.0x1c2: the speaker's own line is answered before the ask"
+  assert chat_tells(taken) == [] as "the design: the line is told to no viewer"
+  let assert Some(ask) = support.asked(taken)
+  assert ask.request == game_connection_support.summon_asked(75_048)
+    as "the design: the connection asks the run of the map that took the player to summon Creature2 75048, with its own id"
+  assert ask.deadline_ms == support.now_ms + 4000
+    as "the settings' ask deadline from the time of the input"
+}
+
+pub fn an_unknown_command_and_a_malformed_summon_each_answer_one_system_line_and_ask_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      #("!teleport 75048", "unknown command"),
+      #("!summon", "!summon takes one Creature2 id, as !summon 75048"),
+      #("!summon x", "!summon takes one Creature2 id, as !summon 75048"),
+    ],
+    fn(row) {
+      let #(state, taken) =
+        game_connection_support.read(
+          game_connection_support.in_world_with_dev_commands(),
+          chat_line_message(4, row.0),
+        )
+      assert game_connection_support.written_ids(taken) == [0x01C2, 0x01C8]
+        as "opcode.0x1c2 then the one system line"
+      assert system_lines(taken) == [row.1]
+        as "the design's texts, on the System channel"
+      assert support.asked(taken) == None && chat_tells(taken) == []
+      assert goes_on_in_the_world(state)
+    },
+  )
+}
+
+pub fn a_summoned_answer_writes_nothing_and_the_player_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = summoning()
+  let #(state, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromMap(Summoned(unit_id: 9))),
+    )
+  assert support.writes(answered) == []
+    as "the creature sent its own 0x262 as it started, so the connection writes nothing"
+  assert support.logs(answered) == [] && !support.stops(answered)
+  assert goes_on_in_the_world(state)
+}
+
+pub fn a_line_the_client_sent_while_the_summon_was_asked_is_taken_when_the_answer_comes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = summoning()
+  let #(state, held) =
+    game_connection_support.read(state, chat_line_message(4, "Hello"))
+  assert support.writes(held) == [] && support.asked(held) == None
+    as "the client's frames are held while the ask is out"
+  let #(_, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromMap(Summoned(unit_id: 9))),
+    )
+  assert game_connection_support.written_ids(answered) == [0x01C2]
+    as "opcode.0x1c2: the held line is taken once the player is back in the world, and answered"
+}
+
+pub fn a_map_with_no_player_of_the_connection_answers_one_system_line_that_says_so_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = summoning()
+  let #(state, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromMap(NotSummoned(reason: NoPlayerHere))),
+    )
+  assert system_lines(answered)
+    == ["not summoned: the player is not in the map"]
+    as "the design: the reason, on the System channel"
+  assert game_connection_support.written_ids(answered) == [0x01C8]
+  assert goes_on_in_the_world(state)
+}
+
+pub fn a_refused_creature_answers_one_system_line_naming_the_reason_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      #(
+        CreatureRefused(FailsTheChecks(NoCreatureRow(Creature2Id(999_999)))),
+        "not summoned: Creature2 999999 has no row",
+      ),
+      #(
+        CreatureRefused(WouldNotStart(Creature2Id(75_048), NoFaction)),
+        "not summoned: Creature2 75048 would not start as a spawn: no faction",
+      ),
+      #(
+        map.CreatureNotStarted(reason: "the creature supervisor is not running"),
+        "not summoned: the creature did not start",
+      ),
+    ],
+    fn(row) {
+      let #(state, taken) = summoning()
+      let #(state, answered) =
+        game_connection_support.answer(
+          state:,
+          taken:,
+          outcome: step.Answer(FromMap(NotSummoned(reason: row.0))),
+        )
+      assert system_lines(answered) == [row.1]
+        as "the design: one system line, with the map's reason"
+      assert game_connection_support.written_ids(answered) == [0x01C8]
+      assert goes_on_in_the_world(state)
+    },
+  )
+}
+
+pub fn a_map_that_is_not_running_ended_or_gave_no_answer_in_time_answers_not_summoned_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      #(NotRunning, "not summoned: the map was not running"),
+      #(EndedBeforeAnswer, "not summoned: the map ended before it answered"),
+      #(NoAnswerInTime, "not summoned: the map gave no answer in time"),
+    ],
+    fn(row) {
+      let #(state, taken) = summoning()
+      let #(state, answered) =
+        game_connection_support.answer(state:, taken:, outcome: row.0)
+      assert system_lines(answered) == [row.1]
+        as "the design: the player is answered one \"not summoned\" line with why"
+      assert game_connection_support.written_ids(answered) == [0x01C8]
+      assert support.logs_of(step: answered, level: LogError) == []
+        && !support.stops(answered)
+        && support.asked(answered) == None
+        as "the connection goes on in the world"
+      assert goes_on_in_the_world(state)
+    },
+  )
+}
+
+pub fn the_server_stopping_during_the_summon_ends_the_connection_as_a_stop_does_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = summoning()
+  let #(_, answered) =
+    game_connection_support.answer(state:, taken:, outcome: StoppedWaiting)
+  assert system_lines(answered) == []
+    as "no line is written to a player the server is stopping for"
+  assert game_connection_support.ask_request(answered)
+    == game_connection_support.save_asked(
+      1,
+      game_connection_support.entry_place(),
+    )
+    as "a stop saves the player in the world, as in any status that holds one"
+}
+
+pub fn an_answer_that_is_none_a_summon_asked_for_ends_the_connection_as_a_bug_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      step.Answer(FromStore(store.Unavailable)),
+      ..game_connection_support.answers_to_other_asks()
+    ],
+    fn(outcome) {
+      let #(state, taken) = summoning()
+      let #(state, answered) =
+        game_connection_support.answer(state:, taken:, outcome:)
+      assert list.length(support.logs_of(step: answered, level: LogError)) == 1
+        as "a bug is an error line"
+      assert system_lines(answered) == []
+      let #(_, saved) =
+        game_connection_support.answer(
+          state:,
+          taken: answered,
+          outcome: game_connection_support.place_saved(),
+        )
+      assert game_connection_support.disconnect(
+          saved,
+          game_connection_support.keyed(),
+        )
+        == LostUserServer
+        as "the player's place is saved, then 0x036A reason 8 as for any bug"
+    },
+  )
+}
+
+pub fn a_connection_that_ends_while_the_summon_is_asked_still_saves_the_player_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = summoning()
+  let #(_, taken) =
+    game_connection_support.feed(state, OwnEvent(step.PeerClosed))
+  assert game_connection_support.ask_request(taken)
+    == game_connection_support.save_asked(
+      1,
+      game_connection_support.entry_place(),
+    )
+    as "the player is in the world while the creature starts, so its place is saved as in InWorld"
+}
+
+// ---- the whole summon: the connection, the map and the creature ----
+
+pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_place_and_the_player_sees_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The three rules chained, each fed what the one before sent, as the shells
+  // carry it. Expected values: the creature stands where the client moved the
+  // player (0x637's position, x 1.5, y 2.5, z 3.5, which the connection tells
+  // the map), as Creature2 73465, the Virtual Defense Dagun (faction 1442,
+  // display 26578, `Creature2.73465`); the player's client is written one 0x262
+  // (opcode.0x262) and the map's answer writes nothing.
+  let select =
+    game_connection_support.in_select_from(
+      game_connection_support.accepted(
+        game_connection_support.settings_with_dev_commands(),
+      ).0,
+    )
+  let #(joining, joining_taken) =
+    game_connection_support.joining_from(
+      in_character_select: select,
+      character: game_connection_support.world_character(),
+    )
+  let #(map_state, join_answer) =
+    game_connection_support.mapped(
+      map_state: game_connection_support.map_with_four_players(),
+      taken: joining_taken,
+    )
+  let #(state, _) =
+    game_connection_support.answer(
+      state: joining,
+      taken: joining_taken,
+      outcome: step.Answer(FromMap(join_answer)),
+    )
+  let standing = game_connection_support.standing_at(x: 1.5, y: 2.5, z: 3.5)
+  let #(state, moved) =
+    game_connection_support.read(state, game_connection_support.a_move(1.5))
+  assert game_connection_support.moves_told(moved) == [1]
+  let #(map_state, _) =
+    map.step(
+      map_state,
+      support.input(
+        OwnEvent(
+          step.Told(message: map.Moved(
+            connection: ConnectionId(1),
+            place: standing,
+            seq: 1,
+          )),
+        ),
+      ),
+    )
+  let #(state, asked) =
+    game_connection_support.read(state, chat_line_message(4, "!summon 73465"))
+  assert game_connection_support.ask_request(asked)
+    == game_connection_support.summon_asked(73_465)
+    as "the line asks the player's map run, as one"
+  let assert client_connection.AskMapRun(message:, ..) =
+    game_connection_support.ask_request(asked)
+  let #(map_state, summoned) =
+    map.step(
+      map_state,
+      support.input(OwnEvent(step.Asked(caller: step.CallerId(1), message:))),
+    )
+  let assert [#(_, start)] = map_spawn_support.starts(summoned)
+    as "the map starts one creature"
+  let assert RunOnly(summoned: made) = start.spawn as "as a run-only spawn"
+  assert made
+    == spawn_source.Summoned(
+      id: SpawnId(-1),
+      creature_id: Creature2Id(73_465),
+      place: standing,
+    )
+    as "at the place the player stands at"
+  assert list.any(start.viewers, fn(viewer) { viewer.0 == ConnectionId(1) })
+    as "the player sees the place, so it is a viewer"
+  let #(_, settled) =
+    map_spawn_support.start_settled(state: map_state, at_ms: 6000, spawn: -1)
+  let assert [#(_, answer)] = support.replies(settled)
+  let assert Summoned(unit_id:) = answer
+  assert unit_id == start.unit_id
+  let #(state, answered) =
+    game_connection_support.answer(
+      state:,
+      taken: asked,
+      outcome: step.Answer(FromMap(answer)),
+    )
+  assert support.writes(answered) == []
+  // The creature, started from the summon as the server builds it.
+  let assert Ok(built) =
+    spawn.summoned(checks: spawn_support.summon_checks(), summoned: made)
+    as "the creature's start rebuilds the spawn the map checked"
+  let #(_, started) =
+    creature.step(
+      creature.new(creature.Settings(
+        creature: start,
+        spawn: built,
+        kind: Kind(
+          respawn_ms: 60_000,
+          attack_spell4_id: Spell4Id(5649),
+          attack_interval_ms: 1500,
+        ),
+        numbers: spawn_support.numbers,
+      )),
+      support.input(OwnEvent(step.Started)),
+    )
+  let appeared =
+    list.filter_map(support.effects_of(started), fn(effect) {
+      case effect {
+        OwnEffect(step.Send(to: step.Connection(ConnectionId(1)), message:)) ->
+          Ok(server.creature_message(outgoing: message))
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+  let assert [message] = appeared as "the creature sends the player its 0x262"
+  let #(_, written) =
+    game_connection_support.feed(state:, event: OwnEvent(Woken(message)))
+  assert game_connection_support.written_ids(written) == [0x0262]
+    as "opcode.0x262: the player's client is shown the creature"
+  let assert ForStay(
+    sent: SentByPeer(PeerNews(news: CreatureAppeared(unit:, ..), ..)),
+    ..,
+  ) = message
+  assert unit.unit_id == unit_id && unit.creature_id == 73_465
+  assert unit.tail.faction_id == 1442 && unit.tail.display_info_id == 26_578
+  assert list.contains(
+    unit.tail.movement_commands,
+    start_movement.Position(unit_position_command.UnitPositionCommand(
+      x: 0x3FC00000,
+      y: 0x40200000,
+      z: 0x40600000,
+      blends: 0,
+    )),
+  )
+    as "at the player's place: 1.5, 2.5 and 3.5 as 32-bit floats"
 }

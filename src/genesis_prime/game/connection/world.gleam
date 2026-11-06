@@ -71,8 +71,8 @@ import genesis_prime/game/connection/state.{
   type AfterLeave, type AfterSave, type EntryFrom, type Session,
   AwaitingHelloReply, Camped, ClaimingSession, EnteringWorld,
   FromCharacterSelect, FromHolocrypt, InCharacterSelect, InWorld, JoinAt,
-  Leaving, LeavingMap, Playing, SavingPlace, Session, TakingSessionKey,
-  ToCharacterSelect, WaitingToClaim,
+  Leaving, LeavingMap, Playing, SavingPlace, Session, Summoning,
+  TakingSessionKey, ToCharacterSelect, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
@@ -150,6 +150,7 @@ pub fn save_due(
     | ClaimingSession(..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
+    | Summoning(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -329,6 +330,8 @@ pub fn leave_answered(
     step.StoppedWaiting -> connection_state.stopped(session, now)
     step.Answer(FromMap(map.Joined(..)))
     | step.Answer(FromMap(map.NotJoined(..)))
+    | step.Answer(FromMap(map.Summoned(..)))
+    | step.Answer(FromMap(map.NotSummoned(..)))
     | step.Answer(FromMap(map.Noticed(..)))
     | step.Answer(FromMap(map.Watched(..)))
     | step.Answer(FromMap(map.Unwatched(..)))

@@ -49,7 +49,7 @@ import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/state.{
   type Resume, type Session, AwaitingHelloReply, ClaimingSession, EnteringWorld,
   InCharacterSelect, InWorld, LeavingMap, ResumeSelect, ResumeWorld, SavingPlace,
-  Session, TakingSessionKey, WaitingToClaim,
+  Session, Summoning, TakingSessionKey, WaitingToClaim,
 } as connection_state
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{
@@ -251,6 +251,7 @@ pub fn sessions_sent(
     | account_session.TakenOver, WaitingToClaim(..)
     | account_session.TakenOver, EnteringWorld(..)
     | account_session.TakenOver, InWorld(..)
+    | account_session.TakenOver, Summoning(..)
     | account_session.TakenOver, SavingPlace(..)
     | account_session.TakenOver, LeavingMap(..)
     -> taken_over(session, now)
@@ -299,6 +300,7 @@ pub fn own_watch_ended(
     | ClaimingSession(..), _
     | WaitingToClaim(..), _
     | EnteringWorld(..), _
+    | Summoning(..), _
     | SavingPlace(..), _
     | LeavingMap(..), _
     | AwaitingHelloReply, _
@@ -351,6 +353,7 @@ pub fn claim_wait_over(
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | InWorld(..)
+    | Summoning(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply

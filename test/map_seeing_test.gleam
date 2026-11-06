@@ -160,6 +160,8 @@ fn notices(
       Noticed(stay:, notice:) -> Ok(#(sent.0, stay, notice))
       Joined(..)
       | map.NotJoined(..)
+      | map.Summoned(..)
+      | map.NotSummoned(..)
       | map.Left
       | map.Watched(..)
       | map.Unwatched(..)

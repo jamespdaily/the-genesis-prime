@@ -535,6 +535,8 @@ pub fn joined(
           ))
         }
         map.Left
+        | map.Summoned(..)
+        | map.NotSummoned(..)
         | map.Noticed(..)
         | map.Watched(..)
         | map.Unwatched(..)

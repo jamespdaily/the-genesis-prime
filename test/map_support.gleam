@@ -70,12 +70,30 @@ pub fn with_objects(
   objects objects: List(StaticObject),
   kinds kinds: Kinds,
 ) -> State {
+  with_summons(
+    incarnation:,
+    spawns:,
+    objects:,
+    kinds:,
+    summons: spawn_support.summon_checks(),
+  )
+}
+
+/// The same map whose development summons are checked with `summons`.
+pub fn with_summons(
+  incarnation incarnation: Int,
+  spawns spawns: List(Spawn),
+  objects objects: List(StaticObject),
+  kinds kinds: Kinds,
+  summons summons: spawn.SummonChecks,
+) -> State {
   map.new(map.Settings(
     map: MapId(world_id: 3460, instance: 0),
     incarnation:,
     realm_id:,
     tables: character_tables.shared(),
     spawns: spawn.world_spawns(spawns:, objects:),
+    summons:,
     kinds:,
     numbers: spawn_support.numbers,
     idle_stop_ms:,
