@@ -23,8 +23,8 @@
 ////   starts meanwhile adds its bytes to the held ones. A load starts only when
 ////   what the allocator holds beyond the live terms is at most
 ////   `pending_limit_bytes` (`wait_until_released`, called by every key
-////   `owned_key` makes), and a process that holds no load starts one only while
-////   `owned_key.loads_held_limit` processes hold or are about to hold one.
+////   `owned_key` makes), and a process that holds no place starts one only while
+////   fewer than `owned_key.loads_held_limit` processes hold one.
 //// - **The peak is the allocator's own record** of its carriers' size since the
 ////   VM started, not a sum of blocks: a request needs one free stretch of the
 ////   region, and the carriers are what hold the region (measured on a fill test
@@ -76,6 +76,17 @@ pub fn pending_limit_bytes() -> Int
 @external(erlang, "literal_area_ffi", "wait_until_released")
 pub fn wait_until_released() -> Nil
 
-/// How many times `wait_until_released` has returned in this VM.
+/// How many times the calling process has come out of `wait_until_released`.
 @external(erlang, "literal_area_ffi", "admissions")
 pub fn admissions() -> Int
+
+/// The longest a wait of the gate takes, in milliseconds, before it fails the
+/// test that waits with a text naming what it waited for.
+@external(erlang, "literal_area_ffi", "wait_bound_ms")
+pub fn wait_bound_ms() -> Int
+
+/// Runs the body while the literal area collector is suspended, so a term erased
+/// in it stays allocated until the body ends. For a test of the allocator's
+/// account, in a VM no other test shares.
+@external(erlang, "literal_area_ffi", "with_the_collector_suspended")
+pub fn while_the_collector_is_suspended(body: fn() -> a) -> a

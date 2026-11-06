@@ -1,7 +1,8 @@
 -module(literal_area_ffi).
 -export([record_peak/1, carriers_peak/0, persistent_term_memory/0, tables_held_twice/0,
          names_held_twice/1, table_names/0, pending_bytes/0, pending_limit_bytes/0,
-         wait_until_released/0, admissions/0]).
+         wait_until_released/0, admissions/0, wait_until/2, wait_bound_ms/0,
+         with_the_collector_suspended/1]).
 
 %% Starts a process that writes the literal allocator's highest carriers size
 %% since the VM started to File whenever it grows, as decimal digits and a line
@@ -96,23 +97,58 @@ pending_bytes() ->
                               {size, Size, _, _} <- [lists:keyfind(size, 1, Sizes)]]),
     max(0, Allocated - persistent_term_memory()).
 
-%% Returns when pending_bytes/0 is at most the limit, checking again every
-%% millisecond. The collector releases the erased terms whatever a test does,
-%% so the wait ends; it is the wait of event_wait.until.
-wait_until_released() ->
-    case pending_bytes() =< ?PENDING_LIMIT of
+%% The longest any wait of the gate takes before it gives up and fails the test
+%% that waits, so a wait that never ends is a failure that names what it waited
+%% for.
+-define(WAIT_BOUND_MS, 60000).
+
+wait_bound_ms() ->
+    ?WAIT_BOUND_MS.
+
+%% Returns when Check() is true, checking again every millisecond; after the
+%% bound it ends the calling process with the text Describe() gives. The one wait
+%% of the gate: the literal area's release (wait_until_released/0) and a place
+%% among the loads (owned_key_ffi) are both made with it.
+wait_until(Check, Describe) ->
+    wait_until(Check, Describe, erlang:monotonic_time(millisecond) + ?WAIT_BOUND_MS).
+
+wait_until(Check, Describe, Until) ->
+    case Check() of
         true ->
-            counters:add(admission_counter(), 1, 1),
-            nil;
+            ok;
         false ->
-            timer:sleep(1),
-            wait_until_released()
+            case erlang:monotonic_time(millisecond) >= Until of
+                true ->
+                    erlang:error({gave_up_waiting, unicode:characters_to_binary(Describe())});
+                false ->
+                    timer:sleep(1),
+                    wait_until(Check, Describe, Until)
+            end
     end.
 
-%% How many times wait_until_released/0 has returned in this VM.
-admissions() ->
-    counters:get(admission_counter(), 1).
+%% Returns when pending_bytes/0 is at most the limit. The collector releases the
+%% erased terms whatever a test does, so the wait ends.
+wait_until_released() ->
+    wait_until(fun() -> pending_bytes() =< ?PENDING_LIMIT end, fun describe_pending/0),
+    erlang:put(literal_area_admissions, admissions() + 1),
+    nil.
 
-admission_counter() ->
-    database_support_ffi:once(<<"literal_area_admissions">>,
-                              fun() -> counters:new(1, [write_concurrency]) end).
+describe_pending() ->
+    io_lib:format("waited ~p ms for the literal area collector: ~p bytes pending, limit ~p",
+                  [?WAIT_BOUND_MS, pending_bytes(), ?PENDING_LIMIT]).
+
+%% How many times the calling process has come out of wait_until_released/0.
+admissions() ->
+    case erlang:get(literal_area_admissions) of
+        undefined -> 0;
+        Count -> Count
+    end.
+
+%% Runs Fun while the literal area collector is suspended, so a term erased in it
+%% stays allocated until Fun returns.
+with_the_collector_suspended(Fun) ->
+    [Collector] = [Pid || Pid <- processes(),
+                          process_info(Pid, initial_call)
+                              =:= {initial_call, {erts_literal_area_collector, start, 0}}],
+    erlang:suspend_process(Collector),
+    try Fun() after erlang:resume_process(Collector) end.

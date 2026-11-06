@@ -1,6 +1,6 @@
 -module(owned_key_ffi).
 -export([new/0, own/2, left_behind/1, erase_left/1, terms_under/1, erase/1, wait_until_dead/1,
-         loads_held/0, loads_held_limit/0, waiting_for_room/0]).
+         loads_held/0, loads_held_limit/0, waiting_for_room/0, waited_ms/1]).
 
 %% The references each process made, kept in a table that outlives the
 %% processes: {Owner, Reference, Kind}. A body that crashes, is killed by a
@@ -8,13 +8,15 @@
 %% so a process dictionary would be gone with it.
 -define(TABLE, owned_key_references).
 
-%% The keys made and not yet seen with a term stored under them, {Reference,
-%% Owner}, kept beside the table of references. Their owners are about to load,
-%% so each takes a place among the loads held from the moment its key is made.
--define(PENDING, owned_key_pending).
+%% What the keys wait for, {Key, Value} in one set: {{slot, N}, Pid} is the place
+%% N among the loads held, {{admitting, Pid}, StartMs} a process inside admit/0,
+%% {{waiting, Pid}, true} a process waiting for a place, and {{waited, Pid}, Ms}
+%% what the process has waited in all. A process that is killed leaves its rows
+%% behind, so a row counts only while its process lives.
+-define(ADMISSION, owned_key_admission).
 
-%% The most processes that hold a load, or are about to, when a process that
-%% holds none makes a key.
+%% The most processes that hold a place among the loads at once. A process holds
+%% one from its first key to its end (or erase_left/1).
 -define(LOADS_HELD_LIMIT, 2).
 
 %% A new reference, remembered as made by the calling process and to be erased
@@ -35,7 +37,7 @@ own(Key, _Kind) ->
 
 remember(Reference, Kind) ->
     ensure_table(),
-    admit(Reference),
+    admit(),
     ets:insert(?TABLE, {self(), Reference, Kind}),
     ok.
 
@@ -43,85 +45,92 @@ loads_held_limit() ->
     ?LOADS_HELD_LIMIT.
 
 %% What a key waits for before it is made: the literal area's released, and, for
-%% a process that holds no load, is not about to load and is not making a shared
-%% one, a place among the processes that hold a load (see owned_key.gleam). The
-%% place is taken inside one lock, so processes that ask at once are not all let
-%% in.
-admit(Reference) ->
-    literal_area_ffi:wait_until_released(),
-    case erlang:get(owned_key_unlimited) =:= true orelse claims_a_place(self()) of
-        true -> ok;
-        false -> take_a_place(Reference)
+%% a process that holds no place and is not making a shared load, a place among
+%% the loads held (see owned_key.gleam). The time spent here is what
+%% waited_ms/1 reports, so a test's deadline can leave it out.
+admit() ->
+    Start = erlang:monotonic_time(millisecond),
+    ets:insert(?ADMISSION, {{admitting, self()}, Start}),
+    try
+        literal_area_ffi:wait_until_released(),
+        case erlang:get(owned_key_unlimited) =:= true orelse holds_a_place(self()) of
+            true -> ok;
+            false -> take_a_place()
+        end
+    after
+        ets:delete(?ADMISSION, {admitting, self()}),
+        ets:update_counter(?ADMISSION, {waited, self()},
+                           erlang:monotonic_time(millisecond) - Start,
+                           {{waited, self()}, 0})
     end.
 
-take_a_place(Reference) ->
-    case try_to_take_a_place(Reference) of
+take_a_place() ->
+    case try_to_take_a_place() of
         true ->
             ok;
         false ->
-            Waiting = waiting_counter(),
-            counters:add(Waiting, 1, 1),
-            try wait_for_a_place(Reference) after counters:sub(Waiting, 1, 1) end
+            ets:insert(?ADMISSION, {{waiting, self()}, true}),
+            try
+                literal_area_ffi:wait_until(fun try_to_take_a_place/0, fun describe_places/0)
+            after
+                ets:delete(?ADMISSION, {waiting, self()})
+            end
     end.
 
-wait_for_a_place(Reference) ->
-    case try_to_take_a_place(Reference) of
-        true ->
-            ok;
-        false ->
-            timer:sleep(1),
-            wait_for_a_place(Reference)
+describe_places() ->
+    io_lib:format("waited ~p ms for a place among the loads; held by ~p",
+                  [literal_area_ffi:wait_bound_ms(), places_held_by()]).
+
+%% Takes the first free place, or one whose process has ended; one insert_new
+%% decides between processes that ask at once.
+try_to_take_a_place() ->
+    lists:any(fun take_slot/1, lists:seq(1, ?LOADS_HELD_LIMIT)).
+
+take_slot(Number) ->
+    Key = {slot, Number},
+    case ets:lookup(?ADMISSION, Key) of
+        [{Key, Holder} = Row] ->
+            case is_process_alive(Holder) of
+                true ->
+                    false;
+                false ->
+                    ets:delete_object(?ADMISSION, Row),
+                    ets:insert_new(?ADMISSION, {Key, self()})
+            end;
+        [] ->
+            ets:insert_new(?ADMISSION, {Key, self()})
     end.
 
-try_to_take_a_place(Reference) ->
-    global:trans({owned_key_admission, self()},
-                 fun() ->
-                     case loads_held() < ?LOADS_HELD_LIMIT of
-                         true ->
-                             ets:insert(?PENDING, {Reference, self()}),
-                             true;
-                         false ->
-                             false
-                     end
-                 end,
-                 [node()],
-                 infinity).
+holds_a_place(Pid) ->
+    ets:match(?ADMISSION, {{slot, '_'}, Pid}) =/= [].
+
+%% The processes that hold a place now.
+places_held_by() ->
+    [Pid || [Pid] <- ets:match(?ADMISSION, {{slot, '_'}, '$1'}), is_process_alive(Pid)].
+
+%% How many processes hold a place among the loads now.
+loads_held() ->
+    ensure_table(),
+    length(places_held_by()).
 
 %% How many processes wait now for a place.
 waiting_for_room() ->
-    counters:get(waiting_counter(), 1).
+    ensure_table(),
+    length([Pid || [Pid] <- ets:match(?ADMISSION, {{waiting, '$1'}, true}), is_process_alive(Pid)]).
 
-waiting_counter() ->
-    database_support_ffi:once(<<"owned_key_waiting">>,
-                              fun() -> counters:new(1, [write_concurrency]) end).
-
-%% Whether the process holds a load or is about to load.
-claims_a_place(Owner) ->
-    ets:match_object(?PENDING, {'_', Owner}) =/= []
-        orelse stored_under([Reference || {Reference, _Kind} <- owned_by(Owner)]) =/= [].
-
-%% How many processes hold a load (a term stored under a key they made) or are
-%% about to (a key made, no term seen yet). A key that has a term now, or whose
-%% process has ended, is no longer waiting for one.
-loads_held() ->
-    Entries = ets:tab2list(?TABLE),
-    Owners = maps:from_list([{Reference, Owner} || {Owner, Reference, _Kind} <- Entries]),
-    WithTerms = lists:usort([Reference
-                             || {{{load_key, Reference}, _Name}, _Term} <- persistent_term:get(),
-                                maps:is_key(Reference, Owners)]),
-    Waiting = [Owner
-               || {Reference, Owner} <- ets:tab2list(?PENDING),
-                  still_to_load(Reference, Owner, WithTerms)],
-    length(lists:usort([maps:get(Reference, Owners) || Reference <- WithTerms] ++ Waiting)).
-
-still_to_load(Reference, Owner, WithTerms) ->
-    case lists:member(Reference, WithTerms) orelse not is_process_alive(Owner) of
-        true ->
-            ets:delete(?PENDING, Reference),
-            false;
-        false ->
-            true
-    end.
+%% How many milliseconds the process has waited in admit/0 in all, the wait it is
+%% in now included.
+waited_ms(Pid) ->
+    ensure_table(),
+    Done = case ets:lookup(?ADMISSION, {waited, Pid}) of
+               [{_, Ms}] -> Ms;
+               [] -> 0
+           end,
+    Ongoing = case ets:lookup(?ADMISSION, {admitting, Pid}) of
+                  [{_, Start}] -> erlang:monotonic_time(millisecond) - Start;
+                  [] -> 0
+              end,
+    Done + Ongoing.
 
 %% The tables are made by a process that stays for the life of the VM, by the
 %% first caller; a caller that loses the race finds them made.
@@ -132,7 +141,7 @@ ensure_table() ->
             Made = make_ref(),
             spawn(fun() ->
                 try
-                    ets:new(?PENDING, [named_table, public, set, {write_concurrency, true}]),
+                    ets:new(?ADMISSION, [named_table, public, set, {write_concurrency, true}]),
                     ets:new(?TABLE, [named_table, public, bag, {write_concurrency, true}])
                 of
                     _ ->
@@ -170,7 +179,7 @@ left_behind(Owner) ->
     length(stored_under(Mine)).
 
 %% Erases every persistent term stored under the keys the owner made, of either
-%% kind, and forgets the owner's keys.
+%% kind, and forgets the owner's keys and its place among the loads.
 erase_left(Owner) ->
     erase_each(stored_under([Reference || {Reference, _Kind} <- owned_by(Owner)])),
     case ets:whereis(?TABLE) of
@@ -178,7 +187,10 @@ erase_left(Owner) ->
             ok;
         _ ->
             ets:delete(?TABLE, Owner),
-            ets:match_delete(?PENDING, {'_', Owner})
+            ets:match_delete(?ADMISSION, {{slot, '_'}, Owner}),
+            ets:delete(?ADMISSION, {waited, Owner}),
+            ets:delete(?ADMISSION, {admitting, Owner}),
+            ets:delete(?ADMISSION, {waiting, Owner})
     end,
     nil.
 

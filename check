@@ -157,14 +157,18 @@ test_workers=${GENESIS_TEST_WORKERS:-1}
 # waiting for the VM to release them (one round over all processes per erased
 # term, taking seconds when a dozen tests end together) and the loads in flight.
 # A test's load starts only when the allocator holds at most 32 MB beyond the
-# live terms and fewer than two tests hold a load (test/owned_key.gleam), which
-# bounds both. The highest carriers of five runs with one test worker (the
-# default; more workers run more tests at once), one on each of five seeds of the
-# test order, were 74.6%, 74.7%, 75.3%, 75.4% and 78.7% of the region, where the
-# same seeds without the gate gave 79.2%, 80.0%, 80.3%, 80.5% and 82.6%, and
-# four workers without it fill the region and end the VM. The limit is 85%: it
-# fails at 870 MiB, 6.3 points above the worst run measured, so a good run does
-# not fail, and it leaves 154 MiB free, 1.4
+# live terms, and a test holds one of two places among the loads from its first
+# key to its end (test/owned_key.gleam). That bounds the erased terms waiting for
+# release and the planted loads in flight. It does not bound the loads that take
+# no place (the server's own key's content loads and the shared loads made once
+# per run), nor the carriers' fragmentation, so the peak stays above the live
+# terms by more than the gate's own allowance. The highest carriers of eleven runs
+# with one test worker (the default; more workers run more tests at once), on
+# eight seeds of the test order, were 74.1% to 78.7% of the region,
+# where the same seeds without the gate gave 79.2% to 83.1%, and four workers
+# without it fill the region and end the VM. The limit is 85%: it fails at 870
+# MiB, 6.3 points above the worst run measured, so a good run does not fail, and
+# it leaves 154 MiB free, 1.4
 # times the largest table the suite puts (Spline2Node, 115.7 MB), and 123 MiB
 # before the 97% where the VM dies. A run over it fails the check, so the margin
 # cannot vanish unnoticed again. The limit is not set from outside: +MIscs is

@@ -100,18 +100,27 @@ fn erase_term(key: ProbeKey) -> Bool
 
 const two_megabytes = 2_097_152
 
-pub fn a_live_term_is_not_pending_and_an_erased_one_is_released_by_the_wait_test() -> Nil {
+const thirty_megabytes = 30_000_000
+
+pub fn a_live_term_is_not_pending_and_an_erased_one_is_until_the_wait_releases_it_test() -> Nil {
   // The terms of every other test sit in the same VM's allocator, so only the
   // serial run, which has the VM to itself, can read the allocator's whole
-  // account.
+  // account. The collector is suspended while the term is erased, so nothing can
+  // release it before it is read.
   use <- owned_test.run(60_000)
   use <- unitest.tag("serial")
   literal_area.wait_until_released()
-  let before = literal_area.pending_bytes()
-  let _stored = put_term(ProbeKey(1), big_term())
-  assert literal_area.pending_bytes() < before + two_megabytes
-    as "a term that is live is in the persistent terms' memory, so it is not pending"
-  assert erase_term(ProbeKey(1)) as "the probe term was stored"
+  literal_area.while_the_collector_is_suspended(fn() {
+    let before = literal_area.pending_bytes()
+    assert before > 0
+      as "the VM's own literals, the code of its modules, are allocated and in no persistent term"
+    let _stored = put_term(ProbeKey(1), big_term())
+    assert literal_area.pending_bytes() < before + two_megabytes
+      as "a term that is live is in the persistent terms' memory, so it is not pending"
+    assert erase_term(ProbeKey(1)) as "the probe term was stored"
+    assert literal_area.pending_bytes() >= before + thirty_megabytes
+      as "an erased term stays allocated until the collector releases it, so the reading rises by its size"
+  })
   literal_area.wait_until_released()
   assert literal_area.pending_bytes() <= literal_area.pending_limit_bytes()
     as "the wait returns only once what the allocator holds beyond the live terms is within the limit"
@@ -121,13 +130,17 @@ pub fn the_wait_outlasts_erased_terms_that_hold_more_than_the_limit_test() -> Ni
   use <- owned_test.run(60_000)
   use <- unitest.tag("serial")
   literal_area.wait_until_released()
-  let _first = put_term(ProbeKey(1), big_term())
-  let _second = put_term(ProbeKey(2), big_term())
-  let _third = put_term(ProbeKey(3), big_term())
-  assert erase_term(ProbeKey(1))
-    && erase_term(ProbeKey(2))
-    && erase_term(ProbeKey(3))
-    as "the probe terms were stored"
+  literal_area.while_the_collector_is_suspended(fn() {
+    let _first = put_term(ProbeKey(1), big_term())
+    let _second = put_term(ProbeKey(2), big_term())
+    let _third = put_term(ProbeKey(3), big_term())
+    assert erase_term(ProbeKey(1))
+      && erase_term(ProbeKey(2))
+      && erase_term(ProbeKey(3))
+      as "the probe terms were stored"
+    assert literal_area.pending_bytes() > literal_area.pending_limit_bytes()
+      as "96 MB erased at once are over the limit until the collector releases them"
+  })
   literal_area.wait_until_released()
   assert literal_area.pending_bytes() <= literal_area.pending_limit_bytes()
     as "96 MB erased at once are released before the wait returns"
@@ -155,37 +168,4 @@ pub fn a_fixture_key_made_for_a_test_waits_for_the_collector_first_test() -> Nil
   let _key = owned_key.new_fixture_key()
   assert literal_area.admissions() > before
     as "owned_key.new_fixture_key calls wait_until_released before it hands the key out"
-}
-
-/// What a planted extra load's terms are stored under.
-type ExtraLoadKey {
-  ExtraLoadKey(number: Int)
-}
-
-@external(erlang, "persistent_term", "put")
-fn put_extra_term(key: ExtraLoadKey, term: List(Int)) -> a
-
-@external(erlang, "persistent_term", "erase")
-fn erase_extra_term(key: ExtraLoadKey) -> Bool
-
-pub fn a_planted_extra_load_is_in_the_peak_the_check_compares_with_its_limit_test() -> Nil {
-  // The allocator's record is the whole VM's, so only the serial run, which has
-  // the VM to itself, can tell a rise one test made.
-  use <- owned_test.run(60_000)
-  use <- unitest.tag("serial")
-  let keys = [
-    ExtraLoadKey(1),
-    ExtraLoadKey(2),
-    ExtraLoadKey(3),
-    ExtraLoadKey(4),
-  ]
-  list.each(keys, fn(key) { put_extra_term(key, big_term()) })
-  let peak_with_the_load = literal_area.carriers_peak()
-  list.each(keys, fn(key) {
-    assert erase_extra_term(key) as "the extra load was stored"
-  })
-  // Four terms of 2,000,000 list cells, 16 bytes each: the carriers held at least
-  // those bytes while the terms were stored.
-  assert peak_with_the_load >= 4 * 2_000_000 * 16
-    as "a load held at once is in the highest carriers size, the number ./check fails over its limit (setup_check/test_check_script.py plants a peak over it)"
 }
