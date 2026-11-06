@@ -12,7 +12,7 @@ Each script's header is its contract: what it runs on the PC, what it refuses, a
 
 ## A session by hand
 
-1. Start the server in record mode: `gleam run -m genesis_prime/dev_start -- <folder>`.
+1. Stop the play server's container (`dev/play_service/stop.sh`), then start the server in record mode (server.md, "A server by hand"): `gleam run -m genesis_prime/dev_start -- <folder>`.
 2. `scripts/client-log.sh start <folder>`.
 3. `scripts/report.sh install`, before the client starts: the client reads its addons when the world starts.
 4. `scripts/client.sh start`.
@@ -20,7 +20,7 @@ Each script's header is its contract: what it runs on the PC, what it refuses, a
 6. `scripts/screenshot.sh <folder>/screen.jpg`.
 7. When the report is wanted, enter the world from character select: `scripts/client.sh key enter` (a background key; it plays the first character in the list), or, for another character, the takeover click (`scripts/client.sh click enter-game --pc-free`). Wait about 15 s, then `scripts/report.sh collect <folder>`.
 8. `scripts/client-log.sh collect <folder>`.
-9. `scripts/client.sh stop`, then `scripts/report.sh remove`, then stop the server.
+9. `scripts/client.sh stop`, then `scripts/report.sh remove`, then stop the server, then `dev/play_service/start.sh`.
 
 ## A fight played by hand
 
