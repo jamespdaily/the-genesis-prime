@@ -526,8 +526,15 @@ fn stealthed_verdict(
   comparison comparison: Comparison,
   subject subject: Subject,
 ) -> Verdict {
-  let _ = #(comparison, subject)
-  todo as "compare the subject's stealth by the comparison"
+  case subject.stealthed {
+    None -> NotRead(prerequisite_type: 116)
+    Some(stealthed) ->
+      case comparison {
+        Found -> verdict_of(stealthed)
+        NotFound -> verdict_of(!stealthed)
+        OtherComparison(..) -> Fails
+      }
+  }
 }
 
 /// Whether a cast of the Spell4 holds a node on the subject.

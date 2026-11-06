@@ -220,13 +220,15 @@
 ////   by cast id and effect id (`State.stealth`), kept with whether damage ends each
 ////   (`spell_plan.Breaks`); the player is stealthed while it holds any (`stealthed`).
 ////   A go lists each Stealth row of its phase whose gate passes against the caster in
-////   the caster's target info and gives the caster's node its life, as a Fluff row
-////   does, and adds its source; a RemoveStealth row (type 84) ends every source. After
-////   the go's effects, a spell whose `stealth_change` is `EndsStealth` ends every source
-////   held before the go (`Spell4.spellCastStealthChange.break`; the server's rule): the
-////   cast of each loses its node on the caster as a type 80 removal takes it off (0x811,
-////   then the 0x7fe of a lingering cast left with none), so the buff that stands for the
-////   stealth never outlives it. A node that leaves the caster takes its cast's sources
+////   the caster's target info and holds the caster's node until it is removed (a Stealth
+////   row with no durationTime lasts until removed), and adds its source; a RemoveStealth
+////   row (type 84) ends every source. After the go's effects, a spell whose
+////   `stealth_change` is `EndsStealth` ends every source held before the go and not
+////   applied by it (`Spell4.spellCastStealthChange.break`; the server's rule): the cast
+////   of each loses its node on the caster as a type 80 removal takes it off (0x811, and
+////   the 0x7fe of a lingering cast of a method the client keeps, `node_off`; a Normal
+////   cast the client destroys with the 0x811), so the buff that stands for the stealth
+////   never outlives it. A node that leaves the caster takes its cast's sources
 ////   with it (`effects_ended`), `damage_taken` ends the sources damage breaks, and
 ////   death and leaving drop all. Each input (a press, a timer, a go, the player's death,
 ////   a blow) compares the stealth before and after and ends with one `StealthChanged`
@@ -2604,13 +2606,36 @@ fn broken_by_damage(
   caster caster: Caster,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let breakable =
-    list.any(dict.values(cast.stealth), fn(breaks) {
-      breaks == spell_plan.BrokenByDamage
+  let sources =
+    dict.to_list(cast.stealth)
+    |> list.filter_map(fn(held) {
+      case held.1 {
+        spell_plan.BrokenByDamage -> Ok(held.0)
+        spell_plan.KeptOnDamage -> Error(Nil)
+      }
     })
-  use <- bool.guard(when: !breakable, return: #(cast, []))
-  let _ = #(caster, now_ms)
-  todo as "take the node off the caster of each cast that holds a BrokenByDamage source, oldest cast first, as a type 80 removal does"
+  stealth_ended(cast:, caster:, sources:, now_ms:)
+}
+
+/// The casts that hold the stealth sources taken off the caster, oldest cast first, each
+/// as a type 80 removal takes a cast off a unit (`node_off`: 0x811, and the 0x7fe of a
+/// lingering cast of a method the client keeps), which drops every source of the cast
+/// with its node; nothing for a source whose cast is gone.
+fn stealth_ended(
+  cast cast: State,
+  caster caster: Caster,
+  sources sources: List(unit_properties.Source),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  list.map(sources, fn(source) { source.cast_id })
+  |> list.unique
+  |> list.sort(int.compare)
+  |> list.fold(#(cast, []), fn(so_far, cast_id) {
+    let #(cast, effects) = so_far
+    let #(cast, more) =
+      node_off(cast:, cast_id:, unit_id: caster.unit_id, now_ms:)
+    #(stealth_dropped(cast:, cast_id:), list.append(effects, more))
+  })
 }
 
 /// Each property modifier the caster's casts may still hold, told ended in order: those
@@ -3220,9 +3245,9 @@ fn go(
 /// `Breaks`; a RemoveStealth row that applied ends every source; then a spell whose
 /// `stealth_change` is `EndsStealth` ends every source held before this go, so a source
 /// this go added is kept. A source ends as `cast.stealth` loses it and its cast's node
-/// leaves the caster, as `node_off` takes a type 80 removal's (0x811, then the 0x7fe of a
-/// lingering cast left with none). A go with no row, and no source to end, changes nothing
-/// (`Spell4.spellCastStealthChange.break`).
+/// leaves the caster, as `node_off` takes a type 80 removal's (0x811, and the 0x7fe of a
+/// lingering cast of a method the client keeps). A go with no row, and no source to end,
+/// changes nothing (`Spell4.spellCastStealthChange.break`).
 fn stealth_changed_by_go(
   cast cast: State,
   caster caster: Caster,
@@ -3234,8 +3259,46 @@ fn stealth_changed_by_go(
   case stealthed(cast:), applied.stealth, applied.remove_stealth {
     False, [], [] -> #(cast, [])
     _, _, _ -> {
-      let _ = #(caster, cast_id, spell, now_ms)
-      todo as "add the applied Stealth sources, end every source for a RemoveStealth row, then end the sources held before the go when the spell EndsStealth"
+      let held_before = dict.keys(cast.stealth)
+      let applied_sources =
+        list.map(applied.stealth, fn(row) {
+          unit_properties.Source(cast_id:, effect_id: row.effect_id)
+        })
+      let cast =
+        State(
+          ..cast,
+          stealth: list.fold(applied.stealth, cast.stealth, fn(held, row) {
+            dict.insert(
+              held,
+              unit_properties.Source(cast_id:, effect_id: row.effect_id),
+              row.breaks,
+            )
+          }),
+        )
+      let #(cast, removed) = case applied.remove_stealth {
+        [] -> #(cast, [])
+        [_, ..] ->
+          stealth_ended(
+            cast:,
+            caster:,
+            sources: dict.keys(cast.stealth),
+            now_ms:,
+          )
+      }
+      let #(cast, broken) = case spell.stealth_change {
+        spell_plan.EndsStealth ->
+          stealth_ended(
+            cast:,
+            caster:,
+            sources: list.filter(held_before, fn(source) {
+              dict.has_key(cast.stealth, source)
+              && !list.contains(applied_sources, source)
+            }),
+            now_ms:,
+          )
+        spell_plan.KeepsStealth -> #(cast, [])
+      }
+      #(cast, list.append(removed, broken))
     }
   }
 }

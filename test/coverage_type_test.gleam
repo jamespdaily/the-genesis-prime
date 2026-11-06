@@ -508,6 +508,112 @@ pub fn the_clients_522_type_73_rows_count_488_handled_and_34_not_test() -> Nil {
     as "targetFlags 1 in 480 rows and 3 in 8 include the caster (488 handled); 2 in 30 rows and 4 in 4 aim only at others (34 not handled)"
 }
 
+/// The measure of planted type 83 or 84 rows beside a type 8 row, for the line of the
+/// type given: Spell4Effects.targetFlags bit 1 is the caster, and the plan reads a Stealth
+/// or RemoveStealth row that includes it and leaves out one aimed only at others.
+fn measured_stealth_rows(
+  type_ type_: Int,
+  flags flags: List(Int),
+) -> measurement.Measurement {
+  let row = fn(id, type_, flags) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", planted_table.Integer(id)),
+      #("effectType", planted_table.Integer(type_)),
+      #("targetFlags", planted_table.Integer(flags)),
+    ])
+  }
+  use folder <- planted_table.in_folder([
+    planted_table.file(
+      spell4_effects.schema,
+      list.append(
+        list.index_map(flags, fn(flag, index) { row(index + 1, type_, flag) }),
+        [row(99, 8, 4)],
+      ),
+    ),
+  ])
+  let assert Ok(tables) =
+    store.load(
+      under: owned_key.new(),
+      from: folder,
+      entries: [spell4_effects.entry()],
+      requirements: [],
+      derivations: [],
+    )
+    as "a planted Spell4Effects table loads"
+  let measured =
+    measurement.measure(
+      EngineDeclaration(
+        ..engine_named("Spell effects"),
+        starting_abilities: None,
+      ),
+      tables,
+    )
+  store.unload(tables)
+  measured
+}
+
+pub fn the_type_83_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Planted: three type 83 rows, flags 1, 2 and 4, and one type 8 row.
+  let assert Measured(types:, ..) =
+    measured_stealth_rows(type_: 83, flags: [1, 2, 4])
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 83 })
+  assert line.rows == 3
+  assert line.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit, which hold no stealth the server keeps",
+      fact_key: "Spell4Effects.effectType.83",
+      unread_rows: 2,
+    )
+    as "two of the three rows aim only at others and are not read"
+}
+
+pub fn the_type_84_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Planted: two type 84 rows, flags 1 and 2, and one type 8 row.
+  let assert Measured(types:, ..) =
+    measured_stealth_rows(type_: 84, flags: [1, 2])
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 84 })
+  assert line.rows == 2
+  assert line.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit, whose stealth the server does not hold",
+      fact_key: "Spell4Effects.effectType.84",
+      unread_rows: 1,
+    )
+    as "one of the two rows aims only at others and is not read"
+}
+
+pub fn the_clients_74_type_83_rows_and_9_type_84_rows_have_11_and_4_aimed_only_at_others_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let assert Measured(types:, ..) =
+    measurement.measure(
+      engine_named("Spell effects"),
+      client_tables.every_table(),
+    )
+    as "the engine's source is a table"
+  let assert Ok(stealth) = list.find(types, fn(line) { line.type_number == 83 })
+  assert stealth.rows == 74
+    as "table_rows -- Spell4Effects effectType=83: 74 rows"
+  assert stealth.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit, which hold no stealth the server keeps",
+      fact_key: "Spell4Effects.effectType.83",
+      unread_rows: 11,
+    )
+    as "targetFlags 1 in 63 rows is the caster; 2 in 7 rows and 4 in 4 aim only at others, so the gap is real and the partial entry stays"
+  let assert Ok(remove) = list.find(types, fn(line) { line.type_number == 84 })
+  assert remove.rows == 9 as "table_rows -- Spell4Effects effectType=84: 9 rows"
+  assert remove.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit, whose stealth the server does not hold",
+      fact_key: "Spell4Effects.effectType.84",
+      unread_rows: 4,
+    )
+    as "targetFlags 1 in 5 rows is the caster; 2 in 3 rows and 4 in 1 aim only at others"
+}
+
 pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missing_type_a_breach_test() -> Nil {
   use <- owned_test.run(10_000)
   let declared =

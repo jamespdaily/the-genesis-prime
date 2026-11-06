@@ -193,6 +193,33 @@ pub fn shared_with_property_modifiers() -> store.Tables {
   })
 }
 
+/// The planted tables with a Stealth effect (type 83) aimed at the caster, as the
+/// Stalker's 83834 holds it (flags 2: until removed; dataBits02 0: damage ends it), added
+/// to Paralytic Surge 42352, which holds none: test data, since no pressable planted
+/// ability holds one, so the Medic's press enters stealth. Loaded once under a key of its
+/// own.
+pub fn shared_with_stealth() -> store.Tables {
+  database_support.once("character_tables_stealth", fn() {
+    let stealth =
+      planted_table.row(spell4_effects.schema, [
+        #("ID", Integer(99_903)),
+        #("spellId", Integer(42_352)),
+        #("targetFlags", Integer(1)),
+        #("effectType", Integer(83)),
+        #("flags", Integer(2)),
+        #("phaseFlags", Integer(-1)),
+        #("orderIndex", Integer(3)),
+      ])
+    load_files(files_replacing(
+      schema: spell4_effects.schema,
+      rows: spell_tables.sorted_by_id([
+        stealth,
+        ..novice_tables.spell4_effects_rows()
+      ]),
+    ))
+  })
+}
+
 /// The planted tables with Gate's forced move, row 67776 as the client holds it (delay
 /// 200, phaseFlags 1, orderIndex 0, aimed at the caster, `table_rows --
 /// Spell4Effects 67776`), added to Paralytic Surge 42352, which holds none, so the
