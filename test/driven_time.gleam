@@ -140,33 +140,39 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
         ),
       )
     }
-    TakeDue(limit_ms:, reply:) -> {
-      let due =
-        list.filter(state.pending, fn(pending) { pending.due_ms <= limit_ms })
-        |> list.sort(fn(a, b) {
-          int.compare(a.due_ms, b.due_ms)
-          |> order_then(int.compare(a.number, b.number))
-        })
-      case due {
-        [] -> {
-          process.send(reply, None)
-          actor.continue(
-            State(..state, now_ms: int.max(state.now_ms, limit_ms)),
-          )
-        }
-        [first, ..] -> {
-          process.send(reply, Some(first))
-          actor.continue(
-            State(
-              ..state,
-              now_ms: int.max(state.now_ms, first.due_ms),
-              pending: list.filter(state.pending, fn(pending) {
-                pending.number != first.number
-              }),
-            ),
-          )
-        }
-      }
+    TakeDue(limit_ms:, reply:) -> take_due(state:, limit_ms:, reply:)
+  }
+}
+
+/// Gives the earliest timer due by `limit_ms` and moves the clock to its due time;
+/// with none due, moves the clock to `limit_ms`.
+fn take_due(
+  state state: State,
+  limit_ms limit_ms: Int,
+  reply reply: Subject(Option(Pending)),
+) -> actor.Next(State, Message) {
+  let due =
+    list.filter(state.pending, fn(pending) { pending.due_ms <= limit_ms })
+    |> list.sort(fn(a, b) {
+      int.compare(a.due_ms, b.due_ms)
+      |> order_then(int.compare(a.number, b.number))
+    })
+  case due {
+    [] -> {
+      process.send(reply, None)
+      actor.continue(State(..state, now_ms: int.max(state.now_ms, limit_ms)))
+    }
+    [first, ..] -> {
+      process.send(reply, Some(first))
+      actor.continue(
+        State(
+          ..state,
+          now_ms: int.max(state.now_ms, first.due_ms),
+          pending: list.filter(state.pending, fn(pending) {
+            pending.number != first.number
+          }),
+        ),
+      )
     }
   }
 }
