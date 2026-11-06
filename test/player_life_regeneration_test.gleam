@@ -27,69 +27,26 @@
 
 import character_tables
 import genesis_prime/client_connection
-import genesis_prime/game/hit.{Rolls}
+import genesis_prime/game/hit
 import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
   type Effect, type Life, CancelTimer, OwnCombatState, OwnHealth, OwnShield,
-  Regeneration, ShieldRegeneration, StartTimer, ToClient, ToViewers,
+  Regeneration, StartTimer, ToClient, ToViewers,
 }
 import genesis_prime/game/rating
-import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/step.{TimerId}
 import genesis_prime/table/id.{ClassId}
-import genesis_prime/world_map/map_id.{MapId}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
+import player_life_support
 import properties_support
 import spawn_support
 
 const health_timer = TimerId(8)
-
-const shield_timer = TimerId(9)
-
-/// The rule's numbers as the tests plant them: a fortieth of the maximum each
-/// 500 ms, a multiplier of 1.0, a shield regenerating 0.25 of its maximum each
-/// 500 ms after 2500 ms.
-const regeneration =
-  Regeneration(
-    health_fraction: 0.025,
-    health_multiplier: 1.0,
-    health_tick_ms: 500,
-    shield: Some(
-      ShieldRegeneration(percent: 0.25, reboot_ms: 2500, tick_ms: 500),
-    ),
-  )
-
-const rolls = Rolls(crit: 0.5, deflect: 0.0, glance: 0.0)
-
-const own_unit = 20
-
-fn beast() -> step.Address {
-  step.Creature(
-    map: MapId(world_id: 3460, instance: 0),
-    incarnation: 1,
-    unit_id: 7,
-    life: 3,
-  )
-}
-
-fn place() -> Place {
-  let assert Ok(place) =
-    start_place.place(
-      world_id: 3460,
-      world_zone_id: 5967,
-      x: 0.0,
-      y: 0.0,
-      z: 0.0,
-      facing: start_place.unturned,
-    )
-    as "world 3460 is a world"
-  place
-}
 
 fn defence() -> hit.Defence {
   let tables = character_tables.shared()
@@ -106,8 +63,12 @@ fn defence() -> hit.Defence {
 /// The Beast's strike, its every blow dealing `damage`.
 fn blow(cast_id cast_id: Int, damage damage: Int) -> strike_tell.Tell {
   strike_tell.Strike(
-    key: strike_tell.Key(cast_id:, phase: 0, unit_id: own_unit),
-    from: beast(),
+    key: strike_tell.Key(
+      cast_id:,
+      phase: 0,
+      unit_id: player_life_support.own_unit,
+    ),
+    from: player_life_support.beast(),
     striker: strike_tell.CreatureStriker,
     offence: spawn_support.dealing(
       offence: spawn_support.beast_attack().offence,
@@ -126,8 +87,8 @@ fn struck(
     life:,
     defence: defence(),
     strike: blow(cast_id:, damage:),
-    rolls:,
-    place: place(),
+    rolls: player_life_support.rolls,
+    place: player_life_support.place(),
   )
 }
 
@@ -138,8 +99,8 @@ fn entering(saved saved: option.Option(Int)) -> #(Life, List(Effect)) {
     saved:,
     max_health: 736,
     shield: 450,
-    regeneration:,
-    place: place(),
+    regeneration: player_life_support.regeneration,
+    place: player_life_support.place(),
   )
 }
 
@@ -197,8 +158,8 @@ pub fn a_health_tick_adds_at_least_1_test() -> Nil {
       saved: Some(10),
       max_health: 20,
       shield: 0,
-      regeneration:,
-      place: place(),
+      regeneration: player_life_support.regeneration,
+      place: player_life_support.place(),
     )
   let #(life, _) = ticked(life:)
   assert player_life.health(life:) == 11
@@ -273,24 +234,33 @@ pub fn the_dead_regenerate_neither_and_coming_back_arms_nothing_test() -> Nil {
   let #(life, _) = entering(saved: Some(5))
   let #(life, first) = struck(life:, cast_id: 1, damage: 12)
   assert player_life.health(life:) == 4 as "Armor 250: the health takes 1 of 12"
-  assert timers(first) == [StartTimer(timer: shield_timer, after_ms: 2500)]
+  assert timers(first)
+    == [StartTimer(timer: player_life_support.shield_timer, after_ms: 2500)]
     as "the blow arms the shield's reboot; the health tick armed at entry runs on"
   let #(dead, killing) = struck(life:, cast_id: 2, damage: 100_000)
   assert player_life.state(life: dead) == player_life.Dead
   assert timers(killing)
-    == [CancelTimer(timer: health_timer), CancelTimer(timer: shield_timer)]
+    == [
+      CancelTimer(timer: health_timer),
+      CancelTimer(timer: player_life_support.shield_timer),
+    ]
     as "death cancels the health tick and the shield's clock"
   let #(still, none) = ticked(life: dead)
   assert still == dead && none == []
     as "a health tick that fires after the death changes nothing"
-  let #(still, none) = player_life.timer_fired(life: dead, timer: shield_timer)
+  let #(still, none) =
+    player_life.timer_fired(life: dead, timer: player_life_support.shield_timer)
   assert still == dead && none == [] as "nor does a shield tick"
   let assert Ok(#(alive, back)) =
     player_life.take(
       life: dead,
       message: player_life.ResurrectionChosen,
-      body: message_support.choice_body(unit_id: own_unit, choice: 1, value: 0),
-      unit_id: own_unit,
+      body: message_support.choice_body(
+        unit_id: player_life_support.own_unit,
+        choice: 1,
+        value: 0,
+      ),
+      unit_id: player_life_support.own_unit,
     )
   assert player_life.health(life: alive) == 736
     && player_life.shield(life: alive) == 450
@@ -303,13 +273,14 @@ pub fn a_blow_arms_the_shield_for_the_reboot_time_and_a_second_blow_pushes_it_ba
   use <- owned_test.run(60_000)
   let life = fought_by_the_beast(life: entering(saved: None).0)
   let #(life, first) = struck(life:, cast_id: 1, damage: 12)
-  assert timers(first) == [StartTimer(timer: shield_timer, after_ms: 2500)]
+  assert timers(first)
+    == [StartTimer(timer: player_life_support.shield_timer, after_ms: 2500)]
     as "ShieldRebootTime from the blow"
   let #(life, second) = struck(life:, cast_id: 2, damage: 12)
   assert timers(second)
     == [
-      CancelTimer(timer: shield_timer),
-      StartTimer(timer: shield_timer, after_ms: 2500),
+      CancelTimer(timer: player_life_support.shield_timer),
+      StartTimer(timer: player_life_support.shield_timer, after_ms: 2500),
     ]
     as "a blow before it fires starts the reboot again"
   assert player_life.shield(life:) == 446 as "450 less 2 and 2"
@@ -332,23 +303,26 @@ pub fn after_the_reboot_each_tick_adds_its_share_in_combat_too_until_full_test()
   let #(life, hit) = struck(life:, cast_id: 1, damage: 1000)
   assert player_life.shield(life:) == 294 && player_life.health(life:) == 642
     as "1000 mitigated to 250: the shield takes 156, the health 94"
-  assert timers(hit) == [StartTimer(timer: shield_timer, after_ms: 2500)]
+  assert timers(hit)
+    == [StartTimer(timer: player_life_support.shield_timer, after_ms: 2500)]
     && !list.contains(
       timers(hit),
       StartTimer(timer: health_timer, after_ms: 500),
     )
     as "in combat no health tick runs, and the shield waits out its reboot"
-  let #(life, first) = player_life.timer_fired(life:, timer: shield_timer)
+  let #(life, first) =
+    player_life.timer_fired(life:, timer: player_life_support.shield_timer)
   assert player_life.shield(life:) == 406 as "294 and floor(450 x 0.25) = 112"
   assert first
     == [
       ToClient(OwnShield(shield: 406)),
       ToViewers(client_connection.Shield(shield: 406)),
-      StartTimer(timer: shield_timer, after_ms: 500),
+      StartTimer(timer: player_life_support.shield_timer, after_ms: 500),
     ]
     as "0x938 stat 20 to the player and its viewers, then a tick later again"
   assert player_life.in_combat(life:) as "still in combat"
-  let #(life, last) = player_life.timer_fired(life:, timer: shield_timer)
+  let #(life, last) =
+    player_life.timer_fired(life:, timer: player_life_support.shield_timer)
   assert player_life.shield(life:) == 450 as "406 and 112 stops at the maximum"
   assert last
     == [
@@ -356,7 +330,8 @@ pub fn after_the_reboot_each_tick_adds_its_share_in_combat_too_until_full_test()
       ToViewers(client_connection.Shield(shield: 450)),
     ]
     as "full: no next tick"
-  let #(after, none) = player_life.timer_fired(life:, timer: shield_timer)
+  let #(after, none) =
+    player_life.timer_fired(life:, timer: player_life_support.shield_timer)
   assert after == life && none == []
     as "a shield tick that fires after the shield is full changes nothing"
 }
@@ -382,9 +357,9 @@ pub fn a_health_regen_multiplier_other_than_1_scales_the_tick_test() -> Nil {
         saved: Some(500),
         max_health: 736,
         shield: 450,
-        place: place(),
+        place: player_life_support.place(),
         regeneration: Regeneration(
-          ..regeneration,
+          ..player_life_support.regeneration,
           health_multiplier: multiplier,
         ),
       )
@@ -407,7 +382,8 @@ pub fn the_life_rule_owns_timer_ids_8_and_9_and_leaving_cancels_the_running_ones
   assert player_life.left(life:) == [health_timer]
     as "only the health tick runs"
   let #(life, _) = struck(life:, cast_id: 1, damage: 12)
-  assert player_life.left(life:) == [health_timer, shield_timer]
+  assert player_life.left(life:)
+    == [health_timer, player_life_support.shield_timer]
     as "the health tick and the shield's reboot"
   let #(full, _) = entering(saved: None)
   assert player_life.left(life: full) == [] as "none runs at full health"
@@ -420,13 +396,17 @@ pub fn a_player_with_no_shield_item_has_no_shield_clock_test() -> Nil {
       saved: None,
       max_health: 736,
       shield: 450,
-      place: place(),
-      regeneration: Regeneration(..regeneration, shield: None),
+      place: player_life_support.place(),
+      regeneration: Regeneration(
+        ..player_life_support.regeneration,
+        shield: None,
+      ),
     )
   let #(life, hit) =
     struck(life: fought_by_the_beast(life:), cast_id: 1, damage: 1000)
   assert timers(hit) == [] as "no shield item: no reboot to wait for"
   assert player_life.left(life:) == []
-  let #(after, none) = player_life.timer_fired(life:, timer: shield_timer)
+  let #(after, none) =
+    player_life.timer_fired(life:, timer: player_life_support.shield_timer)
   assert after == life && none == [] as "a stray shield timer changes nothing"
 }

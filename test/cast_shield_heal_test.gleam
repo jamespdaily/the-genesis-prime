@@ -30,7 +30,7 @@ import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AimsAtCaster, Always, GatedOnCaster,
 }
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Source, Change, Source}
+import genesis_prime/game/unit_properties.{type Source, Change}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
@@ -40,9 +40,8 @@ import genesis_prime/message/spell_effect_info.{
 }
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/step.{type TimerId, LogDebug, TimerId}
+import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
-import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -72,7 +71,7 @@ fn heal_of(
     aim: AimsAtCaster,
     condition:,
     tag: spend.always,
-    formula: Formula(multiplier: 1.0, base: 0, parameters: [
+    formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
       Parameter(kind: 22, value: 0.3),
       Parameter(kind: 0, value: 0.0),
       Parameter(kind: 0, value: 0.0),
@@ -136,10 +135,6 @@ fn press(
   )
 }
 
-fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
-  Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
-}
-
 /// The heals the effects start, with their sources and amounts.
 fn heals(effects effects: List(Effect)) -> List(#(Source, Int)) {
   list.filter_map(effects, fn(effect) {
@@ -148,6 +143,7 @@ fn heals(effects effects: List(Effect)) -> List(#(Source, Int)) {
         Ok(#(source, amount))
       cast.CasterChangeStarts(change: cast.Property(..), ..)
       | cast.CasterChangeStarts(change: cast.Look(..), ..)
+      | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -242,7 +238,8 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
       at: 1000,
     )
   let id = support.pressed_id(effects:)
-  assert heals(effects:) == [#(source_of(cast_id: id, effect_id: 228_914), 60)]
+  assert heals(effects:)
+    == [#(support.source_of(cast_id: id, effect_id: 228_914), 60)]
     as "a heal with no delay starts in the go's own step"
   let position = fn(wanted: fn(Effect) -> Bool) {
     let assert Ok(found) =
@@ -292,7 +289,7 @@ pub fn a_shield_heal_with_a_delay_lands_on_a_timer_of_its_delay_test() -> Nil {
     as "a timer of the row's delay is started"
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   assert timeline(fired:)
-    == [#(1010, source_of(cast_id: id, effect_id: 228_914), 60)]
+    == [#(1010, support.source_of(cast_id: id, effect_id: 228_914), 60)]
     as "the heal lands at go + 10, with the amount worked out at the go"
 }
 
@@ -335,13 +332,15 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
       at: 1000,
     )
   let id = support.pressed_id(effects:)
-  assert heals(effects:) == [#(source_of(cast_id: id, effect_id: 228_914), 60)]
+  assert heals(effects:)
+    == [#(support.source_of(cast_id: id, effect_id: 228_914), 60)]
     as "0.3 x (450 - 250) = 60: the gates' rule, a go's effects read the caster before the go's own"
   assert list.any(effects, fn(effect) {
     case effect {
       cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
       cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
       | cast.CasterChangeStarts(change: cast.Look(..), ..)
+      | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -381,7 +380,7 @@ pub fn a_delayed_shield_heal_holds_the_casters_node_until_it_lands_test() -> Nil
   assert list.map(finishes, fn(step) { step.0 }) == [1500]
     as "the 0x7fe comes 500 ms after the go"
   assert timeline(fired:)
-    == [#(1500, source_of(cast_id: id, effect_id: 228_914), 60)]
+    == [#(1500, support.source_of(cast_id: id, effect_id: 228_914), 60)]
     as "and the heal lands in the same millisecond"
 }
 
@@ -408,7 +407,7 @@ pub fn a_heal_whose_nodes_end_fires_first_still_lands_test() -> Nil {
   assert support.finished_ids(support.writes(effects: first)) == [id]
     as "the first step is the node's end, which writes the 0x7fe: the heal had not fired yet"
   assert list.append(heals(effects: first), heals(effects: second))
-    == [#(source_of(cast_id: id, effect_id: 228_914), 60)]
+    == [#(support.source_of(cast_id: id, effect_id: 228_914), 60)]
     as "the heal lands once, in the step of whichever timer comes first"
   assert heals(effects: first) != []
     as "here the node's end lands it, and the heal's own timer, cancelled, finds nothing"
@@ -470,20 +469,13 @@ pub fn a_shield_heal_behind_a_caster_gate_that_fails_is_neither_listed_nor_appli
 
 // ---- dropped heals ----
 
-/// The ids of the timers the effects start, as numbers, sorted.
-fn numbers(timers: List(TimerId)) -> List(Int) {
-  list.map(timers, fn(timer) {
-    let TimerId(number) = timer
-    number
-  })
-  |> list.sort(int.compare)
-}
-
 pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_taken_off_test() -> Nil {
   use <- owned_test.run(5000)
   let delayed = healer(heals: [energize(delay_ms: 500)])
   let started_by = fn(effects) {
-    numbers(list.map(support.started_timers(effects:), fn(timer) { timer.0 }))
+    support.timer_numbers(
+      list.map(support.started_timers(effects:), fn(timer) { timer.0 }),
+    )
   }
   // A death before the delay.
   let plans = plans_of([delayed])
@@ -505,7 +497,8 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
       now: support.at(ms: 1100),
     )
   assert heals(effects: died) == []
-  assert numbers(support.cancelled_timers(effects: died)) == started_by(first)
+  assert support.timer_numbers(support.cancelled_timers(effects: died))
+    == started_by(first)
     as "every timer the press started is cancelled, the heal's among them"
   let #(_, later) =
     support.run_timers(state: dead, effects: first, from_ms: 1000)
@@ -539,7 +532,10 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
     press(plans:, state:, caster: struck_caster(), bag: bag_of_base_1, at: 1100)
   assert heals(effects: removal) == []
   assert list.all(started_by(first), fn(started) {
-    list.contains(numbers(support.cancelled_timers(effects: removal)), started)
+    list.contains(
+      support.timer_numbers(support.cancelled_timers(effects: removal)),
+      started,
+    )
   })
     as "taking the cast's node off the caster cancels the heal's timer with the node's end"
   let #(_, later) = support.run_timers(state:, effects: first, from_ms: 1000)
@@ -572,7 +568,10 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
     )
   assert heals(effects: ended) == []
   assert list.all(started_by(first), fn(started) {
-    list.contains(numbers(support.cancelled_timers(effects: ended)), started)
+    list.contains(
+      support.timer_numbers(support.cancelled_timers(effects: ended)),
+      started,
+    )
   })
     as "a cast ended by its persistence drops the heal with its node"
   let #(_, later) = support.run_timers(state:, effects: first, from_ms: 1000)
@@ -633,8 +632,8 @@ pub fn two_shield_heal_rows_of_one_go_each_land_and_a_later_go_heals_again_test(
   let id = support.pressed_id(effects:)
   assert heals(effects:)
     == [
-      #(source_of(cast_id: id, effect_id: 228_914), 60),
-      #(source_of(cast_id: id, effect_id: 228_999), 60),
+      #(support.source_of(cast_id: id, effect_id: 228_914), 60),
+      #(support.source_of(cast_id: id, effect_id: 228_999), 60),
     ]
     as "each row is its own heal, each worked out from the caster as the go found it"
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
@@ -662,7 +661,7 @@ pub fn two_goes_with_overlapping_delayed_heals_both_land_each_at_its_own_delay_t
       at: 1000,
     )
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 228_914)
+  let source = support.source_of(cast_id: id, effect_id: 228_914)
   let timer_after = fn(effects, wanted_ms) {
     let assert Ok(found) =
       list.find(support.started_timers(effects:), fn(timer) {
@@ -743,6 +742,7 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
         | client_connection.CrowdControlApplied(..)
         | client_connection.CrowdControlEnded(..)
         | client_connection.InterruptArmor(..)
+        | client_connection.Absorption(..)
         | client_connection.PropertiesChanged(..)
         | client_connection.Stealth(..)
         | client_connection.LookChanged(..) -> Error(Nil)

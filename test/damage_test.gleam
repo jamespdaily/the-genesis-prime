@@ -28,7 +28,7 @@ fn row(
   support support: Float,
   per_level per_level: Float,
 ) -> damage.Formula {
-  Formula(multiplier: 1.0, base: 0, parameters: [
+  Formula(multiplier: 1.0, base: 0.0, parameters: [
     Parameter(kind: 12, value: assault),
     Parameter(kind: 13, value: support),
     Parameter(kind: 10, value: per_level),
@@ -122,7 +122,7 @@ pub fn a_parameter_type_the_rule_does_not_read_is_named_test() -> Nil {
     ))
     == None
   assert damage.unread(
-      formula: Formula(multiplier: 1.0, base: 0, parameters: [
+      formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
         Parameter(kind: 19, value: 0.1),
       ]),
     )

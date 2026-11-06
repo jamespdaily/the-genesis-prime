@@ -251,6 +251,33 @@
 ////   tickTime) is not applied, and a debug line says so: each tick needs a 0x7f8. The
 ////   server rolls no critical for a heal: the description is always a Hit, so the seed
 ////   draws nothing for it (the server's choice).
+//// - **A go's absorbs** (`Spell4Effects.effectType.29`): each Absorption effect of the phase
+////   that reaches the caster, has a lifetime (a durationTime, or flags bit 2), is not
+////   periodic and whose gate against the caster passes is listed in the caster's target
+////   info like a Fluff effect, gives the caster's node its life, and starts a pool on
+////   the caster, as a shield heal and a property modifier do, from the amount worked out at
+////   the go from the caster's stats as they stood before the go's own effects
+////   (genesis_prime/game/damage). The plan reads a type 29 row as a property modifier row
+////   whose change is an `AbsorbChange` (genesis_prime/game/spell_plan), so it goes
+////   through the same listing, node life, timers, end and removal. The sequence of one go:
+////
+////   ```
+////   go ─▶ 0x7f4 lists the row on the caster
+////      ─▶ no delay: CasterChangeStarts(source, Absorb(amount, mask)) in the go's step, after its 0x7f4
+////         delay:    a ModifierStart timer of the delay
+////      ─▶ ModifierEnd timer at delay + duration, none for flags bit 2
+////   ModifierStart fires ─▶ CasterChangeStarts(source, Absorb(amount, mask))
+////   ModifierEnd fires   ─▶ CasterChangeEnds(source)
+////   ```
+////
+////   A pool ends on a timer of its own, as a property modifier does, and the connection
+////   ends it by source (genesis_prime/game/connection/absorption), where a pool the
+////   hit rule used up is already gone and the end writes nothing: the cast keeps its
+////   node's time when its pool is spent (a server choice). Taking the cast's node off
+////   the caster ends the pool of each row and cancels its timers; the caster's death
+////   ends every pool of its casts and cancels the pending ones, after the life dropped
+////   them; the player leaving ends none, since the life goes with its `Entered`; a later go
+////   of the cast arms each pool again from that go, which refills a pool still held.
 //// - **A go's forced moves** (`Spell4Effects.effectType.3.player`): each type 3 effect of
 ////   the phase aimed at the caster whose gate against the caster passes is listed in the
 ////   caster's target info with its delay, and nothing more: the caster's client works out
@@ -448,6 +475,11 @@
 //// | a go lists a shield heal while the caster's shield is full | the description is written with amount 0; the shield writes nothing (genesis_prime/game/player_life) |
 //// | a heal's timer fires after its cast's node was taken off, the caster died or its persistence ended | no timer: it was cancelled with the node; nothing lands |
 //// | a heal's start and its node's end fire in either order | the heal lands once, in the step of whichever is delivered first |
+//// | a go lists an absorb and its connection restarts before the start | no pool: the connection enters with none and the client is created again |
+//// | an absorb's start timer fires after its cast's node was taken off, the caster died or its persistence ended | no timer: it was cancelled with the node; nothing starts |
+//// | an absorb's end timer fires after the pool was used up, or the death dropped it | the end writes nothing (genesis_prime/game/player_life) |
+//// | a go of the cast arms its absorb while the earlier go's pool is held | the pool is refilled to the new amount, its end timer set again |
+//// | an absorb's end and a blow reach the connection in one millisecond | arrival order: the pool soaks and then ends, or ends first |
 //// | a go adds a Stealth source while the stack cap of its spell takes the first cast off | one source left, one 0x811, no `StealthChanged` |
 //// | a go of a spell that ends stealth after the stealth ended | nothing to end, nothing written |
 //// | a 0x801 ends a cast of `EndsStealthAfterLastGo` after one of its goes and before its last | the other casts' stealth ends as the cast stops, the 0x811 and the change after the cast's own end |
@@ -617,12 +649,19 @@ pub type Caster {
 
 /// What a caster's spell changes on the caster itself, which starts after the effect's
 /// delay: the payload of `CasterChangeStarts` and `Due.ModifierStart`. A change that ends
-/// has its end tied to its source (`CasterChangeEnds`, `Due.ModifierEnd`); a shield heal has
-/// none.
+/// has its end tied to its source alone (`CasterChangeEnds`, `Due.ModifierEnd`), which
+/// each owner of a change takes by its source and ignores when it holds none; a shield
+/// heal has no end.
 pub type CasterChange {
   /// A property modifier (a UnitPropertyModifier or UnitPropertyConversion effect): the
   /// connection applies it to the player's properties (genesis_prime/game/unit_properties `apply`).
   Property(modifier: unit_properties.Modifier)
+  /// An absorb pool (an Absorption effect): the connection gives the player's life a pool of
+  /// `amount` that takes the damage types of `mask` (bit 1 Physical, 2 Tech, 4 Magic) before
+  /// its shield and health (genesis_prime/game/player_life `absorb_started`). The amount is
+  /// worked out at the go from the caster's stats, as a heal's is, and the pool lasts until
+  /// its end or it is used up (`Spell4Effects.effectType.29`).
+  Absorb(amount: Int, mask: Int)
   /// A disguise (a DisguiseOutfit effect): the connection starts it on the player's look,
   /// writes the slots that changed to the player's client and tells its viewers
   /// (genesis_prime/game/look `start`). It ends with the modifiers' own end,
@@ -657,11 +696,14 @@ pub type Effect {
   /// A change of the caster's spell on the caster itself starts: the connection applies a
   /// property modifier to the player's properties and tells its client and its viewers
   /// the entries that changed (genesis_prime/game/unit_properties `apply`), and raises
-  /// the shield for a shield heal (genesis_prime/game/player_life `shield_healed`).
+  /// the shield for a shield heal (genesis_prime/game/player_life `shield_healed`) and gives
+  /// the life an absorb pool for an `Absorb` (genesis_prime/game/player_life `absorb_started`).
   CasterChangeStarts(source: unit_properties.Source, change: CasterChange)
-  /// A property modifier or disguise of the caster's spell ends, or is told ended for a
-  /// source the properties and the look may not hold (`unit_properties.remove` and
-  /// `look.end` change nothing then).
+  /// A change of the caster's spell ends, or is told ended for a source the connection may
+  /// hold nothing for: it is told by source alone to each owner of a caster change, the
+  /// properties (`unit_properties.remove`), the look (`look.end`) and the life
+  /// (`player_life.absorb_ended`), and an owner that holds nothing for the source changes
+  /// nothing. A source names one cast and one Spell4Effects row, so at most one owner holds it.
   CasterChangeEnds(source: unit_properties.Source)
   /// The caster entered or left stealth, the last effect of the input that moved it:
   /// the connection writes 0x8f5 to the caster's client and tells each viewer
@@ -4182,7 +4224,7 @@ fn go(
         )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
       let #(cast, never_held) = procs_held(cast:, cast_id:, applied:)
-      let #(cast, modifying) = modifiers_armed(cast:, cast_id:, aimed:)
+      let #(cast, modifying) = modifiers_armed(cast:, cast_id:, caster:, aimed:)
       let #(cast, healing) = heals_armed(cast:, cast_id:, aimed:)
       let #(cast, cooldowns) =
         cooldowns_armed(
@@ -4384,7 +4426,9 @@ fn lasting_applied(
       ),
       condition: fn(row: spell_plan.PropertyModifier) { row.condition },
       what: fn(row: spell_plan.PropertyModifier) {
-        "the UnitPropertyModifier or UnitPropertyConversion effect "
+        "the "
+        <> modifier_kind_named(row:)
+        <> " effect "
         <> int.to_string(row.effect_id.value)
       },
       outcome: "so it is not applied",
@@ -4606,7 +4650,7 @@ fn aimed_at(
   let modifiers =
     rows_with_units(
       rows: applied.modifiers,
-      aim: modifier_aim,
+      aim: fn(row) { spell_plan.modifier_aim(modifier: row) },
       caster:,
       primary_target: live.primary_target,
       struck:,
@@ -4750,17 +4794,6 @@ fn aimed_at(
   )
 }
 
-/// The unit a property modifier row aims at: the caster for a type 11 row, which the plan
-/// reads only when its targetFlags include the caster, and for a type 52 row what its
-/// targetFlags name. Only the caster is changed (`aimed_at`): the server gives no other
-/// unit a property.
-fn modifier_aim(row row: spell_plan.PropertyModifier) -> spell_plan.Aim {
-  case row.armor {
-    Some(armor) -> armor.aim
-    None -> spell_plan.AimsAtCaster
-  }
-}
-
 /// The shield heals a go applies, each on the caster, with the amount the caster's own
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
 /// every gate of the go (`subject_of`). A row's units are those its aim names
@@ -4774,7 +4807,7 @@ fn healed_by(
   live live: Live,
   struck struck: List(Struck),
 ) -> List(#(Healed, Int)) {
-  let on_caster = damage.OnCaster(attacker: caster.stats, vitals: caster.vitals)
+  let on_caster = on_caster_of(caster:)
   rows_with_units(
     rows: applied.shield_heals,
     aim: fn(heal: spell_plan.ShieldHeal) { heal.aim },
@@ -4799,6 +4832,12 @@ fn healed_by(
   })
 }
 
+/// What a formula reads of the caster when it is also the target of its effect: the stats
+/// and the vitals it had before the go's own effects (`subject_of`).
+fn on_caster_of(caster caster: Caster) -> damage.OnCaster {
+  damage.OnCaster(attacker: caster.stats, vitals: caster.vitals)
+}
+
 /// The damage description of a shield heal: the amount as the raw, the scaled raw and the
 /// health change, a Hit of damage type HealShields (5), nothing absorbed or killed and no
 /// hit entries (`Spell4Effects.effectType.118`, `GameLib.CodeEnumDamageType`,
@@ -4818,6 +4857,17 @@ fn heal_description(amount amount: Int) -> SpellDamageDescription {
     damage_type: damage_type.HealShields,
     hits: [],
   )
+}
+
+/// What the row's effect type is called in a log line.
+fn modifier_kind_named(row row: spell_plan.PropertyModifier) -> String {
+  case row.armor, row.change {
+    Some(..), _ -> "ModifyInterruptArmor"
+    None, spell_plan.AbsorbChange(..) -> "Absorption"
+    None, spell_plan.LookChange(..) -> "DisguiseOutfit"
+    None, spell_plan.PropertyChange(..) ->
+      "UnitPropertyModifier or UnitPropertyConversion"
+  }
 }
 
 /// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
@@ -4954,11 +5004,13 @@ fn removed_by_go(
 fn modifiers_armed(
   cast cast: State,
   cast_id cast_id: Int,
+  caster caster: Caster,
   aimed aimed: Aimed,
 ) -> #(State, List(Effect)) {
   list.fold(aimed.modifiers, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
     let row = entry.0
+    let change = caster_change_of(change: row.change, caster:)
     let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
     let #(cast, cancels) = cancel_source_timers(cast:, source:)
     let #(cast, starting) = case row.row.delay_ms > 0 {
@@ -4966,14 +5018,12 @@ fn modifiers_armed(
         let #(cast, _, start) =
           armed(
             cast:,
-            due: ModifierStart(source:, change: caster_change_of(row.change)),
+            due: ModifierStart(source:, change:),
             after_ms: row.row.delay_ms,
           )
         #(cast, [start])
       }
-      False -> #(cast, [
-        CasterChangeStarts(source:, change: caster_change_of(row.change)),
-      ])
+      False -> #(cast, [CasterChangeStarts(source:, change:)])
     }
     let #(cast, ending) = case row.row.until_removed {
       True -> #(cast, [])
@@ -4991,11 +5041,24 @@ fn modifiers_armed(
   })
 }
 
-/// What a modifier row's change asks of the connection when it starts.
-fn caster_change_of(change: spell_plan.Change) -> CasterChange {
+/// What a modifier row's change asks of the connection when it starts: an absorb's pool is
+/// worked out at the go from the caster as it stood before the go's own effects, as a shield
+/// heal's amount is (`healed_by`).
+fn caster_change_of(
+  change change: spell_plan.Change,
+  caster caster: Caster,
+) -> CasterChange {
   case change {
     spell_plan.PropertyChange(modifier:) -> Property(modifier:)
     spell_plan.LookChange(disguise:) -> Look(disguise:)
+    spell_plan.AbsorbChange(absorption:) ->
+      Absorb(
+        amount: damage.amount_on_caster(
+          formula: absorption.formula,
+          caster: on_caster_of(caster:),
+        ),
+        mask: absorption.mask,
+      )
   }
 }
 
@@ -5289,6 +5352,7 @@ fn pending_heals_cancelled(
       ModifierStart(source:, change: ShieldHeal(..)) ->
         source.cast_id == cast_id
       ModifierStart(change: Property(..), ..)
+      | ModifierStart(change: Absorb(..), ..)
       | ModifierStart(change: Look(..), ..)
       | ModifierEnd(..)
       | CooldownModifierStarts(..)

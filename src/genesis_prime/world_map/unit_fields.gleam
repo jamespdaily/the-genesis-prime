@@ -43,6 +43,10 @@ pub const shield_stat = 20
 /// stat list and by a 0x938 (`opcode.0x938.interrupt_armor`).
 pub const interrupt_armor_stat = 21
 
+/// The stat the client keeps a unit's absorption in, what Unit:GetAbsorptionValue returns:
+/// set by the create's stat list and by a 0x938 (`opcode.0x938`, `0x14064fb40`).
+pub const absorption_stat = 22
+
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).
 pub const base_health_property = 7

@@ -22,6 +22,9 @@
 ////   `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
 ////   1.0 for a player (UnitProperty2 140 to 143: the multiplier's default).
+//// - **An Absorption row** (`absorption_formula_of`) reads dataBits00 and dataBits01 as
+////   floats and is worked out as an effect on its caster is, at the go
+////   (`Spell4Effects.effectType.29`).
 //// - **An effect on its caster** (`value_on_caster`): the caster is also the target, so
 ////   the flat part F also reads the caster's own health, shield and maxima by the kinds
 ////   the client names (`0x140566ad0`), and the amount is the value rounded half away
@@ -44,10 +47,11 @@ pub type Parameter {
   Parameter(kind: Int, value: Float)
 }
 
-/// A damage effect's row as the formula reads it: the multiplier dataBits00 as a
-/// float, the integer dataBits01, and the four parameters.
+/// An effect's row as the formula reads it: the multiplier dataBits00 as a float, the
+/// flat base dataBits01 (an integer for a damage or heal row, a float for an Absorption
+/// row) and the four parameters.
 pub type Formula {
-  Formula(multiplier: Float, base: Int, parameters: List(Parameter))
+  Formula(multiplier: Float, base: Float, parameters: List(Parameter))
 }
 
 /// A damage effect's row as the formula reads it, or an error when its dataBits00,
@@ -58,12 +62,50 @@ pub fn formula_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Formula, Nil) {
   use multiplier <- result.map(float32.of_column(number: effect.data_bits00))
-  Formula(multiplier:, base: effect.data_bits01, parameters: [
+  Formula(
+    multiplier:,
+    base: int.to_float(effect.data_bits01),
+    parameters: parameters_of(effect:),
+  )
+}
+
+/// An Absorption row's formula (`Spell4Effects.effectType.29`): dataBits00 is the
+/// multiplier and dataBits01 the flat base, both 32-bit floats ('Granted 45 Absorb' is row
+/// 183643's dataBits01 1110704128 = 45.0), with the parameters of a damage row. An error
+/// when either is not finite. That type 29 takes the row part as a damage row does is the
+/// server's choice: ComputeEffectValue gives it none.
+pub fn absorption_formula_of(
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Formula, Nil) {
+  use multiplier <- result.try(float32.of_column(number: effect.data_bits00))
+  use base <- result.map(float32.of_column(number: effect.data_bits01))
+  Formula(multiplier:, base:, parameters: parameters_of(effect:))
+}
+
+fn parameters_of(
+  effect effect: spell4_effects.Spell4Effects,
+) -> List(Parameter) {
+  [
     Parameter(kind: effect.parameter_type00, value: effect.parameter_value00),
     Parameter(kind: effect.parameter_type01, value: effect.parameter_value01),
     Parameter(kind: effect.parameter_type02, value: effect.parameter_value02),
     Parameter(kind: effect.parameter_type03, value: effect.parameter_value03),
-  ])
+  ]
+}
+
+/// Whether the formula gives 0 to every caster: no stat parameter (kind 12 or 13) has a
+/// value, and the multiplier is 0.0 or the base is 0.0 with no flat parameter (any other
+/// kind) that has a value. Such a row has no amount the server can read, whatever the
+/// caster's stats.
+pub fn gives_nothing(formula formula: Formula) -> Bool {
+  let has_value = fn(is_kind) {
+    list.any(formula.parameters, fn(parameter) {
+      parameter.value != 0.0 && is_kind(parameter.kind)
+    })
+  }
+  let stat = has_value(fn(kind) { kind == 12 || kind == 13 })
+  let flat = has_value(fn(kind) { kind != 0 && kind != 12 && kind != 13 })
+  !stat && { formula.multiplier == 0.0 || { formula.base == 0.0 && !flat } }
 }
 
 /// What the formula reads of the caster: its level and its two ratings.
@@ -141,8 +183,7 @@ fn value_with(
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
       sum +. parameter.value *. flat_of(parameter.kind)
     })
-  let row_part =
-    { int.to_float(formula.base) +. flat_part } *. formula.multiplier
+  let row_part = { formula.base +. flat_part } *. formula.multiplier
   int.to_float(float.round(stat_part)) +. row_part
 }
 
@@ -310,7 +351,6 @@ pub fn creature_value(
         _ -> sum
       }
     })
-  let row_part =
-    { int.to_float(formula.base) +. flat_part } *. formula.multiplier
+  let row_part = { formula.base +. flat_part } *. formula.multiplier
   { capped +. row_part } /. scaling.divisor
 }

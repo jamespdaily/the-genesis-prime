@@ -82,7 +82,7 @@ fn armor_of(change change: unit_stat_change.UnitStatChange) -> List(Written) {
     unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value:)) -> [
       Armor(value:),
     ]
-    unit_stat_change.Shield(..) -> []
+    unit_stat_change.Shield(..) | unit_stat_change.Absorption(..) -> []
   }
 }
 

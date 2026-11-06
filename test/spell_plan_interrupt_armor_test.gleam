@@ -163,7 +163,7 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_the_cast
     as "targetFlags 2 is the primary target"
   assert read.row
     == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
-  assert spell_plan.proxy_armors_read(
+  assert spell_plan.proxy_modifiers_read(
       spell4_id: 58_586,
       proxy_effect_id: 178_143,
       target: OnCaster,
@@ -190,7 +190,7 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_each_str
       effect: row,
       condition: Always,
     )
-  assert spell_plan.proxy_armors_read(
+  assert spell_plan.proxy_modifiers_read(
       spell4_id: 58_586,
       proxy_effect_id: 178_143,
       target: OnEachStruck,
@@ -213,7 +213,7 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_each_str
       ),
       condition: Always,
     )
-  assert spell_plan.proxy_armors_read(
+  assert spell_plan.proxy_modifiers_read(
       spell4_id: 58_586,
       proxy_effect_id: 178_143,
       target: OnEachStruck,

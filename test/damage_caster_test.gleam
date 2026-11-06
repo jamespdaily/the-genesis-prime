@@ -37,7 +37,7 @@ fn medic() -> damage.OnCaster {
 
 /// A formula of a multiplier 1.0 and a base of 0 with one parameter.
 fn formula(kind kind: Int, factor factor: Float) -> Formula {
-  Formula(multiplier: 1.0, base: 0, parameters: [
+  Formula(multiplier: 1.0, base: 0.0, parameters: [
     Parameter(kind:, value: factor),
     Parameter(kind: 0, value: 0.0),
     Parameter(kind: 0, value: 0.0),

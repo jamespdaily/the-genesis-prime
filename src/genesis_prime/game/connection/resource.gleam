@@ -126,6 +126,7 @@ pub fn life_effects(
             apply(class_resource.combat_changed(resources: _, in_combat:))
           player_life.OwnShield(..)
           | player_life.OwnInterruptArmor(..)
+          | player_life.OwnAbsorption(..)
           | player_life.OwnHealth(..)
           | player_life.OwnDeathLogged
           | player_life.OwnCameBackLogged
