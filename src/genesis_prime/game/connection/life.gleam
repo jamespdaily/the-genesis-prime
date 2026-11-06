@@ -217,7 +217,24 @@ fn life_carried(
                 cast_carried(
                   session:,
                   now:,
-                  taken: cast.died(cast: entered.cast, now:),
+                  taken: cast.died(
+                    cast: entered.cast,
+                    caster: connection_casting.caster_of(entered:),
+                    now:,
+                  ),
+                )
+              #(session, list.append(written, more), to_the_holocrypt)
+            }
+            player_life.CombatLeft -> {
+              let #(session, more) =
+                cast_carried(
+                  session:,
+                  now:,
+                  taken: cast.combat_left(
+                    cast: entered.cast,
+                    caster: connection_casting.caster_of(entered:),
+                    now:,
+                  ),
                 )
               #(session, list.append(written, more), to_the_holocrypt)
             }

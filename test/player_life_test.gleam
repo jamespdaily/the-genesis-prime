@@ -315,6 +315,7 @@ fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
         | ToViewers(..)
         | StreamTo(..)
         | player_life.DamageTaken
+        | player_life.CombatLeft
         | EndCasts
         | GoToHolocrypt
         | StartTimer(..)

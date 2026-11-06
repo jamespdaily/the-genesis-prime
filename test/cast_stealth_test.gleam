@@ -888,7 +888,12 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_ch
   let plans = plans_of([kept()])
   let #(state, entered) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let #(state, effects) = cast.died(cast: state, now: support.at(ms: 2000))
+  let #(state, effects) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 2000),
+    )
   assert list.contains(
     support.finished_ids(support.writes(effects:)),
     support.pressed_id(effects: entered),
@@ -900,7 +905,12 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_ch
     as "and it is the last effect, after the casts' 0x7fe"
   assert last_of(lines:, line: "end") < first_of(lines:, line: "stealth off")
   assert !cast.stealthed(cast: state)
-  let #(_, healthy) = cast.died(cast: cast.new(), now: support.at(ms: 2000))
+  let #(_, healthy) =
+    cast.died(
+      cast: cast.new(),
+      caster: support.dead_caster(),
+      now: support.at(ms: 2000),
+    )
   assert changes(effects: healthy) == []
     as "a caster that was not stealthed is told no change"
 }

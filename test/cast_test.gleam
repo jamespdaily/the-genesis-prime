@@ -802,7 +802,12 @@ pub fn a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_cas
   let assert [frame, ..] = support.writes(effects: pressed)
   let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
   let id = confirmed.server_cast_id
-  let #(after, effects) = cast.died(cast: state, now: support.at(ms: 1500))
+  let #(after, effects) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 1500),
+    )
   assert support.cancelled_timers(effects:) == [go_timer]
     as "the waiting go is cancelled: no go and no strike"
   assert ids_of(effects:) == [0x07FE] as "0x7fe to the caster's own client"

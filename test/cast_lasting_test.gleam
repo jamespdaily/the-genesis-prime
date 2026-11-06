@@ -602,7 +602,12 @@ pub fn the_caster_dying_finishes_a_lingering_cast_with_its_0x7fe_test() -> Nil {
       at: 1000,
     )
   let id = support.pressed_id(effects:)
-  let #(_, ended) = cast.died(cast: state, now: support.at(ms: 2000))
+  let #(_, ended) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 2000),
+    )
   assert support.finished_ids(support.writes(effects: ended)) == [id]
     as "the server's choice: the client has no path that ends a buff on a unit's death (cast.target_node_end)"
   assert support.tells(effects: ended)

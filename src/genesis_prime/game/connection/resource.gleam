@@ -137,6 +137,7 @@ pub fn life_effects(
       | player_life.Answer(..)
       | player_life.StreamTo(..)
       | player_life.DamageTaken
+      | player_life.CombatLeft
       | player_life.EndCasts
       | player_life.GoToHolocrypt
       | player_life.StartTimer(..)

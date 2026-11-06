@@ -747,6 +747,12 @@ pub type HeldUntil {
   CastClears
 }
 
+/// A Proc row a cast holds on the caster, with the times it fired at that are still inside
+/// its window (`ProcRow.window_ms`).
+type HeldProc {
+  HeldProc(row: spell_plan.ProcRow, fires_ms: List(Int))
+}
+
 /// What the rule keeps for one player: its cooldowns, its live casts, its open
 /// thresholds and what waits on a timer, and the counters its cast ids and timer
 /// ids are made from.
@@ -779,6 +785,10 @@ pub opaque type State {
     /// The Stealth rows the caster's casts hold on it, by cast id and effect id, each
     /// with whether damage ends it; the caster is stealthed while this is not empty.
     stealth: Dict(unit_properties.Source, spell_plan.Breaks),
+    /// The Proc rows the caster's casts hold on it, by cast id and effect id, each with the
+    /// monotonic times of its fires still inside its window; a proc leaves where a stealth
+    /// source does (`procs_dropped`).
+    procs: Dict(unit_properties.Source, HeldProc),
     /// The id of the cast of the player's innate passive, once `passive_started` has
     /// started it: the one cast a death leaves.
     passive: Option(Int),
@@ -817,6 +827,7 @@ pub fn new() -> State {
     timers_started: 0,
     logged: set.new(),
     stealth: dict.new(),
+    procs: dict.new(),
     passive: None,
     persistence_logged: set.new(),
   )
@@ -891,7 +902,9 @@ pub fn take(
       |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
   }
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) { settled(cast:, step: fn() { taken }) })
+  |> result.map(fn(taken) {
+    settled(cast:, caster:, now:, own: [], step: fn() { taken })
+  })
 }
 
 /// What an input did, with `StealthChanged` as its last effect when the caster's stealth
@@ -899,16 +912,47 @@ pub fn take(
 /// Stealth rows came and went. `step` is the input's own work.
 fn settled(
   cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  own own: List(spell_plan.Trigger),
   step step: fn() -> #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
   let #(after, effects) = step()
-  case stealthed(cast: after) == stealthed(cast:) {
-    True -> #(after, effects)
-    False -> #(
-      after,
-      list.append(effects, [StealthChanged(stealthed: stealthed(cast: after))]),
-    )
+  let #(after, moved, fired) = case stealthed(cast: after) == stealthed(cast:) {
+    True -> {
+      let #(after, fired) =
+        procs_fired(cast: after, caster:, now:, triggers: own)
+      #(after, [], fired)
+    }
+    False -> {
+      let stealthed = stealthed(cast: after)
+      let change = case stealthed {
+        True -> spell_plan.EnteredStealth
+        False -> spell_plan.LeftStealth
+      }
+      let #(after, fired) =
+        procs_fired(
+          cast: after,
+          caster:,
+          now:,
+          triggers: list.append(own, [change]),
+        )
+      #(after, [StealthChanged(stealthed:)], fired)
+    }
   }
+  #(after, list.flatten([effects, moved, fired]))
+}
+
+/// The procs held when an input's own work is done fire for each of its events, in the
+/// order given; a stub.
+fn procs_fired(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  triggers triggers: List(spell_plan.Trigger),
+) -> #(State, List(Effect)) {
+  let _ = #(caster, now, triggers)
+  #(cast, [])
 }
 
 /// A step's result with the held press started when the step cleared the current
@@ -2140,7 +2184,7 @@ pub fn timer_fired(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:)
+  use <- settled(cast:, caster:, now:, own: [])
   released(
     taken: fire(cast:, timer:, caster:, now:),
     caster:,
@@ -2374,7 +2418,7 @@ pub fn went(
   struck struck: List(Struck),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:)
+  use <- settled(cast:, caster:, now:, own: [])
   released(
     taken: go(
       cast:,
@@ -2759,6 +2803,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       thresholds: dict.new(),
       cooldowns: cooldown.drop_all(book: cast.cooldowns),
       stealth: dict.new(),
+      procs: dict.new(),
       passive: None,
     ),
     list.map(dict.keys(cast.timers), fn(timer) { CancelTimer(timer:) }),
@@ -2775,9 +2820,24 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 /// 0x7fe. The innate passive's cast is the one cast it leaves: it stays live or
 /// lingering with its nodes, its modifiers, its pending timers and its stealth sources,
 /// and nothing is written for it (`passive_set_aside`).
-pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
-  use <- settled(cast:)
+pub fn died(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  use <- settled(cast:, caster:, now:, own: [spell_plan.Died])
   all_ended(cast:, now:)
+}
+
+/// The caster left combat: the combat flag of its life (genesis_prime/game/player_life
+/// `CombatLeft`) went off. The only effects are the casts of the procs held for it.
+pub fn combat_left(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  use <- settled(cast:, caster:, now:, own: [spell_plan.LeftCombat])
+  #(cast, [])
 }
 
 /// Whether some live or lingering cast holds a spell with a persistence column, so
@@ -2815,7 +2875,7 @@ pub fn persisted(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:)
+  use <- settled(cast:, caster:, now:, own: [])
   let now_ms = now.monotonic_ms
   let #(cast, ended) = persistence_ended(cast:, caster:, now_ms:, done: [])
   let #(cast, effects) =
@@ -3236,7 +3296,7 @@ pub fn damage_taken(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:)
+  use <- settled(cast:, caster:, now:, own: [])
   broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms)
 }
 

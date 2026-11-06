@@ -27,6 +27,10 @@
 ////   **RemoveStealth** (84) ends the stealth its unit holds; the client has no case
 ////   for either, so the server tells it with 0x8f5; the server reads the rows aimed at
 ////   the caster (`Spell4Effects.effectType.83`, `Spell4Effects.effectType.84`).
+//// - **Proc** (14) casts a spell when the holder's trigger happens; the client has no
+////   case for it, so the server decides every fire; the server reads the rows aimed at
+////   the caster whose trigger is one of the holder's own events
+////   (`Spell4Effects.effectType.14`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -72,6 +76,11 @@ pub type Kind {
   /// A RemoveStealth effect (84): ends the stealth of the unit it aims at
   /// (`Spell4Effects.effectType.84`). Read as Stealth is.
   RemoveStealth
+  /// A Proc effect (14): casts a spell at its holder when the holder's trigger happens
+  /// (`Spell4Effects.effectType.14`). A row is read when its targetFlags include the
+  /// caster (`is_row_read`); the plan reads only the kinds the holder's own events make
+  /// (genesis_prime/game/spell_plan `proc_read`).
+  Proc
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -90,6 +99,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     73 -> CooldownModifier
     83 -> Stealth
     84 -> RemoveStealth
+    14 -> Proc
     other -> Unread(effect_type: other)
   }
 }
@@ -109,14 +119,15 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | ForcedMove
     | CooldownModifier
     | Stealth
-    | RemoveStealth -> True
+    | RemoveStealth
+    | Proc -> True
     Unread(..) -> False
   }
 }
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
 /// type `is_read` for, except that a PropertyModifier, ForcedMove, CooldownModifier,
-/// Stealth or RemoveStealth row is read only when its flags include the caster (bit 1,
+/// Stealth, RemoveStealth or Proc row is read only when its flags include the caster (bit 1,
 /// `Spell4Effects.targetFlags`); a row aimed only at other units is left out. A plan of
 /// a spell with a Stealth or RemoveStealth row aimed other than at the caster alone
 /// fails to load (genesis_prime/game/spell_plan `StealthAimNotRead`).
@@ -129,7 +140,8 @@ pub fn is_row_read(
     | ForcedMove
     | CooldownModifier
     | Stealth
-    | RemoveStealth -> int.bitwise_and(target_flags, 1) == 1
+    | RemoveStealth
+    | Proc -> int.bitwise_and(target_flags, 1) == 1
     Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
     Unread(..) -> False
   }

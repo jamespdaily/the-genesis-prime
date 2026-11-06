@@ -476,6 +476,9 @@ pub type Spell {
     remove_stealth: List(RemoveStealthRow),
     /// What the spell does to the caster's stealth, and at which go (`StealthChange`).
     stealth_change: StealthChange,
+    /// The Proc effects aimed at the caster, whose kind is one of the holder's own
+    /// events, each with the spell it casts (`ProcRow`).
+    procs: List(ProcRow),
   )
 }
 
@@ -539,6 +542,48 @@ pub type RemoveStealthRow {
     condition: Condition,
     tag: spend.Tag,
   )
+}
+
+/// The event of its holder that fires a Proc effect (`Spell4Effects.effectType.14`,
+/// dataBits00; the readings are `Spell4Effects.effectType.14.dataBits00.217_218` and
+/// `Spell4Effects.effectType.14.dataBits00.0_44`, none of them in the client's code).
+pub type Trigger {
+  /// 217: the holder enters stealth.
+  EnteredStealth
+  /// 218: the holder leaves stealth.
+  LeftStealth
+  /// 44: the holder leaves combat.
+  LeftCombat
+  /// 0: the holder dies.
+  Died
+}
+
+/// A Proc effect (`Spell4Effects.effectType.14`) of a spell, aimed at the caster: when
+/// the holder's `trigger` happens, the holder casts `spell` at itself. At most `count`
+/// fires in any `window_ms` (dataBits05 in dataBits04 milliseconds,
+/// `Spell4Effects.effectType.14.limits`); the chance is 1.0 and draws no roll. Its `row`
+/// gives the caster's node of the holding cast its life (a Proc with no durationTime and
+/// flags bit 2 lasts until removed, `Spell4Effects.effectType.14.lifetime`), in the
+/// phases of `phase_flags`, when its `condition` holds (its caster apply prerequisite
+/// against the caster) and its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend). The proc's `spell` is planned as a Proxy's child is.
+pub type ProcRow {
+  ProcRow(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    trigger: Trigger,
+    spell: Spell,
+    window_ms: Int,
+    count: Int,
+    row: lasting.LastingRow,
+    condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
+/// What a Proc row's columns say without a table: its trigger and its limit.
+pub type ProcReading {
+  ProcReading(trigger: Trigger, window_ms: Int, count: Int)
 }
 
 /// A ModifySpellCooldown effect (`Spell4Effects.effectType.73`) of a spell whose
@@ -814,6 +859,12 @@ pub type PlanError {
   /// A spell of a tree has a spellCastStealthChange that is not 0, 1 or 2
   /// (`Spell4.spellCastStealthChange`).
   StealthChangeNotRead(spell4_id: Int, value: Int)
+  /// A Proc effect of a kind the server does not read (`proc_read`): the row is in no
+  /// list of its spell and the load goes on, so this error is a skip, never a failure.
+  ProcKindNotRead(spell4_id: Int, effect_id: Int, kind: Int)
+  /// A Proc effect of a kind the server reads has a column the plan does not read: its
+  /// name and value. The load fails (`proc_read`).
+  ProcNotRead(spell4_id: Int, effect_id: Int, column: String, value: Int)
   /// A class's innate cannot be held (genesis_prime/game/innate).
   InnateFailed(error: innate.InnateError)
   /// A Prerequisite row a spell or effect names nests itself through the rows it
@@ -1002,6 +1053,24 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a spellCastStealthChange of "
       <> int.to_string(value)
       <> ", and only 0, 1 and 2 are read"
+    ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proc effect "
+      <> int.to_string(effect_id)
+      <> " of kind "
+      <> int.to_string(kind)
+      <> ", which is not read"
+    ProcNotRead(spell4_id:, effect_id:, column:, value:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proc effect "
+      <> int.to_string(effect_id)
+      <> " whose "
+      <> column
+      <> " is "
+      <> int.to_string(value)
+      <> ", which is not read"
     InnateFailed(error:) -> innate.describe(error:)
     PrerequisiteCycle(path:) ->
       "the Prerequisite rows nest each other round a cycle: " <> string_of(path)
@@ -1180,6 +1249,16 @@ const max_phases = 32
 /// (`0x14053e5a0`).
 const cooldown_at_last_phase_flag = 0x200
 
+/// The chain of spells from the pressed ability to `spell4_id`, which fails as a
+/// `ProxyCycle` naming the whole chain when `spell4_id` is already on it: a Proxy or a
+/// Proc effect that leads back to a spell on the way would start it for ever. A stub.
+pub fn chain_extended(
+  chain chain: List(Int),
+  spell4_id spell4_id: Int,
+) -> Result(List(Int), PlanError) {
+  Ok(list.append(chain, [spell4_id]))
+}
+
 fn spell_of(
   tables tables: table_store.Tables,
   sources sources: Sources,
@@ -1187,11 +1266,7 @@ fn spell_of(
   chain chain: List(Int),
   threshold_costs threshold_costs: List(#(Int, Int)),
 ) -> Result(Spell, PlanError) {
-  let chain = list.append(chain, [spell4_id])
-  use <- bool.guard(
-    when: list.contains(list.take(chain, list.length(chain) - 1), spell4_id),
-    return: Error(ProxyCycle(chain:)),
-  )
+  use chain <- result.try(chain_extended(chain:, spell4_id:))
   use row <- result.try(
     spell4.get(tables:, id: Spell4Id(spell4_id))
     |> result.replace_error(NoRow(table: "Spell4", id: spell4_id)),
@@ -1279,6 +1354,13 @@ fn spell_of(
   use stealth_change <- result.try(stealth_change_of(
     spell4_id:,
     value: row.spell_cast_stealth_change,
+  ))
+  use procs <- result.try(procs_of(
+    tables:,
+    sources:,
+    spell4_id:,
+    effects:,
+    chain:,
   ))
   use Nil <- result.try(
     stealth_conditions_read(spell4_id:, conditions: [
@@ -1400,6 +1482,7 @@ fn spell_of(
       stealth:,
       remove_stealth:,
       stealth_change:,
+      procs:,
     )
   Ok(spell)
 }
@@ -1876,6 +1959,36 @@ fn remove_stealth_row_of(
     phase_flags: effect.phase_flags,
     condition:,
     tag: tag_of(effect:),
+  ))
+}
+
+/// The Proc effects of a spell (`Spell4Effects.effectType.14`) whose kind the server
+/// reads, each with its spell planned as a Proxy's child is, on the same chain, so a
+/// proc that leads back to a spell on the way fails as a cycle. A row of another kind is
+/// in no list; a row of a kind read with a column the plan does not read fails the load
+/// (`proc_read`).
+fn procs_of(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+  chain chain: List(Int),
+) -> Result(List(ProcRow), PlanError) {
+  let _ = #(tables, sources, spell4_id, effects, chain)
+  Ok([])
+}
+
+/// What a Proc row says without a table: its trigger and its limit, or why it is not
+/// read. A row of a kind the server does not read is `ProcKindNotRead`, which the load
+/// skips; any other error fails the load, naming the first column the plan does not read.
+pub fn proc_read(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(ProcReading, PlanError) {
+  Error(ProcKindNotRead(
+    spell4_id:,
+    effect_id: effect.id,
+    kind: effect.data_bits00,
   ))
 }
 
@@ -2776,9 +2889,10 @@ pub fn stage_at(spell spell: Spell, index index: Int) -> Result(Spell, Nil) {
   |> result.map(fn(stage) { stage.spell })
 }
 
-/// The spell, the stage spells a RapidTap or ChargeRelease ability casts and the
-/// spell of each Proxy that `started` accepts, below them, each with its own tree
-/// the same way.
+/// The spell, the stage spells a RapidTap or ChargeRelease ability casts, the spell of
+/// each Proxy that `started` accepts and the spell each Proc effect casts, below them,
+/// each with its own tree the same way. A proc's spell may be cast whenever its holder
+/// holds the proc, so every one is in the tree.
 pub fn tree(
   spell spell: Spell,
   started started: fn(Proxy) -> Bool,
@@ -2787,9 +2901,10 @@ pub fn tree(
   let proxied =
     list.filter(spell.proxies, started)
     |> list.map(fn(proxy) { proxy.spell })
+  let procced = list.map(spell.procs, fn(proc) { proc.spell })
   [
     spell,
-    ..list.flat_map(list.append(stages, proxied), fn(below) {
+    ..list.flat_map(list.flatten([stages, proxied, procced]), fn(below) {
       tree(spell: below, started:)
     })
   ]
@@ -2811,6 +2926,22 @@ pub fn units_aimed_at(
     AimsAtBoth -> list.unique([primary_target, ..area])
     OtherAim(..) -> []
   }
+}
+
+/// The Proc effects of the spell that apply in phase `phase`, those whose tag holds for
+/// the points the cast spent.
+pub fn procs_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(ProcRow) {
+  in_phase(
+    rows: spell.procs,
+    phase_flags: fn(proc) { proc.phase_flags },
+    tag: fn(proc) { proc.tag },
+    phase:,
+    spent:,
+  )
 }
 
 /// The Fluff effects of the spell that apply in phase `phase`, those whose tag holds

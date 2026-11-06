@@ -283,6 +283,10 @@ pub type Effect {
   /// stealth damage breaks (genesis_prime/game/cast `damage_taken`). A deflected blow, and
   /// a landed one that lowered neither, send none.
   DamageTaken
+  /// The player's combat flag went off, right after its news (0x89a off): the last
+  /// fighter released it, or it died with a fighter on its list. The connection tells the
+  /// cast rule (genesis_prime/game/cast `combat_left`).
+  CombatLeft
   /// The player died: each of its own live casts ends with 0x7fe to its client
   /// and to every viewer told the cast's start (genesis_prime/game/cast `died`).
   EndCasts

@@ -220,6 +220,7 @@ fn refused_by_the_plan(row row: spell4_effects.Spell4Effects) -> Bool {
     | effect_kind.PropertyModifier
     | effect_kind.ForcedMove
     | effect_kind.CooldownModifier
+    | effect_kind.Proc
     | effect_kind.Unread(..) -> False
   }
 }
