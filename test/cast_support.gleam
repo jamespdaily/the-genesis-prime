@@ -8,6 +8,7 @@
 //// with a cooldown of its own, or a cast method the rule does not cast:
 //// `blocked_only` (kind 2), `exempt`, `slow` and `unbuilt` (PressHold).
 
+import class_resource_support
 import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
@@ -20,6 +21,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
+import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_stack_removed
 import genesis_prime/message/spell_targets_removed
@@ -208,6 +210,35 @@ pub fn full_slot_1() -> class_resource.Resource {
 /// The caster holding `resources` in place of `full_slot_1`.
 pub fn caster_holding(resources resources: class_resource.Resources) -> Caster {
   cast.Caster(..caster(), resources:)
+}
+
+/// The class's resource with its slot at `value`.
+pub fn holding(class_id: Int, value: Float) -> class_resource.Resources {
+  class_resource.new(
+    resource: class_resource.Resource(
+      ..class_resource_support.resource_of(class_id),
+      start: value,
+    ),
+  )
+}
+
+/// The result of each 0x7fc the effects write, in order.
+pub fn refusals(effects effects: List(Effect)) -> List(CastResult) {
+  list.filter_map(writes(effects:), fn(frame) {
+    case frame.message_id == spell_cast_refused.message_id {
+      True -> {
+        let assert Ok(refused) = spell_cast_refused.decode(frame.body)
+          as "a 0x7fc the rule wrote decodes"
+        Ok(refused.result)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The same as the client's numbers.
+pub fn refusal_results(effects effects: List(Effect)) -> List(Int) {
+  list.map(refusals(effects:), cast_result.to_value)
 }
 
 /// What the presses of a step paid, in order.

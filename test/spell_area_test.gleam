@@ -323,27 +323,6 @@ pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_clients_t
 
 // ---- a spell with an innate cost EMM id chooses its damage by n ----
 
-/// The area of Mind Burst in the planted rows with its spend, its damage effects as
-/// (emmComparison, emmValue, targetFlags).
-fn mind_burst_area(
-  damage damage: List(#(Int, Int, Int)),
-) -> spell_area.SpellArea {
-  let assert Ok(areas) =
-    spell_tables.with_loaded_deriving(
-      rows: spell_tables.rows_with_mind_burst_spend(
-        emm_id: 4,
-        cost: #(6, 1),
-        damage:,
-      ),
-      derivations: [spell_plan.derivation()],
-      body: fn(tables) { spell_area.build(tables:) },
-    )
-    as "the planted Mind Burst builds its areas"
-  let assert Ok(area) = spell_area.of_spell(areas:, spell4_id: Spell4Id(32_809))
-    as "Mind Burst is in the areas"
-  area
-}
-
 fn damage_of(
   area area: spell_area.SpellArea,
   spent spent: option.Option(Int),
@@ -355,7 +334,8 @@ fn damage_of(
 
 pub fn mind_burst_tags_its_five_damage_effects_with_their_emm_columns_test() -> Nil {
   use <- owned_test.run(60_000)
-  let area = mind_burst_area(damage: spell_tables.mind_burst_damage)
+  let area =
+    spell_tables.mind_burst_area(damage: spell_tables.mind_burst_damage)
   assert list.map(damage_of(area:, spent: None), fn(effect) {
       #(effect.effect_id, effect.tag)
     })
@@ -371,7 +351,8 @@ pub fn mind_burst_tags_its_five_damage_effects_with_their_emm_columns_test() -> 
 
 pub fn a_phase_with_n_holds_only_the_damage_effects_n_chooses_test() -> Nil {
   use <- owned_test.run(60_000)
-  let area = mind_burst_area(damage: spell_tables.mind_burst_damage)
+  let area =
+    spell_tables.mind_burst_area(damage: spell_tables.mind_burst_damage)
   list.each([0, 1, 2, 3, 4], fn(spent) {
     assert list.map(damage_of(area:, spent: Some(spent)), fn(effect) {
         effect.effect_id.value
@@ -385,7 +366,7 @@ pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
   use <- owned_test.run(60_000)
   // One damage effect aimed at the cast's target at n 0 and one aimed at the area
   // from n 1 (Spell4Effects.targetFlags 2 and 4).
-  let area = mind_burst_area(damage: [#(0, 0, 2), #(1, 1, 4)])
+  let area = spell_tables.mind_burst_area(damage: [#(0, 0, 2), #(1, 1, 4)])
   let flags = fn(spent) {
     let assert Ok(phase) =
       spell_area.phase(spell: area, phase: 0, spent: Some(spent))
@@ -399,7 +380,7 @@ pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
   let assert Ok(all) = spell_area.phase(spell: area, phase: 0, spent: None)
   assert #(all.selects_area, all.strikes_primary_target) == #(True, True)
     as "a cast with no n chooses nothing, so both flags hold as for every effect"
-  let only_from_1 = mind_burst_area(damage: [#(1, 1, 4)])
+  let only_from_1 = spell_tables.mind_burst_area(damage: [#(1, 1, 4)])
   let assert Ok(none_at_0) =
     spell_area.phase(spell: only_from_1, phase: 0, spent: Some(0))
   assert none_at_0.damage == []

@@ -20,16 +20,12 @@
 //// The bag index 2 is Mind Burst, with the plan of `spell_tables.plans_with_mind_burst_spend`.
 
 import cast_support as support
-import class_resource_support
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast.{type GoAsked}
-import genesis_prime/game/class_resource.{type Resources, Payment, Resource}
+import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
-import genesis_prime/message/cast_result
-import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/table/id.{Spell4Id}
@@ -65,12 +61,7 @@ fn plans_with(spell spell: Spell) -> Plans {
 
 /// The Esper's resource (Class 3: slot 1, a maximum of 5) holding `points`.
 fn esper_holding(points points: Int) -> Resources {
-  class_resource.new(
-    resource: Resource(
-      ..class_resource_support.resource_of(3),
-      start: int.to_float(points),
-    ),
-  )
+  support.holding(3, int.to_float(points))
 }
 
 fn caster_holding(points points: Int) -> cast.Caster {
@@ -105,19 +96,6 @@ fn asked_goes(effects effects: List(cast.Effect)) -> List(GoAsked) {
       | cast.Gain(..)
       | cast.PropertyStarts(..)
       | cast.PropertyEnds(..) -> Error(Nil)
-    }
-  })
-}
-
-fn refusal_results(frames frames: List(Frame)) -> List(Int) {
-  list.filter_map(frames, fn(frame) {
-    case frame.message_id == spell_cast_refused.message_id {
-      True -> {
-        let assert Ok(refused) = spell_cast_refused.decode(frame.body)
-          as "0x7fc decodes"
-        Ok(cast_result.to_value(refused.result))
-      }
-      False -> Error(Nil)
     }
   })
 }
@@ -388,7 +366,7 @@ pub fn a_5_point_mind_burst_with_the_reckful_amp_held_starts_the_crit_buff_test(
 pub fn mind_burst_with_no_psi_point_is_refused_51_and_pays_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(_, effects) = press(spell: mind_burst_spell(), points: 0)
-  assert refusal_results(frames: support.writes(effects:)) == [51]
+  assert support.refusal_results(effects:) == [51]
     as "0x1403b3320: 0 of slot 1 is below the base cost of 1, refused 51 (CasterVitalCostResource1)"
   assert support.payments(effects:) == []
   assert asked_goes(effects:) == []
@@ -472,7 +450,7 @@ pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test()
     )
   assert support.payments(effects:) == [Payment(slot: 1, amount: 3)]
     as "the held press spends all 3 Psi Points"
-  assert refusal_results(frames: support.writes(effects:)) == [51]
+  assert support.refusal_results(effects:) == [51]
     as "the hold's press in the same step meets the 0 the first left, not the 3 the step began with: 51 (0x1403b3320)"
 }
 
@@ -566,7 +544,7 @@ pub fn an_unread_emm_id_is_refused_with_its_costs_result_logged_once_and_pays_no
     )
   }
   let #(state, first) = take(cast.new(), 1000)
-  assert refusal_results(frames: support.writes(effects: first)) == [51]
+  assert support.refusal_results(effects: first) == [51]
     as "Spell4.innateCostEMMId0: the meaning of 5 is not in the client, so the press is refused with the cost's result, type 6: 51"
   assert support.payments(effects: first) == []
   assert asked_goes(effects: first) == []
@@ -574,7 +552,7 @@ pub fn an_unread_emm_id_is_refused_with_its_costs_result_logged_once_and_pays_no
     as "the first refusal is logged once, as a cost in a vital the server does not hold is"
   assert string.contains(text, "32809") && string.contains(text, "51")
   let #(_, second) = take(state, 3000)
-  assert refusal_results(frames: support.writes(effects: second)) == [51]
+  assert support.refusal_results(effects: second) == [51]
   assert support.logs(effects: second) == []
     as "the same Spell4 is logged once on the connection"
 }

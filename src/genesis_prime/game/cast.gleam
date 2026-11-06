@@ -88,8 +88,9 @@
 ////   (`Spell4.innateCost0.timing`), and a retail video shows the Actuators of Gamma
 ////   Rays dropping when its beams go off. The accept checks the costs against the slot
 ////   less what the live casts have reserved (`unreserved`) and keeps them on its live
-////   cast (`Live.reserved`); the first go pays them before its gains and gates, as one
-////   0x935. A cast that ends before its first go (a 0x801, death, leaving) pays
+////   cast (`Live.reserved`); the first go pays them as its strike begins, so the round's
+////   hits are always paid for and the go's gates and gains read the paid caster, as
+////   one 0x935. A cast that ends before its first go (a 0x801, death, leaving) pays
 ////   nothing, and its reservation ends with it. A spell whose first go is at once, or
 ////   that has no go of its own, pays at its accept, in the step of its check
 ////   (`pays_at_accept`). A second press taken in the same step is checked against what
@@ -266,7 +267,7 @@
 //// | a cast with a cost ends before its first go: a 0x801, the caster's death or leaving | nothing is paid and nothing is sent for the cost; its reservation ends with the cast |
 //// | a press needs points that a live cast has reserved | 0x7fc with the cost's result, as for a slot that holds too little |
 //// | the slot holds less than a live cast reserved when its first go comes (the Esper's empty, the Warrior's drain) | the go pays what the slot holds, down to 0 |
-//// | a 0x801 ends a cast while the round of its first go is open | the round's answer finds no live cast: no go, nothing paid, the hits stand |
+//// | a 0x801 ends a cast while the round of its first go is open | the cost was paid as the strike began; the round's answer finds no live cast: no go is written, the hits stand |
 //// | a press while one is held | 0x7fc 13 |
 //// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
 //// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
@@ -1136,10 +1137,9 @@ fn press_of(
             cast_id: next_cast_id(cast:, caster:),
           )
       }
-      let #(taken, reserved) = case pays_at_accept(spell:), payments {
-        _, [] -> #([], [])
-        True, [_, ..] -> #([Pay(payments:)], [])
-        False, [_, ..] -> #([], payments)
+      let #(taken, reserved) = case pays_at_accept(spell:) {
+        True -> #(paying(payments:), [])
+        False -> #([], payments)
       }
       let #(cast, started) = case resolution.stage {
         None ->
@@ -1546,6 +1546,14 @@ fn whole_points(resources resources: Resources, slot slot: Int) -> Int {
   |> int.absolute_value
 }
 
+/// The effect that pays these costs, none for no costs.
+fn paying(payments payments: List(Payment)) -> List(Effect) {
+  case payments {
+    [] -> []
+    [_, ..] -> [Pay(payments:)]
+  }
+}
+
 /// Whether a press's costs are paid at its accept: a cast whose first go is at once
 /// and a cast with no go of its own (a charge held until its release) have no later
 /// moment to pay at. Any other cast reserves its costs at the accept and pays them
@@ -1570,7 +1578,7 @@ fn unreserved(cast cast: State, resources resources: Resources) -> Resources {
 /// The caster with the payments and gains among the effects taken into its
 /// resources, so a second press of the same step, such as a held press a go
 /// releases, is checked against what the first left.
-fn after_payments(
+pub fn after_payments(
   caster caster: Caster,
   effects effects: List(Effect),
 ) -> Caster {
@@ -2040,8 +2048,9 @@ pub fn went(
   |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
-/// A go of a live cast is asked: the connection selects its targets and strikes them,
-/// and answers with `went` when the round closes. A cast that is not live has no go.
+/// A go of a live cast is asked: its first go pays the cast's reserved costs, then
+/// the connection selects its targets and strikes them, and answers with `went` when
+/// the round closes. A cast that is not live has no go.
 fn asked(
   cast cast: State,
   cast_id cast_id: Int,
@@ -2049,15 +2058,26 @@ fn asked(
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id) {
     Error(Nil) -> #(cast, [])
-    Ok(live) -> #(cast, [
-      Strike(asked: GoAsked(
-        cast_id:,
-        phase:,
-        spell4_id: live.spell.spell4_id,
-        primary_target: live.primary_target,
-        spent: live.spent,
-      )),
-    ])
+    Ok(live) -> {
+      // The first go pays what the accept reserved as its strike begins: creatures
+      // apply the round's hits as soon as they are told, so they are always paid for,
+      // and the go's gates and gains read the paid caster (the server's choice: the
+      // order at one go is not recorded).
+      let reserved = live.reserved
+      let live = Live(..live, reserved: [])
+      #(
+        State(..cast, casts: dict.insert(cast.casts, cast_id, live)),
+        list.append(paying(payments: reserved), [
+          Strike(asked: GoAsked(
+            cast_id:,
+            phase:,
+            spell4_id: live.spell.spell4_id,
+            primary_target: live.primary_target,
+            spent: live.spent,
+          )),
+        ]),
+      )
+    }
   }
 }
 
@@ -2859,14 +2879,6 @@ fn go(
     Error(Nil) -> #(cast, [])
     Ok(live) -> {
       let spell = live.spell
-      // The first go pays what the accept reserved, before the gains and gates of
-      // this go (the server's choice: the order at one go is not recorded).
-      let paying = case live.reserved {
-        [] -> []
-        [_, ..] -> [Pay(payments: live.reserved)]
-      }
-      let live = Live(..live, reserved: [])
-      let caster = after_payments(caster:, effects: paying)
       let go_count = list.length(spell_plan.go_times_ms(spell:))
       let cast = case spell.cooldown_start {
         spell_plan.AtFirstGo if live.gone == 0 ->
@@ -2979,7 +2991,6 @@ fn go(
       #(
         cast,
         list.flatten([
-          paying,
           going,
           logged,
           removed,
