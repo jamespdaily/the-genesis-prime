@@ -1,8 +1,9 @@
 //// The development chat commands: a Say line that starts with `!`, read as a
 //// command when the setting `dev_commands` is on (genesis_prime/game_settings),
-//// and a Say line as any other when it is off. A server choice for testing: the
-//// client has no such commands, and every one of them reaches the client as a
-//// Say line it sent and a system line the server answers it with.
+//// and a Say line as any other when it is off. A server choice: a test tool for
+//// the play container, so a tester can start a creature without a database
+//// edit; every command reaches the client as the Say line it sent and a system
+//// line the server answers it with.
 ////
 //// ```
 //// Say "!summon 75048"  ─▶ chat: setting on, channel Say, text starts with `!`

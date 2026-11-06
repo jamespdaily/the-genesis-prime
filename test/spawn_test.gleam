@@ -33,8 +33,6 @@ import genesis_prime/table/creature2_outfit_group_entry
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/instance_portal
-import genesis_prime/table/loader/server_table
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/spawn.{
@@ -50,7 +48,6 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/string
 import novice_tables
-import owned_key
 import owned_test
 import place_support
 import planted_table
@@ -72,26 +69,15 @@ fn selected_with(
   files files: List(#(String, BitArray)),
   rows rows: List(Row),
 ) -> Selection {
-  use folder <- planted_table.in_folder(list.append(
+  use more <- spawn_support.with_content_tables_of(
     novice_tables.with_creature_attack(files:, padding: True),
-    character_tables.content_files(),
-  ))
-  let assert Ok(server) =
-    server_table.load_under(under: owned_key.new(), from: folder)
-    as "the planted files load as the server's tables"
-  let assert Ok(more) =
-    server_table.load_content_tables(over: server, from: folder)
-    as "the planted files load as the content-only tables"
-  let selection =
-    spawn.select(
-      rows:,
-      tables: more,
-      formulas: rating_support.formulas(),
-      kinds: spawn_support.kinds(),
-    )
-  table_store.unload(more)
-  table_store.unload(server)
-  selection
+  )
+  spawn.select(
+    rows:,
+    tables: more,
+    formulas: rating_support.formulas(),
+    kinds: spawn_support.kinds(),
+  )
 }
 
 /// The ids of the spawns that start, in id order.
@@ -966,26 +952,13 @@ fn attack_beast_of(files files: List(#(String, BitArray))) -> spawn.Spawn {
 
 /// The selection of the Beast's row, spawn 1, over these files and the content files.
 fn beast_selection(files files: List(#(String, BitArray))) -> spawn.Selection {
-  use folder <- planted_table.in_folder(list.append(
-    files,
-    character_tables.content_files(),
-  ))
-  let assert Ok(server) =
-    server_table.load_under(under: owned_key.new(), from: folder)
-    as "the planted files load as the server's tables"
-  let assert Ok(more) =
-    server_table.load_content_tables(over: server, from: folder)
-    as "the planted files load as the content-only tables"
-  let selection =
-    spawn.select(
-      rows: [spawn_support.beast_row(number: 1)],
-      tables: more,
-      formulas: rating_support.formulas(),
-      kinds: spawn_support.kinds(),
-    )
-  table_store.unload(more)
-  table_store.unload(server)
-  selection
+  use more <- spawn_support.with_content_tables_of(files)
+  spawn.select(
+    rows: [spawn_support.beast_row(number: 1)],
+    tables: more,
+    formulas: rating_support.formulas(),
+    kinds: spawn_support.kinds(),
+  )
 }
 
 pub fn an_attack_effect_whose_multiplier_is_not_a_finite_float_refuses_the_spawn_test() -> Nil {

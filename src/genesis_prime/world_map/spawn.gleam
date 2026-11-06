@@ -654,8 +654,7 @@ fn first_kept(
   group group: Int,
   entry entry: Int,
 ) -> Dict(Int, Int) {
-  use <- bool.guard(when: dict.has_key(found, group), return: found)
-  dict.insert(found, group, entry)
+  dict.upsert(found, group, option.unwrap(_, entry))
 }
 
 /// A faction and its parents, nearest first: the chain the client walks

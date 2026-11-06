@@ -1,7 +1,7 @@
 //// The development chat commands' grammar (`genesis_prime/game/dev_command`):
-//// which `!` lines are commands and which are refused. The client has no such
-//// commands (it sends every chat line as typed), so the expected values are the
-//// design's choices, stated by the module's doc comment: `!` then a word, then
+//// which `!` lines are commands and which are refused. The commands are a test
+//// tool of the server's own choosing (for the play container), so the expected
+//// values are the design's choices, stated by the module's doc comment: `!` then a word, then
 //// its arguments split at spaces; `summon` takes one whole decimal number, a
 //// Creature2 id; the word is read as typed, in lower case; a line the grammar
 //// refuses is answered, never said. The one Creature2 id, 75048, is Commander

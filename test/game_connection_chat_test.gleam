@@ -880,7 +880,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
 // ---- the development summon ----
 //
 // Expected values: the setting, the `!` grammar and the answers' texts are the
-// design's choices (a test tool, the client has no commands); the 0x1c2 for
+// design's choices (a test tool for the play container); the 0x1c2 for
 // each 0x1c3 is `opcode.0x1c2`; a system line is `chat.system_line` (ChatChannel
 // row 2, flags 8) as a 0x1c8 (`opcode.0x1c8`); the ask is the map's `Summon`
 // to the run that took the player, with the settings' deadline, 4000 ms.

@@ -906,7 +906,7 @@ pub fn every_0x1c3_gets_exactly_one_answer_test() -> Nil {
 // ---- the development commands ----
 //
 // Expected values: the setting, the `!` grammar and the answers' texts are the
-// design's choices (a test tool, the client has no commands); the System line's
+// design's choices (a test tool for the play container); the System line's
 // channel and fields are `chat.system_line` (ChatChannel row 2, flags 8) and
 // `opcode.0x1c8`; the one 0x1c2 for each 0x1c3 is `opcode.0x1c3` and
 // `opcode.0x1c2`.

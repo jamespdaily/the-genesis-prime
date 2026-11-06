@@ -180,15 +180,33 @@ pub fn summon_checks() -> spawn.SummonChecks {
 }
 
 /// What a summon is checked with over these planted files, their tables unloaded
-/// when `then` returns: the checks are good only inside it. A file of `files`
-/// that is also a content file (`character_tables.content_files`) replaces it.
+/// when `then` returns: the checks are good only inside it.
 pub fn with_summon_checks_of(
   files files: List(#(String, BitArray)),
   then then: fn(spawn.SummonChecks) -> a,
 ) -> a {
+  use more <- with_content_tables_of(novice_tables.with_creature_attack(
+    files:,
+    padding: True,
+  ))
+  then(spawn.summon_checks(
+    tables: more,
+    formulas: rating_support.formulas(),
+    kinds: kinds(),
+  ))
+}
+
+/// The server's tables and the content-only tables loaded from these planted
+/// files and the content files (`character_tables.content_files`), which no
+/// server table shares a file with; `then` gets the content-only tables and both
+/// are unloaded when it returns.
+pub fn with_content_tables_of(
+  files files: List(#(String, BitArray)),
+  then then: fn(table_store.Tables) -> a,
+) -> a {
   use folder <- planted_table.in_folder(list.append(
     character_tables.content_files(),
-    novice_tables.with_creature_attack(files:, padding: True),
+    files,
   ))
   let assert Ok(server) =
     server_table.load_under(under: owned_key.new(), from: folder)
@@ -196,12 +214,7 @@ pub fn with_summon_checks_of(
   let assert Ok(more) =
     server_table.load_content_tables(over: server, from: folder)
     as "the planted files load as the content-only tables"
-  let found =
-    then(spawn.summon_checks(
-      tables: more,
-      formulas: rating_support.formulas(),
-      kinds: kinds(),
-    ))
+  let found = then(more)
   table_store.unload(more)
   table_store.unload(server)
   found

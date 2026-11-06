@@ -16,7 +16,8 @@
 //// - **A run-only spawn id is negative**, counting down from -1. A stored spawn's
 ////   id is an identity value above 0 (migration 0008's `spawn_id_is_positive`),
 ////   and a map's sweep timer is 0, so no run-only id is ever a stored id, a timer
-////   or 0. A server choice: the client sees only the unit id the map gives.
+////   or 0. A server choice: a run-only spawn is a test creature that no spawn row
+////   names, so it takes an id no stored spawn can hold.
 //// - **A run-only spawn is not saved.** A map that ends or restarts loses its run
 ////   spawns with the rest of its state.
 

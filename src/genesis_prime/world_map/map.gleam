@@ -844,10 +844,11 @@ fn summoned(
               next_run_only_id: spawn_source.run_only_id_after(id:),
             )
           let state = standing_for_players(state:, spawn: id, run_spawn:)
-          let viewers = players_seeing(state:, spawn: id)
-          let #(state, start) = start_creature(state:, spawn: id, viewers:)
+          let #(state, started) = started_for_those_who_see(state:, spawn: id)
+          let assert Effects(started_effects) = started
+            as "a service rule's step makes no ask"
           let assert Ok(unit_id) = dict.get(state.unit_of_spawn, id)
-            as "a started creature has its unit id"
+            as "the summoner sees the place, so the creature started"
           let SpawnId(number) = id
           #(
             State(
@@ -858,12 +859,11 @@ fn summoned(
                 Summoning(caller:, unit_id:),
               ),
             ),
-            Effects([
-              start,
-              ..list.append(approaches_at_start(state:, spawn: id), [
+            Effects(
+              list.append(started_effects, [
                 OwnEffect(StartServiceTimer(timer: TimerId(number), after_ms: 0)),
-              ])
-            ]),
+              ]),
+            ),
           )
         }
       }
@@ -891,12 +891,12 @@ fn standing_for_players(
       }
       let inside = case
         player.readiness,
-        hostile(
+        in_ring(
           spawn: run_spawn,
+          place:,
           faction_id: player_unit.faction_id(player.unit),
+          range:,
         )
-        && sight.squared_distance(first: place, second: run_spawn.place)
-        <=. range *. range
       {
         Loaded, True -> set.insert(player.inside, spawn)
         Loaded, False | StillLoading, _ -> player.inside
@@ -1788,11 +1788,7 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
   let place = player_unit.place(player.unit)
   let range = state.settings.numbers.aggro_range
   let faction_id = player_unit.faction_id(player.unit)
-  let holds = fn(found: spawn.Spawn) {
-    hostile(spawn: found, faction_id:)
-    && sight.squared_distance(first: place, second: found.place)
-    <=. range *. range
-  }
+  let holds = in_ring(spawn: _, place:, faction_id:, range:)
   let stored =
     spawn_cell.near(
       cells: spawns.cells,
@@ -1813,6 +1809,20 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
       False -> found
     }
   })
+}
+
+/// Whether the place is in the spawn's ring for a player of the faction: the
+/// spawn is hostile to the faction and the place is within `range` of the spawn's
+/// place, in three dimensions.
+fn in_ring(
+  spawn spawn: spawn.Spawn,
+  place place: Place,
+  faction_id faction_id: Int,
+  range range: Float,
+) -> Bool {
+  hostile(spawn:, faction_id:)
+  && sight.squared_distance(first: place, second: spawn.place)
+  <=. range *. range
 }
 
 /// Whether the spawn's creature fights a player of the faction on sight.
