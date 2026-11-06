@@ -23,6 +23,7 @@ import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/connection as game_connection
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/unit_stealth
@@ -319,7 +320,11 @@ pub fn a_stealthed_stalkers_impale_ends_the_stealth_after_its_second_phase_and_n
   // (phaseFlags 2): `Spell4.spellCastStealthChange.break`, the stealth ends after the
   // cast's effects, so those still see it. The Proxies' target gates 5734 and 5735 are
   // not checked, so no Proxy child starts: the stealth's end is read from the frames.
-  let #(state, _) = entered_as(class_id: 5, saved_health: None)
+  let #(state, _) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 5,
+      saved_health: None,
+    )
   let #(state, _) =
     connection_support.feed(
       state:,
