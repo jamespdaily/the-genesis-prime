@@ -19,8 +19,8 @@
 ////   and "under a spell of group 503"; 29795 is AND of "slot 1 above 29" and "slot 1 below
 ////   71" (type 64). A caster whose slot 1 holds 0 or 1000 and is under no cast fails 29795,
 ////   so 38897, 30010 and so passes 30012: the Proxy to 46297 starts.
-//// - `spellId=45057`: 147119, 147132, 159136, 202043 and 211002 (type 14 procs, not
-////   read), 147125 (Proxy to 60724 after 50 ms, ungated), 173780 (VitalModifier
+//// - `spellId=45057`: 147119, 147132, 159136, 202043 and 211002 (type 14 procs, read,
+////   `cast_proc_test`), 147125 (Proxy to 60724 after 50 ms, ungated), 173780 (VitalModifier
 ////   behind 37067: in combat) and 173872 (Proxy to 60868 behind 28773); `spellId=60724`:
 ////   146910, type 24, not read.
 //// - `Spell4.spellCastStealthChange`, `cast.target_node_end`: a cast whose nodes last
@@ -135,14 +135,14 @@ pub fn the_engineers_passive_lists_its_three_properties_and_starts_46297_behind_
     as "what is skipped is a debug line"
 }
 
-pub fn the_stalkers_passive_lists_nothing_and_starts_60724_50_ms_later_test() -> Nil {
+pub fn the_stalkers_passive_lists_its_five_procs_and_starts_60724_50_ms_later_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(state, effects) = started(base: 29_131)
   assert lines(effects:)
     == ["started k1 45057 root 45057 parent 0", "went k1 p0"]
-    as "the procs 147119, 147132, 159136, 202043 and 211002 (type 14) are not read, so the go lists nothing and the cast lingers with no 0x7fe"
-  assert listed(effects:) == []
+    as "the go lists the procs 147119, 147132, 159136, 202043 and 211002 (type 14) and the cast lingers with no 0x7fe"
+  assert listed(effects:) == [147_119, 147_132, 159_136, 202_043, 211_002]
   assert support.started_timers(effects:) |> list.map(fn(timer) { timer.1 })
     == [50]
     as "Spell4Effects 147125, the ungated Proxy to 60724, waits its delayTime of 50 ms; 173780 (behind 37067: in combat) and the Proxy to 60868 (behind 28773: under Spell4 59312) are withheld out of combat"
