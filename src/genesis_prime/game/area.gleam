@@ -20,15 +20,21 @@
 //// - **The area row** gives a unit's distance between `min_range` and `max_range`
 ////   and an angle off the facing of at most half `degrees`; 360 is all round. The
 ////   angle is the whole arc (`0x1405ecf20`). A spell with hit shapes uses the row's
-////   range only: its shapes say where it reaches.
+////   range only: its shapes say where it reaches. The range stays on the distance
+////   between the two centres: it is a selection constraint, not a shape, so a unit's
+////   radius does not count in it.
 ////   (`Spell4.58591.area`: Kick's cone is narrower than its 180 degrees.)
 //// - **A hit shape** is a telegraph's damage shape placed on the caster: its
 ////   offsets, x and z negated before the turn so a positive z is ahead
-////   (`0x14054b1b0`), and its turn. A unit is inside when its hit circle overlaps the
-////   shape, which the server chooses to read as the outer radius and the half
-////   extents grown by the unit's hit radius, and a cone's inner radius shrunk by it
-////   but not below 0, as the client sizes a drawn shape by the viewer's own radius
-////   (`0x14054d170` case 4, `0x14054da10`). A row with flag 0x200 does not grow. The
+////   (`0x14054b1b0`), and its turn. A unit is inside when its hit circle touches the
+////   shape: the distance from its centre to the nearest point of the shape is at most
+////   its hit radius. The client sizes a drawn shape by the viewer's own radius
+////   (`0x14054d170` case 4, `0x14054da10`) and tests no unit against a shape
+////   (`unit.hit_radius`), so that a struck unit's body counts, for every shape
+////   whatever flag 0x200 says, is the server's choice. The shapes are a circle, a
+////   rectangle or box (the nearest point is the centre clamped to it, so a corner is
+////   round) and a cone, an annular sector from its inner to its outer radius over its
+////   angle, which has no point at its tip when its inner radius is above 0. The
 ////   direction of a row's turn is not read; every shape built so far has none.
 //// - **Distance and order** are horizontal, from centre to centre; the vertical
 ////   range is -1 for every row and the shapes lie on the ground
@@ -72,7 +78,7 @@ pub type Shape {
 }
 
 /// A shape placed on the caster: where it lies against the caster's place and
-/// facing, and whether the struck unit's hit radius grows it.
+/// facing. The struck unit's hit radius grows it.
 pub type Placement {
   Placement(
     shape: Shape,
@@ -83,8 +89,6 @@ pub type Placement {
     aside: Float,
     /// The turn of the shape off the caster's facing, in degrees.
     turn_degrees: Float,
-    /// False for a row with flag 0x200, whose size does not grow.
-    grows_by_hit_radius: Bool,
   )
 }
 
@@ -180,10 +184,6 @@ fn in_shape(
   centre centre: Pose,
   placement placement: Placement,
 ) -> Bool {
-  let grown = case placement.grows_by_hit_radius {
-    True -> candidate.hit_radius
-    False -> 0.0
-  }
   let facing_x = float.negate(maths.sin(centre.yaw))
   let facing_z = float.negate(maths.cos(centre.yaw))
   let origin =
@@ -207,20 +207,76 @@ fn in_shape(
   let forward = dx *. shape_x +. dz *. shape_z
   let sideways = dx *. maths.cos(yaw) -. dz *. maths.sin(yaw)
   let reach = distance(from: origin, to: candidate.at)
-  case placement.shape {
-    Circle(radius:) -> reach <=. radius +. grown
+  let gap = case placement.shape {
+    Circle(radius:) -> float.max(reach -. radius, 0.0)
     Box(width:, length:) ->
-      float.absolute_value(sideways) <=. width /. 2.0 +. grown
-      && float.absolute_value(forward) <=. length /. 2.0 +. grown
+      gap_to_box(
+        sideways:,
+        forward:,
+        half_width: width /. 2.0,
+        near: float.negate(length /. 2.0),
+        far: length /. 2.0,
+      )
     Rectangle(width:, length:) ->
-      float.absolute_value(sideways) <=. width /. 2.0 +. grown
-      && forward >=. float.negate(grown)
-      && forward <=. length +. grown
+      gap_to_box(
+        sideways:,
+        forward:,
+        half_width: width /. 2.0,
+        near: 0.0,
+        far: length,
+      )
     Cone(inner:, outer:, degrees:) ->
-      reach >=. float.max(0.0, inner -. grown)
-      && reach <=. outer +. grown
-      && float.absolute_value(bearing(from: origin, target: candidate.at, yaw:))
-      <=. maths.degrees_to_radians(degrees /. 2.0) +. 0.000001
+      gap_to_cone(
+        angle: bearing(from: origin, target: candidate.at, yaw:),
+        reach:,
+        inner:,
+        outer:,
+        half_angle: maths.degrees_to_radians(degrees /. 2.0),
+      )
+  }
+  gap <=. candidate.hit_radius
+}
+
+/// The distance from a point to a box that is `half_width` either side of the shape's
+/// line and from `near` to `far` along it: 0 inside, else to the nearest point of the
+/// box, which is the point clamped to it.
+fn gap_to_box(
+  sideways sideways: Float,
+  forward forward: Float,
+  half_width half_width: Float,
+  near near: Float,
+  far far: Float,
+) -> Float {
+  distance(
+    from: Point(x: 0.0, z: 0.0),
+    to: Point(
+      x: float.max(float.absolute_value(sideways) -. half_width, 0.0),
+      z: float.max(float.max(near -. forward, forward -. far), 0.0),
+    ),
+  )
+}
+
+/// The distance from a unit at distance `reach` from a cone's apex and `angle` off its
+/// facing to the cone: inside its angle, how far it is outside the band from `inner`
+/// to `outer`; beyond a side, the distance to the nearer side segment, which runs from
+/// `inner` to `outer` along the ray at `half_angle`, ending at its corners.
+fn gap_to_cone(
+  angle angle: Float,
+  reach reach: Float,
+  inner inner: Float,
+  outer outer: Float,
+  half_angle half_angle: Float,
+) -> Float {
+  let beyond = float.absolute_value(angle) -. half_angle
+  case beyond <=. 0.000001 {
+    True -> float.max(float.max(inner -. reach, reach -. outer), 0.0)
+    False -> {
+      let along = float.max(inner, float.min(outer, reach *. maths.cos(beyond)))
+      distance(
+        from: Point(x: along, z: 0.0),
+        to: Point(x: reach *. maths.cos(beyond), z: reach *. maths.sin(beyond)),
+      )
+    }
   }
 }
 
