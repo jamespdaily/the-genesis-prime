@@ -1827,9 +1827,9 @@ fn remove_stealth_row_of(
   ))
 }
 
-/// What a go of the spell does to the caster's stealth, from the spell's
-/// spellCastStealthChange: 0 and 1 end it, 2 leaves it, any other value fails the load
-/// (`Spell4.spellCastStealthChange`).
+/// What the spell does to the caster's stealth, from the spell's spellCastStealthChange:
+/// 0 is `EndsStealthAtEachGo`, 1 is `EndsStealthAfterLastGo`, 2 is `KeepsStealth`, and
+/// any other value fails the load (`Spell4.spellCastStealthChange`).
 pub fn stealth_change_of(
   spell4_id spell4_id: Int,
   value value: Int,

@@ -109,6 +109,16 @@ fn after_0x61(frames frames: List(Frame)) -> List(Int) {
   list.drop(rest, 1)
 }
 
+/// The timers a step starts for casts: the cast rule's ids begin at 1000.
+fn cast_timers_started(
+  taken taken: ConnectionStep(Request),
+) -> List(step.TimerId) {
+  list.filter(support.timers_started(taken), fn(timer) {
+    let step.TimerId(number) = timer
+    number >= 1000
+  })
+}
+
 /// The Spell4 ids of the casts the frames start, in order.
 fn started_spells(frames frames: List(Frame)) -> List(Int) {
   list.filter_map(frames, fn(frame) {
@@ -175,11 +185,7 @@ pub fn a_stalkers_passive_starts_60724_50_ms_later_and_that_cast_ends_test() -> 
   assert started_spells(frames:) == [45_057]
     as "the passive 45057 starts; the Proxy to 60724 waits 50 ms"
   assert listed(frames:) == [] as "its procs are not read"
-  let cast_timers =
-    list.filter(support.timers_started(taken), fn(timer) {
-      let step.TimerId(number) = timer
-      number >= 1000
-    })
+  let cast_timers = cast_timers_started(taken:)
   let assert [timer] = cast_timers as "one cast timer: the 50 ms start of 60724"
   let #(_, later) =
     connection_support.feed(state:, event: OwnEvent(TimerFired(timer)))
@@ -350,11 +356,7 @@ pub fn a_stealthed_stalkers_impale_ends_the_stealth_after_its_second_phase_and_n
   assert stealth_bits(frames: written(taken: first)) == []
     as "Impale's first go ends nothing: its last go is 300 ms later"
   assert !list.contains(ids(frames: written(taken: first)), 0x0811)
-  let assert [second_go] =
-    list.filter(support.timers_started(first), fn(timer) {
-      let step.TimerId(number) = timer
-      number >= 1000
-    })
+  let assert [second_go] = cast_timers_started(taken: first)
     as "one cast timer: the second go"
   let #(_, second) =
     connection_support.feed(state:, event: OwnEvent(TimerFired(second_go)))
