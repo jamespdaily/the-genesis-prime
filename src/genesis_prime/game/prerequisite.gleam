@@ -41,6 +41,10 @@
 ////   (`Prerequisite.prerequisiteTypeId.71`, `0x1404a4e30`).
 //// - **Type 73** compares the vital the objectId names, cut to a whole number
 ////   toward zero, with the value (`Prerequisite.prerequisiteTypeId.73`).
+//// - **Type 116** passes, by comparison 1, when the unit is stealthed and by comparison
+////   2 when it is not; any other comparison fails, and its objectId and value are not
+////   read. A subject that holds no stealth gives `NotRead`
+////   (`Prerequisite.prerequisiteTypeId.116`, `0x1404a2609`).
 //// - **Type 179** compares the unit's difficulty with the condition's objectId, not
 ////   its value, by comparisons 1 to 6; only a creature's side holds a difficulty,
 ////   so a subject with none gives `NotRead` (`0x14049eeb0`, `of_difficulty`).
@@ -157,6 +161,9 @@ type Condition {
   /// Type 73: the vital's current value, cut to a whole number, against the
   /// value (`Prerequisite.prerequisiteTypeId.73`).
   VitalCurrent(relation: Relation, vital: Int, value: Int)
+  /// Type 116: whether the unit is stealthed
+  /// (`Prerequisite.prerequisiteTypeId.116`).
+  Stealthed(comparison: Comparison)
   /// Type 179: the unit's difficulty against the objectId
   /// (`Prerequisite.prerequisiteTypeId.179`, `0x14049eeb0`).
   Difficulty(relation: Relation, object_id: Int)
@@ -217,6 +224,10 @@ pub type Subject {
     /// The subject's difficulty, which only a creature's side holds: `None` for a
     /// player, so type 179 is not read for it (`0x14049eeb0`).
     difficulty: Option(Int),
+    /// Whether the subject is stealthed, which only a player's cast rule holds: `None`
+    /// for a creature's side, so type 116 is not read for it
+    /// (genesis_prime/game/cast `stealthed`).
+    stealthed: Option(Bool),
     /// The rolls for the type 37 conditions of the check, one for each, in the
     /// order the conditions are tested (`rolls_needed`).
     rolls: List(Int),
@@ -233,6 +244,7 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     in_combat: False,
     vitals: dict.new(),
     difficulty: Some(difficulty),
+    stealthed: None,
     rolls: [],
   )
 }
@@ -334,6 +346,7 @@ fn condition_of(
         vital: object_id,
         value:,
       )
+    116 -> Stealthed(comparison: comparison_of(comparison))
     179 -> Difficulty(relation: relation_of(code: comparison), object_id:)
     _ ->
       case
@@ -360,6 +373,7 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | Roll(..)
     | VitalPercent(..)
     | VitalCurrent(..)
+    | Stealthed(..)
     | Difficulty(..)
     | NoCase -> True
   }
@@ -382,6 +396,7 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | InCombat(..)
       | VitalPercent(..)
       | VitalCurrent(..)
+      | Stealthed(..)
       | Difficulty(..)
       | NoCase
       | Unread(..) -> False
@@ -493,6 +508,7 @@ fn condition_check(
         Error(Nil) -> NotRead(prerequisite_type: 73)
       },
     )
+    Stealthed(comparison:) -> #(rolls, stealthed_verdict(comparison:, subject:))
     Difficulty(relation:, object_id:) -> #(rolls, case subject.difficulty {
       Some(difficulty) ->
         verdict_of(compare(relation:, measured: difficulty, value: object_id))
@@ -501,6 +517,17 @@ fn condition_check(
     NoCase -> #(rolls, Fails)
     Unread(prerequisite_type:) -> #(rolls, NotRead(prerequisite_type:))
   }
+}
+
+/// Type 116's verdict: comparison 1 passes for a stealthed subject and 2 for one that is
+/// not, any other fails, and a subject that holds no stealth is `NotRead(116)`
+/// (`Prerequisite.prerequisiteTypeId.116`).
+fn stealthed_verdict(
+  comparison comparison: Comparison,
+  subject subject: Subject,
+) -> Verdict {
+  let _ = #(comparison, subject)
+  todo as "compare the subject's stealth by the comparison"
 }
 
 /// Whether a cast of the Spell4 holds a node on the subject.

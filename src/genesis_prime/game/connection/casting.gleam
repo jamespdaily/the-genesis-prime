@@ -155,7 +155,7 @@ const shield_vital = 3
 
 /// The player as its cast rule takes it: who it is, where it stands, what it
 /// holds, who sees it, whether it is dead or in combat and its health and shield.
-fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
+pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
   let life = entered.life
   cast.Caster(
     unit_id: entered.unit_id,
@@ -204,7 +204,8 @@ fn carry_cast(
 
 /// The connection's effects for what the cast rule decided, with the session as
 /// they leave it: a write, a tell of news to a viewer in the run of the player's
-/// map, a timer or a log line, a press's costs paid from the class resource and a
+/// map, a timer or a log line, a stealth change written to the player and told to its
+/// viewers, a press's costs paid from the class resource and a
 /// go's gains given to it (genesis_prime/game/connection/resource), and a go asked,
 /// which selects and strikes its targets
 /// (`strike_begins`). A tell with no player in the world is dropped.
@@ -245,6 +246,28 @@ pub fn cast_effects(
         connection_properties.started(session:, now:, source:, modifier:)
       cast.PropertyEnds(source:), _ ->
         connection_properties.ended(session:, now:, source:)
+      cast.StealthChanged(stealthed:), Some(entered) -> #(
+        session,
+        list.flatten([
+          [
+            connection_state.to_client(
+              session,
+              connection_frames.unit_stealth_frame(
+                unit_id: entered.unit_id,
+                stealthed:,
+              ),
+            ),
+          ],
+          list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
+            connection_state.news_to(
+              entered:,
+              viewer:,
+              news: client_connection.Stealth(stealthed:),
+            )
+          }),
+        ]),
+      )
+      cast.StealthChanged(..), None -> #(session, [])
     }
     #(session, list.append(done, more))
   })
@@ -454,6 +477,7 @@ pub fn creature_news_frames(
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
-    | client_connection.PropertiesChanged(..) -> []
+    | client_connection.PropertiesChanged(..)
+    | client_connection.Stealth(..) -> []
   }
 }

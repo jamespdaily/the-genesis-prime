@@ -1782,7 +1782,12 @@ fn rings_decided(
 
 /// The spawns hostile to the player's faction whose ring holds its place: within
 /// the aggro range of the spawn's place, in three dimensions, found through the cell
-/// index for the stored spawns and by a scan of the run-only ones.
+/// index for the stored spawns and by a scan of the run-only ones. A stealthed player
+/// stands in a ring as any other and its creatures are told `Approached`: this map does
+/// not hold the player's stealth. What a creature does about a player it cannot see is
+/// not decided and waits on Jim's decision; this function is where it would go, with the
+/// player's stealth told one way beside `Moved`, so that a ring would hold only the
+/// players a creature can see.
 fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
   let spawns = state.settings.spawns
   let place = player_unit.place(player.unit)

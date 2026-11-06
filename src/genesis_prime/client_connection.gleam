@@ -221,6 +221,12 @@ pub type News {
   /// the unit. A player's connection sends it for a property a lasting modifier of
   /// its own spell changed (genesis_prime/game/unit_properties).
   PropertiesChanged(properties: List(UnitProperty))
+  /// The unit entered or left stealth: 0x8f5 (opcode.0x8f5), then 0x247 of type 24
+  /// (opcode.0x247.type24), written when the viewer's client shows the unit. Only a
+  /// player's connection sends it, for its own unit (genesis_prime/game/cast
+  /// `StealthChanged`); the unit's own client gets the 0x8f5 alone, since it logs its
+  /// own change.
+  Stealth(stealthed: Bool)
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).

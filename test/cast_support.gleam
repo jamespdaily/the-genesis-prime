@@ -78,6 +78,9 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     cooldown_groups: [],
     cooldown_modifiers: [],
     controls: [],
+    stealth: [],
+    remove_stealth: [],
+    stealth_change: spell_plan.EndsStealth,
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
   )
@@ -260,7 +263,8 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.Gain(..)
       | cast.Log(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> []
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> []
     }
   })
 }
@@ -278,7 +282,8 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.Pay(..)
       | cast.Log(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -498,7 +503,8 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -563,7 +569,8 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -581,7 +588,8 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -599,7 +607,8 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -617,7 +626,8 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> Error(Nil)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -712,7 +722,8 @@ pub fn answered_as(
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> #(state, list.append(done, [effect]))
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
   })
 }

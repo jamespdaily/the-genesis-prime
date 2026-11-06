@@ -442,6 +442,57 @@ pub type Spell {
     /// The ModifySpellCooldown effects aimed at the caster, which change the
     /// caster's spell cooldowns.
     cooldown_modifiers: List(CooldownModifier),
+    /// The Stealth effects aimed at the caster, each a stealth the cast holds on it.
+    stealth: List(StealthRow),
+    /// The RemoveStealth effects aimed at the caster, which end every stealth it holds.
+    remove_stealth: List(RemoveStealthRow),
+    /// What a go of the spell does to the caster's stealth (`Spell4.spellCastStealthChange`).
+    stealth_change: StealthChange,
+  )
+}
+
+/// Whether taking damage ends a stealth: a Stealth effect's dataBits02, 0 for
+/// `BrokenByDamage` and 1 for `KeptOnDamage` (`Spell4Effects.effectType.83`).
+pub type Breaks {
+  BrokenByDamage
+  KeptOnDamage
+}
+
+/// What a go of a spell does to its caster's stealth, from `Spell4.spellCastStealthChange`:
+/// 0 and 1 end it after the go's effects, 2 leaves it. The client reads the column
+/// nowhere, so ending stealth on a cast is the server's rule
+/// (`Spell4.spellCastStealthChange`, `Spell4.spellCastStealthChange.break`).
+pub type StealthChange {
+  EndsStealth
+  KeepsStealth
+}
+
+/// A Stealth effect (`Spell4Effects.effectType.83`) of a spell, aimed at the caster:
+/// whether damage ends the stealth it gives (`breaks`), its `row` (which gives the
+/// caster's node of the cast its life, as a Fluff effect's does; a Stealth effect with
+/// a delayTime or durationTime is not built), the phases of `phase_flags` it applies in,
+/// when its `condition` holds (its caster apply prerequisite against the caster), and
+/// when its `tag` holds for the points the cast spent (genesis_prime/game/spend).
+pub type StealthRow {
+  StealthRow(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    breaks: Breaks,
+    row: lasting.LastingRow,
+    condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
+/// A RemoveStealth effect (`Spell4Effects.effectType.84`) of a spell, aimed at the
+/// caster: it ends every stealth the caster holds, in the phases of `phase_flags`, when
+/// its `condition` holds and its `tag` holds for the points the cast spent.
+pub type RemoveStealthRow {
+  RemoveStealthRow(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    condition: Condition,
+    tag: spend.Tag,
   )
 }
 
@@ -699,6 +750,22 @@ pub type PlanError {
   /// A ModifySpellCooldown effect of a tree has a dataBits03 that is not a finite
   /// number, for an operation that reads it (`Spell4Effects.effectType.73`).
   CooldownNumberNotFinite(spell4_id: Int, effect_id: Int)
+  /// A Stealth or RemoveStealth effect of a tree is aimed other than at the caster
+  /// alone, which is not read (`Spell4Effects.targetFlags`).
+  StealthAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
+  /// A Stealth or RemoveStealth effect of a tree has a target apply prerequisite, which
+  /// is not read.
+  StealthTargetPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
+  /// A Stealth effect of a tree has a delayTime or durationTime: timed stealth is not
+  /// built (`Spell4Effects.effectType.83`).
+  StealthTimedNotRead(spell4_id: Int, effect_id: Int)
+  /// A spell of a tree has a caster or target Spell4Conditions row whose mask holds bit
+  /// 16, the client's stealth test, whose refusals 65 and 114 are not checked
+  /// (`Spell4Conditions.conditionMask.16`).
+  StealthConditionNotRead(spell4_id: Int, spell4_conditions_id: Int)
+  /// A spell of a tree has a spellCastStealthChange that is not 0, 1 or 2
+  /// (`Spell4.spellCastStealthChange`).
+  StealthChangeNotRead(spell4_id: Int, value: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -842,6 +909,38 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a ModifySpellCooldown effect "
       <> int.to_string(effect_id)
       <> " whose dataBits03 is not a finite number"
+    StealthAimNotRead(spell4_id:, effect_id:, target_flags:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Stealth or RemoveStealth effect "
+      <> int.to_string(effect_id)
+      <> " aimed by flags "
+      <> int.to_string(target_flags)
+      <> ", and only the caster alone is read"
+    StealthTargetPrerequisiteNotRead(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Stealth or RemoveStealth effect "
+      <> int.to_string(effect_id)
+      <> " behind a target apply prerequisite, which is not read"
+    StealthTimedNotRead(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Stealth effect "
+      <> int.to_string(effect_id)
+      <> " with a delayTime or durationTime, and timed stealth is not built"
+    StealthConditionNotRead(spell4_id:, spell4_conditions_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has the Spell4Conditions row "
+      <> int.to_string(spell4_conditions_id)
+      <> ", whose mask tests stealth, and the client's refusals 65 and 114 are not checked"
+    StealthChangeNotRead(spell4_id:, value:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a spellCastStealthChange of "
+      <> int.to_string(value)
+      <> ", and only 0, 1 and 2 are read"
   }
 }
 
@@ -1062,6 +1161,14 @@ fn spell_of(
     spell4_id:,
     effects:,
   ))
+  use stealth <- result.try(stealth_of(tables:, spell4_id:, effects:))
+  use remove_stealth <- result.try(remove_stealth_of(
+    tables:,
+    spell4_id:,
+    effects:,
+  ))
+  use stealth_change <- result.try(stealth_change_of(spell4_id:, row:))
+  use Nil <- result.try(stealth_conditions_read(tables:, spell4_id:, row:))
   use cooldown_groups <- result.try(cooldown_groups_of(tables:, row:))
   use groups <- result.try(groups_of(sources:, row:))
   use stack <- result.try(stack_of(tables:, row:))
@@ -1176,6 +1283,9 @@ fn spell_of(
     forced_moves:,
     cooldown_groups:,
     cooldown_modifiers:,
+    stealth:,
+    remove_stealth:,
+    stealth_change:,
   ))
 }
 
@@ -1530,6 +1640,107 @@ fn cooldown_modifiers_of(
       tag: tag_of(effect:),
     ))
   })
+}
+
+/// The Stealth effects of a spell (`Spell4Effects.effectType.83`). Each must aim at the
+/// caster alone (`Spell4Effects.targetFlags` 1), have no target apply prerequisite and
+/// no delayTime or durationTime, or the load fails; its dataBits02 is whether damage
+/// ends it (`Breaks`), and its caster apply prerequisite is read as a Fluff effect's is
+/// (`condition_of`).
+fn stealth_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(StealthRow), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.Stealth
+  })
+  |> list.try_map(fn(effect) { stealth_row_of(tables:, spell4_id:, effect:) })
+}
+
+/// One Stealth effect as a row, or the error that fails the load (`stealth_of`).
+fn stealth_row_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(StealthRow, PlanError) {
+  let _ = #(tables, spell4_id, effect)
+  todo as "read the aim, the target prerequisite, the timing, dataBits02 and the condition of a Stealth effect"
+}
+
+/// The RemoveStealth effects of a spell (`Spell4Effects.effectType.84`), each aimed at
+/// the caster alone and with no target apply prerequisite, or the load fails.
+fn remove_stealth_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(RemoveStealthRow), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.RemoveStealth
+  })
+  |> list.try_map(fn(effect) {
+    remove_stealth_row_of(tables:, spell4_id:, effect:)
+  })
+}
+
+/// One RemoveStealth effect as a row, or the error that fails the load
+/// (`remove_stealth_of`).
+fn remove_stealth_row_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RemoveStealthRow, PlanError) {
+  let _ = #(tables, spell4_id, effect)
+  todo as "read the aim, the target prerequisite and the condition of a RemoveStealth effect"
+}
+
+/// What a go of the spell does to the caster's stealth, from the spell's
+/// spellCastStealthChange: 0 and 1 end it, 2 leaves it, any other value fails the load
+/// (`Spell4.spellCastStealthChange`).
+fn stealth_change_of(
+  spell4_id spell4_id: Int,
+  row row: spell4.Spell4,
+) -> Result(StealthChange, PlanError) {
+  case row.spell_cast_stealth_change {
+    0 | 1 -> Ok(EndsStealth)
+    2 -> Ok(KeepsStealth)
+    value -> Error(StealthChangeNotRead(spell4_id:, value:))
+  }
+}
+
+/// A spell whose caster or target Spell4Conditions row tests stealth (mask bit 16) fails
+/// the load: the client refuses such a cast with 65 or 114, and the server does not
+/// check those results (`Spell4Conditions.conditionMask.16`). The place for the check,
+/// when a spell needs it, is `cast.verdict` after the dead test.
+fn stealth_conditions_read(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  row row: spell4.Spell4,
+) -> Result(Nil, PlanError) {
+  list.try_each(
+    [row.spell4_conditions_id_caster, row.spell4_conditions_id_target],
+    fn(id) {
+      case id {
+        0 -> Ok(Nil)
+        id -> {
+          use condition <- result.try(
+            spell4_conditions.get(tables:, id: Spell4ConditionsId(id))
+            |> result.replace_error(NoRow(table: "Spell4Conditions", id:)),
+          )
+          case has_flag(flags: condition.condition_mask, bit: 16) {
+            True ->
+              Error(StealthConditionNotRead(
+                spell4_id:,
+                spell4_conditions_id: id,
+              ))
+            False -> Ok(Nil)
+          }
+        }
+      }
+    },
+  )
 }
 
 /// A cooldown effect's operation (dataBits02) with its float (dataBits03): the 32-bit
@@ -2442,6 +2653,38 @@ pub fn removes_in_phase(
 ) -> List(ForceRemove) {
   in_phase(
     rows: spell.removes,
+    phase_flags: fn(remove) { remove.phase_flags },
+    tag: fn(remove) { remove.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The Stealth effects of the spell that apply in phase `phase`, those whose tag holds
+/// for the points the cast spent.
+pub fn stealth_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(StealthRow) {
+  in_phase(
+    rows: spell.stealth,
+    phase_flags: fn(stealth) { stealth.phase_flags },
+    tag: fn(stealth) { stealth.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The RemoveStealth effects of the spell that apply in phase `phase`, those whose tag
+/// holds for the points the cast spent.
+pub fn remove_stealth_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(RemoveStealthRow) {
+  in_phase(
+    rows: spell.remove_stealth,
     phase_flags: fn(remove) { remove.phase_flags },
     tag: fn(remove) { remove.tag },
     phase:,

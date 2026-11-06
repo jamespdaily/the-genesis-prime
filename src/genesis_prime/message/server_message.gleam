@@ -72,6 +72,7 @@ import genesis_prime/message/unit_is_player.{type UnitIsPlayer}
 import genesis_prime/message/unit_movement.{type UnitMovement}
 import genesis_prime/message/unit_properties_changed.{type UnitPropertiesChanged}
 import genesis_prime/message/unit_stat_changed.{type UnitStatChanged}
+import genesis_prime/message/unit_stealth.{type UnitStealth}
 import genesis_prime/message/unit_target.{type UnitTarget}
 import genesis_prime/message/unit_threat.{type UnitThreat}
 import genesis_prime/message/whisper_failed.{type WhisperFailed}
@@ -141,6 +142,7 @@ pub type ServerMessage {
   UnitTarget(message: UnitTarget)
   UnitThreat(message: UnitThreat)
   UnitCombatState(message: UnitCombatState)
+  UnitStealth(message: UnitStealth)
   ResurrectionWindow(message: ResurrectionWindow)
   CombatLog(message: CombatLog)
 }
@@ -336,6 +338,7 @@ pub fn decode(
     0x090A -> decoded(body, message_id, unit_threat.decode, UnitThreat)
     0x089A ->
       decoded(body, message_id, unit_combat_state.decode, UnitCombatState)
+    0x08F5 -> decoded(body, message_id, unit_stealth.decode, UnitStealth)
     0x01B3 ->
       decoded(body, message_id, resurrection_window.decode, ResurrectionWindow)
     0x0247 -> decoded(body, message_id, combat_log.decode, CombatLog)
@@ -408,6 +411,7 @@ pub fn name(message: ServerMessage) -> String {
     UnitTarget(..) -> "unit_target"
     UnitThreat(..) -> "unit_threat"
     UnitCombatState(..) -> "unit_combat_state"
+    UnitStealth(..) -> "unit_stealth"
     ResurrectionWindow(..) -> "resurrection_window"
     CombatLog(..) -> "combat_log"
   }

@@ -278,6 +278,11 @@ pub type Effect {
   /// Tell the creature `unit_id` of life `life` the player's place now, with its
   /// move sequence number: the start of the stream.
   StreamTo(unit_id: Int, life: Int)
+  /// A landed blow lowered the player's health or shield, after the news of both and
+  /// before the answer and any death: the connection tells the cast rule, which ends the
+  /// stealth damage breaks (genesis_prime/game/cast `damage_taken`). A deflected blow, and
+  /// a landed one that lowered neither, send none.
+  DamageTaken
   /// The player died: each of its own live casts ends with 0x7fe to its client
   /// and to every viewer told the cast's start (genesis_prime/game/cast `died`).
   EndCasts
@@ -596,6 +601,10 @@ pub fn struck(
             list.flatten([
               shield_news,
               health_told(health: left, dead: left == 0),
+              case lowered {
+                True -> [DamageTaken]
+                False -> []
+              },
               [
                 Answer(
                   to: strike.from,

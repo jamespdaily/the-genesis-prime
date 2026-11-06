@@ -2188,6 +2188,17 @@ fields = [
 ]
 
 [[message]]
+id = 0x08F5
+name = "unit_stealth"
+direction = "server_to_client"
+evidence = "opcode.0x8f5"
+summary = "a unit enters or leaves stealth: the client sets the unit's stealth state, which Prerequisite type 116 and its own cast checks read; besides the create flag 16 of message 0x262 it is the only message that sets it"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x8f5", named_by = "opcode.0x8f5" },
+  { name = "stealthed", kind = "unsigned", bits = 1, evidence = "opcode.0x8f5", named_by = "opcode.0x8f5" },
+]
+
+[[message]]
 id = 0x01B3
 name = "resurrection_window"
 direction = "server_to_client"
@@ -2221,7 +2232,7 @@ id = 0x0247
 name = "combat_log"
 direction = "server_to_client"
 evidence = "opcode.0x247"
-summary = "a combat log entry: the type in 6 bits picks the entry's layout, and the client's reader fails a type above 35; the schema holds types 1 (crowd-control state), 2 (state break), 22 (death) and 23 (resurrect), and a spell hit's line is made by the client from its damage description"
+summary = "a combat log entry: the type in 6 bits picks the entry's layout, and the client's reader fails a type above 35; the schema holds types 1 (crowd-control state), 2 (state break), 22 (death), 23 (resurrect) and 24 (stealth), and a spell hit's line is made by the client from its damage description"
 fields = [
   { name = "entry", kind = "record", record = "combat_log_entry", evidence = "opcode.0x247", named_by = "opcode.0x247" },
 ]
@@ -2229,13 +2240,14 @@ fields = [
 [[union]]
 name = "combat_log_entry"
 evidence = "opcode.0x247"
-summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 1, 2, 22 and 23, and the client's reader takes 0 to 35"
+summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 1, 2, 22, 23 and 24, and the client's reader takes 0 to 35"
 tag_bits = 6
 variants = [
   { tag = 1, name = "cc_state", record = "combat_log_cc_state", named_by = "opcode.0x247.cc_state" },
   { tag = 2, name = "cc_state_break", record = "combat_log_cc_state_break", named_by = "opcode.0x247.cc_state" },
   { tag = 22, name = "death", record = "combat_log_death", named_by = "opcode.0x247.death" },
   { tag = 23, name = "resurrect", record = "combat_log_resurrect", named_by = "opcode.0x247.death" },
+  { tag = 24, name = "stealth", record = "combat_log_stealth", named_by = "opcode.0x247.type24" },
 ]
 
 [[record]]
@@ -2281,4 +2293,14 @@ summary = "a combat log entry of type 23: the unit that came back, which the cli
 fields = [
   { name = "kind", kind = "constant", bits = 6, value = 23, evidence = "opcode.0x247.death", named_by = "opcode.0x247.death" },
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.death", named_by = "opcode.0x247.death" },
+]
+
+[[record]]
+name = "combat_log_stealth"
+evidence = "opcode.0x247.type24"
+summary = "a combat log entry of type 24: the unit that entered or left stealth and whether it is leaving, which the client logs only for a player's unit and for a unit a player owns"
+fields = [
+  { name = "kind", kind = "constant", bits = 6, value = 24, evidence = "opcode.0x247.type24", named_by = "opcode.0x247.type24" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.type24", named_by = "opcode.0x247.type24" },
+  { name = "exiting", kind = "unsigned", bits = 1, evidence = "opcode.0x247.type24", named_by = "opcode.0x247.type24" },
 ]

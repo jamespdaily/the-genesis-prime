@@ -150,11 +150,6 @@ fn prerequisites() -> EngineDeclaration {
         reason: "needs a creature's facing, which the creature's fight behaviour holds",
         fact_key: "Prerequisite.prerequisiteTypeId.108",
       ),
-      Missing(
-        type_number: 116,
-        reason: "needs a unit's stealth, which no effect the server reads sets",
-        fact_key: "Prerequisite.prerequisiteTypeId.116",
-      ),
     ],
     starting_abilities: Some(starting_ability.prerequisite_types),
   )
@@ -184,7 +179,7 @@ fn quest_objectives() -> EngineDeclaration {
 }
 
 /// The rows of the effect type that the effect rule does not read (genesis_prime/game/effect_kind
-/// `is_row_read`): the type 3, type 11 and type 73 rows aimed only at other units.
+/// `is_row_read`): the type 3, type 11, type 73, type 83 and type 84 rows aimed only at other units.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   list.count(spell4_effects.all(tables), fn(row) {
     row.effect_type == type_number
@@ -228,6 +223,16 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 73,
         reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
         fact_key: "Spell4Effects.effectType.73",
+      ),
+      Missing(
+        type_number: 83,
+        reason: "rows aimed at another unit, which hold no stealth the server keeps",
+        fact_key: "Spell4Effects.effectType.83",
+      ),
+      Missing(
+        type_number: 84,
+        reason: "rows aimed at another unit, whose stealth the server does not hold",
+        fact_key: "Spell4Effects.effectType.84",
       ),
     ],
     missing: [

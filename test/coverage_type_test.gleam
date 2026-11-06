@@ -66,27 +66,27 @@ fn handled_over(
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_73_and_80_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_73_80_83_and_84_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Spell effects"),
       types: numbers(from: 1, to: 200),
     )
-    == [1, 3, 4, 8, 11, 17, 26, 73, 80]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) and SpellForceRemove 80 (Spell4Effects.effectType.80); every other type is unread"
+    == [1, 3, 4, 8, 11, 17, 26, 73, 80, 83, 84]
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), Stealth 83 (Spell4Effects.effectType.83) and RemoveStealth 84 (Spell4Effects.effectType.84) for the rows aimed at the caster; every other type is unread"
 }
 
-pub fn the_prerequisite_types_the_measure_handles_are_the_eight_read_and_those_with_no_case_test() -> Nil {
+pub fn the_prerequisite_types_the_measure_handles_are_the_nine_read_and_those_with_no_case_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Prerequisites"),
       types: numbers(from: 1, to: 295),
     )
     == [
-      15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 132, 144, 156,
-      157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
+      15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 116, 132, 144,
+      156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
     ]
-    as "the server reads 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 71, 73 and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+    as "the server reads 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 71, 73, 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116) and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
 }
 
 // ---- the starting abilities' column ----
@@ -199,8 +199,8 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
     as "the trace's effect types of the starting abilities that no rule reads: proc 14 and charges 90; forced move 3, property modifier 11 and cooldown change 73 are read for the rows aimed at the caster and listed as partial"
   assert missing_of("Spend-scaled costs") == [2, 5, 9, 10, 11]
     as "the innate cost EMM ids besides 4 and 7 that the rows hold"
-  assert missing_of("Prerequisites") == [43, 108, 116]
-    as "the trace's prerequisite types the server cannot decide: quest log 43, facing 108 and stealth 116"
+  assert missing_of("Prerequisites") == [43, 108]
+    as "the trace's prerequisite types the server cannot decide: quest log 43 and facing 108; stealth 116 is read"
 }
 
 pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
@@ -255,7 +255,7 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
     as "no row uses 99, so listing it as partial is a declaration no data supports"
 }
 
-pub fn the_effect_types_3_11_and_73_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+pub fn the_effect_types_3_11_73_83_and_84_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(facts) =
     simplifile.read(
@@ -280,14 +280,28 @@ pub fn the_effect_types_3_11_and_73_are_partial_with_a_reason_and_a_fact_key_the
         reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
         fact_key: "Spell4Effects.effectType.73",
       ),
+      Missing(
+        type_number: 83,
+        reason: "rows aimed at another unit, which hold no stealth the server keeps",
+        fact_key: "Spell4Effects.effectType.83",
+      ),
+      Missing(
+        type_number: 84,
+        reason: "rows aimed at another unit, whose stealth the server does not hold",
+        fact_key: "Spell4Effects.effectType.84",
+      ),
     ]
   assert has_record(facts:, key: "Spell4Effects.effectType.3")
   assert has_record(facts:, key: "Spell4Effects.effectType.11")
   assert has_record(facts:, key: "Spell4Effects.effectType.73")
+  assert has_record(facts:, key: "Spell4Effects.effectType.83")
+  assert has_record(facts:, key: "Spell4Effects.effectType.84")
   assert engine.handles(engine: declared, type_number: 3)
     && engine.handles(engine: declared, type_number: 11)
     && engine.handles(engine: declared, type_number: 73)
-    as "types 3, 11 and 73 are handled, with the gap"
+    && engine.handles(engine: declared, type_number: 83)
+    && engine.handles(engine: declared, type_number: 84)
+    as "types 3, 11, 73, 83 and 84 are handled, with the gap"
 }
 
 pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {

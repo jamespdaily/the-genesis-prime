@@ -194,7 +194,8 @@ pub fn life_message(
 
 /// What player_life decided, carried out in order, then what its death, coming
 /// back and combat flag did to the class resource (`resource.life_effects`): the
-/// frames and news as `life_effects` makes them, `EndCasts` as the cast rule's `died`, whose 0x7fe
+/// frames and news as `life_effects` makes them, `DamageTaken` as the cast rule's
+/// `damage_taken`, `EndCasts` as the cast rule's `died`, whose 0x7fe
 /// go out in its place in the order, and `GoToHolocrypt` as the leave of the map
 /// that the Holocrypt's join follows (`leaving_for_the_holocrypt`), which comes
 /// last.
@@ -218,6 +219,21 @@ fn life_carried(
                   session: connection_casting.with_cast(session:, cast: updated),
                   now:,
                   effects: ended,
+                )
+              #(session, list.append(written, more), to_the_holocrypt)
+            }
+            player_life.DamageTaken -> {
+              let #(updated, broken) =
+                cast.damage_taken(
+                  cast: entered.cast,
+                  caster: connection_casting.caster_of(entered:),
+                  now:,
+                )
+              let #(session, more) =
+                connection_casting.cast_effects(
+                  session: connection_casting.with_cast(session:, cast: updated),
+                  now:,
+                  effects: broken,
                 )
               #(session, list.append(written, more), to_the_holocrypt)
             }

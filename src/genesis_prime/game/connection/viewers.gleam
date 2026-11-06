@@ -67,6 +67,29 @@
 ////   `UnseenBy` to one owner are the map's only, so the owner's viewers change in
 ////   order. The one case two senders speak of a unit, `Gone` after the owner has
 ////   ended, is the viewer's `gone`.
+//// - **A player's stealth** is the cast rule's (genesis_prime/game/cast): the owner's
+////   connection writes 0x8f5 to its own client and tells each viewer `Stealth`, which
+////   the viewer writes as 0x8f5 and then 0x247 of type 24 for a unit it shows. The
+////   owner's own client logs its own change from the 0x8f5, so it is sent no type 24
+////   (`opcode.0x8f5`, `opcode.0x247.type24`). A viewer that first sees a stealthed
+////   player gets its 0x262 with create flag 16 (`opcode.0x262.unit_fields`), and a
+////   `Stealth` news follows that 0x262 from the same sender, in order:
+////
+////   ```
+////   owner's connection (cast rule)                 viewer's connection              viewer's client
+////   a go, a blow or the death moves the stealth
+////     StealthChanged(s) ─▶ 0x8f5 {owner, s}  ─────────────────────────────────────▶ the owner's client
+////                       ─▶ Tell(each viewer, Stealth(s)) ─▶ shown? 0x8f5 {owner, s}, 0x247 type 24 {owner, exiting = !s}
+////   SeenBy(v) while stealthed ─▶ Tell(v, Appeared(0x262, flag 16)) ─▶ writes 0x262 if not shown
+////   ```
+////
+////   - A viewer whose connection is gone, or that no longer sees the owner, is not told
+////     (`news_to`), and a tell to a connection that has ended is dropped.
+////   - The owner dying or leaving: a death ends the stealth first (`StealthChanged`
+////     after the casts' 0x7fe, before 0x247 type 22); a camp or the Holocrypt sends the
+////     viewers `Removed` and nothing about stealth, and the next stay starts unstealthed.
+////   - A `Stealth` news for a unit the viewer does not show, or no longer shows, is
+////     dropped and writes nothing.
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
@@ -292,7 +315,8 @@ pub fn viewer_takes(
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
-    | client_connection.PropertiesChanged(..) -> False
+    | client_connection.PropertiesChanged(..)
+    | client_connection.Stealth(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && names_own_unit(entered:, unit_id:),
@@ -540,6 +564,19 @@ pub fn viewer_takes(
         ),
       ])
     }
+    client_connection.Stealth(stealthed:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.unit_stealth_frame(unit_id:, stealthed:),
+        ),
+        connection_state.to_client(
+          session,
+          connection_frames.stealth_logged_frame(unit_id:, exiting: !stealthed),
+        ),
+      ])
+    }
     client_connection.CrowdControlApplied(state:, instance_id:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
@@ -639,7 +676,8 @@ fn creature_news(
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
-    | client_connection.PropertiesChanged(..) -> session
+    | client_connection.PropertiesChanged(..)
+    | client_connection.Stealth(..) -> session
   }
   case strike.holds(strike: entered.strike, unit_id:) {
     True ->
@@ -725,7 +763,8 @@ fn life_news(
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
-    | client_connection.PropertiesChanged(..) -> Continue(session, [])
+    | client_connection.PropertiesChanged(..)
+    | client_connection.Stealth(..) -> Continue(session, [])
   }
 }
 

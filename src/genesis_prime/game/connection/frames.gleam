@@ -1,9 +1,10 @@
 //// The frames the game connection's rule writes about units
 //// (genesis_prime/game/connection): the player's own unit, its death and its
-//// ghost, the combat log, a unit's shield, class resource, combat state, move, path, creation
-//// and removal, and the leave of the world.
+//// ghost, the combat log, a unit's shield, class resource, combat state, stealth, move,
+//// path, creation and removal, and the leave of the world.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/cast
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_properties
@@ -12,6 +13,7 @@ import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
+import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
 import genesis_prime/message/half_float
@@ -43,12 +45,14 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
+import genesis_prime/message/unit_stealth.{UnitStealth}
 import genesis_prime/step.{type Now}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/unit_fields
 import gleam/bool
+import gleam/int
 import gleam/option.{type Option, None, Some}
 
 /// A yes or no as the 1-bit value a message holds it in: 1 for yes.
@@ -292,9 +296,45 @@ pub fn leave_world_frame() -> Frame {
   Frame(message_id: leave_world.message_id, body:)
 }
 
+/// 0x8f5 {unit, stealthed}: the unit entered or left stealth (`opcode.0x8f5`).
+pub fn unit_stealth_frame(
+  unit_id unit_id: Int,
+  stealthed stealthed: Bool,
+) -> Frame {
+  let assert Ok(body) =
+    unit_stealth.encode(UnitStealth(unit_id:, stealthed: bit(stealthed)))
+    as "a unit id of 32 bits and a bit fit the message"
+  Frame(message_id: unit_stealth.message_id, body:)
+}
+
+/// 0x247 of type 24 for the unit: it entered stealth, or is leaving it
+/// (`opcode.0x247.type24`).
+pub fn stealth_logged_frame(
+  unit_id unit_id: Int,
+  exiting exiting: Bool,
+) -> Frame {
+  let assert Ok(body) =
+    combat_log.encode(
+      CombatLog(
+        entry: combat_log_entry.Stealth(CombatLogStealth(
+          unit_id:,
+          exiting: bit(exiting),
+        )),
+      ),
+    )
+    as "a unit id of 32 bits and a bit fit the entry"
+  Frame(message_id: combat_log.message_id, body:)
+}
+
+/// The create flag that marks a unit stealthed: its stealth state is 2 from its
+/// creation (`opcode.0x262.unit_fields`, flag 16).
+const stealthed_create_flag = 16
+
 /// The player's own record at `place`, stamped from the map's clock, from the
 /// origin `Joined` carried (`map.server_time`), with the current base and value of each
-/// property a live modifier changes (`unit_properties.overlay`).
+/// property a live modifier changes (`unit_properties.overlay`), and the create flag 16
+/// while the player is stealthed, which a viewer that first sees the unit needs
+/// (`cast.stealthed`).
 pub fn appearance_at(
   entered entered: world_entry.Entered,
   place place: Place,
@@ -305,6 +345,11 @@ pub fn appearance_at(
     ..entered.unit,
     tail: UnitCreateTail(
       ..entered.unit.tail,
+      create_flags: case cast.stealthed(cast: entered.cast) {
+        True ->
+          int.bitwise_or(entered.unit.tail.create_flags, stealthed_create_flag)
+        False -> entered.unit.tail.create_flags
+      },
       properties: unit_properties.overlay(
         listed: entered.unit.tail.properties,
         properties: entered.properties,

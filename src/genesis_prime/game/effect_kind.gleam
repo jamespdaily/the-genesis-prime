@@ -23,6 +23,10 @@
 //// - **CooldownModifier** (73) changes the spell cooldowns of the unit it aims at; the
 ////   server reads the rows whose aim includes the caster
 ////   (`Spell4Effects.effectType.73`).
+//// - **Stealth** (83) holds the caster stealthed while the effect lasts, and
+////   **RemoveStealth** (84) ends the stealth its unit holds; the client has no case
+////   for either, so the server tells it with 0x8f5; the server reads the rows aimed at
+////   the caster (`Spell4Effects.effectType.83`, `Spell4Effects.effectType.84`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -61,6 +65,13 @@ pub type Kind {
   /// (`Spell4Effects.effectType.73`); a row aimed only at other units changes cooldowns
   /// no server rule keeps, and is not read (`is_row_read`).
   CooldownModifier
+  /// A Stealth effect (83): the unit it aims at is stealthed while it lasts
+  /// (`Spell4Effects.effectType.83`). A row is read when its targetFlags include the
+  /// caster (`is_row_read`).
+  Stealth
+  /// A RemoveStealth effect (84): ends the stealth of the unit it aims at
+  /// (`Spell4Effects.effectType.84`). Read as Stealth is.
+  RemoveStealth
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -77,6 +88,8 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     11 -> PropertyModifier
     3 -> ForcedMove
     73 -> CooldownModifier
+    83 -> Stealth
+    84 -> RemoveStealth
     other -> Unread(effect_type: other)
   }
 }
@@ -94,22 +107,29 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | CrowdControl
     | PropertyModifier
     | ForcedMove
-    | CooldownModifier -> True
+    | CooldownModifier
+    | Stealth
+    | RemoveStealth -> True
     Unread(..) -> False
   }
 }
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
-/// type `is_read` for, except that a PropertyModifier, ForcedMove or CooldownModifier
-/// row is read only when its flags include the caster (bit 1,
-/// `Spell4Effects.targetFlags`); a row aimed only at other units is left out.
+/// type `is_read` for, except that a PropertyModifier, ForcedMove, CooldownModifier,
+/// Stealth or RemoveStealth row is read only when its flags include the caster (bit 1,
+/// `Spell4Effects.targetFlags`); a row aimed only at other units is left out. A plan of
+/// a spell with a Stealth or RemoveStealth row aimed other than at the caster alone
+/// fails to load (genesis_prime/game/spell_plan `StealthAimNotRead`).
 pub fn is_row_read(
   effect_type effect_type: Int,
   target_flags target_flags: Int,
 ) -> Bool {
   case kind_of(effect_type:) {
-    PropertyModifier | ForcedMove | CooldownModifier ->
-      int.bitwise_and(target_flags, 1) == 1
+    PropertyModifier
+    | ForcedMove
+    | CooldownModifier
+    | Stealth
+    | RemoveStealth -> int.bitwise_and(target_flags, 1) == 1
     Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
     Unread(..) -> False
   }

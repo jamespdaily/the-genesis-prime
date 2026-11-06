@@ -54,7 +54,7 @@ pub fn single(
 }
 
 /// A subject holding these nodes (spell, caster, stack count), whose second unit is
-/// `second_unit`, out of combat, with no vital, difficulty or roll.
+/// `second_unit`, out of combat, with no vital, difficulty, stealth or roll.
 pub fn holding(
   held held: List(#(Int, Int, Int)),
   second_unit second_unit: Option(Int),
@@ -68,6 +68,7 @@ pub fn holding(
     vitals: dict.new(),
     rolls: [],
     difficulty: None,
+    stealthed: None,
   )
 }
 

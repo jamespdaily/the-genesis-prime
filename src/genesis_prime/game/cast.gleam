@@ -216,6 +216,23 @@
 ////   no 0x804, which would undo the change. After a change a press held for a cooldown's
 ////   end and the hold's repeat wait for the new end, a timer of 0 ms when it ended: the
 ////   server's choice. Group cooldowns are not kept.
+//// - **A player's stealth** is the Stealth rows (effect type 83) its casts hold on it,
+////   by cast id and effect id (`State.stealth`), kept with whether damage ends each
+////   (`spell_plan.Breaks`); the player is stealthed while it holds any (`stealthed`).
+////   A go lists each Stealth row of its phase whose gate passes against the caster in
+////   the caster's target info and gives the caster's node its life, as a Fluff row
+////   does, and adds its source; a RemoveStealth row (type 84) ends every source. After
+////   the go's effects, a spell whose `stealth_change` is `EndsStealth` ends every source
+////   held before the go (`Spell4.spellCastStealthChange.break`; the server's rule): the
+////   cast of each loses its node on the caster as a type 80 removal takes it off (0x811,
+////   then the 0x7fe of a lingering cast left with none), so the buff that stands for the
+////   stealth never outlives it. A node that leaves the caster takes its cast's sources
+////   with it (`effects_ended`), `damage_taken` ends the sources damage breaks, and
+////   death and leaving drop all. Each input (a press, a timer, a go, the player's death,
+////   a blow) compares the stealth before and after and ends with one `StealthChanged`
+////   when it moved, so the connection's 0x8f5 follows the 0x811 and 0x7fe it causes. A
+////   caster's type 116 prerequisite reads the stealth as it stood before the go's own
+////   effects, as every gate does (`subject_of`).
 //// - **A cast that lingers** is one whose last go has gone while a node of it still
 ////   has life: every step of its end runs (the current cast cleared, a channel's
 ////   cooldown, a stage's threshold closed) and only its 0x7fe waits, since the client
@@ -295,6 +312,10 @@
 //// | the slot holds less than a live cast reserved when its first go comes (the Esper's empty, the Warrior's drain) | the go pays what the slot holds, down to 0 |
 //// | a 0x801 ends a cast while the round of its first go is open | the cost was paid as the strike began; the round's answer finds no live cast: no go is written, the hits stand |
 //// | a press while one is held | 0x7fc 13 |
+//// | a go adds a Stealth source while the stack cap of its spell takes the first cast off | one source left, one 0x811, no `StealthChanged` |
+//// | a go of an `EndsStealth` spell after the stealth ended | nothing to end, nothing written |
+//// | the caster dies stealthed | every cast ends, the sources drop, `StealthChanged` last |
+//// | the player leaves stealthed | the sources drop, nothing is written |
 //// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
 //// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
 //// | a 0x801 (0, 0) naming no open threshold | no change, a debug line |
@@ -455,6 +476,10 @@ pub type Effect {
   /// A property modifier of the caster's spell ends, or is told ended for a source the
   /// properties may not hold (`unit_properties.remove` changes nothing then).
   PropertyEnds(source: unit_properties.Source)
+  /// The caster entered or left stealth, the last effect of the input that moved it:
+  /// the connection writes 0x8f5 to the caster's client and tells each viewer
+  /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
+  StealthChanged(stealthed: Bool)
 }
 
 /// A go of a live cast that waits for its targets: which cast and phase, the spell,
@@ -679,6 +704,9 @@ pub opaque type State {
     timers_started: Int,
     /// The Spell4 ids already logged as unbuilt on this connection.
     logged: Set(Int),
+    /// The Stealth rows the caster's casts hold on it, by cast id and effect id, each
+    /// with whether damage ends it; the caster is stealthed while this is not empty.
+    stealth: Dict(unit_properties.Source, spell_plan.Breaks),
   )
 }
 
@@ -710,7 +738,14 @@ pub fn new() -> State {
     presses: 0,
     timers_started: 0,
     logged: set.new(),
+    stealth: dict.new(),
   )
+}
+
+/// Whether the caster is stealthed: some Stealth row of its casts holds. The client
+/// is told by 0x8f5 and 0x262's create flag 16, and a type 116 prerequisite reads it.
+pub fn stealthed(cast cast: State) -> Bool {
+  !dict.is_empty(cast.stealth)
 }
 
 /// Whether the timer is one of this rule's, for the connection to hand it to
@@ -768,6 +803,7 @@ pub fn take(
   now now: Now,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let now_ms = now.monotonic_ms
+  let before = stealthed(cast:)
   case message {
     Pressed -> pressed(cast:, body:, caster:, plans:, now:)
     KeyHeld -> key_held(cast:, body:, caster:, plans:, now:)
@@ -776,6 +812,24 @@ pub fn take(
       |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
   }
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
+  |> result.map(fn(taken) { settled(before:, taken:) })
+}
+
+/// What an input did, with `StealthChanged` as its last effect when the caster's stealth
+/// is not what it was before the input (`before`): one per input, however many Stealth
+/// rows came and went.
+fn settled(
+  before before: Bool,
+  taken taken: #(State, List(Effect)),
+) -> #(State, List(Effect)) {
+  let #(cast, effects) = taken
+  case stealthed(cast:) == before {
+    True -> taken
+    False -> #(
+      cast,
+      list.append(effects, [StealthChanged(stealthed: stealthed(cast:))]),
+    )
+  }
 }
 
 /// A step's result with the held press started when the step cleared the current
@@ -1633,7 +1687,8 @@ pub fn after_payments(
         | Log(..)
         | Strike(..)
         | PropertyStarts(..)
-        | PropertyEnds(..) -> resources
+        | PropertyEnds(..)
+        | StealthChanged(..) -> resources
       }
     }),
   )
@@ -1867,12 +1922,15 @@ pub fn timer_fired(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  released(
-    taken: fire(cast:, timer:, caster:, now:),
-    caster:,
-    now_ms: now.monotonic_ms,
-  )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  let before = stealthed(cast:)
+  let taken =
+    released(
+      taken: fire(cast:, timer:, caster:, now:),
+      caster:,
+      now_ms: now.monotonic_ms,
+    )
+    |> continued(caster:, now_ms: now.monotonic_ms)
+  settled(before:, taken:)
 }
 
 fn fire(
@@ -1999,6 +2057,18 @@ pub fn rolls_needed(
             ),
             fn(row) { condition_rolls_needed(row.condition) },
           ),
+          list.map(
+            spell_plan.stealth_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
+          list.map(
+            spell_plan.remove_stealth_in_phase(
+              spell:,
+              phase:,
+              spent: live.spent,
+            ),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
         ]),
       )
     }
@@ -2088,20 +2158,23 @@ pub fn went(
   struck struck: List(Struck),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
-  released(
-    taken: go(
-      cast:,
+  let before = stealthed(cast:)
+  let taken =
+    released(
+      taken: go(
+        cast:,
+        caster:,
+        now_ms: now.monotonic_ms,
+        cast_id:,
+        phase:,
+        struck:,
+        rolls:,
+      ),
       caster:,
       now_ms: now.monotonic_ms,
-      cast_id:,
-      phase:,
-      struck:,
-      rolls:,
-    ),
-    caster:,
-    now_ms: now.monotonic_ms,
-  )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+    )
+    |> continued(caster:, now_ms: now.monotonic_ms)
+  settled(before:, taken:)
 }
 
 /// A go of a live cast is asked: its first go pays the cast's reserved costs, then
@@ -2462,6 +2535,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       current: None,
       thresholds: dict.new(),
       cooldowns: cooldown.drop_all(book: cast.cooldowns),
+      stealth: dict.new(),
     ),
     list.map(dict.keys(cast.timers), fn(timer) { CancelTimer(timer:) }),
   )
@@ -2472,8 +2546,16 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 /// with it, where a 0x801 lets them linger (`end_live_cast`); then the held press, the hold and every open
 /// threshold end, and every other timer is cancelled, as when the player leaves
 /// (`left`). The client does not end its own casts when it dies (not read,
-/// `0x14045e740`), so the server's 0x7fe is the end its viewers see.
+/// `0x14045e740`), so the server's 0x7fe is the end its viewers see. Every stealth
+/// source drops, and a stealthed caster's `StealthChanged` comes last, after the casts'
+/// 0x7fe.
 pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
+  let before = stealthed(cast:)
+  settled(before:, taken: all_ended(cast:, now:))
+}
+
+/// The caster's casts, press, hold, thresholds and timers ended by its death.
+fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let #(cast, ended) =
     dict.to_list(cast.casts)
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
@@ -2496,6 +2578,39 @@ pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let modifiers_ended = modifiers_pending(cast:)
   let #(cast, cancelled) = left(cast:)
   #(cast, list.flatten([ended, lingering_ended, modifiers_ended, cancelled]))
+}
+
+/// The caster took damage: its health or its shield was lowered by a landed blow
+/// (genesis_prime/game/player_life `DamageTaken`). Each cast that holds a stealth source
+/// damage breaks loses its node on the caster, as a type 80 removal takes it off, and the
+/// input ends with `StealthChanged` when the caster is no longer stealthed. A source kept
+/// on damage stays (`Spell4Effects.effectType.83`: dataBits02).
+pub fn damage_taken(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  let before = stealthed(cast:)
+  settled(
+    before:,
+    taken: broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms),
+  )
+}
+
+/// Takes the node off the caster of each cast that holds a source damage breaks
+/// (`damage_taken`); nothing when the caster holds none.
+fn broken_by_damage(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let breakable =
+    list.any(dict.values(cast.stealth), fn(breaks) {
+      breaks == spell_plan.BrokenByDamage
+    })
+  use <- bool.guard(when: !breakable, return: #(cast, []))
+  let _ = #(caster, now_ms)
+  todo as "take the node off the caster of each cast that holds a BrokenByDamage source, oldest cast first, as a type 80 removal does"
 }
 
 /// Each property modifier the caster's casts may still hold, told ended in order: those
@@ -3050,6 +3165,15 @@ fn go(
             children(cast:, caster:, now_ms:, live:, proxy:, struck:)
           #(cast, list.append(effects, more))
         })
+      let #(cast, stealth) =
+        stealth_changed_by_go(
+          cast:,
+          caster:,
+          cast_id:,
+          spell:,
+          applied:,
+          now_ms:,
+        )
       let #(cast, finished) = case
         live.gone == go_count
         && option.is_none(spell_plan.finish_after_ms(spell:))
@@ -3082,10 +3206,36 @@ fn go(
           gate_logs,
           lasting_logs,
           children,
+          stealth,
           finished,
           armed,
         ]),
       )
+    }
+  }
+}
+
+/// What a go does to the caster's stealth, after the go's other effects: each Stealth row
+/// that applied adds its source (the cast `cast_id`, the row's effect) with the row's
+/// `Breaks`; a RemoveStealth row that applied ends every source; then a spell whose
+/// `stealth_change` is `EndsStealth` ends every source held before this go, so a source
+/// this go added is kept. A source ends as `cast.stealth` loses it and its cast's node
+/// leaves the caster, as `node_off` takes a type 80 removal's (0x811, then the 0x7fe of a
+/// lingering cast left with none). A go with no row, and no source to end, changes nothing
+/// (`Spell4.spellCastStealthChange.break`).
+fn stealth_changed_by_go(
+  cast cast: State,
+  caster caster: Caster,
+  cast_id cast_id: Int,
+  spell spell: Spell,
+  applied applied: Applied,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case stealthed(cast:), applied.stealth, applied.remove_stealth {
+    False, [], [] -> #(cast, [])
+    _, _, _ -> {
+      let _ = #(caster, cast_id, spell, now_ms)
+      todo as "add the applied Stealth sources, end every source for a RemoveStealth row, then end the sources held before the go when the spell EndsStealth"
     }
   }
 }
@@ -3099,13 +3249,16 @@ type Applied {
     modifiers: List(spell_plan.PropertyModifier),
     forced_moves: List(spell_plan.ForcedMove),
     cooldowns: List(spell_plan.CooldownModifier),
+    stealth: List(spell_plan.StealthRow),
+    remove_stealth: List(spell_plan.RemoveStealthRow),
   )
 }
 
-/// The Fluff, SpellForceRemove, property modifier, forced move and cooldown effects of
-/// the phase whose gates pass against the caster, a debug line for each that cannot be
-/// decided, and the rolls left. Their gates are checked after the Proxies' and the
-/// gains', in that order, the cooldown effects' last (`rolls_needed`).
+/// The Fluff, SpellForceRemove, property modifier, forced move, cooldown, Stealth and
+/// RemoveStealth effects of the phase whose gates pass against the caster, a debug line
+/// for each that cannot be decided, and the rolls left. Their gates are checked after the
+/// Proxies' and the gains', in that order, the RemoveStealth effects' last
+/// (`rolls_needed`).
 fn lasting_applied(
   spell spell: Spell,
   phase phase: Int,
@@ -3171,14 +3324,46 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
+  let #(stealth, stealth_logs, rolls) =
+    gated(
+      rows: spell_plan.stealth_in_phase(spell:, phase:, spent:),
+      condition: fn(row: spell_plan.StealthRow) { row.condition },
+      what: fn(row: spell_plan.StealthRow) {
+        "the Stealth effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(remove_stealth, remove_stealth_logs, rolls) =
+    gated(
+      rows: spell_plan.remove_stealth_in_phase(spell:, phase:, spent:),
+      condition: fn(row: spell_plan.RemoveStealthRow) { row.condition },
+      what: fn(row: spell_plan.RemoveStealthRow) {
+        "the RemoveStealth effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
   #(
-    Applied(lasting:, removes:, modifiers:, forced_moves:, cooldowns:),
+    Applied(
+      lasting:,
+      removes:,
+      modifiers:,
+      forced_moves:,
+      cooldowns:,
+      stealth:,
+      remove_stealth:,
+    ),
     list.flatten([
       logs,
       more_logs,
       modifier_logs,
       forced_move_logs,
       cooldown_logs,
+      stealth_logs,
+      remove_stealth_logs,
     ]),
     rolls,
   )
@@ -3201,6 +3386,7 @@ type Aimed {
     removes: List(#(spell_plan.ForceRemove, Int)),
     modifiers: List(#(spell_plan.PropertyModifier, Int)),
     cooldowns: List(#(spell_plan.CooldownModifier, Int, Bool)),
+    stealth: List(#(spell_plan.StealthRow, Int)),
     controls: List(#(strike_tell.ControlLanded, Int)),
   )
 }
@@ -3272,8 +3458,19 @@ fn aimed_at(
         ),
       )
     })
+  let stealth = list.map(applied.stealth, fn(row) { #(row, caster.unit_id) })
   let listed =
     list.flatten([
+      list.map(stealth, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.row.delay_ms,
+            instance_id: None,
+          ),
+        )
+      }),
       list.map(lasting, fn(entry) {
         #(
           entry.1,
@@ -3339,7 +3536,7 @@ fn aimed_at(
         Error(Nil) -> list.append(units, [#(entry.0, [entry.1])])
       }
     })
-  Aimed(units:, lasting:, removes:, modifiers:, cooldowns:, controls:)
+  Aimed(units:, lasting:, removes:, modifiers:, cooldowns:, stealth:, controls:)
 }
 
 /// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
@@ -3674,7 +3871,8 @@ type Ending {
 }
 
 /// The effects of the cast `cast_id` ended, as its node leaves the caster: each source
-/// of its spell's rows has its timers cancelled. A property modifier that lasts until
+/// of its spell's rows has its timers cancelled, and its stealth sources are dropped
+/// (`stealth_dropped`). A property modifier that lasts until
 /// removed or whose start or end a timer waited for is told ended, and a modifier whose
 /// own end already fired is not told again. A cooldown effect is taken out of the kept
 /// list; the cooldowns it changed stay changed, as on the client.
@@ -3698,25 +3896,38 @@ fn effects_ended(
         ))
       }),
     )
-  list.fold(endings, #(cast, []), fn(so_far, ending) {
-    let #(cast, effects) = so_far
-    let held =
-      list.any(dict.values(cast.timers), fn(due) {
-        source_of(due:) == Some(ending.source)
-      })
-    let #(cast, cancels) = cancel_source_timers(cast:, source: ending.source)
-    case ending {
-      PropertyEnding(source:, until_removed:) if until_removed || held -> #(
-        cast,
-        list.flatten([effects, cancels, [PropertyEnds(source:)]]),
-      )
-      PropertyEnding(..) -> #(cast, list.append(effects, cancels))
-      CooldownEnding(source:) -> #(
-        State(..cast, cooldowns: cooldown.drop(book: cast.cooldowns, source:)),
-        list.append(effects, cancels),
-      )
-    }
-  })
+  let #(cast, effects) =
+    list.fold(endings, #(cast, []), fn(so_far, ending) {
+      let #(cast, effects) = so_far
+      let held =
+        list.any(dict.values(cast.timers), fn(due) {
+          source_of(due:) == Some(ending.source)
+        })
+      let #(cast, cancels) = cancel_source_timers(cast:, source: ending.source)
+      case ending {
+        PropertyEnding(source:, until_removed:) if until_removed || held -> #(
+          cast,
+          list.flatten([effects, cancels, [PropertyEnds(source:)]]),
+        )
+        PropertyEnding(..) -> #(cast, list.append(effects, cancels))
+        CooldownEnding(source:) -> #(
+          State(..cast, cooldowns: cooldown.drop(book: cast.cooldowns, source:)),
+          list.append(effects, cancels),
+        )
+      }
+    })
+  #(stealth_dropped(cast:, cast_id:), effects)
+}
+
+/// The stealth sources of the cast `cast_id` dropped, as its node leaves the caster: the
+/// stealth lasts as long as the node that holds it.
+fn stealth_dropped(cast cast: State, cast_id cast_id: Int) -> State {
+  State(
+    ..cast,
+    stealth: dict.filter(cast.stealth, fn(source, _) {
+      source.cast_id != cast_id
+    }),
+  )
 }
 
 /// The cooldown effects of the cast `cast_id` that a timer still waits to start, taken
@@ -3822,6 +4033,7 @@ fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
       list.map(aimed.lasting, fn(entry) { entry.1 }),
       list.map(aimed.modifiers, fn(entry) { entry.1 }),
       list.map(aimed.cooldowns, fn(entry) { entry.1 }),
+      list.map(aimed.stealth, fn(entry) { entry.1 }),
       list.map(aimed.controls, fn(entry) { entry.1 }),
     ]),
   )
@@ -3851,6 +4063,12 @@ fn node_of(
         }
       }),
       list.filter_map(aimed.cooldowns, fn(entry) {
+        case entry.1 == unit_id {
+          True -> Ok(entry.0.row)
+          False -> Error(Nil)
+        }
+      }),
+      list.filter_map(aimed.stealth, fn(entry) {
         case entry.1 == unit_id {
           True -> Ok(entry.0.row)
           False -> Error(Nil)
@@ -4115,6 +4333,7 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     in_combat: caster.in_combat,
     vitals: dict.merge(dict.from_list(held), caster.life_vitals),
     difficulty: None,
+    stealthed: Some(stealthed(cast:)),
     rolls: [],
   )
 }

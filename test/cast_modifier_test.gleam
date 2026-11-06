@@ -133,6 +133,7 @@ fn change_of(effect effect: Effect) -> Result(Change, Nil) {
     | cast.Log(..)
     | cast.Strike(..)
     | cast.Pay(..)
+    | cast.StealthChanged(..)
     | cast.Gain(..) -> Error(Nil)
   }
 }
