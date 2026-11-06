@@ -136,12 +136,12 @@ fn procs_not_read(
   list.flat_map(spells, fn(spell) {
     dict.get(by_spell, spell_id(spell))
     |> result.unwrap([])
+    |> list.filter(fn(effect) {
+      effect_kind.kind_of(effect.effect_type) == effect_kind.Proc
+    })
     |> list.filter_map(fn(effect) {
-      case
-        effect_kind.kind_of(effect.effect_type),
-        spell_plan.proc_read(spell4_id: spell_id(spell), effect:)
-      {
-        effect_kind.Proc, Error(spell_plan.ProcKindNotRead(kind:, ..)) ->
+      case spell_plan.proc_read(spell4_id: spell_id(spell), effect:) {
+        Error(spell_plan.ProcKindNotRead(kind:, ..)) ->
           Ok(#(
             effect.id,
             ProcKindNotRead(
@@ -151,7 +151,7 @@ fn procs_not_read(
               casts: effect.data_bits01,
             ),
           ))
-        _, _ -> Error(Nil)
+        Ok(_) | Error(_) -> Error(Nil)
       }
     })
   })
@@ -373,19 +373,17 @@ pub fn effect_types(
 
 /// How many Spell4Effects rows of the type, among the spells the starting abilities' trees
 /// reach, the plan does not read (genesis_prime/game/spell_plan `effect_row_read`): a Proc
-/// row of a kind it skips is one. The starting abilities' column counts them as not handled.
+/// row of a kind it skips is one. The starting abilities' column counts them as not
+/// handled. The rows the walk names that the tables lack are the error, as for the types.
 pub fn unread_effect_rows(
   tables tables: store.Tables,
   type_number type_number: Int,
-) -> Int {
-  level_one_gate.load(tables:)
-  |> result.map(fn(gates) {
-    effects_of(tables:, spells: reached_spells(tables:, gates:))
-    |> list.count(fn(effect) {
-      effect.effect_type == type_number && !spell_plan.effect_row_read(effect:)
-    })
+) -> Result(Int, List(MissingRow)) {
+  use spells <- result.map(spells(tables:))
+  effects_of(tables:, spells:)
+  |> list.count(fn(effect) {
+    effect.effect_type == type_number && !spell_plan.effect_row_read(effect:)
   })
-  |> result.unwrap(0)
 }
 
 /// The innate cost EMM id of each cost of the spells the starting abilities' trees

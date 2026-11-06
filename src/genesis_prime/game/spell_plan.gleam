@@ -398,6 +398,28 @@ pub type CasterDeath {
   AliveOrDead
 }
 
+/// The life of a caster that a spell's caster condition refuses.
+pub type RefusedLife {
+  /// A dead caster (`CannotBeDead`).
+  RefusesDead
+  /// A living caster (`MustBeDead`).
+  RefusesLiving
+}
+
+/// The life of the caster, dead or alive, that the spell's caster condition refuses, when
+/// it refuses it: the press (`cast.verdict`) and a proc's cast (`cast.proc_cast`) both ask
+/// this (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`).
+pub fn refused_life(
+  spell spell: Spell,
+  dead dead: Bool,
+) -> Option(RefusedLife) {
+  case spell.caster_death, dead {
+    CannotBeDead, True -> Some(RefusesDead)
+    MustBeDead, False -> Some(RefusesLiving)
+    CannotBeDead, False | MustBeDead, True | AliveOrDead, _ -> None
+  }
+}
+
 /// One stage of a RapidTap or ChargeRelease ability: the spell a tap or a charge
 /// level casts, and the time the threshold takes to reach it from the stage before
 /// (Spell4Thresholds.thresholdDuration).
@@ -2056,7 +2078,8 @@ const chance_of_one_bits = 1_065_353_216
 /// targetFlags other than the caster, a chance other than 1.0 (no roll is drawn), a unit
 /// bit of the event's other unit (4) or beyond the five the texts name, a window or count
 /// that is not above 0, a gate, a filter, a target apply or persistence prerequisite and
-/// a delay (`Spell4Effects.effectType.14.dataBits03`, `.limits`, `.prerequisites`,
+/// a delay, and a row with no durationTime and no flags bit 2, which gives its holder's
+/// node no life (`Spell4Effects.effectType.14.dataBits03`, `.limits`, `.prerequisites`,
 /// `.dataBits07`, `.lifetime`).
 pub fn proc_read(
   spell4_id spell4_id: Int,
@@ -2104,6 +2127,11 @@ pub fn proc_read(
       effect.prerequisite_id_target_persistence != 0,
     ),
     #("delayTime", effect.delay_time, effect.delay_time != 0),
+    #(
+      "flags",
+      effect.flags,
+      effect.duration_time <= 0 && !has_flag(flags: effect.flags, bit: 2),
+    ),
   ]
   case list.find(refusals, fn(refusal) { refusal.2 }) {
     Ok(#(column, value, _)) ->

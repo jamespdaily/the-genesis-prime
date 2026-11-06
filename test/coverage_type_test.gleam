@@ -1763,6 +1763,7 @@ fn measured_proc_rows(
     planted_table.row(spell4_effects.schema, [
       #("ID", planted_table.Integer(id)),
       #("effectType", planted_table.Integer(14)),
+      #("flags", planted_table.Integer(2)),
       #("targetFlags", planted_table.Integer(planted.0)),
       #("dataBits00", planted_table.Integer(planted.1)),
       #("dataBits02", planted_table.Integer(planted.2)),

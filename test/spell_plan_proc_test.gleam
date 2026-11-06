@@ -22,6 +22,7 @@
 ////   kinds, 30 hold targetFlags other than 1 (rows 791, 5725, 5898), 9 a dataBits04 of -1
 ////   (2313, 4435, 37547) and 1 a delayTime (144096); the other 43 are read.
 
+import cast_support
 import client_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
@@ -34,6 +35,7 @@ import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/set
 import owned_test
 import unitest
@@ -356,6 +358,66 @@ pub fn a_proc_of_a_kind_read_with_a_column_the_plan_does_not_read_fails_the_load
     column: "delayTime",
     value: 100,
   )
+}
+
+pub fn a_proc_with_no_life_fails_the_load_and_a_timed_one_is_read_test() -> Nil {
+  use <- owned_test.run(5000)
+  // All 43 rows of the four kinds the plan reads hold flags 2 (until removed) and no
+  // durationTime: a row with neither gives its holder's node no life, so it would never
+  // be held (Spell4Effects.effectType.14.lifetime).
+  refused(
+    effect: Spell4Effects(..row(id: 99_102), flags: 0),
+    column: "flags",
+    value: 0,
+  )
+  assert spell_plan.proc_read(
+      spell4_id: holder,
+      effect: Spell4Effects(..row(id: 99_103), flags: 0, duration_time: 3000),
+    )
+    == Ok(ProcReading(trigger: EnteredStealth, window_ms: 500, count: 1))
+    as "a durationTime gives the node its life"
+}
+
+pub fn a_spell_refuses_the_life_its_caster_condition_names_test() -> Nil {
+  use <- owned_test.run(5000)
+  let spell = fn(death) {
+    spell_plan.Spell(
+      ..cast_support.child(spell4_id: 1, base: 1),
+      caster_death: death,
+    )
+  }
+  assert spell_plan.refused_life(
+      spell: spell(spell_plan.CannotBeDead),
+      dead: True,
+    )
+    == Some(spell_plan.RefusesDead)
+    as "Spell4Conditions row 1 (mask 225) refuses a dead caster"
+  assert spell_plan.refused_life(
+      spell: spell(spell_plan.CannotBeDead),
+      dead: False,
+    )
+    == None
+  assert spell_plan.refused_life(
+      spell: spell(spell_plan.MustBeDead),
+      dead: False,
+    )
+    == Some(spell_plan.RefusesLiving)
+  assert spell_plan.refused_life(
+      spell: spell(spell_plan.MustBeDead),
+      dead: True,
+    )
+    == None
+  assert spell_plan.refused_life(
+      spell: spell(spell_plan.AliveOrDead),
+      dead: True,
+    )
+    == None
+    as "row 4 (mask 0) refuses neither"
+  assert spell_plan.refused_life(
+      spell: spell(spell_plan.AliveOrDead),
+      dead: False,
+    )
+    == None
 }
 
 pub fn the_first_column_the_plan_does_not_read_is_the_one_named_test() -> Nil {

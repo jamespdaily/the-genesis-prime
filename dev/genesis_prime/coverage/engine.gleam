@@ -83,7 +83,8 @@ pub type EngineDeclaration {
     unread_rows: fn(store.Tables, Int) -> Int,
     /// How many of the starting abilities' rows of a type no rule reads, which the
     /// starting abilities' column counts as not handled.
-    unread_starting_rows: fn(store.Tables, Int) -> Int,
+    unread_starting_rows: fn(store.Tables, Int) ->
+      Result(Int, List(starting_ability.MissingRow)),
     /// The types read from the client and not handled. A type is never both.
     missing: List(Missing),
     /// The type values the level-1 abilities' trees use, when the engine's
@@ -97,6 +98,14 @@ pub type EngineDeclaration {
 /// No row of a partial type is left out whole.
 fn no_unread_rows(_tables: store.Tables, _type_number: Int) -> Int {
   0
+}
+
+/// No row of the starting abilities is left out of a handled type.
+fn no_unread_starting_rows(
+  _tables: store.Tables,
+  _type_number: Int,
+) -> Result(Int, List(starting_ability.MissingRow)) {
+  Ok(0)
 }
 
 /// Whether the engine handles the type.
@@ -142,7 +151,7 @@ fn prerequisites() -> EngineDeclaration {
     handled: Decoded(is_read: game_prerequisite.is_read),
     partial: [],
     unread_rows: no_unread_rows,
-    unread_starting_rows: no_unread_rows,
+    unread_starting_rows: no_unread_starting_rows,
     missing: [
       Missing(
         type_number: 43,
@@ -172,7 +181,7 @@ fn quest_objectives() -> EngineDeclaration {
     handled: Listed(ids: []),
     partial: [],
     unread_rows: no_unread_rows,
-    unread_starting_rows: no_unread_rows,
+    unread_starting_rows: no_unread_starting_rows,
     missing: [],
     starting_abilities: None,
   )
@@ -206,9 +215,7 @@ fn spell_effects() -> EngineDeclaration {
     ),
     handled: Decoded(is_read: effect_kind.is_read),
     unread_rows: unread_effect_rows,
-    unread_starting_rows: fn(tables, type_number) {
-      starting_ability.unread_effect_rows(tables:, type_number:)
-    },
+    unread_starting_rows: starting_ability.unread_effect_rows,
     partial: [
       Missing(
         type_number: 3,
@@ -282,7 +289,7 @@ fn spend_scaled_costs() -> EngineDeclaration {
     handled: Decoded(is_read: spend.is_read),
     partial: [],
     unread_rows: no_unread_rows,
-    unread_starting_rows: no_unread_rows,
+    unread_starting_rows: no_unread_starting_rows,
     missing: list.map([2, 5, 9, 10, 11], unread),
     starting_abilities: Some(starting_ability.spend_ids),
   )
@@ -306,7 +313,7 @@ fn unit_types() -> EngineDeclaration {
     handled: Listed(ids: []),
     partial: [],
     unread_rows: no_unread_rows,
-    unread_starting_rows: no_unread_rows,
+    unread_starting_rows: no_unread_starting_rows,
     missing: [],
     starting_abilities: None,
   )
@@ -335,7 +342,7 @@ fn messages() -> EngineDeclaration {
     handled: Listed(ids: handled_client_message_ids()),
     partial: [],
     unread_rows: no_unread_rows,
-    unread_starting_rows: no_unread_rows,
+    unread_starting_rows: no_unread_starting_rows,
     missing: [],
     starting_abilities: None,
   )

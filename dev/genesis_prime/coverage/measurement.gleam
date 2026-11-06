@@ -8,6 +8,7 @@ import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 
 /// Where one type stands in an engine.
 pub type Status {
@@ -82,7 +83,11 @@ pub fn measure(
     None -> #([], [])
   }
   let unread = engine.unread_rows(tables, _)
-  let unread_starting = engine.unread_starting_rows(tables, _)
+  // A walk the tables cannot finish has no starting rows either, and `missing_rows`
+  // below reports it, so a count it cannot make is 0.
+  let unread_starting = fn(type_number) {
+    engine.unread_starting_rows(tables, type_number) |> result.unwrap(0)
+  }
   let measured = case engine.source {
     engine.TableColumns(values:, ..) ->
       from_values_reading(
