@@ -196,6 +196,24 @@
 ////   the destination, moves its own unit and reports the move in its next 0x637, which
 ////   the movement rule takes as any other. A forced move gives no node a life, starts no
 ////   timer and changes no property.
+//// - **A go's cooldown effects** (`Spell4Effects.effectType.73`,
+////   genesis_prime/game/cooldown): the spell's own cooldown and a stage's ability
+////   cooldown start before the go's effects apply, as in the client (`0x14053e5a0`), so
+////   a type 73 effect of the phase aimed at the caster whose gate passes already sees
+////   them. It is listed in the caster's target info with its delay, and it changes the
+////   running cooldowns it picks at the go plus its delay: in the go's step with no
+////   delay, on a timer with one. An effect whose lifetime (delay plus duration, the
+////   larger of the two for a spell with the record flag 0x10000000, never ending with
+////   flags bit 2) ends after its start is also kept for the cooldowns that start later
+////   and dropped on a timer at the end of its lifetime; any other acts once
+////   (`0x14046b7f0`, `opcode.0x7f4.effect_time`). An effect that is kept gives the
+////   caster's node its life; one that acts once gives it none. Taking the cast's node off the caster, the caster's death
+////   and its leaving drop the kept effects and cancel their timers, and a later go of
+////   the cast keeps each again from that go; the cooldowns an effect changed stay
+////   changed. The global cooldown is never changed (`0x14046b920`) and the server sends
+////   no 0x804, which would undo the change. After a change a press held for a cooldown's
+////   end and the hold's repeat wait for the new end, a timer of 0 ms when it ended: the
+////   server's choice. Group cooldowns are not kept.
 //// - **A cast that lingers** is one whose last go has gone while a node of it still
 ////   has life: every step of its end runs (the current cast cleared, a channel's
 ////   cooldown, a stage's threshold closed) and only its 0x7fe waits, since the client
@@ -302,6 +320,7 @@
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
+import genesis_prime/game/cooldown
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
@@ -508,6 +527,15 @@ pub type Due {
   )
   /// The property modifier `source` ends, after its duration.
   ModifierEnd(source: unit_properties.Source)
+  /// The cooldown effect `source` takes effect, after its delay: it changes the
+  /// running cooldowns and, when `kept`, the ones that start while it lasts.
+  CooldownModifierStarts(
+    source: unit_properties.Source,
+    modifier: cooldown.Modifier,
+    kept: Bool,
+  )
+  /// The cooldown effect `source` is no longer kept, after its lifetime.
+  CooldownModifierEnds(source: unit_properties.Source)
   /// The held press starts.
   StartHeld
   /// The ability the player holds down casts again: its cooldowns have ended.
@@ -628,8 +656,10 @@ pub opaque type State {
     /// The monotonic time the global cooldown ends at, once one has started. The
     /// monotonic clock can be negative, so 0 never means none.
     global_cooldown_ends_ms: Option(Int),
-    /// The monotonic time each Spell4's own cooldown ends at.
-    cooldown_ends_ms: Dict(Int, Int),
+    /// The running cooldowns of the caster's spells and the cooldown effects kept for
+    /// the ones that start later (genesis_prime/game/cooldown). The global cooldown is
+    /// the field above: no cooldown effect changes it.
+    cooldowns: cooldown.Book,
     casts: Dict(Int, Live),
     /// The casts whose last go has gone and whose nodes still have life left, by
     /// cast id.
@@ -667,7 +697,7 @@ const ids_per_unit = 2048
 pub fn new() -> State {
   State(
     global_cooldown_ends_ms: None,
-    cooldown_ends_ms: dict.new(),
+    cooldowns: cooldown.new(),
     casts: dict.new(),
     lingering: dict.new(),
     current: None,
@@ -1624,9 +1654,7 @@ fn cooldown_left_ms(
     True, None | False, Some(_) | False, None -> 0
   }
   let own_left =
-    dict.get(cast.cooldown_ends_ms, spell.spell4_id.value)
-    |> result.map(fn(ends_ms) { int.max(0, ends_ms - now_ms) })
-    |> result.unwrap(0)
+    cooldown.left_ms(book: cast.cooldowns, spell4_id: spell.spell4_id, now_ms:)
   #(global_left, own_left)
 }
 
@@ -1796,6 +1824,8 @@ fn stop_pending(
       | StateEnd(..)
       | ModifierStart(..)
       | ModifierEnd(..)
+      | CooldownModifierStarts(..)
+      | CooldownModifierEnds(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -1889,6 +1919,12 @@ fn fire(
           PropertyStarts(source:, modifier:),
         ])
         ModifierEnd(source:) -> #(cast, [PropertyEnds(source:)])
+        CooldownModifierStarts(source:, modifier:, kept:) ->
+          cooldown_applied(cast:, source:, modifier:, kept:, now_ms:)
+        CooldownModifierEnds(source:) -> #(
+          State(..cast, cooldowns: cooldown.drop(book: cast.cooldowns, source:)),
+          [],
+        )
         RepeatHeld -> #(repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
@@ -1951,6 +1987,14 @@ pub fn rolls_needed(
           ),
           list.map(
             spell_plan.forced_moves_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
+          list.map(
+            spell_plan.cooldown_modifiers_in_phase(
+              spell:,
+              phase:,
+              spent: live.spent,
+            ),
             fn(row) { condition_rolls_needed(row.condition) },
           ),
         ]),
@@ -2337,6 +2381,8 @@ fn cancel_nodes_end(
       | StateEnd(..)
       | ModifierStart(..)
       | ModifierEnd(..)
+      | CooldownModifierStarts(..)
+      | CooldownModifierEnds(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -2367,6 +2413,8 @@ pub fn unit_removed(
         | NodesEnd(..)
         | ModifierStart(..)
         | ModifierEnd(..)
+        | CooldownModifierStarts(..)
+        | CooldownModifierEnds(..)
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
@@ -2402,6 +2450,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       holding: None,
       current: None,
       thresholds: dict.new(),
+      cooldowns: cooldown.drop_all(book: cast.cooldowns),
     ),
     list.map(dict.keys(cast.timers), fn(timer) { CancelTimer(timer:) }),
   )
@@ -2459,6 +2508,8 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
       case entry.1 {
         ModifierEnd(source:) -> Ok(source)
         ModifierStart(..)
+        | CooldownModifierStarts(..)
+        | CooldownModifierEnds(..)
         | Go(..)
         | Finish(..)
         | StartChild(..)
@@ -2795,6 +2846,8 @@ fn close_threshold(
             | StateEnd(..)
             | ModifierStart(..)
             | ModifierEnd(..)
+            | CooldownModifierStarts(..)
+            | CooldownModifierEnds(..)
             | StartHeld
             | RepeatHeld -> False
           }
@@ -2846,28 +2899,27 @@ fn end_base_cast(
 }
 
 /// The spell's own cooldown starts now, unless it is running already or the spell
-/// has none.
+/// has none. Its group cooldowns do not start: the server keeps none, so it is never
+/// stricter than the client.
 fn start_cooldown(
   cast cast: State,
   spell spell: Spell,
   now_ms now_ms: Int,
 ) -> State {
-  let running =
-    dict.get(cast.cooldown_ends_ms, spell.spell4_id.value)
-    |> result.map(fn(ends_ms) { ends_ms > now_ms })
-    |> result.unwrap(False)
-  case spell.cooldown_ms > 0 && !running {
-    True ->
-      State(
-        ..cast,
-        cooldown_ends_ms: dict.insert(
-          cast.cooldown_ends_ms,
-          spell.spell4_id.value,
-          now_ms + spell.cooldown_ms,
-        ),
-      )
-    False -> cast
-  }
+  State(
+    ..cast,
+    cooldowns: cooldown.start(
+      book: cast.cooldowns,
+      keys: cooldown.keys(
+        spell4_id: spell.spell4_id,
+        spell4_base_id: spell.spell4_base_id,
+        spell_groups: spell.groups,
+        cooldown_groups: spell.cooldown_groups,
+      ),
+      cooldown_ms: spell.cooldown_ms,
+      now_ms:,
+    ),
+  )
 }
 
 /// The go of phase `phase` of a live cast, with the units its round struck: 0x7f4 to
@@ -2972,6 +3024,14 @@ fn go(
         )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
       let #(cast, modifying) = modifiers_armed(cast:, cast_id:, aimed:)
+      let #(cast, cooldowns) =
+        cooldowns_armed(
+          cast:,
+          cast_id:,
+          aimed:,
+          longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+          now_ms:,
+        )
       let #(cast, children) =
         list.fold(starting, #(cast, []), fn(so_far, proxy) {
           let #(cast, effects) = so_far
@@ -3006,6 +3066,7 @@ fn go(
           removed,
           given,
           modifying,
+          cooldowns,
           gains,
           gate_logs,
           lasting_logs,
@@ -3026,13 +3087,14 @@ type Applied {
     removes: List(spell_plan.ForceRemove),
     modifiers: List(spell_plan.PropertyModifier),
     forced_moves: List(spell_plan.ForcedMove),
+    cooldowns: List(spell_plan.CooldownModifier),
   )
 }
 
-/// The Fluff, SpellForceRemove, property modifier and forced move effects of the phase
-/// whose gates pass against the caster, a debug line for each that cannot be decided,
-/// and the rolls left. Their gates are checked after the Proxies' and the gains', in that
-/// order, the forced moves' last (`rolls_needed`).
+/// The Fluff, SpellForceRemove, property modifier, forced move and cooldown effects of
+/// the phase whose gates pass against the caster, a debug line for each that cannot be
+/// decided, and the rolls left. Their gates are checked after the Proxies' and the
+/// gains', in that order, the cooldown effects' last (`rolls_needed`).
 fn lasting_applied(
   spell spell: Spell,
   phase phase: Int,
@@ -3087,9 +3149,26 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
+  let #(cooldowns, cooldown_logs, rolls) =
+    gated(
+      rows: spell_plan.cooldown_modifiers_in_phase(spell:, phase:, spent:),
+      condition: fn(row: spell_plan.CooldownModifier) { row.condition },
+      what: fn(row: spell_plan.CooldownModifier) {
+        "the ModifySpellCooldown effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
   #(
-    Applied(lasting:, removes:, modifiers:, forced_moves:),
-    list.flatten([logs, more_logs, modifier_logs, forced_move_logs]),
+    Applied(lasting:, removes:, modifiers:, forced_moves:, cooldowns:),
+    list.flatten([
+      logs,
+      more_logs,
+      modifier_logs,
+      forced_move_logs,
+      cooldown_logs,
+    ]),
     rolls,
   )
 }
@@ -3110,6 +3189,7 @@ type Aimed {
     lasting: List(#(spell_plan.Lasting, Int)),
     removes: List(#(spell_plan.ForceRemove, Int)),
     modifiers: List(#(spell_plan.PropertyModifier, Int)),
+    cooldowns: List(#(spell_plan.CooldownModifier, Int, Bool)),
     controls: List(#(strike_tell.ControlLanded, Int)),
   )
 }
@@ -3170,6 +3250,17 @@ fn aimed_at(
   let modifiers =
     list.map(applied.modifiers, fn(row) { #(row, caster.unit_id) })
   let forced_moves = applied.forced_moves
+  let cooldowns =
+    list.map(applied.cooldowns, fn(row) {
+      #(
+        row,
+        caster.unit_id,
+        cooldown_kept(
+          row:,
+          longer_of_delay_and_duration: live.spell.longer_of_delay_and_duration,
+        ),
+      )
+    })
   let listed =
     list.flatten([
       list.map(lasting, fn(entry) {
@@ -3202,6 +3293,16 @@ fn aimed_at(
           ),
         )
       }),
+      list.map(cooldowns, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.row.delay_ms,
+            instance_id: None,
+          ),
+        )
+      }),
       list.map(removes, fn(entry) {
         #(
           entry.1,
@@ -3227,13 +3328,28 @@ fn aimed_at(
         Error(Nil) -> list.append(units, [#(entry.0, [entry.1])])
       }
     })
-  Aimed(units:, lasting:, removes:, modifiers:, controls:)
+  Aimed(units:, lasting:, removes:, modifiers:, cooldowns:, controls:)
 }
 
 /// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
 /// A row with neither changes nothing and gives its node no life.
 fn modifier_has_life(row: spell_plan.PropertyModifier) -> Bool {
   row.row.until_removed || row.row.duration_ms > 0
+}
+
+/// Whether a cooldown row is kept for the cooldowns that start after it takes effect:
+/// its lifetime (delay plus durationTime, the larger of the two for a spell with the
+/// record flag 0x10000000) ends after its start, or never ends (flags bit 2). A kept row
+/// gives the caster's node its life; any other acts once and gives it none, so a delayed
+/// row that acts once cannot have its timer cancelled by the end of a node of its own
+/// delay (`0x14046b7f0`, `opcode.0x7f4.effect_time`).
+fn cooldown_kept(
+  row row: spell_plan.CooldownModifier,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+) -> Bool {
+  row.row.until_removed
+  || lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
+  > row.row.delay_ms
 }
 
 /// The caster's combat log of the states a go landed: an entry for each (0x247 of
@@ -3385,6 +3501,150 @@ fn modifiers_armed(
   })
 }
 
+/// The cooldown effects a go applies, each armed from this go: the effect of an
+/// earlier go of the cast is armed again, its timers cancelled and started anew. A row
+/// with no delay takes effect in this step and any other on a timer of its delay. A row
+/// is kept for the cooldowns that start later when it is `cooldown_kept`; a kept row is
+/// dropped on a timer at the end of its lifetime, unless it never ends.
+fn cooldowns_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  aimed aimed: Aimed,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.cooldowns, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let row = entry.0
+    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+    let #(cast, cancels) = cancel_cooldown_timers(cast:, source:)
+    let lifetime_ms =
+      lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
+    let kept = entry.2
+    let #(cast, starting) = case row.row.delay_ms > 0 {
+      True -> {
+        let #(cast, _, start) =
+          armed(
+            cast:,
+            due: CooldownModifierStarts(source:, modifier: row.modifier, kept:),
+            after_ms: row.row.delay_ms,
+          )
+        #(cast, [start])
+      }
+      False ->
+        cooldown_applied(cast:, source:, modifier: row.modifier, kept:, now_ms:)
+    }
+    let #(cast, ending) = case kept && !row.row.until_removed {
+      True -> {
+        let #(cast, _, start) =
+          armed(
+            cast:,
+            due: CooldownModifierEnds(source:),
+            after_ms: lifetime_ms,
+          )
+        #(cast, [start])
+      }
+      False -> #(cast, [])
+    }
+    #(cast, list.flatten([effects, cancels, starting, ending]))
+  })
+}
+
+/// A cooldown effect takes effect: it is kept for the cooldowns that start later when
+/// `kept`, and the running cooldowns it picks change. When one did, a press held for a
+/// cooldown and the hold's repeat wait again for the new end (`waits_rearmed`).
+fn cooldown_applied(
+  cast cast: State,
+  source source: unit_properties.Source,
+  modifier modifier: cooldown.Modifier,
+  kept kept: Bool,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let book = case kept {
+    True -> cooldown.keep(book: cast.cooldowns, source:, modifier:)
+    False -> cast.cooldowns
+  }
+  let changed = cooldown.modify(book:, modifier:, now_ms:)
+  let cast = State(..cast, cooldowns: changed)
+  case changed == book {
+    True -> #(cast, [])
+    False -> waits_rearmed(cast:, now_ms:)
+  }
+}
+
+/// The wait of a press held for a cooldown's end and of the held ability's repeat is
+/// worked out again after a cooldown moved: each timer is cancelled and started for the
+/// new wait, which is a timer of 0 ms when the cooldown ended, so the step's own messages
+/// go out first. The press waits for the end wherever it moves (the server's choice,
+/// `cast.hold_repeat`).
+fn waits_rearmed(
+  cast cast: State,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, held) = case cast.held {
+    Some(Held(resolution:, until: CooldownEnds, ..)) -> {
+      let #(global_left, own_left) =
+        cooldown_left_ms(cast:, spell: resolution.spell, now_ms:)
+      let #(cast, cancels) =
+        cancel_timers(cast:, matching: fn(due) { due == StartHeld })
+      let #(cast, _, start) =
+        armed(cast:, due: StartHeld, after_ms: int.max(global_left, own_left))
+      #(cast, list.append(cancels, [start]))
+    }
+    Some(Held(until: CastClears, ..)) | None -> #(cast, [])
+  }
+  let #(cast, repeating) = case cast.holding {
+    Some(Holding(ability:, repeat_timer: Some(_), ..)) ->
+      case resolved(cast:, ability:) {
+        Ok(resolution) -> {
+          let #(cast, cancels) =
+            cancel_timers(cast:, matching: fn(due) { due == RepeatHeld })
+          let #(cast, start) =
+            repeat_after(
+              cast:,
+              wait_ms: cooldown_wait_ms(cast:, spell: resolution.spell, now_ms:),
+            )
+          #(cast, list.append(cancels, start))
+        }
+        Error(Nil) -> #(cast, [])
+      }
+    Some(Holding(repeat_timer: None, ..)) | None -> #(cast, [])
+  }
+  #(cast, list.append(held, repeating))
+}
+
+/// The cooldown effect timers of `source` cancelled.
+fn cancel_cooldown_timers(
+  cast cast: State,
+  source source: unit_properties.Source,
+) -> #(State, List(Effect)) {
+  cancel_timers(cast:, matching: fn(due) {
+    case cooldown_source_of(due:) {
+      Some(waiting) -> waiting == source
+      None -> False
+    }
+  })
+}
+
+/// The cooldown effects of the cast `cast_id` dropped, as its node leaves the caster:
+/// each row of its spell is taken out of the kept list and its timers are cancelled. The
+/// cooldowns it changed stay changed, as on the client.
+fn cooldown_modifiers_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  spell spell: Spell,
+) -> #(State, List(Effect)) {
+  list.fold(spell.cooldown_modifiers, #(cast, []), fn(so_far, row) {
+    let #(cast, effects) = so_far
+    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+    let #(cast, cancels) = cancel_cooldown_timers(cast:, source:)
+    #(
+      State(..cast, cooldowns: cooldown.drop(book: cast.cooldowns, source:)),
+      list.append(effects, cancels),
+    )
+  })
+}
+
 /// The modifier timers of `source` cancelled.
 fn cancel_modifier_timers(
   cast cast: State,
@@ -3398,7 +3658,7 @@ fn cancel_modifier_timers(
   })
 }
 
-/// The source a modifier timer is for.
+/// The source a property modifier timer is for.
 fn modifier_source_of(due due: Due) -> Option(unit_properties.Source) {
   case due {
     ModifierStart(source:, ..) | ModifierEnd(source:) -> Some(source)
@@ -3407,6 +3667,27 @@ fn modifier_source_of(due due: Due) -> Option(unit_properties.Source) {
     | StartChild(..)
     | NodesEnd(..)
     | StateEnd(..)
+    | CooldownModifierStarts(..)
+    | CooldownModifierEnds(..)
+    | StartHeld
+    | RepeatHeld
+    | WindowEnd(..)
+    | ChargeLevel(..) -> None
+  }
+}
+
+/// The source a cooldown effect timer is for.
+fn cooldown_source_of(due due: Due) -> Option(unit_properties.Source) {
+  case due {
+    CooldownModifierStarts(source:, ..) | CooldownModifierEnds(source:) ->
+      Some(source)
+    Go(..)
+    | Finish(..)
+    | StartChild(..)
+    | NodesEnd(..)
+    | StateEnd(..)
+    | ModifierStart(..)
+    | ModifierEnd(..)
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)
@@ -3426,7 +3707,9 @@ fn caster_modifiers_ended(
     when: !list.contains(unit_ids, caster_of(cast_id:)),
     return: #(cast, []),
   )
-  modifiers_ended(cast:, cast_id:, spell:)
+  let #(cast, modifiers) = modifiers_ended(cast:, cast_id:, spell:)
+  let #(cast, cooldowns) = cooldown_modifiers_ended(cast:, cast_id:, spell:)
+  #(cast, list.append(modifiers, cooldowns))
 }
 
 /// The property modifiers of the cast `cast_id` ended, as its node leaves the caster:
@@ -3515,6 +3798,12 @@ fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
     list.flatten([
       list.map(aimed.lasting, fn(entry) { entry.1 }),
       list.map(aimed.modifiers, fn(entry) { entry.1 }),
+      list.filter_map(aimed.cooldowns, fn(entry) {
+        case entry.2 {
+          True -> Ok(entry.1)
+          False -> Error(Nil)
+        }
+      }),
       list.map(aimed.controls, fn(entry) { entry.1 }),
     ]),
   )
@@ -3530,7 +3819,7 @@ fn node_of(
   now_ms now_ms: Int,
 ) -> Result(lasting.Node, Nil) {
   let rows =
-    list.append(
+    list.flatten([
       list.filter_map(aimed.lasting, fn(entry) {
         case entry.1 == unit_id {
           True -> Ok(entry.0.row)
@@ -3543,7 +3832,13 @@ fn node_of(
           False -> Error(Nil)
         }
       }),
-    )
+      list.filter_map(aimed.cooldowns, fn(entry) {
+        case entry.1 == unit_id && entry.2 {
+          True -> Ok(entry.0.row)
+          False -> Error(Nil)
+        }
+      }),
+    ])
   let held_until_ms =
     list.filter_map(aimed.controls, fn(entry) {
       case entry.1 == unit_id {

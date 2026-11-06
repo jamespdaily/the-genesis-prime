@@ -73,6 +73,15 @@
 ////   on the caster and the caster's client moves itself and reports the move
 ////   (`Spell4Effects.effectType.3.player`); the server works out no destination. A row aimed only at other units is not read. Its caster apply
 ////   prerequisite, phases and spend tag are a Fluff effect's.
+//// - **The cooldown effects.** A ModifySpellCooldown effect
+////   (`Spell4Effects.effectType.73`) whose targetFlags include the caster is a
+////   `CooldownModifier` row: the selector (dataBits00 and the id of dataBits01, kept as
+////   given and looked up in no table) and the operation with its 32-bit float
+////   (genesis_prime/game/cooldown), and its delay, durationTime and flags bit 2, which
+////   time the change and give the caster's node of the cast its life. A row aimed only
+////   at other units is not read. A spell also holds its cooldown groups, the non-zero
+////   spellCoolDownId00 to 02, each of which must be a SpellCoolDown row. Its caster
+////   apply prerequisite, phases and spend tag are a Fluff effect's.
 //// - **The phases** of a Multiphase spell (`Spell.CodeEnumCastMethod` 8) are the
 ////   SpellPhase rows of its owner kept by the client's rule (`0x14055e180`: order
 ////   index below 32, and index 0 or a non-zero delay), each delay the gap after
@@ -145,6 +154,7 @@
 ////   of a state other than Stun and Knockdown, aimed at the caster or by other flags,
 ////   or behind an apply prerequisite.
 
+import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting
@@ -426,6 +436,32 @@ pub type Spell {
     /// The ForcedMove effects aimed at the caster, which the go lists and the caster's
     /// client carries out.
     forced_moves: List(ForcedMove),
+    /// The non-zero cooldown groups of the Spell4 row (`spellCoolDownId00` to `02`),
+    /// each a SpellCoolDown row, which a selector 3 of a cooldown effect tests.
+    cooldown_groups: List(Int),
+    /// The ModifySpellCooldown effects aimed at the caster, which change the
+    /// caster's spell cooldowns.
+    cooldown_modifiers: List(CooldownModifier),
+  )
+}
+
+/// A ModifySpellCooldown effect (`Spell4Effects.effectType.73`) of a spell whose
+/// targetFlags include the caster: the change it makes to the running and later
+/// cooldowns (`modifier`), its delay, durationTime and flags bit 2 (`row`, which also
+/// give the caster's node of the cast its life, as a Fluff effect's do), the phases of
+/// `phase_flags` it applies in, when its `condition` holds (its caster apply
+/// prerequisite against the caster; one behind a target apply prerequisite is not
+/// applied), and when its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend). A row aimed only at other units is not read, and the
+/// part of a row's aim that is not the caster is not applied (`effect_kind.is_row_read`).
+pub type CooldownModifier {
+  CooldownModifier(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    modifier: cooldown.Modifier,
+    row: lasting.LastingRow,
+    condition: Condition,
+    tag: spend.Tag,
   )
 }
 
@@ -660,6 +696,9 @@ pub type PlanError {
   /// A UnitPropertyModifier effect of a tree has a multiplier, flat amount or per-level
   /// amount that is not a finite number: `column` is its dataBits column.
   ModifierNumberNotFinite(spell4_id: Int, effect_id: Int, column: String)
+  /// A ModifySpellCooldown effect of a tree has a dataBits03 that is not a finite
+  /// number, for an operation that reads it (`Spell4Effects.effectType.73`).
+  CooldownNumberNotFinite(spell4_id: Int, effect_id: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -797,6 +836,12 @@ pub fn describe(error error: PlanError) -> String {
       <> " whose "
       <> column
       <> " is not a finite number"
+    CooldownNumberNotFinite(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a ModifySpellCooldown effect "
+      <> int.to_string(effect_id)
+      <> " whose dataBits03 is not a finite number"
   }
 }
 
@@ -1012,6 +1057,12 @@ fn spell_of(
   use controls <- result.try(controls_of(spell4_id:, effects:))
   use modifiers <- result.try(modifiers_of(tables:, spell4_id:, effects:))
   use forced_moves <- result.try(forced_moves_of(tables:, effects:))
+  use cooldown_modifiers <- result.try(cooldown_modifiers_of(
+    tables:,
+    spell4_id:,
+    effects:,
+  ))
+  use cooldown_groups <- result.try(cooldown_groups_of(tables:, row:))
   use groups <- result.try(groups_of(sources:, row:))
   use stack <- result.try(stack_of(tables:, row:))
   use proxies <- result.try(
@@ -1123,6 +1174,8 @@ fn spell_of(
     controls:,
     modifiers:,
     forced_moves:,
+    cooldown_groups:,
+    cooldown_modifiers:,
   ))
 }
 
@@ -1427,6 +1480,94 @@ fn forced_moves_of(
       condition:,
       tag: tag_of(effect:),
     ))
+  })
+}
+
+/// The ModifySpellCooldown effects of a spell whose targetFlags include the caster
+/// (`effect_kind.is_row_read`; `Spell4Effects.effectType.73`): dataBits00 picks the
+/// spells (0 a Spell4Base, 1 a Spell4, 2 a spell group, 3 a cooldown group, any other
+/// value every spell), dataBits01 is the id it compares, dataBits02 the operation and
+/// dataBits03 its float, which must be finite where the operation reads it. The id is
+/// kept as given and no row is looked up: the client compares it and looks nothing up
+/// (`0x14046b920`), so an id no row holds matches nothing on both sides, where a type
+/// 80 row's selector must name a row. Its caster apply prerequisite is read as a Fluff
+/// effect's is (`condition_of`); a row aimed only at other units is left out.
+fn cooldown_modifiers_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(CooldownModifier), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.CooldownModifier
+    && effect_kind.is_row_read(
+      effect_type: effect.effect_type,
+      target_flags: effect.target_flags,
+    )
+  })
+  |> list.try_map(fn(effect) {
+    use operation <- result.try(cooldown_operation_of(spell4_id:, effect:))
+    use condition <- result.try(condition_of(
+      tables:,
+      effect:,
+      data_bits06_names_a_gate: False,
+    ))
+    Ok(CooldownModifier(
+      effect_id: Spell4EffectsId(effect.id),
+      phase_flags: effect.phase_flags,
+      modifier: cooldown.Modifier(
+        selector: case effect.data_bits00 {
+          0 -> cooldown.Base(Spell4BaseId(effect.data_bits01))
+          1 -> cooldown.Spell(Spell4Id(effect.data_bits01))
+          2 -> cooldown.SpellGroup(effect.data_bits01)
+          3 -> cooldown.CooldownGroup(effect.data_bits01)
+          selector -> cooldown.EverySpell(selector:)
+        },
+        operation:,
+      ),
+      row: lasting_row_of(effect:),
+      condition:,
+      tag: tag_of(effect:),
+    ))
+  })
+}
+
+/// A cooldown effect's operation (dataBits02) with its float (dataBits03): the 32-bit
+/// float its column holds, which must be finite. An operation the client has no case for
+/// reads no float (`0x14046b920`).
+fn cooldown_operation_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(cooldown.Operation, PlanError) {
+  let number = fn() {
+    float32.of_column(number: effect.data_bits03)
+    |> result.replace_error(CooldownNumberNotFinite(
+      spell4_id:,
+      effect_id: effect.id,
+    ))
+  }
+  case effect.data_bits02 {
+    0 -> result.map(number(), cooldown.NoLonger)
+    1 -> result.map(number(), cooldown.Multiply)
+    2 -> result.map(number(), cooldown.AddMs)
+    3 -> result.map(number(), cooldown.SetMs)
+    operation -> Ok(cooldown.Unchanged(operation:))
+  }
+}
+
+/// The cooldown groups of a spell: the non-zero of spellCoolDownId00 to 02, each of
+/// which must be a SpellCoolDown row, as the client's StartSpellCooldowns reports an
+/// error for a group it finds none for (`0x14046b1e0`).
+fn cooldown_groups_of(
+  tables tables: table_store.Tables,
+  row row: spell4.Spell4,
+) -> Result(List(Int), PlanError) {
+  [row.spell_cool_down_id00, row.spell_cool_down_id01, row.spell_cool_down_id02]
+  |> list.filter(fn(group) { group != 0 })
+  |> list.try_map(fn(group) {
+    spell_cool_down.get(tables:, id: SpellCoolDownId(group))
+    |> result.replace_error(NoRow(table: "SpellCoolDown", id: group))
+    |> result.replace(group)
   })
 }
 
@@ -2271,6 +2412,22 @@ pub fn forced_moves_in_phase(
     rows: spell.forced_moves,
     phase_flags: fn(forced_move) { forced_move.phase_flags },
     tag: fn(forced_move) { forced_move.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The ModifySpellCooldown effects of the spell that apply in phase `phase`, those
+/// whose tag holds for the points the cast spent.
+pub fn cooldown_modifiers_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(CooldownModifier) {
+  in_phase(
+    rows: spell.cooldown_modifiers,
+    phase_flags: fn(row) { row.phase_flags },
+    tag: fn(row) { row.tag },
     phase:,
     spent:,
   )
