@@ -193,6 +193,35 @@ pub fn shared_with_property_modifiers() -> store.Tables {
   })
 }
 
+/// The planted tables with Gate's forced move, row 67776 as the client holds it (delay
+/// 200, phaseFlags 1, orderIndex 0, aimed at the caster, `table_rows --
+/// Spell4Effects 67776`), added to Paralytic Surge 42352, which holds none, so the
+/// Medic's press lists it in its go. Loaded once under a key of its own.
+pub fn shared_with_forced_move() -> store.Tables {
+  database_support.once("character_tables_forced_move", fn() {
+    let blink =
+      planted_table.row(spell4_effects.schema, [
+        #("ID", Integer(67_776)),
+        #("spellId", Integer(42_352)),
+        #("targetFlags", Integer(1)),
+        #("effectType", Integer(3)),
+        #("delayTime", Integer(200)),
+        #("phaseFlags", Integer(1)),
+        #("dataBits00", Integer(0)),
+        #("dataBits01", Integer(1_101_004_800)),
+        #("dataBits02", Integer(1_101_004_800)),
+        #("orderIndex", Integer(0)),
+      ])
+    load_files(files_replacing(
+      schema: spell4_effects.schema,
+      rows: spell_tables.sorted_by_id([
+        blink,
+        ..novice_tables.spell4_effects_rows()
+      ]),
+    ))
+  })
+}
+
 /// The planted tables with UnitProperty2 rows 8 (HealthRegenMultiplier) at 2.0 and
 /// 177 (ShieldTickTime) at 750.0 in place of their defaults 1.0 and 500.0: test
 /// data, so a test can tell the regeneration reads them from the table. Loaded once

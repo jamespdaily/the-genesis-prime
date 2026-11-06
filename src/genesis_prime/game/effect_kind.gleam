@@ -17,11 +17,14 @@
 //// - **PropertyModifier** (11) changes a property of the unit it aims at for its time;
 ////   the server reads the rows whose aim includes the caster
 ////   (`Spell4Effects.effectType.11.change`).
+//// - **ForcedMove** (3) moves the unit it aims at; the server lists the rows aimed at
+////   the caster in the go, and the client moves its own unit and reports the move
+////   (`Spell4Effects.effectType.3.player`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
 //// Reading a row's columns stays with each rule; this decode looks at the type
-//// only, and `is_row_read` adds the aim for the one type a rule reads for some aims.
+//// only, and `is_row_read` adds the aim for the types a rule reads for some aims.
 
 import gleam/int
 
@@ -44,6 +47,12 @@ pub type Kind {
   /// targetFlags include the caster; a row aimed only at other units is not read
   /// (`is_row_read`).
   PropertyModifier
+  /// A ForcedMove effect (3): moves the unit it aims at. A row is read when its
+  /// targetFlags include the caster, whose client moves itself
+  /// (`Spell4Effects.effectType.3.player`); a row aimed only at other units, which the
+  /// server would move itself (`Spell4Effects.effectType.3.other_unit`), is not read
+  /// (`is_row_read`).
+  ForcedMove
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -58,13 +67,14 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     80 -> ForceRemove
     4 -> CrowdControl
     11 -> PropertyModifier
+    3 -> ForcedMove
     other -> Unread(effect_type: other)
   }
 }
 
 /// Whether some rule reads the effect type: the coverage measure's "handled". A
-/// PropertyModifier counts as read for its rows aimed at the caster, which
-/// `is_row_read` tells apart from the others.
+/// PropertyModifier or ForcedMove counts as read for its rows aimed at the caster,
+/// which `is_row_read` tells apart from the others.
 pub fn is_read(effect_type effect_type: Int) -> Bool {
   case kind_of(effect_type:) {
     Proxy
@@ -73,21 +83,22 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | Fluff
     | ForceRemove
     | CrowdControl
-    | PropertyModifier -> True
+    | PropertyModifier
+    | ForcedMove -> True
     Unread(..) -> False
   }
 }
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
-/// type `is_read` for, except that a PropertyModifier row is read only when its flags
-/// include the caster (bit 1, `Spell4Effects.targetFlags`); a row aimed only at
-/// other units is the next step's.
+/// type `is_read` for, except that a PropertyModifier or ForcedMove row is read only when
+/// its flags include the caster (bit 1, `Spell4Effects.targetFlags`); a row aimed only
+/// at other units is the next step's.
 pub fn is_row_read(
   effect_type effect_type: Int,
   target_flags target_flags: Int,
 ) -> Bool {
   case kind_of(effect_type:) {
-    PropertyModifier -> int.bitwise_and(target_flags, 1) == 1
+    PropertyModifier | ForcedMove -> int.bitwise_and(target_flags, 1) == 1
     Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
     Unread(..) -> False
   }

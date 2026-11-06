@@ -74,6 +74,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     lasting: [],
     removes: [],
     modifiers: [],
+    forced_moves: [],
     controls: [],
     cooldown_start: AtFirstGo,
     cooldown_phase: None,

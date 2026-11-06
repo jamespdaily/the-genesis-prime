@@ -190,6 +190,12 @@
 ////   one still pending; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
+//// - **A go's forced moves** (`Spell4Effects.effectType.3.player`): each type 3 effect of
+////   the phase aimed at the caster whose gate against the caster passes is listed in the
+////   caster's target info with its delay, and nothing more: the caster's client works out
+////   the destination, moves its own unit and reports the move in its next 0x637, which
+////   the movement rule takes as any other. A forced move gives no node a life, starts no
+////   timer and changes no property.
 //// - **A cast that lingers** is one whose last go has gone while a node of it still
 ////   has life: every step of its end runs (the current cast cleared, a channel's
 ////   cooldown, a stage's threshold closed) and only its 0x7fe waits, since the client
@@ -1943,6 +1949,10 @@ pub fn rolls_needed(
             spell_plan.modifiers_in_phase(spell:, phase:, spent: live.spent),
             fn(row) { condition_rolls_needed(row.condition) },
           ),
+          list.map(
+            spell_plan.forced_moves_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
         ]),
       )
     }
@@ -3015,13 +3025,14 @@ type Applied {
     lasting: List(spell_plan.Lasting),
     removes: List(spell_plan.ForceRemove),
     modifiers: List(spell_plan.PropertyModifier),
+    forced_moves: List(spell_plan.ForcedMove),
   )
 }
 
-/// The Fluff, SpellForceRemove and property modifier effects of the phase whose gates
-/// pass against the caster, a debug line for each that cannot be decided, and the
-/// rolls left. Their gates are checked after the Proxies' and the gains', in that
-/// order, the modifiers' last (`rolls_needed`).
+/// The Fluff, SpellForceRemove, property modifier and forced move effects of the phase
+/// whose gates pass against the caster, a debug line for each that cannot be decided,
+/// and the rolls left. Their gates are checked after the Proxies' and the gains', in that
+/// order, the forced moves' last (`rolls_needed`).
 fn lasting_applied(
   spell spell: Spell,
   phase phase: Int,
@@ -3065,9 +3076,20 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
+  let #(forced_moves, forced_move_logs, rolls) =
+    gated(
+      rows: spell_plan.forced_moves_in_phase(spell:, phase:, spent:),
+      condition: fn(row: spell_plan.ForcedMove) { row.condition },
+      what: fn(row: spell_plan.ForcedMove) {
+        "the ForcedMove effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
   #(
-    Applied(lasting:, removes:, modifiers:),
-    list.flatten([logs, more_logs, modifier_logs]),
+    Applied(lasting:, removes:, modifiers:, forced_moves:),
+    list.flatten([logs, more_logs, modifier_logs, forced_move_logs]),
     rolls,
   )
 }
@@ -3147,6 +3169,7 @@ fn aimed_at(
   let controls = controls_landed(struck:)
   let modifiers =
     list.map(applied.modifiers, fn(row) { #(row, caster.unit_id) })
+  let forced_moves = applied.forced_moves
   let listed =
     list.flatten([
       list.map(lasting, fn(entry) {
@@ -3165,6 +3188,16 @@ fn aimed_at(
           Listed(
             effect_id: entry.0.effect_id,
             delay_ms: entry.0.row.delay_ms,
+            instance_id: None,
+          ),
+        )
+      }),
+      list.map(forced_moves, fn(row) {
+        #(
+          caster.unit_id,
+          Listed(
+            effect_id: row.effect_id,
+            delay_ms: row.delay_ms,
             instance_id: None,
           ),
         )
