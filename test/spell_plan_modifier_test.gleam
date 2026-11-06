@@ -108,6 +108,7 @@ pub fn a_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
         row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
         condition: Always,
         tag: spend.EqualTo(value: 0),
+        armor: None,
       ),
     ]
     as "0x3da3d70a is 0.07999999821186066; the row's emmComparison 0 and emmValue 0 are the tag"

@@ -43,6 +43,12 @@
 //// death ─▶ both cancelled;  coming back is full: nothing started
 //// a heal of the shield (genesis_prime/game/cast `ShieldHeal`) ─▶ + amount, capped
 ////                ─▶ 0x938(P, 20, shield) to P and to its viewers; the clocks as they were
+//// an Interrupt Armor row (genesis_prime/game/cast `Armor`) ─▶ the connection raises property 44
+////                first, then armor + points, capped at property 44's value (-1: no cap)
+////                ─▶ 0x938(P, 21, armor) to P and to its viewers
+//// the row's end ─▶ armor - points when the row takes them back, then capped at the new
+////                maximum, told before the maximum falls; a property change that lowers the
+////                maximum caps the armor too
 //// ```
 ////
 //// Death and coming back, when a strike leaves P at 0:
@@ -89,6 +95,11 @@
 ////   up to ShieldMitigationMax of each blow (genesis_prime/game/hit). Armor,
 ////   ShieldMitigationMax, the maxima and the regeneration numbers are the player's
 ////   properties (genesis_prime/game/unit_properties).
+//// - **Interrupt Armor** is held beside the shield, from the grants of the player's own casts
+////   (`armor_given`, `armor_ended`) and clamped as the client clamps stat 21: to 0 and the
+////   maximum, property 44, unless that is -1 (`opcode.0x938.interrupt_armor`). A player
+////   starts with none. A creature's strike spends none: no strike carries a crowd-control
+////   state onto a player yet (`struck` answers `controls: []`).
 //// - **Health** stays in [0, max]. At 0 the answer is `Landed` with the killed bit,
 ////   the creature releases the player, and a later strike is refused `Dead`.
 //// - **Health regenerates** while P is alive, out of combat and below its maximum,
@@ -196,7 +207,16 @@ pub opaque type Life {
     regeneration: Regeneration,
     health_clock: Clock,
     shield_clock: Clock,
+    armor: Int,
+    max_armor: Int,
+    armor_grants: List(ArmorGrant),
   )
+}
+
+/// A grant of Interrupt Armor the player's casts hold: the source of the cast's row, its
+/// points and whether its end takes them back.
+type ArmorGrant {
+  ArmorGrant(source: unit_properties.Source, points: Int, takes_back: Bool)
 }
 
 /// The numbers health and shield regenerate by (`regeneration` builds them).
@@ -338,6 +358,8 @@ pub type Written {
   OwnCombatState(in_combat: Bool)
   /// 0x938 of stat 20: the player's shield.
   OwnShield(shield: Int)
+  /// 0x938 of stat 21: the player's Interrupt Armor.
+  OwnInterruptArmor(armor: Int)
   /// 0x92f: the player's health.
   OwnHealth(health: Int)
   /// 0x88c {P, dead, 0, 0}: the player died or came back. The 5-bit value is
@@ -446,10 +468,21 @@ pub fn properties_changed(
         ShieldRegeneration(..shield, tick_ms: shield_tick_ms(properties:))
       }),
     )
+  let max_armor = max_armor_of(properties:)
   let health = int.min(life.health, max_health)
   let shield = int.min(life.shield, max_shield)
+  let armor = armor_clamped(armor: life.armor, max_armor:)
   let changed =
-    Life(..life, max_health:, max_shield:, health:, shield:, regeneration:)
+    Life(
+      ..life,
+      max_health:,
+      max_shield:,
+      health:,
+      shield:,
+      regeneration:,
+      armor:,
+      max_armor:,
+    )
   let #(changed, timers) = health_clock_settled(life: changed)
   #(
     changed,
@@ -461,6 +494,10 @@ pub fn properties_changed(
       case shield == life.shield {
         True -> []
         False -> shield_told(shield:)
+      },
+      case armor == life.armor {
+        True -> []
+        False -> armor_told(armor:)
       },
       timers,
     ]),
@@ -484,6 +521,9 @@ pub fn new(
     regeneration:,
     health_clock: Idle,
     shield_clock: Idle,
+    armor: 0,
+    max_armor: 0,
+    armor_grants: [],
   )
 }
 
@@ -1029,6 +1069,103 @@ pub fn shield_healed(
     return: #(life, []),
   )
   #(Life(..life, shield:), shield_told(shield:))
+}
+
+/// The player's Interrupt Armor: stat 21.
+pub fn interrupt_armor(life life: Life) -> Int {
+  life.armor
+}
+
+/// The most Interrupt Armor the player holds: the value of property 44, which the client
+/// clamps stat 21 to, -1 for no limit (`opcode.0x938.interrupt_armor`).
+pub fn max_interrupt_armor(life life: Life) -> Int {
+  life.max_armor
+}
+
+/// The armor held to the client's own clamp: not below 0 and not above the maximum, with
+/// -1 for no maximum (`opcode.0x938.interrupt_armor`).
+fn armor_clamped(armor armor: Int, max_armor max_armor: Int) -> Int {
+  case max_armor {
+    -1 -> int.max(0, armor)
+    _ -> int.max(0, int.min(armor, max_armor))
+  }
+}
+
+/// The player's armor written to its own client (0x938 of stat 21) and told to its
+/// viewers.
+fn armor_told(armor armor: Int) -> List(Effect) {
+  [
+    ToClient(OwnInterruptArmor(armor:)),
+    ToViewers(client_connection.InterruptArmor(armor:)),
+  ]
+}
+
+/// A grant of Interrupt Armor by a type 52 row of `source` (genesis_prime/game/cast
+/// `Armor`): the armor rises by `points`, capped at the maximum, and the grant is held
+/// until `armor_ended`. The maximum is the player's property 44, which the connection has
+/// raised first, since the client clamps the armor it is sent to the maximum it holds
+/// (`opcode.0x938.interrupt_armor`). A source already held changes nothing, as a modifier
+/// of the properties does. A grant that moves nothing is not written.
+pub fn armor_given(
+  life life: Life,
+  source source: unit_properties.Source,
+  points points: Int,
+  takes_back takes_back: Bool,
+) -> #(Life, List(Effect)) {
+  use <- bool.guard(
+    when: list.any(life.armor_grants, fn(grant) { grant.source == source }),
+    return: #(life, []),
+  )
+  let armor =
+    armor_clamped(armor: life.armor + points, max_armor: life.max_armor)
+  let held = ArmorGrant(source:, points:, takes_back:)
+  let given =
+    Life(..life, armor:, armor_grants: list.append(life.armor_grants, [held]))
+  case armor == life.armor {
+    True -> #(given, [])
+    False -> #(given, armor_told(armor:))
+  }
+}
+
+/// The grant of `source` ends, and the armor is written before the maximum falls, as the
+/// client needs: the client clamps the armor it is sent to the maximum it holds and an
+/// armor above a lowered maximum stays until the next 0x938 (`opcode.0x938.interrupt_armor`).
+/// So the armor is the one the end leaves under the maximum `properties` hold once the
+/// source's modifier is off: when the grant takes its points back the armor falls by them
+/// (not below 0), and when it keeps the armor it stays, to the new maximum. A grant that
+/// moves nothing is not written, and a source that holds no grant changes nothing (a type 11
+/// row on property 44 lowers the maximum, which `properties_changed` follows).
+pub fn armor_ended(
+  life life: Life,
+  source source: unit_properties.Source,
+  properties properties: Properties,
+) -> #(Life, List(Effect)) {
+  case list.find(life.armor_grants, fn(grant) { grant.source == source }) {
+    Error(Nil) -> #(life, [])
+    Ok(ended) -> {
+      let kept = case ended.takes_back {
+        True -> int.max(0, life.armor - ended.points)
+        False -> life.armor
+      }
+      let armor =
+        armor_clamped(armor: kept, max_armor: max_armor_of(properties:))
+      let remaining =
+        list.filter(life.armor_grants, fn(grant) { grant.source != source })
+      let after = Life(..life, armor:, armor_grants: remaining)
+      case armor == life.armor {
+        True -> #(after, [])
+        False -> #(after, armor_told(armor:))
+      }
+    }
+  }
+}
+
+/// The maximum Interrupt Armor the properties give: property 44's value, rounded.
+fn max_armor_of(properties properties: Properties) -> Int {
+  float.round(unit_properties.value(
+    properties:,
+    property: unit_properties.interrupt_armor_threshold,
+  ))
 }
 
 /// Both clocks stopped, each running one cancelled.

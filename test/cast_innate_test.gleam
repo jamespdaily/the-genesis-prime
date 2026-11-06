@@ -242,12 +242,12 @@ pub fn the_unread_rows_of_a_pressed_innate_are_listed_nowhere_and_write_no_line_
     innate_pressed(bag: [19_102, 19_019, 19_022, 38_012], in_combat: True)
   let unread = [
     #(warrior, [192_556, 192_608, 192_609, 210_834, 109_482]),
-    #(esper, [178_144, 199_192]),
+    #(esper, [178_144]),
   ]
   list.each(unread, fn(pressed) {
     let #(effects, rows) = pressed
     assert list.all(rows, fn(row) { !list.contains(listed(effects:), row) })
-      as "Spell4Effects 192556, 192608 and 192609 (type 90), 109482 (type 18) of the Warrior's, 178144 (type 29) and 199192 (type 52) of the Esper's are not read (effect_kind.kind_of), and 210834 (type 118, tickTime 1000) is held and not applied: no go lists one"
+      as "Spell4Effects 192556, 192608 and 192609 (type 90), 109482 (type 18) of the Warrior's, 178144 (type 29) of the Esper's are not read (effect_kind.kind_of), and 210834 (type 118, tickTime 1000) is held and not applied: no go lists one"
     assert support.frames_of(message_id: 0x07FD, effects:) != []
       as "each press was taken"
     assert list.all(rows, fn(row) {
@@ -271,8 +271,8 @@ pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
     as "Proxies 147848 to 60915 and 210822 to 79875 are behind Prerequisites 24548 and 37438 (type 50, comparison 1: a live cast of an AMP's spell), which a caster with none fails"
   let esper =
     innate_pressed(bag: [19_102, 19_019, 19_022, 38_012], in_combat: True)
-  assert listed(effects: esper) == []
-    as "Spell4.58586 holds Proxies 166935, 178143 and 204548 and the type 29 row 178144: the children list no row, and no row of the go itself is read"
+  assert listed(effects: esper) == [199_192]
+    as "Spell4.58586 holds Proxies 166935, 178143 and 204548 and the type 29 row 178144, which is not read: the one row its go and its children list is the type 52 row 199192 of 76766, aimed at the primary target of a child made on the caster (Spell4Effects spellId=76766)"
   assert started_spells(effects: esper) == [70_369, 76_766]
     as "Proxy 166935 starts 70369 and Proxy 178143 starts 76766; Proxy 204548 to 78078 is behind Prerequisite 36531 (type 15, comparison 1: a live cast of Spell4 41590 on the caster), which a caster with no such cast fails"
   // A Medic with 250 of its 450 shield, struck.

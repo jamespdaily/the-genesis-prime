@@ -342,6 +342,16 @@ pub fn cast_effects(
         connection_properties.started(session:, now:, source:, modifier:)
       cast.CasterChangeStarts(change: cast.ShieldHeal(amount:), ..), _ ->
         connection_healing.shield_healed(session:, now:, amount:)
+      cast.CasterChangeStarts(source:, change: cast.Armor(points:, takes_back:)),
+        _
+      ->
+        connection_properties.armor_started(
+          session:,
+          now:,
+          source:,
+          points:,
+          takes_back:,
+        )
       cast.PropertyEnds(source:), _ ->
         connection_properties.ended(session:, now:, source:)
       cast.StealthChanged(stealthed:), Some(entered) -> #(

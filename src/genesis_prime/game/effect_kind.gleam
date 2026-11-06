@@ -36,12 +36,16 @@
 ////   case for it, so the server decides every fire; the server reads the rows aimed at
 ////   the caster whose trigger is one of the holder's own events
 ////   (`Spell4Effects.effectType.14`).
-//// - **Unread** is any other type: the client's data holds it and no rule of the
+//// - **InterruptArmor** (52) adds Interrupt Armor to the unit it lands on for its time; the
 ////   server reads it.
 ////
 //// Reading a row's columns stays with each rule; this decode looks at the type
 //// only, and `is_row_read` adds the aim for the types a rule reads for some aims.
 
+///   client has no case for it, so the server raises the player's maximum (property 44) and
+///   armor (stat 21) itself and reads the rows aimed at the caster
+///   (`Spell4Effects.effectType.52`).
+/// - **Unread** is any other type: the client's data holds it and no rule of the
 import gleam/int
 
 /// What a rule reads an effect as.
@@ -96,6 +100,12 @@ pub type Kind {
   /// caster (`is_row_read`); the plan reads only the kinds the holder's own events make
   /// (genesis_prime/game/spell_plan `proc_read`).
   Proc
+  /// A ModifyInterruptArmor effect (52): adds Interrupt Armor to the unit it aims at for
+  /// its time (`Spell4Effects.effectType.52`). A row is read when its targetFlags include
+  /// the caster (bit 1) or name the primary target alone (2), which a spell cast on the
+  /// caster makes the caster; a row aimed only at the area or at other units is not read
+  /// (`is_row_read`).
+  InterruptArmor
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -117,6 +127,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     118 -> ShieldHeal
     64 -> ShieldOverload
     14 -> Proc
+    52 -> InterruptArmor
     other -> Unread(effect_type: other)
   }
 }
@@ -139,7 +150,8 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | RemoveStealth
     | ShieldHeal
     | ShieldOverload
-    | Proc -> True
+    | Proc
+    | InterruptArmor -> True
     Unread(..) -> False
   }
 }
@@ -147,8 +159,8 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
 /// type `is_read` for, except that a PropertyModifier, ForcedMove, CooldownModifier,
 /// Stealth, RemoveStealth or Proc row is read only when its flags include the caster (bit 1,
-/// `Spell4Effects.targetFlags`), a ShieldHeal row when they include the caster or are
-/// the primary target alone (2), and a ShieldOverload row only when they are the area
+/// `Spell4Effects.targetFlags`), a ShieldHeal or InterruptArmor row when they include the
+/// caster or are the primary target alone (2), and a ShieldOverload row only when they are the area
 /// alone (4); a row aimed at other units is left out. A plan of
 /// a spell with a Stealth or RemoveStealth row aimed other than at the caster alone
 /// fails to load (genesis_prime/game/spell_plan `StealthAimNotRead`).
@@ -163,7 +175,8 @@ pub fn is_row_read(
     | Stealth
     | RemoveStealth
     | Proc -> int.bitwise_and(target_flags, 1) == 1
-    ShieldHeal -> int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
+    ShieldHeal | InterruptArmor ->
+      int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
     Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
     Unread(..) -> False

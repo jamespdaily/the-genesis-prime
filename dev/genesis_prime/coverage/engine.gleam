@@ -192,7 +192,8 @@ fn quest_objectives() -> EngineDeclaration {
 /// type 84 and type 14 rows aimed only at other units, the type 118 rows aimed at the area
 /// and the type 64 rows aimed at the caster or its target, and the Stealth, RemoveStealth,
 /// Proc and HealShields rows the plan refuses, skips or holds, among them a heal aimed at
-/// the primary target of a spell a Proxy starts on each struck unit.
+/// the primary target of a spell a Proxy starts on each struck unit, and the type 52 rows
+/// aimed at the units a go strikes.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   let rows = spell4_effects.all(tables)
   let struck_children = spell_plan.struck_unit_children(effects: rows)
@@ -236,6 +237,11 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 14,
         reason: "kinds other than entering and leaving stealth, leaving combat and dying, and rows with a chance, a filter, a gate, another unit or a delay, which the plan refuses",
         fact_key: "Spell4Effects.effectType.14",
+      ),
+      Missing(
+        type_number: 52,
+        reason: "rows aimed at the units a go strikes, or at the primary target of a spell started on each struck unit, whose armor the server does not hold",
+        fact_key: "Spell4Effects.effectType.52",
       ),
       Missing(
         type_number: 64,

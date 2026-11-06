@@ -73,6 +73,16 @@
 ////   flags bit 2, which start and end the change and give the caster's node of the cast
 ////   its life. A row aimed only at other units is not read. Its caster apply
 ////   prerequisite, phases and spend tag are a Fluff effect's.
+//// - **The Interrupt Armor rows.** A ModifyInterruptArmor effect
+////   (`Spell4Effects.effectType.52`) whose targetFlags include the caster (bit 1), or are
+////   the primary target alone (2) in a spell cast on the caster, is a `PropertyModifier`
+////   row whose `armor` is set: a change of UnitProperty2 44, the maximum, of x * 1.0 +
+////   dataBits00, with the armor of dataBits00 points, which dataBits01 1 takes back at the
+////   end and 0 keeps; its delay, durationTime, flags bit 2, caster apply prerequisite,
+////   phases and spend tag are a type 11 row's. A dataBits01 other than 0 and 1 fails the
+////   load. A row aimed only at other units is not read. A child a Proxy starts on each
+////   struck unit that holds a row aimed at its primary target fails the load: Interrupt
+////   Armor on a struck unit is not built.
 //// - **The shield heals.** A HealShields effect (`Spell4Effects.effectType.118`) whose
 ////   targetFlags include the caster (bit 1), or are the primary target alone (2) in a spell
 ////   cast on the caster, is a `ShieldHeal` row: its formula (dataBits00 as a float,
@@ -706,7 +716,18 @@ pub type PropertyModifier {
     row: lasting.LastingRow,
     condition: Condition,
     tag: spend.Tag,
+    armor: Option(InterruptArmor),
   )
+}
+
+/// What a ModifyInterruptArmor row (`Spell4Effects.effectType.52`) adds to the change of
+/// property 44 it makes: the armor it gives the unit besides the maximum
+/// (genesis_prime/game/player_life `armor_given`). `points` is dataBits00, `takes_back` is
+/// dataBits01 (1 takes the points back when the row ends, 0 keeps the armor up to the new
+/// maximum) and `aim` is the unit the row's targetFlags name: the caster, or the primary
+/// target, which a spell cast on the caster makes the caster.
+pub type InterruptArmor {
+  InterruptArmor(points: Int, takes_back: Bool, aim: Aim)
 }
 
 /// A CCStateSet effect (`Spell4Effects.effectType.4`) of a spell: the unit it aims
@@ -970,6 +991,18 @@ pub type PlanError {
   /// a HealShields effect aimed at its primary target, a struck unit: `spell4_id` is the
   /// spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
   ShieldHealOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
+  /// A ModifyInterruptArmor effect of a tree has a dataBits01 that is not 0 or 1, the two
+  /// values that say whether the armor is taken back when it ends
+  /// (`Spell4Effects.effectType.52`).
+  InterruptArmorTakeBackNotRead(spell4_id: Int, effect_id: Int, value: Int)
+  /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds a
+  /// ModifyInterruptArmor effect aimed at its primary target, a struck unit: `spell4_id` is
+  /// the spell with the Proxy `proxy_effect_id`, and `effect_id` the row.
+  InterruptArmorOnStruckUnit(
+    spell4_id: Int,
+    proxy_effect_id: Int,
+    effect_id: Int,
+  )
   /// A Proc effect of a kind the server does not read (`proc_read`): the row is in no
   /// list of its spell and the load goes on, so this error is a skip, never a failure.
   ProcKindNotRead(spell4_id: Int, effect_id: Int, kind: Int)
@@ -1186,6 +1219,22 @@ pub fn describe(error error: PlanError) -> String {
       <> " that starts a child on each struck unit, which holds the HealShields effect "
       <> int.to_string(effect_id)
       <> " aimed at that unit, and a shield heal on a struck unit is not built"
+    InterruptArmorTakeBackNotRead(spell4_id:, effect_id:, value:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a ModifyInterruptArmor effect "
+      <> int.to_string(effect_id)
+      <> " whose dataBits01 is "
+      <> int.to_string(value)
+      <> ", and only 0 and 1 say whether the armor is taken back"
+    InterruptArmorOnStruckUnit(spell4_id:, proxy_effect_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proxy effect "
+      <> int.to_string(proxy_effect_id)
+      <> " that starts a child on each struck unit, which holds the ModifyInterruptArmor effect "
+      <> int.to_string(effect_id)
+      <> " aimed at that unit, and Interrupt Armor on a struck unit is not built"
     ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1480,7 +1529,13 @@ fn spell_of(
   use lasting <- result.try(lasting_of(tables:, spell4_id:, effects:))
   use removes <- result.try(removes_of(tables:, sources:, spell4_id:, effects:))
   use controls <- result.try(controls_of(spell4_id:, effects:))
-  use modifiers <- result.try(modifiers_of(tables:, spell4_id:, effects:))
+  use type_11_modifiers <- result.try(modifiers_of(
+    tables:,
+    spell4_id:,
+    effects:,
+  ))
+  use armors <- result.try(interrupt_armors_of(tables:, spell4_id:, effects:))
+  let modifiers = list.append(type_11_modifiers, armors)
   use forced_moves <- result.try(forced_moves_of(tables:, effects:))
   use cooldown_modifiers <- result.try(cooldown_modifiers_of(
     tables:,
@@ -1546,6 +1601,12 @@ fn spell_of(
         proxy_effect_id: effect.id,
         target:,
         heals: child.shield_heals,
+      ))
+      use Nil <- result.try(proxy_armors_read(
+        spell4_id:,
+        proxy_effect_id: effect.id,
+        target:,
+        modifiers: child.modifiers,
       ))
       use condition <- result.try(proxy_condition_of(tables:, effect:))
       Ok(Proxy(
@@ -2034,8 +2095,125 @@ fn modifiers_of(
       row: lasting_row_of(effect:),
       condition:,
       tag: tag_of(effect:),
+      armor: None,
     ))
   })
+}
+
+/// The ModifyInterruptArmor effects of a spell that reach the caster, each with its caster
+/// apply prerequisite read as a Fluff effect's is (`condition_of`).
+fn interrupt_armors_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(PropertyModifier), PlanError) {
+  interrupt_armors_in(spell4_id:, effects:, condition: fn(effect) {
+    condition_of(tables:, effect:, data_bits06_names_a_gate: False)
+  })
+}
+
+/// The ModifyInterruptArmor rows among `effects` that reach the caster
+/// (`effect_kind.is_row_read`), each read by `interrupt_armor_of` with the condition
+/// `condition` gives it. A row aimed only at other units is left out.
+fn interrupt_armors_in(
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+  condition condition: fn(spell4_effects.Spell4Effects) ->
+    Result(Condition, PlanError),
+) -> Result(List(PropertyModifier), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.InterruptArmor
+    && effect_kind.is_row_read(
+      effect_type: effect.effect_type,
+      target_flags: effect.target_flags,
+    )
+  })
+  |> list.try_map(fn(effect) {
+    use condition <- result.try(condition(effect))
+    interrupt_armor_of(spell4_id:, effect:, condition:)
+  })
+}
+
+/// One ModifyInterruptArmor row as the change of property 44 and the armor it makes, or
+/// the error that fails the load: dataBits00 is the points, dataBits01 0 or 1 says
+/// whether the end takes them back (`Spell4Effects.effectType.52`), and the row's delay,
+/// durationTime and flags bit 2 time it as a type 11 row's do. It aims at the caster when
+/// its targetFlags include it and else at the primary target.
+pub fn interrupt_armor_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  condition condition: Condition,
+) -> Result(PropertyModifier, PlanError) {
+  use armor <- result.map(interrupt_armor_read(spell4_id:, effect:))
+  PropertyModifier(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    modifier: unit_properties.interrupt_armor_modifier(points: armor.points),
+    row: lasting_row_of(effect:),
+    condition:,
+    tag: tag_of(effect:),
+    armor: Some(armor),
+  )
+}
+
+/// The armor a ModifyInterruptArmor row gives: its points, whether the end takes them
+/// back, and the unit its targetFlags aim at.
+fn interrupt_armor_read(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(InterruptArmor, PlanError) {
+  use takes_back <- result.map(case effect.data_bits01 {
+    0 -> Ok(False)
+    1 -> Ok(True)
+    value ->
+      Error(InterruptArmorTakeBackNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        value:,
+      ))
+  })
+  InterruptArmor(
+    points: effect.data_bits00,
+    takes_back:,
+    aim: case has_flag(flags: effect.target_flags, bit: 1) {
+      True -> AimsAtCaster
+      False -> AimsAtPrimaryTarget
+    },
+  )
+}
+
+/// A Proxy that starts its child on each unit its area strikes makes that unit the
+/// child's primary target, so an Interrupt Armor row of the child aimed at it fails the
+/// load: Interrupt Armor on a struck unit is not built. `spell4_id` is the spell with the
+/// Proxy `proxy_effect_id` and `modifiers` the child's. A child made on the caster, and a
+/// row that includes the caster, are read.
+pub fn proxy_armors_read(
+  spell4_id spell4_id: Int,
+  proxy_effect_id proxy_effect_id: Int,
+  target target: ProxyTarget,
+  modifiers modifiers: List(PropertyModifier),
+) -> Result(Nil, PlanError) {
+  case target {
+    OnCaster -> Ok(Nil)
+    OnEachStruck ->
+      case
+        list.find(modifiers, fn(modifier) {
+          case modifier.armor {
+            Some(armor) -> armor.aim == AimsAtPrimaryTarget
+            None -> False
+          }
+        })
+      {
+        Ok(modifier) ->
+          Error(InterruptArmorOnStruckUnit(
+            spell4_id:,
+            proxy_effect_id:,
+            effect_id: modifier.effect_id.value,
+          ))
+        Error(Nil) -> Ok(Nil)
+      }
+  }
 }
 
 /// The ForcedMove effects of a spell whose targetFlags include the caster
@@ -2394,11 +2572,12 @@ pub fn struck_unit_children(
 }
 
 /// Whether the plan reads this effect row: its type is read for its aim
-/// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth, Proc or HealShields row,
-/// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
-/// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
-/// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
-/// struck unit, which fails the load, `proxy_heals_read`). The coverage measure counts the
+/// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth, Proc, HealShields or
+/// ModifyInterruptArmor row, the plan does not refuse, skip or hold it (`stealth_read`,
+/// `stealth_on_the_caster`, `proc_read`, `shield_heal_of`: a periodic heal is held and not
+/// applied; `interrupt_armor_read`; and a heal or armor aimed at the primary target of a
+/// spell in `struck_children`, the spells a Proxy starts on each struck unit, which fails
+/// the load, `proxy_heals_read`, `proxy_armors_read`). The coverage measure counts the
 /// other rows as not read, so it and the plan cannot disagree.
 pub fn effect_row_read(
   effect effect: spell4_effects.Spell4Effects,
@@ -2424,6 +2603,13 @@ pub fn effect_row_read(
             || !set.contains(struck_children, effect.spell_id)
           TickingShieldHeal(..) -> False
         }
+      })
+      |> result.unwrap(or: False)
+    effect_kind.InterruptArmor ->
+      interrupt_armor_read(spell4_id: effect.spell_id, effect:)
+      |> result.map(fn(armor) {
+        armor.aim != AimsAtPrimaryTarget
+        || !set.contains(struck_children, effect.spell_id)
       })
       |> result.unwrap(or: False)
     effect_kind.Proxy

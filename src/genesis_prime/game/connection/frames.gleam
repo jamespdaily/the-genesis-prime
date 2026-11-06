@@ -158,6 +158,8 @@ pub fn own_unit_frame(
     player_life.OwnCombatState(in_combat:) ->
       combat_state_frame(unit_id:, in_combat:)
     player_life.OwnShield(shield:) -> shield_frame(unit_id:, shield:)
+    player_life.OwnInterruptArmor(armor:) ->
+      interrupt_armor_frame(unit_id:, armor:)
     player_life.OwnHealth(health:) -> {
       let assert Ok(body) =
         player_health.encode(PlayerHealth(unit_id:, health:, reason_mask: 0))

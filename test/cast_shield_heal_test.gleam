@@ -44,7 +44,7 @@ import genesis_prime/step.{type TimerId, LogDebug, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import prerequisite_support as prerequisites
@@ -147,6 +147,7 @@ fn heals(effects effects: List(Effect)) -> List(#(Source, Int)) {
       cast.CasterChangeStarts(source:, change: cast.ShieldHeal(amount:)) ->
         Ok(#(source, amount))
       cast.CasterChangeStarts(change: cast.Property(..), ..)
+      | cast.CasterChangeStarts(change: cast.Armor(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -317,6 +318,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
       ),
       condition: Always,
       tag: spend.always,
+      armor: None,
     )
   let plans =
     plans_of([
@@ -339,6 +341,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     case effect {
       cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
       cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
+      | cast.CasterChangeStarts(change: cast.Armor(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)

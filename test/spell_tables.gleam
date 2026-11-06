@@ -392,6 +392,60 @@ pub fn effect_row(
   ])
 }
 
+/// A Spell4Effects row in memory with every column 0 but its id, spell, type, aim and
+/// phases (every one), for a test of a function that reads one row.
+pub fn blank_effect(
+  id id: Int,
+  spell spell: Int,
+  effect_type effect_type: Int,
+  target_flags target_flags: Int,
+) -> spell4_effects.Spell4Effects {
+  spell4_effects.Spell4Effects(
+    id:,
+    spell_id: spell,
+    target_flags:,
+    effect_type:,
+    damage_type: 0,
+    delay_time: 0,
+    tick_time: 0,
+    duration_time: 0,
+    flags: 0,
+    data_bits00: 0,
+    data_bits01: 0,
+    data_bits02: 0,
+    data_bits03: 0,
+    data_bits04: 0,
+    data_bits05: 0,
+    data_bits06: 0,
+    data_bits07: 0,
+    data_bits08: 0,
+    data_bits09: 0,
+    innate_cost_per_tick_type0: 0,
+    innate_cost_per_tick_type1: 0,
+    innate_cost_per_tick0: 0,
+    innate_cost_per_tick1: 0,
+    emm_comparison: 0,
+    emm_value: 0,
+    threat_multiplier: 0.0,
+    spell4_effect_group_list_id: 0,
+    prerequisite_id_caster_apply: 0,
+    prerequisite_id_target_apply: 0,
+    prerequisite_id_caster_persistence: 0,
+    prerequisite_id_target_persistence: 0,
+    prerequisite_id_target_suspend: 0,
+    parameter_type00: 0,
+    parameter_type01: 0,
+    parameter_type02: 0,
+    parameter_type03: 0,
+    parameter_value00: 0.0,
+    parameter_value01: 0.0,
+    parameter_value02: 0.0,
+    parameter_value03: 0.0,
+    phase_flags: -1,
+    order_index: 0,
+  )
+}
+
 /// A Proxy effect that applies only behind a caster prerequisite
 /// (`Spell4Effects.prerequisiteIdCasterApply`).
 pub fn proxy_behind_prerequisite(
@@ -1855,11 +1909,12 @@ pub fn rows() -> Rows {
 }
 
 /// The UnitProperty2 defaults of the properties the server's rules and plans name, the
-/// client's (`table_rows -- UnitProperty2 7 8 35 36 41 42 100 102 104 127 134 175
+/// client's (`table_rows -- UnitProperty2 7 8 35 36 41 42 44 100 102 104 127 134 175
 /// 177`): BaseHealth 1.0, HealthRegenMultiplier 1.0, AssaultRating 0.0, SupportRating
-/// 0.0, ShieldCapacityMax 0.0, Armor 0.0, MoveSpeedMultiplier 1.0, BaseCritChance 0.0,
-/// BaseAvoidReduceChance 0.0, CriticalHitSeverityMultiplier 1.5,
-/// FallingDamageMultiplier 1.0, ShieldMitigationMax 0.0 and ShieldTickTime 500.0.
+/// 0.0, ShieldCapacityMax 0.0, Armor 0.0, InterruptArmor_Threshold 0.0,
+/// MoveSpeedMultiplier 1.0, BaseCritChance 0.0, BaseAvoidReduceChance 0.0,
+/// CriticalHitSeverityMultiplier 1.5, FallingDamageMultiplier 1.0, ShieldMitigationMax
+/// 0.0 and ShieldTickTime 500.0.
 pub fn unit_property_defaults() -> List(#(Int, Float)) {
   [
     #(7, 1.0),
@@ -1868,6 +1923,7 @@ pub fn unit_property_defaults() -> List(#(Int, Float)) {
     #(36, 0.0),
     #(41, 0.0),
     #(42, 0.0),
+    #(44, 0.0),
     #(100, 1.0),
     #(102, 0.0),
     #(104, 0.0),
