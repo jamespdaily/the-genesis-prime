@@ -294,12 +294,12 @@ pub fn the_effect_types_3_11_73_83_and_84_are_partial_with_a_reason_and_a_fact_k
       ),
       Missing(
         type_number: 83,
-        reason: "rows aimed at another unit, which hold no stealth the server keeps",
+        reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
         fact_key: "Spell4Effects.effectType.83",
       ),
       Missing(
         type_number: 84,
-        reason: "rows aimed at another unit, whose stealth the server does not hold",
+        reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
       ),
     ]
@@ -521,25 +521,29 @@ pub fn the_clients_522_type_73_rows_count_488_handled_and_34_not_test() -> Nil {
 }
 
 /// The measure of planted type 83 or 84 rows beside a type 8 row, for the line of the
-/// type given: Spell4Effects.targetFlags bit 1 is the caster, and the plan reads a Stealth
-/// or RemoveStealth row that includes it and leaves out one aimed only at others.
+/// type given, each row as (targetFlags, durationTime): Spell4Effects.targetFlags bit 1 is
+/// the caster, and the plan reads a Stealth or RemoveStealth row aimed at the caster alone
+/// and, for a Stealth row, with no delayTime or durationTime.
 fn measured_stealth_rows(
   type_ type_: Int,
-  flags flags: List(Int),
+  rows rows: List(#(Int, Int)),
 ) -> measurement.Measurement {
-  let row = fn(id, type_, flags) {
+  let row = fn(id, type_, flags, duration) {
     planted_table.row(spell4_effects.schema, [
       #("ID", planted_table.Integer(id)),
       #("effectType", planted_table.Integer(type_)),
       #("targetFlags", planted_table.Integer(flags)),
+      #("durationTime", planted_table.Integer(duration)),
     ])
   }
   use folder <- planted_table.in_folder([
     planted_table.file(
       spell4_effects.schema,
       list.append(
-        list.index_map(flags, fn(flag, index) { row(index + 1, type_, flag) }),
-        [row(99, 8, 4)],
+        list.index_map(rows, fn(planted, index) {
+          row(index + 1, type_, planted.0, planted.1)
+        }),
+        [row(99, 8, 4, 0)],
       ),
     ),
   ])
@@ -564,39 +568,46 @@ fn measured_stealth_rows(
   measured
 }
 
-pub fn the_type_83_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
+pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Planted: three type 83 rows, flags 1, 2 and 4, and one type 8 row.
+  // Planted: four type 83 rows, flags 1, 2, 4 and 1 with a durationTime of 8000, and one
+  // type 8 row.
   let assert Measured(types:, ..) =
-    measured_stealth_rows(type_: 83, flags: [1, 2, 4])
+    measured_stealth_rows(type_: 83, rows: [
+      #(1, 0),
+      #(2, 0),
+      #(4, 0),
+      #(1, 8000),
+    ])
   let assert Ok(line) = list.find(types, fn(line) { line.type_number == 83 })
-  assert line.rows == 3
+  assert line.rows == 4
   assert line.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, which hold no stealth the server keeps",
+      reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
       fact_key: "Spell4Effects.effectType.83",
-      unread_rows: 2,
+      unread_rows: 3,
     )
-    as "two of the three rows aim only at others and are not read"
+    as "two of the four rows aim only at others and the timed one is refused by the plan: three are not read"
 }
 
 pub fn the_type_84_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Planted: two type 84 rows, flags 1 and 2, and one type 8 row.
+  // Planted: two type 84 rows, flags 1 and 2, and one type 8 row. A RemoveStealth row's
+  // durationTime is not a timed stealth and the plan does not refuse it.
   let assert Measured(types:, ..) =
-    measured_stealth_rows(type_: 84, flags: [1, 2])
+    measured_stealth_rows(type_: 84, rows: [#(1, 5000), #(2, 0)])
   let assert Ok(line) = list.find(types, fn(line) { line.type_number == 84 })
   assert line.rows == 2
   assert line.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, whose stealth the server does not hold",
+      reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
       fact_key: "Spell4Effects.effectType.84",
       unread_rows: 1,
     )
     as "one of the two rows aims only at others and is not read"
 }
 
-pub fn the_clients_74_type_83_rows_and_9_type_84_rows_have_11_and_4_aimed_only_at_others_test() -> Nil {
+pub fn the_clients_74_type_83_rows_count_51_not_read_and_its_9_type_84_rows_4_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let assert Measured(types:, ..) =
@@ -610,16 +621,16 @@ pub fn the_clients_74_type_83_rows_and_9_type_84_rows_have_11_and_4_aimed_only_a
     as "table_rows -- Spell4Effects effectType=83: 74 rows"
   assert stealth.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, which hold no stealth the server keeps",
+      reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
       fact_key: "Spell4Effects.effectType.83",
-      unread_rows: 11,
+      unread_rows: 51,
     )
-    as "targetFlags 1 in 63 rows is the caster; 2 in 7 rows and 4 in 4 aim only at others, so the gap is real and the partial entry stays"
+    as "23 of the 74 rows are read: targetFlags 1 is the caster in 63 rows, 2 in 7 and 4 in 4 aim only at others (11), 38 of the caster rows hold a durationTime or delayTime, and 2 more of the untimed ones hold a target apply prerequisite (`table_rows -- Spell4Effects effectType=83`, columns targetFlags, delayTime, durationTime and prerequisiteIdTargetApply): 11 + 38 + 2 = 51"
   let assert Ok(remove) = list.find(types, fn(line) { line.type_number == 84 })
   assert remove.rows == 9 as "table_rows -- Spell4Effects effectType=84: 9 rows"
   assert remove.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, whose stealth the server does not hold",
+      reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
       fact_key: "Spell4Effects.effectType.84",
       unread_rows: 4,
     )

@@ -26,6 +26,7 @@ import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 
 /// Where the types an engine must handle are found in the client.
 pub type Source {
@@ -179,15 +180,48 @@ fn quest_objectives() -> EngineDeclaration {
 }
 
 /// The rows of the effect type that the effect rule does not read (genesis_prime/game/effect_kind
-/// `is_row_read`): the type 3, type 11, type 73, type 83 and type 84 rows aimed only at other units.
+/// `is_row_read`): the type 3, type 11, type 73, type 83 and type 84 rows aimed only at other
+/// units, and the Stealth and RemoveStealth rows the plan refuses (`refused_by_the_plan`).
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   list.count(spell4_effects.all(tables), fn(row) {
     row.effect_type == type_number
-    && !effect_kind.is_row_read(
-      effect_type: row.effect_type,
-      target_flags: row.target_flags,
-    )
+    && {
+      !effect_kind.is_row_read(
+        effect_type: row.effect_type,
+        target_flags: row.target_flags,
+      )
+      || refused_by_the_plan(row:)
+    }
   })
+}
+
+/// Whether the plan refuses a Stealth or RemoveStealth row, by the plan's own check
+/// (genesis_prime/game/spell_plan `stealth_read`, `stealth_on_the_caster`): a row aimed other
+/// than at the caster alone or behind a target prerequisite, and a Stealth row with a
+/// delayTime or durationTime (timed stealth) or a dataBits02 the plan has no case for.
+fn refused_by_the_plan(row row: spell4_effects.Spell4Effects) -> Bool {
+  case effect_kind.kind_of(row.effect_type) {
+    effect_kind.Stealth ->
+      result.is_error(spell_plan.stealth_read(
+        spell4_id: row.spell_id,
+        effect: row,
+      ))
+    effect_kind.RemoveStealth ->
+      result.is_error(spell_plan.stealth_on_the_caster(
+        spell4_id: row.spell_id,
+        effect: row,
+      ))
+    effect_kind.Proxy
+    | effect_kind.Damage
+    | effect_kind.VitalModifier
+    | effect_kind.Fluff
+    | effect_kind.ForceRemove
+    | effect_kind.CrowdControl
+    | effect_kind.PropertyModifier
+    | effect_kind.ForcedMove
+    | effect_kind.CooldownModifier
+    | effect_kind.Unread(..) -> False
+  }
 }
 
 /// The spell effect engine: the `effectType` column of Spell4Effects, the
@@ -226,12 +260,12 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 83,
-        reason: "rows aimed at another unit, which hold no stealth the server keeps",
+        reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
         fact_key: "Spell4Effects.effectType.83",
       ),
       Missing(
         type_number: 84,
-        reason: "rows aimed at another unit, whose stealth the server does not hold",
+        reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
       ),
     ],
