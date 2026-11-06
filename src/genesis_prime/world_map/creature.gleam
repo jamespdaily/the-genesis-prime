@@ -59,8 +59,8 @@
 ////   retiring until it ends and a corpse is never shown to a viewer that comes
 ////   after.
 //// - **A strike's crowd-control states** land after its damage, on a creature that
-////   lives and has no Interrupt Armor, and the answer's `Landed` names the ones that
-////   did; while the creature holds one it does not act
+////   lives and whose Interrupt Armor is already 0 (a strike on armor above 0 wears it down
+////   instead), and the answer's `Landed` names the ones that did; while the creature holds one it does not act
 ////   (genesis_prime/world_map/creature_control).
 //// - **A strike** is told by the connection of the caster through the creature
 ////   registry with no watch (genesis_prime/world_map/creature_registry `tell`), and
@@ -149,6 +149,10 @@ const run_watch = WatchId(1)
 /// The corpse timer. The fight's timers are numbered from it by kind and
 /// generation (`timer_id`), so none is 1.
 const corpse_timer = TimerId(1)
+
+/// The timer of the creature's Interrupt Armor refill: 2, which no fight timer is (they
+/// start at 6) and no control's (they start at 5).
+const refill_timer = TimerId(2)
 
 /// What a creature is started with: which creature of which run it is and the
 /// map's clock (`CreatureStart`), the spawn it stands at, found by the id the start
@@ -366,6 +370,15 @@ pub fn step(
           )
         }
       }
+    OwnEvent(ServiceTimerFired(timer:)) if timer == refill_timer -> {
+      let #(control, effects) =
+        creature_control.refilled(
+          state: state.control,
+          armor: state.body.combat.interrupt_armor,
+        )
+      let state = State(..state, control:)
+      #(state, Effects(carried(state:, effects:)))
+    }
     OwnEvent(ServiceTimerFired(timer:)) ->
       case control_of(timer:), fight_timer(timer:) {
         Ok(number), _ -> control_ended(state:, number:, now_ms:)
@@ -460,9 +473,9 @@ fn struck(
 /// the controls to take them (`creature_control.land`), which land on a creature
 /// the strike left alive and name the ones that did in the answer, and the fight
 /// stops the creature's path when it held no state before; a strike that kills a
-/// creature that holds states drops them with no 0x880 (`creature_control.died`). A
-/// strike with no state that kills no controlled creature touches no control, and its
-/// answer stands.
+/// creature that holds states or worn armor drops them with no 0x880
+/// (`creature_control.died`). A strike with no state that kills no such creature touches
+/// no control, and its answer stands.
 fn controls_after(
   state state: State,
   tell tell: StrikeTell,
@@ -472,7 +485,7 @@ fn controls_after(
   case
     tell.controls,
     reaction.corpse_for_ms,
-    creature_control.holds(state: state.control)
+    creature_control.holds_anything(state: state.control)
   {
     [], None, _ | [], Some(..), False -> #(state, reaction.answer, [])
     _, Some(..), _ -> {
@@ -492,6 +505,7 @@ fn controls_after(
               state: state.control,
               tell:,
               armor: state.body.combat.interrupt_armor,
+              refill_ms: state.settings.numbers.interrupt_armor_refill_ms,
               now_ms:,
             )
           let state = State(..state, control: landing.state)
@@ -522,8 +536,8 @@ fn controls_after(
   }
 }
 
-/// The effects the creature's controls ask for, carried out: news to every viewer,
-/// the control timers, and a log line about this creature's map.
+/// The effects the creature's controls ask for, carried out: news to every viewer and
+/// the control and refill timers.
 fn carried(
   state state: State,
   effects effects: List(creature_control.Effect),
@@ -540,15 +554,11 @@ fn carried(
       creature_control.CancelTimer(control:) -> [
         OwnEffect(step.CancelServiceTimer(timer: control_timer(control:))),
       ]
-      creature_control.Log(level:, text:) -> [
-        step.Log(line: step.LogLine(
-          level:,
-          text:,
-          about: step.About(
-            ..step.no_one,
-            map: Some(state.settings.creature.map),
-          ),
-        )),
+      creature_control.StartRefill(after_ms:) -> [
+        OwnEffect(step.StartServiceTimer(timer: refill_timer, after_ms:)),
+      ]
+      creature_control.CancelRefill -> [
+        OwnEffect(step.CancelServiceTimer(timer: refill_timer)),
       ]
     }
   })
@@ -673,7 +683,8 @@ fn fighter_of(state state: State) -> Fighter {
 /// tick, the strike deadline and the walk home, by generation, so none is the
 /// corpse timer's 1 and a timer of an old generation is never the new one's. The
 /// ids 1 above a multiple of 4 are the corpse timer's (1) and the controls' (5, 9, 13
-/// ...: `control_timer`), so no two timers of a creature share an id.
+/// ...: `control_timer`), and the refill timer is 2, so no two timers of a creature share
+/// an id.
 fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
   case timer {
     AttackTick(generation:) -> TimerId(4 * generation + 2)
@@ -736,6 +747,10 @@ fn appeared(
         spawn: Spawn(..state.settings.spawn, place:),
         unit_id: creature.unit_id,
         health: creature_life.health(life: state.life),
+        interrupt_armor: creature_control.armor_now(
+          state: state.control,
+          armor: state.body.combat.interrupt_armor,
+        ),
         server_time_estimate_start: map.server_time(
           origin_ms: creature.clock_origin_ms,
           monotonic_ms: now_ms,

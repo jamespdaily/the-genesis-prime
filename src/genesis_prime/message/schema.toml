@@ -2082,10 +2082,10 @@ id = 0x0938
 name = "unit_stat_changed"
 direction = "server_to_client"
 evidence = "opcode.0x938"
-summary = "a unit's stat changed, as an integer: stat 20 is the shield, 22 the absorption and 10 the level, and stat 0 (health) is not taken here; the server writes it only for stat 20, since for stats 2 to 9 it sets the resource slot to 0 (0x935 sets those)"
+summary = "a unit's stat changed, as an integer: stat 20 is the shield, 21 the Interrupt Armor (clamped by the client to 0 and the unit's maximum), 22 the absorption and 10 the level, and stat 0 (health) is not taken here; the server writes it only for stats 20 and 21, since for stats 2 to 9 it sets the resource slot to 0 (0x935 sets those)"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
-  { name = "shield_stat", kind = "constant", bits = 5, value = 20, evidence = "opcode.0x938", named_by = "opcode.0x938.resource_stats" },
+  { name = "stat", kind = "unsigned", bits = 5, evidence = "opcode.0x938", named_by = "opcode.0x938", values_type = "StatKind", values = [ { value = 10, name = "level", evidence = "opcode.0x938" }, { value = 20, name = "shield", evidence = "opcode.0x938.resource_stats" }, { value = 21, name = "interrupt_armor", evidence = "opcode.0x938.interrupt_armor" }, { value = 22, name = "absorption", evidence = "opcode.0x938" } ] },
   { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
 ]
 

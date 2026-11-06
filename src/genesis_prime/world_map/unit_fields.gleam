@@ -39,6 +39,10 @@ pub const level_stat = 10
 /// The stat the client keeps a unit's current shield in (0x140458140).
 pub const shield_stat = 20
 
+/// The stat the client keeps a unit's current Interrupt Armor in: set by the create's
+/// stat list and by a 0x938 (`opcode.0x938.interrupt_armor`).
+const interrupt_armor_stat = 21
+
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).
 pub const base_health_property = 7
@@ -143,13 +147,15 @@ pub fn tail(
 }
 
 /// The tail of a unit the server stands at a spawn, a creature's or a static
-/// object's: stat 0 at `health` and stat 10 at `level`, each when given, the kind
+/// object's: stat 0 at `health`, stat 10 at `level` and stat 21 at `interrupt_armor`,
+/// each when given, the kind
 /// 2 and kind 14 commands of `standing` (`player_unit.standing`), which place it
 /// at once, Base Health (property 7) at `base_health` when given, no item
 /// visuals, and the rest as given.
 pub fn spawned_tail(
   health health: Option(Int),
   level level: Option(Int),
+  interrupt_armor interrupt_armor: Option(Int),
   base_health base_health: Option(Int),
   standing standing: #(UnitPositionCommand, MovementRotation),
   faction_id faction_id: Int,
@@ -167,6 +173,9 @@ pub fn spawned_tail(
         integer_stat(stat_id: health_stat, value:)
       }),
       option.map(level, fn(value) { integer_stat(stat_id: level_stat, value:) }),
+      option.map(interrupt_armor, fn(value) {
+        integer_stat(stat_id: interrupt_armor_stat, value:)
+      }),
     ]),
     movement_commands: [
       start_movement.Position(position),

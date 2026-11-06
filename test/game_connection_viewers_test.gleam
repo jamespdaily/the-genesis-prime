@@ -23,6 +23,7 @@ import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/start_movement
+import genesis_prime/message/stat_kind
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_create_player.{
@@ -33,6 +34,7 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/step.{
   ConnectionId, LogError, LogInfo, Map, OwnEffect, OwnEvent, Woken,
 }
@@ -1252,4 +1254,32 @@ pub fn a_shown_units_crowd_control_news_is_written_as_0x87f_and_0x880_and_none_f
     assert support.writes(taken) == []
       as "a unit the viewer's client does not show is written nothing"
   })
+}
+
+pub fn a_shown_units_interrupt_armor_news_is_written_as_0x938_of_stat_21_and_none_for_a_unit_not_shown_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(shown, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.event_of(Appears),
+    )
+  let news_of = fn(unit_id) {
+    game_connection_support.for_stay(
+      game_connection_support.own_stay(),
+      SentByPeer(PeerNews(
+        unit_id:,
+        news: client_connection.InterruptArmor(armor: 1),
+      )),
+    )
+  }
+  let #(_, taken) = game_connection_support.feed(shown, news_of(9))
+  let assert [Frame(message_id: 0x0938, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "opcode.0x938"
+  assert unit_stat_changed.decode(body)
+    == Ok(UnitStatChanged(unit_id: 9, stat: stat_kind.InterruptArmor, value: 1))
+    as "stat 21 with the current armor (opcode.0x938.interrupt_armor)"
+  let #(_, taken) = game_connection_support.feed(shown, news_of(77))
+  assert support.writes(taken) == []
+    as "a unit the viewer's client does not show is written nothing"
 }

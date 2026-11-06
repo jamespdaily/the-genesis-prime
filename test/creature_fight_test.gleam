@@ -51,6 +51,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
 import gleam/set
@@ -303,6 +304,8 @@ fn name_of(news: News) -> String {
     | client_connection.Shield(..) -> "other"
     client_connection.CrowdControlApplied(..) -> "0x87f"
     client_connection.CrowdControlEnded(..) -> "0x880"
+    client_connection.InterruptArmor(armor:) ->
+      "0x938(21, " <> int.to_string(armor) <> ")"
   }
 }
 
@@ -1660,10 +1663,6 @@ fn timers_cancelled(
   })
 }
 
-fn log_lines(taken: ServiceStep(creature.Outgoing)) -> List(String) {
-  list.map(support.logs(taken), fn(line) { line.text })
-}
-
 pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f_and_the_answer_names_it_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, taken) =
@@ -1692,39 +1691,6 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
   assert creature.controlled(state:)
   assert control_timers(taken) == [#(step.TimerId(5), 3166)]
     as "one timer for the state, 166 + 3000 from the tell; ids 4n + 1 from 5"
-  assert log_lines(taken) == []
-}
-
-pub fn a_creature_with_armor_above_0_or_infinite_takes_no_state_and_logs_one_line_test() -> Nil {
-  use <- owned_test.run(5000)
-  list.each(
-    [creature_life.Armor(points: 3), creature_life.InfiniteArmor],
-    fn(armor) {
-      let #(state, first) =
-        tell(
-          state: armored(armor:),
-          at_ms: 1000,
-          message: controlling(number: 2, cast_id: 1, controls: [
-            crowd_control_support.stagger_stun(instance_id: 28_673),
-          ]),
-        )
-      assert landed_in(first) == [] && state_news(first, 2) == []
-        as "nothing lands and no 0x87f is sent"
-      assert !creature.controlled(state:) && control_timers(first) == []
-      assert list.length(log_lines(first)) == 1
-        as "one line says the armor rules are not built"
-      let #(_, second) =
-        tell(
-          state:,
-          at_ms: 2000,
-          message: controlling(number: 2, cast_id: 2, controls: [
-            crowd_control_support.stagger_stun(instance_id: 28_674),
-          ]),
-        )
-      assert log_lines(second) == []
-        as "and the line is logged once for the creature"
-    },
-  )
 }
 
 pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_before_test() -> Nil {
@@ -1914,4 +1880,215 @@ pub fn a_deflected_stun_only_strike_lands_no_state_and_sends_no_0x87f_test() -> 
     && control_timers(taken) == []
     && state_news(taken, 2) == []
     && landed_in(taken) == []
+}
+
+// ---- Interrupt Armor (`genesis_prime/world_map/creature_control`) ----
+//
+// Expected values come from these places: Jim's decision for the step (Design 445
+// section 3): a state lands only on a creature whose armor is already 0 when the strike
+// arrives, a strike on armor above 0 lands none and destroys the row's dataBits03 points
+// (Stagger's Stun 83827 removes 1), never below 0, and infinite armor (-1) takes none and
+// loses nothing; the viewers are told the current value as 0x938 of stat 21
+// (`opcode.0x938.interrupt_armor`), which the client clamps to 0 and the maximum; armor
+// returns to its maximum `interrupt_armor_refill_ms` after the strike (10000 ms, migration
+// 0016's server choice, `spawn_support.numbers`), and a later strike restarts the wait.
+
+/// The step's 0x938 of stat 21 to viewer `number`, as the fight tests name them.
+fn armor_news(
+  taken: ServiceStep(creature.Outgoing),
+  number: Int,
+) -> List(String) {
+  list.filter(list.map(news_to(taken, number), name_of), fn(name) {
+    string.starts_with(name, "0x938(21")
+  })
+}
+
+/// The refill timers the step starts, with their times.
+fn refill_timers(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(step.TimerId, Int)) {
+  list.filter(timers(taken), fn(started) { started.0 == step.TimerId(2) })
+}
+
+fn stunning(
+  from from: Int,
+  cast_id cast_id: Int,
+  instance_id instance_id: Int,
+) -> creature.Message {
+  controlling(number: from, cast_id:, controls: [
+    crowd_control_support.stagger_stun(instance_id:),
+  ])
+}
+
+pub fn armor_wears_down_by_the_rows_points_and_the_state_lands_once_it_is_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) =
+    tell(
+      state: armored(armor: creature_life.Armor(points: 2)),
+      at_ms: 1000,
+      message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+    )
+  assert landed_in(first) == [] && state_news(first, 2) == []
+    as "armor 2: the first strike lands no state"
+  assert armor_news(first, 2) == ["0x938(21, 1)"]
+    && armor_news(first, 5) == ["0x938(21, 1)"]
+    as "it destroys the row's 1 point and every viewer is told the 1 left"
+  assert !creature.controlled(state:)
+  let #(state, second) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: stunning(from: 2, cast_id: 2, instance_id: 28_674),
+    )
+  assert landed_in(second) == [] && armor_news(second, 2) == ["0x938(21, 0)"]
+    as "the second takes the last point, and still lands nothing: the armor was above 0 when it arrived"
+  let #(state, third) =
+    tell(
+      state:,
+      at_ms: 3000,
+      message: stunning(from: 2, cast_id: 3, instance_id: 28_675),
+    )
+  assert landed_in(third)
+    == [
+      strike_tell.ControlLanded(
+        tell: crowd_control_support.stagger_stun(instance_id: 28_675),
+        ends_at_ms: 15_500,
+      ),
+    ]
+    as "the third finds the armor at 0 and lands: arrival 10000 + 3000, plus 2500"
+  assert armor_news(third, 2) == [] && creature.controlled(state:)
+    as "armor 0 changes no more, and the state holds"
+}
+
+pub fn armor_is_never_destroyed_below_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  // One strike with two rows of 1 each on armor 1.
+  let #(_, taken) =
+    tell(
+      state: armored(armor: creature_life.Armor(points: 1)),
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+        crowd_control_support.stagger_stun(instance_id: 28_674),
+      ]),
+    )
+  assert armor_news(taken, 2) == ["0x938(21, 0)"] && landed_in(taken) == []
+    as "2 points of rows on 1 point of armor leave 0, and none of the strike's states lands"
+}
+
+pub fn infinite_armor_takes_no_state_and_loses_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    tell(
+      state: armored(armor: creature_life.InfiniteArmor),
+      at_ms: 1000,
+      message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+    )
+  assert landed_in(taken) == []
+    && armor_news(taken, 2) == []
+    && state_news(taken, 2) == []
+    && refill_timers(taken) == []
+    && !creature.controlled(state:)
+    as "infinite armor (-1): no state, no 0x938, nothing to refill"
+}
+
+pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) =
+    tell(
+      state: armored(armor: creature_life.Armor(points: 2)),
+      at_ms: 1000,
+      message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+    )
+  assert refill_timers(first) == [#(step.TimerId(2), 10_000)]
+    as "the refill waits interrupt_armor_refill_ms from the strike"
+  let #(state, second) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: stunning(from: 2, cast_id: 2, instance_id: 28_674),
+    )
+  assert list.contains(timers_cancelled(second), step.TimerId(2))
+    && refill_timers(second) == [#(step.TimerId(2), 10_000)]
+    as "a strike before it cancels the wait and starts it again"
+  let #(state, refilled) = fire(state:, at_ms: 15_000, timer: step.TimerId(2))
+  assert armor_news(refilled, 2) == ["0x938(21, 2)"]
+    && armor_news(refilled, 5) == ["0x938(21, 2)"]
+    as "armor is back at its maximum 2, told to every viewer"
+  let #(_, again) =
+    tell(
+      state:,
+      at_ms: 16_000,
+      message: stunning(from: 2, cast_id: 3, instance_id: 28_675),
+    )
+  assert landed_in(again) == [] && armor_news(again, 2) == ["0x938(21, 1)"]
+    as "the refilled armor wears down again before a state lands"
+  let #(_, full) =
+    fire(
+      state: armored(armor: creature_life.Armor(points: 2)),
+      at_ms: 1000,
+      timer: step.TimerId(2),
+    )
+  assert support.effects_of(full) == []
+    as "a refill timer that fires with the armor full does nothing"
+}
+
+pub fn a_creature_killed_with_worn_armor_cancels_its_refill_and_stands_again_at_full_armor_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: armored(armor: creature_life.Armor(points: 2)),
+      at_ms: 1000,
+      message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+    )
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: strike_of(number: 2, cast_id: 2, blows: [#(1, 1000, 1.0)]),
+    )
+  assert list.contains(timers_cancelled(killed), step.TimerId(2))
+    as "the refill timer is cancelled at the death"
+  let #(_, late) = fire(state:, at_ms: 11_000, timer: step.TimerId(2))
+  assert support.effects_of(late) == []
+    as "a refill timer already waiting in the mailbox writes nothing"
+  let #(_, arrived) =
+    tell(
+      state:,
+      at_ms: 12_000,
+      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+    )
+  let assert [CreatureAppeared(unit:, ..), ..] = news_to(arrived, 9)
+    as "the viewer's 0x262"
+  assert unit_fields.stat(tail: unit.tail, stat_id: 21) == Ok(2)
+    as "armor is back at its maximum"
+}
+
+pub fn a_creatures_0x262_carries_its_current_armor_above_0_and_none_otherwise_test() -> Nil {
+  use <- owned_test.run(5000)
+  let stat_of = fn(state) {
+    let #(_, arrived) =
+      tell(
+        state:,
+        at_ms: 2000,
+        message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+      )
+    let assert [CreatureAppeared(unit:, ..), ..] = news_to(arrived, 9)
+      as "the viewer's 0x262"
+    unit_fields.stat(tail: unit.tail, stat_id: 21)
+  }
+  let worn = armored(armor: creature_life.Armor(points: 3))
+  assert stat_of(worn) == Ok(3)
+    as "the create's stat list sets stat 21, which the client reads (opcode.0x938.interrupt_armor)"
+  let #(struck, _) =
+    tell(
+      state: worn,
+      at_ms: 1000,
+      message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+    )
+  assert stat_of(struck) == Ok(2)
+    as "a viewer that arrives after a strike is shown the current value"
+  assert stat_of(armored(armor: creature_life.NoArmor)) == Error(Nil)
+    && stat_of(armored(armor: creature_life.InfiniteArmor)) == Error(Nil)
+    as "none for a creature with no armor or infinite armor: the client's maximum is its own"
 }

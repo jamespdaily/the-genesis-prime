@@ -17,6 +17,10 @@
 ////   in place of the row's (opcode.0x262.creature).
 //// - **Display and outfit:** the spawn's display info, since with 0 the creature
 ////   has no model, and its outfit info (opcode.0x262.creature).
+//// - **Interrupt Armor:** stat 21 at the creature's current armor when it is above 0,
+////   which the client reads from the create's stat list and clamps no further
+////   (`opcode.0x938.interrupt_armor`); a creature with none or infinite armor sends no
+////   stat, and the client's maximum (property 44) is its own.
 //// - **Properties:** Base Health (property 7) at the spawn's health when that is a
 ////   recorded value, so the client's maximum is the spawn's, not its own formula's
 ////   (`opcode.0x262.creature`); otherwise none, and the client computes each from
@@ -32,16 +36,17 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/unit_fields
-import gleam/option.{Some}
+import gleam/option.{type Option, Some}
 import gleam/result
 
-/// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health`,
-/// stamped with `server_time_estimate_start`, the map's server time
+/// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health` and its
+/// current Interrupt Armor when it has any above 0, stamped with `server_time_estimate_start`, the map's server time
 /// (`map.server_time`).
 pub fn create(
   spawn spawn: Spawn,
   unit_id unit_id: Int,
   health health: Int,
+  interrupt_armor interrupt_armor: Option(Int),
   server_time_estimate_start server_time_estimate_start: Int,
 ) -> UnitCreateCreature {
   let Creature2Id(creature_id) = spawn.creature_id
@@ -52,6 +57,7 @@ pub fn create(
     tail: unit_fields.spawned_tail(
       health: Some(health),
       level: Some(spawn.level),
+      interrupt_armor:,
       base_health: unit_fields.sent_base_health(
         max_health: spawn.health,
         health_source: spawn.health_source,

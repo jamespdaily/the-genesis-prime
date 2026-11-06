@@ -30,6 +30,7 @@ import genesis_prime/message/resurrection_window.{ResurrectionWindow}
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_finished
 import genesis_prime/message/start_movement
+import genesis_prime/message/stat_kind
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_ghost
 import genesis_prime/message/unit_death_state.{UnitDeathState}
@@ -316,7 +317,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
     == [UnitHealth(unit_id: 9, health: 736, dead: 0)]
     as "full health, 736 (player.level1_base_health)"
   assert game_connection_support.decoded(back, 0x0938, unit_stat_changed.decode)
-    == [UnitStatChanged(unit_id: 9, value: 450)]
+    == [UnitStatChanged(unit_id: 9, stat: stat_kind.Shield, value: 450)]
     as "the full shield, 450 (player.level1_gear_properties)"
   assert game_connection_support.decoded(back, 0x088C, unit_death_state.decode)
     == [UnitDeathState(unit_id: 9, dead: 0, field_3: 0, field_4: 0)]
@@ -627,7 +628,11 @@ pub fn wake_here_writes_the_coming_back_in_the_clients_order_where_the_body_lies
       unit_stat_changed.decode,
     )
     == [
-      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 450),
+      UnitStatChanged(
+        unit_id: game_connection_support.own_unit_id,
+        stat: stat_kind.Shield,
+        value: 450,
+      ),
     ]
     as "the full shield"
   assert game_connection_support.decoded(
@@ -1057,7 +1062,11 @@ pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
       unit_stat_changed.decode,
     )
     == [
-      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 448),
+      UnitStatChanged(
+        unit_id: game_connection_support.own_unit_id,
+        stat: stat_kind.Shield,
+        value: 448,
+      ),
     ]
     && game_connection_support.decoded(
       game_connection_support.heard(struck, game_connection_support.keyed()),

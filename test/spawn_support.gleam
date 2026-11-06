@@ -41,6 +41,7 @@ pub const numbers: GameNumbers =
     leash_range: 55.0,
     aggro_threat: 1.0,
     chase_stop_fraction: 0.5,
+    interrupt_armor_refill_ms: 10_000,
   )
 
 /// The spawn numbered `number` of a Virtual Battle Beast, `x` units along the

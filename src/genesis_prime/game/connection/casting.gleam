@@ -439,6 +439,7 @@ pub fn creature_news_frames(
     | client_connection.CombatState(..)
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
-    | client_connection.CrowdControlEnded(..) -> []
+    | client_connection.CrowdControlEnded(..)
+    | client_connection.InterruptArmor(..) -> []
   }
 }

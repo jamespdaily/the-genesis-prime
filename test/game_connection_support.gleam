@@ -1023,6 +1023,7 @@ pub fn beast_appears(
         spawn: beast,
         unit_id:,
         health: 52,
+        interrupt_armor: option.None,
         server_time_estimate_start: 0,
       ),
       life: 4,

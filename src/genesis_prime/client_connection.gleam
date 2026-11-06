@@ -205,6 +205,9 @@ pub type News {
   CombatState(in_combat: Bool)
   /// The unit's shield: 0x938 of stat 20 (opcode.0x938).
   Shield(shield: Int)
+  /// The unit's current Interrupt Armor: 0x938 of stat 21 (opcode.0x938.interrupt_armor),
+  /// written when the viewer's client shows the unit.
+  InterruptArmor(armor: Int)
   /// The unit holds a crowd-control state: 0x87f with the instance id of the effect the
   /// caster's go listed (opcode.0x87f), written when the viewer's client shows the unit.
   CrowdControlApplied(state: CrowdControlState, instance_id: Int)

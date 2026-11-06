@@ -199,6 +199,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/spell_threshold_index.gleam",
       "src/genesis_prime/message/spell_threshold_opened.gleam",
       "src/genesis_prime/message/start_movement.gleam",
+      "src/genesis_prime/message/stat_kind.gleam",
       "src/genesis_prime/message/static_unit_type.gleam",
       "src/genesis_prime/message/terrain_loaded.gleam",
       "src/genesis_prime/message/text_group.gleam",

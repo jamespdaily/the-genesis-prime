@@ -394,7 +394,8 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               | client_connection.CameBackLogged
               | client_connection.Shield(..)
               | client_connection.CrowdControlApplied(..)
-              | client_connection.CrowdControlEnded(..) -> "other"
+              | client_connection.CrowdControlEnded(..)
+              | client_connection.InterruptArmor(..) -> "other"
             })
           False -> Error(Nil)
         }

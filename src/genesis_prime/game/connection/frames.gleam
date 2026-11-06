@@ -22,6 +22,7 @@ import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/resurrection_window.{ResurrectionWindow}
 import genesis_prime/message/start_movement
+import genesis_prime/message/stat_kind
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
@@ -186,8 +187,22 @@ pub fn combat_state_frame(
 /// 0x938 of stat 20: the unit's shield (`opcode.0x938`), the one stat the server
 /// sends by it (`opcode.0x938.resource_stats`).
 pub fn shield_frame(unit_id unit_id: Int, shield shield: Int) -> Frame {
+  stat_frame(unit_id:, stat: stat_kind.Shield, value: shield)
+}
+
+/// 0x938 of stat 21: the unit's current Interrupt Armor, which the client clamps to 0 and
+/// the unit's maximum (`opcode.0x938.interrupt_armor`).
+pub fn interrupt_armor_frame(unit_id unit_id: Int, armor armor: Int) -> Frame {
+  stat_frame(unit_id:, stat: stat_kind.InterruptArmor, value: armor)
+}
+
+fn stat_frame(
+  unit_id unit_id: Int,
+  stat stat: stat_kind.StatKind,
+  value value: Int,
+) -> Frame {
   let assert Ok(body) =
-    unit_stat_changed.encode(UnitStatChanged(unit_id:, value: shield))
+    unit_stat_changed.encode(UnitStatChanged(unit_id:, stat:, value:))
     as "a unit id, a stat and a value fit the message"
   Frame(message_id: unit_stat_changed.message_id, body:)
 }
