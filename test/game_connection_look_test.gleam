@@ -119,19 +119,30 @@ fn written(
   })
 }
 
-/// The visuals of each `LookChanged` the steps tell the viewer `viewer`, in order.
+/// The `LookChanged` news among what the steps tell the viewer `viewer`, in order: the
+/// news that carries slot 64 with the suits' displays or with display 0.
 fn told(
   steps steps: List(ConnectionStep(Request)),
   viewer viewer: Int,
-) -> List(List(ItemVisual)) {
+) -> List(News) {
   list.flat_map(steps, fn(taken) {
     list.filter_map(support.peer_tells(taken), fn(tell) {
-      case tell.0 == viewer, { tell.1 }.news {
-        True, LookChanged(item_visuals:) -> Ok(item_visuals)
-        _, _ -> Error(Nil)
+      case tell.0 == viewer {
+        True -> Ok({ tell.1 }.news)
+        False -> Error(Nil)
       }
     })
   })
+  |> list.filter(fn(news) {
+    list.any([7221, 4807, 0], fn(display) {
+      news == LookChanged(item_visuals: [suit(display:)])
+    })
+  })
+}
+
+/// The news that carries slot 64 with this display.
+fn look_news(display display: Int) -> News {
+  LookChanged(item_visuals: [suit(display:)])
 }
 
 pub fn a_dominion_engineers_eradicate_writes_the_suit_then_the_empty_slot_to_itself_and_each_viewer_test() -> Nil {
@@ -141,14 +152,14 @@ pub fn a_dominion_engineers_eradicate_writes_the_suit_then_the_empty_slot_to_its
   let #(_, early) = eradicate_until(state:, bag_index:, until_ms: 10_000)
   assert written(steps: early) == [[suit(display: 7221)]]
     as "0x933 {the player, [slot 64, display 7221, colour set 0, dye 0]} once, at the go: 178142, behind 30101 (base faction 166)"
-  assert told(steps: early, viewer: 2) == [[suit(display: 7221)]]
+  assert told(steps: early, viewer: 2) == [look_news(display: 7221)]
     as "each viewer is told the same visuals"
-  assert told(steps: early, viewer: 3) == [[suit(display: 7221)]]
+  assert told(steps: early, viewer: 3) == [look_news(display: 7221)]
   let #(_, whole) = eradicate_until(state:, bag_index:, until_ms: 20_000)
   assert written(steps: whole) == [[suit(display: 7221)], [suit(display: 0)]]
     as "and 10,250 ms later slot 64 with display 0, which empties it (opcode.0x933.empty_display): the Engineer held nothing there"
   assert told(steps: whole, viewer: 2)
-    == [[suit(display: 7221)], [suit(display: 0)]]
+    == [look_news(display: 7221), look_news(display: 0)]
 }
 
 pub fn an_exile_engineer_gets_the_other_suit_test() -> Nil {
@@ -299,8 +310,8 @@ pub fn the_death_mid_suit_writes_the_restore_to_the_player_and_each_viewer_and_a
   let #(dead, taken) = support.killed(suited)
   assert written(steps: [taken]) == [[suit(display: 0)]]
     as "the death ends the suit: slot 64 with display 0 goes to the player in the death's step"
-  assert told(steps: [taken], viewer: 2) == [[suit(display: 0)]]
-  assert told(steps: [taken], viewer: 3) == [[suit(display: 0)]]
+  assert told(steps: [taken], viewer: 2) == [look_news(display: 0)]
+  assert told(steps: [taken], viewer: 3) == [look_news(display: 0)]
   assert suits_of(unit: created_for(state: dead, viewer: 4)) == []
     as "a viewer that comes after the death gets the base list"
 }

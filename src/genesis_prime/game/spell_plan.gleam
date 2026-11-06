@@ -2197,18 +2197,7 @@ fn disguise_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(look.Disguise, PlanError) {
-  let refused = fn(reason) {
-    Error(DisguiseNotRead(spell4_id:, effect_id: effect.id, reason:))
-  }
-  use <- bool.guard(
-    when: effect.data_bits00 != 0 || effect.data_bits08 != 0,
-    return: refused(OutfitNeedsMessage0x905),
-  )
-  let displays =
-    list.filter([effect.data_bits01, effect.data_bits02], fn(display) {
-      display != 0
-    })
-  use <- bool.guard(when: displays == [], return: refused(NamesNoDisplay))
+  use displays <- result.try(disguise_displays_of(spell4_id:, effect:))
   use shown <- result.map(
     list.try_map(displays, fn(display) {
       use item_slot <- result.map(display_slot(
@@ -2221,6 +2210,26 @@ fn disguise_of(
     }),
   )
   look.Disguise(shown:)
+}
+
+/// The ItemDisplay ids a DisguiseOutfit row shows, dataBits01 then dataBits02, or why
+/// 0x933 cannot draw it: dataBits00 or dataBits08 set is an outfit, which only 0x905 draws,
+/// and a row with neither display names nothing to show.
+fn disguise_displays_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(List(Int), PlanError) {
+  let refused = fn(reason) {
+    Error(DisguiseNotRead(spell4_id:, effect_id: effect.id, reason:))
+  }
+  use <- bool.guard(
+    when: effect.data_bits00 != 0 || effect.data_bits08 != 0,
+    return: refused(OutfitNeedsMessage0x905),
+  )
+  case list.filter([effect.data_bits01, effect.data_bits02], fn(d) { d != 0 }) {
+    [] -> refused(NamesNoDisplay)
+    displays -> Ok(displays)
+  }
 }
 
 /// The ItemSlot an ItemDisplay is worn in: its row's item type's itemSlotId, which
@@ -2815,7 +2824,9 @@ pub fn struck_unit_children(
 }
 
 /// Whether the plan reads this effect row: its type is read for its aim
-/// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth, Proc or HealShields row,
+/// (`effect_kind.is_row_read`) and, for a DisguiseOutfit row, it names no outfit and a display
+/// (`disguise_displays_of`), has no target apply prerequisite and has a life (a durationTime or
+/// flags bit 2, `modifier_has_life` in genesis_prime/game/cast), and, for a Stealth, RemoveStealth, Proc or HealShields row,
 /// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
 /// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
 /// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
@@ -2868,6 +2879,10 @@ pub fn effect_row_read(
         || !set.contains(struck_children, effect.spell_id)
       })
       |> result.unwrap(or: False)
+    effect_kind.DisguiseOutfit ->
+      result.is_ok(disguise_displays_of(spell4_id: effect.spell_id, effect:))
+      && effect.prerequisite_id_target_apply == 0
+      && { effect.duration_time > 0 || has_flag(flags: effect.flags, bit: 2) }
     effect_kind.Proxy
     | effect_kind.Damage
     | effect_kind.VitalModifier
@@ -2877,7 +2892,6 @@ pub fn effect_row_read(
     | effect_kind.ForcedMove
     | effect_kind.CooldownModifier
     | effect_kind.ShieldOverload
-    | effect_kind.DisguiseOutfit
     | effect_kind.Unread(..) -> True
   }
 }

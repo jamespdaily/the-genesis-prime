@@ -167,7 +167,7 @@ pub fn a_databits02_display_is_a_timed_look_change_in_its_item_types_slot_test()
     == Ok(PropertyModifier(
       effect_id: Spell4EffectsId(112_543),
       phase_flags: 3,
-      change: LookChange(disguise: suit(4807)),
+      change: LookChange(disguise: suit(display: 4807)),
       row: LastingRow(delay_ms: 500, duration_ms: 10_250, until_removed: True),
       condition: Always,
       tag: spend.AtLeast(value: 2),
@@ -264,13 +264,13 @@ pub fn mode_eradicates_two_exosuit_rows_are_read_from_the_clients_tables_test() 
     })
   let assert [exile, dominion] = proxy.spell.modifiers
   assert exile.effect_id == Spell4EffectsId(112_543)
-  assert exile.change == LookChange(disguise: suit(4807))
+  assert exile.change == LookChange(disguise: suit(display: 4807))
   assert exile.row
     == LastingRow(delay_ms: 0, duration_ms: 10_250, until_removed: False)
   let assert GatedOnCaster(gates: [exile_gate]) = exile.condition
   assert prerequisite.id(prerequisite: exile_gate) == PrerequisiteId(30_100)
   assert dominion.effect_id == Spell4EffectsId(178_142)
-  assert dominion.change == LookChange(disguise: suit(7221))
+  assert dominion.change == LookChange(disguise: suit(display: 7221))
   assert dominion.row
     == LastingRow(delay_ms: 0, duration_ms: 10_250, until_removed: False)
   let assert GatedOnCaster(gates: [dominion_gate]) = dominion.condition

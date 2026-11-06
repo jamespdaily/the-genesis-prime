@@ -189,12 +189,13 @@ fn quest_objectives() -> EngineDeclaration {
 
 /// The rows of the effect type that the effect rule does not read
 /// (genesis_prime/game/spell_plan `effect_row_read`): the type 3, type 11, type 73, type 83,
-/// type 84 and type 14 rows aimed only at other units, the type 145 rows aimed only at other
+/// type 84, type 14 and type 112 rows aimed only at other units, the type 145 rows aimed only at other
 /// units, the type 118 rows aimed at the area and the type 64 rows aimed at the caster or its
 /// target, the Stealth, RemoveStealth, Proc and HealShields rows the plan refuses, skips or
 /// holds, among them a heal aimed at the primary target of a spell a Proxy starts on each
 /// struck unit, the type 52 rows aimed at the units a go strikes or at the primary target
-/// of such a spell, and the type 17, 18, 80 and 81 rows aimed by flags the plan refuses or
+/// of such a spell, the type 112 rows with an outfit, no display, a target apply prerequisite
+/// or no life, and the type 17, 18, 80 and 81 rows aimed by flags the plan refuses or
 /// behind a target apply prerequisite.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   let rows = spell4_effects.all(tables)
@@ -303,6 +304,11 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 84,
         reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
+      ),
+      Missing(
+        type_number: 112,
+        reason: "rows with an outfit (0x905), aimed at another unit, behind a target prerequisite or with no life, which the plan refuses or no go applies",
+        fact_key: "Spell4Effects.effectType.112",
       ),
       Missing(
         type_number: 118,

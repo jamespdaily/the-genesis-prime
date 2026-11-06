@@ -110,14 +110,34 @@ fn handled_over(
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_18_26_52_64_73_80_81_83_84_118_and_145_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_18_26_52_64_73_80_81_83_84_112_118_and_145_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Spell effects"),
       types: numbers(from: 1, to: 200),
     )
-    == [1, 3, 4, 8, 11, 14, 17, 18, 26, 52, 64, 73, 80, 81, 83, 84, 118, 145]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) for the rows that reach the caster; every other type is unread"
+    == [
+      1,
+      3,
+      4,
+      8,
+      11,
+      14,
+      17,
+      18,
+      26,
+      52,
+      64,
+      73,
+      80,
+      81,
+      83,
+      84,
+      112,
+      118,
+      145,
+    ]
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), DisguiseOutfit 112 for the rows aimed at the caster (Spell4Effects.effectType.112), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) for the rows that reach the caster; every other type is unread"
 }
 
 pub fn the_prerequisite_types_the_measure_handles_are_the_sixteen_read_and_those_with_no_case_test() -> Nil {
@@ -325,7 +345,7 @@ const signal_gap =
 const conversion_gap =
   "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
 
-pub fn the_effect_types_3_11_14_17_18_52_64_73_80_81_83_84_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+pub fn the_effect_types_3_11_14_17_18_52_64_73_80_81_83_84_112_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(facts) =
     simplifile.read(
@@ -396,6 +416,11 @@ pub fn the_effect_types_3_11_14_17_18_52_64_73_80_81_83_84_118_and_145_are_parti
         fact_key: "Spell4Effects.effectType.84",
       ),
       Missing(
+        type_number: 112,
+        reason: disguise_gap,
+        fact_key: "Spell4Effects.effectType.112",
+      ),
+      Missing(
         type_number: 118,
         reason: "rows aimed at another unit, periodic (tickTime) or with a formula parameter the plan refuses",
         fact_key: "Spell4Effects.effectType.118",
@@ -419,6 +444,7 @@ pub fn the_effect_types_3_11_14_17_18_52_64_73_80_81_83_84_118_and_145_are_parti
   assert has_record(facts:, key: "Spell4Effects.effectType.81")
   assert has_record(facts:, key: "Spell4Effects.effectType.83")
   assert has_record(facts:, key: "Spell4Effects.effectType.84")
+  assert has_record(facts:, key: "Spell4Effects.effectType.112")
   assert has_record(facts:, key: "Spell4Effects.effectType.145")
   assert engine.handles(engine: declared, type_number: 3)
     && engine.handles(engine: declared, type_number: 11)
@@ -429,13 +455,14 @@ pub fn the_effect_types_3_11_14_17_18_52_64_73_80_81_83_84_118_and_145_are_parti
     && engine.handles(engine: declared, type_number: 73)
     && engine.handles(engine: declared, type_number: 83)
     && engine.handles(engine: declared, type_number: 84)
+    && engine.handles(engine: declared, type_number: 112)
     && engine.handles(engine: declared, type_number: 17)
     && engine.handles(engine: declared, type_number: 52)
     && engine.handles(engine: declared, type_number: 18)
     && engine.handles(engine: declared, type_number: 80)
     && engine.handles(engine: declared, type_number: 81)
     && engine.handles(engine: declared, type_number: 145)
-    as "types 3, 11, 14, 17, 18, 52, 64, 73, 80, 81, 83, 84, 118 and 145 are handled, with the gap"
+    as "types 3, 11, 14, 17, 18, 52, 64, 73, 80, 81, 83, 84, 112, 118 and 145 are handled, with the gap"
 }
 
 pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
@@ -1747,7 +1774,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_77_of_79_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_186_of_196_effect_rows_and_77_of_79_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1760,9 +1787,9 @@ pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_77_of_79_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 18 | 184 of 196 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 19 | 186 of 196 |",
   )
-    as "196 effect rows are left, 12 of them not handled (the two Proc rows the plan skips, 90 x4, 112 x2, 118 once (the Warrior's periodic row 210834, held and not applied), 24 and 29 once, and the Stalker's 91018 of type 81, behind target apply prerequisite 11311; the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145 and the Esper's type 52 row 199192 are read); the whole-game columns are the walk's of 2026-11-05, with types 14, 18, 52, 64, 81, 83, 84, 118 and 145 handled beside the nine"
+    as "196 effect rows are left, 10 of them not handled (the two Proc rows the plan skips, 90 x4, 118 once (the Warrior's periodic row 210834, held and not applied), 24 and 29 once, and the Stalker's 91018 of type 81, behind target apply prerequisite 11311; the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145 and the Esper's type 52 row 199192 are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 14, 18, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine"
   assert string.contains(
     totals,
     "| Prerequisites (#47) | 232 | 49184 | 47209 | 17 | 77 of 79 |",
@@ -2061,4 +2088,90 @@ pub fn the_clients_rows_of_types_18_81_and_145_count_14_634_and_0_not_read_and_1
     as "effectType=17: 10,790 rows, 375 aimed by other flags or behind a target apply prerequisite"
   assert counted(80).0 == 2294 && counted(80).1 == 503
     as "effectType=80: 2,294 rows, 503 aimed by other flags, behind a target apply prerequisite or with dataBits03 and dataBits04 differing (232 differ, 47969 the first)"
+}
+
+// ---- the disguises (type 112) ----
+
+const disguise_gap =
+  "rows with an outfit (0x905), aimed at another unit, behind a target prerequisite or with no life, which the plan refuses or no go applies"
+
+pub fn the_type_112_rows_the_plan_does_not_read_are_counted_as_not_handled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects.effectType.112: a row is read when its flags include the caster (bit 1),
+  // it names no outfit (dataBits00 and dataBits08 are 0) and names a display (dataBits01 or
+  // dataBits02), no target apply prerequisite stands before it, and it has a life (a
+  // durationTime or flags bit 2). Planted: seven type 112 rows, of which the first two
+  // are read, and one type 8 row.
+  let row = fn(
+    id: Int,
+    flags: Int,
+    columns: List(#(String, planted_table.Cell)),
+  ) {
+    let defaults = [
+      #("ID", planted_table.Integer(id)),
+      #("effectType", planted_table.Integer(112)),
+      #("targetFlags", planted_table.Integer(flags)),
+      #("dataBits02", planted_table.Integer(4807)),
+      #("durationTime", planted_table.Integer(10_250)),
+    ]
+    planted_table.row(
+      spell4_effects.schema,
+      list.append(
+        list.filter(defaults, fn(default) {
+          !list.any(columns, fn(given) { given.0 == default.0 })
+        }),
+        columns,
+      ),
+    )
+  }
+  let measured =
+    measure_planted(rows: [
+      row(1, 1, []),
+      row(2, 3, [
+        #("dataBits02", planted_table.Integer(0)),
+        #("dataBits01", planted_table.Integer(119)),
+        #("durationTime", planted_table.Integer(0)),
+        #("flags", planted_table.Integer(2)),
+      ]),
+      row(3, 2, []),
+      row(4, 1, [#("dataBits00", planted_table.Integer(5))]),
+      row(5, 1, [#("dataBits02", planted_table.Integer(0))]),
+      row(6, 1, [#("prerequisiteIdTargetApply", planted_table.Integer(5))]),
+      row(7, 1, [#("durationTime", planted_table.Integer(0))]),
+      planted_table.row(spell4_effects.schema, [
+        #("ID", planted_table.Integer(8)),
+        #("effectType", planted_table.Integer(8)),
+      ]),
+    ])
+  let assert Measured(types:, ..) = measured as "the planted table is measured"
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 112 })
+  assert line.rows == 7
+  assert line.status
+    == HandledWithGap(
+      reason: disguise_gap,
+      fact_key: "Spell4Effects.effectType.112",
+      unread_rows: 5,
+    )
+    as "row 3 aims only at another unit, 4 holds an outfit, 5 names no display, 6 stands behind a target prerequisite and 7 has no life: five of the seven are not read"
+}
+
+pub fn the_clients_358_disguise_rows_count_159_read_and_the_two_exosuit_rows_among_the_starting_abilities_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.every_table()
+  let assert Measured(types:, ..) =
+    measurement.measure(engine_named("Spell effects"), tables)
+    as "the engine's source is a table"
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 112 })
+  assert line.rows == 358
+    as "table_rows -- Spell4Effects effectType=112: 358 rows"
+  assert line.status
+    == HandledWithGap(
+      reason: disguise_gap,
+      fact_key: "Spell4Effects.effectType.112",
+      unread_rows: 199,
+    )
+    as "159 rows are read: of the 358, 104 aim only at other units (targetFlags 2, 4 or 6), 90 of the 254 that include the caster hold an outfit (dataBits00 or dataBits08), 2 name no display and 3 have no life (no durationTime and no flags bit 2), counted from table_rows"
+  assert line.starting_abilities == 2
+    as "the two ExoSuit rows 112543 and 178142 of Spell4 47860 (Spell4Effects.effectType.112)"
 }
