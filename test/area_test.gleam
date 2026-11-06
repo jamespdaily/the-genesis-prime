@@ -86,8 +86,20 @@ pub fn kick_strikes_a_unit_inside_its_drawn_cone_and_not_one_outside_it_test() -
   assert by(6.9, 0.0) == [1] as "the cone ends at 7 m (Spell4.58591.area)"
   assert by(7.1, 0.0) == [1]
     as "7.1 m is past the cone's 7 m, but the Beast's hit radius of 3 reaches it (a unit's radius counts for every shape)"
-  assert by(10.1, 0.0) == []
-    as "10.1 m is past the cone's 7 m by more than the Beast's hit radius of 3"
+  assert struck(
+      candidates: [beast(1, at(distance: 10.1, degrees: 0.0, yaw: 0.0))],
+      row: Row(min_range: 0.0, max_range: 30.0, degrees: 180.0, target_count: 5),
+      inside: kick_cone(),
+    )
+    == []
+    as "10.1 m is past the cone's 7 m by more than the Beast's hit radius of 3 (a 30 m row, so the shape alone decides)"
+  assert struck(
+      candidates: [beast(1, at(distance: 3.0, degrees: 180.0, yaw: 0.0))],
+      row: Row(min_range: 0.0, max_range: 30.0, degrees: 360.0, target_count: 5),
+      inside: kick_cone(),
+    )
+    == []
+    as "3 m straight behind the caster is 3.72 m from the cone's nearest point, its inner corner 1 m out at 50 degrees, past the Beast's hit radius of 3"
   assert by(5.0, 49.0) == [1] as "the cone is 100 degrees, 50 each side"
   assert by(5.0, 51.0) == [1]
     as "1 degree past the cone's side is 0.09 m from the side line, within the Beast's hit radius of 3"
@@ -253,11 +265,11 @@ pub fn crush_strikes_one_unit_test() -> Nil {
 
 pub fn turning_half_a_turn_moves_kicks_strike_to_the_beast_behind_test() -> Nil {
   use <- owned_test.run(5000)
-  // 5 m away, so that the Beast behind stands further than its hit radius of 3 from
-  // the cone's apex.
+  // The Beast behind stands 3 m from the caster: 3.72 m from the cone's inner corner,
+  // past its hit radius of 3, so only the Beast ahead is struck.
   let candidates = [
-    beast(1, at(distance: 5.0, degrees: 0.0, yaw: 0.0)),
-    beast(2, at(distance: 5.0, degrees: 180.0, yaw: 0.0)),
+    beast(1, at(distance: 3.0, degrees: 0.0, yaw: 0.0)),
+    beast(2, at(distance: 3.0, degrees: 180.0, yaw: 0.0)),
   ]
   let facing = fn(yaw, inside) {
     area.select(
@@ -335,6 +347,12 @@ pub fn a_unit_just_outside_a_shape_by_less_than_its_hit_radius_is_struck_and_by_
   assert !struck_at(box, 0.0, -16.1)
   assert struck_at(box, 0.0, -4.1)
   assert !struck_at(box, 0.0, -3.9)
+  assert !struck_at(rectangle, 3.9, -12.9)
+    as "2.9 m past a side and 2.9 m past the end is 4.10 m from the corner, not within 3"
+  assert !struck_at(box, 4.9, -15.9)
+    as "2.9 m past a side and 2.9 m past the end is 4.10 m from the corner, not within 3"
+  assert struck_at(box, 4.9, -13.0)
+    as "2.9 m past a side, level with the end: 2.9 m from the box"
   let cone = placed(Cone(inner: 4.0, outer: 10.0, degrees: 90.0), 0.0)
   assert struck_at(cone, 0.0, -12.9) as "a cone to 10 m reaches 13 m"
   assert !struck_at(cone, 0.0, -13.1)
@@ -370,9 +388,12 @@ pub fn a_unit_just_outside_a_cones_side_by_less_than_its_hit_radius_is_struck_an
   assert !struck_at(5.0, 83.4) as "3.1 m from the side line"
   assert struck_at(5.0, -80.4)
   assert !struck_at(5.0, -83.4)
-  assert struck_at(2.9, 180.0)
-    as "behind the apex, past a quarter turn beyond the side, the gap is the distance to the apex: 2.9 m"
-  assert !struck_at(3.1, 180.0)
+  assert !struck_at(2.9, 180.0)
+    as "2.9 m straight behind the apex: the cone has no shape at its tip, its sides start 1 m out, so the nearest point is the inner corner, 3.68 m away"
+  assert struck_at(12.0, 55.0)
+    as "10 degrees past a side, 12 m out: 2.76 m from the outer corner"
+  assert !struck_at(12.0, 59.0)
+    as "14 degrees past a side, 12 m out: 3.33 m from the outer corner, though 2.9 m from the side's line"
 }
 
 pub fn a_unit_straight_ahead_of_any_facing_is_at_bearing_zero_test() -> Nil {

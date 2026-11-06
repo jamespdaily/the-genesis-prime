@@ -26,15 +26,15 @@
 ////   (`Spell4.58591.area`: Kick's cone is narrower than its 180 degrees.)
 //// - **A hit shape** is a telegraph's damage shape placed on the caster: its
 ////   offsets, x and z negated before the turn so a positive z is ahead
-////   (`0x14054b1b0`), and its turn. A unit is inside when its hit circle overlaps the
-////   shape, which the server chooses to read as the outer radius and the half
-////   extents grown by the unit's hit radius, and a cone's inner radius shrunk by it
-////   but not below 0, as the client sizes a drawn shape by the viewer's own radius
-////   (`0x14054d170` case 4, `0x14054da10`). Every shape grows, whatever flag 0x200
-////   says: that flag only stops the drawn shape growing by the viewer's radius, and
-////   the client tests no unit against a shape (`unit.hit_radius`); that a struck
-////   unit's body counts is the server's choice. A cone's sides grow too: a unit is
-////   inside when its distance to the nearer side line is at most its radius. The
+////   (`0x14054b1b0`), and its turn. A unit is inside when its hit circle touches the
+////   shape: the distance from its centre to the nearest point of the shape is at most
+////   its hit radius. The client sizes a drawn shape by the viewer's own radius
+////   (`0x14054d170` case 4, `0x14054da10`) and tests no unit against a shape
+////   (`unit.hit_radius`), so that a struck unit's body counts, for every shape
+////   whatever flag 0x200 says, is the server's choice. The shapes are a circle, a
+////   rectangle or box (the nearest point is the centre clamped to it, so a corner is
+////   round) and a cone, an annular sector from its inner to its outer radius over its
+////   angle, which has no point at its tip when its inner radius is above 0. The
 ////   direction of a row's turn is not read; every shape built so far has none.
 //// - **Distance and order** are horizontal, from centre to centre; the vertical
 ////   range is -1 for every row and the shapes lie on the ground
@@ -184,7 +184,6 @@ fn in_shape(
   centre centre: Pose,
   placement placement: Placement,
 ) -> Bool {
-  let grown = candidate.hit_radius
   let facing_x = float.negate(maths.sin(centre.yaw))
   let facing_z = float.negate(maths.cos(centre.yaw))
   let origin =
@@ -208,44 +207,76 @@ fn in_shape(
   let forward = dx *. shape_x +. dz *. shape_z
   let sideways = dx *. maths.cos(yaw) -. dz *. maths.sin(yaw)
   let reach = distance(from: origin, to: candidate.at)
-  case placement.shape {
-    Circle(radius:) -> reach <=. radius +. grown
+  let gap = case placement.shape {
+    Circle(radius:) -> float.max(reach -. radius, 0.0)
     Box(width:, length:) ->
-      float.absolute_value(sideways) <=. width /. 2.0 +. grown
-      && float.absolute_value(forward) <=. length /. 2.0 +. grown
+      gap_to_box(
+        sideways:,
+        forward:,
+        half_width: width /. 2.0,
+        near: float.negate(length /. 2.0),
+        far: length /. 2.0,
+      )
     Rectangle(width:, length:) ->
-      float.absolute_value(sideways) <=. width /. 2.0 +. grown
-      && forward >=. float.negate(grown)
-      && forward <=. length +. grown
+      gap_to_box(
+        sideways:,
+        forward:,
+        half_width: width /. 2.0,
+        near: 0.0,
+        far: length,
+      )
     Cone(inner:, outer:, degrees:) ->
-      reach >=. float.max(0.0, inner -. grown)
-      && reach <=. outer +. grown
-      && distance_outside_sides(
+      gap_to_cone(
         angle: bearing(from: origin, target: candidate.at, yaw:),
         reach:,
+        inner:,
+        outer:,
         half_angle: maths.degrees_to_radians(degrees /. 2.0),
       )
-      <=. grown
   }
+  gap <=. candidate.hit_radius
 }
 
-/// How far a unit at distance `reach` from a cone's apex and `angle` off its facing
-/// lies from the cone's nearer side line: 0 inside the angle, `reach` times the sine
-/// of the angle past a side while that is under a quarter turn, and `reach` (the
-/// distance to the apex) beyond it.
-fn distance_outside_sides(
+/// The distance from a point to a box that is `half_width` either side of the shape's
+/// line and from `near` to `far` along it: 0 inside, else to the nearest point of the
+/// box, which is the point clamped to it.
+fn gap_to_box(
+  sideways sideways: Float,
+  forward forward: Float,
+  half_width half_width: Float,
+  near near: Float,
+  far far: Float,
+) -> Float {
+  distance(
+    from: Point(x: 0.0, z: 0.0),
+    to: Point(
+      x: float.max(float.absolute_value(sideways) -. half_width, 0.0),
+      z: float.max(float.max(near -. forward, forward -. far), 0.0),
+    ),
+  )
+}
+
+/// The distance from a unit at distance `reach` from a cone's apex and `angle` off its
+/// facing to the cone: inside its angle, how far it is outside the band from `inner`
+/// to `outer`; beyond a side, the distance to the nearer side segment, which runs from
+/// `inner` to `outer` along the ray at `half_angle`, ending at its corners.
+fn gap_to_cone(
   angle angle: Float,
   reach reach: Float,
+  inner inner: Float,
+  outer outer: Float,
   half_angle half_angle: Float,
 ) -> Float {
   let beyond = float.absolute_value(angle) -. half_angle
   case beyond <=. 0.000001 {
-    True -> 0.0
-    False ->
-      case beyond <. maths.pi() /. 2.0 {
-        True -> reach *. maths.sin(beyond)
-        False -> reach
-      }
+    True -> float.max(float.max(inner -. reach, reach -. outer), 0.0)
+    False -> {
+      let along = float.max(inner, float.min(outer, reach *. maths.cos(beyond)))
+      distance(
+        from: Point(x: along, z: 0.0),
+        to: Point(x: reach *. maths.cos(beyond), z: reach *. maths.sin(beyond)),
+      )
+    }
   }
 }
 

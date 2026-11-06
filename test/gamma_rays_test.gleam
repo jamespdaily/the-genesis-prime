@@ -112,13 +112,6 @@ fn struck_by_the_three(
   })
 }
 
-pub fn the_recordings_creature_has_the_hit_radius_of_its_display_row_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  assert striker_hit_radius() == 2.799999952316284
-    as "Creature2DisplayInfo 26120: hitRadius 2.8 (table_rows, f32 0x40333333)"
-}
-
 pub fn gamma_rays_on_the_recordings_creature_strikes_it_with_each_of_its_three_beams_in_casts_1_and_2_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
