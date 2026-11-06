@@ -62,7 +62,6 @@ import genesis_prime/message/spell_telegraph_position.{
   type SpellTelegraphPosition, SpellTelegraphPosition,
 }
 import genesis_prime/message/start_movement
-import genesis_prime/message/stat_kind
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature.{UnitCreateCreature}
@@ -77,7 +76,10 @@ import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property
 import genesis_prime/message/unit_stat.{type UnitStat}
+import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
+import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/world_map/static_object
@@ -663,7 +665,10 @@ pub fn a_stat_change_is_a_unit_a_stat_in_5_bits_and_a_value_test() -> Nil {
   message_support.assert_codec(
     name: "opcode.0x938: unit id, stat 20 (shield) in 5 bits, value 123 in 32",
     body: message_support.hex("01 10 00 00 74 0f 00 00 00"),
-    value: UnitStatChanged(unit_id: 0x1001, stat: stat_kind.Shield, value: 123),
+    value: UnitStatChanged(
+      unit_id: 0x1001,
+      change: unit_stat_change.Shield(UnitStatShield(value: 123)),
+    ),
     encode: unit_stat_changed.encode,
     decode: unit_stat_changed.decode,
   )
@@ -672,8 +677,7 @@ pub fn a_stat_change_is_a_unit_a_stat_in_5_bits_and_a_value_test() -> Nil {
     body: message_support.hex("01 10 00 00 75 0f 00 00 00"),
     value: UnitStatChanged(
       unit_id: 0x1001,
-      stat: stat_kind.InterruptArmor,
-      value: 123,
+      change: unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value: 123)),
     ),
     encode: unit_stat_changed.encode,
     decode: unit_stat_changed.decode,

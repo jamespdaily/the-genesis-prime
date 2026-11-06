@@ -23,7 +23,6 @@ import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/start_movement
-import genesis_prime/message/stat_kind
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_create_player.{
@@ -34,7 +33,9 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/step.{
   ConnectionId, LogError, LogInfo, Map, OwnEffect, OwnEvent, Woken,
 }
@@ -1277,7 +1278,10 @@ pub fn a_shown_units_interrupt_armor_news_is_written_as_0x938_of_stat_21_and_non
     game_connection_support.heard(taken, game_connection_support.keyed())
     as "opcode.0x938"
   assert unit_stat_changed.decode(body)
-    == Ok(UnitStatChanged(unit_id: 9, stat: stat_kind.InterruptArmor, value: 1))
+    == Ok(UnitStatChanged(
+      unit_id: 9,
+      change: unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value: 1)),
+    ))
     as "stat 21 with the current armor (opcode.0x938.interrupt_armor)"
   let #(_, taken) = game_connection_support.feed(shown, news_of(77))
   assert support.writes(taken) == []

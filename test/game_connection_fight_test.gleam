@@ -27,7 +27,6 @@ import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
-import genesis_prime/message/stat_kind
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_death_state.{UnitDeathState}
@@ -35,7 +34,9 @@ import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/server
@@ -617,7 +618,10 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
   ] = game_connection_support.heard(struck, game_connection_support.keyed())
     as "0x938, then 0x92f, to the player's own client"
   assert unit_stat_changed.decode(shield)
-    == Ok(UnitStatChanged(unit_id: 5, stat: stat_kind.Shield, value: 448))
+    == Ok(UnitStatChanged(
+      unit_id: 5,
+      change: unit_stat_change.Shield(UnitStatShield(value: 448)),
+    ))
     as "stat 20, the shield: 450 less 2"
   assert player_health.decode(health)
     == Ok(PlayerHealth(unit_id: 5, health: 735, reason_mask: 0))
@@ -1064,7 +1068,10 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
       unit_stat_changed.decode,
     )
     == [
-      UnitStatChanged(unit_id: medic_unit, stat: stat_kind.Shield, value: 448),
+      UnitStatChanged(
+        unit_id: medic_unit,
+        change: unit_stat_change.Shield(UnitStatShield(value: 448)),
+      ),
     ]
     && game_connection_support.decoded(struck, 0x092F, player_health.decode)
     == [PlayerHealth(unit_id: medic_unit, health: 735, reason_mask: 0)]

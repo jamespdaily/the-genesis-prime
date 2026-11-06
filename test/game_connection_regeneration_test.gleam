@@ -30,9 +30,10 @@ import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/float32
 import genesis_prime/message/player_health.{PlayerHealth}
-import genesis_prime/message/stat_kind
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, CancelTimer, OwnEffect,
   OwnEvent, StartTimer, TimerFired, TimerId, Unwatch, Watch,
@@ -199,8 +200,7 @@ pub fn a_blow_starts_the_shield_timer_at_the_items_reboot_time_and_each_tick_aft
     == [
       UnitStatChanged(
         unit_id: game_connection_support.own_unit_id,
-        stat: stat_kind.Shield,
-        value: 361,
+        change: unit_stat_change.Shield(UnitStatShield(value: 361)),
       ),
     ]
     as "294 and 67: 0x938 stat 20, in combat"
@@ -216,8 +216,7 @@ pub fn a_blow_starts_the_shield_timer_at_the_items_reboot_time_and_each_tick_aft
     == [
       UnitStatChanged(
         unit_id: game_connection_support.own_unit_id,
-        stat: stat_kind.Shield,
-        value: 428,
+        change: unit_stat_change.Shield(UnitStatShield(value: 428)),
       ),
     ]
   let #(_, last) = fire(state:, timer: shield_timer)
@@ -225,8 +224,7 @@ pub fn a_blow_starts_the_shield_timer_at_the_items_reboot_time_and_each_tick_aft
     == [
       UnitStatChanged(
         unit_id: game_connection_support.own_unit_id,
-        stat: stat_kind.Shield,
-        value: 450,
+        change: unit_stat_change.Shield(UnitStatShield(value: 450)),
       ),
     ]
     as "428 and 67 stops at the maximum"
@@ -331,8 +329,7 @@ pub fn the_multiplier_and_the_shield_tick_are_the_client_tables_unit_property2_d
     == [
       UnitStatChanged(
         unit_id: game_connection_support.own_unit_id,
-        stat: stat_kind.Shield,
-        value: 361,
+        change: unit_stat_change.Shield(UnitStatShield(value: 361)),
       ),
     ]
     as "294 and floor(450 x 0.15) = 67: the share is the item's"

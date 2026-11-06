@@ -22,7 +22,6 @@ import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/resurrection_window.{ResurrectionWindow}
 import genesis_prime/message/start_movement
-import genesis_prime/message/stat_kind
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
@@ -37,7 +36,10 @@ import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
 import genesis_prime/message/unit_movement.{UnitMovement}
+import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
+import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/step.{type Now}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map
@@ -187,22 +189,27 @@ pub fn combat_state_frame(
 /// 0x938 of stat 20: the unit's shield (`opcode.0x938`), the one stat the server
 /// sends by it (`opcode.0x938.resource_stats`).
 pub fn shield_frame(unit_id unit_id: Int, shield shield: Int) -> Frame {
-  stat_frame(unit_id:, stat: stat_kind.Shield, value: shield)
+  stat_frame(
+    unit_id:,
+    change: unit_stat_change.Shield(UnitStatShield(value: shield)),
+  )
 }
 
 /// 0x938 of stat 21: the unit's current Interrupt Armor, which the client clamps to 0 and
 /// the unit's maximum (`opcode.0x938.interrupt_armor`).
 pub fn interrupt_armor_frame(unit_id unit_id: Int, armor armor: Int) -> Frame {
-  stat_frame(unit_id:, stat: stat_kind.InterruptArmor, value: armor)
+  stat_frame(
+    unit_id:,
+    change: unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value: armor)),
+  )
 }
 
 fn stat_frame(
   unit_id unit_id: Int,
-  stat stat: stat_kind.StatKind,
-  value value: Int,
+  change change: unit_stat_change.UnitStatChange,
 ) -> Frame {
   let assert Ok(body) =
-    unit_stat_changed.encode(UnitStatChanged(unit_id:, stat:, value:))
+    unit_stat_changed.encode(UnitStatChanged(unit_id:, change:))
     as "a unit id, a stat and a value fit the message"
   Frame(message_id: unit_stat_changed.message_id, body:)
 }
