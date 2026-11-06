@@ -231,6 +231,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/unit_properties_changed.gleam",
       "src/genesis_prime/message/unit_property.gleam",
       "src/genesis_prime/message/unit_stat.gleam",
+      "src/genesis_prime/message/unit_stat_absorption.gleam",
       "src/genesis_prime/message/unit_stat_change.gleam",
       "src/genesis_prime/message/unit_stat_changed.gleam",
       "src/genesis_prime/message/unit_stat_float.gleam",

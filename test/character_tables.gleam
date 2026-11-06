@@ -167,6 +167,38 @@ pub fn shared_with_a_lasting_effect() -> store.Tables {
   })
 }
 
+/// The planted tables with Spectral Form's Absorption row, 178144 as the client holds it
+/// (targetFlags 1, Magic, 5000 ms, dataBits00 1.0, dataBits04 7, Assault Power x 2.531 and
+/// Support Power x 2.531, phaseFlags 1; `table_rows -- Spell4Effects spellId=58586`),
+/// added to Paralytic Surge 42352: test data, since no planted ability holds an Absorption
+/// row. Loaded once under a key of its own.
+pub fn shared_with_absorption() -> store.Tables {
+  database_support.once("character_tables_absorption", fn() {
+    load_files(files_replacing(
+      schema: spell4_effects.schema,
+      rows: spell_tables.sorted_by_id([
+        planted_table.row(spell4_effects.schema, [
+          #("ID", Integer(178_144)),
+          #("spellId", Integer(42_352)),
+          #("targetFlags", Integer(1)),
+          #("effectType", Integer(29)),
+          #("damageType", Integer(3)),
+          #("durationTime", Integer(5000)),
+          #("dataBits00", Integer(1_065_353_216)),
+          #("dataBits04", Integer(7)),
+          #("parameterType00", Integer(12)),
+          #("parameterType01", Integer(13)),
+          #("parameterValue00", planted_table.Float(2.531)),
+          #("parameterValue01", planted_table.Float(2.531)),
+          #("phaseFlags", Integer(1)),
+          #("orderIndex", Integer(5)),
+        ]),
+        ..novice_tables.spell4_effects_rows()
+      ]),
+    ))
+  })
+}
+
 /// The planted tables with two type 11 effects aimed at the caster added to Paralytic
 /// Surge 42352, which holds none: row 135954 as the client holds it on Mind Burst's
 /// child 57030 (BaseCritChance, mode 3, multiplier 1.0, flat 0.08, 8000 ms), and a row

@@ -17,63 +17,21 @@
 
 import character_tables
 import genesis_prime/client_connection
-import genesis_prime/game/hit.{Rolls}
+import genesis_prime/game/hit
 import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
-  type Effect, type Life, CancelTimer, OwnShield, Regeneration,
-  ShieldRegeneration, StartTimer, ToClient, ToViewers,
+  type Effect, type Life, CancelTimer, OwnShield, StartTimer, ToClient,
+  ToViewers,
 }
 import genesis_prime/game/rating
-import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
-import genesis_prime/step.{TimerId}
 import genesis_prime/table/id.{ClassId}
-import genesis_prime/world_map/map_id.{MapId}
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{None}
 import gleam/set
 import owned_test
+import player_life_support
 import properties_support
 import spawn_support
-
-const shield_timer = TimerId(9)
-
-const regeneration =
-  Regeneration(
-    health_fraction: 0.025,
-    health_multiplier: 1.0,
-    health_tick_ms: 500,
-    shield: Some(
-      ShieldRegeneration(percent: 0.25, reboot_ms: 2500, tick_ms: 500),
-    ),
-  )
-
-const rolls = Rolls(crit: 0.5, deflect: 0.0, glance: 0.0)
-
-const own_unit = 20
-
-fn beast() -> step.Address {
-  step.Creature(
-    map: MapId(world_id: 3460, instance: 0),
-    incarnation: 1,
-    unit_id: 7,
-    life: 3,
-  )
-}
-
-fn place() -> Place {
-  let assert Ok(place) =
-    start_place.place(
-      world_id: 3460,
-      world_zone_id: 5967,
-      x: 0.0,
-      y: 0.0,
-      z: 0.0,
-      facing: start_place.unturned,
-    )
-    as "world 3460 is a world"
-  place
-}
 
 fn defence() -> hit.Defence {
   let tables = character_tables.shared()
@@ -92,21 +50,14 @@ fn struck(
   cast_id cast_id: Int,
   damage damage: Int,
 ) -> #(Life, List(Effect)) {
-  player_life.struck(
+  player_life_support.struck(
     life:,
     defence: defence(),
-    strike: strike_tell.Strike(
-      key: strike_tell.Key(cast_id:, phase: 0, unit_id: own_unit),
-      from: beast(),
-      striker: strike_tell.CreatureStriker,
-      offence: spawn_support.dealing(
-        offence: spawn_support.beast_attack().offence,
-        damage:,
-      ),
-      controls: [],
+    offence: spawn_support.dealing(
+      offence: spawn_support.beast_attack().offence,
+      damage:,
     ),
-    rolls:,
-    place: place(),
+    cast_id:,
   )
 }
 
@@ -118,8 +69,8 @@ fn struck_to_400() -> Life {
       saved: None,
       max_health: 736,
       shield: 450,
-      regeneration:,
-      place: place(),
+      regeneration: player_life_support.regeneration,
+      place: player_life_support.place(),
     )
   let life =
     player_life.threatened(life:, unit_id: 7, creature_life: 3, gone: set.new()).0
@@ -178,8 +129,8 @@ pub fn a_shield_heal_on_a_full_shield_writes_nothing_test() -> Nil {
       saved: None,
       max_health: 736,
       shield: 450,
-      regeneration:,
-      place: place(),
+      regeneration: player_life_support.regeneration,
+      place: player_life_support.place(),
     )
   let #(healed, effects) = player_life.shield_healed(life:, amount: 60)
   assert healed == life && effects == []
@@ -206,7 +157,8 @@ pub fn a_shield_heal_leaves_the_shield_clock_as_it_was_test() -> Nil {
   assert player_life.shield(life:) == 430 as "400 and 30"
   assert timers(effects) == []
     as "the reboot running since the blow is neither cancelled nor restarted (text 531855)"
-  let #(life, tick) = player_life.timer_fired(life:, timer: shield_timer)
+  let #(life, tick) =
+    player_life.timer_fired(life:, timer: player_life_support.shield_timer)
   assert player_life.shield(life:) == 450
     as "the reboot's first tick adds floor(450 x 0.25) = 112 to 430 and stops at the maximum"
   assert tick

@@ -720,6 +720,7 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.CrowdControlApplied(..)
         | client_connection.CrowdControlEnded(..)
         | client_connection.InterruptArmor(..)
+        | client_connection.Absorption(..)
         | client_connection.PropertiesChanged(..)
         | client_connection.Stealth(..)
         | client_connection.LookChanged(..) -> False

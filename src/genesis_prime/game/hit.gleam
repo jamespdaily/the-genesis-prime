@@ -9,12 +9,13 @@
 //// caster (genesis_prime/game/strike)                  struck unit's owner
 ////   blows from the effects' formulas (genesis_prime/game/damage)
 ////   crit and strikethrough (genesis_prime/game/rating)
-////   rolls from the connection's seed ───────────────▶ apply(health, offence, defence, rolls)
+////   rolls from the connection's seed ───────────────▶ apply(health, shield, absorbs, offence, defence, rolls)
 ////                                                      deflect roll < deflect chance - strikethrough ─▶ Deflected
 ////                                                      each blow: crit roll < crit chance - crit deflect ─▶ x severity
 ////                                                                 glance roll < glance chance ─▶ less the glance amount
 ////                                                                 x (1 - mitigation of its damage type)
-////                                                                 the shield takes up to its share, limited by what it holds
+////                                                                 the absorbs whose mask holds its type take from it, oldest first
+////                                                                 the shield takes up to its share of the rest, limited by what it holds
 ////                                                      health' = max(0, health - damage); killed at 0
 //// ```
 ////
@@ -39,11 +40,23 @@
 ////   by the same formula from their twin properties, which the client's bodies were not
 ////   read for (a gap; the Virtual Battle Beast has none of the three,
 ////   `Creature2.73464.mitigation`). That it multiplies the damage is the server's
-////   choice (`Creature2.73464.mitigation`). The damage absorbed is the amount taken.
+////   choice (`Creature2.73464.mitigation`). The damage absorbed is the amount taken, and the
+////   absorbs' part is added to it.
+//// - **The absorbs** (genesis_prime/game/player_life keeps them in start order) take a
+////   blow's damage after mitigation and before the shield: each pool whose damage-type
+////   mask holds the blow's type (type t is held when bit 2^(t-1) of the mask is set,
+////   `Spell4Effects.effectType.29`), oldest first, gives up to what it has left. The part
+////   the pools took is added to the description's absorbed field, which holds the
+////   mitigated part too; the shield's share and the health's are of what is left. A pool
+////   used up is dropped from the outcome's list, and a deflected strike leaves every pool
+////   as it was. A creature holds none, so its hits are as before. The order, and the
+////   absorbed field holding both parts, are the server's choice
+////   (`Spell4Effects.effectType.29`).
 //// - **The shield** takes up to the target's ShieldMitigationMax of each blow after
-////   mitigation (property 175, 0.625 for a Novice, `player.level1_gear_properties`),
-////   limited by what it holds, and the description's shield absorbed is the amount
-////   it took; the rest is the health's. Its share is rounded half away from zero, a
+////   mitigation and the absorbs (property 175, 0.625 for a Novice,
+////   `player.level1_gear_properties`), limited by what it holds, and the description's
+////   shield absorbed is the amount it took; the rest is the health's. Its share is
+////   rounded half away from zero, a
 ////   server choice as every step's rounding is. A creature has no shield (0), so its
 ////   hits are as before. The order is the server's choice (274 section 3).
 //// - **The damage** of a blow is a whole number, rounded half away from zero (the
@@ -54,6 +67,7 @@
 //// - **One roll triple for each strike.** A strike with several blows rolls once, so
 ////   a deflect misses all, a critical hit multiplies all and a glance reduces all.
 
+import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result.{Critical, Hit}
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{
@@ -126,6 +140,14 @@ pub type Rolls {
   Rolls(crit: Float, deflect: Float, glance: Float)
 }
 
+/// An absorb pool on the struck unit (`Spell4Effects.effectType.29`): the cast effect that
+/// gave it, what is left of it and the damage types it takes as a mask (bit 1 Physical,
+/// 2 Tech, 4 Magic). A unit's pools are kept in start order, which is the order they
+/// soak in.
+pub type Absorb {
+  Absorb(source: unit_properties.Source, left: Int, mask: Int)
+}
+
 /// One landed blow as the go's target info carries it: the effect's row and
 /// delay, and the damage description the client makes the number, the hit
 /// reaction and the combat log line from.
@@ -137,14 +159,16 @@ pub type Description {
   )
 }
 
-/// What a strike did to a unit with `health` and `shield` before it.
+/// What a strike did to a unit with `health`, `shield` and `absorbs` before it.
 pub type Outcome {
   /// The blows landed: a description for each, the health and the shield after
-  /// them and whether a blow took the health to 0.
+  /// them, the absorbs left (a pool used up is dropped) and whether a blow took the
+  /// health to 0.
   Landed(
     descriptions: List(Description),
     health: Int,
     shield: Int,
+    absorbs: List(Absorb),
     killed: Bool,
   )
   /// The target deflected the whole strike.
@@ -172,13 +196,14 @@ fn fraction(number: Int) -> Float {
   int.to_float(number) /. 4_294_967_296.0
 }
 
-/// The hit rule: what `offence` does to a unit with `health`, `shield` and
+/// The hit rule: what `offence` does to a unit with `health`, `shield`, `absorbs` and
 /// `defence`, on `rolls`. A health of 0 is a dead unit, which no strike reaches
 /// (genesis_prime/world_map/creature_life and genesis_prime/game/player_life refuse
-/// it first).
+/// it first). A unit that holds no pool passes `[]`.
 pub fn apply(
   health health: Int,
   shield shield: Int,
+  absorbs absorbs: List(Absorb),
   offence offence: Offence,
   defence defence: Defence,
   rolls rolls: Rolls,
@@ -192,64 +217,121 @@ pub fn apply(
         float.max(0.0, offence.crit_chance -. defence.crit_deflect_chance)
       let critical = rolls.crit <. crit_chance
       let glancing = rolls.glance <. defence.glance_chance
-      let #(descriptions, left, shield_left, killed) =
-        list.fold(offence.blows, #([], health, shield, False), fn(so_far, blow) {
-          let #(done, left, shield_left, killed) = so_far
-          let raw = case critical {
-            True ->
-              float.round(int.to_float(blow.damage) *. offence.crit_severity)
-            False -> blow.damage
-          }
-          let glanced = case glancing {
-            True -> float.round(int.to_float(raw) *. defence.glance_amount)
-            False -> 0
-          }
-          let after_glance = raw - glanced
-          let taken =
-            float.round(
-              int.to_float(after_glance)
-              *. { 1.0 -. mitigation_of(defence:, blow:) },
+      let #(descriptions, left, shield_left, absorbs_left, killed) =
+        list.fold(
+          offence.blows,
+          #([], health, shield, absorbs, False),
+          fn(so_far, blow) {
+            let #(done, left, shield_left, absorbs_left, killed) = so_far
+            let raw = case critical {
+              True ->
+                float.round(int.to_float(blow.damage) *. offence.crit_severity)
+              False -> blow.damage
+            }
+            let glanced = case glancing {
+              True -> float.round(int.to_float(raw) *. defence.glance_amount)
+              False -> 0
+            }
+            let after_glance = raw - glanced
+            let taken =
+              float.round(
+                int.to_float(after_glance)
+                *. { 1.0 -. mitigation_of(defence:, blow:) },
+              )
+            let mitigated = after_glance - taken
+            let #(soaked, absorbs_left) =
+              soak(
+                absorbs: absorbs_left,
+                damage_type: blow.damage_type,
+                damage: taken,
+              )
+            let rest = taken - soaked
+            let shielded =
+              int.min(
+                shield_left,
+                float.round(int.to_float(rest) *. defence.shield_mitigation_max),
+              )
+            let to_health = rest - shielded
+            let overkill = int.max(0, to_health - left)
+            let kills = left > 0 && to_health >= left
+            let description =
+              Description(
+                spell4_effects_id: blow.spell4_effects_id,
+                delay_ms: blow.delay_ms,
+                damage: described(
+                  blow:,
+                  raw:,
+                  mitigated: mitigated + soaked,
+                  shielded:,
+                  to_health:,
+                  overkill:,
+                  glanced:,
+                  kills:,
+                  critical:,
+                ),
+              )
+            #(
+              [description, ..done],
+              int.max(0, left - to_health),
+              shield_left - shielded,
+              absorbs_left,
+              killed || kills,
             )
-          let mitigated = after_glance - taken
-          let shielded =
-            int.min(
-              shield_left,
-              float.round(int.to_float(taken) *. defence.shield_mitigation_max),
-            )
-          let to_health = taken - shielded
-          let overkill = int.max(0, to_health - left)
-          let kills = left > 0 && to_health >= left
-          let description =
-            Description(
-              spell4_effects_id: blow.spell4_effects_id,
-              delay_ms: blow.delay_ms,
-              damage: described(
-                blow:,
-                raw:,
-                mitigated:,
-                shielded:,
-                to_health:,
-                overkill:,
-                glanced:,
-                kills:,
-                critical:,
-              ),
-            )
-          #(
-            [description, ..done],
-            int.max(0, left - to_health),
-            shield_left - shielded,
-            killed || kills,
-          )
-        })
+          },
+        )
       Landed(
         descriptions: list.reverse(descriptions),
         health: left,
         shield: shield_left,
+        absorbs: absorbs_left,
         killed:,
       )
     }
   }
+}
+
+/// What the pools take of one blow of `damage` after mitigation, and the pools left: each
+/// pool whose mask holds the blow's `damage_type` (the message's DamageType value),
+/// oldest first, gives up to what it has left until the damage is taken, and a pool used
+/// up is dropped (`Spell4Effects.effectType.29`). A pool whose mask does not hold the
+/// type is untouched, and a blow of 0 takes nothing. No pool soaks nothing.
+fn soak(
+  absorbs absorbs: List(Absorb),
+  damage_type damage_type: Int,
+  damage damage: Int,
+) -> #(Int, List(Absorb)) {
+  let #(to_take, kept) =
+    list.fold(absorbs, #(int.max(0, damage), []), fn(so_far, absorb) {
+      let #(to_take, kept) = so_far
+      case to_take > 0 && holds(absorb:, damage_type:) {
+        False -> #(to_take, [absorb, ..kept])
+        True -> {
+          let taken = int.min(absorb.left, to_take)
+          let left = absorb.left - taken
+          case left > 0 {
+            True -> #(to_take - taken, [Absorb(..absorb, left:), ..kept])
+            False -> #(to_take - taken, kept)
+          }
+        }
+      }
+    })
+  #(int.max(0, damage) - to_take, list.reverse(kept))
+}
+
+/// Whether the pool takes blows of `damage_type`: bit 2^(t-1) of its mask is set for the
+/// type t (`Spell4Effects.effectType.29`).
+fn holds(absorb absorb: Absorb, damage_type damage_type: Int) -> Bool {
+  let bit = case damage_type.from_value(damage_type) {
+    damage_type.Physical -> 1
+    damage_type.Tech -> 2
+    damage_type.Magic -> 4
+    damage_type.Heal
+    | damage_type.HealShields
+    | damage_type.Fall
+    | damage_type.Suffocate
+    | damage_type.Other(..) -> 0
+  }
+  int.bitwise_and(absorb.mask, bit) != 0
 }
 
 fn mitigation_of(defence defence: Defence, blow blow: Blow) -> Float {

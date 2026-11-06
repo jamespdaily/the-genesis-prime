@@ -64,6 +64,7 @@ import genesis_prime/message/unit_health
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property
+import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
@@ -1409,6 +1410,8 @@ pub type FightEvent {
   ShieldIs(unit_id: Int, shield: Int)
   /// 0x938 of stat 21: the unit's current Interrupt Armor (opcode.0x938.interrupt_armor).
   InterruptArmorIs(unit_id: Int, armor: Int)
+  /// 0x938 of stat 22: the unit's absorption (opcode.0x938).
+  AbsorptionIs(unit_id: Int, absorption: Int)
   /// 0x92f: the player's own health (opcode.0x92f).
   OwnHealthIs(unit_id: Int, health: Int)
   /// 0x638: the unit's command kinds in order, and the place the commands leave the
@@ -1454,12 +1457,14 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
       }
       0x0938 -> {
         let assert Ok(changed) = unit_stat_changed.decode(frame.body)
-          as "0x938 decodes: the server sends it only for stats 20 and 21"
+          as "0x938 decodes: the server sends it only for stats 20, 21 and 22"
         Ok(case changed.change {
           unit_stat_change.Shield(UnitStatShield(value:)) ->
             ShieldIs(unit_id: changed.unit_id, shield: value)
           unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value:)) ->
             InterruptArmorIs(unit_id: changed.unit_id, armor: value)
+          unit_stat_change.Absorption(UnitStatAbsorption(value:)) ->
+            AbsorptionIs(unit_id: changed.unit_id, absorption: value)
         })
       }
       0x092F -> {

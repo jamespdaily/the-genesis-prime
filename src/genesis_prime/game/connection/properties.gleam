@@ -23,7 +23,10 @@
 ////   an armor above a lowered maximum until the next 0x938
 ////   (`opcode.0x938.interrupt_armor`).
 //// - **A change that moves nothing** is not told: a modifier that leaves a value as it
-////   was, a source already held, and an end of a source that is not held.
+////   was, a source already held, and an end of a source that is not held: the cast rule's
+////   end is told by source to the life's absorb pools as well
+////   (genesis_prime/game/connection/absorption), so an end for a pool's source reaches this
+////   rule and changes nothing.
 //// - **The life follows the properties**: BaseHealth and ShieldCapacityMax are the
 ////   maxima, HealthRegenMultiplier and ShieldTickTime the regeneration's numbers; the
 ////   health and shield are kept and capped at a lowered maximum, which the player's

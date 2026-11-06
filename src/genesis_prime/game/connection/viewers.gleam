@@ -138,6 +138,7 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/message/unit_stat.{type UnitStat}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/step.{
@@ -328,6 +329,7 @@ pub fn viewer_takes(
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
+    | client_connection.Absorption(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> False
@@ -569,6 +571,15 @@ pub fn viewer_takes(
         ),
       ])
     }
+    client_connection.Absorption(absorption:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.absorption_frame(unit_id:, absorption:),
+        ),
+      ])
+    }
     client_connection.PropertiesChanged(properties:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
@@ -699,6 +710,7 @@ fn creature_news(
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
+    | client_connection.Absorption(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> session
@@ -787,6 +799,7 @@ fn life_news(
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
+    | client_connection.Absorption(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> Continue(session, [])
@@ -842,7 +855,9 @@ fn finishes_of_forgotten_casts(
 /// the place the player stands at now, with its health now as stat 0, so a dead
 /// player is created dead (`0x140457bc5`), its shield now as stat 20
 /// (`opcode.0x938`) and its Interrupt Armor as stat 21 while it is above 0
-/// (`opcode.0x938.interrupt_armor`: the create's stat list sets it), without its class resource: the stat and the ResourceMax
+/// (`opcode.0x938.interrupt_armor`: the create's stat list sets it) and its absorption as
+/// stat 22 while it is above 0 (`opcode.0x938`, `0x14064fb40`: the create's stat list sets
+/// it), without its class resource: the stat and the ResourceMax
 /// property of the player's own 0x262 are left out, since a 0x935 goes to the
 /// player alone (`opcode.0x262.resource_stats`), and stamped from the map's clock,
 /// from the origin `Joined` carried (`map.server_time`).
@@ -859,6 +874,7 @@ fn appearance(
   let health = player_life.health(life: entered.life)
   let shield = player_life.shield(life: entered.life)
   let armor = player_life.interrupt_armor(life: entered.life)
+  let absorption = player_life.absorption(life: entered.life)
   let slot = class_resource.slot(resources: entered.resources)
   let resource_stat = unit_fields.resource_stat_id(slot:)
   let resource_max = unit_fields.resource_max_property(slot:)
@@ -877,21 +893,30 @@ fn appearance(
             _ -> Ok(stat)
           }
         }),
-        case armor > 0 {
-          True -> [
-            unit_fields.integer_stat(
-              stat_id: unit_fields.interrupt_armor_stat,
-              value: armor,
-            ),
-          ]
-          False -> []
-        },
+        list.flatten([
+          stat_above_zero(
+            stat_id: unit_fields.interrupt_armor_stat,
+            value: armor,
+          ),
+          stat_above_zero(
+            stat_id: unit_fields.absorption_stat,
+            value: absorption,
+          ),
+        ]),
       ),
       properties: list.filter(unit.tail.properties, fn(property) {
         property.property_id != resource_max
       }),
     ),
   )
+}
+
+/// The stat the create lists: `value` while it is above 0, and none at 0.
+fn stat_above_zero(stat_id stat_id: Int, value value: Int) -> List(UnitStat) {
+  case value > 0 {
+    True -> [unit_fields.integer_stat(stat_id:, value:)]
+    False -> []
+  }
 }
 
 /// The session with the player's viewers changed by `change`.
