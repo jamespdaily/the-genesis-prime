@@ -29,9 +29,10 @@
 ////   disguise over a slot the base holds nothing in sends the slot with display 0. A
 ////   slot the base holds an item in is sent that item's visual, colour set and dye
 ////   included.
-//// - **A start or an end reports the visuals whose shown display changed**, in slot
-////   order, so one 0x933 carries them. A start that changes nothing, because the slot
-////   already shows that display, reports nothing.
+//// - **A start or an end reports the visuals whose shown visual changed** (display,
+////   colour set or dye, since the client draws all three), in slot order, so one 0x933
+////   carries them. A start that changes nothing, because the slot already shows that
+////   visual, reports nothing.
 //// - **The same source started twice is held once**, as for properties, and ending a
 ////   source that is not held reports nothing.
 //// - **The 0x262's list** is the base with each disguised slot's entry replaced, or
@@ -54,9 +55,10 @@
 //// | The caster leaves | `Entered` goes with its look; the next entry starts from the base | | |
 
 import genesis_prime/game/unit_properties
-import genesis_prime/message/item_visual.{type ItemVisual}
+import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/table/id.{type ItemDisplayId, type ItemSlotId}
 import gleam/bool
+import gleam/int
 import gleam/list
 
 /// What one DisguiseOutfit row shows in one slot: the ItemSlot id of its display's
@@ -85,11 +87,17 @@ pub fn new(base base: List(ItemVisual)) -> Look {
 /// The look with the disguise of `source` started, and the visuals whose shown display
 /// changed, in slot order.
 pub fn start(
-  look _look: Look,
-  source _source: unit_properties.Source,
-  disguise _disguise: Disguise,
+  look look: Look,
+  source source: unit_properties.Source,
+  disguise disguise: Disguise,
 ) -> #(Look, List(ItemVisual)) {
-  panic as "shape: #494"
+  let held = list.any(look.held, fn(held) { held.0 == source })
+  use <- bool.guard(when: held, return: #(look, []))
+  changed_by(
+    look:,
+    slots: slots_of(disguise:),
+    after: Look(..look, held: [#(source, disguise), ..look.held]),
+  )
 }
 
 /// The look with the disguise of `source` ended, and the visuals whose shown display
@@ -98,16 +106,88 @@ pub fn end(
   look look: Look,
   source source: unit_properties.Source,
 ) -> #(Look, List(ItemVisual)) {
-  let held = list.any(look.held, fn(held) { held.0 == source })
-  use <- bool.guard(when: !held, return: #(look, []))
-  panic as "shape: #494"
+  case list.find(look.held, fn(held) { held.0 == source }) {
+    Error(Nil) -> #(look, [])
+    Ok(#(_, disguise)) ->
+      changed_by(
+        look:,
+        slots: slots_of(disguise:),
+        after: Look(
+          ..look,
+          held: list.filter(look.held, fn(held) { held.0 != source }),
+        ),
+      )
+  }
 }
 
 /// The item visuals a 0x262 of the player lists: the base with each disguised slot's
 /// entry replaced by what shows there, or added.
 pub fn visuals(look look: Look) -> List(ItemVisual) {
-  case look.held {
-    [] -> look.base
-    [_, ..] -> panic as "shape: #494"
+  let disguised =
+    look.held
+    |> list.flat_map(fn(held) { slots_of(disguise: held.1) })
+    |> list.unique
+    |> list.sort(by: int.compare)
+  let replaced =
+    list.map(look.base, fn(visual) {
+      case list.contains(disguised, visual.slot) {
+        True -> shown(look:, slot: visual.slot)
+        False -> visual
+      }
+    })
+  let added =
+    list.filter(disguised, fn(slot) {
+      !list.any(look.base, fn(visual) { visual.slot == slot })
+    })
+  list.append(replaced, list.map(added, fn(slot) { shown(look:, slot:) }))
+}
+
+/// The slots a disguise names, as the 0x933 and the 0x262 carry them.
+fn slots_of(disguise disguise: Disguise) -> List(Int) {
+  list.map(disguise.shown, fn(shown) { shown.item_slot.value })
+}
+
+/// What `look` shows in `slot`: the newest disguise that names the slot, else the
+/// base's visual for it, else display 0 (`opcode.0x933.empty_display`).
+fn shown(look look: Look, slot slot: Int) -> ItemVisual {
+  let disguised =
+    list.find_map(look.held, fn(held) {
+      list.find(held.1.shown, fn(shown) { shown.item_slot.value == slot })
+    })
+  case disguised {
+    Ok(shown) ->
+      ItemVisual(
+        slot:,
+        display_id: shown.display.value,
+        item_color_set_id: 0,
+        dye: 0,
+      )
+    Error(Nil) ->
+      case list.find(look.base, fn(visual) { visual.slot == slot }) {
+        Ok(visual) -> visual
+        Error(Nil) ->
+          ItemVisual(slot:, display_id: 0, item_color_set_id: 0, dye: 0)
+      }
   }
+}
+
+/// `after`, and the visuals of `slots` whose shown visual differs between `look` and
+/// `after`, in slot order.
+fn changed_by(
+  look look: Look,
+  slots slots: List(Int),
+  after after: Look,
+) -> #(Look, List(ItemVisual)) {
+  let changed =
+    slots
+    |> list.unique
+    |> list.sort(by: int.compare)
+    |> list.filter_map(fn(slot) {
+      let now = shown(look: after, slot:)
+      case now == shown(look:, slot:) {
+        True -> Error(Nil)
+        False -> Ok(now)
+      }
+    })
+  #(after, changed)
 }
