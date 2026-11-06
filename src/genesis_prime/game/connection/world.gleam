@@ -373,6 +373,7 @@ pub fn leave_answered(
     | step.Answer(FromMap(map.Retire))
     | step.Answer(FromMap(map.Approached(..)))
     | step.Answer(FromMap(map.Withdrew(..)))
+    | step.Answer(FromMap(map.PlayerDied(..)))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) ->

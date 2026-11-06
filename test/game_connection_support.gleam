@@ -504,6 +504,7 @@ pub fn map_run_with_four_players(run: Int) -> map.State {
               character: world_character(),
               place:,
               stay: viewer_stay(other),
+              alive: True,
             ),
           )),
         ),
@@ -849,6 +850,7 @@ pub fn mapped(
     | TellMoved(..)
     | client_connection.TellReady(..)
     | client_connection.TellStealthChanged(..)
+    | client_connection.TellLifeChanged(..)
     | TellPeer(..)
     | client_connection.TellStrike(..)
     | client_connection.TellTargetMoved(..)
@@ -992,6 +994,14 @@ pub fn peer_tells_for(
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
+/// The tell of `request` to the run of the map that took the tests' player, as the
+/// connection's rule asks for it.
+pub fn map_tell(
+  request request: Request,
+) -> step.Effect(step.ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(to: Map(map: camp_map(), incarnation:), request:))
+}
+
 /// The tells of a step to the map: where each goes and what it says.
 pub fn told_the_map(
   taken: ConnectionStep(Request),
@@ -1038,17 +1048,54 @@ pub fn medic_in_world() -> game_connection.State {
   entered_as(Character(..world_character(), class_id: ClassId(4))).0
 }
 
+/// The Medic of these tables in the world.
+pub fn medic_in(tables tables: store_tables.Tables) -> game_connection.State {
+  let fresh = accepted(Settings(..settings(), tables:)).0
+  entered_from(
+    in_character_select: in_select_from(fresh),
+    character: Character(..world_character(), class_id: ClassId(4)),
+  ).0
+}
+
+/// A press of Paralytic Surge by a Medic of these tables, seen by the connections 2
+/// and 3: with a planted Stealth effect in the tables the press enters stealth, which
+/// may be kept on damage.
+pub fn stealthed_medic_in(
+  tables tables: store_tables.Tables,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  press_paralytic_surge(
+    state: watched_by(state: medic_in(tables:), viewers: [2, 3]),
+    client_cast_id: 1,
+  )
+}
+
+/// The step's effects after the first tell to the map, kept to those that write to the
+/// client or tell a viewer.
+pub fn writes_or_viewer_tells_after_the_map_tell(
+  taken taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  support.effects_of(taken)
+  |> list.drop_while(fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(to: Map(..), ..)) -> False
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> True
+    }
+  })
+  |> list.drop(1)
+  |> list.filter(fn(effect) {
+    case effect {
+      OwnEffect(step.Write(..))
+      | OwnEffect(step.Tell(to: step.Connection(..), ..)) -> True
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+}
+
 /// The Medic of these tables in the world, the Beast unit 40 shown before it.
 pub fn medic_with_beast_in_world(
   tables tables: store_tables.Tables,
 ) -> game_connection.State {
-  let fresh = accepted(Settings(..settings(), tables:)).0
-  let #(medic, _) =
-    entered_from(
-      in_character_select: in_select_from(fresh),
-      character: Character(..world_character(), class_id: ClassId(4)),
-    )
-  feed(state: medic, event: beast_appears(unit_id: 40)).0
+  feed(state: medic_in(tables:), event: beast_appears(unit_id: 40)).0
 }
 
 /// The 0x262 news of a Beast, as its process sends it, standing 3 m ahead of the

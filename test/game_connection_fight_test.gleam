@@ -937,6 +937,7 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
           | TellMoved(..)
           | client_connection.TellReady(..)
           | client_connection.TellStealthChanged(..)
+          | client_connection.TellLifeChanged(..)
           | TellPeer(..)
           | TellChat(..) -> Error(Nil)
         }

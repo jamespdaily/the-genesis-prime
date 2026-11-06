@@ -104,8 +104,8 @@ import genesis_prime/client_connection.{
   type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
   AskMapRun, AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions,
   FromStore, SentByChat, SentByFoe, SentByMap, SentByPeer, SentBySessions,
-  SentByTarget, TellChat, TellMoved, TellPeer, TellReady, TellStealthChanged,
-  TellStrike, TellStrikeAnswered, TellTargetMoved,
+  SentByTarget, TellChat, TellLifeChanged, TellMoved, TellPeer, TellReady,
+  TellStealthChanged, TellStrike, TellStrikeAnswered, TellTargetMoved,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -339,6 +339,7 @@ fn directory(settings: Settings) -> Directory {
       TellMoved(..)
       | TellReady(..)
       | TellStealthChanged(..)
+      | TellLifeChanged(..)
       | TellPeer(..)
       | TellChat(..)
       | TellStrike(..)
@@ -444,6 +445,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     TellMoved(..)
     | TellReady(..)
     | TellStealthChanged(..)
+    | TellLifeChanged(..)
     | TellPeer(..)
     | TellStrike(..)
     | TellTargetMoved(..)
@@ -462,7 +464,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
 }
 
 /// Tells the run of a map what the request says: that a player moved, is
-/// ready, or entered or left stealth. Any other request is an ask, which a tell never carries: a rule that
+/// ready, entered or left stealth, or died or woke. Any other request is an ask, which a tell never carries: a rule that
 /// tells one has a bug, logged as an error, and nothing is sent.
 pub fn tell_the_run(
   subject subject: Subject(Call(map.Message, map.Outgoing)),
@@ -484,6 +486,11 @@ pub fn tell_the_run(
           subject,
           map.StealthChanged(connection:, stealthed:),
         )
+      Nil
+    }
+    TellLifeChanged(connection:, alive:) -> {
+      let _sent =
+        service.tell_subject(subject, map.LifeChanged(connection:, alive:))
       Nil
     }
     TellPeer(..)
@@ -565,6 +572,7 @@ fn connection_deliver(
       | TellMoved(..), _
       | TellReady(..), _
       | TellStealthChanged(..), _
+      | TellLifeChanged(..), _
       | AskStore(..), _
       | AskHandOff(..), _
       | AskSessions(..), _
@@ -638,7 +646,8 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     | map.Unwatched(..)
     | map.Retire
     | map.Approached(..)
-    | map.Withdrew(..) -> Error(Nil)
+    | map.Withdrew(..)
+    | map.PlayerDied(..) -> Error(Nil)
   }
 }
 

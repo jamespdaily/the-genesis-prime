@@ -60,7 +60,8 @@ pub fn life_effects(
       player_life.DamageTaken
       | player_life.CombatLeft
       | player_life.EndCasts
-      | player_life.GoToHolocrypt -> []
+      | player_life.GoToHolocrypt
+      | player_life.TellMap(..) -> []
     }
   })
 }
