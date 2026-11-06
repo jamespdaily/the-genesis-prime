@@ -630,7 +630,7 @@ pub fn a_player_with_health_and_base_health_is_the_clients_912_bits_test() -> Ni
         ..minimal_player().tail,
         stats: [unit_fields.integer_stat(stat_id: 0, value: 136)],
         properties: [
-          UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
+          UnitProperty(property_id: 7, base: 0x43080000, value: 0x43080000),
         ],
       ),
     ),

@@ -75,9 +75,11 @@
 ////   connection replays them (genesis_prime/game/strike_tell).
 //// - **A level-1 player's defence** has no deflect, critical deflect or glance: each
 ////   is 0 from UnitProperty2's defaults (`player.level1_defence`); its physical
-////   mitigation is GameFormula 1234 from its gear's Armor (`0x140464240`,
-////   `player.level1_gear_properties`), and its shield takes up to ShieldMitigationMax
-////   of each blow (genesis_prime/game/hit).
+////   mitigation is GameFormula 1234 from its Armor, its gear's unless a modifier
+////   changes it (`0x140464240`, `player.level1_gear_properties`), and its shield takes
+////   up to ShieldMitigationMax of each blow (genesis_prime/game/hit). Armor,
+////   ShieldMitigationMax, the maxima and the regeneration numbers are the player's
+////   properties (genesis_prime/game/unit_properties).
 //// - **Health** stays in [0, max]. At 0 the answer is `Landed` with the killed bit,
 ////   the creature releases the player, and a later strike is refused `Dead`.
 //// - **Health regenerates** while P is alive, out of combat and below its maximum,
@@ -85,12 +87,14 @@
 ////   HealthRegenMultiplier (UnitProperty2 8), at least 1: the client's text says only
 ////   "slowly out of combat" (149418), so the fraction and the tick are the server's
 ////   choices, two game_number rows (migration 0015), and the multiplier is the
-////   UnitProperty2 default (`UnitProperty2.176`).
+////   player's property, the UnitProperty2 default unless a modifier changes it
+////   (`UnitProperty2.176`).
 //// - **The shield regenerates** ShieldRebootTime after the last blow that lowered
 ////   health or shield (text 531855), then each ShieldTickTime by ShieldRegenPct of
 ////   its maximum (text 531859), in or out of combat. ShieldRegenPct and
 ////   ShieldRebootTime are the player's shield item's (properties 176 and 178 of its
-////   0x262); ShieldTickTime is UnitProperty2 177's default (`UnitProperty2.176`).
+////   0x262); ShieldTickTime is the player's property, UnitProperty2 177's default unless
+////   a modifier changes it (`UnitProperty2.176`).
 //// - **The combat flag** has no client timer (`opcode.0x89a`): the server sends it on
 ////   with the first fighter and off with the last.
 //// - **The stream** goes only to fighters: a creature that holds P on its threat list
@@ -145,10 +149,10 @@
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/hit.{type Defence, type Rolls}
 import genesis_prime/game/item_property
-import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{type Tell, Answered}
+import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
 import genesis_prime/step.{type Address, type TimerId, TimerId}
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -339,12 +343,12 @@ pub const offered_choices = 3
 pub const window_zero = 0
 
 /// The numbers a player regenerates by: the server's two choices from the
-/// game_number rows, UnitProperty2's defaults for HealthRegenMultiplier and
-/// ShieldTickTime from the rating formulas, and ShieldRegenPct and ShieldRebootTime
-/// of the player's shield item; with no shield item the shield has no clock.
+/// game_number rows, the player's HealthRegenMultiplier and ShieldTickTime
+/// properties, and ShieldRegenPct and ShieldRebootTime of the player's shield item;
+/// with no shield item the shield has no clock.
 pub fn regeneration(
   numbers numbers: GameNumbers,
-  formulas formulas: Formulas,
+  properties properties: Properties,
   shield shield: Option(item_property.Shield),
 ) -> Regeneration {
   let shield =
@@ -352,14 +356,81 @@ pub fn regeneration(
       ShieldRegeneration(
         percent: item.regen_percent,
         reboot_ms: item.reboot_time_ms,
-        tick_ms: formulas.player_shield_tick_ms,
+        tick_ms: shield_tick_ms(properties:),
       )
     })
   Regeneration(
     health_fraction: numbers.health_regen_fraction,
-    health_multiplier: formulas.player_health_regen_multiplier,
+    health_multiplier: health_multiplier(properties:),
     health_tick_ms: numbers.health_regen_tick_ms,
     shield:,
+  )
+}
+
+/// The number a health tick's share is multiplied by: the player's
+/// HealthRegenMultiplier.
+fn health_multiplier(properties properties: Properties) -> Float {
+  unit_properties.value(
+    properties:,
+    property: unit_properties.health_regen_multiplier,
+  )
+}
+
+/// The milliseconds between shield ticks: the player's ShieldTickTime, rounded.
+fn shield_tick_ms(properties properties: Properties) -> Int {
+  float.round(unit_properties.value(
+    properties:,
+    property: unit_properties.shield_tick_time,
+  ))
+}
+
+/// The life after the player's properties changed: the maxima are the BaseHealth and
+/// ShieldCapacityMax values, the health and the shield are kept and capped at the new
+/// maxima (the server's choice: the client holds no rule for a maximum that changes), and
+/// the regeneration takes the new HealthRegenMultiplier and ShieldTickTime. A health or
+/// shield the cap lowers is written to the player's client and its viewers, and the
+/// health clock starts or stops as the new maximum asks. The shield's clock is left as it
+/// is: a raised maximum does not start it, the next blow does.
+pub fn properties_changed(
+  life life: Life,
+  properties properties: Properties,
+) -> #(Life, List(Effect)) {
+  let max_health =
+    float.round(unit_properties.value(
+      properties:,
+      property: unit_properties.base_health,
+    ))
+  let max_shield =
+    float.round(unit_properties.value(
+      properties:,
+      property: unit_properties.shield_capacity_max,
+    ))
+  let regeneration =
+    Regeneration(
+      ..life.regeneration,
+      health_multiplier: health_multiplier(properties:),
+      shield: option.map(life.regeneration.shield, fn(shield) {
+        ShieldRegeneration(..shield, tick_ms: shield_tick_ms(properties:))
+      }),
+    )
+  let health = int.min(life.health, max_health)
+  let shield = int.min(life.shield, max_shield)
+  let changed =
+    Life(..life, max_health:, max_shield:, health:, shield:, regeneration:)
+  let #(changed, timers) = health_clock_settled(life: changed)
+  #(
+    changed,
+    list.flatten([
+      case health == life.health {
+        True -> []
+        False -> health_told(health:, dead: False)
+      },
+      case shield == life.shield {
+        True -> []
+        False -> shield_told(shield:)
+      },
+      timers,
+    ]),
   )
 }
 
@@ -414,14 +485,14 @@ pub fn saved_health(life life: Life) -> Option(Int) {
   }
 }
 
-/// A level-1 player's defence from its loadout: its deflect, critical deflect and
+/// A level-1 player's defence from its properties: its deflect, critical deflect and
 /// glance chances and its glance amount from UnitProperty2's defaults (0) and no
 /// rating (`player.level1_defence`), each through its rating formula; the mitigation
-/// of its gear's Armor (property 42, with ResistPhysical and the offsets at their
+/// of its Armor (property 42, with ResistPhysical and the offsets at their
 /// defaults, 0) by GameFormula 1234 (`0x140464240`) for each damage type; and its
-/// shield's ShieldMitigationMax.
+/// ShieldMitigationMax (property 175), 0 for a player with no shield.
 pub fn defence(
-  loadout loadout: Loadout,
+  properties properties: Properties,
   level level: Int,
   formulas formulas: Formulas,
 ) -> Defence {
@@ -433,7 +504,10 @@ pub fn defence(
       formulas:,
       level:,
       base: 0.0,
-      rating: loadout.properties.armor,
+      rating: unit_properties.value(
+        properties:,
+        property: unit_properties.armor,
+      ),
     )
   hit.Defence(
     deflect_chance: chance(formulas.deflect_chance),
@@ -443,10 +517,10 @@ pub fn defence(
     physical_mitigation: mitigation,
     tech_mitigation: mitigation,
     magic_mitigation: mitigation,
-    shield_mitigation_max: case loadout.properties.shield {
-      Some(item_property.Shield(mitigation_max:, ..)) -> mitigation_max
-      None -> 0.0
-    },
+    shield_mitigation_max: unit_properties.value(
+      properties:,
+      property: unit_properties.shield_mitigation_max,
+    ),
   )
 }
 
@@ -490,10 +564,7 @@ pub fn struck(
         hit.Landed(descriptions:, health: left, shield:, ..) -> {
           let shield_news = case shield == life.shield {
             True -> []
-            False -> [
-              ToClient(OwnShield(shield:)),
-              ToViewers(client_connection.Shield(shield:)),
-            ]
+            False -> shield_told(shield:)
           }
           let lowered = shield != life.shield || left != life.health
           let #(life, after) = case left {
@@ -504,12 +575,8 @@ pub fn struck(
             life,
             list.flatten([
               shield_news,
+              health_told(health: left, dead: left == 0),
               [
-                ToClient(OwnHealth(health: left)),
-                ToViewers(client_connection.Health(
-                  health: left,
-                  dead: left == 0,
-                )),
                 Answer(
                   to: strike.from,
                   answered: Answered(
@@ -610,11 +677,20 @@ fn choice(value value: Int) -> Choice {
 fn came_back(life life: Life) -> #(Life, List(Effect)) {
   let health = life.max_health
   let shield = life.max_shield
-  #(Life(..life, health:, shield:, state: Alive), [
-    ToClient(OwnHealth(health:)),
-    ToViewers(client_connection.Health(health:, dead: False)),
-    ToClient(OwnShield(shield:)),
-    ToViewers(client_connection.Shield(shield:)),
+  #(
+    Life(..life, health:, shield:, state: Alive),
+    list.flatten([
+      health_told(health:, dead: False),
+      shield_told(shield:),
+      came_back_news(),
+    ]),
+  )
+}
+
+/// What the player's coming back tells after its health and shield: the death state,
+/// the resurrection window, the ghost's removal, the body's control and the combat log.
+fn came_back_news() -> List(Effect) {
+  [
     ToClient(OwnDeathState(dead: False)),
     ToViewers(client_connection.CameBack),
     ToClient(OwnResurrectionWindow(dead: False)),
@@ -622,7 +698,21 @@ fn came_back(life life: Life) -> #(Life, List(Effect)) {
     ToClient(ControlGiven(to: ControlBody)),
     ToClient(OwnCameBackLogged),
     ToViewers(client_connection.CameBackLogged),
-  ])
+  ]
+}
+
+/// The player's health written to its own client (0x92f) and told to its viewers (0x937).
+fn health_told(health health: Int, dead dead: Bool) -> List(Effect) {
+  [
+    ToClient(OwnHealth(health:)),
+    ToViewers(client_connection.Health(health:, dead:)),
+  ]
+}
+
+/// The player's shield written to its own client and told to its viewers (0x938 of
+/// stat 20).
+fn shield_told(shield shield: Int) -> List(Effect) {
+  [ToClient(OwnShield(shield:)), ToViewers(client_connection.Shield(shield:))]
 }
 
 /// Whether the player is alive.
@@ -787,11 +877,7 @@ fn health_ticked(life life: Life) -> #(Life, List(Effect)) {
     |> int.max(1)
   let health = int.min(life.health + share, life.max_health)
   let #(life, timers) = health_clock_settled(life: Life(..life, health:))
-  #(life, [
-    ToClient(OwnHealth(health:)),
-    ToViewers(client_connection.Health(health:, dead: False)),
-    ..timers
-  ])
+  #(life, list.append(health_told(health:, dead: False), timers))
 }
 
 /// A blow lowered the health or the shield of a living player: the shield's clock
@@ -849,11 +935,7 @@ fn shield_gained(
     ])
     False -> #(life, [])
   }
-  #(life, [
-    ToClient(OwnShield(shield:)),
-    ToViewers(client_connection.Shield(shield:)),
-    ..timers
-  ])
+  #(life, list.append(shield_told(shield:), timers))
 }
 
 /// Both clocks stopped, each running one cancelled.

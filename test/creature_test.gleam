@@ -514,7 +514,7 @@ fn recorded_beast() -> Spawn {
 /// in both words, 0x43DD0000 as a 32-bit float (sign 0, exponent 135, mantissa
 /// 0x5D0000), as the player's vector sends its own (`opcode.0x262.health`).
 fn base_health_442() -> List(unit_property.UnitProperty) {
-  [UnitProperty(property_id: 7, field_2: 0x43DD0000, value: 0x43DD0000)]
+  [UnitProperty(property_id: 7, base: 0x43DD0000, value: 0x43DD0000)]
 }
 
 pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_current_health_and_its_recorded_maximum_test() -> Nil {

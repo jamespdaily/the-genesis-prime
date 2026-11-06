@@ -75,9 +75,9 @@ import genesis_prime/game/connection/state.{
   ToCharacterSelect, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/movement
-import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/top_zone
+import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
@@ -452,7 +452,7 @@ pub fn entry_answered(
           next_whisper: session.next_whisper,
           classes: session.settings.class_resources,
           numbers: session.settings.numbers,
-          formulas: rating.formulas(tables: session.settings.tables),
+          defaults: unit_properties.defaults(tables: session.settings.tables),
         )
       {
         Ok(world_entry.InTheWorld(entered:, effects:)) ->

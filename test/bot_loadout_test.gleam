@@ -178,7 +178,7 @@ fn unit_with(
       ..record.tail,
       properties: list.map(properties, fn(pair) {
         let bits = float32.to_bits(pair.1)
-        UnitProperty(property_id: pair.0, field_2: bits, value: bits)
+        UnitProperty(property_id: pair.0, base: bits, value: bits)
       }),
     ),
   )

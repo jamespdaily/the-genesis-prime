@@ -67,7 +67,7 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
-import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/world_map/unit_fields
 import gleam/float
@@ -165,6 +165,41 @@ pub fn character_id(unit unit: PlayerUnit) -> Int {
   character_id
 }
 
+/// The properties a player's 0x262 lists from its loadout, in id order, each with its
+/// base and value alike: its maximum health as BaseHealth (7), the gear's Assault Rating
+/// (35), Support Rating (36) and Armor (42), and its shield's ShieldCapacityMax (41),
+/// ShieldMitigationMax (175), ShieldRegenPct (176) and ShieldRebootTime (178), when it
+/// holds a shield (`opcode.0x262`, `player.level1_gear_properties`).
+pub fn gear_properties(
+  loadout loadout: Loadout,
+  max_health max_health: Int,
+) -> List(UnitProperty) {
+  let gear = loadout.properties
+  let shield_properties = case gear.shield {
+    Some(Shield(capacity_max:, mitigation_max:, regen_percent:, reboot_time_ms:)) -> [
+      #(41, capacity_max),
+      #(175, mitigation_max),
+      #(176, regen_percent),
+      #(178, int.to_float(reboot_time_ms)),
+    ]
+    None -> []
+  }
+  list.flatten([
+    [
+      #(unit_fields.base_health_property, int.to_float(max_health)),
+      #(35, gear.assault_rating),
+      #(36, gear.support_rating),
+      #(42, gear.armor),
+    ],
+    shield_properties,
+  ])
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.map(fn(pair) {
+    let bits = float32.to_bits(pair.1)
+    UnitProperty(property_id: pair.0, base: bits, value: bits)
+  })
+}
+
 /// Message 0x262 for the unit, in the realm.
 pub fn create(
   unit unit: PlayerUnit,
@@ -183,30 +218,7 @@ pub fn create(
     ]
     None -> []
   }
-  let shield_properties = case gear.shield {
-    Some(Shield(capacity_max:, mitigation_max:, regen_percent:, reboot_time_ms:)) -> [
-      #(41, capacity_max),
-      #(175, mitigation_max),
-      #(176, regen_percent),
-      #(178, int.to_float(reboot_time_ms)),
-    ]
-    None -> []
-  }
-  let properties =
-    list.flatten([
-      [
-        #(unit_fields.base_health_property, int.to_float(max_health)),
-        #(35, gear.assault_rating),
-        #(36, gear.support_rating),
-        #(42, gear.armor),
-      ],
-      shield_properties,
-    ])
-    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
-    |> list.map(fn(pair) {
-      let bits = float32.to_bits(pair.1)
-      UnitProperty(property_id: pair.0, field_2: bits, value: bits)
-    })
+  let properties = gear_properties(loadout:, max_health:)
   UnitCreatePlayer(
     unit_id:,
     character_id:,
@@ -302,7 +314,7 @@ pub fn with_resource(
       properties: [
           UnitProperty(
             property_id: unit_fields.resource_max_property(slot: resource.slot),
-            field_2: bits,
+            base: bits,
             value: bits,
           ),
           ..record.tail.properties

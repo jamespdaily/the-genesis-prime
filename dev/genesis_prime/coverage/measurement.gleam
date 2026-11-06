@@ -13,6 +13,10 @@ import gleam/option.{None, Some}
 pub type Status {
   /// A rule of the engine handles the type.
   Handled
+  /// A rule of the engine handles the type with a gap: what it does not handle, the
+  /// fact file's key of the client's reading, and how many of the type's rows no rule
+  /// reads (they are not handled).
+  HandledWithGap(reason: String, fact_key: String, unread_rows: Int)
   /// The client's code was read for the type and the engine does not handle it:
   /// what it lacks and the fact file's key of the reading.
   DecodedMissing(reason: String, fact_key: String)
@@ -47,7 +51,8 @@ pub type Measurement {
     /// The types the engine's declaration names that no row uses: the ids it
     /// lists as handled and the types it lists as missing.
     breaches: List(Int),
-    /// The types the engine both handles and lists as missing.
+    /// The types the engine both handles and lists as missing, and the types it lists
+    /// as partial that it does not handle.
     conflicts: List(Int),
     /// The rows the starting abilities' trees name that the tables lack: the
     /// starting abilities' column is then empty and the measure fails.
@@ -73,10 +78,12 @@ pub fn measure(
       }
     None -> #([], [])
   }
+  let unread = engine.unread_rows(tables, _)
   let measured = case engine.source {
     engine.TableColumns(values:, ..) ->
-      from_values(engine:, values: values(tables), starting:)
-    engine.Cases(ids:, ..) -> from_values(engine:, values: ids, starting:)
+      from_values_reading(engine:, values: values(tables), starting:, unread:)
+    engine.Cases(ids:, ..) ->
+      from_values_reading(engine:, values: ids, starting:, unread:)
     engine.CasesNotRecorded(needed:, ..) -> Unmeasured(engine:, needed:)
   }
   case measured {
@@ -94,12 +101,28 @@ pub fn from_values(
   values values: List(Int),
   starting starting: List(Int),
 ) -> Measurement {
+  from_values_reading(engine:, values:, starting:, unread: fn(_) { 0 })
+}
+
+/// The same, with `unread` giving how many rows of a partial type no rule reads.
+fn from_values_reading(
+  engine engine: EngineDeclaration,
+  values values: List(Int),
+  starting starting: List(Int),
+  unread unread: fn(Int) -> Int,
+) -> Measurement {
   case engine.source {
     engine.CasesNotRecorded(needed:, ..) -> Unmeasured(engine:, needed:)
     engine.TableColumns(..) ->
-      measured(engine:, values:, starting:, zero: type_count.EmptySlot)
+      measured(engine:, values:, starting:, zero: type_count.EmptySlot, unread:)
     engine.Cases(..) ->
-      measured(engine:, values:, starting:, zero: type_count.ATypeLikeAnyOther)
+      measured(
+        engine:,
+        values:,
+        starting:,
+        zero: type_count.ATypeLikeAnyOther,
+        unread:,
+      )
   }
 }
 
@@ -108,6 +131,7 @@ fn measured(
   values values: List(Int),
   starting starting: List(Int),
   zero zero: type_count.ZeroMeans,
+  unread unread: fn(Int) -> Int,
 ) -> Measurement {
   let count = type_count.count(values:, zero:)
   let in_starting =
@@ -120,7 +144,7 @@ fn measured(
         type_number: counted.type_number,
         rows: counted.rows,
         share: counted.share,
-        status: status_of(engine:, type_number: counted.type_number),
+        status: status_of(engine:, type_number: counted.type_number, unread:),
         starting_abilities: dict.get(in_starting, counted.type_number)
           |> option.from_result
           |> option.unwrap(0),
@@ -133,36 +157,67 @@ fn measured(
     engine.Listed(ids:) -> list.filter(ids, fn(declared) { !used(declared) })
     engine.Decoded(..) -> []
   }
-  let unused_missing =
-    list.filter(engine.missing, fn(missing) { !used(missing.type_number) })
-    |> list.map(fn(missing) { missing.type_number })
-  let conflicts =
-    list.filter_map(engine.missing, fn(missing) {
-      case engine.handles(engine:, type_number: missing.type_number) {
-        True -> Ok(missing.type_number)
-        False -> Error(Nil)
-      }
+  let unused = fn(gaps: List(engine.Missing)) {
+    list.filter(gaps, fn(gap) { !used(gap.type_number) })
+    |> list.map(fn(gap) { gap.type_number })
+  }
+  let handled_gaps = fn(gaps: List(engine.Missing), handled: Bool) {
+    list.filter(gaps, fn(gap) {
+      engine.handles(engine:, type_number: gap.type_number) == handled
     })
+    |> list.map(fn(gap) { gap.type_number })
+  }
+  let conflicts =
+    list.append(
+      handled_gaps(engine.missing, True),
+      handled_gaps(engine.partial, False),
+    )
   Measured(
     engine:,
     types:,
     rows: count.rows,
     zero_values: count.zero_values,
-    breaches: list.append(unused_handled, unused_missing),
+    breaches: list.flatten([
+      unused_handled,
+      unused(engine.missing),
+      unused(engine.partial),
+    ]),
     conflicts:,
     missing_rows: [],
   )
 }
 
-/// Where the type stands: handled when the engine handles it, else decoded and
-/// missing when the engine lists it so, else not decoded.
+/// Whether a rule handles the type, with a gap or without.
+pub fn is_handled(status status: Status) -> Bool {
+  case status {
+    Handled | HandledWithGap(..) -> True
+    DecodedMissing(..) | NotDecoded -> False
+  }
+}
+
+/// Where the type stands: handled when the engine handles it, with its gap when the
+/// engine lists it as partial, else decoded and missing when the engine lists it so,
+/// else not decoded.
 fn status_of(
   engine engine: EngineDeclaration,
   type_number type_number: Int,
+  unread unread: fn(Int) -> Int,
 ) -> Status {
   use <- bool.guard(
     when: engine.handles(engine:, type_number:),
-    return: Handled,
+    return: case
+      list.find(engine.partial, fn(partial) {
+        partial.type_number == type_number
+      })
+    {
+      Ok(partial) ->
+        HandledWithGap(
+          reason: partial.reason,
+          fact_key: partial.fact_key,
+          unread_rows: unread(type_number),
+        )
+      Error(Nil) -> Handled
+    },
   )
   case
     list.find(engine.missing, fn(missing) { missing.type_number == type_number })

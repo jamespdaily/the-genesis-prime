@@ -201,17 +201,17 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
           )),
         ],
         properties: [
-          UnitProperty(property_id: 7, field_2: 0x44380000, value: 0x44380000),
+          UnitProperty(property_id: 7, base: 0x44380000, value: 0x44380000),
           // ResourceMax_1 (UnitProperty2.ResourceMax_0) at 100.0, the Engineer's
           // maximum (the design: Tenton Hammer's Engineer guide).
-          UnitProperty(property_id: 10, field_2: 0x42C80000, value: 0x42C80000),
-          UnitProperty(property_id: 35, field_2: 0x434B1000, value: 0x434B1000),
-          UnitProperty(property_id: 36, field_2: 0x425EC000, value: 0x425EC000),
-          UnitProperty(property_id: 41, field_2: 0x43E10000, value: 0x43E10000),
-          UnitProperty(property_id: 42, field_2: 0x437A0000, value: 0x437A0000),
-          UnitProperty(property_id: 175, field_2: 0x3F200000, value: 0x3F200000),
-          UnitProperty(property_id: 176, field_2: 0x3E19999A, value: 0x3E19999A),
-          UnitProperty(property_id: 178, field_2: 0x45A02800, value: 0x45A02800),
+          UnitProperty(property_id: 10, base: 0x42C80000, value: 0x42C80000),
+          UnitProperty(property_id: 35, base: 0x434B1000, value: 0x434B1000),
+          UnitProperty(property_id: 36, base: 0x425EC000, value: 0x425EC000),
+          UnitProperty(property_id: 41, base: 0x43E10000, value: 0x43E10000),
+          UnitProperty(property_id: 42, base: 0x437A0000, value: 0x437A0000),
+          UnitProperty(property_id: 175, base: 0x3F200000, value: 0x3F200000),
+          UnitProperty(property_id: 176, base: 0x3E19999A, value: 0x3E19999A),
+          UnitProperty(property_id: 178, base: 0x45A02800, value: 0x45A02800),
         ],
         item_visuals: [
           ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0),

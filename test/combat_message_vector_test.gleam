@@ -424,7 +424,7 @@ pub fn a_static_object_is_created_as_type_10_11_or_32_with_a_creatures_type_data
         properties: [
           unit_property.UnitProperty(
             property_id: 7,
-            field_2: 0x43DD0000,
+            base: 0x43DD0000,
             value: 0x43DD0000,
           ),
         ],

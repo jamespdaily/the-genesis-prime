@@ -190,7 +190,7 @@ pub fn a_saved_health_below_the_maximum_is_the_stat_0_of_the_players_own_0x262_a
   let bits = float32.to_bits(int.to_float(game_connection_support.full_health))
   assert list.contains(
     unit.tail.properties,
-    UnitProperty(property_id: 7, field_2: bits, value: bits),
+    UnitProperty(property_id: 7, base: bits, value: bits),
   )
     as "Base Health, the maximum Unit:GetMaxHealth reads, stays full"
   assert unit_fields.stat(tail: unit.tail, stat_id: unit_fields.shield_stat)

@@ -115,11 +115,6 @@ pub fn mitigation_is_never_below_zero_test() -> Nil {
         int0: 0,
         int01: 75,
       ),
-      player_base_crit_chance: 0.0,
-      player_base_crit_severity: 1.5,
-      player_base_strikethrough: 0.0,
-      player_health_regen_multiplier: 1.0,
-      player_shield_tick_ms: 500,
     )
   assert rating.mitigation_fraction(
       formulas:,
@@ -148,11 +143,6 @@ pub fn the_clients_rows_build_the_formulas_test() -> Nil {
     && near(value: mitigation.f03, expected: 7250.0)
     && mitigation.int01 == 75
     as "GameFormula 1234 (0x140464240)"
-  assert formulas.player_base_crit_severity == 1.5
-    as "UnitProperty2 127 defaults to 1.5 (0x140463e80)"
-  assert formulas.player_health_regen_multiplier == 1.0
-    && formulas.player_shield_tick_ms == 500
-    as "UnitProperty2 8 defaults to 1.0 and 177 to 500 (UnitProperty2.176)"
 }
 
 pub fn the_test_support_formulas_are_the_clients_rows_test() -> Nil {
@@ -177,12 +167,4 @@ pub fn the_test_support_formulas_are_the_clients_rows_test() -> Nil {
     && same(planted.glance_chance, real.glance_chance)
     && same(planted.glance_amount, real.glance_amount)
     as "every GameFormula row the tests plant is the client's"
-  assert planted.player_base_crit_chance == real.player_base_crit_chance
-    && planted.player_base_crit_severity == real.player_base_crit_severity
-    && planted.player_base_strikethrough == real.player_base_strikethrough
-    as "UnitProperty2 102, 127 and 104 default to these"
-  assert planted.player_health_regen_multiplier
-    == real.player_health_regen_multiplier
-    && planted.player_shield_tick_ms == real.player_shield_tick_ms
-    as "UnitProperty2 8 and 177 default to these"
 }

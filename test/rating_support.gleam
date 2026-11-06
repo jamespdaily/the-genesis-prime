@@ -2,8 +2,7 @@
 //// that have no client tables (`genesis_prime/game/rating`): GameFormula 1230, 1231,
 //// 1232, 1234, 1235, 1236, 1245 and 1271 as the fact file records them (`0x140462ef0`,
 //// `0x140463700`, `0x140463e80`, `0x140464240`, `0x140463340`, `0x140463ac0`,
-//// `0x140461a30`, `0x1404615f0`), and a player's bases: UnitProperty2's defaults, BaseCritChance 0, a crit severity
-//// of 1.5 and BaseAvoidReduceChance 0 (`0x140463e80`).
+//// `0x140461a30`, `0x1404615f0`).
 
 import genesis_prime/game/rating.{type Formula, type Formulas, Formula, Formulas}
 import gleam/list
@@ -20,11 +19,6 @@ pub fn formulas() -> Formulas {
     crit_deflect: row(id: 1236),
     glance_chance: row(id: 1245),
     glance_amount: row(id: 1271),
-    player_base_crit_chance: 0.0,
-    player_base_crit_severity: 1.5,
-    player_base_strikethrough: 0.0,
-    player_health_regen_multiplier: 1.0,
-    player_shield_tick_ms: 500,
   )
 }
 

@@ -18,17 +18,15 @@
 ////   strikethrough 1230 (`0x140462ef0`), critical deflect 1236 (`0x140463ac0`),
 ////   glance chance 1245 and glance amount 1271 (`0x140453b60.callers`) and
 ////   mitigation 1234, never below 0 (`0x140464240`).
-//// - **A player's bases** are the UnitProperty2 default of BaseCritChance (102),
-////   CriticalHitSeverityMultiplier (127) and BaseAvoidReduceChance (104); a
-////   Novice's ratings for each are 0 (`player.level1_gear_properties`). The
-////   regeneration properties a player has no item for are read here too, as the
-////   same kind of default: HealthRegenMultiplier (8) and ShieldTickTime (177)
-////   (`UnitProperty2.176`).
+//// - **A player's bases** are the player's own properties
+////   (genesis_prime/game/unit_properties): BaseCritChance (102),
+////   CriticalHitSeverityMultiplier (127) and BaseAvoidReduceChance (104), which the
+////   callers hand to `to_fraction` as `base`; a Novice's ratings for each are 0
+////   (`player.level1_gear_properties`).
 
 import genesis_prime/table/game_formula
-import genesis_prime/table/id.{GameFormulaId, UnitProperty2Id}
+import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/unit_property2
 import gleam/bool
 import gleam/float
 import gleam/int
@@ -40,8 +38,7 @@ pub type Formula {
   Formula(f0: Float, f01: Float, f02: Float, f03: Float, int0: Int, int01: Int)
 }
 
-/// The formulas of the hit rule and a player's bases, built once when the tables
-/// load.
+/// The formulas of the hit rule, built once when the tables load.
 pub type Formulas {
   Formulas(
     crit_chance: Formula,
@@ -52,16 +49,6 @@ pub type Formulas {
     glance_chance: Formula,
     glance_amount: Formula,
     mitigation: Formula,
-    /// UnitProperty2 102's default, a player's BaseCritChance.
-    player_base_crit_chance: Float,
-    /// UnitProperty2 127's default, a player's CriticalHitSeverityMultiplier.
-    player_base_crit_severity: Float,
-    /// UnitProperty2 104's default, a player's BaseAvoidReduceChance.
-    player_base_strikethrough: Float,
-    /// UnitProperty2 8's default, a player's HealthRegenMultiplier.
-    player_health_regen_multiplier: Float,
-    /// UnitProperty2 177's default, a player's ShieldTickTime in milliseconds.
-    player_shield_tick_ms: Int,
   )
 }
 
@@ -116,8 +103,8 @@ pub fn mitigation_fraction(
 }
 
 /// The formulas as a value the tables' load builds once, under the tables' key
-/// (genesis_prime/table/loader/store `derived`): the GameFormula rows and the
-/// five UnitProperty2 defaults. A missing row fails the load.
+/// (genesis_prime/table/loader/store `derived`): the GameFormula rows. A missing
+/// row fails the load.
 pub fn derivation() -> table_store.Derivation {
   table_store.derivation(key: formulas_key, build: fn(tables) {
     build(tables:) |> result.map_error(fn(error) { describe(error:) })
@@ -146,11 +133,6 @@ pub fn build(
     })
     |> result.replace_error(NoRow(table: "GameFormula", id: number))
   }
-  let default = fn(number: Int) {
-    unit_property2.get(tables:, id: UnitProperty2Id(number))
-    |> result.map(fn(row) { row.default_value })
-    |> result.replace_error(NoRow(table: "UnitProperty2", id: number))
-  }
   use strikethrough <- result.try(formula(1230))
   use crit_chance <- result.try(formula(1231))
   use crit_severity <- result.try(formula(1232))
@@ -158,12 +140,7 @@ pub fn build(
   use deflect_chance <- result.try(formula(1235))
   use crit_deflect <- result.try(formula(1236))
   use glance_chance <- result.try(formula(1245))
-  use glance_amount <- result.try(formula(1271))
-  use player_base_crit_chance <- result.try(default(102))
-  use player_base_crit_severity <- result.try(default(127))
-  use player_base_strikethrough <- result.try(default(104))
-  use player_health_regen_multiplier <- result.try(default(8))
-  use player_shield_tick_ms <- result.map(default(177))
+  use glance_amount <- result.map(formula(1271))
   Formulas(
     crit_chance:,
     crit_severity:,
@@ -173,11 +150,6 @@ pub fn build(
     glance_chance:,
     glance_amount:,
     mitigation:,
-    player_base_crit_chance:,
-    player_base_crit_severity:,
-    player_base_strikethrough:,
-    player_health_regen_multiplier:,
-    player_shield_tick_ms: float.round(player_shield_tick_ms),
   )
 }
 

@@ -14,11 +14,16 @@
 ////   (`Spell4Effects.effectType.80`).
 //// - **CrowdControl** (4) holds a crowd-control state on the unit it aims at for its
 ////   time (`Spell4Effects.effectType.4`).
+//// - **PropertyModifier** (11) changes a property of the unit it aims at for its time;
+////   the server reads the rows whose aim includes the caster
+////   (`Spell4Effects.effectType.11.change`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
 //// Reading a row's columns stays with each rule; this decode looks at the type
-//// only.
+//// only, and `is_row_read` adds the aim for the one type a rule reads for some aims.
+
+import gleam/int
 
 /// What a rule reads an effect as.
 pub type Kind {
@@ -34,6 +39,11 @@ pub type Kind {
   /// A CCStateSet effect (4): holds a crowd-control state, a stun or a knockdown, on
   /// the unit it aims at (`Spell4Effects.effectType.4`).
   CrowdControl
+  /// A UnitPropertyModifier effect (11): changes a property of the unit it aims at
+  /// for its time (`Spell4Effects.effectType.11.change`). A row is read when its
+  /// targetFlags include the caster; a row aimed only at other units is not read
+  /// (`is_row_read`).
+  PropertyModifier
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -47,13 +57,37 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     17 -> Fluff
     80 -> ForceRemove
     4 -> CrowdControl
+    11 -> PropertyModifier
     other -> Unread(effect_type: other)
   }
 }
 
-/// Whether some rule reads the effect type: the coverage measure's "handled".
+/// Whether some rule reads the effect type: the coverage measure's "handled". A
+/// PropertyModifier counts as read for its rows aimed at the caster, which
+/// `is_row_read` tells apart from the others.
 pub fn is_read(effect_type effect_type: Int) -> Bool {
   case kind_of(effect_type:) {
+    Proxy
+    | Damage
+    | VitalModifier
+    | Fluff
+    | ForceRemove
+    | CrowdControl
+    | PropertyModifier -> True
+    Unread(..) -> False
+  }
+}
+
+/// Whether a row of the effect type with these `targetFlags` is read: every row of a
+/// type `is_read` for, except that a PropertyModifier row is read only when its flags
+/// include the caster (bit 1, `Spell4Effects.targetFlags`); a row aimed only at
+/// other units is the next step's.
+pub fn is_row_read(
+  effect_type effect_type: Int,
+  target_flags target_flags: Int,
+) -> Bool {
+  case kind_of(effect_type:) {
+    PropertyModifier -> int.bitwise_and(target_flags, 1) == 1
     Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
     Unread(..) -> False
   }

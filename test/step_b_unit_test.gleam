@@ -91,7 +91,7 @@ fn step_b(
           start_movement.Rotation(rotation),
         ],
         properties: [
-          UnitProperty(property_id: 7, field_2: health, value: health),
+          UnitProperty(property_id: 7, base: health, value: health),
         ],
         item_visuals: list.append(body, loadout.item_visuals(loadout: set)),
         cast_id: 0,
@@ -138,7 +138,7 @@ fn step_b(
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     |> list.map(fn(pair) {
       let bits = float32.to_bits(pair.1)
-      UnitProperty(property_id: pair.0, field_2: bits, value: bits)
+      UnitProperty(property_id: pair.0, base: bits, value: bits)
     })
   UnitCreatePlayer(
     ..record,

@@ -80,6 +80,7 @@ import genesis_prime/game/spell_area.{type Areas}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{type Answered, type Tell}
+import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
 }
@@ -103,8 +104,10 @@ const bytes_per_unit = hit.roll_bytes
 /// The caster as a selection and a strike take it: who it is, where it stands and
 /// faces, the place it stands at with the move sequence number of that place and
 /// the stay its strikes are told for, which their answers come back in
-/// (genesis_prime/game/strike_tell `PlayerStriker`), its player faction and what
-/// its formulas read.
+/// (genesis_prime/game/strike_tell `PlayerStriker`), its player faction, what its
+/// damage formulas read (`stats`) and its properties, whose BaseCritChance,
+/// CriticalHitSeverityMultiplier and BaseAvoidReduceChance values, a modifier's
+/// included, are the bases of its hit chances (`offence_of`).
 pub type Attacker {
   Attacker(
     unit_id: Int,
@@ -115,6 +118,7 @@ pub type Attacker {
     stay: Stay,
     faction: PlayerFaction,
     stats: damage.Attacker,
+    properties: Properties,
   )
 }
 
@@ -416,19 +420,28 @@ fn offence_of(
     crit_chance: rating.to_fraction(
       formula: formulas.crit_chance,
       level:,
-      base: formulas.player_base_crit_chance,
+      base: unit_properties.value(
+        properties: attacker.properties,
+        property: unit_properties.base_crit_chance,
+      ),
       rating: 0.0,
     ),
     crit_severity: rating.to_fraction(
       formula: formulas.crit_severity,
       level:,
-      base: formulas.player_base_crit_severity,
+      base: unit_properties.value(
+        properties: attacker.properties,
+        property: unit_properties.critical_hit_severity_multiplier,
+      ),
       rating: 0.0,
     ),
     strikethrough: rating.to_fraction(
       formula: formulas.strikethrough,
       level:,
-      base: formulas.player_base_strikethrough,
+      base: unit_properties.value(
+        properties: attacker.properties,
+        property: unit_properties.base_avoid_reduce_chance,
+      ),
       rating: 0.0,
     ),
   )

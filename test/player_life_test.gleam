@@ -34,8 +34,11 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   Answered, CreatureStriker, Key, Landed, Refused, Strike,
 }
+import genesis_prime/game/unit_properties
+import genesis_prime/message/float32
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/step.{TimerId}
-import genesis_prime/table/id.{ClassId}
+import genesis_prime/table/id.{ClassId, Spell4EffectsId}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/float
 import gleam/list
@@ -43,6 +46,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
+import properties_support
 import spawn_support
 
 /// The numbers the player regenerates by: the planted ones of
@@ -90,7 +94,11 @@ fn defence_of(class_id: Int) -> hit.Defence {
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the class has a Dominion Novice set"
-  player_life.defence(loadout:, level: 1, formulas: rating.formulas(tables:))
+  player_life.defence(
+    properties: properties_support.wearing(loadout:),
+    level: 1,
+    formulas: rating.formulas(tables:),
+  )
 }
 
 fn close(first: Float, second: Float) -> Bool {
@@ -579,4 +587,107 @@ pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -
   assert player_life.health(life: dead) == 0
   assert player_life.saved_health(life: dead) == None
     as "a dead player keeps none: it comes back at full health (death.server_choices)"
+}
+
+// ---- the maxima the player's properties give ----
+
+/// A player of 100 health whose health regenerates a quarter of its maximum each tick,
+/// the numbers test data of this rule's own.
+fn quarter_regeneration() -> player_life.Regeneration {
+  player_life.Regeneration(
+    health_fraction: 0.25,
+    health_multiplier: 1.0,
+    health_tick_ms: 500,
+    shield: None,
+  )
+}
+
+/// The properties of a player whose 0x262 lists BaseHealth 100, with 100 more for the
+/// source `source`, live or not.
+fn base_health_100() -> unit_properties.Properties {
+  let bits = float32.to_bits(100.0)
+  unit_properties.new(
+    defaults: properties_support.defaults(),
+    listed: [UnitProperty(property_id: 7, base: bits, value: bits)],
+    level: 1,
+  )
+}
+
+pub fn a_modifier_of_the_maximum_health_raises_it_keeps_the_health_and_its_end_caps_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let source =
+    unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(99_901))
+  let life =
+    player_life.new(
+      health: 100,
+      shield: 0,
+      regeneration: quarter_regeneration(),
+    )
+  // A modifier of BaseHealth (7): x * 1.0 + 100.0.
+  let #(raised, _) =
+    unit_properties.apply(
+      properties: base_health_100(),
+      source:,
+      modifier: unit_properties.Modifier(
+        property: unit_properties.base_health,
+        mode: 3,
+        multiplier: 1.0,
+        flat: 100.0,
+        per_level: 0.0,
+      ),
+    )
+  let #(life, effects) =
+    player_life.properties_changed(life:, properties: raised)
+  assert player_life.max_health(life:) == 200
+    as "the maximum is BaseHealth's value"
+  assert player_life.health(life:) == 100 as "the current health is kept"
+  assert effects == [player_life.StartTimer(timer: TimerId(8), after_ms: 500)]
+    as "the player is now below its maximum, so its health regenerates, and nothing is written for a health that did not change"
+  let #(life, _) = player_life.timer_fired(life:, timer: TimerId(8))
+  assert player_life.health(life:) == 150
+    as "a tick adds floor(200 x 0.25 x 1.0), 50"
+  let #(ended, _) = unit_properties.remove(properties: raised, source:)
+  let #(life, effects) =
+    player_life.properties_changed(life:, properties: ended)
+  assert player_life.max_health(life:) == 100
+  assert player_life.health(life:) == 100
+    as "the end caps the health at the old maximum (the server's choice)"
+  assert effects
+    == [
+      player_life.ToClient(player_life.OwnHealth(health: 100)),
+      player_life.ToViewers(client_connection.Health(health: 100, dead: False)),
+      player_life.CancelTimer(timer: TimerId(8)),
+    ]
+    as "the lowered health is written to the player and told to its viewers, and the full player's health clock stops"
+}
+
+pub fn the_regeneration_numbers_follow_the_properties_test() -> Nil {
+  use <- owned_test.run(5000)
+  // HealthRegenMultiplier (8) at 2.0 doubles the share of a tick: floor(100 x 0.25 x
+  // 2.0) is 50, where the multiplier 1.0 gives 25. The player entered with 10 health.
+  let #(life, _) =
+    player_life.entering(
+      saved: Some(10),
+      max_health: 100,
+      shield: 0,
+      regeneration: quarter_regeneration(),
+    )
+  let doubled =
+    properties_support.with_modifier(
+      properties: base_health_100(),
+      source: unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(1)),
+      modifier: unit_properties.Modifier(
+        property: unit_properties.health_regen_multiplier,
+        mode: 3,
+        multiplier: 2.0,
+        flat: 0.0,
+        per_level: 0.0,
+      ),
+    )
+  let #(plain, _) = player_life.timer_fired(life:, timer: TimerId(8))
+  assert player_life.health(life: plain) == 35
+    as "the multiplier 1.0 adds 25 to 10"
+  let #(life, _) = player_life.properties_changed(life:, properties: doubled)
+  let #(life, _) = player_life.timer_fired(life:, timer: TimerId(8))
+  assert player_life.health(life:) == 60 as "the multiplier 2.0 adds 50 to 10"
 }
