@@ -107,8 +107,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
-import genesis_prime/game/connection/life_effect as connection_life_effect
-import genesis_prime/game/connection/resource as connection_resource
+import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -181,21 +180,14 @@ pub fn map_sent(
           }),
           unit_id:,
         )
-      let released =
-        connection_life_effect.life_effects(
-          session:,
-          now:,
-          entered:,
-          effects: by_life,
-        )
-      let #(session, resource_written) =
-        connection_resource.life_effects(session:, effects: by_life)
-      let released = list.append(released, resource_written)
-      use <- bool.guard(
-        when: !dict.has_key(entered.shown, unit_id),
-        return: Continue(session, released),
-      )
-      let #(session, ended) = cast_loses_unit(session:, now:, unit_id:)
+      let shown = dict.has_key(entered.shown, unit_id)
+      let #(session, ended) = case shown {
+        True -> cast_loses_unit(session:, now:, unit_id:)
+        False -> #(session, [])
+      }
+      let #(session, released, _) =
+        connection_life.carried(session:, now:, effects: by_life)
+      use <- bool.guard(when: !shown, return: Continue(session, released))
       Continue(
         session,
         list.flatten([

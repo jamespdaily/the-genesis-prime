@@ -157,6 +157,7 @@ fn timers(effects: List(Effect)) -> List(Effect) {
       | player_life.Answer(..)
       | player_life.StreamTo(..)
       | player_life.DamageTaken
+      | player_life.CombatLeft
       | player_life.EndCasts
       | player_life.GoToHolocrypt -> False
     }
@@ -249,9 +250,10 @@ pub fn in_combat_no_health_tick_runs_leaving_combat_arms_it_and_entering_combat_
     == [
       ToClient(OwnCombatState(in_combat: False)),
       ToViewers(client_connection.CombatState(in_combat: False)),
+      player_life.CombatLeft,
       StartTimer(timer: health_timer, after_ms: 500),
     ]
-    as "the last release clears the flag and arms the health tick"
+    as "the last release clears the flag, tells the combat left and arms the health tick"
   let #(life, _) = ticked(life:)
   assert player_life.health(life:) == 718
 }

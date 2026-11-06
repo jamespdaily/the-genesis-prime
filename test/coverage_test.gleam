@@ -173,6 +173,7 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
         share: 0.5,
         status: Handled,
         starting_abilities: 0,
+        starting_unread: 0,
       ),
       TypeLine(
         type_number: 2,
@@ -180,6 +181,7 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
         share: 0.25,
         status: Handled,
         starting_abilities: 0,
+        starting_unread: 0,
       ),
       TypeLine(
         type_number: 5,
@@ -187,6 +189,7 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
         share: 0.125,
         status: NotDecoded,
         starting_abilities: 0,
+        starting_unread: 0,
       ),
       TypeLine(
         type_number: 9,
@@ -194,6 +197,7 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
         share: 0.125,
         status: NotDecoded,
         starting_abilities: 0,
+        starting_unread: 0,
       ),
     ]
     as "the engine declares 7 and 2, so those two are handled and 5 and 9 are not, each with the share it has without the declaration"
