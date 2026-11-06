@@ -16,11 +16,9 @@
 
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/life_effect
-import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/connection/state.{type Session}
 import genesis_prime/game/player_life
-import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
-import gleam/option.{None, Some}
 
 /// The player's shield heals by `amount` (genesis_prime/game/cast `ShieldHeal`): the
 /// life is kept and what it decided is written to the player's client and told to its
@@ -30,16 +28,7 @@ pub fn shield_healed(
   now now: Now,
   amount amount: Int,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  case connection_state.held_in_the_world(session.status) {
-    None -> #(session, [])
-    Some(#(_, entered)) -> {
-      let #(life, effects) =
-        player_life.shield_healed(life: entered.life, amount:)
-      let session =
-        connection_state.with_entered(session:, change: fn(entered) {
-          world_entry.Entered(..entered, life:)
-        })
-      #(session, life_effect.life_effects(session:, now:, entered:, effects:))
-    }
-  }
+  life_effect.life_changed(session:, now:, change: fn(entered) {
+    player_life.shield_healed(life: entered.life, amount:)
+  })
 }

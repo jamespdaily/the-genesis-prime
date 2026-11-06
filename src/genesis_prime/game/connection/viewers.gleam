@@ -808,8 +808,9 @@ fn finishes_of_forgotten_casts(
 
 /// The unit of the player's own record as another player is created with it: at
 /// the place the player stands at now, with its health now as stat 0, so a dead
-/// player is created dead (`0x140457bc5`), and its shield now as stat 20
-/// (`opcode.0x938`), without its class resource: the stat and the ResourceMax
+/// player is created dead (`0x140457bc5`), its shield now as stat 20
+/// (`opcode.0x938`) and its Interrupt Armor as stat 21 while it is above 0
+/// (`opcode.0x938.interrupt_armor`: the create's stat list sets it), without its class resource: the stat and the ResourceMax
 /// property of the player's own 0x262 are left out, since a 0x935 goes to the
 /// player alone (`opcode.0x262.resource_stats`), and stamped from the map's clock,
 /// from the origin `Joined` carried (`map.server_time`).
@@ -825,6 +826,7 @@ fn appearance(
     )
   let health = player_life.health(life: entered.life)
   let shield = player_life.shield(life: entered.life)
+  let armor = player_life.interrupt_armor(life: entered.life)
   let slot = class_resource.slot(resources: entered.resources)
   let resource_stat = unit_fields.resource_stat_id(slot:)
   let resource_max = unit_fields.resource_max_property(slot:)
@@ -832,16 +834,27 @@ fn appearance(
     ..unit,
     tail: UnitCreateTail(
       ..unit.tail,
-      stats: list.filter_map(unit.tail.stats, fn(stat) {
-        case stat.stat_id {
-          id if id == unit_fields.health_stat ->
-            Ok(unit_fields.integer_stat(stat_id: id, value: health))
-          id if id == unit_fields.shield_stat ->
-            Ok(unit_fields.integer_stat(stat_id: id, value: shield))
-          id if id == resource_stat -> Error(Nil)
-          _ -> Ok(stat)
-        }
-      }),
+      stats: list.append(
+        list.filter_map(unit.tail.stats, fn(stat) {
+          case stat.stat_id {
+            id if id == unit_fields.health_stat ->
+              Ok(unit_fields.integer_stat(stat_id: id, value: health))
+            id if id == unit_fields.shield_stat ->
+              Ok(unit_fields.integer_stat(stat_id: id, value: shield))
+            id if id == resource_stat -> Error(Nil)
+            _ -> Ok(stat)
+          }
+        }),
+        case armor > 0 {
+          True -> [
+            unit_fields.integer_stat(
+              stat_id: unit_fields.interrupt_armor_stat,
+              value: armor,
+            ),
+          ]
+          False -> []
+        },
+      ),
       properties: list.filter(unit.tail.properties, fn(property) {
         property.property_id != resource_max
       }),

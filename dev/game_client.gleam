@@ -915,17 +915,19 @@ fn standing(
   #(value(placed.x), value(placed.y), value(placed.z))
 }
 
-/// The ids of the messages that put a player in the world, in the order the
-/// client needs (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc,
-/// opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD first; 0x262 before 0x19B; 0x19B
-/// before the six armor items, the weapon and the three abilities (0x111,
-/// opcode.0x111.ability_bag, opcode.0x111.equipped_set),
+/// The ids of the messages that put a player in the world from character select,
+/// in the order the client needs (opcode.0xad, opcode.0x262, opcode.0x19b,
+/// opcode.0x25e, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD
+/// first; 0x262 before 0x19B; 0x19B before the character's own state (0x25E,
+/// opcode.0x25e.entry_order), the six armor items, the weapon and the three
+/// abilities (0x111, opcode.0x111.ability_bag, opcode.0x111.equipped_set),
 /// their tiers (0x1A0, opcode.0x1a0), the action set (0x19D, opcode.0x19d), 0x6BC,
 /// 0x636 and 0x61; then the zone channel (opcode.0x1da, opcode.0x1bc).
 pub const world_entry_ids = [
   0x00AD,
   0x0262,
   0x019B,
+  0x025E,
   0x0111,
   0x0111,
   0x0111,
@@ -945,6 +947,14 @@ pub const world_entry_ids = [
   0x01DA,
   0x01BC,
 ]
+
+/// The ids of the messages of the Holocrypt's join: the entry's, but with no
+/// 0x25E, since the join is a 0xAD in the world on the client's same game object
+/// (0x1403b6de0), where a second copy would add its items and pets again
+/// (opcode.0x25e.entry_order).
+pub fn holocrypt_entry_ids() -> List(Int) {
+  list.filter(world_entry_ids, fn(id) { id != 0x025E })
+}
 
 /// The 0x262 among the messages of an entry, decoded: the player the burst
 /// creates.
@@ -1258,7 +1268,7 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
     list.filter(frames, fn(frame) { frame.message_id == item_added.message_id })
     |> list.map(fn(frame) {
       let assert Ok(added) = item_added.decode(frame.body) as "0x0111 decodes"
-      added.item
+      added.held_item.item
     })
   let weapon =
     list.find(items, fn(item) { item.location == 0 && item.bag_index == 16 })
