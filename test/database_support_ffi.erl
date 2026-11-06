@@ -17,7 +17,7 @@ once(Key, Create) ->
                         {value, Value} ->
                             Value;
                         none ->
-                            Value = Create(),
+                            Value = unlimited_loads(Create),
                             persistent_term:put(Slot, {value, Value}),
                             Value
                     end
@@ -26,6 +26,14 @@ once(Key, Create) ->
                 infinity
             )
     end.
+
+%% Runs Create while the process holds the lock that every other caller of the
+%% same key waits on, so a key it makes for a load is made without waiting for
+%% room among the loads held (owned_key_ffi): the processes that hold those
+%% loads may be waiting on this lock.
+unlimited_loads(Create) ->
+    Before = erlang:put(owned_key_unlimited, true),
+    try Create() after erlang:put(owned_key_unlimited, Before =:= true) end.
 
 %% The operating system process id and start time of this VM, as one word that
 %% is safe in a database name.
