@@ -15,6 +15,7 @@ import code_rule/syntax
 import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/character_select
+import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
 import genesis_prime/game/routing.{
   AtCharacterSelect, AtWorld, BeforeHelloReply, InsideWorldMessage, OnItsOwn,
@@ -174,4 +175,16 @@ pub fn the_press_the_hold_and_the_cancel_of_a_cast_are_rows_taken_inside_0x038c_
     assert routing.route(AtWorld, OnItsOwn, id) == Error(Nil)
       as { "0x" <> int.to_base16(id) <> " is not taken outside 0x038C" }
   })
+}
+
+pub fn the_innate_choice_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert routing.route(AtWorld, InsideWorldMessage, 0x016F)
+    == Ok(routing.Innate(message: innate_choice.IndexChosen))
+    as "0x016F is the innate row in the world (opcode.0x16f: the client sends it from inside 0x038C like every message of the world)"
+  assert routing.route(AtCharacterSelect, InsideWorldMessage, 0x016F)
+    == Error(Nil)
+    as "it is not taken in character select"
+  assert routing.route(AtWorld, OnItsOwn, 0x016F) == Error(Nil)
+    as "it is not taken outside 0x038C"
 }

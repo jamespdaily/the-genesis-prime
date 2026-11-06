@@ -8,6 +8,7 @@
 ////      its items ─▶ item_property ─▶ the gear's properties, each piece's bag index
 ////      its items ─▶ worn_visual ─▶ what is drawn on the wearer
 //// SpellLevel (class, level 1, no prerequisite) ─▶ Spell4 ─▶ Spell4Base ids
+//// Class (the first innate slot) ─▶ the innate (genesis_prime/game/innate)
 //// both, once, when the tables load ─▶ Loadouts ─▶ of(class, faction)
 //// ```
 ////
@@ -28,12 +29,19 @@
 ////   piece and the weapon (genesis_prime/game/worn_visual); the shield has none.
 //// - **The abilities** are the class's SpellLevel rows of level 1 with no
 ////   prerequisite, in id order, each as the Spell4Base id of its Spell4 row
-////   (`SpellLevel.spell4Id`).
+////   (`SpellLevel.spell4Id`). They are the action bar's.
+//// - **The innate** is the class's first innate slot (genesis_prime/game/innate). The
+////   ability bag holds its active spell's Spell4Base after the abilities, at the index
+////   the abilities number (3): the innate button finds the spell by its base in the bag
+////   (`lua.ActionBarFrame.ActionBarInnate`, `0x14077dfa0`), and it is in no action set
+////   (`opcode.0x19d`). A class whose innate has the base of one of its abilities fails
+////   the load.
 //// - **Health** is CreatureLevel's Base Health at the character's level, rounded,
 ////   plus the armor's: Jim's decision on goal 274, that gear gives health at any
 ////   level (the client holds no health rule for a player,
 ////   `player.level1_base_health` for level 1).
 
+import genesis_prime/game/innate.{type Innate}
 import genesis_prime/game/item_property.{
   type ItemProperties, type ItemPropertyError,
 }
@@ -54,12 +62,13 @@ import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// A character's loadout: the weapon and the slot it is equipped in, the armor
 /// pieces and shield with their slots, what is drawn of them and the weapon,
-/// the abilities as Spell4Base ids in bar order, and what the gear gives.
+/// the abilities as Spell4Base ids in bar order, the class's innate, if it
+/// holds one, and what the gear gives.
 pub type Loadout {
   Loadout(
     weapon: Item2Id,
@@ -67,8 +76,18 @@ pub type Loadout {
     armor: List(Equipped),
     visuals: List(WornVisual),
     abilities: List(Spell4BaseId),
+    innate: Option(Innate),
     properties: ItemProperties,
   )
+}
+
+/// The ability bag, as Spell4Base ids by bag index: the abilities in bar order, then
+/// the class's innate, if it holds one. A press names a bag index.
+pub fn bag(loadout loadout: Loadout) -> List(Spell4BaseId) {
+  case loadout.innate {
+    Some(held) -> list.append(loadout.abilities, [held.active_base])
+    None -> loadout.abilities
+  }
 }
 
 /// An item held equipped, at location 0, and the bag index it is held at.
@@ -140,6 +159,8 @@ type LoadoutError {
   NoAbilities(class_id: Int)
   /// A SpellLevel row names a Spell4 row the table lacks.
   NoSpell(spell_level_id: Int, spell4_id: Int)
+  /// A class's innate cannot be held (genesis_prime/game/innate).
+  InnateFailed(error: innate.InnateError)
 }
 
 /// A sentence that says why, naming the table and the row, for the message the
@@ -176,6 +197,7 @@ fn describe(error error: LoadoutError) -> String {
       <> ", which SpellLevel row "
       <> int.to_string(spell_level_id)
       <> " names"
+    InnateFailed(error:) -> innate.describe(error:)
   }
 }
 
@@ -191,13 +213,20 @@ fn build(tables: table_store.Tables) -> Result(Loadouts, LoadoutError) {
       && !row.costume_only
     })
   use Nil <- result.try(health_rows(tables:))
+  use innates <- result.try(
+    innate.held(tables:) |> result.map_error(InnateFailed),
+  )
   use sets <- result.try(
     list.try_fold(novice, dict.new(), fn(sets, row) {
       let key = #(row.class_id, row.faction_id)
       case dict.has_key(sets, key) {
         True -> Ok(sets)
         False ->
-          build_set(tables:, row:)
+          build_set(
+            tables:,
+            row:,
+            innate: dict.get(innates, row.class_id) |> option.from_result,
+          )
           |> result.map(dict.insert(sets, key, _))
       }
     }),
@@ -238,6 +267,7 @@ fn health_rows(tables tables: table_store.Tables) -> Result(Nil, LoadoutError) {
 fn build_set(
   tables tables: table_store.Tables,
   row row: CharacterCreation,
+  innate held: Option(Innate),
 ) -> Result(Loadout, LoadoutError) {
   let items = items_of(row:)
   use properties <- result.try(
@@ -249,12 +279,19 @@ fn build_set(
   use armor <- result.try(armor_of(tables:, items:, weapon: weapon.0))
   use visuals <- result.try(visuals_of(tables:, items:))
   use abilities <- result.try(abilities_of(tables:, class_id: row.class_id))
+  use Nil <- result.try(case held {
+    Some(held) ->
+      innate.not_an_ability(class_id: row.class_id, innate: held, abilities:)
+      |> result.map_error(InnateFailed)
+    None -> Ok(Nil)
+  })
   Ok(Loadout(
     weapon: Item2Id(weapon.0),
     weapon_slot: weapon.1,
     armor:,
     visuals:,
     abilities:,
+    innate: held,
     properties:,
   ))
 }

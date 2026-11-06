@@ -505,11 +505,11 @@ pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_co
   assert list.sort(handled_ids, int.compare)
     == [
       0x0000, 0x0001, 0x0002, 0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB,
-      0x00FC, 0x015A, 0x01C3, 0x01D4, 0x0244, 0x025B, 0x025C, 0x0352, 0x038C,
-      0x04DB, 0x058F, 0x0592, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0,
-      0x0801,
+      0x00FC, 0x015A, 0x016F, 0x01C3, 0x01D4, 0x0244, 0x025B, 0x025C, 0x0352,
+      0x038C, 0x04DB, 0x058F, 0x0592, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD,
+      0x07E0, 0x0801,
     ]
-    as "the network layer's ids 0, 1 and 2 and the wrapper 0x0244 (fact 0x140332580, fact 0x140332920), the auth rule's 0x0592, and the game rule's 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, 0x038C and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x4db, opcode.0x801), and the choice of how to come back, 0x015A (opcode.0x15a)"
+    as "the network layer's ids 0, 1 and 2 and the wrapper 0x0244 (fact 0x140332580, fact 0x140332920), the auth rule's 0x0592, and the game rule's 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, 0x038C and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x4db, opcode.0x801), the choice of how to come back, 0x015A (opcode.0x15a), and the choice of an innate, 0x016F (opcode.0x16f)"
   let assert Measured(types:, breaches:, ..) =
     measurement.from_values(
       engine: routing,
@@ -519,6 +519,6 @@ pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_co
     as "the routing engine is measured over the ids the client sends"
   assert breaches == [] as "every handled id is one the client sends"
   assert list.length(list.filter(types, fn(line) { line.status == Handled }))
-    == 28
-    as "the 28 ids above are marked handled among the 352"
+    == 29
+    as "the 29 ids above are marked handled among the 352"
 }

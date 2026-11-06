@@ -33,6 +33,8 @@ import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
 import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
+import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
+import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/message/item_added.{ItemAdded}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_path.{MovementPath}
@@ -106,6 +108,10 @@ pub fn the_message_numbers_are_the_clients_test() -> Nil {
   assert ability_tiers.message_id == 0x1A0
     as "opcode.0x1a0: message 0x1a0 (416)"
   assert action_set.message_id == 0x19D as "opcode.0x19d: message 0x19d (413)"
+  assert innate_index_set.message_id == 0x19F
+    as "opcode.0x19f: message 0x19f (415)"
+  assert innate_index_chosen.message_id == 0x16F
+    as "opcode.0x16f: message 0x16f (367)"
   assert unit_create_creature.message_id == 0x262
     as "opcode.0x262.creature: message 0x262 (610)"
   assert unit_create_ghost.message_id == 0x262
@@ -1068,4 +1074,49 @@ pub fn an_effect_info_tag_of_2_or_3_fails_the_read_as_the_clients_does_test() ->
     ))
     == Ok(spell_go())
     as "the packed tag is 1 in this position, so the same bits set to 1 read as the vector"
+}
+
+pub fn the_innate_index_the_server_sets_is_2_bits_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0x19f: the innate index in 2 bits (reader 0x14008e170, ReadBits8 with width 2): 2 is the byte 02",
+    body: message_support.hex("02"),
+    value: InnateIndexSet(innate_index: 2),
+    encode: innate_index_set.encode,
+    decode: innate_index_set.decode,
+  )
+  assert innate_index_set.encode(InnateIndexSet(innate_index: 4))
+    == Error(bit_stream.ValueDoesNotFit(
+      field: "innate_index",
+      bits: 2,
+      value: 4,
+    ))
+    as "opcode.0x19f: the index has 2 bits, so 4 does not fit"
+}
+
+pub fn the_innate_index_the_client_chooses_is_8_bits_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0x16f: the innate index in 8 bits (writer 0x140088120, one byte at the bit position): 2 is the byte 02, 255 is ff",
+    body: message_support.hex("02"),
+    value: InnateIndexChosen(innate_index: 2),
+    encode: innate_index_chosen.encode,
+    decode: innate_index_chosen.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0x16f: the largest value of 8 bits",
+    body: message_support.hex("ff"),
+    value: InnateIndexChosen(innate_index: 255),
+    encode: innate_index_chosen.encode,
+    decode: innate_index_chosen.decode,
+  )
+}
+
+pub fn a_0x16f_body_of_the_wrong_length_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert innate_index_chosen.decode(<<>>) == Error(bit_stream.EndOfData)
+    as "opcode.0x16f: an empty body ends inside the index"
+  assert innate_index_chosen.decode(<<2, 0>>)
+    == Error(bit_stream.TrailingBytes(count: 1))
+    as "opcode.0x16f: the client's writer adds 8 bits, so a body of two bytes is longer than any the client writes"
 }

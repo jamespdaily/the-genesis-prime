@@ -31,6 +31,7 @@ import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
+import genesis_prime/game/loadout
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
@@ -160,7 +161,7 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
   cast.Caster(
     unit_id: entered.unit_id,
     place: movement.place(entered.movement),
-    abilities: entered.loadout.abilities,
+    abilities: loadout.bag(loadout: entered.loadout),
     weapon: Some(entered.loadout.weapon),
     audience: connection_state.viewer_connections(entered:),
     dead: player_life.state(life:) == player_life.Dead,

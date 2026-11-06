@@ -21,6 +21,7 @@ pub fn bare_loadout() -> Loadout {
     armor: [],
     visuals: [],
     abilities: [],
+    innate: None,
     properties: ItemProperties(
       base_health: 0.0,
       assault_rating: 0.0,

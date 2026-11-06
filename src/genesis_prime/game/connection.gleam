@@ -533,7 +533,9 @@ fn routed(
     | Ok(routing.Camp(..))
     | Ok(routing.Chat(..))
     | Ok(routing.Cast(..))
-    | Ok(routing.Life(..)) -> connection_state.misrouted(session:, now:, inner:)
+    | Ok(routing.Life(..))
+    | Ok(routing.Innate(..)) ->
+      connection_state.misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
         routing.BeforeHelloReply ->
@@ -670,6 +672,14 @@ fn world_carried(
                     session:,
                     now:,
                     holder:,
+                    entered:,
+                    inner: whole,
+                    message:,
+                  )
+                Ok(routing.Innate(message:)) ->
+                  connection_world.innate_message(
+                    session:,
+                    now:,
                     entered:,
                     inner: whole,
                     message:,

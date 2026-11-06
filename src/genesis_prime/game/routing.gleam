@@ -7,7 +7,8 @@
 //// whole frame in the client's wrapper 0x0244 ─▶ route(stage, OnItsOwn, id)
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
-////                                                 ─▶ Movement(message), Camp(message), Chat(message) or Cast(message)
+////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
+////                                                    Life(message) or Innate(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -29,6 +30,7 @@ import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
+import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/message/ability_hold
@@ -43,6 +45,7 @@ import genesis_prime/message/delete_character
 import genesis_prime/message/fall_value
 import genesis_prime/message/fell_below_floor
 import genesis_prime/message/game_hello_reply
+import genesis_prime/message/innate_index_chosen
 import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/play_character
@@ -77,6 +80,8 @@ pub type Feature {
   /// The player's choice of how to come back from death
   /// (genesis_prime/game/player_life).
   Life(message: player_life.Message)
+  /// The player's choice of an innate (genesis_prime/game/innate_choice).
+  Innate(message: innate_choice.Message)
 }
 
 /// Where the connection is when it takes a message.
@@ -224,6 +229,12 @@ const table = [
     choose_resurrection.message_id,
     InsideWorldMessage,
     Life(player_life.ResurrectionChosen),
+    [AtWorld],
+  ),
+  Row(
+    innate_index_chosen.message_id,
+    InsideWorldMessage,
+    Innate(innate_choice.IndexChosen),
     [AtWorld],
   ),
   Row(

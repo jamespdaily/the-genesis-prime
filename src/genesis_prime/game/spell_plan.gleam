@@ -1,10 +1,11 @@
 //// What the client's tables say a pressed ability does: for each ability a class
-//// holds at level 1, the tree of casts it starts, built once when the tables
-//// load. The cast rule (genesis_prime/game/cast) reads the tree and decides
+//// holds at level 1, and each class's innate active and passive spell, the tree of
+//// casts it starts, built once when the tables load. The cast rule (genesis_prime/game/cast) reads the tree and decides
 //// nothing from the tables itself.
 ////
 //// ```
 //// SpellLevel (class, level 1, no prerequisite) ─▶ Spell4 (the ability) ─▶ Spell4Base
+//// Class (the first innate slot, genesis_prime/game/innate) ─▶ Spell4 (the innate's active and passive) ─▶ Spell4Base
 ////      Spell4Effects (spellId = the Spell4 id), each effect of type Proxy (26) ─▶ the Spell4 it names, as a child
 ////      Spell4Thresholds (parent = the Spell4 id), by order index ─▶ the Spell4 each tap or charge level casts, as a stage
 ////      SpellPhase (owner = a Multiphase Spell4) ─▶ the phase delays and flags, in row order
@@ -134,9 +135,18 @@
 ////   `UnreadRequirement`. The waiver (propertyFlags bit 2 with a
 ////   prerequisiteIdCasterCast) is kept and never passes: the waiver's prerequisite
 ////   is not checked.
-//// - **No target.** None of the 18 level-1 abilities needs a target the client
-////   picks (`Spell4TargetMechanics.targetType`), so the plan holds no range and
-////   no target rule.
+//// - **No target.** None of the 18 level-1 abilities nor the six innate actives needs a
+////   target the client picks (`Spell4TargetMechanics.targetType`), so the plan holds
+////   no range and no target rule.
+//// - **A spell's own cast prerequisite** (`Spell4.prerequisiteIdCasterCast`) is
+////   checked by the client before it sends a press (`0x1403ace00`) and by the server
+////   for no spell: it reads only a waiver's (`requirement_waiver`). Four innate
+////   actives hold one (Warrior 46867, Esper 58586, Stalker 46073, Spellslinger
+////   47273), so the server takes a press the client would not send.
+//// - **The innates.** A slot-0 innate's active spell is held as an ability in the
+////   bag at the index after the level-1 abilities (genesis_prime/game/loadout), so its
+////   plan is the ability's. Its passive is never pressed: the server starts it itself
+////   (genesis_prime/game/cast `passive_started`).
 //// - **The caster's death.** Bit 0 of the spell's caster condition row says
 ////   whether its caster must be alive, must be dead or may be either
 ////   (`Spell4.spell4ConditionsIdCaster`, `CasterDeath`); the row's other
@@ -157,6 +167,7 @@
 import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/effect_kind
+import genesis_prime/game/innate
 import genesis_prime/game/lasting
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -774,6 +785,8 @@ pub type PlanError {
   /// A spell of a tree has a spellCastStealthChange that is not 0, 1 or 2
   /// (`Spell4.spellCastStealthChange`).
   StealthChangeNotRead(spell4_id: Int, value: Int)
+  /// A class's innate cannot be held (genesis_prime/game/innate).
+  InnateFailed(error: innate.InnateError)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -963,6 +976,7 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a spellCastStealthChange of "
       <> int.to_string(value)
       <> ", and only 0, 1 and 2 are read"
+    InnateFailed(error:) -> innate.describe(error:)
   }
 }
 
@@ -970,8 +984,8 @@ fn string_of(chain: List(Int)) -> String {
   string.join(list.map(chain, int.to_string), " -> ")
 }
 
-/// Every class's level-1 abilities as trees, by Spell4BaseId, as the load keeps
-/// them.
+/// Every class's level-1 abilities and slot-0 innate spells as trees, by
+/// Spell4BaseId, as the load keeps them.
 pub type Plans =
   Dict(Int, Spell)
 
@@ -980,8 +994,8 @@ const plans_key: table_store.DerivedKey(Plans) =
 
 /// The plans as a value the tables' load builds once, under the tables' key
 /// (genesis_prime/table/loader/store `derived`): a plan for the Spell4BaseId of
-/// each class's level-1 ability. A missing row, a cost not read or a cycle fails
-/// the load.
+/// each class's level-1 ability and of each class's innate active and passive spell.
+/// A missing row, a cost not read or a cycle fails the load.
 pub fn derivation() -> table_store.Derivation {
   table_store.derivation(key: plans_key, build: fn(tables) {
     build(tables:)
@@ -1020,21 +1034,35 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
       group_lists:,
       known_groups: set.from_list(list.flatten(dict.values(group_lists))),
     )
-  spell_level.all(tables)
-  |> list.filter(loadout.is_level_one_ability)
-  |> list.try_fold(dict.new(), fn(plans, row) {
-    use spell <- result.try(
-      spell_of(
-        tables:,
-        sources:,
-        spell4_id: row.spell4_id,
-        chain: [],
-        threshold_costs: [],
-      ),
-    )
-    use Nil <- result.try(has_threshold_time(spell:))
-    Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
-  })
+  use held <- result.try(innate.held(tables:) |> result.map_error(InnateFailed))
+  let abilities =
+    spell_level.all(tables)
+    |> list.filter(loadout.is_level_one_ability)
+    |> list.map(fn(row) { row.spell4_id })
+  let innates =
+    dict.to_list(held)
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    |> list.flat_map(fn(entry) {
+      let innate = entry.1
+      [
+        innate.active.value,
+        ..case innate.passive {
+          Some(passive) -> [passive.spell4_id.value]
+          None -> []
+        }
+      ]
+    })
+  list.try_fold(
+    list.append(abilities, innates),
+    dict.new(),
+    fn(plans, spell4_id) {
+      use spell <- result.try(
+        spell_of(tables:, sources:, spell4_id:, chain: [], threshold_costs: []),
+      )
+      use Nil <- result.try(has_threshold_time(spell:))
+      Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
+    },
+  )
 }
 
 /// A RapidTap or ChargeRelease ability opens a threshold of its thresholdTime, so

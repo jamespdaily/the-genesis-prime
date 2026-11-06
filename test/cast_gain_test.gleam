@@ -134,14 +134,15 @@ pub fn energize_gives_4_actuators_and_logs_its_ticking_gain_test() -> Nil {
   let effects =
     pressed_through(
       plans:,
-      caster: cast.Caster(..support.caster(), abilities: [
-        Spell4BaseId(46_615),
-      ]),
-      bag_index: 0,
+      caster: cast.Caster(
+        ..support.caster(),
+        abilities: list.map([38_201, 16_322, 26_543, 46_615], Spell4BaseId),
+      ),
+      bag_index: 3,
       struck: [],
     )
   assert support.gains(effects:) == [[Gain(slot: 1, amount: 4)]]
-    as "228910: +4 of slot 1 on the caster, behind 43811, which passes with no Power Cadence 58999 live; it needs no foe"
+    as "228910: +4 of slot 1 on the caster, behind 43811, which passes with no Power Cadence 58999 live; it needs no foe; the Medic holds Energize as its innate, at bag index 3 after its three abilities"
   assert list.any(support.logs(effects:), fn(line) {
     line.0 == LogDebug && string.contains(line.1, "228918")
   })

@@ -10,8 +10,9 @@
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay)
 ////                                                 (or Refused: the rule hands back to select)
 //// Joined(unit record, loadout, health, run)
-////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 10, 0x1A0, 0x19D,
-////                                                 0x6BC, 0x636, 0xF1, 0x61, WatchMap(map, run)
+////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 10 (x 11 with an innate), 0x1A0, 0x19D,
+////                                                 0x19F (with an innate), 0x6BC, 0x636, 0xF1, 0x61, WatchMap(map, run),
+////                                                 StartPassive (with an innate passive)
 ////                                                 (a player saved dead: the ghost's 0x262 and
 ////                                                 0x1B3 before 0x636, which names the ghost)
 //// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
@@ -44,10 +45,13 @@
 //// - **The loadout** (genesis_prime/game/loadout) is sent after 0x19B, which sets
 ////   the player, and before 0x61: the Novice armor pieces and shield, each held
 ////   at the bag index of its slot, then the weapon in slot 16 (0x111 at location
-////   0, in bag order), then one ability item per level-1 spell (0x111 at
-////   location 4, bag index from 0), then the tier 1 of each ability in action
+////   0, in bag order), then one ability item per level-1 spell and the class's
+////   innate (0x111 at location 4, bag index from 0: the abilities, then the innate's
+////   Spell4Base at index 3), then the tier 1 of each of them in action
 ////   sets 0 to 3 (0x1A0) and action set 0 with the abilities in bar slots 0 to 2
-////   (0x19D) (`opcode.0x111.ability_bag`, `opcode.0x1a0`, `opcode.0x19d`). Without
+////   (0x19D; the innate is in no action set), then, with an innate, 0x19F {0}, which
+////   points the innate button at slot 0 (`opcode.0x111.ability_bag`, `opcode.0x1a0`,
+////   `opcode.0x19d`, `opcode.0x19f`, `lua.ActionBarFrame.ActionBarInnate`). Without
 ////   the weapon the client hides the bar and refuses the abilities that need
 ////   one (`lua.ActionBarFrame.InitializeBars`, `0x1403afb10`). Holding an item
 ////   draws nothing: the worn set is drawn by the item visuals the map's unit
@@ -57,6 +61,10 @@
 ////   carries its class resource's slot at its start and the slot's maximum
 ////   (`player_unit.with_resource`, genesis_prime/game/class_resource), which the
 ////   player then holds.
+//// - **The innate's passive** is never cast by the client, so the entry's last effect
+////   starts it (`StartPassive`, genesis_prime/game/cast `passive_started`), after the
+////   entry's writes and the watch on the map, at each join: a play and the Holocrypt's
+////   join (`Class.spell4IdInnateAbilityPassive00`).
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
 ////   floats, which neither entry path reads (opcode.0xad.last_floats). The
 ////   position, here and in 0x262, is bounded to the box the client bounds a
@@ -102,6 +110,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
+import genesis_prime/game/innate
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -116,6 +125,7 @@ import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
+import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/message/item_added.{ItemAdded}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
@@ -161,6 +171,9 @@ pub type Effect {
   /// health timer, and one that enters dead is written its ghost, the window and
   /// control of the ghost.
   Life(effects: List(player_life.Effect))
+  /// Start the player's innate passive, the spell with this Spell4Base, which the
+  /// plans hold.
+  StartPassive(base: Spell4BaseId)
 }
 
 /// Why the client's request to play is refused: its body is one the client's
@@ -521,6 +534,7 @@ pub fn joined(
                 entered_world(),
                 WatchMap(map:, incarnation:),
               ],
+              passive_started(loadout:),
             ]),
           ))
         }
@@ -732,6 +746,10 @@ const first_action_set = 0
 /// The shortcut type of an ability, by its Spell4Base id (`opcode.0x19d`).
 const ability_shortcut = 4
 
+/// The innate slot the client points its button at: the first of the Class row
+/// (`opcode.0x19f`).
+const first_innate_slot = 0
+
 /// The 2-bit value of an action set: bit 0 set marks the set unlocked, which the
 /// ability book's set arrows and the active set's switch read; nothing in casting
 /// or the bar reads it (`opcode.0x19d.set_value`). Set 0, the active set, is
@@ -739,7 +757,8 @@ const ability_shortcut = 4
 const set_unlocked = 1
 
 /// The loadout's messages, in order: each armor piece and the shield, the
-/// weapon, each ability, the tiers and action set 0.
+/// weapon, each ability and the innate, the tiers, action set 0 and the innate's
+/// index.
 fn loadout_sent(
   character_number character_number: Int,
   loadout loadout: Loadout,
@@ -761,7 +780,7 @@ fn loadout_sent(
       bag_index: loadout.weapon_slot,
     )
   let abilities =
-    list.index_map(loadout.abilities, fn(ability, bag_index) {
+    list.index_map(loadout.bag(loadout:), fn(ability, bag_index) {
       held_item(
         character_number:,
         item_id: ability.value,
@@ -769,15 +788,38 @@ fn loadout_sent(
         bag_index:,
       )
     })
+  let innate = case loadout.innate {
+    Some(_) -> [innate_index_frame()]
+    None -> []
+  }
   list.flatten([
     armor,
     [weapon],
     abilities,
     [
-      ability_tiers_frame(abilities: loadout.abilities),
+      ability_tiers_frame(abilities: loadout.bag(loadout:)),
       action_set_frame(abilities: loadout.abilities),
     ],
+    innate,
   ])
+}
+
+/// The innate's passive start, when the class's innate has a passive.
+fn passive_started(loadout loadout: Loadout) -> List(Effect) {
+  case loadout.innate {
+    Some(innate.Innate(passive: Some(passive), ..)) -> [
+      StartPassive(base: passive.spell4_base_id),
+    ]
+    Some(innate.Innate(passive: None, ..)) | None -> []
+  }
+}
+
+/// 0x19F with index 0, the innate slot the loadout holds (`opcode.0x19f`).
+fn innate_index_frame() -> Effect {
+  let assert Ok(body) =
+    innate_index_set.encode(InnateIndexSet(innate_index: first_innate_slot))
+    as "the first slot fits the message's 2 bits"
+  Send(Frame(message_id: innate_index_set.message_id, body:))
 }
 
 /// 0x111 for an item the character holds, a stack of 1 with no charges and full

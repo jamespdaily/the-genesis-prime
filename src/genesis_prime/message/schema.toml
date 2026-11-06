@@ -1666,6 +1666,26 @@ fields = [
 ]
 
 [[message]]
+id = 0x019F
+name = "innate_index_set"
+direction = "server_to_client"
+evidence = "opcode.0x19f"
+summary = "the player's current innate: the index of its Class innate slot, which the client takes when it is below its unlocked count and its slot holds an active spell, pointing the innate button at that spell; until one arrives the client's index is 4, which names no slot"
+fields = [
+  { name = "innate_index", kind = "unsigned", bits = 2, evidence = "opcode.0x19f", named_by = "opcode.0x19f" },
+]
+
+[[message]]
+id = 0x016F
+name = "innate_index_chosen"
+direction = "client_to_server"
+evidence = "opcode.0x16f"
+summary = "the player switches to an innate: the Class slot, 0 to 2, which the client has already switched its own index and button to; the client never sends the index it already holds"
+fields = [
+  { name = "innate_index", kind = "unsigned", bits = 8, evidence = "opcode.0x16f", named_by = "opcode.0x16f" },
+]
+
+[[message]]
 id = 0x0262
 name = "unit_create_creature"
 direction = "server_to_client"
