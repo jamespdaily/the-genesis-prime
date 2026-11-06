@@ -25,8 +25,8 @@ import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/spell_plan.{type Plans}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
-import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId}
+import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
@@ -207,52 +207,60 @@ pub fn bag_index_4_holds_no_ability_and_is_refused_as_today_test() -> Nil {
 
 // ---- unread rows ----
 
-/// A class's innate pressed at bag index 3, its go answered with no unit struck:
-/// what it writes, and the log lines.
+/// A class's innate pressed at bag index 3, its go answered with no unit struck, and
+/// the timers it starts fired in turn: every effect of the press and of the casts it
+/// starts, in order.
 fn innate_pressed(bag bag: List(Int)) -> List(Effect) {
   let caster = caster_with(bag:, in_combat: False)
-  let #(_, effects) =
+  let #(state, effects) =
     pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
-  effects
+  let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
+  list.flatten([effects, ..list.map(steps, fn(step) { step.1 })])
 }
 
 pub fn the_unread_rows_of_a_pressed_innate_are_listed_nowhere_and_write_no_line_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let warrior = innate_pressed(bag: [18_309, 37_968, 38_017, 30_828])
-  let unread_of_warrior = [192_556, 192_608, 192_609, 210_834]
-  assert list.all(unread_of_warrior, fn(row) {
-    !list.contains(listed(effects: warrior), row)
-  })
-    as "Spell4Effects 192556, 192608 and 192609 (type 90) and 210834 (type 118) are not read (effect_kind.kind_of): the go lists none"
   let esper = innate_pressed(bag: [19_102, 19_019, 19_022, 38_012])
-  assert !list.contains(listed(effects: esper), 178_144)
-    as "Spell4Effects 178144 (type 29) is not read"
   let medic = innate_pressed(bag: [38_201, 16_322, 26_543, 46_615])
-  assert !list.contains(listed(effects: medic), 228_914)
-    as "Spell4Effects 228914 (type 118) is not read"
-  list.each([warrior, esper, medic], fn(effects) {
+  let unread = [
+    #(warrior, [192_556, 192_608, 192_609, 210_834, 109_482]),
+    #(esper, [178_144, 199_192]),
+    #(medic, [228_914]),
+  ]
+  list.each(unread, fn(pressed) {
+    let #(effects, rows) = pressed
+    assert list.all(rows, fn(row) { !list.contains(listed(effects:), row) })
+      as "Spell4Effects 192556, 192608 and 192609 (type 90), 210834 (type 118) and 109482 (type 18) of the Warrior's, 178144 (type 29) and 199192 (type 52) of the Esper's and 228914 (type 118) of the Medic's are not read (effect_kind.kind_of): no go lists one"
     assert support.frames_of(message_id: 0x07FD, effects:) != []
       as "each press was taken"
-    assert list.filter(support.logs(effects:), fn(line) {
-        line.0 == LogDebug
-        && {
-          string.contains(line.1, "192556")
-          || string.contains(line.1, "178144")
-          || string.contains(line.1, "228914")
-        }
+    assert list.all(rows, fn(row) {
+      list.all(support.logs(effects:), fn(line) {
+        !string.contains(line.1, int.to_string(row))
       })
-      == []
-      as "an unread row is counted by the coverage measure and written about by no go"
+    })
+      as "an unread row is counted by the coverage measure and written about by no go: no log line of any level names one"
   })
 }
 
-pub fn the_innates_go_lists_the_rows_the_server_reads_test() -> Nil {
+pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
+  let warrior = innate_pressed(bag: [18_309, 37_968, 38_017, 30_828])
+  assert listed(effects: warrior) |> list.sort(int.compare)
+    == [127_652, 173_869, 173_911, 173_912]
+    as "Spell4.46867's own go lists its type 73 row 173869, aimed at the caster; Proxy 127637 starts 42908 after 1 ms, whose go lists its three type 11 properties 127652, 173911 and 173912 (Spell4Effects spellId=42908); the type 18 row 109482 is not read"
+  assert started_spells(effects: warrior) == [42_908]
+    as "Proxies 147848 to 60915 and 210822 to 79875 are behind Prerequisites 24548 and 37438 (type 50, comparison 1: a live cast of an AMP's spell), which a caster with none fails"
   let esper = innate_pressed(bag: [19_102, 19_019, 19_022, 38_012])
   assert listed(effects: esper) == []
-    as "Spell4.58586 holds Proxies 166935, 178143 and 204548 and the type 29 row 178144: the Proxies' children list no row of the caster's go, and no row of the go itself is read"
+    as "Spell4.58586 holds Proxies 166935, 178143 and 204548 and the type 29 row 178144: the children list no row, and no row of the go itself is read"
   assert started_spells(effects: esper) == [70_369, 76_766]
     as "Proxy 166935 starts 70369 and Proxy 178143 starts 76766; Proxy 204548 to 78078 is behind Prerequisite 36531 (type 15, comparison 1: a live cast of Spell4 41590 on the caster), which a caster with no such cast fails"
+  let medic = innate_pressed(bag: [38_201, 16_322, 26_543, 46_615])
+  assert listed(effects: medic) == [228_911, 228_912]
+    as "Spell4.69450's type 11 rows 228911 and 228912 (properties 35 and 36, for 8 s, aimed at the caster) are listed; 228914 (type 118) is not"
+  assert started_spells(effects: medic) == []
+    as "Proxies 228915 and 228917 are behind Prerequisites 24356 and 24445 (type 15, comparison 1: an AMP's spell), which a caster with none fails"
 }

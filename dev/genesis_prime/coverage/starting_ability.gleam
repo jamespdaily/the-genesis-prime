@@ -147,7 +147,7 @@ fn closed_innate_slots(
     })
     |> result.partition
   case missing {
-    [] -> Ok(list.filter_map(list.reverse(verdicts), fn(verdict) { verdict }))
+    [] -> Ok(result.values(list.reverse(verdicts)))
     [_, ..] -> Error(missing)
   }
 }

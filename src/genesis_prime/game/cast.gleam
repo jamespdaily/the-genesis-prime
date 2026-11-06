@@ -186,8 +186,8 @@
 ////   player's properties. A modifier ends on a timer of its own and not with the node's
 ////   time (a node can outlive it, or end before it when the spell takes the larger of
 ////   delay and duration); taking the cast's node off the caster ends its modifiers and
-////   cancels their timers; the caster's death ends every modifier of its casts and every
-////   one still pending; a later go of the cast arms each again from that go; the player
+////   cancels their timers; the caster's death ends every modifier of its casts but the
+////   innate passive's, and every one still pending but the passive's; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
 //// - **A go's forced moves** (`Spell4Effects.effectType.3.player`): each type 3 effect of
@@ -2394,7 +2394,13 @@ fn nodes_left(
   case holder.lingering && dict.is_empty(nodes) {
     True -> {
       let #(cast, cancels) = cancel_nodes_end(cast:, cast_id:)
-      #(State(..cast, lingering: dict.delete(cast.lingering, cast_id)), cancels)
+      #(
+        passive_cleared(
+          cast: State(..cast, lingering: dict.delete(cast.lingering, cast_id)),
+          cast_id:,
+        ),
+        cancels,
+      )
     }
     False ->
       rearmed(cast: with_nodes(cast:, cast_id:, nodes:), cast_id:, now_ms:)
@@ -2565,7 +2571,9 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 /// (`left`). The client does not end its own casts when it dies (not read,
 /// `0x14045e740`), so the server's 0x7fe is the end its viewers see. Every stealth
 /// source drops, and a stealthed caster's `StealthChanged` comes last, after the casts'
-/// 0x7fe.
+/// 0x7fe. The innate passive's cast is the one cast it leaves: it stays live or
+/// lingering with its nodes, its modifiers, its pending timers and its stealth sources,
+/// and nothing is written for it (`passive_set_aside`).
 pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   use <- settled(cast:)
   all_ended(cast:, now:)
@@ -2592,24 +2600,20 @@ pub fn passive_started(
           <> " is in no plan, so it is not started",
       ),
     ])
-    Ok(spell) -> {
-      let id = next_cast_id(cast:, caster:)
-      let #(cast, effects) =
-        start(
-          cast:,
-          caster:,
-          now_ms: now.monotonic_ms,
-          spell:,
-          root: spell.spell4_id,
-          parent: None,
-          primary_target: caster.unit_id,
-          client_cast_id: None,
-          role: Passive,
-          spent: None,
-          reserved: [],
-        )
-      #(State(..cast, passive: Some(id)), effects)
-    }
+    Ok(spell) ->
+      start(
+        cast:,
+        caster:,
+        now_ms: now.monotonic_ms,
+        spell:,
+        root: spell.spell4_id,
+        parent: None,
+        primary_target: caster.unit_id,
+        client_cast_id: None,
+        role: Passive,
+        spent: None,
+        reserved: [],
+      )
   }
 }
 
@@ -2901,6 +2905,10 @@ fn start(
       presses: cast.presses + 1,
       global_cooldown_ends_ms: global_ends,
       casts: dict.insert(cast.casts, id, live),
+      passive: case role {
+        Passive -> Some(id)
+        Child | Base(..) | Stage(..) -> cast.passive
+      },
       current: case
         role != Passive
         && spell_plan.shows_cast_bar(spell:, pressed: root == spell.spell4_id)
@@ -4935,9 +4943,17 @@ fn finish(
 ) -> #(State, List(Effect)) {
   let #(cast, closed) = finish_steps(cast:, cast_id:, live:, now_ms:)
   #(
-    cast,
+    passive_cleared(cast:, cast_id:),
     list.append(finished_effects(cast_id:, audience: live.audience), closed),
   )
+}
+
+/// The cast without the innate passive's id when the cast `cast_id` is the passive and
+/// has left both `casts` and `lingering`, so that no later cast the caster mints the
+/// same id for is taken for the passive.
+fn passive_cleared(cast cast: State, cast_id cast_id: Int) -> State {
+  use <- bool.guard(when: cast.passive != Some(cast_id), return: cast)
+  State(..cast, passive: None)
 }
 
 /// Every step of a live cast's end but its 0x7fe: the cast is no longer live nor the
@@ -4982,7 +4998,9 @@ fn finish_steps(
 /// A live cast that has gone for the last time ends, or lingers when a node of it
 /// still has life: every step of its end runs, and only its 0x7fe waits until its
 /// last node ends (`cast.target_node_end`). A node whose life is over when the cast
-/// starts to linger is written 0x811 at once.
+/// starts to linger is written 0x811 at once. The innate passive's cast lingers even
+/// when no node of it lives, so it ends with no 0x7fe, and only when its last node is
+/// taken off.
 fn finish_or_linger(
   cast cast: State,
   cast_id cast_id: Int,

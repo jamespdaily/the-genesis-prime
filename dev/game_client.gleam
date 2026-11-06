@@ -29,6 +29,7 @@ import genesis_prime/message/chat_line
 import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
 import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/innate_index_set
 import genesis_prime/message/item_added
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -1269,20 +1270,25 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
   let in_the_bag =
     list.filter(items, fn(item) { item.location == 4 })
     |> list.map(fn(item) { #(item.bag_index, item.item_id) })
-  let on_a_bar =
+  let sets =
     list.filter_map(frames, fn(frame) {
       case frame.message_id == action_set.message_id {
         True -> {
           let assert Ok(set) = action_set.decode(frame.body) as "0x019D decodes"
-          Ok(set.shortcuts)
+          Ok(set)
         }
         False -> Error(Nil)
       }
     })
-    |> list.flatten
+  let on_a_bar =
+    list.flat_map(sets, fn(set) { set.shortcuts })
     |> list.filter(fn(shortcut) { shortcut.shortcut_type == 4 })
     |> list.map(fn(shortcut) { shortcut.object_id })
-  let innate = case list.any(frames, fn(frame) { frame.message_id == 0x019F }) {
+  let innate = case
+    list.any(frames, fn(frame) {
+      frame.message_id == innate_index_set.message_id
+    })
+  {
     True ->
       list.find(in_the_bag, fn(held) { !list.contains(on_a_bar, held.1) })
       |> option.from_result
@@ -1304,15 +1310,7 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
     |> list.filter(fn(tier) { tier.action_set_index == 0 })
     |> list.map(fn(tier) { tier.spell4_base_id })
   let bar =
-    list.filter_map(frames, fn(frame) {
-      case frame.message_id == action_set.message_id {
-        True -> {
-          let assert Ok(set) = action_set.decode(frame.body) as "0x019D decodes"
-          Ok(set)
-        }
-        False -> Error(Nil)
-      }
-    })
+    sets
     |> list.filter(fn(set) { set.action_set_index == 0 && set.result == 1 })
     |> list.flat_map(fn(set) { set.shortcuts })
     |> list.filter(fn(shortcut) {

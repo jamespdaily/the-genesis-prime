@@ -16,6 +16,10 @@
 ////   (`opcode.0x19f` sets it at entry). The client sends 0 only before that message
 ////   has set its own index, which is 4 until then (`opcode.0x16f`), so nothing changes
 ////   and nothing is written.
+//// - **The held count assumes a level below 6.** Slots 1 and 2 are left out because their
+////   gates need levels 6 and 10 (`Class.spell4IdInnateAbilityActive00`); the character's
+////   level is not checked here, so a character above level 5 would be refused an index
+////   the client allows.
 //// - **No state is kept**: the index cannot change while one slot is held.
 
 import genesis_prime/client_connection.{type Undecoded}

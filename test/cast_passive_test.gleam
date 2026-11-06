@@ -34,11 +34,12 @@ import genesis_prime/game/spell_plan.{
   type Plans, type Spell, GlobalCooldown, ShowsCastBar, Spell,
 }
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
-import genesis_prime/table/id.{Spell4BaseId}
+import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import unitest
@@ -307,4 +308,156 @@ pub fn a_player_saved_dead_starts_the_passive_at_entry_test() -> Nil {
   assert lines(effects:)
     == ["started k1 44926 root 44926 parent 0", "went k1 p0"]
     as "Spell4.44926: caster condition row 4 (mask 0) holds alive or dead, so a dead player holds it too"
+}
+
+/// The ids of the casts the effects start, in order.
+fn started_ids(effects effects: List(Effect)) -> List(Int) {
+  list.filter_map(support.writes(effects:), fn(frame) {
+    case frame.message_id == spell_started.message_id {
+      True -> {
+        let assert Ok(start) = spell_started.decode(frame.body)
+          as "a 0x7ff the rule wrote decodes"
+        Ok(start.cast_id)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+pub fn the_passive_still_lingers_after_a_death_so_taking_its_unit_off_ends_it_with_its_0x7fe_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let #(passive, effects) = started(base: 29_035)
+  let #(left, died) = cast.died(cast: passive, now: support.at(ms: 5000))
+  assert support.frames_of(message_id: 0x07FE, effects: died) == []
+  let #(_, removed) =
+    cast.unit_removed(
+      cast: left,
+      unit_id: support.caster().unit_id,
+      now_ms: 5100,
+    )
+  assert support.finished_ids(support.writes(effects: removed))
+    == started_ids(effects:)
+    as "the passive's nodes are on the caster's unit, so the unit's removal leaves the cast with none and writes its 0x7fe: the cast a death left is still the passive's, lingering"
+}
+
+pub fn the_passives_pending_child_survives_a_death_and_starts_when_its_timer_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let #(state, effects) = started(base: 29_131)
+  let #(state, _) = cast.died(cast: state, now: support.at(ms: 1020))
+  let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
+  let assert [#(due, child)] = steps
+    as "the Proxy to 60724 waited 50 ms (Spell4Effects 147125) and the death 20 ms after the start left its timer"
+  assert due == 1050
+  assert lines(effects: child)
+    == [
+      "started k1 60724 root 45057 parent 45057",
+      "went k1 p0",
+      "finished k1",
+    ]
+    as "the child starts after the death as it would without one"
+}
+
+pub fn a_passive_taken_off_the_caster_is_forgotten_so_a_cast_that_gets_its_id_later_ends_at_death_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let filler = support.child(spell4_id: 250_010, base: 250_010)
+  let plans = support.with_spells(plans: real_plans(), spells: [filler])
+  let caster =
+    cast.Caster(..support.caster(), abilities: [
+      Spell4BaseId(250_010),
+      Spell4BaseId(29_035),
+    ])
+  let #(passive, started_effects) =
+    started_in(plans:, caster:, base: 29_035, at: 1000)
+  let #(state, _) =
+    cast.unit_removed(cast: passive, unit_id: caster.unit_id, now_ms: 1100)
+  // The ids of a unit's casts count up and wrap after 2048 starts, so the
+  // 2048th start after the passive's gets its id again.
+  let state =
+    int.range(from: 0, to: 2047, with: state, run: fn(state, number) {
+      let #(state, _) =
+        support.pressed_in(
+          plans:,
+          state:,
+          caster:,
+          bag_index: 0,
+          target: 0,
+          at: 2000 + number,
+        )
+      state
+    })
+  let #(state, pressed) =
+    support.pressed_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: 1,
+      target: 0,
+      at: 9000,
+    )
+  assert support.pressed_id(effects: pressed)
+    == case started_ids(effects: started_effects) {
+      [first, ..] -> first
+      [] -> 0
+    }
+    as "the setup: the 2049th cast of the unit has the passive's old cast id"
+  let #(_, died) = cast.died(cast: state, now: support.at(ms: 9500))
+  assert list.length(support.frames_of(message_id: 0x07FE, effects: died)) == 1
+    as "the Warrior's spell pressed as an ability lingers and ends with its 0x7fe at death, as the control of the death test shows: it is not mistaken for the passive that held its id"
+}
+
+pub fn a_passives_go_does_not_clear_the_cast_another_press_made_current_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let second =
+    Spell(
+      ..slow_passive(),
+      spell4_id: Spell4Id(250_002),
+      spell4_base_id: Spell4BaseId(250_002),
+      cast_time_ms: 2000,
+      global_cooldown: GlobalCooldown(
+        refused_while_running: False,
+        starts_for_ms: None,
+      ),
+    )
+  let plans =
+    support.with_spells(plans: support.plans(), spells: [slow_passive(), second])
+  let caster =
+    cast.Caster(..support.caster(), abilities: [
+      Spell4BaseId(250_001),
+      Spell4BaseId(250_002),
+      Spell4BaseId(19_102),
+    ])
+  let #(state, started) =
+    cast.passive_started(
+      cast: cast.new(),
+      caster:,
+      plans:,
+      base: Spell4BaseId(250_001),
+      now: support.at(ms: 1000),
+    )
+  let assert [#(passive_go, 1000)] = support.started_timers(effects: started)
+    as "the passive's go waits its cast time of 1000 ms"
+  let #(state, _) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: 1,
+      target: 0,
+      at: 1500,
+    )
+  let #(state, _) = support.fired(state:, timer: passive_go, at: 2000)
+  let #(_, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: 2,
+      target: 0,
+      at: 2100,
+    )
+  assert support.refusal_results(effects: pressed) == [13]
+    as "a cast with a cast bar clears the current cast at its go when it has a cast time and no parent; the passive's go does not, so the press at 1500 stays the current cast, with more than 500 ms left (13, 0x1403b14c0)"
 }

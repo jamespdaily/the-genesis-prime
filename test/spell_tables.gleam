@@ -637,27 +637,19 @@ pub fn method_spell_row(
   ])
 }
 
-fn class_row(id id: Int, slots slots: List(Int)) -> List(Cell) {
-  planted_table.row(class.schema, [
-    #("ID", Integer(id)),
-    ..list.index_map(slots, fn(vital, slot) {
-      #("vitalEnumResource0" <> int.to_string(slot), Integer(vital))
-    })
-  ])
-}
-
-/// A planted Class row that names this Spell4 as its first innate active ability.
-fn class_row_with(
+fn class_row(
   id id: Int,
   slots slots: List(Int),
-  innate innate: Int,
+  more more: List(#(String, Int)),
 ) -> List(Cell) {
   planted_table.row(class.schema, [
     #("ID", Integer(id)),
-    #("spell4IdInnateAbilityActive00", Integer(innate)),
-    ..list.index_map(slots, fn(vital, slot) {
-      #("vitalEnumResource0" <> int.to_string(slot), Integer(vital))
-    })
+    ..list.append(
+      list.index_map(slots, fn(vital, slot) {
+        #("vitalEnumResource0" <> int.to_string(slot), Integer(vital))
+      }),
+      list.map(more, fn(column) { #(column.0, Integer(column.1)) }),
+    )
   ])
 }
 
@@ -1839,9 +1831,9 @@ pub fn rows() -> Rows {
       },
     ),
     classes: [
-      class_row(id: 3, slots: [5, 0, 0, 0, 0, 0, 0, 16]),
-      class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16]),
-      class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16]),
+      class_row(id: 3, slots: [5, 0, 0, 0, 0, 0, 0, 16], more: []),
+      class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: []),
+      class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16], more: []),
     ],
     prerequisites: sorted_by_id(
       list.flatten([
@@ -2039,11 +2031,9 @@ pub fn rows_with_energize() -> Rows {
     classes: list.map(rows.classes, fn(row) {
       case row {
         [Integer(4), ..] ->
-          class_row_with(
-            id: 4,
-            slots: [5, 18, 18, 18, 18, 18, 0, 16],
-            innate: 69_450,
-          )
+          class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: [
+            #("spell4IdInnateAbilityActive00", 69_450),
+          ])
         other -> other
       }
     }),
