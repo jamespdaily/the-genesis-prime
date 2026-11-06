@@ -56,6 +56,12 @@ pub type Closed {
   FailsAtLevelOne(comparison: Int, value: Int)
 }
 
+/// The gates' evidence: each AMP's spell with its EldanAugmentation id, and the
+/// level AMPs are offered from.
+pub fn gates(amps amps: List(#(Int, Int)), amp_level amp_level: Int) -> Gates {
+  Gates(amps: dict.from_list(list.reverse(amps)), amp_level:)
+}
+
 /// The AMPs' spells and the AMP unlock's level, read from the tables; an error
 /// when the table has no AMP unlock row.
 pub fn load(tables tables: store.Tables) -> Result(Gates, Nil) {
@@ -63,12 +69,12 @@ pub fn load(tables tables: store.Tables) -> Result(Gates, Nil) {
     tables:,
     id: LevelUpUnlockId(amp_unlock_id),
   ))
-  let amps =
-    eldan_augmentation.all(tables)
-    |> list.reverse
-    |> list.map(fn(row) { #(row.spell4_id_augment, row.id) })
-    |> dict.from_list
-  Gates(amps:, amp_level: unlock.level)
+  gates(
+    amps: list.map(eldan_augmentation.all(tables), fn(row) {
+      #(row.spell4_id_augment, row.id)
+    }),
+    amp_level: unlock.level,
+  )
 }
 
 /// The gate prerequisite that keeps a level-1 character from starting the Proxy,
@@ -97,7 +103,7 @@ pub fn closed_by(
 
 /// Why the row cannot pass for a level-1 character: under AND the first condition
 /// that cannot, under OR only when none can.
-fn row_closed(
+pub fn row_closed(
   gates gates: Gates,
   row row: prerequisite_table.Prerequisite,
 ) -> Result(Closed, Nil) {
