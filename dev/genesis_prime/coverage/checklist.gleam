@@ -13,7 +13,7 @@ import gleam/string
 
 /// What the marks of a type line say.
 pub const legend =
-  "Marks: [x] handled by a rule of the server, with the gap it states when it has one; [~] the client's code was read for the type and the server does not handle it (what it lacks, and the fact file's key); [ ] the client's code was not read for the type. \"In the starting abilities\": the rows of the type among the spells the 18 level-1 abilities' trees reach, gated children included."
+  "Marks: [x] handled by a rule of the server, with the gap it states when it has one; [~] the client's code was read for the type and the server does not handle it (what it lacks, and the fact file's key); [ ] the client's code was not read for the type. \"In the starting abilities\": the rows of the type among the spells the 18 level-1 abilities' trees reach, a child behind a gate a level-1 character cannot open and the prerequisites only the runner columns name left out (listed after the checklists)."
 
 /// The Markdown of every engine's measure: a heading, the source and totals,
 /// then one line per type, heaviest first: `- [ ] type N: R rows (S%)`, with
