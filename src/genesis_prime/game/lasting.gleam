@@ -136,7 +136,7 @@ pub fn life_of(
 
 /// One effect's lifetime from the go: its delay plus durationTime, or the larger of
 /// the two (`opcode.0x7f4.effect_time`).
-fn lifetime_of(
+pub fn lifetime_of(
   row row: LastingRow,
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
 ) -> Int {

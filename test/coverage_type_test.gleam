@@ -66,14 +66,14 @@ fn handled_over(
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_and_80_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_73_and_80_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Spell effects"),
       types: numbers(from: 1, to: 200),
     )
-    == [1, 3, 4, 8, 11, 17, 26, 80]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26) and SpellForceRemove 80 (Spell4Effects.effectType.80); every other type is unread"
+    == [1, 3, 4, 8, 11, 17, 26, 73, 80]
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) and SpellForceRemove 80 (Spell4Effects.effectType.80); every other type is unread"
 }
 
 pub fn the_prerequisite_types_the_measure_handles_are_the_eight_read_and_those_with_no_case_test() -> Nil {
@@ -195,8 +195,8 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
     list.map(declared.missing, fn(missing) { missing.type_number })
     |> list.sort(int.compare)
   }
-  assert missing_of("Spell effects") == [14, 73, 90]
-    as "the trace's effect types of the starting abilities that no rule reads: proc 14, cooldown change 73 and charges 90; forced move 3 and property modifier 11 are read for the rows aimed at the caster and listed as partial"
+  assert missing_of("Spell effects") == [14, 90]
+    as "the trace's effect types of the starting abilities that no rule reads: proc 14 and charges 90; forced move 3, property modifier 11 and cooldown change 73 are read for the rows aimed at the caster and listed as partial"
   assert missing_of("Spend-scaled costs") == [2, 5, 9, 10, 11]
     as "the innate cost EMM ids besides 4 and 7 that the rows hold"
   assert missing_of("Prerequisites") == [43, 108, 116]
@@ -255,7 +255,7 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
     as "no row uses 99, so listing it as partial is a declaration no data supports"
 }
 
-pub fn the_effect_types_3_and_11_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+pub fn the_effect_types_3_11_and_73_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(facts) =
     simplifile.read(
@@ -275,12 +275,19 @@ pub fn the_effect_types_3_and_11_are_partial_with_a_reason_and_a_fact_key_the_fi
         reason: "rows, or parts of rows, aimed at another unit: the next step",
         fact_key: "Spell4Effects.effectType.11",
       ),
+      Missing(
+        type_number: 73,
+        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
+        fact_key: "Spell4Effects.effectType.73",
+      ),
     ]
   assert has_record(facts:, key: "Spell4Effects.effectType.3")
   assert has_record(facts:, key: "Spell4Effects.effectType.11")
+  assert has_record(facts:, key: "Spell4Effects.effectType.73")
   assert engine.handles(engine: declared, type_number: 3)
     && engine.handles(engine: declared, type_number: 11)
-    as "types 3 and 11 are handled, with the gap"
+    && engine.handles(engine: declared, type_number: 73)
+    as "types 3, 11 and 73 are handled, with the gap"
 }
 
 pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
@@ -404,6 +411,87 @@ pub fn the_type_11_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   assert string.contains(text, "2 of 2 types handled (50.0% of rows)")
     as "the handled rows are the type 8 row and the two type 11 rows the plan reads: 3 of 6"
   assert string.contains(text, "3 rows of the handled types not read")
+}
+
+pub fn the_type_73_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects.targetFlags: bit 1 is the caster; the plan reads a type 73 row that
+  // includes it (flags 1, 3, 5 and 7) and leaves out one aimed only at others (2, 4 and
+  // 6), whose cooldowns no server rule keeps. Planted: five type 73 rows, flags 1, 3, 2,
+  // 4 and 4, and one type 8 row.
+  let row = fn(id, type_, flags) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", planted_table.Integer(id)),
+      #("effectType", planted_table.Integer(type_)),
+      #("targetFlags", planted_table.Integer(flags)),
+    ])
+  }
+  use folder <- planted_table.in_folder([
+    planted_table.file(spell4_effects.schema, [
+      row(1, 73, 1),
+      row(2, 73, 3),
+      row(3, 73, 2),
+      row(4, 73, 4),
+      row(5, 73, 4),
+      row(6, 8, 4),
+    ]),
+  ])
+  let assert Ok(tables) =
+    store.load(
+      under: owned_key.new(),
+      from: folder,
+      entries: [spell4_effects.entry()],
+      requirements: [],
+      derivations: [],
+    )
+    as "a planted Spell4Effects table loads"
+  let measured =
+    measurement.measure(
+      EngineDeclaration(
+        ..engine_named("Spell effects"),
+        starting_abilities: None,
+      ),
+      tables,
+    )
+  store.unload(tables)
+  let assert Measured(types:, ..) = measured as "the planted table is measured"
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 73 })
+  assert line.rows == 5
+  assert line.status
+    == HandledWithGap(
+      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
+      fact_key: "Spell4Effects.effectType.73",
+      unread_rows: 3,
+    )
+    as "three of the five rows aim only at others and are not read"
+  let text = checklist.render([measured])
+  assert string.contains(
+    text,
+    "- [x] type 73: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps (Spell4Effects.effectType.73)",
+  )
+    as "the line lists the rows left out with the gap's reason"
+}
+
+pub fn the_clients_522_type_73_rows_count_488_handled_and_34_not_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let assert Measured(types:, ..) =
+    measurement.measure(
+      engine_named("Spell effects"),
+      client_tables.every_table(),
+    )
+    as "the engine's source is a table"
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 73 })
+  assert line.rows == 522
+    as "table_rows -- Spell4Effects effectType=73: 522 rows"
+  assert measurement.is_handled(line.status)
+  assert line.status
+    == HandledWithGap(
+      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
+      fact_key: "Spell4Effects.effectType.73",
+      unread_rows: 34,
+    )
+    as "targetFlags 1 in 480 rows and 3 in 8 include the caster (488 handled); 2 in 30 rows and 4 in 4 aim only at others (34 not handled)"
 }
 
 pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missing_type_a_breach_test() -> Nil {

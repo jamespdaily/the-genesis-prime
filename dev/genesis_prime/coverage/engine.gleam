@@ -184,7 +184,7 @@ fn quest_objectives() -> EngineDeclaration {
 }
 
 /// The rows of the effect type that the effect rule does not read (genesis_prime/game/effect_kind
-/// `is_row_read`): the type 3 and type 11 rows aimed only at other units.
+/// `is_row_read`): the type 3, type 11 and type 73 rows aimed only at other units.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   list.count(spell4_effects.all(tables), fn(row) {
     row.effect_type == type_number
@@ -224,17 +224,17 @@ fn spell_effects() -> EngineDeclaration {
         reason: "rows, or parts of rows, aimed at another unit: the next step",
         fact_key: "Spell4Effects.effectType.11",
       ),
+      Missing(
+        type_number: 73,
+        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
+        fact_key: "Spell4Effects.effectType.73",
+      ),
     ],
     missing: [
       Missing(
         type_number: 14,
         reason: "needs a trigger on a unit that casts a spell, which a lasting effect on a unit holds",
         fact_key: "Spell4Effects.effectType.14",
-      ),
-      Missing(
-        type_number: 73,
-        reason: "needs the cooldowns the server keeps for a unit changed by the effect, for the running ones and for the new ones while it lasts",
-        fact_key: "Spell4Effects.effectType.73",
       ),
       Missing(
         type_number: 90,

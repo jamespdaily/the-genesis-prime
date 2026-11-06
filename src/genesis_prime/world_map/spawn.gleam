@@ -1246,7 +1246,12 @@ fn scaled(
   difficulty difficulty: Float,
   tier tier: Float,
 ) -> Result(Float, SpawnError) {
-  Ok(value |> times(archetype) |> times(difficulty) |> times(tier))
+  Ok(
+    value
+    |> float32.product(right: archetype)
+    |> float32.product(right: difficulty)
+    |> float32.product(right: tier),
+  )
 }
 
 /// The difficulty's multiplier, or 1.0 for a difficulty with no row.
@@ -1801,11 +1806,6 @@ fn base_health(
     property: unit_fields.base_health_property,
   )
   |> result.map(float.truncate)
-}
-
-/// The product as a 32-bit float.
-fn times(left: Float, right: Float) -> Float {
-  float32.rounded(left *. right)
 }
 
 /// One line of the coverage of a world, for the log at start and for the coverage
