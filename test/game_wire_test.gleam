@@ -3561,6 +3561,17 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
 /// effect is added to (`character_tables.shared_with_stealth`).
 const paralytic_surge_index = 2
 
+/// Whether a go of a cast of the unit `caster` names the unit `target` (opcode.0x7f4).
+fn struck_by(
+  frames frames: List(Frame),
+  caster caster: Int,
+  target target: Int,
+) -> Bool {
+  list.any(game_client.go_targets_in(frames:), fn(go) {
+    cast.caster_of(cast_id: go.0) == caster && list.contains(go.1, target)
+  })
+}
+
 /// The stealth changes among the frames, each the unit and its stealthed bit, in
 /// order (opcode.0x8f5).
 fn stealth_changes_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
@@ -3723,12 +3734,11 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
   let #(frames, _) =
     game_client.read_until(game:, have:, within_ms: 20_000, found: fn(frames) {
       list.length(stealth_changes_in(frames:)) >= 2
+      && struck_by(frames:, caster: dagun, target: own)
     })
   assert stealth_changes_in(frames:) == [#(own, 1), #(own, 0)]
     as "opcode.0x8f5: the press enters stealth, and the Dagun, which keeps fighting the bot it already had on its threat list, strikes it: Spell4Effects.effectType.83 (83834, dataBits02 0) ends the stealth on the damage taken"
-  assert list.any(game_client.go_targets_in(frames:), fn(go) {
-    cast.caster_of(cast_id: go.0) == dagun && list.contains(go.1, own)
-  })
+  assert struck_by(frames:, caster: dagun, target: own)
     as "the Dagun's strike names the bot: it keeps fighting a player it already had on its threat list (opcode.0x7f4)"
   game_client.close(game:)
   login_support.stop(started)
