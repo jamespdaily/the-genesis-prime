@@ -15,6 +15,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/hit.{Blow, Defence, Offence}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
@@ -28,8 +29,10 @@ import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/list
 import gleam/option
+import novice_tables
 import owned_key
 import place_support
+import planted_table
 import rating_support
 
 /// Warfare Woods, WorldZone 5967 (Quest2.10518).
@@ -176,6 +179,34 @@ pub fn summon_checks() -> spawn.SummonChecks {
   )
 }
 
+/// What a summon is checked with over these planted files, their tables unloaded
+/// when `then` returns: the checks are good only inside it. A file of `files`
+/// that is also a content file (`character_tables.content_files`) replaces it.
+pub fn with_summon_checks_of(
+  files files: List(#(String, BitArray)),
+  then then: fn(spawn.SummonChecks) -> a,
+) -> a {
+  use folder <- planted_table.in_folder(list.append(
+    character_tables.content_files(),
+    novice_tables.with_creature_attack(files:, padding: True),
+  ))
+  let assert Ok(server) =
+    server_table.load_under(under: owned_key.new(), from: folder)
+    as "the planted files load as the server's tables"
+  let assert Ok(more) =
+    server_table.load_content_tables(over: server, from: folder)
+    as "the planted files load as the content-only tables"
+  let found =
+    then(spawn.summon_checks(
+      tables: more,
+      formulas: rating_support.formulas(),
+      kinds: kinds(),
+    ))
+  table_store.unload(more)
+  table_store.unload(server)
+  found
+}
+
 /// The kinds migration 0010 leaves: row 0 alone, a respawn of 60 000 ms and an
 /// attack of Spell4 5649 every 1500 ms.
 pub fn kinds() -> Kinds {
@@ -287,6 +318,7 @@ fn put_worlds(
   respawn_ms respawn_ms: Int,
 ) -> Nil {
   content_game_number.put(key:, numbers:)
+  content_spawn.put_summon_checks(key:, checks: summon_checks())
   content_class_resource.put(key:, classes: class_resource_support.classes())
   content_creature_kind.put(
     key:,

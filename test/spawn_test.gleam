@@ -35,7 +35,6 @@ import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/spawn.{
@@ -906,34 +905,25 @@ pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_are_lo
       #("instancePortalId", planted_table.Integer(6)),
       #("creature2OutfitGroupId", planted_table.Integer(7)),
     ])
-    |> replacing(schema: path_mission.schema, rows: [id(path_mission.schema, 5)])
-    |> replacing(schema: instance_portal.schema, rows: [
+    |> planted_table.replacing(schema: path_mission.schema, rows: [
+      id(path_mission.schema, 5),
+    ])
+    |> planted_table.replacing(schema: instance_portal.schema, rows: [
       id(instance_portal.schema, 6),
     ])
-    |> replacing(schema: creature2_outfit_group_entry.schema, rows: [
-      planted_table.row(creature2_outfit_group_entry.schema, [
-        #("ID", planted_table.Integer(1)),
-        #("creature2OutfitGroupId", planted_table.Integer(7)),
-      ]),
-    ])
+    |> planted_table.replacing(
+      schema: creature2_outfit_group_entry.schema,
+      rows: [
+        planted_table.row(creature2_outfit_group_entry.schema, [
+          #("ID", planted_table.Integer(1)),
+          #("creature2OutfitGroupId", planted_table.Integer(7)),
+        ]),
+      ],
+    )
   let selection =
     selected_with(files:, rows: [spawn_support.beast_row(number: 1)])
   assert selection.refusals == []
     as "the creature with a mission and a portal that have rows is one the client loads"
-}
-
-/// The files with the file of `schema` holding `rows` in place of its own.
-fn replacing(
-  files files: List(#(String, BitArray)),
-  schema schema: tbl_file.Schema,
-  rows rows: List(List(planted_table.Cell)),
-) -> List(#(String, BitArray)) {
-  list.map(files, fn(file) {
-    case file.0 == schema.file {
-      True -> planted_table.file(schema, rows)
-      False -> file
-    }
-  })
 }
 
 // ------------------------------------------- a creature's own attack

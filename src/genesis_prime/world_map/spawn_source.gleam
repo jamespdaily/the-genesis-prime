@@ -50,6 +50,13 @@ pub fn run_only_id_after(id id: SpawnId) -> SpawnId {
   SpawnId(number - 1)
 }
 
+/// Whether the id is a run-only id: below 0, as `first_run_only_id` and
+/// `run_only_id_after` count.
+pub fn is_run_only_id(id id: SpawnId) -> Bool {
+  let SpawnId(number) = id
+  number < 0
+}
+
 /// Whether the spawn was made for this run only, so its creature does not
 /// respawn after it dies.
 pub fn is_run_only(source source: SpawnSource) -> Bool {

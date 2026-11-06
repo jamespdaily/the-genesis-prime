@@ -345,8 +345,17 @@ pub fn step(
         input: creature_fight.StrikeAnswered(answered:),
         now_ms:,
       )
-    OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer && run_only ->
-      todo as "a run-only creature does not stand again: send each viewer Removed and Stop"
+    OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer && run_only -> #(
+      state,
+      Effects(
+        list.append(
+          list.map(sorted_viewers(state:), fn(viewer) {
+            news_to(creature:, viewer:, news: Removed)
+          }),
+          [Stop],
+        ),
+      ),
+    )
     OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer ->
       case
         creature_life.corpse_timer_fired(

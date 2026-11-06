@@ -97,7 +97,7 @@ import genesis_prime/world_map/creature_life.{
 }
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
-import genesis_prime/world_map/spawn_source.{type Summoned}
+import genesis_prime/world_map/spawn_source.{type Summoned, Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject}
 import genesis_prime/world_map/unit_fields.{
   type HealthSource, ClientDefault, Recorded,
@@ -313,15 +313,16 @@ type Checked {
 /// What the checks and the selection read of the client's tables by something
 /// other than a row's id, built once for a load so no check scans a table for
 /// each of the 77,794 rows: each creature's override of Base Health, the display
-/// ids of each display group, the outfit groups that have entries, each
-/// faction's parent, and the level of each pair of factions that has a
+/// ids of each display group, the first display and the first outfit of each
+/// group, each faction's parent, and the level of each pair of factions that has a
 /// relationship, filed under both orders as the client files it.
 type Catalog {
   Catalog(
     tables: table_store.Tables,
     overrides: Dict(#(Int, Int), Float),
     display_groups: Dict(Int, Set(Int)),
-    outfit_groups: Set(Int),
+    first_displays: Dict(Int, Int),
+    first_outfits: Dict(Int, Int),
     parents: Dict(Int, Int),
     levels: Dict(#(Int, Int), Int),
     worlds: Set(Int),
@@ -488,7 +489,52 @@ pub fn summoned(
   checks checks: SummonChecks,
   summoned summoned: Summoned,
 ) -> Result(Spawn, SummonRefusal) {
-  todo as "build the Row from the Creature2 row, then load_checks and left_out_of"
+  let SummonChecks(catalog:, formulas:, kinds:) = checks
+  let Summoned(id:, creature_id:, place:) = summoned
+  use creature <- result.try(
+    valid_creature(catalog:, creature_id:)
+    |> result.map_error(FailsTheChecks),
+  )
+  let facing = start_place.facing(place)
+  let row =
+    Row(
+      id:,
+      entity_type: non_player,
+      creature_id: creature_id.value,
+      world_id: start_place.world_id(place),
+      area_id: start_place.world_zone_id(place),
+      x: start_place.x(place),
+      y: start_place.y(place),
+      z: start_place.z(place),
+      rotation_x: facing.yaw,
+      rotation_y: facing.pitch,
+      rotation_z: facing.roll,
+      display_info_id: dict.get(
+        catalog.first_displays,
+        creature.creature2_display_group_id,
+      )
+        |> result.unwrap(0),
+      outfit_info_id: dict.get(
+        catalog.first_outfits,
+        creature.creature2_outfit_group_id,
+      )
+        |> result.unwrap(0),
+      faction_id: creature.faction_id,
+      base_faction_id: creature.faction_id,
+      checklist_index: 0,
+      world_object_id: 0,
+      world_socket_id: 0,
+      health: None,
+      level: None,
+    )
+  use #(checked, _shared) <- result.try(
+    load_checks(catalog:, formulas:, kinds:, shared: dict.new(), row:)
+    |> result.map_error(FailsTheChecks),
+  )
+  case left_out_of(catalog:, checked:) {
+    Ok(reason) -> Error(WouldNotStart(creature_id:, reason:))
+    Error(Nil) -> Ok(checked.spawn)
+  }
 }
 
 /// A sentence that says why a summon makes no spawn, which the player's system
@@ -561,10 +607,27 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
         })
       },
     ),
-    outfit_groups: list.fold(
+    first_displays: list.fold(
+      creature2_display_group_entry.all(tables),
+      dict.new(),
+      fn(found, entry) {
+        first_kept(
+          found:,
+          group: entry.creature2_display_group_id,
+          entry: entry.creature2_display_info_id,
+        )
+      },
+    ),
+    first_outfits: list.fold(
       creature2_outfit_group_entry.all(tables),
-      set.new(),
-      fn(found, entry) { set.insert(found, entry.creature2_outfit_group_id) },
+      dict.new(),
+      fn(found, entry) {
+        first_kept(
+          found:,
+          group: entry.creature2_outfit_group_id,
+          entry: entry.creature2_outfit_info_id,
+        )
+      },
     ),
     parents: list.fold(faction2.all(tables), dict.new(), fn(found, faction) {
       dict.insert(found, faction.id, faction.faction2_id_parent)
@@ -582,6 +645,19 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
       )
     }),
   )
+}
+
+/// The entries of a group by group, with the first one met kept: the tables'
+/// rows come in id order, so it is the entry of the lowest id.
+fn first_kept(
+  found found: Dict(Int, Int),
+  group group: Int,
+  entry entry: Int,
+) -> Dict(Int, Int) {
+  case dict.has_key(found, group) {
+    True -> found
+    False -> dict.insert(found, group, entry)
+  }
 }
 
 /// A faction and its parents, nearest first: the chain the client walks
@@ -1694,7 +1770,7 @@ fn valid_creature(
     ),
     #(
       row.creature2_outfit_group_id == 0
-        || set.contains(catalog.outfit_groups, row.creature2_outfit_group_id),
+        || dict.has_key(catalog.first_outfits, row.creature2_outfit_group_id),
       NoOutfitEntries,
     ),
   ]

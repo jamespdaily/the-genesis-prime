@@ -47,6 +47,14 @@ pub type Message {
   /// `Echoed(watch)`. The creature's end opens the key `watch`; one that does
   /// not start opens the key `-watch`.
   StartCreatureAs(watch: Int, creature: CreatureStart)
+  /// Start the creature as `StartCreatureAs` does, then timer `timer` for
+  /// `after_ms` in the same step, then answer with `Echoed(watch)`.
+  StartCreatureThenTimer(
+    watch: Int,
+    creature: CreatureStart,
+    timer: Int,
+    after_ms: Int,
+  )
   /// Start timer `timer` for `after_ms`, then answer with `Echoed(timer)`. Its
   /// firing opens the key `timer_key_base + timer`.
   StartTimerAs(timer: Int, after_ms: Int)
@@ -149,6 +157,14 @@ fn asked(
       state,
       Effects([
         OwnEffect(StartCreature(WatchId(watch), creature)),
+        OwnEffect(Reply(caller, Echoed(watch))),
+      ]),
+    )
+    StartCreatureThenTimer(watch:, creature:, timer:, after_ms:) -> #(
+      state,
+      Effects([
+        OwnEffect(StartCreature(WatchId(watch), creature)),
+        OwnEffect(StartServiceTimer(TimerId(timer), after_ms)),
         OwnEffect(Reply(caller, Echoed(watch))),
       ]),
     )
