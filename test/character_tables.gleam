@@ -69,6 +69,9 @@ import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{CharacterCustomizationLabelId}
 import genesis_prime/table/instance_portal
+import genesis_prime/table/item2_type
+import genesis_prime/table/item_display
+import genesis_prime/table/item_slot
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
@@ -264,6 +267,96 @@ fn load_stealth(broken_by_damage broken_by_damage: Bool) -> store.Tables {
       }
     }),
   )
+}
+
+/// The planted tables with the two DisguiseOutfit rows of the Eradication ExoSuit
+/// (`Spell4Effects.effectType.112`) added to Paralytic Surge 42352, which holds none,
+/// so the Medic's press lists one in its go and shows its suit for 10,250 ms: test data,
+/// since no pressable planted ability holds one, and the Medic is no Engineer. The rows
+/// are the client's 112543 (ItemDisplay 4807, behind Prerequisite 30100: types 243 and
+/// 250, comparison 1, value 167, any condition) and 178142 (7221, behind 30101: 166),
+/// with the rows they read, as the client holds them (`-- ItemDisplay 4807 7221`: item
+/// type 346; `-- Item2Type 346`: ItemSlot 64; `-- ItemSlot 64`; `-- Prerequisite 30100
+/// 30101`). The planted Medic is of faction 166, so 178142's suit, 7221, is shown.
+/// Loaded once under a key of its own.
+pub fn shared_with_disguise() -> store.Tables {
+  database_support.once("character_tables_disguise", fn() {
+    let suit = fn(id, display, gate, order) {
+      planted_table.row(spell4_effects.schema, [
+        #("ID", Integer(id)),
+        #("spellId", Integer(42_352)),
+        #("targetFlags", Integer(1)),
+        #("effectType", Integer(112)),
+        #("durationTime", Integer(10_250)),
+        #("dataBits02", Integer(display)),
+        #("dataBits03", Integer(1)),
+        #("phaseFlags", Integer(-1)),
+        #("orderIndex", Integer(order)),
+        #("prerequisiteIdCasterApply", Integer(gate)),
+      ])
+    }
+    let gate = fn(id, faction) {
+      planted_table.row(prerequisite.schema, [
+        #("ID", Integer(id)),
+        #("flags", Integer(1)),
+        #("prerequisiteTypeId0", Integer(243)),
+        #("prerequisiteTypeId1", Integer(250)),
+        #("prerequisiteComparisonId0", Integer(1)),
+        #("prerequisiteComparisonId1", Integer(1)),
+        #("value0", Integer(faction)),
+        #("value1", Integer(faction)),
+      ])
+    }
+    let display = fn(id) {
+      planted_table.row(item_display.schema, [
+        #("ID", Integer(id)),
+        #("item2TypeId", Integer(346)),
+      ])
+    }
+    let files =
+      files_replacing(
+        schema: spell4_effects.schema,
+        rows: spell_tables.sorted_by_id([
+          suit(112_543, 4807, 30_100, 3),
+          suit(178_142, 7221, 30_101, 4),
+          ..novice_tables.spell4_effects_rows()
+        ]),
+      )
+      |> planted_table.replacing(
+        schema: prerequisite.schema,
+        rows: spell_tables.sorted_by_id([
+          gate(30_100, 167),
+          gate(30_101, 166),
+          ..prerequisite_rows()
+        ]),
+      )
+      |> planted_table.replacing(
+        schema: item_display.schema,
+        rows: spell_tables.sorted_by_id([
+          display(4807),
+          display(7221),
+          ..novice_tables.item_display_rows()
+        ]),
+      )
+      |> planted_table.replacing(
+        schema: item2_type.schema,
+        rows: spell_tables.sorted_by_id([
+          planted_table.row(item2_type.schema, [
+            #("ID", Integer(346)),
+            #("itemSlotId", Integer(64)),
+          ]),
+          ..novice_tables.item2_type_rows()
+        ]),
+      )
+      |> planted_table.replacing(
+        schema: item_slot.schema,
+        rows: spell_tables.sorted_by_id([
+          novice_tables.item_slot_row(#(64, 0, 1.0)),
+          ..novice_tables.item_slot_rows()
+        ]),
+      )
+    load_files(files)
+  })
 }
 
 /// The planted tables with Gate's forced move, row 67776 as the client holds it (delay

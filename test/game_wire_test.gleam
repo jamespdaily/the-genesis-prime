@@ -1343,6 +1343,19 @@ fn two_players_of_class_enter_one_map_with(
   first_class first_class: Int,
   scripts scripts: Scripts,
 ) -> TwoEntered {
+  two_players_enter_on(
+    tables: character_tables.shared_with_spell_trees(),
+    first_class:,
+    scripts:,
+  )
+}
+
+/// As `two_players_of_class_enter_one_map_with`, on these tables.
+fn two_players_enter_on(
+  tables tables: table_store.Tables,
+  first_class first_class: Int,
+  scripts scripts: Scripts,
+) -> TwoEntered {
   let started =
     login_support.start_with(change: fn(settings) {
       server.Settings(
@@ -1350,10 +1363,7 @@ fn two_players_of_class_enter_one_map_with(
         game: server.Served(
           ..settings.game,
           scripts:,
-          settings: connection_state.Settings(
-            ..settings.game.settings,
-            tables: character_tables.shared_with_spell_trees(),
-          ),
+          settings: connection_state.Settings(..settings.game.settings, tables:),
         ),
       )
     })
@@ -1801,30 +1811,27 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
   login_support.stop(started)
 }
 
-pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
-  let started =
-    login_support.start_with(change: fn(settings) {
-      server.Settings(
-        ..settings,
-        game: server.Served(
-          ..settings.game,
-          settings: connection_state.Settings(
-            ..settings.game.settings,
-            tables: client_tables.shared(),
-          ),
-        ),
-      )
-    })
-  let TwoEntered(first:, second:, second_have:, ..) =
-    two_players_enter(started:, first_class: 2)
-  // Mode: Eradicate is the Engineer's innate, after its three abilities in the bag
-  // (`Class` 2 spell4IdInnateAbilityActive00 47866).
+/// A suited player's connection ends before the suit's 10,250 ms are up, on a clock the
+/// test moves by hand: the watcher is written the suit once, then 0x355 for the unit and
+/// no 0x933 after, and the server goes on. The first player's class presses the ability
+/// at `bag_index` that puts the suit of `display` on it.
+fn a_suited_players_connection_ends(
+  tables tables: table_store.Tables,
+  first_class first_class: Int,
+  bag_index bag_index: Int,
+  display display: Int,
+) -> Nil {
+  let time = driven_time.new()
+  let TwoEntered(started:, first:, second:, second_have:, ..) =
+    two_players_enter_on(
+      tables:,
+      first_class:,
+      scripts: driven_time.scripts(time),
+    )
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
-    bag_index: 3,
+    bag_index:,
     target: 0,
   )
   let is_suit = fn(frame: Frame) { frame.message_id == 0x0933 }
@@ -1840,10 +1847,12 @@ pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_
   assert unit_item_visuals_changed.decode(suit.body)
     == Ok(
       UnitItemVisualsChanged(unit_id: 1, item_visuals: [
-        ItemVisual(slot: 64, display_id: 7221, item_color_set_id: 0, dye: 0),
+        ItemVisual(slot: 64, display_id: display, item_color_set_id: 0, dye: 0),
       ]),
     )
-    as "opcode.0x933: unit 1 in slot 64 with ItemDisplay 7221, the Dominion Engineer's suit (112543 and 178142 of Spell4 47860)"
+    as "opcode.0x933: unit 1 in slot 64 with the suit of a faction 166 player, ItemDisplay 7221 (178142 of Spell4 47860)"
+  // The clock is the test's and has not moved, so the suit's 10,250 ms are not up: the
+  // connection ends in the middle of the suit.
   game_client.close(game: first)
   let #(after, second_have) =
     game_client.read_until(
@@ -1866,6 +1875,29 @@ pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_
     as "no 0x933 follows the end of the suited player's connection, the restore included: its unit is gone"
   game_client.close(game: second)
   login_support.stop(started)
+}
+
+pub fn a_suited_players_connection_ending_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  a_suited_players_connection_ends(
+    tables: character_tables.shared_with_disguise(),
+    first_class: 4,
+    bag_index: 2,
+    display: 7221,
+  )
+}
+
+pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Mode: Eradicate is the Engineer's innate, after its three abilities in the bag
+  // (`Class` 2 spell4IdInnateAbilityActive00 47866).
+  a_suited_players_connection_ends(
+    tables: client_tables.shared(),
+    first_class: 2,
+    bag_index: 3,
+    display: 7221,
+  )
 }
 
 pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_held_until_the_release_on_the_whole_server_test() -> Nil {
