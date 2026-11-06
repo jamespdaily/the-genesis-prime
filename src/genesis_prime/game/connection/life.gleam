@@ -220,8 +220,8 @@ pub fn life_message(
 /// What player_life decided, carried out in order, then what its death, coming
 /// back and combat flag did to the class resource (`resource.life_effects`): the
 /// frames and news as `life_effects` makes them, `DamageTaken` as the cast rule's
-/// `damage_taken`, `EndCasts` as the cast rule's `died`, whose 0x7fe
-/// go out in its place in the order, and `GoToHolocrypt` as the leave of the map
+/// `damage_taken`, `CombatLeft` as its `combat_left` and `EndCasts` as its `died`, whose
+/// 0x7fe and the procs' casts go out in their place in the order, and `GoToHolocrypt` as the leave of the map
 /// that the Holocrypt's join follows (`leaving_for_the_holocrypt`), which comes
 /// last.
 fn life_carried(
@@ -230,6 +230,30 @@ fn life_carried(
   holder holder: Holder,
   effects effects: List(player_life.Effect),
 ) -> client_connection.Handled(Session) {
+  let #(session, written, to_the_holocrypt) = carried(session:, now:, effects:)
+  case to_the_holocrypt, connection_state.entered_of(session.status) {
+    True, Some(entered) ->
+      leaving_for_the_holocrypt(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        before: written,
+      )
+    True, None | False, _ -> Continue(session, written)
+  }
+}
+
+/// What player_life decided, carried out in order, with what it did to the class resource
+/// after it, as `life_carried` carries it, but for the Holocrypt: whether the effects asked
+/// to go there is the last of the three results. The map's `Gone` of a fighter carries the
+/// life's effects this way too, so the combat it ends reaches the cast rule
+/// (`CombatLeft`), as the last release by a creature's own tell does.
+pub fn carried(
+  session session: Session,
+  now now: Now,
+  effects effects: List(player_life.Effect),
+) -> #(Session, List(Effect(ConnectionEffect(Request))), Bool) {
   let #(session, written, to_the_holocrypt) =
     list.fold(effects, #(session, [], False), fn(so_far, effect) {
       let #(session, written, to_the_holocrypt) = so_far
@@ -242,7 +266,24 @@ fn life_carried(
                 cast_carried(
                   session:,
                   now:,
-                  taken: cast.died(cast: entered.cast, now:),
+                  taken: cast.died(
+                    cast: entered.cast,
+                    caster: connection_casting.caster_of(entered:),
+                    now:,
+                  ),
+                )
+              #(session, list.append(written, more), to_the_holocrypt)
+            }
+            player_life.CombatLeft -> {
+              let #(session, more) =
+                cast_carried(
+                  session:,
+                  now:,
+                  taken: cast.combat_left(
+                    cast: entered.cast,
+                    caster: connection_casting.caster_of(entered:),
+                    now:,
+                  ),
                 )
               #(session, list.append(written, more), to_the_holocrypt)
             }
@@ -281,18 +322,7 @@ fn life_carried(
     })
   let #(session, resource_written) =
     connection_resource.life_effects(session:, effects:)
-  let written = list.append(written, resource_written)
-  case to_the_holocrypt, connection_state.entered_of(session.status) {
-    True, Some(entered) ->
-      leaving_for_the_holocrypt(
-        session:,
-        now:,
-        holder:,
-        entered:,
-        before: written,
-      )
-    True, None | False, _ -> Continue(session, written)
-  }
+  #(session, list.append(written, resource_written), to_the_holocrypt)
 }
 
 /// A step of the cast rule that the player's life asked for: the rule's new state kept

@@ -61,7 +61,9 @@ pub fn each_innates_tree_holds_the_spells_the_trace_found_test() -> Nil {
   assert tree_of(base: 46_615) == [60_718, 60_796, 69_450] as "Medic's Energize"
   assert tree_of(base: 30_075) == [38_783, 38_784, 46_073, 83_850]
     as "Stalker's Nano Skin: Lethal"
-  assert tree_of(base: 29_131) == [45_057, 60_724, 60_868] as "its passive"
+  assert tree_of(base: 29_131)
+    == [45_057, 60_724, 60_769, 60_868, 63_366, 79_932]
+    as "its passive: the Proxies 60724 and 60868, and the spells its Proc rows cast (Spell4Effects 147132, 159136, 202043 and 211002)"
   assert tree_of(base: 31_213) == [47_273, 47_439, 78_307]
     as "Spellslinger's Spell Surge"
 }

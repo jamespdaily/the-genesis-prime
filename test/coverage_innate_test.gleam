@@ -84,8 +84,8 @@ pub fn the_spells_behind_a_gate_a_level_1_character_cannot_open_are_not_reached_
 pub fn the_starting_set_holds_the_20_spells_of_the_innates_beside_the_59_of_the_abilities_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
-  assert set.size(reached_ids()) == 79
-    as "59 spells of the 18 level-1 abilities, and the innates' 20: 46867 and 42908; 44926; 47866, 47860, 52371 and 70599; 45000 and 46297; 58586, 70369 and 76766; 69450; 46073, 38784 and 38783; 45057 and 60724; 47273 and 47439"
+  assert set.size(reached_ids()) == 82
+    as "the three spells the Stalker passive's procs cast (60769, 79932, 63366) make 82; 59 spells of the 18 level-1 abilities, and the innates' 20: 46867 and 42908; 44926; 47866, 47860, 52371 and 70599; 45000 and 46297; 58586, 70369 and 76766; 69450; 46073, 38784 and 38783; 45057 and 60724; 47273 and 47439"
 }
 
 pub fn the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_open_at_level_1_test() -> Nil {
@@ -99,6 +99,7 @@ pub fn the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_o
       case part {
         InnateSlotClosed(..) -> Ok(part)
         starting_ability.ProxyGateClosed(..)
+        | starting_ability.ProcKindNotRead(..)
         | starting_ability.RunnerColumnsOnly(..) -> Error(Nil)
       }
     })

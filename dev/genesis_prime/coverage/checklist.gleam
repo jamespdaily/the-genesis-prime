@@ -151,7 +151,7 @@ fn starting_rows(types: List(TypeLine)) -> #(Int, Int) {
     let #(handled, all) = totals
     case line.status {
       Handled | HandledWithGap(..) -> #(
-        handled + line.starting_abilities,
+        handled + line.starting_abilities - line.starting_unread,
         all + line.starting_abilities,
       )
       DecodedMissing(..) | NotDecoded -> #(
