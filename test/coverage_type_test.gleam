@@ -1449,7 +1449,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_22_of_26_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_24_of_26_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1462,14 +1462,14 @@ pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_22_of_26_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 9 | 113 of 114 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 11 | 113 of 114 |",
   )
-    as "114 effect rows are left, 1 of them not handled (Deja Vu's type 90); the whole-game columns are the walk's of 2026-11-05"
+    as "114 effect rows are left, 1 of them not handled (Deja Vu's type 90); the whole-game columns are the walk's of 2026-11-05, with types 83 and 84 handled beside the nine"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 9 | 22 of 26 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 10 | 24 of 26 |",
   )
-    as "26 conditions are left, 4 of them not handled (type 108 twice, type 116 twice)"
+    as "26 conditions are left, 2 of them not handled (type 108 twice); type 116 is read (Prerequisite.prerequisiteTypeId.116)"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {
