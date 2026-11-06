@@ -191,10 +191,14 @@ fn quest_objectives() -> EngineDeclaration {
 /// (genesis_prime/game/spell_plan `effect_row_read`): the type 3, type 11, type 73, type 83,
 /// type 84 and type 14 rows aimed only at other units, the type 118 rows aimed at the area
 /// and the type 64 rows aimed at the caster or its target, and the Stealth, RemoveStealth,
-/// Proc and HealShields rows the plan refuses, skips or holds.
+/// Proc and HealShields rows the plan refuses, skips or holds, among them a heal aimed at
+/// the primary target of a spell a Proxy starts on each struck unit.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
-  list.count(spell4_effects.all(tables), fn(row) {
-    row.effect_type == type_number && !spell_plan.effect_row_read(effect: row)
+  let rows = spell4_effects.all(tables)
+  let struck_children = spell_plan.struck_unit_children(effects: rows)
+  list.count(rows, fn(row) {
+    row.effect_type == type_number
+    && !spell_plan.effect_row_read(effect: row, struck_children:)
   })
 }
 

@@ -1,9 +1,9 @@
 //// The player's own heals on the game connection (genesis_prime/game/connection):
-//// what the cast rule's `PropertyStarts` of a shield heal asks, carried out on the
+//// what the cast rule's `CasterChangeStarts` of a shield heal asks, carried out on the
 //// player's life.
 ////
 //// ```
-//// the cast rule's PropertyStarts(source, ShieldHeal(amount))
+//// the cast rule's CasterChangeStarts(source, ShieldHeal(amount))
 ////   ─▶ player_life.shield_healed ─▶ 0x938 {P, 20, shield} to the player's client
 ////                                 ─▶ Shield news to each viewer
 //// ```

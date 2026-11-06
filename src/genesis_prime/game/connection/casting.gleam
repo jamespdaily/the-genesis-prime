@@ -23,7 +23,7 @@
 ////   picture at that moment (`shown.poses_of`) for its Proxies' target gates. A viewer
 ////   writes a creature's health and
 ////   death (`Health`, `Died`) for a creature it shows, whatever its own casts.
-//// - **Heals** are the cast rule's: a `PropertyStarts` whose change is a `ShieldHeal`
+//// - **Heals** are the cast rule's: a `CasterChangeStarts` whose change is a `ShieldHeal`
 ////   raises the player's shield by its amount and tells the player's client and its viewers
 ////   (genesis_prime/game/connection/healing), where one whose change is a `Property` is
 ////   applied to the player's properties (genesis_prime/game/connection/properties).
@@ -256,6 +256,12 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
       base: entered.unit.tail.base_faction_id,
     ),
     stats: stats_of(entered:),
+    vitals: damage.Vitals(
+      health: player_life.health(life:),
+      max_health: player_life.max_health(life:),
+      shield: player_life.shield(life:),
+      max_shield: player_life.max_shield(life:),
+    ),
   )
 }
 
@@ -332,9 +338,9 @@ pub fn cast_effects(
       cast.Strike(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
       cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
-      cast.PropertyStarts(source:, change: cast.Property(modifier:)), _ ->
+      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)), _ ->
         connection_properties.started(session:, now:, source:, modifier:)
-      cast.PropertyStarts(change: cast.ShieldHeal(amount:), ..), _ ->
+      cast.CasterChangeStarts(change: cast.ShieldHeal(amount:), ..), _ ->
         connection_healing.shield_healed(session:, now:, amount:)
       cast.PropertyEnds(source:), _ ->
         connection_properties.ended(session:, now:, source:)

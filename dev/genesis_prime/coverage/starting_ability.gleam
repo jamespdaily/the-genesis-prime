@@ -380,9 +380,11 @@ pub fn unread_effect_rows(
   type_number type_number: Int,
 ) -> Result(Int, List(MissingRow)) {
   use spells <- result.map(spells(tables:))
-  effects_of(tables:, spells:)
-  |> list.count(fn(effect) {
-    effect.effect_type == type_number && !spell_plan.effect_row_read(effect:)
+  let effects = effects_of(tables:, spells:)
+  let struck_children = spell_plan.struck_unit_children(effects:)
+  list.count(effects, fn(effect) {
+    effect.effect_type == type_number
+    && !spell_plan.effect_row_read(effect:, struck_children:)
   })
 }
 

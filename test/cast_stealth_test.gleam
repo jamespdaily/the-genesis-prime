@@ -154,7 +154,7 @@ fn trace(effects effects: List(Effect)) -> List(String) {
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
+      | cast.CasterChangeStarts(..)
       | cast.PropertyEnds(..) -> Error(Nil)
     }
   })
@@ -173,7 +173,7 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
+      | cast.CasterChangeStarts(..)
       | cast.PropertyEnds(..) -> Error(Nil)
     }
   })
@@ -308,7 +308,7 @@ fn goes_apart(
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
+      | cast.CasterChangeStarts(..)
       | cast.PropertyEnds(..)
       | cast.StealthChanged(..) -> so_far
     }

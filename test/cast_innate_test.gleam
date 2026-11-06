@@ -26,14 +26,13 @@
 import cast_support as support
 import client_tables
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
-import genesis_prime/game/prerequisite
+import genesis_prime/game/damage
 import genesis_prime/game/spell_plan.{type Plans}
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/table/id.{Spell4BaseId}
-import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/string
@@ -281,9 +280,12 @@ pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
     innate_pressed_by(
       caster: cast.Caster(
         ..caster_with(bag: [38_201, 16_322, 26_543, 46_615], in_combat: False),
-        life_vitals: dict.from_list([
-          #(3, prerequisite.Vital(current: 250.0, maximum: 450.0)),
-        ]),
+        vitals: damage.Vitals(
+          health: 500,
+          max_health: 736,
+          shield: 250,
+          max_shield: 450,
+        ),
       ),
     )
   assert listed(effects: medic) == [228_911, 228_912, 228_914]

@@ -208,7 +208,7 @@
 ////   effect of the phase that has a life (a durationTime, or flags bit 2) and whose gate
 ////   against the caster passes is listed on the caster like a Fluff effect, gives the
 ////   caster's node its life, and starts at the go plus its delay and ends after its
-////   duration, as `PropertyStarts` and `PropertyEnds` for the connection to apply to the
+////   duration, as `CasterChangeStarts` and `PropertyEnds` for the connection to apply to the
 ////   player's properties. A modifier ends on a timer of its own and not with the node's
 ////   time (a node can outlive it, or end before it when the spell takes the larger of
 ////   delay and duration); taking the cast's node off the caster ends its modifiers and
@@ -224,7 +224,7 @@
 ////   log line and never applies. The amount is worked out at the go from the caster's own
 ////   shield, health and stats as they stood before the go's own effects
 ////   (genesis_prime/game/damage `amount_on_caster`: Energize is 0.3 of the missing
-////   shield), and lands at the go plus the row's delay as `PropertyStarts` with a
+////   shield), and lands at the go plus the row's delay as `CasterChangeStarts` with a
 ////   `ShieldHeal` change, for the connection to raise the player's shield by
 ////   (genesis_prime/game/player_life `shield_healed`): in the go's step, after its 0x7f4,
 ////   with no delay, else on a timer. A heal gives the caster's node a life of its delay, so
@@ -592,11 +592,14 @@ pub type Caster {
     /// What a damage or heal formula reads of the player: its level and its Assault
     /// and Support Rating (genesis_prime/game/damage).
     stats: damage.Attacker,
+    /// The player's health and shield with their maxima, which a heal's formula reads
+    /// (genesis_prime/game/damage `value_on_caster`).
+    vitals: damage.Vitals,
   )
 }
 
 /// What a caster's spell changes on the caster itself, which starts after the effect's
-/// delay: the payload of `PropertyStarts` and `Due.ModifierStart`. A change that ends
+/// delay: the payload of `CasterChangeStarts` and `Due.ModifierStart`. A change that ends
 /// has its end tied to its source (`PropertyEnds`, `Due.ModifierEnd`); a shield heal has
 /// none.
 pub type CasterChange {
@@ -629,10 +632,11 @@ pub type Effect {
   /// A go's resource gains are given to the caster's class resource
   /// (genesis_prime/game/class_resource `gain`).
   Gain(gains: List(class_resource.Gain))
-  /// A property modifier of the caster's spell starts: the connection applies it to the
-  /// player's properties, tells its client and its viewers the entries that changed
-  /// (genesis_prime/game/unit_properties `apply`).
-  PropertyStarts(source: unit_properties.Source, change: CasterChange)
+  /// A change of the caster's spell on the caster itself starts: the connection applies a
+  /// property modifier to the player's properties and tells its client and its viewers
+  /// the entries that changed (genesis_prime/game/unit_properties `apply`), and raises
+  /// the shield for a shield heal (genesis_prime/game/player_life `shield_healed`).
+  CasterChangeStarts(source: unit_properties.Source, change: CasterChange)
   /// A property modifier of the caster's spell ends, or is told ended for a source the
   /// properties may not hold (`unit_properties.remove` changes nothing then).
   PropertyEnds(source: unit_properties.Source)
@@ -2159,7 +2163,7 @@ pub fn after_payments(
         | CancelTimer(..)
         | Log(..)
         | Strike(..)
-        | PropertyStarts(..)
+        | CasterChangeStarts(..)
         | PropertyEnds(..)
         | StealthChanged(..) -> resources
       }
@@ -2479,7 +2483,7 @@ fn fire(
           )),
         ])
         ModifierStart(source:, change:) -> #(cast, [
-          PropertyStarts(source:, change:),
+          CasterChangeStarts(source:, change:),
         ])
         ModifierEnd(source:) -> #(cast, [PropertyEnds(source:)])
         CooldownModifierStarts(source:, modifier:, kept:) ->
@@ -3615,12 +3619,7 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
       })
     })
   let waiting =
-    dict.to_list(cast.timers)
-    |> list.sort(fn(first, second) {
-      let TimerId(first_number) = first.0
-      let TimerId(second_number) = second.0
-      int.compare(first_number, second_number)
-    })
+    timers_in_order(cast:)
     |> list.filter_map(fn(entry) {
       case entry.1 {
         ModifierEnd(source:) -> Ok(source)
@@ -3640,6 +3639,16 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
     })
   list.unique(list.append(held, waiting))
   |> list.map(fn(source) { PropertyEnds(source:) })
+}
+
+/// The timers the rule waits on with what each is for, in the order they were started.
+fn timers_in_order(cast cast: State) -> List(#(TimerId, Due)) {
+  dict.to_list(cast.timers)
+  |> list.sort(fn(first, second) {
+    let TimerId(first_number) = first.0
+    let TimerId(second_number) = second.0
+    int.compare(first_number, second_number)
+  })
 }
 
 /// The id the caster's next cast takes: the id of its next press that no live or
@@ -4586,7 +4595,7 @@ fn aimed_at(
     })
   let stealth = list.map(applied.stealth, fn(row) { #(row, caster.unit_id) })
   let procs = list.map(applied.procs, fn(row) { #(row, caster.unit_id) })
-  let heals = healed_by(applied:, caster:)
+  let heals = healed_by(applied:, caster:, live:, struck:)
   let listed =
     list.flatten([
       list.map(stealth, fn(entry) {
@@ -4712,17 +4721,28 @@ fn aimed_at(
 
 /// The shield heals a go applies, each on the caster, with the amount the caster's own
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
-/// every gate of the go (`subject_of`). A row aimed at the primary target heals the
-/// caster too: the plan reads it only in a spell cast on the caster
-/// (genesis_prime/game/spell_plan `proxy_heals_read`).
+/// every gate of the go (`subject_of`). A row's units are those its aim names
+/// (`units_aimed_at`) and only the caster is healed: the plan reads a row aimed at the
+/// primary target only in a spell cast on the caster
+/// (genesis_prime/game/spell_plan `proxy_heals_read`), and the server gives no other unit
+/// a shield.
 fn healed_by(
   applied applied: Applied,
   caster caster: Caster,
+  live live: Live,
+  struck struck: List(Struck),
 ) -> List(#(Healed, Int)) {
-  let on_caster = on_caster_of(caster:)
-  list.filter_map(applied.shield_heals, fn(heal) {
-    case heal {
-      spell_plan.ShieldHeal(effect_id:, formula:, delay_ms:, ..) ->
+  let on_caster = damage.OnCaster(attacker: caster.stats, vitals: caster.vitals)
+  rows_with_units(
+    rows: applied.shield_heals,
+    aim: fn(heal: spell_plan.ShieldHeal) { heal.aim },
+    caster:,
+    primary_target: live.primary_target,
+    struck:,
+  )
+  |> list.filter_map(fn(entry) {
+    case entry.0, entry.1 == caster.unit_id {
+      spell_plan.ShieldHeal(effect_id:, formula:, delay_ms:, ..), True ->
         Ok(#(
           Healed(
             effect_id:,
@@ -4731,33 +4751,10 @@ fn healed_by(
           ),
           caster.unit_id,
         ))
-      spell_plan.TickingShieldHeal(..) -> Error(Nil)
+      spell_plan.ShieldHeal(..), False | spell_plan.TickingShieldHeal(..), _ ->
+        Error(Nil)
     }
   })
-}
-
-/// What a formula reads of the caster that is also its effect's target.
-fn on_caster_of(caster caster: Caster) -> damage.OnCaster {
-  let vital = fn(id) {
-    case dict.get(caster.life_vitals, id) {
-      Ok(prerequisite.Vital(current:, maximum:)) -> #(
-        float.round(current),
-        float.round(maximum),
-      )
-      Error(Nil) -> #(0, 0)
-    }
-  }
-  let health = vital(health_vital)
-  let shield = vital(shield_vital)
-  damage.OnCaster(
-    attacker: caster.stats,
-    vitals: damage.Vitals(
-      health: health.0,
-      max_health: health.1,
-      shield: shield.0,
-      max_shield: shield.1,
-    ),
-  )
 }
 
 /// The damage description of a shield heal: the amount as the raw, the scaled raw and the
@@ -4936,7 +4933,7 @@ fn modifiers_armed(
         #(cast, [start])
       }
       False -> #(cast, [
-        PropertyStarts(source:, change: Property(modifier: row.modifier)),
+        CasterChangeStarts(source:, change: Property(modifier: row.modifier)),
       ])
     }
     let #(cast, ending) = case row.row.until_removed {
@@ -4981,7 +4978,10 @@ fn heals_armed(
           )
         #(cast, list.append(effects, [start]))
       }
-      False -> #(cast, list.append(effects, [PropertyStarts(source:, change:)]))
+      False -> #(
+        cast,
+        list.append(effects, [CasterChangeStarts(source:, change:)]),
+      )
     }
   })
 }
@@ -5098,8 +5098,9 @@ fn waits_rearmed(
   #(cast, list.append(held, repeating))
 }
 
-/// The source an effect timer is for: a property modifier's or a cooldown effect's.
-/// Effect ids are unique, so a source names one row.
+/// The source an effect timer is for: a property modifier's, a shield heal's (a start is
+/// the only timer a heal has) or a cooldown effect's. Effect ids are unique, so a source
+/// names one row.
 fn source_of(due due: Due) -> Option(unit_properties.Source) {
   case due {
     ModifierStart(source:, ..)
@@ -5206,12 +5207,7 @@ fn pending_heals(
   cast cast: State,
   cast_id cast_id: Int,
 ) -> List(#(TimerId, unit_properties.Source, Int)) {
-  dict.to_list(cast.timers)
-  |> list.sort(fn(first, second) {
-    let TimerId(first_number) = first.0
-    let TimerId(second_number) = second.0
-    int.compare(first_number, second_number)
-  })
+  timers_in_order(cast:)
   |> list.filter_map(fn(entry) {
     case entry.1 {
       ModifierStart(source:, change: ShieldHeal(amount:))
@@ -5241,12 +5237,25 @@ fn pending_heals_cancelled(
   cast cast: State,
   cast_id cast_id: Int,
 ) -> #(State, List(Effect)) {
-  let pending = pending_heals(cast:, cast_id:)
-  let timers = list.map(pending, fn(heal) { heal.0 })
-  #(
-    State(..cast, timers: dict.drop(cast.timers, timers)),
-    list.map(timers, fn(timer) { CancelTimer(timer:) }),
-  )
+  cancel_timers(cast:, matching: fn(due) {
+    case due {
+      ModifierStart(source:, change: ShieldHeal(..)) ->
+        source.cast_id == cast_id
+      ModifierStart(change: Property(..), ..)
+      | ModifierEnd(..)
+      | CooldownModifierStarts(..)
+      | CooldownModifierEnds(..)
+      | Go(..)
+      | Finish(..)
+      | StartChild(..)
+      | NodesEnd(..)
+      | StateEnd(..)
+      | StartHeld
+      | RepeatHeld
+      | WindowEnd(..)
+      | ChargeLevel(..) -> False
+    }
+  })
 }
 
 /// The shield heals of the cast `cast_id` that a timer still waits to land, landed now,
@@ -5270,7 +5279,7 @@ fn heals_landed_at_node_end(
     list.append(
       cancels,
       list.map(pending, fn(heal) {
-        PropertyStarts(source: heal.1, change: ShieldHeal(amount: heal.2))
+        CasterChangeStarts(source: heal.1, change: ShieldHeal(amount: heal.2))
       }),
     ),
   )

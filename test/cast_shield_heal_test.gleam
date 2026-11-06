@@ -1,5 +1,5 @@
 //// The cast rule's shield heals (`genesis_prime/game/cast` `CasterChange`,
-//// `PropertyStarts`, `ModifierStart`). Expected values come from these places:
+//// `CasterChangeStarts`, `ModifierStart`). Expected values come from these places:
 //// - `Spell4Effects.effectType.118`: a HealShields result is shown by the client as a
 ////   floater and a log line from the go's damage description, and never changes the
 ////   shield, so the server works the amount out, puts it in the description's health
@@ -26,7 +26,6 @@ import genesis_prime/client_connection.{CastWent}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/lasting
-import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AimsAtCaster, Always, GatedOnCaster,
 }
@@ -43,7 +42,6 @@ import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type TimerId, LogDebug, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
-import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -101,10 +99,12 @@ fn plans_of(spells: List(Spell)) -> Plans {
 fn struck_caster() -> Caster {
   cast.Caster(
     ..support.caster(),
-    life_vitals: dict.from_list([
-      #(1, prerequisite.Vital(current: 500.0, maximum: 736.0)),
-      #(3, prerequisite.Vital(current: 250.0, maximum: 450.0)),
-    ]),
+    vitals: damage.Vitals(
+      health: 500,
+      max_health: 736,
+      shield: 250,
+      max_shield: 450,
+    ),
   )
 }
 
@@ -144,9 +144,9 @@ fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
 fn heals(effects effects: List(Effect)) -> List(#(Source, Int)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.PropertyStarts(source:, change: cast.ShieldHeal(amount:)) ->
+      cast.CasterChangeStarts(source:, change: cast.ShieldHeal(amount:)) ->
         Ok(#(source, amount))
-      cast.PropertyStarts(change: cast.Property(..), ..)
+      cast.CasterChangeStarts(change: cast.Property(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -253,7 +253,7 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
     position(fn(effect) {
       case effect {
         cast.Send(frame:) -> frame.message_id == spell_go.message_id
-        cast.PropertyStarts(..)
+        cast.CasterChangeStarts(..)
         | cast.Tell(..)
         | cast.StartTimer(..)
         | cast.CancelTimer(..)
@@ -337,8 +337,8 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     as "0.3 x (450 - 250) = 60: the gates' rule, a go's effects read the caster before the go's own"
   assert list.any(effects, fn(effect) {
     case effect {
-      cast.PropertyStarts(change: cast.Property(..), ..) -> True
-      cast.PropertyStarts(change: cast.ShieldHeal(..), ..)
+      cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
+      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -402,9 +402,13 @@ pub fn a_heal_whose_nodes_end_fires_first_still_lands_test() -> Nil {
     support.fired_raw(state:, timer: last_of(numbers), at: 1010)
   let #(_, second) =
     support.fired_raw(state:, timer: first_of(numbers), at: 1010)
+  assert support.finished_ids(support.writes(effects: first)) == [id]
+    as "the first step is the node's end, which writes the 0x7fe: the heal had not fired yet"
   assert list.append(heals(effects: first), heals(effects: second))
     == [#(source_of(cast_id: id, effect_id: 228_914), 60)]
     as "the heal lands once, in the step of whichever timer comes first"
+  assert heals(effects: first) != []
+    as "here the node's end lands it, and the heal's own timer, cancelled, finds nothing"
 }
 
 fn first_of(timers: List(TimerId)) -> TimerId {
@@ -633,6 +637,62 @@ pub fn two_shield_heal_rows_of_one_go_each_land_and_a_later_go_heals_again_test(
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   assert list.map(timeline(fired:), fn(entry) { entry.0 }) == [2000, 2000]
     as "the second go heals again, each go its own heal"
+}
+
+pub fn two_goes_with_overlapping_delayed_heals_both_land_each_at_its_own_delay_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Goes at 1000 and 1100 of a Multiphase-like cast, each with a heal of delay 500: the
+  // second go cancels nothing of the first.
+  let plans =
+    plans_of([
+      spell_plan.Spell(
+        ..healer(heals: [energize(delay_ms: 500)]),
+        phase_delays_ms: [0, 100],
+      ),
+    ])
+  let #(state, effects) =
+    press(
+      plans:,
+      state: cast.new(),
+      caster: struck_caster(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let id = support.pressed_id(effects:)
+  let source = source_of(cast_id: id, effect_id: 228_914)
+  let timer_after = fn(effects, wanted_ms) {
+    let assert Ok(found) =
+      list.find(support.started_timers(effects:), fn(timer) {
+        timer.1 == wanted_ms
+      })
+      as "the step started a timer of this delay"
+    found.0
+  }
+  // The second go at 1100, taken for the same struck caster, then each heal's timer.
+  let #(state, raw) =
+    support.fired_raw_as(
+      caster: struck_caster(),
+      state:,
+      timer: timer_after(effects, 100),
+      at: 1100,
+    )
+  let #(state, second) =
+    support.answered_as(
+      caster: struck_caster(),
+      state:,
+      effects: raw,
+      at: 1100,
+      struck: [],
+      rolls: [],
+    )
+  let #(state, first_lands) =
+    support.fired_raw(state:, timer: timer_after(effects, 500), at: 1500)
+  assert heals(effects: first_lands) == [#(source, 60)]
+    as "the first go's heal lands at 1500, though the second go came before it"
+  let #(_, second_lands) =
+    support.fired_raw(state:, timer: timer_after(second, 500), at: 1600)
+  assert heals(effects: second_lands) == [#(source, 60)]
+    as "the second go's heal lands at 1600: it cancelled nothing of the first"
 }
 
 // ---- viewers ----

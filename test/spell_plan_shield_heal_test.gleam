@@ -37,6 +37,7 @@ import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/int
 import gleam/list
+import gleam/set
 import owned_test
 import unitest
 
@@ -350,6 +351,36 @@ pub fn a_shield_overload_row_aimed_at_the_area_is_a_lasting_row_on_each_struck_u
     )
   assert left_out == []
     as "35 rows aim at the caster or the primary target, whose shield hold at 0 is not built"
+}
+
+pub fn the_measure_counts_a_heal_on_the_primary_target_of_a_struck_unit_child_as_not_read_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 205411 of Spell4 78280 is aimed at the primary target (flags 2); Proxy 137988 of
+  // Spell4 57685 starts 78280 on each unit its area strikes (flags 4), and the plan fails
+  // the load on the shape (`proxy_heals_read`), so the measure counts the row as not read.
+  let proxy =
+    Spell4Effects(
+      ..blank(id: 137_988, spell: 57_685, effect_type: 26, target_flags: 4),
+      data_bits00: 78_280,
+    )
+  let heal =
+    Spell4Effects(..heal_aimed_at(flags: 2), id: 205_411, spell_id: 78_280)
+  let struck = spell_plan.struck_unit_children(effects: [proxy, heal])
+  assert struck == set.from_list([78_280])
+    as "only the Proxy's child is made on each struck unit"
+  assert !spell_plan.effect_row_read(effect: heal, struck_children: struck)
+  assert spell_plan.effect_row_read(
+    effect: heal,
+    struck_children: spell_plan.struck_unit_children(effects: [
+      Spell4Effects(..proxy, target_flags: 1),
+    ]),
+  )
+    as "the same row under a Proxy aimed at the caster is read"
+  assert spell_plan.effect_row_read(
+    effect: Spell4Effects(..heal, target_flags: 1),
+    struck_children: struck,
+  )
+    as "a row that includes the caster heals the caster in a struck child too"
 }
 
 // ---- the kinds ----

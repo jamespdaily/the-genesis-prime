@@ -2372,12 +2372,38 @@ pub fn proc_read(
   }
 }
 
+/// The Spell4 ids among `effects` that a Proxy starts as a child on each struck unit: a
+/// Proxy aimed at the area, or at the area and the primary target (`target_of`).
+pub fn struck_unit_children(
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Set(Int) {
+  list.filter_map(effects, fn(effect) {
+    case
+      effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
+      && effect.data_bits00 != 0
+    {
+      True ->
+        case aim_of(target_flags: effect.target_flags) {
+          AimsAtArea | AimsAtBoth -> Ok(effect.data_bits00)
+          AimsAtCaster | AimsAtPrimaryTarget | OtherAim(..) -> Error(Nil)
+        }
+      False -> Error(Nil)
+    }
+  })
+  |> set.from_list
+}
+
 /// Whether the plan reads this effect row: its type is read for its aim
 /// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth, Proc or HealShields row,
 /// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
-/// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied). The
-/// coverage measure counts the other rows as not read, so it and the plan cannot disagree.
-pub fn effect_row_read(effect effect: spell4_effects.Spell4Effects) -> Bool {
+/// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
+/// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
+/// struck unit, which fails the load, `proxy_heals_read`). The coverage measure counts the
+/// other rows as not read, so it and the plan cannot disagree.
+pub fn effect_row_read(
+  effect effect: spell4_effects.Spell4Effects,
+  struck_children struck_children: Set(Int),
+) -> Bool {
   effect_kind.is_row_read(
     effect_type: effect.effect_type,
     target_flags: effect.target_flags,
@@ -2393,7 +2419,9 @@ pub fn effect_row_read(effect effect: spell4_effects.Spell4Effects) -> Bool {
       shield_heal_of(spell4_id: effect.spell_id, effect:, condition: Always)
       |> result.map(fn(heal) {
         case heal {
-          ShieldHeal(..) -> True
+          ShieldHeal(..) ->
+            heal.aim != AimsAtPrimaryTarget
+            || !set.contains(struck_children, effect.spell_id)
           TickingShieldHeal(..) -> False
         }
       })
