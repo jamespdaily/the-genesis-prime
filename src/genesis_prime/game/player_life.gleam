@@ -52,6 +52,7 @@
 ////                                                    ─▶ 0x92f(P, 0)               0x937(P, 0, dead)
 ////                                                    ─▶ 0x88c(P, 1)               0x88c(P, 1)
 ////                                                    ─▶ 0x89a(P, 0)               0x89a(P, 0)
+////                            CombatLeft, when P was in combat: the cast rule's `combat_left`
 ////                            TellMap(False): the map keeps P out of every ring and tells each
 ////                            creature P sees `PlayerDied` (genesis_prime/world_map/map `LifeChanged`),
 ////                            before the `StealthChanged` that EndCasts ends a stealthed P's casts with
@@ -510,13 +511,13 @@ pub fn entering(
 ) -> #(Life, List(Effect)) {
   let health = int.min(option.unwrap(saved, or: max_health), max_health)
   let life = Life(..new(health: max_health, shield:, regeneration:), health:)
-  case health {
-    0 -> #(Life(..life, shield: 0, state: Dead), [
+  case saved_dead(saved:) {
+    True -> #(Life(..life, shield: 0, state: Dead), [
       ToClient(GhostCreated(place:)),
       ToClient(OwnResurrectionWindow(dead: True)),
       ToClient(ControlGiven(to: ControlGhost)),
     ])
-    _ -> health_clock_settled(life:)
+    False -> health_clock_settled(life:)
   }
 }
 
@@ -682,6 +683,7 @@ fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
       ],
       combat_left,
       [
+        TellMap(alive: False),
         EndCasts,
         ToClient(OwnDeathLogged),
         ToViewers(client_connection.DeathLogged),
@@ -720,7 +722,10 @@ pub fn take(
     return: Error(NonzeroValue(value: chosen.field_3)),
   )
   case choice(value: chosen.choice) {
-    WakeHere -> Ok(came_back(life:))
+    WakeHere -> {
+      let #(life, effects) = came_back(life:)
+      Ok(#(life, list.append(effects, [TellMap(alive: True)])))
+    }
     Holocrypt -> {
       let #(life, effects) = came_back(life:)
       Ok(#(life, list.append(effects, [GoToHolocrypt])))

@@ -465,6 +465,7 @@
 //// | a `LifeChanged` of the value the map holds | nothing is sent |
 //// | the player dies in a creature's ring, and the creature's killing answer and the map's `PlayerDied` both reach it | two senders, either order: the first drops the player from `near` and the threat list, the second finds nothing |
 //// | a player that joins dead sends `Ready` | no ring is decided; its `LifeChanged(True)` decides them |
+//// | a `LifeChanged(True)` reaches the map before the player's first `Ready` (Wake Here before the first 0xF2) | the player is only marked alive; its `Ready` decides its rings (`a_player_that_wakes_before_its_ready_is_only_marked_and_ready_sends_approached_to_each_ring_test`) |
 //// | a dead player's connection ends or camps | its creatures are told `Unwatched`; the next entry's `Join` names `alive` False from its saved health 0 |
 //// | the Holocrypt's `Leave`, then its `Join` | `alive` True; the old map sent no `LifeChanged(True)`, so no ring creature aggroes the player for one step before the leave |
 //// | an `ObjectsSeen` or `ObjectsUnseen` reaches a later stay | dropped by the connection's stay envelope |

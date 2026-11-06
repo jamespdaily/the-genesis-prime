@@ -301,7 +301,19 @@ pub fn carried(
               #(session, list.append(written, more), to_the_holocrypt)
             }
             player_life.GoToHolocrypt -> #(session, written, True)
-            player_life.TellMap(..) -> panic as "shape: #496"
+            player_life.TellMap(alive:) -> #(
+              session,
+              list.append(written, [
+                connection_state.tells_the_map(
+                  entered:,
+                  request: client_connection.TellLifeChanged(
+                    connection: client_connection.connection(session.link),
+                    alive:,
+                  ),
+                ),
+              ]),
+              to_the_holocrypt,
+            )
             player_life.ToClient(..)
             | player_life.ToViewers(..)
             | player_life.Answer(..)
