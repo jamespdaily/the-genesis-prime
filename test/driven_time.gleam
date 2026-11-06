@@ -1,7 +1,7 @@
-//// The clock and the timers of a whole-server test that must not depend on real
-//// time: the game connections of the server it starts take their time from this
-//// clock and start their timers on this scheduler, and a timer fires only when the
-//// test advances the clock past its time.
+//// The clock and the timers of a whole-server test whose game connections' casts run
+//// on timers that must not depend on real time: the game connections of the server it
+//// starts take their time from this clock and start their timers on this scheduler,
+//// and a timer fires only when the test advances the clock past its time.
 ////
 //// ```
 //// test ──advance(1000)──▶ the earliest timer due within 1000 ms
@@ -20,9 +20,19 @@
 ////   0x262 cannot hold. The node's time for an input, which the shell counts an
 ////   ask's wait from, stays the node's own, as a replay's does.
 //// - **Order:** timers fire in the order of their due times, equal times in the order
-////   they were started, and a timer a step starts inside the advance fires in it when
-////   it is due within it, so a connection takes the timers of a stretch of time as a
-////   machine that is never late would.
+////   they were started. The next timer is chosen after the connection that took the
+////   last one has finished its step, so a timer that step starts in that connection
+////   is seen by the choice. That is all it guarantees: a timer started by another
+////   process's step, or after a round trip to another process (an input the
+////   connection takes after `Woken`), can be started after the next choice, so a
+////   test whose casts depend on such a timer reads to a pong or a frame it waits
+////   for before it advances.
+//// - **Only the game connections** are driven. The map's and the creatures' timers
+////   use the real scheduler, so a test whose frames depend on them waits for those
+////   frames as it did.
+//// - **The barrier** is `sys:get_state` of the connection, which waits at most 5 s and
+////   can race a connection that is ending: a connection that ends between the check
+////   that it is alive and the call fails the test.
 
 import genesis_prime/connection/script.{
   type Elapsed, type Scripts, Elapsed, Issued, Script,
@@ -230,9 +240,10 @@ fn started(
 /// Moves the clock on by `ms`, firing each timer due within it, one at a time in
 /// the order of their due times. Each fires at its own due time and the next waits
 /// until the connection it fired on has taken it and finished its step, so a timer
-/// that step starts or cancels is in the queue when the next is chosen. The test
-/// first reads all the connection has written (`game_client.read_until_pong`), so
-/// no step is under way and no timer it cancels is still in the queue.
+/// that step starts or cancels in the connection is in the queue when the next is
+/// chosen. The test first reads all the connection has written
+/// (`game_client.read_until_pong`), so no step is under way and no timer it cancels
+/// is still in the queue.
 pub fn advance(time time: Time, ms ms: Int) -> Nil {
   let Now(monotonic_ms: from_ms, ..) = process.call(time.driver, 5000, ReadNow)
   fire_until(time:, limit_ms: from_ms + ms)

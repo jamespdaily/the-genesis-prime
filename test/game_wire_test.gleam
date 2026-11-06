@@ -1491,7 +1491,7 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
     == ["confirmed k1", ..pulses]
     as "Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631): the accept, then a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250: 0x14053d1f0), each starting its Proxy 80382 (Spell4Effects 173926, phaseFlags -1) with the pulse index as its phase (opcode.0x7f4.phase), then the finish"
   let #(seen, _) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_kept(game: second, have: second_have, count: 14)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 58832 root 58832 parent 0", ..pulses]
     as "opcode.0x7ff, 0x7f4 and 0x7fe: a player in sight reads the same casts, started by unit 1 with no parent"
@@ -1558,7 +1558,7 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
     ]
     as "Spell4Thresholds 238: the second tap, held until the global cooldown ends (Spell4.38765: kind 0, SpellCoolDown 115, 1000 ms), casts the stage 38766 and 0x814 closes the threshold with the cooldown bit (opcode.0x814)"
   let #(seen, _) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_kept(game: second, have: second_have, count: 12)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 38765 root 38765 parent 0",
@@ -1707,19 +1707,20 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
       "closed 38765 1",
     ]
     as "cast.hold_repeat: with the key still down, one global cooldown later (Spell4.38765: SpellCoolDown 115, 1000 ms) the next tap casts the stage 38766 (Spell4Thresholds 238), the last, and 0x814 closes the threshold (opcode.0x814)"
-  // The server has taken the release before the clock moves on, so a repeat it
-  // failed to stop would fire inside the next global cooldown.
+  // The server has taken the release before the clock moves on, and the clock moves
+  // 1500 ms, past the next global cooldown (1000 ms) by half of it, so a repeat the
+  // release failed to stop would fire inside it.
   game_client.hold_ability(game: first, bag_index: 0, target: 0, held: 0)
   let #(_, first_have) =
     game_client.read_until_pong(game: first, have: first_have, number: 3)
-  driven_time.advance(time:, ms: 1000)
+  driven_time.advance(time:, ms: 1500)
   let #(after_release, _) =
     game_client.read_until_pong(game: first, have: first_have, number: 4)
   assert cast_support.cast_lines(frames: after_release)
     == ["went k1 p0", "went k1 p1", "went k1 p2", "finished k1"]
     as "cast.hold_stop: held 0 cuts no cast short, so the stage's Proxy 39467 goes in its three phases (SpellPhase 4032 to 4034), and it ends the repeats, so no cast starts one global cooldown later"
   let #(seen, _) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_kept(game: second, have: second_have, count: 16)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 38765 root 38765 parent 0",
@@ -1839,7 +1840,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     == ["confirmed k1", ..quick_draw]
     as "Spell4.43468, Quick Draw (SpellLevel 1011): five gos, the phase indexes 0 to 4 (SpellPhase 5882 to 5886), and the children whose caster apply gate passes: no cast of 43500 is live, so 17301 (type 15, comparison 2 on 43500) passes and 17302 (comparison 1) fails: 43498 by Spell4Effects 196513 in phase 1, 43499 by 196514 in phase 2, 43498 by 196515 and 43500 by 196516 in phase 3, each with its own go and finish, then Quick Draw's finish"
   let #(seen, second_have) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_kept(game: second, have: second_have, count: 19)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 43468 root 43468 parent 0", ..quick_draw]
   game_client.press_ability(
@@ -1876,7 +1877,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     ]
     as "the release casts the row at level 1, 34722 (Spell4Thresholds 123), then 0x814 closes the threshold and the base cast ends with its 0x7fe (cast.charge_release_base)"
   let #(seen, _) =
-    game_client.read_until_pong(game: second, have: second_have, number: 2)
+    game_client.read_kept(game: second, have: second_have, count: 5)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 34718 root 34718 parent 0",
