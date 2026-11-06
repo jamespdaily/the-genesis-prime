@@ -18,8 +18,8 @@ import genesis_prime/game/area.{
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/spell_area.{
-  AimNotRead, MultiplierNotFinite, SelectionNotClosest, ShapeNotBuilt,
-  TelegraphNotOnCaster, ValidTargetsNotAlive,
+  AimNotRead, FormulaNotRead, MultiplierNotFinite, SelectionNotClosest,
+  ShapeNotBuilt, TelegraphNotOnCaster, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
@@ -243,6 +243,44 @@ pub fn a_damage_effect_aimed_by_a_flag_value_not_read_fails_the_load_test() -> N
     )
     == Error(AimNotRead(spell4_id: 58_591, effect_id: 1, target_flags: 3))
     as "Spell4Effects.targetFlags: 1, 2, 4 and 6 are the values the rows hold"
+}
+
+pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Each planted Kick holds one damage row the area load refuses, and the measure asks the
+  // same function (`spell_area.damage_row_of`) whether it reads the row.
+  list.each(
+    [
+      #(
+        area_tables.Kick(..area_tables.kick(), multiplier_bits: 0x7F800000),
+        MultiplierNotFinite(spell4_id: 58_591, effect_id: 1, bits: 0x7F800000),
+        "dataBits00 0x7F800000 is an infinity, not a multiplier",
+      ),
+      #(
+        area_tables.Kick(..area_tables.kick(), effect_target_flags: 3),
+        AimNotRead(spell4_id: 58_591, effect_id: 1, target_flags: 3),
+        "Spell4Effects.targetFlags: 1, 2, 4 and 6 are the values the rows hold",
+      ),
+      #(
+        area_tables.Kick(..area_tables.kick(), parameters: [#(7, 0.5)]),
+        FormulaNotRead(spell4_id: 58_591, effect_id: 1, parameter_kind: 7),
+        "0x140565600: a player's value reads the parameter types 0, 10, 12 and 13, so a non-zero type 7 is refused",
+      ),
+    ],
+    fn(planted) {
+      let #(kick, error, why) = planted
+      assert area_tables.built(kick:) == Error(error) as why
+      assert !area_tables.read_by_the_measure(kick:)
+        as "a row the area load refuses is not read"
+    },
+  )
+  let readable =
+    area_tables.Kick(..area_tables.kick(), effect_target_flags: 2, parameters: [
+      #(10, 0.5),
+    ])
+  assert result.is_ok(area_tables.built(kick: readable))
+    as "a finite multiplier, flags 2 and a level parameter (type 10) are read by the area load"
+  assert area_tables.read_by_the_measure(kick: readable) as "and by the measure"
 }
 
 pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and_a_cone_test() -> Nil {

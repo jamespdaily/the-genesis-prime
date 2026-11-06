@@ -20,13 +20,14 @@
 ////   ids have a handler").
 
 import client_tables
+import genesis_prime/coverage
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
-  type EngineDeclaration, EngineDeclaration, Listed,
+  type EngineDeclaration, EngineDeclaration, Listed, Missing,
 }
 import genesis_prime/coverage/measurement.{
-  type Measurement, type TypeLine, Handled, Measured, NotDecoded, TypeLine,
-  Unmeasured,
+  type Measurement, type TypeLine, Handled, HandledWithUnstatedGap, Measured,
+  NotDecoded, TypeLine, Unmeasured,
 }
 import genesis_prime/coverage/sent_message
 import genesis_prime/table/creature2
@@ -37,6 +38,7 @@ import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import gleam/bit_array
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -525,4 +527,45 @@ pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_co
   assert list.length(list.filter(types, fn(line) { line.status == Handled }))
     == 29
     as "the 29 ids above are marked handled among the 352"
+}
+
+pub fn a_handled_type_with_unread_rows_and_no_stated_gap_stops_the_measure_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The planted engine handles type 7 and states no gap for it, and its rule leaves one of
+  // the two type 7 rows unread: the declaration says a type is read for every row or states
+  // what it leaves out.
+  let declared =
+    EngineDeclaration(
+      ..engine_named("Quest objectives"),
+      handled: Listed(ids: [7]),
+      partial: [],
+      unread_rows: fn(_) { dict.from_list([#(7, 1)]) },
+    )
+  let measured = measured_over_planted_objectives(declared, [7, 7, 2])
+  let assert Measured(types:, ..) = measured as "the planted table is measured"
+  let assert Ok(seven) = list.find(types, fn(line) { line.type_number == 7 })
+  assert seven.status == HandledWithUnstatedGap(unread_rows: 1)
+    as "the type is handled, one of its two rows is not read, and no gap is stated"
+  assert coverage.breaches([measured])
+    == [
+      "Quest objectives handles type 7 with 1 of its 2 rows not read and states no gap for it",
+    ]
+    as "the measure reports the type, and its main function exits 1 on any breach (`coverage.main`)"
+  let text = checklist.render([measured])
+  assert string.contains(
+    text,
+    "- [x] type 7: 2 rows (66.67%); handled with no gap stated, 1 of its 2 rows not read",
+  )
+    as "the checklist says the gap is not stated"
+  assert string.contains(text, "1 row of the handled types not read")
+    as "and the row counts among those not read"
+  let stated =
+    EngineDeclaration(..declared, partial: [
+      Missing(type_number: 7, reason: "a gap", fact_key: "a.key"),
+    ])
+  assert coverage.breaches([
+      measured_over_planted_objectives(stated, [7, 7, 2]),
+    ])
+    == []
+    as "with the gap stated the same unread row stops nothing"
 }

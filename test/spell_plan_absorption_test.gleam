@@ -29,14 +29,14 @@ import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
-  Absorption, AimsAtCaster, AimsAtPrimaryTarget, Always, OnCaster, OnEachStruck,
+  Absorption, AimsAtCaster, AimsAtPrimaryTarget, Always,
 }
 import genesis_prime/game/spend
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/list
 import gleam/option.{None}
-import gleam/set
+import gleam/result
 import owned_test
 import planted_table.{type Cell, Float, Integer}
 import spell_tables
@@ -197,39 +197,27 @@ pub fn an_absorption_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_
   let assert spell_plan.AbsorbChange(absorption) = read.change
   assert absorption.aim == AimsAtPrimaryTarget
     as "targetFlags 2 is the primary target, which the target of a cast on the caster is"
-  assert spell_plan.proxy_modifiers_read(
+  let on_each_struck =
+    spell_tables.started_on_each_struck(
       spell4_id: 58_586,
       proxy_effect_id: 178_143,
-      target: OnCaster,
-      modifiers: [read],
     )
-    == Ok(Nil)
-    as "a child a Proxy aimed at the caster starts is cast on the caster"
-  assert spell_plan.proxy_modifiers_read(
-      spell4_id: 58_586,
-      proxy_effect_id: 178_143,
-      target: OnEachStruck,
-      modifiers: [read],
-    )
+  assert spell_tables.read_row(effect: row, place: spell_tables.pressed)
+    == Ok(spell_plan.Applied(spell_plan.PlannedModifier(read)))
+    as "a spell a Proxy aimed at the caster starts, or a pressed one, is cast on the caster"
+  assert spell_tables.read_row(effect: row, place: on_each_struck)
     == Error(spell_plan.AbsorptionOnStruckUnit(
       spell4_id: 58_586,
       proxy_effect_id: 178_143,
       effect_id: 56_356,
     ))
-    as "the child's primary target is a struck unit, and an absorb on one is not built"
-  let assert Ok(on_the_caster) =
-    modifier_of(
-      spell4_id: 30_724,
+    as "the spell's primary target is a struck unit, and an absorb on one is not built"
+  assert spell_tables.read_row(
       effect: Spell4Effects(..row, target_flags: 3),
+      place: on_each_struck,
     )
-  assert spell_plan.proxy_modifiers_read(
-      spell4_id: 58_586,
-      proxy_effect_id: 178_143,
-      target: OnEachStruck,
-      modifiers: [on_the_caster],
-    )
-    == Ok(Nil)
-    as "a row that includes the caster reaches the caster, whichever unit the child is cast on"
+    |> result.is_ok
+    as "a row that includes the caster reaches the caster, whichever unit the spell is cast on"
   // The planted Telekinetic Strike holds Proxy 62204 aimed at the area (targetFlags 4),
   // which starts 30900 on each unit it strikes (`spell_tables`).
   assert plan_error(
@@ -405,11 +393,12 @@ pub fn effect_kind_reads_absorption_aimed_at_the_caster_and_the_measure_counts_t
   }
   assert list.map([1, 2, 4, 5, 6], aimed) == [True, True, False, True, False]
     as "read for the caster (bit 1) or the primary target alone (2); 4 and 6 aim only at struck units"
-  // Each refusal of the plan is counted as not read, with no struck-unit children.
-  let counted = fn(row: Spell4Effects, struck_children) {
-    spell_plan.effect_row_read(effect: row, struck_children:)
+  // Each refusal of the plan is counted as not read, in a spell no Proxy starts on each
+  // struck unit.
+  let counted = fn(row: Spell4Effects, place) {
+    spell_tables.measure_reads(effect: row, place:)
   }
-  let none = set.new()
+  let none = spell_tables.pressed
   assert counted(spectral_form_row(), none) as "row 178144 is read"
   assert !counted(Spell4Effects(..spectral_form_row(), tick_time: 1000), none)
     as "a periodic row is refused by the plan, so it is not read"
@@ -451,7 +440,13 @@ pub fn effect_kind_reads_absorption_aimed_at_the_caster_and_the_measure_counts_t
   let on_primary = Spell4Effects(..spectral_form_row(), target_flags: 2)
   assert counted(on_primary, none)
     as "aimed at the primary target in a spell cast on the caster, it is read"
-  assert !counted(on_primary, set.from_list([58_586]))
+  assert !counted(
+    on_primary,
+    spell_tables.started_on_each_struck(
+      spell4_id: 58_586,
+      proxy_effect_id: 178_143,
+    ),
+  )
     as "in a spell a Proxy starts on each struck unit it fails the load, so it is not read"
 }
 

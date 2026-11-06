@@ -36,6 +36,7 @@
 ////   A nested id whose row the table lacks names nothing to count: the client's
 ////   evaluator fails it (`0x1404a1ca0`).
 
+import genesis_prime/coverage/effect_row
 import genesis_prime/coverage/level_one_gate
 import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite
@@ -371,21 +372,15 @@ pub fn effect_types(
   |> list.map(fn(effect) { effect.effect_type })
 }
 
-/// How many Spell4Effects rows of the type, among the spells the starting abilities' trees
-/// reach, the plan does not read (genesis_prime/game/spell_plan `effect_row_read`): a Proc
-/// row of a kind it skips is one. The starting abilities' column counts them as not
-/// handled. The rows the walk names that the tables lack are the error, as for the types.
+/// How many Spell4Effects rows of each type, among the spells the starting abilities' trees
+/// reach, the plan does not read (genesis_prime/coverage/effect_row): a Proc row of a kind it
+/// skips is one. The starting abilities' column counts them as not handled. The rows the walk
+/// names that the tables lack are the error, as for the types.
 pub fn unread_effect_rows(
-  tables tables: store.Tables,
-  type_number type_number: Int,
-) -> Result(Int, List(MissingRow)) {
+  tables: store.Tables,
+) -> Result(Dict(Int, Int), List(MissingRow)) {
   use spells <- result.map(spells(tables:))
-  let effects = effects_of(tables:, spells:)
-  let struck_children = spell_plan.struck_unit_children(effects:)
-  list.count(effects, fn(effect) {
-    effect.effect_type == type_number
-    && !spell_plan.effect_row_read(effect:, struck_children:)
-  })
+  effect_row.unread_by_type(tables:, effects: effects_of(tables:, spells:))
 }
 
 /// The innate cost EMM id of each cost of the spells the starting abilities' trees

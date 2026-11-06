@@ -4,7 +4,7 @@
 import genesis_prime/coverage/engine.{type EngineDeclaration}
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, DecodedMissing, Handled, HandledWithGap,
-  Measured, NotDecoded, Unmeasured,
+  HandledWithUnstatedGap, Measured, NotDecoded, Unmeasured,
 }
 import gleam/float
 import gleam/int
@@ -46,7 +46,10 @@ fn render_engine(measurement: Measurement) -> String {
         list.count(types, fn(line) {
           case line.status {
             DecodedMissing(..) -> True
-            Handled | HandledWithGap(..) | NotDecoded -> False
+            Handled
+            | HandledWithGap(..)
+            | HandledWithUnstatedGap(..)
+            | NotDecoded -> False
           }
         })
       let unread_rows =
@@ -150,7 +153,7 @@ fn starting_rows(types: List(TypeLine)) -> #(Int, Int) {
   list.fold(types, #(0, 0), fn(totals, line) {
     let #(handled, all) = totals
     case line.status {
-      Handled | HandledWithGap(..) -> #(
+      Handled | HandledWithGap(..) | HandledWithUnstatedGap(..) -> #(
         handled + line.starting_abilities - line.starting_unread,
         all + line.starting_abilities,
       )
@@ -164,7 +167,7 @@ fn starting_rows(types: List(TypeLine)) -> #(Int, Int) {
 
 fn type_line(line: TypeLine) -> String {
   let mark = case line.status {
-    Handled | HandledWithGap(..) -> "x"
+    Handled | HandledWithGap(..) | HandledWithUnstatedGap(..) -> "x"
     DecodedMissing(..) -> "~"
     NotDecoded -> " "
   }
@@ -197,6 +200,12 @@ fn type_line(line: TypeLine) -> String {
       <> " ("
       <> fact_key
       <> ")"
+    HandledWithUnstatedGap(unread_rows:) ->
+      "; handled with no gap stated, "
+      <> int.to_string(unread_rows)
+      <> " of its "
+      <> int.to_string(line.rows)
+      <> " rows not read"
     Handled | NotDecoded -> ""
   }
 }
@@ -205,7 +214,8 @@ fn type_line(line: TypeLine) -> String {
 /// rules leave out whole, and none for any other line.
 fn unread_rows_of(line: TypeLine) -> Int {
   case line.status {
-    HandledWithGap(unread_rows:, ..) -> unread_rows
+    HandledWithGap(unread_rows:, ..) | HandledWithUnstatedGap(unread_rows:) ->
+      unread_rows
     Handled | DecodedMissing(..) | NotDecoded -> 0
   }
 }

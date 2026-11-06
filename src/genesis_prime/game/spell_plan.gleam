@@ -14,6 +14,17 @@
 //// all of them, once, when the tables load ─▶ Plans ─▶ in_plans(base)
 //// ```
 ////
+//// - **One decision for each effect row.** `read_row` says what the plan makes of a
+////   Spell4Effects row in the place its spell is planned (`RowPlace`): in a list of its
+////   spell and applied by a go (`Applied`), in a list and applied by none (`Held`: a
+////   periodic gain or heal, a row behind a target apply prerequisite, which the cast rule
+////   does not check, `cast.condition_gate`), in no list (`LeftOut`), a damage row the area
+////   load reads (`ReadByArea`), or an error that fails the load. The lists of a spell are
+////   made from these readings, and the coverage measure counts a row read exactly when it
+////   is `Applied` (genesis_prime/coverage/effect_row), so the two cannot disagree. A spell
+////   a Proxy starts on each struck unit refuses a heal, an Interrupt Armor row and an
+////   absorb aimed at its primary target, and a spell that spends every point held refuses
+////   an effect with a tag the rule does not read.
 //// - **The tree.** A Proxy effect (`Spell4Effects.effectType.26`, dataBits00 the
 ////   Spell4 id; 0 names none) starts that spell as a cast of its own, so a `Spell`
 ////   holds its `Proxy` children, each with the delay the effect gives after its
@@ -952,6 +963,67 @@ pub type Proxy {
   )
 }
 
+/// Where a spell is planned, which two of an effect row's refusals depend on: a spell a
+/// Proxy starts on each struck unit (`struck_by`) and a spell that spends every point held
+/// (`spends_all`).
+pub type RowPlace {
+  RowPlace(struck_by: Option(StruckBy), spends_all: Bool)
+}
+
+/// The Proxy that starts a spell as a child on each unit its area strikes: `spell4_id`
+/// is the spell with the Proxy effect `proxy_effect_id`. The child's primary target is
+/// then a struck unit (`target_of`).
+pub type StruckBy {
+  StruckBy(spell4_id: Int, proxy_effect_id: Int)
+}
+
+/// What the plan makes of one Spell4Effects row (`read_row`), the one decision the plan's
+/// lists and the coverage measure both take from.
+pub type RowReading {
+  /// The row is in a list of its spell and a go applies it: the coverage measure counts
+  /// it read.
+  Applied(row: PlannedRow)
+  /// The row is in a list of its spell and no go applies it: a periodic gain or heal
+  /// (`TickingGain`, `TickingShieldHeal`), a row behind a target apply prerequisite
+  /// (`cast.condition_gate`) and a disguise with no life. The measure counts it not read.
+  Held(row: PlannedRow)
+  /// The row is in no list of its spell and the load goes on.
+  LeftOut(why: LeftOutReason)
+  /// A damage row: the area load reads it (genesis_prime/game/spell_area `damage_row_of`),
+  /// and the plan holds it in no list.
+  ReadByArea
+}
+
+/// Why a row is in no list of its spell.
+pub type LeftOutReason {
+  /// No rule of the server reads the effect type (`effect_kind.Unread`).
+  TypeNotRead
+  /// The type is read for the rows that reach the caster (or, for an overload, the area)
+  /// and this row's targetFlags do not (`effect_kind.is_row_read`).
+  AimedAtOtherUnits
+  /// A Proc of a kind the holder's own events do not make (`proc_read`).
+  ProcOfAnotherKind(kind: Int)
+  /// A Proxy whose dataBits00 names no spell.
+  ProxyNamesNoSpell
+}
+
+/// A row as the list of its spell holds it. A Proxy's child and a Proc's spell are planned
+/// from the reading, by the spell that holds the row.
+pub type PlannedRow {
+  PlannedGain(gain: Gain)
+  PlannedLasting(lasting: Lasting)
+  PlannedRemove(remove: ForceRemove)
+  PlannedControl(control: CrowdControl)
+  PlannedModifier(modifier: PropertyModifier)
+  PlannedForcedMove(forced_move: ForcedMove)
+  PlannedCooldownModifier(modifier: CooldownModifier)
+  PlannedStealth(stealth: StealthRow)
+  PlannedRemoveStealth(remove: RemoveStealthRow)
+  PlannedShieldHeal(heal: ShieldHeal)
+  PlannedProc(reading: ProcReading, condition: Condition)
+  PlannedProxy(target: ProxyTarget, condition: Condition)
+}
+
 /// Why a DisguiseOutfit row cannot be drawn with 0x933 (`Spell4Effects.effectType.112`).
 pub type DisguiseGap {
   /// dataBits00 or dataBits08 names an outfit, which only 0x905 draws.
@@ -1434,7 +1506,7 @@ pub fn derivation() -> table_store.Derivation {
 }
 
 /// The rows the tree reads, grouped by the spell they belong to.
-type Sources {
+pub opaque type Sources {
   Sources(
     effects: Dict(Int, List(spell4_effects.Spell4Effects)),
     phases: Dict(Int, List(Phase)),
@@ -1446,6 +1518,29 @@ type Sources {
   )
 }
 
+/// The rows the plan reads from the loaded tables, grouped once: what `build` and
+/// `spell_alone` plan from.
+pub fn sources_of(tables tables: table_store.Tables) -> Sources {
+  let group_lists = group_lists_by_id(tables:)
+  Sources(
+    effects: effects_by_spell(tables:),
+    phases: phases_by_owner(tables:),
+    thresholds: thresholds_by_parent(tables:),
+    group_lists:,
+    known_groups: known_groups(group_lists:),
+  )
+}
+
+/// Every spell group id some Spell4GroupList row holds, which a SpellForceRemove selector
+/// may name (`read_row`).
+pub fn spell_groups(tables tables: table_store.Tables) -> Set(Int) {
+  known_groups(group_lists: group_lists_by_id(tables:))
+}
+
+fn known_groups(group_lists group_lists: Dict(Int, List(Int))) -> Set(Int) {
+  set.from_list(list.flatten(dict.values(group_lists)))
+}
+
 /// A SpellPhase row the client keeps.
 type Phase {
   Phase(delay_ms: Int, flags: Int)
@@ -1455,15 +1550,7 @@ type Phase {
 /// derivation's body, and the function a test of a missing row or a cycle runs
 /// on planted tables.
 pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
-  let group_lists = group_lists_by_id(tables:)
-  let sources =
-    Sources(
-      effects: effects_by_spell(tables:),
-      phases: phases_by_owner(tables:),
-      thresholds: thresholds_by_parent(tables:),
-      group_lists:,
-      known_groups: set.from_list(list.flatten(dict.values(group_lists))),
-    )
+  let sources = sources_of(tables:)
   use held <- result.try(innate.held(tables:) |> result.map_error(InnateFailed))
   let abilities =
     spell_level.all(tables)
@@ -1486,9 +1573,14 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
     list.append(abilities, innates),
     dict.new(),
     fn(plans, spell4_id) {
-      use spell <- result.try(
-        spell_of(tables:, sources:, spell4_id:, chain: [], threshold_costs: []),
-      )
+      use spell <- result.try(spell_of(
+        tables:,
+        sources:,
+        spell4_id:,
+        chain: [],
+        threshold_costs: [],
+        struck_by: None,
+      ))
       use Nil <- result.try(has_threshold_time(spell:))
       Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
     },
@@ -1596,12 +1688,59 @@ pub fn chain_extended(
   }
 }
 
+/// One Proxy row of the spell `spell4_id` as a `Proxy`: the child it names planned on the
+/// same chain, and the gains of a child started on each struck unit lifted onto it.
+fn proxy_of(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+  chain chain: List(Int),
+  effect effect: spell4_effects.Spell4Effects,
+  target target: ProxyTarget,
+  condition condition: Condition,
+) -> Result(Proxy, PlanError) {
+  use child <- result.map(
+    spell_of(
+      tables:,
+      sources:,
+      spell4_id: effect.data_bits00,
+      chain:,
+      threshold_costs: [],
+      struck_by: case target {
+        OnEachStruck -> Some(StruckBy(spell4_id:, proxy_effect_id: effect.id))
+        OnCaster -> None
+      },
+    ),
+  )
+  // Every gain under a Proxy aimed at each struck unit in the client's level-1 trees fires
+  // in phase 0 only (`spell_plan_gain_test` reads them all), so lifting by phase 0 loses
+  // none to a later phase.
+  let #(lifted, kept) = case target {
+    OnEachStruck ->
+      list.partition(child.gains, fn(gain) {
+        has_flag(flags: gain.phase_flags, bit: 1)
+      })
+    OnCaster -> #([], child.gains)
+  }
+  Proxy(
+    effect_id: Spell4EffectsId(effect.id),
+    delay_ms: effect.delay_time,
+    phase_flags: effect.phase_flags,
+    condition:,
+    tag: tag_of(effect:),
+    target:,
+    spell: Spell(..child, gains: kept),
+    gains: lifted,
+  )
+}
+
 fn spell_of(
   tables tables: table_store.Tables,
   sources sources: Sources,
   spell4_id spell4_id: Int,
   chain chain: List(Int),
   threshold_costs threshold_costs: List(#(Int, Int)),
+  struck_by struck_by: Option(StruckBy),
 ) -> Result(Spell, PlanError) {
   use chain <- result.try(chain_extended(chain:, spell4_id:))
   use row <- result.try(
@@ -1675,42 +1814,53 @@ fn spell_of(
     ]),
   )
   let effects = dict.get(sources.effects, spell4_id) |> result.unwrap([])
-  use Nil <- result.try(spend_tags_read(spell4_id:, costs:, effects:))
-  use gains <- result.try(gains_of(tables:, spell4_id:, effects:))
-  use lasting <- result.try(lasting_of(tables:, spell4_id:, effects:))
-  use removes <- result.try(removes_of(tables:, sources:, spell4_id:, effects:))
-  use controls <- result.try(controls_of(spell4_id:, effects:))
-  use type_11_modifiers <- result.try(modifiers_of(
-    tables:,
-    spell4_id:,
-    effects:,
-  ))
-  use armors <- result.try(interrupt_armors_of(tables:, spell4_id:, effects:))
-  let modifiers = list.append(type_11_modifiers, armors)
-  use forced_moves <- result.try(forced_moves_of(tables:, effects:))
-  use cooldown_modifiers <- result.try(cooldown_modifiers_of(
-    tables:,
-    spell4_id:,
-    effects:,
-  ))
-  use stealth <- result.try(stealth_of(tables:, spell4_id:, effects:))
-  use remove_stealth <- result.try(remove_stealth_of(
-    tables:,
-    spell4_id:,
-    effects:,
-  ))
-  use shield_heals <- result.try(shield_heals_of(tables:, spell4_id:, effects:))
+  let place = RowPlace(struck_by:, spends_all: spends_all_of(costs:))
+  use Nil <- result.try(
+    list.try_each(effects, spend_tag_read(place:, effect: _)),
+  )
+  let readings =
+    list.map(effects, fn(effect) {
+      #(
+        effect,
+        read_row(tables:, spell_groups: sources.known_groups, place:, effect:),
+      )
+    })
+  // The rows of each list are read in the order the lists were once built, so a spell with
+  // two refused rows names the same one first.
+  use Nil <- result.try(
+    list.try_each(
+      [
+        [effect_kind.VitalModifier],
+        [
+          effect_kind.Fluff,
+          effect_kind.Scale,
+          effect_kind.RavelSignal,
+          effect_kind.ShieldOverload,
+        ],
+        [effect_kind.ForceRemove],
+        [effect_kind.CrowdControl],
+        [
+          effect_kind.PropertyModifier,
+          effect_kind.PropertyConversion,
+          effect_kind.DisguiseOutfit,
+          effect_kind.Absorption,
+        ],
+        [effect_kind.InterruptArmor],
+        [effect_kind.ForcedMove],
+        [effect_kind.CooldownModifier],
+        [effect_kind.Stealth],
+        [effect_kind.RemoveStealth],
+        [effect_kind.ShieldHeal],
+      ],
+      fn(kinds) { rows_read(readings:, kinds:) },
+    ),
+  )
+  let lists = lists_of(readings:)
   use stealth_change <- result.try(stealth_change_of(
     spell4_id:,
     value: row.spell_cast_stealth_change,
   ))
-  use procs <- result.try(procs_of(
-    tables:,
-    sources:,
-    spell4_id:,
-    effects:,
-    chain:,
-  ))
+  use procs <- result.try(procs_of(tables:, sources:, readings:, chain:))
   use Nil <- result.try(
     stealth_conditions_read(spell4_id:, conditions: [
       caster_conditions,
@@ -1721,73 +1871,42 @@ fn spell_of(
   use groups <- result.try(groups_of(sources:, row:))
   use stack <- result.try(stack_of(tables:, row:))
   use proxies <- result.try(
-    effects
-    |> list.filter(fn(effect) {
-      effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
-      && effect.data_bits00 != 0
-    })
-    |> list.try_map(fn(effect) {
-      use target <- result.try(target_of(spell4_id:, effect:))
-      use child <- result.try(
-        spell_of(
-          tables:,
-          sources:,
-          spell4_id: effect.data_bits00,
-          chain:,
-          threshold_costs: [],
-        ),
-      )
-      // Every gain under a Proxy aimed at each struck unit in the client's level-1
-      // trees fires in phase 0 only (`spell_plan_gain_test` reads them all), so
-      // lifting by phase 0 loses none to a later phase.
-      let #(lifted, kept) = case target {
-        OnEachStruck ->
-          list.partition(child.gains, fn(gain) {
-            has_flag(flags: gain.phase_flags, bit: 1)
-          })
-        OnCaster -> #([], child.gains)
+    rows_of_kind(readings:, kind: effect_kind.Proxy)
+    |> list.try_map(fn(row) {
+      let #(effect, reading) = row
+      use reading <- result.try(reading)
+      case reading {
+        Applied(PlannedProxy(target:, condition:)) ->
+          proxy_of(
+            tables:,
+            sources:,
+            spell4_id:,
+            chain:,
+            effect:,
+            target:,
+            condition:,
+          )
+          |> result.map(fn(proxy) { [proxy] })
+        Applied(..) | Held(..) | LeftOut(..) | ReadByArea -> Ok([])
       }
-      use Nil <- result.try(proxy_heals_read(
-        spell4_id:,
-        proxy_effect_id: effect.id,
-        target:,
-        heals: child.shield_heals,
-      ))
-      use Nil <- result.try(proxy_modifiers_read(
-        spell4_id:,
-        proxy_effect_id: effect.id,
-        target:,
-        modifiers: child.modifiers,
-      ))
-      use condition <- result.try(proxy_condition_of(tables:, effect:))
-      Ok(Proxy(
-        effect_id: Spell4EffectsId(effect.id),
-        delay_ms: effect.delay_time,
-        phase_flags: effect.phase_flags,
-        condition:,
-        tag: tag_of(effect:),
-        target:,
-        spell: Spell(..child, gains: kept),
-        gains: lifted,
-      ))
-    }),
+    })
+    |> result.map(list.flatten),
   )
   use stages <- result.try(
     dict.get(sources.thresholds, spell4_id)
     |> result.unwrap([])
     |> list.try_map(fn(threshold) {
-      use stage <- result.try(
-        spell_of(
-          tables:,
-          sources:,
-          spell4_id: threshold.spell4_id_to_cast,
-          chain:,
-          threshold_costs: [
-            #(threshold.vital_enum_cost_type00, threshold.vital_cost_value00),
-            #(threshold.vital_enum_cost_type01, threshold.vital_cost_value01),
-          ],
-        ),
-      )
+      use stage <- result.try(spell_of(
+        tables:,
+        sources:,
+        spell4_id: threshold.spell4_id_to_cast,
+        chain:,
+        threshold_costs: [
+          #(threshold.vital_enum_cost_type00, threshold.vital_cost_value00),
+          #(threshold.vital_enum_cost_type01, threshold.vital_cost_value01),
+        ],
+        struck_by: None,
+      ))
       Ok(Stage(duration_ms: threshold.threshold_duration, spell: stage))
     }),
   )
@@ -1826,111 +1945,69 @@ fn spell_of(
       stages:,
       channel:,
       proxies:,
-      gains:,
+      gains: lists.gains,
       groups:,
       stack:,
-      lasting:,
-      removes:,
-      controls:,
-      modifiers:,
-      forced_moves:,
+      lasting: lists.lasting,
+      removes: lists.removes,
+      controls: lists.controls,
+      modifiers: list.append(lists.modifiers, lists.armors),
+      forced_moves: lists.forced_moves,
       cooldown_groups:,
-      cooldown_modifiers:,
-      stealth:,
-      remove_stealth:,
-      shield_heals:,
+      cooldown_modifiers: lists.cooldown_modifiers,
+      stealth: lists.stealth,
+      remove_stealth: lists.remove_stealth,
+      shield_heals: lists.shield_heals,
       stealth_change:,
       procs:,
     )
   Ok(spell)
 }
 
-/// The gains of a spell's effects: each VitalModifier, which must aim at the
-/// caster, change vital 6 or 8, and have no target apply prerequisite; its caster
-/// apply prerequisite is read from its row.
-fn gains_of(
+/// One VitalModifier row as a gain, which must aim at the caster, change vital 6 or 8, and
+/// have no target apply prerequisite; its caster apply prerequisite is read from its row.
+/// A row with a tickTime is a `TickingGain`, which the cast rule does not apply.
+fn gain_row_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(Gain), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.VitalModifier
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Gain, PlanError) {
+  use slot <- result.try(case aim_of(target_flags: effect.target_flags) {
+    AimsAtCaster -> gain_slot_of(spell4_id:, effect:)
+    AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth | OtherAim(..) ->
+      Error(GainAimNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        target_flags: effect.target_flags,
+      ))
   })
-  |> list.try_map(fn(effect) {
-    use slot <- result.try(case aim_of(target_flags: effect.target_flags) {
-      AimsAtCaster -> gain_slot_of(spell4_id:, effect:)
-      AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth | OtherAim(..) ->
-        Error(GainAimNotRead(
-          spell4_id:,
-          effect_id: effect.id,
-          target_flags: effect.target_flags,
-        ))
-    })
-    use Nil <- result.try(case effect.prerequisite_id_target_apply {
-      0 -> Ok(Nil)
-      _ ->
-        Error(GainTargetPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
-    })
-    use prerequisite <- result.try(case effect.prerequisite_id_caster_apply {
-      0 -> Ok(None)
-      id ->
-        prerequisite_of(tables:, id:)
-        |> result.map(Some)
-    })
-    let effect_id = Spell4EffectsId(effect.id)
-    let amount = effect.data_bits02
-    let phase_flags = effect.phase_flags
-    let tag = tag_of(effect:)
-    Ok(case effect.tick_time {
-      0 -> Gain(effect_id:, slot:, amount:, phase_flags:, prerequisite:, tag:)
-      tick_ms ->
-        TickingGain(
-          effect_id:,
-          slot:,
-          amount:,
-          phase_flags:,
-          prerequisite:,
-          tag:,
-          tick_ms:,
-          duration_ms: effect.duration_time,
-        )
-    })
+  use Nil <- result.try(case effect.prerequisite_id_target_apply {
+    0 -> Ok(Nil)
+    _ -> Error(GainTargetPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
   })
-}
-
-/// The HealShields effects of a spell that reach the caster, each with its caster
-/// apply prerequisite read as a Fluff effect's is (`condition_of`).
-fn shield_heals_of(
-  tables tables: table_store.Tables,
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(ShieldHeal), PlanError) {
-  shield_heals_in(spell4_id:, effects:, condition: fn(effect) {
-    condition_of(tables:, effect:, data_bits06_names_a_gate: False)
+  use prerequisite <- result.try(case effect.prerequisite_id_caster_apply {
+    0 -> Ok(None)
+    id ->
+      prerequisite_of(tables:, id:)
+      |> result.map(Some)
   })
-}
-
-/// The HealShields rows among `effects` that reach the caster
-/// (`effect_kind.is_row_read`), each read by `shield_heal_of` with the condition
-/// `condition` gives it. A row aimed only at other units is left out.
-pub fn shield_heals_in(
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-  condition condition: fn(spell4_effects.Spell4Effects) ->
-    Result(Condition, PlanError),
-) -> Result(List(ShieldHeal), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.ShieldHeal
-    && effect_kind.is_row_read(
-      effect_type: effect.effect_type,
-      target_flags: effect.target_flags,
-    )
-  })
-  |> list.try_map(fn(effect) {
-    use condition <- result.try(condition(effect))
-    shield_heal_of(spell4_id:, effect:, condition:)
+  let effect_id = Spell4EffectsId(effect.id)
+  let amount = effect.data_bits02
+  let phase_flags = effect.phase_flags
+  let tag = tag_of(effect:)
+  Ok(case effect.tick_time {
+    0 -> Gain(effect_id:, slot:, amount:, phase_flags:, prerequisite:, tag:)
+    tick_ms ->
+      TickingGain(
+        effect_id:,
+        slot:,
+        amount:,
+        phase_flags:,
+        prerequisite:,
+        tag:,
+        tick_ms:,
+        duration_ms: effect.duration_time,
+      )
   })
 }
 
@@ -1985,77 +2062,28 @@ pub fn shield_heal_of(
   })
 }
 
-/// A Proxy that starts its child on each unit its area strikes makes that unit the
-/// child's primary target, so a heal of the child aimed at it fails the load: a shield
-/// heal on a struck unit is not built. `spell4_id` is the spell with the Proxy
-/// `proxy_effect_id`. A child made on the caster, and a heal that includes the caster,
-/// are read.
-pub fn proxy_heals_read(
-  spell4_id spell4_id: Int,
-  proxy_effect_id proxy_effect_id: Int,
-  target target: ProxyTarget,
-  heals heals: List(ShieldHeal),
-) -> Result(Nil, PlanError) {
-  case target {
-    OnCaster -> Ok(Nil)
-    OnEachStruck ->
-      case list.find(heals, fn(heal) { heal.aim == AimsAtPrimaryTarget }) {
-        Ok(heal) ->
-          Error(ShieldHealOnStruckUnit(
-            spell4_id:,
-            proxy_effect_id:,
-            effect_id: heal.effect_id.value,
-          ))
-        Error(Nil) -> Ok(Nil)
-      }
-  }
-}
-
-/// The Fluff, Scale, RavelSignal and area ShieldOverload effects of a spell: each aimed at a
+/// One Fluff, Scale, RavelSignal or area ShieldOverload row as a lasting row: aimed at a
 /// unit the plan reads, with the columns that give its node a life (`Spell4Effects.effectType.17`,
 /// `.18` and `.81`).
 fn lasting_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(Lasting), PlanError) {
-  lasting_in(spell4_id:, effects:, condition: fn(effect) {
-    condition_of(tables:, effect:, data_bits06_names_a_gate: False)
-  })
-}
-
-/// The Fluff, Scale and RavelSignal rows among `effects` and the ShieldOverload rows aimed
-/// at the area, with the condition `condition` gives each.
-pub fn lasting_in(
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-  condition condition: fn(spell4_effects.Spell4Effects) ->
-    Result(Condition, PlanError),
-) -> Result(List(Lasting), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    let kind = effect_kind.kind_of(effect.effect_type)
-    kind == effect_kind.Fluff
-    || kind == effect_kind.Scale
-    || kind == effect_kind.RavelSignal
-    || kind == effect_kind.ShieldOverload
-    && effect_kind.is_row_read(
-      effect_type: effect.effect_type,
-      target_flags: effect.target_flags,
-    )
-  })
-  |> list.try_map(fn(effect) {
-    use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
-    use condition <- result.try(condition(effect))
-    Ok(Lasting(
-      effect_id: Spell4EffectsId(effect.id),
-      phase_flags: effect.phase_flags,
-      aim:,
-      row: lasting_row_of(effect:),
-      condition:,
-      tag: tag_of(effect:),
-    ))
-  })
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Lasting, PlanError) {
+  use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
+  use condition <- result.map(condition_of(
+    tables:,
+    effect:,
+    data_bits06_names_a_gate: False,
+  ))
+  Lasting(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    aim:,
+    row: lasting_row_of(effect:),
+    condition:,
+    tag: tag_of(effect:),
+  )
 }
 
 /// The columns of a row that give its node a life: its delay and durationTime and whether
@@ -2070,44 +2098,37 @@ fn lasting_row_of(
   )
 }
 
-/// The SpellForceRemove effects of a spell (`Spell4Effects.effectType.80`): dataBits00
-/// picks what is removed (1 a spell group, 2 a Spell4, 3 a Spell4Base) by dataBits01,
-/// which must name a row; the count of stacks is read only where dataBits03 and
-/// dataBits04 agree.
-fn removes_of(
+/// One SpellForceRemove row (`Spell4Effects.effectType.80`): dataBits00 picks what is
+/// removed (1 a spell group, 2 a Spell4, 3 a Spell4Base) by dataBits01, which must name a
+/// row; the count of stacks is read only where dataBits03 and dataBits04 agree.
+fn remove_of(
   tables tables: table_store.Tables,
-  sources sources: Sources,
+  spell_groups spell_groups: Set(Int),
   spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(ForceRemove), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.ForceRemove
-  })
-  |> list.try_map(fn(effect) {
-    use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
-    use selector <- result.try(selector_of(
-      tables:,
-      sources:,
-      spell4_id:,
-      effect:,
-    ))
-    use Nil <- result.try(force_remove_counts_read(spell4_id:, effect:))
-    use condition <- result.try(condition_of(
-      tables:,
-      effect:,
-      data_bits06_names_a_gate: False,
-    ))
-    Ok(ForceRemove(
-      effect_id: Spell4EffectsId(effect.id),
-      phase_flags: effect.phase_flags,
-      aim:,
-      selector:,
-      count: effect.data_bits03,
-      condition:,
-      tag: tag_of(effect:),
-    ))
-  })
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(ForceRemove, PlanError) {
+  use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
+  use selector <- result.try(selector_of(
+    tables:,
+    spell_groups:,
+    spell4_id:,
+    effect:,
+  ))
+  use Nil <- result.try(force_remove_counts_read(spell4_id:, effect:))
+  use condition <- result.map(condition_of(
+    tables:,
+    effect:,
+    data_bits06_names_a_gate: False,
+  ))
+  ForceRemove(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    aim:,
+    selector:,
+    count: effect.data_bits03,
+    condition:,
+    tag: tag_of(effect:),
+  )
 }
 
 /// A type 80 row's count of stacks is read only where dataBits03 and dataBits04 agree
@@ -2128,104 +2149,61 @@ fn force_remove_counts_read(
   ))
 }
 
-/// The CCStateSet effects of a spell (`Spell4Effects.effectType.4`): dataBits00 must be
-/// Stun or Knockdown, the effect must aim at the primary target, the area or both,
-/// and it must have no apply prerequisite. Its delayTime, durationTime and the armor it
-/// removes (dataBits03) are read as they are.
-fn controls_of(
+/// One CCStateSet row (`Spell4Effects.effectType.4`): dataBits00 must be Stun or
+/// Knockdown, the effect must aim at the primary target, the area or both, and it must
+/// have no apply prerequisite. Its delayTime, durationTime and the armor it removes
+/// (dataBits03) are read as they are.
+fn control_of(
   spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(CrowdControl), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.CrowdControl
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(CrowdControl, PlanError) {
+  use state <- result.try(case effect.data_bits00 {
+    0 | 8 -> Ok(crowd_control_state.from_value(effect.data_bits00))
+    other ->
+      Error(ControlStateNotRead(spell4_id:, effect_id: effect.id, state: other))
   })
-  |> list.try_map(fn(effect) {
-    use state <- result.try(case effect.data_bits00 {
-      0 | 8 -> Ok(crowd_control_state.from_value(effect.data_bits00))
-      other ->
-        Error(ControlStateNotRead(
-          spell4_id:,
-          effect_id: effect.id,
-          state: other,
-        ))
-    })
-    use aim <- result.try(case aim_of(target_flags: effect.target_flags) {
-      AimsAtPrimaryTarget -> Ok(AimsAtPrimaryTarget)
-      AimsAtArea -> Ok(AimsAtArea)
-      AimsAtBoth -> Ok(AimsAtBoth)
-      AimsAtCaster | OtherAim(..) ->
-        Error(ControlAimNotRead(
-          spell4_id:,
-          effect_id: effect.id,
-          target_flags: effect.target_flags,
-        ))
-    })
-    use Nil <- result.try(
-      case
-        effect.prerequisite_id_caster_apply,
-        effect.prerequisite_id_target_apply
-      {
-        0, 0 -> Ok(Nil)
-        _, _ ->
-          Error(ControlPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
-      },
-    )
-    Ok(CrowdControl(
-      effect_id: Spell4EffectsId(effect.id),
-      phase_flags: effect.phase_flags,
-      aim:,
-      row: crowd_control.Row(
-        state:,
-        delay_ms: effect.delay_time,
-        duration_ms: effect.duration_time,
-        armor_removed: effect.data_bits03,
-      ),
-      tag: tag_of(effect:),
-    ))
+  use aim <- result.try(case aim_of(target_flags: effect.target_flags) {
+    AimsAtPrimaryTarget -> Ok(AimsAtPrimaryTarget)
+    AimsAtArea -> Ok(AimsAtArea)
+    AimsAtBoth -> Ok(AimsAtBoth)
+    AimsAtCaster | OtherAim(..) ->
+      Error(ControlAimNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        target_flags: effect.target_flags,
+      ))
   })
-}
-
-/// The UnitPropertyModifier and UnitPropertyConversion effects of a spell whose
-/// targetFlags include the caster (`effect_kind.is_row_read`). A type 11 row
-/// (`Spell4Effects.effectType.11.change`): dataBits00 is the property, which UnitProperty2
-/// must have a row for, dataBits01 the mode, dataBits02 the multiplier, dataBits03 the
-/// flat amount and dataBits04 the amount for each level, all three as the 32-bit floats
-/// their columns hold, which must be finite. A type 145 row (`conversion_of`). Its caster
-/// apply prerequisite is read as a Fluff effect's is (`condition_of`); a row aimed only
-/// at other units is left out.
-fn modifiers_of(
-  tables tables: table_store.Tables,
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(PropertyModifier), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    let kind = effect_kind.kind_of(effect.effect_type)
+  use Nil <- result.map(
+    case
+      effect.prerequisite_id_caster_apply,
+      effect.prerequisite_id_target_apply
     {
-      kind == effect_kind.PropertyModifier
-      || kind == effect_kind.PropertyConversion
-      || kind == effect_kind.DisguiseOutfit
-      || kind == effect_kind.Absorption
-    }
-    && effect_kind.is_row_read(
-      effect_type: effect.effect_type,
-      target_flags: effect.target_flags,
-    )
-  })
-  |> list.try_map(fn(effect) {
-    use condition <- result.try(condition_of(
-      tables:,
-      effect:,
-      data_bits06_names_a_gate: False,
-    ))
-    modifier_of(tables:, spell4_id:, effect:, condition:)
-  })
+      0, 0 -> Ok(Nil)
+      _, _ ->
+        Error(ControlPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
+    },
+  )
+  CrowdControl(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    aim:,
+    row: crowd_control.Row(
+      state:,
+      delay_ms: effect.delay_time,
+      duration_ms: effect.duration_time,
+      armor_removed: effect.data_bits03,
+    ),
+    tag: tag_of(effect:),
+  )
 }
 
-/// One UnitPropertyModifier, UnitPropertyConversion or DisguiseOutfit row as a
-/// `PropertyModifier` that holds the caster `condition` it was given, or the error
-/// that fails the load (`modifiers_of`).
+/// One UnitPropertyModifier, UnitPropertyConversion, DisguiseOutfit or Absorption row as a
+/// `PropertyModifier` that holds the caster `condition` it was given, or the error that
+/// fails the load. A type 11 row (`Spell4Effects.effectType.11.change`): dataBits00 is the
+/// property, which UnitProperty2 must have a row for, dataBits01 the mode, dataBits02 the
+/// multiplier, dataBits03 the flat amount and dataBits04 the amount for each level, all
+/// three as the 32-bit floats their columns hold, which must be finite. A type 145 row
+/// (`conversion_of`).
 pub fn modifier_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -2352,41 +2330,6 @@ fn display_slot(
   |> result.replace_error(NoRow(table: "ItemSlot", id: slot.value))
 }
 
-/// The ModifyInterruptArmor effects of a spell that reach the caster, each with its caster
-/// apply prerequisite read as a Fluff effect's is (`condition_of`).
-fn interrupt_armors_of(
-  tables tables: table_store.Tables,
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(PropertyModifier), PlanError) {
-  interrupt_armors_in(spell4_id:, effects:, condition: fn(effect) {
-    condition_of(tables:, effect:, data_bits06_names_a_gate: False)
-  })
-}
-
-/// The ModifyInterruptArmor rows among `effects` that reach the caster
-/// (`effect_kind.is_row_read`), each read by `interrupt_armor_of` with the condition
-/// `condition` gives it. A row aimed only at other units is left out.
-fn interrupt_armors_in(
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-  condition condition: fn(spell4_effects.Spell4Effects) ->
-    Result(Condition, PlanError),
-) -> Result(List(PropertyModifier), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.InterruptArmor
-    && effect_kind.is_row_read(
-      effect_type: effect.effect_type,
-      target_flags: effect.target_flags,
-    )
-  })
-  |> list.try_map(fn(effect) {
-    use condition <- result.try(condition(effect))
-    interrupt_armor_of(spell4_id:, effect:, condition:)
-  })
-}
-
 /// One ModifyInterruptArmor row as the change of property 44 and the armor it makes, or
 /// the error that fails the load: dataBits00 is the points, dataBits01 0 or 1 says
 /// whether the end takes them back (`Spell4Effects.effectType.52`), and the row's delay,
@@ -2473,17 +2416,6 @@ fn caster_formula_read(
   }
 }
 
-/// Whether a row aimed at `aim` is one a go applies in a spell with the Spell4 id
-/// `spell4_id`: not one aimed at the primary target of a spell a Proxy starts on each struck
-/// unit, which fails the load (`struck_children`).
-fn not_on_a_struck_unit(
-  aim aim: Aim,
-  spell4_id spell4_id: Int,
-  struck_children struck_children: Set(Int),
-) -> Bool {
-  aim != AimsAtPrimaryTarget || !set.contains(struck_children, spell4_id)
-}
-
 /// The pool an Absorption row gives (`Spell4Effects.effectType.29`), or the error that
 /// fails the load: dataBits00 and dataBits01 must be finite 32-bit floats, the formula
 /// must read only the parameter types an effect on its caster reads
@@ -2524,41 +2456,49 @@ fn absorption_read(
   Absorption(formula:, mask: effect.data_bits04, aim: reached_aim_of(effect:))
 }
 
-/// A Proxy that starts its child on each unit its area strikes makes that unit the
-/// child's primary target, so an Interrupt Armor or Absorption row of the child aimed at it
-/// fails the load: Interrupt Armor and an absorb on a struck unit are not built.
-/// `spell4_id` is the spell with the Proxy `proxy_effect_id` and `modifiers` the child's. A
-/// child made on the caster, and a row that includes the caster, are read.
-pub fn proxy_modifiers_read(
-  spell4_id spell4_id: Int,
-  proxy_effect_id proxy_effect_id: Int,
-  target target: ProxyTarget,
-  modifiers modifiers: List(PropertyModifier),
+/// A spell a Proxy starts on each unit its area strikes has that unit as its primary
+/// target, so a shield heal, an Interrupt Armor row or an absorb of the spell aimed at it
+/// fails the load: none is built on a struck unit. A spell started on the caster, and a row
+/// that includes the caster, are read (`place`).
+fn not_on_a_struck_unit(
+  place place: RowPlace,
+  aim aim: Aim,
+  refused refused: fn(StruckBy) -> PlanError,
 ) -> Result(Nil, PlanError) {
-  case target {
-    OnCaster -> Ok(Nil)
-    OnEachStruck ->
-      case
-        list.find(modifiers, fn(modifier) {
-          modifier_aim(modifier:) == AimsAtPrimaryTarget
-        })
-      {
-        Ok(modifier) -> {
-          let effect_id = modifier.effect_id.value
-          Error(case modifier.change {
-            AbsorbChange(..) ->
-              AbsorptionOnStruckUnit(spell4_id:, proxy_effect_id:, effect_id:)
-            PropertyChange(..) | LookChange(..) ->
-              InterruptArmorOnStruckUnit(
-                spell4_id:,
-                proxy_effect_id:,
-                effect_id:,
-              )
-          })
-        }
-        Error(Nil) -> Ok(Nil)
-      }
+  case place.struck_by, aim {
+    Some(by), AimsAtPrimaryTarget -> Error(refused(by))
+    Some(..), AimsAtCaster
+    | Some(..), AimsAtArea
+    | Some(..), AimsAtBoth
+    | Some(..), OtherAim(..)
+    | None, _
+    -> Ok(Nil)
   }
+}
+
+/// The refusal of a property row on a struck unit: an absorb gives `AbsorptionOnStruckUnit`
+/// and an Interrupt Armor row `InterruptArmorOnStruckUnit`.
+fn modifier_not_on_a_struck_unit(
+  place place: RowPlace,
+  modifier modifier: PropertyModifier,
+) -> Result(Nil, PlanError) {
+  not_on_a_struck_unit(place:, aim: modifier_aim(modifier:), refused: fn(by) {
+    let effect_id = modifier.effect_id.value
+    case modifier.change {
+      AbsorbChange(..) ->
+        AbsorptionOnStruckUnit(
+          spell4_id: by.spell4_id,
+          proxy_effect_id: by.proxy_effect_id,
+          effect_id:,
+        )
+      PropertyChange(..) | LookChange(..) ->
+        InterruptArmorOnStruckUnit(
+          spell4_id: by.spell4_id,
+          proxy_effect_id: by.proxy_effect_id,
+          effect_id:,
+        )
+    }
+  })
 }
 
 /// A UnitPropertyModifier row's change (`Spell4Effects.effectType.11.change`): dataBits00
@@ -2647,39 +2587,28 @@ fn property_of(
   ))
 }
 
-/// The ForcedMove effects of a spell whose targetFlags include the caster
-/// (`effect_kind.is_row_read`; `Spell4Effects.effectType.3.player`). Its caster apply
-/// prerequisite is read as a Fluff effect's is (`condition_of`); a row aimed only at
-/// other units is left out.
-fn forced_moves_of(
+/// One ForcedMove row whose targetFlags include the caster (`effect_kind.is_row_read`;
+/// `Spell4Effects.effectType.3.player`). Its caster apply prerequisite is read as a Fluff
+/// effect's is (`condition_of`).
+fn forced_move_of(
   tables tables: table_store.Tables,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(ForcedMove), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.ForcedMove
-    && effect_kind.is_row_read(
-      effect_type: effect.effect_type,
-      target_flags: effect.target_flags,
-    )
-  })
-  |> list.try_map(fn(effect) {
-    use condition <- result.try(condition_of(
-      tables:,
-      effect:,
-      data_bits06_names_a_gate: False,
-    ))
-    Ok(ForcedMove(
-      effect_id: Spell4EffectsId(effect.id),
-      phase_flags: effect.phase_flags,
-      delay_ms: effect.delay_time,
-      condition:,
-      tag: tag_of(effect:),
-    ))
-  })
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(ForcedMove, PlanError) {
+  use condition <- result.map(condition_of(
+    tables:,
+    effect:,
+    data_bits06_names_a_gate: False,
+  ))
+  ForcedMove(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    delay_ms: effect.delay_time,
+    condition:,
+    tag: tag_of(effect:),
+  )
 }
 
-/// The ModifySpellCooldown effects of a spell whose targetFlags include the caster
+/// One ModifySpellCooldown row whose targetFlags include the caster
 /// (`effect_kind.is_row_read`; `Spell4Effects.effectType.73`): dataBits00 picks the
 /// spells (0 a Spell4Base, 1 a Spell4, 2 a spell group, 3 a cooldown group, any other
 /// value every spell), dataBits01 is the id it compares, dataBits02 the operation and
@@ -2687,67 +2616,44 @@ fn forced_moves_of(
 /// kept as given and no row is looked up: the client compares it and looks nothing up
 /// (`0x14046b920`), so an id no row holds matches nothing on both sides, where a type
 /// 80 row's selector must name a row. Its caster apply prerequisite is read as a Fluff
-/// effect's is (`condition_of`); a row aimed only at other units is left out.
-fn cooldown_modifiers_of(
+/// effect's is (`condition_of`).
+fn cooldown_modifier_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(CooldownModifier), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.CooldownModifier
-    && effect_kind.is_row_read(
-      effect_type: effect.effect_type,
-      target_flags: effect.target_flags,
-    )
-  })
-  |> list.try_map(fn(effect) {
-    use operation <- result.try(cooldown_operation_of(spell4_id:, effect:))
-    use condition <- result.try(condition_of(
-      tables:,
-      effect:,
-      data_bits06_names_a_gate: False,
-    ))
-    Ok(CooldownModifier(
-      effect_id: Spell4EffectsId(effect.id),
-      phase_flags: effect.phase_flags,
-      modifier: cooldown.Modifier(
-        selector: case effect.data_bits00 {
-          0 -> cooldown.Base(Spell4BaseId(effect.data_bits01))
-          1 -> cooldown.Spell(Spell4Id(effect.data_bits01))
-          2 -> cooldown.SpellGroup(effect.data_bits01)
-          3 -> cooldown.CooldownGroup(effect.data_bits01)
-          selector -> cooldown.EverySpell(selector:)
-        },
-        operation:,
-      ),
-      row: lasting_row_of(effect:),
-      condition:,
-      tag: tag_of(effect:),
-    ))
-  })
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(CooldownModifier, PlanError) {
+  use operation <- result.try(cooldown_operation_of(spell4_id:, effect:))
+  use condition <- result.map(condition_of(
+    tables:,
+    effect:,
+    data_bits06_names_a_gate: False,
+  ))
+  CooldownModifier(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    modifier: cooldown.Modifier(
+      selector: case effect.data_bits00 {
+        0 -> cooldown.Base(Spell4BaseId(effect.data_bits01))
+        1 -> cooldown.Spell(Spell4Id(effect.data_bits01))
+        2 -> cooldown.SpellGroup(effect.data_bits01)
+        3 -> cooldown.CooldownGroup(effect.data_bits01)
+        selector -> cooldown.EverySpell(selector:)
+      },
+      operation:,
+    ),
+    row: lasting_row_of(effect:),
+    condition:,
+    tag: tag_of(effect:),
+  )
 }
 
-/// The Stealth effects of a spell (`Spell4Effects.effectType.83`). Each must aim at the
-/// caster alone (`Spell4Effects.targetFlags` 1), have no target apply prerequisite and
-/// no delayTime or durationTime, or the load fails; its dataBits02 is whether damage
+/// One Stealth effect (`Spell4Effects.effectType.83`) as a row, or the error that fails the
+/// load. It must aim at the caster alone (`Spell4Effects.targetFlags` 1), have no target
+/// apply prerequisite and no delayTime or durationTime; its dataBits02 is whether damage
 /// ends it (`Breaks`), and its caster apply prerequisite is read as a Fluff effect's is
 /// (`condition_of`). With no durationTime the stealth lasts until it is removed whatever
 /// the row's flags say (`Spell4Effects.effectType.83`), so the row's node never ends by
 /// time.
-fn stealth_of(
-  tables tables: table_store.Tables,
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(StealthRow), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.Stealth
-  })
-  |> list.try_map(fn(effect) { stealth_row_of(tables:, spell4_id:, effect:) })
-}
-
-/// One Stealth effect as a row, or the error that fails the load (`stealth_of`).
 fn stealth_row_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -2813,24 +2719,8 @@ pub fn stealth_on_the_caster(
   }
 }
 
-/// The RemoveStealth effects of a spell (`Spell4Effects.effectType.84`), each aimed at
-/// the caster alone and with no target apply prerequisite, or the load fails.
-fn remove_stealth_of(
-  tables tables: table_store.Tables,
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(List(RemoveStealthRow), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.RemoveStealth
-  })
-  |> list.try_map(fn(effect) {
-    remove_stealth_row_of(tables:, spell4_id:, effect:)
-  })
-}
-
-/// One RemoveStealth effect as a row, or the error that fails the load
-/// (`remove_stealth_of`).
+/// One RemoveStealth effect (`Spell4Effects.effectType.84`) as a row, or the error that fails
+/// the load: it must aim at the caster alone and have no target apply prerequisite.
 fn remove_stealth_row_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -2858,51 +2748,41 @@ fn remove_stealth_row_of(
 fn procs_of(
   tables tables: table_store.Tables,
   sources sources: Sources,
-  spell4_id spell4_id: Int,
-  effects effects: List(spell4_effects.Spell4Effects),
+  readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
   chain chain: List(Int),
 ) -> Result(List(ProcRow), PlanError) {
-  effects
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.Proc
-  })
-  |> list.try_fold([], fn(found, effect) {
-    case proc_read(spell4_id:, effect:) {
-      Error(ProcKindNotRead(..)) -> Ok(found)
-      Error(error) -> Error(error)
-      Ok(reading) -> {
-        use condition <- result.try(condition_of(
+  rows_of_kind(readings:, kind: effect_kind.Proc)
+  |> list.try_map(fn(row) {
+    let #(effect, reading) = row
+    use reading <- result.try(reading)
+    case reading {
+      Applied(PlannedProc(reading: proc, condition:)) -> {
+        use spell <- result.try(spell_of(
           tables:,
-          effect:,
-          data_bits06_names_a_gate: False,
+          sources:,
+          spell4_id: effect.data_bits01,
+          chain:,
+          threshold_costs: [],
+          struck_by: None,
         ))
-        use spell <- result.try(
-          spell_of(
-            tables:,
-            sources:,
-            spell4_id: effect.data_bits01,
-            chain:,
-            threshold_costs: [],
-          ),
-        )
         Ok([
           ProcRow(
             effect_id: Spell4EffectsId(effect.id),
             phase_flags: effect.phase_flags,
-            trigger: reading.trigger,
+            trigger: proc.trigger,
             spell:,
-            window_ms: reading.window_ms,
-            count: reading.count,
+            window_ms: proc.window_ms,
+            count: proc.count,
             row: lasting_row_of(effect:),
             condition:,
             tag: tag_of(effect:),
           ),
-          ..found
         ])
       }
+      Applied(..) | Held(..) | LeftOut(..) | ReadByArea -> Ok([])
     }
   })
-  |> result.map(list.reverse)
+  |> result.map(list.flatten)
 }
 
 /// 1.0 as the 32 float bits a Proc row's chance column (dataBits02) holds.
@@ -2982,128 +2862,470 @@ pub fn proc_read(
 }
 
 /// The Spell4 ids among `effects` that a Proxy starts as a child on each struck unit: a
-/// Proxy aimed at the area, or at the area and the primary target (`target_of`).
+/// Proxy aimed at the area, or at the area and the primary target (`target_of`), each with
+/// the first such Proxy in `effects` order.
 pub fn struck_unit_children(
   effects effects: List(spell4_effects.Spell4Effects),
-) -> Set(Int) {
-  list.filter_map(effects, fn(effect) {
+) -> Dict(Int, StruckBy) {
+  list.fold(effects, dict.new(), fn(found, effect) {
     case
       effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
       && effect.data_bits00 != 0
     {
       True ->
         case aim_of(target_flags: effect.target_flags) {
-          AimsAtArea | AimsAtBoth -> Ok(effect.data_bits00)
-          AimsAtCaster | AimsAtPrimaryTarget | OtherAim(..) -> Error(Nil)
+          AimsAtArea | AimsAtBoth ->
+            case dict.has_key(found, effect.data_bits00) {
+              True -> found
+              False ->
+                dict.insert(
+                  found,
+                  effect.data_bits00,
+                  StruckBy(
+                    spell4_id: effect.spell_id,
+                    proxy_effect_id: effect.id,
+                  ),
+                )
+            }
+          AimsAtCaster | AimsAtPrimaryTarget | OtherAim(..) -> found
         }
-      False -> Error(Nil)
+      False -> found
     }
   })
-  |> set.from_list
 }
 
-/// Whether the plan reads this effect row: its type is read for its aim
-/// (`effect_kind.is_row_read`) and, for a DisguiseOutfit row, it names no outfit and a display
-/// (`disguise_displays_of`), has no target apply prerequisite and has a life (a durationTime or
-/// flags bit 2, `lasting.has_life`, which the cast rule applies too), and, for a Stealth,
-/// RemoveStealth, Proc, HealShields, InterruptArmor or Absorption row,
-/// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
-/// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
-/// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
-/// struck unit, which fails the load, `proxy_heals_read`; and an Interrupt Armor row
-/// aimed at the primary target of such a spell, `proxy_modifiers_read`, or whose dataBits01
-/// the plan does not read, `interrupt_armor_read`; and an Absorption row the plan refuses:
-/// a non-finite number, a formula parameter the caster's value does not read, a tickTime,
-/// no life, an amount of 0 for every caster, or an aim at the primary target of such a
-/// spell, `absorption_read`, or that stands behind a target apply prerequisite, which no go
-/// applies). A Fluff, Scale or RavelSignal
-/// row is read when its aim is one the plan reads (`lasting_aim_of`) and no target apply
-/// prerequisite stands before it, which no go applies; a SpellForceRemove row also when its
-/// counts agree (`force_remove_counts_read`). A SpellForceRemove row whose dataBits01 names
-/// no row fails the load too, and so does a DisguiseOutfit row whose display has no ItemDisplay,
-/// Item2Type or ItemSlot row or whose item type has no slot (`display_slot`), which this check
-/// cannot see without the tables. The coverage
-/// measure counts the other rows as not read, so it and the plan cannot disagree.
-pub fn effect_row_read(
-  effect effect: spell4_effects.Spell4Effects,
-  struck_children struck_children: Set(Int),
+/// Whether a spell with these innate costs spends every point held, which gives each of
+/// its effect rows a tag the rule must read (`spend_tag_read`).
+fn spends_all_of(costs costs: List(Cost)) -> Bool {
+  list.any(costs, fn(cost) {
+    case cost {
+      SpendAllCost(..) -> True
+      SlotCost(..)
+      | ClassVitalCost(..)
+      | UnheldCost(..)
+      | UnreadSpendCost(..) -> False
+    }
+  })
+}
+
+/// Whether the Spell4 row spends every point held, by its two innate costs, as the plan of
+/// the spell reads them; false when a cost or its class row is not one the plan reads, since
+/// that spell fails its own plan. A stage's threshold costs carry no EMM id, so they never
+/// make a spell spend every point.
+pub fn spends_all(
+  tables tables: table_store.Tables,
+  row row: spell4.Spell4,
 ) -> Bool {
-  effect_kind.is_row_read(
-    effect_type: effect.effect_type,
-    target_flags: effect.target_flags,
-  )
-  && case effect_kind.kind_of(effect.effect_type) {
-    effect_kind.Stealth ->
-      result.is_ok(stealth_read(spell4_id: effect.spell_id, effect:))
-    effect_kind.RemoveStealth ->
-      result.is_ok(stealth_on_the_caster(spell4_id: effect.spell_id, effect:))
-    effect_kind.Proc ->
-      result.is_ok(proc_read(spell4_id: effect.spell_id, effect:))
-    effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
-      lasting_row_applied(effect:)
-    effect_kind.ForceRemove ->
-      lasting_row_applied(effect:)
-      && result.is_ok(force_remove_counts_read(
-        spell4_id: effect.spell_id,
-        effect:,
-      ))
-    effect_kind.ShieldHeal ->
-      shield_heal_of(spell4_id: effect.spell_id, effect:, condition: Always)
-      |> result.map(fn(heal) {
-        case heal {
-          ShieldHeal(..) ->
-            not_on_a_struck_unit(
-              aim: heal.aim,
-              spell4_id: effect.spell_id,
-              struck_children:,
-            )
-          TickingShieldHeal(..) -> False
-        }
-      })
-      |> result.unwrap(or: False)
-    effect_kind.InterruptArmor ->
-      interrupt_armor_read(spell4_id: effect.spell_id, effect:)
-      |> result.map(fn(armor) {
-        not_on_a_struck_unit(
-          aim: armor.aim,
-          spell4_id: effect.spell_id,
-          struck_children:,
-        )
-      })
-      |> result.unwrap(or: False)
-    effect_kind.Absorption ->
-      absorption_read(spell4_id: effect.spell_id, effect:)
-      |> result.map(fn(absorption) {
-        effect.prerequisite_id_target_apply == 0
-        && not_on_a_struck_unit(
-          aim: absorption.aim,
-          spell4_id: effect.spell_id,
-          struck_children:,
-        )
-      })
-      |> result.unwrap(or: False)
-    effect_kind.DisguiseOutfit ->
-      result.is_ok(disguise_displays_of(spell4_id: effect.spell_id, effect:))
-      && effect.prerequisite_id_target_apply == 0
-      && { effect.duration_time > 0 || has_flag(flags: effect.flags, bit: 2) }
-    effect_kind.Proxy
-    | effect_kind.Damage
-    | effect_kind.VitalModifier
-    | effect_kind.CrowdControl
-    | effect_kind.PropertyModifier
-    | effect_kind.PropertyConversion
-    | effect_kind.ForcedMove
-    | effect_kind.CooldownModifier
-    | effect_kind.ShieldOverload
-    | effect_kind.Unread(..) -> True
+  case
+    spell4_base.get(tables:, id: Spell4BaseId(row.spell4_base_id_base_spell))
+  {
+    Error(Nil) -> False
+    Ok(base) ->
+      case
+        costs_of(tables:, row:, base:, costs: [
+          #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
+          #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
+        ])
+      {
+        Ok(costs) -> spends_all_of(costs:)
+        Error(..) -> False
+      }
   }
 }
 
-/// Whether a lasting row's aim is one the plan reads and no target apply prerequisite
-/// stands before it, which no go applies.
-fn lasting_row_applied(effect effect: spell4_effects.Spell4Effects) -> Bool {
-  result.is_ok(lasting_aim_of(spell4_id: effect.spell_id, effect:))
-  && effect.prerequisite_id_target_apply == 0
+/// Plans one spell on its own, as a pressed ability, and every spell below it, or why it
+/// cannot be planned: the plan's load of a spell, whichever Spell4 row names it.
+pub fn spell_alone(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+) -> Result(Spell, PlanError) {
+  spell_of(
+    tables:,
+    sources:,
+    spell4_id:,
+    chain: [],
+    threshold_costs: [],
+    struck_by: None,
+  )
+}
+
+/// A row's reading or the error that fails the load of its spell.
+type Reading =
+  Result(RowReading, PlanError)
+
+/// The readings of the rows of these kinds, in row order.
+fn rows_of_kind(
+  readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
+  kind kind: effect_kind.Kind,
+) -> List(#(spell4_effects.Spell4Effects, Reading)) {
+  list.filter(readings, fn(row) {
+    effect_kind.kind_of({ row.0 }.effect_type) == kind
+  })
+}
+
+/// Whether no row of these kinds is refused: the first error among their readings, in
+/// row order.
+fn rows_read(
+  readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
+  kinds kinds: List(effect_kind.Kind),
+) -> Result(Nil, PlanError) {
+  list.try_each(readings, fn(row) {
+    case list.contains(kinds, effect_kind.kind_of({ row.0 }.effect_type)) {
+      True -> result.map(row.1, fn(_) { Nil })
+      False -> Ok(Nil)
+    }
+  })
+}
+
+/// The rows of a spell's lists, in row order, taken from the readings of its effects.
+type RowLists {
+  RowLists(
+    gains: List(Gain),
+    lasting: List(Lasting),
+    removes: List(ForceRemove),
+    controls: List(CrowdControl),
+    modifiers: List(PropertyModifier),
+    armors: List(PropertyModifier),
+    forced_moves: List(ForcedMove),
+    cooldown_modifiers: List(CooldownModifier),
+    stealth: List(StealthRow),
+    remove_stealth: List(RemoveStealthRow),
+    shield_heals: List(ShieldHeal),
+  )
+}
+
+/// Each row an `Applied` or `Held` reading holds, in the list of its kind. A Proxy's and a
+/// Proc's row are made by the spell itself, which plans the spell each names.
+fn lists_of(
+  readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
+) -> RowLists {
+  let empty = RowLists([], [], [], [], [], [], [], [], [], [], [])
+  let lists =
+    list.fold(readings, empty, fn(lists, row) {
+      case row.1 {
+        Ok(Applied(planned)) | Ok(Held(planned)) ->
+          case planned {
+            PlannedGain(gain:) ->
+              RowLists(..lists, gains: [gain, ..lists.gains])
+            PlannedLasting(lasting:) ->
+              RowLists(..lists, lasting: [lasting, ..lists.lasting])
+            PlannedRemove(remove:) ->
+              RowLists(..lists, removes: [remove, ..lists.removes])
+            PlannedControl(control:) ->
+              RowLists(..lists, controls: [control, ..lists.controls])
+            PlannedModifier(modifier:) ->
+              case modifier.armor {
+                Some(..) ->
+                  RowLists(..lists, armors: [modifier, ..lists.armors])
+                None ->
+                  RowLists(..lists, modifiers: [modifier, ..lists.modifiers])
+              }
+            PlannedForcedMove(forced_move:) ->
+              RowLists(..lists, forced_moves: [
+                forced_move,
+                ..lists.forced_moves
+              ])
+            PlannedCooldownModifier(modifier:) ->
+              RowLists(..lists, cooldown_modifiers: [
+                modifier,
+                ..lists.cooldown_modifiers
+              ])
+            PlannedStealth(stealth:) ->
+              RowLists(..lists, stealth: [stealth, ..lists.stealth])
+            PlannedRemoveStealth(remove:) ->
+              RowLists(..lists, remove_stealth: [remove, ..lists.remove_stealth])
+            PlannedShieldHeal(heal:) ->
+              RowLists(..lists, shield_heals: [heal, ..lists.shield_heals])
+            PlannedProc(..) | PlannedProxy(..) -> lists
+          }
+        Ok(LeftOut(..)) | Ok(ReadByArea) | Error(..) -> lists
+      }
+    })
+  RowLists(
+    gains: list.reverse(lists.gains),
+    lasting: list.reverse(lists.lasting),
+    removes: list.reverse(lists.removes),
+    controls: list.reverse(lists.controls),
+    modifiers: list.reverse(lists.modifiers),
+    armors: list.reverse(lists.armors),
+    forced_moves: list.reverse(lists.forced_moves),
+    cooldown_modifiers: list.reverse(lists.cooldown_modifiers),
+    stealth: list.reverse(lists.stealth),
+    remove_stealth: list.reverse(lists.remove_stealth),
+    shield_heals: list.reverse(lists.shield_heals),
+  )
+}
+
+/// An effect of a spell that spends every point held must hold an emmComparison the rule
+/// reads (0 or 1), since each effect's tag chooses by the points spent; a spell with no
+/// such cost chooses nothing and its tags are not looked at.
+fn spend_tag_read(
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Nil, PlanError) {
+  use <- bool.guard(
+    when: !place.spends_all || spend.tag_is_read(tag_of(effect:)),
+    return: Ok(Nil),
+  )
+  Error(SpendComparisonNotRead(
+    spell4_id: effect.spell_id,
+    effect_id: effect.id,
+    comparison: effect.emm_comparison,
+  ))
+}
+
+/// The row as `Held` when its condition is behind a target apply prerequisite, which no go
+/// applies (`cast.condition_gate`), and else `Applied`.
+fn by_condition(
+  row row: PlannedRow,
+  condition condition: Condition,
+) -> RowReading {
+  case condition {
+    GatedOnTarget(..) -> Held(row)
+    Always | GatedOnCaster(..) | GatedOnCasterAndTarget(..) -> Applied(row)
+  }
+}
+
+/// What the plan makes of one Spell4Effects row, in the place its spell is planned: the
+/// one decision the plan's lists are made from and the coverage measure counts by.
+///
+/// - `Applied` and `Held` rows are in a list of their spell (`Held`: no go applies them),
+///   `LeftOut` rows are in none and the load goes on, and a damage row is `ReadByArea`.
+/// - An error is what fails the load of the row's spell: a row the tables lack, a column
+///   the plan does not read, a spell that spends every point with a tag the rule does not
+///   read, or a heal, armor or absorb on the primary target of a spell a Proxy starts on
+///   each struck unit (`place`).
+/// - Each row is read by the rule of its type: `gain_row_of`, `lasting_of`, `remove_of`,
+///   `control_of`, `modifier_of`, `interrupt_armor_of`, `forced_move_of`,
+///   `cooldown_modifier_of`, `stealth_row_of`, `remove_stealth_row_of`, `shield_heal_of`,
+///   `proc_read`, and for a Proxy `target_of` and `proxy_condition_of`.
+///
+/// A Proxy's child and a Proc's spell are planned by the spell that holds the row; a
+/// refused child is counted on the child's own rows.
+pub fn read_row(
+  tables tables: table_store.Tables,
+  spell_groups spell_groups: Set(Int),
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  use Nil <- result.try(spend_tag_read(place:, effect:))
+  let spell4_id = effect.spell_id
+  let reaches =
+    effect_kind.is_row_read(
+      effect_type: effect.effect_type,
+      target_flags: effect.target_flags,
+    )
+  case effect_kind.kind_of(effect.effect_type) {
+    effect_kind.VitalModifier ->
+      gain_row_of(tables:, spell4_id:, effect:)
+      |> result.map(fn(gain) {
+        case gain {
+          Gain(..) -> Applied(PlannedGain(gain:))
+          TickingGain(..) -> Held(PlannedGain(gain:))
+        }
+      })
+    effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
+      lasting_reading(tables:, spell4_id:, effect:)
+    effect_kind.ShieldOverload -> {
+      use <- when_reached(reaches:)
+      lasting_reading(tables:, spell4_id:, effect:)
+    }
+    effect_kind.ForceRemove ->
+      remove_of(tables:, spell_groups:, spell4_id:, effect:)
+      |> result.map(fn(remove) {
+        by_condition(row: PlannedRemove(remove:), condition: remove.condition)
+      })
+    effect_kind.CrowdControl ->
+      control_of(spell4_id:, effect:)
+      |> result.map(fn(control) { Applied(PlannedControl(control:)) })
+    effect_kind.PropertyModifier
+    | effect_kind.PropertyConversion
+    | effect_kind.DisguiseOutfit
+    | effect_kind.Absorption -> {
+      use <- when_reached(reaches:)
+      modifier_reading(tables:, place:, spell4_id:, effect:)
+    }
+    effect_kind.InterruptArmor -> {
+      use <- when_reached(reaches:)
+      interrupt_armor_reading(tables:, place:, spell4_id:, effect:)
+    }
+    effect_kind.ForcedMove -> {
+      use <- when_reached(reaches:)
+      forced_move_of(tables:, effect:)
+      |> result.map(fn(forced_move) {
+        by_condition(
+          row: PlannedForcedMove(forced_move:),
+          condition: forced_move.condition,
+        )
+      })
+    }
+    effect_kind.CooldownModifier -> {
+      use <- when_reached(reaches:)
+      cooldown_modifier_of(tables:, spell4_id:, effect:)
+      |> result.map(fn(modifier) {
+        by_condition(
+          row: PlannedCooldownModifier(modifier:),
+          condition: modifier.condition,
+        )
+      })
+    }
+    effect_kind.Stealth ->
+      stealth_row_of(tables:, spell4_id:, effect:)
+      |> result.map(fn(stealth) {
+        by_condition(
+          row: PlannedStealth(stealth:),
+          condition: stealth.condition,
+        )
+      })
+    effect_kind.RemoveStealth ->
+      remove_stealth_row_of(tables:, spell4_id:, effect:)
+      |> result.map(fn(remove) {
+        by_condition(
+          row: PlannedRemoveStealth(remove:),
+          condition: remove.condition,
+        )
+      })
+    effect_kind.ShieldHeal -> {
+      use <- when_reached(reaches:)
+      shield_heal_reading(tables:, place:, spell4_id:, effect:)
+    }
+    effect_kind.Proc -> proc_reading(tables:, spell4_id:, effect:)
+    effect_kind.Proxy ->
+      case effect.data_bits00 {
+        0 -> Ok(LeftOut(why: ProxyNamesNoSpell))
+        _ -> {
+          use target <- result.try(target_of(spell4_id:, effect:))
+          use condition <- result.map(proxy_condition_of(tables:, effect:))
+          Applied(PlannedProxy(target:, condition:))
+        }
+      }
+    effect_kind.Damage -> Ok(ReadByArea)
+    effect_kind.Unread(..) -> Ok(LeftOut(why: TypeNotRead))
+  }
+}
+
+/// The row as `LeftOut` when its targetFlags do not reach a unit the type is read for
+/// (`effect_kind.is_row_read`), and else what `then` makes of it.
+fn when_reached(
+  reaches reaches: Bool,
+  then then: fn() -> Result(RowReading, PlanError),
+) -> Result(RowReading, PlanError) {
+  use <- bool.guard(when: !reaches, return: Ok(LeftOut(why: AimedAtOtherUnits)))
+  then()
+}
+
+/// A Fluff, Scale, RavelSignal or area ShieldOverload row as a lasting row.
+fn lasting_reading(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  lasting_of(tables:, spell4_id:, effect:)
+  |> result.map(fn(lasting) {
+    by_condition(row: PlannedLasting(lasting:), condition: lasting.condition)
+  })
+}
+
+/// A UnitPropertyModifier, UnitPropertyConversion, DisguiseOutfit or Absorption row that
+/// reaches the caster: held when it stands behind a target apply prerequisite or, for a
+/// disguise, has no life, which no go applies (`lasting.has_life`).
+fn modifier_reading(
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  use condition <- result.try(condition_of(
+    tables:,
+    effect:,
+    data_bits06_names_a_gate: False,
+  ))
+  use modifier <- result.try(modifier_of(
+    tables:,
+    spell4_id:,
+    effect:,
+    condition:,
+  ))
+  use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
+  let planned = PlannedModifier(modifier:)
+  case modifier.change {
+    LookChange(..) ->
+      case lasting.has_life(row: lasting_row_of(effect:)) {
+        True -> by_condition(row: planned, condition:)
+        False -> Held(planned)
+      }
+    AbsorbChange(..) | PropertyChange(..) ->
+      by_condition(row: planned, condition:)
+  }
+}
+
+/// A ModifyInterruptArmor row that reaches the caster or the primary target.
+fn interrupt_armor_reading(
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  use condition <- result.try(condition_of(
+    tables:,
+    effect:,
+    data_bits06_names_a_gate: False,
+  ))
+  use modifier <- result.try(interrupt_armor_of(spell4_id:, effect:, condition:))
+  use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
+  by_condition(row: PlannedModifier(modifier:), condition:)
+}
+
+/// A HealShields row that reaches the caster or the primary target: a periodic heal is
+/// held.
+fn shield_heal_reading(
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  use condition <- result.try(condition_of(
+    tables:,
+    effect:,
+    data_bits06_names_a_gate: False,
+  ))
+  use heal <- result.try(shield_heal_of(spell4_id:, effect:, condition:))
+  use Nil <- result.map(
+    not_on_a_struck_unit(place:, aim: heal.aim, refused: fn(by) {
+      ShieldHealOnStruckUnit(
+        spell4_id: by.spell4_id,
+        proxy_effect_id: by.proxy_effect_id,
+        effect_id: effect.id,
+      )
+    }),
+  )
+  case heal {
+    ShieldHeal(..) -> by_condition(row: PlannedShieldHeal(heal:), condition:)
+    TickingShieldHeal(..) -> Held(PlannedShieldHeal(heal:))
+  }
+}
+
+/// A Proc row: left out when its kind is one the holder's own events do not make
+/// (`proc_read`), else its reading with its caster condition.
+fn proc_reading(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  case proc_read(spell4_id:, effect:) {
+    Error(ProcKindNotRead(kind:, ..)) ->
+      Ok(LeftOut(why: ProcOfAnotherKind(kind:)))
+    Error(error) -> Error(error)
+    Ok(reading) -> {
+      use condition <- result.map(condition_of(
+        tables:,
+        effect:,
+        data_bits06_names_a_gate: False,
+      ))
+      Applied(PlannedProc(reading:, condition:))
+    }
+  }
 }
 
 /// What the spell does to the caster's stealth, from the spell's spellCastStealthChange:
@@ -3224,14 +3446,14 @@ fn lasting_aim_of(
 /// some Spell4GroupList row holds), a Spell4 or a Spell4Base the tables have.
 fn selector_of(
   tables tables: table_store.Tables,
-  sources sources: Sources,
+  spell_groups spell_groups: Set(Int),
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(lasting.Selector, PlanError) {
   let named = effect.data_bits01
   case effect.data_bits00 {
     1 ->
-      case set.contains(sources.known_groups, named) {
+      case set.contains(spell_groups, named) {
         True -> Ok(lasting.Group(spell_group_id: named))
         False -> Error(NoRow(table: "Spell4GroupList", id: named))
       }
@@ -3285,36 +3507,6 @@ fn stack_of(
 /// emmValue (`Spell4Effects.emmComparison`).
 pub fn tag_of(effect effect: spell4_effects.Spell4Effects) -> spend.Tag {
   spend.tag_of(comparison: effect.emm_comparison, value: effect.emm_value)
-}
-
-/// A spell that spends every point held has an n, which each of its effects' tags
-/// chooses by, so each must be one the rule reads (emmComparison 0 or 1). A spell
-/// with no such cost chooses nothing and its tags are not looked at.
-fn spend_tags_read(
-  spell4_id spell4_id: Int,
-  costs costs: List(Cost),
-  effects effects: List(spell4_effects.Spell4Effects),
-) -> Result(Nil, PlanError) {
-  let spends =
-    list.any(costs, fn(cost) {
-      case cost {
-        SpendAllCost(..) -> True
-        SlotCost(..)
-        | ClassVitalCost(..)
-        | UnheldCost(..)
-        | UnreadSpendCost(..) -> False
-      }
-    })
-  use <- bool.guard(when: !spends, return: Ok(Nil))
-  case list.find(effects, fn(effect) { !spend.tag_is_read(tag_of(effect:)) }) {
-    Ok(effect) ->
-      Error(SpendComparisonNotRead(
-        spell4_id:,
-        effect_id: effect.id,
-        comparison: effect.emm_comparison,
-      ))
-    Error(Nil) -> Ok(Nil)
-  }
 }
 
 /// The resource slot of a gain's vital: 6 (Resource1) is slot 1 and 8 (Resource3)

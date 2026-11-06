@@ -37,11 +37,20 @@ import genesis_prime/coverage/measurement.{
 }
 import genesis_prime/coverage/starting_ability.{MissingRow}
 import genesis_prime/game/spell_plan.{Spell}
+import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/item2_type
+import genesis_prime/table/item_display
+import genesis_prime/table/item_slot
 import genesis_prime/table/loader/store
+import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
+import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_group_list
+import genesis_prime/table/unit_property2
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -62,21 +71,61 @@ fn engine_named(name: String) -> EngineDeclaration {
   found
 }
 
+/// The tables the plan's decision about an effect row reads, planted with no row beside
+/// the Spell4Effects rows given, so a row that names a prerequisite, a spell, a spell group,
+/// a property or a display finds none (`spell_plan.read_row`).
+fn planted_files(
+  rows rows: List(List(planted_table.Cell)),
+) -> List(#(String, BitArray)) {
+  [
+    planted_table.file(spell4_effects.schema, rows),
+    planted_table.file(spell4.schema, []),
+    planted_table.file(spell4_base.schema, []),
+    planted_table.file(spell4_group_list.schema, []),
+    planted_table.file(class.schema, []),
+    planted_table.file(prerequisite_table.schema, []),
+    planted_table.file(positional_requirement.schema, []),
+    planted_table.file(unit_property2.schema, []),
+    planted_table.file(item_display.schema, []),
+    planted_table.file(item2_type.schema, []),
+    planted_table.file(item_slot.schema, []),
+  ]
+}
+
+fn planted_entries() -> List(store.Entry) {
+  [
+    spell4_effects.entry(),
+    spell4.entry(),
+    spell4_base.entry(),
+    spell4_group_list.entry(),
+    class.entry(),
+    prerequisite_table.entry(),
+    positional_requirement.entry(),
+    unit_property2.entry(),
+    item_display.entry(),
+    item2_type.entry(),
+    item_slot.entry(),
+  ]
+}
+
 /// The measure of the effect types over these planted Spell4Effects rows, with no starting
 /// abilities.
 fn measure_planted(rows rows: List(List(planted_table.Cell))) -> Measurement {
-  use folder <- planted_table.in_folder([
-    planted_table.file(spell4_effects.schema, rows),
-  ])
+  measure_planted_over(files: planted_files(rows:))
+}
+
+/// The same over these planted files, which hold the tables `planted_files` names.
+fn measure_planted_over(files files: List(#(String, BitArray))) -> Measurement {
+  use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
     store.load(
       under: owned_key.new(),
       from: folder,
-      entries: [spell4_effects.entry()],
+      entries: planted_entries(),
       requirements: [],
       derivations: [],
     )
-    as "a planted Spell4Effects table loads"
+    as "the planted tables load"
   let measured =
     measurement.measure(
       EngineDeclaration(
@@ -338,7 +387,7 @@ const lasting_gap =
   "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies"
 
 const force_remove_gap =
-  "rows aimed by flags the plan refuses, behind a target prerequisite or with differing stack counts (dataBits03 and dataBits04), which no go applies or the plan refuses; a selector that names no row fails the load and is not counted"
+  "rows aimed by flags the plan refuses, behind a target prerequisite, with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which no go applies or the plan refuses"
 
 const signal_gap =
   "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies; the script a signal stands for is not in the client"
@@ -357,13 +406,28 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
   assert declared.partial
     == [
       Missing(
+        type_number: 1,
+        reason: "rows aimed at another unit, changing a vital other than 6 and 8, behind a target apply prerequisite or periodic (tickTime), which the plan refuses or holds and no go applies",
+        fact_key: "Spell4Effects.effectType.1",
+      ),
+      Missing(
         type_number: 3,
-        reason: "rows, or parts of rows, aimed at another unit: the next step",
+        reason: "rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
+        type_number: 4,
+        reason: "rows holding a state other than Stun and Knockdown, aimed at the caster or by a flag the plan refuses, or behind an apply prerequisite, which the plan refuses",
+        fact_key: "Spell4Effects.effectType.4",
+      ),
+      Missing(
+        type_number: 8,
+        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses",
+        fact_key: "0x140566ad0",
+      ),
+      Missing(
         type_number: 11,
-        reason: "rows, or parts of rows, aimed at another unit: the next step",
+        reason: "rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
@@ -382,6 +446,11 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
         fact_key: "Spell4Effects.effectType.18",
       ),
       Missing(
+        type_number: 26,
+        reason: "rows whose dataBits00 names no spell (the plan holds no Proxy for them) or that are aimed by a flag the plan refuses",
+        fact_key: "Spell4Effects.effectType.26",
+      ),
+      Missing(
         type_number: 29,
         reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, whose amount is 0 for every caster (which of dataBits00 and dataBits01 is the amount when the other is 0 is not read), behind a target apply prerequisite, or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
         fact_key: "Spell4Effects.effectType.29",
@@ -398,7 +467,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ),
       Missing(
         type_number: 73,
-        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
+        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies",
         fact_key: "Spell4Effects.effectType.73",
       ),
       Missing(
@@ -428,7 +497,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ),
       Missing(
         type_number: 118,
-        reason: "rows aimed at another unit, periodic (tickTime) or with a formula parameter the plan refuses",
+        reason: "rows aimed at another unit, periodic (tickTime), behind a target apply prerequisite or with a formula parameter the plan refuses",
         fact_key: "Spell4Effects.effectType.118",
       ),
       Missing(
@@ -499,7 +568,7 @@ pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test
   assert three.rows == 5
   assert three.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit: the next step",
+      reason: "rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies",
       fact_key: "Spell4Effects.effectType.3",
       unread_rows: 3,
     )
@@ -507,7 +576,7 @@ pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 3: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit: the next step (Spell4Effects.effectType.3)",
+    "- [x] type 3: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies (Spell4Effects.effectType.3)",
   )
     as "the line lists the rows left out with the gap's reason"
   assert string.contains(text, "2 of 2 types handled (50.0% of rows)")
@@ -519,29 +588,33 @@ pub fn the_type_11_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   use <- owned_test.run(10_000)
   // Spell4Effects.targetFlags: bit 1 is the caster; the plan reads a type 11 row that
   // includes it (flags 1, 3, 5 and 7) and leaves out one aimed only at others (2, 4 and 6).
-  // Planted: five type 11 rows, flags 1, 3, 2, 4 and 6, and one type 8 row.
+  // Planted: five type 11 rows of property 1, which UnitProperty2 holds a row for, flags
+  // 1, 3, 2, 4 and 6, and one type 8 row.
   let row = fn(id, type_, flags) {
     planted_table.row(spell4_effects.schema, [
       #("ID", planted_table.Integer(id)),
       #("effectType", planted_table.Integer(type_)),
       #("targetFlags", planted_table.Integer(flags)),
+      #("dataBits00", planted_table.Integer(1)),
     ])
   }
   let measured =
-    measure_planted(rows: [
-      row(1, 11, 1),
-      row(2, 11, 3),
-      row(3, 11, 2),
-      row(4, 11, 4),
-      row(5, 11, 6),
-      row(6, 8, 4),
-    ])
+    measure_planted_over(
+      files: planted_files_naming(rows: [
+        row(1, 11, 1),
+        row(2, 11, 3),
+        row(3, 11, 2),
+        row(4, 11, 4),
+        row(5, 11, 6),
+        row(6, 8, 4),
+      ]),
+    )
   let assert Measured(types:, ..) = measured as "the planted table is measured"
   let assert Ok(eleven) = list.find(types, fn(line) { line.type_number == 11 })
   assert eleven.rows == 5
   assert eleven.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit: the next step",
+      reason: "rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies",
       fact_key: "Spell4Effects.effectType.11",
       unread_rows: 3,
     )
@@ -549,7 +622,7 @@ pub fn the_type_11_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 11: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit: the next step (Spell4Effects.effectType.11)",
+    "- [x] type 11: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies (Spell4Effects.effectType.11)",
   )
     as "the line lists the rows left out with the gap's reason"
   assert string.contains(text, "2 of 2 types handled (50.0% of rows)")
@@ -584,7 +657,7 @@ pub fn the_type_73_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   assert line.rows == 5
   assert line.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
+      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies",
       fact_key: "Spell4Effects.effectType.73",
       unread_rows: 3,
     )
@@ -592,12 +665,12 @@ pub fn the_type_73_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 73: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps (Spell4Effects.effectType.73)",
+    "- [x] type 73: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies (Spell4Effects.effectType.73)",
   )
     as "the line lists the rows left out with the gap's reason"
 }
 
-pub fn the_clients_522_type_73_rows_count_488_handled_and_34_not_test() -> Nil {
+pub fn the_clients_522_type_73_rows_count_487_handled_and_35_not_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let assert Measured(types:, ..) =
@@ -612,11 +685,11 @@ pub fn the_clients_522_type_73_rows_count_488_handled_and_34_not_test() -> Nil {
   assert measurement.is_handled(line.status)
   assert line.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
+      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies",
       fact_key: "Spell4Effects.effectType.73",
-      unread_rows: 34,
+      unread_rows: 35,
     )
-    as "targetFlags 1 in 480 rows and 3 in 8 include the caster (488 handled); 2 in 30 rows and 4 in 4 aim only at others (34 not handled)"
+    as "targetFlags 1 in 480 rows and 3 in 8 include the caster (488); 2 in 30 rows and 4 in 4 aim only at others (34 not handled), and one of the 488, 73611, stands behind a target apply prerequisite, which no go applies (scratch count of effectType=73): 487 handled, 35 not"
 }
 
 /// The measure of planted type 83 or 84 rows beside a type 8 row, for the line of the
@@ -691,7 +764,7 @@ pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test
   assert line.rows == 4
   assert line.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, periodic (tickTime) or with a formula parameter the plan refuses",
+      reason: "rows aimed at another unit, periodic (tickTime), behind a target apply prerequisite or with a formula parameter the plan refuses",
       fact_key: "Spell4Effects.effectType.118",
       unread_rows: 3,
     )
@@ -1781,7 +1854,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_187_of_196_effect_rows_and_77_of_79_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_77_of_79_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1794,9 +1867,9 @@ pub fn the_starting_abilities_totals_hold_187_of_196_effect_rows_and_77_of_79_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 20 | 187 of 196 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 20 | 184 of 196 |",
   )
-    as "196 effect rows are left, 9 of them not handled (the two Proc rows the plan skips, 90 x4, 118 once (the Warrior's periodic row 210834, held and not applied), 24 once, and the Stalker's 91018 of type 81, behind target apply prerequisite 11311; the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145, the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime, are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine"
+    as "196 effect rows are left, 12 of them not handled (the two Proc rows the plan skips, 90 x4, 118 once (the Warrior's periodic row 210834, held and not applied), 24 once, the Stalker's 91018 of type 81, behind target apply prerequisite 11311, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches); the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145, the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime, are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine"
   assert string.contains(
     totals,
     "| Prerequisites (#47) | 232 | 49184 | 47209 | 17 | 77 of 79 |",
@@ -1990,11 +2063,52 @@ fn measured_rows_of(
       #("effectType", planted_table.Integer(effect_type)),
       #("targetFlags", planted_table.Integer(planted.0)),
       #("prerequisiteIdTargetApply", planted_table.Integer(planted.1)),
+      ..named_columns(effect_type:)
     ])
   }
-  measure_planted(
-    rows: list.index_map(rows, fn(planted, index) { row(index + 1, planted) }),
+  measure_planted_over(
+    files: planted_files_naming(
+      rows: list.index_map(rows, fn(planted, index) { row(index + 1, planted) }),
+    ),
   )
+}
+
+/// The columns a type 80 or type 145 row holds beside its aim, which name a row of a table
+/// the plan reads: a type 80 row names the spell group 5 (dataBits00 1, dataBits01 5), a type
+/// 145 row converts property 1 into property 1 (`planted_files_naming`).
+fn named_columns(
+  effect_type effect_type: Int,
+) -> List(#(String, planted_table.Cell)) {
+  case effect_type {
+    80 -> [
+      #("dataBits00", planted_table.Integer(1)),
+      #("dataBits01", planted_table.Integer(5)),
+    ]
+    145 -> [
+      #("dataBits00", planted_table.Integer(1)),
+      #("dataBits01", planted_table.Integer(1)),
+    ]
+    _ -> []
+  }
+}
+
+/// The planted files with the spell group 5 in a Spell4GroupList row and the property 1 in a
+/// UnitProperty2 row, which the rows of `named_columns` name.
+fn planted_files_naming(
+  rows rows: List(List(planted_table.Cell)),
+) -> List(#(String, BitArray)) {
+  planted_files(rows:)
+  |> planted_table.replacing(spell4_group_list.schema, [
+    planted_table.row(spell4_group_list.schema, [
+      #("ID", planted_table.Integer(1)),
+      #("spellGroupId00", planted_table.Integer(5)),
+    ]),
+  ])
+  |> planted_table.replacing(unit_property2.schema, [
+    planted_table.row(unit_property2.schema, [
+      #("ID", planted_table.Integer(1)),
+    ]),
+  ])
 }
 
 pub fn a_lasting_row_aimed_by_other_flags_or_behind_a_target_prerequisite_is_counted_as_not_read_test() -> Nil {
@@ -2038,10 +2152,17 @@ pub fn a_type_80_row_with_differing_stack_counts_is_counted_as_not_read_test() -
       #("targetFlags", planted_table.Integer(1)),
       #("dataBits03", planted_table.Integer(count_03)),
       #("dataBits04", planted_table.Integer(count_04)),
+      ..named_columns(effect_type: 80)
     ])
   }
   let assert Measured(types:, ..) =
-    measure_planted(rows: [row(1, 1, 1), row(2, 0, 0), row(3, 1, 2)])
+    measure_planted_over(
+      files: planted_files_naming(rows: [
+        row(1, 1, 1),
+        row(2, 0, 0),
+        row(3, 1, 2),
+      ]),
+    )
     as "the engine's source is a table"
   let assert Ok(line) = list.find(types, fn(line) { line.type_number == 80 })
   assert line.status
@@ -2068,7 +2189,7 @@ pub fn a_conversion_row_aimed_only_at_another_unit_is_counted_as_not_read_test()
     as "Spell4Effects.effectType.145: a row aimed at the caster is read, one aimed only at another unit is not"
 }
 
-pub fn the_clients_rows_of_types_18_81_and_145_count_14_634_and_0_not_read_and_17_and_80_375_and_503_test() -> Nil {
+pub fn the_clients_rows_of_types_18_81_and_145_count_14_634_and_0_not_read_and_17_and_80_375_and_535_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let assert Measured(types:, ..) =
@@ -2093,8 +2214,8 @@ pub fn the_clients_rows_of_types_18_81_and_145_count_14_634_and_0_not_read_and_1
     as "effectType=145: 6 rows, all aimed at the caster; 229304 is the one starting row"
   assert counted(17).0 == 10_790 && counted(17).1 == 375
     as "effectType=17: 10,790 rows, 375 aimed by other flags or behind a target apply prerequisite"
-  assert counted(80).0 == 2294 && counted(80).1 == 503
-    as "effectType=80: 2,294 rows, 503 aimed by other flags, behind a target apply prerequisite or with dataBits03 and dataBits04 differing (232 differ, 47969 the first)"
+  assert counted(80).0 == 2294 && counted(80).1 == 535
+    as "effectType=80: 2,294 rows, 503 aimed by other flags, behind a target apply prerequisite or with dataBits03 and dataBits04 differing (232 differ, 47969 the first), and 32 more whose selector names no spell group, Spell4 or Spell4Base (scratch count against the Spell4GroupList, Spell4 and Spell4Base ids, the first 59302)"
 }
 
 // ---- the disguises (type 112) ----
@@ -2131,25 +2252,58 @@ pub fn the_type_112_rows_the_plan_does_not_read_are_counted_as_not_handled_test(
       ),
     )
   }
-  let measured =
-    measure_planted(rows: [
-      row(1, 1, []),
-      row(2, 3, [
-        #("dataBits02", planted_table.Integer(0)),
-        #("dataBits01", planted_table.Integer(119)),
-        #("durationTime", planted_table.Integer(0)),
-        #("flags", planted_table.Integer(2)),
-      ]),
-      row(3, 2, []),
-      row(4, 1, [#("dataBits00", planted_table.Integer(5))]),
-      row(5, 1, [#("dataBits02", planted_table.Integer(0))]),
-      row(6, 1, [#("prerequisiteIdTargetApply", planted_table.Integer(5))]),
-      row(7, 1, [#("durationTime", planted_table.Integer(0))]),
-      planted_table.row(spell4_effects.schema, [
-        #("ID", planted_table.Integer(8)),
-        #("effectType", planted_table.Integer(8)),
-      ]),
+  // The displays 4807 and 119 are ItemDisplay rows of item type 346 (slot 64) and 51
+  // (slot 20), as the client holds them (`spell_plan_disguise_test`).
+  let rows = [
+    row(1, 1, []),
+    row(2, 3, [
+      #("dataBits02", planted_table.Integer(0)),
+      #("dataBits01", planted_table.Integer(119)),
+      #("durationTime", planted_table.Integer(0)),
+      #("flags", planted_table.Integer(2)),
+    ]),
+    row(3, 2, []),
+    row(4, 1, [#("dataBits00", planted_table.Integer(5))]),
+    row(5, 1, [#("dataBits02", planted_table.Integer(0))]),
+    row(6, 1, [#("prerequisiteIdTargetApply", planted_table.Integer(5))]),
+    row(7, 1, [#("durationTime", planted_table.Integer(0))]),
+    planted_table.row(spell4_effects.schema, [
+      #("ID", planted_table.Integer(8)),
+      #("effectType", planted_table.Integer(8)),
+    ]),
+  ]
+  let display = fn(id, item2_type) {
+    planted_table.row(item_display.schema, [
+      #("ID", planted_table.Integer(id)),
+      #("item2TypeId", planted_table.Integer(item2_type)),
     ])
+  }
+  let item_type = fn(id, slot) {
+    planted_table.row(item2_type.schema, [
+      #("ID", planted_table.Integer(id)),
+      #("itemSlotId", planted_table.Integer(slot)),
+    ])
+  }
+  let measured =
+    measure_planted_over(
+      files: planted_files(rows:)
+      |> planted_table.replacing(item_display.schema, [
+        display(119, 51),
+        display(4807, 346),
+      ])
+      |> planted_table.replacing(item2_type.schema, [
+        item_type(51, 20),
+        item_type(346, 64),
+      ])
+      |> planted_table.replacing(item_slot.schema, [
+        planted_table.row(item_slot.schema, [
+          #("ID", planted_table.Integer(20)),
+        ]),
+        planted_table.row(item_slot.schema, [
+          #("ID", planted_table.Integer(64)),
+        ]),
+      ]),
+    )
   let assert Measured(types:, ..) = measured as "the planted table is measured"
   let assert Ok(line) = list.find(types, fn(line) { line.type_number == 112 })
   assert line.rows == 7
