@@ -276,8 +276,9 @@
 ////   and its players' connections end.
 //// - **A second Join from a connection in the map** answers the record built
 ////   from the unit the map keeps, not from the new Join, keeps the new Join's stay
-////   and `alive`, sends the joiner a `SeenBy` for each player it sees again, changes
-////   nothing else and logs an error: the connection's rule joins once.
+////   but not its `alive` (the life is the connection's `LifeChanged`, so `inside` and
+////   the life never part), sends the joiner a `SeenBy` for each player it sees again,
+////   changes nothing else and logs an error: the connection's rule joins once.
 //// - **A Leave** removes the connection's player with its unit and its watch,
 ////   and is answered `Left`, so the player's connection, which lives on in
 ////   character select, is not watched by a map it has left; a later Join from
@@ -1923,6 +1924,37 @@ fn stealth_changed(
   connection connection: ConnectionId,
   stealthed stealthed: Bool,
 ) -> #(State, ServiceStep(Outgoing)) {
+  let stealth = case stealthed {
+    True -> Stealthed
+    False -> NotStealthed
+  }
+  told_about_player(
+    state:,
+    connection:,
+    about: "stealth",
+    change: fn(player) { Player(..player, stealth:) },
+    decided: fn(player) {
+      case player.readiness {
+        StillLoading -> #(player, [])
+        Loaded -> rings_decided(state:, connection:, player:)
+      }
+    },
+  )
+}
+
+/// A connection's tell about its player's own state (`StealthChanged`, `LifeChanged`):
+/// from a connection not in the map it is an error line naming `about` and changes
+/// nothing, as for `Moved`; a `change` that leaves the player as it is changes nothing and
+/// sends nothing; else the changed player is `decided` (its rings, or its creatures' news)
+/// and kept with that decision's sends.
+fn told_about_player(
+  state state: State,
+  connection connection: ConnectionId,
+  about about: String,
+  change change: fn(Player) -> Player,
+  decided decided: fn(Player) ->
+    #(Player, List(Effect(ServiceEffect(Outgoing)))),
+) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Error(Nil) -> #(
       state,
@@ -1930,24 +1962,16 @@ fn stealth_changed(
         log_error(
           state:,
           about: step.About(..step.no_one, connection: Some(connection)),
-          text: "the connection told its stealth to the map, but it is not in it",
+          text: "the connection told its "
+            <> about
+            <> " to the map, but it is not in it",
         ),
       ]),
     )
     Ok(player) -> {
-      let stealth = case stealthed {
-        True -> Stealthed
-        False -> NotStealthed
-      }
-      use <- bool.guard(when: player.stealth == stealth, return: #(
-        state,
-        Effects([]),
-      ))
-      let player = Player(..player, stealth:)
-      let #(player, effects) = case player.readiness {
-        StillLoading -> #(player, [])
-        Loaded -> rings_decided(state:, connection:, player:)
-      }
+      let changed = change(player)
+      use <- bool.guard(when: changed == player, return: #(state, Effects([])))
+      let #(player, effects) = decided(changed)
       #(
         State(..state, players: dict.insert(state.players, connection, player)),
         Effects(effects),
@@ -1969,25 +1993,14 @@ fn life_changed(
   connection connection: ConnectionId,
   alive alive: Bool,
 ) -> #(State, ServiceStep(Outgoing)) {
-  case dict.get(state.players, connection) {
-    Error(Nil) -> #(
-      state,
-      Effects([
-        log_error(
-          state:,
-          about: step.About(..step.no_one, connection: Some(connection)),
-          text: "the connection told its life to the map, but it is not in it",
-        ),
-      ]),
-    )
-    Ok(player) -> {
-      let life = case alive {
-        True -> Alive
-        False -> Dead
-      }
-      use <- bool.guard(when: player.life == life, return: #(state, Effects([])))
-      let player = Player(..player, life:)
-      let #(player, effects) = case life, player.readiness {
+  let life = life_of(alive:)
+  told_about_player(
+    state:,
+    connection:,
+    about: "life",
+    change: fn(player) { Player(..player, life:) },
+    decided: fn(player) {
+      case life, player.readiness {
         Dead, _ -> #(
           Player(..player, inside: set.new()),
           players_told_of_death(state:, connection:, player:),
@@ -1995,12 +2008,14 @@ fn life_changed(
         Alive, StillLoading -> #(player, [])
         Alive, Loaded -> rings_decided(state:, connection:, player:)
       }
-      #(
-        State(..state, players: dict.insert(state.players, connection, player)),
-        Effects(effects),
-      )
-    }
-  }
+    },
+  )
+}
+
+/// The life a connection's `alive` names.
+fn life_of(alive alive: Bool) -> Life {
+  use <- bool.guard(when: alive, return: Alive)
+  Dead
 }
 
 /// `PlayerDied` to each Live creature whose spawn the dead player sees, in spawn order:
@@ -2012,19 +2027,24 @@ fn players_told_of_death(
   connection connection: ConnectionId,
   player player: Player,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  list.flat_map(in_order(player.seen), fn(spawn) {
-    case dict.get(state.spawns, spawn) {
-      Ok(Live(unit_id:, life:, ..)) -> [
-        tell_creature(
-          state:,
-          unit_id:,
-          life:,
-          message: PlayerDied(by: connection),
-        ),
-      ]
-      Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
-    }
+  list.flat_map(seen_in_order(player), fn(spawn) {
+    tell_live(state:, spawn:, message: PlayerDied(by: connection))
   })
+}
+
+/// The send of `message` to the creature of the spawn, when its creature is Live: a
+/// spawn waiting for its creature, retiring or failed is sent nothing.
+fn tell_live(
+  state state: State,
+  spawn spawn: SpawnId,
+  message message: Outgoing,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  case dict.get(state.spawns, spawn) {
+    Ok(Live(unit_id:, life:, ..)) -> [
+      tell_creature(state:, unit_id:, life:, message:),
+    ]
+    Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
+  }
 }
 
 /// The rings the ready `player` of `connection` stands in at its place, against
@@ -2040,21 +2060,15 @@ fn rings_decided(
   let entered = in_order(set.difference(now, player.inside))
   let left = in_order(set.difference(player.inside, now))
   let player = Player(..player, inside: now)
-  let tell = fn(spawn, message) {
-    case dict.get(state.spawns, spawn) {
-      Ok(Live(unit_id:, life:, ..)) -> [
-        tell_creature(state:, unit_id:, life:, message:),
-      ]
-      Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
-    }
-  }
   #(
     player,
     list.append(
       list.flat_map(entered, fn(spawn) {
-        tell(spawn, approached(connection:, player:))
+        tell_live(state:, spawn:, message: approached(connection:, player:))
       }),
-      list.flat_map(left, fn(spawn) { tell(spawn, Withdrew(by: connection)) }),
+      list.flat_map(left, fn(spawn) {
+        tell_live(state:, spawn:, message: Withdrew(by: connection))
+      }),
     ),
   )
 }
@@ -2184,10 +2198,6 @@ fn joined(
   alive alive: Bool,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let life = case alive {
-    True -> Alive
-    False -> Dead
-  }
   case dict.get(state.players, connection) {
     Ok(player) ->
       joined_again(
@@ -2195,7 +2205,7 @@ fn joined(
         caller:,
         connection:,
         character:,
-        player: Player(..player, stay:, life:),
+        player: Player(..player, stay:),
         now_ms:,
       )
     Error(Nil) ->
@@ -2206,7 +2216,7 @@ fn joined(
         character:,
         place:,
         stay:,
-        life:,
+        life: life_of(alive:),
         now_ms:,
       )
   }
@@ -2246,19 +2256,12 @@ fn joined_again(
       ]
     })
     |> list.append(
-      seen_in_order(player)
-      |> list.filter_map(fn(spawn) {
-        case dict.get(state.spawns, spawn) {
-          Ok(Live(unit_id:, life:, ..)) ->
-            Ok(tell_creature(
-              state:,
-              unit_id:,
-              life:,
-              message: Watched(by: connection, stay: player.stay),
-            ))
-          Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
-            Error(Nil)
-        }
+      list.flat_map(seen_in_order(player), fn(spawn) {
+        tell_live(
+          state:,
+          spawn:,
+          message: Watched(by: connection, stay: player.stay),
+        )
       }),
     )
   #(

@@ -99,6 +99,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
+import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/int
 import gleam/list
@@ -3989,6 +3990,19 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
   login_support.stop(started)
 }
 
+/// Whether the creature's fight is Returning, read from its process's state: the
+/// service shell's `Running` holds the creature's state as its fourth field, whose fifth
+/// is its fight, whose second is the fight's status: an atom for Resting, else a tuple
+/// tagged by the status.
+fn creature_walks_home(creature creature: process.Pid) -> Bool {
+  let tag = decode.map(atom.decoder(), atom.to_string)
+  let status = decode.one_of(tag, [decode.at([0], tag)])
+  let assert Ok(status) =
+    decode.run(system.get_state(creature), decode.at([3, 4, 1], status))
+    as "the creature's state holds its fight's status"
+  status == "returning"
+}
+
 pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_home_and_waking_in_the_ring_is_aggroed_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
   // Jim's live report: a creature that killed a player kept attacking the body. A
@@ -4017,6 +4031,12 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
     game_client.Threatens(unit_id: dagun, other_unit_id: own, threat: 0),
   )
     as "opcode.0x90a: the Dagun erases the body's threat when it leashes"
+  // The home timer fires at once, but its firing is not in the creature's mailbox when
+  // the barrier's `get_state` is, so the test waits for the creature to leave Returning.
+  let #(_, creature) = the_dagun_and_its_map(started:, dagun:)
+  event_wait.until("the Dagun took its home timer", fn() {
+    !creature_walks_home(creature:)
+  })
   let #(settled, have) =
     read_after_the_map_and_the_creature_took_it(
       game:,

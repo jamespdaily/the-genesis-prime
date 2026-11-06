@@ -1018,9 +1018,7 @@ fn near_player_is_not_aggroed_and_one_approached_again_is(
     tell(state:, at_ms: 7000, message: approached(number: 5, x: 3.0, seq: 1))
   let #(withdrawn, _) = tell(state:, at_ms: 7100, message: gone)
   let #(_, at_home) = fire(state: withdrawn, at_ms: 11_500, timer: home)
-  assert !list.any(said(at_home), fn(line) {
-    string.starts_with(line, "0x908") || string.starts_with(line, "Threatened")
-  })
+  assert !aggroes(at_home)
     as "home: player 5 was told it is gone, so it is in no ring and is not aggroed"
   let #(again, _) =
     tell(
@@ -1052,9 +1050,7 @@ fn near_player_is_not_aggroed_and_one_approached_again_is(
     tell(state:, at_ms: 3000, message: approached(number: 5, x: 3.0, seq: 1))
   let #(withdrawn, _) = tell(state:, at_ms: 3100, message: gone)
   let #(_, stood) = fire(state: withdrawn, at_ms: 61_000, timer: corpse)
-  assert !list.any(said(stood), fn(line) {
-    string.starts_with(line, "0x908") || string.starts_with(line, "Threatened")
-  })
+  assert !aggroes(stood)
     as "corpse timer: players 2 and 5 were told they are gone, so the creature stands again and aggroes no one"
   let #(again, _) =
     tell(

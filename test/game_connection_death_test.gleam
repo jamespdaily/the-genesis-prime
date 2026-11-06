@@ -1423,39 +1423,6 @@ pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never
 // tell goes before the `StealthChanged(False)` that a death ends a stealthed player's casts
 // with (`cast.died` tells the stealth last), and a waking's goes after its frames and news.
 
-/// What the connection tells the run of its map when its player's life changes to
-/// `alive`, as the test's connection 1 and its map's run.
-fn the_map_told_life(
-  alive alive: Bool,
-) -> step.Effect(step.ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: Map(
-      map: game_connection_support.camp_map(),
-      incarnation: game_connection_support.incarnation,
-    ),
-    request: client_connection.TellLifeChanged(
-      connection: ConnectionId(1),
-      alive:,
-    ),
-  ))
-}
-
-/// The same for the player's stealth, which a death ends.
-fn the_map_told_stealth(
-  stealthed stealthed: Bool,
-) -> step.Effect(step.ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: Map(
-      map: game_connection_support.camp_map(),
-      incarnation: game_connection_support.incarnation,
-    ),
-    request: client_connection.TellStealthChanged(
-      connection: ConnectionId(1),
-      stealthed:,
-    ),
-  ))
-}
-
 pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths_end_and_once_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) =
@@ -1464,7 +1431,20 @@ pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths
     )
   let #(state, killed) = game_connection_support.killed(state)
   assert game_connection_support.told_the_map(killed)
-    == [the_map_told_life(alive: False), the_map_told_stealth(stealthed: False)]
+    == [
+      game_connection_support.map_tell(
+        request: client_connection.TellLifeChanged(
+          connection: ConnectionId(1),
+          alive: False,
+        ),
+      ),
+      game_connection_support.map_tell(
+        request: client_connection.TellStealthChanged(
+          connection: ConnectionId(1),
+          stealthed: False,
+        ),
+      ),
+    ]
     as "the death tells the map False before the stealth's end that the casts' end tells last (cast.died)"
   let #(_, refused) =
     game_connection_support.feed(
@@ -1483,7 +1463,14 @@ pub fn wake_here_tells_the_map_life_changed_true_after_the_coming_backs_frames_a
   let #(_, woke) =
     game_connection_support.read(state, game_connection_support.wake_here())
   assert game_connection_support.told_the_map(woke)
-    == [the_map_told_life(alive: True)]
+    == [
+      game_connection_support.map_tell(
+        request: client_connection.TellLifeChanged(
+          connection: ConnectionId(1),
+          alive: True,
+        ),
+      ),
+    ]
     as "Wake Here tells the map True once"
   assert game_connection_support.writes_or_viewer_tells_after_the_map_tell(
       taken: woke,

@@ -264,6 +264,21 @@ pub fn ring_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
   })
 }
 
+/// What the step tells creatures of the rings and of a death, by the creature's unit id
+/// and what it says (`Approached by 1`, `PlayerDied by 1`), in the order sent.
+pub fn ring_and_death_sends(
+  taken: ServiceStep(map.Outgoing),
+) -> List(#(Int, String)) {
+  creature_sends(taken)
+  |> list.filter(fn(sent) {
+    case sent.1 {
+      "Approached by " <> _ | "Withdrew by " <> _ | "PlayerDied by " <> _ ->
+        True
+      _ -> False
+    }
+  })
+}
+
 /// What the step tells creatures of a death, by the creature's unit id and what it
 /// says (`PlayerDied by 1`), in the order sent.
 pub fn death_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {

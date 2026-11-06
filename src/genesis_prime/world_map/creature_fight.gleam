@@ -152,7 +152,7 @@
 //// | a strike P sent before it died reaches C after `PlayerDied` | `StruckBy` adds P to the threat list; C's first strike is refused `Dead` and releases it |  |
 //// | `PlayerDied` for a player on neither `near` nor the threat list (its `Unwatched` came first, or the killing answer dropped it) | nothing | `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
 //// | C is Returning, or dead, when `PlayerDied` reaches it | Returning: P out of `near`, nothing sent; dead: the send is dropped, and the map's `inside` holds no dead player for C's next start | `a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_nor_by_the_corpse_timer_and_one_approached_again_is_test` |
-//// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; it needs a delay of seconds, a human's choice inside the window |  |
+//// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; the answer is taken only before the strike deadline (`strike_tell.deadline_ms`, 1000 ms), so the gap is a Wake Here chosen within that second of the death |  |
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
 
 import genesis_prime/client_connection.{type News}
@@ -764,15 +764,12 @@ fn fell(
   by by: ConnectionId,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let state = State(..state, near: set.delete(state.near, by))
-  case state.status {
-    Fighting(threat: entries, ..) ->
-      case dict.has_key(entries, by) {
-        False -> #(state, [])
-        True -> released(state:, fighter:, by:, now_ms:)
-      }
-    Resting | Returning(..) -> #(state, [])
-  }
+  released(
+    state: State(..state, near: set.delete(state.near, by)),
+    fighter:,
+    by:,
+    now_ms:,
+  )
 }
 
 /// The player of `by` leaves the threat list and is told `Released`: with no one
@@ -964,17 +961,10 @@ fn answered_strike(
         when: !ends_target,
         return: #(state, [cancel, ..closed]),
       )
-      let near = case target_dead {
-        True -> set.delete(state.near, round.target)
-        False -> state.near
+      let #(state, released) = case target_dead {
+        True -> fell(state:, fighter:, by: round.target, now_ms:)
+        False -> released(state:, fighter:, by: round.target, now_ms:)
       }
-      let #(state, released) =
-        released(
-          state: State(..state, near:),
-          fighter:,
-          by: round.target,
-          now_ms:,
-        )
       #(state, list.flatten([[cancel], closed, released]))
     }
     Fighting(..) | Resting | Returning(..) -> #(state, [])

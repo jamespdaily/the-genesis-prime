@@ -806,8 +806,11 @@ pub fn a_dead_player_that_leaves_stealth_and_a_stealthed_player_that_wakes_are_s
   let state = one_dagun_and_a_ready_player()
   let #(state, _) =
     map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 92.0)
-  // The player dies, then leaves stealth (a death ends its stealth last).
-  let #(dead_first, _) = life(state:, at_ms: 6100, alive: False)
+  let #(stealthed, entered) = stealth(state:, at_ms: 6050, stealthed: True)
+  assert map_spawn_support.ring_sends(entered) == [#(2, "Withdrew by 1")]
+    as "the player in the ring enters stealth: the creature is withdrawn from"
+  // The stealthed player dies, then leaves stealth (a death ends its stealth last).
+  let #(dead_first, _) = life(state: stealthed, at_ms: 6100, alive: False)
   let #(dead_first, left) =
     stealth(state: dead_first, at_ms: 6200, stealthed: False)
   assert map_spawn_support.creature_sends(left) == []
@@ -816,8 +819,7 @@ pub fn a_dead_player_that_leaves_stealth_and_a_stealthed_player_that_wakes_are_s
   assert map_spawn_support.ring_sends(woke) == [#(2, "Approached by 1")]
     as "the same player waking, not stealthed, is approached"
   // A stealthed player dies and wakes while still stealthed.
-  let #(state, _) = stealth(state:, at_ms: 6100, stealthed: True)
-  let #(state, _) = life(state:, at_ms: 6200, alive: False)
+  let #(state, _) = life(state: stealthed, at_ms: 6200, alive: False)
   let #(state, woke) = life(state:, at_ms: 6300, alive: True)
   assert map_spawn_support.creature_sends(woke) == []
     as "a stealthed player that wakes stands in no ring"
@@ -844,4 +846,25 @@ pub fn a_life_changed_of_the_value_held_sends_nothing_and_one_from_a_connection_
   assert map_spawn_support.sends(taken) == [] as "nothing is sent"
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
     as "one error line, as a Moved from a connection not in the map"
+}
+
+pub fn a_second_join_of_a_player_in_a_ring_names_no_life_and_the_map_keeps_the_one_it_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state = one_dagun_and_a_ready_player()
+  let #(state, _) =
+    map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 92.0)
+  let #(state, _) =
+    map_spawn_support.join_as(
+      state:,
+      at_ms: 6100,
+      connection: 1,
+      x: 92.0,
+      alive: False,
+    )
+  let #(unchanged, alive) = life(state:, at_ms: 6200, alive: True)
+  assert support.effects_of(alive) == [] && unchanged == state
+    as "the second Join's alive False was not kept: the map still holds the player alive, in its ring"
+  let #(_, died) = life(state:, at_ms: 6300, alive: False)
+  assert map_spawn_support.death_sends(died) == [#(2, "PlayerDied by 1")]
+    as "the connection's own tell of the death is a change, and the creature is told"
 }

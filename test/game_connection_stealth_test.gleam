@@ -101,24 +101,20 @@ pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_
   })
 }
 
-/// What the connection tells the map when its player's stealth changes to `stealthed`:
-/// a tell to the run of the player's map, for the player's connection.
-fn the_map_told(
+/// What the connection tells the map when its player's stealth changes to `stealthed`.
+fn stealth_told(
   stealthed stealthed: Bool,
 ) -> step.Effect(step.ConnectionEffect(Request)) {
-  step.OwnEffect(step.Tell(
-    to: step.Map(map: support.camp_map(), incarnation: support.incarnation),
-    request: client_connection.TellStealthChanged(
-      connection: step.ConnectionId(1),
-      stealthed:,
-    ),
+  support.map_tell(request: client_connection.TellStealthChanged(
+    connection: step.ConnectionId(1),
+    stealthed:,
   ))
 }
 
 pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_viewers_news_once_for_entering_and_once_for_leaving_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, entering) = stealthed()
-  assert support.told_the_map(entering) == [the_map_told(stealthed: True)]
+  assert support.told_the_map(entering) == [stealth_told(stealthed: True)]
     as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
   assert support.writes_or_viewer_tells_after_the_map_tell(taken: entering)
     == []
@@ -128,11 +124,11 @@ pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_view
       as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"
   })
   let #(_, leaving) = support.press_paralytic_surge(state:, client_cast_id: 2)
-  assert support.told_the_map(leaving) == [the_map_told(stealthed: False)]
+  assert support.told_the_map(leaving) == [stealth_told(stealthed: False)]
     as "the second press ends the stealth (Spell4.46073): one tell, False"
   assert support.writes_or_viewer_tells_after_the_map_tell(taken: leaving) == []
   let blow = struck_while_stealthed()
-  assert support.told_the_map(blow) == [the_map_told(stealthed: False)]
+  assert support.told_the_map(blow) == [stealth_told(stealthed: False)]
     as "a landed blow on a stealth that ends on damage taken (Spell4Effects.effectType.83, 83834: dataBits02 0) tells the map False once"
   assert support.writes_or_viewer_tells_after_the_map_tell(taken: blow) == []
 }

@@ -160,16 +160,6 @@ fn parse(said: String) -> Result(#(String, Int), Nil) {
   }
 }
 
-/// The ring and death messages of the step to creatures, by unit id.
-fn ring_and_death_sends(
-  taken: step.ServiceStep(map.Outgoing),
-) -> List(#(Int, String)) {
-  list.append(
-    map_spawn_support.ring_sends(taken),
-    map_spawn_support.death_sends(taken),
-  )
-}
-
 /// The step's ring messages kept in `last`, with a violation for each that does not
 /// follow the one before: the first to a creature for a player is `Approached`, and
 /// they alternate, a `PlayerDied` ending a ring as a `Withdrew` does and following
@@ -180,7 +170,7 @@ fn noted(
   taken taken: step.ServiceStep(map.Outgoing),
   after after: String,
 ) -> Play {
-  list.fold(ring_and_death_sends(taken), play, fn(play, sent) {
+  list.fold(map_spawn_support.ring_and_death_sends(taken), play, fn(play, sent) {
     let assert Ok(#(kind, player)) = parse(sent.1)
       as "a ring send says who it is by"
     let before = dict.get(play.last, #(sent.0, player))
