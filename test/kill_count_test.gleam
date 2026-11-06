@@ -81,6 +81,7 @@ fn kill_loop(
       let assert hit.Landed(health: left, ..) =
         hit.apply(
           shield: 0,
+          absorbs: [],
           health:,
           offence: Offence(
             blows:,

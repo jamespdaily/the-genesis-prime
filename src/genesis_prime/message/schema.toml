@@ -2194,7 +2194,7 @@ id = 0x0938
 name = "unit_stat_changed"
 direction = "server_to_client"
 evidence = "opcode.0x938"
-summary = "a unit's stat changed, as an integer: the unit and the stat in 5 bits, which picks the value's layout. The schema holds stat 20, the shield, and stat 21, the Interrupt Armor (clamped by the client to 0 and the unit's maximum); the client also takes 22, the absorption, and 10, the level, and stat 0 (health) is not taken here. The server writes only 20 and 21, since for stats 2 to 9 it sets the resource slot to 0 (0x935 sets those), so any other stat is refused"
+summary = "a unit's stat changed, as an integer: the unit and the stat in 5 bits, which picks the value's layout. The schema holds stat 20, the shield, stat 21, the Interrupt Armor (clamped by the client to 0 and the unit's maximum) and stat 22, the absorption; the client also takes 10, the level, and stat 0 (health) is not taken here. The server writes only 20, 21 and 22, since for stats 2 to 9 it sets the resource slot to 0 (0x935 sets those), so any other stat is refused"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
   { name = "change", kind = "record", record = "unit_stat_change", evidence = "opcode.0x938", named_by = "opcode.0x938" },
@@ -2203,11 +2203,12 @@ fields = [
 [[union]]
 name = "unit_stat_change"
 evidence = "opcode.0x938"
-summary = "the stat of a 0x938 in 5 bits picks the layout of its value. Gap: the schema holds stats 20 and 21; the client's ApplyUnitStat takes others too (10, 22), which the server never writes"
+summary = "the stat of a 0x938 in 5 bits picks the layout of its value. Gap: the schema holds stats 20, 21 and 22; the client's ApplyUnitStat takes the level (10) too, which the server never writes"
 tag_bits = 5
 variants = [
   { tag = 20, name = "shield", record = "unit_stat_shield", named_by = "opcode.0x938.resource_stats" },
   { tag = 21, name = "interrupt_armor", record = "unit_stat_interrupt_armor", named_by = "opcode.0x938.interrupt_armor" },
+  { tag = 22, name = "absorption", record = "unit_stat_absorption", named_by = "opcode.0x938" },
 ]
 
 [[record]]
@@ -2226,6 +2227,15 @@ summary = "a 0x938 of stat 21: the unit's current Interrupt Armor, which the cli
 fields = [
   { name = "stat", kind = "constant", bits = 5, value = 21, evidence = "opcode.0x938.interrupt_armor", named_by = "opcode.0x938.interrupt_armor" },
   { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x938.interrupt_armor", named_by = "opcode.0x938.interrupt_armor" },
+]
+
+[[record]]
+name = "unit_stat_absorption"
+evidence = "opcode.0x938"
+summary = "a 0x938 of stat 22: the unit's absorption, what Unit:GetAbsorptionValue returns (the sum of the unit's absorb pools)"
+fields = [
+  { name = "stat", kind = "constant", bits = 5, value = 22, evidence = "opcode.0x938", named_by = "opcode.0x938" },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
 ]
 
 [[message]]

@@ -258,7 +258,7 @@ fn live_go_of(spell spell: Spell) -> #(cast.State, cast.GoAsked) {
         | cast.Pay(..)
         | cast.Gain(..)
         | cast.CasterChangeStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })

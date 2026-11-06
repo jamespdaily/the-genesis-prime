@@ -74,6 +74,7 @@ pub fn health_stays_in_range_and_killed_is_set_exactly_at_zero_test() -> Nil {
       let assert Landed(descriptions: [description], health: left, killed:, ..) =
         hit.apply(
           shield: 0,
+          absorbs: [],
           health:,
           offence: offence(damage:, damage_type: 3),
           defence: hit.unprotected,
@@ -94,6 +95,7 @@ pub fn a_crit_lands_only_when_its_roll_is_below_the_crit_chance_test() -> Nil {
     let assert Landed(descriptions: [description], ..) =
       hit.apply(
         shield: 0,
+        absorbs: [],
         health: 100,
         offence: offence(damage: 18, damage_type: 3),
         defence: hit.unprotected,
@@ -113,6 +115,7 @@ pub fn a_deflect_lands_when_its_roll_is_below_the_targets_chance_test() -> Nil {
   let by = fn(roll) {
     hit.apply(
       shield: 0,
+      absorbs: [],
       health: 52,
       offence: offence(damage: 18, damage_type: 3),
       defence: beast,
@@ -129,6 +132,7 @@ pub fn strikethrough_takes_off_the_deflect_chance_and_crit_deflect_the_crit_chan
     Offence(..offence(damage: 18, damage_type: 3), strikethrough: 0.016)
   assert hit.apply(
       shield: 0,
+      absorbs: [],
       health: 52,
       offence: piercing,
       defence: beast,
@@ -139,6 +143,7 @@ pub fn strikethrough_takes_off_the_deflect_chance_and_crit_deflect_the_crit_chan
   let assert Landed(descriptions: [description], ..) =
     hit.apply(
       shield: 0,
+      absorbs: [],
       health: 52,
       offence: offence(damage: 18, damage_type: 3),
       defence: Defence(..hit.unprotected, crit_deflect_chance: 0.1),
@@ -153,6 +158,7 @@ pub fn a_glance_takes_the_glance_amount_off_the_damage_test() -> Nil {
   let assert Landed(descriptions: [description], health:, ..) =
     hit.apply(
       shield: 0,
+      absorbs: [],
       health: 52,
       offence: offence(damage: 20, damage_type: 3),
       defence: Defence(
@@ -173,6 +179,7 @@ pub fn mitigation_takes_its_damage_types_share_off_the_damage_test() -> Nil {
     let assert Landed(descriptions: [description], ..) =
       hit.apply(
         shield: 0,
+        absorbs: [],
         health: 52,
         offence: offence(damage: 20, damage_type:),
         defence: armoured,
@@ -192,6 +199,7 @@ pub fn the_beasts_numbers_pass_a_blow_through_unchanged_test() -> Nil {
   let assert Landed(descriptions: descriptions, health:, killed: False, ..) =
     hit.apply(
       shield: 0,
+      absorbs: [],
       health: 52,
       offence: offence(damage: 18, damage_type: 3),
       defence: beast,

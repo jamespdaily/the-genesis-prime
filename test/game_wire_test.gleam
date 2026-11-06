@@ -3586,6 +3586,7 @@ fn is_targeted_by(event event: game_client.FightEvent, unit unit: Int) -> Bool {
     | game_client.InCombat(..)
     | game_client.ShieldIs(..)
     | game_client.InterruptArmorIs(..)
+    | game_client.AbsorptionIs(..)
     | game_client.OwnHealthIs(..)
     | game_client.Moves(..)
     | game_client.Went(..)
@@ -4070,6 +4071,7 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
       | game_client.InCombat(..)
       | game_client.ShieldIs(..)
       | game_client.InterruptArmorIs(..)
+      | game_client.AbsorptionIs(..)
       | game_client.OwnHealthIs(..)
       | game_client.HealthIs(..) -> True
     }

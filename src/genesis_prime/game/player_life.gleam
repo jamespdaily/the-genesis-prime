@@ -15,8 +15,9 @@
 //// Attacks(Strike(key, C, CreatureStriker, offence))
 ////                             ─▶ dead: Answer(C, Refused(Dead))
 ////                                alive: rolls from P's seed (12 bytes)
-////                                the hit rule on P's health and shield (genesis_prime/game/hit)
-////                                the shield changed:                          ─▶ 0x938(P, 20, shield) to P and its viewers
+////                                the hit rule on P's health, shield and absorbs (genesis_prime/game/hit)
+////                                the absorbs' sum changed:                    ─▶ 0x938(P, 22, sum) to P and its viewers
+////                                the shield changed:                         ─▶ 0x938(P, 20, shield) to P and its viewers
 ////                                                                             ─▶ 0x92f(P, health) to P
 ////                                                                             ─▶ 0x937(P, health) to its viewers
 ////                                Answer(C, Landed(descriptions) | Deflected)  ─▶ TellStrikeAnswered to C
@@ -48,6 +49,22 @@
 ////                after the 0x93a that raised the maximum and before the one that lowers it
 //// ```
 ////
+//// The absorb pools (genesis_prime/game/cast `Absorb`) start and end by the cast rule's
+//// caster changes and are spent by the hit rule; the sum of what they have left is stat 22:
+////
+//// ```
+//// the cast rule's CasterChangeStarts(source, Absorb(amount, mask))
+////                ─▶ absorb_started: the pool joins last, or refills the one of `source`
+////                ─▶ 0x938(P, 22, sum) to P and to its viewers, when the sum moved
+//// a creature's blow, the hit rule: absorbs by mask, oldest first, then the shield, then health
+////                ─▶ 0x938(P, 22, sum), then 0x938(P, 20, shield), then 0x92f / 0x937, each only when it moved
+////                ─▶ DamageTaken when the absorbs, the shield or the health fell; the shield's
+////                   reboot restarts only when the shield or the health fell (text 531855)
+//// the cast rule's CasterChangeEnds(source) ─▶ absorb_ended: the pool of `source` goes
+////                ─▶ 0x938(P, 22, sum) to P and to its viewers, when the sum moved
+//// death ─▶ every pool dropped, 0x938(P, 22, 0) after the killing blow's 0x92f when the sum was above 0
+//// ```
+////
 //// Death and coming back, when a strike leaves P at 0:
 ////
 //// ```
@@ -55,6 +72,8 @@
 //// Attacks(..) health 0  ─▶  Dead, the body where it fell; fighters emptied
 ////                            Answer(C, Landed killed) ─▶ C releases P
 ////                                                    ─▶ 0x92f(P, 0)               0x937(P, 0, dead)
+////                            absorbs dropped, when their sum was above 0
+////                                                    ─▶ 0x938(P, 22, 0)           0x938(P, 22, 0)
 ////                                                    ─▶ 0x88c(P, 1)               0x88c(P, 1)
 ////                                                    ─▶ 0x89a(P, 0)               0x89a(P, 0)
 ////                            CombatLeft, when P was in combat: the cast rule's `combat_left`
@@ -103,6 +122,15 @@
 ////   so the armor worn is none, and whether a type 52 row's end takes its points back
 ////   (dataBits01) or keeps them matters only once armor is worn. An infinite maximum (-1)
 ////   shows 0.
+//// - **The absorbs** are this rule's state, in start order, one pool for each cast effect:
+////   the client has no class for an Absorption effect, so the server keeps the pools and
+////   sends their sum as stat 22 at each change (`Spell4Effects.effectType.29`,
+////   `opcode.0x938`). The pools die with the connection: an entry holds none, and the
+////   client is created with stat 22 only while the sum is above 0. A pool used up leaves
+////   the list and its cast keeps its node; the cast rule's later end for it changes
+////   nothing. A blow wholly taken by the absorbs counts as damage taken for the stealth
+////   and does not restart the shield's reboot, since neither health nor shield fell
+////   (server choices; text 531855).
 //// - **Health** stays in [0, max]. At 0 the answer is `Landed` with the killed bit,
 ////   the creature releases the player, and a later strike is refused `Dead`.
 //// - **Health regenerates** while P is alive, out of combat and below its maximum,
@@ -174,6 +202,16 @@
 //// | the Holocrypt's join is refused or has no answer | refused: 0x0594 and character select; no answer: the connection ends, as entry's join does | `a_refused_holocrypt_join_returns_to_character_select_test`, `a_holocrypt_join_with_no_answer_ends_the_connection_test` |
 //// | P's connection ends while dead | the map's `Leave` as for any end; the ghost was P's client's alone; the save keeps health 0 and the body's place, and the next entry is dead at the body (`entering`) | `a_save_while_dead_keeps_0_and_the_place_of_the_body_test`, `a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never_saved_enters_alive_and_full_test` |
 //// | the map crashes while P is dead | the connection ends, as for any player in the world, after the save of the place the body lies at | `the_map_ending_while_the_player_is_dead_saves_where_the_body_lies_and_ends_the_connection_test` |
+//// | P's connection restarts with a pool held | the connection enters with none and the client is created again with stat 22 absent | `an_entry_holds_no_absorb_test` |
+//// | two casts start a pool each | two pools, the oldest soaks first; the sum is stat 22 | `the_oldest_absorb_soaks_first_and_the_next_takes_the_rest_test` |
+//// | a cast starts the pool of a source that is held | the pool is refilled to the new amount, held once | `the_same_absorb_started_again_is_refilled_test` |
+//// | two creatures' blows reach P in one millisecond | taken in arrival order, each on the pools the other left | `two_blows_in_one_millisecond_each_see_the_pools_the_other_left_test` |
+//// | a blow uses up two pools | both drop, one stat 22 | `an_absorb_used_up_by_one_blow_leaves_the_next_blow_of_the_strike_to_the_shield_test` |
+//// | the cast rule's end reaches a pool that was used up or dropped | nothing is written | `an_absorb_end_tells_the_new_sum_and_an_end_for_a_pool_not_held_writes_nothing_test` |
+//// | the cast rule's end and a blow reach P in one millisecond | arrival order: the pool soaks and then ends, or ends first | `an_end_and_a_blow_in_one_millisecond_are_taken_in_arrival_order_test` |
+//// | a blow reaches P after a pool's end | the shield and the health take it | `a_blow_after_the_absorbs_end_goes_to_the_shield_and_health_test` |
+//// | a blow kills P with a pool of another damage type held | the pools drop, stat 22 = 0 after the 0x92f and before the 0x88c, the cast rule's death ends write nothing | `a_death_drops_every_absorb_and_tells_zero_before_the_death_state_test` |
+//// | a pool starts for a dead P | no pool, nothing is written | `a_pool_started_on_a_dead_player_is_not_held_test` |
 //// | C's killing strike reaches P mid-cast | each live cast ends with 0x7fe to P and the viewers told its start, its timers cancelled; a round that closes later has no go | `a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test`, `a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test` |
 //// | the map's notice, a peer's news or a creature's threat, release or strike sent for P's earlier stay arrives after the Holocrypt's join, a camp and a new entry, or a join to a restarted run that gives the same unit id | dropped: it names the earlier stay | `messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`, `messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test` |
 
@@ -215,6 +253,10 @@ pub opaque type Life {
     armor_worn: Option(Int),
     /// The armor the player's client was last told (stat 21).
     armor_shown: Int,
+    /// The absorb pools the player holds, in start order: the order they soak in
+    /// (genesis_prime/game/hit `soak`). The player's client and viewers are told their
+    /// sum (stat 22).
+    absorbs: List(hit.Absorb),
   )
 }
 
@@ -359,6 +401,8 @@ pub type Written {
   OwnShield(shield: Int)
   /// 0x938 of stat 21: the player's Interrupt Armor.
   OwnInterruptArmor(armor: Int)
+  /// 0x938 of stat 22: the sum of the player's absorb pools (`opcode.0x938`).
+  OwnAbsorption(absorption: Int)
   /// 0x92f: the player's health.
   OwnHealth(health: Int)
   /// 0x88c {P, dead, 0, 0}: the player died or came back. The 5-bit value is
@@ -509,6 +553,7 @@ pub fn new(
     shield_clock: Idle,
     armor_worn: None,
     armor_shown: 0,
+    absorbs: [],
   )
 }
 
@@ -630,6 +675,7 @@ pub fn struck(
         hit.apply(
           health: life.health,
           shield: life.shield,
+          absorbs: life.absorbs,
           offence: strike.offence,
           defence:,
           rolls:,
@@ -641,22 +687,34 @@ pub fn struck(
             answered: Answered(key: strike.key, outcome: strike_tell.Deflected),
           ),
         ])
-        hit.Landed(descriptions:, health: left, shield:, ..) -> {
+        hit.Landed(descriptions:, health: left, shield:, absorbs:, ..) -> {
+          let absorption_news = case
+            absorption_of(absorbs:) == absorption(life:)
+          {
+            True -> []
+            False -> absorption_told(absorption: absorption_of(absorbs:))
+          }
           let shield_news = case shield == life.shield {
             True -> []
             False -> shield_told(shield:)
           }
           let lowered = shield != life.shield || left != life.health
           let #(life, after) = case left {
-            0 -> died(life: Life(..life, health: left, shield:), place:)
-            _ -> blow_taken(life: Life(..life, health: left, shield:), lowered:)
+            0 ->
+              died(life: Life(..life, health: left, shield:, absorbs:), place:)
+            _ ->
+              blow_taken(
+                life: Life(..life, health: left, shield:, absorbs:),
+                lowered:,
+              )
           }
           #(
             life,
             list.flatten([
+              absorption_news,
               shield_news,
               health_told(health: left, dead: left == 0),
-              case lowered {
+              case lowered || absorption_news != [] {
                 True -> [DamageTaken]
                 False -> []
               },
@@ -699,9 +757,14 @@ fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
     True -> [CombatLeft]
     False -> []
   }
+  let absorption_dropped = case absorption(life:) > 0 {
+    True -> absorption_told(absorption: 0)
+    False -> []
+  }
   #(
-    Life(..life, fighters: dict.new(), state: Dead),
+    Life(..life, fighters: dict.new(), state: Dead, absorbs: []),
     list.flatten([
+      absorption_dropped,
       [
         ToClient(OwnDeathState(dead: True)),
         ToViewers(client_connection.Died),
@@ -813,6 +876,52 @@ fn health_told(health health: Int, dead dead: Bool) -> List(Effect) {
 /// stat 20).
 fn shield_told(shield shield: Int) -> List(Effect) {
   [ToClient(OwnShield(shield:)), ToViewers(client_connection.Shield(shield:))]
+}
+
+/// The player's absorption written to its own client (0x938 of stat 22) and told to its
+/// viewers.
+fn absorption_told(absorption absorption: Int) -> List(Effect) {
+  [
+    ToClient(OwnAbsorption(absorption:)),
+    ToViewers(client_connection.Absorption(absorption:)),
+  ]
+}
+
+/// The player's absorption: the sum of what its pools have left, which stat 22 holds
+/// (`opcode.0x938`).
+pub fn absorption(life life: Life) -> Int {
+  absorption_of(absorbs: life.absorbs)
+}
+
+fn absorption_of(absorbs absorbs: List(hit.Absorb)) -> Int {
+  list.fold(absorbs, 0, fn(sum, absorb) { sum + absorb.left })
+}
+
+/// A pool of `amount` that takes the damage types of `mask` starts for the cast effect
+/// `source` (genesis_prime/game/cast `CasterChangeStarts` of an `Absorb`): it joins the
+/// pools last, or, when `source` is held, takes that pool's place in the order with the
+/// new amount and mask (a later go of the cast refills it). The sum is told to the
+/// player's client and its viewers when it moved. A dead player takes none, and a
+/// pool of 0 or less is not held.
+pub fn absorb_started(
+  life _life: Life,
+  source _source: unit_properties.Source,
+  amount _amount: Int,
+  mask _mask: Int,
+) -> #(Life, List(Effect)) {
+  panic as "shape: #492"
+}
+
+/// The pool of the cast effect `source` ends (genesis_prime/game/cast
+/// `CasterChangeEnds`, which every owner of a caster change takes by source): the pool
+/// goes and the new sum is told when it moved. A source that holds no pool here, one
+/// used up, dropped by a death or never started, changes nothing and tells nothing. The
+/// pools are the life's alone, so this is the one owner that ends them.
+pub fn absorb_ended(
+  life life: Life,
+  source _source: unit_properties.Source,
+) -> #(Life, List(Effect)) {
+  #(life, [])
 }
 
 /// Whether the player is alive.

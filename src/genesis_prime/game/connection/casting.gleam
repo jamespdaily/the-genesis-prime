@@ -27,6 +27,10 @@
 ////   raises the player's shield by its amount and tells the player's client and its viewers
 ////   (genesis_prime/game/connection/healing), where one whose change is a `Property` is
 ////   applied to the player's properties (genesis_prime/game/connection/properties).
+//// - **Absorbs** are the cast rule's too: a `CasterChangeStarts` whose change is an `Absorb`
+////   gives the player's life a pool, and a `CasterChangeEnds` is carried out for both owners
+////   of a caster change in turn, the properties then the life, each by source
+////   (genesis_prime/game/connection/absorption).
 //// - **Stealth** is the cast rule's (genesis_prime/game/cast): its `StealthChanged` is
 ////   carried out as the owner's 0x8f5, the viewers' news, and last a tell to the run of
 ////   the player's map, so the map keeps the player out of every creature's ring
@@ -63,6 +67,7 @@ import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/area
 import genesis_prime/game/cast
+import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
 import genesis_prime/game/connection/properties as connection_properties
@@ -342,8 +347,15 @@ pub fn cast_effects(
         connection_properties.started(session:, now:, source:, modifier:)
       cast.CasterChangeStarts(change: cast.ShieldHeal(amount:), ..), _ ->
         connection_healing.shield_healed(session:, now:, amount:)
-      cast.PropertyEnds(source:), _ ->
-        connection_properties.ended(session:, now:, source:)
+      cast.CasterChangeStarts(source:, change: cast.Absorb(amount:, mask:)), _
+      -> connection_absorption.started(session:, now:, source:, amount:, mask:)
+      cast.CasterChangeEnds(source:), _ -> {
+        let #(session, properties) =
+          connection_properties.ended(session:, now:, source:)
+        let #(session, absorption) =
+          connection_absorption.ended(session:, now:, source:)
+        #(session, list.append(properties, absorption))
+      }
       cast.StealthChanged(stealthed:), Some(entered) -> #(
         session,
         list.flatten([
@@ -579,6 +591,7 @@ pub fn creature_news_frames(
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
+    | client_connection.Absorption(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..) -> []
   }

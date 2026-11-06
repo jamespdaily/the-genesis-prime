@@ -110,7 +110,7 @@ fn listed(
 /// Whether the effect starts or ends a change of one of the caster's properties.
 fn changes_a_property(effect effect: cast.Effect) -> Bool {
   case effect {
-    cast.CasterChangeStarts(..) | cast.PropertyEnds(..) -> True
+    cast.CasterChangeStarts(..) | cast.CasterChangeEnds(..) -> True
     cast.Send(..)
     | cast.Tell(..)
     | cast.StartTimer(..)
@@ -208,7 +208,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
         | cast.Pay(..)
         | cast.Gain(..)
         | cast.CasterChangeStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })

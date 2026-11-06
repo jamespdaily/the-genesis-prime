@@ -5,7 +5,7 @@
 ////
 //// ```
 //// the cast rule's CasterChangeStarts ─▶ unit_properties.apply  ─┐
-//// the cast rule's PropertyEnds   ─▶ unit_properties.remove ─┤ changed entries
+//// the cast rule's CasterChangeEnds   ─▶ unit_properties.remove ─┤ changed entries
 ////                                                           ├─▶ 0x93a to the player's client
 ////                                                           ├─▶ PropertiesChanged to each viewer
 ////                                                           └─▶ player_life.properties_changed:
@@ -23,7 +23,10 @@
 ////   an armor above a lowered maximum until the next 0x938
 ////   (`opcode.0x938.interrupt_armor`).
 //// - **A change that moves nothing** is not told: a modifier that leaves a value as it
-////   was, a source already held, and an end of a source that is not held.
+////   was, a source already held, and an end of a source that is not held: the cast rule's
+////   end is told by source to the life's absorb pools as well
+////   (genesis_prime/game/connection/absorption), so an end for a pool's source reaches this
+////   rule and changes nothing.
 //// - **The life follows the properties**: BaseHealth and ShieldCapacityMax are the
 ////   maxima, HealthRegenMultiplier and ShieldTickTime the regeneration's numbers; the
 ////   health and shield are kept and capped at a lowered maximum, which the player's
@@ -58,7 +61,7 @@ pub fn started(
 }
 
 /// A modifier of the player's own spell ends (genesis_prime/game/cast
-/// `PropertyEnds`). The armor follows the maximum down first, and the maximum's 0x93a
+/// `CasterChangeEnds`). The armor follows the maximum down first, and the maximum's 0x93a
 /// comes after: the client clamps the armor it is sent to the maximum it holds, and keeps
 /// an armor above a lowered maximum until the next 0x938
 /// (`opcode.0x938.interrupt_armor`).

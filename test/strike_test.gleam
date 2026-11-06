@@ -1067,7 +1067,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.Pay(..)
         | cast.Gain(..)
         | cast.CasterChangeStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })
@@ -1382,6 +1382,7 @@ pub fn a_planted_100_percent_crit_modifier_makes_every_blow_crit_test() -> Nil {
     hit.apply(
       health: 100,
       shield: 0,
+      absorbs: [],
       offence: offence_of_caster_with(properties:),
       defence: hit.unprotected,
       rolls: roll,

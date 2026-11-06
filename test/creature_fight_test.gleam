@@ -325,6 +325,8 @@ fn name_of(news: News) -> String {
     client_connection.CrowdControlEnded(..) -> "0x880"
     client_connection.InterruptArmor(armor:) ->
       "0x938(21, " <> int.to_string(armor) <> ")"
+    client_connection.Absorption(absorption:) ->
+      "0x938(22, " <> int.to_string(absorption) <> ")"
   }
 }
 
