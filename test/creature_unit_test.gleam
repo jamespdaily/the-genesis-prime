@@ -85,7 +85,7 @@ pub fn a_recorded_health_is_sent_as_stat_0_and_as_base_health_test() -> Nil {
   assert creature_unit.health_of(unit: read) == 300
   assert read.tail.properties
     == [
-      UnitProperty(property_id: 7, field_2: 0x43DD0000, value: 0x43DD0000),
+      UnitProperty(property_id: 7, base: 0x43DD0000, value: 0x43DD0000),
     ]
     as "Base Health 442.0 in both words"
 }

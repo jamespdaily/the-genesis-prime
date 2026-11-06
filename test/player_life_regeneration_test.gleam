@@ -44,6 +44,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
+import properties_support
 import spawn_support
 
 const health_timer = TimerId(8)
@@ -95,7 +96,11 @@ fn defence() -> hit.Defence {
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
     as "a Warrior has a Dominion Novice set"
-  player_life.defence(loadout:, level: 1, formulas: rating.formulas(tables:))
+  player_life.defence(
+    properties: properties_support.wearing(loadout:),
+    level: 1,
+    formulas: rating.formulas(tables:),
+  )
 }
 
 /// The Beast's strike, its every blow dealing `damage`.
@@ -129,7 +134,13 @@ fn struck(
 /// The player entering at `saved` of 736 health and 450 shield, and what its
 /// entry asks.
 fn entering(saved saved: option.Option(Int)) -> #(Life, List(Effect)) {
-  player_life.entering(saved:, max_health: 736, shield: 450, regeneration:)
+  player_life.entering(
+    saved:,
+    max_health: 736,
+    shield: 450,
+    regeneration:,
+    place: place(),
+  )
 }
 
 fn fought_by_the_beast(life life: Life) -> Life {
@@ -184,6 +195,7 @@ pub fn a_health_tick_adds_at_least_1_test() -> Nil {
       max_health: 20,
       shield: 0,
       regeneration:,
+      place: place(),
     )
   let #(life, _) = ticked(life:)
   assert player_life.health(life:) == 11
@@ -366,6 +378,7 @@ pub fn a_health_regen_multiplier_other_than_1_scales_the_tick_test() -> Nil {
         saved: Some(500),
         max_health: 736,
         shield: 450,
+        place: place(),
         regeneration: Regeneration(
           ..regeneration,
           health_multiplier: multiplier,
@@ -403,6 +416,7 @@ pub fn a_player_with_no_shield_item_has_no_shield_clock_test() -> Nil {
       saved: None,
       max_health: 736,
       shield: 450,
+      place: place(),
       regeneration: Regeneration(..regeneration, shield: None),
     )
   let #(life, hit) =

@@ -167,6 +167,18 @@
 ////   unit, oldest cast first, each written 0x811 (`opcode.0x811`); and a cast that
 ////   gives a unit a node it holds none on takes off the caster's oldest casts of its
 ////   stack at the stack's cap (Jim's decision, `Spell4StackGroup.stackCap`).
+//// - **A go's property modifiers** (genesis_prime/game/unit_properties): each type 11
+////   effect of the phase that has a life (a durationTime, or flags bit 2) and whose gate
+////   against the caster passes is listed on the caster like a Fluff effect, gives the
+////   caster's node its life, and starts at the go plus its delay and ends after its
+////   duration, as `PropertyStarts` and `PropertyEnds` for the connection to apply to the
+////   player's properties. A modifier ends on a timer of its own and not with the node's
+////   time (a node can outlive it, or end before it when the spell takes the larger of
+////   delay and duration); taking the cast's node off the caster ends its modifiers and
+////   cancels their timers; the caster's death ends every modifier of its casts and every
+////   one still pending; a later go of the cast arms each again from that go; the player
+////   leaving ends none, since the connection's properties go with its player. These
+////   are the server's choices: the client works out no property.
 //// - **A cast that lingers** is one whose last go has gone while a node of it still
 ////   has life: every step of its end runs (the current cast cleared, a channel's
 ////   cooldown, a stage's threshold closed) and only its 0x7fe waits, since the client
@@ -275,6 +287,7 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_properties
 import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
@@ -389,6 +402,16 @@ pub type Effect {
   /// A go's resource gains are given to the caster's class resource
   /// (genesis_prime/game/class_resource `gain`).
   Gain(gains: List(class_resource.Gain))
+  /// A property modifier of the caster's spell starts: the connection applies it to the
+  /// player's properties, tells its client and its viewers the entries that changed
+  /// (genesis_prime/game/unit_properties `apply`).
+  PropertyStarts(
+    source: unit_properties.Source,
+    modifier: unit_properties.Modifier,
+  )
+  /// A property modifier of the caster's spell ends, or is told ended for a source the
+  /// properties may not hold (`unit_properties.remove` changes nothing then).
+  PropertyEnds(source: unit_properties.Source)
 }
 
 /// A go of a live cast that waits for its targets: which cast and phase, the spell,
@@ -456,6 +479,13 @@ pub type Due {
   /// The crowd-control state `state` the cast `spell4_id` put on the unit `unit_id`
   /// ends on the creature: the caster's combat log gets its end entry.
   StateEnd(spell4_id: Spell4Id, unit_id: Int, state: CrowdControlState)
+  /// The property modifier `source` starts, after its delay.
+  ModifierStart(
+    source: unit_properties.Source,
+    modifier: unit_properties.Modifier,
+  )
+  /// The property modifier `source` ends, after its duration.
+  ModifierEnd(source: unit_properties.Source)
   /// The held press starts.
   StartHeld
   /// The ability the player holds down casts again: its cooldowns have ended.
@@ -1023,16 +1053,15 @@ fn repeat_after(
   cast cast: State,
   wait_ms wait_ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(cast, timer) = new_timer(cast:)
+  let #(cast, timer, start) = armed(cast:, due: RepeatHeld, after_ms: wait_ms)
   #(
     State(
       ..cast,
-      timers: dict.insert(cast.timers, timer, RepeatHeld),
       holding: option.map(cast.holding, fn(holding) {
         Holding(..holding, repeat_timer: Some(timer))
       }),
     ),
-    [StartTimer(timer:, after_ms: wait_ms)],
+    [start],
   )
 }
 
@@ -1170,14 +1199,14 @@ fn press_of(
       case client_cast_id, is_release {
         None, False -> repeat_after(cast:, wait_ms:)
         Some(_), _ | None, True -> {
-          let #(cast, timer) = new_timer(cast:)
+          let #(cast, _, start) =
+            armed(cast:, due: StartHeld, after_ms: wait_ms)
           #(
             State(
               ..cast,
-              timers: dict.insert(cast.timers, timer, StartHeld),
               held: Some(Held(client_cast_id:, resolution:, until: CooldownEnds)),
             ),
-            [StartTimer(timer:, after_ms: wait_ms)],
+            [start],
           )
         }
       }
@@ -1510,7 +1539,9 @@ fn after_payments(
         | StartTimer(..)
         | CancelTimer(..)
         | Log(..)
-        | Strike(..) -> resources
+        | Strike(..)
+        | PropertyStarts(..)
+        | PropertyEnds(..) -> resources
       }
     }),
   )
@@ -1703,6 +1734,8 @@ fn stop_pending(
       StartChild(..)
       | NodesEnd(..)
       | StateEnd(..)
+      | ModifierStart(..)
+      | ModifierEnd(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -1791,6 +1824,10 @@ fn fire(
             removed: True,
           )),
         ])
+        ModifierStart(source:, modifier:) -> #(cast, [
+          PropertyStarts(source:, modifier:),
+        ])
+        ModifierEnd(source:) -> #(cast, [PropertyEnds(source:)])
         RepeatHeld -> #(repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
@@ -1845,6 +1882,10 @@ pub fn rolls_needed(
           ),
           list.map(
             spell_plan.removes_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
+          list.map(
+            spell_plan.modifiers_in_phase(spell:, phase:, spent: live.spent),
             fn(row) { condition_rolls_needed(row.condition) },
           ),
         ]),
@@ -2069,6 +2110,13 @@ fn nodes_ended(
       case ended {
         [] -> rearmed(cast:, cast_id:, now_ms:)
         [_, ..] -> {
+          let #(cast, modifiers) =
+            caster_modifiers_ended(
+              cast:,
+              cast_id:,
+              spell: holder.spell,
+              unit_ids: sorted_units(ended),
+            )
           let #(cast, left) =
             nodes_left(
               cast:,
@@ -2079,10 +2127,11 @@ fn nodes_ended(
             )
           #(
             cast,
-            list.append(
+            list.flatten([
               nodes_ended_frames(cast_id:, holder:, ended:, kept:),
+              modifiers,
               left,
-            ),
+            ]),
           )
         }
       }
@@ -2168,14 +2217,13 @@ fn arm_nodes_end(
   case earliest_end(nodes:) {
     None -> #(cast, [])
     Some(ends_ms) -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(cast.timers, timer, NodesEnd(cast_id:)),
-        ),
-        [StartTimer(timer:, after_ms: int.max(0, ends_ms - now_ms))],
-      )
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: NodesEnd(cast_id:),
+          after_ms: int.max(0, ends_ms - now_ms),
+        )
+      #(cast, [start])
     }
   }
 }
@@ -2210,6 +2258,8 @@ fn cancel_nodes_end(
       | Finish(..)
       | StartChild(..)
       | StateEnd(..)
+      | ModifierStart(..)
+      | ModifierEnd(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -2238,6 +2288,8 @@ pub fn unit_removed(
         | Finish(..)
         | StartChild(..)
         | NodesEnd(..)
+        | ModifierStart(..)
+        | ModifierEnd(..)
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
@@ -2304,8 +2356,45 @@ pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
     |> list.flat_map(fn(entry) {
       finished_effects(cast_id: entry.0, audience: { entry.1 }.audience)
     })
+  let modifiers_ended = modifiers_pending(cast:)
   let #(cast, cancelled) = left(cast:)
-  #(cast, list.flatten([ended, lingering_ended, cancelled]))
+  #(cast, list.flatten([ended, lingering_ended, modifiers_ended, cancelled]))
+}
+
+/// Each property modifier the caster's casts may still hold, told ended in order: those
+/// of the spells of its live and lingering casts, in cast id order, and those whose end
+/// a timer waits for, in timer order; each once.
+fn modifiers_pending(cast cast: State) -> List(Effect) {
+  let held =
+    list.flat_map(holders(cast:), fn(entry) {
+      list.map({ entry.1 }.spell.modifiers, fn(row) {
+        unit_properties.Source(cast_id: entry.0, effect_id: row.effect_id)
+      })
+    })
+  let waiting =
+    dict.to_list(cast.timers)
+    |> list.sort(fn(first, second) {
+      let TimerId(first_number) = first.0
+      let TimerId(second_number) = second.0
+      int.compare(first_number, second_number)
+    })
+    |> list.filter_map(fn(entry) {
+      case entry.1 {
+        ModifierEnd(source:) -> Ok(source)
+        ModifierStart(..)
+        | Go(..)
+        | Finish(..)
+        | StartChild(..)
+        | NodesEnd(..)
+        | StateEnd(..)
+        | StartHeld
+        | RepeatHeld
+        | WindowEnd(..)
+        | ChargeLevel(..) -> Error(Nil)
+      }
+    })
+  list.unique(list.append(held, waiting))
+  |> list.map(fn(source) { PropertyEnds(source:) })
 }
 
 /// The id the caster's next cast takes: the id of its next press that no live or
@@ -2351,11 +2440,8 @@ fn start(
   let #(cast, timer_effects) =
     list.fold(list.append(gos, finishing), #(cast, []), fn(so_far, wait) {
       let #(cast, effects) = so_far
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(..cast, timers: dict.insert(cast.timers, timer, wait.1)),
-        list.append(effects, [StartTimer(timer:, after_ms: wait.0)]),
-      )
+      let #(cast, _, start) = armed(cast:, due: wait.1, after_ms: wait.0)
+      #(cast, list.append(effects, [start]))
     })
   let start_message =
     started_message(id:, spell:, root:, parent:, primary_target:, caster:)
@@ -2510,18 +2596,13 @@ fn open_threshold(
   let opened = Send(frame: opened_frame(spell4_id: ability.spell4_id, cast_id:))
   case ability.method {
     spell_plan.RapidTap -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(
-            cast.timers,
-            timer,
-            WindowEnd(spell4_id: ability.spell4_id.value),
-          ),
-        ),
-        [opened, StartTimer(timer:, after_ms: ability.threshold_ms)],
-      )
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: WindowEnd(spell4_id: ability.spell4_id.value),
+          after_ms: ability.threshold_ms,
+        )
+      #(cast, [opened, start])
     }
     spell_plan.ChargeRelease -> {
       let #(cast, waiting) = charge_timer(cast:, ability:, level: 1)
@@ -2548,18 +2629,13 @@ fn charge_timer(
   case list.drop(ability.stages, level) |> list.first {
     Error(Nil) -> #(cast, [])
     Ok(stage) -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(
-            cast.timers,
-            timer,
-            ChargeLevel(spell4_id: ability.spell4_id.value, level:),
-          ),
-        ),
-        [StartTimer(timer:, after_ms: stage.duration_ms)],
-      )
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: ChargeLevel(spell4_id: ability.spell4_id.value, level:),
+          after_ms: stage.duration_ms,
+        )
+      #(cast, [start])
     }
   }
 }
@@ -2638,6 +2714,8 @@ fn close_threshold(
             | StartChild(..)
             | NodesEnd(..)
             | StateEnd(..)
+            | ModifierStart(..)
+            | ModifierEnd(..)
             | StartHeld
             | RepeatHeld -> False
           }
@@ -2814,6 +2892,7 @@ fn go(
           now_ms:,
         )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
+      let #(cast, modifying) = modifiers_armed(cast:, cast_id:, aimed:)
       let #(cast, children) =
         list.fold(starting, #(cast, []), fn(so_far, proxy) {
           let #(cast, effects) = so_far
@@ -2847,6 +2926,7 @@ fn go(
           logged,
           removed,
           given,
+          modifying,
           gains,
           gate_logs,
           lasting_logs,
@@ -2865,13 +2945,14 @@ type Applied {
   Applied(
     lasting: List(spell_plan.Lasting),
     removes: List(spell_plan.ForceRemove),
+    modifiers: List(spell_plan.PropertyModifier),
   )
 }
 
-/// The Fluff and SpellForceRemove effects of the phase whose gates pass against the
-/// caster, a debug line for each that cannot be decided, and the rolls left. Their
-/// gates are checked after the Proxies' and the gains', in that order
-/// (`rolls_needed`).
+/// The Fluff, SpellForceRemove and property modifier effects of the phase whose gates
+/// pass against the caster, a debug line for each that cannot be decided, and the
+/// rolls left. Their gates are checked after the Proxies' and the gains', in that
+/// order, the modifiers' last (`rolls_needed`).
 fn lasting_applied(
   spell spell: Spell,
   phase phase: Int,
@@ -2901,7 +2982,25 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
-  #(Applied(lasting:, removes:), list.append(logs, more_logs), rolls)
+  let #(modifiers, modifier_logs, rolls) =
+    gated(
+      rows: list.filter(
+        spell_plan.modifiers_in_phase(spell:, phase:, spent:),
+        modifier_has_life,
+      ),
+      condition: fn(row: spell_plan.PropertyModifier) { row.condition },
+      what: fn(row: spell_plan.PropertyModifier) {
+        "the UnitPropertyModifier effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  #(
+    Applied(lasting:, removes:, modifiers:),
+    list.flatten([logs, more_logs, modifier_logs]),
+    rolls,
+  )
 }
 
 /// What a go lists on one unit beside the damage it struck: the effect, its delay
@@ -2919,6 +3018,7 @@ type Aimed {
     units: List(#(Int, List(Listed))),
     lasting: List(#(spell_plan.Lasting, Int)),
     removes: List(#(spell_plan.ForceRemove, Int)),
+    modifiers: List(#(spell_plan.PropertyModifier, Int)),
     controls: List(#(strike_tell.ControlLanded, Int)),
   )
 }
@@ -2976,9 +3076,21 @@ fn aimed_at(
       struck:,
     )
   let controls = controls_landed(struck:)
+  let modifiers =
+    list.map(applied.modifiers, fn(row) { #(row, caster.unit_id) })
   let listed =
     list.flatten([
       list.map(lasting, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.row.delay_ms,
+            instance_id: None,
+          ),
+        )
+      }),
+      list.map(modifiers, fn(entry) {
         #(
           entry.1,
           Listed(
@@ -3013,7 +3125,13 @@ fn aimed_at(
         Error(Nil) -> list.append(units, [#(entry.0, [entry.1])])
       }
     })
-  Aimed(units:, lasting:, removes:, controls:)
+  Aimed(units:, lasting:, removes:, modifiers:, controls:)
+}
+
+/// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
+/// A row with neither changes nothing and gives its node no life.
+fn modifier_has_life(row: spell_plan.PropertyModifier) -> Bool {
+  row.row.until_removed || row.row.duration_ms > 0
 }
 
 /// The caster's combat log of the states a go landed: an entry for each (0x247 of
@@ -3031,16 +3149,14 @@ fn states_logged(
     let #(cast, effects) = so_far
     let #(landed, unit_id) = entry
     let state = landed.tell.row.state
-    let #(cast, timer) = new_timer(cast:)
+    let #(cast, _, start) =
+      armed(
+        cast:,
+        due: StateEnd(spell4_id:, unit_id:, state:),
+        after_ms: int.max(0, landed.ends_at_ms - now_ms),
+      )
     #(
-      State(
-        ..cast,
-        timers: dict.insert(
-          cast.timers,
-          timer,
-          StateEnd(spell4_id:, unit_id:, state:),
-        ),
-      ),
+      cast,
       list.append(effects, [
         Send(frame: control_logged_frame(
           caster_unit_id: caster.unit_id,
@@ -3049,7 +3165,7 @@ fn states_logged(
           state:,
           removed: False,
         )),
-        StartTimer(timer:, after_ms: int.max(0, landed.ends_at_ms - now_ms)),
+        start,
       ]),
     )
   })
@@ -3125,6 +3241,117 @@ fn removed_by_go(
   })
 }
 
+/// The property modifiers a go applies, each armed from this go: the modifier of an
+/// earlier go of the cast is armed again, its timers cancelled and started anew; a row
+/// with no delay starts in this step, any other on a timer of its delay, and one that
+/// does not last until removed ends on a timer after its delay and duration.
+fn modifiers_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  aimed aimed: Aimed,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.modifiers, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let row = entry.0
+    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+    let #(cast, cancels) = cancel_modifier_timers(cast:, source:)
+    let #(cast, starting) = case row.row.delay_ms > 0 {
+      True -> {
+        let #(cast, _, start) =
+          armed(
+            cast:,
+            due: ModifierStart(source:, modifier: row.modifier),
+            after_ms: row.row.delay_ms,
+          )
+        #(cast, [start])
+      }
+      False -> #(cast, [PropertyStarts(source:, modifier: row.modifier)])
+    }
+    let #(cast, ending) = case row.row.until_removed {
+      True -> #(cast, [])
+      False -> {
+        let #(cast, _, start) =
+          armed(
+            cast:,
+            due: ModifierEnd(source:),
+            after_ms: row.row.delay_ms + row.row.duration_ms,
+          )
+        #(cast, [start])
+      }
+    }
+    #(cast, list.flatten([effects, cancels, starting, ending]))
+  })
+}
+
+/// The modifier timers of `source` cancelled.
+fn cancel_modifier_timers(
+  cast cast: State,
+  source source: unit_properties.Source,
+) -> #(State, List(Effect)) {
+  cancel_timers(cast:, matching: fn(due) {
+    case modifier_source_of(due:) {
+      Some(waiting) -> waiting == source
+      None -> False
+    }
+  })
+}
+
+/// The source a modifier timer is for.
+fn modifier_source_of(due due: Due) -> Option(unit_properties.Source) {
+  case due {
+    ModifierStart(source:, ..) | ModifierEnd(source:) -> Some(source)
+    Go(..)
+    | Finish(..)
+    | StartChild(..)
+    | NodesEnd(..)
+    | StateEnd(..)
+    | StartHeld
+    | RepeatHeld
+    | WindowEnd(..)
+    | ChargeLevel(..) -> None
+  }
+}
+
+/// The property modifiers of the cast `cast_id` ended when its node on the caster is among
+/// the nodes that leave `unit_ids`, whether taken off or ended by time.
+fn caster_modifiers_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  spell spell: Spell,
+  unit_ids unit_ids: List(Int),
+) -> #(State, List(Effect)) {
+  use <- bool.guard(
+    when: !list.contains(unit_ids, caster_of(cast_id:)),
+    return: #(cast, []),
+  )
+  modifiers_ended(cast:, cast_id:, spell:)
+}
+
+/// The property modifiers of the cast `cast_id` ended, as its node leaves the caster:
+/// each source of its spell's rows still held, one that lasts until removed or whose
+/// start or end a timer waits for, told ended, and their timers cancelled. A modifier
+/// whose own end already fired is not told again.
+fn modifiers_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  spell spell: Spell,
+) -> #(State, List(Effect)) {
+  list.fold(spell.modifiers, #(cast, []), fn(so_far, row) {
+    let #(cast, effects) = so_far
+    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+    let held =
+      row.row.until_removed
+      || list.any(dict.values(cast.timers), fn(due) {
+        modifier_source_of(due:) == Some(source)
+      })
+    let #(cast, cancels) = cancel_modifier_timers(cast:, source:)
+    #(cast, case held {
+      True -> list.flatten([effects, cancels, [PropertyEnds(source:)]])
+      False -> list.append(effects, cancels)
+    })
+  })
+}
+
 /// The nodes a go gives, one for each unit a Fluff row aims at or a crowd-control state
 /// landed on: count 1 and the longest life of its rows with the effects the cast's node on
 /// the unit already holds (`lasting.given`: a later go keeps and re-arms them, as on the
@@ -3182,10 +3409,13 @@ fn nodes_given(
 /// its duration, so the caster's cast lingers until the state's effect is over and its
 /// time readout stays right (`cc_state.end`).
 fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
-  list.unique(list.append(
-    list.map(aimed.lasting, fn(entry) { entry.1 }),
-    list.map(aimed.controls, fn(entry) { entry.1 }),
-  ))
+  list.unique(
+    list.flatten([
+      list.map(aimed.lasting, fn(entry) { entry.1 }),
+      list.map(aimed.modifiers, fn(entry) { entry.1 }),
+      list.map(aimed.controls, fn(entry) { entry.1 }),
+    ]),
+  )
 }
 
 /// The node a go gives one unit from the node its cast holds there and the Fluff rows
@@ -3198,12 +3428,20 @@ fn node_of(
   now_ms now_ms: Int,
 ) -> Result(lasting.Node, Nil) {
   let rows =
-    list.filter_map(aimed.lasting, fn(entry) {
-      case entry.1 == unit_id {
-        True -> Ok(entry.0.row)
-        False -> Error(Nil)
-      }
-    })
+    list.append(
+      list.filter_map(aimed.lasting, fn(entry) {
+        case entry.1 == unit_id {
+          True -> Ok(entry.0.row)
+          False -> Error(Nil)
+        }
+      }),
+      list.filter_map(aimed.modifiers, fn(entry) {
+        case entry.1 == unit_id {
+          True -> Ok(entry.0.row)
+          False -> Error(Nil)
+        }
+      }),
+    )
   let held_until_ms =
     list.filter_map(aimed.controls, fn(entry) {
       case entry.1 == unit_id {
@@ -3317,12 +3555,16 @@ fn node_off(
           audience: holder.audience,
           destroyed: emptied && !kept,
         )
+      let #(cast, modifiers) =
+        caster_modifiers_ended(cast:, cast_id:, spell: holder.spell, unit_ids: [
+          unit_id,
+        ])
       let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
       let ends = case holder.lingering && emptied && kept {
         True -> finished_effects(cast_id:, audience: holder.audience)
         False -> []
       }
-      #(cast, list.flatten([removed, left, ends]))
+      #(cast, list.flatten([removed, modifiers, left, ends]))
     }
   }
 }
@@ -3817,23 +4059,18 @@ fn child(
         spent: None,
       )
     True -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(
-            cast.timers,
-            timer,
-            StartChild(
-              root: live.root,
-              parent: live.spell.spell4_id,
-              primary_target:,
-              proxy:,
-            ),
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: StartChild(
+            root: live.root,
+            parent: live.spell.spell4_id,
+            primary_target:,
+            proxy:,
           ),
-        ),
-        [StartTimer(timer:, after_ms: proxy.delay_ms)],
-      )
+          after_ms: proxy.delay_ms,
+        )
+      #(cast, [start])
     }
   }
 }
@@ -3940,6 +4177,21 @@ fn finish_or_linger(
 }
 
 /// The next timer's id, and the state counting it.
+/// The timer of `due` started to fire after `after_ms`: the state that keeps it, its id
+/// and the effect that starts it.
+fn armed(
+  cast cast: State,
+  due due: Due,
+  after_ms after_ms: Int,
+) -> #(State, TimerId, Effect) {
+  let #(cast, timer) = new_timer(cast:)
+  #(
+    State(..cast, timers: dict.insert(cast.timers, timer, due)),
+    timer,
+    StartTimer(timer:, after_ms:),
+  )
+}
+
 fn new_timer(cast cast: State) -> #(State, TimerId) {
   #(
     State(..cast, timers_started: cast.timers_started + 1),

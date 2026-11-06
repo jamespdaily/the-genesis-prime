@@ -187,7 +187,7 @@ pub fn spawned_tail(
         [
           UnitProperty(
             property_id: base_health_property,
-            field_2: bits,
+            base: bits,
             value: bits,
           ),
         ]

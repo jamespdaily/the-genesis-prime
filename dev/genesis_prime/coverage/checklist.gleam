@@ -3,8 +3,8 @@
 
 import genesis_prime/coverage/engine.{type EngineDeclaration}
 import genesis_prime/coverage/measurement.{
-  type Measurement, type TypeLine, DecodedMissing, Handled, Measured, NotDecoded,
-  Unmeasured,
+  type Measurement, type TypeLine, DecodedMissing, Handled, HandledWithGap,
+  Measured, NotDecoded, Unmeasured,
 }
 import gleam/float
 import gleam/int
@@ -13,7 +13,7 @@ import gleam/string
 
 /// What the marks of a type line say.
 pub const legend =
-  "Marks: [x] handled by a rule of the server; [~] the client's code was read for the type and the server does not handle it (what it lacks, and the fact file's key); [ ] the client's code was not read for the type. \"In the starting abilities\": the rows of the type among the spells the 18 level-1 abilities' trees reach, gated children included."
+  "Marks: [x] handled by a rule of the server, with the gap it states when it has one; [~] the client's code was read for the type and the server does not handle it (what it lacks, and the fact file's key); [ ] the client's code was not read for the type. \"In the starting abilities\": the rows of the type among the spells the 18 level-1 abilities' trees reach, gated children included."
 
 /// The Markdown of every engine's measure: a heading, the source and totals,
 /// then one line per type, heaviest first: `- [ ] type N: R rows (S%)`, with
@@ -40,16 +40,20 @@ fn render_engine(measurement: Measurement) -> String {
         "\n\n",
       )
     Measured(engine:, types:, rows:, zero_values:, ..) -> {
-      let handled = list.filter(types, fn(line) { line.status == Handled })
+      let handled =
+        list.filter(types, fn(line) { measurement.is_handled(line.status) })
       let missing =
         list.count(types, fn(line) {
           case line.status {
             DecodedMissing(..) -> True
-            Handled | NotDecoded -> False
+            Handled | HandledWithGap(..) | NotDecoded -> False
           }
         })
+      let unread_rows =
+        list.fold(handled, 0, fn(total, line) { total + unread_rows_of(line) })
       let handled_rows =
         list.fold(handled, 0, fn(total, line) { total + line.rows })
+        - unread_rows
       let summary =
         count_of(count: rows, singular: "row", plural: "rows")
         <> " over "
@@ -74,6 +78,13 @@ fn render_engine(measurement: Measurement) -> String {
         <> case missing {
           0 -> ""
           _ -> "; " <> int.to_string(missing) <> " decoded and missing"
+        }
+        <> case unread_rows {
+          0 -> ""
+          _ ->
+            "; "
+            <> count_of(count: unread_rows, singular: "row", plural: "rows")
+            <> " of the handled types not read"
         }
         <> starting_summary(types)
       string.join(
@@ -139,7 +150,7 @@ fn starting_rows(types: List(TypeLine)) -> #(Int, Int) {
   list.fold(types, #(0, 0), fn(totals, line) {
     let #(handled, all) = totals
     case line.status {
-      Handled -> #(
+      Handled | HandledWithGap(..) -> #(
         handled + line.starting_abilities,
         all + line.starting_abilities,
       )
@@ -153,7 +164,7 @@ fn starting_rows(types: List(TypeLine)) -> #(Int, Int) {
 
 fn type_line(line: TypeLine) -> String {
   let mark = case line.status {
-    Handled -> "x"
+    Handled | HandledWithGap(..) -> "x"
     DecodedMissing(..) -> "~"
     NotDecoded -> " "
   }
@@ -176,7 +187,26 @@ fn type_line(line: TypeLine) -> String {
   <> case line.status {
     DecodedMissing(reason:, fact_key:) ->
       "; decoded, not handled: " <> reason <> " (" <> fact_key <> ")"
+    HandledWithGap(reason:, fact_key:, unread_rows:) ->
+      "; handled with a gap, "
+      <> int.to_string(unread_rows)
+      <> " of its "
+      <> int.to_string(line.rows)
+      <> " rows not read: "
+      <> reason
+      <> " ("
+      <> fact_key
+      <> ")"
     Handled | NotDecoded -> ""
+  }
+}
+
+/// The rows of a type line that no rule reads: those of a handled type with a gap the
+/// rules leave out whole, and none for any other line.
+fn unread_rows_of(line: TypeLine) -> Int {
+  case line.status {
+    HandledWithGap(unread_rows:, ..) -> unread_rows
+    Handled | DecodedMissing(..) | NotDecoded -> 0
   }
 }
 
@@ -223,7 +253,7 @@ pub fn totals(measurements: List(Measurement)) -> String {
           <> int.to_string(zero_values)
           <> " | "
           <> int.to_string(
-            list.count(types, fn(line) { line.status == Handled }),
+            list.count(types, fn(line) { measurement.is_handled(line.status) }),
           )
           <> " | "
           <> starting_column(types)

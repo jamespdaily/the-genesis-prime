@@ -27,6 +27,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/area.{Pose}
 import genesis_prime/game/cast
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
@@ -40,6 +41,7 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
+import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/step.{
@@ -239,6 +241,10 @@ pub fn cast_effects(
       cast.Strike(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
       cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
+      cast.PropertyStarts(source:, modifier:), _ ->
+        connection_properties.started(session:, now:, source:, modifier:)
+      cast.PropertyEnds(source:), _ ->
+        connection_properties.ended(session:, now:, source:)
     }
     #(session, list.append(done, more))
   })
@@ -282,8 +288,8 @@ fn strike_begins(
 }
 
 /// The player as its strikes take it: who it is, where it stands and faces, which
-/// player faction it is of and what its damage reads of it (its level and the
-/// ratings its gear gives).
+/// player faction it is of, what its damage reads of it (its level and its Assault and
+/// Support Rating) and its properties.
 fn attacker_of(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -301,9 +307,16 @@ fn attacker_of(
     faction:,
     stats: damage.Attacker(
       level: connection_state.level_of(entered:),
-      assault_rating: entered.loadout.properties.assault_rating,
-      support_rating: entered.loadout.properties.support_rating,
+      assault_rating: unit_properties.value(
+        properties: entered.properties,
+        property: unit_properties.assault_rating,
+      ),
+      support_rating: unit_properties.value(
+        properties: entered.properties,
+        property: unit_properties.support_rating,
+      ),
     ),
+    properties: entered.properties,
   )
 }
 
@@ -440,6 +453,7 @@ pub fn creature_news_frames(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
-    | client_connection.InterruptArmor(..) -> []
+    | client_connection.InterruptArmor(..)
+    | client_connection.PropertiesChanged(..) -> []
   }
 }

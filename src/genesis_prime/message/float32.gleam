@@ -5,6 +5,8 @@
 
 import gleam/bool
 import gleam/float
+import gleam/int
+import gleam/result
 
 /// The largest finite 32-bit float, 3.4028234663852886e38 (0x7F7FFFFF), as a
 /// float of the VM's own width.
@@ -52,4 +54,12 @@ pub fn value(bits bits: Bits) -> Result(Float, Nil) {
     <<finite:float-size(32)>> -> Ok(finite)
     _ -> Error(Nil)
   }
+}
+
+/// The float a client table's integer column holds as its 32 bits. The tables' integer
+/// columns are signed 32-bit values, so the bits of a negative float arrive negative
+/// (-1.0, 0xBF800000, is -1082130432): the number is taken modulo 2^32 first. `Error(Nil)`
+/// for infinity and for a number that is not one.
+pub fn of_column(number number: Int) -> Result(Float, Nil) {
+  bits(number: int.bitwise_and(number, 0xFFFFFFFF)) |> result.try(value)
 }

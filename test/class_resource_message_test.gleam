@@ -137,7 +137,7 @@ pub fn a_new_players_0x262_carries_its_slots_resource_max_at_the_classes_maximum
       })
       as "ResourceMax_1 is property 10, ResourceMax_3 12, ResourceMax_4 13 (UnitProperty2.ResourceMax_0)"
     assert property.value == float32.to_bits(max)
-      && property.field_2 == float32.to_bits(max)
+      && property.base == float32.to_bits(max)
       as "base and value alike (0x1404584b0), at the design's maximum"
     assert list.filter(player.tail.properties, fn(property) {
         property.property_id >= 9 && property.property_id <= 15

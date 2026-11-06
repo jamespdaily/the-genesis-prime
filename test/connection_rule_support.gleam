@@ -151,6 +151,25 @@ pub fn effects_of(step: Step(request, own)) -> List(Effect(own)) {
   }
 }
 
+/// The timers the step starts, in order.
+pub fn timers_started(step: ConnectionStep(request)) -> List(step.TimerId) {
+  list.filter_map(effects_of(step), fn(effect) {
+    case effect {
+      OwnEffect(StartTimer(timer:, ..)) -> Ok(timer)
+      OwnEffect(Write(..))
+      | OwnEffect(CancelTimer(..))
+      | OwnEffect(step.Tell(..))
+      | OwnEffect(step.TellWatched(..))
+      | OwnEffect(step.JoinGroup(..))
+      | OwnEffect(step.LeaveGroup(..))
+      | Watch(..)
+      | Unwatch(..)
+      | Log(..)
+      | Stop -> Error(Nil)
+    }
+  })
+}
+
 /// The bytes the step writes, in order.
 pub fn writes(step: ConnectionStep(request)) -> List(BitArray) {
   list.filter_map(effects_of(step), fn(effect) {

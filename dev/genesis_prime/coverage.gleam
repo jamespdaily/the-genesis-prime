@@ -126,7 +126,8 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
 }
 
 /// A line for each engine that declares a type no row uses, one for each that
-/// both handles a type and lists it as missing, and one for each that names a row
+/// both handles a type and lists it as missing or lists as partial a type it does not
+/// handle, and one for each that names a row
 /// of a starting ability's tree the client's tables lack.
 pub fn breaches(measurements: List(Measurement)) -> List(String) {
   list.flat_map(measurements, fn(measured) {
@@ -145,7 +146,7 @@ pub fn breaches(measurements: List(Measurement)) -> List(String) {
             [] -> []
             both -> [
               engine.name
-              <> " both handles and lists as missing the types: "
+              <> " lists as missing a type it handles, or as partial a type it does not handle: "
               <> string.join(list.map(both, int.to_string), ", "),
             ]
           },

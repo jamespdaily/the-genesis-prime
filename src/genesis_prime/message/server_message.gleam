@@ -70,6 +70,7 @@ import genesis_prime/message/unit_float_stat_changed.{type UnitFloatStatChanged}
 import genesis_prime/message/unit_health.{type UnitHealth}
 import genesis_prime/message/unit_is_player.{type UnitIsPlayer}
 import genesis_prime/message/unit_movement.{type UnitMovement}
+import genesis_prime/message/unit_properties_changed.{type UnitPropertiesChanged}
 import genesis_prime/message/unit_stat_changed.{type UnitStatChanged}
 import genesis_prime/message/unit_target.{type UnitTarget}
 import genesis_prime/message/unit_threat.{type UnitThreat}
@@ -135,6 +136,7 @@ pub type ServerMessage {
   PlayerHealth(message: PlayerHealth)
   UnitStatChanged(message: UnitStatChanged)
   UnitFloatStatChanged(message: UnitFloatStatChanged)
+  UnitPropertiesChanged(message: UnitPropertiesChanged)
   UnitDeathState(message: UnitDeathState)
   UnitTarget(message: UnitTarget)
   UnitThreat(message: UnitThreat)
@@ -322,6 +324,13 @@ pub fn decode(
         unit_float_stat_changed.decode,
         UnitFloatStatChanged,
       )
+    0x093A ->
+      decoded(
+        body,
+        message_id,
+        unit_properties_changed.decode,
+        UnitPropertiesChanged,
+      )
     0x088C -> decoded(body, message_id, unit_death_state.decode, UnitDeathState)
     0x0908 -> decoded(body, message_id, unit_target.decode, UnitTarget)
     0x090A -> decoded(body, message_id, unit_threat.decode, UnitThreat)
@@ -394,6 +403,7 @@ pub fn name(message: ServerMessage) -> String {
     PlayerHealth(..) -> "player_health"
     UnitStatChanged(..) -> "unit_stat_changed"
     UnitFloatStatChanged(..) -> "unit_float_stat_changed"
+    UnitPropertiesChanged(..) -> "unit_properties_changed"
     UnitDeathState(..) -> "unit_death_state"
     UnitTarget(..) -> "unit_target"
     UnitThreat(..) -> "unit_threat"

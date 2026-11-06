@@ -6,6 +6,7 @@
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
@@ -36,6 +37,8 @@ import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
 import genesis_prime/message/unit_movement.{UnitMovement}
+import genesis_prime/message/unit_properties_changed.{UnitPropertiesChanged}
+import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
@@ -204,6 +207,18 @@ pub fn interrupt_armor_frame(unit_id unit_id: Int, armor armor: Int) -> Frame {
   )
 }
 
+/// 0x93a: the unit's `properties` changed, each with its base and its value, which the
+/// client stores as sent (`opcode.0x93a`).
+pub fn properties_changed_frame(
+  unit_id unit_id: Int,
+  properties properties: List(UnitProperty),
+) -> Frame {
+  let assert Ok(body) =
+    unit_properties_changed.encode(UnitPropertiesChanged(unit_id:, properties:))
+    as "a unit id of 32 bits and at most 197 entries, one for each property id, fit the message"
+  Frame(message_id: unit_properties_changed.message_id, body:)
+}
+
 fn stat_frame(
   unit_id unit_id: Int,
   change change: unit_stat_change.UnitStatChange,
@@ -278,7 +293,8 @@ pub fn leave_world_frame() -> Frame {
 }
 
 /// The player's own record at `place`, stamped from the map's clock, from the
-/// origin `Joined` carried (`map.server_time`).
+/// origin `Joined` carried (`map.server_time`), with the current base and value of each
+/// property a live modifier changes (`unit_properties.overlay`).
 pub fn appearance_at(
   entered entered: world_entry.Entered,
   place place: Place,
@@ -289,6 +305,10 @@ pub fn appearance_at(
     ..entered.unit,
     tail: UnitCreateTail(
       ..entered.unit.tail,
+      properties: unit_properties.overlay(
+        listed: entered.unit.tail.properties,
+        properties: entered.properties,
+      ),
       movement_commands: [
         start_movement.Position(position),
         start_movement.Rotation(rotation),

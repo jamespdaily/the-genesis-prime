@@ -172,7 +172,7 @@ pub fn the_unit_holds_the_maximum_health_it_was_made_with_as_stat_0_and_base_hea
     unit.tail.properties,
     UnitProperty(
       property_id: 7,
-      field_2: float32.to_bits(777.0),
+      base: float32.to_bits(777.0),
       value: float32.to_bits(777.0),
     ),
   )

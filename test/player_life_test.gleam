@@ -34,8 +34,11 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   Answered, CreatureStriker, Key, Landed, Refused, Strike,
 }
+import genesis_prime/game/unit_properties
+import genesis_prime/message/float32
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/step.{TimerId}
-import genesis_prime/table/id.{ClassId}
+import genesis_prime/table/id.{ClassId, Spell4EffectsId}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/float
 import gleam/list
@@ -43,6 +46,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
+import properties_support
 import spawn_support
 
 /// The numbers the player regenerates by: the planted ones of
@@ -90,7 +94,11 @@ fn defence_of(class_id: Int) -> hit.Defence {
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the class has a Dominion Novice set"
-  player_life.defence(loadout:, level: 1, formulas: rating.formulas(tables:))
+  player_life.defence(
+    properties: properties_support.wearing(loadout:),
+    level: 1,
+    formulas: rating.formulas(tables:),
+  )
 }
 
 fn close(first: Float, second: Float) -> Bool {
@@ -525,7 +533,13 @@ fn test_place() -> Place {
 pub fn a_player_enters_at_the_health_saved_capped_at_the_maximum_and_at_full_when_none_was_saved_test() -> Nil {
   use <- owned_test.run(10_000)
   let entered = fn(saved) {
-    player_life.entering(saved:, max_health: 736, shield: 450, regeneration:).0
+    player_life.entering(
+      saved:,
+      max_health: 736,
+      shield: 450,
+      regeneration:,
+      place: test_place(),
+    ).0
   }
   let below = entered(Some(500))
   assert player_life.health(life: below) == 500
@@ -542,7 +556,7 @@ pub fn a_player_enters_at_the_health_saved_capped_at_the_maximum_and_at_full_whe
     as "nothing saved: full, as before"
   assert player_life.fighters(life: below) == []
     && !player_life.in_combat(life: below)
-    && player_life.saved_health(life: below) == Some(500)
+    && player_life.saved_health(life: below) == 500
     as "alive, fighting no one"
   let #(struck, _) =
     player_life.struck(
@@ -556,7 +570,98 @@ pub fn a_player_enters_at_the_health_saved_capped_at_the_maximum_and_at_full_whe
     as "Armor 250: the shield takes 2 and the health 1, from 500"
 }
 
-pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -> Nil {
+pub fn a_player_entering_at_a_saved_health_of_0_enters_dead_with_its_ghost_at_the_body_and_starts_no_timer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(dead, effects) =
+    player_life.entering(
+      saved: Some(0),
+      max_health: 736,
+      shield: 450,
+      regeneration:,
+      place: test_place(),
+    )
+  assert player_life.state(life: dead) == player_life.Dead
+    && player_life.health(life: dead) == 0
+    && player_life.max_health(life: dead) == 736
+    && player_life.fighters(life: dead) == []
+    && !player_life.in_combat(life: dead)
+    as "health 0 is dead (0x140457bc5), the maximum stays the level's, and it fights no one"
+  assert player_life.shield(life: dead) == 0
+    && player_life.max_shield(life: dead) == 450
+    as "a death in the world leaves what the killing blow left, which no save keeps: the server's choice is a shield of 0 with the level's maximum"
+  assert effects
+    == [
+      ToClient(GhostCreated(place: test_place())),
+      ToClient(OwnResurrectionWindow(dead: True)),
+      ToClient(ControlGiven(to: ControlGhost)),
+    ]
+    as "the ghost at the body's place, 0x1b3 with dead 1, then control of the ghost, in the order of death.enter_dead: no 0x88c, no 0x89a, no regeneration timer"
+  assert player_life.left(life: dead) == []
+    as "nothing runs to cancel at the leave"
+  assert player_life.saved_health(life: dead) == 0
+    as "a player that camps again before coming back saves 0 again"
+  assert player_life.timer_fired(life: dead, timer: TimerId(8)).1 == []
+    && player_life.timer_fired(life: dead, timer: TimerId(9)).1 == []
+    as "a regeneration timer that fires anyway changes nothing"
+}
+
+pub fn a_player_that_entered_dead_refuses_a_strike_takes_no_threat_and_comes_back_at_full_health_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(dead, _) =
+    player_life.entering(
+      saved: Some(0),
+      max_health: 736,
+      shield: 450,
+      regeneration:,
+      place: test_place(),
+    )
+  let #(after_strike, effects) =
+    player_life.struck(
+      life: dead,
+      defence: defence_of(1),
+      strike: attack(1),
+      rolls:,
+      place: test_place(),
+    )
+  assert after_strike == dead
+    && effects
+    == [
+      Answer(
+        to: beast(),
+        answered: Answered(
+          key: Key(cast_id: 1, phase: 0, unit_id: 20),
+          outcome: Refused(why: strike_tell.Dead),
+        ),
+      ),
+    ]
+    as "a dead player is refused the strike Dead and changes nothing"
+  let #(threatened, effects) =
+    player_life.threatened(
+      life: dead,
+      unit_id: 7,
+      creature_life: 3,
+      gone: set.new(),
+    )
+  assert threatened == dead && effects == []
+    as "no combat flag, no stream: a dead player is fought by no one"
+  let assert Ok(#(alive, came_back)) =
+    player_life.take(
+      life: dead,
+      message: player_life.ResurrectionChosen,
+      body: message_support.choice_body(unit_id: 5, choice: 1, value: 0),
+      unit_id: 5,
+    )
+    as "the choice the window offers is taken"
+  assert player_life.state(life: alive) == player_life.Alive
+    && player_life.health(life: alive) == 736
+    && player_life.shield(life: alive) == 450
+    as "Wake Here brings it back at full health and the maximum shield, as after a death in the world"
+  assert list.contains(came_back, ToClient(OwnDeathState(dead: False)))
+    && list.contains(came_back, ToClient(ControlGiven(to: ControlBody)))
+    as "0x88c (P, 0) and control of the body"
+}
+
+pub fn a_save_keeps_the_health_the_player_has_and_0_while_it_is_dead_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(hurt, _) =
     player_life.struck(
@@ -566,8 +671,8 @@ pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -
       rolls:,
       place: test_place(),
     )
-  assert player_life.saved_health(life: hurt) == Some(735)
-    as "the health now, which the table requires above 0 (character_health_is_positive)"
+  assert player_life.saved_health(life: hurt) == 735
+    as "the health now, which the table holds (character_health_is_not_negative)"
   let #(dead, _) =
     player_life.struck(
       life: player_life.new(health: 1, shield: 0, regeneration:),
@@ -577,6 +682,110 @@ pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -
       place: test_place(),
     )
   assert player_life.health(life: dead) == 0
-  assert player_life.saved_health(life: dead) == None
-    as "a dead player keeps none: it comes back at full health (death.server_choices)"
+  assert player_life.saved_health(life: dead) == 0
+    as "a dead player keeps 0, the health the client creates a unit dead at (0x140457bc5): the next entry is dead"
+}
+
+// ---- the maxima the player's properties give ----
+
+/// A player of 100 health whose health regenerates a quarter of its maximum each tick,
+/// the numbers test data of this rule's own.
+fn quarter_regeneration() -> player_life.Regeneration {
+  player_life.Regeneration(
+    health_fraction: 0.25,
+    health_multiplier: 1.0,
+    health_tick_ms: 500,
+    shield: None,
+  )
+}
+
+/// The properties of a player whose 0x262 lists BaseHealth 100, with 100 more for the
+/// source `source`, live or not.
+fn base_health_100() -> unit_properties.Properties {
+  let bits = float32.to_bits(100.0)
+  unit_properties.new(
+    defaults: properties_support.defaults(),
+    listed: [UnitProperty(property_id: 7, base: bits, value: bits)],
+    level: 1,
+  )
+}
+
+pub fn a_modifier_of_the_maximum_health_raises_it_keeps_the_health_and_its_end_caps_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let source =
+    unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(99_901))
+  let life =
+    player_life.new(
+      health: 100,
+      shield: 0,
+      regeneration: quarter_regeneration(),
+    )
+  // A modifier of BaseHealth (7): x * 1.0 + 100.0.
+  let #(raised, _) =
+    unit_properties.apply(
+      properties: base_health_100(),
+      source:,
+      modifier: unit_properties.Modifier(
+        property: unit_properties.base_health,
+        mode: 3,
+        multiplier: 1.0,
+        flat: 100.0,
+        per_level: 0.0,
+      ),
+    )
+  let #(life, effects) =
+    player_life.properties_changed(life:, properties: raised)
+  assert player_life.max_health(life:) == 200
+    as "the maximum is BaseHealth's value"
+  assert player_life.health(life:) == 100 as "the current health is kept"
+  assert effects == [player_life.StartTimer(timer: TimerId(8), after_ms: 500)]
+    as "the player is now below its maximum, so its health regenerates, and nothing is written for a health that did not change"
+  let #(life, _) = player_life.timer_fired(life:, timer: TimerId(8))
+  assert player_life.health(life:) == 150
+    as "a tick adds floor(200 x 0.25 x 1.0), 50"
+  let #(ended, _) = unit_properties.remove(properties: raised, source:)
+  let #(life, effects) =
+    player_life.properties_changed(life:, properties: ended)
+  assert player_life.max_health(life:) == 100
+  assert player_life.health(life:) == 100
+    as "the end caps the health at the old maximum (the server's choice)"
+  assert effects
+    == [
+      player_life.ToClient(player_life.OwnHealth(health: 100)),
+      player_life.ToViewers(client_connection.Health(health: 100, dead: False)),
+      player_life.CancelTimer(timer: TimerId(8)),
+    ]
+    as "the lowered health is written to the player and told to its viewers, and the full player's health clock stops"
+}
+
+pub fn the_regeneration_numbers_follow_the_properties_test() -> Nil {
+  use <- owned_test.run(5000)
+  // HealthRegenMultiplier (8) at 2.0 doubles the share of a tick: floor(100 x 0.25 x
+  // 2.0) is 50, where the multiplier 1.0 gives 25. The player entered with 10 health.
+  let #(life, _) =
+    player_life.entering(
+      saved: Some(10),
+      max_health: 100,
+      shield: 0,
+      regeneration: quarter_regeneration(),
+      place: test_place(),
+    )
+  let doubled =
+    properties_support.with_modifier(
+      properties: base_health_100(),
+      source: unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(1)),
+      modifier: unit_properties.Modifier(
+        property: unit_properties.health_regen_multiplier,
+        mode: 3,
+        multiplier: 2.0,
+        flat: 0.0,
+        per_level: 0.0,
+      ),
+    )
+  let #(plain, _) = player_life.timer_fired(life:, timer: TimerId(8))
+  assert player_life.health(life: plain) == 35
+    as "the multiplier 1.0 adds 25 to 10"
+  let #(life, _) = player_life.properties_changed(life:, properties: doubled)
+  let #(life, _) = player_life.timer_fired(life:, timer: TimerId(8))
+  assert player_life.health(life:) == 60 as "the multiplier 2.0 adds 50 to 10"
 }

@@ -75,9 +75,11 @@
 ////   connection replays them (genesis_prime/game/strike_tell).
 //// - **A level-1 player's defence** has no deflect, critical deflect or glance: each
 ////   is 0 from UnitProperty2's defaults (`player.level1_defence`); its physical
-////   mitigation is GameFormula 1234 from its gear's Armor (`0x140464240`,
-////   `player.level1_gear_properties`), and its shield takes up to ShieldMitigationMax
-////   of each blow (genesis_prime/game/hit).
+////   mitigation is GameFormula 1234 from its Armor, its gear's unless a modifier
+////   changes it (`0x140464240`, `player.level1_gear_properties`), and its shield takes
+////   up to ShieldMitigationMax of each blow (genesis_prime/game/hit). Armor,
+////   ShieldMitigationMax, the maxima and the regeneration numbers are the player's
+////   properties (genesis_prime/game/unit_properties).
 //// - **Health** stays in [0, max]. At 0 the answer is `Landed` with the killed bit,
 ////   the creature releases the player, and a later strike is refused `Dead`.
 //// - **Health regenerates** while P is alive, out of combat and below its maximum,
@@ -85,12 +87,14 @@
 ////   HealthRegenMultiplier (UnitProperty2 8), at least 1: the client's text says only
 ////   "slowly out of combat" (149418), so the fraction and the tick are the server's
 ////   choices, two game_number rows (migration 0015), and the multiplier is the
-////   UnitProperty2 default (`UnitProperty2.176`).
+////   player's property, the UnitProperty2 default unless a modifier changes it
+////   (`UnitProperty2.176`).
 //// - **The shield regenerates** ShieldRebootTime after the last blow that lowered
 ////   health or shield (text 531855), then each ShieldTickTime by ShieldRegenPct of
 ////   its maximum (text 531859), in or out of combat. ShieldRegenPct and
 ////   ShieldRebootTime are the player's shield item's (properties 176 and 178 of its
-////   0x262); ShieldTickTime is UnitProperty2 177's default (`UnitProperty2.176`).
+////   0x262); ShieldTickTime is the player's property, UnitProperty2 177's default unless
+////   a modifier changes it (`UnitProperty2.176`).
 //// - **The combat flag** has no client timer (`opcode.0x89a`): the server sends it on
 ////   with the first fighter and off with the last.
 //// - **The stream** goes only to fighters: a creature that holds P on its threat list
@@ -105,6 +109,11 @@
 ////   choice: viewers need only the body), with the id `map.ghost_unit_id` gives,
 ////   at the body's place (`0x140096970`). 0x1b3 hands the client's control to it
 ////   (`opcode.0x1b3`) and 0x636 its movement (`opcode.0x636`).
+//// - **Entering dead**: a save while dead keeps health 0 and the body's place, and
+////   an entry at a saved health of 0 (`entering`) is dead, with the ghost at the
+////   saved place and the window open, with a shield of 0, and no 0x88c, no 0x89a and
+////   no regeneration:
+////   the client creates a unit of health 0 dead (`0x140457bc5`, `death.enter_dead`).
 //// - **The window's values** are the server's choices (`death.server_choices`):
 ////   no cost, penalty, cooldown or forced release, since any cost disables Wake
 ////   Here with no currency sent (`death.window`); the choices Wake Here and
@@ -137,7 +146,7 @@
 //// | the dead client's frames wait while the Holocrypt's leave and join are asked | taken after the join: a ghost's 0x637 is dropped, until the stay's first 0xF2; nothing the dead client may send ends the connection | `what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_as_from_the_dead_test` |
 //// | the Holocrypt's leave has no answer by its deadline | the connection ends, as the camp's leave does | `a_holocrypt_leave_with_no_answer_ends_the_connection_test` |
 //// | the Holocrypt's join is refused or has no answer | refused: 0x0594 and character select; no answer: the connection ends, as entry's join does | `a_refused_holocrypt_join_returns_to_character_select_test`, `a_holocrypt_join_with_no_answer_ends_the_connection_test` |
-//// | P's connection ends while dead | the map's `Leave` as for any end; the ghost was P's client's alone; the next entry is alive and full | `a_player_dead_at_camp_enters_again_alive_and_full_test` |
+//// | P's connection ends while dead | the map's `Leave` as for any end; the ghost was P's client's alone; the save keeps health 0 and the body's place, and the next entry is dead at the body (`entering`) | `a_save_while_dead_keeps_0_and_the_place_of_the_body_test`, `a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never_saved_enters_alive_and_full_test` |
 //// | the map crashes while P is dead | the connection ends, as for any player in the world, after the save of the place the body lies at | `the_map_ending_while_the_player_is_dead_saves_where_the_body_lies_and_ends_the_connection_test` |
 //// | C's killing strike reaches P mid-cast | each live cast ends with 0x7fe to P and the viewers told its start, its timers cancelled; a round that closes later has no go | `a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test`, `a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test` |
 //// | the map's notice, a peer's news or a creature's threat, release or strike sent for P's earlier stay arrives after the Holocrypt's join, a camp and a new entry, or a join to a restarted run that gives the same unit id | dropped: it names the earlier stay | `messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`, `messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test` |
@@ -145,10 +154,10 @@
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/hit.{type Defence, type Rolls}
 import genesis_prime/game/item_property
-import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{type Tell, Answered}
+import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
 import genesis_prime/step.{type Address, type TimerId, TimerId}
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -339,12 +348,12 @@ pub const offered_choices = 3
 pub const window_zero = 0
 
 /// The numbers a player regenerates by: the server's two choices from the
-/// game_number rows, UnitProperty2's defaults for HealthRegenMultiplier and
-/// ShieldTickTime from the rating formulas, and ShieldRegenPct and ShieldRebootTime
-/// of the player's shield item; with no shield item the shield has no clock.
+/// game_number rows, the player's HealthRegenMultiplier and ShieldTickTime
+/// properties, and ShieldRegenPct and ShieldRebootTime of the player's shield item;
+/// with no shield item the shield has no clock.
 pub fn regeneration(
   numbers numbers: GameNumbers,
-  formulas formulas: Formulas,
+  properties properties: Properties,
   shield shield: Option(item_property.Shield),
 ) -> Regeneration {
   let shield =
@@ -352,14 +361,81 @@ pub fn regeneration(
       ShieldRegeneration(
         percent: item.regen_percent,
         reboot_ms: item.reboot_time_ms,
-        tick_ms: formulas.player_shield_tick_ms,
+        tick_ms: shield_tick_ms(properties:),
       )
     })
   Regeneration(
     health_fraction: numbers.health_regen_fraction,
-    health_multiplier: formulas.player_health_regen_multiplier,
+    health_multiplier: health_multiplier(properties:),
     health_tick_ms: numbers.health_regen_tick_ms,
     shield:,
+  )
+}
+
+/// The number a health tick's share is multiplied by: the player's
+/// HealthRegenMultiplier.
+fn health_multiplier(properties properties: Properties) -> Float {
+  unit_properties.value(
+    properties:,
+    property: unit_properties.health_regen_multiplier,
+  )
+}
+
+/// The milliseconds between shield ticks: the player's ShieldTickTime, rounded.
+fn shield_tick_ms(properties properties: Properties) -> Int {
+  float.round(unit_properties.value(
+    properties:,
+    property: unit_properties.shield_tick_time,
+  ))
+}
+
+/// The life after the player's properties changed: the maxima are the BaseHealth and
+/// ShieldCapacityMax values, the health and the shield are kept and capped at the new
+/// maxima (the server's choice: the client holds no rule for a maximum that changes), and
+/// the regeneration takes the new HealthRegenMultiplier and ShieldTickTime. A health or
+/// shield the cap lowers is written to the player's client and its viewers, and the
+/// health clock starts or stops as the new maximum asks. The shield's clock is left as it
+/// is: a raised maximum does not start it, the next blow does.
+pub fn properties_changed(
+  life life: Life,
+  properties properties: Properties,
+) -> #(Life, List(Effect)) {
+  let max_health =
+    float.round(unit_properties.value(
+      properties:,
+      property: unit_properties.base_health,
+    ))
+  let max_shield =
+    float.round(unit_properties.value(
+      properties:,
+      property: unit_properties.shield_capacity_max,
+    ))
+  let regeneration =
+    Regeneration(
+      ..life.regeneration,
+      health_multiplier: health_multiplier(properties:),
+      shield: option.map(life.regeneration.shield, fn(shield) {
+        ShieldRegeneration(..shield, tick_ms: shield_tick_ms(properties:))
+      }),
+    )
+  let health = int.min(life.health, max_health)
+  let shield = int.min(life.shield, max_shield)
+  let changed =
+    Life(..life, max_health:, max_shield:, health:, shield:, regeneration:)
+  let #(changed, timers) = health_clock_settled(life: changed)
+  #(
+    changed,
+    list.flatten([
+      case health == life.health {
+        True -> []
+        False -> health_told(health:, dead: False)
+      },
+      case shield == life.shield {
+        True -> []
+        False -> shield_told(shield:)
+      },
+      timers,
+    ]),
   )
 }
 
@@ -387,41 +463,56 @@ pub fn new(
 /// capped at `max_health`, or `max_health` when nothing was saved, alive and
 /// fighting no one, with a full `shield`. The cap and "nothing saved is full" are
 /// the server's choices: the client holds no saved health (the stat 0 of the
-/// player's 0x262 is the health it shows, `opcode.0x262`), and the health a
-/// player comes back with is the server's choice (`death.server_choices`). Below
-/// its maximum, out of combat, the player starts regenerating: the effect starts
-/// its health timer.
+/// player's 0x262 is the health it shows, `opcode.0x262`). Below its maximum, out
+/// of combat, the player starts regenerating: the effect starts its health timer.
+///
+/// A saved health of 0 is a player that left dead: it enters dead with its body
+/// at `place`, where the character is saved. The client creates a unit with
+/// health 0 dead and refuses nothing for it (`0x140457bc5`), so the entry sends
+/// no 0x88c and no 0x89a, which would run the death branch again, and no timer
+/// starts; its effects are the ghost's 0x262 at `place`, 0x1b3 with dead 1 and
+/// control of the ghost, which the entry burst places before its 0x636
+/// (`death.enter_dead`, `death.player_branch`). Its shield is 0: a death in the
+/// world leaves what the killing blow left, which no save keeps, so a player that
+/// enters dead holds none (the server's choice, as the save holds no shield),
+/// and coming back gives it the maximum.
 pub fn entering(
   saved saved: Option(Int),
   max_health max_health: Int,
   shield shield: Int,
   regeneration regeneration: Regeneration,
+  place place: Place,
 ) -> #(Life, List(Effect)) {
   let health = int.min(option.unwrap(saved, or: max_health), max_health)
-  health_clock_settled(
-    life: Life(..new(health: max_health, shield:, regeneration:), health:),
-  )
-}
-
-/// The health a save keeps: the player's health now, or none while it is dead,
-/// so a player who camps or drops dead comes back at full health
-/// (`death.server_choices`). A living player holds more than 0, which the table
-/// requires of a saved health (`character_health_is_positive`).
-pub fn saved_health(life life: Life) -> Option(Int) {
-  case life.state {
-    Alive -> Some(life.health)
-    Dead -> None
+  let life = Life(..new(health: max_health, shield:, regeneration:), health:)
+  case health {
+    0 -> #(Life(..life, shield: 0, state: Dead), [
+      ToClient(GhostCreated(place:)),
+      ToClient(OwnResurrectionWindow(dead: True)),
+      ToClient(ControlGiven(to: ControlGhost)),
+    ])
+    _ -> health_clock_settled(life:)
   }
 }
 
-/// A level-1 player's defence from its loadout: its deflect, critical deflect and
+/// The health a save keeps: the player's health now, 0 while it is dead, so a
+/// player who camps or drops dead comes back dead (`death.enter_dead`). The table
+/// holds 0 and above (`character_health_is_not_negative`).
+pub fn saved_health(life life: Life) -> Int {
+  case life.state {
+    Alive -> life.health
+    Dead -> 0
+  }
+}
+
+/// A level-1 player's defence from its properties: its deflect, critical deflect and
 /// glance chances and its glance amount from UnitProperty2's defaults (0) and no
 /// rating (`player.level1_defence`), each through its rating formula; the mitigation
-/// of its gear's Armor (property 42, with ResistPhysical and the offsets at their
+/// of its Armor (property 42, with ResistPhysical and the offsets at their
 /// defaults, 0) by GameFormula 1234 (`0x140464240`) for each damage type; and its
-/// shield's ShieldMitigationMax.
+/// ShieldMitigationMax (property 175), 0 for a player with no shield.
 pub fn defence(
-  loadout loadout: Loadout,
+  properties properties: Properties,
   level level: Int,
   formulas formulas: Formulas,
 ) -> Defence {
@@ -433,7 +524,10 @@ pub fn defence(
       formulas:,
       level:,
       base: 0.0,
-      rating: loadout.properties.armor,
+      rating: unit_properties.value(
+        properties:,
+        property: unit_properties.armor,
+      ),
     )
   hit.Defence(
     deflect_chance: chance(formulas.deflect_chance),
@@ -443,10 +537,10 @@ pub fn defence(
     physical_mitigation: mitigation,
     tech_mitigation: mitigation,
     magic_mitigation: mitigation,
-    shield_mitigation_max: case loadout.properties.shield {
-      Some(item_property.Shield(mitigation_max:, ..)) -> mitigation_max
-      None -> 0.0
-    },
+    shield_mitigation_max: unit_properties.value(
+      properties:,
+      property: unit_properties.shield_mitigation_max,
+    ),
   )
 }
 
@@ -490,10 +584,7 @@ pub fn struck(
         hit.Landed(descriptions:, health: left, shield:, ..) -> {
           let shield_news = case shield == life.shield {
             True -> []
-            False -> [
-              ToClient(OwnShield(shield:)),
-              ToViewers(client_connection.Shield(shield:)),
-            ]
+            False -> shield_told(shield:)
           }
           let lowered = shield != life.shield || left != life.health
           let #(life, after) = case left {
@@ -504,12 +595,8 @@ pub fn struck(
             life,
             list.flatten([
               shield_news,
+              health_told(health: left, dead: left == 0),
               [
-                ToClient(OwnHealth(health: left)),
-                ToViewers(client_connection.Health(
-                  health: left,
-                  dead: left == 0,
-                )),
                 Answer(
                   to: strike.from,
                   answered: Answered(
@@ -610,11 +697,20 @@ fn choice(value value: Int) -> Choice {
 fn came_back(life life: Life) -> #(Life, List(Effect)) {
   let health = life.max_health
   let shield = life.max_shield
-  #(Life(..life, health:, shield:, state: Alive), [
-    ToClient(OwnHealth(health:)),
-    ToViewers(client_connection.Health(health:, dead: False)),
-    ToClient(OwnShield(shield:)),
-    ToViewers(client_connection.Shield(shield:)),
+  #(
+    Life(..life, health:, shield:, state: Alive),
+    list.flatten([
+      health_told(health:, dead: False),
+      shield_told(shield:),
+      came_back_news(),
+    ]),
+  )
+}
+
+/// What the player's coming back tells after its health and shield: the death state,
+/// the resurrection window, the ghost's removal, the body's control and the combat log.
+fn came_back_news() -> List(Effect) {
+  [
     ToClient(OwnDeathState(dead: False)),
     ToViewers(client_connection.CameBack),
     ToClient(OwnResurrectionWindow(dead: False)),
@@ -622,7 +718,21 @@ fn came_back(life life: Life) -> #(Life, List(Effect)) {
     ToClient(ControlGiven(to: ControlBody)),
     ToClient(OwnCameBackLogged),
     ToViewers(client_connection.CameBackLogged),
-  ])
+  ]
+}
+
+/// The player's health written to its own client (0x92f) and told to its viewers (0x937).
+fn health_told(health health: Int, dead dead: Bool) -> List(Effect) {
+  [
+    ToClient(OwnHealth(health:)),
+    ToViewers(client_connection.Health(health:, dead:)),
+  ]
+}
+
+/// The player's shield written to its own client and told to its viewers (0x938 of
+/// stat 20).
+fn shield_told(shield shield: Int) -> List(Effect) {
+  [ToClient(OwnShield(shield:)), ToViewers(client_connection.Shield(shield:))]
 }
 
 /// Whether the player is alive.
@@ -787,11 +897,7 @@ fn health_ticked(life life: Life) -> #(Life, List(Effect)) {
     |> int.max(1)
   let health = int.min(life.health + share, life.max_health)
   let #(life, timers) = health_clock_settled(life: Life(..life, health:))
-  #(life, [
-    ToClient(OwnHealth(health:)),
-    ToViewers(client_connection.Health(health:, dead: False)),
-    ..timers
-  ])
+  #(life, list.append(health_told(health:, dead: False), timers))
 }
 
 /// A blow lowered the health or the shield of a living player: the shield's clock
@@ -849,11 +955,7 @@ fn shield_gained(
     ])
     False -> #(life, [])
   }
-  #(life, [
-    ToClient(OwnShield(shield:)),
-    ToViewers(client_connection.Shield(shield:)),
-    ..timers
-  ])
+  #(life, list.append(shield_told(shield:), timers))
 }
 
 /// Both clocks stopped, each running one cancelled.

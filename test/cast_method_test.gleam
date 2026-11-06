@@ -727,7 +727,8 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.Shield(..)
         | client_connection.CrowdControlApplied(..)
         | client_connection.CrowdControlEnded(..)
-        | client_connection.InterruptArmor(..) -> False
+        | client_connection.InterruptArmor(..)
+        | client_connection.PropertiesChanged(..) -> False
       }
     })
     |> list.length
@@ -883,7 +884,9 @@ fn count_logs(effects effects: List(cast.Effect)) -> Int {
       | cast.Strike(..)
       | cast.CancelTimer(..)
       | cast.Pay(..)
-      | cast.Gain(..) -> False
+      | cast.Gain(..)
+      | cast.PropertyStarts(..)
+      | cast.PropertyEnds(..) -> False
     }
   })
   |> list.length

@@ -7,6 +7,7 @@ import genesis_prime/game/rating
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/top_zone
+import genesis_prime/game/unit_properties
 import genesis_prime/table/loader/store
 
 /// Each derived value. A feature whose rule reads a value of the tables that
@@ -19,10 +20,12 @@ import genesis_prime/table/loader/store
 ///   missing rows, unread costs and cycles fail the load (genesis_prime/game/spell_plan).
 /// - The spell areas: what each spell of those trees strikes (genesis_prime/game/spell_area),
 ///   built after the trees.
-/// - The rating formulas: the hit rule's GameFormula rows and a player's bases
-///   (genesis_prime/game/rating).
+/// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/game/rating).
 /// - The top zones: each WorldZone's top zone, which a cycle in the parent chain
 ///   fails (genesis_prime/game/top_zone).
+/// - The unit property defaults: each UnitProperty2 row's defaultValue, the base of
+///   a player's property no 0x262 lists, whose missing rows the rules read fail the
+///   load (genesis_prime/game/unit_properties).
 pub fn all() -> List(store.Derivation) {
   [
     appearance.derivation(),
@@ -31,5 +34,6 @@ pub fn all() -> List(store.Derivation) {
     spell_area.derivation(),
     rating.derivation(),
     top_zone.derivation(),
+    unit_properties.derivation(),
   ]
 }
