@@ -56,6 +56,7 @@ import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/set
 import gleam/string
 import map_support
@@ -473,6 +474,7 @@ pub fn a_summoned_creature_aggroes_the_first_player_that_approaches_it_and_strik
       source: spawn_source.RunOnly(spawn_source.Summoned(
         id: SpawnId(-1),
         creature_id: spawn.creature_id,
+        level: None,
         place: spawn.place,
       )),
       spawn:,

@@ -41,7 +41,7 @@ import genesis_prime/world_map/map.{
   CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
 }
 import genesis_prime/world_map/spawn.{
-  FailsTheChecks, NoCreatureRow, NoFaction, WouldNotStart,
+  FailsTheChecks, NoCreatureLevelRow, NoCreatureRow, NoFaction, WouldNotStart,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{RunOnly}
@@ -955,7 +955,7 @@ pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_
     as "opcode.0x1c2: the speaker's own line is answered before the ask"
   assert chat_tells(taken) == [] as "the design: the line is told to no viewer"
   let assert Some(ask) = support.asked(taken)
-  assert ask.request == game_connection_support.summon_asked(75_048)
+  assert ask.request == game_connection_support.summon_asked(75_048, None)
     as "the design: the connection asks the run of the map that took the player to summon Creature2 75048, with its own id"
   assert ask.deadline_ms == support.now_ms + 4000
     as "the settings' ask deadline from the time of the input"
@@ -966,8 +966,22 @@ pub fn an_unknown_command_and_a_malformed_summon_each_answer_one_system_line_and
   list.each(
     [
       #("!teleport 75048", "unknown command"),
-      #("!summon", "!summon takes one Creature2 id, as !summon 75048"),
-      #("!summon x", "!summon takes one Creature2 id, as !summon 75048"),
+      #(
+        "!summon",
+        "!summon takes a Creature2 id and an optional level, as !summon 75048 or !summon 75048 3",
+      ),
+      #(
+        "!summon x",
+        "!summon takes a Creature2 id and an optional level, as !summon 75048 or !summon 75048 3",
+      ),
+      #(
+        "!summon 75048 x",
+        "!summon's level is a whole number, as !summon 75048 3",
+      ),
+      #(
+        "!summon 75048 3 4",
+        "!summon takes a Creature2 id and an optional level, as !summon 75048 or !summon 75048 3",
+      ),
     ],
     fn(row) {
       let #(state, taken) =
@@ -983,6 +997,54 @@ pub fn an_unknown_command_and_a_malformed_summon_each_answer_one_system_line_and
       assert goes_on_in_the_world(state)
     },
   )
+}
+
+pub fn a_summon_line_with_a_level_asks_the_map_for_that_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    game_connection_support.read(
+      game_connection_support.in_world_with_dev_commands(),
+      chat_line_message(4, "!summon 75048 3"),
+    )
+  assert game_connection_support.written_ids(taken) == [0x01C2]
+    as "opcode.0x1c2: the speaker's own line is answered before the ask"
+  let assert Some(ask) = support.asked(taken)
+  assert ask.request == game_connection_support.summon_asked(75_048, Some(3))
+    as "the design: the ask names the level the line named"
+}
+
+pub fn a_level_the_map_refused_is_a_system_line_naming_it_and_the_player_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) =
+    game_connection_support.read(
+      game_connection_support.in_world_with_dev_commands(),
+      chat_line_message(4, "!summon 73465 51"),
+    )
+  let assert client_connection.AskMapRun(map: _, message:, ..) =
+    game_connection_support.ask_request(taken)
+  let #(map_state, _) = map_spawn_support.started(at: [])
+  let #(map_state, _) =
+    map_spawn_support.join(state: map_state, at_ms: 5100, connection: 1, x: 0.0)
+  let #(_, refused) =
+    map.step(
+      map_state,
+      support.input(OwnEvent(step.Asked(caller: step.CallerId(1), message:))),
+    )
+  let assert [#(_, answer)] = support.replies(refused)
+  assert answer
+    == NotSummoned(reason: CreatureRefused(NoCreatureLevelRow(level: 51)))
+    as "the map's answer for a level the planted tables hold no CreatureLevel row for (they hold rows 1 to 50 and 101)"
+  let #(state, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromMap(answer)),
+    )
+  assert system_lines(answered) == ["not summoned: CreatureLevel 51 has no row"]
+    as "the design: one system line, naming the level, and never said aloud"
+  assert game_connection_support.written_ids(answered) == [0x01C8]
+  assert chat_tells(answered) == []
+  assert goes_on_in_the_world(state)
 }
 
 pub fn a_summoned_answer_writes_nothing_and_the_player_goes_on_test() -> Nil {
@@ -1040,6 +1102,10 @@ pub fn a_refused_creature_answers_one_system_line_naming_the_reason_test() -> Ni
       #(
         CreatureRefused(FailsTheChecks(NoCreatureRow(Creature2Id(999_999)))),
         "not summoned: Creature2 999999 has no row",
+      ),
+      #(
+        CreatureRefused(NoCreatureLevelRow(level: 200)),
+        "not summoned: CreatureLevel 200 has no row",
       ),
       #(
         CreatureRefused(WouldNotStart(Creature2Id(75_048), NoFaction)),
@@ -1200,7 +1266,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
   let #(state, asked) =
     game_connection_support.read(state, chat_line_message(4, "!summon 73465"))
   assert game_connection_support.ask_request(asked)
-    == game_connection_support.summon_asked(73_465)
+    == game_connection_support.summon_asked(73_465, None)
     as "the line asks the player's map run, as one"
   let assert client_connection.AskMapRun(message:, ..) =
     game_connection_support.ask_request(asked)
@@ -1216,9 +1282,10 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
     == spawn_source.Summoned(
       id: SpawnId(-1),
       creature_id: Creature2Id(73_465),
+      level: Some(1),
       place: standing,
     )
-    as "at the place the player stands at"
+    as "at the place the player stands at, with the Dagun's minLevel 1 (Creature2.73465) as the line named no level"
   assert list.any(start.viewers, fn(viewer) { viewer.0 == ConnectionId(1) })
     as "the player sees the place, so it is a viewer"
   let #(_, settled) =

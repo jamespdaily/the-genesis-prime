@@ -468,6 +468,9 @@ pub fn summon_checks(
 
 /// Why a summon makes no spawn.
 pub type SummonRefusal {
+  /// The summon names a level the CreatureLevel table has no row for, so no
+  /// level, health or defence follows from it.
+  NoCreatureLevelRow(level: Int)
   /// The row the summon would make fails the client's checks of a spawn
   /// (`client_checks`) or the load's (`load_checks`).
   FailsTheChecks(error: SpawnError)
@@ -482,9 +485,10 @@ pub type SummonRefusal {
 /// The run-only spawn of a summon, checked as a spawn is: a row of entity type 0
 /// (NonPlayer) for the creature at the summoned place and facing, with the
 /// display, outfit and factions the creature's Creature2 row gives, through
-/// `load_checks` and `left_out_of`. The row's own level and health are none, so
-/// the creature stands at its `minLevel` with its Base Health
-/// (`creature_vitals`). The display and the outfit are the first entry of the
+/// `load_checks` and `left_out_of`. The row's own health is none, and its level
+/// is the summon's when it names one (stat 10, so the health and the defence
+/// follow the CreatureLevel row of that level) and else none, so the creature
+/// stands at its `minLevel` with its Base Health (`creature_vitals`). The display and the outfit are the first entry of the
 /// creature's groups, a server choice: the client's weighted pick runs only for
 /// spawns it makes itself (`0x1404846c0`, `opcode.0x262.creature`), and both
 /// factions are `Creature2.factionId`, as the world database sends them
@@ -494,11 +498,19 @@ pub fn summoned(
   summoned summoned: Summoned,
 ) -> Result(Spawn, SummonRefusal) {
   let SummonChecks(catalog:, formulas:, kinds:) = checks
-  let Summoned(id:, creature_id:, place:) = summoned
+  let Summoned(id:, creature_id:, level:, place:) = summoned
   use creature <- result.try(
     valid_creature(catalog:, creature_id:)
     |> result.map_error(FailsTheChecks),
   )
+  use row_level <- result.try(case level {
+    None -> Ok(None)
+    Some(number) ->
+      case creature_level.get(catalog.tables, CreatureLevelId(number)) {
+        Ok(_) -> Ok(Some(int.to_float(number)))
+        Error(Nil) -> Error(NoCreatureLevelRow(level: number))
+      }
+  })
   let facing = start_place.facing(place)
   let row =
     Row(
@@ -529,7 +541,7 @@ pub fn summoned(
       world_object_id: 0,
       world_socket_id: 0,
       health: None,
-      level: None,
+      level: row_level,
     )
   use #(checked, _shared) <- result.try(
     load_checks(catalog:, formulas:, kinds:, shared: dict.new(), row:)
@@ -545,6 +557,8 @@ pub fn summoned(
 /// chat line carries.
 pub fn describe_refusal(refusal refusal: SummonRefusal) -> String {
   case refusal {
+    NoCreatureLevelRow(level:) ->
+      "CreatureLevel " <> int.to_string(level) <> " has no row"
     FailsTheChecks(error:) -> describe(error:)
     WouldNotStart(creature_id: Creature2Id(creature_id), reason:) ->
       "Creature2 "

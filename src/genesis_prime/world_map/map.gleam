@@ -329,8 +329,8 @@
 ////
 //// ```
 //// connection c                     map                                          shell
-////   Summon(c, creature2 id) ─▶ Asked ─▶ place = c's player's place and facing
-////                                      spawn.summoned(checks, Summoned(id s, creature2 id, place))
+////   Summon(c, creature2 id, level) ─▶ Asked ─▶ place = c's player's place and facing
+////                                      spawn.summoned(checks, Summoned(id s, creature2 id, level, place))
 ////                                      refused ─▶ Reply(NotSummoned(CreatureRefused(why))); nothing changes
 ////                                      s = next run-only id (-1, -2, ...); run_spawns[s] = the spawn
 ////                                      the players who see place (sight, exact) are its first viewers:
@@ -394,6 +394,7 @@
 //// | the respawn timer fires with no one in sight | the spawn is dormant |
 //// | a summoned creature does not start | the asker is answered `NotSummoned(CreatureNotStarted(why))`, an error line is written, and the run-only spawn, its state and its unit id are dropped |
 //// | a summoned creature ends before the answer | the run-only spawn is dropped as at any end; the asker is answered `Summoned` when the summon's timer fires, since the start did not fail |
+//// | a summon names a level with no CreatureLevel row, or one whose row holds no health | answered `NotSummoned(CreatureRefused(why))` at once, naming the level; nothing changes |
 //// | a summon is asked for a connection with no player here | answered `NotSummoned(NoPlayerHere)`; nothing changes |
 //// | two summons are asked at once | each takes the next run-only id and unit id, and each caller is held under its own id, so the answers are told apart |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
@@ -521,11 +522,12 @@ pub type Message {
   StealthChanged(connection: ConnectionId, stealthed: Bool)
   /// A development command of the connection's player: start `creature_id` as a
   /// run-only spawn at the place and facing the map holds for the player, and
-  /// show it to the players who see that place. An ask, answered `Summoned` or
+  /// show it to the players who see that place, at `level` when there is one and
+  /// else at the creature's own minLevel. An ask, answered `Summoned` or
   /// `NotSummoned`, with the connection's ask deadline; a map that is not running
   /// or ends before it answers is the asker's outcome, not a `NotSummoned`.
   /// Taken only from a connection that is in the map.
-  Summon(connection: ConnectionId, creature_id: Creature2Id)
+  Summon(connection: ConnectionId, creature_id: Creature2Id, level: Option(Int))
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -853,8 +855,8 @@ pub fn step(
       ready(state:, connection:, seq:)
     OwnEvent(Told(message: StealthChanged(connection:, stealthed:))) ->
       stealth_changed(state:, connection:, stealthed:)
-    OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:))) ->
-      summoned(state:, caller:, connection:, creature_id:)
+    OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:, level:))) ->
+      summoned(state:, caller:, connection:, creature_id:, level:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Asked(message: StealthChanged(..), ..))
@@ -890,6 +892,7 @@ fn summoned(
   caller caller: CallerId,
   connection connection: ConnectionId,
   creature_id creature_id: Creature2Id,
+  level level: Option(Int),
 ) -> #(State, ServiceStep(Outgoing)) {
   let refused = fn(reason) {
     #(state, Effects([OwnEffect(Reply(caller, NotSummoned(reason:)))]))
@@ -902,7 +905,7 @@ fn summoned(
       case
         spawn.summoned(
           checks: state.settings.summons,
-          summoned: spawn_source.Summoned(id:, creature_id:, place:),
+          summoned: spawn_source.Summoned(id:, creature_id:, level:, place:),
         )
       {
         Error(refusal) -> refused(CreatureRefused(refusal:))
@@ -1370,6 +1373,7 @@ fn source_of(
       spawn_source.RunOnly(summoned: spawn_source.Summoned(
         id: spawn,
         creature_id: run_spawn.creature_id,
+        level: Some(run_spawn.level),
         place: run_spawn.place,
       ))
     Error(Nil) -> spawn_source.Stored(id: spawn)

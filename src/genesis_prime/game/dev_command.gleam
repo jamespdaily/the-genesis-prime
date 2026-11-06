@@ -6,35 +6,43 @@
 //// line the server answers it with.
 ////
 //// ```
-//// Say "!summon 75048"  ─▶ chat: setting on, channel Say, text starts with `!`
-////                          parse ─▶ Summon(Creature2Id 75048) ─▶ chat.AskSummon ─▶ the connection asks the map
-////                          parse ─▶ Refusal                   ─▶ one system line (`describe`)
+//// Say "!summon 75048 3" ─▶ chat: setting on, channel Say, text starts with `!`
+////                          parse ─▶ Summon(Creature2Id 75048, Some(3)) ─▶ chat.AskSummon ─▶ the connection asks the map
+////                          parse ─▶ Refusal                            ─▶ one system line (`describe`)
 //// ```
 ////
 //// - **The grammar** is `!` then a word, then its arguments, split at spaces.
-////   `summon` takes one whole decimal number, a Creature2 id; the word is read
-////   as typed, in lower case.
+////   `summon` takes one whole decimal number, a Creature2 id, and then
+////   optionally a second, the level; the word is read as typed, in lower case.
+////   Whether a CreatureLevel row has the level is the map's check.
 //// - **A word with no command**, and a command whose arguments are not what it
 ////   takes, are each answered with a system line, never as a Say line, so a
 ////   mistyped command is not said aloud to the players who see the speaker.
 
 import genesis_prime/table/id.{type Creature2Id, Creature2Id}
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// A development command.
 pub type Command {
-  /// `!summon <Creature2 id>`: start that creature at the player's place and
-  /// facing as a run-only spawn (genesis_prime/world_map/map `Summon`).
-  Summon(creature2_id: Creature2Id)
+  /// `!summon <Creature2 id>` or `!summon <Creature2 id> <level>`: start that
+  /// creature at the player's place and facing as a run-only spawn
+  /// (genesis_prime/world_map/map `Summon`), at the level when there is one and
+  /// else at its own minLevel.
+  Summon(creature2_id: Creature2Id, level: Option(Int))
 }
 
 /// Why a `!` line is no command.
 pub type Refusal {
   /// The word after `!` is no command.
   UnknownCommand
-  /// The word is `summon`, but what follows is not exactly one whole number.
+  /// The word is `summon`, but what follows is not a whole number for the
+  /// Creature2 id, or one and a level, and nothing more.
   SummonTakesACreature2Id
+  /// The word is `summon` with a Creature2 id, and its second word is not a whole
+  /// number.
+  SummonLevelIsNotAWholeNumber
 }
 
 /// Whether the text is a command line: its first UTF-16 unit is `!`.
@@ -50,14 +58,30 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
   case words(units: text, word: [], found: []) {
     [command, ..arguments] if command == summon_word ->
       case arguments {
-        [argument] ->
-          decimal(units: argument)
-          |> result.map(fn(number) { Summon(creature2_id: Creature2Id(number)) })
-          |> result.replace_error(SummonTakesACreature2Id)
-        [] | [_, _, ..] -> Error(SummonTakesACreature2Id)
+        [creature] -> summon(creature:, level: None)
+        [creature, level] ->
+          case decimal(units: level) {
+            Ok(number) -> summon(creature:, level: Some(number))
+            Error(Nil) ->
+              case decimal(units: creature) {
+                Ok(_) -> Error(SummonLevelIsNotAWholeNumber)
+                Error(Nil) -> Error(SummonTakesACreature2Id)
+              }
+          }
+        [] | [_, _, _, ..] -> Error(SummonTakesACreature2Id)
       }
     [_, ..] | [] -> Error(UnknownCommand)
   }
+}
+
+/// The summon of the creature the units spell, at the level when there is one.
+fn summon(
+  creature creature: List(Int),
+  level level: Option(Int),
+) -> Result(Command, Refusal) {
+  decimal(units: creature)
+  |> result.map(fn(number) { Summon(creature2_id: Creature2Id(number), level:) })
+  |> result.replace_error(SummonTakesACreature2Id)
 }
 
 /// `!summon` as the UTF-16 units the client sends.
@@ -100,6 +124,8 @@ pub fn describe(refusal refusal: Refusal) -> String {
   case refusal {
     UnknownCommand -> "unknown command"
     SummonTakesACreature2Id ->
-      "!summon takes one Creature2 id, as !summon 75048"
+      "!summon takes a Creature2 id and an optional level, as !summon 75048 or !summon 75048 3"
+    SummonLevelIsNotAWholeNumber ->
+      "!summon's level is a whole number, as !summon 75048 3"
   }
 }

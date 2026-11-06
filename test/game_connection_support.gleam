@@ -579,15 +579,19 @@ pub fn in_world_with_dev_commands() -> game_connection.State {
 }
 
 /// The ask of a `!summon` line of the tests' player: the run of the map that
-/// took the player, 77 (`incarnation`), with the connection's id and the
-/// Creature2 id.
-pub fn summon_asked(creature2_id creature2_id: Int) -> Request {
+/// took the player, 77 (`incarnation`), with the connection's id, the
+/// Creature2 id and the level the line named, if any.
+pub fn summon_asked(
+  creature2_id creature2_id: Int,
+  level level: Option(Int),
+) -> Request {
   AskMapRun(
     map: camp_map(),
     incarnation:,
     message: Summon(
       connection: ConnectionId(1),
       creature_id: Creature2Id(creature2_id),
+      level:,
     ),
   )
 }

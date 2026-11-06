@@ -44,6 +44,7 @@ import genesis_prime/table/id.{ChatChannelId, Creature2Id}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/set
 import gleam/string
 import owned_test
@@ -993,7 +994,8 @@ pub fn with_the_setting_off_a_summon_line_is_a_say_line_and_nothing_is_asked_tes
 pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_the_summon_last_test() -> Nil {
   use <- owned_test.run(5000)
   let effects = say_taken(text: "!summon 75048", dev_commands: True)
-  let assert [chat.Send(frame:), chat.AskSummon(creature2_id:)] = effects
+  let assert [chat.Send(frame:), chat.AskSummon(creature2_id:, level:)] =
+    effects
     as "the 0x1c2, then the ask last: the connection's ask ends the step"
   assert accepted([chat.Send(frame:)])
     == ChatLineAccepted(
@@ -1005,7 +1007,8 @@ pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_
       premium_tier: 0,
     )
     as "opcode.0x1c2: the same answer as for a said line, so the client shows the line it typed"
-  assert creature2_id == Creature2Id(75_048)
+  assert creature2_id == Creature2Id(75_048) && level == None
+    as "no level was typed, so none is asked for"
   assert tells_of(effects) == []
     as "the design: the line is told to no viewer, so a command is not said aloud"
 }
@@ -1023,13 +1026,72 @@ pub fn an_unknown_bang_command_answers_one_system_line_and_is_told_to_no_viewer_
 
 pub fn a_summon_with_no_number_or_a_bad_one_answers_its_usage_as_one_system_line_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each(["!summon", "!summon x", "!summon 1 2", "!summon -1"], fn(text) {
+  list.each(["!summon", "!summon x", "!summon 1 2 3", "!summon -1"], fn(text) {
     let effects = say_taken(text:, dev_commands: True)
     assert system_line_of(effects)
-      == system_line_with("!summon takes one Creature2 id, as !summon 75048")
+      == system_line_with(
+        "!summon takes a Creature2 id and an optional level, as !summon 75048 or !summon 75048 3",
+      )
       as "chat.system_line: the design's usage line, as a System line"
     assert tells_of(effects) == []
   })
+}
+
+pub fn a_summon_with_a_level_asks_the_summon_at_that_level_test() -> Nil {
+  use <- owned_test.run(5000)
+  let effects = say_taken(text: "!summon 75048 3", dev_commands: True)
+  let assert [chat.Send(_), chat.AskSummon(creature2_id:, level:)] = effects
+    as "the 0x1c2, then the ask last"
+  assert creature2_id == Creature2Id(75_048) && level == Some(3)
+    as "the creature and the level the line names"
+  assert tells_of(effects) == []
+    as "the design: the line is told to no viewer, so a command is not said aloud"
+}
+
+pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers_one_system_line_and_asks_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(
+        "!summon 75048 x",
+        "!summon's level is a whole number, as !summon 75048 3",
+      ),
+      #(
+        "!summon 75048 3.5",
+        "!summon's level is a whole number, as !summon 75048 3",
+      ),
+      #(
+        "!summon 75048 -3",
+        "!summon's level is a whole number, as !summon 75048 3",
+      ),
+      #(
+        "!summon 75048 3 4",
+        "!summon takes a Creature2 id and an optional level, as !summon 75048 or !summon 75048 3",
+      ),
+    ],
+    fn(row) {
+      let effects = say_taken(text: row.0, dev_commands: True)
+      assert system_line_of(effects) == system_line_with(row.1)
+        as "chat.system_line: the design's text for the refusal, as a System line"
+      assert tells_of(effects) == []
+        as "the design: a refused command is not said aloud"
+      assert !list.any(effects, fn(effect) {
+        case effect {
+          chat.AskSummon(..) -> True
+          chat.Send(..)
+          | chat.Tell(..)
+          | chat.TellWatched(..)
+          | chat.UnknownZone(..)
+          | chat.Watch(..)
+          | chat.Unwatch(..)
+          | chat.JoinGroup(..)
+          | chat.LeaveGroup(..)
+          | chat.Unhandled(..) -> False
+        }
+      })
+        as "no summon is asked of the map"
+    },
+  )
 }
 
 pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting_on_test() -> Nil {
