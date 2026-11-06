@@ -44,6 +44,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
+import properties_support
 import spawn_support
 
 const health_timer = TimerId(8)
@@ -95,7 +96,11 @@ fn defence() -> hit.Defence {
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
     as "a Warrior has a Dominion Novice set"
-  player_life.defence(loadout:, level: 1, formulas: rating.formulas(tables:))
+  player_life.defence(
+    properties: properties_support.wearing(loadout:),
+    level: 1,
+    formulas: rating.formulas(tables:),
+  )
 }
 
 /// The Beast's strike, its every blow dealing `damage`.

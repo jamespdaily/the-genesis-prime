@@ -656,7 +656,9 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
         | cast.CancelTimer(..)
         | cast.Strike(..)
         | cast.Pay(..)
-        | cast.Gain(..) -> False
+        | cast.Gain(..)
+        | cast.PropertyStarts(..)
+        | cast.PropertyEnds(..) -> False
       }
     })
   }

@@ -884,7 +884,9 @@ fn count_logs(effects effects: List(cast.Effect)) -> Int {
       | cast.Strike(..)
       | cast.CancelTimer(..)
       | cast.Pay(..)
-      | cast.Gain(..) -> False
+      | cast.Gain(..)
+      | cast.PropertyStarts(..)
+      | cast.PropertyEnds(..) -> False
     }
   })
   |> list.length

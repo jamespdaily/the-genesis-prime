@@ -35,6 +35,7 @@ import character_tables
 import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/rating
+import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
@@ -166,7 +167,7 @@ fn entering(
       next_whisper: 1,
       classes: class_resource_support.classes(),
       numbers: spawn_support.numbers,
-      formulas: rating.formulas(tables: character_tables.shared()),
+      defaults: unit_properties.defaults(tables: character_tables.shared()),
     )
     as "the map's answer to the join is the one world entry asked for"
   let frames =

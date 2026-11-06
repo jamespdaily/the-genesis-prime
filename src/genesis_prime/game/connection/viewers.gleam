@@ -83,7 +83,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
-import genesis_prime/game/connection/life as connection_life
+import genesis_prime/game/connection/life_effect as connection_life_effect
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/movement
@@ -158,7 +158,12 @@ pub fn map_sent(
           unit_id:,
         )
       let released =
-        connection_life.life_effects(session:, now:, entered:, effects: by_life)
+        connection_life_effect.life_effects(
+          session:,
+          now:,
+          entered:,
+          effects: by_life,
+        )
       let #(session, resource_written) =
         connection_resource.life_effects(session:, effects: by_life)
       let released = list.append(released, resource_written)

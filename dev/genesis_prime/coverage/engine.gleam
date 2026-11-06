@@ -63,6 +63,18 @@ pub type Missing {
   )
 }
 
+/// A type the engine handles with a gap: a rule reads it, but not every row or every
+/// part of a row of the type.
+pub type Partial {
+  Partial(
+    type_number: Int,
+    /// What the rule does not handle of the type, in plain words.
+    reason: String,
+    /// The fact file's key of the client's reading of the type.
+    fact_key: String,
+  )
+}
+
 /// One engine's declaration.
 pub type EngineDeclaration {
   EngineDeclaration(
@@ -72,6 +84,9 @@ pub type EngineDeclaration {
     area_issue: Int,
     source: Source,
     handled: Handling,
+    /// The types handled with a stated gap. A type is never both partial and missing,
+    /// and each is one the engine handles.
+    partial: List(Partial),
     /// The types read from the client and not handled. A type is never both.
     missing: List(Missing),
     /// The type values the level-1 abilities' trees use, when the engine's
@@ -123,6 +138,7 @@ fn prerequisites() -> EngineDeclaration {
       },
     ),
     handled: Decoded(is_read: game_prerequisite.is_read),
+    partial: [],
     missing: [
       Missing(
         type_number: 43,
@@ -160,6 +176,7 @@ fn quest_objectives() -> EngineDeclaration {
       },
     ),
     handled: Listed(ids: []),
+    partial: [],
     missing: [],
     starting_abilities: None,
   )
@@ -182,6 +199,13 @@ fn spell_effects() -> EngineDeclaration {
       },
     ),
     handled: Decoded(is_read: effect_kind.is_read),
+    partial: [
+      Partial(
+        type_number: 11,
+        reason: "rows, or parts of rows, aimed at another unit: the next step",
+        fact_key: "Spell4Effects.effectType.11",
+      ),
+    ],
     missing: [
       Missing(
         type_number: 3,
@@ -236,6 +260,7 @@ fn spend_scaled_costs() -> EngineDeclaration {
       },
     ),
     handled: Decoded(is_read: spend.is_read),
+    partial: [],
     missing: list.map([2, 5, 9, 10, 11], unread),
     starting_abilities: Some(starting_ability.spend_ids),
   )
@@ -257,6 +282,7 @@ fn unit_types() -> EngineDeclaration {
       },
     ),
     handled: Listed(ids: []),
+    partial: [],
     missing: [],
     starting_abilities: None,
   )
@@ -283,6 +309,7 @@ fn messages() -> EngineDeclaration {
       ids: sent_message.all(),
     ),
     handled: Listed(ids: handled_client_message_ids()),
+    partial: [],
     missing: [],
     starting_abilities: None,
   )

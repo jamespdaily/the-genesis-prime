@@ -43,6 +43,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
+import properties_support
 import spawn_support
 
 /// The numbers the player regenerates by: the planted ones of
@@ -90,7 +91,11 @@ fn defence_of(class_id: Int) -> hit.Defence {
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the class has a Dominion Novice set"
-  player_life.defence(loadout:, level: 1, formulas: rating.formulas(tables:))
+  player_life.defence(
+    properties: properties_support.wearing(loadout:),
+    level: 1,
+    formulas: rating.formulas(tables:),
+  )
 }
 
 fn close(first: Float, second: Float) -> Bool {

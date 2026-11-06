@@ -11,9 +11,9 @@
 ////  go + delay
 ////    PropertyStarts ─────▶ apply(source, modifier) ─────────▶ 0x93a to the player,
 ////                            changed entries                   PropertiesChanged to viewers
-////                            max health or shield changed ──▶ player_life takes the new maximum
+////                            a maximum or a regeneration ───▶ player_life takes the new numbers
 ////  go + delay + duration, a node taken off, the caster dies
-////    PropertyEnds ───────▶ remove(source) / remove_cast ────▶ 0x93a, PropertiesChanged
+////    PropertyEnds ───────▶ remove(source) ──────────────────▶ 0x93a, PropertiesChanged
 ////
 //// strike, damage, defence, regeneration ◀── value(property)
 //// ```
@@ -47,14 +47,20 @@
 //// |---|---|---|---|
 //// | A modifier starts | the connection restarts from storage with the table's bases and no modifier, and the client is created again | the same source applied twice is held once | n/a |
 //// | A modifier ends | as above | the same source removed twice changes nothing the second time | removing a source that is not held changes nothing |
-//// | The caster dies or leaves | every modifier of its casts is removed (`remove_cast`), each reported | | |
+//// | The caster dies | each modifier of its casts is removed by the cast rule's `PropertyEnds`, each reported | | |
+//// | The caster leaves | the connection's `Entered` goes with its properties; the next entry starts from the bases | | |
 
-import genesis_prime/message/unit_property.{type UnitProperty}
+import genesis_prime/message/float32
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/table/id.{
   type Spell4EffectsId, type UnitProperty2Id, UnitProperty2Id,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/unit_property2
 import gleam/dict.{type Dict}
+import gleam/int
+import gleam/list
+import gleam/result
 
 /// BaseHealth (7): the maximum health `Unit:GetMaxHealth` reads
 /// (`Unit.GetMaxHealth`).
@@ -145,25 +151,52 @@ type Live {
   Live(source: Source, modifier: Modifier)
 }
 
-/// The properties of a player entering the world at `level`: every UnitProperty2 row's
-/// defaultValue as base and value, and the base and value `listed` carries for the ids
-/// the player's 0x262 lists, no modifier live. A row the table lacks for a listed id is
-/// a crash: the 0x262 is the server's own.
-pub fn new(
+/// Every UnitProperty2 row's defaultValue, the base of a property no 0x262 lists.
+pub fn defaults(
   tables tables: table_store.Tables,
+) -> List(#(UnitProperty2Id, Float)) {
+  list.map(unit_property2.all(tables), fn(row) {
+    #(unit_property2.id(row), row.default_value)
+  })
+}
+
+/// The properties of a player entering the world at `level`: each of `defaults` as
+/// base and value, then the base and value `listed` carries for the ids the player's
+/// 0x262 lists, no modifier live. The server's own 0x262 lists finite floats.
+pub fn new(
+  defaults defaults: List(#(UnitProperty2Id, Float)),
   listed listed: List(UnitProperty),
   level level: Int,
 ) -> Properties {
-  todo as "defaults of unit_property2.all, then the listed bases and values"
+  let initial =
+    list.map(defaults, fn(entry) { #({ entry.0 }.value, entry.1) })
+    |> dict.from_list
+  let #(base, value) =
+    list.fold(listed, #(initial, initial), fn(so_far, entry) {
+      #(
+        dict.insert(so_far.0, entry.property_id, float_of(bits: entry.base)),
+        dict.insert(so_far.1, entry.property_id, float_of(bits: entry.value)),
+      )
+    })
+  Properties(base:, value:, live: [], level:)
+}
+
+fn float_of(bits bits: Int) -> Float {
+  let assert Ok(float) = float32.bits(number: bits) |> result.try(float32.value)
+    as "the server's own 0x262 lists finite 32-bit floats"
+  float
 }
 
 /// The base of a property: the number the 0x262 or the table gave it, which no modifier
-/// changes.
+/// changes. A property that neither names is a crash: every id a rule or a plan names
+/// has a UnitProperty2 row.
 pub fn base(
   properties properties: Properties,
   property property: UnitProperty2Id,
 ) -> Float {
-  todo as "the base dict's entry; an id the table lacks is a crash"
+  let assert Ok(base) = dict.get(properties.base, property.value)
+    as "every property a rule or a plan names has a UnitProperty2 row"
+  base
 }
 
 /// The value of a property: its base with every live modifier on it applied in start
@@ -172,7 +205,9 @@ pub fn value(
   properties properties: Properties,
   property property: UnitProperty2Id,
 ) -> Float {
-  todo as "the value dict's entry; an id the table lacks is a crash"
+  let assert Ok(value) = dict.get(properties.value, property.value)
+    as "every property a rule or a plan names has a UnitProperty2 row"
+  value
 }
 
 /// The properties with `modifier` live from `source`, and the entries whose value
@@ -183,7 +218,15 @@ pub fn apply(
   source source: Source,
   modifier modifier: Modifier,
 ) -> #(Properties, List(Changed)) {
-  todo as "append to live, recompute the property from its base in start order, compare"
+  case list.any(properties.live, fn(live) { live.source == source }) {
+    True -> #(properties, [])
+    False ->
+      recomputed(
+        properties:,
+        live: list.append(properties.live, [Live(source:, modifier:)]),
+        property: modifier.property,
+      )
+  }
 }
 
 /// The properties with the modifier of `source` taken off, and the entries whose value
@@ -193,23 +236,62 @@ pub fn remove(
   properties properties: Properties,
   source source: Source,
 ) -> #(Properties, List(Changed)) {
-  todo as "drop from live, recompute the property from its base in start order, compare"
+  case list.find(properties.live, fn(live) { live.source == source }) {
+    Error(Nil) -> #(properties, [])
+    Ok(taken) ->
+      recomputed(
+        properties:,
+        live: list.filter(properties.live, fn(live) { live.source != source }),
+        property: taken.modifier.property,
+      )
+  }
 }
 
-/// The properties with every modifier of the cast `cast_id` taken off, and the entries
-/// whose value changed, in property order: the cast ended, was removed or its caster
-/// died.
-pub fn remove_cast(
+/// The properties with `live` as the modifiers held and the value of `property` worked
+/// out again from its base in start order, with the entry it changed, if it did.
+fn recomputed(
   properties properties: Properties,
-  cast_id cast_id: Int,
+  live live: List(Live),
+  property property: UnitProperty2Id,
 ) -> #(Properties, List(Changed)) {
-  todo as "drop every live of the cast, recompute each affected property, compare"
+  let before = value(properties:, property:)
+  let level = int.to_float(properties.level)
+  let after =
+    list.fold(live, base(properties:, property:), fn(x, held) {
+      case held.modifier.property == property {
+        True ->
+          x
+          *. held.modifier.multiplier
+          +. held.modifier.flat
+          +. held.modifier.per_level
+          *. level
+        False -> x
+      }
+    })
+  let updated =
+    Properties(
+      ..properties,
+      value: dict.insert(properties.value, property.value, after),
+      live:,
+    )
+  case after == before {
+    True -> #(updated, [])
+    False -> #(updated, [
+      Changed(property:, base: base(properties:, property:), value: after),
+    ])
+  }
 }
 
 /// The 0x93a entries for the changed properties, base and value as the client holds
 /// them (32-bit floats), in the order given.
 pub fn entries(changed changed: List(Changed)) -> List(UnitProperty) {
-  todo as "float32.to_bits of base and value, the id's number"
+  list.map(changed, fn(entry) {
+    UnitProperty(
+      property_id: { entry.property }.value,
+      base: float32.to_bits(entry.base),
+      value: float32.to_bits(entry.value),
+    )
+  })
 }
 
 /// The properties a player's 0x262 lists, with the current base and value of each
@@ -220,5 +302,24 @@ pub fn overlay(
   listed listed: List(UnitProperty),
   properties properties: Properties,
 ) -> List(UnitProperty) {
-  todo as "replace or add the entry of each property with a live modifier, sorted by id"
+  let held =
+    list.map(properties.live, fn(live) { live.modifier.property })
+    |> list.unique
+  let current =
+    list.map(held, fn(property) {
+      UnitProperty(
+        property_id: property.value,
+        base: float32.to_bits(base(properties:, property:)),
+        value: float32.to_bits(value(properties:, property:)),
+      )
+    })
+  list.append(
+    list.filter(listed, fn(entry) {
+      !list.contains(held, UnitProperty2Id(entry.property_id))
+    }),
+    current,
+  )
+  |> list.sort(fn(first, second) {
+    int.compare(first.property_id, second.property_id)
+  })
 }

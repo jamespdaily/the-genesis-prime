@@ -1367,14 +1367,15 @@ fn modifiers_of(
 }
 
 /// A modifier row's multiplier, flat amount or per-level amount: the 32-bit float its
-/// column holds, which must be finite.
+/// column holds, which must be finite. The table column is a signed 32-bit integer, so
+/// the bits of a negative float arrive negative and are masked to 32 bits first.
 fn modifier_number(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
   column column: String,
   bits bits: Int,
 ) -> Result(Float, PlanError) {
-  float32.bits(number: bits)
+  float32.bits(number: int.bitwise_and(bits, 0xFFFFFFFF))
   |> result.try(float32.value)
   |> result.replace_error(ModifierNumberNotFinite(
     spell4_id:,

@@ -101,7 +101,9 @@ fn asked_goes(effects effects: List(cast.Effect)) -> List(GoAsked) {
       | cast.CancelTimer(..)
       | cast.Log(..)
       | cast.Pay(..)
-      | cast.Gain(..) -> Error(Nil)
+      | cast.Gain(..)
+      | cast.PropertyStarts(..)
+      | cast.PropertyEnds(..) -> Error(Nil)
     }
   })
 }

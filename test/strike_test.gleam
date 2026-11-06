@@ -52,6 +52,7 @@ import gleam/option.{None}
 import map_support
 import owned_test
 import place_support
+import properties_support
 import rating_support
 import spell_tables
 import unitest
@@ -76,6 +77,7 @@ fn attacker() -> Attacker {
     stay: map_support.stay(count: 1),
     faction: Exile,
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
+    properties: properties_support.fresh(level: 1),
   )
 }
 
@@ -1061,7 +1063,9 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.CancelTimer(..)
         | cast.Log(..)
         | cast.Pay(..)
-        | cast.Gain(..) -> Error(Nil)
+        | cast.Gain(..)
+        | cast.PropertyStarts(..)
+        | cast.PropertyEnds(..) -> Error(Nil)
       }
     })
     as "Mind Burst has no cast time: its go is asked at the accept"

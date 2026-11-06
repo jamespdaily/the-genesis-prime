@@ -95,10 +95,10 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
-import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
+import genesis_prime/game/unit_properties
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
@@ -118,7 +118,7 @@ import genesis_prime/step.{type ConnectionId}
 import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, CharacterId,
 }
-import genesis_prime/table/id.{type Spell4BaseId}
+import genesis_prime/table/id.{type Spell4BaseId, type UnitProperty2Id}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
@@ -238,6 +238,11 @@ pub type Entered {
     movement: movement.State,
     readiness: Readiness,
     life: player_life.Life,
+    /// The player's properties, each with its base and value
+    /// (genesis_prime/game/unit_properties): the connection owns them beside the life
+    /// and the cast, applies a modifier of its own spell to them, and hands the
+    /// strike, the damage, the defence and the regeneration the values they read.
+    properties: unit_properties.Properties,
     resources: class_resource.Resources,
     camp: camp.Camp,
     cast: cast.State,
@@ -407,7 +412,7 @@ pub fn joined(
   next_whisper next_whisper: Int,
   classes classes: class_resource.Classes,
   numbers numbers: GameNumbers,
-  formulas formulas: Formulas,
+  defaults defaults: List(#(UnitProperty2Id, Float)),
 ) -> Result(Joined, Nil) {
   case state {
     Joining(
@@ -425,6 +430,13 @@ pub fn joined(
           let assert Ok(resource) =
             class_resource.of_class(classes:, class_id: character.class_id)
             as "character creation makes only playable classes, and the content load refuses a table with no resource for one"
+          let unit = player_unit.with_resource(record: unit, resource:)
+          let properties =
+            unit_properties.new(
+              defaults:,
+              listed: unit.tail.properties,
+              level: character.level,
+            )
           let #(life, life_effects) =
             player_life.entering(
               saved: saved_health,
@@ -432,11 +444,10 @@ pub fn joined(
               shield: full_shield(unit:),
               regeneration: player_life.regeneration(
                 numbers:,
-                formulas:,
+                properties:,
                 shield: loadout.properties.shield,
               ),
             )
-          let unit = player_unit.with_resource(record: unit, resource:)
           let unit =
             player_unit.with_health(
               record: unit,
@@ -464,6 +475,7 @@ pub fn joined(
               movement:,
               readiness:,
               life:,
+              properties:,
               resources: class_resource.new(resource:),
               camp: camp.none(),
               cast: cast.new(),

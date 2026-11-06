@@ -73,6 +73,7 @@ import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
 import genesis_prime/table/telegraph_damage
+import genesis_prime/table/unit_property2
 import gleam/int
 import gleam/list
 import gleam/order
@@ -97,6 +98,7 @@ pub type Rows {
     prerequisites: List(List(Cell)),
     spell4_group_lists: List(List(Cell)),
     spell4_stack_groups: List(List(Cell)),
+    unit_properties: List(List(Cell)),
   )
 }
 
@@ -1781,7 +1783,54 @@ pub fn rows() -> Rows {
     ),
     spell4_group_lists: [],
     spell4_stack_groups: [],
+    unit_properties: unit_property_rows(),
   )
+}
+
+/// The UnitProperty2 defaults of the properties the server's rules and plans name, the
+/// client's (`table_rows -- UnitProperty2 7 8 35 36 41 42 100 102 104 127 134 175
+/// 177`): BaseHealth 1.0, HealthRegenMultiplier 1.0, AssaultRating 0.0, SupportRating
+/// 0.0, ShieldCapacityMax 0.0, Armor 0.0, MoveSpeedMultiplier 1.0, BaseCritChance 0.0,
+/// BaseAvoidReduceChance 0.0, CriticalHitSeverityMultiplier 1.5,
+/// FallingDamageMultiplier 1.0, ShieldMitigationMax 0.0 and ShieldTickTime 500.0.
+pub fn unit_property_defaults() -> List(#(Int, Float)) {
+  [
+    #(7, 1.0),
+    #(8, 1.0),
+    #(35, 0.0),
+    #(36, 0.0),
+    #(41, 0.0),
+    #(42, 0.0),
+    #(100, 1.0),
+    #(102, 0.0),
+    #(104, 0.0),
+    #(127, 1.5),
+    #(134, 1.0),
+    #(175, 0.0),
+    #(177, 500.0),
+  ]
+}
+
+/// The planted UnitProperty2 rows of `unit_property_defaults`, with these defaults in
+/// place of the client's for the ids named.
+pub fn unit_property_rows_with(
+  replacing replacing: List(#(Int, Float)),
+) -> List(List(Cell)) {
+  list.map(unit_property_defaults(), fn(property) {
+    let default = case list.key_find(replacing, property.0) {
+      Ok(replacement) -> replacement
+      Error(Nil) -> property.1
+    }
+    planted_table.row(unit_property2.schema, [
+      #("ID", Integer(property.0)),
+      #("defaultValue", Float(default)),
+    ])
+  })
+}
+
+/// The planted UnitProperty2 rows with the client's defaults.
+pub fn unit_property_rows() -> List(List(Cell)) {
+  unit_property_rows_with(replacing: [])
 }
 
 /// The Prerequisite row Rampage's caster cast column names, the client's
@@ -1841,6 +1890,7 @@ fn entries() -> List(table_store.Entry) {
     spell_cool_down.entry(),
     prerequisite.entry(),
     class.entry(),
+    unit_property2.entry(),
   ]
 }
 
@@ -1865,6 +1915,7 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),
     planted_table.file(prerequisite.schema, rows.prerequisites),
+    planted_table.file(unit_property2.schema, rows.unit_properties),
   ]
 }
 

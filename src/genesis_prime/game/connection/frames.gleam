@@ -6,6 +6,7 @@
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
@@ -292,7 +293,8 @@ pub fn leave_world_frame() -> Frame {
 }
 
 /// The player's own record at `place`, stamped from the map's clock, from the
-/// origin `Joined` carried (`map.server_time`).
+/// origin `Joined` carried (`map.server_time`), with the current base and value of each
+/// property a live modifier changes (`unit_properties.overlay`).
 pub fn appearance_at(
   entered entered: world_entry.Entered,
   place place: Place,
@@ -303,6 +305,10 @@ pub fn appearance_at(
     ..entered.unit,
     tail: UnitCreateTail(
       ..entered.unit.tail,
+      properties: unit_properties.overlay(
+        listed: entered.unit.tail.properties,
+        properties: entered.properties,
+      ),
       movement_commands: [
         start_movement.Position(position),
         start_movement.Rotation(rotation),

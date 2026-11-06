@@ -46,6 +46,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/movement as connection_movement
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, JoinAt, Session} as connection_state
@@ -100,7 +101,7 @@ pub fn foe_taken(
         player_life.struck(
           life: entered.life,
           defence: player_life.defence(
-            loadout: entered.loadout,
+            properties: entered.properties,
             level: connection_state.level_of(entered:),
             formulas: rating.formulas(tables:),
           ),
@@ -118,52 +119,6 @@ pub fn foe_taken(
   life_carried(session:, now:, holder:, effects:)
 }
 
-/// What player_life decided, as the connection's effects: its own unit's messages
-/// to its client, its news to its viewers, the answer told to the creature, and the
-/// start of a fighter's stream at the player's place now. The casts' end and the
-/// Holocrypt are `life_carried`'s.
-pub fn life_effects(
-  session session: Session,
-  now now: Now,
-  entered entered: world_entry.Entered,
-  effects effects: List(player_life.Effect),
-) -> List(Effect(ConnectionEffect(Request))) {
-  list.flat_map(effects, fn(effect) {
-    case effect {
-      player_life.ToClient(written:) -> [
-        connection_state.to_client(
-          session,
-          connection_frames.own_unit_frame(entered:, now:, written:),
-        ),
-      ]
-      player_life.ToViewers(news:) ->
-        list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
-          connection_state.news_to(entered:, viewer:, news:)
-        })
-      player_life.Answer(to:, answered:) -> [
-        OwnEffect(step.Tell(
-          to:,
-          request: client_connection.TellStrikeAnswered(answered:),
-        )),
-      ]
-      player_life.StreamTo(unit_id:, life:) -> [
-        connection_movement.tells_a_fighter_the_place(
-          connection: client_connection.connection(session.link),
-          entered:,
-          fighter: #(unit_id, life),
-          place: movement.place(entered.movement),
-          seq: session.move_seq,
-        ),
-      ]
-      player_life.StartTimer(timer:, after_ms:) -> [
-        OwnEffect(StartTimer(timer:, after_ms:)),
-      ]
-      player_life.CancelTimer(timer:) -> [OwnEffect(CancelTimer(timer:))]
-      player_life.EndCasts | player_life.GoToHolocrypt -> []
-    }
-  })
-}
-
 /// A regeneration timer of the player's life fired (genesis_prime/game/player_life):
 /// the tick's news to the player and its viewers, and the next tick's timer. With no
 /// player the client holds in the world (a save or a leave is on) it is dropped.
@@ -179,7 +134,10 @@ pub fn regeneration_due(
         connection_state.with_entered(session:, change: fn(entered) {
           world_entry.Entered(..entered, life:)
         })
-      Continue(session, life_effects(session:, now:, entered:, effects:))
+      Continue(
+        session,
+        life_effect.life_effects(session:, now:, entered:, effects:),
+      )
     }
     None -> Continue(session, [])
   }
@@ -276,7 +234,9 @@ fn life_carried(
               session,
               list.append(
                 written,
-                life_effects(session:, now:, entered:, effects: [effect]),
+                life_effect.life_effects(session:, now:, entered:, effects: [
+                  effect,
+                ]),
               ),
               to_the_holocrypt,
             )

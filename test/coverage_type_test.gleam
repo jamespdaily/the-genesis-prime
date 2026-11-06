@@ -19,9 +19,9 @@ import client_tables
 import genesis_prime/coverage
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
-  type EngineDeclaration, EngineDeclaration, Listed, Missing,
+  type EngineDeclaration, EngineDeclaration, Listed, Missing, Partial,
 }
-import genesis_prime/coverage/measurement.{Handled, Measured}
+import genesis_prime/coverage/measurement.{Handled, HandledWithGap, Measured}
 import genesis_prime/coverage/starting_ability.{MissingRow}
 import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/table/id.{Spell4Id}
@@ -59,19 +59,19 @@ fn handled_over(
   let assert Measured(types: lines, ..) =
     measurement.from_values(engine:, values: types, starting: [])
     as "the engine's source is a table"
-  list.filter(lines, fn(line) { line.status == Handled })
+  list.filter(lines, fn(line) { measurement.is_handled(line.status) })
   |> list.map(fn(line) { line.type_number })
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_4_8_17_26_and_80_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_4_8_11_17_26_and_80_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Spell effects"),
       types: numbers(from: 1, to: 200),
     )
-    == [1, 4, 8, 17, 26, 80]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26) and SpellForceRemove 80 (Spell4Effects.effectType.80); every other type is unread"
+    == [1, 4, 8, 11, 17, 26, 80]
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26) and SpellForceRemove 80 (Spell4Effects.effectType.80); every other type is unread"
 }
 
 pub fn the_prerequisite_types_the_measure_handles_are_the_eight_read_and_those_with_no_case_test() -> Nil {
@@ -193,12 +193,84 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
     list.map(declared.missing, fn(missing) { missing.type_number })
     |> list.sort(int.compare)
   }
-  assert missing_of("Spell effects") == [3, 11, 14, 73, 90]
-    as "the trace's effect types of the starting abilities that no rule reads: forced move 3, crowd control 4, property modifier 11, proc 14, cooldown change 73 and charges 90"
+  assert missing_of("Spell effects") == [3, 14, 73, 90]
+    as "the trace's effect types of the starting abilities that no rule reads: forced move 3, proc 14, cooldown change 73 and charges 90; property modifier 11 is read for the rows aimed at the caster and listed as partial"
   assert missing_of("Spend-scaled costs") == [2, 5, 9, 10, 11]
     as "the innate cost EMM ids besides 4 and 7 that the rows hold"
   assert missing_of("Prerequisites") == [43, 108, 116]
     as "the trace's prerequisite types the server cannot decide: quest log 43, facing 108 and stealth 116"
+}
+
+pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let declared =
+    EngineDeclaration(
+      ..engine_named("Quest objectives"),
+      handled: Listed(ids: [7]),
+      partial: [
+        Partial(type_number: 7, reason: "a gap", fact_key: "a.key"),
+      ],
+      missing: [],
+    )
+  let measured =
+    measurement.from_values(engine: declared, values: [7, 2, 7], starting: [])
+  let assert Measured(types:, conflicts:, breaches:, ..) = measured
+    as "the engine's source is a table"
+  let assert Ok(seven) = list.find(types, fn(line) { line.type_number == 7 })
+  assert seven.status == HandledWithGap(reason: "a gap", fact_key: "a.key")
+    as "a partial type is handled, and its line holds the gap's reason and key"
+  assert measurement.is_handled(status: seven.status)
+  assert conflicts == [] && breaches == []
+  let text = checklist.render([measured])
+  assert string.contains(
+    text,
+    "- [x] type 7: 2 rows (66.67%); handled with a gap: a gap (a.key)",
+  )
+    as "the checklist marks it [x] and lists its reason"
+  assert string.contains(text, "1 of 2 types handled (66.67% of rows)")
+    as "a partial type counts among the types handled"
+}
+
+pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let declared =
+    EngineDeclaration(
+      ..engine_named("Quest objectives"),
+      handled: Listed(ids: [7]),
+      partial: [
+        Partial(type_number: 2, reason: "a gap", fact_key: "a.key"),
+        Partial(type_number: 99, reason: "a gap", fact_key: "a.key"),
+      ],
+      missing: [],
+    )
+  let assert Measured(conflicts:, breaches:, ..) =
+    measurement.from_values(engine: declared, values: [7, 2, 7], starting: [])
+    as "the engine's source is a table"
+  assert list.contains(conflicts, 2)
+    as "2 is listed partial and no rule reads it: the measure fails"
+  assert breaches == [99]
+    as "no row uses 99, so listing it as partial is a declaration no data supports"
+}
+
+pub fn the_effect_type_11_is_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(facts) =
+    simplifile.read(
+      ".claude/skills/decoding-the-client/references/client-facts.toml",
+    )
+    as "the fact file is in the repository"
+  let declared = engine_named("Spell effects")
+  assert declared.partial
+    == [
+      Partial(
+        type_number: 11,
+        reason: "rows, or parts of rows, aimed at another unit: the next step",
+        fact_key: "Spell4Effects.effectType.11",
+      ),
+    ]
+  assert has_record(facts:, key: "Spell4Effects.effectType.11")
+  assert engine.handles(engine: declared, type_number: 11)
+    as "type 11 is handled, with the gap"
 }
 
 pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missing_type_a_breach_test() -> Nil {

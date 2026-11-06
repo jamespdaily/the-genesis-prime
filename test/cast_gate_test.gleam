@@ -274,7 +274,9 @@ fn live_go_of(spell spell: Spell) -> #(cast.State, cast.GoAsked) {
         | cast.CancelTimer(..)
         | cast.Log(..)
         | cast.Pay(..)
-        | cast.Gain(..) -> Error(Nil)
+        | cast.Gain(..)
+        | cast.PropertyStarts(..)
+        | cast.PropertyEnds(..) -> Error(Nil)
       }
     })
     as "the press of a spell with no cast time asks for its go at once"

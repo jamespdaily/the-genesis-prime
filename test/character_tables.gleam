@@ -167,15 +167,10 @@ pub fn shared_with_other_regeneration_defaults() -> store.Tables {
   database_support.once("character_tables_regeneration_defaults", fn() {
     load_files(files_replacing(
       schema: unit_property2.schema,
-      rows: list.map(
-        [#(8, 2.0), #(102, 0.0), #(104, 0.0), #(127, 1.5), #(177, 750.0)],
-        fn(property) {
-          planted_table.row(unit_property2.schema, [
-            #("ID", Integer(property.0)),
-            #("defaultValue", Float(property.1)),
-          ])
-        },
-      ),
+      rows: spell_tables.unit_property_rows_with(replacing: [
+        #(8, 2.0),
+        #(177, 750.0),
+      ]),
     ))
   })
 }
@@ -610,18 +605,7 @@ fn files_with_looks(
         list.map(novice_tables.formulas(), novice_tables.game_formula_row),
       ]),
     ),
-    planted_table.file(
-      unit_property2.schema,
-      list.map(
-        [#(8, 1.0), #(102, 0.0), #(104, 0.0), #(127, 1.5), #(177, 500.0)],
-        fn(property) {
-          planted_table.row(unit_property2.schema, [
-            #("ID", Integer(property.0)),
-            #("defaultValue", Float(property.1)),
-          ])
-        },
-      ),
-    ),
+    planted_table.file(unit_property2.schema, spell_tables.unit_property_rows()),
     planted_table.file(
       xp_per_level.schema,
       xp_per_level_rows(min_xp_for_level()),
