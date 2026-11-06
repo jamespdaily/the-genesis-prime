@@ -758,8 +758,8 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
     as "a Dominion Cassian in World 3460: the Novice start's row 51596 is that world's start of its race and faction"
   let #(state, taken) = game_connection_support.at_the_holocrypt()
   assert game_connection_support.written_ids(taken)
-    == game_client.world_entry_ids
-    as "the entry burst, 0xAD first: the client removes every unit and loads again (0x1403b6de0)"
+    == game_client.holocrypt_entry_ids()
+    as "the entry burst, 0xAD first: the client removes every unit and loads again (0x1403b6de0); no 0x25E, which the client's same game object already holds (opcode.0x25e.entry_order)"
   let assert [entered] =
     game_connection_support.decoded(
       game_connection_support.heard(taken, game_connection_support.keyed()),
@@ -845,7 +845,7 @@ pub fn what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_
     && support.logs_of(step: burst, level: LogError) == []
     as "nothing the client may send while dead ends the connection"
   assert game_connection_support.written_ids(burst)
-    == game_client.world_entry_ids
+    == game_client.holocrypt_entry_ids()
     && game_connection_support.moves_told(burst) == []
     as "the ghost's move is dropped, as every 0x637 while dead: the body stands at the Holocrypt"
   assert list.length(support.logs_of(step: burst, level: LogWarning)) == 1
@@ -1071,6 +1071,7 @@ const dead_entry_ids = [
   0x00AD,
   0x0262,
   0x019B,
+  0x025E,
   0x0111,
   0x0111,
   0x0111,
@@ -1353,8 +1354,8 @@ pub fn a_player_that_entered_dead_chooses_the_holocrypt_and_joins_there_alive_an
     as "then the run of the map is asked to take the player out"
   let #(_, taken) = game_connection_support.at_the_holocrypt_from(dead:)
   assert game_connection_support.written_ids(taken)
-    == game_client.world_entry_ids
-    as "the join at the Holocrypt place is a living entry: no ghost, no 0x1b3"
+    == game_client.holocrypt_entry_ids()
+    as "the join at the Holocrypt place is a living entry: no ghost, no 0x1b3, and no second 0x25E"
   assert unit_fields.stat(
       tail: game_connection_support.player_in(taken).tail,
       stat_id: 0,

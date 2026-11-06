@@ -246,6 +246,7 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
     _,
     _,
     Frame(message_id: 0x019B, body: is_player),
+    Frame(message_id: 0x025E, ..),
     Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),

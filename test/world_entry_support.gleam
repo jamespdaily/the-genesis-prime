@@ -68,6 +68,7 @@ pub fn entry(
       classes: class_resource_support.classes(),
       numbers: spawn_support.numbers,
       defaults: unit_properties.defaults(tables:),
+      tables:,
     )
     as "the map's answer to the join is the one world entry asked for"
   #(effects, entered)
