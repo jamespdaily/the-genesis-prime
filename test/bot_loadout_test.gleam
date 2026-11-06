@@ -25,6 +25,7 @@ import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/float32
+import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/message/item_added
 import genesis_prime/message/shared_item.{type SharedItem, SharedItem}
 import genesis_prime/message/unit_create_player
@@ -94,6 +95,13 @@ fn tiers(bases bases: List(Int), set set: Int) -> Frame {
   Frame(message_id: ability_tiers.message_id, body:)
 }
 
+fn innate_index(index index: Int) -> Frame {
+  let assert Ok(body) =
+    innate_index_set.encode(InnateIndexSet(innate_index: index))
+    as "0x19f encodes"
+  Frame(message_id: innate_index_set.message_id, body:)
+}
+
 fn bar(objects objects: List(Int)) -> Frame {
   let assert Ok(body) =
     action_set.encode(ActionSet(
@@ -130,6 +138,7 @@ pub fn the_bot_reads_the_weapon_the_armor_the_abilities_and_the_bar_from_an_entr
       weapon: Some(81_346),
       armor: [#(0, 81_359), #(3, 81_381), #(15, 8534)],
       abilities: [#(0, 100), #(1, 200)],
+      innate: None,
       bar: [#(0, 100), #(1, 200)],
     )
     as "the weapon at location 0, index 16, the armor and shield at location 0 in their bag indexes, the abilities at location 4 and a bar of the abilities held with a tier in set 0"
@@ -145,10 +154,36 @@ pub fn the_bar_leaves_out_an_ability_that_is_not_held_or_has_no_tier_in_set_0_an
     bar(objects: [100, 200, 300]),
   ]
   assert game_client.loadout_in(frames:)
-    == Loadout(weapon: None, armor: [], abilities: [#(0, 100), #(1, 200)], bar: [
-      #(0, 100),
-    ])
+    == Loadout(
+      weapon: None,
+      armor: [],
+      abilities: [#(0, 100), #(1, 200)],
+      innate: None,
+      bar: [#(0, 100)],
+    )
     as "ability 200 has a tier only in set 1 and 300 is not held: neither shows on the bar; no item at location 0, index 16 is no weapon"
+}
+
+pub fn the_bot_keeps_the_innate_apart_from_the_bar_test() -> Nil {
+  use <- owned_test.run(5000)
+  let frames = [
+    added(item: item(location: 4, index: 0, id: 100)),
+    added(item: item(location: 4, index: 1, id: 200)),
+    added(item: item(location: 4, index: 2, id: 300)),
+    added(item: item(location: 4, index: 3, id: 400)),
+    tiers(bases: [100, 200, 300, 400], set: 0),
+    bar(objects: [100, 200, 300]),
+    innate_index(index: 0),
+  ]
+  assert game_client.loadout_in(frames:)
+    == Loadout(
+      weapon: None,
+      armor: [],
+      abilities: [#(0, 100), #(1, 200), #(2, 300)],
+      innate: Some(#(3, 400)),
+      bar: [#(0, 100), #(1, 200), #(2, 300)],
+    )
+    as "lua.ActionBarFrame.ActionBarInnate: the innate is held in the bag and is no shortcut of an action set (opcode.0x19d), so the item at location 4 that no shortcut names is the innate, and the bar's presses are the three abilities'"
 }
 
 /// A player's 0x262 that sets only these properties, each as the pair of its

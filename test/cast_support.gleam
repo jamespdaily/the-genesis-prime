@@ -19,6 +19,7 @@ import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AtFirstGo, GlobalCooldown, NoWeaponNeeded, Normal,
   Spell,
 }
+import genesis_prime/game/unit_properties
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
 import genesis_prime/message/spell_cast_confirmed
@@ -284,6 +285,27 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.Log(..)
       | cast.PropertyStarts(..)
       | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The sources whose property modifier the effects end, in order.
+pub fn property_ends(
+  effects effects: List(Effect),
+) -> List(unit_properties.Source) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast.PropertyEnds(source:) -> Ok(source)
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.Log(..)
+      | cast.PropertyStarts(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })

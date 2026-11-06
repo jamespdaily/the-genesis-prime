@@ -27,6 +27,7 @@ import genesis_prime/message/delete_character.{type DeleteCharacter}
 import genesis_prime/message/fall_value.{type FallValue}
 import genesis_prime/message/fell_below_floor.{type FellBelowFloor}
 import genesis_prime/message/game_hello_reply.{type GameHelloReply}
+import genesis_prime/message/innate_index_chosen.{type InnateIndexChosen}
 import genesis_prime/message/login_request.{type LoginRequest}
 import genesis_prime/message/move_speed_setting.{type MoveSpeedSetting}
 import genesis_prime/message/movement_send_interval_answer.{
@@ -75,6 +76,7 @@ pub type ClientMessage {
   SendWhisper(message: SendWhisper)
   CastAbility(message: CastAbility)
   AbilityHold(message: AbilityHold)
+  InnateIndexChosen(message: InnateIndexChosen)
   CancelCast(message: CancelCast)
   ChooseResurrection(message: ChooseResurrection)
 }
@@ -153,6 +155,8 @@ pub fn decode(
     0x01D4 -> decoded(body, message_id, send_whisper.decode, SendWhisper)
     0x009A -> decoded(body, message_id, cast_ability.decode, CastAbility)
     0x04DB -> decoded(body, message_id, ability_hold.decode, AbilityHold)
+    0x016F ->
+      decoded(body, message_id, innate_index_chosen.decode, InnateIndexChosen)
     0x0801 -> decoded(body, message_id, cancel_cast.decode, CancelCast)
     0x015A ->
       decoded(body, message_id, choose_resurrection.decode, ChooseResurrection)
@@ -193,6 +197,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     SendWhisper(message:) -> send_whisper.encode(message)
     CastAbility(message:) -> cast_ability.encode(message)
     AbilityHold(message:) -> ability_hold.encode(message)
+    InnateIndexChosen(message:) -> innate_index_chosen.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
     ChooseResurrection(message:) -> choose_resurrection.encode(message)
   }
@@ -230,6 +235,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     SendWhisper(..) -> send_whisper.message_id
     CastAbility(..) -> cast_ability.message_id
     AbilityHold(..) -> ability_hold.message_id
+    InnateIndexChosen(..) -> innate_index_chosen.message_id
     CancelCast(..) -> cancel_cast.message_id
     ChooseResurrection(..) -> choose_resurrection.message_id
   }
@@ -267,6 +273,7 @@ pub fn name(message: ClientMessage) -> String {
     SendWhisper(..) -> "send_whisper"
     CastAbility(..) -> "cast_ability"
     AbilityHold(..) -> "ability_hold"
+    InnateIndexChosen(..) -> "innate_index_chosen"
     CancelCast(..) -> "cancel_cast"
     ChooseResurrection(..) -> "choose_resurrection"
   }

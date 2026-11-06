@@ -30,11 +30,8 @@
 //// - The shield on entry is full (stat 20 equal to property 41): a server
 ////   choice, the client holding no shield rule (`regen.client`).
 
-import character_support
 import character_tables
-import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
@@ -42,27 +39,19 @@ import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/float32
 import genesis_prime/message/item_added
-import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
-import genesis_prime/step.{ConnectionId}
-import genesis_prime/store.{
-  type Character, AccountId, Character, CharacterId, NameStands,
-}
+import genesis_prime/store.{type Character, Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId, Spell4BaseId}
-import genesis_prime/world_map/map
-import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
-import map_support
+import gleam/option.{Some}
 import novice_tables
 import owned_test
 import place_support
-import spawn_support
-import unit_support
+import world_entry_support
 
 /// A class's id, its armor and its three Spell4Base ids (the SpellLevel rows of
 /// level 1, in id order), and the weapon of each faction.
@@ -119,67 +108,9 @@ fn character(
 fn entering(
   character character: Character,
 ) -> #(List(Frame), world_entry.Entered) {
-  let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
-    as "a character id fits the message"
-  let assert Ok(#(state, _asks)) =
-    world_entry.take(account_id: AccountId(7), body:)
-    as "the client's request to play decodes"
-  let place =
-    place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 29.0,
-      y: -853.0,
-      z: -560.0,
-    )
-  let assert Ok(world_entry.Join(state:, ..)) =
-    world_entry.loaded(
-      state:,
-      answer: store.CharacterLoaded(
-        character:,
-        session_epoch: character_support.epoch(1),
-        saved_health: None,
-      ),
-      connection: ConnectionId(1),
-      stay: map_support.stay(count: 1),
-    )
-    as "the store holds the character and its place"
-  let unit =
-    unit_support.novice_unit(
-      tables: character_tables.shared(),
-      character:,
-      place:,
-      unit_id: 1,
-      body: [],
-    )
-  let assert Ok(world_entry.InTheWorld(entered:, effects:)) =
-    world_entry.joined(
-      state:,
-      answer: map.Joined(
-        unit: player_unit.create(unit:, realm_id: 1),
-        loadout: player_unit.loadout(unit:),
-        max_health: player_unit.max_health(unit:),
-        incarnation: 1,
-        clock_origin_ms: 0,
-      ),
-      realm_id: 1,
-      next_whisper: 1,
-      classes: class_resource_support.classes(),
-      numbers: spawn_support.numbers,
-      defaults: unit_properties.defaults(tables: character_tables.shared()),
-    )
-    as "the map's answer to the join is the one world entry asked for"
-  let frames =
-    list.filter_map(effects, fn(effect) {
-      case effect {
-        world_entry.Send(frame:) -> Ok(frame)
-        world_entry.AskStore(..)
-        | world_entry.AskMap(..)
-        | world_entry.WatchMap(..)
-        | world_entry.Life(..) -> Error(Nil)
-      }
-    })
-  #(frames, entered)
+  let #(effects, entered) =
+    world_entry_support.entry(tables: character_tables.shared(), character:)
+  #(world_entry_support.frames_of(effects:), entered)
 }
 
 /// The 0x111 of the entry at location 0, as the bag index and the item id, in

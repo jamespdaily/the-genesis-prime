@@ -186,8 +186,8 @@
 ////   player's properties. A modifier ends on a timer of its own and not with the node's
 ////   time (a node can outlive it, or end before it when the spell takes the larger of
 ////   delay and duration); taking the cast's node off the caster ends its modifiers and
-////   cancels their timers; the caster's death ends every modifier of its casts and every
-////   one still pending; a later go of the cast arms each again from that go; the player
+////   cancels their timers; the caster's death ends every modifier of its casts but the
+////   innate passive's, and every one still pending but the passive's; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
 //// - **A go's forced moves** (`Spell4Effects.effectType.3.player`): each type 3 effect of
@@ -295,6 +295,17 @@
 ////   `first_timer`, one for each go, finish, child, held press, threshold window
 ////   and charge level waiting, and owns the ids from there up (`owns`).
 ////
+//// - **The innate passive** is a cast the client never makes: `passive_started` starts it
+////   at each join with a 0x7ff and no 0x7fd, as `Passive`, which starts no global
+////   cooldown, is never the current cast, opens no threshold and runs no check of the
+////   caster. Its go runs as any cast's, and the cast lingers with no 0x7fe, even when
+////   no node of it lives, for the whole stay. The three passives hold caster condition
+////   row 4 (mask 0: alive or dead) and propertyFlags 0x100 (the cast stays when its
+////   caster is removed), so a death leaves it with its nodes and modifiers
+////   (`Class.spell4IdInnateAbilityPassive00`, `Spell4.spell4ConditionsIdCaster`;
+////   the server's choice for what death does to a cast no press made), and a camp, which
+////   leaves every cast, drops it, so the next join starts it again.
+////
 //// What happens at each failure point of a cast:
 ////
 //// | Point | What happens |
@@ -326,7 +337,8 @@
 //// | a threshold's window ends with taps left | the threshold closes, nothing is written, the cooldown starts |
 //// | the player camps with casts, children or a threshold pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
 //// | the caster's connection ends, a key held | its timers and the hold end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
-//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end (`died`) |
+//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end, but the innate passive's cast, its nodes, modifiers and pending children (`died`) |
+//// | the innate passive's plan is missing | a warning and no cast: the plans hold every class's passive, or the load fails |
 //// | a timer fires after its cast ended | a go finds no live cast and does nothing; the cast's end cancels its go timers |
 //// | a timer fires in a status that holds no player in the world | dropped; the world is left already |
 //// | the answer of a store ask comes after a timer's due time | the timer is taken after the answer: the go and finish are late by the ask, never lost |
@@ -591,6 +603,9 @@ type Role {
   Base(ability: Spell)
   /// The stage at `index` of the ability's open threshold.
   Stage(ability: Spell, index: Int)
+  /// A class's innate passive, which no press made: no threshold is touched, no
+  /// global cooldown starts and it is never the current cast.
+  Passive
 }
 
 /// A cast of the caster that has started and not finished.
@@ -709,6 +724,9 @@ pub opaque type State {
     /// The Stealth rows the caster's casts hold on it, by cast id and effect id, each
     /// with whether damage ends it; the caster is stealthed while this is not empty.
     stealth: Dict(unit_properties.Source, spell_plan.Breaks),
+    /// The id of the cast of the player's innate passive, once `passive_started` has
+    /// started it: the one cast a death leaves.
+    passive: Option(Int),
   )
 }
 
@@ -741,6 +759,7 @@ pub fn new() -> State {
     timers_started: 0,
     logged: set.new(),
     stealth: dict.new(),
+    passive: None,
   )
 }
 
@@ -2375,7 +2394,13 @@ fn nodes_left(
   case holder.lingering && dict.is_empty(nodes) {
     True -> {
       let #(cast, cancels) = cancel_nodes_end(cast:, cast_id:)
-      #(State(..cast, lingering: dict.delete(cast.lingering, cast_id)), cancels)
+      #(
+        passive_cleared(
+          cast: State(..cast, lingering: dict.delete(cast.lingering, cast_id)),
+          cast_id:,
+        ),
+        cancels,
+      )
     }
     False ->
       rearmed(cast: with_nodes(cast:, cast_id:, nodes:), cast_id:, now_ms:)
@@ -2533,6 +2558,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       thresholds: dict.new(),
       cooldowns: cooldown.drop_all(book: cast.cooldowns),
       stealth: dict.new(),
+      passive: None,
     ),
     list.map(dict.keys(cast.timers), fn(timer) { CancelTimer(timer:) }),
   )
@@ -2545,14 +2571,55 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 /// (`left`). The client does not end its own casts when it dies (not read,
 /// `0x14045e740`), so the server's 0x7fe is the end its viewers see. Every stealth
 /// source drops, and a stealthed caster's `StealthChanged` comes last, after the casts'
-/// 0x7fe.
+/// 0x7fe. The innate passive's cast is the one cast it leaves: it stays live or
+/// lingering with its nodes, its modifiers, its pending timers and its stealth sources,
+/// and nothing is written for it (`passive_set_aside`).
 pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   use <- settled(cast:)
   all_ended(cast:, now:)
 }
 
+/// The player's innate passive, the plans' spell of this Spell4Base, starts: a cast of
+/// the player's own with its caster as root, no parent and its primary target, written
+/// as 0x7ff with no 0x7fd, which runs no check of the caster and starts no global
+/// cooldown (`Passive`). It starts at each join, alive or dead. A base the plans do not
+/// hold is a warning and no cast.
+pub fn passive_started(
+  cast cast: State,
+  caster caster: Caster,
+  plans plans: Plans,
+  base base: Spell4BaseId,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  case spell_plan.in_plans(plans:, base:) {
+    Error(Nil) -> #(cast, [
+      Log(
+        level: LogWarning,
+        text: "the innate passive with Spell4Base "
+          <> int.to_string(base.value)
+          <> " is in no plan, so it is not started",
+      ),
+    ])
+    Ok(spell) ->
+      start(
+        cast:,
+        caster:,
+        now_ms: now.monotonic_ms,
+        spell:,
+        root: spell.spell4_id,
+        parent: None,
+        primary_target: caster.unit_id,
+        client_cast_id: None,
+        role: Passive,
+        spent: None,
+        reserved: [],
+      )
+  }
+}
+
 /// The caster's casts, press, hold, thresholds and timers ended by its death.
 fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
+  let #(cast, aside) = passive_set_aside(cast:)
   let #(cast, ended) =
     dict.to_list(cast.casts)
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
@@ -2574,7 +2641,101 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
     })
   let modifiers_ended = modifiers_pending(cast:)
   let #(cast, cancelled) = left(cast:)
-  #(cast, list.flatten([ended, lingering_ended, modifiers_ended, cancelled]))
+  #(
+    passive_restored(cast:, aside:),
+    list.flatten([ended, lingering_ended, modifiers_ended, cancelled]),
+  )
+}
+
+/// What a death leaves of the innate passive: its live or lingering cast, the timers
+/// that belong to its tree and the stealth sources it holds.
+type Aside {
+  Aside(
+    id: Int,
+    live: Option(Live),
+    lingering: Option(Lingering),
+    timers: List(#(TimerId, Due)),
+    stealth: List(#(unit_properties.Source, spell_plan.Breaks)),
+  )
+}
+
+/// The cast without the passive's cast, timers and stealth sources, and what was
+/// taken out, when the passive has a cast.
+fn passive_set_aside(cast cast: State) -> #(State, Option(Aside)) {
+  case cast.passive {
+    None -> #(cast, None)
+    Some(id) -> {
+      let live = dict.get(cast.casts, id) |> option.from_result
+      let lingering = dict.get(cast.lingering, id) |> option.from_result
+      let spell4_id = case live, lingering {
+        Some(live), _ -> Some(live.spell.spell4_id)
+        None, Some(lingering) -> Some(lingering.spell.spell4_id)
+        None, None -> None
+      }
+      let #(timers, rest) =
+        dict.to_list(cast.timers)
+        |> list.partition(fn(entry) {
+          belongs_to_passive(due: entry.1, id:, spell4_id:)
+        })
+      let #(stealth, others) =
+        dict.to_list(cast.stealth)
+        |> list.partition(fn(entry) { { entry.0 }.cast_id == id })
+      case live, lingering {
+        None, None -> #(cast, None)
+        _, _ -> #(
+          State(
+            ..cast,
+            casts: dict.delete(cast.casts, id),
+            lingering: dict.delete(cast.lingering, id),
+            timers: dict.from_list(rest),
+            stealth: dict.from_list(others),
+          ),
+          Some(Aside(id:, live:, lingering:, timers:, stealth:)),
+        )
+      }
+    }
+  }
+}
+
+/// The cast with what `passive_set_aside` took out put back.
+fn passive_restored(cast cast: State, aside aside: Option(Aside)) -> State {
+  case aside {
+    None -> cast
+    Some(Aside(id:, live:, lingering:, timers:, stealth:)) ->
+      State(
+        ..cast,
+        casts: case live {
+          Some(live) -> dict.insert(cast.casts, id, live)
+          None -> cast.casts
+        },
+        lingering: case lingering {
+          Some(lingering) -> dict.insert(cast.lingering, id, lingering)
+          None -> cast.lingering
+        },
+        timers: dict.merge(cast.timers, dict.from_list(timers)),
+        stealth: dict.merge(cast.stealth, dict.from_list(stealth)),
+        passive: Some(id),
+      )
+  }
+}
+
+/// Whether a timer belongs to the passive's own tree: one of its cast `id`, a modifier
+/// or cooldown effect of that cast, or the start of a child whose root is its spell.
+fn belongs_to_passive(
+  due due: Due,
+  id id: Int,
+  spell4_id spell4_id: Option(Spell4Id),
+) -> Bool {
+  case due {
+    Go(cast_id:, ..) | Finish(cast_id:) | NodesEnd(cast_id:) -> cast_id == id
+    ModifierStart(source:, ..)
+    | ModifierEnd(source:)
+    | CooldownModifierStarts(source:, ..)
+    | CooldownModifierEnds(source:) -> source.cast_id == id
+    StartChild(root:, ..) -> Some(root) == spell4_id
+    StateEnd(..) | StartHeld | RepeatHeld | WindowEnd(..) | ChargeLevel(..) ->
+      False
+  }
 }
 
 /// The caster took damage: its health or its shield was lowered by a landed blow
@@ -2726,14 +2887,17 @@ fn start(
       started_ms: now_ms,
       stage_of: case role {
         Stage(ability:, ..) -> Some(ability)
-        Child | Base(..) -> None
+        Child | Base(..) | Passive -> None
       },
       closes_threshold: closes_threshold(role:),
       nodes: dict.new(),
     )
-  let global_ends = case spell.global_cooldown.starts_for_ms {
-    Some(wait_ms) -> Some(now_ms + wait_ms)
-    None -> cast.global_cooldown_ends_ms
+  let global_ends = case role, spell.global_cooldown.starts_for_ms {
+    Passive, _ -> cast.global_cooldown_ends_ms
+    Child, Some(wait_ms) | Base(..), Some(wait_ms) | Stage(..), Some(wait_ms) ->
+      Some(now_ms + wait_ms)
+    Child, None | Base(..), None | Stage(..), None ->
+      cast.global_cooldown_ends_ms
   }
   let cast =
     State(
@@ -2741,8 +2905,13 @@ fn start(
       presses: cast.presses + 1,
       global_cooldown_ends_ms: global_ends,
       casts: dict.insert(cast.casts, id, live),
+      passive: case role {
+        Passive -> Some(id)
+        Child | Base(..) | Stage(..) -> cast.passive
+      },
       current: case
-        spell_plan.shows_cast_bar(spell:, pressed: root == spell.spell4_id)
+        role != Passive
+        && spell_plan.shows_cast_bar(spell:, pressed: root == spell.spell4_id)
       {
         True -> Some(id)
         False -> cast.current
@@ -2781,7 +2950,7 @@ fn start(
 /// release always does, a tap only when it is the last stage.
 fn closes_threshold(role role: Role) -> Bool {
   case role {
-    Child | Base(..) -> False
+    Child | Base(..) | Passive -> False
     Stage(ability:, index:) ->
       case ability.method {
         spell_plan.ChargeRelease -> True
@@ -2807,7 +2976,7 @@ fn threshold_step(
   cast_id cast_id: Int,
 ) -> #(State, List(Effect)) {
   case role {
-    Child -> #(cast, [])
+    Child | Passive -> #(cast, [])
     Base(ability:) ->
       case spell_plan.opens_threshold(spell: ability) {
         True -> open_threshold(cast:, ability:, cast_id:)
@@ -4653,6 +4822,7 @@ fn clears_current(
   live live: Live,
   cast_id cast_id: Int,
 ) -> Bool {
+  use <- bool.guard(when: cast.passive == Some(cast_id), return: False)
   let spell = live.spell
   let clears_whichever = case spell.method {
     spell_plan.Normal
@@ -4773,9 +4943,17 @@ fn finish(
 ) -> #(State, List(Effect)) {
   let #(cast, closed) = finish_steps(cast:, cast_id:, live:, now_ms:)
   #(
-    cast,
+    passive_cleared(cast:, cast_id:),
     list.append(finished_effects(cast_id:, audience: live.audience), closed),
   )
+}
+
+/// The cast without the innate passive's id when the cast `cast_id` is the passive and
+/// has left both `casts` and `lingering`, so that no later cast the caster mints the
+/// same id for is taken for the passive.
+fn passive_cleared(cast cast: State, cast_id cast_id: Int) -> State {
+  use <- bool.guard(when: cast.passive != Some(cast_id), return: cast)
+  State(..cast, passive: None)
 }
 
 /// Every step of a live cast's end but its 0x7fe: the cast is no longer live nor the
@@ -4820,7 +4998,9 @@ fn finish_steps(
 /// A live cast that has gone for the last time ends, or lingers when a node of it
 /// still has life: every step of its end runs, and only its 0x7fe waits until its
 /// last node ends (`cast.target_node_end`). A node whose life is over when the cast
-/// starts to linger is written 0x811 at once.
+/// starts to linger is written 0x811 at once. The innate passive's cast lingers even
+/// when no node of it lives, so it ends with no 0x7fe, and only when its last node is
+/// taken off.
 fn finish_or_linger(
   cast cast: State,
   cast_id cast_id: Int,
@@ -4828,9 +5008,9 @@ fn finish_or_linger(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(ended, kept) = ended_and_kept(nodes: live.nodes, now_ms:)
-  case kept {
-    [] -> finish(cast:, cast_id:, live:, now_ms:)
-    [_, ..] -> {
+  case kept, cast.passive == Some(cast_id) {
+    [], False -> finish(cast:, cast_id:, live:, now_ms:)
+    [], True | [_, ..], _ -> {
       let #(cast, closed) = finish_steps(cast:, cast_id:, live:, now_ms:)
       let cast =
         State(

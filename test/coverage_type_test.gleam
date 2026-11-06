@@ -126,18 +126,28 @@ pub fn the_starting_abilities_column_holds_the_issues_effect_counts_test() -> Ni
   use <- unitest.guard(client_tables.present())
   assert starting_counts(engine: engine_named("Spell effects"))
     == [
-      #(1, 4),
+      #(1, 11),
       #(3, 1),
       #(4, 6),
       #(8, 36),
-      #(11, 1),
-      #(17, 8),
-      #(26, 49),
-      #(73, 5),
-      #(80, 3),
-      #(90, 1),
+      #(11, 12),
+      #(14, 7),
+      #(17, 12),
+      #(18, 1),
+      #(24, 1),
+      #(26, 72),
+      #(29, 1),
+      #(52, 1),
+      #(73, 8),
+      #(80, 9),
+      #(81, 1),
+      #(83, 2),
+      #(90, 4),
+      #(112, 2),
+      #(118, 2),
+      #(145, 1),
     ]
-    as "the 120 rows of the walk less the six rows of the spells behind AMP gates (types 17 three times, 14, 11 and 26 once each): 26 Proxy 49, 8 damage 36, 17 8, 4 6, 73 5, 1 VitalModifier 4, 80 3, 11 1, 3 1, 90 1 (Deja Vu 228968, whose gate 44174 names no AMP spell): 114 effect rows"
+    as "the 114 rows of the 18 abilities' walk (26 Proxy 49, 8 damage 36, 17 8, 4 6, 73 5, 1 VitalModifier 4, 80 3, 11 1, 3 1, 90 1: Deja Vu 228968, whose gate 44174 names no AMP spell) and the 76 rows of the 20 spells the class innates reach under the same gates, counted from `table_rows -- Spell4Effects spellId=<id>` of 46867, 42908, 44926, 47866, 47860, 52371, 70599, 45000, 46297, 58586, 70369, 76766, 69450, 46073, 38784, 38783, 45057, 60724, 47273 and 47439: 1 7, 11 11, 14 7, 17 4, 18 1, 24 1, 26 23, 29 1, 52 1, 73 3, 80 6, 81 1, 83 2, 90 3, 112 2, 118 2, 145 1: 190 effect rows"
 }
 
 pub fn the_starting_abilities_column_holds_the_issues_prerequisite_counts_test() -> Nil {
@@ -145,26 +155,32 @@ pub fn the_starting_abilities_column_holds_the_issues_prerequisite_counts_test()
   use <- unitest.guard(client_tables.present())
   assert starting_counts(engine: engine_named("Prerequisites"))
     == [
-      #(15, 12),
-      #(28, 1),
+      #(11, 3),
+      #(15, 31),
+      #(28, 3),
       #(37, 1),
-      #(50, 3),
+      #(50, 12),
       #(59, 4),
-      #(73, 1),
+      #(64, 2),
+      #(73, 2),
       #(108, 2),
-      #(116, 2),
+      #(109, 2),
+      #(116, 5),
+      #(129, 1),
+      #(243, 2),
+      #(250, 2),
     ]
-    as "the 39 conditions of the walk less the runner columns' 13: 15 17 less 5 (4918, 13653, 19411 and 20117 hold them), 28 2 less 1 (24090), 43 2 less 2 (41834), 71 1 less 1 (4918), 73 4 less 3 (11153, 19411 and 24090) and 116 3 less 1 (13653): 26 conditions"
+    as "the 26 conditions of the 18 abilities' walk (15 12, 28 1, 37 1, 50 3, 59 4, 73 1, 108 2, 116 2: the 39 conditions less the runner columns' 13) and the 46 the 20 innate spells add, each prerequisite counted once however many columns name it (counted from `table_rows -- Prerequisite` of the ids their Spell4 and Spell4Effects columns name): 11 3, 15 19, 28 2 (903 is named by an ability's spell already), 50 9, 64 2, 73 1, 109 2, 116 3, 129 1, 243 2, 250 2: 72 conditions"
 }
 
-pub fn the_starting_abilities_reach_59_spells_with_the_gates_a_level_1_character_can_open_test() -> Nil {
+pub fn the_starting_abilities_and_innates_reach_79_spells_with_the_gates_a_level_1_character_can_open_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let assert Ok(spells) =
     starting_ability.spells(tables: client_tables.every_table())
     as "the client's tables hold the rows the walk names"
-  assert list.length(spells) == 59
-    as "the 18 level-1 abilities reach 65 spells with every gate open, less the six spells below the five Proxies behind AMP gates (79220, 79229, 57030, 41869 with 77116, and 60947); Deja Vu's 87353 behind a gate that names no AMP stays"
+  assert list.length(spells) == 79
+    as "the 18 level-1 abilities reach 65 spells with every gate open, less the six spells below the five Proxies behind AMP gates (79220, 79229, 57030, 41869 with 77116, and 60947); Deja Vu's 87353 behind a gate that names no AMP stays; the nine innate roots add 20 (Class.spell4IdInnateAbilityActive00.trees, less the ten behind closed gates)"
 }
 
 // ---- the decoded and missing types ----
@@ -1335,20 +1351,22 @@ pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the
       case part {
         starting_ability.RunnerColumnsOnly(prerequisite_id:, conditions:, ..) ->
           Ok(#(prerequisite_id, conditions))
-        starting_ability.ProxyGateClosed(..) -> Error(Nil)
+        starting_ability.ProxyGateClosed(..)
+        | starting_ability.InnateSlotClosed(..) -> Error(Nil)
       }
     })
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     == [
       #(4918, 3),
+      #(6527, 1),
       #(11_153, 1),
       #(13_653, 2),
       #(19_411, 2),
-      #(20_117, 1),
       #(24_090, 2),
+      #(26_645, 3),
       #(41_834, 2),
     ]
-    as "the runner columns name Prerequisite 4918, 11153, 13653, 19411, 20117, 24090 and 41834 and no other column of a reached spell does: 13 conditions"
+    as "the runner columns name Prerequisite 4918, 6527 (Spell4 46073's runner, type 116), 11153, 13653, 19411, 24090, 26645 (Spell4 47273's runner, types 28, 64 and 11) and 41834 and no other column of a reached spell does: 16 conditions; 20117, which Spell4 34718 and 43468 name as a runner, is also Spell4Effects 111668's caster apply gate (Spell Surge 47273), so it is counted"
   assert list.filter_map(left, fn(part) {
       case part {
         starting_ability.ProxyGateClosed(
@@ -1358,7 +1376,8 @@ pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the
           why:,
           ..,
         ) -> Ok(#(proxy_effect_id, child, gate, why))
-        starting_ability.RunnerColumnsOnly(..) -> Error(Nil)
+        starting_ability.RunnerColumnsOnly(..)
+        | starting_ability.InnateSlotClosed(..) -> Error(Nil)
       }
     })
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
@@ -1370,6 +1389,46 @@ pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the
         level_one_gate.NeedsAmp(
           spell4_id: 57_027,
           eldan_augmentation_id: 340,
+          level: 10,
+        ),
+      ),
+      #(
+        136_726,
+        79_697,
+        23_478,
+        level_one_gate.NeedsAmp(
+          spell4_id: 57_326,
+          eldan_augmentation_id: 615,
+          level: 10,
+        ),
+      ),
+      #(
+        137_177,
+        57_443,
+        23_519,
+        level_one_gate.NeedsAmp(
+          spell4_id: 57_442,
+          eldan_augmentation_id: 512,
+          level: 10,
+        ),
+      ),
+      #(
+        147_848,
+        60_915,
+        24_548,
+        level_one_gate.NeedsAmp(
+          spell4_id: 59_077,
+          eldan_augmentation_id: 45,
+          level: 10,
+        ),
+      ),
+      #(
+        173_872,
+        60_868,
+        28_773,
+        level_one_gate.NeedsAmp(
+          spell4_id: 59_312,
+          eldan_augmentation_id: 802,
           level: 10,
         ),
       ),
@@ -1394,6 +1453,26 @@ pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the
         ),
       ),
       #(
+        204_548,
+        78_078,
+        36_531,
+        level_one_gate.NeedsAmp(
+          spell4_id: 41_590,
+          eldan_augmentation_id: 450,
+          level: 10,
+        ),
+      ),
+      #(
+        205_537,
+        78_307,
+        26_149,
+        level_one_gate.NeedsAmp(
+          spell4_id: 56_725,
+          eldan_augmentation_id: 499,
+          level: 10,
+        ),
+      ),
+      #(
         208_128,
         79_220,
         37_037,
@@ -1413,8 +1492,48 @@ pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the
           level: 10,
         ),
       ),
+      #(
+        208_380,
+        83_850,
+        37_077,
+        level_one_gate.NeedsAmp(
+          spell4_id: 59_417,
+          eldan_augmentation_id: 881,
+          level: 10,
+        ),
+      ),
+      #(
+        210_822,
+        79_875,
+        37_438,
+        level_one_gate.NeedsAmp(
+          spell4_id: 59_136,
+          eldan_augmentation_id: 157,
+          level: 10,
+        ),
+      ),
+      #(
+        228_915,
+        60_718,
+        24_356,
+        level_one_gate.NeedsAmp(
+          spell4_id: 58_946,
+          eldan_augmentation_id: 681,
+          level: 10,
+        ),
+      ),
+      #(
+        228_917,
+        60_796,
+        24_445,
+        level_one_gate.NeedsAmp(
+          spell4_id: 58_914,
+          eldan_augmentation_id: 650,
+          level: 10,
+        ),
+      ),
     ]
-    as "five Proxies start a child behind a gate whose condition (type 50 or 15, comparison 1) names an AMP's spell, each AMP offered at level 10 by LevelUpUnlock 26"
+    as "fifteen Proxies start a child behind a gate whose condition (type 50 or 15, comparison 1) names an AMP's spell, each AMP offered at level 10 by LevelUpUnlock 26: five of the 18 abilities and ten of the class innates (Spell4Effects 136726, 137177, 147848, 173872, 204548, 205537, 208380, 210822, 228915 and 228917, with the Prerequisite and EldanAugmentation rows of `table_rows`)"
   assert list.contains(
     left,
     starting_ability.ProxyGateClosed(
@@ -1460,7 +1579,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_24_of_26_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_58_of_72_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1473,14 +1592,14 @@ pub fn the_starting_abilities_totals_hold_113_of_114_effect_rows_and_24_of_26_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 11 | 113 of 114 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 11 | 169 of 190 |",
   )
-    as "114 effect rows are left, 1 of them not handled (Deja Vu's type 90); the whole-game columns are the walk's of 2026-11-05, with types 83 and 84 handled beside the nine"
+    as "190 effect rows are left, 21 of them not handled (types 14 x7, 90 x4, 112 x2, 118 x2, and 18, 24, 29, 52, 81 and 145 once); the whole-game columns are the walk's of 2026-11-05, with types 83 and 84 handled beside the nine"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 10 | 24 of 26 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 10 | 58 of 72 |",
   )
-    as "26 conditions are left, 2 of them not handled (type 108 twice); type 116 is read (Prerequisite.prerequisiteTypeId.116)"
+    as "72 conditions are left, 14 of them not handled (types 11 x3, 64, 108, 109, 243 and 250 twice, and 129 once); type 116 is read (Prerequisite.prerequisiteTypeId.116)"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {

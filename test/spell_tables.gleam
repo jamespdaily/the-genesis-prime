@@ -637,12 +637,19 @@ pub fn method_spell_row(
   ])
 }
 
-fn class_row(id id: Int, slots slots: List(Int)) -> List(Cell) {
+fn class_row(
+  id id: Int,
+  slots slots: List(Int),
+  more more: List(#(String, Int)),
+) -> List(Cell) {
   planted_table.row(class.schema, [
     #("ID", Integer(id)),
-    ..list.index_map(slots, fn(vital, slot) {
-      #("vitalEnumResource0" <> int.to_string(slot), Integer(vital))
-    })
+    ..list.append(
+      list.index_map(slots, fn(vital, slot) {
+        #("vitalEnumResource0" <> int.to_string(slot), Integer(vital))
+      }),
+      list.map(more, fn(column) { #(column.0, Integer(column.1)) }),
+    )
   ])
 }
 
@@ -1824,9 +1831,9 @@ pub fn rows() -> Rows {
       },
     ),
     classes: [
-      class_row(id: 3, slots: [5, 0, 0, 0, 0, 0, 0, 16]),
-      class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16]),
-      class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16]),
+      class_row(id: 3, slots: [5, 0, 0, 0, 0, 0, 0, 16], more: []),
+      class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: []),
+      class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16], more: []),
     ],
     prerequisites: sorted_by_id(
       list.flatten([
@@ -2010,27 +2017,26 @@ pub fn with_loaded_deriving(
   result
 }
 
-/// The planted rows with Energize, 69450, as a level-1 ability of the Medic. The
-/// SpellLevel row 99418 is test data, not the client's: the client holds no
-/// SpellLevel row for 69450 (`table_rows -- SpellLevel spell4Id=69450`), which only
-/// 78462 reaches, by an effect of type 137. Its Spell4, Spell4Base and VitalModifier
-/// rows are the client's (`table_rows -- Spell4 69450`, `-- Spell4Base 46615`,
-/// `-- Spell4Effects spellId=69450`); its effects of types 11 and 118 and its
-/// Proxies 228915 and 228917, behind prerequisites, are not planted.
+/// The planted rows with Energize, 69450, as the Medic's innate: Class row 4 names it in
+/// spell4IdInnateAbilityActive00, as the client's row does (`table_rows -- Class 4`), and
+/// the client holds no SpellLevel row for 69450 (`table_rows -- SpellLevel
+/// spell4Id=69450`), which only 78462 reaches, by an effect of type 137. Its Spell4,
+/// Spell4Base and VitalModifier rows are the client's (`table_rows -- Spell4 69450`, `--
+/// Spell4Base 46615`, `-- Spell4Effects spellId=69450`); its effects of types 11 and 118
+/// and its Proxies 228915 and 228917, behind prerequisites, are not planted.
 pub fn rows_with_energize() -> Rows {
   let rows = rows()
   Rows(
     ..rows,
-    spell_levels: [
-      planted_table.row(spell_level.schema, [
-        #("ID", Integer(99_418)),
-        #("classId", Integer(4)),
-        #("characterLevel", Integer(1)),
-        #("prerequisiteId", Integer(0)),
-        #("spell4Id", Integer(69_450)),
-      ]),
-      ..rows.spell_levels
-    ],
+    classes: list.map(rows.classes, fn(row) {
+      case row {
+        [Integer(4), ..] ->
+          class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: [
+            #("spell4IdInnateAbilityActive00", 69_450),
+          ])
+        other -> other
+      }
+    }),
     spell4: sorted_by_id([
       method_spell_row(
         id: 69_450,

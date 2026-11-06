@@ -74,6 +74,7 @@ import genesis_prime/game/connection/state.{
   Leaving, LeavingMap, Playing, SavingPlace, Session, Summoning,
   TakingSessionKey, ToCharacterSelect, WaitingToClaim,
 } as connection_state
+import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/top_zone
@@ -124,6 +125,40 @@ pub fn camp_message(
       )
     Error(refusal) ->
       connection_state.end_for(session:, now:, text: camp.describe(refusal))
+  }
+}
+
+/// What the innate message does, taken from inside 0x038C, in the world
+/// (genesis_prime/game/innate_choice): its log line is written, and a refusal ends
+/// the connection.
+pub fn innate_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: innate_choice.Message,
+) -> client_connection.Handled(Session) {
+  case
+    innate_choice.take(
+      innate: entered.loadout.innate,
+      message:,
+      body: inner.body,
+    )
+  {
+    Ok(effects) ->
+      Continue(
+        session,
+        list.map(effects, fn(effect) {
+          let innate_choice.Log(level:, text:) = effect
+          connection_state.log(session:, level:, text:)
+        }),
+      )
+    Error(refusal) ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: innate_choice.describe(refusal:),
+      )
   }
 }
 

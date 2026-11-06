@@ -26,6 +26,7 @@ import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
@@ -296,6 +297,12 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         bag_index: 2,
         target_unit_id: 0x12345,
         held: 1,
+      )),
+    ),
+    #(
+      0x016F,
+      client_message.InnateIndexChosen(message: InnateIndexChosen(
+        innate_index: 2,
       )),
     ),
     #(

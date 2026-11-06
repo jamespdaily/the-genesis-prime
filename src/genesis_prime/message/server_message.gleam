@@ -28,6 +28,7 @@ import genesis_prime/message/delete_character_result.{type DeleteCharacterResult
 import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
 import genesis_prime/message/enter_world.{type EnterWorld}
 import genesis_prime/message/game_server_handoff.{type GameServerHandoff}
+import genesis_prime/message/innate_index_set.{type InnateIndexSet}
 import genesis_prime/message/item_added.{type ItemAdded}
 import genesis_prime/message/leave_world.{type LeaveWorld}
 import genesis_prime/message/login_accepted.{type LoginAccepted}
@@ -116,6 +117,7 @@ pub type ServerMessage {
   ItemAdded(message: ItemAdded)
   AbilityTiers(message: AbilityTiers)
   ActionSet(message: ActionSet)
+  InnateIndexSet(message: InnateIndexSet)
   UnitCreateCreature(message: UnitCreateCreature)
   UnitCreateStatic(message: UnitCreateStatic)
   UnitCreateGhost(message: UnitCreateGhost)
@@ -261,6 +263,7 @@ pub fn decode(
     0x0111 -> decoded(body, message_id, item_added.decode, ItemAdded)
     0x01A0 -> decoded(body, message_id, ability_tiers.decode, AbilityTiers)
     0x019D -> decoded(body, message_id, action_set.decode, ActionSet)
+    0x019F -> decoded(body, message_id, innate_index_set.decode, InnateIndexSet)
     0x07FC ->
       decoded(body, message_id, spell_cast_refused.decode, SpellCastRefused)
     0x07FD ->
@@ -385,6 +388,7 @@ pub fn name(message: ServerMessage) -> String {
     ItemAdded(..) -> "item_added"
     AbilityTiers(..) -> "ability_tiers"
     ActionSet(..) -> "action_set"
+    InnateIndexSet(..) -> "innate_index_set"
     UnitCreateCreature(..) -> "unit_create_creature"
     UnitCreateStatic(..) -> "unit_create_static"
     UnitCreateGhost(..) -> "unit_create_ghost"

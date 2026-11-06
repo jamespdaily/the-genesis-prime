@@ -1,7 +1,8 @@
 //// The types the starting abilities use: the effect types, the prerequisite
 //// types and the innate cost EMM ids of the spells the 18 level-1 abilities' trees
-//// reach, which the coverage measure shows beside each type's weight in the whole
-//// game, and the parts of those trees it leaves out, each with why.
+//// and the class innates held at level 1 reach, which the coverage measure shows
+//// beside each type's weight in the whole game, and the parts of those trees it
+//// leaves out, each with why.
 ////
 //// ```
 //// plans (genesis_prime/game/spell_plan) ─▶ every spell of every tree, once each,
@@ -19,6 +20,12 @@
 ////   name is not counted.
 //// - **A gate a level-1 character cannot open** leaves out the Proxy's child and
 ////   every spell below it, whatever that child's own rows hold.
+//// - **The class innates** are in the plans (genesis_prime/game/innate: slot 0 of each
+////   Class row, active and passive), so the walk counts them as it counts the
+////   abilities. A class's slots 1 and 2 are left out when their gate is a condition a
+////   level-1 character fails (`InnateSlotClosed`, by `level_one_gate.row_closed`, the
+////   rule the Proxies' gates use), as the client unlocks a slot only when its gate
+////   passes (`0x1405e73e0`); a slot with no gate or an open one is not listed.
 //// - A prerequisite reached by several columns counts once; a type counts once for
 ////   each condition that holds it (`0x1404a5190`: the conditions before the first of
 ////   type 0). A row a tree names that its table lacks is an error, never a type
@@ -28,6 +35,7 @@ import genesis_prime/coverage/level_one_gate
 import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/table/class
 import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -64,6 +72,16 @@ pub type LeftOut {
     spells: List(Int),
     effects: List(#(Int, Int)),
   )
+  /// A class innate slot (1 or 2) behind a gate a level-1 character cannot open: the
+  /// slot's active and passive spells are not counted.
+  InnateSlotClosed(
+    class_id: Int,
+    slot: Int,
+    active: Int,
+    passive: Int,
+    gate: Int,
+    why: level_one_gate.Closed,
+  )
 }
 
 /// Every part of the starting abilities' trees the measure leaves out, each with
@@ -89,7 +107,75 @@ pub fn left_out(
         ))
       })
     })
-  Ok(list.append(closed, runner_columns_only(tables:, spells: reached, rows:)))
+  use slots <- result.map(closed_innate_slots(tables:, gates:))
+  list.flatten([
+    closed,
+    slots,
+    runner_columns_only(tables:, spells: reached, rows:),
+  ])
+}
+
+/// The innate slots 1 and 2 of every Class row whose gate a level-1 character cannot
+/// pass, in class and slot order; a gate Prerequisite the table lacks is a missing row.
+fn closed_innate_slots(
+  tables tables: store.Tables,
+  gates gates: level_one_gate.Gates,
+) -> Result(List(LeftOut), List(MissingRow)) {
+  let #(verdicts, missing) =
+    list.sort(class.all(tables), fn(first, second) {
+      int.compare(first.id, second.id)
+    })
+    |> list.flat_map(fn(row) {
+      [
+        #(
+          1,
+          row.spell4_id_innate_ability_active01,
+          row.spell4_id_innate_ability_passive01,
+          row.prerequisite_id_innate_ability01,
+        ),
+        #(
+          2,
+          row.spell4_id_innate_ability_active02,
+          row.spell4_id_innate_ability_passive02,
+          row.prerequisite_id_innate_ability02,
+        ),
+      ]
+      |> list.filter(fn(slot) { slot.1 != 0 && slot.3 != 0 })
+      |> list.map(fn(slot) {
+        slot_verdict(tables:, gates:, class_id: row.id, slot:)
+      })
+    })
+    |> result.partition
+  case missing {
+    [] -> Ok(result.values(list.reverse(verdicts)))
+    [_, ..] -> Error(missing)
+  }
+}
+
+/// One innate slot of a Class row, as the slot number, its active and passive spell and
+/// its gate: closed with why, or an error for a gate Prerequisite the table lacks.
+fn slot_verdict(
+  tables tables: store.Tables,
+  gates gates: level_one_gate.Gates,
+  class_id class_id: Int,
+  slot slot: #(Int, Int, Int, Int),
+) -> Result(Result(LeftOut, Nil), MissingRow) {
+  let #(number, active, passive, gate) = slot
+  use gate_row <- result.map(
+    prerequisite_table.get(tables:, id: PrerequisiteId(gate))
+    |> result.replace_error(MissingRow(
+      table: "Prerequisite",
+      id: gate,
+      named_by: "Class "
+        <> int.to_string(class_id)
+        <> " column prerequisiteIdInnateAbility0"
+        <> int.to_string(number),
+    )),
+  )
+  level_one_gate.row_closed(gates:, row: gate_row)
+  |> result.map(fn(why) {
+    InnateSlotClosed(class_id:, slot: number, active:, passive:, gate:, why:)
+  })
 }
 
 /// A Proxy the measure leaves out: its child and the spells below it that no open
@@ -199,6 +285,17 @@ pub fn describe_left_out(left_out left_out: LeftOut) -> String {
         ", ",
       )
       <> "): "
+      <> level_one_gate.describe(gate:, closed: why)
+    InnateSlotClosed(class_id:, slot:, active:, passive:, gate:, why:) ->
+      "Class "
+      <> int.to_string(class_id)
+      <> " innate slot "
+      <> int.to_string(slot)
+      <> " (Spell4 "
+      <> int.to_string(active)
+      <> ", passive "
+      <> int.to_string(passive)
+      <> ") is not counted: "
       <> level_one_gate.describe(gate:, closed: why)
   }
 }

@@ -29,6 +29,7 @@ import genesis_prime/message/chat_line
 import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
 import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/innate_index_set
 import genesis_prime/message/item_added
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -78,7 +79,7 @@ import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/float
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import login_client
 import mug
@@ -1228,13 +1229,16 @@ pub fn whisper_next(
 /// What the entry's items, tiers and action set give the player's action bar, as
 /// the client keeps them: the weapon equipped in slot 16, the other equipped
 /// items (armor pieces and the shield) by bag index, the abilities in the bag by
-/// bag index, and the bar slots of action set 0 whose ability the client can
-/// show (the ability's item is held, and its tier is set for action set 0).
+/// bag index, the innate the class's button casts (the ability in the bag that no
+/// action set names, once 0x19F has set the client's innate index) and the bar
+/// slots of action set 0 whose ability the client can show (the ability's item is
+/// held, and its tier is set for action set 0).
 pub type Loadout {
   Loadout(
     weapon: Option(Int),
     armor: List(#(Int, Int)),
     abilities: List(#(Int, Int)),
+    innate: Option(#(Int, Int)),
     bar: List(#(Int, Int)),
   )
 }
@@ -1246,7 +1250,9 @@ pub type Loadout {
 /// equipped piece at its bag index (opcode.0x111.equipped_set); opcode.0x1a0: a tier per base and set;
 /// opcode.0x19d: a type 4 shortcut is an ability by its Spell4Base id, in the bar
 /// slot its bag index names, and the client shows it when it holds the ability,
-/// 0x1403c1bf0).
+/// 0x1403c1bf0; lua.ActionBarFrame.ActionBarInnate: the innate button casts the bag
+/// item of the class's innate, which is in no action set, and points at it only
+/// after 0x19F, opcode.0x19f).
 pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
   let items =
     list.filter(frames, fn(frame) { frame.message_id == item_added.message_id })
@@ -1261,9 +1267,34 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
   let armor =
     list.filter(items, fn(item) { item.location == 0 && item.bag_index != 16 })
     |> list.map(fn(item) { #(item.bag_index, item.item_id) })
-  let abilities =
+  let in_the_bag =
     list.filter(items, fn(item) { item.location == 4 })
     |> list.map(fn(item) { #(item.bag_index, item.item_id) })
+  let sets =
+    list.filter_map(frames, fn(frame) {
+      case frame.message_id == action_set.message_id {
+        True -> {
+          let assert Ok(set) = action_set.decode(frame.body) as "0x019D decodes"
+          Ok(set)
+        }
+        False -> Error(Nil)
+      }
+    })
+  let on_a_bar =
+    list.flat_map(sets, fn(set) { set.shortcuts })
+    |> list.filter(fn(shortcut) { shortcut.shortcut_type == 4 })
+    |> list.map(fn(shortcut) { shortcut.object_id })
+  let innate = case
+    list.any(frames, fn(frame) {
+      frame.message_id == innate_index_set.message_id
+    })
+  {
+    True ->
+      list.find(in_the_bag, fn(held) { !list.contains(on_a_bar, held.1) })
+      |> option.from_result
+    False -> None
+  }
+  let abilities = list.filter(in_the_bag, fn(held) { Some(held) != innate })
   let held_with_tier =
     list.filter_map(frames, fn(frame) {
       case frame.message_id == ability_tiers.message_id {
@@ -1279,15 +1310,7 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
     |> list.filter(fn(tier) { tier.action_set_index == 0 })
     |> list.map(fn(tier) { tier.spell4_base_id })
   let bar =
-    list.filter_map(frames, fn(frame) {
-      case frame.message_id == action_set.message_id {
-        True -> {
-          let assert Ok(set) = action_set.decode(frame.body) as "0x019D decodes"
-          Ok(set)
-        }
-        False -> Error(Nil)
-      }
-    })
+    sets
     |> list.filter(fn(set) { set.action_set_index == 0 && set.result == 1 })
     |> list.flat_map(fn(set) { set.shortcuts })
     |> list.filter(fn(shortcut) {
@@ -1296,7 +1319,7 @@ pub fn loadout_in(frames frames: List(Frame)) -> Loadout {
       && list.contains(held_with_tier, shortcut.object_id)
     })
     |> list.map(fn(shortcut) { #(shortcut.bag_index, shortcut.object_id) })
-  Loadout(weapon:, armor:, abilities:, bar:)
+  Loadout(weapon:, armor:, abilities:, innate:, bar:)
 }
 
 /// The figures the character sheet shows (lua.Character.UpdateAttributes), whole
