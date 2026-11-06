@@ -189,11 +189,16 @@ fn quest_objectives() -> EngineDeclaration {
 
 /// The rows of the effect type that the effect rule does not read
 /// (genesis_prime/game/spell_plan `effect_row_read`): the type 3, type 11, type 73, type 83,
-/// type 84 and type 14 rows aimed only at other units, and the Stealth, RemoveStealth and
-/// Proc rows the plan refuses or skips.
+/// type 84 and type 14 rows aimed only at other units, the type 118 rows aimed at the area
+/// and the type 64 rows aimed at the caster or its target, and the Stealth, RemoveStealth,
+/// Proc and HealShields rows the plan refuses, skips or holds, among them a heal aimed at
+/// the primary target of a spell a Proxy starts on each struck unit.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
-  list.count(spell4_effects.all(tables), fn(row) {
-    row.effect_type == type_number && !spell_plan.effect_row_read(effect: row)
+  let rows = spell4_effects.all(tables)
+  let struck_children = spell_plan.struck_unit_children(effects: rows)
+  list.count(rows, fn(row) {
+    row.effect_type == type_number
+    && !spell_plan.effect_row_read(effect: row, struck_children:)
   })
 }
 
@@ -233,6 +238,11 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
+        type_number: 64,
+        reason: "rows aimed at the caster or its target, whose shield the server does not hold at 0",
+        fact_key: "Spell4Effects.effectType.64",
+      ),
+      Missing(
         type_number: 73,
         reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
         fact_key: "Spell4Effects.effectType.73",
@@ -246,6 +256,11 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 84,
         reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
+      ),
+      Missing(
+        type_number: 118,
+        reason: "rows aimed at another unit, periodic (tickTime) or with a formula parameter the plan refuses",
+        fact_key: "Spell4Effects.effectType.118",
       ),
     ],
     missing: [

@@ -240,6 +240,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option}
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
@@ -280,10 +281,11 @@ pub type Effect {
   /// unhandled once per channel on a connection.
   Unhandled(channel_type: ChannelType)
   /// A `!summon` line of the player: the connection asks the player's map to
-  /// start the creature (genesis_prime/world_map/map `Summon`) and writes the
+  /// start the creature, at the level the line named if it named one
+  /// (genesis_prime/world_map/map `Summon`), and writes the
   /// system line of its answer (`system_line_frame`). The rule gives it last
   /// among the effects of a line, since the ask ends the step.
-  AskSummon(creature2_id: Creature2Id)
+  AskSummon(creature2_id: Creature2Id, level: Option(Int))
 }
 
 /// Why a chat message is refused so that the connection ends: the client's own
@@ -740,7 +742,9 @@ fn line_sent(
 /// (`system_line_frame` of `dev_command.describe`).
 fn command_line(text text: List(Int)) -> List(Effect) {
   case dev_command.parse(text:) {
-    Ok(dev_command.Summon(creature2_id:)) -> [AskSummon(creature2_id:)]
+    Ok(dev_command.Summon(creature2_id:, level:)) -> [
+      AskSummon(creature2_id:, level:),
+    ]
     Error(refusal) -> [
       Send(system_line_frame(text: dev_command.describe(refusal:))),
     ]
