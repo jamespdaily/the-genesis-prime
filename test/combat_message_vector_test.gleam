@@ -80,6 +80,7 @@ import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property
 import genesis_prime/message/unit_stat.{type UnitStat}
+import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
@@ -689,6 +690,36 @@ pub fn a_stat_change_is_a_unit_a_stat_in_5_bits_and_a_value_test() -> Nil {
     value: UnitStatChanged(
       unit_id: 0x1001,
       change: unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value: 123)),
+    ),
+    encode: unit_stat_changed.encode,
+    decode: unit_stat_changed.decode,
+  )
+}
+
+pub fn stat_22_of_0x938_round_trips_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The client's reader of the body, 0x140097620: the unit id in 32 bits, the stat in 5 and
+  // the value in 32, least significant bit first. Stat 22 is 0b10110: the byte after the
+  // unit id holds it in its low 5 bits and the value's low 3 bits (123 = 0b1111011, so
+  // 0b011) above them: 0b01110110 = 0x76; the other 29 bits of the value are 15 (0x0f).
+  message_support.assert_codec(
+    name: "opcode.0x938: unit id, stat 22 (absorption) in 5 bits, value 123 in 32",
+    body: message_support.hex("01 10 00 00 76 0f 00 00 00"),
+    value: UnitStatChanged(
+      unit_id: 0x1001,
+      change: unit_stat_change.Absorption(UnitStatAbsorption(value: 123)),
+    ),
+    encode: unit_stat_changed.encode,
+    decode: unit_stat_changed.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0x938: stat 22 with the value's 32 bits all set",
+    body: message_support.hex("01 10 00 00 f6 ff ff ff 1f"),
+    value: UnitStatChanged(
+      unit_id: 0x1001,
+      change: unit_stat_change.Absorption(UnitStatAbsorption(
+        value: 4_294_967_295,
+      )),
     ),
     encode: unit_stat_changed.encode,
     decode: unit_stat_changed.decode,

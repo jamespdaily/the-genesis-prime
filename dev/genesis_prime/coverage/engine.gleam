@@ -194,9 +194,11 @@ fn quest_objectives() -> EngineDeclaration {
 /// target, the Stealth, RemoveStealth, Proc and HealShields rows the plan refuses, skips or
 /// holds, among them a heal aimed at the primary target of a spell a Proxy starts on each
 /// struck unit, the type 52 rows aimed at the units a go strikes or at the primary target
-/// of such a spell, the type 112 rows with an outfit, no display, a target apply prerequisite
-/// or no life, and the type 17, 18, 80 and 81 rows aimed by flags the plan refuses or
-/// behind a target apply prerequisite.
+/// of such a spell, the type 29 rows aimed only at other units, at the primary target of such
+/// a spell or that the plan refuses (a tickTime, no life, a non-finite number or a formula
+/// parameter not read), the type 112 rows with an outfit, no display, a target apply
+/// prerequisite or no life, and the type 17, 18, 80 and 81 rows aimed by flags the plan
+/// refuses or behind a target apply prerequisite.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   let rows = spell4_effects.all(tables)
   let struck_children = spell_plan.struck_unit_children(effects: rows)
@@ -269,6 +271,11 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 18,
         reason: lasting_gap,
         fact_key: "Spell4Effects.effectType.18",
+      ),
+      Missing(
+        type_number: 29,
+        reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
+        fact_key: "Spell4Effects.effectType.29",
       ),
       Missing(
         type_number: 52,
