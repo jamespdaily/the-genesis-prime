@@ -2404,6 +2404,34 @@ pub fn rows_with_effect(effect effect: List(Cell)) -> Rows {
   Rows(..rows, spell4_effects: sorted_by_id([effect, ..rows.spell4_effects]))
 }
 
+/// A Spell4Effects row of Telekinetic Strike's planted spell of this type aimed by
+/// `target_flags`, in every phase, with these columns beside its id, spell and type: the
+/// row a plan test of one effect type adds (`rows_with_effect`).
+pub fn effect_row_with(
+  id id: Int,
+  effect_type effect_type: Int,
+  target_flags target_flags: Int,
+  columns columns: List(#(String, Cell)),
+) -> List(Cell) {
+  let defaults = [
+    #("ID", Integer(id)),
+    #("spellId", Integer(32_893)),
+    #("effectType", Integer(effect_type)),
+    #("targetFlags", Integer(target_flags)),
+    #("phaseFlags", Integer(-1)),
+    #("orderIndex", Integer(9)),
+  ]
+  planted_table.row(
+    spell4_effects.schema,
+    list.append(
+      list.filter(defaults, fn(default) {
+        !list.any(columns, fn(given) { given.0 == default.0 })
+      }),
+      columns,
+    ),
+  )
+}
+
 /// A planted Spell4 row with one column set.
 pub fn with_column(
   row row: List(Cell),

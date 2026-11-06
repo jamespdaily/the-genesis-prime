@@ -44,8 +44,8 @@
 ////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
 ////   a client frame).
 //// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`), a Scale
-////   effect (18) and a RavelSignal effect (81) of a tree are each a `Lasting` row: the unit its targetFlags aim at, its delay, durationTime and
-////   flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
+////   effect (18) and a RavelSignal effect (81) of a tree are each a `Lasting` row: the unit
+////   its targetFlags aim at, its delay, durationTime and flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
 ////   SpellForceRemove effect (`Spell4Effects.effectType.80`) is a `ForceRemove` row:
 ////   dataBits00 picks a spell group (1), a Spell4 (2) or a Spell4Base (3) by
 ////   dataBits01, which must name a row, and the count of stacks is read only where
@@ -520,7 +520,8 @@ pub type Spell {
     /// The spell's stack group and its cap (`Spell4.spell4StackGroupId`,
     /// `Spell4StackGroup.stackCap`).
     stack: lasting.Stack,
-    /// The Fluff, Scale and RavelSignal effects that give the spell a life on a unit.
+    /// The Fluff, Scale, RavelSignal and area ShieldOverload effects that give the spell a
+    /// life on a unit.
     lasting: List(Lasting),
     /// The SpellForceRemove effects that take casts off a unit.
     removes: List(ForceRemove),
@@ -694,10 +695,9 @@ pub type ForcedMove {
   )
 }
 
-/// A UnitPropertyModifier effect (`Spell4Effects.effectType.11`) or a UnitPropertyConversion
-/// effect (`Spell4Effects.effectType.145`) of a spell whose targetFlags include the
-/// caster: the change it makes to the properties
-/// (`modifier`), its delay, durationTime and flags bit 2 (`row`, which also give the
+/// A UnitPropertyModifier effect (`Spell4Effects.effectType.11`) or a
+/// UnitPropertyConversion effect (`Spell4Effects.effectType.145`) of a spell whose
+/// targetFlags include the caster: the change it makes to the properties (`modifier`), its delay, durationTime and flags bit 2 (`row`, which also give the
 /// caster's node of the cast its life, as a Fluff effect's do), the phases of
 /// `phase_flags` it applies in, when its `condition` holds (its caster apply
 /// prerequisite against the caster; one behind a target apply prerequisite is not
@@ -731,14 +731,15 @@ pub type CrowdControl {
   )
 }
 
-/// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18) or RavelSignal effect
-/// (81) of a spell: it names the unit it aims at in the go's target info and gives the
+/// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), RavelSignal effect
+/// (81) or area ShieldOverload effect (64) of a spell: it names the unit it aims at in the go's target info and gives the
 /// spell a life there, from its `row`, in the phases of `phase_flags`, when its
 /// `condition` holds (its caster apply prerequisite against the caster; one behind a
 /// target apply prerequisite is not applied), and when its `tag` holds for the points
 /// the cast spent (genesis_prime/game/spend). Its dataBits need no handling: the client
 /// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), and a
-/// RavelSignal effect is only a life (`Spell4Effects.effectType.81`).
+/// RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
+/// ShieldOverload unit itself (`Spell4Effects.effectType.64`).
 pub type Lasting {
   Lasting(
     effect_id: Spell4EffectsId,
@@ -938,7 +939,8 @@ pub type PlanError {
   /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
   ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
   /// A UnitPropertyModifier or UnitPropertyConversion effect of a tree names a property
-  /// that UnitProperty2 has no row for, which the client's 0x93a refuses from id 197 (`opcode.0x93a`).
+  /// that UnitProperty2 has no row for, which the client's 0x93a refuses from id 197
+  /// (`opcode.0x93a`).
   ModifierPropertyHasNoRow(spell4_id: Int, effect_id: Int, property: Int)
   /// A UnitPropertyModifier effect of a tree has a multiplier, flat amount or per-level
   /// amount, or a UnitPropertyConversion effect a share, that is not a finite number:
@@ -1814,8 +1816,8 @@ pub fn proxy_heals_read(
   }
 }
 
-/// The Fluff, Scale and RavelSignal effects of a spell: each aimed at a unit the plan
-/// reads, with the columns that give its node a life (`Spell4Effects.effectType.17`,
+/// The Fluff, Scale, RavelSignal and area ShieldOverload effects of a spell: each aimed at a
+/// unit the plan reads, with the columns that give its node a life (`Spell4Effects.effectType.17`,
 /// `.18` and `.81`).
 fn lasting_of(
   tables tables: table_store.Tables,
@@ -1895,16 +1897,7 @@ fn removes_of(
       spell4_id:,
       effect:,
     ))
-    use Nil <- result.try(case effect.data_bits03 == effect.data_bits04 {
-      True -> Ok(Nil)
-      False ->
-        Error(ForceRemoveCountsDiffer(
-          spell4_id:,
-          effect_id: effect.id,
-          data_bits03: effect.data_bits03,
-          data_bits04: effect.data_bits04,
-        ))
-    })
+    use Nil <- result.try(force_remove_counts_read(spell4_id:, effect:))
     use condition <- result.try(condition_of(
       tables:,
       effect:,
@@ -1920,6 +1913,24 @@ fn removes_of(
       tag: tag_of(effect:),
     ))
   })
+}
+
+/// A type 80 row's count of stacks is read only where dataBits03 and dataBits04 agree
+/// (`Spell4Effects.effectType.80`); a row where they differ fails the load.
+fn force_remove_counts_read(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Nil, PlanError) {
+  case effect.data_bits03 == effect.data_bits04 {
+    True -> Ok(Nil)
+    False ->
+      Error(ForceRemoveCountsDiffer(
+        spell4_id:,
+        effect_id: effect.id,
+        data_bits03: effect.data_bits03,
+        data_bits04: effect.data_bits04,
+      ))
+  }
 }
 
 /// The CCStateSet effects of a spell (`Spell4Effects.effectType.4`): dataBits00 must be
@@ -2062,7 +2073,7 @@ fn change_of(
     column: "dataBits04",
     bits: effect.data_bits04,
   ))
-  Ok(unit_properties.Modifier(
+  Ok(unit_properties.Change(
     property:,
     mode: effect.data_bits01,
     multiplier:,
@@ -2477,10 +2488,12 @@ pub fn struck_unit_children(
 /// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
 /// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
 /// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
-/// struck unit, which fails the load, `proxy_heals_read`). A Fluff, SpellForceRemove, Scale
-/// or RavelSignal row is read when its aim is one the plan reads (`aim_of`) and no target
-/// apply prerequisite stands before it, which no go applies. The coverage measure counts
-/// the other rows as not read, so it and the plan cannot disagree.
+/// struck unit, which fails the load, `proxy_heals_read`). A Fluff, Scale or RavelSignal
+/// row is read when its aim is one the plan reads (`lasting_aim_of`) and no target apply
+/// prerequisite stands before it, which no go applies; a SpellForceRemove row also when its
+/// counts agree (`force_remove_counts_read`). A SpellForceRemove row whose dataBits01 names
+/// no row fails the load too, which this check cannot see without the tables. The coverage
+/// measure counts the other rows as not read, so it and the plan cannot disagree.
 pub fn effect_row_read(
   effect effect: spell4_effects.Spell4Effects,
   struck_children struck_children: Set(Int),
@@ -2496,12 +2509,14 @@ pub fn effect_row_read(
       result.is_ok(stealth_on_the_caster(spell4_id: effect.spell_id, effect:))
     effect_kind.Proc ->
       result.is_ok(proc_read(spell4_id: effect.spell_id, effect:))
-    effect_kind.Fluff
-    | effect_kind.ForceRemove
-    | effect_kind.Scale
-    | effect_kind.RavelSignal ->
-      aim_is_read(target_flags: effect.target_flags)
-      && effect.prerequisite_id_target_apply == 0
+    effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
+      lasting_row_applied(effect:)
+    effect_kind.ForceRemove ->
+      lasting_row_applied(effect:)
+      && result.is_ok(force_remove_counts_read(
+        spell4_id: effect.spell_id,
+        effect:,
+      ))
     effect_kind.ShieldHeal ->
       shield_heal_of(spell4_id: effect.spell_id, effect:, condition: Always)
       |> result.map(fn(heal) {
@@ -2526,12 +2541,11 @@ pub fn effect_row_read(
   }
 }
 
-/// Whether the aim of these `targetFlags` is one the plan reads (`aim_of`).
-fn aim_is_read(target_flags target_flags: Int) -> Bool {
-  case aim_of(target_flags:) {
-    AimsAtCaster | AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth -> True
-    OtherAim(..) -> False
-  }
+/// Whether a lasting row's aim is one the plan reads and no target apply prerequisite
+/// stands before it, which no go applies.
+fn lasting_row_applied(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  result.is_ok(lasting_aim_of(spell4_id: effect.spell_id, effect:))
+  && effect.prerequisite_id_target_apply == 0
 }
 
 /// What the spell does to the caster's stealth, from the spell's spellCastStealthChange:

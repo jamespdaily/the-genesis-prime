@@ -778,7 +778,7 @@ pub fn a_modifier_of_the_maximum_health_raises_it_keeps_the_health_and_its_end_c
     unit_properties.apply(
       properties: base_health_100(),
       source:,
-      modifier: unit_properties.Modifier(
+      modifier: unit_properties.Change(
         property: unit_properties.base_health,
         mode: 3,
         multiplier: 1.0,
@@ -827,7 +827,7 @@ pub fn the_regeneration_numbers_follow_the_properties_test() -> Nil {
     properties_support.with_modifier(
       properties: base_health_100(),
       source: unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(1)),
-      modifier: unit_properties.Modifier(
+      modifier: unit_properties.Change(
         property: unit_properties.health_regen_multiplier,
         mode: 3,
         multiplier: 2.0,

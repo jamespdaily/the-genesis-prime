@@ -20,7 +20,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{Modifier}
+import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
@@ -98,7 +98,7 @@ pub fn a_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
       spell_plan.PropertyModifier(
         effect_id: Spell4EffectsId(135_954),
         phase_flags: -1,
-        modifier: Modifier(
+        modifier: Change(
           property: UnitProperty2Id(102),
           mode: 3,
           multiplier: 1.0,
@@ -126,7 +126,7 @@ pub fn gates_falling_damage_row_is_read_with_its_delay_and_duration_test() -> Ni
       ]),
     )
   assert row.modifier
-    == Modifier(
+    == Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,
@@ -149,7 +149,7 @@ pub fn a_negative_multiplier_and_amounts_are_read_from_their_signed_bits_test() 
         #("dataBits04", Integer(1_108_082_688)),
       ]),
     )
-  let assert Modifier(multiplier:, flat:, per_level:, ..) = row.modifier
+  let assert Change(multiplier:, flat:, per_level:, ..) = row.modifier
   assert multiplier == -1.0
   assert flat == -2.5
   assert per_level == 35.0
@@ -309,7 +309,7 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
   let assert [falling] = gate.modifiers
   assert falling.effect_id == Spell4EffectsId(67_777)
   assert falling.modifier
-    == Modifier(
+    == Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,
@@ -329,7 +329,7 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
   let assert [crit] = proxy.spell.modifiers
   assert crit.effect_id == Spell4EffectsId(135_954)
   assert crit.modifier
-    == Modifier(
+    == Change(
       property: UnitProperty2Id(102),
       mode: 3,
       multiplier: 1.0,

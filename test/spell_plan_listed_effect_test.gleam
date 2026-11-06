@@ -52,33 +52,6 @@ const one_point_three = 1_067_869_798
 /// 0.25 as row 229304 holds it.
 const a_quarter = 1_048_576_000
 
-/// A row of a planted spell of this type aimed by `target_flags`, in every phase, with
-/// these columns beside its id, spell and type.
-fn effect_row(
-  id id: Int,
-  effect_type effect_type: Int,
-  target_flags target_flags: Int,
-  columns columns: List(#(String, Cell)),
-) -> List(Cell) {
-  let defaults = [
-    #("ID", Integer(id)),
-    #("spellId", Integer(strike)),
-    #("effectType", Integer(effect_type)),
-    #("targetFlags", Integer(target_flags)),
-    #("phaseFlags", Integer(-1)),
-    #("orderIndex", Integer(9)),
-  ]
-  planted_table.row(
-    spell4_effects.schema,
-    list.append(
-      list.filter(defaults, fn(default) {
-        !list.any(columns, fn(given) { given.0 == default.0 })
-      }),
-      columns,
-    ),
-  )
-}
-
 fn planned(row row: List(Cell)) -> spell_plan.Spell {
   let assert Ok(spell) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
@@ -136,12 +109,17 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
   // 109482 as the client holds it: caster, 8000 ms, no flags.
   let spell =
     planned(
-      row: effect_row(id: 109_482, effect_type: 18, target_flags: 1, columns: [
-        #("durationTime", Integer(8000)),
-        #("dataBits00", Integer(one_point_three)),
-        #("dataBits01", Integer(500)),
-        #("dataBits02", Integer(1000)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 109_482,
+        effect_type: 18,
+        target_flags: 1,
+        columns: [
+          #("durationTime", Integer(8000)),
+          #("dataBits00", Integer(one_point_three)),
+          #("dataBits01", Integer(500)),
+          #("dataBits02", Integer(1000)),
+        ],
+      ),
     )
   assert lasting_row(spell:, id: 109_482)
     == Ok(spell_plan.Lasting(
@@ -156,12 +134,17 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
   // The same row with a delay, flags bit 2, one phase and a caster prerequisite.
   let spell =
     planned(
-      row: effect_row(id: 99_101, effect_type: 18, target_flags: 1, columns: [
-        #("delayTime", Integer(250)),
-        #("flags", Integer(2)),
-        #("phaseFlags", Integer(2)),
-        #("prerequisiteIdCasterApply", Integer(17_302)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 99_101,
+        effect_type: 18,
+        target_flags: 1,
+        columns: [
+          #("delayTime", Integer(250)),
+          #("flags", Integer(2)),
+          #("phaseFlags", Integer(2)),
+          #("prerequisiteIdCasterApply", Integer(17_302)),
+        ],
+      ),
     )
   let assert Ok(row) = lasting_row(spell:, id: 99_101)
   assert row.row
@@ -185,7 +168,7 @@ pub fn a_scale_or_ravel_signal_row_is_held_for_each_aim_the_plan_reads_test() ->
     list.each(aims, fn(aim) {
       let spell =
         planned(
-          row: effect_row(
+          row: spell_tables.effect_row_with(
             id: 99_102,
             effect_type:,
             target_flags: aim.0,
@@ -204,11 +187,16 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_held_gated_on_the_targ
   // 91018: caster and target 11311 (Spell4Effects.effectType.81).
   let spell =
     planned(
-      row: effect_row(id: 91_018, effect_type: 81, target_flags: 1, columns: [
-        #("dataBits00", Integer(1)),
-        #("dataBits01", Integer(13_076)),
-        #("prerequisiteIdTargetApply", Integer(11_311)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 91_018,
+        effect_type: 81,
+        target_flags: 1,
+        columns: [
+          #("dataBits00", Integer(1)),
+          #("dataBits01", Integer(13_076)),
+          #("prerequisiteIdTargetApply", Integer(11_311)),
+        ],
+      ),
     )
   let assert Ok(row) = lasting_row(spell:, id: 91_018)
   assert row.condition == GatedOnTarget(prerequisite_id: PrerequisiteId(11_311))
@@ -218,7 +206,12 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_held_gated_on_the_targ
 pub fn a_scale_row_aimed_by_3_and_a_ravel_signal_row_aimed_by_7_fail_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   assert plan_error(
-      row: effect_row(id: 99_103, effect_type: 18, target_flags: 3, columns: []),
+      row: spell_tables.effect_row_with(
+        id: 99_103,
+        effect_type: 18,
+        target_flags: 3,
+        columns: [],
+      ),
     )
     == spell_plan.LastingAimNotRead(
       spell4_id: strike,
@@ -226,7 +219,12 @@ pub fn a_scale_row_aimed_by_3_and_a_ravel_signal_row_aimed_by_7_fail_the_load_te
       target_flags: 3,
     )
   assert plan_error(
-      row: effect_row(id: 99_104, effect_type: 81, target_flags: 7, columns: []),
+      row: spell_tables.effect_row_with(
+        id: 99_104,
+        effect_type: 81,
+        target_flags: 7,
+        columns: [],
+      ),
     )
     == spell_plan.LastingAimNotRead(
       spell4_id: strike,
@@ -240,13 +238,18 @@ pub fn a_property_conversion_row_is_a_modifier_that_converts_47_into_60_at_a_qua
   // 229304: 47 to 60 at 0x3e800000, flags 2, orderIndex 4.
   let spell =
     planned(
-      row: effect_row(id: 229_304, effect_type: 145, target_flags: 1, columns: [
-        #("flags", Integer(2)),
-        #("orderIndex", Integer(4)),
-        #("dataBits00", Integer(47)),
-        #("dataBits01", Integer(60)),
-        #("dataBits02", Integer(a_quarter)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 229_304,
+        effect_type: 145,
+        target_flags: 1,
+        columns: [
+          #("flags", Integer(2)),
+          #("orderIndex", Integer(4)),
+          #("dataBits00", Integer(47)),
+          #("dataBits01", Integer(60)),
+          #("dataBits02", Integer(a_quarter)),
+        ],
+      ),
     )
   let assert Ok(row) =
     list.find(spell.modifiers, fn(row) {
@@ -267,12 +270,17 @@ pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() 
   use <- owned_test.run(60_000)
   // UnitProperty2 has no row 197 (the client's 0x93a refuses from id 197).
   assert plan_error(
-      row: effect_row(id: 99_105, effect_type: 145, target_flags: 1, columns: [
-        #("flags", Integer(2)),
-        #("dataBits00", Integer(47)),
-        #("dataBits01", Integer(197)),
-        #("dataBits02", Integer(a_quarter)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 99_105,
+        effect_type: 145,
+        target_flags: 1,
+        columns: [
+          #("flags", Integer(2)),
+          #("dataBits00", Integer(47)),
+          #("dataBits01", Integer(197)),
+          #("dataBits02", Integer(a_quarter)),
+        ],
+      ),
     )
     == spell_plan.ModifierPropertyHasNoRow(
       spell4_id: strike,
@@ -280,12 +288,17 @@ pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() 
       property: 197,
     )
   assert plan_error(
-      row: effect_row(id: 99_106, effect_type: 145, target_flags: 1, columns: [
-        #("flags", Integer(2)),
-        #("dataBits00", Integer(197)),
-        #("dataBits01", Integer(60)),
-        #("dataBits02", Integer(a_quarter)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 99_106,
+        effect_type: 145,
+        target_flags: 1,
+        columns: [
+          #("flags", Integer(2)),
+          #("dataBits00", Integer(197)),
+          #("dataBits01", Integer(60)),
+          #("dataBits02", Integer(a_quarter)),
+        ],
+      ),
     )
     == spell_plan.ModifierPropertyHasNoRow(
       spell4_id: strike,
@@ -294,12 +307,17 @@ pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() 
     )
   // 0x7FC00000 is a NaN.
   assert plan_error(
-      row: effect_row(id: 99_107, effect_type: 145, target_flags: 1, columns: [
-        #("flags", Integer(2)),
-        #("dataBits00", Integer(47)),
-        #("dataBits01", Integer(60)),
-        #("dataBits02", Integer(2_143_289_344)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 99_107,
+        effect_type: 145,
+        target_flags: 1,
+        columns: [
+          #("flags", Integer(2)),
+          #("dataBits00", Integer(47)),
+          #("dataBits01", Integer(60)),
+          #("dataBits02", Integer(2_143_289_344)),
+        ],
+      ),
     )
     == spell_plan.ModifierNumberNotFinite(
       spell4_id: strike,

@@ -501,7 +501,7 @@ fn modifier(
   multiplier multiplier: Float,
   flat flat: Float,
 ) -> unit_properties.Modifier {
-  unit_properties.Modifier(
+  unit_properties.Change(
     property: UnitProperty2Id(property),
     mode:,
     multiplier:,

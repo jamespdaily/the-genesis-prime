@@ -204,10 +204,16 @@ fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   })
 }
 
-/// What a type 17, 18 or 80 row the plan does not read leaves out: its go lists no row aimed
+/// What a type 17 or 18 row the plan does not read leaves out: its go lists no row aimed
 /// by flags the plan refuses, and applies none behind a target apply prerequisite.
 const lasting_gap =
   "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies"
+
+/// The same for type 80, whose rows the plan also refuses where the two columns that hold
+/// the count of stacks differ. A selector that names no row fails the load too, which the
+/// measure cannot see without the tables, so those rows count as read.
+const force_remove_gap =
+  "rows aimed by flags the plan refuses, behind a target prerequisite or with differing stack counts (dataBits03 and dataBits04), which no go applies or the plan refuses; a selector that names no row fails the load and is not counted"
 
 /// The same for type 81, whose script the client does not hold either.
 const signal_gap =
@@ -274,7 +280,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 80,
-        reason: lasting_gap,
+        reason: force_remove_gap,
         fact_key: "Spell4Effects.effectType.80",
       ),
       Missing(

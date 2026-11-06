@@ -39,8 +39,11 @@
 ////   from the bases in two passes after any start or end, first each change in the order
 ////   it started, then each conversion in the order it started, each adding its share of the
 ////   source's value as the values stand at that point, so a conversion sees a change that
-////   started after it and a pair of conversions runs once each with no loop. Whether the
-////   source is the property's base or its value, when the share is recomputed and how
+////   started after it and a pair of conversions runs once each with no loop. A chain does
+////   not settle: a conversion into another conversion's source that started later is not
+////   seen by the earlier one (row 228153, 34 into 47, started after row 229304, 47 into 60,
+////   leaves 60 as 47 stood before it; no level-1 tree holds 228153's spell 87367). Whether
+////   the source is the property's base or its value, when the share is recomputed and how
 ////   the rows' orderIndex orders conversions are not read; a retail 0x93a of an Engineer's
 ////   property 60 with Critical Severity gear would settle them.
 //// - **A change reports the property's base and value** as the 0x93a carries them, for
@@ -118,7 +121,7 @@ pub type Modifier {
   /// amount for each level of the unit). `mode` is the row's dataBits01, 1 to 4, named by
   /// its number because the client does not settle its meaning and the server's order of
   /// application ignores it.
-  Modifier(
+  Change(
     property: UnitProperty2Id,
     mode: Int,
     multiplier: Float,
@@ -315,18 +318,18 @@ pub fn remove(
   }
 }
 
-/// The property a modifier changes: the one a Modifier is on and the one a Conversion
+/// The property a modifier changes: the one a Change is on and the one a Conversion
 /// adds to.
 pub fn changed_property(modifier modifier: Modifier) -> UnitProperty2Id {
   case modifier {
-    Modifier(property:, ..) -> property
+    Change(property:, ..) -> property
     Conversion(to:, ..) -> to
   }
 }
 
 /// The properties with `live` as the modifiers held and every value worked out again
 /// from the bases in two passes, with the entries whose value changed, in property
-/// order: first each Modifier in start order, then each Conversion in start order,
+/// order: first each Change in start order, then each Conversion in start order,
 /// which adds its share of the source's value as the values stand at that point. Only
 /// the properties a modifier held before or holds now are worked out; any other keeps its
 /// value.
@@ -346,10 +349,10 @@ fn recomputed(
       let after =
         list.fold(live, base(properties:, property:), fn(x, held) {
           case held.modifier {
-            Modifier(property: on, multiplier:, flat:, per_level:, ..)
+            Change(property: on, multiplier:, flat:, per_level:, ..)
               if on == property
             -> x *. multiplier +. flat +. per_level *. level
-            Modifier(..) | Conversion(..) -> x
+            Change(..) | Conversion(..) -> x
           }
         })
       #(id, after)
@@ -359,17 +362,16 @@ fn recomputed(
     list.fold(live, changed, fn(values, held) {
       case held.modifier {
         Conversion(from:, to:, share:) -> {
-          let source = case dict.get(values, from.value) {
-            Ok(worked_out) -> worked_out
-            Error(Nil) -> value(properties:, property: from)
-          }
+          let source =
+            dict.get(values, from.value)
+            |> result.lazy_unwrap(fn() { value(properties:, property: from) })
           dict.upsert(values, to.value, fn(so_far) {
             let assert Some(target) = so_far
               as "a conversion's target is among the properties worked out"
             target +. share *. source
           })
         }
-        Modifier(..) -> values
+        Change(..) -> values
       }
     })
   let reported =

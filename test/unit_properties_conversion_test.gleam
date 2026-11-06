@@ -18,7 +18,7 @@
 ////   (`table_rows -- UnitProperty2 7 42 47 60`).
 
 import genesis_prime/game/unit_properties.{
-  type Properties, type Source, Changed, Conversion, Modifier, Source,
+  type Properties, type Source, Change, Changed, Conversion, Source,
 }
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
@@ -70,7 +70,7 @@ fn adds(
   property property: id.UnitProperty2Id,
   flat flat: Float,
 ) -> unit_properties.Modifier {
-  Modifier(property:, mode: 3, multiplier: 1.0, flat:, per_level: 0.0)
+  Change(property:, mode: 3, multiplier: 1.0, flat:, per_level: 0.0)
 }
 
 /// Whether two numbers are the same to a ten-thousandth: 0.2 and 0.1 are 32-bit floats in

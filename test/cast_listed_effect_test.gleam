@@ -27,15 +27,11 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, UnitProperty2Id}
-import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/string
 import owned_test
 import planted_table.{type Cell, Integer}
 import spell_tables
-
-/// Telekinetic Strike's Spell4, whose planted tree the rows are read in.
-const strike = 32_893
 
 const one_point_three = 1_067_869_798
 
@@ -43,31 +39,6 @@ const a_quarter = 1_048_576_000
 
 // The planted base 3 is bag index 11 (`cast_support.abilities`).
 const bag_of_base_3 = 11
-
-fn effect_row(
-  id id: Int,
-  effect_type effect_type: Int,
-  target_flags target_flags: Int,
-  columns columns: List(#(String, Cell)),
-) -> List(Cell) {
-  let defaults = [
-    #("ID", Integer(id)),
-    #("spellId", Integer(strike)),
-    #("effectType", Integer(effect_type)),
-    #("targetFlags", Integer(target_flags)),
-    #("phaseFlags", Integer(-1)),
-    #("orderIndex", Integer(9)),
-  ]
-  planted_table.row(
-    spell4_effects.schema,
-    list.append(
-      list.filter(defaults, fn(default) {
-        !list.any(columns, fn(given) { given.0 == default.0 })
-      }),
-      columns,
-    ),
-  )
-}
 
 /// A spell of no cast time and no cooldown that holds the lasting and modifier rows the
 /// plan reads from this planted row, and no other.
@@ -137,13 +108,18 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
   // 109482's shape: the caster, 1.3 over 500 ms, 8000 ms, here with a delay of 120 ms.
   let spell =
     spell_of(
-      row: effect_row(id: 109_482, effect_type: 18, target_flags: 1, columns: [
-        #("delayTime", Integer(120)),
-        #("durationTime", Integer(8000)),
-        #("dataBits00", Integer(one_point_three)),
-        #("dataBits01", Integer(500)),
-        #("dataBits02", Integer(1000)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 109_482,
+        effect_type: 18,
+        target_flags: 1,
+        columns: [
+          #("delayTime", Integer(120)),
+          #("durationTime", Integer(8000)),
+          #("dataBits00", Integer(one_point_three)),
+          #("dataBits01", Integer(500)),
+          #("dataBits02", Integer(1000)),
+        ],
+      ),
       id: 109_482,
       spell4_id: 42_908,
       base: 3,
@@ -174,10 +150,15 @@ pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_
   use <- owned_test.run(60_000)
   let spell =
     spell_of(
-      row: effect_row(id: 109_482, effect_type: 18, target_flags: 1, columns: [
-        #("durationTime", Integer(8000)),
-        #("dataBits00", Integer(one_point_three)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 109_482,
+        effect_type: 18,
+        target_flags: 1,
+        columns: [
+          #("durationTime", Integer(8000)),
+          #("dataBits00", Integer(one_point_three)),
+        ],
+      ),
       id: 109_482,
       spell4_id: 42_908,
       base: 3,
@@ -201,10 +182,15 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
   use <- owned_test.run(60_000)
   let spell =
     spell_of(
-      row: effect_row(id: 192_250, effect_type: 18, target_flags: 4, columns: [
-        #("durationTime", Integer(5000)),
-        #("dataBits00", Integer(one_point_three)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 192_250,
+        effect_type: 18,
+        target_flags: 4,
+        columns: [
+          #("durationTime", Integer(5000)),
+          #("dataBits00", Integer(one_point_three)),
+        ],
+      ),
       id: 192_250,
       spell4_id: 101,
       base: 3,
@@ -240,12 +226,17 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so
   // 91018 as the client holds it: the caster, behind target apply prerequisite 11311.
   let spell =
     spell_of(
-      row: effect_row(id: 91_018, effect_type: 81, target_flags: 1, columns: [
-        #("dataBits00", Integer(1)),
-        #("dataBits01", Integer(13_076)),
-        #("durationTime", Integer(1000)),
-        #("prerequisiteIdTargetApply", Integer(11_311)),
-      ]),
+      row: spell_tables.effect_row_with(
+        id: 91_018,
+        effect_type: 81,
+        target_flags: 1,
+        columns: [
+          #("dataBits00", Integer(1)),
+          #("dataBits01", Integer(13_076)),
+          #("durationTime", Integer(1000)),
+          #("prerequisiteIdTargetApply", Integer(11_311)),
+        ],
+      ),
       id: 91_018,
       spell4_id: 38_784,
       base: 3,
@@ -267,12 +258,17 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so
 /// The Engineer passive's shape: 229304, flags 2, from property 47 to 60 at a quarter.
 fn passive() -> Spell {
   spell_of(
-    row: effect_row(id: 229_304, effect_type: 145, target_flags: 1, columns: [
-      #("flags", Integer(2)),
-      #("dataBits00", Integer(47)),
-      #("dataBits01", Integer(60)),
-      #("dataBits02", Integer(a_quarter)),
-    ]),
+    row: spell_tables.effect_row_with(
+      id: 229_304,
+      effect_type: 145,
+      target_flags: 1,
+      columns: [
+        #("flags", Integer(2)),
+        #("dataBits00", Integer(47)),
+        #("dataBits01", Integer(60)),
+        #("dataBits02", Integer(a_quarter)),
+      ],
+    ),
     id: 229_304,
     spell4_id: 250_001,
     base: 250_001,
