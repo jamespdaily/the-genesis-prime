@@ -28,6 +28,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/class_resource.{Row}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/server_proxy
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
@@ -63,6 +64,7 @@ fn spellslinger() -> #(game_connection.State, Int) {
         ..connection_support.settings(),
         tables: client_tables.shared(),
         class_resources: emptying_after_combat(),
+        server_proxies: server_proxy.none(),
       ),
       class_id: 7,
       saved_health: None,

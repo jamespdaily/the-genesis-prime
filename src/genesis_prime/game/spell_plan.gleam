@@ -15,8 +15,10 @@
 //// ```
 ////
 //// - **The tree.** A Proxy effect (`Spell4Effects.effectType.26`, dataBits00 the
-////   Spell4 id; 0 names none) starts that spell as a cast of its own, so a `Spell`
-////   holds its `Proxy` children, each with the delay the effect gives after its
+////   Spell4 id; a row with dataBits00 0 names its spell in dataBits01 and ticks, which
+////   the plan does not start: `Spell4Effects.effectType.26.periodic`) starts that spell
+////   as a cast of its own, so a `Spell` holds its `Proxy` children, each with the delay
+////   the effect gives after its
 ////   parent's go (`delayTime`) and the phases it fires in (`phaseFlags`: bit n is
 ////   phase n, every bit for -1, the reading `Spell4.38791` gives). A Proxy with a
 ////   target apply prerequisite is kept as `GatedOnCasterAndTarget`, with its caster
@@ -1492,6 +1494,49 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
       use Nil <- result.try(has_threshold_time(spell:))
       Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
     },
+  )
+}
+
+/// The tree of a spell the server casts as a child, built as a Proxy's child is, with
+/// `chain` the Spell4 ids from the pressed ability to the spell that casts it, so a
+/// tree that leads back to one of them fails as a `ProxyCycle`
+/// (genesis_prime/game/server_proxy). The rows are grouped on each call, which a
+/// load makes once for each row it reads.
+pub fn child_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Spell4Id,
+  chain chain: List(Int),
+) -> Result(Spell, PlanError) {
+  let group_lists = group_lists_by_id(tables:)
+  spell_of(
+    tables:,
+    sources: Sources(
+      effects: effects_by_spell(tables:),
+      phases: phases_by_owner(tables:),
+      thresholds: thresholds_by_parent(tables:),
+      group_lists:,
+      known_groups: set.from_list(list.flatten(dict.values(group_lists))),
+    ),
+    spell4_id: spell4_id.value,
+    chain:,
+    threshold_costs: [],
+  )
+}
+
+/// A Proxy the server adds to a tree, which starts `child` on the caster at once at
+/// each go of the phases `phase_flags` names, with no gate and no gain lifted. It
+/// stands for no Spell4Effects row, so its effect id is 0
+/// (genesis_prime/game/server_proxy).
+pub fn server_proxy(child child: Spell, phase_flags phase_flags: Int) -> Proxy {
+  Proxy(
+    effect_id: Spell4EffectsId(0),
+    delay_ms: 0,
+    phase_flags:,
+    condition: Always,
+    tag: spend.always,
+    target: OnCaster,
+    spell: child,
+    gains: [],
   )
 }
 

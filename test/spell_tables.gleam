@@ -58,6 +58,7 @@
 //// naming a row the table lacks.
 
 import database_support
+import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/table/class
@@ -249,7 +250,7 @@ fn property_flags(id: Int) -> Int {
 /// and 87353, and none (0) for 60947.
 pub fn caster_conditions(id: Int) -> Int {
   case id {
-    30_900 | 42_297 | 87_353 -> 4
+    30_900 | 42_148 | 42_297 | 87_353 -> 4
     60_947 -> 0
     25_190
     | 53_865
@@ -2786,5 +2787,179 @@ pub fn plans_with_stealth() -> spell_plan.Plans {
       })
       as "the planted rows with the Stalker's Stealth toggle build"
     plans
+  })
+}
+
+/// The planted rows with the Engineer's Volatility gain as the client holds it
+/// (`Spell4.42148`): the hidden spell 42148 (base 26342, cast time 0, caster condition
+/// row 4), its one effect 95337 (a VitalModifier of vital 6, +15, phaseFlags 1, behind
+/// prerequisite 903) and Prerequisite 903 (type 28, comparison 1: the caster is in
+/// combat, `Prerequisite.prerequisiteTypeId.28`). Nothing in the client's tables casts
+/// 42148, so no Proxy of the planted rows names it. Pulse Blast's damage spell 37302
+/// holds its damage as the client's rows do (`table_rows -- Spell4Effects spellId=37302`,
+/// `-- Spell4Telegraph spell4Id=37302`, `-- TelegraphDamage 213 217 218`): three Physical
+/// effects aimed at the area in its goes 1, 2 and 3 (phaseFlags 2, 4 and 8), each with a
+/// cone of its own.
+pub fn rows_with_volatility() -> Rows {
+  let rows = rows()
+  Rows(
+    ..rows,
+    spell4: sorted_by_id([
+      method_spell_row(
+        id: 42_148,
+        base: 26_342,
+        cast_time: 0,
+        cooldown: 0,
+        kind: 3,
+        global: 100,
+        cost: #(0, 0),
+        more: [],
+      ),
+      ..list.map(rows.spell4, fn(row) {
+        case row {
+          [Integer(37_302), ..] ->
+            with_column(
+              row:,
+              name: "spell4AoeTargetConstraintsId",
+              cell: Integer(area_id(37_302)),
+            )
+          other -> other
+        }
+      })
+    ]),
+    spell4_base: sorted_by_id([
+      base_row(id: 26_342, method: 0, weapon: 0, bar: 0, class: 0),
+      ..rows.spell4_base
+    ]),
+    spell4_effects: sorted_by_id([
+      vital_modifier_row(
+        id: 95_337,
+        spell: 42_148,
+        vital: 6,
+        amount: 15,
+        delay: 0,
+        phases: 1,
+        prerequisite: 903,
+        order: 0,
+      ),
+      pulse_blast_damage_row(
+        id: 79_090,
+        phases: 2,
+        order: 0,
+        scale: 0.3493,
+        flat: 11.07,
+      ),
+      pulse_blast_damage_row(
+        id: 79_092,
+        phases: 4,
+        order: 1,
+        scale: 0.2898,
+        flat: 9.18,
+      ),
+      pulse_blast_damage_row(
+        id: 79_093,
+        phases: 8,
+        order: 2,
+        scale: 0.2342,
+        flat: 7.42,
+      ),
+      ..rows.spell4_effects
+    ]),
+    prerequisites: sorted_by_id([
+      prerequisite_row(id: 903, flags: 0, conditions: [#(28, 1, 0, 0)]),
+      ..rows.prerequisites
+    ]),
+    spell4_telegraph: list.append(
+      rows.spell4_telegraph,
+      list.map([#(2566, 213), #(2569, 217), #(2570, 218)], fn(link) {
+        planted_table.row(spell4_telegraph.schema, [
+          #("ID", Integer(link.0)),
+          #("spell4Id", Integer(37_302)),
+          #("telegraphDamageId", Integer(link.1)),
+        ])
+      }),
+    ),
+    telegraph_damage: list.append(
+      rows.telegraph_damage,
+      list.map(
+        [
+          #(213, 5.0, 29.0, 10.0, 2),
+          #(217, 4.0, 18.0, 30.0, 4),
+          #(218, 3.0, 13.0, 60.0, 8),
+        ],
+        fn(row) {
+          planted_table.row(telegraph_damage.schema, [
+            #("ID", Integer(row.0)),
+            #("damageShapeEnum", Integer(8)),
+            #("param00", Float(row.1)),
+            #("param01", Float(row.2)),
+            #("param02", Float(row.3)),
+            #("param04", Float(20.0)),
+            #("telegraphDamageFlags", Integer(576)),
+            #("targetTypeFlags", Integer(1)),
+            #("phaseFlags", Integer(row.4)),
+          ])
+        },
+      ),
+    ),
+  )
+}
+
+/// A Physical damage effect of Pulse Blast's damage spell 37302 aimed at the area, in the
+/// go `phases` names, with the client's two parameters (types 12 and 10).
+fn pulse_blast_damage_row(
+  id id: Int,
+  phases phases: Int,
+  order order: Int,
+  scale scale: Float,
+  flat flat: Float,
+) -> List(Cell) {
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(37_302)),
+    #("targetFlags", Integer(4)),
+    #("effectType", Integer(8)),
+    #("damageType", Integer(1)),
+    #("phaseFlags", Integer(phases)),
+    #("dataBits00", Integer(1_065_353_216)),
+    #("parameterType00", Integer(12)),
+    #("parameterValue00", Float(scale)),
+    #("parameterType01", Integer(10)),
+    #("parameterValue01", Float(flat)),
+    #("orderIndex", Integer(order)),
+  ])
+}
+
+/// The seed row of migration 0018: Pulse Blast's base 26468, go 1, spell 42148.
+pub fn volatility_row() -> server_proxy.Row {
+  server_proxy.Row(spell4_base_id: 26_468, phase: 1, spell4_id: 42_148)
+}
+
+/// The server's Proxies of the seed row, selected over `rows_with_volatility`
+/// (genesis_prime/game/server_proxy), built once per run. The value holds the planned
+/// spell and no table, so a connection made with other planted tables can plant it.
+pub fn server_proxies_with_volatility() -> server_proxy.ServerProxies {
+  database_support.once("spell_tables_server_proxies_with_volatility", fn() {
+    with_loaded(rows: rows_with_volatility(), body: fn(tables) {
+      let assert Ok(plans) = spell_plan.build(tables:)
+        as "the planted rows with Volatility build"
+      let assert Ok(proxies) =
+        server_proxy.select(rows: [volatility_row()], tables:, plans:)
+        as "the seed row selects"
+      proxies
+    })
+  })
+}
+
+/// The plans of `rows_with_volatility` with the server's Proxy planted, built once per
+/// run.
+pub fn plans_with_volatility() -> spell_plan.Plans {
+  let proxies = server_proxies_with_volatility()
+  database_support.once("spell_tables_plans_with_volatility", fn() {
+    with_loaded(rows: rows_with_volatility(), body: fn(tables) {
+      let assert Ok(plans) = spell_plan.build(tables:)
+        as "the planted rows with Volatility build"
+      server_proxy.planted_into(plans:, proxies:)
+    })
   })
 }

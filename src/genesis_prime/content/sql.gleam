@@ -148,6 +148,48 @@ order by name;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_server_proxies` query
+/// defined in `./src/genesis_prime/content/sql/load_server_proxies.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadServerProxiesRow {
+  LoadServerProxiesRow(spell4_base_id: Int, phase: Int, spell4_id: Int)
+}
+
+/// Every row of the server_proxy table in key order: the one query the load makes of
+/// the table at start (genesis_prime/content/server_proxy). The checks run on these
+/// rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_server_proxies(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadServerProxiesRow), pog.QueryError) {
+  let decoder = {
+    use spell4_base_id <- decode.field(0, decode.int)
+    use phase <- decode.field(1, decode.int)
+    use spell4_id <- decode.field(2, decode.int)
+    decode.success(LoadServerProxiesRow(spell4_base_id:, phase:, spell4_id:))
+  }
+
+  "-- Every row of the server_proxy table in key order: the one query the load makes of
+-- the table at start (genesis_prime/content/server_proxy). The checks run on these
+-- rows, not in SQL.
+select
+  spell4_base_id,
+  phase,
+  spell4_id
+from server_proxy
+order by spell4_base_id, phase, spell4_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_spawns` query
 /// defined in `./src/genesis_prime/content/sql/load_spawns.sql`.
 ///

@@ -19,8 +19,10 @@ import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal}
+import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/class_resource
+import genesis_prime/game/server_proxy
 import genesis_prime/migration
 import genesis_prime/readiness
 import genesis_prime/table/id.{ClassId}
@@ -362,4 +364,35 @@ pub fn a_class_missing_the_rows_of_its_refill_stops_the_load_naming_each_test() 
       #("class_resource", refusal.RowName("7 regen_amount")),
     ]
     as "each missing row is named by its class and number"
+}
+
+pub fn the_load_puts_the_servers_proxies_in_a_term_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = load(database:)
+  assert loaded == Ok(Nil)
+  assert server_proxy.holds(
+    proxies: content_server_proxy.proxies(key:),
+    base: 26_468,
+  )
+    as "migration 0018's seed row, Pulse Blast's go 1 casting 42148, is selected over the planted trees and kept"
+}
+
+pub fn a_server_proxy_row_that_cannot_be_planned_stops_the_load_naming_each_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  change(
+    database,
+    "insert into server_proxy (spell4_base_id, phase, spell4_id, source, reason) values (99999, 0, 42148, 'server_choice', 'a base with no plan'), (26468, 2, 42148, 'server_choice', 'a go Pulse Blast does not have'), (26468, 0, 99999, 'server_choice', 'a spell the tables lack')",
+  )
+  let #(loaded, _key) = load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a row that names no plan, no go or no spell stops the start (the design, tests 10 to 12)"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [
+      #("server_proxy", refusal.RowName("26468 0 99999")),
+      #("server_proxy", refusal.RowName("26468 2 42148")),
+      #("server_proxy", refusal.RowName("99999 0 42148")),
+    ]
+    as "each bad row is named by its key, in the table's key order, and the seed row is not"
 }

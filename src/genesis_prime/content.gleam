@@ -4,7 +4,8 @@
 //// (genesis_prime/content/spawn), `creature_kind` the second
 //// (genesis_prime/content/creature_kind), `game_number` the third
 //// (genesis_prime/content/game_number), `class_resource` the fourth
-//// (genesis_prime/content/class_resource), and every later one follows the same
+//// (genesis_prime/content/class_resource), `server_proxy` the fifth
+//// (genesis_prime/content/server_proxy), and every later one follows the same
 //// pattern.
 //// The kinds are selected before the spawns, since a spawn's attack is its kind's
 //// spell.
@@ -57,6 +58,9 @@
 //// - **The terms** are put once, one for each table and world, under `key`
 ////   (genesis_prime/content/term); a world of the client's World table with no
 ////   spawn gets an empty one, so a missing term is a bug and crashes its reader.
+//// - **The server's Proxies** are planned over the ability trees the tables' load derived
+////   (genesis_prime/game/server_proxy), so a row naming a base, a go or a spell those trees
+////   lack is refused with the plan's reason.
 //// - **Content-only tables.** The faction, outfit and world tables the selection
 ////   reads load beside the server's own tables (`server_table.load_content_tables`:
 ////   the creature tables are read where they already are, so nothing loads twice),
@@ -77,9 +81,12 @@ import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/class_resource
 import genesis_prime/game/rating
+import genesis_prime/game/server_proxy
+import genesis_prime/game/spell_plan
 import genesis_prime/migration.{type Migration}
 import genesis_prime/readiness
 import genesis_prime/step
@@ -189,8 +196,27 @@ fn read(
       )
     }),
   )
+  use proxy_rows <- result.try(
+    content_server_proxy.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_server_proxy.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
   let classes = class_resource.select(rows: class_rows)
   let class_refusals = case classes {
+    Ok(..) -> []
+    Error(refusals) -> refusals
+  }
+  let proxies =
+    server_proxy.select(
+      rows: proxy_rows,
+      tables:,
+      plans: spell_plan.plans(tables:),
+    )
+  let proxy_refusals = case proxies {
     Ok(..) -> []
     Error(refusals) -> refusals
   }
@@ -228,6 +254,7 @@ fn read(
       kind_refusals,
       number_refusals,
       class_refusals,
+      proxy_refusals,
     ])
   {
     [] -> {
@@ -260,6 +287,10 @@ fn read(
       }
       case classes {
         Ok(classes) -> content_class_resource.put(key:, classes:)
+        Error(..) -> Nil
+      }
+      case proxies {
+        Ok(proxies) -> content_server_proxy.put(key:, proxies:)
         Error(..) -> Nil
       }
       Ok(Nil)

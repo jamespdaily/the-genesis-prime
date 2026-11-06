@@ -24,6 +24,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/hit.{Blow, Offence}
 import genesis_prime/game/loadout
+import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game_settings.{GameSettings}
@@ -93,6 +94,7 @@ pub fn settings() -> game_connection.Settings {
     ask_deadline_ms: 4000,
     rate: support.roomy(),
     class_resources: class_resource_support.classes(),
+    server_proxies: server_proxy.none(),
     numbers: spawn_support.numbers,
   )
 }
@@ -1495,10 +1497,24 @@ pub fn entered_with_spell_trees(
   class_id class_id: Int,
   ability ability: Int,
 ) -> #(game_connection.State, Int, Int) {
+  entered_with_server_proxies(
+    class_id:,
+    ability:,
+    proxies: server_proxy.none(),
+    tables: character_tables.shared_with_spell_trees(),
+  )
+}
+
+/// The same with the server's Proxies planted into the abilities' trees
+/// (genesis_prime/game/server_proxy) and these tables.
+pub fn entered_with_server_proxies(
+  class_id class_id: Int,
+  ability ability: Int,
+  proxies proxies: server_proxy.ServerProxies,
+  tables tables: store_tables.Tables,
+) -> #(game_connection.State, Int, Int) {
   let fresh =
-    accepted(
-      Settings(..settings(), tables: character_tables.shared_with_spell_trees()),
-    ).0
+    accepted(Settings(..settings(), tables:, server_proxies: proxies)).0
   let #(state, entered) =
     entered_from(
       in_character_select: in_select_from(fresh),

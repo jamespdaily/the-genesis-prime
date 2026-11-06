@@ -1,12 +1,12 @@
 //// The classes' resources the tests' connections are made with: the rows of
-//// migrations 0011 and 0012, as the steps' designs give them (issues 403 and 418,
-//// their Design artifacts' values), selected as the content load selects them. A test's
-//// expected values name the design or the client, never this module.
+//// migrations 0011, 0012 and 0018, as the steps' designs give them (issues 403, 418
+//// and 419, their Design artifacts' values), selected as the content load selects
+//// them. A test's expected values name the design or the client, never this module.
 
 import genesis_prime/game/class_resource.{type Classes, type Resource, Row}
 import genesis_prime/table/id.{ClassId}
 
-/// The rows of migrations 0011 and 0012, in class and name order.
+/// The rows of migrations 0011, 0012 and 0018, in class and name order.
 pub fn rows() -> List(class_resource.Row) {
   [
     Row(class_id: 1, name: "drain_after_ms", value: 1500.0, unit: "ms"),
@@ -14,6 +14,7 @@ pub fn rows() -> List(class_resource.Row) {
     Row(class_id: 1, name: "drain_period_ms", value: 1000.0, unit: "ms"),
     Row(class_id: 1, name: "drain_tick_ms", value: 1000.0, unit: "ms"),
     Row(class_id: 1, name: "max", value: 1000.0, unit: "points"),
+    Row(class_id: 2, name: "empty_after_combat_ms", value: 5000.0, unit: "ms"),
     Row(class_id: 2, name: "max", value: 100.0, unit: "points"),
     Row(class_id: 3, name: "empty_after_combat_ms", value: 10_000.0, unit: "ms"),
     Row(class_id: 3, name: "max", value: 5.0, unit: "points"),

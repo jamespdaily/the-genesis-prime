@@ -89,7 +89,6 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/rating
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/unit_properties
@@ -123,7 +122,7 @@ pub fn cast_message(
       message:,
       body: inner.body,
       caster: caster_of(entered:),
-      plans: spell_plan.plans(session.settings.tables),
+      plans: connection_state.plans_of(session:),
       now:,
     )
   {

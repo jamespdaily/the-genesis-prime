@@ -123,6 +123,37 @@ pub fn shared_with_spell_trees() -> store.Tables {
   })
 }
 
+/// The same with the Engineer's Volatility rows (`spell_tables.rows_with_volatility`): the
+/// hidden spell 42148 and the damage of Pulse Blast's damage spell 37302. Loaded once under
+/// a key of its own.
+pub fn shared_with_volatility() -> store.Tables {
+  database_support.once("character_tables_volatility", fn() {
+    let trees =
+      novice_tables.spell_tree_files_of(
+        rows: spell_tables.rows_with_volatility(),
+        creature_attack: True,
+      )
+    let names = list.map(trees, fn(file) { file.0 })
+    let prerequisites =
+      spell_tables.sorted_by_id(list.append(
+        spell_tables.rows_with_volatility().prerequisites,
+        prerequisite_rows(),
+      ))
+    load_files(list.append(
+      list.map(
+        list.filter(files(), fn(file) { !list.contains(names, file.0) }),
+        fn(file) {
+          case file.0 == prerequisite.schema.file {
+            True -> planted_table.file(prerequisite.schema, prerequisites)
+            False -> file
+          }
+        },
+      ),
+      trees,
+    ))
+  })
+}
+
 /// The planted tables with Spell4Conditions row 43, the caster row of every
 /// ability a planted class presses, holding no dead bit (mask 1248, the client's
 /// 1249 less bit 0, `cast.dead_player`): test data, since no pressable planted
@@ -983,13 +1014,18 @@ pub fn prerequisite_rows() -> List(List(Cell)) {
 }
 
 /// The tables only the content load reads, loaded once from the planted files
-/// beside the planted tables (`shared`), under their key: the content load reads
-/// the creature tables where they are. Never unloaded, as `shared` is not.
+/// beside the planted tables with the Engineer's Volatility rows
+/// (`shared_with_volatility`), under their key: the content load reads the creature tables
+/// where they are, and the spell trees the server's Proxy of migration 0018 is selected
+/// from (Pulse Blast's two goes and the hidden 42148). Never unloaded, as `shared` is not.
 pub fn content_tables() -> store.Tables {
   database_support.once("character_content_tables", fn() {
     use folder <- planted_table.in_folder(content_files())
     let assert Ok(tables) =
-      server_table.load_content_tables(over: shared(), from: folder)
+      server_table.load_content_tables(
+        over: shared_with_volatility(),
+        from: folder,
+      )
       as "the planted files load as the content load's tables"
     tables
   })
