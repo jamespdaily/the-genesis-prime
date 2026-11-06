@@ -68,6 +68,11 @@
 ////   flags bit 2, which start and end the change and give the caster's node of the cast
 ////   its life. A row aimed only at other units is not read. Its caster apply
 ////   prerequisite, phases and spend tag are a Fluff effect's.
+//// - **The forced moves.** A ForcedMove effect (`Spell4Effects.effectType.3`) whose
+////   targetFlags include the caster is a `ForcedMove` row: its delay. The go lists it
+////   on the caster and the caster's client moves itself and reports the move
+////   (`Spell4Effects.effectType.3.player`); the server works out no destination. A row aimed only at other units is not read. Its caster apply
+////   prerequisite, phases and spend tag are a Fluff effect's.
 //// - **The phases** of a Multiphase spell (`Spell.CodeEnumCastMethod` 8) are the
 ////   SpellPhase rows of its owner kept by the client's rule (`0x14055e180`: order
 ////   index below 32, and index 0 or a non-zero delay), each delay the gap after
@@ -418,6 +423,27 @@ pub type Spell {
     /// The UnitPropertyModifier effects aimed at the caster, which change one of its
     /// properties for their time.
     modifiers: List(PropertyModifier),
+    /// The ForcedMove effects aimed at the caster, which the go lists and the caster's
+    /// client carries out.
+    forced_moves: List(ForcedMove),
+  )
+}
+
+/// A ForcedMove effect (`Spell4Effects.effectType.3`) of a spell whose targetFlags
+/// include the caster: the `delay_ms` the go lists it with (the move itself, its kind
+/// and distance, the caster's client works out and carries out
+/// (`Spell4Effects.effectType.3.player`) and no rule of the server reads), the phases of `phase_flags` it applies in, when its `condition`
+/// holds (its caster apply prerequisite against the caster; one behind a target apply
+/// prerequisite is not applied), and when its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend). A row aimed only at other units is not read, and the part
+/// of a row's aim that is not the caster is not applied (`effect_kind.is_row_read`).
+pub type ForcedMove {
+  ForcedMove(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    delay_ms: Int,
+    condition: Condition,
+    tag: spend.Tag,
   )
 }
 
@@ -985,6 +1011,7 @@ fn spell_of(
   use removes <- result.try(removes_of(tables:, sources:, spell4_id:, effects:))
   use controls <- result.try(controls_of(spell4_id:, effects:))
   use modifiers <- result.try(modifiers_of(tables:, spell4_id:, effects:))
+  use forced_moves <- result.try(forced_moves_of(tables:, effects:))
   use groups <- result.try(groups_of(sources:, row:))
   use stack <- result.try(stack_of(tables:, row:))
   use proxies <- result.try(
@@ -1095,6 +1122,7 @@ fn spell_of(
     removes:,
     controls:,
     modifiers:,
+    forced_moves:,
   ))
 }
 
@@ -1364,6 +1392,38 @@ fn modifiers_of(
         per_level:,
       ),
       row: lasting_row_of(effect:),
+      condition:,
+      tag: tag_of(effect:),
+    ))
+  })
+}
+
+/// The ForcedMove effects of a spell whose targetFlags include the caster
+/// (`effect_kind.is_row_read`; `Spell4Effects.effectType.3.player`). Its caster apply
+/// prerequisite is read as a Fluff effect's is (`condition_of`); a row aimed only at
+/// other units is left out.
+fn forced_moves_of(
+  tables tables: table_store.Tables,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(ForcedMove), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.ForcedMove
+    && effect_kind.is_row_read(
+      effect_type: effect.effect_type,
+      target_flags: effect.target_flags,
+    )
+  })
+  |> list.try_map(fn(effect) {
+    use condition <- result.try(condition_of(
+      tables:,
+      effect:,
+      data_bits06_names_a_gate: False,
+    ))
+    Ok(ForcedMove(
+      effect_id: Spell4EffectsId(effect.id),
+      phase_flags: effect.phase_flags,
+      delay_ms: effect.delay_time,
       condition:,
       tag: tag_of(effect:),
     ))
@@ -2195,6 +2255,22 @@ pub fn modifiers_in_phase(
     rows: spell.modifiers,
     phase_flags: fn(modifier) { modifier.phase_flags },
     tag: fn(modifier) { modifier.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The ForcedMove effects of the spell that apply in phase `phase`, those whose tag
+/// holds for the points the cast spent.
+pub fn forced_moves_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(ForcedMove) {
+  in_phase(
+    rows: spell.forced_moves,
+    phase_flags: fn(forced_move) { forced_move.phase_flags },
+    tag: fn(forced_move) { forced_move.tag },
     phase:,
     spent:,
   )
