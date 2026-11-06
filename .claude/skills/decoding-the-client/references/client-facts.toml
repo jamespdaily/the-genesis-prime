@@ -9029,6 +9029,7 @@ statement = "Sets the time of a running cooldown entry: the entry's timer is res
 proof = "Saved C 0x1407a0320.c (hash 8eb22adb6de47956): the old timer is cancelled by 0x140195d70 when entry word 8 is set; the entry's timer (entry word 4) is started for the time by 0x140195960 with 0x1407a0390 as its callback; entry word 0x16 is raised to the time when it was smaller. Callers: ModifyRunningCooldowns 0x14046b920 and SetSpellCooldown 0x14046a3d0."
 grade = "fairly sure"
 gap = "Read from the decompile; not run. The callback 0x1407a0390 is not read in full: it ends the entry, and its other work is not known."
+name = "SetCooldownEntryTime"
 
 ["0x1405a7380"]
 statement = "Changes the player's ability recharge timers by a ModifySpellCooldown effect: for each ability with charges whose recharge runs and whose spell the selector picks, the time left is changed by the effect's operation (an instant effect), or put through all the lasting modifiers (an effect with a lifetime), and the timer restarted."
