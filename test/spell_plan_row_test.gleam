@@ -286,3 +286,36 @@ pub fn a_row_whose_tables_lack_its_prerequisite_is_not_read_test() -> Nil {
       as "the measure counts the row not read, without stopping"
   })
 }
+
+pub fn a_row_whose_prerequisites_nest_each_other_is_not_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Prerequisite 910 nests 911 and 911 nests 910 (a type 11 condition's objectId names the
+  // nested row, `Prerequisite.prerequisiteTypeId.11`), and a Fluff row names 910 as its
+  // caster apply prerequisite: the plan's load refuses the cycle and the measure counts the
+  // row not read.
+  let planted_row =
+    row(id: 90_031, effect_type: 17, target_flags: 1, columns: [
+      #("durationTime", Integer(5000)),
+      #("prerequisiteIdCasterApply", Integer(910)),
+    ])
+  let rows =
+    spell_tables.Rows(..rows_with(effects: [planted_row]), prerequisites: [
+      spell_tables.prerequisite_row(id: 910, flags: 0, conditions: [
+        #(11, 1, 911, 0),
+      ]),
+      spell_tables.prerequisite_row(id: 911, flags: 0, conditions: [
+        #(11, 1, 910, 0),
+      ]),
+    ])
+  assert spell_tables.planned_strike(rows:)
+    == Error(spell_plan.PrerequisiteCycle(path: [910, 911, 910]))
+    as "the rows nest each other round a cycle"
+  spell_tables.with_loaded(rows:, body: fn(tables) {
+    let effects =
+      spell4_effects.all(tables)
+      |> list.filter(fn(effect) { effect.id == 90_031 })
+    assert effect_row.unread_by_type(tables:, effects:)
+      == dict.from_list([#(17, 1)])
+      as "the measure counts the row not read, without stopping"
+  })
+}

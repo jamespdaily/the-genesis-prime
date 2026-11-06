@@ -216,7 +216,10 @@ const conversion_gap =
 /// The spell effect engine: the `effectType` column of Spell4Effects, the
 /// client's own column name (`game_table.schema`). No fact records the code that
 /// reads the column. A type is handled when the effect rule's decode reads it
-/// (genesis_prime/game/effect_kind `is_read`).
+/// (genesis_prime/game/effect_kind `is_read`). A row is read when the plan applies it
+/// (genesis_prime/coverage/effect_row); a spell the plan refuses for a column of its own
+/// (a cost, a requirement, a cycle) is left out of the counts, and each of its rows is
+/// counted by its own columns.
 fn spell_effects() -> EngineDeclaration {
   EngineDeclaration(
     name: "Spell effects",
