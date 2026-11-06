@@ -11,6 +11,11 @@
 //// lists it as missing, or a starting ability's tree names a Spell4 or Prerequisite
 //// row the tables lack.
 ////
+//// It then lists the parts of the starting abilities' trees the starting abilities'
+//// column leaves out, each with why: a Prerequisite only a runner column names, and
+//// a Proxy's child behind a gate a level-1 character cannot open
+//// (genesis_prime/coverage/starting_ability).
+////
 //// It then prints the coverage of the world's spawns, a line for each world: how
 //// many start as fight creatures, how many NonPlayer rows are left out and why,
 //// and how many rows each other entity type has (genesis_prime/world_map/spawn,
@@ -61,6 +66,7 @@ pub fn main() -> Nil {
         list.map(engine.all(), fn(declared) {
           measurement.measure(declared, tables)
         })
+      let left_out = left_out_report(tables:)
       let spawns = spawn_coverage(tables:)
       store.unload(tables)
       io.println(checklist.totals(measurements))
@@ -68,6 +74,8 @@ pub fn main() -> Nil {
       io.println(checklist.legend)
       io.println("")
       io.println(checklist.render(measurements))
+      io.println("")
+      io.println(left_out)
       io.println("")
       io.println(spawns)
       case breaches(measurements) {
@@ -78,6 +86,26 @@ pub fn main() -> Nil {
         }
       }
     }
+  }
+}
+
+/// A line for each part of the starting abilities' trees the counts leave out, with
+/// why, so a reader can audit the starting abilities' column.
+fn left_out_report(tables tables: store.Tables) -> String {
+  case starting_ability.left_out(tables:) {
+    Error(missing) ->
+      "Starting abilities, left out of the counts above: not listed, "
+      <> string.join(list.map(missing, starting_ability.describe), "; ")
+    Ok(parts) ->
+      string.join(
+        [
+          "Starting abilities, left out of the counts above:",
+          ..list.map(parts, fn(part) {
+            "- " <> starting_ability.describe_left_out(left_out: part)
+          })
+        ],
+        "\n",
+      )
   }
 }
 

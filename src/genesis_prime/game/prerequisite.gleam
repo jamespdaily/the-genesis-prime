@@ -250,7 +250,7 @@ const highest_type = 295
 /// The row as the client keeps it (`0x1404a5190`).
 pub fn of_row(row row: prerequisite_table.Prerequisite) -> Prerequisite {
   let conditions =
-    list.map(kept(row:), fn(condition) {
+    list.map(kept_conditions(row:), fn(condition) {
       condition_of(
         type_id: condition.0,
         comparison: condition.1,
@@ -258,17 +258,23 @@ pub fn of_row(row row: prerequisite_table.Prerequisite) -> Prerequisite {
         value: condition.3,
       )
     })
-  Prerequisite(id: PrerequisiteId(row.id), any: row.flags % 2 != 0, conditions:)
+  Prerequisite(id: PrerequisiteId(row.id), any: is_any(row:), conditions:)
 }
 
 /// The PrerequisiteTypes of the conditions the client keeps from the row, in
 /// order: those before the first of type 0 (`0x1404a5190`).
 pub fn condition_types(row row: prerequisite_table.Prerequisite) -> List(Int) {
-  list.map(kept(row:), fn(condition) { condition.0 })
+  list.map(kept_conditions(row:), fn(condition) { condition.0 })
+}
+
+/// Whether any one kept condition is enough for the row to pass (`Prerequisite.flags`
+/// bit 0), rather than all of them (`0x1404a1ca0`).
+pub fn is_any(row row: prerequisite_table.Prerequisite) -> Bool {
+  row.flags % 2 != 0
 }
 
 /// The conditions the client keeps, each as (type, comparison, objectId, value).
-fn kept(
+pub fn kept_conditions(
   row row: prerequisite_table.Prerequisite,
 ) -> List(#(Int, Int, Int, Int)) {
   [

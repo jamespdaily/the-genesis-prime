@@ -58,7 +58,9 @@ import database_support
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/table/class
+import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/level_up_unlock
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
@@ -101,6 +103,8 @@ pub type Rows {
     spell4_group_lists: List(List(Cell)),
     spell4_stack_groups: List(List(Cell)),
     unit_properties: List(List(Cell)),
+    eldan_augmentations: List(List(Cell)),
+    level_up_unlocks: List(List(Cell)),
   )
 }
 
@@ -465,6 +469,30 @@ pub fn proxy_by_data_bits06(
     #("dataBits00", Integer(data)),
     #("dataBits06", Integer(prerequisite)),
     #("orderIndex", Integer(order)),
+  ])
+}
+
+/// An EldanAugmentation row (an AMP) of a class that names the spell it adds
+/// (`EldanAugmentation.spell4IdAugment`).
+pub fn eldan_augmentation_row(
+  id id: Int,
+  class class: Int,
+  spell spell: Int,
+) -> List(Cell) {
+  planted_table.row(eldan_augmentation.schema, [
+    #("ID", Integer(id)),
+    #("classId", Integer(class)),
+    #("spell4IdAugment", Integer(spell)),
+  ])
+}
+
+/// A LevelUpUnlock row of the Level system (levelUpUnlockSystemEnum 0): the level
+/// at which it is offered.
+pub fn level_up_unlock_row(id id: Int, level level: Int) -> List(Cell) {
+  planted_table.row(level_up_unlock.schema, [
+    #("ID", Integer(id)),
+    #("levelUpUnlockSystemEnum", Integer(0)),
+    #("level", Integer(level)),
   ])
 }
 
@@ -1786,6 +1814,8 @@ pub fn rows() -> Rows {
     spell4_group_lists: [],
     spell4_stack_groups: [],
     unit_properties: unit_property_rows(),
+    eldan_augmentations: [],
+    level_up_unlocks: [level_up_unlock_row(id: 26, level: 10)],
   )
 }
 
@@ -1893,6 +1923,8 @@ fn entries() -> List(table_store.Entry) {
     prerequisite.entry(),
     class.entry(),
     unit_property2.entry(),
+    eldan_augmentation.entry(),
+    level_up_unlock.entry(),
   ]
 }
 
@@ -1918,6 +1950,8 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(class.schema, rows.classes),
     planted_table.file(prerequisite.schema, rows.prerequisites),
     planted_table.file(unit_property2.schema, rows.unit_properties),
+    planted_table.file(eldan_augmentation.schema, rows.eldan_augmentations),
+    planted_table.file(level_up_unlock.schema, rows.level_up_unlocks),
   ]
 }
 

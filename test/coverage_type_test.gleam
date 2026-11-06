@@ -10,8 +10,18 @@
 ////   (`0x1404a2100`).
 //// - The starting abilities' counts are the issue's measured walk of 2026-11-05 over
 ////   SpellLevel (level 1, no prerequisite), Spell4, Spell4Effects, Spell4Thresholds
-////   and Prerequisite: 18 abilities reach 65 spells, 120 effect rows and 26
-////   prerequisites, with the counts by type written out below.
+////   and Prerequisite (18 abilities reach 65 spells, 120 effect rows and 39
+////   prerequisite conditions), less what a level-1 character does not reach or the
+////   server does not check, with the counts by type written out below:
+////   - the runner columns (`Spell4.prerequisiteIdRunner00`, `prerequisiteIdRunner01`)
+////     hold seven prerequisites no other column names: 4918, 11153, 13653, 19411,
+////     20117, 24090 and 41834, 13 conditions (`table_rows -- Prerequisite ...`);
+////   - five Proxies start a child behind a gate on the spell of an AMP
+////     (EldanAugmentation 863, 340, 440 and 102 name Spell4 59436, 57027, 41594 and
+////     59208, which LevelUpUnlock 26 offers at level 10): 208128 and 208198 of Spell4
+////     38780 (Prerequisite 37037), 135961 of 32809 (23344), 200542 of 30900 (35913)
+////     and 177873 of 53865 (24582). Their six spells hold six effect rows: 208199
+////     (type 17), 208200 (14), 135954 (11), 210256 (26), 200468 (17) and 147971 (17).
 //// - The decoded and missing types, with each reason, are the fact file's records
 ////   (`Spell4Effects.effectType.N`, `Prerequisite.prerequisiteTypeId.N`).
 
@@ -21,12 +31,15 @@ import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
   type EngineDeclaration, EngineDeclaration, Listed, Missing,
 }
+import genesis_prime/coverage/level_one_gate
 import genesis_prime/coverage/measurement.{HandledWithGap, Measured}
 import genesis_prime/coverage/starting_ability.{MissingRow}
 import genesis_prime/game/spell_plan.{Spell}
+import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -115,15 +128,14 @@ pub fn the_starting_abilities_column_holds_the_issues_effect_counts_test() -> Ni
       #(3, 1),
       #(4, 6),
       #(8, 36),
-      #(11, 2),
-      #(14, 1),
-      #(17, 11),
-      #(26, 50),
+      #(11, 1),
+      #(17, 8),
+      #(26, 49),
       #(73, 5),
       #(80, 3),
       #(90, 1),
     ]
-    as "the issue's walk: 26 Proxy 50, 8 damage 36, 17 11, 4 6, 73 5, 1 VitalModifier 4, 80 3, 11 2, 3 1, 14 1, 90 1: 120 effect rows"
+    as "the 120 rows of the walk less the six rows of the spells behind AMP gates (types 17 three times, 14, 11 and 26 once each): 26 Proxy 49, 8 damage 36, 17 8, 4 6, 73 5, 1 VitalModifier 4, 80 3, 11 1, 3 1, 90 1 (Deja Vu 228968, whose gate 44174 names no AMP spell): 114 effect rows"
 }
 
 pub fn the_starting_abilities_column_holds_the_issues_prerequisite_counts_test() -> Nil {
@@ -131,28 +143,26 @@ pub fn the_starting_abilities_column_holds_the_issues_prerequisite_counts_test()
   use <- unitest.guard(client_tables.present())
   assert starting_counts(engine: engine_named("Prerequisites"))
     == [
-      #(15, 17),
-      #(28, 2),
+      #(15, 12),
+      #(28, 1),
       #(37, 1),
-      #(43, 2),
       #(50, 3),
       #(59, 4),
-      #(71, 1),
-      #(73, 4),
+      #(73, 1),
       #(108, 2),
-      #(116, 3),
+      #(116, 2),
     ]
-    as "the issue's walk: 15 17, 59 4, 73 4, 50 3, 116 3, 28 2, 108 2, 43 2, 71 1, 37 1: 39 conditions of 26 prerequisites"
+    as "the 39 conditions of the walk less the runner columns' 13: 15 17 less 5 (4918, 13653, 19411 and 20117 hold them), 28 2 less 1 (24090), 43 2 less 2 (41834), 71 1 less 1 (4918), 73 4 less 3 (11153, 19411 and 24090) and 116 3 less 1 (13653): 26 conditions"
 }
 
-pub fn the_starting_abilities_reach_65_spells_gated_children_included_test() -> Nil {
+pub fn the_starting_abilities_reach_59_spells_with_the_gates_a_level_1_character_can_open_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
-  assert list.length(
-      starting_ability.spells(tables: client_tables.every_table()),
-    )
-    == 65
-    as "the issue's walk: the 18 level-1 abilities reach 65 spells, a Proxy's child behind a gate among them"
+  let assert Ok(spells) =
+    starting_ability.spells(tables: client_tables.every_table())
+    as "the client's tables hold the rows the walk names"
+  assert list.length(spells) == 59
+    as "the 18 level-1 abilities reach 65 spells with every gate open, less the six spells below the five Proxies behind AMP gates (79220, 79229, 57030, 41869 with 77116, and 60947); Deja Vu's 87353 behind a gate that names no AMP stays"
 }
 
 // ---- the decoded and missing types ----
@@ -560,9 +570,12 @@ pub fn the_checklist_marks_handled_missing_and_undecoded_types_with_the_starting
 // ---- rows a starting ability's tree names that the tables lack ----
 
 /// The planted rows with Energize's Spell4 row (69450, a level-1 ability of the
-/// Medic) naming this Prerequisite id in its runner column, which the plan's load
-/// does not read.
-fn rows_naming(prerequisite_id prerequisite_id: Int) -> spell_tables.Rows {
+/// Medic) naming this Prerequisite id in this column, which the plan's load does
+/// not read.
+fn rows_naming(
+  column column: String,
+  prerequisite_id prerequisite_id: Int,
+) -> spell_tables.Rows {
   let rows = spell_tables.rows_with_energize()
   spell_tables.Rows(
     ..rows,
@@ -575,7 +588,7 @@ fn rows_naming(prerequisite_id prerequisite_id: Int) -> spell_tables.Rows {
         kind: 3,
         global: 0,
         cost: #(0, 0),
-        more: [#("prerequisiteIdRunner00", prerequisite_id)],
+        more: [#(column, prerequisite_id)],
       ),
       ..planted_table.without(rows.spell4, ids: [69_450])
     ]),
@@ -599,16 +612,22 @@ pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row
     MissingRow(
       table: "Prerequisite",
       id: 77_777,
-      named_by: "Spell4 69450 column prerequisiteIdRunner00",
+      named_by: "Spell4 69450 column prerequisiteIdCasterCast",
     )
   assert with_trees_loaded(
-      rows: rows_naming(prerequisite_id: 77_777),
+      rows: rows_naming(
+        column: "prerequisiteIdCasterCast",
+        prerequisite_id: 77_777,
+      ),
       body: fn(tables) { starting_ability.prerequisite_types(tables) },
     )
     == Error([lacking])
-    as "Spell4 69450 names Prerequisite 77777 in prerequisiteIdRunner00 and the table has no such row: it is reported with the row and the column, not left out of the starting abilities' types"
+    as "Spell4 69450 names Prerequisite 77777 in prerequisiteIdCasterCast and the table has no such row: it is reported with the row and the column, not left out of the starting abilities' types"
   assert with_trees_loaded(
-      rows: rows_naming(prerequisite_id: 43_811),
+      rows: rows_naming(
+        column: "prerequisiteIdCasterCast",
+        prerequisite_id: 43_811,
+      ),
       body: starting_ability.prerequisite_types,
     )
     == with_trees_loaded(
@@ -621,7 +640,7 @@ pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row
 pub fn a_spell_of_the_tree_the_spell4_table_lacks_is_a_missing_row_test() -> Nil {
   use <- owned_test.run(10_000)
   assert with_trees_loaded(rows: spell_tables.rows(), body: fn(tables) {
-      let assert [spell, ..] = starting_ability.spells(tables:)
+      let assert Ok([spell, ..]) = starting_ability.spells(tables:)
         as "the planted abilities hold spells"
       starting_ability.prerequisite_types_of(tables:, spells: [
         Spell(..spell, spell4_id: Spell4Id(123_456)),
@@ -641,7 +660,10 @@ pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
   use <- owned_test.run(10_000)
   let measured =
     with_trees_loaded(
-      rows: rows_naming(prerequisite_id: 77_777),
+      rows: rows_naming(
+        column: "prerequisiteIdCasterCast",
+        prerequisite_id: 77_777,
+      ),
       body: fn(tables) {
         measurement.measure(engine_named("Prerequisites"), tables)
       },
@@ -653,17 +675,603 @@ pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
       MissingRow(
         table: "Prerequisite",
         id: 77_777,
-        named_by: "Spell4 69450 column prerequisiteIdRunner00",
+        named_by: "Spell4 69450 column prerequisiteIdCasterCast",
       ),
     ]
     as "the measure keeps the missing row"
   assert list.any(coverage.breaches([measured]), fn(line) {
     string.contains(
       line,
-      "Prerequisites reaches rows the client's tables lack: Prerequisite 77777, named by Spell4 69450 column prerequisiteIdRunner00, is not in the client's tables",
+      "Prerequisites reaches rows the client's tables lack: Prerequisite 77777, named by Spell4 69450 column prerequisiteIdCasterCast, is not in the client's tables",
     )
   })
     as "the tool's breaches, which end it with exit 1, name the row"
+}
+
+// ---- what a level-1 character reaches and the server checks ----
+
+/// The Spell4 of the AMP 'D+U - Inlaid B' (EldanAugmentation 863, a Stalker AMP),
+/// which Prerequisite 37037 names (`table_rows -- EldanAugmentation 863`).
+const amp_spell = 59_436
+
+/// A Spell4 that no EldanAugmentation row names, one of the two Deja Vu's gate
+/// 44174 names (`table_rows -- Prerequisite 44174`).
+const other_spell = 87_333
+
+const gated_proxy = 990_001
+
+const gated_child = 990_100
+
+const gated_grandchild = 990_200
+
+const gate_row = 990_300
+
+/// A spell of a planted tree, with Energize's base.
+fn tree_spell(id id: Int) -> List(planted_table.Cell) {
+  spell_tables.method_spell_row(
+    id:,
+    base: 46_615,
+    cast_time: 0,
+    cooldown: 0,
+    kind: 0,
+    global: 0,
+    cost: #(0, 0),
+    more: [],
+  )
+}
+
+/// The planted rows with a Proxy of Energize (69450, a level-1 ability) whose
+/// child 990100 holds a Fluff row and a Proxy to 990200, which holds a Fluff row.
+/// The Proxy starts behind the caster apply prerequisite 990300 and the dataBits06
+/// prerequisite given, which the rows hold as these conditions: (type, comparison,
+/// objectId, value). EldanAugmentation 863 names the AMP spell and LevelUpUnlock 26
+/// is offered at level 10, as the client's rows hold them.
+fn rows_with_gated_child(
+  flags flags: Int,
+  conditions conditions: List(#(Int, Int, Int, Int)),
+  data_bits06 data_bits06: Int,
+) -> spell_tables.Rows {
+  let rows = spell_tables.rows_with_energize()
+  spell_tables.Rows(
+    ..rows,
+    spell4: spell_tables.sorted_by_id([
+      tree_spell(id: gated_child),
+      tree_spell(id: gated_grandchild),
+      ..rows.spell4
+    ]),
+    spell4_effects: spell_tables.sorted_by_id([
+      planted_table.row(spell4_effects.schema, [
+        #("ID", planted_table.Integer(gated_proxy)),
+        #("spellId", planted_table.Integer(69_450)),
+        #("targetFlags", planted_table.Integer(1)),
+        #("effectType", planted_table.Integer(26)),
+        #("phaseFlags", planted_table.Integer(-1)),
+        #("dataBits00", planted_table.Integer(gated_child)),
+        #("dataBits06", planted_table.Integer(data_bits06)),
+        #("prerequisiteIdCasterApply", planted_table.Integer(gate_row)),
+        #("orderIndex", planted_table.Integer(20)),
+      ]),
+      spell_tables.effect_row(
+        id: 990_101,
+        spell: gated_child,
+        type_: 17,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 0,
+        order: 0,
+      ),
+      spell_tables.effect_row(
+        id: 990_102,
+        spell: gated_child,
+        type_: 26,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: gated_grandchild,
+        order: 1,
+      ),
+      spell_tables.effect_row(
+        id: 990_201,
+        spell: gated_grandchild,
+        type_: 17,
+        target_flags: 1,
+        delay: 0,
+        phases: -1,
+        data: 0,
+        order: 0,
+      ),
+      ..rows.spell4_effects
+    ]),
+    prerequisites: spell_tables.sorted_by_id([
+      spell_tables.prerequisite_row(id: gate_row, flags:, conditions:),
+      spell_tables.prerequisite_row(id: 990_301, flags: 0, conditions: [
+        #(15, 1, 0, amp_spell),
+      ]),
+      spell_tables.prerequisite_row(id: 990_302, flags: 0, conditions: [
+        #(15, 1, 0, other_spell),
+      ]),
+      ..rows.prerequisites
+    ]),
+    eldan_augmentations: [
+      spell_tables.eldan_augmentation_row(id: 863, class: 5, spell: amp_spell),
+    ],
+  )
+}
+
+/// The same with the gate on the caster apply column alone.
+fn rows_gated_by(
+  flags flags: Int,
+  conditions conditions: List(#(Int, Int, Int, Int)),
+) -> spell_tables.Rows {
+  rows_with_gated_child(flags:, conditions:, data_bits06: 0)
+}
+
+/// The Spell4 ids the starting abilities of these rows reach.
+fn reached(rows rows: spell_tables.Rows) -> List(Int) {
+  with_trees_loaded(rows:, body: fn(tables) {
+    let assert Ok(spells) = starting_ability.spells(tables:)
+      as "the planted rows hold what the walk names"
+    list.map(spells, fn(spell) { spell.spell4_id.value })
+  })
+}
+
+/// Whether the child of the planted Proxy, and its grandchild, are reached; the two
+/// always go together, as a child's subtree does.
+fn child_reached(rows rows: spell_tables.Rows) -> Bool {
+  let ids = reached(rows:)
+  let child = list.contains(ids, gated_child)
+  assert child == list.contains(ids, gated_grandchild)
+    as "a child's whole subtree is reached or left out with it"
+  assert list.contains(ids, 69_450) as "Energize itself is always reached"
+  child
+}
+
+pub fn a_proxy_behind_a_condition_that_needs_the_cast_of_an_amp_spell_is_left_out_with_its_subtree_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert !child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(15, 1, 0, amp_spell),
+    ]),
+  )
+    as "type 15, comparison 1: the unit is a target of a live cast of the AMP spell, which a level-1 character has not unlocked (LevelUpUnlock 26 offers AMPs at level 10)"
+  assert !child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(50, 1, 0, amp_spell),
+    ]),
+  )
+    as "type 50, comparison 1: the same under a cast of the AMP spell by the caster"
+}
+
+pub fn a_proxy_behind_a_condition_that_needs_no_amp_cast_stays_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(15, 2, 0, amp_spell),
+    ]),
+  )
+    as "type 15, comparison 2: not under a cast of the AMP spell, which is true at level 1 (Prerequisite 24581 reads so)"
+  assert child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(15, 1, 0, other_spell),
+    ]),
+  )
+    as "a spell no EldanAugmentation names has no level to wait for"
+  assert child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(28, 1, 0, 0),
+    ]),
+  )
+    as "a type the measure has no level evidence for leaves the gate open"
+}
+
+pub fn an_or_gate_is_left_out_only_when_every_condition_needs_an_amp_and_an_and_gate_when_one_does_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert child_reached(
+    rows: rows_gated_by(flags: 1, conditions: [
+      #(15, 1, 0, amp_spell),
+      #(15, 1, 0, other_spell),
+    ]),
+  )
+    as "an OR row (flags bit 0) passes when any condition does, as Prerequisite 44174 reads: Deja Vu's gate"
+  assert !child_reached(
+    rows: rows_gated_by(flags: 1, conditions: [
+      #(15, 1, 0, amp_spell),
+      #(50, 1, 0, amp_spell),
+    ]),
+  )
+    as "an OR row of two conditions that both need the AMP cast cannot pass"
+  assert !child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(15, 1, 0, other_spell),
+      #(15, 1, 0, amp_spell),
+    ]),
+  )
+    as "an AND row passes only when every condition does"
+}
+
+pub fn a_proxy_whose_second_gate_column_cannot_open_is_left_out_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert !child_reached(rows: rows_with_gated_child(
+    flags: 0,
+    conditions: [#(15, 2, 0, amp_spell)],
+    data_bits06: 990_301,
+  ))
+    as "the Proxy starts only when its caster apply prerequisite and its dataBits06 prerequisite both pass (Spell4Effects.effectType.26.dataBits06)"
+  assert child_reached(rows: rows_with_gated_child(
+    flags: 0,
+    conditions: [#(15, 2, 0, amp_spell)],
+    data_bits06: 990_302,
+  ))
+    as "a dataBits06 prerequisite on a spell no AMP names leaves the Proxy open"
+}
+
+pub fn an_amp_spell_is_reached_when_the_amp_unlock_is_offered_at_level_1_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let rows = rows_gated_by(flags: 0, conditions: [#(15, 1, 0, amp_spell)])
+  assert child_reached(
+    rows: spell_tables.Rows(..rows, level_up_unlocks: [
+      spell_tables.level_up_unlock_row(id: 26, level: 1),
+    ]),
+  )
+    as "the level comes from LevelUpUnlock row 26; at level 1 a new character holds the AMP's spell as far as the measure can tell"
+}
+
+pub fn a_level_condition_a_level_1_character_fails_closes_the_gate_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert !child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(1, 4, 0, 2),
+    ]),
+  )
+    as "type 1 compares the unit's level (0x1404a2100, GetUnitFormulaLevel 0x1403b5030) by comparison 4, at least: 1 is not at least 2"
+  assert !child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(1, 3, 0, 1),
+    ]),
+  )
+    as "comparison 3, greater than: 1 is not greater than 1"
+  assert !child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(1, 5, 0, 1),
+    ]),
+  )
+    as "comparison 5, less than: 1 is not less than 1 (0x1404a2090)"
+}
+
+pub fn a_level_condition_a_level_1_character_passes_leaves_the_gate_open_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(1, 4, 0, 1),
+    ]),
+  )
+    as "comparison 4: 1 is at least 1"
+  assert child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(1, 1, 0, 1),
+    ]),
+  )
+    as "comparison 1: 1 equals 1"
+  assert child_reached(
+    rows: rows_gated_by(flags: 0, conditions: [
+      #(1, 6, 0, 10),
+    ]),
+  )
+    as "comparison 6, at most: 1 is at most 10"
+}
+
+pub fn a_missing_amp_unlock_row_is_a_missing_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let rows = rows_gated_by(flags: 0, conditions: [#(15, 1, 0, amp_spell)])
+  assert with_trees_loaded(
+      rows: spell_tables.Rows(..rows, level_up_unlocks: []),
+      body: fn(tables) { starting_ability.spells(tables:) },
+    )
+    == Error([
+      MissingRow(
+        table: "LevelUpUnlock",
+        id: 26,
+        named_by: "the AMP unlock the measure reads the level of an AMP spell from",
+      ),
+    ])
+    as "the measure cannot tell when an AMP spell is held without the AMP unlock's row, and says so"
+}
+
+/// Quest objectives the interrupts' Prerequisite 41834 reads, as the client holds
+/// the row (`table_rows -- Prerequisite 41834`): Quest2 10518 or 10524, objective 4.
+fn runner_prerequisite_row() -> List(planted_table.Cell) {
+  spell_tables.prerequisite_row(id: 41_834, flags: 1, conditions: [
+    #(43, 1, 10_518, 4),
+    #(43, 1, 10_524, 4),
+  ])
+}
+
+fn rows_naming_41834(column column: String) -> spell_tables.Rows {
+  let rows = rows_naming(column:, prerequisite_id: 41_834)
+  spell_tables.Rows(
+    ..rows,
+    prerequisites: spell_tables.sorted_by_id([
+      runner_prerequisite_row(),
+      ..rows.prerequisites
+    ]),
+  )
+}
+
+pub fn a_prerequisite_only_the_runner_columns_name_is_not_counted_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let base =
+    with_trees_loaded(
+      rows: spell_tables.rows_with_energize(),
+      body: starting_ability.prerequisite_types,
+    )
+  assert with_trees_loaded(
+      rows: rows_naming_41834(column: "prerequisiteIdRunner01"),
+      body: starting_ability.prerequisite_types,
+    )
+    == base
+    as "the client reads a runner column only to show a prompt on the ability button (Spell4.prerequisiteIdRunner00), so its two type 43 conditions are not counted"
+  assert with_trees_loaded(
+      rows: rows_naming(
+        column: "prerequisiteIdRunner00",
+        prerequisite_id: 77_777,
+      ),
+      body: starting_ability.prerequisite_types,
+    )
+    == base
+    as "a runner column naming a row the table lacks is not a missing row: nothing reads it"
+  let assert Ok(base_types) = base
+  let assert Ok(counted) =
+    with_trees_loaded(
+      rows: rows_naming_41834(column: "prerequisiteIdCasterCast"),
+      body: starting_ability.prerequisite_types,
+    )
+  assert list.sort(counted, int.compare)
+    == list.sort(list.append([43, 43], base_types), int.compare)
+    as "the same prerequisite named by a column the measure reads is counted: two type 43 conditions"
+}
+
+pub fn a_prerequisite_a_runner_column_and_another_column_name_is_counted_and_not_left_out_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let rows = rows_naming_41834(column: "prerequisiteIdRunner00")
+  let assert Ok(left) =
+    with_trees_loaded(rows:, body: fn(tables) {
+      starting_ability.left_out(tables:)
+    })
+  assert left
+    == [
+      starting_ability.RunnerColumnsOnly(
+        prerequisite_id: 41_834,
+        conditions: 2,
+        named_by: ["Spell4 69450 column prerequisiteIdRunner00"],
+      ),
+    ]
+    as "the runner column alone names 41834: it is listed with the column and its two conditions"
+  let both =
+    spell_tables.Rows(
+      ..rows,
+      spell4: spell_tables.sorted_by_id([
+        spell_tables.method_spell_row(
+          id: 69_450,
+          base: 46_615,
+          cast_time: 0,
+          cooldown: 30_000,
+          kind: 3,
+          global: 0,
+          cost: #(0, 0),
+          more: [
+            #("prerequisiteIdRunner00", 41_834),
+            #("prerequisiteIdCasterCast", 41_834),
+          ],
+        ),
+        ..planted_table.without(rows.spell4, ids: [69_450])
+      ]),
+    )
+  assert with_trees_loaded(rows: both, body: fn(tables) {
+      starting_ability.left_out(tables:)
+    })
+    == Ok([])
+    as "a column the measure reads names it too, so it is counted and nothing is left out"
+}
+
+pub fn each_proxy_left_out_is_listed_with_its_gate_and_what_is_below_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(left) =
+    with_trees_loaded(
+      rows: rows_gated_by(flags: 0, conditions: [#(15, 1, 0, amp_spell)]),
+      body: fn(tables) { starting_ability.left_out(tables:) },
+    )
+  assert left
+    == [
+      starting_ability.ProxyGateClosed(
+        proxy_effect_id: gated_proxy,
+        parent: 69_450,
+        child: gated_child,
+        gate: gate_row,
+        why: level_one_gate.NeedsAmp(
+          spell4_id: amp_spell,
+          eldan_augmentation_id: 863,
+          level: 10,
+        ),
+        spells: [gated_child, gated_grandchild],
+        effects: [#(990_101, 17), #(990_102, 26), #(990_201, 17)],
+      ),
+    ]
+    as "the Proxy, its parent, its child, the gate and the AMP, and every spell and effect row below it"
+  let assert [line] =
+    list.map(left, fn(part) {
+      starting_ability.describe_left_out(left_out: part)
+    })
+  assert string.contains(line, "Spell4 990100") as "the line names the child"
+  assert string.contains(line, "Proxy effect 990001 of Spell4 69450")
+    as "the line names the Proxy and its parent"
+  assert string.contains(line, "Prerequisite 990300")
+    as "the line names the gate"
+  assert string.contains(line, "EldanAugmentation 863")
+    as "the line names the AMP"
+  assert string.contains(line, "level 10 (LevelUpUnlock 26)")
+    as "the line names the level and the row it comes from"
+  let assert Ok(level) =
+    with_trees_loaded(
+      rows: rows_gated_by(flags: 0, conditions: [#(1, 4, 0, 2)]),
+      body: fn(tables) { starting_ability.left_out(tables:) },
+    )
+  let assert [level_line] =
+    list.map(level, fn(part) {
+      starting_ability.describe_left_out(left_out: part)
+    })
+  assert string.contains(level_line, "needs level 2")
+    as "a level condition says the level it needs"
+}
+
+pub fn the_runner_columns_prerequisites_are_listed_with_the_columns_that_name_them_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok([part]) =
+    with_trees_loaded(
+      rows: rows_naming_41834(column: "prerequisiteIdRunner01"),
+      body: fn(tables) { starting_ability.left_out(tables:) },
+    )
+  let line = starting_ability.describe_left_out(left_out: part)
+  assert string.contains(line, "Prerequisite 41834")
+    as "the line names the prerequisite"
+  assert string.contains(line, "Spell4 69450 column prerequisiteIdRunner01")
+    as "the line names the column"
+  assert string.contains(line, "prompt on the ability button")
+    as "the line says why a runner column is not counted"
+}
+
+pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the_proxies_behind_amp_gates_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let assert Ok(left) =
+    starting_ability.left_out(tables: client_tables.every_table())
+  assert list.filter_map(left, fn(part) {
+      case part {
+        starting_ability.RunnerColumnsOnly(prerequisite_id:, conditions:, ..) ->
+          Ok(#(prerequisite_id, conditions))
+        starting_ability.ProxyGateClosed(..) -> Error(Nil)
+      }
+    })
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    == [
+      #(4918, 3),
+      #(11_153, 1),
+      #(13_653, 2),
+      #(19_411, 2),
+      #(20_117, 1),
+      #(24_090, 2),
+      #(41_834, 2),
+    ]
+    as "the runner columns name Prerequisite 4918, 11153, 13653, 19411, 20117, 24090 and 41834 and no other column of a reached spell does: 13 conditions"
+  assert list.filter_map(left, fn(part) {
+      case part {
+        starting_ability.ProxyGateClosed(
+          proxy_effect_id:,
+          child:,
+          gate:,
+          why:,
+          ..,
+        ) -> Ok(#(proxy_effect_id, child, gate, why))
+        starting_ability.RunnerColumnsOnly(..) -> Error(Nil)
+      }
+    })
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    == [
+      #(
+        135_961,
+        57_030,
+        23_344,
+        level_one_gate.NeedsAmp(
+          spell4_id: 57_027,
+          eldan_augmentation_id: 340,
+          level: 10,
+        ),
+      ),
+      #(
+        177_873,
+        60_947,
+        24_582,
+        level_one_gate.NeedsAmp(
+          spell4_id: 59_208,
+          eldan_augmentation_id: 102,
+          level: 10,
+        ),
+      ),
+      #(
+        200_542,
+        41_869,
+        35_913,
+        level_one_gate.NeedsAmp(
+          spell4_id: 41_594,
+          eldan_augmentation_id: 440,
+          level: 10,
+        ),
+      ),
+      #(
+        208_128,
+        79_220,
+        37_037,
+        level_one_gate.NeedsAmp(
+          spell4_id: 59_436,
+          eldan_augmentation_id: 863,
+          level: 10,
+        ),
+      ),
+      #(
+        208_198,
+        79_229,
+        37_037,
+        level_one_gate.NeedsAmp(
+          spell4_id: 59_436,
+          eldan_augmentation_id: 863,
+          level: 10,
+        ),
+      ),
+    ]
+    as "five Proxies start a child behind a gate whose condition (type 50 or 15, comparison 1) names an AMP's spell, each AMP offered at level 10 by LevelUpUnlock 26"
+  assert list.contains(
+    left,
+    starting_ability.ProxyGateClosed(
+      proxy_effect_id: 208_198,
+      parent: 38_780,
+      child: 79_229,
+      gate: 37_037,
+      why: level_one_gate.NeedsAmp(
+        spell4_id: 59_436,
+        eldan_augmentation_id: 863,
+        level: 10,
+      ),
+      spells: [79_229],
+      effects: [#(208_200, 14)],
+    ),
+  )
+    as "Proxy 208198 of Spell4 38780 starts 79229, which holds the Proc 208200 alone (Spell4Effects spellId=79229)"
+  let tables = client_tables.every_table()
+  let castable =
+    dict.values(spell_plan.plans(tables:))
+    |> list.flat_map(fn(ability) {
+      spell_plan.tree(spell: ability, started: fn(_) { True })
+    })
+    |> list.map(fn(spell) { spell.spell4_id.value })
+  assert list.all([59_436, 57_027, 41_594, 59_208], fn(amp_spell) {
+    !list.contains(castable, amp_spell)
+  })
+    as "no level-1 ability's tree, with every gate open, casts an AMP spell a closed gate names, so only its AMP could hold it"
+}
+
+pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.every_table()
+  let assert Ok(spells) = starting_ability.spells(tables:)
+  assert list.any(spells, fn(spell) { spell.spell4_id.value == 87_353 })
+    as "Proxy 230116 of Mind Burst 32809 starts 87353, which holds Deja Vu 228968 (type 90), behind Prerequisite 44174: type 15 on Spell4 87333 or on 87334"
+  assert list.all([87_333, 87_334], fn(spell) {
+    !list.any(eldan_augmentation.all(tables), fn(amp) {
+      amp.spell4_id_augment == spell
+    })
+  })
+    as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
 // ---- the spend-scaled costs ----
