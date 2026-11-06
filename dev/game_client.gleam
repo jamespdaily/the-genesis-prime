@@ -1312,6 +1312,7 @@ pub type FightEvent {
   InCombat(unit_id: Int, in_combat: Bool)
   /// 0x938 of stat 20: the unit's shield (opcode.0x938).
   ShieldIs(unit_id: Int, shield: Int)
+  /// 0x938 of stat 21: the unit's current Interrupt Armor (opcode.0x938.interrupt_armor).
   InterruptArmorIs(unit_id: Int, armor: Int)
   /// 0x92f: the player's own health (opcode.0x92f).
   OwnHealthIs(unit_id: Int, health: Int)

@@ -20,7 +20,9 @@
 //// - **Interrupt Armor:** stat 21 at the creature's current armor when it is above 0,
 ////   which the client reads from the create's stat list and clamps no further
 ////   (`opcode.0x938.interrupt_armor`); a creature with none or infinite armor sends no
-////   stat, and the client's maximum (property 44) is its own.
+////   stat, and the client's maximum (property 44, `UnitProperty2.InterruptArmor_Threshold`)
+////   is its own. What the client's unit holds in stat 21 when the list has none is not
+////   read: it is taken to be 0, which is right for no armor and unread for infinite armor.
 //// - **Properties:** Base Health (property 7) at the spawn's health when that is a
 ////   recorded value, so the client's maximum is the spawn's, not its own formula's
 ////   (`opcode.0x262.creature`); otherwise none, and the client computes each from

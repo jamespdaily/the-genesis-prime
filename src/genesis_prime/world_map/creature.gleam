@@ -389,7 +389,7 @@ pub fn step(
             now_ms:,
           )
         Error(Nil), Error(Nil) ->
-          panic as "a creature starts no timer but its corpse's, its fight's and its controls'"
+          panic as "a creature starts no timer but its corpse's, its armor refill's, its fight's and its controls'"
       }
     WatchEnded(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->

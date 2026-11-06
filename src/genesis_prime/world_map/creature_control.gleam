@@ -33,10 +33,11 @@
 ////   and loses nothing. Which of these the client shows is the stat and the maximum
 ////   (`opcode.0x938.interrupt_armor`).
 //// - **Armor refills** to its maximum `interrupt_armor_refill_ms` after the strike that
-////   last wore it down or met a creature with none, with 0x938 stat 21 at the maximum: a
-////   strike that carries states while the armor is below its maximum starts the wait
-////   again. The time is a server choice (genesis_prime/world_map/game_number): no client
-////   value says when armor returns. A death resets it with the creature.
+////   last destroyed a point of it, with 0x938 stat 21 at the maximum: a strike that
+////   destroys more starts the wait again, and one that lands a state at armor 0, or whose
+////   rows destroy nothing, leaves it as it is. The time is a server choice
+////   (genesis_prime/world_map/game_number): no client value says when armor returns. A
+////   death resets it with the creature.
 //// - **How long** a creature holds a state is the row's delay plus durationTime from the
 ////   tell's arrival: a creature's CC resilience is 0 and its duration modifier 1
 ////   (`cc_state.duration_on_creature`). Counting from the arrival is the server's choice:
@@ -142,9 +143,9 @@ pub fn holds_anything(state state: State) -> Bool {
 /// current armor of 0 each becomes a control ending `delay_ms` plus `duration_ms` after
 /// `now_ms`, with a timer and its 0x87f (unit, state, instance id); with armor above 0
 /// none lands and the rows' armor is destroyed instead (0x938 stat 21 with what is left);
-/// with infinite armor none lands and nothing changes. A strike that finds the armor below
-/// its maximum starts the refill wait of `refill_ms` again. The creature's rule asks only
-/// for a creature the strike left alive.
+/// with infinite armor none lands and nothing changes. A strike that destroys armor starts
+/// the refill wait of `refill_ms` again; one that lands a state at armor 0 leaves the wait
+/// as it is. The creature's rule asks only for a creature the strike left alive.
 pub fn land(
   state state: State,
   tell tell: Tell,
@@ -160,8 +161,9 @@ pub fn land(
   }
 }
 
-/// A strike's states meet armor with this maximum: at 0 they land and the refill wait
-/// starts again; above 0 none lands and the rows' armor is destroyed, never below 0.
+/// A strike's states meet armor with this maximum: at 0 they land and a refill already
+/// waiting is left alone; above 0 none lands and the rows' armor is destroyed, never below
+/// 0, which starts the refill wait again; rows that destroy nothing change nothing.
 fn armored(
   state state: State,
   tell tell: Tell,
@@ -174,14 +176,12 @@ fn armored(
     Some(_) -> [CancelRefill, StartRefill(after_ms: refill_ms)]
     None -> [StartRefill(after_ms: refill_ms)]
   }
-  case current {
-    0 -> {
-      let landing = held(state:, tell:, now_ms:)
-      Landing(..landing, effects: list.append(landing.effects, restarted))
-    }
-    _ -> {
-      let destroyed =
-        int.sum(list.map(tell.controls, fn(told) { told.row.armor_removed }))
+  let destroyed =
+    int.sum(list.map(tell.controls, fn(told) { told.row.armor_removed }))
+  case current, destroyed {
+    0, _ -> held(state:, tell:, now_ms:)
+    _, 0 -> Landing(state:, landed: [], effects: [])
+    _, _ -> {
       let left = int.max(0, current - destroyed)
       Landing(state: State(..state, armor: Some(left)), landed: [], effects: [
         ToViewers(client_connection.InterruptArmor(armor: left)),
@@ -248,8 +248,12 @@ pub fn refilled(
 
 /// The current Interrupt Armor a creature's 0x262 carries as stat 21: its points when it
 /// has armor above 0 (the maximum, or less after a strike), none for a creature with no
-/// armor or infinite armor, whose maximum the client's own property gives
-/// (`opcode.0x938.interrupt_armor`: the create's stat list sets the same stat).
+/// armor or infinite armor. The client's maximum is its own property
+/// (`UnitProperty2.InterruptArmor_Threshold`), and the create's stat list sets the same
+/// stat as a 0x938 (`opcode.0x938.interrupt_armor`). What the client's unit holds in stat
+/// 21 when the list has none is not read: it is taken to be 0, which is right for a
+/// creature with none and unread for one with infinite armor, whose value the client does
+/// not clamp.
 pub fn armor_now(
   state state: State,
   armor armor: InterruptArmor,

@@ -27,6 +27,7 @@ import genesis_prime/client_connection.{
   type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
   CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
 }
+import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{
@@ -1893,14 +1894,16 @@ pub fn a_deflected_stun_only_strike_lands_no_state_and_sends_no_0x87f_test() -> 
 // returns to its maximum `interrupt_armor_refill_ms` after the strike (10000 ms, migration
 // 0016's server choice, `spawn_support.numbers`), and a later strike restarts the wait.
 
-/// The step's 0x938 of stat 21 to viewer `number`, as the fight tests name them.
+/// The step's 0x938 of stat 21 to viewer `number`, for any armor from 0 to 10, in order.
 fn armor_news(
   taken: ServiceStep(creature.Outgoing),
   number: Int,
-) -> List(String) {
-  list.filter(list.map(news_to(taken, number), name_of), fn(name) {
-    string.starts_with(name, "0x938(21")
-  })
+) -> List(client_connection.News) {
+  let armors =
+    list.map([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], fn(armor) {
+      client_connection.InterruptArmor(armor:)
+    })
+  list.filter(news_to(taken, number), fn(news) { list.contains(armors, news) })
 }
 
 /// The refill timers the step starts, with their times.
@@ -1930,8 +1933,8 @@ pub fn armor_wears_down_by_the_rows_points_and_the_state_lands_once_it_is_0_test
     )
   assert landed_in(first) == [] && state_news(first, 2) == []
     as "armor 2: the first strike lands no state"
-  assert armor_news(first, 2) == ["0x938(21, 1)"]
-    && armor_news(first, 5) == ["0x938(21, 1)"]
+  assert armor_news(first, 2) == [client_connection.InterruptArmor(armor: 1)]
+    && armor_news(first, 5) == [client_connection.InterruptArmor(armor: 1)]
     as "it destroys the row's 1 point and every viewer is told the 1 left"
   assert !creature.controlled(state:)
   let #(state, second) =
@@ -1940,7 +1943,8 @@ pub fn armor_wears_down_by_the_rows_points_and_the_state_lands_once_it_is_0_test
       at_ms: 2000,
       message: stunning(from: 2, cast_id: 2, instance_id: 28_674),
     )
-  assert landed_in(second) == [] && armor_news(second, 2) == ["0x938(21, 0)"]
+  assert landed_in(second) == []
+    && armor_news(second, 2) == [client_connection.InterruptArmor(armor: 0)]
     as "the second takes the last point, and still lands nothing: the armor was above 0 when it arrived"
   let #(state, third) =
     tell(
@@ -1972,7 +1976,8 @@ pub fn armor_is_never_destroyed_below_0_test() -> Nil {
         crowd_control_support.stagger_stun(instance_id: 28_674),
       ]),
     )
-  assert armor_news(taken, 2) == ["0x938(21, 0)"] && landed_in(taken) == []
+  assert armor_news(taken, 2) == [client_connection.InterruptArmor(armor: 0)]
+    && landed_in(taken) == []
     as "2 points of rows on 1 point of armor leave 0, and none of the strike's states lands"
 }
 
@@ -2012,8 +2017,8 @@ pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_te
     && refill_timers(second) == [#(step.TimerId(2), 10_000)]
     as "a strike before it cancels the wait and starts it again"
   let #(state, refilled) = fire(state:, at_ms: 15_000, timer: step.TimerId(2))
-  assert armor_news(refilled, 2) == ["0x938(21, 2)"]
-    && armor_news(refilled, 5) == ["0x938(21, 2)"]
+  assert armor_news(refilled, 2) == [client_connection.InterruptArmor(armor: 2)]
+    && armor_news(refilled, 5) == [client_connection.InterruptArmor(armor: 2)]
     as "armor is back at its maximum 2, told to every viewer"
   let #(_, again) =
     tell(
@@ -2021,7 +2026,8 @@ pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_te
       at_ms: 16_000,
       message: stunning(from: 2, cast_id: 3, instance_id: 28_675),
     )
-  assert landed_in(again) == [] && armor_news(again, 2) == ["0x938(21, 1)"]
+  assert landed_in(again) == []
+    && armor_news(again, 2) == [client_connection.InterruptArmor(armor: 1)]
     as "the refilled armor wears down again before a state lands"
   let #(_, full) =
     fire(
@@ -2091,4 +2097,66 @@ pub fn a_creatures_0x262_carries_its_current_armor_above_0_and_none_otherwise_te
   assert stat_of(armored(armor: creature_life.NoArmor)) == Error(Nil)
     && stat_of(armored(armor: creature_life.InfiniteArmor)) == Error(Nil)
     as "none for a creature with no armor or infinite armor: the client's maximum is its own"
+}
+
+pub fn a_state_landing_at_armor_0_leaves_the_refill_where_it_is_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Armor 2 is worn to 0 at 0 and at 1000; the refill, 10000 ms from the last strike
+  // that destroyed a point, is due at 11000. A stun at 5000 finds the armor at 0 and
+  // lands, and destroys nothing, so it does not move the refill.
+  let #(state, _) =
+    tell(
+      state: armored(armor: creature_life.Armor(points: 2)),
+      at_ms: 0,
+      message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+    )
+  let #(state, worn) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: stunning(from: 2, cast_id: 2, instance_id: 28_674),
+    )
+  assert armor_news(worn, 2) == [client_connection.InterruptArmor(armor: 0)]
+  let #(state, landed) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: stunning(from: 2, cast_id: 3, instance_id: 28_675),
+    )
+  assert list.length(landed_in(landed)) == 1
+    as "the stun lands on the armor that is 0"
+  assert refill_timers(landed) == []
+    && !list.contains(timers_cancelled(landed), step.TimerId(2))
+    as "and leaves the running refill alone: two players stunning every few seconds do not keep armor at 0"
+  let #(_, refilled) = fire(state:, at_ms: 11_000, timer: step.TimerId(2))
+  assert armor_news(refilled, 2) == [client_connection.InterruptArmor(armor: 2)]
+    as "the refill fires at 11000, 10000 ms after the strike that destroyed the last point"
+}
+
+pub fn a_row_that_destroys_no_armor_changes_nothing_on_armor_above_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  let told = crowd_control_support.stagger_stun(instance_id: 28_673)
+  let harmless =
+    strike_tell.ControlTell(
+      ..told,
+      row: crowd_control.Row(..told.row, armor_removed: 0),
+    )
+  let #(state, taken) =
+    tell(
+      state: armored(armor: creature_life.Armor(points: 2)),
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [harmless]),
+    )
+  assert landed_in(taken) == []
+    && armor_news(taken, 2) == []
+    && refill_timers(taken) == []
+    as "a row of dataBits03 0 lands no state on armor above 0 and sends no 0x938 and starts no refill"
+  let #(_, next) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: stunning(from: 2, cast_id: 2, instance_id: 28_674),
+    )
+  assert armor_news(next, 2) == [client_connection.InterruptArmor(armor: 1)]
+    as "the armor was left at 2"
 }
