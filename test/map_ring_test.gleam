@@ -272,6 +272,37 @@ fn stealth(
   map_spawn_support.stealth(state:, at_ms:, connection: 1, stealthed:)
 }
 
+/// How a ready player is kept out of every ring and let back in: a stealth that
+/// starts and ends, a death and a waking. The creature's ring is the same either way.
+type Hiding {
+  Hiding(
+    hide: fn(State, Int) -> #(State, step.ServiceStep(map.Outgoing)),
+    show: fn(State, Int) -> #(State, step.ServiceStep(map.Outgoing)),
+  )
+}
+
+fn stealthed() -> Hiding {
+  Hiding(
+    hide: fn(state, at_ms) { stealth(state:, at_ms:, stealthed: True) },
+    show: fn(state, at_ms) { stealth(state:, at_ms:, stealthed: False) },
+  )
+}
+
+fn dead() -> Hiding {
+  Hiding(
+    hide: fn(state, at_ms) { life(state:, at_ms:, alive: False) },
+    show: fn(state, at_ms) { life(state:, at_ms:, alive: True) },
+  )
+}
+
+fn life(
+  state state: State,
+  at_ms at_ms: Int,
+  alive alive: Bool,
+) -> #(State, step.ServiceStep(map.Outgoing)) {
+  map_spawn_support.life(state:, at_ms:, connection: 1, alive:)
+}
+
 pub fn a_stealthed_ready_player_crossing_a_hostile_creatures_ring_sends_it_no_approached_and_crossing_out_no_withdrew_test() -> Nil {
   use <- owned_test.run(5000)
   let state = one_dagun_and_a_ready_player()
@@ -405,11 +436,10 @@ pub fn a_player_stealthed_before_its_ready_is_sent_to_no_creature_at_ready_and_l
 }
 
 /// A Dagun at x = 100 whose creature a player at x = 80 started, and that player
-/// ready, then stealthed, with the creature's watch.
-fn a_stealthed_ready_player_and_the_creature_it_started() -> #(
-  State,
-  step.WatchId,
-) {
+/// ready, then hidden from every ring (`hiding`), with the creature's watch.
+fn a_hidden_ready_player_and_the_creature_it_started(
+  hiding hiding: Hiding,
+) -> #(State, step.WatchId) {
   let state =
     map_spawn_support.started_with_spawns(spawns: [
       spawn_support.dagun(number: 1, x: 100.0),
@@ -424,12 +454,14 @@ fn a_stealthed_ready_player_and_the_creature_it_started() -> #(
   let assert [#(watch, _)] = map_spawn_support.starts(joined)
     as "the player's sight starts the Dagun's creature"
   let #(state, _) = ready(state:, connection: 1)
-  let #(state, _) = stealth(state:, at_ms: 5900, stealthed: True)
+  let #(state, _) = hiding.hide(state, 5900)
   #(state, watch)
 }
 
-fn a_first_viewer_starts_the_creature_with_the_stealthed_player_in_its_ring() -> Nil {
-  // The player is far, ready and stealthed; its one move puts it in sight of the
+fn a_first_viewer_starts_the_creature_with_the_hidden_player_in_its_ring(
+  hiding hiding: Hiding,
+) -> Nil {
+  // The player is far, ready and hidden; its one move puts it in sight of the
   // Dagun and in its ring together.
   let state =
     map_spawn_support.started_with_spawns(spawns: [
@@ -443,21 +475,24 @@ fn a_first_viewer_starts_the_creature_with_the_stealthed_player_in_its_ring() ->
       x: map_spawn_support.far,
     )
   let #(state, _) = ready(state:, connection: 1)
-  let #(state, _) = stealth(state:, at_ms: 5900, stealthed: True)
+  let #(state, _) = hiding.hide(state, 5900)
   let #(state, moved) =
     map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 92.0)
   let assert [#(_, creature)] = map_spawn_support.starts(moved)
     as "the move starts the creature: the player is the first to see the spawn"
   assert map_spawn_support.ring_sends(moved) == []
     as "first viewer: the creature starts and is sent no Approached"
-  let #(_, left) = stealth(state:, at_ms: 6100, stealthed: False)
+  let #(_, left) = hiding.show(state, 6100)
   assert map_spawn_support.ring_sends(left)
     == [#(creature.unit_id, "Approached by 1")]
-    as "after the player leaves stealth the Live creature gets one"
+    as "after the player is no longer hidden the Live creature gets one"
 }
 
-fn a_restart_after_a_crash_with_the_stealthed_player_in_its_ring() -> Nil {
-  let #(state, watch) = a_stealthed_ready_player_and_the_creature_it_started()
+fn a_restart_after_a_crash_with_the_hidden_player_in_its_ring(
+  hiding hiding: Hiding,
+) -> Nil {
+  let #(state, watch) =
+    a_hidden_ready_player_and_the_creature_it_started(hiding: hiding)
   let #(state, _) =
     map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 92.0)
   let #(state, crashed) =
@@ -474,14 +509,16 @@ fn a_restart_after_a_crash_with_the_stealthed_player_in_its_ring() -> Nil {
     as "a creature starts again, the player sees the spawn"
   assert map_spawn_support.ring_sends(restarted) == []
     as "restart after a crash: the creature is sent no Approached"
-  let #(_, left) =
-    stealth(state:, at_ms: 8000 + map_support.respawn_ms, stealthed: False)
+  let #(_, left) = hiding.show(state, 8000 + map_support.respawn_ms)
   assert map_spawn_support.ring_sends(left)
     == [#(creature.unit_id, "Approached by 1")]
 }
 
-fn a_retired_creatures_end_with_a_viewer_and_the_stealthed_player_in_its_ring() -> Nil {
-  let #(state, watch) = a_stealthed_ready_player_and_the_creature_it_started()
+fn a_retired_creatures_end_with_a_viewer_and_the_hidden_player_in_its_ring(
+  hiding hiding: Hiding,
+) -> Nil {
+  let #(state, watch) =
+    a_hidden_ready_player_and_the_creature_it_started(hiding: hiding)
   let #(state, _) =
     map_spawn_support.move(
       state:,
@@ -503,20 +540,33 @@ fn a_retired_creatures_end_with_a_viewer_and_the_stealthed_player_in_its_ring() 
     as "at its end a creature starts for the viewer"
   assert map_spawn_support.ring_sends(ended) == []
     as "retired creature's end with a viewer: no Approached"
-  let #(_, left) = stealth(state:, at_ms: 75_200, stealthed: False)
+  let #(_, left) = hiding.show(state, 75_200)
   assert map_spawn_support.ring_sends(left)
     == [#(creature.unit_id, "Approached by 1")]
 }
 
 pub fn a_creature_that_starts_where_a_stealthed_ready_player_stands_in_its_ring_is_sent_no_approached_for_each_start_path_test() -> Nil {
   use <- owned_test.run(5000)
-  a_first_viewer_starts_the_creature_with_the_stealthed_player_in_its_ring()
-  a_restart_after_a_crash_with_the_stealthed_player_in_its_ring()
-  a_retired_creatures_end_with_a_viewer_and_the_stealthed_player_in_its_ring()
+  a_first_viewer_starts_the_creature_with_the_hidden_player_in_its_ring(
+    hiding: stealthed(),
+  )
+  a_restart_after_a_crash_with_the_hidden_player_in_its_ring(
+    hiding: stealthed(),
+  )
+  a_retired_creatures_end_with_a_viewer_and_the_hidden_player_in_its_ring(
+    hiding: stealthed(),
+  )
 }
 
 pub fn a_summoned_creature_whose_ring_holds_a_stealthed_ready_player_gets_no_approached_at_its_start_and_one_when_the_player_leaves_stealth_test() -> Nil {
   use <- owned_test.run(5000)
+  a_summon_where_the_hidden_player_stands(hiding: stealthed())
+}
+
+/// A ready player at x = 100, hidden from every ring (`hiding`), summons a Dagun at its
+/// place: the creature is sent no `Approached` at its start, and one when the player is
+/// no longer hidden.
+fn a_summon_where_the_hidden_player_stands(hiding hiding: Hiding) -> Nil {
   let #(state, _) = map_spawn_support.started(at: [])
   let #(state, _) =
     map_spawn_support.join(
@@ -526,7 +576,7 @@ pub fn a_summoned_creature_whose_ring_holds_a_stealthed_ready_player_gets_no_app
       x: 100.0,
     )
   let #(state, _) = ready(state:, connection: 1)
-  let #(state, _) = stealth(state:, at_ms: 5900, stealthed: True)
+  let #(state, _) = hiding.hide(state, 5900)
   let #(state, summoned) =
     map_spawn_support.summon(
       state:,
@@ -538,11 +588,11 @@ pub fn a_summoned_creature_whose_ring_holds_a_stealthed_ready_player_gets_no_app
   let assert [#(_, creature)] = map_spawn_support.starts(summoned)
     as "the summon starts the Dagun's creature at the player's place"
   assert map_spawn_support.ring_sends(summoned) == []
-    as "the player stands at the creature's place, in its ring, but is stealthed: no Approached at its start"
-  let #(_, left) = stealth(state:, at_ms: 6100, stealthed: False)
+    as "the player stands at the creature's place, in its ring, but is hidden from every ring: no Approached at its start"
+  let #(_, left) = hiding.show(state, 6100)
   assert map_spawn_support.ring_sends(left)
     == [#(creature.unit_id, "Approached by 1")]
-    as "one when the player leaves stealth"
+    as "one when the player is no longer hidden"
 }
 
 pub fn a_stealth_changed_from_a_connection_not_in_the_map_changes_nothing_and_writes_one_error_line_test() -> Nil {
@@ -563,7 +613,8 @@ pub fn a_stealth_changed_from_a_connection_not_in_the_map_changes_nothing_and_wr
 
 pub fn a_player_stealthed_in_one_stay_that_leaves_and_joins_again_is_not_stealthed_in_the_map_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, _) = a_stealthed_ready_player_and_the_creature_it_started()
+  let #(state, _) =
+    a_hidden_ready_player_and_the_creature_it_started(hiding: stealthed())
   let #(state, _) = map_spawn_support.leave(state:, at_ms: 6000, connection: 1)
   let #(state, joined) =
     map_spawn_support.join(state:, at_ms: 6100, connection: 1, x: 80.0)
@@ -609,4 +660,188 @@ pub fn the_watch_of_a_stealthed_player_in_a_ring_ending_sends_its_creatures_unwa
   assert map_spawn_support.creature_sends(ended)
     == [#(creature.unit_id, "Unwatched by 1")]
     as "the map's end rule: the creature that saw the player is sent Unwatched, and nothing else (the failure table row 'a player in a ring leaves, camps or its connection ends')"
+}
+
+// A player's death (issue 496): the connection tells the map `LifeChanged`; a dead
+// player stands in no ring, and each creature it sees is sent `PlayerDied`. A dead
+// player's rings are a server choice (the Design of issue 496, section 2): the client
+// holds no creature rule, and a dead unit is struck by nothing
+// (`Spell4ValidTargets.targetBitmask`). A creature that is Neutral to a player fights
+// only by that player's strike (`0x1403ad540`).
+
+pub fn a_ready_player_that_dies_sends_player_died_to_each_live_creature_it_sees_in_spawn_order_and_stands_in_no_ring_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Dagun spawns at 100 and 104 hold the player at 103 in their rings; a Neutral
+  // creature at 125 is in its sight and in no ring.
+  let beast = spawn_support.battle_beast(number: 3, x: 125.0)
+  let neutral =
+    Spawn(
+      ..beast,
+      combat: creature_life.Combat(
+        ..beast.combat,
+        hostile_to: Hostile(exile: False, dominion: False),
+      ),
+    )
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+      spawn_support.dagun(number: 2, x: 104.0),
+      neutral,
+    ])
+  let #(state, joined) =
+    map_spawn_support.join(
+      state:,
+      at_ms: map_spawn_support.started_at_ms + 1,
+      connection: 1,
+      x: 103.0,
+    )
+  let assert [#(_, first), #(_, second), #(_, third)] =
+    map_spawn_support.starts(joined)
+    as "the player's sight starts the three creatures, in spawn order"
+  let #(state, readied) = ready(state:, connection: 1)
+  assert list.length(map_spawn_support.ring_sends(readied)) == 2
+    as "the player stands in the two Dagun rings, not in the Neutral creature's"
+  let #(state, died) = life(state:, at_ms: 6000, alive: False)
+  assert map_spawn_support.creature_sends(died)
+    == [
+      #(first.unit_id, "PlayerDied by 1"),
+      #(second.unit_id, "PlayerDied by 1"),
+      #(third.unit_id, "PlayerDied by 1"),
+    ]
+    as "PlayerDied to each Live creature the player sees, in spawn order, ring or not, and no Withdrew"
+  let #(_, moved) =
+    map_spawn_support.move(state:, at_ms: 6100, connection: 1, x: 101.0)
+  assert map_spawn_support.ring_sends(moved) == []
+    as "a move inside a ring sends no Approached: a dead player stands in no ring"
+}
+
+pub fn a_creature_that_starts_restarts_or_is_summoned_where_a_dead_player_lies_is_sent_no_approached_for_each_start_path_test() -> Nil {
+  use <- owned_test.run(5000)
+  a_first_viewer_starts_the_creature_with_the_hidden_player_in_its_ring(
+    hiding: dead(),
+  )
+  a_restart_after_a_crash_with_the_hidden_player_in_its_ring(hiding: dead())
+  a_retired_creatures_end_with_a_viewer_and_the_hidden_player_in_its_ring(
+    hiding: dead(),
+  )
+  a_summon_where_the_hidden_player_stands(hiding: dead())
+}
+
+pub fn a_dead_player_that_wakes_inside_a_ring_sends_that_creature_one_approached_as_a_walk_in_does_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state = one_dagun_and_a_ready_player()
+  let #(state, _) =
+    map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 92.0)
+  let #(state, died) = life(state:, at_ms: 6100, alive: False)
+  assert map_spawn_support.creature_sends(died) == [#(2, "PlayerDied by 1")]
+    as "the death is told to the Dagun (unit 2, after the player's 1) and no ring is withdrawn"
+  let #(state, woke) = life(state:, at_ms: 6200, alive: True)
+  assert map_spawn_support.ring_sends(woke) == [#(2, "Approached by 1")]
+    as "waking where the body lies sends one Approached to the Dagun, as a walk-in does"
+  assert approaches_in_full(woke)
+    == [#(1, 1, 92.0, 6000, map_support.stay(count: 1))]
+    as "the player's connection and unit, its place, the sequence number of its last move and its stay"
+  let #(_, again) = life(state:, at_ms: 6300, alive: True)
+  assert map_spawn_support.ring_sends(again) == []
+    as "a second tell of the same value sends nothing"
+}
+
+pub fn a_player_that_joins_dead_is_sent_to_no_creature_at_ready_and_waking_then_sends_approached_to_each_ring_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+      spawn_support.dagun(number: 2, x: 104.0),
+    ])
+  let #(state, _) =
+    map_spawn_support.join_as(
+      state:,
+      at_ms: map_spawn_support.started_at_ms + 1,
+      connection: 1,
+      x: 102.0,
+      alive: False,
+    )
+  let #(state, _) =
+    map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 101.0)
+  let #(state, readied) = ready(state:, connection: 1)
+  assert map_spawn_support.ring_sends(readied) == []
+    as "its first 0xF2 finds it in no ring: it entered dead (death.enter_dead)"
+  let #(_, woke) = life(state:, at_ms: 6100, alive: True)
+  assert map_spawn_support.ring_sends(woke)
+    == [#(2, "Approached by 1"), #(3, "Approached by 1")]
+    as "waking sends one Approached to each ring it stands in, in spawn order"
+  assert approaches_in_full(woke)
+    == [
+      #(1, 1, 101.0, 6000, map_support.stay(count: 1)),
+      #(1, 1, 101.0, 6000, map_support.stay(count: 1)),
+    ]
+}
+
+pub fn a_player_that_wakes_before_its_ready_is_only_marked_and_ready_sends_approached_to_each_ring_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+      spawn_support.dagun(number: 2, x: 104.0),
+    ])
+  let #(state, _) =
+    map_spawn_support.join_as(
+      state:,
+      at_ms: map_spawn_support.started_at_ms + 1,
+      connection: 1,
+      x: 102.0,
+      alive: False,
+    )
+  let #(state, woke) = life(state:, at_ms: 5100, alive: True)
+  assert support.effects_of(woke) == []
+    as "a player still loading is only marked: Wake Here can come before the first 0xF2"
+  let #(_, readied) = ready(state:, connection: 1)
+  assert map_spawn_support.ring_sends(readied)
+    == [#(2, "Approached by 1"), #(3, "Approached by 1")]
+    as "its first 0xF2 decides its rings as for any player alive"
+}
+
+pub fn a_dead_player_that_leaves_stealth_and_a_stealthed_player_that_wakes_are_sent_to_no_creature_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state = one_dagun_and_a_ready_player()
+  let #(state, _) =
+    map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 92.0)
+  // The player dies, then leaves stealth (a death ends its stealth last).
+  let #(dead_first, _) = life(state:, at_ms: 6100, alive: False)
+  let #(dead_first, left) =
+    stealth(state: dead_first, at_ms: 6200, stealthed: False)
+  assert map_spawn_support.creature_sends(left) == []
+    as "a dead player that leaves stealth stands in no ring: nothing to approach"
+  let #(_, woke) = life(state: dead_first, at_ms: 6300, alive: True)
+  assert map_spawn_support.ring_sends(woke) == [#(2, "Approached by 1")]
+    as "the same player waking, not stealthed, is approached"
+  // A stealthed player dies and wakes while still stealthed.
+  let #(state, _) = stealth(state:, at_ms: 6100, stealthed: True)
+  let #(state, _) = life(state:, at_ms: 6200, alive: False)
+  let #(state, woke) = life(state:, at_ms: 6300, alive: True)
+  assert map_spawn_support.creature_sends(woke) == []
+    as "a stealthed player that wakes stands in no ring"
+  let #(_, left) = stealth(state:, at_ms: 6400, stealthed: False)
+  assert map_spawn_support.ring_sends(left) == [#(2, "Approached by 1")]
+    as "leaving stealth, alive, it is approached"
+}
+
+pub fn a_life_changed_of_the_value_held_sends_nothing_and_one_from_a_connection_not_in_the_map_writes_one_error_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state = one_dagun_and_a_ready_player()
+  let #(unchanged, alive) = life(state:, at_ms: 6000, alive: True)
+  assert support.effects_of(alive) == [] && unchanged == state
+    as "a player the map holds alive, told alive: no send, no log, the same state"
+  let #(state, died) = life(state:, at_ms: 6100, alive: False)
+  assert map_spawn_support.death_sends(died) == [#(2, "PlayerDied by 1")]
+    as "the first tell of False is a change"
+  let #(again, repeated) = life(state:, at_ms: 6200, alive: False)
+  assert support.effects_of(repeated) == [] && again == state
+    as "a player the map holds dead, told dead: no send, no log, the same state"
+  let #(after, taken) =
+    map_spawn_support.life(state:, at_ms: 6300, connection: 9, alive: False)
+  assert after == state as "nothing changes"
+  assert map_spawn_support.sends(taken) == [] as "nothing is sent"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    as "one error line, as a Moved from a connection not in the map"
 }

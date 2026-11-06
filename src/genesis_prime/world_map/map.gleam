@@ -763,8 +763,8 @@ pub type SpawnState {
 /// exactly when it is within sight of the player's place), the static objects
 /// it sees (`objects`, likewise), whether it is ready,
 /// the move sequence number of its place, the hostile spawns whose ring it
-/// stands in, empty until it is ready and while it is stealthed, and whether it is
-/// stealthed and whether it is alive, as its connection last told.
+/// stands in, empty until it is ready and while it is stealthed or dead, and whether it
+/// is stealthed and whether it is alive, as its connection last told.
 type Player {
   Player(
     stay: Stay,
@@ -1964,11 +1964,66 @@ fn stealth_changed(
 /// creature whose ring holds it, in spawn order; a player still loading is only marked,
 /// and `ready` decides its rings.
 fn life_changed(
-  state _state: State,
-  connection _connection: ConnectionId,
-  alive _alive: Bool,
+  state state: State,
+  connection connection: ConnectionId,
+  alive alive: Bool,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "shape: #496"
+  case dict.get(state.players, connection) {
+    Error(Nil) -> #(
+      state,
+      Effects([
+        log_error(
+          state:,
+          about: step.About(..step.no_one, connection: Some(connection)),
+          text: "the connection told its life to the map, but it is not in it",
+        ),
+      ]),
+    )
+    Ok(player) -> {
+      let life = case alive {
+        True -> Alive
+        False -> Dead
+      }
+      use <- bool.guard(when: player.life == life, return: #(state, Effects([])))
+      let player = Player(..player, life:)
+      let #(player, effects) = case life, player.readiness {
+        Dead, _ -> #(
+          Player(..player, inside: set.new()),
+          players_told_of_death(state:, connection:, player:),
+        )
+        Alive, StillLoading -> #(player, [])
+        Alive, Loaded -> rings_decided(state:, connection:, player:)
+      }
+      #(
+        State(..state, players: dict.insert(state.players, connection, player)),
+        Effects(effects),
+      )
+    }
+  }
+}
+
+/// `PlayerDied` to each Live creature whose spawn the dead player sees, in spawn order:
+/// a creature that chased the player out of its ring, or whose `Threatened` the dead
+/// player dropped, may still hold it. A spawn whose creature is not Live is sent nothing:
+/// its next start reads `inside`, which holds no dead player.
+fn players_told_of_death(
+  state state: State,
+  connection connection: ConnectionId,
+  player player: Player,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  list.flat_map(in_order(player.seen), fn(spawn) {
+    case dict.get(state.spawns, spawn) {
+      Ok(Live(unit_id:, life:, ..)) -> [
+        tell_creature(
+          state:,
+          unit_id:,
+          life:,
+          message: PlayerDied(by: connection),
+        ),
+      ]
+      Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
+    }
+  })
 }
 
 /// The rings the ready `player` of `connection` stands in at its place, against
@@ -2039,13 +2094,13 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
   })
 }
 
-/// Whether a ring can notice the player: it is ready and not stealthed. The one
+/// Whether a ring can notice the player: it is ready, not stealthed and alive. The one
 /// predicate `rings_holding` and `standing_for_players` (a summon's ring entry) share, so
-/// a creature that starts beside a stealthed player is told nothing of it.
+/// a creature that starts beside a stealthed or a dead player is told nothing of it.
 fn noticeable_by_rings(player player: Player) -> Bool {
-  case player.readiness, player.stealth {
-    Loaded, NotStealthed -> True
-    Loaded, Stealthed | StillLoading, _ -> False
+  case player.readiness {
+    Loaded -> player.stealth == NotStealthed && player.life == Alive
+    StillLoading -> False
   }
 }
 
