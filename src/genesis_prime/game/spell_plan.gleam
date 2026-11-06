@@ -1921,16 +1921,16 @@ fn force_remove_counts_read(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Nil, PlanError) {
-  case effect.data_bits03 == effect.data_bits04 {
-    True -> Ok(Nil)
-    False ->
-      Error(ForceRemoveCountsDiffer(
-        spell4_id:,
-        effect_id: effect.id,
-        data_bits03: effect.data_bits03,
-        data_bits04: effect.data_bits04,
-      ))
-  }
+  use <- bool.guard(
+    when: effect.data_bits03 == effect.data_bits04,
+    return: Ok(Nil),
+  )
+  Error(ForceRemoveCountsDiffer(
+    spell4_id:,
+    effect_id: effect.id,
+    data_bits03: effect.data_bits03,
+    data_bits04: effect.data_bits04,
+  ))
 }
 
 /// The CCStateSet effects of a spell (`Spell4Effects.effectType.4`): dataBits00 must be
