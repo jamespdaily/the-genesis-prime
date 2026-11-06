@@ -22,6 +22,7 @@ import genesis_prime/step.{ConnectionId}
 import genesis_prime/world_map/creature_life.{
   type Life, Body, Died, Health, StandsAgain, StopAtRespawn, StopNow,
 }
+import gleam/list
 import gleam/option.{None, Some}
 import map_support
 import owned_test
@@ -93,6 +94,49 @@ pub fn a_hit_that_leaves_health_sends_the_new_health_and_no_death_test() -> Nil 
     outcome: Landed(descriptions: [description], controls: []),
   ) = reaction.answer
   assert description.damage.killed == 0
+}
+
+pub fn a_creatures_life_passes_no_absorb_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A creature holds no pool (`Spell4Effects.effectType.29`'s gap: no rule gives one, and a
+  // creature casts only its attack), so a blow of any damage type reaches its health whole:
+  // the Beast has no mitigation (`Creature2.73464.mitigation`), so nothing is absorbed, the
+  // health takes all 18 and no shield takes any.
+  let taken = fn(damage_type) {
+    let reaction =
+      creature_life.struck(
+        life: creature_life.new(body: beast()),
+        body: beast(),
+        strike: Strike(
+          ..strike_of(damage: 18, rolls: no_luck, cast_id: 1),
+          offence: Offence(
+            blows: [
+              Blow(
+                spell4_effects_id: 1,
+                damage_type:,
+                damage: 18,
+                delay_ms: 0,
+                threat_multiplier: 1.0,
+              ),
+            ],
+            crit_chance: 0.0,
+            crit_severity: 1.5,
+            strikethrough: 0.0,
+          ),
+        ),
+      )
+    let assert Answered(outcome: Landed(descriptions: [description], ..), ..) =
+      reaction.answer
+    #(
+      creature_life.health(reaction.life),
+      description.damage.absorbed,
+      description.damage.shield_absorbed,
+      description.damage.health_damage_with_overkill,
+    )
+  }
+  assert list.map([1, 2, 3], taken)
+    == [#(34, 0, 0, 18), #(34, 0, 0, 18), #(34, 0, 0, 18)]
+    as "Physical, Tech and Magic: 52 less 18, nothing absorbed"
 }
 
 pub fn a_hit_that_kills_sends_health_with_the_dead_bit_then_the_death_and_starts_the_corpse_timer_test() -> Nil {

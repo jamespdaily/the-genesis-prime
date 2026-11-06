@@ -73,7 +73,6 @@ import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription, SpellDamageDescription,
 }
-import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
@@ -301,17 +300,30 @@ fn soak(
   damage_type damage_type: Int,
   damage damage: Int,
 ) -> #(Int, List(Absorb)) {
-  use <- bool.guard(when: damage <= 0, return: #(0, absorbs))
-  case list.filter(absorbs, fn(absorb) { holds(absorb:, damage_type:) }) {
-    [] -> #(0, absorbs)
-    [_, ..] -> panic as "shape: #492"
-  }
+  let #(to_take, kept) =
+    list.fold(absorbs, #(int.max(0, damage), []), fn(so_far, absorb) {
+      let #(to_take, kept) = so_far
+      case to_take > 0 && holds(absorb:, damage_type:) {
+        False -> #(to_take, [absorb, ..kept])
+        True -> {
+          let taken = int.min(absorb.left, to_take)
+          let left = absorb.left - taken
+          case left > 0 {
+            True -> #(to_take - taken, [Absorb(..absorb, left:), ..kept])
+            False -> #(to_take - taken, kept)
+          }
+        }
+      }
+    })
+  #(int.max(0, damage) - to_take, list.reverse(kept))
 }
 
 /// Whether the pool takes blows of `damage_type`: bit 2^(t-1) of its mask is set for the
 /// type t (`Spell4Effects.effectType.29`).
-fn holds(absorb _absorb: Absorb, damage_type _damage_type: Int) -> Bool {
-  panic as "shape: #492"
+fn holds(absorb absorb: Absorb, damage_type damage_type: Int) -> Bool {
+  damage_type >= 1
+  && int.bitwise_and(absorb.mask, int.bitwise_shift_left(1, damage_type - 1))
+  != 0
 }
 
 fn mitigation_of(defence defence: Defence, blow blow: Blow) -> Float {

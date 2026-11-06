@@ -904,12 +904,41 @@ fn absorption_of(absorbs absorbs: List(hit.Absorb)) -> Int {
 /// player's client and its viewers when it moved. A dead player takes none, and a
 /// pool of 0 or less is not held.
 pub fn absorb_started(
-  life _life: Life,
-  source _source: unit_properties.Source,
-  amount _amount: Int,
-  mask _mask: Int,
+  life life: Life,
+  source source: unit_properties.Source,
+  amount amount: Int,
+  mask mask: Int,
 ) -> #(Life, List(Effect)) {
-  panic as "shape: #492"
+  case life.state, amount > 0 {
+    Alive, True ->
+      absorbs_changed(
+        life:,
+        absorbs: pool_placed(
+          absorbs: life.absorbs,
+          pool: hit.Absorb(source:, left: amount, mask:),
+        ),
+      )
+    Alive, False -> absorb_ended(life:, source:)
+    Dead, _ -> #(life, [])
+  }
+}
+
+/// The pools with `pool` among them: it takes the place of the pool of its source when one
+/// is held, so a refilled pool keeps its place in the order, and else joins last.
+fn pool_placed(
+  absorbs absorbs: List(hit.Absorb),
+  pool pool: hit.Absorb,
+) -> List(hit.Absorb) {
+  case list.any(absorbs, held_by(source: pool.source)) {
+    True ->
+      list.map(absorbs, fn(absorb) {
+        case held_by(source: pool.source)(absorb) {
+          True -> pool
+          False -> absorb
+        }
+      })
+    False -> list.append(absorbs, [pool])
+  }
 }
 
 /// The pool of the cast effect `source` ends (genesis_prime/game/cast
@@ -919,9 +948,29 @@ pub fn absorb_started(
 /// pools are the life's alone, so this is the one owner that ends them.
 pub fn absorb_ended(
   life life: Life,
-  source _source: unit_properties.Source,
+  source source: unit_properties.Source,
 ) -> #(Life, List(Effect)) {
-  #(life, [])
+  absorbs_changed(
+    life:,
+    absorbs: list.filter(life.absorbs, fn(absorb) { !held_by(source:)(absorb) }),
+  )
+}
+
+fn held_by(source source: unit_properties.Source) -> fn(hit.Absorb) -> Bool {
+  fn(absorb: hit.Absorb) { absorb.source == source }
+}
+
+/// The life with `absorbs` as its pools, and the new sum told when it differs from the
+/// old one.
+fn absorbs_changed(
+  life life: Life,
+  absorbs absorbs: List(hit.Absorb),
+) -> #(Life, List(Effect)) {
+  let sum = absorption_of(absorbs:)
+  #(Life(..life, absorbs:), case sum == absorption(life:) {
+    True -> []
+    False -> absorption_told(absorption: sum)
+  })
 }
 
 /// Whether the player is alive.
