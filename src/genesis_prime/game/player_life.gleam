@@ -21,6 +21,7 @@
 ////                                                                             ─▶ 0x937(P, health) to its viewers
 ////                                Answer(C, Landed(descriptions) | Deflected)  ─▶ TellStrikeAnswered to C
 //// Released(C) ─────────────────▶ fighters - C; the last one:                  ─▶ 0x89a(P, 0) to P and its viewers
+////                                                                              CombatLeft (the cast rule's `combat_left`)
 //// the map's Gone(C) ───────────▶ the same as Released(C), and C joins gone
 //// ```
 ////
@@ -96,7 +97,10 @@
 ////   0x262); ShieldTickTime is the player's property, UnitProperty2 177's default unless
 ////   a modifier changes it (`UnitProperty2.176`).
 //// - **The combat flag** has no client timer (`opcode.0x89a`): the server sends it on
-////   with the first fighter and off with the last.
+////   with the first fighter and off with the last. `CombatLeft` follows the flag's news
+////   when it goes off, with the last release and with a death that had a fighter, and
+////   never when the flag was off already; it is the event of a Proc of kind 44
+////   (`Spell4Effects.effectType.14.dataBits00.0_44`).
 //// - **The stream** goes only to fighters: a creature that holds P on its threat list
 ////   is told P's place at once, then each accepted 0x637, and nothing after it releases P.
 //// - **A `Threatened` from a unit the map reported gone** is dropped: the creature
@@ -283,6 +287,10 @@ pub type Effect {
   /// stealth damage breaks (genesis_prime/game/cast `damage_taken`). A deflected blow, and
   /// a landed one that lowered neither, send none.
   DamageTaken
+  /// The player's combat flag went off, right after its news (0x89a off): the last
+  /// fighter released it, or it died with a fighter on its list. The connection tells the
+  /// cast rule (genesis_prime/game/cast `combat_left`).
+  CombatLeft
   /// The player died: each of its own live casts ends with 0x7fe to its client
   /// and to every viewer told the cast's start (genesis_prime/game/cast `died`).
   EndCasts
@@ -636,23 +644,35 @@ fn blow_taken(life life: Life, lowered lowered: Bool) -> #(Life, List(Effect)) {
 
 /// The player at 0 dies where its body lies, `place`: it is dead with its ghost
 /// there, it fights no one, and the death's messages go out in the client's order:
-/// 0x88c and 0x89a to it and its viewers, its casts ended, 0x247 type 22, then
-/// for its own client the ghost's 0x262, 0x1b3 and 0x636.
+/// 0x88c and 0x89a to it and its viewers, the combat left when it had a fighter, its casts
+/// ended, 0x247 type 22, then for its own client the ghost's 0x262, 0x1b3 and 0x636.
 fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
   let #(life, cancels) = stopped(life:)
-  #(Life(..life, fighters: dict.new(), state: Dead), [
-    ToClient(OwnDeathState(dead: True)),
-    ToViewers(client_connection.Died),
-    ToClient(OwnCombatState(in_combat: False)),
-    ToViewers(client_connection.CombatState(in_combat: False)),
-    EndCasts,
-    ToClient(OwnDeathLogged),
-    ToViewers(client_connection.DeathLogged),
-    ToClient(GhostCreated(place:)),
-    ToClient(OwnResurrectionWindow(dead: True)),
-    ToClient(ControlGiven(to: ControlGhost)),
-    ..cancels
-  ])
+  let combat_left = case in_combat(life:) {
+    True -> [CombatLeft]
+    False -> []
+  }
+  #(
+    Life(..life, fighters: dict.new(), state: Dead),
+    list.flatten([
+      [
+        ToClient(OwnDeathState(dead: True)),
+        ToViewers(client_connection.Died),
+        ToClient(OwnCombatState(in_combat: False)),
+        ToViewers(client_connection.CombatState(in_combat: False)),
+      ],
+      combat_left,
+      [
+        EndCasts,
+        ToClient(OwnDeathLogged),
+        ToViewers(client_connection.DeathLogged),
+        ToClient(GhostCreated(place:)),
+        ToClient(OwnResurrectionWindow(dead: True)),
+        ToClient(ControlGiven(to: ControlGhost)),
+      ],
+      cancels,
+    ]),
+  )
 }
 
 /// What the client's 0x15a does, decoded at the edge: a choice offered, for the
@@ -828,6 +848,7 @@ pub fn released(
     True -> [
       ToClient(OwnCombatState(in_combat: False)),
       ToViewers(client_connection.CombatState(in_combat: False)),
+      CombatLeft,
     ]
     False -> []
   }

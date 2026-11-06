@@ -19,8 +19,8 @@
 ////   and "under a spell of group 503"; 29795 is AND of "slot 1 above 29" and "slot 1 below
 ////   71" (type 64). A caster whose slot 1 holds 0 or 1000 and is under no cast fails 29795,
 ////   so 38897, 30010 and so passes 30012: the Proxy to 46297 starts.
-//// - `spellId=45057`: 147119, 147132, 159136, 202043 and 211002 (type 14 procs, not
-////   read), 147125 (Proxy to 60724 after 50 ms, ungated), 173780 (VitalModifier
+//// - `spellId=45057`: 147119, 147132, 159136, 202043 and 211002 (type 14 procs, read,
+////   `cast_proc_test`), 147125 (Proxy to 60724 after 50 ms, ungated), 173780 (VitalModifier
 ////   behind 37067: in combat) and 173872 (Proxy to 60868 behind 28773); `spellId=60724`:
 ////   146910, type 24, not read.
 //// - `Spell4.spellCastStealthChange`, `cast.target_node_end`: a cast whose nodes last
@@ -135,14 +135,14 @@ pub fn the_engineers_passive_lists_its_three_properties_and_starts_46297_behind_
     as "what is skipped is a debug line"
 }
 
-pub fn the_stalkers_passive_lists_nothing_and_starts_60724_50_ms_later_test() -> Nil {
+pub fn the_stalkers_passive_lists_its_five_procs_and_starts_60724_50_ms_later_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(state, effects) = started(base: 29_131)
   assert lines(effects:)
     == ["started k1 45057 root 45057 parent 0", "went k1 p0"]
-    as "the procs 147119, 147132, 159136, 202043 and 211002 (type 14) are not read, so the go lists nothing and the cast lingers with no 0x7fe"
-  assert listed(effects:) == []
+    as "the go lists the procs 147119, 147132, 159136, 202043 and 211002 (type 14) and the cast lingers with no 0x7fe"
+  assert listed(effects:) == [147_119, 147_132, 159_136, 202_043, 211_002]
   assert support.started_timers(effects:) |> list.map(fn(timer) { timer.1 })
     == [50]
     as "Spell4Effects 147125, the ungated Proxy to 60724, waits its delayTime of 50 ms; 173780 (behind 37067: in combat) and the Proxy to 60868 (behind 28773: under Spell4 59312) are withheld out of combat"
@@ -270,7 +270,11 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
   use <- unitest.guard(client_tables.present())
   let #(ordinary, _) = warrior_pressed_as_an_ability()
   let #(_, ordinary_death) =
-    cast.died(cast: ordinary, now: support.at(ms: 5000))
+    cast.died(
+      cast: ordinary,
+      caster: support.dead_caster(),
+      now: support.at(ms: 5000),
+    )
   assert list.length(support.frames_of(
       message_id: 0x07FE,
       effects: ordinary_death,
@@ -280,11 +284,21 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
   assert list.length(support.property_ends(effects: ordinary_death)) == 3
     as "and takes its three property modifiers off"
   let #(passive, _) = started(base: 29_035)
-  let #(left, died) = cast.died(cast: passive, now: support.at(ms: 5000))
+  let #(left, died) =
+    cast.died(
+      cast: passive,
+      caster: support.dead_caster(),
+      now: support.at(ms: 5000),
+    )
   assert support.frames_of(message_id: 0x07FE, effects: died) == []
     as "Spell4.44926: caster condition row 4 holds alive or dead, and propertyFlags 0x100 keeps the cast when its caster is removed, so death leaves the passive"
   assert support.property_ends(effects: died) == [] as "and its modifiers"
-  let #(_, after) = cast.died(cast: left, now: support.at(ms: 6000))
+  let #(_, after) =
+    cast.died(
+      cast: left,
+      caster: support.dead_caster(),
+      now: support.at(ms: 6000),
+    )
   assert support.frames_of(message_id: 0x07FE, effects: after) == []
     as "a second death still leaves it"
 }
@@ -337,7 +351,12 @@ pub fn the_passive_still_lingers_after_a_death_so_taking_its_unit_off_ends_it_wi
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(passive, effects) = started(base: 29_035)
-  let #(left, died) = cast.died(cast: passive, now: support.at(ms: 5000))
+  let #(left, died) =
+    cast.died(
+      cast: passive,
+      caster: support.dead_caster(),
+      now: support.at(ms: 5000),
+    )
   assert support.frames_of(message_id: 0x07FE, effects: died) == []
   let #(_, removed) =
     cast.unit_removed(
@@ -354,7 +373,12 @@ pub fn the_passives_pending_child_survives_a_death_and_starts_when_its_timer_fir
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(state, effects) = started(base: 29_131)
-  let #(state, _) = cast.died(cast: state, now: support.at(ms: 1020))
+  let #(state, _) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 1020),
+    )
   let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
   let assert [#(due, child)] = steps
     as "the Proxy to 60724 waited 50 ms (Spell4Effects 147125) and the death 20 ms after the start left its timer"
@@ -412,7 +436,12 @@ pub fn a_passive_taken_off_the_caster_is_forgotten_so_a_cast_that_gets_its_id_la
       [] -> 0
     }
     as "the setup: the 2049th cast of the unit has the passive's old cast id"
-  let #(_, died) = cast.died(cast: state, now: support.at(ms: 9500))
+  let #(_, died) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 9500),
+    )
   assert list.length(support.frames_of(message_id: 0x07FE, effects: died)) == 1
     as "the Warrior's spell pressed as an ability lingers and ends with its 0x7fe at death, as the control of the death test shows: it is not mistaken for the passive that held its id"
 }
