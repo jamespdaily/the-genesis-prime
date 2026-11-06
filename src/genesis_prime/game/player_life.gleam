@@ -41,6 +41,8 @@
 ////                ─▶ 0x938(P, 20, shield) to P and to its viewers
 ////                below the max still ─▶ StartTimer(shield_timer, ShieldTickTime)
 //// death ─▶ both cancelled;  coming back is full: nothing started
+//// a heal of the shield (genesis_prime/game/cast `ShieldHeal`) ─▶ + amount, capped
+////                ─▶ 0x938(P, 20, shield) to P and to its viewers; the clocks as they were
 //// ```
 ////
 //// Death and coming back, when a strike leaves P at 0:
@@ -986,6 +988,23 @@ fn shield_gained(
     False -> #(life, [])
   }
   #(life, list.append(shield_told(shield:), timers))
+}
+
+/// A heal of the player's own shield by `amount` (genesis_prime/game/cast `ShieldHeal`):
+/// the shield rises by it, capped at its maximum (`Spell4Effects.effectType.118`), and
+/// is written to the player's client and told to its viewers as a tick's is. A heal
+/// that moves nothing, on a full shield or a dead player, is not told, and the shield's
+/// clock is left as it was: only a blow restarts the reboot (text 531855).
+pub fn shield_healed(
+  life life: Life,
+  amount amount: Int,
+) -> #(Life, List(Effect)) {
+  let shield = int.min(life.shield + amount, life.max_shield)
+  use <- bool.guard(
+    when: life.state == Dead || amount <= 0 || shield <= life.shield,
+    return: #(life, []),
+  )
+  #(Life(..life, shield:), shield_told(shield:))
 }
 
 /// Both clocks stopped, each running one cancelled.

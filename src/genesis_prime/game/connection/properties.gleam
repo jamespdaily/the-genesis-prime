@@ -4,7 +4,7 @@
 //// into the rule's inputs and carries out what changed.
 ////
 //// ```
-//// the cast rule's PropertyStarts ─▶ unit_properties.apply  ─┐
+//// the cast rule's CasterChangeStarts ─▶ unit_properties.apply  ─┐
 //// the cast rule's PropertyEnds   ─▶ unit_properties.remove ─┤ changed entries
 ////                                                           ├─▶ 0x93a to the player's client
 ////                                                           ├─▶ PropertiesChanged to each viewer
@@ -38,7 +38,7 @@ import gleam/list
 import gleam/option.{None, Some}
 
 /// A modifier of the player's own spell starts (genesis_prime/game/cast
-/// `PropertyStarts`).
+/// `CasterChangeStarts`).
 pub fn started(
   session session: Session,
   now now: Now,

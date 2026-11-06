@@ -73,6 +73,21 @@
 ////   flags bit 2, which start and end the change and give the caster's node of the cast
 ////   its life. A row aimed only at other units is not read. Its caster apply
 ////   prerequisite, phases and spend tag are a Fluff effect's.
+//// - **The shield heals.** A HealShields effect (`Spell4Effects.effectType.118`) whose
+////   targetFlags include the caster (bit 1), or are the primary target alone (2) in a spell
+////   cast on the caster, is a `ShieldHeal` row: its formula (dataBits00 as a float,
+////   dataBits01 and the four parameters, which must be kinds the caster's value reads,
+////   genesis_prime/game/damage `caster_unread`), its delay, aim and caster apply
+////   prerequisite, which the cast rule checks and which a target apply prerequisite
+////   leaves not applied; a row with a tickTime is a `TickingShieldHeal`, held and not
+////   applied, since each tick needs a 0x7f8. A row aimed only at other units (4 and 6) is
+////   not read. A child a Proxy starts on each struck unit that holds a heal aimed at its
+////   primary target fails the load: a shield heal on a struck unit is not built.
+//// - **The shield overloads.** A ShieldOverload effect (`Spell4Effects.effectType.64`)
+////   aimed at the area (targetFlags 4) is a `Lasting` row, listed on each struck unit for
+////   its durationTime as a Fluff effect is: the client marks the unit overloaded and
+////   clears the mark itself. A row aimed at the caster or the primary target is not read:
+////   the server's hold of a player's shield at 0 is not built.
 //// - **The procs.** A Proc effect (`Spell4Effects.effectType.14`) whose targetFlags are the
 ////   caster's and whose trigger kind (dataBits00) is one of the holder's own events is a
 ////   `ProcRow`: 217 entering stealth, 218 leaving it, 44 leaving combat and 0 dying
@@ -193,6 +208,7 @@
 
 import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
+import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/innate
 import genesis_prime/game/lasting
@@ -521,6 +537,8 @@ pub type Spell {
     stealth: List(StealthRow),
     /// The RemoveStealth effects aimed at the caster, which end every stealth it holds.
     remove_stealth: List(RemoveStealthRow),
+    /// The HealShields effects that reach the caster, which refill its shield.
+    shield_heals: List(ShieldHeal),
     /// What the spell does to the caster's stealth, and at which go (`StealthChange`).
     stealth_change: StealthChange,
     /// The Proc effects aimed at the caster, whose kind is one of the holder's own
@@ -724,6 +742,39 @@ pub type Lasting {
   )
 }
 
+/// A HealShields effect (`Spell4Effects.effectType.118`) of a spell whose targetFlags
+/// reach the caster (`effect_kind.is_row_read`): the unit it heals (`aim`: the caster,
+/// or the primary target of a spell cast on the caster), the phases of `phase_flags` it
+/// applies in, when its `condition` holds (its caster apply prerequisite against the
+/// caster; one behind a target apply prerequisite is not applied), and when its `tag`
+/// holds for the points the cast spent (genesis_prime/game/spend). The part of a row's
+/// aim that is not the caster is not applied (`effect_kind.is_row_read`).
+pub type ShieldHeal {
+  /// A heal that lands once, `delay_ms` after its go, by `formula` read for the caster
+  /// (genesis_prime/game/damage `value_on_caster`).
+  ShieldHeal(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    aim: Aim,
+    condition: Condition,
+    tag: spend.Tag,
+    formula: damage.Formula,
+    delay_ms: Int,
+  )
+  /// A heal each `tick_ms` for `duration_ms` (Spell4Effects.tickTime and durationTime),
+  /// which the cast rule does not apply: each tick needs its own 0x7f8
+  /// (`Spell4Effects.effectType.118`).
+  TickingShieldHeal(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    aim: Aim,
+    condition: Condition,
+    tag: spend.Tag,
+    tick_ms: Int,
+    duration_ms: Int,
+  )
+}
+
 /// A SpellForceRemove effect (`Spell4Effects.effectType.80`) of a spell: it takes
 /// `count` stacks of the casts `selector` names off the unit it aims at, in the
 /// phases of `phase_flags`, when its `condition` holds (as a Fluff effect's does), and
@@ -906,6 +957,19 @@ pub type PlanError {
   /// A spell of a tree has a spellCastStealthChange that is not 0, 1 or 2
   /// (`Spell4.spellCastStealthChange`).
   StealthChangeNotRead(spell4_id: Int, value: Int)
+  /// A HealShields effect of a tree has a parameter type the formula for an effect on
+  /// its caster does not read (`damage.caster_unread`).
+  ShieldHealParameterNotRead(
+    spell4_id: Int,
+    effect_id: Int,
+    parameter_kind: Int,
+  )
+  /// A HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
+  ShieldHealNumberNotFinite(spell4_id: Int, effect_id: Int)
+  /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds
+  /// a HealShields effect aimed at its primary target, a struck unit: `spell4_id` is the
+  /// spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
+  ShieldHealOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
   /// A Proc effect of a kind the server does not read (`proc_read`): the row is in no
   /// list of its spell and the load goes on, so this error is a skip, never a failure.
   ProcKindNotRead(spell4_id: Int, effect_id: Int, kind: Int)
@@ -1100,6 +1164,28 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a spellCastStealthChange of "
       <> int.to_string(value)
       <> ", and only 0, 1 and 2 are read"
+    ShieldHealParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a HealShields effect "
+      <> int.to_string(effect_id)
+      <> " with a parameter of type "
+      <> int.to_string(parameter_kind)
+      <> ", which the caster's formula does not read"
+    ShieldHealNumberNotFinite(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a HealShields effect "
+      <> int.to_string(effect_id)
+      <> " whose dataBits00 is not a finite number"
+    ShieldHealOnStruckUnit(spell4_id:, proxy_effect_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proxy effect "
+      <> int.to_string(proxy_effect_id)
+      <> " that starts a child on each struck unit, which holds the HealShields effect "
+      <> int.to_string(effect_id)
+      <> " aimed at that unit, and a shield heal on a struck unit is not built"
     ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1407,6 +1493,7 @@ fn spell_of(
     spell4_id:,
     effects:,
   ))
+  use shield_heals <- result.try(shield_heals_of(tables:, spell4_id:, effects:))
   use stealth_change <- result.try(stealth_change_of(
     spell4_id:,
     value: row.spell_cast_stealth_change,
@@ -1454,6 +1541,12 @@ fn spell_of(
           })
         OnCaster -> #([], child.gains)
       }
+      use Nil <- result.try(proxy_heals_read(
+        spell4_id:,
+        proxy_effect_id: effect.id,
+        target:,
+        heals: child.shield_heals,
+      ))
       use condition <- result.try(proxy_condition_of(tables:, effect:))
       Ok(Proxy(
         effect_id: Spell4EffectsId(effect.id),
@@ -1533,6 +1626,7 @@ fn spell_of(
       cooldown_modifiers:,
       stealth:,
       remove_stealth:,
+      shield_heals:,
       stealth_change:,
       procs:,
     )
@@ -1593,6 +1687,124 @@ fn gains_of(
   })
 }
 
+/// The HealShields effects of a spell that reach the caster, each with its caster
+/// apply prerequisite read as a Fluff effect's is (`condition_of`).
+fn shield_heals_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(ShieldHeal), PlanError) {
+  shield_heals_in(spell4_id:, effects:, condition: fn(effect) {
+    condition_of(tables:, effect:, data_bits06_names_a_gate: False)
+  })
+}
+
+/// The HealShields rows among `effects` that reach the caster
+/// (`effect_kind.is_row_read`), each read by `shield_heal_of` with the condition
+/// `condition` gives it. A row aimed only at other units is left out.
+pub fn shield_heals_in(
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+  condition condition: fn(spell4_effects.Spell4Effects) ->
+    Result(Condition, PlanError),
+) -> Result(List(ShieldHeal), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.ShieldHeal
+    && effect_kind.is_row_read(
+      effect_type: effect.effect_type,
+      target_flags: effect.target_flags,
+    )
+  })
+  |> list.try_map(fn(effect) {
+    use condition <- result.try(condition(effect))
+    shield_heal_of(spell4_id:, effect:, condition:)
+  })
+}
+
+/// One HealShields row that reaches the caster as a heal, or the error that fails the
+/// load: its dataBits00 must be a finite 32-bit float and its formula must read only the
+/// parameter types an effect on its caster reads (genesis_prime/game/damage
+/// `caster_unread`). It aims at the caster when its targetFlags include it and else at
+/// the primary target. A row with a tickTime is periodic, a `TickingShieldHeal`.
+pub fn shield_heal_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  condition condition: Condition,
+) -> Result(ShieldHeal, PlanError) {
+  use formula <- result.try(
+    damage.formula_of(effect:)
+    |> result.replace_error(ShieldHealNumberNotFinite(
+      spell4_id:,
+      effect_id: effect.id,
+    )),
+  )
+  use Nil <- result.try(case damage.caster_unread(formula:) {
+    Some(damage.Unread(parameter_kind:)) ->
+      Error(ShieldHealParameterNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        parameter_kind:,
+      ))
+    None -> Ok(Nil)
+  })
+  let effect_id = Spell4EffectsId(effect.id)
+  let aim = case has_flag(flags: effect.target_flags, bit: 1) {
+    True -> AimsAtCaster
+    False -> AimsAtPrimaryTarget
+  }
+  let phase_flags = effect.phase_flags
+  let tag = tag_of(effect:)
+  Ok(case effect.tick_time {
+    0 ->
+      ShieldHeal(
+        effect_id:,
+        phase_flags:,
+        aim:,
+        condition:,
+        tag:,
+        formula:,
+        delay_ms: effect.delay_time,
+      )
+    tick_ms ->
+      TickingShieldHeal(
+        effect_id:,
+        phase_flags:,
+        aim:,
+        condition:,
+        tag:,
+        tick_ms:,
+        duration_ms: effect.duration_time,
+      )
+  })
+}
+
+/// A Proxy that starts its child on each unit its area strikes makes that unit the
+/// child's primary target, so a heal of the child aimed at it fails the load: a shield
+/// heal on a struck unit is not built. `spell4_id` is the spell with the Proxy
+/// `proxy_effect_id`. A child made on the caster, and a heal that includes the caster,
+/// are read.
+pub fn proxy_heals_read(
+  spell4_id spell4_id: Int,
+  proxy_effect_id proxy_effect_id: Int,
+  target target: ProxyTarget,
+  heals heals: List(ShieldHeal),
+) -> Result(Nil, PlanError) {
+  case target {
+    OnCaster -> Ok(Nil)
+    OnEachStruck ->
+      case list.find(heals, fn(heal) { heal.aim == AimsAtPrimaryTarget }) {
+        Ok(heal) ->
+          Error(ShieldHealOnStruckUnit(
+            spell4_id:,
+            proxy_effect_id:,
+            effect_id: heal.effect_id.value,
+          ))
+        Error(Nil) -> Ok(Nil)
+      }
+  }
+}
+
 /// The Fluff effects of a spell: each aimed at a unit the plan reads, with the
 /// columns that give its node a life (`Spell4Effects.effectType.17`).
 fn lasting_of(
@@ -1600,17 +1812,32 @@ fn lasting_of(
   spell4_id spell4_id: Int,
   effects effects: List(spell4_effects.Spell4Effects),
 ) -> Result(List(Lasting), PlanError) {
+  lasting_in(spell4_id:, effects:, condition: fn(effect) {
+    condition_of(tables:, effect:, data_bits06_names_a_gate: False)
+  })
+}
+
+/// The Fluff rows among `effects` and the ShieldOverload rows aimed at the area, with the
+/// condition `condition` gives each.
+pub fn lasting_in(
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+  condition condition: fn(spell4_effects.Spell4Effects) ->
+    Result(Condition, PlanError),
+) -> Result(List(Lasting), PlanError) {
   effects
   |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.Fluff
+    let kind = effect_kind.kind_of(effect.effect_type)
+    kind == effect_kind.Fluff
+    || kind == effect_kind.ShieldOverload
+    && effect_kind.is_row_read(
+      effect_type: effect.effect_type,
+      target_flags: effect.target_flags,
+    )
   })
   |> list.try_map(fn(effect) {
     use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
-    use condition <- result.try(condition_of(
-      tables:,
-      effect:,
-      data_bits06_names_a_gate: False,
-    ))
+    use condition <- result.try(condition(effect))
     Ok(Lasting(
       effect_id: Spell4EffectsId(effect.id),
       phase_flags: effect.phase_flags,
@@ -2145,11 +2372,38 @@ pub fn proc_read(
   }
 }
 
+/// The Spell4 ids among `effects` that a Proxy starts as a child on each struck unit: a
+/// Proxy aimed at the area, or at the area and the primary target (`target_of`).
+pub fn struck_unit_children(
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Set(Int) {
+  list.filter_map(effects, fn(effect) {
+    case
+      effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
+      && effect.data_bits00 != 0
+    {
+      True ->
+        case aim_of(target_flags: effect.target_flags) {
+          AimsAtArea | AimsAtBoth -> Ok(effect.data_bits00)
+          AimsAtCaster | AimsAtPrimaryTarget | OtherAim(..) -> Error(Nil)
+        }
+      False -> Error(Nil)
+    }
+  })
+  |> set.from_list
+}
+
 /// Whether the plan reads this effect row: its type is read for its aim
-/// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth or Proc row, the plan does
-/// not refuse or skip it (`stealth_read`, `stealth_on_the_caster`, `proc_read`). The
-/// coverage measure counts the other rows as not read, so it and the plan cannot disagree.
-pub fn effect_row_read(effect effect: spell4_effects.Spell4Effects) -> Bool {
+/// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth, Proc or HealShields row,
+/// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
+/// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
+/// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
+/// struck unit, which fails the load, `proxy_heals_read`). The coverage measure counts the
+/// other rows as not read, so it and the plan cannot disagree.
+pub fn effect_row_read(
+  effect effect: spell4_effects.Spell4Effects,
+  struck_children struck_children: Set(Int),
+) -> Bool {
   effect_kind.is_row_read(
     effect_type: effect.effect_type,
     target_flags: effect.target_flags,
@@ -2161,6 +2415,17 @@ pub fn effect_row_read(effect effect: spell4_effects.Spell4Effects) -> Bool {
       result.is_ok(stealth_on_the_caster(spell4_id: effect.spell_id, effect:))
     effect_kind.Proc ->
       result.is_ok(proc_read(spell4_id: effect.spell_id, effect:))
+    effect_kind.ShieldHeal ->
+      shield_heal_of(spell4_id: effect.spell_id, effect:, condition: Always)
+      |> result.map(fn(heal) {
+        case heal {
+          ShieldHeal(..) ->
+            heal.aim != AimsAtPrimaryTarget
+            || !set.contains(struck_children, effect.spell_id)
+          TickingShieldHeal(..) -> False
+        }
+      })
+      |> result.unwrap(or: False)
     effect_kind.Proxy
     | effect_kind.Damage
     | effect_kind.VitalModifier
@@ -2170,6 +2435,7 @@ pub fn effect_row_read(effect effect: spell4_effects.Spell4Effects) -> Bool {
     | effect_kind.PropertyModifier
     | effect_kind.ForcedMove
     | effect_kind.CooldownModifier
+    | effect_kind.ShieldOverload
     | effect_kind.Unread(..) -> True
   }
 }
@@ -3182,6 +3448,22 @@ pub fn lasting_in_phase(
     rows: spell.lasting,
     phase_flags: fn(lasting) { lasting.phase_flags },
     tag: fn(lasting) { lasting.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The HealShields effects of the spell that apply in phase `phase`, those whose tag
+/// holds for the points the cast spent.
+pub fn shield_heals_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(ShieldHeal) {
+  in_phase(
+    rows: spell.shield_heals,
+    phase_flags: fn(heal) { heal.phase_flags },
+    tag: fn(heal) { heal.tag },
     phase:,
     spent:,
   )
