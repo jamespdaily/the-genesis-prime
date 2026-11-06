@@ -319,3 +319,117 @@ pub fn a_row_whose_prerequisites_nest_each_other_is_not_read_test() -> Nil {
       as "the measure counts the row not read, without stopping"
   })
 }
+
+pub fn a_property_row_with_no_life_is_held_whatever_its_type_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `lasting.has_life`: a durationTime or flags bit 2; the cast rule drops a modifier with
+  // neither (`modifier_has_life`). Planted: a type 11, 145 and 52 row each with and
+  // without a durationTime, aimed at the caster.
+  let timed = [#("durationTime", Integer(5000))]
+  let rows = [
+    #(11, [#("dataBits00", Integer(7))]),
+    #(145, [#("dataBits00", Integer(7)), #("dataBits01", Integer(8))]),
+    #(52, [#("dataBits00", Integer(1))]),
+  ]
+  let effects =
+    list.flat_map(rows, fn(planted) {
+      let #(effect_type, columns) = planted
+      [
+        row(
+          id: 90_100 + effect_type,
+          effect_type:,
+          target_flags: 1,
+          columns: list.append(timed, columns),
+        ),
+        row(id: 91_100 + effect_type, effect_type:, target_flags: 1, columns:),
+      ]
+    })
+  spell_tables.with_loaded(rows: rows_with(effects:), body: fn(tables) {
+    let planted_effects =
+      spell4_effects.all(tables)
+      |> list.filter(fn(effect) { effect.id >= 90_100 && effect.id < 92_000 })
+    let spell_groups = spell_plan.spell_groups(tables:)
+    let verdicts =
+      list.map(planted_effects, fn(effect) {
+        let reading =
+          spell_plan.read_row(
+            tables:,
+            spell_groups:,
+            place: spell_tables.pressed,
+            effect:,
+          )
+        #(effect.id, case reading {
+          Ok(Applied(..)) -> "applied"
+          Ok(Held(..)) -> "held"
+          Ok(LeftOut(..)) | Ok(ReadByArea) | Error(..) -> "other"
+        })
+      })
+    assert verdicts
+      == [
+        #(90_152, "applied"),
+        #(90_111, "applied"),
+        #(90_245, "applied"),
+        #(91_152, "held"),
+        #(91_111, "held"),
+        #(91_245, "held"),
+      ]
+      |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+      as "a row with a durationTime is applied, one with no life is held: the plan lists both"
+    assert effect_row.unread_by_type(tables:, effects: planted_effects)
+      == dict.from_list([#(52, 1), #(11, 1), #(145, 1)])
+      as "the measure counts the three rows with no life not read"
+  })
+}
+
+pub fn a_row_no_phase_selects_is_held_and_a_damage_row_left_out_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `in_phase`: bit n of phaseFlags is phase n, so phaseFlags 0 is no phase and no go
+  // applies the row; what the client means by 0 is not known. Planted: a Fluff row, a Proxy
+  // to Spell4 30900 and a damage row with phaseFlags 0, and the same Fluff row with -1.
+  let none = [#("phaseFlags", Integer(0))]
+  let effects = [
+    row(id: 92_001, effect_type: 17, target_flags: 1, columns: [
+      #("durationTime", Integer(5000)),
+      ..none
+    ]),
+    row(id: 92_002, effect_type: 26, target_flags: 1, columns: [
+      #("dataBits00", Integer(30_900)),
+      ..none
+    ]),
+    row(id: 92_003, effect_type: 8, target_flags: 2, columns: none),
+    row(id: 92_004, effect_type: 17, target_flags: 1, columns: [
+      #("durationTime", Integer(5000)),
+    ]),
+  ]
+  let rows = rows_with(effects:)
+  let assert Ok(spell) = spell_tables.planned_strike(rows:)
+    as "the planted spell loads"
+  assert spell_tables.listed_effect_ids(spell:)
+    |> list.filter(fn(id) { id >= 92_000 && id < 93_000 })
+    |> list.sort(int.compare)
+    == [92_001, 92_002, 92_004]
+    as "the plan lists the Fluff and the Proxy of phaseFlags 0, which no phase applies, beside the Fluff of -1; the damage row is in no list"
+  spell_tables.with_loaded(rows:, body: fn(tables) {
+    let planted_effects =
+      spell4_effects.all(tables)
+      |> list.filter(fn(effect) { effect.id >= 92_000 && effect.id < 93_000 })
+    let spell_groups = spell_plan.spell_groups(tables:)
+    let read = fn(id) {
+      spell_plan.read_row(
+        tables:,
+        spell_groups:,
+        place: spell_tables.pressed,
+        effect: first_of(effects: planted_effects, id:),
+      )
+    }
+    let assert Ok(Held(..)) = read(92_001)
+      as "a lasting row no phase selects is held"
+    let assert Ok(Held(PlannedProxy(..))) = read(92_002)
+      as "so is a Proxy, and its child is still planned"
+    assert read(92_003) == Ok(LeftOut(why: spell_plan.InNoPhase))
+    let assert Ok(Applied(..)) = read(92_004)
+    assert effect_row.unread_by_type(tables:, effects: planted_effects)
+      == dict.from_list([#(17, 1), #(26, 1), #(8, 1)])
+      as "the measure counts the three rows no phase selects not read, and the Fluff of -1 read"
+  })
+}

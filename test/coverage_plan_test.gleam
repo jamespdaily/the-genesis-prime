@@ -83,8 +83,8 @@ pub fn the_measure_counts_the_damage_rows_the_area_load_refuses_as_not_read_test
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, _, starting_unread) = counted(type_number: 8)
   assert rows == 29_445 as "scratch count: effectType=8 holds 29,445 rows"
-  assert unread == 10_131
-    as "scratch count: 9,995 rows hold a formula parameter whose value is not 0 and whose type is not 0, 10, 12 or 13 (`damage.unread`) and 136 more aim other than 1, 2, 4 or 6; no multiplier is infinite or not a number: 10,131 of 29,445"
+  assert unread == 10_136
+    as "scratch count: 9,995 rows hold a formula parameter whose value is not 0 and whose type is not 0, 10, 12 or 13 (`damage.unread`) and 136 more aim other than 1, 2, 4 or 6; no multiplier is infinite or not a number; and 5 more, otherwise read, hold a phaseFlags of 0, which no phase selects (`in_phase`): 10,136 of 29,445"
   assert starting_unread == 0
     as "the area load builds every damage row of the starting abilities' spells"
 }
@@ -94,8 +94,8 @@ pub fn the_measure_counts_a_proxy_that_names_no_spell_or_aims_elsewhere_as_not_r
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, starting, starting_unread) = counted(type_number: 26)
   assert rows == 16_929 as "scratch count: effectType=26 holds 16,929 rows"
-  assert unread == 1978
-    as "scratch count: 1,808 rows hold a dataBits00 of 0, which names no spell (`Spell4Effects.effectType.26` counts the same 1,808) and 170 more aim by a flag other than 1, 2, 4 and 6: 1,978 of 16,929"
+  assert unread == 1986
+    as "scratch count: 1,808 rows hold a dataBits00 of 0, which names no spell (`Spell4Effects.effectType.26` counts the same 1,808), 170 more aim by a flag other than 1, 2, 4 and 6 and 8 more, otherwise read, hold a phaseFlags of 0, which no phase selects: 1,986 of 16,929"
   assert #(starting, starting_unread) == #(72, 2)
     as "scratch count over the starting rows: 72 of type 26, and 121345 and 178429 hold a dataBits00 of 0"
 }
@@ -103,8 +103,8 @@ pub fn the_measure_counts_a_proxy_that_names_no_spell_or_aims_elsewhere_as_not_r
 pub fn the_measure_counts_rows_behind_a_target_prerequisite_as_not_read_for_every_kind_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
-  assert counted(type_number: 3).1 == 2557
-    as "scratch count: 2,543 rows aim only at other units and 14 more, the first 48817, aim at the caster behind a target apply prerequisite: 2,557 of 4,645, since the cast applies no `GatedOnTarget` row (`cast.condition_gate`)"
+  assert counted(type_number: 3).1 == 2562
+    as "scratch count: 2,543 rows aim only at other units, 14 more, the first 48817, aim at the caster behind a target apply prerequisite (the cast applies no `GatedOnTarget` row, `cast.condition_gate`) and 5 more hold a phaseFlags of 0, which no phase selects (`in_phase`): 2,562 of 4,645"
   assert counted(type_number: 11).1 == 7638
     as "scratch count: 7,502 aimed at other units and 136 more behind a target apply prerequisite, the first 42729: 7,638 of 20,105"
   assert counted(type_number: 73).1 == 35
@@ -124,8 +124,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "33274 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 1,368, 3 2,557, 4 3,872, 8 10,131, 11 7,638, 26 1,978, 73 35, 80 535 and 118 110 (the tests above), and the counts this step leaves as they were: 14 3,455, 17 375, 18 14, 29 281, 52 2, 64 35, 81 634, 83 51, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values, which the step does not move)"
+  assert string.contains(text, "33396 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 1,368, 3 2,562, 4 3,872, 8 10,136, 11 7,638, 26 1,986, 73 35, 80 535 and 118 110 (the tests above), 17 455 and 81 658 (the 375 and 634 of before and 80 and 24 rows, otherwise read, with phaseFlags 0), and the counts this step leaves as they were: 14 3,455, 18 14, 29 281, 52 2, 64 35, 83 51, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values, which the step does not move)"
   assert string.contains(text, "starting abilities: 184 of 196 rows handled")
     as "scratch count over the 196 starting rows: 9 were not read before (the two Proc rows the plan skips, 90 four times, 24, the Warrior's 210834 and 91018) and 3 are not read now: Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }

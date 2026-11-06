@@ -73,12 +73,30 @@ fn engine_named(name: String) -> EngineDeclaration {
 
 /// The tables the plan's decision about an effect row reads, planted with no row beside
 /// the Spell4Effects rows given, so a row that names a prerequisite, a spell, a spell group,
-/// a property or a display finds none (`spell_plan.read_row`).
+/// a property or a display finds none (`spell_plan.read_row`). A planted row that leaves
+/// phaseFlags out holds -1, every phase, as the client's rows do; a row with phaseFlags 0 is
+/// selected by no phase and is not read.
 fn planted_files(
   rows rows: List(List(planted_table.Cell)),
 ) -> List(#(String, BitArray)) {
+  let phase_column =
+    list.index_fold(spell4_effects.schema.columns, 0, fn(found, column, index) {
+      case column.name == "phaseFlags" {
+        True -> index
+        False -> found
+      }
+    })
+  let in_every_phase =
+    list.map(rows, fn(row) {
+      list.index_map(row, fn(cell, index) {
+        case index == phase_column, cell {
+          True, planted_table.Integer(0) -> planted_table.Integer(-1)
+          True, _ | False, _ -> cell
+        }
+      })
+    })
   [
-    planted_table.file(spell4_effects.schema, rows),
+    planted_table.file(spell4_effects.schema, in_every_phase),
     planted_table.file(spell4.schema, []),
     planted_table.file(spell4_base.schema, []),
     planted_table.file(spell4_group_list.schema, []),
@@ -588,7 +606,8 @@ pub fn the_type_11_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   use <- owned_test.run(10_000)
   // Spell4Effects.targetFlags: bit 1 is the caster; the plan reads a type 11 row that
   // includes it (flags 1, 3, 5 and 7) and leaves out one aimed only at others (2, 4 and 6).
-  // Planted: five type 11 rows of property 1, which UnitProperty2 holds a row for, flags
+  // Planted: five type 11 rows of property 1, which UnitProperty2 holds a row for, with a
+  // durationTime (a row with no life is held), flags
   // 1, 3, 2, 4 and 6, and one type 8 row.
   let row = fn(id, type_, flags) {
     planted_table.row(spell4_effects.schema, [
@@ -596,6 +615,7 @@ pub fn the_type_11_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
       #("effectType", planted_table.Integer(type_)),
       #("targetFlags", planted_table.Integer(flags)),
       #("dataBits00", planted_table.Integer(1)),
+      #("durationTime", planted_table.Integer(5000)),
     ])
   }
   let measured =
@@ -2087,6 +2107,7 @@ fn named_columns(
     145 -> [
       #("dataBits00", planted_table.Integer(1)),
       #("dataBits01", planted_table.Integer(1)),
+      #("durationTime", planted_table.Integer(5000)),
     ]
     _ -> []
   }
@@ -2189,7 +2210,7 @@ pub fn a_conversion_row_aimed_only_at_another_unit_is_counted_as_not_read_test()
     as "Spell4Effects.effectType.145: a row aimed at the caster is read, one aimed only at another unit is not"
 }
 
-pub fn the_clients_rows_of_types_18_81_and_145_count_14_634_and_0_not_read_and_17_and_80_375_and_535_test() -> Nil {
+pub fn the_clients_rows_of_types_18_81_and_145_count_14_658_and_0_not_read_and_17_and_80_455_and_535_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let assert Measured(types:, ..) =
@@ -2208,12 +2229,12 @@ pub fn the_clients_rows_of_types_18_81_and_145_count_14_634_and_0_not_read_and_1
   }
   assert counted(18) == #(531, 14, 1, 0)
     as "table_rows -- Spell4Effects effectType=18: 531 rows, 5 aimed by flags 3 or 7 and 9 behind a target apply prerequisite; 109482 is the one starting row, aimed at the caster with no prerequisite"
-  assert counted(81) == #(5262, 634, 1, 1)
-    as "effectType=81: 5,262 rows, 84 aimed by flags other than 1, 2, 4 and 6 and 555 behind a target apply prerequisite, 5 of them both; 91018 is the one starting row, behind prerequisite 11311"
+  assert counted(81) == #(5262, 658, 1, 1)
+    as "effectType=81: 5,262 rows, 84 aimed by flags other than 1, 2, 4 and 6 and 555 behind a target apply prerequisite, 5 of them both (634), and 24 more, otherwise read, with a phaseFlags of 0, which no phase selects (scratch count); 91018 is the one starting row, behind prerequisite 11311"
   assert counted(145) == #(6, 0, 1, 0)
     as "effectType=145: 6 rows, all aimed at the caster; 229304 is the one starting row"
-  assert counted(17).0 == 10_790 && counted(17).1 == 375
-    as "effectType=17: 10,790 rows, 375 aimed by other flags or behind a target apply prerequisite"
+  assert counted(17).0 == 10_790 && counted(17).1 == 455
+    as "effectType=17: 10,790 rows, 375 aimed by other flags or behind a target apply prerequisite and 80 more, otherwise read, with a phaseFlags of 0, which no phase selects (scratch count)"
   assert counted(80).0 == 2294 && counted(80).1 == 535
     as "effectType=80: 2,294 rows, 503 aimed by other flags, behind a target apply prerequisite or with dataBits03 and dataBits04 differing (232 differ, 47969 the first), and 32 more whose selector names no spell group, Spell4 or Spell4Base (scratch count against the Spell4GroupList, Spell4 and Spell4Base ids, the first 59302)"
 }

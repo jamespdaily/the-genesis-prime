@@ -985,7 +985,9 @@ pub type RowReading {
   Applied(row: PlannedRow)
   /// The row is in a list of its spell and no go applies it: a periodic gain or heal
   /// (`TickingGain`, `TickingShieldHeal`), a row behind a target apply prerequisite
-  /// (`cast.condition_gate`) and a disguise with no life. The measure counts it not read.
+  /// (`cast.condition_gate`), a property change or disguise with no life
+  /// (`lasting.has_life`) and a row whose phaseFlags is 0, which no phase selects
+  /// (`in_phase`). The measure counts it not read.
   Held(row: PlannedRow)
   /// The row is in no list of its spell and the load goes on.
   LeftOut(why: LeftOutReason)
@@ -1005,6 +1007,8 @@ pub type LeftOutReason {
   ProcOfAnotherKind(kind: Int)
   /// A Proxy whose dataBits00 names no spell.
   ProxyNamesNoSpell
+  /// A damage row whose phaseFlags is 0: no phase selects it (`spell_area` `phase`).
+  InNoPhase
 }
 
 /// A row as the list of its spell holds it. A Proxy's child and a Proc's spell are planned
@@ -1876,7 +1880,8 @@ fn spell_of(
       let #(effect, reading) = row
       use reading <- result.try(reading)
       case reading {
-        Applied(PlannedProxy(target:, condition:)) ->
+        Applied(PlannedProxy(target:, condition:))
+        | Held(PlannedProxy(target:, condition:)) ->
           proxy_of(
             tables:,
             sources:,
@@ -2756,7 +2761,8 @@ fn procs_of(
     let #(effect, reading) = row
     use reading <- result.try(reading)
     case reading {
-      Applied(PlannedProc(reading: proc, condition:)) -> {
+      Applied(PlannedProc(reading: proc, condition:))
+      | Held(PlannedProc(reading: proc, condition:)) -> {
         use spell <- result.try(spell_of(
           tables:,
           sources:,
@@ -2972,7 +2978,7 @@ fn rows_read(
 ) -> Result(Nil, PlanError) {
   list.try_each(readings, fn(row) {
     case list.contains(kinds, effect_kind.kind_of({ row.0 }.effect_type)) {
-      True -> result.map(row.1, fn(_) { Nil })
+      True -> result.replace(row.1, Nil)
       False -> Ok(Nil)
     }
   })
@@ -3090,8 +3096,9 @@ fn by_condition(
 /// What the plan makes of one Spell4Effects row, in the place its spell is planned: the
 /// one decision the plan's lists are made from and the coverage measure counts by.
 ///
-/// - `Applied` and `Held` rows are in a list of their spell (`Held`: no go applies them),
-///   `LeftOut` rows are in none and the load goes on, and a damage row is `ReadByArea`.
+/// - `Applied` and `Held` rows are in a list of their spell (`Held`: no go applies them,
+///   among them a row with no life or with phaseFlags 0), `LeftOut` rows are in none and
+///   the load goes on, and a damage row is `ReadByArea`.
 /// - An error is what fails the load of the row's spell: a row the tables lack, a column
 ///   the plan does not read, a spell that spends every point with a tag the rule does not
 ///   read, or a heal, armor or absorb on the primary target of a spell a Proxy starts on
@@ -3110,6 +3117,37 @@ pub fn read_row(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
   use Nil <- result.try(spend_tag_read(place:, effect:))
+  use reading <- result.map(kind_reading(
+    tables:,
+    spell_groups:,
+    place:,
+    effect:,
+  ))
+  held_without_a_phase(reading:, effect:)
+}
+
+/// A row whose phaseFlags is 0 is selected by no phase, so no go applies it
+/// (`in_phase`): an `Applied` row is `Held`, and a damage row is left out. What the client
+/// means by phaseFlags 0 is not known.
+fn held_without_a_phase(
+  reading reading: RowReading,
+  effect effect: spell4_effects.Spell4Effects,
+) -> RowReading {
+  use <- bool.guard(when: effect.phase_flags != 0, return: reading)
+  case reading {
+    Applied(row) -> Held(row)
+    ReadByArea -> LeftOut(why: InNoPhase)
+    Held(..) | LeftOut(..) -> reading
+  }
+}
+
+/// What the rule of the row's type makes of it, before the phases are looked at.
+fn kind_reading(
+  tables tables: table_store.Tables,
+  spell_groups spell_groups: Set(Int),
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
   let spell4_id = effect.spell_id
   let reaches =
     effect_kind.is_row_read(
@@ -3248,15 +3286,19 @@ fn modifier_reading(
     condition:,
   ))
   use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
+  by_condition_with_life(modifier:, condition:)
+}
+
+/// A property row as `Held` when it has no life (`lasting.has_life`), which the cast rule
+/// drops, and else by its condition.
+fn by_condition_with_life(
+  modifier modifier: PropertyModifier,
+  condition condition: Condition,
+) -> RowReading {
   let planned = PlannedModifier(modifier:)
-  case modifier.change {
-    LookChange(..) ->
-      case lasting.has_life(row: lasting_row_of(effect:)) {
-        True -> by_condition(row: planned, condition:)
-        False -> Held(planned)
-      }
-    AbsorbChange(..) | PropertyChange(..) ->
-      by_condition(row: planned, condition:)
+  case lasting.has_life(row: modifier.row) {
+    True -> by_condition(row: planned, condition:)
+    False -> Held(planned)
   }
 }
 
@@ -3274,7 +3316,7 @@ fn interrupt_armor_reading(
   ))
   use modifier <- result.try(interrupt_armor_of(spell4_id:, effect:, condition:))
   use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
-  by_condition(row: PlannedModifier(modifier:), condition:)
+  by_condition_with_life(modifier:, condition:)
 }
 
 /// A HealShields row that reaches the caster or the primary target: a periodic heal is

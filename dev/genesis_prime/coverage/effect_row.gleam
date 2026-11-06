@@ -24,7 +24,7 @@ import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import gleam/dict.{type Dict}
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option
 import gleam/result
 import gleam/set.{type Set}
 
@@ -43,10 +43,7 @@ pub fn unread_by_type(
       True -> counts
       False ->
         dict.upsert(counts, effect.effect_type, fn(found) {
-          case found {
-            Some(count) -> count + 1
-            None -> 1
-          }
+          option.unwrap(found, 0) + 1
         })
     }
   })
