@@ -130,6 +130,7 @@ pub fn create(
     creature_id:,
     checklist_index: object.checklist_index,
     tail: unit_fields.spawned_tail(
+      interrupt_armor: option.None,
       health: option.map(object.health, fn(health) { health.value }),
       level: object.level,
       base_health: option.then(object.health, fn(health) {

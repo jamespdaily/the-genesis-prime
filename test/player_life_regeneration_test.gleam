@@ -108,6 +108,7 @@ fn blow(cast_id cast_id: Int, damage damage: Int) -> strike_tell.Tell {
       offence: spawn_support.beast_attack().offence,
       damage:,
     ),
+    controls: [],
   )
 }
 

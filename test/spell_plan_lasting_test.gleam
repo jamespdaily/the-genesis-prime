@@ -17,11 +17,13 @@
 ////   Fluff or type 80 row with an aim that is not read, fail the load.
 
 import client_tables
+import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting.{Group, LastingRow, Spell, Stack}
 import genesis_prime/game/spell_plan.{
   type Spell as PlannedSpell, Always, GatedOnCaster, GatedOnTarget,
 }
 import genesis_prime/game/spend
+import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
@@ -475,4 +477,101 @@ pub fn quick_draws_removal_is_gated_on_the_caster_under_its_marker_test() -> Nil
   let assert GatedOnCaster(gates: [_]) = row.condition
     as "prerequisiteIdCasterApply 17302"
   Nil
+}
+
+// ---- the CCStateSet rows ----
+
+/// Kick's CCStateSet row 140382 planted on the spell: a Knockdown (dataBits00 8) of
+/// 3000 ms after 166 ms, removing 1 Interrupt Armor (dataBits03), aimed at the area
+/// (`table_rows -- Spell4Effects 140382`).
+fn knockdown_row(
+  state state: Int,
+  target_flags target_flags: Int,
+  columns columns: List(#(String, Cell)),
+) -> List(Cell) {
+  effect(id: 140_382, type_: 4, target_flags:, columns: [
+    #("delayTime", Integer(166)),
+    #("durationTime", Integer(3000)),
+    #("dataBits00", Integer(state)),
+    #("dataBits03", Integer(1)),
+    ..columns
+  ])
+}
+
+pub fn a_crowd_control_row_is_read_with_its_state_time_armor_and_aim_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(spell) =
+    planned(
+      rows: rows_with(
+        effect: knockdown_row(state: 8, target_flags: 4, columns: []),
+      ),
+    )
+  assert spell.controls
+    == [
+      spell_plan.CrowdControl(
+        effect_id: Spell4EffectsId(140_382),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtArea,
+        row: crowd_control.Row(
+          state: crowd_control_state.Knockdown,
+          delay_ms: 166,
+          duration_ms: 3000,
+          armor_removed: 1,
+        ),
+        tag: spend.EqualTo(0),
+      ),
+    ]
+    as "Spell4Effects.effectType.4: dataBits00 the state, dataBits03 the armor, delayTime and durationTime the time"
+}
+
+pub fn a_crowd_control_row_of_a_state_other_than_a_stun_or_a_knockdown_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert plan_error(
+      rows: rows_with(
+        effect: knockdown_row(state: 21, target_flags: 4, columns: []),
+      ),
+    )
+    == spell_plan.ControlStateNotRead(
+      spell4_id: strike,
+      effect_id: 140_382,
+      state: 21,
+    )
+    as "Snare (21) has no rule on a creature"
+}
+
+pub fn a_crowd_control_row_aimed_at_the_caster_or_by_other_flags_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each([1, 3], fn(flags) {
+    assert plan_error(
+        rows: rows_with(
+          effect: knockdown_row(state: 8, target_flags: flags, columns: []),
+        ),
+      )
+      == spell_plan.ControlAimNotRead(
+        spell4_id: strike,
+        effect_id: 140_382,
+        target_flags: flags,
+      )
+      as "a state on the caster is a player's, which no creature casts"
+  })
+}
+
+pub fn a_crowd_control_row_behind_an_apply_prerequisite_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    ["prerequisiteIdCasterApply", "prerequisiteIdTargetApply"],
+    fn(column) {
+      assert plan_error(
+          rows: rows_with(
+            effect: knockdown_row(state: 8, target_flags: 4, columns: [
+              #(column, Integer(17_302)),
+            ]),
+          ),
+        )
+        == spell_plan.ControlPrerequisiteNotRead(
+          spell4_id: strike,
+          effect_id: 140_382,
+        )
+    },
+  )
 }

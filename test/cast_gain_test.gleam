@@ -27,7 +27,9 @@ import owned_test
 import spell_tables
 
 fn hits(units: List(Int)) -> List(cast.Struck) {
-  list.map(units, fn(unit_id) { cast.Hit(unit_id:, descriptions: []) })
+  list.map(units, fn(unit_id) {
+    cast.Hit(unit_id:, descriptions: [], controls: [])
+  })
 }
 
 /// Every effect of a press of the bag index at 1000 and of every timer it leads to,

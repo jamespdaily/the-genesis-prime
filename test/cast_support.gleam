@@ -71,6 +71,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     stack: lasting.Stack(group_id: 0, cap: 0),
     lasting: [],
     removes: [],
+    controls: [],
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
   )

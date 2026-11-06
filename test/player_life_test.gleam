@@ -76,6 +76,7 @@ fn attack(cast_id: Int) -> strike_tell.Tell {
     from: beast(),
     striker: CreatureStriker,
     offence: spawn_support.beast_attack().offence,
+    controls: [],
   )
 }
 
@@ -142,7 +143,10 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
     ToViewers(client_connection.Health(health: 734, dead: False)),
     Answer(
       to:,
-      answered: Answered(outcome: Landed(descriptions: [description]), ..),
+      answered: Answered(
+        outcome: Landed(descriptions: [description], controls: []),
+        ..,
+      ),
     ),
     StartTimer(timer: TimerId(9), after_ms: 2500),
     StartTimer(timer: TimerId(8), after_ms: 500),
@@ -171,7 +175,10 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
     ToClient(OwnHealth(health: 0)),
     ToViewers(client_connection.Health(health: 0, dead: True)),
     Answer(
-      answered: Answered(outcome: Landed(descriptions: [description]), ..),
+      answered: Answered(
+        outcome: Landed(descriptions: [description], controls: []),
+        ..,
+      ),
       ..,
     ),
     ..

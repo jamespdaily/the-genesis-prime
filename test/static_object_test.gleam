@@ -143,6 +143,7 @@ pub fn a_players_and_a_creatures_0x262_claim_no_world_object_test() -> Nil {
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       unit_id: 2,
       health: 52,
+      interrupt_armor: option.None,
       server_time_estimate_start: 0,
     )
   assert #(player.tail.world_object_id, player.tail.world_socket_id) == #(0, 0)

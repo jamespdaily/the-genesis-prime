@@ -44,6 +44,7 @@ pub const numbers: GameNumbers =
     chase_stop_fraction: 0.5,
     health_regen_fraction: 0.025,
     health_regen_tick_ms: 500,
+    interrupt_armor_refill_ms: 10_000,
   )
 
 /// The spawn numbered `number` of a Virtual Battle Beast, `x` units along the
@@ -159,6 +160,7 @@ pub fn beast_combat() -> creature_life.Combat {
       shield_mitigation_max: 0.0,
     ),
     attack: beast_attack(),
+    interrupt_armor: creature_life.NoArmor,
   )
 }
 

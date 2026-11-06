@@ -13,6 +13,7 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/unit_fields
+import gleam/option
 import message_support
 import owned_test
 import spawn_support
@@ -47,6 +48,7 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       spawn: beast,
       unit_id: 0x1001,
       health: 52,
+      interrupt_armor: option.None,
       server_time_estimate_start: 0,
     ))
     == Ok(message_support.hex(
@@ -73,6 +75,7 @@ pub fn a_recorded_health_is_sent_as_stat_0_and_as_base_health_test() -> Nil {
       spawn: beast,
       unit_id: 0x1001,
       health: 300,
+      interrupt_armor: option.None,
       server_time_estimate_start: 0,
     )
   let assert Ok(bytes) = unit_create_creature.encode(unit)
@@ -85,4 +88,30 @@ pub fn a_recorded_health_is_sent_as_stat_0_and_as_base_health_test() -> Nil {
       UnitProperty(property_id: 7, field_2: 0x43DD0000, value: 0x43DD0000),
     ]
     as "Base Health 442.0 in both words"
+}
+
+pub fn a_creatures_current_armor_is_stat_21_of_its_0x262_and_no_armor_adds_no_stat_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `opcode.0x938.interrupt_armor`: the create's stat list sets stat 21, the same stat
+  // a 0x938 changes, after stat 0 (health) and stat 10 (level) as the client reads them.
+  let beast = spawn_support.battle_beast(number: 1, x: 0.0)
+  let create = fn(armor) {
+    creature_unit.create(
+      spawn: beast,
+      unit_id: 0x1001,
+      health: 52,
+      interrupt_armor: armor,
+      server_time_estimate_start: 0,
+    )
+  }
+  let assert Ok(body) = unit_create_creature.encode(create(option.Some(3)))
+    as "the creature's 0x262 encodes"
+  let assert Ok(decoded) = unit_create_creature.decode(body) as "and decodes"
+  assert unit_fields.stat(tail: decoded.tail, stat_id: 21) == Ok(3)
+  assert unit_fields.stat(tail: decoded.tail, stat_id: 0) == Ok(52)
+    && unit_fields.stat(tail: decoded.tail, stat_id: 10) == Ok(beast.level)
+    as "health and level are still sent"
+  assert unit_fields.stat(tail: create(option.None).tail, stat_id: 21)
+    == Error(Nil)
+    as "a creature with no armor or infinite armor sends no stat 21"
 }

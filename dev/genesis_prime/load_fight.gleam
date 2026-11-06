@@ -431,7 +431,7 @@ fn hear(
             life:,
             message: creature.StrikeAnswered(answered: strike_tell.Answered(
               key: tell.key,
-              outcome: strike_tell.Landed(descriptions: []),
+              outcome: strike_tell.Landed(descriptions: [], controls: []),
             )),
           )
         _ -> Error(Nil)
