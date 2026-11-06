@@ -1420,6 +1420,6 @@ pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_
       outcome: step.Answer(FromMap(joined)),
     )
   assert game_connection_support.written_ids(burst)
-    == game_client.world_entry_ids
-    as "the Spellslinger comes back at the Holocrypt: the entry burst"
+    == game_client.holocrypt_entry_ids()
+    as "the Spellslinger comes back at the Holocrypt: the entry burst, with no second 0x25E (opcode.0x25e.entry_order)"
 }

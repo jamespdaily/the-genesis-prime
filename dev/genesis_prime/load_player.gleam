@@ -347,7 +347,7 @@ pub fn enter_world(
     )
   assert list.map(burst, fn(frame) { frame.message_id })
     == game_client.world_entry_ids
-    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1, 0x61, 0x1DA and 0x1BC"
+    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x25E, 0x6BC, 0x636, 0xF1, 0x61, 0x1DA and 0x1BC"
   #(burst, have)
 }
 
