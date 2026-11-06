@@ -136,7 +136,8 @@ pub fn a_stalkers_passive_starts_60724_50_ms_later_and_that_cast_ends_test() -> 
   let frames = written(taken:)
   assert started_spells(frames:) == [45_057]
     as "the passive 45057 starts; the Proxy to 60724 waits 50 ms"
-  assert listed(frames:) == [] as "its procs are not read"
+  assert listed(frames:) == [147_119, 147_132, 159_136, 202_043, 211_002]
+    as "the five Proc rows are listed on the holder (Spell4Effects.effectType.14)"
   let cast_timers = cast_timers_started(taken:)
   let assert [timer] = cast_timers as "one cast timer: the 50 ms start of 60724"
   let #(_, later) =
@@ -342,8 +343,8 @@ pub fn a_stealthed_stalkers_impale_ends_the_stealth_after_its_second_phase_and_n
   let #(_, second) =
     connection_support.feed(state:, event: OwnEvent(TimerFired(second_go)))
   let frames = written(taken: second)
-  assert started_spells(frames:) == [39_427, 70_775]
-    as "Impale's Proxy child 39427 (stealthed and behind) and its Fluff child (Spell4Effects 231067) start in the second phase"
+  assert started_spells(frames:) == [39_427, 70_775, 60_769, 79_932]
+    as "Impale's Proxy child 39427 (stealthed and behind) and its Fluff child (Spell4Effects 231067) start in the second phase, and once the stealth has ended the passive's procs 147132 and 211002 cast 60769 and 79932"
   assert stealth_bits(frames:) == [0]
   let at = fn(id) {
     let assert Ok(found) =
@@ -354,8 +355,13 @@ pub fn a_stealthed_stalkers_impale_ends_the_stealth_after_its_second_phase_and_n
   }
   assert at(0x07FF) < at(0x0811) && at(0x0811) < at(0x08F5)
     as "the child's start, then the stealth cast taken off, then the change"
-  assert list.last(ids(frames:)) == Ok(0x08F5)
-    as "the change is the step's last frame"
+  assert list.take(list.drop(from_id(frames:, id: 0x08F5), 1), 1) == [0x07FF]
+    as "the change is followed by the procs' casts alone"
+}
+
+/// The message ids of the frames from the first of this id on.
+fn from_id(frames frames: List(Frame), id id: Int) -> List(Int) {
+  list.drop_while(ids(frames:), fn(found) { found != id })
 }
 
 /// The stealthed bits of the 0x8F5 frames, in order.
