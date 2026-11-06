@@ -2641,7 +2641,6 @@ pub fn rows_with_stealth() -> Rows {
         prerequisite_row(id: 8127, flags: 0, conditions: [#(116, 1, 0, 28_455)]),
         prerequisite_row(id: 16_152, flags: 0, conditions: [#(50, 2, 0, 59_389)]),
         prerequisite_row(id: 16_153, flags: 0, conditions: [#(50, 1, 0, 59_389)]),
-        prerequisite_row(id: 390, flags: 0, conditions: [#(28, 2, 0, 0)]),
       ]),
     ),
     spell4_stack_groups: [
