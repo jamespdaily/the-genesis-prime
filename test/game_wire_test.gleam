@@ -1326,21 +1326,11 @@ fn two_players_enter_one_map() -> TwoEntered {
   two_players_enter(started: login_support.start(), first_class: 4)
 }
 
-/// As `two_players_enter_one_map`, the first player being of the class given and
-/// the server holding the trees of the starting abilities of every cast method
-/// (`character_tables.shared_with_spell_trees`).
-fn two_players_of_class_enter_one_map(
-  first_class first_class: Int,
-) -> TwoEntered {
-  two_players_of_class_enter_one_map_with(
-    first_class:,
-    scripts: script.operating_system,
-  )
-}
-
-/// As `two_players_of_class_enter_one_map`, the game connections taking their time
-/// and their timers from `scripts`, which a test that drives them gives
-/// (`driven_time.scripts`).
+/// As `two_players_enter_one_map`, the first player being of the class given, the
+/// server holding the trees of the starting abilities of every cast method
+/// (`character_tables.shared_with_spell_trees`) and its game connections taking
+/// their time and their timers from `scripts`, which a test whose casts run on
+/// timers gives so it moves them by hand (`driven_time.scripts`).
 fn two_players_of_class_enter_one_map_with(
   first_class first_class: Int,
   scripts scripts: Scripts,
@@ -1463,8 +1453,12 @@ pub fn a_players_press_is_answered_0x7fd_go_and_finish_and_a_player_in_sight_rea
 
 pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_same_casts_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map(first_class: 4)
+    two_players_of_class_enter_one_map_with(
+      first_class: 4,
+      scripts: driven_time.scripts(time),
+    )
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
@@ -1486,12 +1480,18 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
       pulse(2, "k4"),
       ["finished k1"],
     ])
-  let #(own, _) =
-    game_client.read_kept(game: first, have: first_have, count: 14)
-  assert cast_support.cast_lines(frames: own) == ["confirmed k1", ..pulses]
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  // The channel ends at its channelMaxTime, 1250 ms after the press, the pulses
+  // coming every channelPulseTime, 410 ms.
+  driven_time.advance(time:, ms: 1250)
+  let #(later, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  assert cast_support.cast_lines(frames: list.append(pressed, later))
+    == ["confirmed k1", ..pulses]
     as "Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631): the accept, then a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250: 0x14053d1f0), each starting its Proxy 80382 (Spell4Effects 173926, phaseFlags -1) with the pulse index as its phase (opcode.0x7f4.phase), then the finish"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 14)
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 58832 root 58832 parent 0", ..pulses]
     as "opcode.0x7ff, 0x7f4 and 0x7fe: a player in sight reads the same casts, started by unit 1 with no parent"
@@ -1502,17 +1502,27 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
 
 pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in_sight_reads_both_casts_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map(first_class: 5)
+    two_players_of_class_enter_one_map_with(
+      first_class: 5,
+      scripts: driven_time.scripts(time),
+    )
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
     bag_index: 0,
     target: 0,
   )
-  let #(own, first_have) =
-    game_client.read_kept(game: first, have: first_have, count: 9)
-  assert cast_support.cast_lines(frames: own)
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  // The Proxy's phases come 133, 300 and 333 ms after the cast (SpellPhase 3712
+  // to 3714), so it is over 766 ms in and the global cooldown, 1000 ms from the
+  // press, is not.
+  driven_time.advance(time:, ms: 800)
+  let #(later, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  assert cast_support.cast_lines(frames: list.append(pressed, later))
     == [
       "confirmed k1",
       "opened 38765 k1",
@@ -1531,7 +1541,13 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
     bag_index: 0,
     target: 0,
   )
-  let #(own, _) = game_client.read_kept(game: first, have: first_have, count: 5)
+  let #(held, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 3)
+  assert cast_support.cast_lines(frames: held) == []
+    as "the second tap is held for the global cooldown: the server has written nothing for it"
+  driven_time.advance(time:, ms: 200)
+  let #(own, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 4)
   assert cast_support.cast_lines(frames: own)
     == [
       "confirmed k1",
@@ -1542,7 +1558,7 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
     ]
     as "Spell4Thresholds 238: the second tap, held until the global cooldown ends (Spell4.38765: kind 0, SpellCoolDown 115, 1000 ms), casts the stage 38766 and 0x814 closes the threshold with the cooldown bit (opcode.0x814)"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 12)
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 38765 root 38765 parent 0",
@@ -1731,10 +1747,17 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
 
 pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_and_the_server_goes_on_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map(first_class: 5)
+    two_players_of_class_enter_one_map_with(
+      first_class: 5,
+      scripts: driven_time.scripts(time),
+    )
   game_client.hold_ability(game: first, bag_index: 0, target: 0, held: 1)
-  let #(_, _) = game_client.read_kept(game: first, have: first_have, count: 9)
+  // The hold is under way with the Proxy's phases and the repeat still to fire: the
+  // clock does not move, so the connection ends in the middle of it.
+  let #(_, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
   game_client.close(game: first)
   let #(seen, second_have) =
     game_client.read_until(
@@ -1753,7 +1776,7 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
     as "opcode.0x355: the map removes the unit that held a key when its connection ended"
   game_client.hold_ability(game: second, bag_index: 0, target: 0, held: 1)
   let #(own, _) =
-    game_client.read_kept(game: second, have: second_have, count: 1)
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
   let assert [
     game_client.CastStarted(
       spell4_id: 58_832,
@@ -1762,6 +1785,7 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
       caster_unit_id: 2,
       ..,
     ),
+    ..
   ] = game_client.casts_in(frames: own)
     as "the server goes on: the second player's own hold of Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631), is answered with its own 0x7ff, unit 2 casting"
   game_client.close(game: second)
