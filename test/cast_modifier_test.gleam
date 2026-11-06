@@ -391,7 +391,12 @@ pub fn the_caster_dying_ends_every_modifier_still_pending_test() -> Nil {
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let #(_, ended) = cast.died(cast: state, now: support.at(ms: 1100))
+  let #(_, ended) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 1100),
+    )
   assert ends(effects: ended) == [source_of(cast_id: id, effect_id: 67_777)]
     as "the modifier had not started, and its end is told: the properties hold none, so it changes nothing"
 }

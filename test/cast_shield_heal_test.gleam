@@ -491,7 +491,12 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
   let #(_, alive) = support.run_timers(state:, effects: first, from_ms: 1000)
   assert list.length(timeline(fired: alive)) == 1
     as "left alone, the heal lands at go + 500"
-  let #(dead, died) = cast.died(cast: state, now: support.at(ms: 1100))
+  let #(dead, died) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 1100),
+    )
   assert heals(effects: died) == []
   assert numbers(support.cancelled_timers(effects: died)) == started_by(first)
     as "every timer the press started is cancelled, the heal's among them"

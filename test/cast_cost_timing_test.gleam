@@ -222,7 +222,12 @@ pub fn a_caster_that_dies_before_the_go_pays_nothing_for_a_channel_test() -> Nil
       target: 0,
       at: 1000,
     )
-  let #(state, died) = cast.died(cast: state, now: support.at(ms: 1100))
+  let #(state, died) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 1100),
+    )
   assert support.payments(effects: list.append(pressed, died)) == []
     as "death before the first pulse: nothing was paid, at the press or at the death"
   let #(pulse, _) = go_timer(effects: pressed)

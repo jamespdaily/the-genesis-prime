@@ -91,6 +91,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     remove_stealth: [],
     shield_heals: [],
     stealth_change: spell_plan.EndsStealthAtEachGo,
+    procs: [],
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
   )
@@ -233,6 +234,12 @@ pub fn caster() -> Caster {
     factions: prerequisite.Factions(current: 167, base: 167),
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
   )
+}
+
+/// The same player dead, as the connection builds it when it tells the rule of its
+/// death (`genesis_prime/game/connection/casting.caster_of`).
+pub fn dead_caster() -> Caster {
+  cast.Caster(..caster(), dead: True)
 }
 
 /// A planted resource of 1000 points in slot 1, full: it meets every level-1 cost

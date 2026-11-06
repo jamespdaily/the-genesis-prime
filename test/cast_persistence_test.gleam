@@ -603,7 +603,12 @@ pub fn a_caster_that_left_or_died_has_no_cast_left_for_the_check_to_end_test() -
   let #(left, _) = cast.left(cast: state)
   assert persisted(state: left, caster: out, at: 1100).1 == []
     as "`left` dropped every cast"
-  let #(dead, _) = cast.died(cast: state, now: support.at(ms: 1100))
+  let #(dead, _) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 1100),
+    )
   assert persisted(state: dead, caster: out, at: 1200).1 == []
     as "`died` ended every cast but the innate passive's"
 }

@@ -88,6 +88,20 @@
 ////   its durationTime as a Fluff effect is: the client marks the unit overloaded and
 ////   clears the mark itself. A row aimed at the caster or the primary target is not read:
 ////   the server's hold of a player's shield at 0 is not built.
+//// - **The procs.** A Proc effect (`Spell4Effects.effectType.14`) whose targetFlags are the
+////   caster's and whose trigger kind (dataBits00) is one of the holder's own events is a
+////   `ProcRow`: 217 entering stealth, 218 leaving it, 44 leaving combat and 0 dying
+////   (`Spell4Effects.effectType.14.dataBits00.217_218`, `.0_44`), the spell it casts
+////   (dataBits01), planned as a Proxy's child is and on the same chain, so a proc that leads
+////   back to a spell on the way fails as a cycle, and its limit, dataBits05 fires in
+////   dataBits04 ms (`Spell4Effects.effectType.14.limits`). Its chance is 1.0 and draws no
+////   roll. Its delay, durationTime and flags bit 2 give the holder's node its life
+////   (`Spell4Effects.effectType.14.lifetime`), and its caster apply prerequisite is a Fluff
+////   effect's. A Proc row of another kind is in no list and the load goes on
+////   (`proc_read`); a row of these kinds with a chance other than 1.0, a unit bit of the
+////   event's other unit, a window or count at or below 0, a gate or filter column, a target
+////   apply or persistence prerequisite or a delayTime fails the load naming the column
+////   (`ProcNotRead`). The spells the procs cast are in the tree (`tree`).
 //// - **The forced moves.** A ForcedMove effect (`Spell4Effects.effectType.3`) whose
 ////   targetFlags include the caster is a `ForcedMove` row: its delay. The go lists it
 ////   on the caster and the caster's client moves itself and reports the move
@@ -400,6 +414,28 @@ pub type CasterDeath {
   AliveOrDead
 }
 
+/// The life of a caster that a spell's caster condition refuses.
+pub type RefusedLife {
+  /// A dead caster (`CannotBeDead`).
+  RefusesDead
+  /// A living caster (`MustBeDead`).
+  RefusesLiving
+}
+
+/// The life of the caster, dead or alive, that the spell's caster condition refuses, when
+/// it refuses it: the press (`cast.verdict`) and a proc's cast (`cast.proc_cast`) both ask
+/// this (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`).
+pub fn refused_life(
+  spell spell: Spell,
+  dead dead: Bool,
+) -> Option(RefusedLife) {
+  case spell.caster_death, dead {
+    CannotBeDead, True -> Some(RefusesDead)
+    MustBeDead, False -> Some(RefusesLiving)
+    CannotBeDead, False | MustBeDead, True | AliveOrDead, _ -> None
+  }
+}
+
 /// One stage of a RapidTap or ChargeRelease ability: the spell a tap or a charge
 /// level casts, and the time the threshold takes to reach it from the stage before
 /// (Spell4Thresholds.thresholdDuration).
@@ -505,6 +541,9 @@ pub type Spell {
     shield_heals: List(ShieldHeal),
     /// What the spell does to the caster's stealth, and at which go (`StealthChange`).
     stealth_change: StealthChange,
+    /// The Proc effects aimed at the caster, whose kind is one of the holder's own
+    /// events, each with the spell it casts (`ProcRow`).
+    procs: List(ProcRow),
   )
 }
 
@@ -568,6 +607,48 @@ pub type RemoveStealthRow {
     condition: Condition,
     tag: spend.Tag,
   )
+}
+
+/// The event of its holder that fires a Proc effect (`Spell4Effects.effectType.14`,
+/// dataBits00; the readings are `Spell4Effects.effectType.14.dataBits00.217_218` and
+/// `Spell4Effects.effectType.14.dataBits00.0_44`, none of them in the client's code).
+pub type Trigger {
+  /// 217: the holder enters stealth.
+  EnteredStealth
+  /// 218: the holder leaves stealth.
+  LeftStealth
+  /// 44: the holder leaves combat.
+  LeftCombat
+  /// 0: the holder dies.
+  Died
+}
+
+/// A Proc effect (`Spell4Effects.effectType.14`) of a spell, aimed at the caster: when
+/// the holder's `trigger` happens, the holder casts `spell` at itself. At most `count`
+/// fires in any `window_ms` (dataBits05 in dataBits04 milliseconds,
+/// `Spell4Effects.effectType.14.limits`); the chance is 1.0 and draws no roll. Its `row`
+/// gives the caster's node of the holding cast its life (a Proc with no durationTime and
+/// flags bit 2 lasts until removed, `Spell4Effects.effectType.14.lifetime`), in the
+/// phases of `phase_flags`, when its `condition` holds (its caster apply prerequisite
+/// against the caster) and its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend). The proc's `spell` is planned as a Proxy's child is.
+pub type ProcRow {
+  ProcRow(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    trigger: Trigger,
+    spell: Spell,
+    window_ms: Int,
+    count: Int,
+    row: lasting.LastingRow,
+    condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
+/// What a Proc row's columns say without a table: its trigger and its limit.
+pub type ProcReading {
+  ProcReading(trigger: Trigger, window_ms: Int, count: Int)
 }
 
 /// A ModifySpellCooldown effect (`Spell4Effects.effectType.73`) of a spell whose
@@ -889,6 +970,12 @@ pub type PlanError {
   /// a HealShields effect aimed at its primary target, a struck unit: `spell4_id` is the
   /// spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
   ShieldHealOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
+  /// A Proc effect of a kind the server does not read (`proc_read`): the row is in no
+  /// list of its spell and the load goes on, so this error is a skip, never a failure.
+  ProcKindNotRead(spell4_id: Int, effect_id: Int, kind: Int)
+  /// A Proc effect of a kind the server reads has a column the plan does not read: its
+  /// name and value. The load fails (`proc_read`).
+  ProcNotRead(spell4_id: Int, effect_id: Int, column: String, value: Int)
   /// A class's innate cannot be held (genesis_prime/game/innate).
   InnateFailed(error: innate.InnateError)
   /// A Prerequisite row a spell or effect names nests itself through the rows it
@@ -1099,6 +1186,24 @@ pub fn describe(error error: PlanError) -> String {
       <> " that starts a child on each struck unit, which holds the HealShields effect "
       <> int.to_string(effect_id)
       <> " aimed at that unit, and a shield heal on a struck unit is not built"
+    ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proc effect "
+      <> int.to_string(effect_id)
+      <> " of kind "
+      <> int.to_string(kind)
+      <> ", which is not read"
+    ProcNotRead(spell4_id:, effect_id:, column:, value:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proc effect "
+      <> int.to_string(effect_id)
+      <> " whose "
+      <> column
+      <> " is "
+      <> int.to_string(value)
+      <> ", which is not read"
     InnateFailed(error:) -> innate.describe(error:)
     PrerequisiteCycle(path:) ->
       "the Prerequisite rows nest each other round a cycle: " <> string_of(path)
@@ -1277,6 +1382,20 @@ const max_phases = 32
 /// (`0x14053e5a0`).
 const cooldown_at_last_phase_flag = 0x200
 
+/// The chain of spells from the pressed ability to `spell4_id`, which fails as a
+/// `ProxyCycle` naming the whole chain when `spell4_id` is already on it: a Proxy or a
+/// Proc effect that leads back to a spell on the way would start it for ever.
+pub fn chain_extended(
+  chain chain: List(Int),
+  spell4_id spell4_id: Int,
+) -> Result(List(Int), PlanError) {
+  let chain = list.append(chain, [spell4_id])
+  case list.contains(list.take(chain, list.length(chain) - 1), spell4_id) {
+    True -> Error(ProxyCycle(chain:))
+    False -> Ok(chain)
+  }
+}
+
 fn spell_of(
   tables tables: table_store.Tables,
   sources sources: Sources,
@@ -1284,11 +1403,7 @@ fn spell_of(
   chain chain: List(Int),
   threshold_costs threshold_costs: List(#(Int, Int)),
 ) -> Result(Spell, PlanError) {
-  let chain = list.append(chain, [spell4_id])
-  use <- bool.guard(
-    when: list.contains(list.take(chain, list.length(chain) - 1), spell4_id),
-    return: Error(ProxyCycle(chain:)),
-  )
+  use chain <- result.try(chain_extended(chain:, spell4_id:))
   use row <- result.try(
     spell4.get(tables:, id: Spell4Id(spell4_id))
     |> result.replace_error(NoRow(table: "Spell4", id: spell4_id)),
@@ -1382,6 +1497,13 @@ fn spell_of(
   use stealth_change <- result.try(stealth_change_of(
     spell4_id:,
     value: row.spell_cast_stealth_change,
+  ))
+  use procs <- result.try(procs_of(
+    tables:,
+    sources:,
+    spell4_id:,
+    effects:,
+    chain:,
   ))
   use Nil <- result.try(
     stealth_conditions_read(spell4_id:, conditions: [
@@ -1506,6 +1628,7 @@ fn spell_of(
       remove_stealth:,
       shield_heals:,
       stealth_change:,
+      procs:,
     )
   Ok(spell)
 }
@@ -2116,6 +2239,177 @@ fn remove_stealth_row_of(
     condition:,
     tag: tag_of(effect:),
   ))
+}
+
+/// The Proc effects of a spell (`Spell4Effects.effectType.14`) whose kind the server
+/// reads, each with its spell planned as a Proxy's child is, on the same chain, so a
+/// proc that leads back to a spell on the way fails as a cycle. A row of another kind is
+/// in no list; a row of a kind read with a column the plan does not read fails the load
+/// (`proc_read`).
+fn procs_of(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+  chain chain: List(Int),
+) -> Result(List(ProcRow), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.Proc
+  })
+  |> list.try_fold([], fn(found, effect) {
+    case proc_read(spell4_id:, effect:) {
+      Error(ProcKindNotRead(..)) -> Ok(found)
+      Error(error) -> Error(error)
+      Ok(reading) -> {
+        use condition <- result.try(condition_of(
+          tables:,
+          effect:,
+          data_bits06_names_a_gate: False,
+        ))
+        use spell <- result.try(
+          spell_of(
+            tables:,
+            sources:,
+            spell4_id: effect.data_bits01,
+            chain:,
+            threshold_costs: [],
+          ),
+        )
+        Ok([
+          ProcRow(
+            effect_id: Spell4EffectsId(effect.id),
+            phase_flags: effect.phase_flags,
+            trigger: reading.trigger,
+            spell:,
+            window_ms: reading.window_ms,
+            count: reading.count,
+            row: lasting_row_of(effect:),
+            condition:,
+            tag: tag_of(effect:),
+          ),
+          ..found
+        ])
+      }
+    }
+  })
+  |> result.map(list.reverse)
+}
+
+/// 1.0 as the 32 float bits a Proc row's chance column (dataBits02) holds.
+const chance_of_one_bits = 1_065_353_216
+
+/// What a Proc row says without a table: its trigger and its limit, or why it is not
+/// read. A row of a kind the server does not read is `ProcKindNotRead`, which the load
+/// skips; any other error fails the load, naming the first column the plan does not read:
+/// targetFlags other than the caster, a chance other than 1.0 (no roll is drawn), a unit
+/// bit of the event's other unit (4) or beyond the five the texts name, a window or count
+/// that is not above 0, a gate, a filter, a target apply or persistence prerequisite and
+/// a delay, and a row with no durationTime and no flags bit 2, which gives its holder's
+/// node no life (`Spell4Effects.effectType.14.dataBits03`, `.limits`, `.prerequisites`,
+/// `.dataBits07`, `.lifetime`).
+pub fn proc_read(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(ProcReading, PlanError) {
+  use trigger <- result.try(case effect.data_bits00 {
+    217 -> Ok(EnteredStealth)
+    218 -> Ok(LeftStealth)
+    44 -> Ok(LeftCombat)
+    0 -> Ok(Died)
+    kind -> Error(ProcKindNotRead(spell4_id:, effect_id: effect.id, kind:))
+  })
+  let unit_bits = effect.data_bits03
+  let refusals = [
+    #("targetFlags", effect.target_flags, effect.target_flags != 1),
+    #(
+      "dataBits02",
+      effect.data_bits02,
+      effect.data_bits02 != chance_of_one_bits,
+    ),
+    #(
+      "dataBits03",
+      unit_bits,
+      int.bitwise_and(unit_bits, 4) != 0 || unit_bits >= 32 || unit_bits < 0,
+    ),
+    #("dataBits04", effect.data_bits04, effect.data_bits04 <= 0),
+    #("dataBits05", effect.data_bits05, effect.data_bits05 <= 0),
+    #("dataBits06", effect.data_bits06, effect.data_bits06 != 0),
+    #("dataBits07", effect.data_bits07, effect.data_bits07 != 0),
+    #("dataBits08", effect.data_bits08, effect.data_bits08 != 0),
+    #("dataBits09", effect.data_bits09, effect.data_bits09 != 0),
+    #(
+      "prerequisiteIdTargetApply",
+      effect.prerequisite_id_target_apply,
+      effect.prerequisite_id_target_apply != 0,
+    ),
+    #(
+      "prerequisiteIdCasterPersistence",
+      effect.prerequisite_id_caster_persistence,
+      effect.prerequisite_id_caster_persistence != 0,
+    ),
+    #(
+      "prerequisiteIdTargetPersistence",
+      effect.prerequisite_id_target_persistence,
+      effect.prerequisite_id_target_persistence != 0,
+    ),
+    #("delayTime", effect.delay_time, effect.delay_time != 0),
+    #(
+      "flags",
+      effect.flags,
+      effect.duration_time <= 0 && !has_flag(flags: effect.flags, bit: 2),
+    ),
+  ]
+  case list.find(refusals, fn(refusal) { refusal.2 }) {
+    Ok(#(column, value, _)) ->
+      Error(ProcNotRead(spell4_id:, effect_id: effect.id, column:, value:))
+    Error(Nil) ->
+      Ok(ProcReading(
+        trigger:,
+        window_ms: effect.data_bits04,
+        count: effect.data_bits05,
+      ))
+  }
+}
+
+/// Whether the plan reads this effect row: its type is read for its aim
+/// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth, Proc or HealShields row,
+/// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
+/// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied). The
+/// coverage measure counts the other rows as not read, so it and the plan cannot disagree.
+pub fn effect_row_read(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  effect_kind.is_row_read(
+    effect_type: effect.effect_type,
+    target_flags: effect.target_flags,
+  )
+  && case effect_kind.kind_of(effect.effect_type) {
+    effect_kind.Stealth ->
+      result.is_ok(stealth_read(spell4_id: effect.spell_id, effect:))
+    effect_kind.RemoveStealth ->
+      result.is_ok(stealth_on_the_caster(spell4_id: effect.spell_id, effect:))
+    effect_kind.Proc ->
+      result.is_ok(proc_read(spell4_id: effect.spell_id, effect:))
+    effect_kind.ShieldHeal ->
+      shield_heal_of(spell4_id: effect.spell_id, effect:, condition: Always)
+      |> result.map(fn(heal) {
+        case heal {
+          ShieldHeal(..) -> True
+          TickingShieldHeal(..) -> False
+        }
+      })
+      |> result.unwrap(or: False)
+    effect_kind.Proxy
+    | effect_kind.Damage
+    | effect_kind.VitalModifier
+    | effect_kind.Fluff
+    | effect_kind.ForceRemove
+    | effect_kind.CrowdControl
+    | effect_kind.PropertyModifier
+    | effect_kind.ForcedMove
+    | effect_kind.CooldownModifier
+    | effect_kind.ShieldOverload
+    | effect_kind.Unread(..) -> True
+  }
 }
 
 /// What the spell does to the caster's stealth, from the spell's spellCastStealthChange:
@@ -3060,9 +3354,10 @@ pub fn stage_at(spell spell: Spell, index index: Int) -> Result(Spell, Nil) {
   |> result.map(fn(stage) { stage.spell })
 }
 
-/// The spell, the stage spells a RapidTap or ChargeRelease ability casts and the
-/// spell of each Proxy that `started` accepts, below them, each with its own tree
-/// the same way.
+/// The spell, the stage spells a RapidTap or ChargeRelease ability casts, the spell of
+/// each Proxy that `started` accepts and the spell each Proc effect casts, below them,
+/// each with its own tree the same way. A proc's spell may be cast whenever its holder
+/// holds the proc, so every one is in the tree.
 pub fn tree(
   spell spell: Spell,
   started started: fn(Proxy) -> Bool,
@@ -3071,9 +3366,10 @@ pub fn tree(
   let proxied =
     list.filter(spell.proxies, started)
     |> list.map(fn(proxy) { proxy.spell })
+  let procced = list.map(spell.procs, fn(proc) { proc.spell })
   [
     spell,
-    ..list.flat_map(list.append(stages, proxied), fn(below) {
+    ..list.flat_map(list.flatten([stages, proxied, procced]), fn(below) {
       tree(spell: below, started:)
     })
   ]
@@ -3095,6 +3391,22 @@ pub fn units_aimed_at(
     AimsAtBoth -> list.unique([primary_target, ..area])
     OtherAim(..) -> []
   }
+}
+
+/// The Proc effects of the spell that apply in phase `phase`, those whose tag holds for
+/// the points the cast spent.
+pub fn procs_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(ProcRow) {
+  in_phase(
+    rows: spell.procs,
+    phase_flags: fn(proc) { proc.phase_flags },
+    tag: fn(proc) { proc.tag },
+    phase:,
+    spent:,
+  )
 }
 
 /// The Fluff effects of the spell that apply in phase `phase`, those whose tag holds

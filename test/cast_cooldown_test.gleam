@@ -627,7 +627,12 @@ pub fn the_caster_dying_drops_every_lasting_row_test() -> Nil {
     ])
   let #(state, _) =
     press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
-  let #(state, _) = cast.died(cast: state, now: support.at(ms: 1100))
+  let #(state, _) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 1100),
+    )
   let after = slow_cast(plans:, state:, at: 3000)
   assert meets(plans:, state: after, at: 8600) == Held(wait_ms: 400)
     as "the death ends every cast and cancels every timer, so the row is not kept"

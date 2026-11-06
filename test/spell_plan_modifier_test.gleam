@@ -293,7 +293,7 @@ pub fn type_11_is_read_for_the_rows_that_include_the_caster_only_test() -> Nil {
   })
   assert effect_kind.is_row_read(effect_type: 17, target_flags: 2)
     as "every other type read is read for any aim"
-  assert !effect_kind.is_row_read(effect_type: 14, target_flags: 1)
+  assert !effect_kind.is_row_read(effect_type: 90, target_flags: 1)
     as "an unread type stays unread"
 }
 
