@@ -21,6 +21,7 @@ import gleam/option.{Some}
 import gleam/result
 import gleam/string
 import owned_test
+import server_proxy_support
 import spell_tables
 import unitest
 
@@ -242,7 +243,7 @@ pub fn the_seed_row_builds_a_tree_on_the_clients_tables_test() -> Nil {
   let plans = spell_plan.plans(tables)
   let assert Ok(proxies) = server_proxy.select(rows: [seed()], tables:, plans:)
     as "the client's Pulse Blast and 42148 plan with the seed row"
-  assert server_proxy.holds(proxies:, base: 26_468)
+  assert server_proxy_support.changes(proxies:, plans:, base: 26_468)
   let host = striking_proxy(server_proxy.planted_into(plans:, proxies:))
   let assert Ok(planted) = list.last(host.spell.proxies)
     as "the damage spell holds the server's Proxy last"

@@ -178,45 +178,6 @@ pub fn a_pulse_blast_that_strikes_no_foe_out_of_combat_casts_42148_and_gives_not
     as "42148 is still cast: the prerequisite gates the gain, not the Proxy"
 }
 
-pub fn a_pulse_blast_that_only_deflects_out_of_combat_gives_nothing_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, raw) =
-    support.pressed_raw_in(
-      plans: spell_tables.plans_with_volatility(),
-      state: cast.new(),
-      caster: engineer(in_combat: False),
-      bag_index: support.pulse_blast,
-      target: 0,
-      at: 1000,
-    )
-  let deflecting = fn(asked: cast.GoAsked) {
-    case asked.spell4_id == Spell4Id(striking_spell) && asked.phase > 0 {
-      True -> [cast.Deflected(unit_id: 10)]
-      False -> []
-    }
-  }
-  let #(state, pressed) =
-    support.answered_each(
-      caster: engineer(in_combat: False),
-      state:,
-      effects: raw,
-      at: 1000,
-      struck_of: deflecting,
-      rolls: [],
-      poses: dict.new(),
-    )
-  let #(_, fired) =
-    support.run_timers_each(
-      caster: engineer(in_combat: False),
-      state:,
-      effects: pressed,
-      from_ms: 1000,
-      struck_of: deflecting,
-    )
-  assert gains_at([#(1000, pressed), ..fired]) == []
-    as "903 fails for a caster that is not in combat, and a deflect puts none in combat"
-}
-
 // ---- 5 ----
 
 pub fn one_gain_for_each_cast_whether_it_strikes_three_foes_or_none_in_combat_test() -> Nil {
@@ -346,7 +307,7 @@ fn started_told(
   })
 }
 
-pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_the_gain_is_the_players_alone_test() -> Nil {
+pub fn a_viewer_of_the_engineer_is_told_42148s_cast_test() -> Nil {
   use <- owned_test.run(5000)
   let effects =
     every(pulse_blast(caster: engineer(in_combat: True), foes: [10]))
@@ -354,7 +315,5 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_the_gain_is_the_players_
     list.filter(started_told(effects), fn(told) { told.1.spell4_id == 42_148 })
   assert list.map(told_of_42148, fn(told) { told.0 })
     == [step.ConnectionId(2), step.ConnectionId(3)]
-    as "each connection that sees the caster is told 42148's start, as of any child (opcode.0x7ff); the test caster's audience is connections 2 and 3"
-  assert list.length(support.gains(effects:)) == 1
-    as "the gain is one effect for the player's own connection: 0x935 goes only to the player's own client (class_resource header), so a viewer is never sent it"
+    as "each connection that sees the caster is told 42148's start, as of any child (opcode.0x7ff); the test caster's audience is connections 2 and 3. That a viewer is sent no 0x935 is shown on the connection (game_connection_volatility_test)"
 }

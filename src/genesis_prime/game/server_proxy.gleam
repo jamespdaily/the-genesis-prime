@@ -22,12 +22,19 @@
 ////   into the first spell the row's go starts at once on the caster with no gate, which is
 ////   the spell that strikes when the go is a Proxy to its damage spell (Pulse Blast's
 ////   95881 to 37302, whose damage is in its goes 1 to 3: `Spell4Effects` 79090, 79092,
-////   79093), and goes with that spell's last go. A creature has then answered the strikes
-////   of the earlier goes, and its threat, which it sends after its first answer, has
-////   reached the player (genesis_prime/world_map/creature `struck`: one sender, one
-////   order); a spell with a single go, or a hit that has not turned the combat flag on,
-////   is read as in combat by the cast rule (genesis_prime/game/cast `Live.after_hit`).
-////   A go that starts no such spell takes the Proxy itself.
+////   79093), and goes with that spell's last go. A creature that the first go struck has
+////   then sent its answer and its `Threatened`, and sent its later answers after both
+////   (genesis_prime/world_map/creature `struck`: one process, one order; the strike rounds
+////   of a cast close in phase order), so prerequisite 903 (in combat) passes at the
+////   opener. A go that starts no such spell takes the Proxy itself.
+//// - **The opener's gap.** The opener gives 0 when the first strike's threat has not
+////   reached the player by the last go's round: the go's selection finds no creature that
+////   threatened (the creature left the area between go 1 and go 3), the rounds close at
+////   their 1 s deadline before a late `Threatened`, or the creature died before the last
+////   go. A host with a single go gives 0 at the opener, as the answer closes its round
+////   before the threat. Turning the flag on from a `Landed` answer, or the answer carrying
+////   the threat, would close the gap; it belongs to the step that reads the hit rows'
+////   phases.
 //// - **A row is refused** when its base has no plan (it is not a class's level-1
 ////   ability or innate), when its phase is not a go of that plan
 ////   (`spell_plan.go_times_ms`), or when its spell has no row or its tree cannot be
@@ -53,7 +60,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option
+import gleam/option.{None}
 import gleam/result
 
 /// One row of the server_proxy table as the load reads it: the ability's Spell4Base,
@@ -95,16 +102,6 @@ fn describe(not_planned not_planned: NotPlanned) -> String {
 /// The server's Proxies of every ability, by Spell4Base id, as the load selected them.
 pub opaque type ServerProxies {
   ServerProxies(by_base: Dict(Int, List(Planned)))
-}
-
-/// No Proxies: the plans stay as the client's tables give them.
-pub fn none() -> ServerProxies {
-  ServerProxies(by_base: dict.new())
-}
-
-/// Whether a base has a Proxy of the server's.
-pub fn holds(proxies proxies: ServerProxies, base base: Int) -> Bool {
-  dict.has_key(proxies.by_base, base)
 }
 
 /// The Proxies of the rows, planned from the client's tables, or every refusal: a row
@@ -164,7 +161,7 @@ fn planned_of(
     return: Error(NotAGo(phase: row.phase, goes:)),
   )
   let chain = case host_of(ability:, phase: row.phase) {
-    Ok(#(_, host)) -> [ability.spell4_id.value, host.spell.spell4_id.value]
+    Ok(host) -> [ability.spell4_id.value, host.spell.spell4_id.value]
     Error(Nil) -> [ability.spell4_id.value]
   }
   spell_plan.child_of(tables:, spell4_id: Spell4Id(row.spell4_id), chain:)
@@ -173,17 +170,11 @@ fn planned_of(
 }
 
 /// The Proxy of the ability that starts, at its go `phase`, a spell on the caster at once
-/// with no gate, with its place among the ability's Proxies: the first of them is the
-/// spell that strikes.
-fn host_of(
-  ability ability: Spell,
-  phase phase: Int,
-) -> Result(#(Int, Proxy), Nil) {
-  list.index_map(ability.proxies, fn(proxy, index) { #(index, proxy) })
-  |> list.find(fn(entry) {
-    let proxy = entry.1
+/// with no gate: the first of them is the spell that strikes.
+fn host_of(ability ability: Spell, phase phase: Int) -> Result(Proxy, Nil) {
+  spell_plan.proxies_in_phase(spell: ability, phase:, spent: None)
+  |> list.find(fn(proxy) {
     proxy.delay_ms == 0
-    && spell_plan.has_flag(flags: proxy.phase_flags, bit: bit_of(phase:))
     && case proxy.target, proxy.condition {
       spell_plan.OnCaster, spell_plan.Always -> True
       spell_plan.OnCaster, spell_plan.GatedOnCaster(..)
@@ -199,11 +190,6 @@ fn host_of(
 /// release) has go 0.
 fn last_go_of(spell spell: Spell) -> Int {
   int.max(0, list.length(spell_plan.go_times_ms(spell:)) - 1)
-}
-
-/// The Spell4Effects phase flag of a go: bit n is phase n.
-fn bit_of(phase phase: Int) -> Int {
-  int.bitwise_shift_left(1, phase)
 }
 
 /// The plans with each ability's Proxies of the server's added to its tree: after the
@@ -225,11 +211,11 @@ pub fn planted_into(
 /// at that spell's last go, or else into the ability at its own go.
 fn planted_in(ability ability: Spell, planned planned: Planned) -> Spell {
   case host_of(ability:, phase: planned.phase) {
-    Ok(#(host_index, _)) ->
+    Ok(host) ->
       spell_plan.Spell(
         ..ability,
-        proxies: list.index_map(ability.proxies, fn(proxy, index) {
-          case index == host_index {
+        proxies: list.map(ability.proxies, fn(proxy) {
+          case proxy.effect_id == host.effect_id {
             True ->
               spell_plan.Proxy(
                 ..proxy,
@@ -238,7 +224,9 @@ fn planted_in(ability ability: Spell, planned planned: Planned) -> Spell {
                   proxies: list.append(proxy.spell.proxies, [
                     spell_plan.server_proxy(
                       child: planned.spell,
-                      phase_flags: bit_of(phase: last_go_of(spell: proxy.spell)),
+                      phase_flags: spell_plan.phase_bit(phase: last_go_of(
+                        spell: proxy.spell,
+                      )),
                     ),
                   ]),
                 ),
@@ -253,7 +241,7 @@ fn planted_in(ability ability: Spell, planned planned: Planned) -> Spell {
         proxies: list.append(ability.proxies, [
           spell_plan.server_proxy(
             child: planned.spell,
-            phase_flags: bit_of(phase: planned.phase),
+            phase_flags: spell_plan.phase_bit(phase: planned.phase),
           ),
         ]),
       )

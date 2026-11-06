@@ -31,9 +31,11 @@
 ////   start full, the Warrior's, Engineer's and Esper's empty
 ////   (`LocalizedEnum.CRB_StalkerResource`).
 //// - **The maximum and the refill** are content rows the client lacks
-////   (`UnitProperty2.ResourceMax_0`), each with its source (migration 0011): the
-////   load refuses a playable class with no maximum, and the Medic, Stalker and
-////   Spellslinger with a row of their refill missing (`select`).
+////   (`UnitProperty2.ResourceMax_0`), each with its source (migrations 0011, 0012 and
+////   0018): the load refuses a playable class with no maximum, and a class with a row of
+////   its refill missing (`select`): the Warrior's drain, the Engineer's and Esper's empty
+////   wait, the Medic's refill after combat, and the Stalker's and Spellslinger's
+////   regeneration.
 //// - **The value** is held as the 32-bit float the client holds, so a check here and
 ////   the client's own read the same number.
 //// - **Paying** is at the cast's first go, which is the accept's own step for a spell

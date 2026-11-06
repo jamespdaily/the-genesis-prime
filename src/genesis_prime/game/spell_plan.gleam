@@ -3386,7 +3386,7 @@ fn in_phase(
   spent spent: Option(Int),
 ) -> List(row) {
   list.filter(rows, fn(row) {
-    has_flag(flags: phase_flags(row), bit: int.bitwise_shift_left(1, phase))
+    has_flag(flags: phase_flags(row), bit: phase_bit(phase:))
     && spend.applies(tag: tag(row), spent:)
   })
 }
@@ -3981,6 +3981,11 @@ fn comparison_of(eval eval: Int) -> Comparison {
     4 | 9 -> AtMost
     other -> NeverPasses(eval: other)
   }
+}
+
+/// The Spell4Effects phase flag of a go: bit n is phase n.
+pub fn phase_bit(phase phase: Int) -> Int {
+  int.bitwise_shift_left(1, phase)
 }
 
 /// Whether the flags hold the bit.

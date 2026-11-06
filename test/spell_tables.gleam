@@ -2799,7 +2799,8 @@ pub fn plans_with_stealth() -> spell_plan.Plans {
 /// holds its damage as the client's rows do (`table_rows -- Spell4Effects spellId=37302`,
 /// `-- Spell4Telegraph spell4Id=37302`, `-- TelegraphDamage 213 217 218`): three Physical
 /// effects aimed at the area in its goes 1, 2 and 3 (phaseFlags 2, 4 and 8), each with a
-/// cone of its own.
+/// cone of its own. Pulse Blast 42276 holds no CasterPersistence, as the client's row has
+/// none (`rows` plants 390 as test data).
 pub fn rows_with_volatility() -> Rows {
   let rows = rows()
   Rows(
@@ -2822,6 +2823,12 @@ pub fn rows_with_volatility() -> Rows {
               row:,
               name: "spell4AoeTargetConstraintsId",
               cell: Integer(area_id(37_302)),
+            )
+          [Integer(42_276), ..] ->
+            with_column(
+              row:,
+              name: "prerequisiteIdCasterPersistence",
+              cell: Integer(0),
             )
           other -> other
         }

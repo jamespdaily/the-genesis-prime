@@ -549,7 +549,7 @@ fn phase_of(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> PhaseStrike {
-  let bit = int.bitwise_shift_left(1, phase)
+  let bit = spell_plan.phase_bit(phase:)
   let firing =
     list.filter(spell.damage, fn(effect) {
       spell_plan.has_flag(flags: effect.phase_flags, bit:)

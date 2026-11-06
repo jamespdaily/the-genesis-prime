@@ -22,7 +22,7 @@ import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/class_resource
-import genesis_prime/game/server_proxy
+import genesis_prime/game/spell_plan
 import genesis_prime/migration
 import genesis_prime/readiness
 import genesis_prime/table/id.{ClassId}
@@ -39,6 +39,7 @@ import mailbox_support
 import owned_key
 import owned_test
 import pog
+import server_proxy_support
 import unitest
 
 /// How the load asks in these tests: attempts of 500 ms, 50 ms between them, and
@@ -371,8 +372,9 @@ pub fn the_load_puts_the_servers_proxies_in_a_term_test() -> Nil {
   let database = database_support.new_database(on: database_support.shared())
   let #(loaded, key) = load(database:)
   assert loaded == Ok(Nil)
-  assert server_proxy.holds(
+  assert server_proxy_support.changes(
     proxies: content_server_proxy.proxies(key:),
+    plans: spell_plan.plans(character_tables.content_tables()),
     base: 26_468,
   )
     as "migration 0018's seed row, Pulse Blast's go 1 casting 42148, is selected over the planted trees and kept"

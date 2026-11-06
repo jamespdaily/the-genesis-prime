@@ -75,6 +75,7 @@ import gleam/result
 import map_support
 import message_support
 import place_support
+import server_proxy_support
 import spawn_support
 
 /// What the tests' game connections are made with: a realm id and a
@@ -94,7 +95,7 @@ pub fn settings() -> game_connection.Settings {
     ask_deadline_ms: 4000,
     rate: support.roomy(),
     class_resources: class_resource_support.classes(),
-    server_proxies: server_proxy.none(),
+    server_proxies: server_proxy_support.none(),
     numbers: spawn_support.numbers,
   )
 }
@@ -1500,7 +1501,7 @@ pub fn entered_with_spell_trees(
   entered_with_server_proxies(
     class_id:,
     ability:,
-    proxies: server_proxy.none(),
+    proxies: server_proxy_support.none(),
     tables: character_tables.shared_with_spell_trees(),
   )
 }
