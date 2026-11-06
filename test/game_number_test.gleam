@@ -4,9 +4,12 @@
 ////   seeded rows, aggro_range 10 units (no client range, `creature.ai_data`),
 ////   leash_range 55 units (the objective circle's radius, WorldLocation2 51739),
 ////   aggro_threat 1 threat (any threat above 0 shows hostile, `0x14045a950`) and
-////   chase_stop_fraction 0.5; a missing, unknown or mis-united name, a leash range
-////   not above the aggro range and an aggro range not below sight each stop the
-////   start, named.
+////   chase_stop_fraction 0.5 (strictly between 0 and 1: at 0 the creature stops at
+////   the edge of its reach, at 1 it runs onto the target); a missing or unknown
+////   name, a leash range not above the aggro range and an aggro range not below
+////   sight each stop the start, named, and the table refuses a threat of 0 or
+////   below, a fraction outside (0, 1) and a name with a unit that is not its own
+////   or that no one listed (migration 0014).
 //// - The shared pattern of the content tables (`genesis_prime/content`): every
 ////   refusal is collected and named by its table, its row and its rule.
 //// - Sight is 1024 units (`genesis_prime/world_map/sight.range`, unit.range).
@@ -52,21 +55,15 @@ pub fn the_seeded_rows_select_into_the_numbers_a_fight_reads_test() -> Nil {
     ))
 }
 
-pub fn a_missing_an_unknown_and_a_mis_united_number_are_each_refused_by_name_test() -> Nil {
+pub fn a_missing_and_an_unknown_number_are_each_refused_by_name_test() -> Nil {
   use <- owned_test.run(5000)
   let rows =
     seeded()
     |> list.filter(fn(row) { row.name != "aggro_threat" })
-    |> list.map(fn(row) {
-      case row.name {
-        "leash_range" -> Row(..row, unit: "ms")
-        _ -> row
-      }
-    })
     |> list.append([Row(name: "evade_range", value: 30.0, unit: "units")])
   let assert Error(refusals) = game_number.select(rows:, sight_range:)
-  assert names_of(refusals) == ["leash_range", "evade_range", "aggro_threat"]
-    as "one bad row shows its neighbours: the leash range in ms, the number the server knows no use of, and the missing threat"
+  assert names_of(refusals) == ["evade_range", "aggro_threat"]
+    as "one bad row shows its neighbours: the number the server knows no use of, and the missing threat"
 }
 
 pub fn a_leash_range_not_above_the_aggro_range_is_refused_test() -> Nil {
@@ -81,58 +78,6 @@ pub fn a_leash_range_not_above_the_aggro_range_is_refused_test() -> Nil {
   let assert Error(refusals) = game_number.select(rows:, sight_range:)
   assert names_of(refusals) == ["leash_range"]
     as "a creature at home with a player in its ring would leash at once"
-}
-
-pub fn an_aggro_threat_not_above_0_is_refused_test() -> Nil {
-  use <- owned_test.run(5000)
-  let rows =
-    list.map(seeded(), fn(row) {
-      case row.name {
-        "aggro_threat" -> Row(..row, value: 0.0)
-        _ -> row
-      }
-    })
-  let assert Error([refused]) = game_number.select(rows:, sight_range:)
-  assert refused
-    == Refusal(
-      table: "game_number",
-      row: RowName("aggro_threat"),
-      rule: "an aggro threat of 0.0 is not above 0",
-    )
-    as "an entry of 0 threat is no foe the client shows hostile (0x14045a950)"
-}
-
-pub fn a_chase_stop_fraction_of_0_or_1_is_refused_test() -> Nil {
-  use <- owned_test.run(5000)
-  let with_fraction = fn(fraction) {
-    list.map(seeded(), fn(row) {
-      case row.name {
-        "chase_stop_fraction" -> Row(..row, value: fraction)
-        _ -> row
-      }
-    })
-  }
-  assert game_number.select(rows: with_fraction(0.0), sight_range:)
-    == Error([
-      Refusal(
-        table: "game_number",
-        row: RowName("chase_stop_fraction"),
-        rule: "a chase stop fraction of 0.0 is not between 0 and 1",
-      ),
-    ])
-    as "at 0 the creature stops at the edge of its reach"
-  assert game_number.select(rows: with_fraction(1.0), sight_range:)
-    == Error([
-      Refusal(
-        table: "game_number",
-        row: RowName("chase_stop_fraction"),
-        rule: "a chase stop fraction of 1.0 is not between 0 and 1",
-      ),
-    ])
-    as "at 1 it runs onto the target's own place"
-  let assert Ok(_) = game_number.select(rows: with_fraction(0.99), sight_range:)
-    as "a fraction inside (0, 1) is taken"
-  Nil
 }
 
 pub fn an_aggro_range_not_below_sight_is_refused_test() -> Nil {
@@ -169,6 +114,18 @@ pub fn a_migrated_database_holds_the_four_seeded_numbers_test() -> Nil {
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
+  // A name is one insert into the reference table, so the rows below name
+  // numbers the table lists, and each bad row breaks one rule only.
+  let assert Ok(_) =
+    database_support.psql(
+      with: database_support.settings(),
+      database:,
+      arguments: [
+        "-c",
+        "insert into game_number_name (name, unit) values ('evade', 'units'), ('flee', 'units')",
+      ],
+    )
+    as "the names were listed"
   list.each(
     [
       #(
@@ -210,6 +167,30 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
       #(
         "insert into game_number (name, value, unit, source, reason) values ('aggro_range', 1, 'units', 'server_choice', 'x')",
         "game_number_pkey",
+      ),
+      #(
+        "insert into game_number (name, value, unit, source, reason) values ('evade', 1, 'ms', 'server_choice', 'x')",
+        "game_number_name_has_its_unit",
+      ),
+      #(
+        "insert into game_number (name, value, unit, source, reason) values ('nobody_listed', 1, 'units', 'server_choice', 'x')",
+        "game_number_name_has_its_unit",
+      ),
+      #(
+        "update game_number set value = 0 where name = 'aggro_threat'",
+        "game_number_aggro_threat_is_positive",
+      ),
+      #(
+        "update game_number set value = -1 where name = 'aggro_threat'",
+        "game_number_aggro_threat_is_positive",
+      ),
+      #(
+        "update game_number set value = 0 where name = 'chase_stop_fraction'",
+        "game_number_chase_stop_fraction_is_between_0_and_1",
+      ),
+      #(
+        "update game_number set value = 1 where name = 'chase_stop_fraction'",
+        "game_number_chase_stop_fraction_is_between_0_and_1",
       ),
     ],
     fn(bad) {

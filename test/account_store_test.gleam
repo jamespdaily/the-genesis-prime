@@ -27,21 +27,24 @@ import asking_rule
 import character_support
 import database_support
 import genesis_prime/add_character/sql as add_character_sql
+import genesis_prime/game/character_name
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, Account, AccountFound, AccountId, Character, CharacterCreated,
   CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
-  CreateCharacter, Created, DeleteCharacter, Deleted, FindAccount, ForLogin,
-  ForMove, ForSelect, ForWorld, HealthRefused, ListCharacters, Listed,
-  LoadCharacter, Login, LookEntry, Move, NameStands, NameTaken, NeedsRename,
-  NewCharacter, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
-  NotRenamable, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
-  RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
+  CreateCharacter, CreateForNoSuchAccount, Created, DeleteCharacter, Deleted,
+  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
+  ListCharacters, Listed, LoadCharacter, Login, LookEntry, Move, NameBreaksRule,
+  NameStands, NameTaken, NeedsRename, NewCharacter, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
+  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
+  Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import gleam/bool
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
@@ -170,7 +173,7 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
     })
   let client = ask_support.connect(server)
   // A transaction in another connection locks the table, so the query waits.
-  let release = lock_table(store.pool)
+  let lock = lock_table(store.pool)
   ask_support.command(client, asking_rule.store_command, 1, wait_ms: 300)
   let assert Ok(#(worker_pid, monitored)) =
     process.receive(workers, within: ask_support.event_wait_ms)
@@ -183,9 +186,21 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
     as "the query was still waiting for the lock at the deadline"
   assert ask_support.ended(worker_ended) == ask_support.shutdown()
     as "the asker ended the worker with exit shutdown, the lock still held"
-  process.send(release, Nil)
+  release_lock(lock)
   ask_support.stop(server)
   stop(store)
+}
+
+/// The pool is stopped the moment the lock is released, as a test's end does;
+/// the locking transaction's commit must already be done, or it reads a closed
+/// socket (`query_timeout`) and its crash ends the test.
+pub fn a_lock_released_and_the_pool_stopped_at_once_does_not_crash_the_test_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(list.repeat(Nil, 20), fn(_) {
+    let store = start_store(pool_size: 2)
+    release_lock(lock_table(store.pool))
+    stop(store)
+  })
 }
 
 pub fn a_worker_that_crashes_gives_ended_before_answer_and_the_store_goes_on_serving_test() -> Nil {
@@ -281,7 +296,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Zed",
+      name: "Zed Qu",
       class_id: 4,
       path: 2,
     )
@@ -289,7 +304,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Abe",
+      name: "Abe Qu",
       class_id: 12,
       path: 0,
     )
@@ -297,7 +312,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
     character_support.insert(
       pool: store.pool,
       account: other,
-      name: "Cal",
+      name: "Cal Qu",
       class_id: 1,
       path: 1,
     )
@@ -306,7 +321,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
       Listed([
         Character(
           character_id: CharacterId(first),
-          name: "Zed",
+          name: "Zed Qu",
           gender: 1,
           race_id: RaceId(3),
           class_id: ClassId(4),
@@ -326,7 +341,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
         ),
         Character(
           character_id: CharacterId(second),
-          name: "Abe",
+          name: "Abe Qu",
           gender: 1,
           race_id: RaceId(3),
           class_id: ClassId(12),
@@ -388,48 +403,137 @@ pub fn with_the_database_pool_not_running_a_list_of_characters_gives_unavailable
   stop(store)
 }
 
-pub fn the_table_refuses_a_class_outside_1_to_20_a_path_outside_0_to_3_and_a_name_outside_1_to_32_characters_test() -> Nil {
+pub fn the_table_refuses_a_class_outside_1_to_20_and_a_path_outside_0_to_3_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let account = insert_account(store, "login-1")
   let refused = fn(name, class_id, path) {
-    case
-      character_support.try_insert(
-        pool: store.pool,
-        account:,
-        name:,
-        class_id:,
-        path:,
-      )
-    {
-      Ok(_) -> "accepted"
-      Error(character_support.Refused(constraint:)) -> constraint
-      Error(character_support.NotAConstraint) ->
-        "a failure that is no constraint"
-    }
+    refusal_of(store:, account:, name:, class_id:, path:)
   }
-  assert refused("Eve", 0, 0) == "character_class_shown_by_the_client"
+  assert refused("Eve Qu", 0, 0) == "character_class_shown_by_the_client"
     as "the client shows ClassIcon_<class> for the classes 1 to 20, so class 0 has no icon"
-  assert refused("Eve", 21, 0) == "character_class_shown_by_the_client"
+  assert refused("Eve Qu", 21, 0) == "character_class_shown_by_the_client"
     as "and class 21 has none"
-  assert refused("Eve", 1, 4) == "character_path_shown_by_the_client"
+  assert refused("Eve Qu", 1, 4) == "character_path_shown_by_the_client"
     as "the client shows PathIcon_<path + 1> up to 4, so path 4 has no icon"
-  assert refused("Eve", 1, -1) == "character_path_shown_by_the_client"
+  assert refused("Eve Qu", 1, -1) == "character_path_shown_by_the_client"
   // The edges the client does show are taken, each with a name of its own: a
   // name is unique ignoring case (migrations 0003 and 0005).
-  assert refused("Eve", 1, 0) == "accepted"
-  assert refused("Eva", 20, 3) == "accepted"
-  // 0x1400201f0: the client copies at most 32 characters of a name (0x21 wide
-  // characters with the zero), and a name of none has nothing to show.
-  assert refused("", 1, 0) == "character_name_shown_by_the_client"
-    as "no name is no name the list can show"
-  assert refused(string.repeat("a", 33), 1, 0)
-    == "character_name_shown_by_the_client"
-    as "the client keeps 32 characters, so a 33rd is one it would cut"
-  assert refused(string.repeat("a", 32), 1, 0) == "accepted"
-    as "32 characters is the most the client keeps"
-  assert refused(string.repeat("é", 32), 1, 0) == "accepted"
-    as "the 32 are characters, not bytes"
+  assert refused("Eve Qu", 1, 0) == "accepted"
+  assert refused("Eva Qu", 20, 3) == "accepted"
+  stop(store)
+}
+
+/// What the table said of a character row with the name, class and path:
+/// "accepted", the name of the constraint that refused it, or a note that the
+/// failure was no constraint.
+fn refusal_of(
+  store store: Store,
+  account account: AccountId,
+  name name: String,
+  class_id class_id: Int,
+  path path: Int,
+) -> String {
+  case
+    character_support.try_insert(
+      pool: store.pool,
+      account:,
+      name:,
+      class_id:,
+      path:,
+    )
+  {
+    Ok(_) -> "accepted"
+    Error(character_support.Refused(constraint:)) -> constraint
+    Error(character_support.NotAConstraint) -> "a failure that is no constraint"
+  }
+}
+
+pub fn the_table_refuses_a_name_that_breaks_text_rule_0_by_character_name_follows_rule_0_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let refused = fn(name) {
+    refusal_of(store:, account:, name:, class_id: 1, path: 0)
+  }
+  // vector.0x1403e1170.names: the emulator ran CheckTextRule 0x1403e1170 on each
+  // text, which is letters and exactly one space, not first or last, 5 to 30
+  // characters in all.
+  list.each(
+    [
+      #("Ab C", "4 characters"),
+      #("Abcd", "4 characters and no space"),
+      #("Abc", "too short and no space"),
+      #("Abcde", "5 characters and no space"),
+      #("Ab  Cd", "two spaces"),
+      #("Ab Cd Ef", "two spaces"),
+      #(" Abc Def", "a space first"),
+      #("Abc Def ", "a space last"),
+      #("Ab1 Cd", "a digit"),
+      #("Ab-Cd Ef", "a hyphen"),
+      #("Ab_Cd Ef", "an underscore"),
+      #("Ab'c Def", "an apostrophe"),
+      #("Ab.c Def", "a full stop"),
+      #("Abcå Def", "a letter the client does not list (å is not in its list)"),
+      #("AbЖ Cd", "a Cyrillic letter"),
+      #("Ab\nCd", "a line break"),
+      #("Ab Cd\n", "a line break at the end"),
+      #("", "no text"),
+      #(
+        string.repeat("A", 15) <> " " <> string.repeat("B", 15),
+        "31 characters",
+      ),
+      #(
+        string.repeat("é", 16) <> " " <> string.repeat("é", 15),
+        "32 characters, 63 bytes: the table counts characters",
+      ),
+    ],
+    fn(refused_name) {
+      let #(name, why) = refused_name
+      assert refused(name) == "character_name_follows_rule_0"
+        as { "vector.0x1403e1170.names refuses " <> why }
+    },
+  )
+  // A name at the edges and with each letter the client lists is taken, each
+  // with a name of its own (a name is unique ignoring case).
+  assert refused("Ab Cd") == "accepted" as "5 characters, the fewest"
+  assert refused(string.repeat("A", 14) <> " " <> string.repeat("B", 15))
+    == "accepted"
+    as "30 characters, the most"
+  assert refused(string.repeat("É", 15) <> " " <> string.repeat("é", 14))
+    == "accepted"
+    as "0x1403e1170: the bound counts characters, and 30 of these are 59 bytes"
+  let letters =
+    list.append(
+      string.to_graphemes(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+      ),
+      string.to_graphemes(character_name.listed_letters),
+    )
+  assert list.length(letters) == 52 + 53
+    as "A to Z, a to z and the client's 53 listed letters (IsTextRuleLetter 0x1403e09d0)"
+  list.each(letters, fn(letter) {
+    // The letter is first on one side of the space and last on the other, so
+    // the pattern takes it on each side. A capital and its small letter fold to
+    // one name, so each pair's two names differ in a letter beside it.
+    let case_mark = case string.lowercase(letter) == letter {
+      True -> "l"
+      False -> "u"
+    }
+    assert refused(case_mark <> letter <> "x " <> "zw" <> letter) == "accepted"
+      as { "a letter the client lists is accepted: " <> letter }
+  })
+  // Every other character of Latin-1 and Latin Extended-A and -B is refused: the
+  // client's list is these 53 letters and no more.
+  list.each(character_support.numbers(0x24F), fn(number) {
+    use <- bool.guard(number < 0x80, Nil)
+    let assert Ok(codepoint) = string.utf_codepoint(number)
+    let character = string.from_utf_codepoints([codepoint])
+    use <- bool.guard(list.contains(letters, character), Nil)
+    assert refused("Ab" <> character <> " Cd")
+      == "character_name_follows_rule_0"
+      as { "a character the client does not list is refused: " <> character }
+  })
   stop(store)
 }
 
@@ -443,7 +547,7 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
     add_character_sql.insert_character(
       store.pool,
       "login-1",
-      "Dev",
+      "Dev Qu",
       1,
       1,
       1,
@@ -458,7 +562,7 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
       Listed([
         Character(
           character_id: CharacterId(character_id),
-          name: "Dev",
+          name: "Dev Qu",
           gender: 1,
           race_id: RaceId(1),
           class_id: ClassId(1),
@@ -477,7 +581,7 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
     add_character_sql.insert_character(
       store.pool,
       "nobody",
-      "Dev",
+      "Dev Qu",
       1,
       1,
       1,
@@ -532,7 +636,7 @@ pub fn a_delete_removes_the_accounts_character_and_the_list_omits_it_test() -> N
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Zed",
+      name: "Zed Qu",
       class_id: 4,
       path: 2,
     )
@@ -540,14 +644,14 @@ pub fn a_delete_removes_the_accounts_character_and_the_list_omits_it_test() -> N
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Abe",
+      name: "Abe Qu",
       class_id: 4,
       path: 2,
     )
   assert deleted(store:, account: account, character_id: zed)
     == CharacterDeleted
     as "lua.CharacterSelection.OnCharacterDeleteResult: the character is removed and the result is 0"
-  assert names_listed(store, account) == ["Abe"]
+  assert names_listed(store, account) == ["Abe Qu"]
     as "the next list omits it and keeps the account's other character"
   assert deleted(store:, account: account, character_id: zed) == NoSuchCharacter
     as "a character deleted is gone, so a repeated delete finds none"
@@ -563,7 +667,7 @@ pub fn a_delete_of_another_accounts_character_or_of_none_is_no_such_character_an
     character_support.insert(
       pool: store.pool,
       account: other,
-      name: "Cal",
+      name: "Cal Qu",
       class_id: 1,
       path: 1,
     )
@@ -572,7 +676,7 @@ pub fn a_delete_of_another_accounts_character_or_of_none_is_no_such_character_an
     as "CLAUDE.md: a modified client could send any id, so the statement is scoped by the account's id"
   assert deleted(store:, account: account, character_id: account_id_nobody_has)
     == NoSuchCharacter
-  assert names_listed(store, other) == ["Cal"]
+  assert names_listed(store, other) == ["Cal Qu"]
     as "the other account's character is untouched"
   stop(store)
 }
@@ -585,13 +689,13 @@ pub fn a_rename_of_a_marked_character_stores_the_name_clears_the_mark_and_answer
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Zed",
+      name: "Zed Qu",
       class_id: 4,
       path: 2,
     )
   assert naming_of(store, account) == [NameStands]
     as "a character the table inserts needs no rename"
-  character_support.mark_for_rename(pool: store.pool, name: "Zed")
+  character_support.mark_for_rename(pool: store.pool, name: "Zed Qu")
   assert naming_of(store, account) == [NeedsRename]
     as "opcode.0x117 carries the rename bit the client offers a rename by (lua.CharacterSelection.OnSelectCharacter)"
   assert renamed(store:, account: account, character_id: zed, name: "Ab Cd")
@@ -625,7 +729,7 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_new_name_taken_and_changes_nothin
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Zed",
+      name: "Zed Qu",
       class_id: 4,
       path: 2,
     )
@@ -633,15 +737,15 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_new_name_taken_and_changes_nothin
     character_support.insert(
       pool: store.pool,
       account: other,
-      name: "Abe",
+      name: "Abe Qu",
       class_id: 4,
       path: 2,
     )
-  character_support.mark_for_rename(pool: store.pool, name: "Zed")
-  assert renamed(store:, account: account, character_id: zed, name: "aBE")
+  character_support.mark_for_rename(pool: store.pool, name: "Zed Qu")
+  assert renamed(store:, account: account, character_id: zed, name: "aBE qU")
     == NewNameTaken
     as "lua.CharacterSelection.OnCharacterRenameResult: 16; a name is unique ignoring case, across accounts, held by the unique index on the lower-cased name (migrations 0003 and 0005)"
-  assert names_listed(store, account) == ["Zed"]
+  assert names_listed(store, account) == ["Zed Qu"]
   assert naming_of(store, account) == [NeedsRename]
     as "the refused rename left the mark, so the player can pick another name"
   assert renamed(store:, account: account, character_id: zed, name: "Ab Cd")
@@ -659,7 +763,7 @@ pub fn a_rename_of_an_unmarked_or_another_accounts_character_or_of_none_is_not_r
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Zed",
+      name: "Zed Qu",
       class_id: 4,
       path: 2,
     )
@@ -667,11 +771,11 @@ pub fn a_rename_of_an_unmarked_or_another_accounts_character_or_of_none_is_not_r
     character_support.insert(
       pool: store.pool,
       account: other,
-      name: "Abe",
+      name: "Abe Qu",
       class_id: 4,
       path: 2,
     )
-  character_support.mark_for_rename(pool: store.pool, name: "Abe")
+  character_support.mark_for_rename(pool: store.pool, name: "Abe Qu")
   assert renamed(store:, account: account, character_id: mine, name: "Ab Cd")
     == NotRenamable
     as "lua.CharacterSelection.OnSelectCharacter: the client offers a rename only for a marked character"
@@ -685,8 +789,8 @@ pub fn a_rename_of_an_unmarked_or_another_accounts_character_or_of_none_is_not_r
       name: "Ab Cd",
     )
     == NotRenamable
-  assert names_listed(store, account) == ["Zed"]
-  assert names_listed(store, other) == ["Abe"]
+  assert names_listed(store, account) == ["Zed Qu"]
+  assert names_listed(store, other) == ["Abe Qu"]
   assert naming_of(store, other) == [NeedsRename]
     as "the other account's character keeps its mark"
   stop(store)
@@ -845,15 +949,15 @@ pub fn the_table_refuses_a_character_with_no_world_that_has_a_zone_or_a_position
     |> result.replace(Nil)
   }
   let refused = Error("character_no_world_has_no_zone_or_position")
-  assert insert("Zone", 0, 7, 0.0, 0.0, 0.0) == refused
+  assert insert("Zone Ab", 0, 7, 0.0, 0.0, 0.0) == refused
     as "world 0 is no World row (opcode.0xad), so a zone of it means nothing"
-  assert insert("Xx", 0, 0, 1.5, 0.0, 0.0) == refused
-  assert insert("Yy", 0, 0, 0.0, 2.5, 0.0) == refused
-  assert insert("Zz", 0, 0, 0.0, 0.0, 3.5) == refused
+  assert insert("Xxx Ab", 0, 0, 1.5, 0.0, 0.0) == refused
+  assert insert("Yyy Ab", 0, 0, 0.0, 2.5, 0.0) == refused
+  assert insert("Zzz Ab", 0, 0, 0.0, 0.0, 3.5) == refused
     as "nor does any one coordinate"
-  assert insert("None", 0, 0, 0.0, 0.0, 0.0) == Ok(Nil)
+  assert insert("None Ab", 0, 0, 0.0, 0.0, 0.0) == Ok(Nil)
     as "a character with no place is world 0, zone 0 and position 0"
-  assert insert("Placed", 1387, 1100, 1.5, 2.5, 3.5) == Ok(Nil)
+  assert insert("Placed Ab", 1387, 1100, 1.5, 2.5, 3.5) == Ok(Nil)
     as "a character with a world keeps its zone and position"
   stop(store)
 }
@@ -867,7 +971,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Zed",
+      name: "Zed Qu",
       class_id: 4,
       path: 2,
     )
@@ -875,7 +979,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
     character_support.insert(
       pool: store.pool,
       account: other,
-      name: "Abe",
+      name: "Abe Qu",
       class_id: 4,
       path: 2,
     )
@@ -883,7 +987,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
     == ForWorld(CharacterLoaded(
       Character(
         character_id: CharacterId(mine),
-        name: "Zed",
+        name: "Zed Qu",
         gender: 1,
         race_id: RaceId(3),
         class_id: ClassId(4),
@@ -1178,7 +1282,7 @@ fn one_character(store store: Store) -> #(AccountId, Int) {
     character_support.insert(
       pool: store.pool,
       account:,
-      name: "Zed",
+      name: "Zed Qu",
       class_id: 4,
       path: 2,
     )
@@ -1548,16 +1652,16 @@ pub fn a_save_with_a_health_the_table_refuses_is_answered_health_refused_and_sav
   stop(store)
 }
 
-pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_and_the_store_goes_on_test() -> Nil {
+pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_with_the_constraints_name_and_the_store_goes_on_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   execute(
     store.pool,
-    "alter table character add constraint test_refuses_far_x check (position_x < 1000)",
+    "alter table character add constraint test_refuses_far_x check (position_x < 1000), add constraint test_refuses_far_y check (position_y < 1000)",
   )
-  let far =
+  let far_x =
     place_facing(x: 2000.0, y: 0.0, z: 0.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
   assert save(
       store:,
@@ -1565,10 +1669,22 @@ pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_and_the
       character_id: id,
       epoch: 1,
       sequence: 1,
-      place: far,
+      place: far_x,
     )
-    == ForMove(PlaceRefused)
-    as "a constraint the database holds refused the place: the asker is told, and the worker does not crash"
+    == ForMove(PlaceRefused(constraint: "test_refuses_far_x"))
+    as "a constraint the database holds refused the place: the asker is told which, and the worker does not crash"
+  let far_y =
+    place_facing(x: 0.0, y: 2000.0, z: 0.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: far_y,
+    )
+    == ForMove(PlaceRefused(constraint: "test_refuses_far_y"))
+    as "another constraint is named as itself"
   assert character_support.place_row(pool: store.pool, character_id: id).position
     == #(1.5, 2.5, 3.5)
   let near =
@@ -1582,7 +1698,144 @@ pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_and_the
       place: near,
     )
     == ForMove(PlaceSaved)
-    as "the store answers the next save, and the refused one took no sequence"
+    as "the store answers the next save, and the refused ones took no sequence"
+  stop(store)
+}
+
+pub fn a_create_with_a_name_that_breaks_rule_0_is_name_breaks_rule_and_nothing_is_stored_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  list.each(["Abcd", "Ab  Cd", "Ab1 Cd", " Ab Cd", ""], fn(name) {
+    assert create(store:, account:, name:, slots: 2) == NameBreaksRule
+      as "lua.Character.OnCreateCharacterFailed: 10, the name's length; CheckTextRule 0x1403e1170 refuses it, and the table's check is the one copy of the rule"
+  })
+  assert ask(store, Select(ListCharacters(account))) == ForSelect(Listed([]))
+    as "nothing was stored for a refused create"
+  let assert CharacterCreated(_) =
+    create(store:, account:, name: "Ab Cd", slots: 2)
+    as "the store answers the next create, so the refusal did not crash its worker"
+  stop(store)
+}
+
+pub fn a_rename_to_a_name_that_breaks_rule_0_is_new_name_breaks_rule_and_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let zed =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  character_support.mark_for_rename(pool: store.pool, name: "Zed Qu")
+  list.each(["Abcd", "Ab  Cd", "Ab1 Cd", " Ab Cd"], fn(name) {
+    assert renamed(store:, account: account, character_id: zed, name:)
+      == NewNameBreaksRule
+      as "lua.CharacterSelection.OnCharacterRenameResult: 15, the name's length; CheckTextRule 0x1403e1170 refuses it, and the table's check is the one copy of the rule"
+  })
+  assert names_listed(store, account) == ["Zed Qu"]
+  assert naming_of(store, account) == [NeedsRename]
+    as "the refused rename left the mark, so the player can pick another name"
+  assert renamed(store:, account: account, character_id: zed, name: "Ab Cd")
+    == CharacterRenamed("Ab Cd")
+    as "and another name is taken"
+  stop(store)
+}
+
+pub fn a_create_for_an_account_that_does_not_exist_is_create_for_no_such_account_and_the_store_goes_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  assert create(
+      store:,
+      account: AccountId(account_id_nobody_has),
+      name: "Ab Cd",
+      slots: 2,
+    )
+    == CreateForNoSuchAccount
+    as "the lock of the account's row finds no row, so no character is inserted to break the foreign key"
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(_) =
+    create(store:, account:, name: "Ab Cd", slots: 2)
+    as "the store answers the next create: the worker did not crash"
+  stop(store)
+}
+
+pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  assert worker.mapped_constraints
+    == [
+      "character_name_unique",
+      "character_name_follows_rule_0",
+      "character_health_is_positive",
+    ]
+    as "the three refusals the worker answers for: a name taken, a name that breaks rule 0, and a health of 0 or below"
+  list.each(worker.mapped_constraints, fn(name) {
+    let assert Ok(returned) =
+      pog.query(
+        "select count(*)::int from (select conname::text as name from pg_constraint union all select c.relname::text from pg_class c where c.relkind = 'i') as names where name = $1",
+      )
+      |> pog.parameter(pog.text(name))
+      |> pog.returning(decode.at([0], decode.int))
+      |> pog.execute(store.pool)
+      as "the catalogue was read"
+    assert returned.rows == [1]
+      as { "the schema has one constraint or unique index named " <> name }
+  })
+  stop(store)
+}
+
+pub fn the_schema_names_its_constraints_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let named = fn(table, constraint) {
+    let assert Ok(returned) =
+      pog.query(
+        "select count(*)::int from pg_constraint where conrelid = $1::text::regclass and conname = $2",
+      )
+      |> pog.parameter(pog.text(table))
+      |> pog.parameter(pog.text(constraint))
+      |> pog.returning(decode.at([0], decode.int))
+      |> pog.execute(store.pool)
+      as "the catalogue was read"
+    assert returned.rows == [1]
+      as { table <> " has the constraint " <> constraint }
+  }
+  named("account", "account_login_name_is_unique")
+  named("account", "account_game_account_id_is_unique")
+  named("account", "account_login_name_is_not_empty")
+  named("account", "account_srp_salt_is_not_empty")
+  named("account", "account_srp_verifier_is_not_empty")
+  named("character", "character_session_epoch_is_not_negative")
+  named("character", "character_account_is_an_account")
+  named("spawn_stat", "spawn_stat_spawn_is_a_spawn")
+  stop(store)
+}
+
+pub fn the_table_refuses_an_empty_login_name_and_a_second_account_with_one_by_their_names_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let attempt = fn(login_name) {
+    case
+      pog.query(
+        "insert into account (login_name, srp_salt, srp_verifier, game_account_id) values ($1, '\\x01', '\\x02', gen_random_uuid())",
+      )
+      |> pog.parameter(pog.text(login_name))
+      |> pog.execute(store.pool)
+    {
+      Ok(_) -> "accepted"
+      Error(pog.ConstraintViolated(constraint:, ..)) -> constraint
+      Error(error) -> worker.describe_query_error(error)
+    }
+  }
+  assert attempt("") == "account_login_name_is_not_empty"
+    as "an account with no login name has none to log in by"
+  assert attempt("login-1") == "accepted"
+  assert attempt("login-1") == "account_login_name_is_unique"
+    as "a login name is held by one account"
   stop(store)
 }
 
@@ -1616,7 +1869,7 @@ pub fn a_save_with_the_database_pool_not_running_is_unavailable_test() -> Nil {
 fn is_created(answer: store.CreateAnswer) -> Bool {
   case answer {
     CharacterCreated(..) -> True
-    NameTaken | NoFreeSlot -> False
+    NameTaken | NameBreaksRule | NoFreeSlot | CreateForNoSuchAccount -> False
   }
 }
 
@@ -1744,10 +1997,16 @@ fn execute(pool: pog.Connection, sql: String) -> Nil {
   Nil
 }
 
-/// Locks the account table in a transaction of another connection, until the
-/// returned subject is sent to. Returns once the lock is held.
-fn lock_table(pool: pog.Connection) -> process.Subject(Nil) {
+/// A lock on the account table held by a transaction of another connection.
+type Lock {
+  Lock(release: process.Subject(Nil), committed: process.Subject(Nil))
+}
+
+/// Locks the account table in a transaction of another connection, until
+/// `release_lock`. Returns once the lock is held.
+fn lock_table(pool: pog.Connection) -> Lock {
   let locked = process.new_subject()
+  let committed = process.new_subject()
   let _locker =
     process.spawn(fn() {
       let release = process.new_subject()
@@ -1763,10 +2022,20 @@ fn lock_table(pool: pog.Connection) -> process.Subject(Nil) {
           Ok(Nil)
         })
         as "the locking transaction ran"
-      Nil
+      process.send(committed, Nil)
     })
   let assert Ok(release) =
     process.receive(locked, within: ask_support.event_wait_ms)
     as "the table is locked"
-  release
+  Lock(release:, committed:)
+}
+
+/// Releases the lock and returns once its transaction has committed, so the
+/// pool the test stops next has no commit still on the wire.
+fn release_lock(lock: Lock) -> Nil {
+  process.send(lock.release, Nil)
+  let assert Ok(Nil) =
+    process.receive(lock.committed, within: ask_support.event_wait_ms)
+    as "the locking transaction committed"
+  Nil
 }

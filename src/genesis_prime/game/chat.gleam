@@ -123,10 +123,16 @@
 ////   client's text never makes (0, 3, 7 or 8, `0x140402720`) is refused with
 ////   result 17: the client's reader takes it, but its own code does not send it.
 //// - **The target's name is folded** with `string.lowercase`, the fold of the
-////   database's unique index (migration 0005); a name that is not a full name by
-////   rule 0 gets 0x1d9 at once with no watch (`opcode.0x1d4`,
-////   genesis_prime/game/character_name). A realm name that is neither empty nor
-////   the server's own, compared without case, gets 0x1d9 (`opcode.0x1d4`).
+////   database's unique index (migration 0005), and watched like any name: a name
+////   that is no full name by rule 0 is held by no character (the table refuses
+////   it, `character_name_follows_rule_0`), so its watch ends with 0x1d9
+////   (`opcode.0x1d4`, genesis_prime/game/character_name). A target whose fold is an
+////   online character's name reaches that character, as that name's own spelling
+////   does: the registry holds the fold, so U+212A KELVIN SIGN, which folds to
+////   "k", reaches the player named with a "K". A name that is not valid UTF-16
+////   cannot be folded, so it gets 0x1d9 at once with no watch. A realm name
+////   that is neither empty nor the server's own, compared without case, gets 0x1d9
+////   (`opcode.0x1d4`).
 //// - **A whisper to oneself** writes 0x1c8 and 0x1c2 in the speaker's own step,
 ////   with no watch: a server choice.
 //// - **An empty whisper** gets 0x1d9 when the target is not found, and otherwise
@@ -500,24 +506,31 @@ fn whisper_sent(
       ])
     },
   )
-  use <- bool.guard(
-    when: sent.account == 1
-      || !is_a_valid_name(sent.target_name)
-      || !is_the_realm(named: sent.target_realm_name, own: realm_name),
-    return: #(chat, [Send(whisper_failed_frame(sent:))]),
-  )
-  let line =
-    Line(
-      channel_type: chat_channel.Whisper,
-      channel_id: 0,
-      text: sent.text,
-      formats: sent.formats,
-    )
-  let folded_target = character_name.fold(name: text_of(sent.target_name))
-  case folded_target == folded(chat) {
-    True -> #(chat, whisper_to_oneself(chat:, sent:, line:))
+  let target = case
+    sent.account == 1
+    || !is_the_realm(named: sent.target_realm_name, own: realm_name)
+  {
+    True -> Error(Nil)
     False ->
-      whisper_to_another(chat:, sent:, line:, folded_target:, connection:)
+      bit_stream.from_utf16(sent.target_name) |> result.replace_error(Nil)
+  }
+  case target {
+    Error(Nil) -> #(chat, [Send(whisper_failed_frame(sent:))])
+    Ok(target_name) -> {
+      let line =
+        Line(
+          channel_type: chat_channel.Whisper,
+          channel_id: 0,
+          text: sent.text,
+          formats: sent.formats,
+        )
+      let folded_target = character_name.fold(name: target_name)
+      case folded_target == folded(chat) {
+        True -> #(chat, whisper_to_oneself(chat:, sent:, line:))
+        False ->
+          whisper_to_another(chat:, sent:, line:, folded_target:, connection:)
+      }
+    }
   }
 }
 
@@ -580,21 +593,6 @@ fn whisper_to_oneself(
       )),
     ]
   }
-}
-
-/// Whether the name a whisper names is a full name by rule 0: a text that is not
-/// valid UTF-16 is no character's name (`character_name`).
-fn is_a_valid_name(units: List(Int)) -> Bool {
-  bit_stream.from_utf16(units)
-  |> result.map(character_name.is_valid)
-  |> result.unwrap(or: False)
-}
-
-/// The text of units that are valid UTF-16, which `is_a_valid_name` has shown.
-fn text_of(units: List(Int)) -> String {
-  let assert Ok(text) = bit_stream.from_utf16(units)
-    as "a name that passed rule 0 is valid UTF-16"
-  text
 }
 
 /// Whether the realm name a whisper names is this realm: empty, or the server's

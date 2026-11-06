@@ -55,20 +55,21 @@
 ////   "no characters found" (lua.CharacterSelection.OnLoadFromCharacter.list).
 //// - **Create.** A request is checked (genesis_prime/game/character_creation)
 ////   and then the store makes the character; 0x00DC answers with the result:
-////   CreateOk with the id, name unavailable, account full, or the result a
-////   refusal maps to, with 0 for the character and for the field the client
-////   never reads (opcode.0xdc, opcode.0xdc.field_2). A request that fails the
-////   checks is refused at once and the store is not asked.
+////   CreateOk with the id, name length for a name the table's rule 0 refuses,
+////   name unavailable, account full, or the result a refusal maps to, with 0
+////   for the character and for the field the client never reads (opcode.0xdc,
+////   opcode.0xdc.field_2). A request that fails the checks is refused at once
+////   and the store is not asked.
 //// - **Delete.** The store deletes the character only when the account has
 ////   it; 0x00E6 answers with result 0 and a value of 0, which the client reads
 ////   only for a guild leader's count, or with result 1 and a warning for a
 ////   character the account does not have. The client removes the character
 ////   from its own list and rebuilds it, so no 0x0117 follows
 ////   (opcode.0xe6, opcode.0xe6.value, lua.CharacterSelection.OnCharacterDeleteResult).
-//// - **Rename.** A name that fails rule 0 is refused at once with 0x014B result
-////   15; else the store renames the character when the account has it and it is
-////   marked, and clears the mark. 0x014B answers 18 with the id and the stored
-////   name, 16 for a name another character has in any case, and 13 with a
+//// - **Rename.** The store renames the character when the account has it and it
+////   is marked, and clears the mark. 0x014B answers 18 with the id and the stored
+////   name, 15 for a name that fails rule 0, which the table refuses, 16 for a name
+////   another character has in any case, and 13 with a
 ////   warning for a character that is not the account's or not marked
 ////   (opcode.0x14b, lua.CharacterSelection.OnCharacterRenameResult). A
 ////   character's entry carries the rename bit the client offers a rename by
@@ -99,7 +100,6 @@ import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
-import genesis_prime/game/character_name
 import genesis_prime/game/start_place
 import genesis_prime/game_settings
 import genesis_prime/message/account_entitlements.{AccountEntitlements}
@@ -293,8 +293,10 @@ pub fn started(account_id account_id: AccountId) -> #(State, List(Effect)) {
 }
 
 /// The client's create request, read for this account: refused at once with
-/// 0x00DC when it fails the checks, else the store is asked to make the
-/// character, for an account with `character_slots` slots.
+/// 0x00DC when it fails the checks against the client's tables, else the store
+/// is asked to make the character, for an account with `character_slots` slots.
+/// The name's rule 0 is the table's, so a name that breaks it is the store's to
+/// refuse.
 pub fn create_requested(
   account_id account_id: AccountId,
   request request: CreateCharacter,
@@ -309,21 +311,13 @@ pub fn create_requested(
         character_slots:,
       )),
     ])
-    Error(refusal) -> #(
-      Resting,
-      list.append(
-        case character_creation.warning(refusal) {
-          Some(text) -> [Warn(text:)]
-          None -> []
-        },
-        [
-          create_result(
-            character_id: 0,
-            result: character_creation.result_of(refusal),
-          ),
-        ],
+    Error(refusal) -> #(Resting, [
+      Warn(text: character_creation.describe(refusal)),
+      create_result(
+        character_id: 0,
+        result: character_creation.result_of(refusal),
       ),
-    )
+    ])
   }
 }
 
@@ -360,24 +354,13 @@ pub fn delete_requested(
   ])
 }
 
-/// The client's request to rename a character, read for this account: refused
-/// at once with 0x014B when the name fails the client's text rule 0 (which the
-/// real client checks first, so no warning), else the store is asked to rename
-/// the character.
+/// The client's request to rename a character, read for this account: the store
+/// is asked to rename the character. The name's rule 0 is the table's, so a name
+/// that breaks it is the store's to refuse.
 pub fn rename_requested(
   account_id account_id: AccountId,
   request request: RenameCharacter,
 ) -> #(State, List(Effect)) {
-  use <- bool.guard(
-    !character_name.is_valid(request.name),
-    #(Resting, [
-      rename_result(
-        character_id: request.character_id,
-        name: request.name,
-        result: rename_result.NameLength,
-      ),
-    ]),
-  )
   #(Renaming(character_id: request.character_id, name: request.name), [
     Ask(request: store.RenameCharacter(
       account_id:,
@@ -437,8 +420,14 @@ pub fn created(
           created_with(character_id:, result: create_result.CreateOk)
         store.NameTaken ->
           created_with(character_id: 0, result: create_result.NameUnavailable)
+        store.NameBreaksRule ->
+          created_with(character_id: 0, result: create_result.NameLength)
         store.NoFreeSlot ->
           created_with(character_id: 0, result: create_result.AccountFull)
+        store.CreateForNoSuchAccount -> #(Resting, [
+          Warn(text: "a create for an account the store has no row for"),
+          create_result(character_id: 0, result: create_result.CreateFailed),
+        ])
       })
     Resting | Listing(..) | Deleting(..) | Renaming(..) -> Error(Nil)
   }
@@ -495,6 +484,7 @@ pub fn renamed(
           rename_result.RenameOk,
         )
         store.NewNameTaken -> #([], asked, rename_result.NameUnavailable)
+        store.NewNameBreaksRule -> #([], asked, rename_result.NameLength)
         store.NotRenamable -> #(
           [
             Warn(
