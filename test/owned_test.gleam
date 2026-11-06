@@ -36,7 +36,7 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
     process.new_selector()
     |> process.select(reply)
     |> process.select_specific_monitor(monitor, fn(_down) { Crashed })
-    |> receive_within(timeout_ms, worker, 0)
+    |> receive_within(timeout_ms:, worker:, extended_ms: 0)
   // The body is ended first, so it puts nothing more, and then its terms are
   // counted and erased, whatever ended it: its return, a crash or the deadline.
   process.kill(worker)
@@ -66,17 +66,22 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
 /// deadline, so a test is not failed for the gate's wait. `extended_ms` is what
 /// has been added so far.
 fn receive_within(
-  selector: process.Selector(Outcome(a)),
-  timeout_ms: Int,
-  worker: process.Pid,
-  extended_ms: Int,
+  selector selector: process.Selector(Outcome(a)),
+  timeout_ms timeout_ms: Int,
+  worker worker: process.Pid,
+  extended_ms extended_ms: Int,
 ) -> Result(Outcome(a), Nil) {
   case process.selector_receive(selector, within: timeout_ms) {
     Ok(outcome) -> Ok(outcome)
     Error(Nil) ->
       case owned_key.waited_ms(of: worker) - extended_ms {
         more if more > 0 ->
-          receive_within(selector, more, worker, extended_ms + more)
+          receive_within(
+            selector:,
+            timeout_ms: more,
+            worker:,
+            extended_ms: extended_ms + more,
+          )
         _ -> Error(Nil)
       }
   }
