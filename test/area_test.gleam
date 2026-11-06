@@ -89,7 +89,10 @@ pub fn kick_strikes_a_unit_inside_its_drawn_cone_and_not_one_outside_it_test() -
   assert by(10.1, 0.0) == []
     as "10.1 m is past the cone's 7 m by more than the Beast's hit radius of 3"
   assert by(5.0, 49.0) == [1] as "the cone is 100 degrees, 50 each side"
-  assert by(5.0, 51.0) == [] as "the cone's angle does not grow"
+  assert by(5.0, 51.0) == [1]
+    as "1 degree past the cone's side is 0.09 m from the side line, within the Beast's hit radius of 3"
+  assert by(5.0, 90.0) == []
+    as "40 degrees past the side is 3.2 m from the side line, past the Beast's hit radius of 3"
   assert by(0.5, 0.0) == [1]
     as "the cone starts at 1 m, but the Beast's hit radius of 3 reaches back to it"
 }
@@ -250,9 +253,11 @@ pub fn crush_strikes_one_unit_test() -> Nil {
 
 pub fn turning_half_a_turn_moves_kicks_strike_to_the_beast_behind_test() -> Nil {
   use <- owned_test.run(5000)
+  // 5 m away, so that the Beast behind stands further than its hit radius of 3 from
+  // the cone's apex.
   let candidates = [
-    beast(1, at(distance: 3.0, degrees: 0.0, yaw: 0.0)),
-    beast(2, at(distance: 3.0, degrees: 180.0, yaw: 0.0)),
+    beast(1, at(distance: 5.0, degrees: 0.0, yaw: 0.0)),
+    beast(2, at(distance: 5.0, degrees: 180.0, yaw: 0.0)),
   ]
   let facing = fn(yaw, inside) {
     area.select(
@@ -335,6 +340,39 @@ pub fn a_unit_just_outside_a_shape_by_less_than_its_hit_radius_is_struck_and_by_
   assert !struck_at(cone, 0.0, -13.1)
   assert struck_at(cone, 0.0, -1.1) as "a cone from 4 m reaches back to 1 m"
   assert !struck_at(cone, 0.0, -0.9)
+}
+
+pub fn a_unit_just_outside_a_cones_side_by_less_than_its_hit_radius_is_struck_and_by_more_is_not_test() -> Nil {
+  use <- owned_test.run(5000)
+  let row =
+    Row(min_range: 0.0, max_range: 30.0, degrees: 360.0, target_count: 5)
+  let cone =
+    InsideShapes([
+      Placement(
+        shape: Cone(inner: 1.0, outer: 10.0, degrees: 90.0),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+    ])
+  let struck_at = fn(distance, degrees) {
+    struck(
+      candidates: [beast(1, at(distance:, degrees:, yaw: 0.0))],
+      row:,
+      inside: cone,
+    )
+    == [1]
+  }
+  // The cone's sides lie 45 degrees off the facing. A unit 5 m out and d degrees
+  // past a side is 5 x sin(d) m from the side line: 35.4 degrees is 2.9 m, 38.4
+  // degrees 3.1 m, each side of the Beast's hit radius of 3.
+  assert struck_at(5.0, 80.4) as "2.9 m from the side line"
+  assert !struck_at(5.0, 83.4) as "3.1 m from the side line"
+  assert struck_at(5.0, -80.4)
+  assert !struck_at(5.0, -83.4)
+  assert struck_at(2.9, 180.0)
+    as "behind the apex, past a quarter turn beyond the side, the gap is the distance to the apex: 2.9 m"
+  assert !struck_at(3.1, 180.0)
 }
 
 pub fn a_unit_straight_ahead_of_any_facing_is_at_bearing_zero_test() -> Nil {

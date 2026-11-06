@@ -39,7 +39,6 @@ import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
 import genesis_prime/table/prerequisite
-import genesis_prime/table/race
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -96,8 +95,6 @@ import gleam/erlang/reference.{type Reference}
 /// - Prerequisite: the gate of a spell's resource gains (genesis_prime/game/spell_plan)
 ///   and the caster prerequisite of a creature attack's damage effects, which the
 ///   content load reads (genesis_prime/world_map/creature_attack).
-/// - Race: a player's hit radius, which an area counts as the body of a unit it
-///   strikes (genesis_prime/game/hit_radius).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -130,7 +127,6 @@ pub fn entries() -> List(store.Entry) {
     item_slot.entry(),
     path_mission.entry(),
     prerequisite.entry(),
-    race.entry(),
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),

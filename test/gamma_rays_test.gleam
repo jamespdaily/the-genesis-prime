@@ -128,7 +128,7 @@ pub fn gamma_rays_on_the_recordings_creature_strikes_it_with_each_of_its_three_b
       picture:,
     )
     == [[164], [164], [164]]
-    as "the creature is 1.528 m from the centre strip's line, 0.328 m from one side strip's and 2.728 m from the other's, all within 0.45 + 2.8 m (Spell4.29874.area, unit.hit_radius)"
+    as "the creature is 1.528 m from the centre strip's line, 0.328 m from one side strip's and 2.728 m from the other's, all within 0.45 + 2.8 m, 2.8 being Creature2DisplayInfo 26120's hitRadius (Spell4.29874.area, unit.hit_radius)"
 }
 
 pub fn gamma_rays_on_the_recordings_creature_strikes_it_with_each_of_its_three_beams_in_casts_3_and_4_test() -> Nil {
@@ -140,7 +140,7 @@ pub fn gamma_rays_on_the_recordings_creature_strikes_it_with_each_of_its_three_b
       picture:,
     )
     == [[164], [164], [164]]
-    as "the creature is 0.005 m aside, 1.2 m from each side strip's line, within 0.45 + 2.8 m"
+    as "the creature is 0.005 m aside, 1.2 m from each side strip's line, within 0.45 + 2.8 m (2.8: Creature2DisplayInfo 26120's hitRadius)"
 }
 
 pub fn a_creature_beside_one_side_beam_takes_that_beam_and_not_the_centre_spell_through_the_drawn_copy_of_it_test() -> Nil {
@@ -156,5 +156,5 @@ pub fn a_creature_beside_one_side_beam_takes_that_beam_and_not_the_centre_spell_
       picture:,
     )
     == [[], [165], []]
-    as "Spell4.29874.area: 2.8 m from 2451's strip is within 0.45 + 2.8 m, 4 m from the centre's and 5.2 m from 2452's is not; the centre spell's drawn copies 311 and 312 do not strike (TelegraphDamage.telegraphDamageFlags.0x20.rows)"
+    as "Spell4.29874.area: 2.8 m from 2451's strip is within 0.45 + 2.8 m (2.8: Creature2DisplayInfo 26120's hitRadius), 4 m from the centre's and 5.2 m from 2452's is not; the centre spell's drawn copies 311 and 312 do not strike (TelegraphDamage.telegraphDamageFlags.0x20.rows)"
 }

@@ -31,8 +31,6 @@
 ////   to 168, 174, 177, 189, 219, 1441 and 1442 with their parents, the
 ////   Faction2Relationship rows among them (684, 691, 726, 944 and 2943 to 2948),
 ////   no Creature2OutfitInfo row, and the World rows the tests' maps run in.
-//// - Race rows 1, 2, 3, 4, 5, 12, 13 and 16, the eight player races, with their hitRadius
-////   (`race_file`).
 //// - Prerequisite: the creature attack's rows (`prerequisite_rows`) and the rows
 ////   the planted spells' gains name (`spell_tables.gain_prerequisite_rows`) and
 ////   their Proxies' caster apply columns (`spell_tables.proxy_prerequisite_rows`).
@@ -72,7 +70,6 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
 import genesis_prime/table/prerequisite
-import genesis_prime/table/race
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/unit_property2
@@ -582,23 +579,6 @@ fn chat_channel_file() -> #(String, BitArray) {
   )
 }
 
-/// The planted Race file: the eight player races, each with the client's hitRadius
-/// 1.2 (`unit.hit_radius`).
-fn race_file() -> #(String, BitArray) {
-  planted_table.file(
-    race.schema,
-    list.map(player_races, fn(id) {
-      planted_table.row(race.schema, [
-        #("ID", Integer(id)),
-        #("hitRadius", Float(1.2)),
-      ])
-    }),
-  )
-}
-
-/// The ids of the eight player races in the Race table.
-pub const player_races = [1, 2, 3, 4, 5, 12, 13, 16]
-
 fn world_zone_file(zones: List(#(Int, Int))) -> #(String, BitArray) {
   planted_table.file(
     world_zone.schema,
@@ -652,7 +632,6 @@ fn files_with_looks(
     ),
     world_zone_file(world_zones()),
     chat_channel_file(),
-    race_file(),
     planted_table.file(
       game_formula.schema,
       list.flatten([

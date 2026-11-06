@@ -20,7 +20,9 @@
 //// - **The area row** gives a unit's distance between `min_range` and `max_range`
 ////   and an angle off the facing of at most half `degrees`; 360 is all round. The
 ////   angle is the whole arc (`0x1405ecf20`). A spell with hit shapes uses the row's
-////   range only: its shapes say where it reaches.
+////   range only: its shapes say where it reaches. The range stays on the distance
+////   between the two centres: it is a selection constraint, not a shape, so a unit's
+////   radius does not count in it.
 ////   (`Spell4.58591.area`: Kick's cone is narrower than its 180 degrees.)
 //// - **A hit shape** is a telegraph's damage shape placed on the caster: its
 ////   offsets, x and z negated before the turn so a positive z is ahead
@@ -31,7 +33,8 @@
 ////   (`0x14054d170` case 4, `0x14054da10`). Every shape grows, whatever flag 0x200
 ////   says: that flag only stops the drawn shape growing by the viewer's radius, and
 ////   the client tests no unit against a shape (`unit.hit_radius`); that a struck
-////   unit's body counts is the server's choice. A cone's angle is not grown. The
+////   unit's body counts is the server's choice. A cone's sides grow too: a unit is
+////   inside when its distance to the nearer side line is at most its radius. The
 ////   direction of a row's turn is not read; every shape built so far has none.
 //// - **Distance and order** are horizontal, from centre to centre; the vertical
 ////   range is -1 for every row and the shapes lie on the ground
@@ -217,8 +220,32 @@ fn in_shape(
     Cone(inner:, outer:, degrees:) ->
       reach >=. float.max(0.0, inner -. grown)
       && reach <=. outer +. grown
-      && float.absolute_value(bearing(from: origin, target: candidate.at, yaw:))
-      <=. maths.degrees_to_radians(degrees /. 2.0) +. 0.000001
+      && distance_outside_sides(
+        angle: bearing(from: origin, target: candidate.at, yaw:),
+        reach:,
+        half_angle: maths.degrees_to_radians(degrees /. 2.0),
+      )
+      <=. grown
+  }
+}
+
+/// How far a unit at distance `reach` from a cone's apex and `angle` off its facing
+/// lies from the cone's nearer side line: 0 inside the angle, `reach` times the sine
+/// of the angle past a side while that is under a quarter turn, and `reach` (the
+/// distance to the apex) beyond it.
+fn distance_outside_sides(
+  angle angle: Float,
+  reach reach: Float,
+  half_angle half_angle: Float,
+) -> Float {
+  let beyond = float.absolute_value(angle) -. half_angle
+  case beyond <=. 0.000001 {
+    True -> 0.0
+    False ->
+      case beyond <. maths.pi() /. 2.0 {
+        True -> reach *. maths.sin(beyond)
+        False -> reach
+      }
   }
 }
 
