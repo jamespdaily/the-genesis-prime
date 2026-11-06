@@ -10050,3 +10050,69 @@ statement = "An item visual in message 0x933 with display 0 empties its slot: th
 proof = "HandleMessage0933 0x1403da490 (saved C, hash 8eb22adb6de47956, line 59): SetUnitItemVisual 0x140466d20 (unit, entry word 0 the slot, word 1 the display, the colour). It passes slot, display and colour to the costume's slot 0x50, SetCostumeSlotDisplay 0x1401e0240: ItemDisplay has no row 0, so the row is null, and SetCostumeSlotVisual 0x1401e0060 empties any slot but 1, 2 and 6 (their records). SetUnitItemVisual's own checks compare the slot with ItemSlot ids (0x14 WeaponPrimary, 1 ArmorChest), and ItemVisualSwap maps its bag index to an ItemSlot id through 0x140c39050 before calling it, so the slot is an ItemSlot id. ItemVisualSwap's save and restore: Spell4Effects.effectType.76; the empty visual GetCostumeSlotVisual 0x1401e0030 gives is 16 zero bytes. `gleam run -m genesis_prime/table_rows -- ItemSlot 1 2 6 64`."
 grade = "fairly sure"
 gap = "Read from the decompile; not run with a live client. Whether the model is redrawn at once after the costume's change marks (costume 0xc60, 0x108) is not read; a live 0x933 with display 0 for slot 64 after one with 4807 settles it."
+
+["lua.event.UI_XPChanged"]
+statement = "The UI event UI_XPChanged is raised only where the client works out the player's level progress (UpdatePlayerExperienceProgress), and that runs only for message 0x25e (the player's own state) and message 0x1ac (experience gained). A server that sends neither never raises it, so the XPBar addon's OnXpChanged never redraws the XP bar; the bar is drawn once at load only when the player unit already exists, else on CharacterCreated."
+proof = "Raise sites: every call or jmp to 0x1400ea3e0 (the one caller of DispatchUiEvent 0x1400ea400 in the reference index) with a lea of the event's name before it, and every lea of the name that reaches one; the name 'UI_XPChanged' has one: 0x1403c70aa in 0x1403c6d80 (saved C 0x1403c6d80.c, hash 8eb22adb6de47956, line 97). call_paths.py 0x1403c6d80 --up: its only callers are 0x1403b5f80 (call at 0x1403b60b8), which HandleWorldMessage 0x1403ec6a0 calls for 0x25e at 0x1403ec923, and 0x1403c8760 (call at 0x1403c879c), which it calls for 0x1ac at 0x1403eca14 (client_trace.py 0x1ac and 0x25e, dispatched). The walk is the scratch script event_map3.py (sites, then callers over the reference index to the dispatchers' case blocks). The waiting addon: UI/XPBar/XPBar.lua RegisterEventHandler('UI_XPChanged', 'OnXpChanged'); OnDocumentReady calls RedrawAll only when GameLib.GetPlayerUnit() is not nil."
+grade = "fairly sure"
+gap = "A call through a register or a virtual call into 0x1403c6d80 or its two callers would not show in the reference index. Whether the player unit exists when XPBar's form loads in a live entry is not seen."
+
+["lua.event.ExperienceGained"]
+statement = "The UI event ExperienceGained (experience amount, source kind and the rest) is raised only by the handler of message 0x1ac (experience gained). A server that never sends 0x1ac never raises it: the FloatText addon shows no experience number after a kill or a quest."
+proof = "Two raise sites, both in 0x1403c8760 (saved C hash 8eb22adb6de47956, lines 252 and 359: FUN_1400ea3e0(ui, 'ExperienceGained', 'iUSii', ...)): 0x1403c8c23 and 0x1403c8f11. call_paths.py 0x1403c8760 --up: its one caller is HandleWorldMessage 0x1403ec6a0 at 0x1403eca14, the case client_trace.py 0x1ac lists for 0x1ac. Walk by the scratch script event_map3.py. Addon: UI/FloatText RegisterEventHandler('ExperienceGained', 'OnExperienceGained')."
+grade = "fairly sure"
+gap = "A call through a register or a virtual call into 0x1403c8760 would not show in the reference index."
+
+["lua.event.StoreLinksRefresh"]
+statement = "The UI events StoreLinksRefresh and StoreCatalogReady are raised only while the client handles message 0x987, a message with an empty body. A server that never sends 0x987 never raises them, so the store-link buttons of the 23 addons that wait for StoreLinksRefresh (Inventory, Death, Character, Costumes, BankViewer, Mail and others) keep their first state."
+proof = "Raise sites of 'StoreLinksRefresh' (0x14044dc13, 0x14044dc4a) and 'StoreCatalogReady' (0x14044dbee, 0x14044dca4) are all in 0x14044dbd0 (saved C hash 8eb22adb6de47956, lines 9 to 30). call_paths.py 0x14044dbd0 --up: called by HandleMessages0987To0991 0x14044b630 at 0x14044b6b7, inside the 0x987 case (0x14044b695 call 0x14044cff0 to 0x14044b6cf ret, read in llvm-objdump); and by 0x14044e0d0, which no code calls and whose address 0x14044da90 takes (lea at 0x14044db04), a routine the same 0x987 case calls at 0x14044b6a5. 0x987 is registered with record size 1 and the reader ReadEmptyBody (client_trace.py 0x987). Walk by the scratch script event_map3.py. Addons: grep of the UI Lua for RegisterEventHandler(\"StoreLinksRefresh\" (23 addon folders)."
+grade = "fairly sure"
+gap = "What 0x14044cff0, 0x14044d450 and 0x14044da90 need from the store messages 0x988 to 0x991 before 0x987 is not read, so whether an empty 0x987 alone gives valid links is unknown. When 0x14044da90 hands 0x14044e0d0 on, and who calls it, is not read."
+
+["lua.event.CharacterEntitlementUpdate"]
+statement = "The UI event CharacterEntitlementUpdate is raised only through the client's per-character entitlement update, which runs for message 0x918 and inside the handler of message 0x25e (the player's own state). A server that sends neither never raises it; 14 addons (Character, Costumes, BankViewer, AccountInventory and others) never refresh what entitlements unlock after their first draw."
+proof = "One raise site: 0x1404314d7 in 0x1404313e0 (saved C hash 8eb22adb6de47956, line 39). call_paths.py 0x1404313e0 --up: its one caller 0x1403d1e40 (calls at 0x1403d1ff5 and 0x1403d20c4) is called by HandleWorldMessage 0x1403ec6a0 at 0x1403f1023, the 0x918 case (client_trace.py 0x918, record 8 bytes, reader 0x14007a220), and by 0x1403b5f80 at 0x1403b62da, the handler of 0x25e. Walk by the scratch script event_map3.py. Addons: grep of the UI Lua for RegisterEventHandler(\"CharacterEntitlementUpdate\" (14 folders)."
+grade = "fairly sure"
+gap = "The 0x918 record (8 bytes) is not read, nor which entitlement ids 0x25e passes. A call through a register into 0x1403d1e40 would not show."
+
+["lua.event.PlayerEquippedItemChanged"]
+statement = "The UI event PlayerEquippedItemChanged is raised only by the handlers of messages 0x568 and 0x569. A server that sends neither never raises it after an equip: Character and Costumes keep their old equipment map, Inventory, RuneSets and the combat log do not refresh, and ActionBarFrame never starts its first-weapon tutorial."
+proof = "Raise sites 0x1403b7453 and 0x1403b748b in 0x1403b7300 (saved C hash 13906f95d07bb7f9, lines 43 and 47), 0x1403b76d8 and 0x1403b7709 in 0x1403b74e0 (same hash, lines 63 and 67). call_paths.py --up: 0x1403b7300's one caller is HandleWorldMessage 0x1403ec6a0 at 0x1403eee8e, the 0x569 case; 0x1403b74e0's is at 0x1403eeea0, the 0x568 case (client_trace.py 0x568: record 32 bytes, reader 0x1400a4840; 0x569: record 16 bytes, reader 0x1400a47f0). Walk by the scratch script event_map3.py. Addons: ActionBarFrame, Character, CombatLog, Costumes, Inventory, RuneSets."
+grade = "fairly sure"
+gap = "The two records (32 and 16 bytes) are not read, so which of the two is equip and which unequip is unknown. A call through a register into either handler would not show."
+
+["lua.event.UpdatePathXp"]
+statement = "The UI events UpdatePathXp and PathLevelUp are raised only by the handler of message 0x1aa (a 4-byte record). A server that never sends 0x1aa never raises them: the XP bar's path part, PathFrame's path ability list, PlayerPath and the path experience float text and combat-log line never update, and no path level-up window opens."
+proof = "Raise sites 0x14056e7f5 ('UpdatePathXp', saved C 0x14056e610.c hash 8eb22adb6de47956 line 96) and 0x14056e994 ('PathLevelUp'), both in 0x14056e610. call_paths.py 0x14056e610 --up: one caller, HandleWorldMessage 0x1403ec6a0 at 0x1403eca31, the 0x1aa case (client_trace.py 0x1aa: record 4 bytes). Walk by the scratch script event_map3.py. Addons: CombatLog, FloatText, PathFrame, PlayerPath, XPBar (UpdatePathXp); LevelUpUnlocks, PlayerPath (PathLevelUp)."
+grade = "fairly sure"
+gap = "The 4-byte record is not read (the path experience, by the event's use). A call through a register into 0x14056e610 would not show."
+
+["lua.event.QuestStateChanged"]
+statement = "The UI events QuestStateChanged and QuestObjectiveUpdated are raised only while the client handles quest messages: 0x176 for both, 0x35c for the state and 0x361 for an objective. A server that sends none of them never raises them, so the quest tracker, quest log, datachron, HUD alerts and the minimap's quest markers never react to a quest."
+proof = "'QuestStateChanged': one site 0x14042620f in 0x1404261e0 (saved C hash 8eb22adb6de47956, line 10); 'QuestObjectiveUpdated': one site 0x14042626f in 0x140426240 (same hash, line 10). call_paths.py --up to HandleWorldMessage 0x1403ec6a0: 0x1404261e0 through 0x1403b9fb0 (call at 0x1403ba320; HandleWorldMessage calls 0x1403b9fb0 at 0x1403ef057, the 0x176 case) and through 0x1405fb670 (at 0x1403eecf3, the 0x35c case); 0x140426240 through 0x1403b9fb0 (call at 0x1403ba3b3) and 0x1405fb830 (at 0x1403eed15, the 0x361 case). client_trace.py 0x176, 0x35c, 0x361 give those cases. Walk by the scratch script event_map3.py."
+grade = "fairly sure"
+gap = "The quest records (0x176 16 bytes, 0x35c and 0x361 12 bytes) are not read. A call through a register into the two raisers or their callers would not show."
+
+["lua.event.QuestInit"]
+statement = "The UI event QuestInit is raised only by the handler of message 0x35f (a 56-byte record). A server that never sends 0x35f never raises it, so the quest tracker and contract tracker never build their first list."
+proof = "One raise site 0x1405fb630 in 0x1405fb350 (saved C hash 8eb22adb6de47956, line 124). call_paths.py 0x1405fb350 --up: one caller, HandleWorldMessage 0x1403ec6a0 at 0x1403eed37, the 0x35f case (client_trace.py 0x35f: record 56 bytes, reader 0x14008f2d0). Walk by the scratch script event_map3.py. Addons: ContractTracker, FloatText, QuestTracker."
+grade = "fairly sure"
+gap = "Whether QuestTracker also builds its list without QuestInit (from its own load) is not read; the 0x35f record is not read."
+
+["lua.event.ItemDurabilityUpdate"]
+statement = "The UI event ItemDurabilityUpdate is raised only by the handler of message 0x1a7 (a 16-byte record). A server that never sends 0x1a7 never raises it: no durability alert in HUDAlerts, and the character sheet and vendor repair costs do not refresh."
+proof = "One raise site 0x1403b96f4 in 0x1403b9690 (saved C hash 13906f95d07bb7f9, line 21). call_paths.py 0x1403b9690 --up: one caller, HandleWorldMessage 0x1403ec6a0 at 0x1403ef780, the 0x1a7 case (client_trace.py 0x1a7: record 16 bytes, reader 0x14008ef80). Walk by the scratch script event_map3.py. Addons: Character, HUDAlerts, Vendor."
+grade = "fairly sure"
+gap = "The record is not read. A call through a register into 0x1403b9690 would not show."
+
+["lua.event.InvokeVendorWindow"]
+statement = "The UI event InvokeVendorWindow is raised only by the handler of message 0x90b (a 56-byte record). A server that never sends 0x90b never opens the Vendor addon's window or the bag beside it when the player talks to a vendor."
+proof = "One raise site 0x1403dba2f in 0x1403db9a0 (saved C hash 8eb22adb6de47956, line 21). call_paths.py 0x1403db9a0 --up: one caller, HandleWorldMessage 0x1403ec6a0 at 0x1403ed771, the 0x90b case (client_trace.py 0x90b: record 56 bytes, reader 0x140097ca0). Walk by the scratch script event_map3.py. Addons: Vendor (OnInvokeVendorWindow), Inventory (OnToggleVisibilityAlways)."
+grade = "fairly sure"
+gap = "The record is not read. A call through a register into 0x1403db9a0 would not show."
+
+["lua.event.PlayerCurrencyChanged"]
+statement = "The UI event PlayerCurrencyChanged is a throttled event: the client keeps one event object for it in its UI object and raises it at most once per interval, when asked. It is asked only while handling message 0x919 (a currency change, 24 bytes) and message 0x48d. A server that sends neither never raises it, so the 17 addons that wait for it (ability book, AMPs, ability vendor, costumes, crafting and others) never refresh their money-dependent parts."
+proof = "Raise site 0x140426b07: a leaf at 0x140426b00 (lea r8, lea rdx 'PlayerCurrencyChanged', jmp 0x1400ea3e0), stored as a callback by GameMgr's constructor 0x1404218a0 (saved C hash 49fd5a78aaad3411: param_1[0x209] = &LAB_140426b00, the object starting at qword 0x204, marked 0x544e5645). The object is passed to 0x1400a8020 (saved C hash 8eb22adb6de47956: raises now, or arms a timer with itself as the callback, when the last raise is too recent) in two places: 0x1403b5730 line 108 and 0x14057cce0 line 30 (the UI object plus 0x1020). call_paths.py --up: 0x1403b5730 is called by 0x1403c70e0 at 0x1403c7138, which HandleWorldMessage 0x1403ec6a0 calls at 0x1403ec9f3, the 0x919 case (client_trace.py 0x919); 0x14057cce0 is called at 0x1403f023f, in the 0x48d case after 0x1405845f0 at 0x1403f022b. Walk by the scratch script event_map3.py."
+grade = "fairly sure"
+gap = "The callback call in 0x1400a8020 goes through an indirect jump that is not read; the object's layout is read from the constructor's stores. Which currencies 0x919 carries and what 0x48d is are not read."
