@@ -19,11 +19,12 @@
 import cast_support as support
 import genesis_prime/game/cast.{type Effect, type State}
 import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/look.{type Disguise, Disguise, Shown}
+import genesis_prime/game/look.{type Disguise, Disguise}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Source, Source}
+import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{
@@ -53,7 +54,7 @@ fn faction_gate(id id: Int, faction faction: Int) -> prerequisite.Prerequisite {
 
 fn disguise_of(display display: Int) -> Disguise {
   Disguise(shown: [
-    Shown(item_slot: ItemSlotId(64), display: ItemDisplayId(display)),
+    WornVisual(slot: ItemSlotId(64), display: ItemDisplayId(display)),
   ])
 }
 
@@ -168,7 +169,7 @@ fn timeline(
       list.map(starts(effects: step.1), fn(start) {
         #(step.0, "start", start.0)
       }),
-      list.map(support.property_ends(effects: step.1), fn(source) {
+      list.map(support.caster_change_ends(effects: step.1), fn(source) {
         #(step.0, "end", source)
       }),
     ])
@@ -320,7 +321,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
       bag: bag_of_base_1,
       at: 2000,
     )
-  assert support.property_ends(effects: removal) == [source]
+  assert support.caster_change_ends(effects: removal) == [source]
     as "taking the cast's node off the caster ends the disguise at once"
   assert timer_numbers(timers: support.cancelled_timers(effects: removal))
     == timer_numbers(timers: timers_started)
@@ -332,8 +333,11 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
       caster: support.dead_caster(),
       now: support.at(ms: 2000),
     )
-  assert support.property_ends(effects: died) == [source]
+  assert support.caster_change_ends(effects: died) == [source]
     as "death ends the disguise"
+  assert timer_numbers(timers: support.cancelled_timers(effects: died))
+    == timer_numbers(timers: timers_started)
+    as "and cancels the two timers the go started"
   // A persistence that stops holding: prerequisite 903, the caster in combat.
   let in_combat = prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
   let guarded =
@@ -359,9 +363,16 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
       caster: cast.Caster(..support.caster(), in_combat: False),
       now: support.at(ms: 2000),
     )
-  assert support.property_ends(effects: ended)
+  assert support.caster_change_ends(effects: ended)
     == [source_of(cast_id: held_id, effect_id: 112_543)]
     as "the persistence ends the cast, and the disguise with it"
+  assert timer_numbers(timers: support.cancelled_timers(effects: ended))
+    == timer_numbers(
+      timers: list.map(support.started_timers(effects: pressed), fn(started) {
+        started.0
+      }),
+    )
+    as "and cancels the two timers its go started"
 }
 
 pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_none_test() -> Nil {
@@ -400,7 +411,7 @@ pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_no
     == [#(1500, "start", source), #(11_250, "end", source)]
     as "the disguise ends with its node at go + 10,250; its own end at go + 10,750 never fires"
   let #(_, left) = cast.left(cast: state)
-  assert support.property_ends(effects: left) == []
+  assert support.caster_change_ends(effects: left) == []
     as "the connection's look goes with the player's Entered"
 }
 
@@ -424,6 +435,12 @@ pub fn a_disguise_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
       bag: bag_of_base_3,
       at: 1000,
     )
+  assert list.length(support.frames_of(
+      message_id: spell_go.message_id,
+      effects:,
+    ))
+    == 1
+    as "the press went: its go was written"
   assert starts(effects:) == []
     as "a row behind a target apply prerequisite is not applied"
 }

@@ -335,7 +335,7 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
 }
 
 /// The sources whose property modifier the effects end, in order.
-pub fn property_ends(
+pub fn caster_change_ends(
   effects effects: List(Effect),
 ) -> List(unit_properties.Source) {
   list.filter_map(effects, fn(effect) {

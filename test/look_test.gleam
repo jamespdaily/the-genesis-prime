@@ -11,8 +11,9 @@
 //// - The server's choices, which the module's doc names: the newest disguise on a slot
 ////   shows, and a source is held once (the properties' rule, `unit_properties`).
 
-import genesis_prime/game/look.{Disguise, Shown}
+import genesis_prime/game/look.{Disguise}
 import genesis_prime/game/unit_properties.{type Source, Source}
+import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/table/id.{ItemDisplayId, ItemSlotId, Spell4EffectsId}
 import owned_test
@@ -40,7 +41,7 @@ fn source(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
 
 fn disguise(slot slot: Int, display display: Int) -> look.Disguise {
   Disguise(shown: [
-    Shown(item_slot: ItemSlotId(slot), display: ItemDisplayId(display)),
+    WornVisual(slot: ItemSlotId(slot), display: ItemDisplayId(display)),
   ])
 }
 
@@ -222,11 +223,11 @@ pub fn a_row_with_two_displays_reports_both_in_slot_order_test() -> Nil {
       look: engineer(),
       source: source(cast_id: 1, effect_id: 90_004),
       disguise: Disguise(shown: [
-        Shown(
-          item_slot: ItemSlotId(suit_slot),
+        WornVisual(
+          slot: ItemSlotId(suit_slot),
           display: ItemDisplayId(exile_suit),
         ),
-        Shown(item_slot: ItemSlotId(weapon_slot), display: ItemDisplayId(119)),
+        WornVisual(slot: ItemSlotId(weapon_slot), display: ItemDisplayId(119)),
       ]),
     )
   assert changed

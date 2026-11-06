@@ -4823,7 +4823,7 @@ fn heal_description(amount amount: Int) -> SpellDamageDescription {
 /// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
 /// A row with neither changes nothing and gives its node no life.
 fn modifier_has_life(row: spell_plan.PropertyModifier) -> Bool {
-  row.row.until_removed || row.row.duration_ms > 0
+  lasting.has_life(row: row.row)
 }
 
 /// Whether a cooldown row is kept for the cooldowns that start after it takes effect:
@@ -5192,7 +5192,7 @@ fn caster_modifiers_ended(
 /// A row of a spell that ends with its node on the caster: a property modifier, which
 /// is told ended, or a cooldown effect, which is dropped from the kept list.
 type Ending {
-  PropertyEnding(source: unit_properties.Source, until_removed: Bool)
+  CasterChangeEnding(source: unit_properties.Source, until_removed: Bool)
   CooldownEnding(source: unit_properties.Source)
 }
 
@@ -5210,7 +5210,7 @@ fn effects_ended(
   let endings =
     list.append(
       list.map(spell.modifiers, fn(row) {
-        PropertyEnding(
+        CasterChangeEnding(
           source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
           until_removed: row.row.until_removed,
         )
@@ -5231,11 +5231,11 @@ fn effects_ended(
         })
       let #(cast, cancels) = cancel_source_timers(cast:, source: ending.source)
       case ending {
-        PropertyEnding(source:, until_removed:) if until_removed || held -> #(
+        CasterChangeEnding(source:, until_removed:) if until_removed || held -> #(
           cast,
           list.flatten([effects, cancels, [CasterChangeEnds(source:)]]),
         )
-        PropertyEnding(..) -> #(cast, list.append(effects, cancels))
+        CasterChangeEnding(..) -> #(cast, list.append(effects, cancels))
         CooldownEnding(source:) -> #(
           State(..cast, cooldowns: cooldown.drop(book: cast.cooldowns, source:)),
           list.append(effects, cancels),

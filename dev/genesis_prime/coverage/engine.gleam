@@ -307,7 +307,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 112,
-        reason: "rows with an outfit (0x905), aimed at another unit, behind a target prerequisite or with no life, which the plan refuses or no go applies",
+        reason: "rows with an outfit (0x905), no display, aimed at another unit, behind a target prerequisite or with no life, which the plan refuses or no go applies",
         fact_key: "Spell4Effects.effectType.112",
       ),
       Missing(

@@ -55,22 +55,18 @@
 //// | The caster leaves | `Entered` goes with its look; the next entry starts from the base | | |
 
 import genesis_prime/game/unit_properties
+import genesis_prime/game/worn_visual.{type WornVisual}
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
-import genesis_prime/table/id.{type ItemDisplayId, type ItemSlotId}
 import gleam/bool
 import gleam/int
 import gleam/list
 
-/// What one DisguiseOutfit row shows in one slot: the ItemSlot id of its display's
-/// item type and the display (`Spell4Effects.effectType.112`).
-pub type Shown {
-  Shown(item_slot: ItemSlotId, display: ItemDisplayId)
-}
-
-/// A DisguiseOutfit row's look change: what it shows, one slot for a dataBits02 row
-/// and one for a dataBits01 row, in the order the row gives them.
+/// A DisguiseOutfit row's look change: what it shows, one slot and display for a
+/// dataBits02 row and one for a dataBits01 row, in the order the row gives them. A shown
+/// item is a worn item's (genesis_prime/game/worn_visual): the ItemSlot id of its
+/// display's item type and the display.
 pub type Disguise {
-  Disguise(shown: List(Shown))
+  Disguise(shown: List(WornVisual))
 }
 
 /// A player's look: its base item visuals and the disguises held over them, newest
@@ -144,7 +140,7 @@ pub fn visuals(look look: Look) -> List(ItemVisual) {
 
 /// The slots a disguise names, as the 0x933 and the 0x262 carry them.
 fn slots_of(disguise disguise: Disguise) -> List(Int) {
-  list.map(disguise.shown, fn(shown) { shown.item_slot.value })
+  list.map(disguise.shown, fn(shown) { shown.slot.value })
 }
 
 /// What `look` shows in `slot`: the newest disguise that names the slot, else the
@@ -152,16 +148,10 @@ fn slots_of(disguise disguise: Disguise) -> List(Int) {
 fn shown(look look: Look, slot slot: Int) -> ItemVisual {
   let disguised =
     list.find_map(look.held, fn(held) {
-      list.find(held.1.shown, fn(shown) { shown.item_slot.value == slot })
+      list.find(held.1.shown, fn(shown) { shown.slot.value == slot })
     })
   case disguised {
-    Ok(shown) ->
-      ItemVisual(
-        slot:,
-        display_id: shown.display.value,
-        item_color_set_id: 0,
-        dye: 0,
-      )
+    Ok(shown) -> worn_visual.item_visual(worn: shown)
     Error(Nil) ->
       case list.find(look.base, fn(visual) { visual.slot == slot }) {
         Ok(visual) -> visual

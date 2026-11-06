@@ -2093,7 +2093,7 @@ pub fn the_clients_rows_of_types_18_81_and_145_count_14_634_and_0_not_read_and_1
 // ---- the disguises (type 112) ----
 
 const disguise_gap =
-  "rows with an outfit (0x905), aimed at another unit, behind a target prerequisite or with no life, which the plan refuses or no go applies"
+  "rows with an outfit (0x905), no display, aimed at another unit, behind a target prerequisite or with no life, which the plan refuses or no go applies"
 
 pub fn the_type_112_rows_the_plan_does_not_read_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)

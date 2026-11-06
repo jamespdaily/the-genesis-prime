@@ -16,12 +16,13 @@
 import client_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/look.{Disguise, Shown}
+import genesis_prime/game/look.{Disguise}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type PropertyModifier, Always, GatedOnCaster, LookChange, PropertyModifier,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/table/id.{
   ItemDisplayId, ItemSlotId, PrerequisiteId, Spell4BaseId, Spell4EffectsId,
 }
@@ -128,7 +129,7 @@ fn modifier_of(
 
 fn suit(display display: Int) -> look.Disguise {
   Disguise(shown: [
-    Shown(item_slot: ItemSlotId(64), display: ItemDisplayId(display)),
+    WornVisual(slot: ItemSlotId(64), display: ItemDisplayId(display)),
   ])
 }
 
@@ -184,7 +185,7 @@ pub fn a_databits01_display_of_a_weapon_is_drawn_in_slot_20_test() -> Nil {
   assert row.change
     == LookChange(
       disguise: Disguise(shown: [
-        Shown(item_slot: ItemSlotId(20), display: ItemDisplayId(119)),
+        WornVisual(slot: ItemSlotId(20), display: ItemDisplayId(119)),
       ]),
     )
 }

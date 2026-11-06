@@ -84,7 +84,6 @@
 ////   display, or a display whose item type has no slot fails the load
 ////   (`DisguiseNotRead`); dataBits03 is read as nothing, since no client code reads a
 ////   type 112 row.
-////   UnitProperty2 row.
 //// - **The Interrupt Armor rows.** A ModifyInterruptArmor effect
 ////   (`Spell4Effects.effectType.52`) whose targetFlags include the caster (bit 1), or are
 ////   the primary target alone (2) in a spell cast on the caster, is a `PropertyModifier`
@@ -241,6 +240,7 @@ import genesis_prime/game/look
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
+import genesis_prime/game/worn_visual
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/table/class
@@ -2206,7 +2206,7 @@ fn disguise_of(
         effect:,
         display:,
       ))
-      look.Shown(item_slot:, display: ItemDisplayId(display))
+      worn_visual.WornVisual(slot: item_slot, display: ItemDisplayId(display))
     }),
   )
   look.Disguise(shown:)
@@ -2826,7 +2826,7 @@ pub fn struck_unit_children(
 /// Whether the plan reads this effect row: its type is read for its aim
 /// (`effect_kind.is_row_read`) and, for a DisguiseOutfit row, it names no outfit and a display
 /// (`disguise_displays_of`), has no target apply prerequisite and has a life (a durationTime or
-/// flags bit 2, `modifier_has_life` in genesis_prime/game/cast), and, for a Stealth, RemoveStealth, Proc or HealShields row,
+/// flags bit 2, `lasting.has_life`, which the cast rule applies too), and, for a Stealth, RemoveStealth, Proc or HealShields row,
 /// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
 /// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
 /// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
@@ -2836,7 +2836,9 @@ pub fn struck_unit_children(
 /// row is read when its aim is one the plan reads (`lasting_aim_of`) and no target apply
 /// prerequisite stands before it, which no go applies; a SpellForceRemove row also when its
 /// counts agree (`force_remove_counts_read`). A SpellForceRemove row whose dataBits01 names
-/// no row fails the load too, which this check cannot see without the tables. The coverage
+/// no row fails the load too, and so does a DisguiseOutfit row whose display has no ItemDisplay,
+/// Item2Type or ItemSlot row or whose item type has no slot (`display_slot`), which this check
+/// cannot see without the tables. The coverage
 /// measure counts the other rows as not read, so it and the plan cannot disagree.
 pub fn effect_row_read(
   effect effect: spell4_effects.Spell4Effects,
