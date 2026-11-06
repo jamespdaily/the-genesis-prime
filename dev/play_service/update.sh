@@ -20,8 +20,8 @@
 #   a deploy came up                                       removes dangling images and every
 #                                                            genesis-play image but the running one and
 #                                                            the last good one
-#   main's commit new, check red or not finished           nothing for that commit; it is asked again
-#                                                            at the next run
+#   main's commit new, server check red, missing or not    nothing for that commit; it is asked again
+#     finished                                               at the next run (a docs job's result is not looked at)
 #   main's commit holds no release/Containerfile           nothing, and it is not asked about again
 #                                                            (the commits before the service existed)
 #   this Mac's address changed, or the server stopped      replaces the server container with the same
@@ -132,12 +132,14 @@ branch=${branch:-main}
 machine_up || { log "the Podman machine could not be started"; exit 1; }
 ensure_postgres || exit 1
 
-# ci_passed COMMIT: 0 when the commit has check runs and every one finished well,
-# 1 when it has none or one is red or not finished, 2 when GitHub could not be asked.
+# ci_passed COMMIT: 0 when the commit's server check run (the `check` job of
+# .github/workflows/check.yml) finished well, 1 when it has none or it is red or not
+# finished, 2 when GitHub could not be asked. The docs workflow's jobs do not count:
+# a newer commit cancels a publish that is still waiting.
 ci_passed() {
   local runs
   runs=$(gh api "repos/$repository/commits/$1/check-runs" \
-    --jq '.check_runs[] | "\(.status):\(.conclusion)"') || return 2
+    --jq '.check_runs[] | select(.name == "check") | "\(.status):\(.conclusion)"') || return 2
   [ -n "$runs" ] || return 1
   if printf '%s\n' "$runs" | grep -qv '^completed:\(success\|skipped\|neutral\)$'; then
     return 1
