@@ -161,7 +161,10 @@ pub fn a_struck_medic_pressing_energize_sees_the_heal_and_its_shield_rise_and_so
   }
   assert healed == [expected]
     as "the shield rises by the amount, capped at 450: one 0x938 to the Medic"
-  assert list.flat_map(landed, fn(taken) { told_to_the_viewer(taken:) })
-    == [client_connection.Shield(shield: expected)]
-    as "and the same shield is told to the viewer"
+  let told = list.flat_map(landed, fn(taken) { told_to_the_viewer(taken:) })
+  assert list.count(told, fn(news) {
+      news == client_connection.Shield(shield: expected)
+    })
+    == 1
+    as "and the same shield is told to the viewer, once (beside the properties the go's type 11 rows start)"
 }
