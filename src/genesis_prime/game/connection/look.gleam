@@ -53,6 +53,7 @@
 ////   after it.
 
 import genesis_prime/client_connection.{type Request}
+import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/look
 import genesis_prime/game/unit_properties
@@ -103,9 +104,21 @@ fn changed(
 
 /// 0x933 to the player's client and `LookChanged` to each viewer, the same visuals.
 fn told(
-  session _session: Session,
-  entered _entered: world_entry.Entered,
-  visuals _visuals: List(ItemVisual),
+  session session: Session,
+  entered entered: world_entry.Entered,
+  visuals visuals: List(ItemVisual),
 ) -> List(Effect(ConnectionEffect(Request))) {
-  panic as "shape: #494"
+  [
+    connection_state.to_client(
+      session,
+      connection_frames.item_visuals_frame(
+        unit_id: entered.unit_id,
+        item_visuals: visuals,
+      ),
+    ),
+    ..connection_state.news_to_viewers(
+      entered:,
+      news: client_connection.LookChanged(item_visuals: visuals),
+    )
+  ]
 }
