@@ -65,6 +65,14 @@
 ////   2 when it is not; any other comparison fails, and its objectId and value are not
 ////   read. A subject that holds no stealth gives `NotRead`
 ////   (`Prerequisite.prerequisiteTypeId.116`, `0x1404a2609`).
+//// - **Type 4** passes, by comparison 1, when the unit's current faction equals the
+////   value and by comparison 2 when it does not; any other comparison fails, a unit
+////   with no faction counts as faction 0 and its objectId is not read. **Type 250**
+////   is the same on the unit's base faction (`Prerequisite.prerequisiteTypeId.4`,
+////   `.250`, `0x14049c620`, `0x14049c6a0`). Only a player's side holds its factions,
+////   so a subject with none gives `NotRead`.
+//// - **Type 243** always fails: the client's check reads nothing from the unit
+////   (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
 //// - **Type 179** compares the unit's difficulty with the condition's objectId, not
 ////   its value, by comparisons 1 to 6; only a creature's side holds a difficulty,
 ////   so a subject with none gives `NotRead` (`0x14049eeb0`, `of_difficulty`).
@@ -226,6 +234,14 @@ type Condition {
   /// Type 179: the unit's difficulty against the objectId
   /// (`Prerequisite.prerequisiteTypeId.179`, `0x14049eeb0`).
   Difficulty(relation: Relation, object_id: Int)
+  /// Type 4: whether the unit's current faction equals the value
+  /// (`Prerequisite.prerequisiteTypeId.4`, `0x14049c620`).
+  CurrentFaction(comparison: Comparison, value: Int)
+  /// Type 250: whether the unit's base faction equals the value
+  /// (`Prerequisite.prerequisiteTypeId.250`, `0x14049c6a0`).
+  BaseFaction(comparison: Comparison, value: Int)
+  /// Type 243: never met (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
+  NeverMet
   /// Type 108: whether the second unit stands in the arc around the first unit's
   /// facing, `None` for the objectId 0 that names no arc
   /// (`Prerequisite.prerequisiteTypeId.108`, `0x14049d940`).
@@ -274,6 +290,13 @@ pub type Vital {
   Vital(current: Float, maximum: Float)
 }
 
+/// A unit's two factions, Faction2 ids, as the faction message 0x262 sets them: its
+/// current faction (the first faction field) and its base faction (the second). A unit
+/// with no faction has 0 (`Prerequisite.prerequisiteTypeId.4`, `.250`).
+pub type Factions {
+  Factions(current: Int, base: Int)
+}
+
 /// What a check may read about its subject, the check's first unit.
 pub type Subject {
   Subject(
@@ -306,6 +329,10 @@ pub type Subject {
     rolls: List(Int),
     /// Where the check's two units stand, for type 108.
     positions: Positions,
+    /// The subject's factions, which only a player's cast rule holds: `None` for a
+    /// creature's side, so types 4 and 250 are not read for it
+    /// (`Prerequisite.prerequisiteTypeId.4`, `.250`).
+    factions: Option(Factions),
     /// What the check knows of the subject.
     seen: Seen,
   )
@@ -350,6 +377,7 @@ pub fn of_struck(first first: Option(Pose), second second: Pose) -> Subject {
       Some(first) -> Placed(first:, second:)
       None -> NotPlaced
     },
+    factions: None,
     seen: PlaceOnly,
   )
 }
@@ -368,6 +396,7 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     resource_slots: None,
     rolls: [],
     positions: NotPlaced,
+    factions: None,
     seen: WholeUnit,
   )
 }
@@ -620,6 +649,9 @@ fn condition_of(
     129 -> UnderGroup(comparison: comparison_of(comparison), group: object_id)
     116 -> Stealthed(comparison: comparison_of(comparison))
     179 -> Difficulty(relation: relation_of(code: comparison), object_id:)
+    4 -> CurrentFaction(comparison: comparison_of(comparison), value:)
+    250 -> BaseFaction(comparison: comparison_of(comparison), value:)
+    243 -> NeverMet
     _ ->
       case
         type_id < 1
@@ -652,6 +684,9 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | UnderGroup(..)
     | Stealthed(..)
     | Difficulty(..)
+    | CurrentFaction(..)
+    | BaseFaction(..)
+    | NeverMet
     | InArc(..)
     | NoCase -> True
   }
@@ -680,6 +715,9 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | UnderGroup(..)
       | Stealthed(..)
       | Difficulty(..)
+      | CurrentFaction(..)
+      | BaseFaction(..)
+      | NeverMet
       | InArc(..)
       | NoCase
       | Unread(..) -> 0
@@ -774,6 +812,9 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     | ResourceSlot(..)
     | Stealthed(..)
     | Difficulty(..)
+    | CurrentFaction(..)
+    | BaseFaction(..)
+    | NeverMet
     | InArc(..)
     | NoCase
     | Unread(..) -> None
@@ -876,6 +917,27 @@ fn condition_decided(
         verdict_of(compare(relation:, measured: difficulty, value: object_id))
       None -> NotRead(prerequisite_type: 179)
     })
+    CurrentFaction(comparison:, value:) -> #(
+      rolls,
+      faction_verdict(
+        comparison:,
+        value:,
+        subject:,
+        prerequisite_type: 4,
+        read: fn(factions) { factions.current },
+      ),
+    )
+    BaseFaction(comparison:, value:) -> #(
+      rolls,
+      faction_verdict(
+        comparison:,
+        value:,
+        subject:,
+        prerequisite_type: 250,
+        read: fn(factions) { factions.base },
+      ),
+    )
+    NeverMet -> #(rolls, Fails)
     InArc(comparison:, arc:) -> #(
       rolls,
       arc_verdict(comparison:, arc:, positions: subject.positions),
@@ -1038,6 +1100,31 @@ fn stealthed_verdict(
         NotFound -> verdict_of(!stealthed)
         OtherComparison(..) -> Fails
       }
+  }
+}
+
+/// The verdict of a faction condition (type 4 on the current faction, type 250 on the
+/// base faction; `read` picks it): comparison 1 passes when the faction equals the value,
+/// 2 when it does not, any other fails, and a subject that holds no factions is
+/// `NotRead`. The faction and the value are compared as 32-bit numbers
+/// (`0x14049c620`, `0x14049c6a0`).
+fn faction_verdict(
+  comparison comparison: Comparison,
+  value value: Int,
+  subject subject: Subject,
+  prerequisite_type prerequisite_type: Int,
+  read read: fn(Factions) -> Int,
+) -> Verdict {
+  case subject.factions {
+    None -> NotRead(prerequisite_type:)
+    Some(factions) -> {
+      let equal = compare(relation: Equal, measured: read(factions), value:)
+      case comparison {
+        Found -> verdict_of(equal)
+        NotFound -> verdict_of(!equal)
+        OtherComparison(..) -> Fails
+      }
+    }
   }
 }
 

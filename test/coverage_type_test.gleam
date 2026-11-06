@@ -4,10 +4,10 @@
 //// and their sources:
 //// - The types the server reads: effect types 1 (VitalModifier), 8 (Damage), 17
 ////   (Fluff), 26 (Proxy) and 80 (SpellForceRemove), which `Spell4Effects.effectType.N`
-////   and `Spell.CodeEnumSpellEffectType.damage` name, and prerequisite types 15, 28,
-////   37, 50, 59, 71, 73 and 179 (`Prerequisite.prerequisiteTypeId.N`); a type the
-////   client's condition check has no case for fails in the client and in the server
-////   (`0x1404a2100`).
+////   and `Spell.CodeEnumSpellEffectType.damage` name, and prerequisite types 4, 15, 28,
+////   37, 50, 59, 71, 73, 179, 243 (which always fails) and 250
+////   (`Prerequisite.prerequisiteTypeId.N`); a type the client's condition check has no
+////   case for fails in the client and in the server (`0x1404a2100`).
 //// - The starting abilities' counts are the issue's measured walk of 2026-11-05 over
 ////   SpellLevel (level 1, no prerequisite), Spell4, Spell4Effects, Spell4Thresholds
 ////   and Prerequisite (18 abilities reach 65 spells, 120 effect rows and 39
@@ -91,18 +91,18 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_26_73_80_83_and
     as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster; every other type is unread"
 }
 
-pub fn the_prerequisite_types_the_measure_handles_are_the_thirteen_read_and_those_with_no_case_test() -> Nil {
+pub fn the_prerequisite_types_the_measure_handles_are_the_sixteen_read_and_those_with_no_case_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Prerequisites"),
       types: numbers(from: 1, to: 295),
     )
     == [
-      11, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 64, 71, 72, 73, 75, 108,
-      116, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257,
-      258, 274, 282, 284,
+      4, 11, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 64, 71, 72, 73, 75, 108,
+      116, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 243, 247, 249,
+      250, 257, 258, 274, 282, 284,
     ]
-    as "the server reads 11 (a nested prerequisite, Prerequisite.prerequisiteTypeId.11), 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 64 (a resource slot, Prerequisite.prerequisiteTypeId.64), 71, 73, 108 (where the second unit stands around the first, Prerequisite.prerequisiteTypeId.108), 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116), 129 (under a spell of a group, Prerequisite.prerequisiteTypeId.129) and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+    as "the server reads 4 (the unit's current faction, Prerequisite.prerequisiteTypeId.4), 11 (a nested prerequisite, Prerequisite.prerequisiteTypeId.11), 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 64 (a resource slot, Prerequisite.prerequisiteTypeId.64), 71, 73, 108 (where the second unit stands around the first, Prerequisite.prerequisiteTypeId.108), 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116), 129 (under a spell of a group, Prerequisite.prerequisiteTypeId.129) 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), 243 (which the client's check always fails, Prerequisite.prerequisiteTypeId.243) and 250 (the unit's base faction, Prerequisite.prerequisiteTypeId.250), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
 }
 
 // ---- the starting abilities' column ----
@@ -1664,7 +1664,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_180_of_196_effect_rows_and_73_of_79_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_180_of_196_effect_rows_and_77_of_79_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1682,9 +1682,9 @@ pub fn the_starting_abilities_totals_hold_180_of_196_effect_rows_and_73_of_79_co
     as "196 effect rows are left, 16 of them not handled (the two Proc rows the plan skips, kind 12 of 123744 and kind 16 of 178239, 90 x4, 112 x2, 118 x2, and 18, 24, 29, 52, 81 and 145 once; the five other Proc rows are read); the whole-game columns are the walk's of 2026-11-05, with types 83 and 84 handled beside the nine"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 14 | 73 of 79 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 17 | 77 of 79 |",
   )
-    as "79 conditions are left, 6 of them not handled (types 109, 243 and 250, twice each); types 11, 64, 108 and 129 are read beside the ten handled before (Prerequisite.prerequisiteTypeId.11, .64, .108, .129), so 14 types are handled"
+    as "79 conditions are left, 2 of them not handled (type 109, twice); types 4, 243 and 250 are read beside the fourteen handled before (Prerequisite.prerequisiteTypeId.4, .243, .250), so 17 types are handled"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {
