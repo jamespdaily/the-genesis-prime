@@ -147,7 +147,7 @@ pub fn rampage_is_refused_51_at_249_kinetic_energy_and_accepted_at_250_test() ->
       bag_index: support.rampage,
     )
     == #([51], [])
-    as "0x1403b1780: type 6 (slot 1) at least 250 (eval 2); 249 fails with 51, and the waiver (prerequisite 19750) never passes: the server holds no prerequisite engine"
+    as "0x1403b1780: type 6 (slot 1) at least 250 (eval 2); 249 fails with 51 unless the waiver (prerequisite 19750, under Overdrive 42908) passes, which it does not for a caster under no cast (the waiver's own cases are cast_prerequisite_test)"
   assert press(
       resources: support.holding(class_id: 1, value: 250.0),
       bag_index: support.rampage,

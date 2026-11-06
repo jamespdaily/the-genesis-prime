@@ -91,7 +91,7 @@ pub fn a_warriors_entry_ends_with_its_passives_0x7ff_and_0x7f4_and_no_property_o
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(_, taken) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 1,
       saved_health: None,
     )
@@ -107,17 +107,17 @@ pub fn a_warriors_entry_ends_with_its_passives_0x7ff_and_0x7f4_and_no_property_o
     as "UnitProperty2 141 to 143 hold their default 1.0 under x 1.0 + 0, so no 0x93A; Kinetic Energy 0 less 1200 clamps at 0, so no 0x935; nothing ends"
 }
 
-pub fn an_engineers_entry_lists_its_three_properties_and_starts_no_child_test() -> Nil {
+pub fn an_engineers_entry_lists_its_three_properties_and_starts_46297_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(_, taken) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 2,
       saved_health: None,
     )
   let frames = written(taken:)
-  assert started_spells(frames:) == [45_000]
-    as "46297 is behind Prerequisite 30012 of type 11, which the server does not read"
+  assert started_spells(frames:) == [45_000, 46_297]
+    as "Proxy 108412 starts 46297 behind Prerequisite 30012, which an Engineer with 0 in slot 1 (Volatility, the start of its resource) and under no cast passes: 29795, the innermost row, wants slot 1 above 29 (cast_passive_test)"
   assert listed(frames:) == [104_980, 177_521, 177_522]
   assert list.all(support.logs(taken), fn(line) {
     line.level != step.LogError && line.level != step.LogWarning
@@ -129,7 +129,7 @@ pub fn a_stalkers_passive_starts_60724_50_ms_later_and_that_cast_ends_test() -> 
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(state, taken) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 5,
       saved_health: None,
     )
@@ -152,7 +152,7 @@ pub fn a_class_with_no_passive_starts_no_cast_at_entry_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   list.each([3, 4, 7], fn(class_id) {
     let #(_, taken) =
-      connection_support.entered_with_the_clients_tables(
+      connection_support.entered_on_the_clients_tables(
         class_id:,
         saved_health: None,
       )
@@ -167,7 +167,7 @@ pub fn a_player_saved_dead_starts_its_passive_at_entry_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(_, taken) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 1,
       saved_health: Some(0),
     )
@@ -179,7 +179,7 @@ pub fn the_holocrypts_join_starts_the_passive_again_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(state, _) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 1,
       saved_health: None,
     )
@@ -205,7 +205,10 @@ pub fn the_holocrypts_join_starts_the_passive_again_test() -> Nil {
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(connection_support.with_the_real_loadout(joined:, class_id: 1)),
+        FromMap(connection_support.with_the_clients_loadout(
+          joined:,
+          class_id: 1,
+        )),
       ),
     )
   let frames = written(taken: joined_taken)
@@ -225,7 +228,7 @@ pub fn a_0x16f_of_index_0_writes_nothing_and_is_a_debug_line_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(state, _) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 1,
       saved_health: None,
     )
@@ -242,7 +245,7 @@ pub fn a_0x16f_of_an_index_above_0_ends_the_connection_with_an_error_line_and_no
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(state, _) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 1,
       saved_health: None,
     )
@@ -315,11 +318,10 @@ pub fn a_stealthed_stalkers_impale_ends_the_stealth_after_its_second_phase_and_n
   // SpellPhase 3715 and 3716 (a go at 0 and at 300 ms), and its Proxies, behind
   // Prerequisite 38585 (the caster stealthed), and its Fluff child 70775 start in phase 1
   // (phaseFlags 2): `Spell4.spellCastStealthChange.break`, the stealth ends after the
-  // cast's effects, so those still see it. The Beast stands 3 m ahead facing -z, so the
-  // stealthed Stalker is behind it: Proxy 85682 (38585 and 5734) starts 39427 once, and
-  // 83819 (38585 and 5735) does not.
+  // cast's effects, so those still see it. The Proxies' target gates 5734 and 5735 are
+  // not checked, so no Proxy child starts: the stealth's end is read from the frames.
   let #(state, _) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 5,
       saved_health: None,
     )

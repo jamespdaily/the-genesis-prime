@@ -401,7 +401,12 @@ pub fn the_clients_72_rows_with_a_type_108_condition_all_decode_test() -> Nil {
   assert list.length(rows) == 72
     as "72 Prerequisite rows hold a type 108 condition (`table_rows -- Prerequisite prerequisiteTypeId0=108`, `1=108` and `2=108`)"
   list.each(rows, fn(row) {
-    let assert Ok(_) = prerequisite.of_row(row:, tables:)
+    let assert Ok(_) =
+      prerequisite.load(
+        id: PrerequisiteId(row.id),
+        rows: prerequisite.table_rows(tables:),
+        arcs: prerequisite.table_arcs(tables:),
+      )
       as "every objectId of a type 108 condition names a PositionalRequirement row"
   })
   let conditions =
@@ -434,40 +439,38 @@ pub fn the_clients_72_rows_with_a_type_108_condition_all_decode_test() -> Nil {
     as "the PositionalRequirement table has 52 rows"
 }
 
-pub fn a_row_naming_a_positional_requirement_that_is_not_found_fails_the_decode_test() -> Nil {
+pub fn a_row_naming_a_positional_requirement_that_is_not_found_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
-  let row =
-    prerequisite_support.row(id: 1, flags: 0, conditions: [#(108, 1, 999, 0)])
-  assert prerequisite.of_row_with(row:, find_arc: fn(_) { Error(Nil) })
-    == Error(prerequisite.MissingRow(table: "PositionalRequirement", id: 999))
+  let rows = [
+    prerequisite_support.row(id: 1, flags: 0, conditions: [#(108, 1, 999, 0)]),
+  ]
+  assert prerequisite_support.load_with_arcs(id: 1, rows:, arcs: [])
+    == Error(prerequisite.NoPositionalRequirementRow(id: 999))
     as "the client would read it as no arc, but no row in the game hits that case, so the load refuses it"
-  assert prerequisite.of_row_with(row:, find_arc: fn(arc_id) {
-      list.find(
-        [
-          prerequisite_support.arc_row(
-            id: 998,
-            center: 180,
-            range: 140,
-            flags: 0,
-          ),
-        ],
-        fn(arc) { arc.id == arc_id },
-      )
-    })
-    == Error(prerequisite.MissingRow(table: "PositionalRequirement", id: 999))
+  assert prerequisite_support.load_with_arcs(id: 1, rows:, arcs: [
+      prerequisite_support.arc_row(id: 998, center: 180, range: 140, flags: 0),
+    ])
+    == Error(prerequisite.NoPositionalRequirementRow(id: 999))
     as "a row of another id does not stand in for it"
+  assert prerequisite_support.load_with_arcs(id: 1, rows:, arcs: [
+      prerequisite_support.arc_row(id: 999, center: 180, range: 140, flags: 0),
+    ])
+    != Error(prerequisite.NoPositionalRequirementRow(id: 999))
+    as "the row itself does"
 }
 
 pub fn a_row_naming_a_positional_requirement_the_clients_table_lacks_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  assert prerequisite.of_row(
-      row: prerequisite_support.row(id: 1, flags: 0, conditions: [
-        #(108, 1, 999, 0),
-      ]),
-      tables: client_tables.shared(),
+  let tables = client_tables.shared()
+  let row =
+    prerequisite_support.row(id: 1, flags: 0, conditions: [#(108, 1, 999, 0)])
+  assert prerequisite.load(
+      id: PrerequisiteId(1),
+      rows: fn(_) { Ok(row) },
+      arcs: prerequisite.table_arcs(tables:),
     )
-    == Error(prerequisite.MissingRow(table: "PositionalRequirement", id: 999))
+    == Error(prerequisite.NoPositionalRequirementRow(id: 999))
     as "the client's table holds 52 rows and none is 999"
 }
 

@@ -3,7 +3,7 @@
 
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject, Subject}
-import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/dict
@@ -51,31 +51,71 @@ pub fn single(
   id id: Int,
   condition condition: #(Int, Int, Int, Int),
 ) -> Prerequisite {
-  prerequisite_of(row: row(id:, flags: 0, conditions: [condition]))
+  loaded(id:, rows: [row(id:, flags: 0, conditions: [condition])])
 }
 
-/// The prerequisite of a row that holds no type 108 condition, which would need a
-/// PositionalRequirement row (`prerequisite_of_arcs`); a row that does is a mistake of the
-/// test.
+/// The PositionalRequirement rows of a planted table that holds none.
+pub fn no_arcs() -> fn(Int) ->
+  Result(positional_requirement.PositionalRequirement, Nil) {
+  fn(_) { Error(Nil) }
+}
+
+/// The prerequisite with this id as `load` makes it from rows held in memory: the
+/// planted table is these rows, and it holds no PositionalRequirement row.
+pub fn load_from(
+  id id: Int,
+  rows rows: List(prerequisite_table.Prerequisite),
+) -> Result(Prerequisite, prerequisite.LoadError) {
+  load_with_arcs(id:, rows:, arcs: [])
+}
+
+/// The same, whose type 108 conditions find their PositionalRequirement rows among
+/// `arcs`, as the client's table holds them (`table_rows -- PositionalRequirement 53`).
+pub fn load_with_arcs(
+  id id: Int,
+  rows rows: List(prerequisite_table.Prerequisite),
+  arcs arcs: List(positional_requirement.PositionalRequirement),
+) -> Result(Prerequisite, prerequisite.LoadError) {
+  prerequisite.load(
+    id: PrerequisiteId(id),
+    rows: fn(wanted) { list.find(rows, fn(row) { row.id == wanted.value }) },
+    arcs: fn(wanted) { list.find(arcs, fn(arc) { arc.id == wanted }) },
+  )
+}
+
+/// The same, which must load.
+pub fn loaded(
+  id id: Int,
+  rows rows: List(prerequisite_table.Prerequisite),
+) -> Prerequisite {
+  loaded_with_arcs(id:, rows:, arcs: [])
+}
+
+/// The same with the arcs, which must load.
+pub fn loaded_with_arcs(
+  id id: Int,
+  rows rows: List(prerequisite_table.Prerequisite),
+  arcs arcs: List(positional_requirement.PositionalRequirement),
+) -> Prerequisite {
+  let assert Ok(loaded) = load_with_arcs(id:, rows:, arcs:)
+    as "the rows held in memory load: every id they name has a row"
+  loaded
+}
+
+/// The prerequisite of a row that holds no nested row and no type 108 condition.
 pub fn prerequisite_of(
   row row: prerequisite_table.Prerequisite,
 ) -> Prerequisite {
-  prerequisite_of_arcs(row:, arcs: [])
+  loaded(id: row.id, rows: [row])
 }
 
-/// The prerequisite of a row, whose type 108 conditions find their PositionalRequirement
-/// rows among `arcs`, as the client's table holds them (`table_rows -- PositionalRequirement
-/// 53`); a row that names none is a mistake of the test.
+/// The prerequisite of a row whose type 108 conditions find their PositionalRequirement
+/// rows among `arcs`.
 pub fn prerequisite_of_arcs(
   row row: prerequisite_table.Prerequisite,
   arcs arcs: List(positional_requirement.PositionalRequirement),
 ) -> Prerequisite {
-  let assert Ok(prerequisite) =
-    prerequisite.of_row_with(row:, find_arc: fn(id) {
-      list.find(arcs, fn(arc) { arc.id == id })
-    })
-    as "the row's type 108 conditions name the arcs given"
-  prerequisite
+  loaded_with_arcs(id: row.id, rows: [row], arcs:)
 }
 
 /// A PositionalRequirement row: its id, angleCenter, angleRange and flags.
@@ -108,7 +148,12 @@ pub fn holding(
 ) -> Subject {
   Subject(
     under: list.map(held, fn(node) {
-      lasting.Held(spell4_id: Spell4Id(node.0), caster: node.1, count: node.2)
+      lasting.Held(
+        spell4_id: Spell4Id(node.0),
+        caster: node.1,
+        count: node.2,
+        groups: [],
+      )
     }),
     second_unit:,
     in_combat: False,
@@ -116,6 +161,7 @@ pub fn holding(
     rolls: [],
     difficulty: None,
     stealthed: None,
+    resource_slots: None,
     positions: prerequisite.NotPlaced,
     seen: prerequisite.WholeUnit,
   )
@@ -126,5 +172,5 @@ pub fn check(
   row row: prerequisite_table.Prerequisite,
   subject subject: Subject,
 ) -> prerequisite.Verdict {
-  prerequisite.check(prerequisite: prerequisite_of(row:), subject:)
+  prerequisite.check(prerequisite: loaded(id: row.id, rows: [row]), subject:)
 }

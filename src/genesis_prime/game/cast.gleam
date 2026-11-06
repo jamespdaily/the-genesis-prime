@@ -12,6 +12,7 @@
 //// 0x9a press ──────────────▶ decode; bag index ─▶ the ability's tree (genesis_prime/game/spell_plan)
 ////                            an open threshold of the ability ─▶ the stage its index names
 ////                            a refusal of the client's own checks ──▶ 0x7fc {client id, Spell4 id, result}
+////                            the spell's cast conditions last (CasterCast 151, TargetCast 281)
 ////                            accepted: id k = mint(unit, n); the gcd starts
 //// ◀── 0x7fd {client id, k, caster}                  (the caster's cast starts in its client)
 ////                            Tell(each viewer, CastStarted)  ──────────────▶ 0x7ff, when its client shows the caster
@@ -27,6 +28,9 @@
 //// ◀── 0x7fe {k}             Tell(each viewer, CastFinished) ──────────────▶ 0x7fe, for a cast it wrote
 //// ◀── 0x814 {ability, bit}  the last tap or the release closes the threshold
 //// 0x801 {k, 6, 1} ─────────▶ the cast ends: its timers cancelled, 0x7fe to all
+////
+//// each input in the world ─▶ `persisted`: a lasting cast whose persistence stopped holding
+////                            ends ──▶ 0x7f9 {k, 282 or 283, caster, 0}, then 0x7fe {k}; Tell(each viewer, CastFinished)
 ////
 //// 0x4db held 1 ────────────▶ the ability is held: the same press, with the id k minted and no 0x7fd
 ////                            its cast over and its cooldowns run ─▶ the same press again (StartTimer(repeat))
@@ -73,15 +77,33 @@
 ////   caster's current cast is live (below); 14 while the global cooldown has more
 ////   than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
 ////   more than 500 ms left (`0x1403b14c0`); a caster requirement's result when the
-////   caster's resource fails it, never waived (`0x1403b1780`, `Rampage` 51 below
-////   250 Kinetic Energy); 50 + the resource slot for a cost the caster's class
+////   caster's resource fails it and the spell's waiver does not pass (`0x1403b1780`,
+////   `Rampage` 51 below 250 Kinetic Energy unless the caster is under Overdrive 42908);
+////   50 + the resource slot for a cost the caster's class
 ////   resource cannot pay (`0x1403b3320`, `0x1405e7980`,
 ////   `Spell4CastResult.vital_cost`); 169 for a spell that needs the weapon when
-////   slot 16 holds none (`0x1403afb10`); and 285 for a spell whose method is not
+////   slot 16 holds none (`0x1403afb10`); 151 for a spell whose CasterCast fails and
+////   281 for one whose TargetCast does, the last checks of the press (`0x1403ace00`,
+////   below); and 285 for a spell whose method is not
 ////   one of Normal, Multiphase, Channeled, RapidTap and ChargeRelease
-////   (`Spell.CodeEnumCastMethod`). A cost in a vital the server does not hold and
-////   a method not built are each logged once on the connection for the coverage
-////   measure. The caster's checks run in the client's order (`Verdict`).
+////   (`Spell.CodeEnumCastMethod`). A cost in a vital the server does not hold, a cast
+////   condition it cannot read and a method not built are each logged once on the
+////   connection for the coverage measure. The caster's checks run in the client's
+////   order (`Verdict`).
+//// - **The cast conditions** are the spell's prerequisiteIdCasterCast and
+////   prerequisiteIdTargetCast, which the client checks after every other check of the
+////   press, CasterCast first (`0x1403ace00`, `Spell4.prerequisiteIdCasterCast`), so a press
+////   that fails several gets the client's first failure; the check runs only on the path
+////   that would accept, since a press the client queues (317) is sent unchecked. The first
+////   unit is the caster, and the second unit too: the server reads no target and the client
+////   makes the caster the target of every spell it presses. A press held for a cooldown or
+////   behind the current cast is checked when it starts, as one the client sent unchecked is
+////   (`Spell4.prerequisiteIdCasterCast`), and a held key's repeat each time. A spell with a
+////   caster requirement block and propertyFlags bit 2 is not gated by its CasterCast: that
+////   prerequisite only waives a failed requirement (`0x1403b1780`). A condition of a type
+////   the server does not read, or a type 37 roll (a press draws none), refuses with the
+////   check's result and a warning once for the spell (the server's choice, as for a cost in
+////   a vital it does not hold).
 //// - **A cost is checked at the accept and paid at the cast's first go** (`Pay`): the
 ////   client checks a cost only before it sends a press, lowers no resource itself and
 ////   shows only what 0x935 says, so when to pay is the server's
@@ -244,6 +266,25 @@
 ////   on the same timer, 0x811 for the unit while the cast goes on, and a 0x801 stops a
 ////   cast the same way: its pending gos are cancelled and it lingers if a node has life
 ////   left, since a cancel ends no buff.
+//// - **Persistence** is the server's alone: the client never evaluates
+////   prerequisiteIdCasterPersistence or prerequisiteIdTargetPersistence, which it keeps
+////   to word the results 282 and 283 (`Spell4.prerequisiteIdCasterPersistence`,
+////   `0x1405648a0`). The connection calls `persisted` at the end of each input of a player
+////   in the world, which is exact and needs no timer or interval (the tables give none).
+////   Each live or lingering cast, lowest id first, whose spell's condition fails ends
+////   (checked again after each end, since one can break another's): 0x7f9 {cast id, 282 or
+////   283, the caster, 0}, which destroys the nodes the cast holds so its buff goes and leaves
+////   the cast filed, then the 0x7fe that takes it out of the client's table, told to the
+////   audience as a finish (`opcode.0x7f9`, `cast.target_node_end`; which message retail sent
+////   is not known). The cast's go, finish and NodesEnd timers are cancelled, its property
+////   modifiers and cooldown effects end, its stealth sources drop (the input's last effect
+////   is `StealthChanged`), the current cast clears when it was this one, an open threshold
+////   it is the base cast of closes as a 0x801 closes it, and a press held for the clear
+////   starts. CasterPersistence (282) is checked before TargetPersistence (283), the caster
+////   the first unit and the cast's primary target the second; TargetPersistence is checked
+////   only for a cast whose primary target is the caster, since the connection holds no
+////   creature's state. A condition of a type not read, a roll and a creature target keep the
+////   cast, with one debug line for the spell.
 //// - **A unit that leaves the caster's sight** takes its nodes with it on the client
 ////   (`0x1404550d0`), so the rule drops them too and a lingering cast left with no node
 ////   ends with its 0x7fe (`unit_removed`).
@@ -330,6 +371,15 @@
 //// | a press needs points that a live cast has reserved | 0x7fc with the cost's result, as for a slot that holds too little |
 //// | the slot holds less than a live cast reserved when its first go comes (the Esper's empty, the Warrior's drain) | the go pays what the slot holds, down to 0 |
 //// | a 0x801 ends a cast while the round of its first go is open | the cost was paid as the strike began; the round's answer finds no live cast: no go is written, the hits stand |
+//// | a press whose CasterCast or TargetCast fails | 0x7fc {client id, spell, 151 or 281}, after every other check; nothing else changes |
+//// | a press whose cast condition is of a type the server does not read | 0x7fc 151 or 281, a warning once for the spell |
+//// | a held press, or a held key's repeat, whose cast condition fails when it starts | 0x7fc {client id, or 0 for a key, spell, 151}; nothing started, a key's hold ends |
+//// | a caster requirement fails and the spell's waiver passes | the requirement is waived; the next is checked |
+//// | a caster requirement fails and its waiver is not read | 0x7fc with the requirement's result, a warning once for the spell |
+//// | a lasting cast's persistence fails | 0x7f9 {cast id, 282 or 283, caster, 0}, 0x7fe, CastFinished to each viewer; timers and modifiers end; the current cast clears; a press held for it starts |
+//// | a persistence not read, or a target persistence on a creature | the cast goes on; a debug line once for the spell |
+//// | two casts whose persistence fails in one input, or one that fails because the other ended | both end in that input, the lower cast id first |
+//// | a persistence check while the player is leaving or dead | nothing: `left` and `died` have already dropped every cast |
 //// | a press while one is held | 0x7fc 13 |
 //// | a go adds a Stealth source while the stack cap of its spell takes the first cast off | one source left, one 0x811, no `StealthChanged` |
 //// | a go of a spell that ends stealth after the stealth ended | nothing to end, nothing written |
@@ -392,6 +442,7 @@ import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_failed.{SpellFailed}
 import genesis_prime/message/spell_finished.{SpellFinished}
 import genesis_prime/message/spell_go.{type SpellGo, SpellGo}
 import genesis_prime/message/spell_miss.{SpellMiss}
@@ -661,6 +712,8 @@ pub type Lingering {
     /// The monotonic time the cast started at: a removal takes the oldest cast
     /// first, and the cast id wraps, so the age is this.
     started_ms: Int,
+    /// The unit the cast was aimed at when it started, which its persistence reads.
+    primary_target: Int,
     nodes: Dict(Int, lasting.Node),
   )
 }
@@ -736,6 +789,9 @@ pub opaque type State {
     /// The id of the cast of the player's innate passive, once `passive_started` has
     /// started it: the one cast a death leaves.
     passive: Option(Int),
+    /// The persistence columns already logged as not read or not checked on this
+    /// connection, by Spell4 id and result (282 or 283): one debug line for each.
+    persistence_logged: Set(#(Int, Int)),
   )
 }
 
@@ -769,6 +825,7 @@ pub fn new() -> State {
     logged: set.new(),
     stealth: dict.new(),
     passive: None,
+    persistence_logged: set.new(),
   )
 }
 
@@ -1418,8 +1475,9 @@ const caster_must_be_dead = 58
 /// What the client's checks make of a press, in its order: the caster's death, a
 /// press held already and the method, then CheckCastCaster's own in its order
 /// (`0x1403afb10.order`): the current cast, the cooldowns (a press within the queue
-/// window passing as the client's 317 does), the caster requirements, the innate
-/// costs and the weapon.
+/// window passing as the client's 317 does), the caster requirements (waived by the
+/// spell's waiver), the innate costs, the weapon and, last, the spell's own cast conditions
+/// (`0x1403ace00`).
 type Verdict {
   /// The press is accepted, and its cast pays these costs at its first go (at the
   /// accept when it goes at once).
@@ -1431,8 +1489,9 @@ type Verdict {
   /// The caster's current cast has 500 ms or less left: the press waits for the go
   /// or finish that clears it, which is the server's choice (`cast.press_queue`).
   HoldForCast
-  /// The spell waits for a later step: its method is not built, or its cost needs
-  /// a vital the server does not hold. It is refused, and logged once.
+  /// The spell waits for a later step: its method is not built, its cost needs a
+  /// vital the server does not hold, or a cast condition or waiver is of a type the
+  /// server does not read. It is refused, and logged once.
   NotBuilt(result: cast_result.CastResult, why: String)
 }
 
@@ -1479,13 +1538,13 @@ fn verdict(
     return: Refuse(result: cast_result.SpellCooldown),
   )
   case
-    failed_requirement(spell:, resources: caster.resources),
+    requirement_refusal(cast:, caster:, spell:),
     costs_paid(
       costs: spell.costs,
       resources: unreserved(cast:, resources: caster.resources),
     )
   {
-    Some(result), _ -> Refuse(result: cast_result.from_value(result))
+    Some(refusal), _ -> refusal
     None, Error(Unpaid(result:)) ->
       Refuse(result: cast_result.from_value(result))
     None, Error(Unheld(result:)) ->
@@ -1503,26 +1562,131 @@ fn verdict(
     None, Ok(paid) ->
       case lacks_the_weapon(spell:, caster:), int.max(global_left, own_left) {
         True, _ -> Refuse(result: cast_result.WeaponSlot)
-        False, 0 -> Accept(paid:)
+        False, 0 -> cast_conditions(cast:, caster:, spell:, paid:)
         False, wait_ms -> Hold(wait_ms:)
       }
   }
 }
 
-/// The result of the first of the spell's caster requirements the caster fails
-/// (`0x1403b1780`). A failed requirement is never waived: the waiver is a
-/// prerequisite (`spell_plan.Spell.requirement_waiver`), which is not checked.
-fn failed_requirement(
+/// What the spell's caster requirements make of the press: the refusal for the first the
+/// caster fails and its waiver does not pass (`0x1403b1780`), none when each is met or
+/// waived. A waiver the server cannot read refuses with the requirement's result, as
+/// not built (the server's choice, as for a cost in a vital it does not hold).
+fn requirement_refusal(
+  cast cast: State,
+  caster caster: Caster,
   spell spell: Spell,
-  resources resources: Resources,
-) -> Option(Int) {
+) -> Option(Verdict) {
   list.find_map(spell.requirements, fn(requirement) {
-    case meets(requirement:, resources:) {
+    case meets(requirement:, resources: caster.resources) {
       True -> Error(Nil)
-      False -> Ok(requirement.result)
+      False ->
+        case waiver_verdict(cast:, caster:, spell:) {
+          prerequisite.Passes -> Error(Nil)
+          prerequisite.Fails ->
+            Ok(Refuse(result: cast_result.from_value(requirement.result)))
+          prerequisite.NotRead(prerequisite_type:) ->
+            Ok(NotBuilt(
+              result: cast_result.from_value(requirement.result),
+              why: "has a caster requirement whose waiver is a condition of the PrerequisiteType "
+                <> int.to_string(prerequisite_type)
+                <> ", which the server does not read",
+            ))
+        }
     }
   })
   |> option.from_result
+}
+
+/// What the spell's waiver makes of a failed requirement: the waiver's prerequisite
+/// checked against the caster, and a spell that has none fails (`0x1403b1780`).
+fn waiver_verdict(
+  cast cast: State,
+  caster caster: Caster,
+  spell spell: Spell,
+) -> prerequisite.Verdict {
+  case spell.caster_cast {
+    spell_plan.RequirementWaiver(prerequisite: waiver) ->
+      prerequisite.check(
+        prerequisite: waiver,
+        subject: subject_of(cast:, caster:),
+      )
+    spell_plan.CastGate(..) | spell_plan.NoCasterCast -> prerequisite.Fails
+  }
+}
+
+/// The press that passed every other check, now against the spell's own cast
+/// conditions in the client's order: CasterCast, then TargetCast (`0x1403ace00`). The
+/// caster is both units of each check: the server reads no target, and the client makes
+/// the caster the target of every spell it presses (the cast module's doc, "The target").
+/// A condition the server cannot read, a type it does not read or a roll (a press draws
+/// none), refuses with the check's result as not built.
+fn cast_conditions(
+  cast cast: State,
+  caster caster: Caster,
+  spell spell: Spell,
+  paid paid: Paid,
+) -> Verdict {
+  let caster_gate = case spell.caster_cast {
+    spell_plan.CastGate(prerequisite: gate) -> Some(gate)
+    spell_plan.RequirementWaiver(..) | spell_plan.NoCasterCast -> None
+  }
+  use <- bool.guard(
+    when: option.is_none(caster_gate) && option.is_none(spell.target_cast),
+    return: Accept(paid:),
+  )
+  let subject = subject_of(cast:, caster:)
+  case
+    condition_verdict(
+      gate: caster_gate,
+      subject:,
+      result: cast_result.PrereqCasterCast,
+    )
+  {
+    Some(refusal) -> refusal
+    None ->
+      case
+        condition_verdict(
+          gate: spell.target_cast,
+          subject:,
+          result: cast_result.PrereqTargetCast,
+        )
+      {
+        Some(refusal) -> refusal
+        None -> Accept(paid:)
+      }
+  }
+}
+
+/// What a Prerequisite column of the spell makes of the subject; a spell with none passes.
+fn column_verdict(
+  gate gate: Option(prerequisite.Prerequisite),
+  subject subject: prerequisite.Subject,
+) -> prerequisite.Verdict {
+  case gate {
+    None -> prerequisite.Passes
+    Some(gate) -> prerequisite.check(prerequisite: gate, subject:)
+  }
+}
+
+/// The refusal a cast condition gives when it fails or cannot be read, none when it
+/// passes or the spell has none.
+fn condition_verdict(
+  gate gate: Option(prerequisite.Prerequisite),
+  subject subject: prerequisite.Subject,
+  result result: cast_result.CastResult,
+) -> Option(Verdict) {
+  case column_verdict(gate:, subject:) {
+    prerequisite.Passes -> None
+    prerequisite.Fails -> Some(Refuse(result:))
+    prerequisite.NotRead(prerequisite_type:) ->
+      Some(NotBuilt(
+        result:,
+        why: "has a cast condition of the PrerequisiteType "
+          <> int.to_string(prerequisite_type)
+          <> ", which the server does not read",
+      ))
+  }
 }
 
 /// Whether the caster's slot meets the requirement: its amount, or its percentage
@@ -2281,6 +2445,7 @@ type Holder {
     spell: Spell,
     audience: Set(ConnectionId),
     started_ms: Int,
+    primary_target: Int,
     nodes: Dict(Int, lasting.Node),
     /// Whether the cast has gone for the last time and waits for its nodes to end.
     lingering: Bool,
@@ -2295,6 +2460,7 @@ fn holder_of(cast cast: State, cast_id cast_id: Int) -> Result(Holder, Nil) {
         spell: live.spell,
         audience: live.audience,
         started_ms: live.started_ms,
+        primary_target: live.primary_target,
         nodes: live.nodes,
         lingering: False,
       ))
@@ -2303,6 +2469,7 @@ fn holder_of(cast cast: State, cast_id cast_id: Int) -> Result(Holder, Nil) {
         spell: lingering.spell,
         audience: lingering.audience,
         started_ms: lingering.started_ms,
+        primary_target: lingering.primary_target,
         nodes: lingering.nodes,
         lingering: True,
       ))
@@ -2625,6 +2792,293 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   use <- settled(cast:)
   all_ended(cast:, now:)
+}
+
+/// Whether some live or lingering cast holds a spell with a persistence column, so
+/// `persisted` has something to check: the connection asks before it builds the caster,
+/// since most inputs find nothing.
+pub fn persists(cast cast: State) -> Bool {
+  list.any(holders(cast:), fn(entry) {
+    has_persistence(spell: { entry.1 }.spell)
+  })
+}
+
+fn has_persistence(spell spell: Spell) -> Bool {
+  option.is_some(spell.caster_persistence)
+  || option.is_some(spell.target_persistence)
+}
+
+/// The end of an input in the world: each live or lingering cast whose spell's
+/// persistence condition no longer holds ends, in cast id order, the lowest first,
+/// checked again after each end (it can break another's condition), and a press held
+/// for the current cast it cleared starts. The client never evaluates a persistence
+/// column (`Spell4.prerequisiteIdCasterPersistence`), so when to check and how to end
+/// are the server's: after every input, which is exact and needs no timer. A cast ends
+/// with 0x7f9 {cast id, 282 or 283, the caster, 0}, which destroys its nodes and so ends
+/// its buff, then the 0x7fe that takes it out of the client's table, and is told to the
+/// audience as a finish (`opcode.0x7f9`, `cast.target_node_end`). CasterPersistence
+/// (282) is checked before TargetPersistence (283), the caster the first unit and the
+/// cast's primary target the second; TargetPersistence is checked only for a cast the
+/// caster itself is the target of, since no creature's state is held here. A press held
+/// for the current cast it cleared starts, and a held key repeats, as after any input;
+/// the casts they start are checked in turn. A condition
+/// of a type not read, a roll (none is drawn) and a creature target keep the cast, with
+/// one debug line for the spell.
+pub fn persisted(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  use <- settled(cast:)
+  let now_ms = now.monotonic_ms
+  let #(cast, ended) = persistence_ended(cast:, caster:, now_ms:, done: [])
+  let #(cast, effects) =
+    released(taken: #(cast, ended), caster:, now_ms:)
+    |> continued(caster:, now_ms:)
+  // A press the end let start, or a repeat of a held key, starts a cast whose own
+  // persistence may already fail.
+  let #(cast, more) =
+    persistence_ended(
+      cast:,
+      caster: after_payments(caster:, effects:),
+      now_ms:,
+      done: [],
+    )
+  #(cast, list.append(effects, more))
+}
+
+/// The casts that fail their persistence ended one at a time, the lowest cast id first,
+/// until none fails.
+fn persistence_ended(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  done done: List(Effect),
+) -> #(State, List(Effect)) {
+  let subject = subject_of(cast:, caster:)
+  let #(cast, logs, failing) =
+    first_failing_persistence(
+      cast:,
+      caster:,
+      subject:,
+      holders: holders(cast:),
+      logs: [],
+    )
+  case failing {
+    None -> #(cast, list.append(done, logs))
+    Some(#(cast_id, result)) -> {
+      let #(cast, ended) =
+        persistence_end(cast:, caster:, now_ms:, cast_id:, result:)
+      persistence_ended(
+        cast:,
+        caster:,
+        now_ms:,
+        done: list.flatten([done, logs, ended]),
+      )
+    }
+  }
+}
+
+/// The first cast, in the order given, whose persistence fails, with its result and the
+/// debug lines of the casts checked on the way.
+fn first_failing_persistence(
+  cast cast: State,
+  caster caster: Caster,
+  subject subject: prerequisite.Subject,
+  holders holders: List(#(Int, Holder)),
+  logs logs: List(Effect),
+) -> #(State, List(Effect), Option(#(Int, cast_result.CastResult))) {
+  case holders {
+    [] -> #(cast, logs, None)
+    [#(cast_id, holder), ..rest] -> {
+      let #(cast, more, failing) =
+        persistence_of(cast:, caster:, subject:, holder:)
+      let logs = list.append(logs, more)
+      case failing {
+        Some(result) -> #(cast, logs, Some(#(cast_id, result)))
+        None ->
+          first_failing_persistence(
+            cast:,
+            caster:,
+            subject:,
+            holders: rest,
+            logs:,
+          )
+      }
+    }
+  }
+}
+
+/// The result a cast's persistence fails with, none when it holds or cannot be read.
+fn persistence_of(
+  cast cast: State,
+  caster caster: Caster,
+  subject subject: prerequisite.Subject,
+  holder holder: Holder,
+) -> #(State, List(Effect), Option(cast_result.CastResult)) {
+  let spell = holder.spell
+  let #(cast, caster_logs, caster_fails) =
+    persistence_column(
+      cast:,
+      spell:,
+      result: cast_result.PrereqCasterPersistence,
+      gate: spell.caster_persistence,
+      subject: prerequisite.Subject(
+        ..subject,
+        second_unit: Some(holder.primary_target),
+      ),
+    )
+  use <- bool.guard(when: caster_fails, return: #(
+    cast,
+    caster_logs,
+    Some(cast_result.PrereqCasterPersistence),
+  ))
+  let #(cast, target_logs, target_fails) = case
+    holder.primary_target == caster.unit_id
+  {
+    True ->
+      persistence_column(
+        cast:,
+        spell:,
+        result: cast_result.PrereqTargetPersistence,
+        gate: spell.target_persistence,
+        subject:,
+      )
+    False ->
+      case spell.target_persistence {
+        None -> #(cast, [], False)
+        Some(_) -> {
+          let #(cast, log) =
+            logged_once(
+              cast:,
+              spell:,
+              result: cast_result.PrereqTargetPersistence,
+              text: "has a target persistence on a creature, whose state this connection does not hold, so it is not checked",
+            )
+          #(cast, log, False)
+        }
+      }
+  }
+  #(cast, list.append(caster_logs, target_logs), case target_fails {
+    True -> Some(cast_result.PrereqTargetPersistence)
+    False -> None
+  })
+}
+
+/// One persistence column checked: whether it fails, and the debug line when it cannot
+/// be read, once for the spell.
+fn persistence_column(
+  cast cast: State,
+  spell spell: Spell,
+  result result: cast_result.CastResult,
+  gate gate: Option(prerequisite.Prerequisite),
+  subject subject: prerequisite.Subject,
+) -> #(State, List(Effect), Bool) {
+  case column_verdict(gate:, subject:) {
+    prerequisite.Passes -> #(cast, [], False)
+    prerequisite.Fails -> #(cast, [], True)
+    prerequisite.NotRead(prerequisite_type:) -> {
+      let #(cast, log) =
+        logged_once(
+          cast:,
+          spell:,
+          result:,
+          text: "has a persistence of the PrerequisiteType "
+            <> int.to_string(prerequisite_type)
+            <> ", which the server does not read, so its casts go on",
+        )
+      #(cast, log, False)
+    }
+  }
+}
+
+/// A debug line about the spell's persistence column of this result, unless one was
+/// written already on this connection.
+fn logged_once(
+  cast cast: State,
+  spell spell: Spell,
+  result result: cast_result.CastResult,
+  text text: String,
+) -> #(State, List(Effect)) {
+  let key = #(spell.spell4_id.value, cast_result.to_value(result))
+  use <- bool.guard(
+    when: set.contains(cast.persistence_logged, key),
+    return: #(cast, []),
+  )
+  #(
+    State(..cast, persistence_logged: set.insert(cast.persistence_logged, key)),
+    [
+      Log(
+        level: LogDebug,
+        text: "the cast of Spell4 "
+          <> int.to_string(spell.spell4_id.value)
+          <> " "
+          <> text,
+      ),
+    ],
+  )
+}
+
+/// A cast whose persistence failed ends as a death ends one cast: 0x7f9 with the
+/// result, its go, finish and NodesEnd timers cancelled, its property modifiers and
+/// cooldown effects ended, the current cast cleared when it was this one, an open
+/// threshold it is the base cast of closed as a 0x801 closes it, and its 0x7fe to the
+/// caster and the audience.
+fn persistence_end(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  cast_id cast_id: Int,
+  result result: cast_result.CastResult,
+) -> #(State, List(Effect)) {
+  let failure = failed_effect(cast_id:, result:, unit_id: caster.unit_id)
+  case dict.get(cast.casts, cast_id), dict.get(cast.lingering, cast_id) {
+    Ok(live), _ -> {
+      let #(cast, cancels) = stop_pending(cast:, cast_id:)
+      let #(cast, nodes) = cancel_nodes_end(cast:, cast_id:)
+      let #(cast, ended) = effects_ended(cast:, cast_id:, spell: live.spell)
+      let #(cast, finished) = case open_charge_of(cast:, cast_id:) {
+        Some(threshold) ->
+          close_threshold(cast:, ability: threshold.ability, now_ms:)
+        None -> finish(cast:, cast_id:, live:, now_ms:)
+      }
+      #(cast, list.flatten([[failure], cancels, nodes, ended, finished]))
+    }
+    Error(Nil), Ok(lingering) -> {
+      let cast = State(..cast, lingering: dict.delete(cast.lingering, cast_id))
+      let #(cast, nodes) = cancel_nodes_end(cast:, cast_id:)
+      let #(cast, ended) =
+        effects_ended(cast:, cast_id:, spell: lingering.spell)
+      #(
+        passive_cleared(cast:, cast_id:),
+        list.flatten([
+          [failure],
+          nodes,
+          ended,
+          finished_effects(cast_id:, audience: lingering.audience),
+        ]),
+      )
+    }
+    Error(Nil), Error(Nil) -> #(cast, [])
+  }
+}
+
+/// 0x7f9 for a cast that failed with this result: the bit is the 0 the 0x7fe path passes
+/// (`opcode.0x7f9`). The unit is the caster, not the 0 the 0x7fe path passes: FinishCast
+/// releases the threshold of a RapidTap cast ended with a result other than 6 or 8 only
+/// when the end names another unit (`0x14053e1b0`), and this rule keeps the threshold of a
+/// stage it ends open (only a charge's base cast closes its own), so the unit must not be
+/// another; the 0x7fe path's result 8 never touches a threshold, which is why 0 is safe
+/// there.
+fn failed_effect(
+  cast_id cast_id: Int,
+  result result: cast_result.CastResult,
+  unit_id unit_id: Int,
+) -> Effect {
+  let assert Ok(body) =
+    spell_failed.encode(SpellFailed(cast_id:, result:, unit_id:, field_4: 0))
+    as "a cast id of 32 bits, a result of 9, a unit id of 32 and a bit fit the message"
+  Send(frame: Frame(message_id: spell_failed.message_id, body:))
 }
 
 /// The player's innate passive, the plans' spell of this Spell4Base, starts: a cast of
@@ -4584,8 +5038,10 @@ fn finished_effects(
 /// `0x1403b3320`: the cost check reads Vitals 5 to 11 as the caster's resource slots
 /// 0 to 6; the getter type 71 and 73 call is not read case by case, so the same
 /// mapping is taken for it). A slot the class does not hold is no vital, so a
-/// prerequisite of it is not read. A player holds no difficulty. The caster stands on its
-/// own point, facing its own yaw, for both units of a type 108 condition
+/// prerequisite of it is not read. The same slot is the resource slot a type 64 condition
+/// names by its number, and every other slot reads 0.0 as the client's unit holds it
+/// (`class_resource`, `0x140454380`). A player holds no difficulty. The caster stands on
+/// its own point, facing its own yaw, for both units of a type 108 condition
 /// (`Spell4Effects.prerequisiteIdTargetApply`: the caster is both units of a caster-side
 /// check).
 fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
@@ -4611,6 +5067,7 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
           spell4_id: live.spell.spell4_id,
           caster: caster.unit_id,
           count: 0,
+          groups: live.spell.groups,
         )
       })
       |> list.append(nodes_held(cast:, caster:)),
@@ -4619,6 +5076,13 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     vitals: dict.merge(dict.from_list(held), caster.life_vitals),
     difficulty: None,
     stealthed: Some(stealthed(cast:)),
+    resource_slots: Some(case slot >= 0 {
+      True ->
+        dict.from_list([
+          #(slot, class_resource.value(resources: caster.resources, slot:)),
+        ])
+      False -> dict.new()
+    }),
     rolls: [],
     positions: prerequisite.Placed(first: pose, second: pose),
     seen: prerequisite.WholeUnit,
@@ -4633,6 +5097,7 @@ fn nodes_held(cast cast: State, caster caster: Caster) -> List(lasting.Held) {
       spell4_id: hold.spell4_id,
       caster: caster.unit_id,
       count: hold.node.count,
+      groups: hold.groups,
     )
   })
 }
@@ -5184,6 +5649,7 @@ fn finish_or_linger(
               spell: live.spell,
               audience: live.audience,
               started_ms: live.started_ms,
+              primary_target: live.primary_target,
               nodes: dict.from_list(kept),
             ),
           ),

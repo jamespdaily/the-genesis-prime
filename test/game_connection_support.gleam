@@ -55,7 +55,9 @@ import genesis_prime/store.{
   ForWorld, Listed, Move, NameStands, NotTheAccounts, PlaceSaved, SavePlace,
   Unavailable,
 }
-import genesis_prime/table/id.{ClassId, Creature2Id, RaceId, Spell4Id}
+import genesis_prime/table/id.{
+  ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4Id,
+}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_unit
@@ -1346,17 +1348,9 @@ pub fn spell_started_of(
   )
 }
 
-/// The connection of the client's tables in character select, as the entry of
-/// a class needs it.
-pub fn in_select_with_the_clients_tables() -> game_connection.State {
-  in_select_from(
-    accepted(Settings(..settings(), tables: client_tables.shared())).0,
-  )
-}
-
-/// The map's answer to the join, with the loadout the client's tables give
-/// the character's class and faction in place of the planted one.
-pub fn with_the_real_loadout(
+/// The map's answer to the join, with the loadout the client's tables give the
+/// character's class and faction in place of the planted one.
+pub fn with_the_clients_loadout(
   joined joined: map.Outgoing,
   class_id class_id: Int,
 ) -> map.Outgoing {
@@ -1373,20 +1367,70 @@ pub fn with_the_real_loadout(
   map.Joined(unit:, loadout: held, max_health:, incarnation:, clock_origin_ms:)
 }
 
-/// The connection after the map took a character of the class, with its entry
-/// burst.
-pub fn entered_with_the_clients_tables(
+/// The connection after the map took a character of the class, with its entry burst,
+/// on the client's tables.
+pub fn entered_on_the_clients_tables(
   class_id class_id: Int,
-  saved_health saved_health: option.Option(Int),
+  saved_health saved_health: Option(Int),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_with(
+    settings: Settings(..settings(), tables: client_tables.shared()),
+    class_id:,
+    saved_health:,
+  )
+}
+
+/// The same with these settings, whose tables must be the client's (the map's answer
+/// carries the loadout the client's tables give the class).
+pub fn entered_with(
+  settings settings: game_connection.Settings,
+  class_id class_id: Int,
+  saved_health saved_health: Option(Int),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
     joining_saved(
-      in_character_select: in_select_with_the_clients_tables(),
+      in_character_select: in_select_from(accepted(settings).0),
       character: Character(..world_character(), class_id: ClassId(class_id)),
       saved_health:,
     )
-  let joined = with_the_real_loadout(joined: map_answer(taken), class_id:)
-  answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+  answer(
+    state:,
+    taken:,
+    outcome: step.Answer(
+      FromMap(with_the_clients_loadout(joined: map_answer(taken), class_id:)),
+    ),
+  )
+}
+
+/// The tests' player of this class in the world, its connection reading the
+/// starting abilities' trees (`character_tables.shared_with_spell_trees`), with
+/// its unit id and the bag index of the ability of this Spell4Base.
+pub fn entered_with_spell_trees(
+  class_id class_id: Int,
+  ability ability: Int,
+) -> #(game_connection.State, Int, Int) {
+  let fresh =
+    accepted(
+      Settings(..settings(), tables: character_tables.shared_with_spell_trees()),
+    ).0
+  let #(state, entered) =
+    entered_from(
+      in_character_select: in_select_from(fresh),
+      character: Character(..world_character(), class_id: ClassId(class_id)),
+    )
+  let unit_id = player_in(entered).unit_id
+  let assert Ok(set) =
+    loadout.of(
+      tables: character_tables.shared(),
+      class_id: ClassId(class_id),
+      faction_id: 166,
+    )
+    as "the tables hold the class's Novice set"
+  let assert Ok(bag_index) =
+    list.index_map(set.abilities, fn(base, index) { #(base, index) })
+    |> list.key_find(Spell4BaseId(ability))
+    as "a level-1 player of the class holds the ability"
+  #(state, unit_id, bag_index)
 }
 
 /// A step of the connection at the monotonic time `ms`.

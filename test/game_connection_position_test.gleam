@@ -55,7 +55,7 @@ fn bag_index_of(base base: Int) -> Int {
 /// 0x262 gave it this yaw.
 fn stalker_with_a_beast_facing(yaw yaw: Float) -> game_connection.State {
   let #(state, _) =
-    connection_support.entered_with_the_clients_tables(
+    connection_support.entered_on_the_clients_tables(
       class_id: 5,
       saved_health: option.None,
     )

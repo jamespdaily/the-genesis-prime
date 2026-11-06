@@ -77,6 +77,7 @@ fn bare() -> Subject {
     rolls: [],
     difficulty: None,
     stealthed: None,
+    resource_slots: None,
     positions: prerequisite.NotPlaced,
     seen: prerequisite.WholeUnit,
   )
@@ -91,7 +92,12 @@ fn check(
     subject: Subject(
       ..bare(),
       under: list.map(under, fn(spell4_id) {
-        lasting.Held(spell4_id: Spell4Id(spell4_id), caster: 0, count: 0)
+        lasting.Held(
+          spell4_id: Spell4Id(spell4_id),
+          caster: 0,
+          count: 0,
+          groups: [],
+        )
       }),
     ),
   )
@@ -316,12 +322,12 @@ pub fn type_37_compares_its_roll_with_the_value_by_the_comparison_test() -> Nil 
   assert #(rolled(49), rolled(50), rolled(51)) == #(Passes, Passes, Fails)
     as "row 4585: comparison 6, value 50, so a roll of 50 or less passes: a chance of value / 100"
   assert prerequisite.rolls_needed(
-      prerequisite: prerequisite_support.prerequisite_of(row: chance),
+      prerequisite: prerequisite_support.loaded(id: chance.id, rows: [chance]),
     )
     == 1
     as "one roll for the one type 37 condition"
   assert prerequisite.rolls_needed(
-      prerequisite: prerequisite_support.prerequisite_of(row: row_24582()),
+      prerequisite: prerequisite_support.loaded(id: 24_582, rows: [row_24582()]),
     )
     == 0
     as "a row with no type 37 condition takes no roll"
@@ -335,7 +341,7 @@ pub fn each_type_37_condition_takes_a_roll_of_its_own_in_order_test() -> Nil {
       #(37, 4, 0, 90),
     ])
   assert prerequisite.rolls_needed(
-      prerequisite: prerequisite_support.prerequisite_of(row: both),
+      prerequisite: prerequisite_support.loaded(id: 1, rows: [both]),
     )
     == 2
   assert prerequisite_support.check(
@@ -538,11 +544,11 @@ pub fn the_types_the_server_decides_are_those_is_read_names_test() -> Nil {
       prerequisite.is_read(type_id:)
     })
     == [
-      0, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 108, 116,
-      132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274,
-      282, 284, 296, 297, 298, 299, 300,
+      0, 11, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 64, 71, 72, 73, 75, 108,
+      116, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257,
+      258, 274, 282, 284, 296, 297, 298, 299, 300,
     ]
-    as "the types the server reads (15, 28, 37, 50, 59, 71, 73, 108, 116, 179; Prerequisite.prerequisiteTypeId.108 and .116) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
+    as "the types the server reads (11, 15, 28, 37, 50, 59, 64, 71, 73, 108, 116, 129, 179; Prerequisite.prerequisiteTypeId.11, .64, .108, .116, .129) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
 }
 
 fn types_up_to_300() -> List(Int) {

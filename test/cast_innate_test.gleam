@@ -209,9 +209,13 @@ pub fn bag_index_4_holds_no_ability_and_is_refused_as_today_test() -> Nil {
 
 /// A class's innate pressed at bag index 3, its go answered with no unit struck, and
 /// the timers it starts fired in turn: every effect of the press and of the casts it
-/// starts, in order.
-fn innate_pressed(bag bag: List(Int)) -> List(Effect) {
-  let caster = caster_with(bag:, in_combat: False)
+/// starts, in order. The Esper's Spectral Form is pressed in combat, as its cast
+/// prerequisite 903 asks (`Spell4.58586`: the client refuses it out of combat with 151).
+fn innate_pressed(
+  bag bag: List(Int),
+  in_combat in_combat: Bool,
+) -> List(Effect) {
+  let caster = caster_with(bag:, in_combat:)
   let #(state, effects) =
     pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
   let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
@@ -221,9 +225,12 @@ fn innate_pressed(bag bag: List(Int)) -> List(Effect) {
 pub fn the_unread_rows_of_a_pressed_innate_are_listed_nowhere_and_write_no_line_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  let warrior = innate_pressed(bag: [18_309, 37_968, 38_017, 30_828])
-  let esper = innate_pressed(bag: [19_102, 19_019, 19_022, 38_012])
-  let medic = innate_pressed(bag: [38_201, 16_322, 26_543, 46_615])
+  let warrior =
+    innate_pressed(bag: [18_309, 37_968, 38_017, 30_828], in_combat: False)
+  let esper =
+    innate_pressed(bag: [19_102, 19_019, 19_022, 38_012], in_combat: True)
+  let medic =
+    innate_pressed(bag: [38_201, 16_322, 26_543, 46_615], in_combat: False)
   let unread = [
     #(warrior, [192_556, 192_608, 192_609, 210_834, 109_482]),
     #(esper, [178_144, 199_192]),
@@ -247,18 +254,21 @@ pub fn the_unread_rows_of_a_pressed_innate_are_listed_nowhere_and_write_no_line_
 pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  let warrior = innate_pressed(bag: [18_309, 37_968, 38_017, 30_828])
+  let warrior =
+    innate_pressed(bag: [18_309, 37_968, 38_017, 30_828], in_combat: False)
   assert listed(effects: warrior) |> list.sort(int.compare)
     == [127_652, 173_869, 173_911, 173_912]
     as "Spell4.46867's own go lists its type 73 row 173869, aimed at the caster; Proxy 127637 starts 42908 after 1 ms, whose go lists its three type 11 properties 127652, 173911 and 173912 (Spell4Effects spellId=42908); the type 18 row 109482 is not read"
   assert started_spells(effects: warrior) == [42_908]
     as "Proxies 147848 to 60915 and 210822 to 79875 are behind Prerequisites 24548 and 37438 (type 50, comparison 1: a live cast of an AMP's spell), which a caster with none fails"
-  let esper = innate_pressed(bag: [19_102, 19_019, 19_022, 38_012])
+  let esper =
+    innate_pressed(bag: [19_102, 19_019, 19_022, 38_012], in_combat: True)
   assert listed(effects: esper) == []
     as "Spell4.58586 holds Proxies 166935, 178143 and 204548 and the type 29 row 178144: the children list no row, and no row of the go itself is read"
   assert started_spells(effects: esper) == [70_369, 76_766]
     as "Proxy 166935 starts 70369 and Proxy 178143 starts 76766; Proxy 204548 to 78078 is behind Prerequisite 36531 (type 15, comparison 1: a live cast of Spell4 41590 on the caster), which a caster with no such cast fails"
-  let medic = innate_pressed(bag: [38_201, 16_322, 26_543, 46_615])
+  let medic =
+    innate_pressed(bag: [38_201, 16_322, 26_543, 46_615], in_combat: False)
   assert listed(effects: medic) == [228_911, 228_912]
     as "Spell4.69450's type 11 rows 228911 and 228912 (properties 35 and 36, for 8 s, aimed at the caster) are listed; 228914 (type 118) is not"
   assert started_spells(effects: medic) == []

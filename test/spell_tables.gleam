@@ -880,7 +880,7 @@ pub fn rows() -> Rows {
         kind: 0,
         global: 125,
         cost: #(0, 0),
-        more: [],
+        more: [#("prerequisiteIdCasterPersistence", 390)],
       ),
       method_spell_row(
         id: 43_468,
@@ -1900,10 +1900,17 @@ pub fn unit_property_rows() -> List(List(Cell)) {
   unit_property_rows_with(replacing: [])
 }
 
-/// The Prerequisite row Rampage's caster cast column names, the client's
-/// (`table_rows -- Prerequisite 19750`): type 15, comparison 1, value 42908.
-fn waiver_prerequisite_rows() -> List(List(Cell)) {
-  [prerequisite_row(id: 19_750, flags: 0, conditions: [#(15, 1, 0, 42_908)])]
+/// The Prerequisite rows the planted spells' cast and persistence columns name, each the
+/// client's (`table_rows -- Prerequisite 19750 390`): Rampage's cast prerequisite 19750
+/// (type 15, comparison 1, value 42908) and 390 (type 28, comparison 2: not in combat),
+/// which the planted Pulse Blast 42276 holds as its CasterPersistence. The client's Pulse
+/// Blast holds none: that column is test data, so a connection test has a cast that
+/// ends when the player enters combat.
+pub fn waiver_prerequisite_rows() -> List(List(Cell)) {
+  [
+    prerequisite_row(id: 390, flags: 0, conditions: [#(28, 2, 0, 0)]),
+    prerequisite_row(id: 19_750, flags: 0, conditions: [#(15, 1, 0, 42_908)]),
+  ]
 }
 
 /// Every planted row holds its ID in its first cell.
@@ -2640,7 +2647,6 @@ pub fn rows_with_stealth() -> Rows {
         prerequisite_row(id: 8127, flags: 0, conditions: [#(116, 1, 0, 28_455)]),
         prerequisite_row(id: 16_152, flags: 0, conditions: [#(50, 2, 0, 59_389)]),
         prerequisite_row(id: 16_153, flags: 0, conditions: [#(50, 1, 0, 59_389)]),
-        prerequisite_row(id: 390, flags: 0, conditions: [#(28, 2, 0, 0)]),
       ]),
     ),
     spell4_stack_groups: [

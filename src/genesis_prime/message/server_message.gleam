@@ -48,6 +48,7 @@ import genesis_prime/message/resurrection_window.{type ResurrectionWindow}
 import genesis_prime/message/server_hello.{type ServerHello}
 import genesis_prime/message/spell_cast_confirmed.{type SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{type SpellCastRefused}
+import genesis_prime/message/spell_failed.{type SpellFailed}
 import genesis_prime/message/spell_finished.{type SpellFinished}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_missed.{type SpellMissed}
@@ -127,6 +128,7 @@ pub type ServerMessage {
   SpellGo(message: SpellGo)
   SpellMissed(message: SpellMissed)
   SpellFinished(message: SpellFinished)
+  SpellFailed(message: SpellFailed)
   SpellTargetsRemoved(message: SpellTargetsRemoved)
   SpellStackRemoved(message: SpellStackRemoved)
   UnitCcStateApplied(message: UnitCcStateApplied)
@@ -272,6 +274,7 @@ pub fn decode(
     0x07F4 -> decoded(body, message_id, spell_go.decode, SpellGo)
     0x07FB -> decoded(body, message_id, spell_missed.decode, SpellMissed)
     0x07FE -> decoded(body, message_id, spell_finished.decode, SpellFinished)
+    0x07F9 -> decoded(body, message_id, spell_failed.decode, SpellFailed)
     0x0811 ->
       decoded(
         body,
@@ -398,6 +401,7 @@ pub fn name(message: ServerMessage) -> String {
     SpellGo(..) -> "spell_go"
     SpellMissed(..) -> "spell_missed"
     SpellFinished(..) -> "spell_finished"
+    SpellFailed(..) -> "spell_failed"
     SpellTargetsRemoved(..) -> "spell_targets_removed"
     SpellStackRemoved(..) -> "spell_stack_removed"
     UnitCcStateApplied(..) -> "unit_cc_state_applied"
