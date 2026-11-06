@@ -1,19 +1,13 @@
 //// The forced moves of the plan (`genesis_prime/game/spell_plan` `ForcedMove`,
 //// `genesis_prime/game/effect_kind`). Expected values come from these places:
-//// - `Spell4Effects.effectType.3`: a type 3 row names its move kind in dataBits00 and
-////   the minimum and maximum distance in metres in dataBits01 and dataBits02, each a
-////   32-bit float; the kit's one row is 67776 (Gate's blink: kind 0, 20 to 20 m, delay
-////   200 ms, phaseFlags 1, aimed at the caster, 0x41A00000 being 20.0), from
+//// - `Spell4Effects.effectType.3`: the kit's one row is 67776 (Gate's blink: delay
+////   200 ms, phaseFlags 1, aimed at the caster), from
 ////   `table_rows -- Spell4Effects 67776`, and its spell 34355 also holds 67777.
 //// - `Spell4Effects.effectType.3.player`: the client moves its own unit for a row aimed
 ////   at the caster, so the plan reads those rows and leaves out one aimed only at
 ////   others, which the server's 0x638 would carry (the next step).
 //// - `Spell4Effects.targetFlags`: bit 1 is the caster, 2 the primary target, 4 the
 ////   area.
-//// - The table columns are signed 32-bit integers (`game_table.column_type`), so a
-////   float's bits above 0x7FFFFFFF arrive negative.
-//// - IEEE 754 binary32: 0x7F800000 is +infinity and 0x7FC00000 a number that is not one;
-////   2.5 is 0x40200000.
 
 import client_tables
 import genesis_prime/game/effect_kind
@@ -40,12 +34,6 @@ const strike = 32_893
 
 const strike_base = 19_102
 
-/// 20.0 as the client's row holds it (`table_rows -- Spell4Effects 67776`).
-const twenty_metres = 1_101_004_800
-
-/// 2.5 as a 32-bit float's bits.
-const two_and_a_half_metres = 1_075_838_976
-
 /// A type 3 row of a planted spell aimed by `target_flags`, in every phase, as Gate's
 /// 67776 is but for its phase, with these columns beside its id, spell and type.
 fn forced_move_row(
@@ -60,9 +48,6 @@ fn forced_move_row(
     #("targetFlags", Integer(target_flags)),
     #("phaseFlags", Integer(-1)),
     #("orderIndex", Integer(9)),
-    #("dataBits00", Integer(0)),
-    #("dataBits01", Integer(twenty_metres)),
-    #("dataBits02", Integer(twenty_metres)),
   ]
   planted_table.row(
     spell4_effects.schema,
@@ -104,16 +89,11 @@ fn forced_moves_of(row row: List(Cell)) -> List(spell_plan.ForcedMove) {
   spell.forced_moves
 }
 
-fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
-  let assert Error(error) = planned(rows: with_row(row:)) as "the build fails"
-  error
-}
-
 // ---- the rows of the plan ----
 
 pub fn gates_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
   use <- owned_test.run(60_000)
-  // 67776 as the client holds it: kind 0, 20.0 to 20.0, delay 200, phase flags 1.
+  // 67776 as the client holds it: delay 200, phase flags 1.
   assert forced_moves_of(
       row: forced_move_row(id: 67_776, target_flags: 1, columns: [
         #("delayTime", Integer(200)),
@@ -124,30 +104,12 @@ pub fn gates_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
       spell_plan.ForcedMove(
         effect_id: Spell4EffectsId(67_776),
         phase_flags: 1,
-        kind: 0,
-        minimum_distance_metres: 20.0,
-        maximum_distance_metres: 20.0,
         delay_ms: 200,
         condition: Always,
         tag: spend.EqualTo(value: 0),
       ),
     ]
-    as "0x41A00000 is 20.0; the row's emmComparison 0 and emmValue 0 are the tag"
-}
-
-pub fn a_row_of_another_kind_and_a_range_of_distances_is_read_as_it_is_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Kind 4 (away, over time) with 2.5 to 20.0 m.
-  let assert [row] =
-    forced_moves_of(
-      row: forced_move_row(id: 99_060, target_flags: 1, columns: [
-        #("dataBits00", Integer(4)),
-        #("dataBits01", Integer(two_and_a_half_metres)),
-      ]),
-    )
-  assert row.kind == 4
-  assert row.minimum_distance_metres == 2.5
-  assert row.maximum_distance_metres == 20.0
+    as "the row's emmComparison 0 and emmValue 0 are the tag"
 }
 
 pub fn a_row_aimed_only_at_other_units_is_not_read_test() -> Nil {
@@ -172,31 +134,6 @@ pub fn a_row_aimed_at_the_caster_and_others_is_read_for_the_caster_test() -> Nil
       )
     assert row.effect_id == Spell4EffectsId(99_062)
   })
-}
-
-pub fn a_distance_that_is_an_infinity_or_not_a_number_fails_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // 0x7F800000 is +infinity and 0x7FC00000 a NaN.
-  assert plan_error(
-      row: forced_move_row(id: 99_063, target_flags: 1, columns: [
-        #("dataBits01", Integer(2_139_095_040)),
-      ]),
-    )
-    == spell_plan.ForcedMoveDistanceNotFinite(
-      spell4_id: strike,
-      effect_id: 99_063,
-      column: "dataBits01",
-    )
-  assert plan_error(
-      row: forced_move_row(id: 99_064, target_flags: 1, columns: [
-        #("dataBits02", Integer(2_143_289_344)),
-      ]),
-    )
-    == spell_plan.ForcedMoveDistanceNotFinite(
-      spell4_id: strike,
-      effect_id: 99_064,
-      column: "dataBits02",
-    )
 }
 
 pub fn a_row_behind_a_caster_prerequisite_is_gated_on_the_caster_and_behind_a_target_one_is_not_applied_test() -> Nil {
@@ -271,9 +208,6 @@ pub fn gates_two_caster_rows_are_read_from_the_clients_tables_test() -> Nil {
       spell_plan.ForcedMove(
         effect_id: Spell4EffectsId(67_776),
         phase_flags: 1,
-        kind: 0,
-        minimum_distance_metres: 20.0,
-        maximum_distance_metres: 20.0,
         delay_ms: 200,
         condition: Always,
         tag: spend.EqualTo(value: 0),

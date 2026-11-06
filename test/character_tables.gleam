@@ -193,8 +193,8 @@ pub fn shared_with_property_modifiers() -> store.Tables {
   })
 }
 
-/// The planted tables with Gate's forced move, row 67776 as the client holds it (kind 0,
-/// 20.0 to 20.0 m = 0x41A00000, delay 200, aimed at the caster, `table_rows --
+/// The planted tables with Gate's forced move, row 67776 as the client holds it (delay
+/// 200, phaseFlags 1, orderIndex 0, aimed at the caster, `table_rows --
 /// Spell4Effects 67776`), added to Paralytic Surge 42352, which holds none, so the
 /// Medic's press lists it in its go. Loaded once under a key of its own.
 pub fn shared_with_forced_move() -> store.Tables {
@@ -206,11 +206,11 @@ pub fn shared_with_forced_move() -> store.Tables {
         #("targetFlags", Integer(1)),
         #("effectType", Integer(3)),
         #("delayTime", Integer(200)),
-        #("phaseFlags", Integer(-1)),
+        #("phaseFlags", Integer(1)),
         #("dataBits00", Integer(0)),
         #("dataBits01", Integer(1_101_004_800)),
         #("dataBits02", Integer(1_101_004_800)),
-        #("orderIndex", Integer(2)),
+        #("orderIndex", Integer(0)),
       ])
     load_files(files_replacing(
       schema: spell4_effects.schema,

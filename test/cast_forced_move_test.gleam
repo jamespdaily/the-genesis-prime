@@ -28,14 +28,11 @@ import gleam/list
 import owned_test
 import prerequisite_support
 
-/// 67776 as the client holds it: kind 0, 20 to 20 m, delay 200, phase flags 1.
+/// 67776 as the client holds it: delay 200, phase flags 1.
 fn blink_row() -> spell_plan.ForcedMove {
   spell_plan.ForcedMove(
     effect_id: Spell4EffectsId(67_776),
     phase_flags: 1,
-    kind: 0,
-    minimum_distance_metres: 20.0,
-    maximum_distance_metres: 20.0,
     delay_ms: 200,
     condition: Always,
     tag: spend.always,
@@ -144,7 +141,7 @@ pub fn a_forced_move_alone_is_listed_on_the_caster_test() -> Nil {
 
 pub fn a_forced_move_of_a_phase_the_go_is_not_in_is_not_listed_test() -> Nil {
   use <- owned_test.run(5000)
-  // 67776 has phaseFlags 1: a go of phase 1 does not hold it.
+  // The row is moved to phaseFlags 2 (phase 1 only), which a go of phase 0 does not hold.
   let later = spell_plan.ForcedMove(..blink_row(), phase_flags: 2)
   let #(_, effects) = press(spell: holder(forced_moves: [later], modifiers: []))
   assert listed(effects:) == [] as "no row applies in phase 0"
