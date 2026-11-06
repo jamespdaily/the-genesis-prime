@@ -624,3 +624,34 @@ pub fn a_state_with_no_persistence_column_changes_nothing_test() -> Nil {
     as "the abilities' spells hold none: the check finds nothing and writes nothing"
   assert !cast.persists(cast: state)
 }
+
+// ---- a held key ----
+
+pub fn a_held_key_whose_cast_the_persistence_ended_casts_again_at_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    plans_of(spells: [
+      casting_for_a_second(
+        caster_persistence: Some(in_combat()),
+        target_persistence: None,
+      ),
+    ])
+  let fighting = caster_in_combat(in_combat: True)
+  let assert Ok(#(state, down)) =
+    cast.take(
+      cast: cast.new(),
+      message: cast.KeyHeld,
+      body: support.hold_body(bag_index: bag_of_base_3, target: 0, held: 1),
+      caster: fighting,
+      plans:,
+      now: support.at(ms: 1000),
+    )
+    as "a 0x4db that fits the message is taken"
+  assert support.ids(frames: support.writes(effects: down)) == [0x07FF]
+    as "the key goes down in combat: its first cast starts, with no 0x7fd"
+  let #(_, effects) =
+    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1100)
+  assert support.ids(frames: support.writes(effects:))
+    == [0x07F9, 0x07FE, 0x07FF, 0x07F9, 0x07FE]
+    as "the cast the persistence ended is the held key's last, so the key repeats in the same input (a cast of its own, 0x7ff), and the check runs on that cast too, which fails the same condition"
+}

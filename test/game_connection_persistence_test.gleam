@@ -24,6 +24,7 @@ import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/cast
 import genesis_prime/game/class_resource.{Row}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
@@ -176,4 +177,115 @@ pub fn a_connection_with_no_player_in_the_world_checks_nothing_test() -> Nil {
     )
   assert support.writes(taken) == []
     as "in character select a resource timer is nothing, and so is the check that would follow it"
+}
+
+// ---- a planted cast that ends when its player enters combat ----
+//
+// The planted Pulse Blast 42276 (the Engineer's, a cast time of 1250 ms and a global
+// cooldown of 1250 ms) holds the planted CasterPersistence 390, type 28 comparison 2: not
+// in combat (`spell_tables.waiver_prerequisite_rows`). Each test gives a different kind
+// of input the end of one such cast, and checks the input's own writes come first.
+
+const pulse_blast_base = 26_468
+
+fn engineer() -> #(game_connection.State, Int) {
+  let #(state, _, bag_index) =
+    connection_support.entered_with_spell_trees(
+      class_id: 2,
+      ability: pulse_blast_base,
+    )
+  #(state, bag_index)
+}
+
+fn at(
+  state state: game_connection.State,
+  ms ms: Int,
+  event event: step.Event(
+    step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+  ),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  game_connection.step(state, support.input_at_ms(ms:, event:))
+}
+
+fn pressed_at(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  client_cast_id client_cast_id: Int,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  at(
+    state:,
+    ms:,
+    event: OwnEvent(
+      step.Read(connection_support.world_message(
+        message_id: 0x009A,
+        body: cast_support.press_body(
+          client_cast_id:,
+          bag_index:,
+          target: 0,
+          press: 1,
+        ),
+      )),
+    ),
+  )
+}
+
+fn threatened_at(
+  state state: game_connection.State,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  at(
+    state:,
+    ms:,
+    event: connection_support.foe(strike_tell.Threatened(unit_id: 9, life: 3)),
+  )
+}
+
+/// What a press of Pulse Blast writes: its 0x7fd and the go of its first phase, which it
+/// has at once (a Multiphase spell).
+const press_written = [0x07FD, 0x07F4]
+
+const combat_state = 0x089A
+
+const failed_then_finished = [0x07F9, 0x07FE]
+
+pub fn a_press_in_combat_of_a_cast_that_needs_the_player_out_of_it_is_confirmed_then_ended_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(state, bag_index) = engineer()
+  let #(state, _) = threatened_at(state:, ms: 900)
+  let #(_, taken) = pressed_at(state:, bag_index:, client_cast_id: 9, ms: 1000)
+  assert ids(taken:) == list.append(press_written, failed_then_finished)
+    as "the press's own writes, its 0x7fd and its go, come first; then the check, at the end of that input, finds the cast's persistence 390 (not in combat) failing: 0x7f9 then 0x7fe"
+}
+
+pub fn the_combat_flag_setting_ends_a_cast_that_needs_the_player_out_of_combat_after_its_own_0x89a_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(state, bag_index) = engineer()
+  let #(state, pressed) =
+    pressed_at(state:, bag_index:, client_cast_id: 9, ms: 1000)
+  assert ids(taken: pressed) == press_written as "out of combat the cast holds"
+  let #(_, taken) = threatened_at(state:, ms: 1100)
+  assert ids(taken:) == [combat_state, ..failed_then_finished]
+    as "the combat flag's own news, 0x89a, comes first; then 0x7f9 and 0x7fe end the cast"
+}
+
+pub fn a_cast_timer_that_starts_a_held_press_in_combat_ends_its_cast_after_the_timers_own_writes_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(state, bag_index) = engineer()
+  let #(state, _) = threatened_at(state:, ms: 900)
+  // The first press passes the cast checks, starts the global cooldown of 1250 ms (to
+  // 2250) and is ended by the check that follows it.
+  let #(state, first) =
+    pressed_at(state:, bag_index:, client_cast_id: 9, ms: 1000)
+  assert ids(taken: first) == list.append(press_written, failed_then_finished)
+  // 350 ms before the cooldown ends, inside the 500 ms queue window: the press waits.
+  let #(state, held) =
+    pressed_at(state:, bag_index:, client_cast_id: 10, ms: 1900)
+  assert ids(taken: held) == []
+    as "a press within 500 ms of the cooldown's end is held with nothing written"
+  let assert [timer] = list.filter(support.timers_started(held), cast.owns)
+    as "its start waits on a timer of the cast rule"
+  let #(_, taken) = at(state:, ms: 2250, event: OwnEvent(TimerFired(timer:)))
+  assert ids(taken:) == list.append(press_written, failed_then_finished)
+    as "the timer starts the held press (its own 0x7fd and go), and the check after the timer ends it"
 }

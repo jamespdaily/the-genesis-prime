@@ -53,7 +53,9 @@ import genesis_prime/store.{
   ForWorld, Listed, Move, NameStands, NotTheAccounts, PlaceSaved, SavePlace,
   Unavailable,
 }
-import genesis_prime/table/id.{ClassId, Creature2Id, RaceId, Spell4Id}
+import genesis_prime/table/id.{
+  ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4Id,
+}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_unit
@@ -1384,4 +1386,35 @@ pub fn entered_with(
       FromMap(with_the_clients_loadout(joined: map_answer(taken), class_id:)),
     ),
   )
+}
+
+/// The tests' player of this class in the world, its connection reading the
+/// starting abilities' trees (`character_tables.shared_with_spell_trees`), with
+/// its unit id and the bag index of the ability of this Spell4Base.
+pub fn entered_with_spell_trees(
+  class_id class_id: Int,
+  ability ability: Int,
+) -> #(game_connection.State, Int, Int) {
+  let fresh =
+    accepted(
+      Settings(..settings(), tables: character_tables.shared_with_spell_trees()),
+    ).0
+  let #(state, entered) =
+    entered_from(
+      in_character_select: in_select_from(fresh),
+      character: Character(..world_character(), class_id: ClassId(class_id)),
+    )
+  let unit_id = player_in(entered).unit_id
+  let assert Ok(set) =
+    loadout.of(
+      tables: character_tables.shared(),
+      class_id: ClassId(class_id),
+      faction_id: 166,
+    )
+    as "the tables hold the class's Novice set"
+  let assert Ok(bag_index) =
+    list.index_map(set.abilities, fn(base, index) { #(base, index) })
+    |> list.key_find(Spell4BaseId(ability))
+    as "a level-1 player of the class holds the ability"
+  #(state, unit_id, bag_index)
 }

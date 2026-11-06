@@ -46,6 +46,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/spell4.{type Spell4}
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -396,17 +397,17 @@ fn counted_ids(
   rows rows: List(Spell4),
 ) -> Dict(Int, String) {
   let named =
-    list.fold(
-      counted_namings(tables:, spells:, rows:),
-      dict.new(),
-      fn(found, named) {
-        case dict.has_key(found, named.0) {
-          True -> found
-          False -> dict.insert(found, named.0, named.1)
-        }
-      },
-    )
+    list.fold(counted_namings(tables:, spells:, rows:), dict.new(), named_once)
   followed(tables:, found: named, pending: dict.keys(named))
+}
+
+/// The ids found with this one added, named by the first row and column that named it.
+fn named_once(
+  found found: Dict(Int, String),
+  named named: #(Int, String),
+) -> Dict(Int, String) {
+  use <- bool.guard(when: dict.has_key(found, named.0), return: found)
+  dict.insert(found, named.0, named.1)
 }
 
 /// The ids with the rows they nest (type 11) added, each named by the nesting row, until
@@ -421,7 +422,9 @@ fn followed(
       case prerequisite_table.get(tables:, id: PrerequisiteId(id)) {
         Ok(row) ->
           prerequisite.kept_conditions(row:)
-          |> list.filter(fn(condition) { condition.0 == 11 })
+          |> list.filter(fn(condition) {
+            condition.0 == prerequisite.nested_type
+          })
           |> list.map(fn(condition) {
             #(
               condition.2,
@@ -443,13 +446,7 @@ fn followed(
   case nested {
     [] -> found
     [_, ..] -> {
-      let found =
-        list.fold(nested, found, fn(found, named) {
-          case dict.has_key(found, named.0) {
-            True -> found
-            False -> dict.insert(found, named.0, named.1)
-          }
-        })
+      let found = list.fold(nested, found, named_once)
       followed(
         tables:,
         found:,

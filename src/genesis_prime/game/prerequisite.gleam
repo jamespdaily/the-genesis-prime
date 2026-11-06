@@ -79,6 +79,7 @@ import genesis_prime/message/float32
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4Id, PrerequisiteId, Spell4Id,
 }
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -310,6 +311,13 @@ pub type LoadError {
   PrerequisiteCycle(path: List(PrerequisiteId))
 }
 
+/// The Prerequisite rows of the loaded tables by id, for `load`.
+pub fn table_rows(
+  tables tables: table_store.Tables,
+) -> fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil) {
+  fn(id) { prerequisite_table.get(tables:, id:) |> result.replace_error(Nil) }
+}
+
 /// The prerequisite with this id as the client keeps it (`0x1404a5190`), from the
 /// table `rows` reads, each nested row loaded in place.
 pub fn load(
@@ -324,7 +332,7 @@ pub fn load(
 
 /// The PrerequisiteType of a nested prerequisite (`Prerequisite.prerequisiteTypeId.11`),
 /// whose row `load` follows.
-const nested_type = 11
+pub const nested_type = 11
 
 /// The row as a prerequisite; `above` holds the ids of the rows it is nested in,
 /// nearest first.

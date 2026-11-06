@@ -40,7 +40,7 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/game/spend
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
-import genesis_prime/step.{type TimerId, LogWarning}
+import genesis_prime/step.{type TimerId, LogWarning, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/list
 import gleam/option.{None, Some}
@@ -505,9 +505,14 @@ pub fn a_held_key_whose_repeat_fails_the_condition_gets_0x7fc_with_client_id_0_a
     fired_by(state:, caster: out_of_combat, timer: repeat_timer, at: 3000)
   assert refused_frames(effects: repeated) == [#(0, 5001, 151)]
     as "the repeat is checked and refused 0x7fc {client id 0, Spell4 5001, 151}"
-  let #(_, after_release) = key(state, out_of_combat, 0, 3100)
-  assert support.started_timers(effects: after_release) == []
-    as "the refusal ended the hold: no repeat is armed"
+  assert support.started_timers(effects: repeated) == []
+    as "the refused repeat arms no further repeat"
+  // A later input of the rule (a timer the rule no longer knows) lets a hold that is
+  // still active cast again, and the caster is in combat now, so it would.
+  let #(_, later) =
+    fired_by(state:, caster: in_combat_caster, timer: TimerId(99_999), at: 3100)
+  assert support.writes(effects: later) == []
+    as "the refusal ended the hold: nothing repeats at the next input"
 }
 
 // ---- 8: Stealth, Spell Surge and Onslaught at the press ----

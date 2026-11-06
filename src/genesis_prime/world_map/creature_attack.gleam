@@ -35,6 +35,7 @@ import gleam/int
 import gleam/list
 import gleam/order
 import gleam/result
+import gleam/string
 
 /// The prerequisite type of the unit's difficulty (`0x14049eeb0`).
 const difficulty_type = 179
@@ -46,6 +47,9 @@ pub type Unevaluated {
   /// The prerequisite's condition is of a type other than 179, or it holds more
   /// than one condition.
   OtherType(spell4_effects_id: Int, prerequisite_id: Int, type_id: Int)
+  /// The prerequisite nests itself through the rows it nests (type 11): the ids from the
+  /// named row to the one that repeats.
+  NestedCycle(spell4_effects_id: Int, path: List(Int))
   /// The spell's Spell4 row holds an innate cost EMM id, which would choose its
   /// damage effects by points a creature's attack does not spend.
   SpendsByEmmId(spell4_id: Int, emm_id: Int)
@@ -157,8 +161,7 @@ fn condition(
         )),
       )
       case game_prerequisite.condition_types(row:) {
-        [type_id] if type_id == difficulty_type ->
-          Ok(Gated(prerequisite: loaded(row:)))
+        [type_id] if type_id == difficulty_type -> loaded(tables:, effect:, id:)
         [type_id, ..] ->
           Error(OtherType(
             spell4_effects_id: effect.id,
@@ -176,15 +179,28 @@ fn condition(
   }
 }
 
-/// The row, which holds one condition of type 179 and names no nested row, as the game
-/// rule keeps it.
+/// The prerequisite with its nested rows loaded from the client's tables.
 fn loaded(
-  row row: prerequisite.Prerequisite,
-) -> game_prerequisite.Prerequisite {
-  let assert Ok(loaded) =
-    game_prerequisite.load(id: PrerequisiteId(row.id), rows: fn(_) { Ok(row) })
-    as "a row of one type 179 condition names no row of its own to look up"
-  loaded
+  tables tables: table_store.Tables,
+  effect effect: Spell4Effects,
+  id id: Int,
+) -> Result(Condition, Unevaluated) {
+  game_prerequisite.load(
+    id: PrerequisiteId(id),
+    rows: game_prerequisite.table_rows(tables:),
+  )
+  |> result.map(fn(loaded) { Gated(prerequisite: loaded) })
+  |> result.map_error(fn(error) {
+    case error {
+      game_prerequisite.NoPrerequisiteRow(..) ->
+        NoPrerequisiteRow(spell4_effects_id: effect.id, prerequisite_id: id)
+      game_prerequisite.PrerequisiteCycle(path:) ->
+        NestedCycle(
+          spell4_effects_id: effect.id,
+          path: list.map(path, fn(on_the_way) { on_the_way.value }),
+        )
+    }
+  })
 }
 
 /// A sentence for the load's refusal.
@@ -204,6 +220,11 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> " of type "
       <> int.to_string(type_id)
       <> ", which the server does not evaluate (only one condition of type 179, the difficulty)"
+    NestedCycle(spell4_effects_id:, path:) ->
+      "Spell4Effects "
+      <> int.to_string(spell4_effects_id)
+      <> " has a caster prerequisite whose rows nest each other round a cycle: "
+      <> string.join(list.map(path, int.to_string), " to ")
     SpendsByEmmId(spell4_id:, emm_id:) ->
       "Spell4 "
       <> int.to_string(spell4_id)

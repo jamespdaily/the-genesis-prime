@@ -7,8 +7,11 @@
 //// holds, so its effects and the buffs they make end, and leaves the cast
 //// filed; the server sends it with a persistence result (282, 283) when a
 //// lasting cast's condition stops holding, then the 0x7fe that takes the cast
-//// out of the client's table. Its fields are listed in `schema.toml` with the
-//// client's evidence, and the fact file's `opcode.0x7f9` names the message.
+//// out of the client's table; the unit is the caster, since a RapidTap cast
+//// ended with a result other than 6 or 8 releases its threshold only when the
+//// unit is another (0x14053e1b0), and the server keeps the threshold it does
+//// not close itself. Its fields are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `opcode.0x7f9` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/cast_result.{type CastResult}

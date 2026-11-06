@@ -1209,7 +1209,7 @@ fn spell_of(
     )),
   )
   use global_cooldown <- result.try(global_cooldown_of(tables:, row:))
-  let rows = prerequisite_rows(tables:)
+  let rows = prerequisite.table_rows(tables:)
   use caster_cast <- result.try(caster_cast_of(
     prerequisite_id: row.prerequisite_id_caster_cast,
     property_flags: row.property_flags,
@@ -2398,14 +2398,7 @@ fn prerequisite_of(
   tables tables: table_store.Tables,
   id id: Int,
 ) -> Result(Prerequisite, PlanError) {
-  prerequisite_in(rows: prerequisite_rows(tables:), id:)
-}
-
-/// The Prerequisite rows of the tables, by id.
-fn prerequisite_rows(
-  tables tables: table_store.Tables,
-) -> fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil) {
-  fn(id) { prerequisite_table.get(tables:, id:) |> result.replace_error(Nil) }
+  prerequisite_in(rows: prerequisite.table_rows(tables:), id:)
 }
 
 /// The Prerequisite with this id, nested rows loaded, from the rows given: a row

@@ -76,7 +76,6 @@
 ////   conditions are not checked); 13 while the
 ////   caster's current cast is live (below); 14 while the global cooldown has more
 ////   than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
-////   more than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
 ////   more than 500 ms left (`0x1403b14c0`); a caster requirement's result when the
 ////   caster's resource fails it and the spell's waiver does not pass (`0x1403b1780`,
 ////   `Rampage` 51 below 250 Kinetic Energy unless the caster is under Overdrive 42908);
@@ -1650,6 +1649,17 @@ fn cast_conditions(
   }
 }
 
+/// What a Prerequisite column of the spell makes of the subject; a spell with none passes.
+fn column_verdict(
+  gate gate: Option(prerequisite.Prerequisite),
+  subject subject: prerequisite.Subject,
+) -> prerequisite.Verdict {
+  case gate {
+    None -> prerequisite.Passes
+    Some(gate) -> prerequisite.check(prerequisite: gate, subject:)
+  }
+}
+
 /// The refusal a cast condition gives when it fails or cannot be read, none when it
 /// passes or the spell has none.
 fn condition_verdict(
@@ -1657,14 +1667,10 @@ fn condition_verdict(
   subject subject: prerequisite.Subject,
   result result: cast_result.CastResult,
 ) -> Option(Verdict) {
-  case
-    option.map(gate, fn(gate) {
-      prerequisite.check(prerequisite: gate, subject:)
-    })
-  {
-    None | Some(prerequisite.Passes) -> None
-    Some(prerequisite.Fails) -> Some(Refuse(result:))
-    Some(prerequisite.NotRead(prerequisite_type:)) ->
+  case column_verdict(gate:, subject:) {
+    prerequisite.Passes -> None
+    prerequisite.Fails -> Some(Refuse(result:))
+    prerequisite.NotRead(prerequisite_type:) ->
       Some(NotBuilt(
         result:,
         why: "has a cast condition of the PrerequisiteType "
@@ -2765,7 +2771,9 @@ fn has_persistence(spell spell: Spell) -> Bool {
 /// audience as a finish (`opcode.0x7f9`, `cast.target_node_end`). CasterPersistence
 /// (282) is checked before TargetPersistence (283), the caster the first unit and the
 /// cast's primary target the second; TargetPersistence is checked only for a cast the
-/// caster itself is the target of, since no creature's state is held here. A condition
+/// caster itself is the target of, since no creature's state is held here. A press held
+/// for the current cast it cleared starts, and a held key repeats, as after any input;
+/// the casts they start are checked in turn. A condition
 /// of a type not read, a roll (none is drawn) and a creature target keep the cast, with
 /// one debug line for the spell.
 pub fn persisted(
@@ -2775,8 +2783,20 @@ pub fn persisted(
 ) -> #(State, List(Effect)) {
   use <- settled(cast:)
   let now_ms = now.monotonic_ms
-  let #(cast, effects) = persistence_ended(cast:, caster:, now_ms:, done: [])
-  released(taken: #(cast, effects), caster:, now_ms:)
+  let #(cast, ended) = persistence_ended(cast:, caster:, now_ms:, done: [])
+  let #(cast, effects) =
+    released(taken: #(cast, ended), caster:, now_ms:)
+    |> continued(caster:, now_ms:)
+  // A press the end let start, or a repeat of a held key, starts a cast whose own
+  // persistence may already fail.
+  let #(cast, more) =
+    persistence_ended(
+      cast:,
+      caster: after_payments(caster:, effects:),
+      now_ms:,
+      done: [],
+    )
+  #(cast, list.append(effects, more))
 }
 
 /// The casts that fail their persistence ended one at a time, the lowest cast id first,
@@ -2906,14 +2926,10 @@ fn persistence_column(
   gate gate: Option(prerequisite.Prerequisite),
   subject subject: prerequisite.Subject,
 ) -> #(State, List(Effect), Bool) {
-  case
-    option.map(gate, fn(gate) {
-      prerequisite.check(prerequisite: gate, subject:)
-    })
-  {
-    None | Some(prerequisite.Passes) -> #(cast, [], False)
-    Some(prerequisite.Fails) -> #(cast, [], True)
-    Some(prerequisite.NotRead(prerequisite_type:)) -> {
+  case column_verdict(gate:, subject:) {
+    prerequisite.Passes -> #(cast, [], False)
+    prerequisite.Fails -> #(cast, [], True)
+    prerequisite.NotRead(prerequisite_type:) -> {
       let #(cast, log) =
         logged_once(
           cast:,
@@ -2999,8 +3015,13 @@ fn persistence_end(
   }
 }
 
-/// 0x7f9 for a cast that failed with this result: the caster is the unit, and the bit is
-/// the 0 every other finish passes (`opcode.0x7f9`).
+/// 0x7f9 for a cast that failed with this result: the bit is the 0 the 0x7fe path passes
+/// (`opcode.0x7f9`). The unit is the caster, not the 0 the 0x7fe path passes: FinishCast
+/// releases the threshold of a RapidTap cast ended with a result other than 6 or 8 only
+/// when the end names another unit (`0x14053e1b0`), and this rule keeps the threshold of a
+/// stage it ends open (only a charge's base cast closes its own), so the unit must not be
+/// another; the 0x7fe path's result 8 never touches a threshold, which is why 0 is safe
+/// there.
 fn failed_effect(
   cast_id cast_id: Int,
   result result: cast_result.CastResult,
