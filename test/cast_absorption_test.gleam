@@ -21,21 +21,20 @@
 //// - The gates' rule (`cast_shield_heal_test`): a go's effects read the caster as it
 ////   stood before the go's own effects.
 
+import attacker_support
 import cast_support as support
 import genesis_prime/game/cast.{type Effect, type State}
-import genesis_prime/game/damage.{Attacker, Formula, Parameter}
+import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/lasting.{type LastingRow, LastingRow}
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Absorption, AimsAtCaster, Always,
 }
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Source, Change, Source}
+import genesis_prime/game/unit_properties.{type Source, Change}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
-import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -48,22 +47,24 @@ const bag_of_base_1 = 8
 
 /// A level-1 Novice: Assault Rating 203.0625 and Support Rating 55.6875.
 fn novice() -> cast.Caster {
-  cast.Caster(
-    ..support.caster(),
-    stats: Attacker(level: 1, assault_rating: 203.0625, support_rating: 55.6875),
-  )
+  cast.Caster(..support.caster(), stats: attacker_support.novice())
+}
+
+/// Row 178144's formula as the client holds it.
+fn spectral_form_row_formula() -> damage.Formula {
+  Formula(multiplier: 1.0, base: 0.0, parameters: [
+    Parameter(kind: 12, value: 2.5309998989105225),
+    Parameter(kind: 13, value: 2.5309998989105225),
+    Parameter(kind: 0, value: 0.0),
+    Parameter(kind: 0, value: 0.0),
+  ])
 }
 
 /// Row 178144 as the client holds it.
 fn spectral_form_row() -> spell_plan.PropertyModifier {
   absorb_row(
     id: 178_144,
-    formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
-      Parameter(kind: 12, value: 2.5309998989105225),
-      Parameter(kind: 13, value: 2.5309998989105225),
-      Parameter(kind: 0, value: 0.0),
-      Parameter(kind: 0, value: 0.0),
-    ]),
+    formula: spectral_form_row_formula(),
     row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
   )
 }
@@ -127,55 +128,14 @@ fn press(
   )
 }
 
-fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
-  Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
-}
-
 /// The absorbs the effects start, with their sources: the amount and the mask.
 fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      cast.CasterChangeStarts(source:, change: cast.Absorb(amount:, mask:)) ->
-        Ok(#(source, amount, mask))
-      cast.CasterChangeStarts(change: cast.Property(..), ..)
-      | cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-      | cast.CasterChangeStarts(change: cast.Look(..), ..)
-      | cast.CasterChangeEnds(..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.StealthChanged(..)
-      | cast.Gain(..) -> Error(Nil)
+  list.filter_map(support.caster_change_starts(effects:), fn(start) {
+    case start.1 {
+      cast.Absorb(amount:, mask:) -> Ok(#(start.0, amount, mask))
+      cast.Property(..) | cast.ShieldHeal(..) | cast.Look(..) -> Error(Nil)
     }
   })
-}
-
-/// The time each step's effects were taken at, with an absorb starting or ending.
-fn timeline(
-  fired fired: List(#(Int, List(Effect))),
-) -> List(#(Int, String, Source)) {
-  list.flat_map(fired, fn(step) {
-    list.flatten([
-      list.map(starts(effects: step.1), fn(start) {
-        #(step.0, "start", start.0)
-      }),
-      list.map(support.caster_change_ends(effects: step.1), fn(source) {
-        #(step.0, "end", source)
-      }),
-    ])
-  })
-}
-
-fn timer_numbers(timers timers: List(TimerId)) -> List(Int) {
-  list.map(timers, fn(timer) {
-    let TimerId(number) = timer
-    number
-  })
-  |> list.sort(int.compare)
 }
 
 pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_seconds_test() -> Nil {
@@ -200,12 +160,12 @@ pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_s
   assert support.finished_ids(support.writes(effects:)) == []
     as "the node has life, so the 0x7f4's 0x7fe waits (cast.target_node_end)"
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 178_144)
+  let source = support.source_of(cast_id: id, effect_id: 178_144)
   assert starts(effects:) == [#(source, 164, 7)]
     as "Absorb(164, 7) starts in the go's own step: round(2.531 x 50.765625 + 2.531 x 13.921875)"
   assert support.caster_change_ends(effects:) == []
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:) == [#(6000, "end", source)]
+  assert support.timeline(fired:) == [#(6000, "end", source)]
     as "the end comes on a timer 5000 ms after the go, once"
   let finishes =
     list.filter(fired, fn(step) {
@@ -217,10 +177,11 @@ pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_s
 
 pub fn a_delayed_absorb_starts_on_a_timer_test() -> Nil {
   use <- owned_test.run(5000)
-  // A planted copy of row 56356: delay 251, 10000 ms, with the formula 1.0 x 100.0.
+  // A planted shape of row 56356 (delay 251, 10000 ms), not the row: the real row's
+  // dataBits00 is 0, which the plan refuses (its amount is 0), so this one reads 1.0 x 100.0.
   let delayed =
     absorb_row(
-      id: 56_356,
+      id: 99_356,
       formula: Formula(multiplier: 1.0, base: 100.0, parameters: []),
       row: LastingRow(delay_ms: 251, duration_ms: 10_000, until_removed: False),
     )
@@ -229,11 +190,11 @@ pub fn a_delayed_absorb_starts_on_a_timer_test() -> Nil {
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 56_356)
+  let source = support.source_of(cast_id: id, effect_id: 99_356)
   assert starts(effects:) == []
     as "nothing starts at the go: the row waits its delay"
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:)
+  assert support.timeline(fired:)
     == [#(1251, "start", source), #(11_251, "end", source)]
     as "it starts at go + 251 and ends 10000 ms later"
   assert list.flat_map(fired, fn(step) { starts(effects: step.1) })
@@ -266,10 +227,12 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
     as "the absorb started in the press's go"
   let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert support.caster_change_ends(effects: removal)
-    == [source_of(cast_id: id, effect_id: 178_144)]
+    == [support.source_of(cast_id: id, effect_id: 178_144)]
     as "taking the cast's node off the caster ends the absorb at once"
-  assert timer_numbers(timers: support.cancelled_timers(effects: removal))
-    == timer_numbers(
+  assert support.timer_numbers(timers: support.cancelled_timers(
+      effects: removal,
+    ))
+    == support.timer_numbers(
       timers: list.map(support.started_timers(effects: first), fn(started) {
         started.0
       }),
@@ -312,10 +275,10 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
       now: support.at(ms: 2000),
     )
   assert support.caster_change_ends(effects: ended)
-    == [source_of(cast_id: held_id, effect_id: 178_144)]
+    == [support.source_of(cast_id: held_id, effect_id: 178_144)]
     as "the persistence ends the cast as a death ends one, and the absorb with it"
-  assert timer_numbers(timers: support.cancelled_timers(effects: ended))
-    == timer_numbers(
+  assert support.timer_numbers(timers: support.cancelled_timers(effects: ended))
+    == support.timer_numbers(
       timers: list.map(support.started_timers(effects: pressed), fn(started) {
         started.0
       }),
@@ -324,7 +287,7 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
   // The caster's death, with a delayed absorb still pending.
   let delayed =
     absorb_row(
-      id: 56_356,
+      id: 99_356,
       formula: Formula(multiplier: 1.0, base: 100.0, parameters: []),
       row: LastingRow(delay_ms: 251, duration_ms: 10_000, until_removed: False),
     )
@@ -344,16 +307,25 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
     )
   assert support.caster_change_ends(effects: died)
     == [
-      source_of(cast_id: support.pressed_id(effects: one), effect_id: 178_144),
-      source_of(cast_id: support.pressed_id(effects: two), effect_id: 56_356),
+      support.source_of(
+        cast_id: support.pressed_id(effects: one),
+        effect_id: 178_144,
+      ),
+      support.source_of(
+        cast_id: support.pressed_id(effects: two),
+        effect_id: 99_356,
+      ),
     ]
     as "the one that started and the one still pending are both told ended, in cast order; the life, holding no pool for the pending one, changes nothing"
 }
 
 pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> Nil {
   use <- owned_test.run(5000)
-  // The same go raises AssaultRating (property 35) by 1000 with a type 11 row: the pool is
-  // still the 164 the caster's stats gave when the go began, not what they would be after.
+  // The same go raises AssaultRating (property 35) by 1000 with a type 11 row, and its
+  // absorb starts 251 ms later. The pool is the 164 the caster's stats gave at the go: when
+  // the delayed start fires, the rule is handed a caster whose ratings are not the go's
+  // (`cast_support` fires timers for a caster with Assault and Support Rating 0, so an
+  // amount worked out at the start would be 0), and it still starts the pool of 164.
   let raising =
     spell_plan.PropertyModifier(
       effect_id: Spell4EffectsId(99_001),
@@ -370,19 +342,21 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
       tag: spend.always,
       armor: None,
     )
+  let delayed =
+    absorb_row(
+      id: 178_144,
+      formula: spectral_form_row_formula(),
+      row: LastingRow(delay_ms: 251, duration_ms: 5000, until_removed: False),
+    )
   let plans =
     plans_of([
-      holder(spell4_id: 58_586, base: 3, modifiers: [
-        raising,
-        spectral_form_row(),
-      ]),
+      holder(spell4_id: 58_586, base: 3, modifiers: [raising, delayed]),
     ])
-  let #(_, effects) =
+  let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  assert starts(effects:)
-    == [#(source_of(cast_id: id, effect_id: 178_144), 164, 7)]
-    as "the gates' rule: a go's effects read the caster before the go's own"
+  assert starts(effects:) == []
+    as "the absorb waits for its delay; the raised rating starts in the go's step"
   assert list.any(effects, fn(effect) {
     case effect {
       cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
@@ -402,4 +376,8 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
     }
   })
     as "and the raised rating does start in the same go"
+  let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
+  assert list.flat_map(fired, fn(step) { starts(effects: step.1) })
+    == [#(support.source_of(cast_id: id, effect_id: 178_144), 164, 7)]
+    as "the pool is the amount of the go, 164, not one worked out when the start fires"
 }

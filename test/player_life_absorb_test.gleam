@@ -21,59 +21,18 @@
 //// 0.625.
 
 import genesis_prime/client_connection
-import genesis_prime/game/hit.{type Defence, Blow, Defence, Offence, Rolls}
+import genesis_prime/game/hit.{type Defence, Blow, Defence, Offence}
 import genesis_prime/game/player_life.{
   type Effect, type Life, OwnAbsorption, OwnDeathState, OwnHealth, OwnShield,
-  Regeneration, ShieldRegeneration, StartTimer, ToClient, ToViewers,
+  StartTimer, ToClient, ToViewers,
 }
-import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties.{Source}
-import genesis_prime/step.{TimerId}
 import genesis_prime/table/id.{Spell4EffectsId}
-import genesis_prime/world_map/map_id.{MapId}
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{None}
 import owned_test
-
-const shield_timer = TimerId(9)
-
-const regeneration =
-  Regeneration(
-    health_fraction: 0.025,
-    health_multiplier: 1.0,
-    health_tick_ms: 500,
-    shield: Some(
-      ShieldRegeneration(percent: 0.25, reboot_ms: 2500, tick_ms: 500),
-    ),
-  )
-
-const own_unit = 20
-
-const rolls = Rolls(crit: 0.5, deflect: 0.0, glance: 0.0)
-
-fn beast() -> step.Address {
-  step.Creature(
-    map: MapId(world_id: 3460, instance: 0),
-    incarnation: 1,
-    unit_id: 7,
-    life: 3,
-  )
-}
-
-fn place() -> Place {
-  let assert Ok(place) =
-    start_place.place(
-      world_id: 3460,
-      world_zone_id: 5967,
-      x: 0.0,
-      y: 0.0,
-      z: 0.0,
-      facing: start_place.unturned,
-    )
-    as "world 3460 is a world"
-  place
-}
+import player_life_support
 
 /// The defence of a player whose shield takes 0.625 of a blow and that mitigates nothing.
 fn defence() -> Defence {
@@ -86,43 +45,41 @@ fn player() -> Life {
     saved: None,
     max_health: 736,
     shield: 450,
-    regeneration:,
-    place: place(),
+    regeneration: player_life_support.regeneration,
+    place: player_life_support.place(),
   ).0
 }
 
-/// A blow of `damage` of the damage type `damage_type`, with no crit chance, on the rolls
-/// of a strike that crits, glances and deflects nothing.
+/// A strike of one blow of `damage` of the damage type `damage_type`, with no crit chance.
+fn offence_of(damage damage: Int, damage_type damage_type: Int) -> hit.Offence {
+  Offence(
+    blows: [
+      Blow(
+        spell4_effects_id: 62_159,
+        damage_type:,
+        damage:,
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ],
+    crit_chance: 0.0,
+    crit_severity: 1.5,
+    strikethrough: 0.0,
+  )
+}
+
+/// A blow of `damage` of the damage type `damage_type` on the player, on the rolls of a
+/// strike that crits, glances and deflects nothing.
 fn struck(
   life life: Life,
   damage damage: Int,
   damage_type damage_type: Int,
 ) -> #(Life, List(Effect)) {
-  player_life.struck(
+  player_life_support.struck(
     life:,
     defence: defence(),
-    strike: strike_tell.Strike(
-      key: strike_tell.Key(cast_id: 1, phase: 0, unit_id: own_unit),
-      from: beast(),
-      striker: strike_tell.CreatureStriker,
-      offence: Offence(
-        blows: [
-          Blow(
-            spell4_effects_id: 62_159,
-            damage_type:,
-            damage:,
-            delay_ms: 0,
-            threat_multiplier: 1.0,
-          ),
-        ],
-        crit_chance: 0.0,
-        crit_severity: 1.5,
-        strikethrough: 0.0,
-      ),
-      controls: [],
-    ),
-    rolls:,
-    place: place(),
+    offence: offence_of(damage:, damage_type:),
+    cast_id: 1,
   )
 }
 
@@ -243,7 +200,7 @@ pub fn a_blow_taken_wholly_by_the_absorb_counts_as_damage_taken_but_does_not_res
     as "the stealth rule hears of a blow that took only the absorb"
   assert list.any(effects, fn(effect) {
       case effect {
-        StartTimer(timer:, ..) -> timer == shield_timer
+        StartTimer(timer:, ..) -> timer == player_life_support.shield_timer
         ToClient(..)
         | ToViewers(..)
         | player_life.CancelTimer(..)
@@ -264,7 +221,7 @@ pub fn a_blow_taken_wholly_by_the_absorb_counts_as_damage_taken_but_does_not_res
   let #(_, effects) = struck(life: player(), damage: 100, damage_type: 3)
   assert list.any(effects, fn(effect) {
     case effect {
-      StartTimer(timer:, ..) -> timer == shield_timer
+      StartTimer(timer:, ..) -> timer == player_life_support.shield_timer
       ToClient(..)
       | ToViewers(..)
       | player_life.CancelTimer(..)
@@ -386,4 +343,54 @@ pub fn a_pool_started_on_a_dead_player_is_not_held_test() -> Nil {
   let #(after, effects) = started(life: dead, cast_id: 1, amount: 164, mask: 7)
   assert after == dead && effects == []
     as "a dead player takes no change but coming back"
+}
+
+pub fn a_blow_that_uses_up_two_pools_tells_one_stat_22_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(life, _) = started(life: player(), cast_id: 1, amount: 30, mask: 7)
+  let #(life, _) = started(life:, cast_id: 2, amount: 20, mask: 7)
+  // A Magic blow of 60: the oldest pool gives its 30, the next its 20, both are dropped,
+  // and the other 10 goes to the shield: round(10 x 0.625) = round(6.25) = 6, and the
+  // health takes 4.
+  let #(life, effects) = struck(life:, damage: 60, damage_type: 3)
+  assert written(effects:)
+    == list.flatten([
+      sum_told(sum: 0),
+      [
+        ToClient(OwnShield(shield: 444)),
+        ToViewers(client_connection.Shield(shield: 444)),
+        ToClient(OwnHealth(health: 732)),
+        ToViewers(client_connection.Health(health: 732, dead: False)),
+      ],
+    ])
+    as "both pools drop in one blow: stat 22 is written once, with the new sum 0, then stat 20 and the health"
+  assert player_life.absorption(life:) == 0
+  assert player_life.shield(life:) == 444 && player_life.health(life:) == 732
+}
+
+pub fn a_deflected_strike_leaves_the_absorbs_and_writes_no_stat_22_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(life, _) = started(life: player(), cast_id: 1, amount: 164, mask: 7)
+  let #(deflected, effects) =
+    player_life.struck(
+      life:,
+      defence: Defence(..defence(), deflect_chance: 1.0),
+      strike: strike_tell.Strike(
+        key: strike_tell.Key(
+          cast_id: 1,
+          phase: 0,
+          unit_id: player_life_support.own_unit,
+        ),
+        from: player_life_support.beast(),
+        striker: strike_tell.CreatureStriker,
+        offence: offence_of(damage: 300, damage_type: 3),
+        controls: [],
+      ),
+      rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+      place: player_life_support.place(),
+    )
+  assert player_life.absorption(life: deflected) == 164
+    as "a deflect misses the whole strike: the pool is as it was"
+  assert written(effects:) == [] as "and no stat 22, 20 or health is written"
+  assert deflected == life
 }

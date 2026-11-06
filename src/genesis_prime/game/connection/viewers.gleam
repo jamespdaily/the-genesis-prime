@@ -138,6 +138,7 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/message/unit_stat.{type UnitStat}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/step.{
@@ -893,24 +894,14 @@ fn appearance(
           }
         }),
         list.flatten([
-          case armor > 0 {
-            True -> [
-              unit_fields.integer_stat(
-                stat_id: unit_fields.interrupt_armor_stat,
-                value: armor,
-              ),
-            ]
-            False -> []
-          },
-          case absorption > 0 {
-            True -> [
-              unit_fields.integer_stat(
-                stat_id: unit_fields.absorption_stat,
-                value: absorption,
-              ),
-            ]
-            False -> []
-          },
+          stat_above_zero(
+            stat_id: unit_fields.interrupt_armor_stat,
+            value: armor,
+          ),
+          stat_above_zero(
+            stat_id: unit_fields.absorption_stat,
+            value: absorption,
+          ),
         ]),
       ),
       properties: list.filter(unit.tail.properties, fn(property) {
@@ -918,6 +909,14 @@ fn appearance(
       }),
     ),
   )
+}
+
+/// The stat the create lists: `value` while it is above 0, and none at 0.
+fn stat_above_zero(stat_id stat_id: Int, value value: Int) -> List(UnitStat) {
+  case value > 0 {
+    True -> [unit_fields.integer_stat(stat_id:, value:)]
+    False -> []
+  }
 }
 
 /// The session with the player's viewers changed by `change`.

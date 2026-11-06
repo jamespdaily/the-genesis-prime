@@ -18,6 +18,7 @@
 ////   (`Spell4ValidTargets.targetBitmask`, `0x1403ad540`).
 
 import area_tables
+import attacker_support
 import cast_support as support
 import class_resource_support
 import client_tables
@@ -281,8 +282,7 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
 
 pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_and_the_players_base_chances_test() -> Nil {
   use <- owned_test.run(5000)
-  let novice =
-    damage.Attacker(level: 1, assault_rating: 203.0625, support_rating: 55.6875)
+  let novice = attacker_support.novice()
   let paralytic_surge =
     DamageEffect(
       effect_id: Spell4EffectsId(96_125),

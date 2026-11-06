@@ -66,6 +66,14 @@ fn spectral_form_columns() -> List(#(String, Cell)) {
   ]
 }
 
+/// The columns of a readable amount: dataBits00 1.0 and dataBits01 45.0 (row 183643's).
+fn amount_columns() -> List(#(String, Cell)) {
+  [
+    #("dataBits00", Integer(one_as_float_bits)),
+    #("dataBits01", Integer(forty_five_as_float_bits)),
+  ]
+}
+
 /// A type 29 row of the planted spell aimed by `target_flags`, with these columns beside
 /// its id, spell and type.
 fn absorption_row(
@@ -228,6 +236,7 @@ pub fn an_absorption_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_
       row: absorption_row(id: 99_060, target_flags: 2, columns: [
         #("spellId", Integer(30_900)),
         #("durationTime", Integer(5000)),
+        ..amount_columns()
       ]),
     )
     == spell_plan.AbsorptionOnStruckUnit(
@@ -245,6 +254,7 @@ pub fn an_absorption_row_aimed_only_at_other_units_is_left_out_and_one_with_the_
       modifiers_of(
         row: absorption_row(id: 99_061, target_flags: flags, columns: [
           #("durationTime", Integer(5000)),
+          ..amount_columns()
         ]),
       ),
     )
@@ -277,8 +287,8 @@ pub fn an_absorption_row_with_no_lifetime_fails_the_load_and_one_with_flags_bit_
   use <- owned_test.run(60_000)
   assert plan_error(
       row: absorption_row(id: 99_062, target_flags: 1, columns: [
-        #("dataBits00", Integer(one_as_float_bits)),
         #("dataBits04", Integer(7)),
+        ..amount_columns()
       ]),
     )
     == spell_plan.AbsorptionHasNoLifetime(spell4_id: strike, effect_id: 99_062)
@@ -287,8 +297,8 @@ pub fn an_absorption_row_with_no_lifetime_fails_the_load_and_one_with_flags_bit_
     modifiers_of(
       row: absorption_row(id: 99_063, target_flags: 1, columns: [
         #("flags", Integer(2)),
-        #("dataBits00", Integer(one_as_float_bits)),
         #("dataBits04", Integer(7)),
+        ..amount_columns()
       ]),
     )
   assert kept.row
@@ -334,6 +344,55 @@ pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> N
     as "dataBits01 0x7f800000 is not a finite float"
 }
 
+pub fn an_absorption_row_whose_amount_is_0_for_every_caster_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let refused = fn(id, columns) {
+    plan_error(
+      row: absorption_row(id:, target_flags: 1, columns: [
+        #("durationTime", Integer(5000)),
+        ..columns
+      ]),
+    )
+    == spell_plan.AbsorptionAmountNotRead(spell4_id: strike, effect_id: id)
+  }
+  assert refused(99_070, [#("dataBits01", Integer(forty_five_as_float_bits))])
+    as "row 56356's shape: dataBits00 0 with a dataBits01 of 100.0 and no parameter is 0 x the base"
+  assert refused(99_071, [#("dataBits00", Integer(one_as_float_bits))])
+    as "dataBits01 0 with no parameter: 1.0 x 0.0"
+  assert refused(99_072, [#("dataBits00", Integer(1_084_227_584))])
+    as "a multiplier of 5.0 with a base of 0.0 and no parameter, as 140 rows hold"
+  assert refused(99_073, [
+    #("parameterType00", Integer(13)),
+    #("parameterValue00", Float(0.0)),
+  ])
+    as "a stat parameter whose value is 0 gives nothing"
+  // Each of these gives the caster something: a stat parameter, a flat parameter with a
+  // multiplier, or a multiplier and a base.
+  let read = fn(id, columns) {
+    list.length(
+      modifiers_of(
+        row: absorption_row(id:, target_flags: 1, columns: [
+          #("durationTime", Integer(5000)),
+          ..columns
+        ]),
+      ),
+    )
+    == 1
+  }
+  assert read(99_074, [
+    #("parameterType00", Integer(13)),
+    #("parameterValue00", Float(4.0)),
+  ])
+    as "row 97347: dataBits00 0, dataBits01 0 and Support Power x 4.0 is read"
+  assert read(99_075, [
+    #("dataBits00", Integer(one_as_float_bits)),
+    #("parameterType00", Integer(10)),
+    #("parameterValue00", Float(2.0)),
+  ])
+    as "a flat parameter (the level) with a multiplier gives a base"
+  assert read(99_076, amount_columns())
+}
+
 // ---- the kinds and the measure ----
 
 pub fn effect_kind_reads_absorption_aimed_at_the_caster_and_the_measure_counts_the_plans_refusals_test() -> Nil {
@@ -371,6 +430,22 @@ pub fn effect_kind_reads_absorption_aimed_at_the_caster_and_the_measure_counts_t
     none,
   )
     as "a non-finite dataBits01 is refused"
+  assert !counted(
+    Spell4Effects(..spectral_form_row(), prerequisite_id_target_apply: 99),
+    none,
+  )
+    as "a row behind a target apply prerequisite is held by the plan and applied by no go, so it is not read"
+  assert !counted(
+    Spell4Effects(
+      ..spectral_form_row(),
+      parameter_type00: 0,
+      parameter_type01: 0,
+      parameter_value00: 0.0,
+      parameter_value01: 0.0,
+    ),
+    none,
+  )
+    as "a row whose amount is 0 for every caster is refused, so it is not read"
   assert !counted(Spell4Effects(..spectral_form_row(), target_flags: 4), none)
     as "a row aimed at the area alone is not read"
   let on_primary = Spell4Effects(..spectral_form_row(), target_flags: 2)

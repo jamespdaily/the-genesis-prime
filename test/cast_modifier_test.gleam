@@ -18,9 +18,7 @@ import genesis_prime/game/cast.{type Effect, type State}
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{
-  type Modifier, type Source, Change, Source,
-}
+import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
@@ -105,67 +103,13 @@ fn press(
   )
 }
 
-fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
-  Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
-}
-
-/// A modifier an effect starts or ends.
-type Change {
-  Started(source: Source, modifier: Modifier)
-  Ended(source: Source)
-}
-
-fn change_of(effect effect: Effect) -> Result(Change, Nil) {
-  case effect {
-    cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
-      Ok(Started(source:, modifier:))
-    cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-    | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
-    | cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
-    cast.CasterChangeEnds(source:) -> Ok(Ended(source:))
-    cast.Send(..)
-    | cast.Tell(..)
-    | cast.StartTimer(..)
-    | cast.CancelTimer(..)
-    | cast.Log(..)
-    | cast.Strike(..)
-    | cast.Pay(..)
-    | cast.StealthChanged(..)
-    | cast.Gain(..) -> Error(Nil)
-  }
-}
-
 /// The modifiers the effects start, with their sources.
 fn starts(effects effects: List(Effect)) -> List(#(Source, Modifier)) {
-  list.filter_map(effects, fn(effect) {
-    case change_of(effect:) {
-      Ok(Started(source:, modifier:)) -> Ok(#(source, modifier))
-      Ok(Ended(..)) | Error(Nil) -> Error(Nil)
+  list.filter_map(support.caster_change_starts(effects:), fn(start) {
+    case start.1 {
+      cast.Property(modifier:) -> Ok(#(start.0, modifier))
+      cast.ShieldHeal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
     }
-  })
-}
-
-/// The sources the effects end.
-fn ends(effects effects: List(Effect)) -> List(Source) {
-  list.filter_map(effects, fn(effect) {
-    case change_of(effect:) {
-      Ok(Ended(source:)) -> Ok(source)
-      Ok(Started(..)) | Error(Nil) -> Error(Nil)
-    }
-  })
-}
-
-/// The time each step's effects were taken at, with a modifier starting or ending.
-fn timeline(
-  fired fired: List(#(Int, List(Effect))),
-) -> List(#(Int, String, Source)) {
-  list.flat_map(fired, fn(step) {
-    list.flatten([
-      list.map(starts(effects: step.1), fn(start) {
-        #(step.0, "start", start.0)
-      }),
-      list.map(ends(effects: step.1), fn(source) { #(step.0, "end", source) }),
-    ])
   })
 }
 
@@ -211,12 +155,12 @@ pub fn a_modifier_with_no_delay_starts_at_the_go_and_ends_after_its_duration_tes
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 135_954)
+  let source = support.source_of(cast_id: id, effect_id: 135_954)
   assert starts(effects:) == [#(source, crit_modifier())]
     as "a row with no delay starts in the go's own step"
-  assert ends(effects:) == []
+  assert support.caster_change_ends(effects:) == []
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:) == [#(9000, "end", source)]
+  assert support.timeline(fired:) == [#(9000, "end", source)]
     as "it ends 8000 ms after the go, once"
 }
 
@@ -228,13 +172,14 @@ pub fn a_modifier_with_a_delay_starts_after_it_and_ends_after_its_duration_test(
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 67_777)
+  let source = support.source_of(cast_id: id, effect_id: 67_777)
   assert starts(effects:) == []
     as "nothing starts at the go: the row waits its delay"
   assert all_timer_delays(effects:) == [180, 580, 580]
     as "a start timer at the delay, an end timer and the node's end at delay + duration"
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:) == [#(1180, "start", source), #(1580, "end", source)]
+  assert support.timeline(fired:)
+    == [#(1180, "start", source), #(1580, "end", source)]
     as "it starts at go + 180 and ends 400 ms later"
 }
 
@@ -318,14 +263,15 @@ pub fn a_later_go_of_the_cast_arms_its_modifier_again_from_that_go_test() -> Nil
   let #(state, effects) =
     press(plans: two_gos(), state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 135_954)
+  let source = support.source_of(cast_id: id, effect_id: 135_954)
   assert list.map(starts(effects:), fn(start) { start.0 }) == [source]
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  let ending = list.filter(timeline(fired:), fn(entry) { entry.1 == "end" })
+  let ending =
+    list.filter(support.timeline(fired:), fn(entry) { entry.1 == "end" })
   assert ending == [#(10_000, "end", source)]
     as "the modifier ends 8000 ms after the second go, at 2000, and once: the first go's end timer was cancelled"
   let starting_again =
-    list.filter(timeline(fired:), fn(entry) { entry.1 == "start" })
+    list.filter(support.timeline(fired:), fn(entry) { entry.1 == "start" })
   assert starting_again == [#(2000, "start", source)]
     as "the second go names the same source again, which the properties hold once"
 }
@@ -351,7 +297,8 @@ pub fn a_type_80_removal_of_the_cast_ends_its_modifiers_and_cancels_their_timers
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects: first)
   let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
-  assert ends(effects: removal) == [source_of(cast_id: id, effect_id: 135_954)]
+  assert support.caster_change_ends(effects: removal)
+    == [support.source_of(cast_id: id, effect_id: 135_954)]
     as "taking the cast's node off the caster ends its modifier at once"
   let numbers = fn(timers: List(TimerId)) {
     list.map(timers, fn(timer) {
@@ -383,9 +330,10 @@ pub fn a_node_that_ends_by_time_ends_its_modifiers_and_cancels_their_timers_test
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 67_777)
+  let source = support.source_of(cast_id: id, effect_id: 67_777)
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:) == [#(1180, "start", source), #(1400, "end", source)]
+  assert support.timeline(fired:)
+    == [#(1180, "start", source), #(1400, "end", source)]
     as "the modifier ends with its node at go + 400 and its own end timer at go + 580 never fires"
 }
 
@@ -402,7 +350,8 @@ pub fn the_caster_dying_ends_every_modifier_still_pending_test() -> Nil {
       caster: support.dead_caster(),
       now: support.at(ms: 1100),
     )
-  assert ends(effects: ended) == [source_of(cast_id: id, effect_id: 67_777)]
+  assert support.caster_change_ends(effects: ended)
+    == [support.source_of(cast_id: id, effect_id: 67_777)]
     as "the modifier had not started, and its end is told: the properties hold none, so it changes nothing"
 }
 
@@ -413,6 +362,6 @@ pub fn a_caster_that_leaves_ends_no_modifier_test() -> Nil {
   let #(state, _) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let #(_, left) = cast.left(cast: state)
-  assert ends(effects: left) == []
+  assert support.caster_change_ends(effects: left) == []
     as "the connection's properties go with the player's Entered"
 }

@@ -321,9 +321,17 @@ fn soak(
 /// Whether the pool takes blows of `damage_type`: bit 2^(t-1) of its mask is set for the
 /// type t (`Spell4Effects.effectType.29`).
 fn holds(absorb absorb: Absorb, damage_type damage_type: Int) -> Bool {
-  damage_type >= 1
-  && int.bitwise_and(absorb.mask, int.bitwise_shift_left(1, damage_type - 1))
-  != 0
+  let bit = case damage_type.from_value(damage_type) {
+    damage_type.Physical -> 1
+    damage_type.Tech -> 2
+    damage_type.Magic -> 4
+    damage_type.Heal
+    | damage_type.HealShields
+    | damage_type.Fall
+    | damage_type.Suffocate
+    | damage_type.Other(..) -> 0
+  }
+  int.bitwise_and(absorb.mask, bit) != 0
 }
 
 fn mitigation_of(defence defence: Defence, blow blow: Blow) -> Float {

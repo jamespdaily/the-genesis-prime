@@ -17,7 +17,8 @@
 //// By hand: Spectral Form is round(2.531 x 50.765625 + 2.531 x 13.921875) =
 //// round(128.4878 + 35.2363) = round(163.724) = 164.
 
-import genesis_prime/game/damage.{Attacker, OnCaster, Vitals}
+import attacker_support
+import genesis_prime/game/damage.{Attacker, OnCaster}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import owned_test
 import spell_tables
@@ -28,18 +29,6 @@ const forty_five_as_float_bits = 1_110_704_128
 
 /// 10.0 as 32 float bits.
 const ten_as_float_bits = 1_092_616_192
-
-/// A level-1 Novice, standing alone with no health to read.
-fn novice() -> damage.OnCaster {
-  OnCaster(
-    attacker: Attacker(
-      level: 1,
-      assault_rating: 203.0625,
-      support_rating: 55.6875,
-    ),
-    vitals: Vitals(health: 736, max_health: 736, shield: 450, max_shield: 450),
-  )
-}
 
 fn row(
   id id: Int,
@@ -74,7 +63,11 @@ pub fn spectral_forms_absorb_at_level_one_is_164_test() -> Nil {
       parameter_value00: 2.5309998989105225,
       parameter_value01: 2.5309998989105225,
     )
-  assert amount(effect: spectral_form, caster: novice()) == 164
+  assert amount(
+      effect: spectral_form,
+      caster: attacker_support.novice_on_itself(),
+    )
+    == 164
     as "round(2.531 x 50.765625 + 2.531 x 13.921875) = round(163.724)"
 }
 
@@ -86,7 +79,7 @@ pub fn a_flat_absorption_is_its_multiplier_times_its_float_amount_test() -> Nil 
         data_bits00: one_as_float_bits,
         data_bits01: forty_five_as_float_bits,
       ),
-      caster: novice(),
+      caster: attacker_support.novice_on_itself(),
     )
     == 45
     as "row 183643: 1.0 x 45.0, 'Granted 45 Absorb'"
@@ -96,7 +89,8 @@ pub fn a_flat_absorption_is_its_multiplier_times_its_float_amount_test() -> Nil 
       parameter_type00: 13,
       parameter_value00: 4.0,
     )
-  assert amount(effect: stat_only, caster: novice()) == 56
+  assert amount(effect: stat_only, caster: attacker_support.novice_on_itself())
+    == 56
     as "row 97347: dataBits00 0 gives no row part, the stat part alone: round(4.0 x 13.921875) = round(55.6875)"
   let level_flat =
     Spell4Effects(
@@ -111,8 +105,11 @@ pub fn a_flat_absorption_is_its_multiplier_times_its_float_amount_test() -> Nil 
   assert amount(
       effect: level_flat,
       caster: OnCaster(
-        ..novice(),
-        attacker: Attacker(..novice().attacker, level: 5),
+        ..attacker_support.novice_on_itself(),
+        attacker: Attacker(
+          ..attacker_support.novice_on_itself().attacker,
+          level: 5,
+        ),
       ),
     )
     == 20

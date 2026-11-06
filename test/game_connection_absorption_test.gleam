@@ -17,9 +17,13 @@
 ////   GameFormula 1234, `0x140464240`): a blow of 300 is 120 after mitigation (300 x
 ////   0.4003041 = 120.09), all of which the pool of 164 takes, leaving 44; the description's
 ////   absorbed is the 180 mitigated and the 120 soaked, 300, and the shield and the health
-////   are untouched. The planted Medic's Armor 200 mitigates between the Esper's 0.5996959
-////   and the 0.75 cap (Armor 250, `player_life_test`), so its blow of 300 is between 75 and
-////   120 after mitigation and the pool is left between 44 and 89.
+////   are untouched.
+//// - The planted Medic's Armor 200 at level 1 (`loadout_test`: Medic 200) through GameFormula
+////   1234 (f0 50.0, f01 0.008, f02 0.0, f03 7250.0, int01 75, `table_rows -- GameFormula
+////   1234`, the curve of `rating`'s doc): per = 50.0 / 1 x 0.008 = 0.4, knee 0, so p = 0.4 x
+////   200 x cos(pi / 2 x 200 / 7450) = 80 x 0.99911 = 79.93, a fraction of 0.7993, held at
+////   the 75 cap: 0.75. A blow of 300 is 75 after mitigation (300 x 0.25), all of which the
+////   pool takes, leaving 89; the absorbed field is 225 mitigated and 75 soaked, 300.
 //// - **Two worlds run each owner-side test.** The planted one (`character_tables.
 ////   shared_with_absorption`) gives the Medic's Paralytic Surge, at bag index 2, Spectral
 ////   Form's row as the client holds it, so the tests run in CI; the Medic is test data, no
@@ -33,7 +37,6 @@ import genesis_prime/client_connection.{
   type News, type Request, Absorption, Appeared, PeerNews, SentByPeer,
 }
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/hit.{Blow, Offence}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
@@ -98,42 +101,6 @@ fn pooled_until(
   )
 }
 
-/// A creature's blow of `damage` Magic (damage type 3), with no crit chance, on the player.
-fn a_magic_blow(
-  damage damage: Int,
-) -> step.Event(
-  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
-) {
-  support.foe(
-    strike_tell.Attacks(
-      tell: strike_tell.Strike(
-        key: strike_tell.Key(
-          cast_id: 2_147_500_000,
-          phase: 0,
-          unit_id: support.own_unit_id,
-        ),
-        from: support.fighter(),
-        striker: strike_tell.CreatureStriker,
-        offence: Offence(
-          blows: [
-            Blow(
-              spell4_effects_id: 62_159,
-              damage_type: 3,
-              damage:,
-              delay_ms: 0,
-              threat_multiplier: 1.0,
-            ),
-          ],
-          crit_chance: 0.0,
-          crit_severity: 1.5,
-          strikethrough: 0.0,
-        ),
-        controls: [],
-      ),
-    ),
-  )
-}
-
 /// The absorption each 0x938 of stat 22 the steps write to the player's client carries,
 /// in order.
 fn written(steps steps: List(ConnectionStep(Request))) -> List(Int) {
@@ -193,7 +160,7 @@ fn description_of(taken taken: ConnectionStep(Request)) -> #(Int, Int, Int) {
 
 fn a_struck_pool_falls_for_the_player_and_its_viewer(
   world world: World,
-  left_in left_in: #(Int, Int),
+  left_after left_after: Int,
 ) -> Nil {
   let #(holding, early) = pooled_until(world:, until_ms: 1500)
   assert written(steps: early) == [164]
@@ -201,11 +168,18 @@ fn a_struck_pool_falls_for_the_player_and_its_viewer(
   assert told(steps: early, viewer: 2) == [164]
     as "a viewer is told the same sum"
   let #(_, struck) =
-    support.at(state: holding, ms: 2000, event: a_magic_blow(damage: 300))
+    support.at(
+      state: holding,
+      ms: 2000,
+      event: support.a_creatures_blow(
+        unit_id: support.own_unit_id,
+        damage_type: 3,
+        damage: 300,
+      ),
+    )
   let assert [left] = written(steps: [struck])
     as "one 0x938 of stat 22 after the blow, and none of stat 20: the shield is untouched"
-  assert left >= left_in.0 && left <= left_in.1
-    as "164 less what the pool soaked of the blow"
+  assert left == left_after as "164 less what the pool soaked of the blow"
   assert told(steps: [struck], viewer: 2) == [left]
     as "the viewer is told the same value"
   assert told(steps: [struck], viewer: 3) == [left]
@@ -227,7 +201,7 @@ pub fn an_esper_struck_through_its_absorb_sees_stat_22_fall_and_so_does_its_view
   // 164 less 120 is 44, worked by hand in the module's doc.
   a_struck_pool_falls_for_the_player_and_its_viewer(
     world: esper_world(),
-    left_in: #(44, 44),
+    left_after: 44,
   )
 }
 
@@ -235,7 +209,7 @@ pub fn a_medic_struck_through_its_planted_absorb_sees_stat_22_fall_and_so_does_i
   use <- owned_test.run(60_000)
   a_struck_pool_falls_for_the_player_and_its_viewer(
     world: planted_world(),
-    left_in: #(44, 89),
+    left_after: 89,
   )
 }
 

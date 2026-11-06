@@ -93,6 +93,21 @@ fn parameters_of(
   ]
 }
 
+/// Whether the formula gives 0 to every caster: no stat parameter (kind 12 or 13) has a
+/// value, and the multiplier is 0.0 or the base is 0.0 with no flat parameter (any other
+/// kind) that has a value. Such a row has no amount the server can read, whatever the
+/// caster's stats.
+pub fn gives_nothing(formula formula: Formula) -> Bool {
+  let has_value = fn(is_kind) {
+    list.any(formula.parameters, fn(parameter) {
+      parameter.value != 0.0 && is_kind(parameter.kind)
+    })
+  }
+  let stat = has_value(fn(kind) { kind == 12 || kind == 13 })
+  let flat = has_value(fn(kind) { kind != 0 && kind != 12 && kind != 13 })
+  !stat && { formula.multiplier == 0.0 || { formula.base == 0.0 && !flat } }
+}
+
 /// What the formula reads of the caster: its level and its two ratings.
 pub type Attacker {
   Attacker(level: Int, assault_rating: Float, support_rating: Float)

@@ -1082,6 +1082,10 @@ pub type PlanError {
   /// An Absorption effect of a tree has a dataBits00 or dataBits01 that is not a finite
   /// 32-bit float.
   AbsorptionNumberNotFinite(spell4_id: Int, effect_id: Int)
+  /// An Absorption effect of a tree gives 0 to every caster (`damage.gives_nothing`): which
+  /// of dataBits00 and dataBits01 is the amount when the other is 0 is not known
+  /// (`Spell4Effects.effectType.29`).
+  AbsorptionAmountNotRead(spell4_id: Int, effect_id: Int)
   /// An Absorption effect of a tree has a tickTime: a periodic absorb's reading is not known
   /// (`Spell4Effects.effectType.29`).
   AbsorptionPeriodic(spell4_id: Int, effect_id: Int, tick_ms: Int)
@@ -1341,6 +1345,12 @@ pub fn describe(error error: PlanError) -> String {
       <> " has an Absorption effect "
       <> int.to_string(effect_id)
       <> " whose dataBits00 or dataBits01 is not a finite number"
+    AbsorptionAmountNotRead(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has an Absorption effect "
+      <> int.to_string(effect_id)
+      <> " whose multiplier or base is 0 and no parameter gives it a value, so its amount is not read"
     AbsorptionPeriodic(spell4_id:, effect_id:, tick_ms:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1935,26 +1945,20 @@ pub fn shield_heal_of(
   condition condition: Condition,
 ) -> Result(ShieldHeal, PlanError) {
   use formula <- result.try(
-    damage.formula_of(effect:)
-    |> result.replace_error(ShieldHealNumberNotFinite(
-      spell4_id:,
-      effect_id: effect.id,
-    )),
+    caster_formula_read(
+      formula: damage.formula_of(effect:),
+      not_finite: ShieldHealNumberNotFinite(spell4_id:, effect_id: effect.id),
+      not_read: fn(parameter_kind) {
+        ShieldHealParameterNotRead(
+          spell4_id:,
+          effect_id: effect.id,
+          parameter_kind:,
+        )
+      },
+    ),
   )
-  use Nil <- result.try(case damage.caster_unread(formula:) {
-    Some(damage.Unread(parameter_kind:)) ->
-      Error(ShieldHealParameterNotRead(
-        spell4_id:,
-        effect_id: effect.id,
-        parameter_kind:,
-      ))
-    None -> Ok(Nil)
-  })
   let effect_id = Spell4EffectsId(effect.id)
-  let aim = case has_flag(flags: effect.target_flags, bit: 1) {
-    True -> AimsAtCaster
-    False -> AimsAtPrimaryTarget
-  }
+  let aim = reached_aim_of(effect:)
   let phase_flags = effect.phase_flags
   let tag = tag_of(effect:)
   Ok(case effect.tick_time {
@@ -2426,10 +2430,7 @@ fn interrupt_armor_read(
   InterruptArmor(
     points: effect.data_bits00,
     takes_back:,
-    aim: case has_flag(flags: effect.target_flags, bit: 1) {
-      True -> AimsAtCaster
-      False -> AimsAtPrimaryTarget
-    },
+    aim: reached_aim_of(effect:),
   )
 }
 
@@ -2446,6 +2447,43 @@ pub fn modifier_aim(modifier modifier: PropertyModifier) -> Aim {
   }
 }
 
+/// The unit a row aims at when its targetFlags reach the caster or the primary target: the
+/// caster when they include it (bit 1), else the primary target, which a spell cast on the
+/// caster makes the caster.
+fn reached_aim_of(effect effect: spell4_effects.Spell4Effects) -> Aim {
+  use <- bool.guard(
+    when: has_flag(flags: effect.target_flags, bit: 1),
+    return: AimsAtCaster,
+  )
+  AimsAtPrimaryTarget
+}
+
+/// A formula the caster's own value reads: `formula` as the row gave it, or `not_finite`
+/// when a number is not finite, or `not_read` of the first parameter type an effect on its
+/// caster does not read (genesis_prime/game/damage `caster_unread`).
+fn caster_formula_read(
+  formula formula: Result(damage.Formula, Nil),
+  not_finite not_finite: PlanError,
+  not_read not_read: fn(Int) -> PlanError,
+) -> Result(damage.Formula, PlanError) {
+  use formula <- result.try(result.replace_error(formula, not_finite))
+  case damage.caster_unread(formula:) {
+    Some(damage.Unread(parameter_kind:)) -> Error(not_read(parameter_kind))
+    None -> Ok(formula)
+  }
+}
+
+/// Whether a row aimed at `aim` is one a go applies in a spell with the Spell4 id
+/// `spell4_id`: not one aimed at the primary target of a spell a Proxy starts on each struck
+/// unit, which fails the load (`struck_children`).
+fn not_on_a_struck_unit(
+  aim aim: Aim,
+  spell4_id spell4_id: Int,
+  struck_children struck_children: Set(Int),
+) -> Bool {
+  aim != AimsAtPrimaryTarget || !set.contains(struck_children, spell4_id)
+}
+
 /// The pool an Absorption row gives (`Spell4Effects.effectType.29`), or the error that
 /// fails the load: dataBits00 and dataBits01 must be finite 32-bit floats, the formula
 /// must read only the parameter types an effect on its caster reads
@@ -2458,38 +2496,32 @@ fn absorption_read(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Absorption, PlanError) {
   use formula <- result.try(
-    damage.absorption_formula_of(effect:)
-    |> result.replace_error(AbsorptionNumberNotFinite(
-      spell4_id:,
-      effect_id: effect.id,
-    )),
+    caster_formula_read(
+      formula: damage.absorption_formula_of(effect:),
+      not_finite: AbsorptionNumberNotFinite(spell4_id:, effect_id: effect.id),
+      not_read: fn(parameter_kind) {
+        AbsorptionParameterNotRead(
+          spell4_id:,
+          effect_id: effect.id,
+          parameter_kind:,
+        )
+      },
+    ),
   )
-  use Nil <- result.try(case damage.caster_unread(formula:) {
-    Some(damage.Unread(parameter_kind:)) ->
-      Error(AbsorptionParameterNotRead(
-        spell4_id:,
-        effect_id: effect.id,
-        parameter_kind:,
-      ))
-    None -> Ok(Nil)
-  })
   use Nil <- result.try(case effect.tick_time {
     0 -> Ok(Nil)
     tick_ms ->
       Error(AbsorptionPeriodic(spell4_id:, effect_id: effect.id, tick_ms:))
   })
-  use Nil <- result.map(case lasting.has_life(row: lasting_row_of(effect:)) {
+  use Nil <- result.try(case lasting.has_life(row: lasting_row_of(effect:)) {
     True -> Ok(Nil)
     False -> Error(AbsorptionHasNoLifetime(spell4_id:, effect_id: effect.id))
   })
-  Absorption(
-    formula:,
-    mask: effect.data_bits04,
-    aim: case has_flag(flags: effect.target_flags, bit: 1) {
-      True -> AimsAtCaster
-      False -> AimsAtPrimaryTarget
-    },
-  )
+  use Nil <- result.map(case damage.gives_nothing(formula:) {
+    False -> Ok(Nil)
+    True -> Error(AbsorptionAmountNotRead(spell4_id:, effect_id: effect.id))
+  })
+  Absorption(formula:, mask: effect.data_bits04, aim: reached_aim_of(effect:))
 }
 
 /// A Proxy that starts its child on each unit its area strikes makes that unit the
@@ -2982,7 +3014,9 @@ pub fn struck_unit_children(
 /// aimed at the primary target of such a spell, `proxy_modifiers_read`, or whose dataBits01
 /// the plan does not read, `interrupt_armor_read`; and an Absorption row the plan refuses:
 /// a non-finite number, a formula parameter the caster's value does not read, a tickTime,
-/// no life, or an aim at the primary target of such a spell, `absorption_read`). A Fluff, Scale or RavelSignal
+/// no life, an amount of 0 for every caster, or an aim at the primary target of such a
+/// spell, `absorption_read`, or that stands behind a target apply prerequisite, which no go
+/// applies). A Fluff, Scale or RavelSignal
 /// row is read when its aim is one the plan reads (`lasting_aim_of`) and no target apply
 /// prerequisite stands before it, which no go applies; a SpellForceRemove row also when its
 /// counts agree (`force_remove_counts_read`). A SpellForceRemove row whose dataBits01 names
@@ -3018,8 +3052,11 @@ pub fn effect_row_read(
       |> result.map(fn(heal) {
         case heal {
           ShieldHeal(..) ->
-            heal.aim != AimsAtPrimaryTarget
-            || !set.contains(struck_children, effect.spell_id)
+            not_on_a_struck_unit(
+              aim: heal.aim,
+              spell4_id: effect.spell_id,
+              struck_children:,
+            )
           TickingShieldHeal(..) -> False
         }
       })
@@ -3027,15 +3064,22 @@ pub fn effect_row_read(
     effect_kind.InterruptArmor ->
       interrupt_armor_read(spell4_id: effect.spell_id, effect:)
       |> result.map(fn(armor) {
-        armor.aim != AimsAtPrimaryTarget
-        || !set.contains(struck_children, effect.spell_id)
+        not_on_a_struck_unit(
+          aim: armor.aim,
+          spell4_id: effect.spell_id,
+          struck_children:,
+        )
       })
       |> result.unwrap(or: False)
     effect_kind.Absorption ->
       absorption_read(spell4_id: effect.spell_id, effect:)
       |> result.map(fn(absorption) {
-        absorption.aim != AimsAtPrimaryTarget
-        || !set.contains(struck_children, effect.spell_id)
+        effect.prerequisite_id_target_apply == 0
+        && not_on_a_struck_unit(
+          aim: absorption.aim,
+          spell4_id: effect.spell_id,
+          struck_children:,
+        )
       })
       |> result.unwrap(or: False)
     effect_kind.DisguiseOutfit ->

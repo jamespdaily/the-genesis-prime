@@ -688,25 +688,15 @@ pub fn struck(
           ),
         ])
         hit.Landed(descriptions:, health: left, shield:, absorbs:, ..) -> {
-          let absorption_news = case
-            absorption_of(absorbs:) == absorption(life:)
-          {
-            True -> []
-            False -> absorption_told(absorption: absorption_of(absorbs:))
-          }
+          let #(life, absorption_news) = absorbs_changed(life:, absorbs:)
           let shield_news = case shield == life.shield {
             True -> []
             False -> shield_told(shield:)
           }
           let lowered = shield != life.shield || left != life.health
           let #(life, after) = case left {
-            0 ->
-              died(life: Life(..life, health: left, shield:, absorbs:), place:)
-            _ ->
-              blow_taken(
-                life: Life(..life, health: left, shield:, absorbs:),
-                lowered:,
-              )
+            0 -> died(life: Life(..life, health: left, shield:), place:)
+            _ -> blow_taken(life: Life(..life, health: left, shield:), lowered:)
           }
           #(
             life,
