@@ -223,9 +223,9 @@
 ////   the caster's target info and holds the caster's node until it is removed (a Stealth
 ////   row with no durationTime lasts until removed), and adds its source; a RemoveStealth
 ////   row (type 84) ends every source. After the go's effects, a spell whose
-////   `stealth_change` is `EndsStealth` ends every source held before the go and not
-////   applied by it (`Spell4.spellCastStealthChange.break`; the server's rule): the cast
-////   of each loses its node on the caster as a type 80 removal takes it off (0x811, and
+////   `stealth_change` ends stealth at that go (value 0 at each go, value 1 at the cast's
+////   last) ends every source of the other casts (`Spell4.spellCastStealthChange.break`;
+////   the server's rule): the cast of each loses its node on the caster as a type 80 removal takes it off (0x811, and
 ////   the 0x7fe of a lingering cast of a method the client keeps, `node_off`; a Normal
 ////   cast the client destroys with the 0x811), so the buff that stands for the stealth
 ////   never outlives it. A node that leaves the caster takes its cast's sources
@@ -326,7 +326,8 @@
 //// | a 0x801 ends a cast while the round of its first go is open | the cost was paid as the strike began; the round's answer finds no live cast: no go is written, the hits stand |
 //// | a press while one is held | 0x7fc 13 |
 //// | a go adds a Stealth source while the stack cap of its spell takes the first cast off | one source left, one 0x811, no `StealthChanged` |
-//// | a go of an `EndsStealth` spell after the stealth ended | nothing to end, nothing written |
+//// | a go of a spell that ends stealth after the stealth ended | nothing to end, nothing written |
+//// | a 0x801 ends a cast of `EndsStealthAfterLastGo` before its last go | the stealth stays held, nothing written |
 //// | the caster dies stealthed | every cast ends, the sources drop, `StealthChanged` last |
 //// | the player leaves stealthed | the sources drop, nothing is written |
 //// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
@@ -3354,6 +3355,7 @@ fn go(
           cast_id:,
           spell:,
           applied:,
+          last_go: live.gone >= go_count,
           now_ms:,
         )
       let #(cast, finished) = case
@@ -3400,27 +3402,30 @@ fn go(
 /// What a go does to the caster's stealth, after the go's other effects: each Stealth row
 /// that applied adds its source (the cast `cast_id`, the row's effect) with the row's
 /// `Breaks`; a RemoveStealth row that applied ends every source; then a spell whose
-/// `stealth_change` is `EndsStealth` ends every source held before this go, so a source
-/// this go added is kept. A source ends as `cast.stealth` loses it and its cast's node
-/// leaves the caster, as `node_off` takes a type 80 removal's (0x811, and the 0x7fe of a
-/// lingering cast of a method the client keeps). A go with no row, and no source to end,
-/// changes nothing (`Spell4.spellCastStealthChange.break`).
+/// `stealth_change` ends stealth at this go (`EndsStealthAtEachGo`, or
+/// `EndsStealthAfterLastGo` when `last_go`) ends the sources of the other casts. A cast
+/// never ends the sources of its own Stealth rows, whichever go applied them. A source
+/// ends as `cast.stealth` loses it and its cast's node leaves the caster, as `node_off`
+/// takes a type 80 removal's (0x811, and the 0x7fe of a lingering cast of a method the
+/// client keeps). A go with no row, and no source to end, changes nothing.
+///
+/// A cast of `EndsStealthAfterLastGo` that stops before its last go (a 0x801, the
+/// caster's death or leaving) never reaches this: the stealth ends with the effects of
+/// the last go, so a cast that stops before them leaves the stealth held, the server's
+/// choice, since the client reads the column nowhere
+/// (`Spell4.spellCastStealthChange.break`).
 fn stealth_changed_by_go(
   cast cast: State,
   caster caster: Caster,
   cast_id cast_id: Int,
   spell spell: Spell,
   applied applied: Applied,
+  last_go last_go: Bool,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   case stealthed(cast:), applied.stealth, applied.remove_stealth {
     False, [], [] -> #(cast, [])
     _, _, _ -> {
-      let held_before = dict.keys(cast.stealth)
-      let applied_sources =
-        list.map(applied.stealth, fn(row) {
-          unit_properties.Source(cast_id:, effect_id: row.effect_id)
-        })
       let cast =
         State(
           ..cast,
@@ -3442,18 +3447,22 @@ fn stealth_changed_by_go(
             now_ms:,
           )
       }
-      let #(cast, broken) = case spell.stealth_change {
-        spell_plan.EndsStealth ->
+      let #(cast, broken) = case spell.stealth_change, last_go {
+        spell_plan.EndsStealthAtEachGo, _
+        | spell_plan.EndsStealthAfterLastGo, True
+        ->
           stealth_ended(
             cast:,
             caster:,
-            sources: list.filter(held_before, fn(source) {
-              dict.has_key(cast.stealth, source)
-              && !list.contains(applied_sources, source)
+            sources: list.filter(dict.keys(cast.stealth), fn(source) {
+              source.cast_id != cast_id
             }),
             now_ms:,
           )
-        spell_plan.KeepsStealth -> #(cast, [])
+        spell_plan.EndsStealthAfterLastGo, False | spell_plan.KeepsStealth, _ -> #(
+          cast,
+          [],
+        )
       }
       #(cast, list.append(removed, broken))
     }
