@@ -24,18 +24,20 @@
 //// The rows are in memory except in the last test, which reads the client's tables.
 
 import client_tables
+import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
   AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster, InterruptArmor,
-  OnCaster, OnEachStruck,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Modifier, Change}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, UnitProperty2Id}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
+import gleam/dict
 import gleam/list
 import gleam/option.{Some}
+import gleam/result
 import owned_test
 import planted_table.{type Cell, Integer}
 import spell_tables
@@ -163,13 +165,8 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_the_cast
     as "targetFlags 2 is the primary target"
   assert read.row
     == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
-  assert spell_plan.proxy_modifiers_read(
-      spell4_id: 58_586,
-      proxy_effect_id: 178_143,
-      target: OnCaster,
-      modifiers: [read],
-    )
-    == Ok(Nil)
+  assert spell_tables.read_row(effect: row, place: spell_tables.pressed)
+    == Ok(spell_plan.Applied(spell_plan.PlannedModifier(read)))
     as "Proxy 178143 has targetFlags 1: spell_plan.target_of starts the child on the caster, whose primary target is the caster"
 }
 
@@ -184,42 +181,28 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_each_str
       duration_ms: 5000,
       data_bits01: 0,
     )
-  let assert Ok(on_primary) =
-    spell_plan.interrupt_armor_of(
-      spell4_id: 76_766,
-      effect: row,
-      condition: Always,
-    )
-  assert spell_plan.proxy_modifiers_read(
+  let on_each_struck =
+    spell_tables.started_on_each_struck(
       spell4_id: 58_586,
       proxy_effect_id: 178_143,
-      target: OnEachStruck,
-      modifiers: [on_primary],
     )
+  assert spell_tables.read_row(effect: row, place: on_each_struck)
     == Error(spell_plan.InterruptArmorOnStruckUnit(
       spell4_id: 58_586,
       proxy_effect_id: 178_143,
       effect_id: 199_192,
     ))
     as "the child's primary target is a struck unit, and Interrupt Armor on one is not built"
-  let assert Ok(on_caster) =
-    spell_plan.interrupt_armor_of(
-      spell4_id: 76_766,
+  assert spell_tables.read_row(
       effect: spell_tables.blank_effect(
         id: 199_192,
         spell: 76_766,
         effect_type: 52,
         target_flags: 3,
       ),
-      condition: Always,
+      place: on_each_struck,
     )
-  assert spell_plan.proxy_modifiers_read(
-      spell4_id: 58_586,
-      proxy_effect_id: 178_143,
-      target: OnEachStruck,
-      modifiers: [on_caster],
-    )
-    == Ok(Nil)
+    |> result.is_ok
     as "a row that includes the caster reaches the caster, whichever unit the child is cast on"
 }
 
@@ -388,14 +371,12 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
   let assert GatedOnCaster(gates: [_]) = gated.condition
     as "Proxy 210822 has prerequisiteIdCasterApply 37438"
   let rows = spell4_effects.all(client_tables.shared())
-  let struck_children = spell_plan.struck_unit_children(effects: rows)
   let type_52 = list.filter(rows, fn(row) { row.effect_type == 52 })
   assert list.length(type_52) == 38
     as "`table_rows -- Spell4Effects effectType=52`: 38 rows"
-  assert list.count(type_52, fn(row) {
-      spell_plan.effect_row_read(effect: row, struck_children:)
-    })
-    == 36
+  let unread =
+    effect_row.unread_by_type(tables: client_tables.shared(), effects: rows)
+  assert dict.get(unread, 52) == Ok(2)
     as "36 are read; row 105619 (targetFlags 4) is not, and neither is row 100384 (targetFlags 2) of Spell4 43457, which Proxy 99382 (targetFlags 4) starts on each struck unit"
   Nil
 }

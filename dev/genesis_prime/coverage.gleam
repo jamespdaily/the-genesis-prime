@@ -8,8 +8,9 @@
 //// key), or not decoded, beside the rows it has in the whole game and in the
 //// starting abilities' spells. It exits with 1 when the tables do not load, an
 //// engine declares a type no row uses, an engine both handles a type and
-//// lists it as missing, or a starting ability's tree names a Spell4 or Prerequisite
-//// row the tables lack.
+//// lists it as missing, an engine handles a type with rows no rule reads and states no
+//// gap for it, or a starting ability's tree names a Spell4 or Prerequisite row the tables
+//// lack.
 ////
 //// It then lists the parts of the starting abilities' trees the starting abilities'
 //// column leaves out, each with why: a Prerequisite only a runner column names, and
@@ -155,13 +156,32 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
 
 /// A line for each engine that declares a type no row uses, one for each that
 /// both handles a type and lists it as missing or lists as partial a type it does not
-/// handle, and one for each that names a row
-/// of a starting ability's tree the client's tables lack.
+/// handle, one for each type it handles with rows no rule reads and no gap stated, and one
+/// for each that names a row of a starting ability's tree the client's tables lack.
 pub fn breaches(measurements: List(Measurement)) -> List(String) {
   list.flat_map(measurements, fn(measured) {
     case measured {
-      Measured(engine:, breaches:, conflicts:, missing_rows:, ..) ->
+      Measured(engine:, breaches:, conflicts:, missing_rows:, types:, ..) ->
         list.flatten([
+          list.filter_map(types, fn(line) {
+            case line.status {
+              measurement.HandledWithUnstatedGap(unread_rows:) ->
+                Ok(
+                  engine.name
+                  <> " handles type "
+                  <> int.to_string(line.type_number)
+                  <> " with "
+                  <> int.to_string(unread_rows)
+                  <> " of its "
+                  <> int.to_string(line.rows)
+                  <> " rows not read and states no gap for it",
+                )
+              measurement.Handled
+              | measurement.HandledWithGap(..)
+              | measurement.DecodedMissing(..)
+              | measurement.NotDecoded -> Error(Nil)
+            }
+          }),
           case breaches {
             [] -> []
             unused -> [

@@ -4,7 +4,7 @@
 import genesis_prime/coverage/engine.{type EngineDeclaration}
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, DecodedMissing, Handled, HandledWithGap,
-  Measured, NotDecoded, Unmeasured,
+  HandledWithUnstatedGap, Measured, NotDecoded, Unmeasured,
 }
 import gleam/float
 import gleam/int
@@ -13,7 +13,7 @@ import gleam/string
 
 /// What the marks of a type line say.
 pub const legend =
-  "Marks: [x] handled by a rule of the server, with the gap it states when it has one; [~] the client's code was read for the type and the server does not handle it (what it lacks, and the fact file's key); [ ] the client's code was not read for the type. \"In the starting abilities\": the rows of the type among the spells the 18 level-1 abilities' trees reach, a child behind a gate a level-1 character cannot open and the prerequisites only the runner columns name left out (listed after the checklists)."
+  "Marks: [x] handled by a rule of the server, with the gap it states when it has one; [~] the client's code was read for the type and the server does not handle it (what it lacks, and the fact file's key); [ ] the client's code was not read for the type. \"In the starting abilities\": the rows of the type among the spells the 18 level-1 abilities' trees reach, a child behind a gate a level-1 character cannot open and the prerequisites only the runner columns name left out (listed after the checklists). Rows not read, for the spell effects: a row of a handled type that the plan refuses or holds without a go applying it, or that the area load refuses, a property change with no life, and a row whose phaseFlags is 0, which no phase selects (what the client means by 0 is not known); a spell the plan refuses for a column of its own (a cost, a requirement, a cycle) is left out of those counts, and each of its rows is counted by its own columns."
 
 /// The Markdown of every engine's measure: a heading, the source and totals,
 /// then one line per type, heaviest first: `- [ ] type N: R rows (S%)`, with
@@ -46,7 +46,10 @@ fn render_engine(measurement: Measurement) -> String {
         list.count(types, fn(line) {
           case line.status {
             DecodedMissing(..) -> True
-            Handled | HandledWithGap(..) | NotDecoded -> False
+            Handled
+            | HandledWithGap(..)
+            | HandledWithUnstatedGap(..)
+            | NotDecoded -> False
           }
         })
       let unread_rows =
@@ -150,7 +153,7 @@ fn starting_rows(types: List(TypeLine)) -> #(Int, Int) {
   list.fold(types, #(0, 0), fn(totals, line) {
     let #(handled, all) = totals
     case line.status {
-      Handled | HandledWithGap(..) -> #(
+      Handled | HandledWithGap(..) | HandledWithUnstatedGap(..) -> #(
         handled + line.starting_abilities - line.starting_unread,
         all + line.starting_abilities,
       )
@@ -164,7 +167,7 @@ fn starting_rows(types: List(TypeLine)) -> #(Int, Int) {
 
 fn type_line(line: TypeLine) -> String {
   let mark = case line.status {
-    Handled | HandledWithGap(..) -> "x"
+    Handled | HandledWithGap(..) | HandledWithUnstatedGap(..) -> "x"
     DecodedMissing(..) -> "~"
     NotDecoded -> " "
   }
@@ -197,6 +200,12 @@ fn type_line(line: TypeLine) -> String {
       <> " ("
       <> fact_key
       <> ")"
+    HandledWithUnstatedGap(unread_rows:) ->
+      "; handled with no gap stated, "
+      <> int.to_string(unread_rows)
+      <> " of its "
+      <> int.to_string(line.rows)
+      <> " rows not read"
     Handled | NotDecoded -> ""
   }
 }
@@ -205,7 +214,8 @@ fn type_line(line: TypeLine) -> String {
 /// rules leave out whole, and none for any other line.
 fn unread_rows_of(line: TypeLine) -> Int {
   case line.status {
-    HandledWithGap(unread_rows:, ..) -> unread_rows
+    HandledWithGap(unread_rows:, ..) | HandledWithUnstatedGap(unread_rows:) ->
+      unread_rows
     Handled | DecodedMissing(..) | NotDecoded -> 0
   }
 }
