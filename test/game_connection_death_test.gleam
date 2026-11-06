@@ -13,6 +13,7 @@ import genesis_prime/client_connection.{
   TellMoved,
 }
 import genesis_prime/connection/frame.{Frame}
+import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell
@@ -47,7 +48,7 @@ import genesis_prime/world_map/map.{Join, Left, SeenBy}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/unit_fields
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import map_support
 import owned_test
 
@@ -471,9 +472,9 @@ pub fn while_dead_every_0x637_is_dropped_and_after_coming_back_a_move_moves_the_
     == game_connection_support.save_asked_keeping(
       sequence: 1,
       place: game_connection_support.entry_place(),
-      health: None,
+      health: Some(0),
     )
-    as "a dead player's save keeps no health (death.server_choices); the body's place is saved before the end: where it fell"
+    as "a dead player's save keeps 0 (death.enter_dead); the body's place is saved before the end: where it fell"
   let #(state, _) =
     game_connection_support.read(state, game_connection_support.wake_here())
   let #(_, moved) =
@@ -511,12 +512,12 @@ pub fn a_ghosts_0x637_the_clients_code_never_sends_ends_the_connection_after_sav
       == game_connection_support.save_asked_keeping(
         sequence: 1,
         place: game_connection_support.entry_place(),
-        health: None,
+        health: Some(0),
       )
       && support.writes(taken) == []
       as {
         what
-        <> ": the place the body lies at is saved with no health (death.server_choices), nothing written"
+        <> ": the place the body lies at is saved with health 0 (death.enter_dead), nothing written"
       }
   })
 }
@@ -591,9 +592,9 @@ pub fn a_0x15a_the_rule_refuses_writes_nothing_and_logs_a_warning_and_one_the_cl
     == game_connection_support.save_asked_keeping(
       sequence: 1,
       place: game_connection_support.entry_place(),
-      health: None,
+      health: Some(0),
     )
-    as "a dead player's save keeps no health (death.server_choices); after the save of the place, as any end in the world"
+    as "a dead player's save keeps 0 (death.enter_dead); after the save of the place, as any end in the world"
 }
 
 pub fn a_second_choice_is_refused_unchanged_test() -> Nil {
@@ -919,9 +920,9 @@ pub fn the_map_ending_while_the_player_is_dead_saves_where_the_body_lies_and_end
     == game_connection_support.save_asked_keeping(
       sequence: 1,
       place: game_connection_support.entry_place(),
-      health: None,
+      health: Some(0),
     )
-    as "a dead player's save keeps no health (death.server_choices); the body's place: where it fell"
+    as "a dead player's save keeps 0 (death.enter_dead); the body's place: where it fell"
   assert support.writes(taken) == [] && !support.stops(taken)
   let #(_, ended) =
     game_connection_support.answer(
@@ -1039,40 +1040,280 @@ pub fn a_viewer_that_arrives_after_a_hit_gets_the_players_shield_and_health_now_
     as "stat 0, the health, as the hit left it"
 }
 
-pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, _) = game_connection_support.dead_in_world()
-  let #(again, entry) =
-    game_connection_support.entered_from(
-      game_connection_support.camp_from(state),
-      game_connection_support.world_character(),
-    )
-  assert list.contains(
-    game_connection_support.player_in(entry).tail.stats,
-    unit_fields.integer_stat(stat_id: 0, value: 736),
+/// The tests' character entering with a saved health of 0, as the store
+/// answers for a player that saved dead: the connection and the entry's step.
+fn entered_dead() -> #(game_connection.State, ConnectionStep(Request)) {
+  game_connection_support.entered_saved(
+    in_character_select: game_connection_support.in_select(),
+    character: game_connection_support.world_character(),
+    saved_health: Some(0),
   )
-    as "the new entry's 0x262 carries full health"
-  let #(_, struck) =
+}
+
+/// The step after the client camped: its request, then its finish.
+fn camp_finished(state: game_connection.State) -> ConnectionStep(Request) {
+  let #(state, _) =
+    game_connection_support.read(
+      state:,
+      bytes: game_connection_support.camp_request_message(True),
+    )
+  game_connection_support.read(
+    state:,
+    bytes: game_connection_support.camp_finished_message(),
+  ).1
+}
+
+/// The ids of the burst of an entry that enters the player dead: 0xAD, the
+/// player's 0x262, 0x19B, the loadout, 0x6BC, the ghost's 0x262, 0x1B3, 0x636
+/// for the ghost, 0xF1 and 0x61, then the zone channel (`death.enter_dead`,
+/// `opcode.0x1b3.before_player`: 0x1B3 after 0x19B).
+const dead_entry_ids = [
+  0x00AD,
+  0x0262,
+  0x019B,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x0111,
+  0x01A0,
+  0x019D,
+  0x06BC,
+  0x0262,
+  0x01B3,
+  0x0636,
+  0x00F1,
+  0x0061,
+  0x01DA,
+  0x01BC,
+]
+
+pub fn an_entry_at_a_saved_health_of_0_creates_the_player_dead_and_its_ghost_and_opens_the_window_in_the_clients_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = entered_dead()
+  let frames =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+  assert cast_support.ids(frames:) == dead_entry_ids
+    as "the entry burst with the ghost's 0x262 and 0x1b3 after 0x19b and before 0x636, and no 0x88c, 0x89a or 0x247 (death.enter_dead)"
+  let player = game_client.unit_create_player_in(frames:)
+  assert player.unit_id == game_connection_support.own_unit_id
+    && unit_fields.stat(tail: player.tail, stat_id: 0) == Ok(0)
+    as "the player's own 0x262 carries stat 0 = 0: the client creates the unit dead (0x140457bc5)"
+  assert unit_fields.stat(tail: player.tail, stat_id: 20) == Ok(0)
+    as "and stat 20, the shield, 0: a player that enters dead holds none (the server's choice, player_life.entering)"
+  let assert [ghost] =
+    game_connection_support.decoded(frames, 0x0262, unit_create_ghost.decode)
+    as "one 0x262 of type 23, the ghost's"
+  assert ghost.unit_id == ghost_unit_id
+    && ghost.character_id == 42
+    && ghost.name == "Ab Cd"
+    && ghost.tail.stats == []
+    as "the character's ghost, with no stat"
+  let assert [start_movement.Position(at), start_movement.Rotation(_)] =
+    ghost.tail.movement_commands
+  let body = game_connection_support.entry_place()
+  assert at.x == float32.to_bits(start_place.x(body))
+    && at.y == float32.to_bits(start_place.y(body))
+    && at.z == float32.to_bits(start_place.z(body))
+    as "at the body's place: the place the character is saved at (death.ghost_place)"
+  assert game_connection_support.decoded(
+      frames,
+      0x01B3,
+      resurrection_window.decode,
+    )
+    == [
+      ResurrectionWindow(
+        ghost_unit_id:,
+        wake_here_cost: 0,
+        death_penalty_ms: 0,
+        dead: 1,
+        choices: 3,
+        caster_asked: 0,
+        wake_here_cooldown_ms: 0,
+        forced_release_ms: 0,
+      ),
+    ]
+    as "0x1b3 with dead 1 and the choices, costs and timers a death in the world sends"
+  assert game_connection_support.decoded(
+      frames,
+      0x0636,
+      client_control_granted.decode,
+    )
+    == [
+      ClientControlGranted(
+        echo_value: 0,
+        reset_movement: 1,
+        unit_id: ghost_unit_id,
+      ),
+    ]
+    as "the entry's 0x636 names the ghost: one for the player after 0x1b3 would hand control back to the body"
+}
+
+pub fn a_viewer_that_arrives_while_the_player_entered_dead_gets_health_0_and_shield_0_and_no_ghost_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = entered_dead()
+  let #(_, taken) =
     game_connection_support.feed(
-      again,
-      game_connection_support.in_second_stay(
-        game_connection_support.a_beast_strike(
-          game_connection_support.own_unit_id,
-        ),
+      state,
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(3),
+        stay: game_connection_support.viewer_stay(3),
+      )),
+    )
+  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:))] =
+    game_connection_support.peer_tells(taken)
+  assert unit_id == game_connection_support.own_unit_id
+    as "the body, not the ghost"
+  assert list.contains(
+      unit.tail.stats,
+      unit_fields.integer_stat(stat_id: 0, value: 0),
+    )
+    && list.contains(
+      unit.tail.stats,
+      unit_fields.integer_stat(stat_id: 20, value: 0),
+    )
+    as "stat 0, the health, and stat 20, the shield, are 0"
+}
+
+/// The place the body lies at in the tests that move it: not the entry place.
+fn body_place() -> start_place.Place {
+  game_connection_support.standing_at(x: 11.5, y: 12.5, z: 13.5)
+}
+
+pub fn a_save_while_dead_carries_the_place_the_body_lies_at_not_the_ghosts_nor_the_entry_place_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(dead, _) =
+    game_connection_support.killed(game_connection_support.moved_to(
+      state: game_connection_support.in_world(),
+      x: 11.5,
+      y: 12.5,
+      z: 13.5,
+    ))
+  let #(dead, _) =
+    game_connection_support.read(
+      dead,
+      game_connection_support.moves_message([
+        game_client.position_command(x: 500.0, y: 300.0, z: 500.0),
+      ]),
+    )
+  let at_the_body =
+    game_connection_support.save_asked_keeping(
+      sequence: 1,
+      place: body_place(),
+      health: Some(0),
+    )
+  assert game_connection_support.ask_request(camp_finished(dead)) == at_the_body
+    as "the camp's save: where the body fell, health 0; the ghost's run to 500, 300, 500 moved nothing, and the entry place is not saved"
+  assert game_connection_support.ask_request(
+      game_connection_support.feed(
+        dead,
+        step.OwnEvent(step.TimerFired(step.TimerId(2))),
+      ).1,
+    )
+    == at_the_body
+    as "and the 60 s save's"
+}
+
+pub fn an_entry_at_a_saved_health_of_0_starts_no_regeneration_and_saves_0_and_the_body_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = entered_dead()
+  assert !list.contains(support.timers_started(taken), step.TimerId(8))
+    && !list.contains(support.timers_started(taken), step.TimerId(9))
+    as "no health or shield timer: a dead player does not regenerate"
+  let #(_, ticked) =
+    game_connection_support.feed(
+      state,
+      step.OwnEvent(step.TimerFired(step.TimerId(8))),
+    )
+  assert support.writes(ticked) == []
+    && game_connection_support.peer_tells(ticked) == []
+    as "a health tick that fires anyway writes nothing"
+  assert game_connection_support.ask_request(camp_finished(state))
+    == game_connection_support.save_asked_keeping(
+      sequence: 1,
+      place: game_connection_support.entry_place(),
+      health: Some(0),
+    )
+    as "a camp before coming back saves 0 and the body's place again"
+}
+
+pub fn a_player_that_entered_dead_fights_no_one_a_strike_is_refused_dead_and_a_threat_sets_no_combat_flag_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = entered_dead()
+  let #(state, threatened) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  assert support.writes(threatened) == []
+    && game_connection_support.told_creatures(threatened) == []
+    as "no 0x89a and no stream to the creature"
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.a_beast_strike(
+        game_connection_support.own_unit_id,
       ),
     )
+  assert support.writes(taken) == []
+    && game_connection_support.peer_tells(taken) == []
+  let assert [
+    #(
+      7,
+      client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
+        outcome: strike_tell.Refused(why: strike_tell.Dead),
+        ..,
+      )),
+    ),
+  ] = game_connection_support.told_creatures(taken)
+    as "the strike is refused Dead"
+  Nil
+}
+
+pub fn a_player_that_entered_dead_wakes_here_as_after_a_death_in_the_world_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = entered_dead()
+  let #(state, taken) =
+    game_connection_support.read(state, game_connection_support.wake_here())
+  let frames =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+  assert cast_support.ids(frames:)
+    == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
+    as "the coming back a death in the world writes (the wake here test above): full health, 0x88c (P, 0), 0x1b3 dead 0, the ghost removed, the body's control, the log"
+  assert game_connection_support.decoded(frames, 0x092F, player_health.decode)
+    == [
+      PlayerHealth(
+        unit_id: game_connection_support.own_unit_id,
+        health: 736,
+        reason_mask: 0,
+      ),
+    ]
+    as "full health"
   assert game_connection_support.decoded(
-      game_connection_support.heard(struck, game_connection_support.keyed()),
+      frames,
       0x0938,
       unit_stat_changed.decode,
     )
     == [
       UnitStatChanged(
         unit_id: game_connection_support.own_unit_id,
-        change: unit_stat_change.Shield(UnitStatShield(value: 448)),
+        change: unit_stat_change.Shield(UnitStatShield(value: 450)),
       ),
     ]
-    && game_connection_support.decoded(
+    as "and the maximum shield, from the 0 it entered with"
+  let #(_, struck) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.a_beast_strike(
+        game_connection_support.own_unit_id,
+      ),
+    )
+  assert game_connection_support.decoded(
       game_connection_support.heard(struck, game_connection_support.keyed()),
       0x092F,
       player_health.decode,
@@ -1084,5 +1325,89 @@ pub fn a_player_dead_at_camp_enters_again_alive_and_full_test() -> Nil {
         reason_mask: 0,
       ),
     ]
-    as "alive and full: a strike lands on the full shield and health"
+    as "alive again: a strike lands, the Beast's 12 mitigated to 3, 1 of it to health"
+  let #(_, saved) =
+    game_connection_support.feed(
+      state,
+      step.OwnEvent(step.TimerFired(step.TimerId(2))),
+    )
+  assert game_connection_support.ask_request(saved)
+    == game_connection_support.save_asked_keeping(
+      sequence: 1,
+      place: game_connection_support.entry_place(),
+      health: Some(game_connection_support.full_health),
+    )
+    as "and the next save keeps the full health, not 0"
+}
+
+pub fn a_player_that_entered_dead_chooses_the_holocrypt_and_joins_there_alive_and_full_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(dead, _) = entered_dead()
+  let #(_, chosen) =
+    game_connection_support.read(dead, game_connection_support.holocrypt())
+  assert game_connection_support.written_ids(chosen)
+    == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
+    as "the coming back as Wake Here writes it"
+  assert game_connection_support.ask_request(chosen)
+    == game_connection_support.leave_asked()
+    as "then the run of the map is asked to take the player out"
+  let #(_, taken) = game_connection_support.at_the_holocrypt_from(dead:)
+  assert game_connection_support.written_ids(taken)
+    == game_client.world_entry_ids
+    as "the join at the Holocrypt place is a living entry: no ghost, no 0x1b3"
+  assert unit_fields.stat(
+      tail: game_connection_support.player_in(taken).tail,
+      stat_id: 0,
+    )
+    == Ok(game_connection_support.full_health)
+    as "at full health"
+}
+
+pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never_saved_enters_alive_and_full_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    game_connection_support.killed(game_connection_support.moved_to(
+      state: game_connection_support.in_world(),
+      x: 11.5,
+      y: 12.5,
+      z: 13.5,
+    ))
+  let body =
+    store.Character(
+      ..game_connection_support.world_character(),
+      place: Some(body_place()),
+    )
+  let #(_, entry) =
+    game_connection_support.entered_saved(
+      in_character_select: game_connection_support.camp_from(state),
+      character: body,
+      saved_health: Some(0),
+    )
+  assert game_connection_support.written_ids(entry) == dead_entry_ids
+    as "the store's 0 from the dead save of the camp enters dead again"
+  let frames =
+    game_connection_support.heard(entry, game_connection_support.keyed())
+  let assert [ghost] =
+    game_connection_support.decoded(frames, 0x0262, unit_create_ghost.decode)
+    as "one 0x262 of type 23"
+  let assert [start_movement.Position(at), _] = ghost.tail.movement_commands
+  assert at.x == float32.to_bits(start_place.x(body_place()))
+    && at.y == float32.to_bits(start_place.y(body_place()))
+    && at.z == float32.to_bits(start_place.z(body_place()))
+    as "the ghost stands at the saved place, where the body fell, not at the first entry's place"
+  let #(_, never_saved) =
+    game_connection_support.entered_saved(
+      in_character_select: game_connection_support.in_select(),
+      character: game_connection_support.world_character(),
+      saved_health: None,
+    )
+  assert game_connection_support.written_ids(never_saved)
+    == game_client.world_entry_ids
+    as "NULL is nothing saved: alive, no ghost, no 0x1b3"
+  assert unit_fields.stat(
+      tail: game_connection_support.player_in(never_saved).tail,
+      stat_id: 0,
+    )
+    == Ok(game_connection_support.full_health)
+    as "at full health"
 }

@@ -294,6 +294,31 @@ pub fn with_health(
   )
 }
 
+/// The player's 0x262 record with `shield` as its stat 20, the shield the client
+/// shows (`opcode.0x938`), in place of the full one `create` wrote; a unit with no
+/// shield stat keeps none.
+pub fn with_shield(
+  record record: UnitCreatePlayer,
+  shield shield: Int,
+) -> UnitCreatePlayer {
+  UnitCreatePlayer(
+    ..record,
+    tail: UnitCreateTail(
+      ..record.tail,
+      stats: list.map(record.tail.stats, fn(stat) {
+        case stat.stat_id == unit_fields.shield_stat {
+          True ->
+            unit_fields.integer_stat(
+              stat_id: unit_fields.shield_stat,
+              value: shield,
+            )
+          False -> stat
+        }
+      }),
+    ),
+  )
+}
+
 /// The player's 0x262 record with its class's resource, as its own client is
 /// created with it: the stat of the resource's slot at its start, in the float form
 /// (`opcode.0x262.resource_stats`), and the slot's ResourceMax property at its

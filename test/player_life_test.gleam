@@ -533,7 +533,13 @@ fn test_place() -> Place {
 pub fn a_player_enters_at_the_health_saved_capped_at_the_maximum_and_at_full_when_none_was_saved_test() -> Nil {
   use <- owned_test.run(10_000)
   let entered = fn(saved) {
-    player_life.entering(saved:, max_health: 736, shield: 450, regeneration:).0
+    player_life.entering(
+      saved:,
+      max_health: 736,
+      shield: 450,
+      regeneration:,
+      place: test_place(),
+    ).0
   }
   let below = entered(Some(500))
   assert player_life.health(life: below) == 500
@@ -550,7 +556,7 @@ pub fn a_player_enters_at_the_health_saved_capped_at_the_maximum_and_at_full_whe
     as "nothing saved: full, as before"
   assert player_life.fighters(life: below) == []
     && !player_life.in_combat(life: below)
-    && player_life.saved_health(life: below) == Some(500)
+    && player_life.saved_health(life: below) == 500
     as "alive, fighting no one"
   let #(struck, _) =
     player_life.struck(
@@ -564,7 +570,98 @@ pub fn a_player_enters_at_the_health_saved_capped_at_the_maximum_and_at_full_whe
     as "Armor 250: the shield takes 2 and the health 1, from 500"
 }
 
-pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -> Nil {
+pub fn a_player_entering_at_a_saved_health_of_0_enters_dead_with_its_ghost_at_the_body_and_starts_no_timer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(dead, effects) =
+    player_life.entering(
+      saved: Some(0),
+      max_health: 736,
+      shield: 450,
+      regeneration:,
+      place: test_place(),
+    )
+  assert player_life.state(life: dead) == player_life.Dead
+    && player_life.health(life: dead) == 0
+    && player_life.max_health(life: dead) == 736
+    && player_life.fighters(life: dead) == []
+    && !player_life.in_combat(life: dead)
+    as "health 0 is dead (0x140457bc5), the maximum stays the level's, and it fights no one"
+  assert player_life.shield(life: dead) == 0
+    && player_life.max_shield(life: dead) == 450
+    as "a death in the world leaves what the killing blow left, which no save keeps: the server's choice is a shield of 0 with the level's maximum"
+  assert effects
+    == [
+      ToClient(GhostCreated(place: test_place())),
+      ToClient(OwnResurrectionWindow(dead: True)),
+      ToClient(ControlGiven(to: ControlGhost)),
+    ]
+    as "the ghost at the body's place, 0x1b3 with dead 1, then control of the ghost, in the order of death.enter_dead: no 0x88c, no 0x89a, no regeneration timer"
+  assert player_life.left(life: dead) == []
+    as "nothing runs to cancel at the leave"
+  assert player_life.saved_health(life: dead) == 0
+    as "a player that camps again before coming back saves 0 again"
+  assert player_life.timer_fired(life: dead, timer: TimerId(8)).1 == []
+    && player_life.timer_fired(life: dead, timer: TimerId(9)).1 == []
+    as "a regeneration timer that fires anyway changes nothing"
+}
+
+pub fn a_player_that_entered_dead_refuses_a_strike_takes_no_threat_and_comes_back_at_full_health_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(dead, _) =
+    player_life.entering(
+      saved: Some(0),
+      max_health: 736,
+      shield: 450,
+      regeneration:,
+      place: test_place(),
+    )
+  let #(after_strike, effects) =
+    player_life.struck(
+      life: dead,
+      defence: defence_of(1),
+      strike: attack(1),
+      rolls:,
+      place: test_place(),
+    )
+  assert after_strike == dead
+    && effects
+    == [
+      Answer(
+        to: beast(),
+        answered: Answered(
+          key: Key(cast_id: 1, phase: 0, unit_id: 20),
+          outcome: Refused(why: strike_tell.Dead),
+        ),
+      ),
+    ]
+    as "a dead player is refused the strike Dead and changes nothing"
+  let #(threatened, effects) =
+    player_life.threatened(
+      life: dead,
+      unit_id: 7,
+      creature_life: 3,
+      gone: set.new(),
+    )
+  assert threatened == dead && effects == []
+    as "no combat flag, no stream: a dead player is fought by no one"
+  let assert Ok(#(alive, came_back)) =
+    player_life.take(
+      life: dead,
+      message: player_life.ResurrectionChosen,
+      body: message_support.choice_body(unit_id: 5, choice: 1, value: 0),
+      unit_id: 5,
+    )
+    as "the choice the window offers is taken"
+  assert player_life.state(life: alive) == player_life.Alive
+    && player_life.health(life: alive) == 736
+    && player_life.shield(life: alive) == 450
+    as "Wake Here brings it back at full health and the maximum shield, as after a death in the world"
+  assert list.contains(came_back, ToClient(OwnDeathState(dead: False)))
+    && list.contains(came_back, ToClient(ControlGiven(to: ControlBody)))
+    as "0x88c (P, 0) and control of the body"
+}
+
+pub fn a_save_keeps_the_health_the_player_has_and_0_while_it_is_dead_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(hurt, _) =
     player_life.struck(
@@ -574,8 +671,8 @@ pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -
       rolls:,
       place: test_place(),
     )
-  assert player_life.saved_health(life: hurt) == Some(735)
-    as "the health now, which the table requires above 0 (character_health_is_positive)"
+  assert player_life.saved_health(life: hurt) == 735
+    as "the health now, which the table holds (character_health_is_not_negative)"
   let #(dead, _) =
     player_life.struck(
       life: player_life.new(health: 1, shield: 0, regeneration:),
@@ -585,8 +682,8 @@ pub fn a_save_keeps_the_health_the_player_has_and_none_while_it_is_dead_test() -
       place: test_place(),
     )
   assert player_life.health(life: dead) == 0
-  assert player_life.saved_health(life: dead) == None
-    as "a dead player keeps none: it comes back at full health (death.server_choices)"
+  assert player_life.saved_health(life: dead) == 0
+    as "a dead player keeps 0, the health the client creates a unit dead at (0x140457bc5): the next entry is dead"
 }
 
 // ---- the maxima the player's properties give ----
@@ -671,6 +768,7 @@ pub fn the_regeneration_numbers_follow_the_properties_test() -> Nil {
       max_health: 100,
       shield: 0,
       regeneration: quarter_regeneration(),
+      place: test_place(),
     )
   let doubled =
     properties_support.with_modifier(

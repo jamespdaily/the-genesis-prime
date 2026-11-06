@@ -422,7 +422,7 @@ pub fn saving(
       state: entered.movement,
       account_id: holder.account_id,
       character_id: entered.character_id,
-      health: player_life.saved_health(life: entered.life),
+      health: Some(player_life.saved_health(life: entered.life)),
     )
   ask_within(
     session: Session(
