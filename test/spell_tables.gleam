@@ -2220,6 +2220,71 @@ pub fn mind_burst_area(
   area
 }
 
+/// A type 73 row (ModifySpellCooldown) of a spell as the client holds the kit's rows:
+/// aimed at the caster (targetFlags 1), in every phase, with no delay and no duration,
+/// selector 0 on the Spell4Base `base`, operation 0 and the 32-bit float whose bits
+/// are `factor_bits` (`Spell4Effects.effectType.73`).
+fn cooldown_effect_row(
+  id id: Int,
+  spell spell: Int,
+  base base: Int,
+  factor_bits factor_bits: Int,
+  order order: Int,
+) -> List(Cell) {
+  planted_table.row(spell4_effects.schema, [
+    #("ID", Integer(id)),
+    #("spellId", Integer(spell)),
+    #("targetFlags", Integer(1)),
+    #("effectType", Integer(73)),
+    #("phaseFlags", Integer(-1)),
+    #("dataBits00", Integer(0)),
+    #("dataBits01", Integer(base)),
+    #("dataBits02", Integer(0)),
+    #("dataBits03", Integer(factor_bits)),
+    #("orderIndex", Integer(order)),
+  ])
+}
+
+/// The planted rows with Charged Shot's two type 73 rows as the client holds them
+/// (`table_rows -- Spell4Effects 80977 80979`): 80977 of the index-0 stage 34720 and
+/// 80979 of the index-1 stage 34722 multiply the cooldowns of Spell4Base 20684 by 0.0
+/// (bits 0) and by 0.4 (bits 0x3ECCCCCD), once, aimed at the caster.
+pub fn rows_with_cooldown_effects() -> Rows {
+  let rows = rows()
+  Rows(
+    ..rows,
+    spell4_effects: sorted_by_id([
+      cooldown_effect_row(
+        id: 80_977,
+        spell: 34_720,
+        base: 20_684,
+        factor_bits: 0,
+        order: 0,
+      ),
+      cooldown_effect_row(
+        id: 80_979,
+        spell: 34_722,
+        base: 20_684,
+        factor_bits: 1_053_609_165,
+        order: 1,
+      ),
+      ..rows.spell4_effects
+    ]),
+  )
+}
+
+/// The plans of `rows_with_cooldown_effects`, built once per run.
+pub fn plans_with_cooldown_effects() -> spell_plan.Plans {
+  database_support.once("spell_tables_plans_with_cooldown_effects", fn() {
+    let assert Ok(plans) =
+      with_loaded(rows: rows_with_cooldown_effects(), body: fn(tables) {
+        spell_plan.build(tables:)
+      })
+      as "the planted rows with Charged Shot's cooldown effects build"
+    plans
+  })
+}
+
 /// The plans of `rows_with_energize`.
 pub fn plans_with_energize() -> spell_plan.Plans {
   let assert Ok(plans) =

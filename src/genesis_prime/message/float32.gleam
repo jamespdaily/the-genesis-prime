@@ -33,6 +33,12 @@ pub fn rounded(value value: Float) -> Float {
   narrow
 }
 
+/// The 32-bit product of two 32-bit floats: the exact 64-bit product rounded once to
+/// 32 bits, as the client's single-precision multiply gives.
+pub fn product(left left: Float, right right: Float) -> Float {
+  rounded(value: left *. right)
+}
+
 /// The 32 bits a message carries a float in: 0 to 0xFFFFFFFF, so a value wider
 /// than 32 bits is never held. Any pattern is held, a float that is infinite or
 /// not a number among them, so a rule that takes a client's float can refuse it.

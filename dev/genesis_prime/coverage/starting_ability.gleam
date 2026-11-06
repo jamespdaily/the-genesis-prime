@@ -133,6 +133,7 @@ pub fn prerequisite_types_of(
         | effect_kind.CrowdControl
         | effect_kind.PropertyModifier
         | effect_kind.ForcedMove
+        | effect_kind.CooldownModifier
         | effect_kind.Unread(..) -> []
       }
       named(table: "Spell4Effects", id: effect.id, columns: [

@@ -20,6 +20,9 @@
 //// - **ForcedMove** (3) moves the unit it aims at; the server lists the rows aimed at
 ////   the caster in the go, and the client moves its own unit and reports the move
 ////   (`Spell4Effects.effectType.3.player`).
+//// - **CooldownModifier** (73) changes the spell cooldowns of the unit it aims at; the
+////   server reads the rows whose aim includes the caster
+////   (`Spell4Effects.effectType.73`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -53,6 +56,11 @@ pub type Kind {
   /// server would move itself (`Spell4Effects.effectType.3.other_unit`), is not read
   /// (`is_row_read`).
   ForcedMove
+  /// A ModifySpellCooldown effect (73): changes the spell cooldowns of the unit it aims
+  /// at. A row is read when its targetFlags include the caster
+  /// (`Spell4Effects.effectType.73`); a row aimed only at other units changes cooldowns
+  /// no server rule keeps, and is not read (`is_row_read`).
+  CooldownModifier
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -68,13 +76,14 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     4 -> CrowdControl
     11 -> PropertyModifier
     3 -> ForcedMove
+    73 -> CooldownModifier
     other -> Unread(effect_type: other)
   }
 }
 
 /// Whether some rule reads the effect type: the coverage measure's "handled". A
-/// PropertyModifier or ForcedMove counts as read for its rows aimed at the caster,
-/// which `is_row_read` tells apart from the others.
+/// PropertyModifier, ForcedMove or CooldownModifier counts as read for its rows aimed
+/// at the caster, which `is_row_read` tells apart from the others.
 pub fn is_read(effect_type effect_type: Int) -> Bool {
   case kind_of(effect_type:) {
     Proxy
@@ -84,21 +93,23 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | ForceRemove
     | CrowdControl
     | PropertyModifier
-    | ForcedMove -> True
+    | ForcedMove
+    | CooldownModifier -> True
     Unread(..) -> False
   }
 }
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
-/// type `is_read` for, except that a PropertyModifier or ForcedMove row is read only when
-/// its flags include the caster (bit 1, `Spell4Effects.targetFlags`); a row aimed only
-/// at other units is the next step's.
+/// type `is_read` for, except that a PropertyModifier, ForcedMove or CooldownModifier
+/// row is read only when its flags include the caster (bit 1,
+/// `Spell4Effects.targetFlags`); a row aimed only at other units is left out.
 pub fn is_row_read(
   effect_type effect_type: Int,
   target_flags target_flags: Int,
 ) -> Bool {
   case kind_of(effect_type:) {
-    PropertyModifier | ForcedMove -> int.bitwise_and(target_flags, 1) == 1
+    PropertyModifier | ForcedMove | CooldownModifier ->
+      int.bitwise_and(target_flags, 1) == 1
     Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
     Unread(..) -> False
   }
