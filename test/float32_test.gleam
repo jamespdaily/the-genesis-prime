@@ -41,6 +41,15 @@ pub fn a_float_rounded_to_a_single_is_the_float_of_the_singles_bits_test() -> Ni
     as "a value beyond the largest single is the largest single, as to_bits has it"
 }
 
+pub fn the_product_of_two_singles_is_rounded_once_to_a_single_test() -> Nil {
+  use <- owned_test.run(5000)
+  let tenth = float32.rounded(0.1)
+  assert float32.product(left: tenth, right: 3.0) == 0.30000001192092896
+    as "IEEE 754 binary32: 0.1f * 3.0f is 0.3f = 0x3E99999A; the exact product 0.30000000447034836 lies nearer to it than to 0x3E999999"
+  assert tenth *. 3.0 != 0.30000001192092896
+    as "the product of the same two floats at the VM's width is not the single"
+}
+
 pub fn the_bits_of_a_float_the_client_sent_hold_the_float_it_sent_test() -> Nil {
   use <- owned_test.run(5000)
   let assert Ok(one) = float32.bits(0x3F800000)

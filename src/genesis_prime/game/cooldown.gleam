@@ -264,8 +264,9 @@ fn changed(operation operation: Operation, left_ms left_ms: Int) -> Int {
 /// float times the factor, rounded once to 32 bits. The 64-bit product of two 32-bit
 /// values is exact, so rounding it gives the 32-bit product.
 fn product(left_ms left_ms: Int, factor factor: Float) -> Int {
-  float.truncate(float32.rounded(
-    float32.rounded(int.to_float(left_ms)) *. factor,
+  float.truncate(float32.product(
+    left: float32.rounded(int.to_float(left_ms)),
+    right: factor,
   ))
 }
 

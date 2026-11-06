@@ -34,7 +34,7 @@
 import cast_support as support
 import genesis_prime/game/cast.{type Effect, type State}
 import genesis_prime/game/cooldown.{
-  type Operation, AddMs, Base, Modifier, NoLonger,
+  type Operation, AddMs, Base, Modifier, NoLonger, SetMs,
 }
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
@@ -436,18 +436,27 @@ pub fn a_row_that_acts_once_is_not_kept_for_the_cooldowns_that_start_later_test(
     as "0x14046b7f0 keeps an effect only when it has a lifetime: the cooldown that starts after the go is full"
 }
 
-pub fn a_row_that_acts_once_gives_the_node_no_life_and_a_kept_row_gives_it_the_rows_life_test() -> Nil {
+pub fn a_row_that_acts_once_gives_the_node_its_delay_as_life_and_a_kept_row_gives_it_the_rows_life_test() -> Nil {
   use <- owned_test.run(20_000)
   let acts_once =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 2000, duration: 0),
     ])
-  let #(_, once) =
+  let #(state, once) =
     press(plans: acts_once, state: cast.new(), bag: bag_of_holder, at: 1000)
-  assert delays_of(effects: once) == [2000]
-    as "only the row's own timer waits: the server's choice, which keeps the timer from being cancelled by a node's end at the same time"
-  assert list.length(support.finished_ids(support.writes(effects: once))) == 1
-    as "no node, so the cast finishes with its go"
+  assert delays_of(effects: once) == [2000, 2000]
+    as "the row's own timer and the node's end, each at the row's delay (opcode.0x7f4.effect_time)"
+  assert support.finished_ids(support.writes(effects: once)) == []
+    as "the 0x7fe waits for the node, as the client's 0x7fe would destroy the pending effect (opcode.0x7fe, cast.target_node_end)"
+  let #(_, fired) = support.run_timers(state:, effects: once, from_ms: 1000)
+  assert list.map(fired, fn(step) { step.0 }) == [3000, 3000]
+  assert list.length(
+      support.finished_ids(
+        support.writes(effects: list.flat_map(fired, fn(step) { step.1 })),
+      ),
+    )
+    == 1
+    as "the cast finishes at go + delay"
   let kept =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
@@ -695,6 +704,94 @@ pub fn a_delayed_row_changes_the_cooldowns_at_its_timer_not_at_the_go_test() -> 
   // The go at 6000 is after the row, which acted once: 5000 ms, ending at 11000.
   assert meets(plans:, state: later, at: 10_600) == Held(wait_ms: 400)
     as "a row with a delay and no duration acts once"
+}
+
+/// The timers fired one after the other at the time, in this order; a timer an earlier
+/// step cancelled is not fired, as the clock the shell drives would not fire it.
+fn fired_in_order(
+  state state: State,
+  timers timers: List(TimerId),
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let #(state, effects, _) =
+    list.fold(timers, #(state, [], []), fn(so_far, timer) {
+      let #(state, effects, cancelled) = so_far
+      case list.contains(cancelled, timer) {
+        True -> so_far
+        False -> {
+          let #(state, more) = support.fired(state:, timer:, at: ms)
+          #(
+            state,
+            list.append(effects, more),
+            list.append(cancelled, support.cancelled_timers(effects: more)),
+          )
+        }
+      }
+    })
+  #(state, effects)
+}
+
+/// The timers the effects start that are due after this delay.
+fn timers_after(
+  effects effects: List(Effect),
+  delay_ms delay_ms: Int,
+) -> List(TimerId) {
+  list.filter_map(support.started_timers(effects:), fn(started) {
+    case started.1 == delay_ms {
+      True -> Ok(started.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
+pub fn a_row_applies_when_its_nodes_end_fires_first_in_the_same_millisecond_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let plans =
+    plans_holding(rows: [
+      row(effect_id: 1, operation: NoLonger(0.5), delay: 2000, duration: 0),
+    ])
+  let state = slow_cast(plans:, state: cast.new(), at: 500)
+  // The slow spell's go at 1500 starts a cooldown that ends at 6500.
+  let #(state, pressed) = press(plans:, state:, bag: bag_of_holder, at: 1000)
+  let timers = timers_after(effects: pressed, delay_ms: 2000)
+  assert list.length(timers) == 2
+    as "the row's start and the node's end are due in the same millisecond"
+  list.each([timers, list.reverse(timers)], fn(order) {
+    let #(after, effects) = fired_in_order(state:, timers: order, at: 3000)
+    assert list.length(support.finished_ids(support.writes(effects:))) == 1
+      as "the node's end finishes the cast"
+    // At 3000, 3500 ms are left and x0.5 is 1750: the end is 4750.
+    assert meets(plans:, state: after, at: 4400) == Held(wait_ms: 350)
+      as "the row changed the running cooldown whichever timer fired first"
+  })
+}
+
+pub fn a_row_that_sets_a_cooldown_at_go_plus_ten_lands_before_the_cast_finishes_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // Row 130784 of Spell4 34751 sets base 59823's cooldown to 5000 ms at go + 10
+  // (`table_rows -- Spell4Effects 130784`); base 3 is the planted slow spell's.
+  let plans =
+    plans_holding(rows: [
+      row(effect_id: 130_784, operation: SetMs(5000.0), delay: 10, duration: 0),
+    ])
+  let state = slow_cast(plans:, state: cast.new(), at: 1000)
+  // The slow spell's go at 2000 starts a cooldown that ends at 7000; at 6600 400 ms are
+  // left, a press the client allows and the server holds.
+  let #(state, pressed) = press(plans:, state:, bag: bag_of_holder, at: 6600)
+  assert support.finished_ids(support.writes(effects: pressed)) == []
+    as "the cast stays until the row lands: the client's 0x7fe would destroy the pending effect"
+  assert meets(plans:, state:, at: 6605) == Held(wait_ms: 395)
+    as "before go + 10 the cooldown is as it was, so the press the client allows is not refused"
+  let #(after, effects) =
+    fired_in_order(
+      state:,
+      timers: timers_after(effects: pressed, delay_ms: 10),
+      at: 6610,
+    )
+  assert list.length(support.finished_ids(support.writes(effects:))) == 1
+    as "the 0x7fe is written at go + 10, with the row applied"
+  assert meets(plans:, state: after, at: 6700) == Refused(result: 15)
+    as "the cooldown is 5000 ms from go + 10, as the client's effect leaves it"
 }
 
 // ---- a press waiting for the end ----
