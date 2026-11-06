@@ -82,8 +82,8 @@ import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   type Creature2Id, Creature2ArcheTypeId, Creature2DifficultyId,
-  Creature2DisplayInfoId, Creature2Id, Creature2OutfitInfoId, Creature2ResistId,
-  Creature2TierId, CreatureLevelId, InstancePortalId, PathMissionId,
+  Creature2DisplayInfoId, Creature2Id, Creature2ResistId, Creature2TierId,
+  CreatureLevelId, InstancePortalId, PathMissionId,
 }
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
@@ -314,8 +314,11 @@ type Checked {
 /// other than a row's id, built once for a load so no check scans a table for
 /// each of the 77,794 rows: each creature's override of Base Health, the display
 /// ids of each display group, the first display and the first outfit of each
-/// group, each faction's parent, and the level of each pair of factions that has a
-/// relationship, filed under both orders as the client files it.
+/// group, the ids of the outfits that have a Creature2OutfitInfo row, each
+/// faction's parent, and the level of each pair of factions that has a
+/// relationship, filed under both orders as the client files it. Creature2OutfitInfo
+/// is a table only the content load holds, unloaded once the load is done, so the
+/// checks of a summon read the ids and not the table.
 type Catalog {
   Catalog(
     tables: table_store.Tables,
@@ -323,6 +326,7 @@ type Catalog {
     display_groups: Dict(Int, Set(Int)),
     first_displays: Dict(Int, Int),
     first_outfits: Dict(Int, Int),
+    outfits: Set(Int),
     parents: Dict(Int, Int),
     levels: Dict(#(Int, Int), Int),
     worlds: Set(Int),
@@ -628,6 +632,9 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
           entry: entry.creature2_outfit_info_id,
         )
       },
+    ),
+    outfits: set.from_list(
+      list.map(creature2_outfit_info.all(tables), fn(row) { row.id }),
     ),
     parents: list.fold(faction2.all(tables), dict.new(), fn(found, faction) {
       dict.insert(found, faction.id, faction.faction2_id_parent)
@@ -1679,12 +1686,10 @@ fn outfit_exists(
   outfit_info_id outfit_info_id: Int,
 ) -> Result(Nil, SpawnError) {
   use <- bool.guard(when: outfit_info_id == 0, return: Ok(Nil))
-  creature2_outfit_info.get(
-    catalog.tables,
-    Creature2OutfitInfoId(outfit_info_id),
-  )
-  |> result.replace(Nil)
-  |> result.replace_error(NoOutfitRow(outfit_info_id:))
+  case set.contains(catalog.outfits, outfit_info_id) {
+    True -> Ok(Nil)
+    False -> Error(NoOutfitRow(outfit_info_id:))
+  }
 }
 
 /// The row's display is an entry of the creature's display group and has a

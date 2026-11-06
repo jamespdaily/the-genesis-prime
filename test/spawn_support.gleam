@@ -179,21 +179,35 @@ pub fn summon_checks() -> spawn.SummonChecks {
   )
 }
 
-/// What a summon is checked with over these planted files, their tables unloaded
-/// when `then` returns: the checks are good only inside it.
+/// What a summon is checked with over these planted files, as the running
+/// server leaves it: the content-only tables are unloaded once the checks are
+/// built (`genesis_prime.load_content`), so a check that reads one finds no
+/// term. The server's tables are unloaded when `then` returns: the checks are
+/// good only inside it.
 pub fn with_summon_checks_of(
   files files: List(#(String, BitArray)),
   then then: fn(spawn.SummonChecks) -> a,
 ) -> a {
-  use more <- with_content_tables_of(novice_tables.with_creature_attack(
-    files:,
-    padding: True,
+  use folder <- planted_table.in_folder(list.append(
+    character_tables.content_files(),
+    novice_tables.with_creature_attack(files:, padding: True),
   ))
-  then(spawn.summon_checks(
-    tables: more,
-    formulas: rating_support.formulas(),
-    kinds: kinds(),
-  ))
+  let assert Ok(server) =
+    server_table.load_under(under: owned_key.new(), from: folder)
+    as "the planted files load as the server's tables"
+  let assert Ok(more) =
+    server_table.load_content_tables(over: server, from: folder)
+    as "the planted files load as the content-only tables"
+  let checks =
+    spawn.summon_checks(
+      tables: more,
+      formulas: rating_support.formulas(),
+      kinds: kinds(),
+    )
+  table_store.unload(more)
+  let found = then(checks)
+  table_store.unload(server)
+  found
 }
 
 /// The server's tables and the content-only tables loaded from these planted
