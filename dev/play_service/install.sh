@@ -56,8 +56,8 @@ log "scripts installed in $state/bin; main is read from $remote"
 machine_up || { echo "install: the Podman machine could not be started" >&2; exit 1; }
 ensure_postgres
 
-# The pod's Postgres is reached from this Mac on its published port; the local one as the tests use it.
-pod_psql() { psql -X -q -At -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$postgres_port" -U postgres -d "$play_database" "$@"; }
+# The container's Postgres is reached from this Mac on its published port; the local one as the tests use it.
+container_psql() { psql -X -q -At -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$postgres_port" -U postgres -d "$play_database" "$@"; }
 local_psql() { PGPASSWORD= psql -X -q -At -v ON_ERROR_STOP=1 -h "${GENESIS_SEED_PGHOST:-::1}" -p "${GENESIS_SEED_PGPORT:-5433}" -U postgres -d "$play_database" "$@"; }
 
 counts() {
@@ -68,17 +68,17 @@ counts() {
   echo
 }
 
-tables_in_pod=$(pod_psql -c "select count(*) from information_schema.tables where table_schema = 'public'")
+tables_in_pod=$(container_psql -c "select count(*) from information_schema.tables where table_schema = 'public'")
 if [ "$tables_in_pod" = 0 ]; then
-  log "the pod's $play_database is empty; seeding it from the local $play_database"
+  log "the container's $play_database is empty; seeding it from the local $play_database"
   log "local before:  $(counts local_psql)"
-  log "pod before:    $(counts pod_psql)"
+  log "container before:  $(counts container_psql)"
   PGPASSWORD= pg_dump -h "${GENESIS_SEED_PGHOST:-::1}" -p "${GENESIS_SEED_PGPORT:-5433}" -U postgres -d "$play_database" --no-owner --no-privileges |
-    pod_psql --single-transaction -f - >/dev/null
+    container_psql --single-transaction -f - >/dev/null
   log "local after:   $(counts local_psql)"
-  log "pod after:     $(counts pod_psql)"
+  log "container after:   $(counts container_psql)"
 else
-  log "the pod's $play_database holds $tables_in_pod tables; not seeded"
+  log "the container's $play_database holds $tables_in_pod tables; not seeded"
 fi
 
 plist=$HOME/Library/LaunchAgents/com.genesis-prime.play-service.plist
