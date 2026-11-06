@@ -654,10 +654,8 @@ fn first_kept(
   group group: Int,
   entry entry: Int,
 ) -> Dict(Int, Int) {
-  case dict.has_key(found, group) {
-    True -> found
-    False -> dict.insert(found, group, entry)
-  }
+  use <- bool.guard(when: dict.has_key(found, group), return: found)
+  dict.insert(found, group, entry)
 }
 
 /// A faction and its parents, nearest first: the chain the client walks
@@ -1863,7 +1861,7 @@ fn describe_left_out(reason: LeftOut) -> String {
 
 /// A sentence that says why a row fails the load, for the log and the message the
 /// start stops with.
-pub fn describe(error error: SpawnError) -> String {
+fn describe(error error: SpawnError) -> String {
   case error {
     NoCreatureRow(creature_id: Creature2Id(creature_id)) ->
       "Creature2 " <> int.to_string(creature_id) <> " has no row"
