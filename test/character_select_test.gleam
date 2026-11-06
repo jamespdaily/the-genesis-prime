@@ -44,9 +44,10 @@ import genesis_prime/message/rename_result
 import genesis_prime/store.{
   type Character, AccountId, Character, CharacterCreated, CharacterDeleted,
   CharacterId, CharacterRenamed, CreateCharacter as StoreCreate,
-  DeleteCharacter as StoreDelete, ListCharacters, LookEntry, NameStands,
-  NameTaken, NeedsRename, NewCharacter, NewNameTaken, NoFreeSlot,
-  NoSuchCharacter, NotRenamable, RenameCharacter as StoreRename,
+  CreateForNoSuchAccount, DeleteCharacter as StoreDelete, ListCharacters,
+  LookEntry, NameBreaksRule, NameStands, NameTaken, NeedsRename, NewCharacter,
+  NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchCharacter, NotRenamable,
+  RenameCharacter as StoreRename,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/int
@@ -323,6 +324,13 @@ pub fn the_stores_answer_to_a_create_becomes_the_result_the_client_shows_test() 
       result: create_result.NameUnavailable,
     )
     as "lua.Character.OnCreateCharacterFailed: 6, 'that name is not available'"
+  assert result_for(NameBreaksRule)
+    == CreateCharacterResult(
+      character_id: 0,
+      field_2: 0,
+      result: create_result.NameLength,
+    )
+    as "lua.Character.OnCreateCharacterFailed: 10, 'Character names may only contain 3 to 20 letters.'"
   assert result_for(NoFreeSlot)
     == CreateCharacterResult(
       character_id: 0,
@@ -332,18 +340,36 @@ pub fn the_stores_answer_to_a_create_becomes_the_result_the_client_shows_test() 
     as "lua.Character.OnCreateCharacterFailed: 9, 'your account is full'"
 }
 
-pub fn a_name_that_breaks_rule_0_is_refused_with_name_length_and_the_store_is_not_asked_test() -> Nil {
+pub fn a_name_that_breaks_rule_0_is_asked_of_the_store_whose_table_refuses_it_with_0x00dc_name_length_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, effects) = create(a_request("Abcd"))
+  let #(asking, effects) = create(a_request("Abcd"))
+  let assert [Ask(request: StoreCreate(character: NewCharacter(name:, ..), ..))] =
+    effects
+    as "the name's rule 0 is the table's, so the rule asks the store like any create"
+  assert name == "Abcd"
+  assert character_select.waiting(asking)
+  let assert Ok(#(state, effects)) =
+    character_select.created(asking, NameBreaksRule)
   assert create_result_of(effects).result == create_result.NameLength
     as "lua.Character.OnCreateCharacterFailed: 10"
   assert list.all(effects, fn(effect) {
     case effect {
-      Ask(..) -> False
-      Send(..) | Warn(..) -> True
+      Send(..) -> True
+      Ask(..) | Warn(..) -> False
     }
   })
-    as "nothing is stored"
+    as "a name is a player's to mistype, so no warning, and nothing more is asked"
+  assert !character_select.waiting(state)
+}
+
+pub fn a_create_for_an_account_the_store_does_not_have_is_0x00dc_create_failed_with_a_warning_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(asking, _) = create(a_request("Ab Cd"))
+  let assert Ok(#(state, effects)) =
+    character_select.created(asking, CreateForNoSuchAccount)
+  assert create_result_of(effects).result == create_result.CreateFailed
+    as "lua.Character.OnCreateCharacterFailed: 4 is 'due to an error': the logged-in account has no row, which is the server's fault, not the player's"
+  assert list.length(warnings(effects)) == 1
   assert !character_select.waiting(state)
 }
 
@@ -452,19 +478,30 @@ pub fn the_clients_0x0786_with_a_name_that_passes_rule_0_asks_the_store_to_renam
   assert character_select.waiting(state)
 }
 
-pub fn a_name_that_fails_rule_0_is_0x014b_result_15_with_the_request_and_nothing_is_asked_test() -> Nil {
+pub fn a_name_that_breaks_rule_0_is_asked_of_the_store_whose_table_refuses_it_with_0x014b_result_15_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, effects) = rename(5, "Abcd")
+  let #(asking, effects) = rename(5, "Abcd")
+  assert effects
+    == [
+      Ask(request: StoreRename(
+        account_id: AccountId(7),
+        character_id: CharacterId(5),
+        name: "Abcd",
+      )),
+    ]
+    as "the name's rule 0 is the table's, so the rule asks the store like any rename"
+  let assert Ok(#(state, effects)) =
+    character_select.renamed(asking, NewNameBreaksRule)
   assert character_support.rename_result_in(sent(effects))
     == RenameCharacterResult(
       result: rename_result.NameLength,
       character_id: 5,
       name: "Abcd",
     )
-    as "lua.CharacterSelection.OnCharacterRenameResult: 15 shows 'Character names may only contain 3 to 20 letters.'"
+    as "lua.CharacterSelection.OnCharacterRenameResult: 15 shows 'Character names may only contain 3 to 20 letters.'; the name is the request's"
   assert warnings(effects) == []
     as "a name is a player's to mistype, so no warning, as for a create"
-  assert list.length(effects) == 1 as "nothing is asked, so nothing is stored"
+  assert list.length(effects) == 1 as "nothing more is asked"
   assert !character_select.waiting(state)
 }
 
@@ -496,6 +533,16 @@ pub fn the_stores_answer_to_a_rename_becomes_the_result_the_client_shows_test() 
       [],
     )
     as "lua.CharacterSelection.OnCharacterRenameResult: 16 'The name you picked is unavailable.'"
+  assert result_for(NewNameBreaksRule)
+    == #(
+      RenameCharacterResult(
+        result: rename_result.NameLength,
+        character_id: 0x1_0000_0001,
+        name: "Ab Cd",
+      ),
+      [],
+    )
+    as "lua.CharacterSelection.OnCharacterRenameResult: 15; the name is the request's"
   let #(refused, logged) = result_for(NotRenamable)
   assert refused
     == RenameCharacterResult(

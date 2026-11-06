@@ -167,7 +167,13 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let id =
-    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
   put_session_key(started, account)
   let game =
     game_client.connect(port:, session_key: session_key(), account_name: "jim")
@@ -181,7 +187,7 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
     as "the realm's id and the character limit of the tree's game settings"
   let assert [entry] = list.characters
     as "the account's one character, from the store"
-  assert entry.character_id == id && entry.name == "Zed"
+  assert entry.character_id == id && entry.name == "Zed Qu"
   assert entry.class_id == 4 && entry.path == 2 && entry.faction_id == 166
     as "the row's values, as character_support inserted them"
   game_client.close(game:)
@@ -193,7 +199,13 @@ pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let _id =
-    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
   let first = in_select(started:, port:, account:)
   let second = in_select(started:, port:, account:)
   // The second login's list came after its claim, which sent the first
@@ -531,7 +543,7 @@ pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_th
     character_support.insert(
       pool:,
       account: AccountId(other),
-      name: "Abe",
+      name: "Abe Qu",
       class_id: 4,
       path: 2,
     )
@@ -622,14 +634,26 @@ pub fn an_account_at_its_two_slots_is_account_full_test() -> Nil {
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let _character =
-    character_support.insert(pool:, account:, name: "Abe", class_id: 4, path: 2)
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Abe Qu",
+      class_id: 4,
+      path: 2,
+    )
   let _character =
-    character_support.insert(pool:, account:, name: "Cal", class_id: 4, path: 2)
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Cal Qu",
+      class_id: 4,
+      path: 2,
+    )
   let game = in_select(started:, port:, account:)
   game_client.send_create(game:, body: create_request("Ab Cd"))
   assert created_result(game).result == create_result.AccountFull
     as "lua.CharacterSelection.OnLoadFromCharacter: 2 slots without an entitlement; lua.Character.OnCreateCharacterFailed: 9"
-  assert names_of(pool) == ["Abe", "Cal"] as "nothing more is stored"
+  assert names_of(pool) == ["Abe Qu", "Cal Qu"] as "nothing more is stored"
   game_client.close(game:)
   login_support.stop(started)
 }
@@ -670,16 +694,28 @@ pub fn a_delete_of_the_accounts_character_is_0x00e6_result_0_and_the_next_list_o
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
-    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
   let _abe =
-    character_support.insert(pool:, account:, name: "Abe", class_id: 4, path: 2)
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Abe Qu",
+      class_id: 4,
+      path: 2,
+    )
   let game = in_select(started:, port:, account:)
   send_delete(game, zed)
   assert character_support.delete_result_in(game_client.read(game:, count: 1))
     == DeleteCharacterResult(result: delete_result.DeleteOk, value: 0)
     as "opcode.0xe6: result 0, and the value nothing reads (opcode.0xe6.value)"
-  assert names_of(pool) == ["Abe"] as "the row is deleted"
-  assert list.map(listed_entries(game), fn(entry) { entry.name }) == ["Abe"]
+  assert names_of(pool) == ["Abe Qu"] as "the row is deleted"
+  assert list.map(listed_entries(game), fn(entry) { entry.name }) == ["Abe Qu"]
     as "the next 0x0117 omits the deleted character"
   game_client.close(game:)
   login_support.stop(started)
@@ -701,7 +737,7 @@ pub fn a_delete_of_a_character_another_account_has_is_0x00e6_result_1_and_delete
     character_support.insert(
       pool:,
       account: other,
-      name: "Cal",
+      name: "Cal Qu",
       class_id: 1,
       path: 1,
     )
@@ -710,7 +746,7 @@ pub fn a_delete_of_a_character_another_account_has_is_0x00e6_result_1_and_delete
   assert character_support.delete_result_in(game_client.read(game:, count: 1))
     == DeleteCharacterResult(result: delete_result.DeleteFailed, value: 0)
     as "lua.CharacterSelection.OnCharacterDeleteResult: 1; a modified client could send any id"
-  assert names_of(pool) == ["Cal"] as "nothing is deleted"
+  assert names_of(pool) == ["Cal Qu"] as "nothing is deleted"
   game_client.close(game:)
   login_support.stop(started)
 }
@@ -720,8 +756,14 @@ pub fn a_rename_of_a_marked_character_is_0x014b_result_18_and_the_next_list_show
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
-    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
-  character_support.mark_for_rename(pool:, name: "Zed")
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  character_support.mark_for_rename(pool:, name: "Zed Qu")
   let game = in_select(started:, port:, account:)
   let assert [marked] = listed_entries(game)
   assert marked.requires_rename == 1
@@ -746,7 +788,13 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_0x014b_16_and_changes_nothing_tes
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
-    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
   let _abe =
     character_support.insert(
       pool:,
@@ -755,13 +803,13 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_0x014b_16_and_changes_nothing_tes
       class_id: 4,
       path: 2,
     )
-  character_support.mark_for_rename(pool:, name: "Zed")
+  character_support.mark_for_rename(pool:, name: "Zed Qu")
   let game = in_select(started:, port:, account:)
   send_rename(game:, character_id: zed, name: "aBE cD")
   assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
     == rename_result.NameUnavailable
     as "lua.CharacterSelection.OnCharacterRenameResult: 16; the unique index on the lower-cased name refuses it"
-  assert names_of(pool) == ["Zed", "Abe Cd"] as "nothing changes"
+  assert names_of(pool) == ["Zed Qu", "Abe Cd"] as "nothing changes"
   let assert [still_marked, _] = listed_entries(game)
   assert still_marked.requires_rename == 1
   game_client.close(game:)
@@ -773,17 +821,24 @@ pub fn a_rename_with_a_name_failing_rule_0_is_0x014b_15_and_an_unmarked_characte
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
-    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
   let game = in_select(started:, port:, account:)
-  send_rename(game:, character_id: zed, name: "Abcd")
-  assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
-    == rename_result.NameLength
-    as "lua.CharacterSelection.OnCharacterRenameResult: 15; rule 0 wants a first and a last name"
   send_rename(game:, character_id: zed, name: "Ab Cd")
   assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
     == rename_result.RenameFailed
     as "lua.CharacterSelection.OnCharacterRenameResult: 13; the character is not marked, so the client would not offer a rename"
-  assert names_of(pool) == ["Zed"] as "nothing changes"
+  character_support.mark_for_rename(pool:, name: "Zed Qu")
+  send_rename(game:, character_id: zed, name: "Abcd")
+  assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
+    == rename_result.NameLength
+    as "lua.CharacterSelection.OnCharacterRenameResult: 15; rule 0 wants a first and a last name, and the character is marked, so the update reaches the table's check"
+  assert names_of(pool) == ["Zed Qu"] as "nothing changes"
   game_client.close(game:)
   login_support.stop(started)
 }

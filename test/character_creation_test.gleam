@@ -25,9 +25,9 @@ import character_tables
 import client_tables
 import genesis_prime/game/character_creation.{
   BoneNotFinite, CostsCurrency, CostumeOnlyRow, LabelNotAllowed,
-  LabelsNotIncreasing, LookValueNotHeld, NameBreaksRule, NeedsEntitlement,
-  NoLevelForExperience, NoStartPlace, NoSuchRow, PathAbove3, RowDisabled,
-  TooManyLabels, WrongBoneCount,
+  LabelsNotIncreasing, LookValueNotHeld, NeedsEntitlement, NoLevelForExperience,
+  NoStartPlace, NoSuchRow, PathAbove3, RowDisabled, TooManyLabels,
+  WrongBoneCount,
 }
 import genesis_prime/game/start_place.{Level50, Novice, OtherStart, Veteran}
 import genesis_prime/message/create_character.{
@@ -52,15 +52,16 @@ fn request(creation_id: Int, name: String) -> CreateCharacter {
   CreateCharacter(..character_support.create_request(name), creation_id:)
 }
 
-pub fn a_name_that_breaks_rule_0_is_name_length_before_the_row_is_read_test() -> Nil {
+pub fn a_name_that_breaks_rule_0_is_the_stores_to_refuse_and_the_row_is_checked_first_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
+  let assert Ok(character) =
+    character_creation.check(tables, request(466, "Abcd"))
+    as "the name's rule 0 is held by the table's character_name_follows_rule_0, so this check passes the name on and the store's refusal is the client's 10 (migration 0014)"
+  assert character.name == "Abcd"
   assert character_creation.check(tables, request(99_999, "Abcd"))
-    == Error(NameBreaksRule)
-    as "0x1403e1170: 'Abcd' is no name by rule 0, and the client checks the name before the row (0x140023e90)"
-  assert character_creation.result_of(NameBreaksRule)
-    == create_result.NameLength
-    as "lua.Character.OnCreateCharacterFailed: 10 is the name's text"
+    == Error(NoSuchRow(creation_id: 99_999))
+    as "a request that breaks the name and the row is answered for the row"
 }
 
 pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> Nil {

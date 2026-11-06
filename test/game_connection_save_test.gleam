@@ -457,11 +457,17 @@ pub fn a_60_s_save_that_changed_nothing_is_an_info_line_and_one_the_database_ref
     game_connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ForMove(PlaceRefused))),
+      outcome: step.Answer(
+        FromStore(
+          ForMove(PlaceRefused(constraint: "character_position_is_finite")),
+        ),
+      ),
     )
   let assert [line] = support.logs(taken)
   assert line.level == LogError
     as "no place the rule keeps breaks a check, so a refusal is a bug"
+  assert support.says(line, "character_position_is_finite")
+    as "the log names the constraint that refused the place"
   assert !support.stops(taken)
   let #(_, taken) =
     game_connection_support.feed(state, OwnEvent(TimerFired(TimerId(2))))
