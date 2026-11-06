@@ -25,6 +25,7 @@ import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/float32
+import genesis_prime/message/held_item.{HeldItem}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/message/item_added
 import genesis_prime/message/shared_item.{type SharedItem, SharedItem}
@@ -77,7 +78,9 @@ fn item(location location: Int, index index: Int, id id: Int) -> SharedItem {
 
 fn added(item item: SharedItem) -> Frame {
   let assert Ok(body) =
-    item_added.encode(item_added.ItemAdded(item:, reason: 49))
+    item_added.encode(
+      item_added.ItemAdded(held_item: HeldItem(item:, reason: 49)),
+    )
     as "0x111 encodes"
   Frame(message_id: item_added.message_id, body:)
 }

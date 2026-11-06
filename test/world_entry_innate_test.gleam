@@ -15,6 +15,7 @@
 //// Skipped where the client's tables are not on the machine, but for the entry of
 //// a class with no innate, which the planted tables give.
 
+import cast_support
 import character_tables
 import client_tables
 import genesis_prime/connection/frame.{type Frame}
@@ -25,13 +26,11 @@ import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/message/item_added
-import genesis_prime/store.{type Character, Character, CharacterId, NameStands}
-import genesis_prime/table/id.{ClassId, RaceId, Spell4BaseId}
+import genesis_prime/table/id.{Spell4BaseId}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
-import place_support
 import unitest
 import world_entry_support
 
@@ -46,33 +45,6 @@ fn classes() -> List(#(Int, List(Int), Int, option.Option(Int))) {
     #(5, [23_148, 23_161, 23_173], 30_075, Some(29_131)),
     #(7, [27_638, 20_684, 20_325], 31_213, None),
   ]
-}
-
-fn character(class class: Int) -> Character {
-  Character(
-    character_id: CharacterId(42),
-    name: "Ab Cd",
-    gender: 0,
-    race_id: RaceId(1),
-    class_id: ClassId(class),
-    faction_id: 166,
-    level: 1,
-    path: 3,
-    place: Some(place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 29.0,
-      y: -853.0,
-      z: -560.0,
-    )),
-    look: [],
-    bones: [],
-    naming: NameStands,
-  )
-}
-
-fn ids(frames frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
 }
 
 fn items_added(frames frames: List(Frame)) -> List(item_added.ItemAdded) {
@@ -98,14 +70,19 @@ pub fn the_entry_sends_the_innate_after_the_abilities_and_0x19f_after_0x19d_for_
     let #(effects, _) =
       world_entry_support.entry(
         tables: client_tables.shared(),
-        character: character(class: class_id),
+        character: world_entry_support.character(
+          class: class_id,
+          faction: 166,
+          level: 1,
+        ),
       )
     let frames = world_entry_support.frames_of(effects:)
-    assert ids(frames:)
+    assert cast_support.ids(frames:)
       == [
         0x00AD,
         0x0262,
         0x019B,
+        0x025E,
         0x0111,
         0x0111,
         0x0111,
@@ -141,23 +118,28 @@ pub fn the_innates_item_is_its_spell4_base_at_location_4_bag_index_3_with_reason
     let #(effects, _) =
       world_entry_support.entry(
         tables: client_tables.shared(),
-        character: character(class: class_id),
+        character: world_entry_support.character(
+          class: class_id,
+          faction: 166,
+          level: 1,
+        ),
       )
     let held =
       items_added(frames: world_entry_support.frames_of(effects:))
-      |> list.filter(fn(added) { added.item.location == 4 })
-    assert list.map(held, fn(added) { added.item.item_id })
+      |> list.filter(fn(added) { added.held_item.item.location == 4 })
+    assert list.map(held, fn(added) { added.held_item.item.item_id })
       == list.append(abilities, [innate_base])
       as "opcode.0x111.ability_bag: the item id of an ability is its Spell4Base"
-    assert list.map(held, fn(added) { added.item.bag_index }) == [0, 1, 2, 3]
+    assert list.map(held, fn(added) { added.held_item.item.bag_index })
+      == [0, 1, 2, 3]
       as "the innate is held after the three abilities, at index 3"
-    assert list.all(held, fn(added) { added.reason == 49 })
+    assert list.all(held, fn(added) { added.held_item.reason == 49 })
       as "opcode.0x111.ability_bag: reason 49 holds the item with no book change"
     let assert Ok(innate) = list.last(held)
-    assert innate.item.item_id == innate_base
-      && innate.item.location == 4
-      && innate.item.bag_index == 3
-      && innate.reason == 49
+    assert innate.held_item.item.item_id == innate_base
+      && innate.held_item.item.location == 4
+      && innate.held_item.item.bag_index == 3
+      && innate.held_item.reason == 49
   })
 }
 
@@ -169,7 +151,11 @@ pub fn one_0x1a0_sets_tier_1_of_the_abilities_and_the_innate_in_action_sets_0_to
     let #(effects, _) =
       world_entry_support.entry(
         tables: client_tables.shared(),
-        character: character(class: class_id),
+        character: world_entry_support.character(
+          class: class_id,
+          faction: 166,
+          level: 1,
+        ),
       )
     let frames = world_entry_support.frames_of(effects:)
     let assert Ok(tiers) =
@@ -193,7 +179,11 @@ pub fn the_action_set_keeps_the_three_bar_abilities_and_0x19f_names_slot_0_test(
     let #(effects, _) =
       world_entry_support.entry(
         tables: client_tables.shared(),
-        character: character(class: class_id),
+        character: world_entry_support.character(
+          class: class_id,
+          faction: 166,
+          level: 1,
+        ),
       )
     let frames = world_entry_support.frames_of(effects:)
     let assert Ok(set) =
@@ -223,7 +213,11 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
     let #(effects, _) =
       world_entry_support.entry(
         tables: client_tables.shared(),
-        character: character(class: class_id),
+        character: world_entry_support.character(
+          class: class_id,
+          faction: 166,
+          level: 1,
+        ),
       )
     let started =
       list.filter_map(effects, fn(effect) {
@@ -260,15 +254,17 @@ pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_sta
   let #(effects, entered) =
     world_entry_support.entry(
       tables: character_tables.shared(),
-      character: character(class: 2),
+      character: world_entry_support.character(class: 2, faction: 166, level: 1),
     )
   let frames = world_entry_support.frames_of(effects:)
   assert list.length(
-      list.filter(items_added(frames:), fn(added) { added.item.location == 4 }),
+      list.filter(items_added(frames:), fn(added) {
+        added.held_item.item.location == 4
+      }),
     )
     == 3
     as "the planted tables' Class rows name no innate: the three abilities only"
-  assert !list.contains(ids(frames:), 0x019F)
+  assert !list.contains(cast_support.ids(frames:), 0x019F)
     as "0x19f is sent only with an innate to point the button at"
   assert entered.loadout.innate == None
   assert list.all(effects, fn(effect) {

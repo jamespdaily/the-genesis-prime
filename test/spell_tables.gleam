@@ -711,6 +711,28 @@ fn class_row(
   ])
 }
 
+/// The six playable classes with their Class.startingItemProficiencies, which
+/// message 0x025E carries (`table_rows -- Class 1 2 3 4 5 7`): Warrior 18,
+/// Engineer 66, Esper 262152, Medic 260, Stalker 1048580 and Spellslinger 4104.
+pub fn class_proficiencies() -> List(#(Int, Int)) {
+  [
+    #(1, 18),
+    #(2, 66),
+    #(3, 262_152),
+    #(4, 260),
+    #(5, 1_048_580),
+    #(7, 4104),
+  ]
+}
+
+/// The Class column of a playable class's item proficiencies, from
+/// `class_proficiencies`.
+fn proficiency(class_id class_id: Int) -> #(String, Int) {
+  let assert Ok(mask) = list.key_find(class_proficiencies(), class_id)
+    as "the six playable classes have a proficiency"
+  #("startingItemProficiencies", mask)
+}
+
 /// The planted rows of the abilities above and their children.
 pub fn rows() -> Rows {
   Rows(
@@ -1889,9 +1911,15 @@ pub fn rows() -> Rows {
       },
     ),
     classes: [
-      class_row(id: 3, slots: [5, 0, 0, 0, 0, 0, 0, 16], more: []),
-      class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: []),
-      class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16], more: []),
+      class_row(id: 3, slots: [5, 0, 0, 0, 0, 0, 0, 16], more: [
+        proficiency(class_id: 3),
+      ]),
+      class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: [
+        proficiency(class_id: 4),
+      ]),
+      class_row(id: 5, slots: [5, 13, 13, 12, 9, 10, 11, 16], more: [
+        proficiency(class_id: 5),
+      ]),
     ],
     prerequisites: sorted_by_id(
       list.flatten([
@@ -2103,6 +2131,7 @@ pub fn rows_with_energize() -> Rows {
       case row {
         [Integer(4), ..] ->
           class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: [
+            proficiency(class_id: 4),
             #("spell4IdInnateAbilityActive00", 69_450),
           ])
         other -> other

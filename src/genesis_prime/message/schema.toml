@@ -451,6 +451,77 @@ fields = [
 ]
 
 [[message]]
+id = 0x025E
+name = "player_character_state"
+direction = "server_to_client"
+evidence = "opcode.0x25e"
+summary = "the player character's own state on entering the world, sent once right after message 0x19B has set the player: held items, currencies, experience, points, reputations, pets, settings, unlocked AMPs, the supply satchel and entitlements; its handler then raises CharacterCreated, which the class resource bar and about 25 other addons wait for; the unlocked AMPs are at most 54, the cap the client's other writer of the list applies, since the handler copies the count it reads into room for 56"
+fields = [
+  { name = "held_items", kind = "array", count_bits = 32, element = "held_item", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "currencies", kind = "raw_bytes", count = 120, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "money_trade_limit", kind = "unsigned", bits = 64, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "experience", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "rest_experience", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "item_proficiencies", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "elder_points", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "periodic_elder_points", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "active_action_set", kind = "unsigned_below", bits = 3, limit = 4, evidence = "0x14008cee0", named_by = "opcode.0x25e.safe_body" },
+  { name = "bonus_amp_power", kind = "unsigned", bits = 16, evidence = "0x14008cee0", named_by = "Prerequisite.prerequisiteTypeId.237" },
+  { name = "bonus_ability_tier_points", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "Prerequisite.prerequisiteTypeId.235" },
+  { name = "reputations", kind = "record", record = "reputation_list", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "pets", kind = "array", count_bits = 32, element = "player_pet", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "input_key_set", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "bind_point", kind = "unsigned", bits = 16, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "costume_index", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "attribute_points", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "pvp_flag_time_left_ms", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "unlocked_amps", kind = "array", count_bits = 6, element = "unsigned", element_bits = 16, evidence = "0x14008cee0", named_by = "Prerequisite.prerequisiteTypeId.231" },
+  { name = "supply_satchel_counts", kind = "raw_bytes", count = 1024, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "gear_score", kind = "float32", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "is_pvp_server", kind = "unsigned", bits = 1, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "field_23", kind = "unsigned", bits = 32, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
+  { name = "character_entitlements", kind = "array", count_bits = 32, element = "character_entitlement", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+]
+
+[[record]]
+name = "reputation_list"
+evidence = "0x14008cee0"
+summary = "message 0x25E's reputations: a 14-bit value the handler does not read, then the reputations; a Faction2 id with no row is skipped"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 14, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
+  { name = "reputations", kind = "array", count_bits = 16, element = "reputation", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+]
+
+[[record]]
+name = "reputation"
+evidence = "0x14008cee0"
+summary = "one reputation: the Faction2 id and the standing"
+fields = [
+  { name = "faction_id", kind = "unsigned", bits = 14, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "value", kind = "float32", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+]
+
+[[record]]
+name = "player_pet"
+evidence = "0x14008cee0"
+summary = "one of the player's pets, kept by its unit id (GetPlayerPets); the three values after it have no reader found"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "field_2", kind = "unsigned", bits = 18, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
+  { name = "field_3", kind = "unsigned", bits = 5, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
+  { name = "field_4", kind = "unsigned", bits = 5, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
+]
+
+[[record]]
+name = "character_entitlement"
+evidence = "0x14008cee0"
+summary = "one character entitlement (GetCharacterEntitlement): the entitlement id and the count held"
+fields = [
+  { name = "entitlement_id", kind = "unsigned", bits = 14, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+  { name = "count", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
+]
+
+[[message]]
 id = 0x06BC
 name = "player_path"
 direction = "server_to_client"
@@ -1582,6 +1653,14 @@ name = "item_added"
 direction = "server_to_client"
 evidence = "opcode.0x111.ability_bag"
 summary = "adds an item the player holds; an item at location 4 is an ability, whose item id is its Spell4Base id and whose bag index is the slot a press names, and the client adds the base to the ability book; the reason is 6 bits, and 49 adds without raising the book's change"
+fields = [
+  { name = "held_item", kind = "record", record = "held_item", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
+]
+
+[[record]]
+name = "held_item"
+evidence = "opcode.0x111.ability_bag"
+summary = "one held item as messages 0x111 and 0x25E carry it: the shared item record and its 6-bit reason"
 fields = [
   { name = "item", kind = "record", record = "shared_item", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "reason", kind = "unsigned", bits = 6, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },

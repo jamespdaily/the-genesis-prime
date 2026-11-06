@@ -460,6 +460,7 @@ pub fn entry_answered(
           answer:,
           connection: client_connection.connection(session.link),
           stay:,
+          tables: session.settings.tables,
         )
       {
         Ok(world_entry.Join(state:, effects:)) ->
