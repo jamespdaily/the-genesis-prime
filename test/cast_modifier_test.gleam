@@ -26,6 +26,7 @@ import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import owned_test
 
 /// 135954 as the client holds it: BaseCritChance, multiplier 1.0, flat 0.08, 8000 ms.
@@ -37,6 +38,7 @@ fn crit_row() -> spell_plan.PropertyModifier {
     row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
     condition: Always,
     tag: spend.always,
+    armor: None,
   )
 }
 
@@ -66,6 +68,7 @@ fn falling_row() -> spell_plan.PropertyModifier {
     row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
     condition: Always,
     tag: spend.always,
+    armor: None,
   )
 }
 

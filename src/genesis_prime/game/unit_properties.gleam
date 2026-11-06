@@ -54,6 +54,14 @@
 ////   no rule reads it (for example MoveSpeedMultiplier, 100: the client moves at it and
 ////   the server checks no speed; FallingDamageMultiplier, 134: falling damage is not
 ////   handled).
+//// - **An Interrupt Armor row is a modifier of property 44** (InterruptArmor_Threshold),
+////   x * 1.0 + its points, built by `interrupt_armor_modifier`: the client clamps the armor
+////   to this property, whose default for a player is 0.0, so the armor shows only while the
+////   property is raised, and the player's armor follows it
+////   (`Spell4Effects.effectType.52`, `opcode.0x938.interrupt_armor`). A modifier applied
+////   to a maximum of -1 (infinite) gives a finite number: a player's base is the default
+////   0.0, and a row that sets -1 (Unstoppable Force) is not kept infinite under a later
+////   change; that is a gap.
 ////
 //// What happens at each failure point:
 ////
@@ -97,6 +105,10 @@ pub const shield_capacity_max = UnitProperty2Id(41)
 /// Armor (42): the rating the defence formulas read.
 pub const armor = UnitProperty2Id(42)
 
+/// InterruptArmor_Threshold (44): the most Interrupt Armor a unit holds, which the client
+/// clamps stat 21 to (`opcode.0x938.interrupt_armor`).
+pub const interrupt_armor_threshold = UnitProperty2Id(44)
+
 /// BaseCritChance (102): the base the critical hit chance formula takes.
 pub const base_crit_chance = UnitProperty2Id(102)
 
@@ -133,6 +145,19 @@ pub type Modifier {
   /// dataBits00). The server works the amount out after every change of the properties,
   /// as the module's doc says.
   Conversion(from: UnitProperty2Id, to: UnitProperty2Id, share: Float)
+}
+
+/// The change a type 52 Interrupt Armor row of `points` makes to the maximum, property 44:
+/// x * 1.0 + points, a type 11 row's formula, which a plan and a player's armor share. It
+/// has no row's mode (0), which the order of application ignores.
+pub fn interrupt_armor_modifier(points points: Int) -> Modifier {
+  Change(
+    property: interrupt_armor_threshold,
+    mode: 0,
+    multiplier: 1.0,
+    flat: int.to_float(points),
+    per_level: 0.0,
+  )
 }
 
 /// What a modifier on the player belongs to: the cast that put it there and the
@@ -179,6 +204,7 @@ const named = [
   support_rating,
   shield_capacity_max,
   armor,
+  interrupt_armor_threshold,
   base_crit_chance,
   base_avoid_reduce_chance,
   critical_hit_severity_multiplier,

@@ -149,20 +149,11 @@ pub fn regeneration_due(
   now now: Now,
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
-  case connection_state.held_in_the_world(session.status) {
-    Some(#(_, entered)) -> {
-      let #(life, effects) = player_life.timer_fired(life: entered.life, timer:)
-      let session =
-        connection_state.with_entered(session:, change: fn(entered) {
-          world_entry.Entered(..entered, life:)
-        })
-      Continue(
-        session,
-        life_effect.life_effects(session:, now:, entered:, effects:),
-      )
-    }
-    None -> Continue(session, [])
-  }
+  let #(session, effects) =
+    life_effect.life_changed(session:, now:, change: fn(entered) {
+      player_life.timer_fired(life: entered.life, timer:)
+    })
+  Continue(session, effects)
 }
 
 /// The player's 0x15a, taken from inside 0x038C in the world

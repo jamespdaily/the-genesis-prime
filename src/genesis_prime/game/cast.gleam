@@ -216,6 +216,15 @@
 ////   innate passive's, and every one still pending but the passive's; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
+//// - **A go's Interrupt Armor** (`Spell4Effects.effectType.52`): each ModifyInterruptArmor
+////   row of the phase that reaches the caster (genesis_prime/game/spell_plan
+////   `PropertyModifier.armor`) is a property modifier of property 44, the armor's maximum,
+////   and goes through every rule of the property modifiers above: the same listing, node
+////   life, start, timer, end and removal. The player's armor follows its maximum
+////   (genesis_prime/game/player_life `armor_followed`), so the rule asks nothing more of
+////   the connection for it. The client has no case for the effect, so the armor and its
+////   maximum are the server's (`Spell4Effects.effectType.52`,
+////   `opcode.0x938.interrupt_armor`).
 //// - **A go's shield heals** (`Spell4Effects.effectType.118`): each HealShields effect of the
 ////   phase that reaches the caster (genesis_prime/game/spell_plan `ShieldHeal`) whose gate
 ////   against the caster passes is listed in the caster's target info with a damage
@@ -4581,7 +4590,14 @@ fn aimed_at(
     )
   let controls = controls_landed(struck:)
   let modifiers =
-    list.map(applied.modifiers, fn(row) { #(row, caster.unit_id) })
+    rows_with_units(
+      rows: applied.modifiers,
+      aim: modifier_aim,
+      caster:,
+      primary_target: live.primary_target,
+      struck:,
+    )
+    |> list.filter(fn(entry) { entry.1 == caster.unit_id })
   let forced_moves = applied.forced_moves
   let cooldowns =
     list.map(applied.cooldowns, fn(row) {
@@ -4718,6 +4734,17 @@ fn aimed_at(
     procs:,
     controls:,
   )
+}
+
+/// The unit a property modifier row aims at: the caster for a type 11 row, which the plan
+/// reads only when its targetFlags include the caster, and for a type 52 row what its
+/// targetFlags name. Only the caster is changed (`aimed_at`): the server gives no other
+/// unit a property.
+fn modifier_aim(row row: spell_plan.PropertyModifier) -> spell_plan.Aim {
+  case row.armor {
+    Some(armor) -> armor.aim
+    None -> spell_plan.AimsAtCaster
+  }
 }
 
 /// The shield heals a go applies, each on the caster, with the amount the caster's own
@@ -4920,22 +4947,18 @@ fn modifiers_armed(
     let row = entry.0
     let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
     let #(cast, cancels) = cancel_source_timers(cast:, source:)
+    let change = Property(modifier: row.modifier)
     let #(cast, starting) = case row.row.delay_ms > 0 {
       True -> {
         let #(cast, _, start) =
           armed(
             cast:,
-            due: ModifierStart(
-              source:,
-              change: Property(modifier: row.modifier),
-            ),
+            due: ModifierStart(source:, change:),
             after_ms: row.row.delay_ms,
           )
         #(cast, [start])
       }
-      False -> #(cast, [
-        CasterChangeStarts(source:, change: Property(modifier: row.modifier)),
-      ])
+      False -> #(cast, [CasterChangeStarts(source:, change:)])
     }
     let #(cast, ending) = case row.row.until_removed {
       True -> #(cast, [])
