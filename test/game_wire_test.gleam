@@ -213,6 +213,7 @@ pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19
   // The second login's list came after its claim, which sent the first
   // connection its takeover.
   let assert [notice] = game_client.read(game: first, count: 1)
+  game_client.nothing_more(game: first)
   assert notice.message_id == 0x036A as "opcode.0x36a"
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: AccountDisconnected))
@@ -234,6 +235,7 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   let game =
     game_client.connect(port:, session_key: session_key(), account_name: "jim")
   let assert [notice] = game_client.read(game:, count: 1)
+  game_client.nothing_more(game:)
   assert notice.message_id == 0x036A as "opcode.0x36a"
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: AccountDisconnected))
@@ -263,6 +265,7 @@ pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connecti
       stopping
     })
   let assert [notice] = game_client.read(game:, count: 1)
+  game_client.nothing_more(game:)
   assert notice.message_id == 0x036A as "opcode.0x36a"
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: LostUserServer))
@@ -593,6 +596,7 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
   let assert [Frame(message_id: 0x036A, body:)] =
     game_client.read(game:, count: 1)
     as "opcode.0x36a: the connection watches the map it is in, so its end tells the client"
+  game_client.nothing_more(game:)
   assert disconnect_notice.decode(body)
     == Ok(DisconnectNotice(reason: LostUserServer))
     as "0x1400168a0: 8, 'Lost connection with user server.'"

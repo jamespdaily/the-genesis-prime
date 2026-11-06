@@ -591,14 +591,44 @@ pub fn moves_body(
 /// Reads until `count` messages have arrived from the server, each opened from
 /// its 0x3DC wrapper under the session cipher, in order. The bytes read beyond
 /// them stay with the connection for the next read, so what a test reads does
-/// not depend on how many messages one socket read held.
+/// not depend on how many messages one socket read held. Kept bytes go in front
+/// of a `have` the caller holds, so `read` must not be mixed with a `have` the
+/// caller still holds from `read_kept`: a test that threads `have` goes on
+/// threading it.
 pub fn read(game game: Game, count count: Int) -> List(Frame) {
   let #(frames, rest) = read_kept(game:, have: <<>>, count:)
+  keep(game:, rest:)
+  frames
+}
+
+/// Leaves `rest` on the connection for the next read.
+fn keep(game game: Game, rest rest: BitArray) -> Nil {
   case rest {
     <<>> -> Nil
     _ -> process.send(game.kept, rest)
   }
-  frames
+}
+
+/// Asserts the server has written nothing beyond what the test read: no byte is
+/// kept from an earlier `read`, and none is waiting on the socket right now (a
+/// connection the server has closed holds none). It does not wait, so it
+/// catches what has already arrived; a test that means "nothing more" has first
+/// read the message that comes last.
+pub fn nothing_more(game game: Game) -> Nil {
+  assert with_kept(game:, have: <<>>) == <<>>
+    as "the game server wrote a message the test does not read"
+  case mug.receive(game.socket, timeout_milliseconds: 0) {
+    Ok(_) -> panic as "the game server wrote a message the test does not read"
+    Error(mug.Timeout)
+    | Error(mug.Closed)
+    | Error(mug.Econnreset)
+    | Error(mug.Econnaborted) -> Nil
+    Error(error) ->
+      panic as {
+        "the game server's connection failed while a test checked it: "
+        <> mug.describe_error(error)
+      }
+  }
 }
 
 /// What `read` left on the connection, in front of `have`, which the caller
@@ -947,23 +977,31 @@ pub fn send_ping(game game: Game, number number: Int) -> Nil {
 }
 
 /// Reads the server's answer to a ping: the bare pong and its number
-/// (opcode.0x1).
+/// (opcode.0x1). The bytes beyond it stay with the connection, as `read`'s do.
 pub fn read_pong(game game: Game) -> Int {
-  let assert Ok([Frame(message_id: 0x0001, body: <<number:size(8)>>)]) =
-    frame_reader.read(have: <<>>, count: 1, next: fn() {
-      mug.receive(game.socket, timeout_milliseconds: wait_ms)
-    })
-    as "the game server answered the ping with one bare pong"
+  let assert Ok(#([Frame(message_id: 0x0001, body: <<number:size(8)>>)], rest)) =
+    frame_reader.read_kept(
+      have: with_kept(game:, have: <<>>),
+      count: 1,
+      next: fn() { mug.receive(game.socket, timeout_milliseconds: wait_ms) },
+    )
+    as "the game server answered the ping with a bare pong"
+  keep(game:, rest:)
   number
 }
 
 /// Whether the server closes the connection within the wait: what it sends
-/// meanwhile is read and dropped, and a reset counts as a close.
+/// meanwhile is read and dropped, and a reset counts as a close, as does a
+/// socket no longer connected, which is what an earlier read that saw the close
+/// (`nothing_more`) leaves.
 pub fn closed(game game: Game) -> Bool {
   case mug.receive(game.socket, timeout_milliseconds: wait_ms) {
     Ok(_) -> closed(game:)
     Error(mug.Timeout) -> False
-    Error(mug.Closed) | Error(mug.Econnreset) | Error(mug.Econnaborted) -> True
+    Error(mug.Closed)
+    | Error(mug.Econnreset)
+    | Error(mug.Econnaborted)
+    | Error(mug.Enotconn) -> True
     Error(error) ->
       panic as {
         "the wait for the server to close ended with "

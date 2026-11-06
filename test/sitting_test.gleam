@@ -83,6 +83,7 @@ pub fn a_sitting_records_each_sts_auth_and_game_connection_test() -> Nil {
   assert list.map(answer, fn(message) { message.message_id })
     == [0x097F, 0x0968, 0x0036, 0x0117]
     as "opcode.0x97f, opcode.0x968, opcode.0x36 and opcode.0x117 answer 0x07E0, the last the account's character list"
+  game_client.nothing_more(game:)
   game_client.close(game:)
   // The tree's stop ends every connection, so each file has its closing line.
   login_support.stop(started)
