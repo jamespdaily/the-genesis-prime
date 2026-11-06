@@ -16,10 +16,10 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place
-import genesis_prime/step.{ConnectionId, LogError, OwnEvent, Started, Told}
+import genesis_prime/step.{ConnectionId, LogError, OwnEvent, Told}
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/spawn.{type Spawn, Spawn}
+import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
 import map_spawn_support
@@ -29,23 +29,6 @@ import spawn_support
 
 /// The Virtual Defense Dagun's Creature2 id (`Creature2.73465`).
 const virtual_defense_dagun = 73_465
-
-/// A map with these spawns, started.
-fn map_with(spawns spawns: List(Spawn)) -> State {
-  let state =
-    map_support.standing_with(
-      incarnation: 1,
-      spawns:,
-      kinds: map_spawn_support.default_kinds(),
-    )
-  let #(state, _) =
-    map_spawn_support.feed(
-      state:,
-      at_ms: map_spawn_support.started_at_ms,
-      event: OwnEvent(Started),
-    )
-  state
-}
 
 fn ready(
   state state: State,
@@ -62,26 +45,15 @@ fn ready(
 
 /// The `Approached` the step sends, with its place's x and its sequence number.
 fn approaches(taken: step.ServiceStep(map.Outgoing)) -> List(#(Float, Int)) {
-  list.filter_map(map_spawn_support.sends(taken), fn(sent) {
-    case sent.1 {
-      map.Approached(place:, seq:, ..) -> Ok(#(start_place.x(place), seq))
-      map.Withdrew(..)
-      | map.Watched(..)
-      | map.Unwatched(..)
-      | map.Noticed(..)
-      | map.Retire
-      | map.Joined(..)
-      | map.NotJoined(..)
-      | map.Summoned(..)
-      | map.NotSummoned(..)
-      | map.Left -> Error(Nil)
-    }
-  })
+  list.map(approaches_in_full(taken), fn(approach) { #(approach.2, approach.3) })
 }
 
 /// A Dagun at x = 100, joined by a Dominion player at x = 80 who is then ready.
 fn one_dagun_and_a_ready_player() -> State {
-  let state = map_with(spawns: [spawn_support.dagun(number: 1, x: 100.0)])
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+    ])
   let #(state, _) =
     map_spawn_support.join(
       state:,
@@ -130,7 +102,7 @@ pub fn a_creature_friendly_or_neutral_to_the_mover_gets_no_approached_test() -> 
         hostile_to: Hostile(exile: False, dominion: False),
       ),
     )
-  let state = map_with(spawns: [beast, neutral])
+  let state = map_spawn_support.started_with_spawns(spawns: [beast, neutral])
   let #(state, _) =
     map_spawn_support.join(
       state:,
@@ -151,7 +123,7 @@ pub fn a_creature_friendly_or_neutral_to_the_mover_gets_no_approached_test() -> 
 pub fn no_approached_before_ready_and_at_ready_one_for_each_ring_the_player_stands_in_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
-    map_with(spawns: [
+    map_spawn_support.started_with_spawns(spawns: [
       spawn_support.dagun(number: 1, x: 100.0),
       spawn_support.dagun(number: 2, x: 104.0),
     ])
@@ -188,7 +160,10 @@ pub fn a_second_ready_in_one_stay_changes_nothing_test() -> Nil {
 
 pub fn a_creature_starting_where_a_ready_player_stands_in_its_ring_is_sent_one_approached_after_its_start_test() -> Nil {
   use <- owned_test.run(5000)
-  let state = map_with(spawns: [spawn_support.dagun(number: 1, x: 100.0)])
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+    ])
   let #(state, joined) =
     map_spawn_support.join(
       state:,
@@ -240,7 +215,10 @@ pub fn a_player_ready_before_any_move_of_its_stay_is_approached_with_the_connect
   use <- owned_test.run(5000)
   // The player camped and entered again; its connection's last move was 5, before
   // the camp, and it has not moved in this stay (the review of 0929cb9).
-  let state = map_with(spawns: [spawn_support.dagun(number: 1, x: 100.0)])
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+    ])
   let #(state, _) =
     map_spawn_support.join(
       state:,
@@ -317,7 +295,7 @@ pub fn a_ready_player_in_two_rings_that_enters_stealth_sends_withdrew_to_each_li
   // Spawns at 100, 104 and 106; the player at 103 is within 10 of each. The second
   // spawn's creature crashes, so its spawn is waiting for its restart, not Live.
   let state =
-    map_with(spawns: [
+    map_spawn_support.started_with_spawns(spawns: [
       spawn_support.dagun(number: 1, x: 100.0),
       spawn_support.dagun(number: 2, x: 104.0),
       spawn_support.dagun(number: 3, x: 106.0),
@@ -395,7 +373,7 @@ pub fn a_stealth_changed_of_the_value_the_map_holds_sends_nothing_and_changes_no
 pub fn a_player_stealthed_before_its_ready_is_sent_to_no_creature_at_ready_and_leaving_stealth_sends_approached_to_each_ring_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
-    map_with(spawns: [
+    map_spawn_support.started_with_spawns(spawns: [
       spawn_support.dagun(number: 1, x: 100.0),
       spawn_support.dagun(number: 2, x: 104.0),
     ])
@@ -431,7 +409,10 @@ fn a_stealthed_ready_player_and_the_creature_it_started() -> #(
   State,
   step.WatchId,
 ) {
-  let state = map_with(spawns: [spawn_support.dagun(number: 1, x: 100.0)])
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+    ])
   let #(state, joined) =
     map_spawn_support.join(
       state:,
@@ -449,7 +430,10 @@ fn a_stealthed_ready_player_and_the_creature_it_started() -> #(
 fn a_first_viewer_starts_the_creature_with_the_stealthed_player_in_its_ring() -> Nil {
   // The player is far, ready and stealthed; its one move puts it in sight of the
   // Dagun and in its ring together.
-  let state = map_with(spawns: [spawn_support.dagun(number: 1, x: 100.0)])
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+    ])
   let #(state, _) =
     map_spawn_support.join(
       state:,
@@ -596,7 +580,10 @@ pub fn a_player_stealthed_in_one_stay_that_leaves_and_joins_again_is_not_stealth
 
 pub fn the_watch_of_a_stealthed_player_in_a_ring_ending_sends_its_creatures_unwatched_and_no_withdrew_or_approached_test() -> Nil {
   use <- owned_test.run(5000)
-  let state = map_with(spawns: [spawn_support.dagun(number: 1, x: 100.0)])
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+    ])
   let #(state, joined) =
     map_spawn_support.join(
       state:,

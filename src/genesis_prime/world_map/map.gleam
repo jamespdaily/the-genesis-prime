@@ -1900,9 +1900,9 @@ fn rings_decided(
 /// the aggro range of the spawn's place, in three dimensions, found through the cell
 /// index for the stored spawns and by a scan of the run-only ones. A player that
 /// `noticeable_by_rings` refuses stands in no ring: a stealthed one is left out of every
-/// creature's ring, by Jim's decision of 2026-11-06 (option A, issue 483): a creature
-/// does not aggro a stealthed player it is not already fighting. A server choice: the
-/// client holds no rule for it (`UnitProperty2.stealth_detection`).
+/// creature's ring, by Jim's decision, a server choice: a creature does not aggro a
+/// stealthed player it is not already fighting. The client holds no rule for it
+/// (`UnitProperty2.stealth_detection`).
 fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
   use <- bool.guard(when: !noticeable_by_rings(player:), return: set.new())
   let spawns = state.settings.spawns

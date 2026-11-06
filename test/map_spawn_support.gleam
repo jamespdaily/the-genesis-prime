@@ -15,6 +15,7 @@ import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{type State, Join, Leave, Moved, Watched}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -81,6 +82,14 @@ pub fn started_with(
       kinds:,
     )
   feed(state:, at_ms: started_at_ms, event: OwnEvent(Started))
+}
+
+/// A map with these spawns, started, on the default kinds.
+pub fn started_with_spawns(spawns spawns: List(Spawn)) -> State {
+  let state =
+    map_support.standing_with(incarnation: 1, spawns:, kinds: default_kinds())
+  let #(state, _) = feed(state:, at_ms: started_at_ms, event: OwnEvent(Started))
+  state
 }
 
 /// A join of connection `connection` at `x`, at time `at_ms`.

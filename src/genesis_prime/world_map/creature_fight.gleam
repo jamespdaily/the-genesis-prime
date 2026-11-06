@@ -45,7 +45,7 @@
 ////   (3 to 7) enters a fight only by a player's strike (`0x1403ad540`). Any threat
 ////   above 0 shows the creature hostile (`0x14045a950`). The map leaves a stealthed
 ////   player out of every ring (genesis_prime/world_map/map `StealthChanged`, Jim's
-////   decision on issue 483): it sends `Withdrew` when the player enters stealth and
+////   decision, a server choice): it sends `Withdrew` when the player enters stealth and
 ////   `Approached` when it leaves stealth inside the ring. So the home timer and the
 ////   respawn, which aggro the players in `near`, do not aggro a stealthed one, and a
 ////   creature already fighting it keeps it on its threat list, since `Withdrew`

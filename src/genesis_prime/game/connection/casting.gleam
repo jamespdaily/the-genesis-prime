@@ -291,8 +291,8 @@ pub fn cast_effects(
             news: client_connection.Stealth(stealthed:),
           ),
           // The map keeps a stealthed player out of every creature's ring: Jim's
-          // decision on issue 483, a server choice. Told last, after the owner's
-          // 0x8f5 and the viewers' news.
+          // decision, a server choice. Told last, after the owner's 0x8f5 and the
+          // viewers' news.
           [
             connection_state.tells_the_map(
               entered:,

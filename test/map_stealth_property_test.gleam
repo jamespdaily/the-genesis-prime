@@ -22,7 +22,6 @@ import gleam/list
 import gleam/result
 import gleam/string
 import map_spawn_support
-import map_support
 import owned_test
 import qcheck
 import spawn_support
@@ -83,18 +82,10 @@ fn x_of(stop: Int) -> Float {
 /// each not ready.
 fn begin() -> Play {
   let state =
-    map_support.standing_with(
-      incarnation: 1,
+    map_spawn_support.started_with_spawns(
       spawns: list.index_map(spawn_xs, fn(x, index) {
         spawn_support.dagun(number: index + 1, x:)
       }),
-      kinds: map_spawn_support.default_kinds(),
-    )
-  let #(state, _) =
-    map_spawn_support.feed(
-      state:,
-      at_ms: map_spawn_support.started_at_ms,
-      event: step.OwnEvent(step.Started),
     )
   let #(state, creatures) =
     list.fold(players, #(state, []), fn(held, player) {
@@ -116,6 +107,7 @@ fn begin() -> Play {
         ),
       )
     })
+  let assert [_, _] = creatures as "the first join starts both creatures"
   Play(
     state:,
     now_ms: map_spawn_support.started_at_ms + list.length(players),
