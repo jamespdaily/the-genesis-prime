@@ -1067,7 +1067,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.Pay(..)
         | cast.Gain(..)
         | cast.CasterChangeStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })

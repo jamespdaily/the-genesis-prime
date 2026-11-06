@@ -1,5 +1,5 @@
 //// The cast rule's Interrupt Armor rows (`genesis_prime/game/cast` `CasterChangeStarts`,
-//// `PropertyEnds`): a row is a change of property 44, whose armor the player's armor
+//// `CasterChangeEnds`): a row is a change of property 44, whose armor the player's armor
 //// follows (`player_life_interrupt_armor_test`). Expected values come from these places:
 //// - `Spell4Effects.effectType.52`: a type 52 row adds dataBits00 points of Interrupt
 ////   Armor to the unit it lands on for durationTime; Esper's row 199192 of Spell4 76766
@@ -122,7 +122,7 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Modifier)) {
         Ok(#(source, modifier))
       cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
       | cast.CasterChangeStarts(change: cast.Look(..), ..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeEnds(..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)

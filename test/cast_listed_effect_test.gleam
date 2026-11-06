@@ -325,7 +325,7 @@ fn starts(
       | cast.Strike(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })

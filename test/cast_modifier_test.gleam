@@ -1,5 +1,5 @@
 //// The cast rule's property modifiers (`genesis_prime/game/cast` `CasterChangeStarts`,
-//// `PropertyEnds`). Expected values come from these places:
+//// `CasterChangeEnds`). Expected values come from these places:
 //// - `Spell4Effects.effectType.11.change`: a type 11 row applies at its go plus its
 ////   delayTime for its durationTime; the kit's two rows are 135954 (BaseCritChance,
 ////   multiplier 1.0, flat 0.08, no delay, 8000 ms, every phase) and 67777
@@ -121,7 +121,7 @@ fn change_of(effect effect: Effect) -> Result(Change, Nil) {
       Ok(Started(source:, modifier:))
     cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..) -> Error(Nil)
     cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
-    cast.PropertyEnds(source:) -> Ok(Ended(source:))
+    cast.CasterChangeEnds(source:) -> Ok(Ended(source:))
     cast.Send(..)
     | cast.Tell(..)
     | cast.StartTimer(..)

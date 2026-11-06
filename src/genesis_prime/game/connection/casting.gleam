@@ -29,7 +29,7 @@
 ////   applied to the player's properties (genesis_prime/game/connection/properties).
 //// - **Disguises** are the cast rule's too: a `CasterChangeStarts` whose change is a `Look`
 ////   starts the disguise on the player's look and tells the player's client and its
-////   viewers the slots that changed, and each `PropertyEnds` ends a property modifier
+////   viewers the slots that changed, and each `CasterChangeEnds` ends a property modifier
 ////   and a disguise of its source, whichever the source holds
 ////   (genesis_prime/game/connection/look). A death, a type 80 removal, a persistence end
 ////   and the node's end by time end the disguise as they end a modifier; a camp sends no
@@ -352,7 +352,7 @@ pub fn cast_effects(
         connection_healing.shield_healed(session:, now:, amount:)
       cast.CasterChangeStarts(source:, change: cast.Look(disguise:)), _ ->
         connection_look.started(session:, source:, disguise:)
-      cast.PropertyEnds(source:), _ -> {
+      cast.CasterChangeEnds(source:), _ -> {
         let #(session, properties) =
           connection_properties.ended(session:, now:, source:)
         let #(session, look) = connection_look.ended(session:, source:)

@@ -654,7 +654,7 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
         | cast.Pay(..)
         | cast.Gain(..)
         | cast.CasterChangeStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> False
       }
     })

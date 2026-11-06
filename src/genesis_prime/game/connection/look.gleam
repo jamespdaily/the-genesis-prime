@@ -6,7 +6,7 @@
 ////
 //// ```
 //// the cast rule's CasterChangeStarts(Look) ─▶ look.start ─┐
-//// the cast rule's PropertyEnds              ─▶ look.end   ─┤ visuals whose display changed
+//// the cast rule's CasterChangeEnds              ─▶ look.end   ─┤ visuals whose display changed
 ////                                                          ├─▶ 0x933 {owner, visuals} to the player's client
 ////                                                          └─▶ LookChanged(visuals) to each viewer
 //// ```
@@ -37,7 +37,7 @@
 ////   shows, a source already held, and an end of a source that is not held.
 //// - **A player not held in the world** (a save, a leave) takes no change: its look goes
 ////   with its `Entered`.
-//// - **Death:** the cast rule's `died` ends the modifiers of its casts (`PropertyEnds`),
+//// - **Death:** the cast rule's `died` ends the modifiers of its casts (`CasterChangeEnds`),
 ////   so the look ends in the death's step and the restore 0x933 goes to the player and
 ////   its viewers in the order the cast rule gives the ends.
 //// - **Camp or the Holocrypt:** the viewers get `Removed` (0x355) and no 0x933; `Entered`
@@ -71,7 +71,7 @@ pub fn started(
   changed(session:, change: look.start(look: _, source:, disguise:))
 }
 
-/// A disguise of the player's own spell ends (genesis_prime/game/cast `PropertyEnds`),
+/// A disguise of the player's own spell ends (genesis_prime/game/cast `CasterChangeEnds`),
 /// or is told ended for a source the look does not hold, which changes nothing.
 pub fn ended(
   session session: Session,

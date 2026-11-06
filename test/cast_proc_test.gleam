@@ -212,7 +212,7 @@ fn trace(
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
-      | cast.PropertyEnds(..) -> []
+      | cast.CasterChangeEnds(..) -> []
     }
   })
 }
@@ -267,7 +267,7 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast.Pay(..)
     | cast.Gain(..)
     | cast.CasterChangeStarts(..)
-    | cast.PropertyEnds(..)
+    | cast.CasterChangeEnds(..)
     | cast.StealthChanged(..) -> False
   }
 }
@@ -490,7 +490,7 @@ fn property_starts(
       | cast.Strike(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })

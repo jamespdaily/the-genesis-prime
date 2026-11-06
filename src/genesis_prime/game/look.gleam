@@ -2,7 +2,7 @@
 //// spells that change them for their time. The connection keeps one `Look` for its
 //// player (genesis_prime/game/world_entry `Entered`), starts and ends a disguise when
 //// the cast rule says so (genesis_prime/game/cast `CasterChangeStarts` with a `Look`
-//// change, `PropertyEnds`), writes the slots that changed to the player's client and
+//// change, `CasterChangeEnds`), writes the slots that changed to the player's client and
 //// tells its viewers (genesis_prime/game/connection/look), and hands a viewer that
 //// first sees the player the list its 0x262 carries (`visuals`). The module is pure.
 ////
@@ -12,7 +12,7 @@
 ////    CasterChangeStarts ─────▶ start(source, disguise) ─────────▶ 0x933 to the player,
 ////      (Look)                  slots whose display changed        LookChanged to viewers
 ////  go + delay + duration, a node taken off, the caster dies
-////    PropertyEnds ───────────▶ end(source) ─────────────────────▶ 0x933, LookChanged
+////    CasterChangeEnds ───────────▶ end(source) ─────────────────────▶ 0x933, LookChanged
 ////
 //// a viewer that first sees the player ◀── visuals(look): the 0x262's item visuals
 //// ```
@@ -50,7 +50,7 @@
 //// | A disguise starts | the connection restarts from storage with the base look, and the client is created again | the same source held once, nothing reported the second time | n/a |
 //// | A disguise ends | as above | the same source ended twice reports nothing the second time | ending a source not held reports nothing |
 //// | Two disguises on one slot | | the newest shows; its end shows the older; the older's end first reports nothing | |
-//// | The caster dies | the cast rule's `PropertyEnds` ends each disguise of its casts, each reported | | |
+//// | The caster dies | the cast rule's `CasterChangeEnds` ends each disguise of its casts, each reported | | |
 //// | The caster leaves | `Entered` goes with its look; the next entry starts from the base | | |
 
 import genesis_prime/game/unit_properties
