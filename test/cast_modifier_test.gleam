@@ -33,7 +33,7 @@ fn crit_row() -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(135_954),
     phase_flags: -1,
-    modifier: crit_modifier(),
+    change: spell_plan.PropertyChange(crit_modifier()),
     row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
     condition: Always,
     tag: spend.always,
@@ -56,13 +56,13 @@ fn falling_row() -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(67_777),
     phase_flags: 1,
-    modifier: Change(
+    change: spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,
       flat: 0.0,
       per_level: 0.0,
-    ),
+    )),
     row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
     condition: Always,
     tag: spend.always,
@@ -117,6 +117,7 @@ fn change_of(effect effect: Effect) -> Result(Change, Nil) {
     cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
       Ok(Started(source:, modifier:))
     cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..) -> Error(Nil)
+    cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
     cast.PropertyEnds(source:) -> Ok(Ended(source:))
     cast.Send(..)
     | cast.Tell(..)

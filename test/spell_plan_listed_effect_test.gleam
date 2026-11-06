@@ -255,12 +255,12 @@ pub fn a_property_conversion_row_is_a_modifier_that_converts_47_into_60_at_a_qua
     list.find(spell.modifiers, fn(row) {
       row.effect_id == Spell4EffectsId(229_304)
     })
-  assert row.modifier
-    == unit_properties.Conversion(
+  assert row.change
+    == spell_plan.PropertyChange(unit_properties.Conversion(
       from: UnitProperty2Id(47),
       to: UnitProperty2Id(60),
       share: 0.25,
-    )
+    ))
   assert row.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
     as "flags bit 2: until removed"
   assert row.condition == Always
@@ -377,12 +377,12 @@ pub fn the_engineers_passive_holds_229304_as_a_conversion_from_47_to_60_until_re
     list.find(spell.modifiers, fn(row) {
       row.effect_id == Spell4EffectsId(229_304)
     })
-  assert row.modifier
-    == unit_properties.Conversion(
+  assert row.change
+    == spell_plan.PropertyChange(unit_properties.Conversion(
       from: UnitProperty2Id(47),
       to: UnitProperty2Id(60),
       share: 0.25,
-    )
+    ))
     as "`table_rows -- Spell4Effects spellId=45000`: dataBits00 47, dataBits01 60, dataBits02 0x3e800000"
   assert row.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
     as "flags 2"

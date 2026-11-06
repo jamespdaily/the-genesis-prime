@@ -569,6 +569,7 @@ fn counted_namings(
         | effect_kind.Scale
         | effect_kind.RavelSignal
         | effect_kind.PropertyConversion
+        | effect_kind.DisguiseOutfit
         | effect_kind.Unread(..) -> []
       }
       named(table: "Spell4Effects", id: effect.id, columns: [

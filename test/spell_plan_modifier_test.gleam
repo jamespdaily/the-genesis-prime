@@ -98,13 +98,13 @@ pub fn a_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
       spell_plan.PropertyModifier(
         effect_id: Spell4EffectsId(135_954),
         phase_flags: -1,
-        modifier: Change(
+        change: spell_plan.PropertyChange(Change(
           property: UnitProperty2Id(102),
           mode: 3,
           multiplier: 1.0,
           flat: 0.07999999821186066,
           per_level: 0.0,
-        ),
+        )),
         row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
         condition: Always,
         tag: spend.EqualTo(value: 0),
@@ -125,14 +125,14 @@ pub fn gates_falling_damage_row_is_read_with_its_delay_and_duration_test() -> Ni
         #("durationTime", Integer(400)),
       ]),
     )
-  assert row.modifier
-    == Change(
+  assert row.change
+    == spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,
       flat: 0.0,
       per_level: 0.0,
-    )
+    ))
   assert row.row
     == LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False)
 }
@@ -149,7 +149,12 @@ pub fn a_negative_multiplier_and_amounts_are_read_from_their_signed_bits_test() 
         #("dataBits04", Integer(1_108_082_688)),
       ]),
     )
-  let assert Change(multiplier:, flat:, per_level:, ..) = row.modifier
+  let assert spell_plan.PropertyChange(Change(
+    multiplier:,
+    flat:,
+    per_level:,
+    ..,
+  )) = row.change
   assert multiplier == -1.0
   assert flat == -2.5
   assert per_level == 35.0
@@ -308,14 +313,14 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
   let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
   let assert [falling] = gate.modifiers
   assert falling.effect_id == Spell4EffectsId(67_777)
-  assert falling.modifier
-    == Change(
+  assert falling.change
+    == spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,
       flat: 0.0,
       per_level: 0.0,
-    )
+    ))
   assert falling.row
     == LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False)
   // Mind Burst, 19019, starts 57030 as a child, whose row 135954 raises BaseCritChance
@@ -328,14 +333,14 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
     })
   let assert [crit] = proxy.spell.modifiers
   assert crit.effect_id == Spell4EffectsId(135_954)
-  assert crit.modifier
-    == Change(
+  assert crit.change
+    == spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(102),
       mode: 3,
       multiplier: 1.0,
       flat: 0.07999999821186066,
       per_level: 0.0,
-    )
+    ))
   assert crit.row
     == LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False)
 }

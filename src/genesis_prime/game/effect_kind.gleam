@@ -46,6 +46,10 @@
 ////   another while it lasts; the client works out no property, so the server computes
 ////   the amount and sends the value; the server reads the rows aimed at the caster
 ////   (`Spell4Effects.effectType.145`).
+//// - **DisguiseOutfit** (112) changes the look of the unit it aims at for its time; the
+////   client has no class for it, so a look changes only by the server's 0x933 or 0x905
+////   (`Spell4Effects.effectType.112`). No rule reads it: `is_read` and `is_row_read` give
+////   False.
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -116,6 +120,10 @@ pub type Kind {
   /// another (`Spell4Effects.effectType.145`). A row is read when its targetFlags include
   /// the caster (`is_row_read`).
   PropertyConversion
+  /// A DisguiseOutfit effect (112): changes the look of the unit it aims at
+  /// (`Spell4Effects.effectType.112`). No rule reads it: `is_read` and `is_row_read` give
+  /// False for it.
+  DisguiseOutfit
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -140,6 +148,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     18 -> Scale
     81 -> RavelSignal
     145 -> PropertyConversion
+    112 -> DisguiseOutfit
     other -> Unread(effect_type: other)
   }
 }
@@ -166,7 +175,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | PropertyConversion
     | ShieldHeal
     | ShieldOverload -> True
-    Unread(..) -> False
+    DisguiseOutfit | Unread(..) -> False
   }
 }
 
@@ -200,6 +209,6 @@ pub fn is_row_read(
     | CrowdControl
     | Scale
     | RavelSignal -> True
-    Unread(..) -> False
+    DisguiseOutfit | Unread(..) -> False
   }
 }

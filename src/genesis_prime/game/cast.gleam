@@ -216,6 +216,13 @@
 ////   innate passive's, and every one still pending but the passive's; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
+//// - **A go's disguises** (genesis_prime/game/look): each type 112 effect of the phase
+////   that has a life and whose gate against the caster passes is a modifier row whose change is a
+////   `Look`, so it is listed, started, ended, cancelled with the node and ended at death
+////   by the modifiers' rules above, as `CasterChangeStarts` and `PropertyEnds`; the
+////   connection turns them into the player's 0x933 and its viewers' `LookChanged`
+////   (genesis_prime/game/connection/look). The rule keeps no look: two disguises on one
+////   slot, the base and what shows are the look's.
 //// - **A go's shield heals** (`Spell4Effects.effectType.118`): each HealShields effect of the
 ////   phase that reaches the caster (genesis_prime/game/spell_plan `ShieldHeal`) whose gate
 ////   against the caster passes is listed in the caster's target info with a damage
@@ -477,6 +484,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
+import genesis_prime/game/look
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
@@ -606,6 +614,11 @@ pub type CasterChange {
   /// A property modifier (a UnitPropertyModifier or UnitPropertyConversion effect): the
   /// connection applies it to the player's properties (genesis_prime/game/unit_properties `apply`).
   Property(modifier: unit_properties.Modifier)
+  /// A disguise (a DisguiseOutfit effect): the connection starts it on the player's look,
+  /// writes the slots that changed to the player's client and tells its viewers
+  /// (genesis_prime/game/look `start`). It ends with the modifiers' own end,
+  /// `PropertyEnds`.
+  Look(disguise: look.Disguise)
   /// A shield heal (a HealShields effect): the connection raises the player's shield by
   /// `amount`, capped at its maximum (genesis_prime/game/player_life `shield_healed`).
   /// The amount is worked out at the go, the amount the go's 0x7f4 shows.
@@ -637,8 +650,9 @@ pub type Effect {
   /// the entries that changed (genesis_prime/game/unit_properties `apply`), and raises
   /// the shield for a shield heal (genesis_prime/game/player_life `shield_healed`).
   CasterChangeStarts(source: unit_properties.Source, change: CasterChange)
-  /// A property modifier of the caster's spell ends, or is told ended for a source the
-  /// properties may not hold (`unit_properties.remove` changes nothing then).
+  /// A property modifier or disguise of the caster's spell ends, or is told ended for a
+  /// source the properties and the look may not hold (`unit_properties.remove` and
+  /// `look.end` change nothing then).
   PropertyEnds(source: unit_properties.Source)
   /// The caster entered or left stealth, the last effect of the input that moved it:
   /// the connection writes 0x8f5 to the caster's client and tells each viewer
@@ -4925,16 +4939,13 @@ fn modifiers_armed(
         let #(cast, _, start) =
           armed(
             cast:,
-            due: ModifierStart(
-              source:,
-              change: Property(modifier: row.modifier),
-            ),
+            due: ModifierStart(source:, change: caster_change_of(row.change)),
             after_ms: row.row.delay_ms,
           )
         #(cast, [start])
       }
       False -> #(cast, [
-        CasterChangeStarts(source:, change: Property(modifier: row.modifier)),
+        CasterChangeStarts(source:, change: caster_change_of(row.change)),
       ])
     }
     let #(cast, ending) = case row.row.until_removed {
@@ -4951,6 +4962,14 @@ fn modifiers_armed(
     }
     #(cast, list.flatten([effects, cancels, starting, ending]))
   })
+}
+
+/// What a modifier row's change asks of the connection when it starts.
+fn caster_change_of(change: spell_plan.Change) -> CasterChange {
+  case change {
+    spell_plan.PropertyChange(modifier:) -> Property(modifier:)
+    spell_plan.LookChange(disguise:) -> Look(disguise:)
+  }
 }
 
 /// The shield heals a go applies: a heal with no delay lands in this step, after the go's
@@ -5243,6 +5262,7 @@ fn pending_heals_cancelled(
       ModifierStart(source:, change: ShieldHeal(..)) ->
         source.cast_id == cast_id
       ModifierStart(change: Property(..), ..)
+      | ModifierStart(change: Look(..), ..)
       | ModifierEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)

@@ -45,13 +45,13 @@ fn falling_row() -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(67_777),
     phase_flags: 1,
-    modifier: Change(
+    change: spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,
       flat: 0.0,
       per_level: 0.0,
-    ),
+    )),
     row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
     condition: Always,
     tag: spend.always,
