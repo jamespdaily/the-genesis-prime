@@ -88,6 +88,8 @@ effectful_modules = [
   { module = "genesis_prime/connection/registry", reason = "starts OTP's pg scope under the supervision tree, and joins and looks in it for a connection shell" },
   { module = "genesis_prime/wire_recording/recorder", reason = "writes a connection's wire recording to a file, a line after each socket read and write" },
   { module = "genesis_prime/wire_recording/fixture/sql", reason = "the queries squirrel generates, run on pog's pool" },
+  { module = "genesis_prime/sitting", reason = "makes the recording folder and saves the fixture from a database pool of its own, before the server accepts a connection" },
+  { module = "genesis_prime/store/ready_pool", reason = "starts a database pool and waits until it has a connection" },
   { module = "genesis_prime/wire_recording/fixture", reason = "writes the rows a recorded session starts from to a file and runs them on a database" },
   { module = "genesis_prime/step/runtime", reason = "reads the clock and the node's unique numbers and writes log lines for a shell" },
   { module = "genesis_prime/step/watch", reason = "monitors the processes a shell's rule watches, for the service shell and the connection shell" },

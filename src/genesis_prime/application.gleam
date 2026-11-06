@@ -2,7 +2,7 @@
 //// gleam.toml), so the host's SIGTERM stops it through OTP, in order. The
 //// application owns one process, a root supervisor with no child. `main`, which
 //// runs after the application has started and alone holds the settings (the
-//// loaded tables, the dev start's recorders, the environment), starts the
+//// loaded tables, the sitting's recorders, the environment), starts the
 //// server's tree (genesis_prime/server) under the root.
 ////
 //// ```

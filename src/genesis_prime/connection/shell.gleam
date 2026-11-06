@@ -265,7 +265,7 @@ pub type Settings(settings, state, message, answer, request) {
     shutdown_ms: Int,
     /// Where the bytes of each connection's socket reads and writes are
     /// recorded, a line after each (genesis_prime/wire_recording); `None`
-    /// unless the dev start turns recording on.
+    /// unless GENESIS_RECORD_DIR turns recording on (genesis_prime/sitting).
     wire_recorder: Option(WireRecorder),
     /// Hands each connection, once the shell holds its socket, its own script:
     /// its seed, the clock that gives each input its `Now` and the scheduler

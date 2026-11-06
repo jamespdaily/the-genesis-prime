@@ -5,8 +5,7 @@
 
 import genesis_prime
 import genesis_prime/dev_exit
-import gleam/dynamic/decode
-import gleam/erlang/process
+import genesis_prime/store/ready_pool
 import gleam/io
 import gleam/result
 import pog
@@ -23,33 +22,11 @@ pub type Failure {
   TimedOut
 }
 
-/// How many times the query is tried while the pool has no connection yet: it
-/// opens its connections after it starts, and a query made before one is open
-/// is answered as unavailable, without having run. A query that timed out may
-/// have run, so it is never tried again.
-const connection_attempts = 5
-
-/// How long to wait before trying again, in milliseconds.
-const connection_wait_ms = 100
-
 /// Starts the pool and waits until it has a connection, so the first query is
 /// not answered as unavailable: gives the pool.
 pub fn connect() -> Result(pog.Connection, Failure) {
-  case pog.start(genesis_prime.pool()) {
-    Error(_) -> Error(DatabaseDown)
-    Ok(started) -> {
-      use _ <- result.map(attempt(
-        pool: started.data,
-        query: fn(db) {
-          pog.query("select 1")
-          |> pog.returning(decode.at([0], decode.int))
-          |> pog.execute(db)
-        },
-        attempts: connection_attempts,
-      ))
-      started.data
-    }
-  }
+  ready_pool.connect(genesis_prime.pool())
+  |> result.map_error(failure_of_pool)
 }
 
 /// Starts the pool and runs the query on it, giving its rows.
@@ -59,26 +36,15 @@ pub fn run(
   case pog.start(genesis_prime.pool()) {
     Error(_) -> Error(DatabaseDown)
     Ok(started) ->
-      attempt(pool: started.data, query:, attempts: connection_attempts)
+      ready_pool.run(pool: started.data, query:)
+      |> result.map_error(failure_of_pool)
   }
 }
 
-fn attempt(
-  pool pool: pog.Connection,
-  query query: fn(pog.Connection) -> Result(pog.Returned(row), pog.QueryError),
-  attempts attempts: Int,
-) -> Result(List(row), Failure) {
-  case query(pool) {
-    Ok(pog.Returned(rows:, ..)) -> Ok(rows)
-    Error(pog.ConnectionUnavailable) ->
-      case attempts > 1 {
-        True -> {
-          process.sleep(connection_wait_ms)
-          attempt(pool:, query:, attempts: attempts - 1)
-        }
-        False -> Error(DatabaseDown)
-      }
-    Error(error) -> Error(failure_of(error:))
+fn failure_of_pool(failure: ready_pool.Failure) -> Failure {
+  case failure {
+    ready_pool.NotStarted -> DatabaseDown
+    ready_pool.QueryFailed(error:) -> failure_of(error:)
   }
 }
 

@@ -1,7 +1,7 @@
 //// Writes a connection's wire recording (genesis_prime/wire_recording) to a
 //// file, a line for each input the shell takes and each write it makes. A
-//// `WireRecorder` is made only by the dev start; the server's own start has
-//// none, and a connection with none writes nothing.
+//// `WireRecorder` is made only by genesis_prime/sitting, when GENESIS_RECORD_DIR
+//// names a folder; a connection with none writes nothing.
 ////
 //// The shell takes each line's sequence number from `runtime.unique_id` as
 //// the line's event happens (a write's before the socket is given the bytes)
@@ -42,8 +42,8 @@ pub type WriteError {
   WriteError(path: String, reason: String)
 }
 
-/// A recorder that writes one file for each connection into `folder`. The dev
-/// start is its only caller.
+/// A recorder that writes one file for each connection into `folder`.
+/// genesis_prime/sitting is its only caller.
 pub fn new(
   folder folder: String,
   client_build client_build: Int,
