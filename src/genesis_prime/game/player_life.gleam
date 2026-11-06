@@ -24,6 +24,24 @@
 //// the map's Gone(C) ───────────▶ the same as Released(C), and C joins gone
 //// ```
 ////
+//// Health and shield regenerate on two timers this rule asks for as effects, as the
+//// class resource's (genesis_prime/game/class_resource) do. The client predicts
+//// neither (`regen.client`), so each change is a message:
+////
+//// ```
+//// P below its max health, alive, out of combat   ─▶ StartTimer(health_timer, health_tick_ms)
+//// health_timer ─▶ + max(1, floor(max x fraction x multiplier)), capped
+////                ─▶ 0x92f(P, health) to P, 0x937(P, health) to its viewers
+////                below the max still ─▶ StartTimer(health_timer, health_tick_ms)
+//// the first fighter ─▶ CancelTimer(health_timer);  the last release ─▶ StartTimer(health_timer)
+//// a blow that lowers shield or health, P alive    ─▶ CancelTimer(shield_timer) if running,
+////                                                    StartTimer(shield_timer, ShieldRebootTime)
+//// shield_timer ─▶ + max(1, floor(max_shield x ShieldRegenPct)), capped
+////                ─▶ 0x938(P, 20, shield) to P and to its viewers
+////                below the max still ─▶ StartTimer(shield_timer, ShieldTickTime)
+//// death ─▶ both cancelled;  coming back is full: nothing started
+//// ```
+////
 //// Death and coming back, when a strike leaves P at 0:
 ////
 //// ```
@@ -62,6 +80,17 @@
 ////   of each blow (genesis_prime/game/hit).
 //// - **Health** stays in [0, max]. At 0 the answer is `Landed` with the killed bit,
 ////   the creature releases the player, and a later strike is refused `Dead`.
+//// - **Health regenerates** while P is alive, out of combat and below its maximum,
+////   each `health_tick_ms` by `health_fraction` of the maximum times
+////   HealthRegenMultiplier (UnitProperty2 8), at least 1: the client's text says only
+////   "slowly out of combat" (149418), so the fraction and the tick are the server's
+////   choices, two game_number rows (migration 0015), and the multiplier is the
+////   UnitProperty2 default (`UnitProperty2.176`).
+//// - **The shield regenerates** ShieldRebootTime after the last blow that lowered
+////   health or shield (text 531855), then each ShieldTickTime by ShieldRegenPct of
+////   its maximum (text 531859), in or out of combat. ShieldRegenPct and
+////   ShieldRebootTime are the player's shield item's (properties 176 and 178 of its
+////   0x262); ShieldTickTime is UnitProperty2 177's default (`UnitProperty2.176`).
 //// - **The combat flag** has no client timer (`opcode.0x89a`): the server sends it on
 ////   with the first fighter and off with the last.
 //// - **The stream** goes only to fighters: a creature that holds P on its threat list
@@ -121,9 +150,11 @@ import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/message/choose_resurrection
-import genesis_prime/step.{type Address}
+import genesis_prime/step.{type Address, type TimerId, TimerId}
+import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -141,7 +172,36 @@ pub opaque type Life {
     max_shield: Int,
     fighters: Dict(Int, Int),
     state: State,
+    regeneration: Regeneration,
+    health_clock: Clock,
+    shield_clock: Clock,
   )
+}
+
+/// The numbers health and shield regenerate by (`regeneration` builds them).
+pub type Regeneration {
+  Regeneration(
+    /// The share of the maximum health a health tick adds, before the multiplier.
+    health_fraction: Float,
+    /// HealthRegenMultiplier (UnitProperty2 8).
+    health_multiplier: Float,
+    /// The time between health ticks, in milliseconds.
+    health_tick_ms: Int,
+    /// ShieldRegenPct: the share of the maximum shield a shield tick adds.
+    shield_percent: Float,
+    /// ShieldRebootTime: the wait after a blow before the shield regenerates, in
+    /// milliseconds.
+    shield_reboot_ms: Int,
+    /// ShieldTickTime (UnitProperty2 177): the time between shield ticks, in
+    /// milliseconds.
+    shield_tick_ms: Int,
+  )
+}
+
+/// Whether a regeneration timer is running.
+type Clock {
+  Idle
+  Running
 }
 
 /// Whether the player is alive. A dead player's body lies where it fell, which
@@ -206,6 +266,24 @@ pub type Effect {
   /// The player chose the Holocrypt: the connection takes it out of its map and
   /// joins it at the Holocrypt place, whose entry burst follows.
   GoToHolocrypt
+  /// Start a regeneration timer: its firing comes back to `timer_fired`.
+  StartTimer(timer: TimerId, after_ms: Int)
+  /// Cancel a regeneration timer.
+  CancelTimer(timer: TimerId)
+}
+
+/// The timer of the health tick; the class resource's timers are 4 to 7
+/// (genesis_prime/game/class_resource) and the connection's other timers are
+/// below them.
+const health_timer = TimerId(8)
+
+/// The timer of the shield's reboot, then each of its ticks.
+const shield_timer = TimerId(9)
+
+/// Whether the timer is one of this rule's, for the connection to hand it to
+/// `timer_fired`.
+pub fn owns(timer timer: TimerId) -> Bool {
+  timer == health_timer || timer == shield_timer
 }
 
 /// What the player's own client is written about its own unit.
@@ -251,9 +329,40 @@ pub const offered_choices = 3
 /// disabled (`death.window`).
 pub const window_zero = 0
 
-/// A player entering the world at full `health` with a full `shield`, alive and
-/// fighting no one.
-pub fn new(health health: Int, shield shield: Int) -> Life {
+/// The numbers a player regenerates by: the server's two choices from the
+/// game_number rows, UnitProperty2's defaults for HealthRegenMultiplier and
+/// ShieldTickTime from the rating formulas, and ShieldRegenPct and ShieldRebootTime
+/// of the player's shield item (0 and 0 with no shield, which then never
+/// regenerates).
+pub fn regeneration(
+  numbers numbers: GameNumbers,
+  formulas formulas: Formulas,
+  shield shield: Option(item_property.Shield),
+) -> Regeneration {
+  let #(shield_percent, shield_reboot_ms) = case shield {
+    Some(item_property.Shield(regen_percent:, reboot_time_ms:, ..)) -> #(
+      regen_percent,
+      reboot_time_ms,
+    )
+    None -> #(0.0, 0)
+  }
+  Regeneration(
+    health_fraction: numbers.health_regen_fraction,
+    health_multiplier: formulas.player_health_regen_multiplier,
+    health_tick_ms: numbers.health_regen_tick_ms,
+    shield_percent:,
+    shield_reboot_ms:,
+    shield_tick_ms: formulas.player_shield_tick_ms,
+  )
+}
+
+/// A player at full `health` with a full `shield`, alive and fighting no one,
+/// regenerating by `regeneration`.
+pub fn new(
+  health health: Int,
+  shield shield: Int,
+  regeneration regeneration: Regeneration,
+) -> Life {
   Life(
     health:,
     max_health: health,
@@ -261,6 +370,9 @@ pub fn new(health health: Int, shield shield: Int) -> Life {
     max_shield: shield,
     fighters: dict.new(),
     state: Alive,
+    regeneration:,
+    health_clock: Idle,
+    shield_clock: Idle,
   )
 }
 
@@ -269,14 +381,19 @@ pub fn new(health health: Int, shield shield: Int) -> Life {
 /// fighting no one, with a full `shield`. The cap and "nothing saved is full" are
 /// the server's choices: the client holds no saved health (the stat 0 of the
 /// player's 0x262 is the health it shows, `opcode.0x262`), and the health a
-/// player comes back with is the server's choice (`death.server_choices`).
+/// player comes back with is the server's choice (`death.server_choices`). Below
+/// its maximum, out of combat, the player starts regenerating: the effect starts
+/// its health timer.
 pub fn entering(
   saved saved: Option(Int),
   max_health max_health: Int,
   shield shield: Int,
-) -> Life {
+  regeneration regeneration: Regeneration,
+) -> #(Life, List(Effect)) {
   let health = int.min(option.unwrap(saved, or: max_health), max_health)
-  Life(..new(health: max_health, shield:), health:)
+  health_clock_settled(
+    life: Life(..new(health: max_health, shield:, regeneration:), health:),
+  )
 }
 
 /// The health a save keeps: the player's health now, or none while it is dead,
@@ -371,9 +488,10 @@ pub fn struck(
               ToViewers(client_connection.Shield(shield:)),
             ]
           }
-          let #(life, death) = case left {
+          let lowered = shield != life.shield || left != life.health
+          let #(life, after) = case left {
             0 -> died(life: Life(..life, health: left, shield:), place:)
-            _ -> #(Life(..life, health: left, shield:), [])
+            _ -> blow_taken(life: Life(..life, health: left, shield:), lowered:)
           }
           #(
             life,
@@ -393,7 +511,7 @@ pub fn struck(
                   ),
                 ),
               ],
-              death,
+              after,
             ]),
           )
         }
@@ -401,11 +519,24 @@ pub fn struck(
   }
 }
 
+/// A blow left the living player with the health and shield it has now: when it
+/// `lowered` either, the shield's reboot starts again, and the health tick runs or
+/// not as the player's state asks.
+fn blow_taken(life life: Life, lowered lowered: Bool) -> #(Life, List(Effect)) {
+  let #(life, shield_timers) = case lowered {
+    True -> shield_rebooted(life:)
+    False -> #(life, [])
+  }
+  let #(life, health_timers) = health_clock_settled(life:)
+  #(life, list.append(shield_timers, health_timers))
+}
+
 /// The player at 0 dies where its body lies, `place`: it is dead with its ghost
 /// there, it fights no one, and the death's messages go out in the client's order:
 /// 0x88c and 0x89a to it and its viewers, its casts ended, 0x247 type 22, then
 /// for its own client the ghost's 0x262, 0x1b3 and 0x636.
 fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
+  let #(life, cancels) = stopped(life:)
   #(Life(..life, fighters: dict.new(), state: Dead), [
     ToClient(OwnDeathState(dead: True)),
     ToViewers(client_connection.Died),
@@ -417,6 +548,7 @@ fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
     ToClient(GhostCreated(place:)),
     ToClient(OwnResurrectionWindow(dead: True)),
     ToClient(ControlGiven(to: ControlGhost)),
+    ..cancels
   ])
 }
 
@@ -542,9 +674,16 @@ pub fn threatened(
     ]
     False -> []
   }
+  let #(life, timers) =
+    health_clock_settled(
+      life: Life(
+        ..life,
+        fighters: dict.insert(life.fighters, unit_id, creature_life),
+      ),
+    )
   #(
-    Life(..life, fighters: dict.insert(life.fighters, unit_id, creature_life)),
-    list.append(flag, [StreamTo(unit_id:, life: creature_life)]),
+    life,
+    list.flatten([flag, [StreamTo(unit_id:, life: creature_life)], timers]),
   )
 }
 
@@ -559,13 +698,149 @@ pub fn released(
     return: #(life, []),
   )
   let fighters = dict.delete(life.fighters, unit_id)
-  #(Life(..life, fighters:), case dict.is_empty(fighters) {
+  let flag = case dict.is_empty(fighters) {
     True -> [
       ToClient(OwnCombatState(in_combat: False)),
       ToViewers(client_connection.CombatState(in_combat: False)),
     ]
     False -> []
-  })
+  }
+  let #(life, timers) = health_clock_settled(life: Life(..life, fighters:))
+  #(life, list.append(flag, timers))
+}
+
+/// A regeneration timer of the rule fired. A health tick adds its share, capped at
+/// the maximum, and a shield tick likewise; each asks for its next tick while the
+/// player is below its maximum. A timer that fires after its cancel, after the
+/// player died, in combat (health) or at its maximum changes nothing.
+pub fn timer_fired(
+  life life: Life,
+  timer timer: TimerId,
+) -> #(Life, List(Effect)) {
+  case timer == health_timer, timer == shield_timer {
+    True, _ -> health_ticked(life:)
+    False, True -> shield_ticked(life:)
+    False, False -> #(life, [])
+  }
+}
+
+/// The timers to cancel when the player leaves the world: those running.
+pub fn left(life life: Life) -> List(TimerId) {
+  list.flatten([
+    case life.health_clock {
+      Running -> [health_timer]
+      Idle -> []
+    },
+    case life.shield_clock {
+      Running -> [shield_timer]
+      Idle -> []
+    },
+  ])
+}
+
+/// Whether health should be regenerating: the player is alive, out of combat and
+/// below its maximum.
+fn regenerates_health(life life: Life) -> Bool {
+  life.state == Alive
+  && dict.is_empty(life.fighters)
+  && life.health < life.max_health
+}
+
+/// The health clock made to match `regenerates_health`: started when it should
+/// run and does not, cancelled when it runs and should not.
+fn health_clock_settled(life life: Life) -> #(Life, List(Effect)) {
+  case regenerates_health(life:), life.health_clock {
+    True, Idle -> #(Life(..life, health_clock: Running), [
+      StartTimer(
+        timer: health_timer,
+        after_ms: life.regeneration.health_tick_ms,
+      ),
+    ])
+    False, Running -> #(Life(..life, health_clock: Idle), [
+      CancelTimer(timer: health_timer),
+    ])
+    True, Running | False, Idle -> #(life, [])
+  }
+}
+
+/// A health tick: the share added to the health, 0x92f to the player and 0x937 to
+/// its viewers, and the next tick while the player is below its maximum.
+fn health_ticked(life life: Life) -> #(Life, List(Effect)) {
+  use <- bool.guard(when: life.health_clock == Idle, return: #(life, []))
+  let life = Life(..life, health_clock: Idle)
+  use <- bool.guard(when: !regenerates_health(life:), return: #(life, []))
+  let regeneration = life.regeneration
+  let share =
+    int.to_float(life.max_health)
+    *. regeneration.health_fraction
+    *. regeneration.health_multiplier
+    |> float.truncate
+    |> int.max(1)
+  let health = int.min(life.health + share, life.max_health)
+  let #(life, timers) = health_clock_settled(life: Life(..life, health:))
+  #(life, [
+    ToClient(OwnHealth(health:)),
+    ToViewers(client_connection.Health(health:, dead: False)),
+    ..timers
+  ])
+}
+
+/// A blow lowered the health or the shield of a living player: the shield's clock
+/// starts again for ShieldRebootTime from the blow, if the shield is below its
+/// maximum.
+fn shield_rebooted(life life: Life) -> #(Life, List(Effect)) {
+  let cancel = case life.shield_clock {
+    Running -> [CancelTimer(timer: shield_timer)]
+    Idle -> []
+  }
+  case life.shield < life.max_shield {
+    True -> #(
+      Life(..life, shield_clock: Running),
+      list.append(cancel, [
+        StartTimer(
+          timer: shield_timer,
+          after_ms: life.regeneration.shield_reboot_ms,
+        ),
+      ]),
+    )
+    False -> #(Life(..life, shield_clock: Idle), cancel)
+  }
+}
+
+/// A shield tick, the first after the reboot: the share added to the shield, 0x938
+/// of stat 20 to the player and its viewers, and the next tick while the shield is
+/// below its maximum.
+fn shield_ticked(life life: Life) -> #(Life, List(Effect)) {
+  use <- bool.guard(when: life.shield_clock == Idle, return: #(life, []))
+  let life = Life(..life, shield_clock: Idle)
+  use <- bool.guard(
+    when: life.state == Dead || life.shield >= life.max_shield,
+    return: #(life, []),
+  )
+  let regeneration = life.regeneration
+  let share =
+    int.to_float(life.max_shield) *. regeneration.shield_percent
+    |> float.truncate
+    |> int.max(1)
+  let shield = int.min(life.shield + share, life.max_shield)
+  let life = Life(..life, shield:)
+  let #(life, timers) = case shield < life.max_shield {
+    True -> #(Life(..life, shield_clock: Running), [
+      StartTimer(timer: shield_timer, after_ms: regeneration.shield_tick_ms),
+    ])
+    False -> #(life, [])
+  }
+  #(life, [
+    ToClient(OwnShield(shield:)),
+    ToViewers(client_connection.Shield(shield:)),
+    ..timers
+  ])
+}
+
+/// Both clocks stopped, each running one cancelled.
+fn stopped(life life: Life) -> #(Life, List(Effect)) {
+  let cancels = list.map(left(life:), fn(timer) { CancelTimer(timer:) })
+  #(Life(..life, health_clock: Idle, shield_clock: Idle), cancels)
 }
 
 /// The creatures the player's accepted moves are told to, by unit id with their

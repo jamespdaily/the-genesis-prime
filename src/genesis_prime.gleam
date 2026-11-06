@@ -24,6 +24,7 @@ import genesis_prime/connection/registry
 import genesis_prime/connection/script
 import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
+import genesis_prime/content/game_number as content_game_number
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
@@ -536,9 +537,9 @@ fn login() -> server.Login {
 /// opcode.0x117), the game settings from the environment
 /// (genesis_prime/game_settings, which stops the server at start with the
 /// reason when a variable's value is refused), the game tables and each ask
-/// given 5 s, and each playable class's resource the content load put under
-/// `spawns`'s key (genesis_prime/content/class_resource). Recording is off; the
-/// dev start changes it.
+/// given 5 s, and each playable class's resource and the game numbers the content
+/// load put under `spawns`'s key (genesis_prime/content/class_resource,
+/// genesis_prime/content/game_number). Recording is off; the dev start changes it.
 fn game(
   tables tables: store.Tables,
   spawns spawns: store.Key,
@@ -560,6 +561,7 @@ fn game(
       ask_deadline_ms:,
       rate: game_rate(),
       class_resources: content_class_resource.classes(key: spawns),
+      numbers: content_game_number.numbers(key: spawns),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

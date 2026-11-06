@@ -10,7 +10,9 @@
 ////   leash_range ≤ aggro_range                                ─▶ Refusal
 ////   aggro_range ≥ the sight range                            ─▶ Refusal
 ////   aggro_threat ≤ 0, chase_stop_fraction outside (0, 1)     ─▶ Refusal
-////   otherwise ─▶ GameNumbers, read by every map and creature of the run
+////   health_regen_fraction outside (0, 1), health_regen_tick_ms < 1  ─▶ Refusal
+////   otherwise ─▶ GameNumbers, read by every map and creature of the run, and by
+////                a player's connection for its regeneration
 //// ```
 ////
 //// - **The aggro range** lies inside sight, so a creature whose ring a player enters
@@ -23,12 +25,17 @@
 //// - **The chase stop fraction** lies strictly between 0 and 1: at 0 the creature
 ////   stops at the edge of its reach, where the target's first step leaves it, and
 ////   at 1 it runs onto the target's own place.
+//// - **The health regeneration** is the server's choice (text 149418 says only
+////   "slowly out of combat"): its fraction lies strictly between 0 and 1, so a
+////   tick adds part of the maximum and never all of it, and its tick is at least
+////   1 ms, since a tick of 0 would fire again at once (migration 0015).
 //// - **Every refusal is collected**, as the other content tables' are
 ////   (genesis_prime/content); the ranges are checked once every name is there.
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import gleam/dict
 import gleam/float
+import gleam/int
 import gleam/list
 import gleam/result
 
@@ -51,6 +58,11 @@ pub type GameNumbers {
     /// The share of its reach a creature stops short of its target by, so one step
     /// of the target keeps it in reach.
     chase_stop_fraction: Float,
+    /// The share of its maximum health a player regenerates each health tick out
+    /// of combat, before HealthRegenMultiplier.
+    health_regen_fraction: Float,
+    /// The time between a player's health ticks, in milliseconds.
+    health_regen_tick_ms: Int,
   )
 }
 
@@ -60,6 +72,8 @@ const expected = [
   #("leash_range", "units"),
   #("aggro_threat", "threat"),
   #("chase_stop_fraction", "fraction"),
+  #("health_regen_fraction", "fraction"),
+  #("health_regen_tick_ms", "ms"),
 ]
 
 /// The numbers of the rows, or every refusal: a name missing or not known, a unit
@@ -113,6 +127,8 @@ fn ranges_checked(
       leash_range: value("leash_range"),
       aggro_threat: value("aggro_threat"),
       chase_stop_fraction: value("chase_stop_fraction"),
+      health_regen_fraction: value("health_regen_fraction"),
+      health_regen_tick_ms: float.round(value("health_regen_tick_ms")),
     )
   let checks = [
     #(
@@ -144,6 +160,21 @@ fn ranges_checked(
       "a chase stop fraction of "
         <> float.to_string(numbers.chase_stop_fraction)
         <> " is not between 0 and 1",
+    ),
+    #(
+      numbers.health_regen_fraction <=. 0.0
+        || numbers.health_regen_fraction >=. 1.0,
+      "health_regen_fraction",
+      "a health regen fraction of "
+        <> float.to_string(numbers.health_regen_fraction)
+        <> " is not between 0 and 1",
+    ),
+    #(
+      numbers.health_regen_tick_ms < 1,
+      "health_regen_tick_ms",
+      "a health regen tick of "
+        <> int.to_string(numbers.health_regen_tick_ms)
+        <> " ms is not at least 1",
     ),
   ]
   case

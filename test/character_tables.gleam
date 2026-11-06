@@ -591,12 +591,15 @@ fn files_with_looks(
     ),
     planted_table.file(
       unit_property2.schema,
-      list.map([#(102, 0.0), #(104, 0.0), #(127, 1.5)], fn(property) {
-        planted_table.row(unit_property2.schema, [
-          #("ID", Integer(property.0)),
-          #("defaultValue", Float(property.1)),
-        ])
-      }),
+      list.map(
+        [#(8, 1.0), #(102, 0.0), #(104, 0.0), #(127, 1.5), #(177, 500.0)],
+        fn(property) {
+          planted_table.row(unit_property2.schema, [
+            #("ID", Integer(property.0)),
+            #("defaultValue", Float(property.1)),
+          ])
+        },
+      ),
     ),
     planted_table.file(
       xp_per_level.schema,

@@ -27,6 +27,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
@@ -63,6 +64,10 @@ pub type Settings {
     /// (genesis_prime/content/class_resource), which a player entering the world
     /// starts with.
     class_resources: class_resource.Classes,
+    /// The numbers the server chose, from the content load
+    /// (genesis_prime/content/game_number), of which a player entering the world
+    /// reads its health regeneration (genesis_prime/game/player_life).
+    numbers: GameNumbers,
   )
 }
 

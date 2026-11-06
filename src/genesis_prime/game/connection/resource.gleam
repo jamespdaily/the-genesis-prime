@@ -137,7 +137,9 @@ pub fn life_effects(
       | player_life.Answer(..)
       | player_life.StreamTo(..)
       | player_life.EndCasts
-      | player_life.GoToHolocrypt -> so_far
+      | player_life.GoToHolocrypt
+      | player_life.StartTimer(..)
+      | player_life.CancelTimer(..) -> so_far
     }
   })
 }

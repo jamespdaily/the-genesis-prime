@@ -128,6 +128,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       ask_deadline_ms: 5000,
       rate: support.roomy(),
       class_resources: class_resource_support.classes(),
+      numbers: spawn_support.numbers,
     ),
     wire_recorder: None,
     scripts: script.operating_system,

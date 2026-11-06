@@ -82,6 +82,7 @@ pub fn settings() -> game_connection.Settings {
     ask_deadline_ms: 4000,
     rate: support.roomy(),
     class_resources: class_resource_support.classes(),
+    numbers: spawn_support.numbers,
   )
 }
 

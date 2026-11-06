@@ -75,6 +75,7 @@ import genesis_prime/game/connection/state.{
   ToCharacterSelect, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/movement
+import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
@@ -450,6 +451,8 @@ pub fn entry_answered(
           realm_id: session.settings.realm_id,
           next_whisper: session.next_whisper,
           classes: session.settings.class_resources,
+          numbers: session.settings.numbers,
+          formulas: rating.formulas(tables: session.settings.tables),
         )
       {
         Ok(world_entry.InTheWorld(entered:, effects:)) ->
