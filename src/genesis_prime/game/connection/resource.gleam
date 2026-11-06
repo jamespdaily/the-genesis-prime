@@ -140,6 +140,7 @@ pub fn life_effects(
       | player_life.CombatLeft
       | player_life.EndCasts
       | player_life.GoToHolocrypt
+      | player_life.TellMap(..)
       | player_life.StartTimer(..)
       | player_life.CancelTimer(..) -> so_far
     }

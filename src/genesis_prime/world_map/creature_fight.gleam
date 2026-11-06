@@ -40,6 +40,30 @@
 ////                                                         is aggroed as by Approached
 //// ```
 ////
+//// A player's death, and what the creature does with it (the player's side is
+//// genesis_prime/game/player_life; the map's is genesis_prime/world_map/map `LifeChanged`):
+////
+//// ```
+//// C strikes P; the hit leaves P at 0
+//// P's connection                map                          creature C                      C's viewers
+//// Answer(Landed, killed) ───────────────────────────────────▶ P out of near; the entry is
+////                                                            released (below)
+//// TellLifeChanged(False) ─LifeChanged(P, False)─▶ P Dead; `inside` emptied
+////                          ─PlayerDied(P)─▶ C, and each Live spawn P sees
+////                                                         P not near, not on the list: nothing
+//// C2 fighting P too, takes PlayerDied(P):
+////                                                         P out of near; P's entry erased:
+////                                                         ─0x90a(C2, P, 0)─────────────────────▶
+////                                                         another entry: 0x908 names it, Released
+////                                                         to P; the next attack tick strikes it
+////                                                         P the only entry: the leash, as
+////                                                         for a release; at home no one is aggroed
+//// C Resting or Returning, P near, takes PlayerDied(P):
+////                                                         P out of near: the home timer and the
+////                                                         corpse timer aggro no one for P
+//// P wakes in C's ring: LifeChanged(P, True) ─Approached(P, ..)─▶ C Resting: aggro, as a walk-in
+//// ```
+////
 //// - **Aggro** comes only from a viewer, by `Approached` while Resting: the map
 ////   sends it for a hostile creature (faction level 0 to 2) only. A Neutral creature
 ////   (3 to 7) enters a fight only by a player's strike (`0x1403ad540`). Any threat
@@ -50,6 +74,12 @@
 ////   respawn, which aggro the players in `near`, do not aggro a stealthed one, and a
 ////   creature already fighting it keeps it on its threat list, since `Withdrew`
 ////   touches only `near`.
+//// - **A dead player is not aggroed** (server choice: the client holds no creature rule,
+////   and a dead unit is struck by nothing, `Spell4ValidTargets.targetBitmask`). The map
+////   leaves a dead player out of every ring and sends `PlayerDied` to each creature the
+////   player sees (genesis_prime/world_map/map `LifeChanged`); the creature drops the
+////   player from `near` and from its threat list. A player that wakes inside the ring is
+////   sent `Approached` as a walk-in or a stealth exit is, so it is aggroed.
 //// - **Threat** added by a strike is the damage taken times the effect's
 ////   `Spell4Effects.threatMultiplier`. The top entry is the target: a change of target
 ////   sends 0x908, and every other entry 0x90a (`opcode.0x908`, `opcode.0x90a`).
@@ -93,7 +123,11 @@
 //// - **Every timer carries a generation**: a tick of a fight that ended, a deadline
 ////   of a round that closed or a home timer of an earlier walk does nothing when it
 ////   fires, though it waited in the mailbox when it was cancelled.
-//// - **A player at 0** answers `Landed` with the killed bit; the creature releases it.
+//// - **A player at 0** answers `Landed` with the killed bit, or `Refused(Dead)` to a strike
+////   that finds it dead; the creature releases it and also drops it from `near`, so its home
+////   timer, which can fire 0 ms after a kill at its spawn, does not aggro the body before the
+////   map's `PlayerDied` arrives. `PlayerDied` does the same for a creature whose strike did not
+////   kill it, and for one that holds the player only in `near` or on its list.
 //// - **While the creature is controlled** (a stun or a knockdown held,
 ////   genesis_prime/world_map/creature_control) it starts no strike, chase or walk
 ////   home, and a path it runs stops where it stands, as at a death. Its attack tick
@@ -113,6 +147,12 @@
 //// | C is told `Retire` while Returning | it stops; the map's sweep sends it only with no viewer, so no one is on its threat list | `over_random_sights_rings_strikes_and_ticks_the_threat_list_stays_within_the_viewers_test` |
 //// | a timer of a round that closed, or of a fight that ended, fires | it is of an old generation and does nothing | `a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test` |
 //// | C dies while it runs | it rests where it fell, and a viewer that arrives before its respawn is shown it there | `a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_it_where_it_fell_test` |
+//// | P dies and C's killing answer and the map's `PlayerDied` both reach C | two senders, either order: the first drops P from `near` and the threat list, the second finds nothing | `a_creature_told_player_died_for_its_target_erases_its_entry_names_the_next_and_never_strikes_the_body_test`, `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
+//// | P died and C's home timer or corpse timer fires before `PlayerDied` reaches C | C aggroes the body; P drops `Threatened`, C's first strike is refused `Dead`, and C releases P and drops it from `near`: at most one swing, in the window of one map hop | `a_creature_that_kills_its_only_target_in_its_ring_does_not_aggro_the_body_at_its_home_timer_test`, `a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_home_timer_nor_when_its_corpse_timer_stands_it_test` |
+//// | a strike P sent before it died reaches C after `PlayerDied` | `StruckBy` adds P to the threat list; C's first strike is refused `Dead` and releases it |  |
+//// | `PlayerDied` for a player on neither `near` nor the threat list (its `Unwatched` came first, or the killing answer dropped it) | nothing | `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
+//// | C is Returning, or dead, when `PlayerDied` reaches it | Returning: P out of `near`, nothing sent; dead: the send is dropped, and the map's `inside` holds no dead player for C's next start | `a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_nor_by_the_corpse_timer_and_one_approached_again_is_test` |
+//// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; the answer is taken only before the strike deadline (`strike_tell.deadline_ms`, 1000 ms), so the gap is a Wake Here chosen within that second of the death |  |
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
 
 import genesis_prime/client_connection.{type News}
@@ -218,6 +258,8 @@ pub type Input {
   Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int, stay: Stay)
   /// The map: the player of `by` left the creature's ring.
   Withdrew(by: ConnectionId)
+  /// The map: the player of `by` died. It leaves `near` and the threat list.
+  PlayerDied(by: ConnectionId)
   /// The player of `by`, on the threat list, in its stay `stay`, moved to `place`
   /// of move `seq`.
   TargetMoved(by: ConnectionId, place: Place, seq: Int, stay: Stay)
@@ -316,6 +358,7 @@ pub fn step(
       }
     }
     Withdrew(by:) -> #(State(..state, near: set.delete(state.near, by)), [])
+    PlayerDied(by:) -> fell(state:, fighter:, by:, now_ms:)
     TargetMoved(by:, place:, seq:, stay:) -> {
       use <- bool.guard(
         when: !in_stay(viewers:, by:, stay:),
@@ -340,7 +383,7 @@ pub fn step(
         True -> threatened_by(state:, fighter:, by:, stay:, threat:, now_ms:)
       }
     }
-    Unwatched(by:) -> unwatched(state:, fighter:, by:, now_ms:)
+    Unwatched(by:) -> fell(state:, fighter:, by:, now_ms:)
     StrikeAnswered(answered:) ->
       answered_strike(state:, fighter:, answered:, now_ms:)
     TimerFired(timer: AttackTick(generation:)) ->
@@ -711,24 +754,22 @@ fn top_of(entries: Dict(ConnectionId, Threat)) -> #(ConnectionId, Threat) {
   top
 }
 
-/// A viewer that no longer sees the creature leaves the near players and the threat
-/// list, and is told `Released`; the last one leashes the creature, and a new top
-/// entry is named its target.
-fn unwatched(
+/// A player that is no longer a foe of the creature leaves the near players and the
+/// threat list, and is told `Released`: a viewer that no longer sees the creature
+/// (`Unwatched`), or a player that died (`PlayerDied`). The last one leashes the
+/// creature, and a new top entry is named its target.
+fn fell(
   state state: State,
   fighter fighter: Fighter,
   by by: ConnectionId,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let state = State(..state, near: set.delete(state.near, by))
-  case state.status {
-    Fighting(threat: entries, ..) ->
-      case dict.has_key(entries, by) {
-        False -> #(state, [])
-        True -> released(state:, fighter:, by:, now_ms:)
-      }
-    Resting | Returning(..) -> #(state, [])
-  }
+  released(
+    state: State(..state, near: set.delete(state.near, by)),
+    fighter:,
+    by:,
+    now_ms:,
+  )
 }
 
 /// The player of `by` leaves the threat list and is told `Released`: with no one
@@ -903,7 +944,8 @@ fn strikes(
 }
 
 /// The target's answer to the open round: its go names what landed, and a target
-/// the strike killed, or found dead, is released.
+/// the strike killed, or found dead, is released and leaves the near players, so the
+/// creature's home timer or corpse timer does not aggro the body.
 fn answered_strike(
   state state: State,
   fighter fighter: Fighter,
@@ -912,29 +954,39 @@ fn answered_strike(
 ) -> #(State, List(Effect)) {
   case state.status {
     Fighting(round: Some(round), ..) if round.key == answered.key -> {
-      let unit_id = answered.key.unit_id
-      let #(struck, ends_target) = case answered.outcome {
-        strike_tell.Landed(descriptions:, ..) -> #(
-          [cast.Hit(unit_id:, descriptions:, controls: [])],
-          list.any(descriptions, fn(description) {
-            description.damage.killed == 1
-          }),
-        )
-        strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False)
-        strike_tell.Refused(..) -> #([], True)
-      }
+      let #(struck, ends_target, target_dead) = answer_of(answered:)
       let #(state, closed) = round_closed(state:, round:, struck:, now_ms:)
       let cancel = CancelTimer(timer: StrikeDeadline(round.deadline))
-      case ends_target {
-        False -> #(state, [cancel, ..closed])
-        True -> {
-          let #(state, released) =
-            released(state:, fighter:, by: round.target, now_ms:)
-          #(state, list.flatten([[cancel], closed, released]))
-        }
+      use <- bool.guard(
+        when: !ends_target,
+        return: #(state, [cancel, ..closed]),
+      )
+      let #(state, released) = case target_dead {
+        True -> fell(state:, fighter:, by: round.target, now_ms:)
+        False -> released(state:, fighter:, by: round.target, now_ms:)
       }
+      #(state, list.flatten([[cancel], closed, released]))
     }
     Fighting(..) | Resting | Returning(..) -> #(state, [])
+  }
+}
+
+/// What the target's answer was: what struck for the round's go, whether the entry
+/// ends (a kill or a refusal), and whether the target is dead (a kill or a `Dead`
+/// refusal).
+fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
+  let unit_id = answered.key.unit_id
+  case answered.outcome {
+    strike_tell.Landed(descriptions:, ..) -> {
+      let killed =
+        list.any(descriptions, fn(description) {
+          description.damage.killed == 1
+        })
+      #([cast.Hit(unit_id:, descriptions:, controls: [])], killed, killed)
+    }
+    strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
+    strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
+    strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
   }
 }
 

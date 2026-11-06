@@ -93,6 +93,7 @@ fn join_for(
         character: map_support.character(100 + connection),
         place:,
         stay: map_support.stay(count: stay),
+        alive: True,
       ),
     )),
   )
@@ -167,7 +168,8 @@ fn notices(
       | map.Unwatched(..)
       | map.Retire
       | map.Approached(..)
-      | map.Withdrew(..) -> Error(Nil)
+      | map.Withdrew(..)
+      | map.PlayerDied(..) -> Error(Nil)
     }
   })
 }

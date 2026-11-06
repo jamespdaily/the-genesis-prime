@@ -984,6 +984,17 @@ pub fn a_creature_fighting_a_player_told_withdrew_for_it_keeps_it_on_its_threat_
 
 pub fn a_near_player_told_withdrew_is_not_aggroed_at_the_home_timer_nor_when_the_corpse_stands_the_creature_again_and_one_approached_again_is_test() -> Nil {
   use <- owned_test.run(5000)
+  near_player_is_not_aggroed_and_one_approached_again_is(
+    gone: creature.Withdrew(by: ConnectionId(5)),
+  )
+}
+
+/// Player 5 comes near a creature and `gone` tells the creature it is not near any more:
+/// neither the home timer nor the corpse timer aggroes it, and an `Approached` after
+/// `gone` does.
+fn near_player_is_not_aggroed_and_one_approached_again_is(
+  gone gone: creature.Message,
+) -> Nil {
   // Home timer: player 2 fights the creature and runs out of the ring until it
   // leashes; player 5 comes near while it walks home.
   let leashed = fn() {
@@ -1007,13 +1018,10 @@ pub fn a_near_player_told_withdrew_is_not_aggroed_at_the_home_timer_nor_when_the
   let #(state, home) = leashed()
   let #(state, _) =
     tell(state:, at_ms: 7000, message: approached(number: 5, x: 3.0, seq: 1))
-  let #(withdrawn, _) =
-    tell(state:, at_ms: 7100, message: creature.Withdrew(by: ConnectionId(5)))
+  let #(withdrawn, _) = tell(state:, at_ms: 7100, message: gone)
   let #(_, at_home) = fire(state: withdrawn, at_ms: 11_500, timer: home)
-  assert !list.any(said(at_home), fn(line) {
-    string.starts_with(line, "0x908") || string.starts_with(line, "Threatened")
-  })
-    as "home: player 5 was told Withdrew, so it is in no ring and is not aggroed"
+  assert !aggroes(at_home)
+    as "home: player 5 was told it is gone, so it is in no ring and is not aggroed"
   let #(again, _) =
     tell(
       state: withdrawn,
@@ -1042,13 +1050,10 @@ pub fn a_near_player_told_withdrew_is_not_aggroed_at_the_home_timer_nor_when_the
     tell(state:, at_ms: 2000, message: creature.Withdrew(by: ConnectionId(2)))
   let #(state, _) =
     tell(state:, at_ms: 3000, message: approached(number: 5, x: 3.0, seq: 1))
-  let #(withdrawn, _) =
-    tell(state:, at_ms: 3100, message: creature.Withdrew(by: ConnectionId(5)))
+  let #(withdrawn, _) = tell(state:, at_ms: 3100, message: gone)
   let #(_, stood) = fire(state: withdrawn, at_ms: 61_000, timer: corpse)
-  assert !list.any(said(stood), fn(line) {
-    string.starts_with(line, "0x908") || string.starts_with(line, "Threatened")
-  })
-    as "corpse timer: players 2 and 5 were told Withdrew, so the creature stands again and aggroes no one"
+  assert !aggroes(stood)
+    as "corpse timer: players 2 and 5 were told they are gone, so the creature stands again and aggroes no one"
   let #(again, _) =
     tell(
       state: withdrawn,
@@ -1058,6 +1063,125 @@ pub fn a_near_player_told_withdrew_is_not_aggroed_at_the_home_timer_nor_when_the
   let #(_, stood) = fire(state: again, at_ms: 61_000, timer: corpse)
   assert list.contains(said(stood), "0x908(50, 1) to 5")
     as "approached again before the corpse timer, it is aggroed"
+}
+
+// A player's death (issue 496): the killing answer, the refusal and the map's
+// `PlayerDied` each take the player out of the creature's `near` and its threat
+// list, so no timer aggroes the body. Evidence: `Spell4ValidTargets.targetBitmask`
+// (a dead unit is struck by nothing); the rest is the server's choice (the Design of
+// issue 496, section 2); a threat of 0 erases an entry (`opcode.0x90a`).
+
+pub fn a_creature_that_kills_its_only_target_in_its_ring_does_not_aggro_the_body_at_its_home_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, key) = struck_once()
+  let #(state, answered) =
+    tell(state:, at_ms: 1600, message: killing_answer(key:))
+  let #(_, at_home) = fire(state:, at_ms: 1600, timer: timer_for(answered, 0))
+  assert !aggroes(at_home)
+    as "the creature stands at its spawn: its home timer fires at once, and the body is in no one's ring"
+}
+
+pub fn a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_home_timer_nor_when_its_corpse_timer_stands_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, key) = struck_once_among(viewers: [2, 5])
+  let refused =
+    creature.StrikeAnswered(answered: Answered(
+      key:,
+      outcome: Refused(why: strike_tell.Dead),
+    ))
+  let #(state, answered) = tell(state:, at_ms: 1600, message: refused)
+  let #(state, at_home) =
+    fire(state:, at_ms: 1600, timer: timer_for(answered, 0))
+  assert !aggroes(at_home) as "home timer: the refusing player is not aggroed"
+  // Player 5 kills the creature; its corpse timer stands it again.
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 60, 1.0)]),
+    )
+  let #(_, stood) =
+    fire(state:, at_ms: 62_000, timer: timer_for(killed, 60_000))
+  assert !aggroes(stood)
+    as "corpse timer: the creature stands again and aggroes no one for player 2"
+}
+
+pub fn a_creature_told_player_died_for_its_target_erases_its_entry_names_the_next_and_never_strikes_the_body_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 3, 1.0)]),
+    )
+  // Player 5 (threat 3) is the target, player 2 (threat 1) the other entry.
+  let #(state, died) =
+    tell(state:, at_ms: 200, message: creature.PlayerDied(by: ConnectionId(5)))
+  assert said(died)
+    == [
+      "0x90a(50, 0) to 2",
+      "0x90a(50, 0) to 5",
+      "0x908(20, 1) to 2",
+      "0x908(20, 1) to 5",
+      "Released(7) to 5",
+    ]
+    as "opcode.0x90a: a threat of 0 erases the body's entry; opcode.0x908 names player 2; the body is told Released"
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let assert [#(struck, Attacks(tell: Strike(key:, ..)))] = fights_told(ticked)
+    as "the tick strikes one player"
+  assert struck == 2 && key.unit_id == unit_of(2)
+    as "the strike goes to player 2's connection and names its unit, never the body's"
+}
+
+pub fn a_creature_told_player_died_for_its_only_entry_leashes_and_at_home_aggroes_no_one_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, died) =
+    tell(state:, at_ms: 100, message: creature.PlayerDied(by: ConnectionId(2)))
+  assert said(died)
+    == [
+      "0x90a(20, 0) to 2",
+      "0x89a(0) to 2",
+      "0x937(52) to 2",
+      "Released(7) to 2",
+    ]
+    as "the leash of a creature standing at its spawn: the entry erased, out of combat, full health (52), no path, the body told Released"
+  let #(_, at_home) = fire(state:, at_ms: 100, timer: timer_for(died, 0))
+  assert said(at_home) == []
+    as "at home nothing is aggroed: the body is not near"
+}
+
+pub fn a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_nor_by_the_corpse_timer_and_one_approached_again_is_test() -> Nil {
+  use <- owned_test.run(5000)
+  near_player_is_not_aggroed_and_one_approached_again_is(
+    gone: creature.PlayerDied(by: ConnectionId(5)),
+  )
+}
+
+pub fn player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state = beast(viewers: [2])
+  let #(unchanged, told) =
+    tell(state:, at_ms: 100, message: creature.PlayerDied(by: ConnectionId(2)))
+  assert support.effects_of(told) == [] && unchanged == state
+    as "player 2 was never near: no effects, state unchanged"
+  let #(state, key) = struck_once()
+  let #(state, _) = tell(state:, at_ms: 1600, message: killing_answer(key:))
+  let #(after, told) =
+    tell(state:, at_ms: 1700, message: creature.PlayerDied(by: ConnectionId(2)))
+  assert support.effects_of(told) == [] && after == state
+    as "the killing answer already released player 2 and dropped it from near: the map's PlayerDied finds nothing"
 }
 
 // Test 13: Unwatched and death.
@@ -1394,9 +1518,14 @@ pub fn dropping_a_secondary_entry_erases_it_and_dropping_the_top_one_erases_it_a
 /// The creature's strike on player 2, standing in reach, at the first tick: the
 /// state and the strike's key.
 fn struck_once() -> #(State, strike_tell.Key) {
+  struck_once_among(viewers: [2])
+}
+
+/// The same for a creature these viewers see; player 2 is the one it aggroes.
+fn struck_once_among(viewers viewers: List(Int)) -> #(State, strike_tell.Key) {
   let #(state, aggro) =
     tell(
-      state: beast(viewers: [2]),
+      state: beast(viewers:),
       at_ms: 0,
       message: approached(number: 2, x: 5.0, seq: 1),
     )
@@ -1406,9 +1535,8 @@ fn struck_once() -> #(State, strike_tell.Key) {
   #(state, key)
 }
 
-pub fn a_target_the_strike_killed_is_released_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, key) = struck_once()
+/// The player's answer to the strike of `key`: `Landed` with the killed bit set.
+fn killing_answer(key key: strike_tell.Key) -> creature.Message {
   let killing =
     SpellDamageDescription(
       raw_damage: 12,
@@ -1423,24 +1551,33 @@ pub fn a_target_the_strike_killed_is_released_test() -> Nil {
       damage_type: damage_type.Physical,
       hits: [],
     )
-  let #(_, answered) =
-    tell(
-      state:,
-      at_ms: 1600,
-      message: creature.StrikeAnswered(answered: Answered(
-        key:,
-        outcome: Landed(
-          descriptions: [
-            hit.Description(
-              spell4_effects_id: 184_741,
-              delay_ms: 0,
-              damage: killing,
-            ),
-          ],
-          controls: [],
+  creature.StrikeAnswered(answered: Answered(
+    key:,
+    outcome: Landed(
+      descriptions: [
+        hit.Description(
+          spell4_effects_id: 184_741,
+          delay_ms: 0,
+          damage: killing,
         ),
-      )),
-    )
+      ],
+      controls: [],
+    ),
+  ))
+}
+
+/// Whether the step aggroes a player: it names a target (0x908) or tells a player
+/// `Threatened`.
+fn aggroes(taken: ServiceStep(creature.Outgoing)) -> Bool {
+  list.any(said(taken), fn(line) {
+    string.starts_with(line, "0x908") || string.starts_with(line, "Threatened")
+  })
+}
+
+pub fn a_target_the_strike_killed_is_released_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, key) = struck_once()
+  let #(_, answered) = tell(state:, at_ms: 1600, message: killing_answer(key:))
   assert list.contains(said(answered), "Released(7) to 2")
     as "the player's answer is Landed with the killed bit: the creature releases it"
 }
