@@ -37,15 +37,15 @@
 ////   the caster whose trigger is one of the holder's own events
 ////   (`Spell4Effects.effectType.14`).
 //// - **InterruptArmor** (52) adds Interrupt Armor to the unit it lands on for its time; the
+////   client has no case for it, so the server raises the player's maximum (property 44)
+////   and armor (stat 21) itself and reads the rows aimed at the caster
+////   (`Spell4Effects.effectType.52`).
+//// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
 //// Reading a row's columns stays with each rule; this decode looks at the type
 //// only, and `is_row_read` adds the aim for the types a rule reads for some aims.
 
-///   client has no case for it, so the server raises the player's maximum (property 44) and
-///   armor (stat 21) itself and reads the rows aimed at the caster
-///   (`Spell4Effects.effectType.52`).
-/// - **Unread** is any other type: the client's data holds it and no rule of the
 import gleam/int
 
 /// What a rule reads an effect as.

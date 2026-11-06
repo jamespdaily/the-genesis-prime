@@ -858,14 +858,13 @@ pub fn a_creatures_strike_leaves_a_players_interrupt_armor_test() -> Nil {
       source:,
       modifier: unit_properties.interrupt_armor_modifier(points: 1),
     )
-  let #(life, _) =
+  let #(armed, _) =
     player_life.properties_changed(
       life: player_life.new(health: 100, shield: 0, regeneration:),
       properties: raised,
     )
-  let #(armed, _) =
-    player_life.armor_given(life:, source:, points: 1, takes_back: False)
   assert player_life.interrupt_armor(life: armed) == 1
+    as "the armor follows the raised maximum"
   let #(life, effects) =
     player_life.struck(
       life: armed,

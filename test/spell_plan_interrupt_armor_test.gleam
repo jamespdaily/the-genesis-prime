@@ -18,9 +18,9 @@
 //// - `opcode.0x7f4.effect_time`: a row whose Spell4Effects flags have bit 2 never ends;
 ////   8 rows of type 52 hold it (`table_rows -- Spell4Effects 210961`: flags 2).
 //// - `Spell4Effects.targetFlags`: bit 1 the caster, 2 the primary target, 4 the area. The
-////   target of every cast is the caster, so a flags-2 row of a spell cast on the caster
-////   reaches the caster; a child a Proxy starts on each struck unit has that unit as its
-////   primary target.
+////   server's present simplification is that the primary target of a cast on the caster
+////   is the caster, so a flags-2 row of such a spell reaches the caster; a child a Proxy
+////   starts on each struck unit has that unit as its primary target.
 //// The rows are in memory except in the last test, which reads the client's tables.
 
 import client_tables
@@ -223,6 +223,34 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_each_str
     as "a row that includes the caster reaches the caster, whichever unit the child is cast on"
 }
 
+pub fn a_planted_area_proxys_child_holding_an_interrupt_armor_row_on_its_primary_target_fails_the_plan_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The planted Telekinetic Strike (32893) holds Proxy 62204, aimed at the area (targetFlags
+  // 4), which starts 30900 on each unit it strikes (`spell_tables`).
+  assert plan_error(
+      row: armor_row(id: 99_054, target_flags: 2, columns: [
+        #("spellId", Integer(30_900)),
+        #("dataBits00", Integer(1)),
+        #("durationTime", Integer(5000)),
+      ]),
+    )
+    == spell_plan.InterruptArmorOnStruckUnit(
+      spell4_id: strike,
+      proxy_effect_id: 62_204,
+      effect_id: 99_054,
+    )
+    as "the child's primary target is a struck unit, so the load fails, naming the Proxy and the row"
+  assert modifiers_of(
+      row: armor_row(id: 99_055, target_flags: 3, columns: [
+        #("spellId", Integer(30_900)),
+        #("dataBits00", Integer(1)),
+        #("durationTime", Integer(5000)),
+      ]),
+    )
+    == []
+    as "a row that includes the caster loads: the strike's own spell holds no armor row"
+}
+
 pub fn an_interrupt_armor_row_aimed_only_at_struck_units_is_left_out_test() -> Nil {
   use <- owned_test.run(60_000)
   // Row 105619 has targetFlags 4: the creature side's.
@@ -358,6 +386,16 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
     as "Spell4Effects spellId=46867: Proxy 210822 starts 79875"
   let assert GatedOnCaster(gates: [_]) = gated.condition
     as "Proxy 210822 has prerequisiteIdCasterApply 37438"
+  let rows = spell4_effects.all(client_tables.shared())
+  let struck_children = spell_plan.struck_unit_children(effects: rows)
+  let type_52 = list.filter(rows, fn(row) { row.effect_type == 52 })
+  assert list.length(type_52) == 38
+    as "`table_rows -- Spell4Effects effectType=52`: 38 rows"
+  assert list.count(type_52, fn(row) {
+      spell_plan.effect_row_read(effect: row, struck_children:)
+    })
+    == 36
+    as "36 are read; row 105619 (targetFlags 4) is not, and neither is row 100384 (targetFlags 2) of Spell4 43457, which Proxy 99382 (targetFlags 4) starts on each struck unit"
   Nil
 }
 

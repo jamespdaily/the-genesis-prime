@@ -43,7 +43,11 @@
 //// - **An Interrupt Armor row is a modifier of property 44** (InterruptArmor_Threshold),
 ////   x * 1.0 + its points, built by `interrupt_armor_modifier`: the client clamps the armor
 ////   to this property, whose default for a player is 0.0, so the armor shows only while the
-////   property is raised (`Spell4Effects.effectType.52`, `opcode.0x938.interrupt_armor`).
+////   property is raised, and the player's armor follows it
+////   (`Spell4Effects.effectType.52`, `opcode.0x938.interrupt_armor`). A modifier applied
+////   to a maximum of -1 (infinite) gives a finite number: a player's base is the default
+////   0.0, and a row that sets -1 (Unstoppable Force) is not kept infinite under a later
+////   change; that is a gap.
 ////
 //// What happens at each failure point:
 ////

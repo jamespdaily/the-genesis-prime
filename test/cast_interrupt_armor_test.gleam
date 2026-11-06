@@ -1,5 +1,6 @@
-//// The cast rule's Interrupt Armor (`genesis_prime/game/cast` `CasterChange.Armor`,
-//// `CasterChangeStarts`, `PropertyEnds`). Expected values come from these places:
+//// The cast rule's Interrupt Armor rows (`genesis_prime/game/cast` `CasterChangeStarts`,
+//// `PropertyEnds`): a row is a change of property 44, whose armor the player's armor
+//// follows (`player_life_interrupt_armor_test`). Expected values come from these places:
 //// - `Spell4Effects.effectType.52`: a type 52 row adds dataBits00 points of Interrupt
 ////   Armor to the unit it lands on for durationTime; Esper's row 199192 of Spell4 76766
 ////   is +1 for 5000 ms with dataBits01 0 (the armor is kept at the end), and row 210820
@@ -112,13 +113,14 @@ fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
   Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
 }
 
-/// The armors the effects start, with their sources.
-fn starts(effects effects: List(Effect)) -> List(#(Source, cast.CasterChange)) {
+/// The property changes the effects start, with their sources: the armor rows are changes
+/// of property 44, which the player's armor follows.
+fn starts(effects effects: List(Effect)) -> List(#(Source, Modifier)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.CasterChangeStarts(source:, change: cast.Armor(..) as change) ->
-        Ok(#(source, change))
-      cast.CasterChangeStarts(..)
+      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
+        Ok(#(source, modifier))
+      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
       | cast.PropertyEnds(..)
       | cast.Send(..)
       | cast.Tell(..)
@@ -204,9 +206,8 @@ pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_d
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = source_of(cast_id: id, effect_id: 199_192)
-  assert starts(effects:)
-    == [#(source, cast.Armor(points: 1, takes_back: False))]
-    as "row 199192: +1, dataBits01 0, in the go's own step"
+  assert starts(effects:) == [#(source, raising(points: 1.0))]
+    as "row 199192: x 1.0 + 1 on property 44, in the go's own step"
   assert support.property_ends(effects:) == []
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   assert timeline(fired:) == [#(6000, "end", source)]
@@ -236,9 +237,9 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
     as "one start timer, and no end timer or node end for a row that never ends"
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   assert timeline(fired:) == [#(151_000, "start", source)]
-    as "it starts at go + 150000 as Armor(1, taken back) and never ends"
+    as "it starts at go + 150000 and never ends"
   assert list.flat_map(fired, fn(step) { starts(effects: step.1) })
-    == [#(source, cast.Armor(points: 1, takes_back: True))]
+    == [#(source, raising(points: 1.0))]
 }
 
 // ---- a removal, a persistence, a death and a later go ----

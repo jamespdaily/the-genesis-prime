@@ -119,8 +119,7 @@ fn change_of(effect effect: Effect) -> Result(Change, Nil) {
   case effect {
     cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
       Ok(Started(source:, modifier:))
-    cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-    | cast.CasterChangeStarts(change: cast.Armor(..), ..) -> Error(Nil)
+    cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..) -> Error(Nil)
     cast.PropertyEnds(source:) -> Ok(Ended(source:))
     cast.Send(..)
     | cast.Tell(..)

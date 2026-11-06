@@ -43,12 +43,9 @@
 //// death ─▶ both cancelled;  coming back is full: nothing started
 //// a heal of the shield (genesis_prime/game/cast `ShieldHeal`) ─▶ + amount, capped
 ////                ─▶ 0x938(P, 20, shield) to P and to its viewers; the clocks as they were
-//// an Interrupt Armor row (genesis_prime/game/cast `Armor`) ─▶ the connection raises property 44
-////                first, then armor + points, capped at property 44's value (-1: no cap)
-////                ─▶ 0x938(P, 21, armor) to P and to its viewers
-//// the row's end ─▶ armor - points when the row takes them back, then capped at the new
-////                maximum, told before the maximum falls; a property change that lowers the
-////                maximum caps the armor too
+//// property 44 (InterruptArmor_Threshold) rises or falls (a type 11 or a type 52 row)
+////                ─▶ the armor follows it: 0x938(P, 21, armor) to P and to its viewers,
+////                after the 0x93a that raised the maximum and before the one that lowers it
 //// ```
 ////
 //// Death and coming back, when a strike leaves P at 0:
@@ -95,11 +92,17 @@
 ////   up to ShieldMitigationMax of each blow (genesis_prime/game/hit). Armor,
 ////   ShieldMitigationMax, the maxima and the regeneration numbers are the player's
 ////   properties (genesis_prime/game/unit_properties).
-//// - **Interrupt Armor** is held beside the shield, from the grants of the player's own casts
-////   (`armor_given`, `armor_ended`) and clamped as the client clamps stat 21: to 0 and the
-////   maximum, property 44, unless that is -1 (`opcode.0x938.interrupt_armor`). A player
-////   starts with none. A creature's strike spends none: no strike carries a crowd-control
-////   state onto a player yet (`struck` answers `controls: []`).
+//// - **Interrupt Armor** is the maximum, property 44, unless worn below it: a raised
+////   maximum is a raised armor, as the Soldier's Clear the Lines (Spell4 36861, row 78035:
+////   a type 11 row of +2 on property 44, no type 52 row) says in its tooltip, text 298981,
+////   "Interrupt Armor rises by 2", and as a creature's armor is (`creature_control`: none
+////   worn is the maximum). Stat 21 follows the maximum up and down (`armor_followed`),
+////   clamped by the client to 0 and the maximum when a 0x938 arrives
+////   (`opcode.0x938.interrupt_armor`). Nothing wears a player's armor down: no strike
+////   carries a crowd-control state onto a player yet (`struck` answers `controls: []`),
+////   so the armor worn is none, and whether a type 52 row's end takes its points back
+////   (dataBits01) or keeps them matters only once armor is worn. An infinite maximum (-1)
+////   shows 0.
 //// - **Health** stays in [0, max]. At 0 the answer is `Landed` with the killed bit,
 ////   the creature releases the player, and a later strike is refused `Dead`.
 //// - **Health regenerates** while P is alive, out of combat and below its maximum,
@@ -183,6 +186,7 @@ import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
 import genesis_prime/step.{type Address, type TimerId, TimerId}
+import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -207,16 +211,11 @@ pub opaque type Life {
     regeneration: Regeneration,
     health_clock: Clock,
     shield_clock: Clock,
-    armor: Int,
-    max_armor: Int,
-    armor_grants: List(ArmorGrant),
+    /// The Interrupt Armor worn below its maximum; none is the maximum.
+    armor_worn: Option(Int),
+    /// The armor the player's client was last told (stat 21).
+    armor_shown: Int,
   )
-}
-
-/// A grant of Interrupt Armor the player's casts hold: the source of the cast's row, its
-/// points and whether its end takes them back.
-type ArmorGrant {
-  ArmorGrant(source: unit_properties.Source, points: Int, takes_back: Bool)
 }
 
 /// The numbers health and shield regenerate by (`regeneration` builds them).
@@ -468,21 +467,11 @@ pub fn properties_changed(
         ShieldRegeneration(..shield, tick_ms: shield_tick_ms(properties:))
       }),
     )
-  let max_armor = max_armor_of(properties:)
   let health = int.min(life.health, max_health)
   let shield = int.min(life.shield, max_shield)
-  let armor = armor_clamped(armor: life.armor, max_armor:)
   let changed =
-    Life(
-      ..life,
-      max_health:,
-      max_shield:,
-      health:,
-      shield:,
-      regeneration:,
-      armor:,
-      max_armor:,
-    )
+    Life(..life, max_health:, max_shield:, health:, shield:, regeneration:)
+  let #(changed, armor_effects) = armor_followed(life: changed, properties:)
   let #(changed, timers) = health_clock_settled(life: changed)
   #(
     changed,
@@ -495,10 +484,7 @@ pub fn properties_changed(
         True -> []
         False -> shield_told(shield:)
       },
-      case armor == life.armor {
-        True -> []
-        False -> armor_told(armor:)
-      },
+      armor_effects,
       timers,
     ]),
   )
@@ -521,9 +507,8 @@ pub fn new(
     regeneration:,
     health_clock: Idle,
     shield_clock: Idle,
-    armor: 0,
-    max_armor: 0,
-    armor_grants: [],
+    armor_worn: None,
+    armor_shown: 0,
   )
 }
 
@@ -1071,24 +1056,9 @@ pub fn shield_healed(
   #(Life(..life, shield:), shield_told(shield:))
 }
 
-/// The player's Interrupt Armor: stat 21.
+/// The player's Interrupt Armor as its client was last told it: stat 21.
 pub fn interrupt_armor(life life: Life) -> Int {
-  life.armor
-}
-
-/// The most Interrupt Armor the player holds: the value of property 44, which the client
-/// clamps stat 21 to, -1 for no limit (`opcode.0x938.interrupt_armor`).
-pub fn max_interrupt_armor(life life: Life) -> Int {
-  life.max_armor
-}
-
-/// The armor held to the client's own clamp: not below 0 and not above the maximum, with
-/// -1 for no maximum (`opcode.0x938.interrupt_armor`).
-fn armor_clamped(armor armor: Int, max_armor max_armor: Int) -> Int {
-  case max_armor {
-    -1 -> int.max(0, armor)
-    _ -> int.max(0, int.min(armor, max_armor))
-  }
+  life.armor_shown
 }
 
 /// The player's armor written to its own client (0x938 of stat 21) and told to its
@@ -1100,72 +1070,40 @@ fn armor_told(armor armor: Int) -> List(Effect) {
   ]
 }
 
-/// A grant of Interrupt Armor by a type 52 row of `source` (genesis_prime/game/cast
-/// `Armor`): the armor rises by `points`, capped at the maximum, and the grant is held
-/// until `armor_ended`. The maximum is the player's property 44, which the connection has
-/// raised first, since the client clamps the armor it is sent to the maximum it holds
-/// (`opcode.0x938.interrupt_armor`). A source already held changes nothing, as a modifier
-/// of the properties does. A grant that moves nothing is not written.
-pub fn armor_given(
-  life life: Life,
-  source source: unit_properties.Source,
-  points points: Int,
-  takes_back takes_back: Bool,
-) -> #(Life, List(Effect)) {
-  use <- bool.guard(
-    when: list.any(life.armor_grants, fn(grant) { grant.source == source }),
-    return: #(life, []),
-  )
-  let armor =
-    armor_clamped(armor: life.armor + points, max_armor: life.max_armor)
-  let held = ArmorGrant(source:, points:, takes_back:)
-  let given =
-    Life(..life, armor:, armor_grants: list.append(life.armor_grants, [held]))
-  case armor == life.armor {
-    True -> #(given, [])
-    False -> #(given, armor_told(armor:))
+/// The armor the maximum `properties` hold gives the player: the maximum, or what is worn
+/// of it when that is less. A maximum of 0 is none and an infinite one (-1) shows 0.
+fn armor_of(life life: Life, properties properties: Properties) -> Int {
+  let maximum =
+    unit_properties.value(
+      properties:,
+      property: unit_properties.interrupt_armor_threshold,
+    )
+  case creature_life.interrupt_armor_of(maximum:) {
+    creature_life.NoArmor | creature_life.InfiniteArmor -> 0
+    creature_life.Armor(points:) ->
+      case life.armor_worn {
+        None -> points
+        Some(worn) -> int.min(worn, points)
+      }
   }
 }
 
-/// The grant of `source` ends, and the armor is written before the maximum falls, as the
-/// client needs: the client clamps the armor it is sent to the maximum it holds and an
-/// armor above a lowered maximum stays until the next 0x938 (`opcode.0x938.interrupt_armor`).
-/// So the armor is the one the end leaves under the maximum `properties` hold once the
-/// source's modifier is off: when the grant takes its points back the armor falls by them
-/// (not below 0), and when it keeps the armor it stays, to the new maximum. A grant that
-/// moves nothing is not written, and a source that holds no grant changes nothing (a type 11
-/// row on property 44 lowers the maximum, which `properties_changed` follows).
-pub fn armor_ended(
+/// The armor follows the maximum, property 44, in `properties`: a raised maximum is a
+/// raised armor, a lowered one lowers it, and the player's client and its viewers are
+/// told the new armor when it moved, once (0x938 of stat 21). The client clamps the armor
+/// it is sent to the maximum it holds and keeps an armor above a lowered maximum until
+/// the next 0x938 (`opcode.0x938.interrupt_armor`), so the connection tells the armor
+/// before the maximum falls, with the properties the end leaves, and after the maximum
+/// has risen, with `properties_changed`, which follows too.
+pub fn armor_followed(
   life life: Life,
-  source source: unit_properties.Source,
   properties properties: Properties,
 ) -> #(Life, List(Effect)) {
-  case list.find(life.armor_grants, fn(grant) { grant.source == source }) {
-    Error(Nil) -> #(life, [])
-    Ok(ended) -> {
-      let kept = case ended.takes_back {
-        True -> int.max(0, life.armor - ended.points)
-        False -> life.armor
-      }
-      let armor =
-        armor_clamped(armor: kept, max_armor: max_armor_of(properties:))
-      let remaining =
-        list.filter(life.armor_grants, fn(grant) { grant.source != source })
-      let after = Life(..life, armor:, armor_grants: remaining)
-      case armor == life.armor {
-        True -> #(after, [])
-        False -> #(after, armor_told(armor:))
-      }
-    }
+  let armor = armor_of(life:, properties:)
+  case armor == life.armor_shown {
+    True -> #(life, [])
+    False -> #(Life(..life, armor_shown: armor), armor_told(armor:))
   }
-}
-
-/// The maximum Interrupt Armor the properties give: property 44's value, rounded.
-fn max_armor_of(properties properties: Properties) -> Int {
-  float.round(unit_properties.value(
-    properties:,
-    property: unit_properties.interrupt_armor_threshold,
-  ))
 }
 
 /// Both clocks stopped, each running one cancelled.

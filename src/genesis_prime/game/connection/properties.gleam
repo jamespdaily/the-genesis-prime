@@ -9,7 +9,7 @@
 ////                                                           ├─▶ 0x93a to the player's client
 ////                                                           ├─▶ PropertiesChanged to each viewer
 ////                                                           └─▶ player_life.properties_changed:
-////                                                               maxima, regeneration, 0x92f, 0x938
+////                                                               maxima, armor, regeneration, 0x92f, 0x938
 //// ```
 ////
 //// - **The player and its viewers are told the same entries**, the base and the value
@@ -17,11 +17,11 @@
 ////   viewer's client shows the unit when its news arrives and drops it otherwise
 ////   (genesis_prime/game/connection/viewers). A viewer that arrives later is created
 ////   with the current values in its 0x262 (`frames.appearance_at`).
-//// - **An Interrupt Armor row** starts as any modifier does, on property 44, and then
-////   raises the armor (`armor_started`: 0x938 of stat 21 to the player and the news to each
-////   viewer); its end tells the armor first and the maximum after (`ended`). The client
-////   clamps the armor it is sent to the maximum it holds, and keeps an armor above a lowered
-////   maximum until the next 0x938 (`opcode.0x938.interrupt_armor`).
+//// - **The armor follows property 44** (`player_life.armor_followed`): a start tells the
+////   maximum, then the armor (0x938 of stat 21 to the player and the news to each viewer);
+////   an end tells the armor first and the maximum after (`ended`), since the client keeps
+////   an armor above a lowered maximum until the next 0x938
+////   (`opcode.0x938.interrupt_armor`).
 //// - **A change that moves nothing** is not told: a modifier that leaves a value as it
 ////   was, a source already held, and an end of a source that is not held.
 //// - **The life follows the properties**: BaseHealth and ShieldCapacityMax are the
@@ -57,74 +57,30 @@ pub fn started(
   ))
 }
 
-/// An Interrupt Armor row of the player's own spell starts (genesis_prime/game/cast
-/// `Armor`): the maximum, property 44, rises by `points` and is told first, then the
-/// armor rises by them. The client clamps the armor it is sent to the maximum it holds, so
-/// the other order would show 0 (`opcode.0x938.interrupt_armor`).
-pub fn armor_started(
-  session session: Session,
-  now now: Now,
-  source source: unit_properties.Source,
-  points points: Int,
-  takes_back takes_back: Bool,
-) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  let #(session, raised) =
-    started(
-      session:,
-      now:,
-      source:,
-      modifier: unit_properties.interrupt_armor_modifier(points:),
-    )
-  let #(session, given) =
-    armor_changed(session:, now:, change: fn(entered) {
-      player_life.armor_given(life: entered.life, source:, points:, takes_back:)
-    })
-  #(session, list.append(raised, given))
-}
-
 /// A modifier of the player's own spell ends (genesis_prime/game/cast
-/// `PropertyEnds`). An Interrupt Armor row's end takes its armor back first, when its row
-/// says so, and then lowers the maximum, which clamps what armor is left: the client
-/// clamps the armor to the maximum it holds only when a 0x938 arrives, so the armor is
-/// told before the maximum falls (`opcode.0x938.interrupt_armor`).
+/// `PropertyEnds`). The armor follows the maximum down first, and the maximum's 0x93a
+/// comes after: the client clamps the armor it is sent to the maximum it holds, and keeps
+/// an armor above a lowered maximum until the next 0x938
+/// (`opcode.0x938.interrupt_armor`).
 pub fn ended(
   session session: Session,
   now now: Now,
   source source: unit_properties.Source,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  let #(session, taken) =
-    armor_changed(session:, now:, change: fn(entered) {
-      let #(without, _) =
-        unit_properties.remove(properties: entered.properties, source:)
-      player_life.armor_ended(life: entered.life, source:, properties: without)
-    })
-  let #(session, lowered) =
-    changed(session:, now:, change: unit_properties.remove(
-      properties: _,
-      source:,
-    ))
-  #(session, list.append(taken, lowered))
-}
-
-/// The session with the player's life changed by `change`, which reads the player as it
-/// stands, and what the life decided
-/// written to the player's client and told to its viewers. With no player in the world it
-/// is dropped.
-fn armor_changed(
-  session session: Session,
-  now now: Now,
-  change change: fn(world_entry.Entered) ->
-    #(player_life.Life, List(player_life.Effect)),
-) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case connection_state.held_in_the_world(session.status) {
     None -> #(session, [])
     Some(#(_, entered)) -> {
-      let #(life, effects) = change(entered)
-      let session =
-        connection_state.with_entered(session:, change: fn(entered) {
-          world_entry.Entered(..entered, life:)
+      let #(properties, entries) =
+        unit_properties.remove(properties: entered.properties, source:)
+      let #(session, armor) =
+        life_effect.life_changed(session:, now:, change: fn(entered) {
+          player_life.armor_followed(life: entered.life, properties:)
         })
-      #(session, life_effect.life_effects(session:, now:, entered:, effects:))
+      let assert Some(entered) = connection_state.entered_of(session.status)
+        as "the player is still held in the world: only its life changed"
+      let #(session, lowered) =
+        changed_to(session:, now:, entered:, properties:, entries:)
+      #(session, list.append(armor, lowered))
     }
   }
 }

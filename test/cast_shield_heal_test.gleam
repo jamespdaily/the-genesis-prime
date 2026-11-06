@@ -147,7 +147,6 @@ fn heals(effects effects: List(Effect)) -> List(#(Source, Int)) {
       cast.CasterChangeStarts(source:, change: cast.ShieldHeal(amount:)) ->
         Ok(#(source, amount))
       cast.CasterChangeStarts(change: cast.Property(..), ..)
-      | cast.CasterChangeStarts(change: cast.Armor(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -341,7 +340,6 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     case effect {
       cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
       cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-      | cast.CasterChangeStarts(change: cast.Armor(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)

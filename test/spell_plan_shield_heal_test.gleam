@@ -39,69 +39,21 @@ import gleam/int
 import gleam/list
 import gleam/set
 import owned_test
+import spell_tables
 import unitest
 
 /// 1.0 as 32 float bits.
 const one_as_float_bits = 1_065_353_216
 
-/// A row of a spell, in memory, with every column 0 but its id, spell, type, aim and
-/// phases (every one).
-fn blank(
-  id id: Int,
-  spell spell: Int,
-  effect_type effect_type: Int,
-  target_flags target_flags: Int,
-) -> Spell4Effects {
-  Spell4Effects(
-    id:,
-    spell_id: spell,
-    target_flags:,
-    effect_type:,
-    damage_type: 0,
-    delay_time: 0,
-    tick_time: 0,
-    duration_time: 0,
-    flags: 0,
-    data_bits00: 0,
-    data_bits01: 0,
-    data_bits02: 0,
-    data_bits03: 0,
-    data_bits04: 0,
-    data_bits05: 0,
-    data_bits06: 0,
-    data_bits07: 0,
-    data_bits08: 0,
-    data_bits09: 0,
-    innate_cost_per_tick_type0: 0,
-    innate_cost_per_tick_type1: 0,
-    innate_cost_per_tick0: 0,
-    innate_cost_per_tick1: 0,
-    emm_comparison: 0,
-    emm_value: 0,
-    threat_multiplier: 0.0,
-    spell4_effect_group_list_id: 0,
-    prerequisite_id_caster_apply: 0,
-    prerequisite_id_target_apply: 0,
-    prerequisite_id_caster_persistence: 0,
-    prerequisite_id_target_persistence: 0,
-    prerequisite_id_target_suspend: 0,
-    parameter_type00: 0,
-    parameter_type01: 0,
-    parameter_type02: 0,
-    parameter_type03: 0,
-    parameter_value00: 0.0,
-    parameter_value01: 0.0,
-    parameter_value02: 0.0,
-    parameter_value03: 0.0,
-    phase_flags: -1,
-    order_index: 0,
-  )
-}
-
 /// Energize's row 228914 as the client holds it.
 fn energize_row() -> Spell4Effects {
   Spell4Effects(
-    ..blank(id: 228_914, spell: 69_450, effect_type: 118, target_flags: 1),
+    ..spell_tables.blank_effect(
+      id: 228_914,
+      spell: 69_450,
+      effect_type: 118,
+      target_flags: 1,
+    ),
     delay_time: 10,
     data_bits00: one_as_float_bits,
     parameter_type00: 22,
@@ -117,7 +69,12 @@ fn heal_aimed_at(flags flags: Int) -> Spell4Effects {
 /// The Warrior's row 210834: 0.125 of the maximum shield each 1000 ms for 8000 ms.
 fn onslaught_row() -> Spell4Effects {
   Spell4Effects(
-    ..blank(id: 210_834, spell: 46_867, effect_type: 118, target_flags: 1),
+    ..spell_tables.blank_effect(
+      id: 210_834,
+      spell: 46_867,
+      effect_type: 118,
+      target_flags: 1,
+    ),
     tick_time: 1000,
     duration_time: 8000,
     flags: 16,
@@ -319,7 +276,12 @@ pub fn a_shield_overload_row_aimed_at_the_area_is_a_lasting_row_on_each_struck_u
   use <- owned_test.run(5000)
   let meltdown =
     Spell4Effects(
-      ..blank(id: 147_229, spell: 60_796, effect_type: 64, target_flags: 4),
+      ..spell_tables.blank_effect(
+        id: 147_229,
+        spell: 60_796,
+        effect_type: 64,
+        target_flags: 4,
+      ),
       duration_time: 4000,
     )
   let assert Ok(lasting) =
@@ -360,7 +322,12 @@ pub fn the_measure_counts_a_heal_on_the_primary_target_of_a_struck_unit_child_as
   // the load on the shape (`proxy_heals_read`), so the measure counts the row as not read.
   let proxy =
     Spell4Effects(
-      ..blank(id: 137_988, spell: 57_685, effect_type: 26, target_flags: 4),
+      ..spell_tables.blank_effect(
+        id: 137_988,
+        spell: 57_685,
+        effect_type: 26,
+        target_flags: 4,
+      ),
       data_bits00: 78_280,
     )
   let heal =

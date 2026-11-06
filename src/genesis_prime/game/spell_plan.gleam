@@ -77,12 +77,14 @@
 ////   (`Spell4Effects.effectType.52`) whose targetFlags include the caster (bit 1), or are
 ////   the primary target alone (2) in a spell cast on the caster, is a `PropertyModifier`
 ////   row whose `armor` is set: a change of UnitProperty2 44, the maximum, of x * 1.0 +
-////   dataBits00, with the armor of dataBits00 points, which dataBits01 1 takes back at the
-////   end and 0 keeps; its delay, durationTime, flags bit 2, caster apply prerequisite,
-////   phases and spend tag are a type 11 row's. A dataBits01 other than 0 and 1 fails the
-////   load. A row aimed only at other units is not read. A child a Proxy starts on each
-////   struck unit that holds a row aimed at its primary target fails the load: Interrupt
-////   Armor on a struck unit is not built.
+////   dataBits00, which the player's armor follows (genesis_prime/game/player_life
+////   `armor_followed`); dataBits01 1 takes the points back at the end and 0 keeps them,
+////   which matters only once armor is worn, and nothing wears a player's armor down yet.
+////   Its delay, durationTime, flags bit 2, caster apply prerequisite, phases and spend
+////   tag are a type 11 row's. A dataBits01 other than 0 and 1 fails the load. A row aimed
+////   only at other units is not read. A child a Proxy starts on each struck unit that
+////   holds a row aimed at its primary target fails the load: Interrupt Armor on a struck
+////   unit is not built. 36 of the 38 type 52 rows are read.
 //// - **The shield heals.** A HealShields effect (`Spell4Effects.effectType.118`) whose
 ////   targetFlags include the caster (bit 1), or are the primary target alone (2) in a spell
 ////   cast on the caster, is a `ShieldHeal` row: its formula (dataBits00 as a float,
@@ -721,11 +723,11 @@ pub type PropertyModifier {
 }
 
 /// What a ModifyInterruptArmor row (`Spell4Effects.effectType.52`) adds to the change of
-/// property 44 it makes: the armor it gives the unit besides the maximum
-/// (genesis_prime/game/player_life `armor_given`). `points` is dataBits00, `takes_back` is
-/// dataBits01 (1 takes the points back when the row ends, 0 keeps the armor up to the new
-/// maximum) and `aim` is the unit the row's targetFlags name: the caster, or the primary
-/// target, which a spell cast on the caster makes the caster.
+/// property 44 it makes, which the player's armor follows. `points` is dataBits00,
+/// `takes_back` is dataBits01 (1 takes the points back when the row ends, 0 keeps the
+/// armor: it matters only once armor is worn, and nothing wears a player's armor down yet)
+/// and `aim` is the unit the row's targetFlags name: the caster, or the primary target,
+/// which a spell cast on the caster makes the caster.
 pub type InterruptArmor {
   InterruptArmor(points: Int, takes_back: Bool, aim: Aim)
 }
