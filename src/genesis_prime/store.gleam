@@ -166,9 +166,9 @@ pub type MoveRequest {
   /// so a save that reaches the database after a newer one of its own changes
   /// nothing. The account's id is in the statement, as for a load. The
   /// character's `health` is written by the same statement: `Some` the health
-  /// the player has, `None` when there is none to keep (a dead player), which
-  /// leaves nothing saved, so the next entry is at full health. A health the
-  /// table refuses, 0 or below, is `HealthRefused`.
+  /// the player has, 0 while it is dead, and `None` when there is none to keep,
+  /// which leaves nothing saved, so the next entry is alive at full health. A
+  /// health the table refuses, below 0, is `HealthRefused`.
   SavePlace(
     account_id: AccountId,
     character_id: CharacterId,
@@ -260,8 +260,8 @@ pub type MoveAnswer {
   /// which no place the rule keeps breaks: a bug of the server's, so nothing
   /// was saved.
   PlaceRefused(constraint: String)
-  /// The database refused the health (`character_health_is_positive`), which
-  /// the rule never asks to keep at 0 or below: a bug of the server's, so
+  /// The database refused the health (`character_health_is_not_negative`),
+  /// which the rule never asks to keep below 0: a bug of the server's, so
   /// nothing was saved, neither the health nor the place beside it.
   HealthRefused
 }

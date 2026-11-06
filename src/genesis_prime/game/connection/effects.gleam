@@ -11,6 +11,7 @@ import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
+import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Camped, Session} as connection_state
 import genesis_prime/game/movement
@@ -41,6 +42,10 @@ pub type Decided {
   StartsSaveTimer
   /// Start a timer of the player's life (genesis_prime/game/player_life).
   StartsTimer(timer: TimerId, after_ms: Int)
+  /// A message about the player's own unit for its own client, which the
+  /// connection writes in its frames for the player it holds
+  /// (genesis_prime/game/connection/frames `own_unit_frame`).
+  WritesOwnUnit(written: player_life.Written)
   /// What the chat decided: writes, tells, watches and group joins.
   Chats(effects: List(chat.Effect))
   /// The player leaves the world for character select: the save timer is
@@ -73,6 +78,7 @@ pub fn from_entry(effect: world_entry.Effect) -> Decided {
     world_entry.AskMap(map:, message:) -> Asks(request: AskMap(map:, message:))
     world_entry.WatchMap(map:, incarnation:) -> WatchesMap(map:, incarnation:)
     world_entry.StartTimer(timer:, after_ms:) -> StartsTimer(timer:, after_ms:)
+    world_entry.OwnUnit(written:) -> WritesOwnUnit(written:)
   }
 }
 
@@ -105,6 +111,23 @@ pub fn carry_out(
         ),
         ..written
       ])
+    [WritesOwnUnit(written: own), ..rest] ->
+      case connection_state.entered_of(session.status) {
+        Some(entered) ->
+          carry_out(session:, now:, effects: rest, written: [
+            connection_state.to_client(
+              session,
+              connection_frames.own_unit_frame(entered:, now:, written: own),
+            ),
+            ..written
+          ])
+        None ->
+          connection_state.end_for(
+            session:,
+            now:,
+            text: "a feature wrote the player's own unit with no player in the world",
+          )
+      }
     [Chats(effects: chat_decided), ..rest] -> {
       let #(session, converted) =
         connection_chat.chat_effects(session:, effects: chat_decided)
