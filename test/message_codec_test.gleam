@@ -184,6 +184,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/spell_effect_damage.gleam",
       "src/genesis_prime/message/spell_effect_info.gleam",
       "src/genesis_prime/message/spell_effect_result.gleam",
+      "src/genesis_prime/message/spell_failed.gleam",
       "src/genesis_prime/message/spell_finished.gleam",
       "src/genesis_prime/message/spell_go.gleam",
       "src/genesis_prime/message/spell_hit_entry.gleam",

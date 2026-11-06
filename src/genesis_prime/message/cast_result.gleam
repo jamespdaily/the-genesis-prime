@@ -56,6 +56,8 @@ pub type CastResult {
   TargetRangeMax
   /// The value 106, the fact file's `Spell.CodeEnumCastResult`.
   TargetCannotBeDead
+  /// The value 151, the fact file's `0x1405648a0`.
+  PrereqCasterCast
   /// The value 166, the fact file's `Spell.CodeEnumCastResult`.
   CasterNeedsLos
   /// The value 169, the fact file's `Spell.CodeEnumCastResult`.
@@ -64,6 +66,12 @@ pub type CastResult {
   SpellNoCharges
   /// The value 183, the fact file's `Spell.CodeEnumCastResult`.
   TargetRangeVertical
+  /// The value 281, the fact file's `0x1405648a0`.
+  PrereqTargetCast
+  /// The value 282, the fact file's `0x1405648a0`.
+  PrereqCasterPersistence
+  /// The value 283, the fact file's `0x1405648a0`.
+  PrereqTargetPersistence
   /// The value 285, the fact file's `Spell.CodeEnumCastResult`.
   IllegalSpellCast
   /// The value 317, the fact file's `Spell.CodeEnumCastResult`.
@@ -100,10 +108,14 @@ pub fn to_value(value: CastResult) -> Int {
     TargetRangeMin -> 104
     TargetRangeMax -> 105
     TargetCannotBeDead -> 106
+    PrereqCasterCast -> 151
     CasterNeedsLos -> 166
     WeaponSlot -> 169
     SpellNoCharges -> 182
     TargetRangeVertical -> 183
+    PrereqTargetCast -> 281
+    PrereqCasterPersistence -> 282
+    PrereqTargetPersistence -> 283
     IllegalSpellCast -> 285
     Queued -> 317
     Other(number) -> number
@@ -138,10 +150,14 @@ pub fn from_value(number: Int) -> CastResult {
     104 -> TargetRangeMin
     105 -> TargetRangeMax
     106 -> TargetCannotBeDead
+    151 -> PrereqCasterCast
     166 -> CasterNeedsLos
     169 -> WeaponSlot
     182 -> SpellNoCharges
     183 -> TargetRangeVertical
+    281 -> PrereqTargetCast
+    282 -> PrereqCasterPersistence
+    283 -> PrereqTargetPersistence
     285 -> IllegalSpellCast
     317 -> Queued
     other -> Other(other)

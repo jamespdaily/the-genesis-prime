@@ -37,6 +37,7 @@ const unnamed = [
   ),
   #("spell_effect_info", "field_4", "opcode.0x7f4.effect_time", "Safe value: 0"),
   #("spell_effect_bit", "field_2", "opcode.0x7f4.effect_bit", "Safe value: 0"),
+  #("spell_failed", "field_4", "opcode.0x7f9", "Safe value for the bit: 0"),
   #("spell_initial_position", "field_2", "spell.empty_lists", "may be empty"),
   #("spell_initial_position", "field_4", "spell.empty_lists", "may be empty"),
   #("spell_initial_position", "field_5", "spell.empty_lists", "may be empty"),
