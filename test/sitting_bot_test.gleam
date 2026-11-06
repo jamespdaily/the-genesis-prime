@@ -575,6 +575,45 @@ pub fn seating_the_bot_again_reuses_its_account_and_character_and_moves_it_to_th
     as "the bot is moved to where the named character is now"
 }
 
+pub fn seating_the_bot_twice_at_once_leaves_one_account_and_one_character_for_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let pool = pool()
+  insert_named(pool, "Zed Qu")
+  let seated = process.new_subject()
+  list.each([1, 2], fn(_) {
+    process.spawn(fn() {
+      process.send(seated, sitting_bot.seat(pool:, near: "Zed Qu"))
+    })
+  })
+  let assert Ok(first) = process.receive(seated, within: 30_000)
+    as "the first seat answered"
+  let assert Ok(second) = process.receive(seated, within: 30_000)
+    as "the second seat answered"
+  let assert Ok(first) = first
+    as "a seat that runs beside another still finds or makes the bot's character"
+  let assert Ok(second) = second as "so does the other"
+  assert first.character_id == second.character_id
+    as "both seats are of the one character"
+  assert count(pool, "account") == 2
+    as "the named character's account and one account for the bot"
+  assert count(pool, "character") == 2
+    as "the named character and one character for the bot"
+}
+
+pub fn a_bot_account_with_no_character_gets_its_character_and_no_second_account_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let pool = pool()
+  insert_named(pool, "Zed Qu")
+  let #(_game_account_id, query) =
+    add_account.new_account(login_name: "sitting-bot", password: "sitting-bot")
+  let assert Ok(_) = query(pool) as "the bot's account was inserted alone"
+  let assert Ok(_) = sitting_bot.seat(pool:, near: "Zed Qu")
+  assert count(pool, "account") == 2
+    as "the bot's account was used, not made again"
+  assert count(pool, "character") == 2 as "the bot's character was made for it"
+  assert bot_row(pool).0 == "Sitting Bot"
+}
+
 pub fn a_named_character_that_does_not_exist_is_refused_and_nothing_is_added_test() -> Nil {
   use <- owned_test.run(60_000)
   let pool = pool()

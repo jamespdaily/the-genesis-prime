@@ -21,10 +21,12 @@
 //// - The timer ids 8 and 9 are the connection's free ids above the class
 ////   resource's.
 
+import character_tables
 import connection_rule_support as support
 import game_connection_support
 import genesis_prime/client_connection.{type Answer, type Message, type Request}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/float32
 import genesis_prime/message/player_health.{PlayerHealth}
@@ -261,4 +263,59 @@ pub fn leaving_the_world_cancels_the_running_regeneration_timers_test() -> Nil {
     == [health_timer, shield_timer]
     as "the camp cancels the health tick and the shield's reboot"
   Nil
+}
+
+pub fn the_multiplier_and_the_shield_tick_are_the_client_tables_unit_property2_defaults_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // UnitProperty2 8 planted at 2.0 and 177 at 750.0 (not the client's 1.0 and 500):
+  // the health tick is floor(736 x 0.025 x 2.0) = 36 each health_regen_tick_ms
+  // (500), the shield's next tick is 750 ms after its first.
+  let fresh =
+    game_connection_support.accepted(
+      Settings(
+        ..game_connection_support.settings(),
+        tables: character_tables.shared_with_other_regeneration_defaults(),
+      ),
+    ).0
+  let #(state, _) =
+    game_connection_support.entered_saved(
+      in_character_select: game_connection_support.in_select_from(fresh),
+      character: game_connection_support.world_character(),
+      saved_health: Some(600),
+    )
+  let #(state, tick) = fire(state:, timer: health_timer)
+  assert game_connection_support.decoded(
+      game_connection_support.heard(tick, game_connection_support.keyed()),
+      0x092F,
+      player_health.decode,
+    )
+    == [
+      PlayerHealth(
+        unit_id: game_connection_support.own_unit_id,
+        health: 636,
+        reason_mask: 0,
+      ),
+    ]
+    as "600 and floor(736 x 0.025 x 2.0) = 36: the multiplier is the table's"
+  assert started(tick) == [#(health_timer, 500)]
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  let #(state, struck) = game_connection_support.feed(state, blow(damage: 1000))
+  assert started(struck) == [#(shield_timer, 5125)]
+    as "the reboot is the item's, not the table's"
+  let #(_, first) = fire(state:, timer: shield_timer)
+  assert game_connection_support.decoded(
+      game_connection_support.heard(first, game_connection_support.keyed()),
+      0x0938,
+      unit_stat_changed.decode,
+    )
+    == [
+      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 361),
+    ]
+    as "294 and floor(450 x 0.15) = 67: the share is the item's"
+  assert started(first) == [#(shield_timer, 750)]
+    as "the next shield tick is ShieldTickTime, the table's 750"
 }

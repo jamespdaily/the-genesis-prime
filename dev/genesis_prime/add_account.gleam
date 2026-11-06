@@ -6,8 +6,9 @@
 //// `gleam run -m genesis_prime/add_account -- <login name> <password>`
 ////
 //// The database is the one the server uses, from PGHOST, PGPORT, PGUSER,
-//// PGPASSWORD and PGDATABASE. A login name already taken is refused with the
-//// constraint that refused it.
+//// PGPASSWORD and PGDATABASE. A login name already taken, and an empty one, are
+//// refused with the constraint that refused them
+//// (`account_login_name_is_unique`, `account_login_name_is_not_empty`).
 
 import argv
 import genesis_prime/add_account/sql
@@ -23,7 +24,6 @@ import pog
 /// Why the account was not added.
 type Failure {
   WrongArguments
-  EmptyLoginName
   Database(failure: dev_database.Failure)
 }
 
@@ -34,18 +34,34 @@ pub fn main() -> Nil {
 fn add() -> Result(String, Failure) {
   case argv.load().arguments {
     [login_name, password] ->
-      case string.lowercase(login_name) {
-        "" -> Error(EmptyLoginName)
-        login_name -> insert(login_name:, password:)
-      }
+      insert(login_name: string.lowercase(login_name), password:)
     _ -> Error(WrongArguments)
   }
 }
 
-/// The query that adds an account, and the text of its game account's GUID: a
-/// fresh 32-byte salt, the SRP verifier of the lower-case name and the password,
-/// and a fresh game account GUID. Other tools that add accounts run it on their
-/// own connection.
+/// What an account is made with: a fresh 32-byte salt, the SRP verifier of the
+/// lower-case name and the password, and the text of a fresh game account GUID.
+/// Other tools that add accounts insert it themselves.
+pub type Credentials {
+  Credentials(salt: BitArray, verifier: BitArray, game_account_id: String)
+}
+
+/// Fresh credentials for the login name and password.
+pub fn credentials(
+  login_name login_name: String,
+  password password: String,
+) -> Credentials {
+  let salt = crypto.strong_random_bytes(32)
+  let verifier = srp.verifier(name: login_name, password:, salt:)
+  let assert Ok(game_account_id) =
+    guid.from_wire(crypto.strong_random_bytes(16))
+    as "sixteen bytes are a GUID"
+  Credentials(salt:, verifier:, game_account_id: guid.to_text(game_account_id))
+}
+
+/// The query that adds an account, and the text of its game account's GUID, with
+/// fresh credentials. Other tools that add accounts run it on their own
+/// connection.
 pub fn new_account(
   login_name login_name: String,
   password password: String,
@@ -54,12 +70,8 @@ pub fn new_account(
   fn(pog.Connection) ->
     Result(pog.Returned(sql.InsertAccountRow), pog.QueryError),
 ) {
-  let salt = crypto.strong_random_bytes(32)
-  let verifier = srp.verifier(name: login_name, password:, salt:)
-  let assert Ok(game_account_id) =
-    guid.from_wire(crypto.strong_random_bytes(16))
-    as "sixteen bytes are a GUID"
-  let game_account_id = guid.to_text(game_account_id)
+  let Credentials(salt:, verifier:, game_account_id:) =
+    credentials(login_name:, password:)
   #(game_account_id, sql.insert_account(
     _,
     login_name,
@@ -96,7 +108,6 @@ fn describe(failure: Failure) -> String {
   case failure {
     WrongArguments ->
       "usage: gleam run -m genesis_prime/add_account -- <login name> <password>"
-    EmptyLoginName -> "the login name is empty"
     Database(failure:) ->
       dev_database.describe(failure:, change: "add the account")
   }

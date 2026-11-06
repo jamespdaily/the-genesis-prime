@@ -27,7 +27,7 @@ import genesis_prime/game/player_life.{
   Answer, CancelTimer, ControlBody, ControlGhost, ControlGiven, EndCasts,
   GhostCreated, GhostRemoved, GoToHolocrypt, OwnCameBackLogged, OwnCombatState,
   OwnDeathLogged, OwnDeathState, OwnHealth, OwnResurrectionWindow, OwnShield,
-  Regeneration, StartTimer, StreamTo, ToClient, ToViewers,
+  Regeneration, ShieldRegeneration, StartTimer, StreamTo, ToClient, ToViewers,
 }
 import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
@@ -52,9 +52,9 @@ const regeneration =
     health_fraction: 0.025,
     health_multiplier: 1.0,
     health_tick_ms: 500,
-    shield_percent: 0.25,
-    shield_reboot_ms: 2500,
-    shield_tick_ms: 500,
+    shield: Some(
+      ShieldRegeneration(percent: 0.25, reboot_ms: 2500, tick_ms: 500),
+    ),
   )
 
 /// The shield's regeneration timer: the connection's free id 9.

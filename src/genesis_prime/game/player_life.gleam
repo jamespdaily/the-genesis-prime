@@ -187,14 +187,23 @@ pub type Regeneration {
     health_multiplier: Float,
     /// The time between health ticks, in milliseconds.
     health_tick_ms: Int,
+    /// The shield's, or none for a player with no shield item, whose shield has no
+    /// clock.
+    shield: Option(ShieldRegeneration),
+  )
+}
+
+/// The numbers a shield regenerates by.
+pub type ShieldRegeneration {
+  ShieldRegeneration(
     /// ShieldRegenPct: the share of the maximum shield a shield tick adds.
-    shield_percent: Float,
+    percent: Float,
     /// ShieldRebootTime: the wait after a blow before the shield regenerates, in
     /// milliseconds.
-    shield_reboot_ms: Int,
+    reboot_ms: Int,
     /// ShieldTickTime (UnitProperty2 177): the time between shield ticks, in
     /// milliseconds.
-    shield_tick_ms: Int,
+    tick_ms: Int,
   )
 }
 
@@ -332,27 +341,25 @@ pub const window_zero = 0
 /// The numbers a player regenerates by: the server's two choices from the
 /// game_number rows, UnitProperty2's defaults for HealthRegenMultiplier and
 /// ShieldTickTime from the rating formulas, and ShieldRegenPct and ShieldRebootTime
-/// of the player's shield item (0 and 0 with no shield, which then never
-/// regenerates).
+/// of the player's shield item; with no shield item the shield has no clock.
 pub fn regeneration(
   numbers numbers: GameNumbers,
   formulas formulas: Formulas,
   shield shield: Option(item_property.Shield),
 ) -> Regeneration {
-  let #(shield_percent, shield_reboot_ms) = case shield {
-    Some(item_property.Shield(regen_percent:, reboot_time_ms:, ..)) -> #(
-      regen_percent,
-      reboot_time_ms,
-    )
-    None -> #(0.0, 0)
-  }
+  let shield =
+    option.map(shield, fn(item) {
+      ShieldRegeneration(
+        percent: item.regen_percent,
+        reboot_ms: item.reboot_time_ms,
+        tick_ms: formulas.player_shield_tick_ms,
+      )
+    })
   Regeneration(
     health_fraction: numbers.health_regen_fraction,
     health_multiplier: formulas.player_health_regen_multiplier,
     health_tick_ms: numbers.health_regen_tick_ms,
-    shield_percent:,
-    shield_reboot_ms:,
-    shield_tick_ms: formulas.player_shield_tick_ms,
+    shield:,
   )
 }
 
@@ -764,7 +771,9 @@ fn health_clock_settled(life life: Life) -> #(Life, List(Effect)) {
 }
 
 /// A health tick: the share added to the health, 0x92f to the player and 0x937 to
-/// its viewers, and the next tick while the player is below its maximum.
+/// its viewers, and the next tick while the player is below its maximum. The share
+/// is floor(max x fraction x multiplier), raised to at least 1 so a tick always
+/// moves the health (the server's choice: the client holds no health rate).
 fn health_ticked(life life: Life) -> #(Life, List(Effect)) {
   use <- bool.guard(when: life.health_clock == Idle, return: #(life, []))
   let life = Life(..life, health_clock: Idle)
@@ -786,30 +795,29 @@ fn health_ticked(life life: Life) -> #(Life, List(Effect)) {
 }
 
 /// A blow lowered the health or the shield of a living player: the shield's clock
-/// starts again for ShieldRebootTime from the blow, if the shield is below its
-/// maximum.
+/// starts again for ShieldRebootTime from the blow, if the player has a shield
+/// below its maximum.
 fn shield_rebooted(life life: Life) -> #(Life, List(Effect)) {
   let cancel = case life.shield_clock {
     Running -> [CancelTimer(timer: shield_timer)]
     Idle -> []
   }
-  case life.shield < life.max_shield {
-    True -> #(
+  case life.regeneration.shield, life.shield < life.max_shield {
+    Some(ShieldRegeneration(reboot_ms:, ..)), True -> #(
       Life(..life, shield_clock: Running),
       list.append(cancel, [
-        StartTimer(
-          timer: shield_timer,
-          after_ms: life.regeneration.shield_reboot_ms,
-        ),
+        StartTimer(timer: shield_timer, after_ms: reboot_ms),
       ]),
     )
-    False -> #(Life(..life, shield_clock: Idle), cancel)
+    Some(..), False | None, _ -> #(Life(..life, shield_clock: Idle), cancel)
   }
 }
 
 /// A shield tick, the first after the reboot: the share added to the shield, 0x938
 /// of stat 20 to the player and its viewers, and the next tick while the shield is
-/// below its maximum.
+/// below its maximum. The share is floor(max shield x ShieldRegenPct) (text
+/// 531859), raised to at least 1 so a tick always moves the shield (the server's
+/// choice: the client holds no minimum).
 fn shield_ticked(life life: Life) -> #(Life, List(Effect)) {
   use <- bool.guard(when: life.shield_clock == Idle, return: #(life, []))
   let life = Life(..life, shield_clock: Idle)
@@ -817,16 +825,27 @@ fn shield_ticked(life life: Life) -> #(Life, List(Effect)) {
     when: life.state == Dead || life.shield >= life.max_shield,
     return: #(life, []),
   )
-  let regeneration = life.regeneration
+  case life.regeneration.shield {
+    Some(regeneration) -> shield_gained(life:, regeneration:)
+    None -> #(life, [])
+  }
+}
+
+/// The shield's tick of `regeneration` taken for a living player whose shield is
+/// below its maximum.
+fn shield_gained(
+  life life: Life,
+  regeneration regeneration: ShieldRegeneration,
+) -> #(Life, List(Effect)) {
   let share =
-    int.to_float(life.max_shield) *. regeneration.shield_percent
+    int.to_float(life.max_shield) *. regeneration.percent
     |> float.truncate
     |> int.max(1)
   let shield = int.min(life.shield + share, life.max_shield)
   let life = Life(..life, shield:)
   let #(life, timers) = case shield < life.max_shield {
     True -> #(Life(..life, shield_clock: Running), [
-      StartTimer(timer: shield_timer, after_ms: regeneration.shield_tick_ms),
+      StartTimer(timer: shield_timer, after_ms: regeneration.tick_ms),
     ])
     False -> #(life, [])
   }

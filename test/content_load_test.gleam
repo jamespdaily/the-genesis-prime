@@ -270,6 +270,12 @@ pub fn a_missing_and_an_unknown_game_number_stop_the_load_each_named_test() -> N
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   change(database, "delete from game_number where name = 'leash_range'")
+  // The table refuses a name nobody listed, so the name is listed first (a new
+  // name is one insert, migration 0014); the server still has no use for it.
+  change(
+    database,
+    "insert into game_number_name (name, unit) values ('evade_range', 'units')",
+  )
   change(
     database,
     "insert into game_number (name, value, unit, source, reason) values ('evade_range', 30, 'units', 'server_choice', 'a number the server has no use for')",

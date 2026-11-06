@@ -261,8 +261,6 @@ pub type Readiness {
   ClientReady
 }
 
-/// The shield a player enters the world with: the stat 20 its client was told in
-/// its 0x262 (`player_unit.create`), or 0 when the unit holds none.
 /// The entry's effect for what the player's life asked at entry: the timer it
 /// starts. Entry cancels no timer, and the life's other effects are its fights'.
 fn life_effect(effect effect: player_life.Effect) -> Result(Effect, Nil) {
@@ -279,6 +277,8 @@ fn life_effect(effect effect: player_life.Effect) -> Result(Effect, Nil) {
   }
 }
 
+/// The shield a player enters the world with: the stat 20 its client was told in
+/// its 0x262 (`player_unit.create`), or 0 when the unit holds none.
 fn full_shield(unit unit: UnitCreatePlayer) -> Int {
   unit_fields.stat(tail: unit.tail, stat_id: unit_fields.shield_stat)
   |> result.unwrap(0)

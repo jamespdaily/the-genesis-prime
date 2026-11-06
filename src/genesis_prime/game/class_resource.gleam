@@ -153,18 +153,21 @@ const playable = [
   #(7, #(4, Full, OverTime)),
 ]
 
-/// Each number the rule reads, by name, with its unit.
+/// Each number the rule reads, by name. The table holds each name's unit, a
+/// value above 0 and a whole number of milliseconds for a time
+/// (`class_resource_name_has_its_unit`, `class_resource_value_is_positive` and
+/// `class_resource_time_is_whole_ms`, migration 0014).
 const expected = [
-  #("max", "points"),
-  #("regen_amount", "points"),
-  #("regen_period_ms", "ms"),
-  #("regen_tick_ms", "ms"),
-  #("refill_after_combat_ms", "ms"),
-  #("drain_amount", "points"),
-  #("drain_period_ms", "ms"),
-  #("drain_tick_ms", "ms"),
-  #("drain_after_ms", "ms"),
-  #("empty_after_combat_ms", "ms"),
+  "max",
+  "regen_amount",
+  "regen_period_ms",
+  "regen_tick_ms",
+  "refill_after_combat_ms",
+  "drain_amount",
+  "drain_period_ms",
+  "drain_tick_ms",
+  "drain_after_ms",
+  "empty_after_combat_ms",
 ]
 
 /// The numbers a class's refill needs.
@@ -185,28 +188,30 @@ fn needed(refill refill: Refill) -> List(String) {
 }
 
 /// The classes' resources of the rows, or every refusal: a class that is not
-/// playable, a name not known, a unit not the name's, a number a playable class
-/// needs that has no row (its maximum, and the amount, period and tick of a refill
-/// over time, the wait of a refill after combat, the amount, period, tick and wait
-/// of a drain, and the wait of an empty after combat), a number not above 0, and a
-/// time that is not a whole number of milliseconds.
+/// playable, a name not known, and a number a playable class needs that has no row
+/// (its maximum, and the amount, period and tick of a refill over time, the wait
+/// of a refill after combat, the amount, period, tick and wait of a drain, and the
+/// wait of an empty after combat).
 pub fn select(rows rows: List(Row)) -> Result(Classes, List(Refusal)) {
   let unknown =
     list.filter_map(rows, fn(row) {
       case
         list.key_find(playable, row.class_id),
-        list.key_find(expected, row.name)
+        list.contains(expected, row.name)
       {
         Error(Nil), _ ->
           Ok(refused(
-            row:,
+            class_id: row.class_id,
+            name: row.name,
             rule: "the server knows no playable class of that id",
           ))
-        _, Error(Nil) ->
-          Ok(refused(row:, rule: "the server knows no such number"))
-        Ok(..), Ok(unit) if unit != row.unit ->
-          Ok(refused(row:, rule: "its unit is " <> row.unit <> ", not " <> unit))
-        Ok(..), Ok(..) -> checked_value(row:)
+        _, False ->
+          Ok(refused(
+            class_id: row.class_id,
+            name: row.name,
+            rule: "the server knows no such number",
+          ))
+        Ok(..), True -> Error(Nil)
       }
     })
   let by_class = list.group(rows, fn(row) { row.class_id })
@@ -219,12 +224,8 @@ pub fn select(rows rows: List(Row)) -> Result(Classes, List(Refusal)) {
           True -> Error(Nil)
           False ->
             Ok(refused(
-              row: Row(
-                class_id:,
-                name:,
-                value: 0.0,
-                unit: list.key_find(expected, name) |> result.unwrap(""),
-              ),
+              class_id:,
+              name:,
               rule: "the table has no such row, which this class needs",
             ))
         }
@@ -241,19 +242,6 @@ pub fn select(rows rows: List(Row)) -> Result(Classes, List(Refusal)) {
         })
         |> dict.from_list,
       ))
-  }
-}
-
-/// A row's value above 0, and a whole number for a time.
-fn checked_value(row row: Row) -> Result(Refusal, Nil) {
-  case
-    row.value <=. 0.0,
-    row.unit == "ms" && int.to_float(float.truncate(row.value)) != row.value
-  {
-    True, _ -> Ok(refused(row:, rule: "its value is not above 0"))
-    False, True ->
-      Ok(refused(row:, rule: "a time is a whole number of milliseconds"))
-    False, False -> Error(Nil)
   }
 }
 
@@ -311,10 +299,14 @@ fn resource_of(
   )
 }
 
-fn refused(row row: Row, rule rule: String) -> Refusal {
+fn refused(
+  class_id class_id: Int,
+  name name: String,
+  rule rule: String,
+) -> Refusal {
   Refusal(
     table: "class_resource",
-    row: RowName(int.to_string(row.class_id) <> " " <> row.name),
+    row: RowName(int.to_string(class_id) <> " " <> name),
     rule:,
   )
 }

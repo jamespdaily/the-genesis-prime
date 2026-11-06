@@ -31,7 +31,7 @@ import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
   type Effect, type Life, CancelTimer, OwnCombatState, OwnHealth, OwnShield,
-  Regeneration, StartTimer, ToClient, ToViewers,
+  Regeneration, ShieldRegeneration, StartTimer, ToClient, ToViewers,
 }
 import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
@@ -58,9 +58,9 @@ const regeneration =
     health_fraction: 0.025,
     health_multiplier: 1.0,
     health_tick_ms: 500,
-    shield_percent: 0.25,
-    shield_reboot_ms: 2500,
-    shield_tick_ms: 500,
+    shield: Some(
+      ShieldRegeneration(percent: 0.25, reboot_ms: 2500, tick_ms: 500),
+    ),
   )
 
 const rolls = Rolls(crit: 0.5, deflect: 0.0, glance: 0.0)
@@ -393,4 +393,21 @@ pub fn the_life_rule_owns_timer_ids_8_and_9_and_leaving_cancels_the_running_ones
     as "the health tick and the shield's reboot"
   let #(full, _) = entering(saved: None)
   assert player_life.left(life: full) == [] as "none runs at full health"
+}
+
+pub fn a_player_with_no_shield_item_has_no_shield_clock_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(life, _) =
+    player_life.entering(
+      saved: None,
+      max_health: 736,
+      shield: 450,
+      regeneration: Regeneration(..regeneration, shield: None),
+    )
+  let #(life, hit) =
+    struck(life: fought_by_the_beast(life:), cast_id: 1, damage: 1000)
+  assert timers(hit) == [] as "no shield item: no reboot to wait for"
+  assert player_life.left(life:) == []
+  let #(after, none) = player_life.timer_fired(life:, timer: shield_timer)
+  assert after == life && none == [] as "a stray shield timer changes nothing"
 }
