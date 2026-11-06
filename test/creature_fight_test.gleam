@@ -948,6 +948,116 @@ pub fn at_home_the_creature_aggroes_the_near_players_test() -> Nil {
     as "home, at full health, it aggroes the player still in its ring (Jim's answer of 2026-11-04)"
 }
 
+// Stealth (issue 483): the map tells a creature `Withdrew` for a player that enters
+// stealth. The creature's rule is not changed; these tests hold what the step relies
+// on. Evidence: Jim's decision on issue 483 (Discord, 2026-11-06, option A): a
+// creature keeps fighting a stealthed player already on its threat list, and does not
+// aggro one that is not.
+
+pub fn a_creature_fighting_a_player_told_withdrew_for_it_keeps_it_on_its_threat_list_chases_its_next_move_and_strikes_it_in_reach_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let tick = timer_for(aggro, 1500)
+  let #(state, withdrawn) =
+    tell(state:, at_ms: 100, message: creature.Withdrew(by: ConnectionId(2)))
+  assert said(withdrawn) == []
+    as "Withdrew touches only the creature's near set: no news, no change of target"
+  let #(_, chased) =
+    tell(state:, at_ms: 200, message: moved(number: 2, x: 30.0, seq: 2))
+  assert x_of(creature_path.end(path: path_sent(chased))) == 26.0
+    as "the next TargetMoved of the target is chased as before: 30 - 0.5 x 8 = 26"
+  let #(_, struck) = fire(state:, at_ms: 1500, timer: tick)
+  assert list.contains(said(struck), "0x7ff to 2")
+    as "the tick finds the player 5 units off, within reach 8: it strikes, with no new aggro"
+  let #(_, unwatched) =
+    tell(state:, at_ms: 300, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(unwatched), "Released(7) to 2")
+    as "the player was still on the threat list, so the end of its watch releases it"
+}
+
+pub fn a_near_player_told_withdrew_is_not_aggroed_at_the_home_timer_nor_when_the_corpse_stands_the_creature_again_and_one_approached_again_is_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Home timer: player 2 fights the creature and runs out of the ring until it
+  // leashes; player 5 comes near while it walks home.
+  let leashed = fn() {
+    let #(state, aggro) =
+      tell(
+        state: beast(viewers: [2, 5]),
+        at_ms: 0,
+        message: approached(number: 2, x: 5.0, seq: 1),
+      )
+    let #(state, _) =
+      tell(state:, at_ms: 0, message: moved(number: 2, x: 100.0, seq: 2))
+    let #(state, _) =
+      tell(state:, at_ms: 0, message: creature.Withdrew(by: ConnectionId(2)))
+    let #(state, t1) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+    let #(state, t2) = fire(state:, at_ms: 3000, timer: timer_for(t1, 1500))
+    let #(state, t3) = fire(state:, at_ms: 4500, timer: timer_for(t2, 1500))
+    let #(state, leashed) =
+      fire(state:, at_ms: 6000, timer: timer_for(t3, 1500))
+    #(state, timer_for(leashed, 5500))
+  }
+  let #(state, home) = leashed()
+  let #(state, _) =
+    tell(state:, at_ms: 7000, message: approached(number: 5, x: 3.0, seq: 1))
+  let #(withdrawn, _) =
+    tell(state:, at_ms: 7100, message: creature.Withdrew(by: ConnectionId(5)))
+  let #(_, at_home) = fire(state: withdrawn, at_ms: 11_500, timer: home)
+  assert !list.any(said(at_home), fn(line) {
+    string.starts_with(line, "0x908") || string.starts_with(line, "Threatened")
+  })
+    as "home: player 5 was told Withdrew, so it is in no ring and is not aggroed"
+  let #(again, _) =
+    tell(
+      state: withdrawn,
+      at_ms: 7200,
+      message: approached(number: 5, x: 3.0, seq: 2),
+    )
+  let #(_, at_home) = fire(state: again, at_ms: 11_500, timer: home)
+  assert list.contains(said(at_home), "0x908(50, 1) to 5")
+    as "approached again before the home timer, it is aggroed"
+
+  // The corpse timer: the creature is killed and stands again at its spawn.
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 60, 1.0)]),
+    )
+  let corpse = timer_for(killed, 60_000)
+  let #(state, _) =
+    tell(state:, at_ms: 2000, message: creature.Withdrew(by: ConnectionId(2)))
+  let #(state, _) =
+    tell(state:, at_ms: 3000, message: approached(number: 5, x: 3.0, seq: 1))
+  let #(withdrawn, _) =
+    tell(state:, at_ms: 3100, message: creature.Withdrew(by: ConnectionId(5)))
+  let #(_, stood) = fire(state: withdrawn, at_ms: 61_000, timer: corpse)
+  assert !list.any(said(stood), fn(line) {
+    string.starts_with(line, "0x908") || string.starts_with(line, "Threatened")
+  })
+    as "corpse timer: players 2 and 5 were told Withdrew, so the creature stands again and aggroes no one"
+  let #(again, _) =
+    tell(
+      state: withdrawn,
+      at_ms: 3200,
+      message: approached(number: 5, x: 3.0, seq: 2),
+    )
+  let #(_, stood) = fire(state: again, at_ms: 61_000, timer: corpse)
+  assert list.contains(said(stood), "0x908(50, 1) to 5")
+    as "approached again before the corpse timer, it is aggroed"
+}
+
 // Test 13: Unwatched and death.
 
 pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the_target_test() -> Nil {

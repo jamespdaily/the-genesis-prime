@@ -942,9 +942,10 @@ fn summoned(
 }
 
 /// The state with each player who sees the new run-only spawn's place having it in
-/// `seen`, and each ready one that stands in its ring having it in `inside`, as a
-/// move into that place would have left them: the cell index does not hold the
-/// spawn, so no later move finds it entered.
+/// `seen`, and each ready, unstealthed one that stands in its ring having it in
+/// `inside` (`noticeable_by_rings`, as `rings_holding` reads it), as a move into that
+/// place would have left them: the cell index does not hold the spawn, so no later move
+/// finds it entered.
 fn standing_for_players(
   state state: State,
   spawn spawn: SpawnId,
@@ -960,16 +961,16 @@ fn standing_for_players(
         False -> player.seen
       }
       let inside = case
-        player.readiness,
-        in_ring(
+        noticeable_by_rings(player:)
+        && in_ring(
           spawn: run_spawn,
           place:,
           faction_id: player_unit.faction_id(player.unit),
           range:,
         )
       {
-        Loaded, True -> set.insert(player.inside, spawn)
-        Loaded, False | StillLoading, _ -> player.inside
+        True -> set.insert(player.inside, spawn)
+        False -> player.inside
       }
       Player(..player, seen:, inside:)
     }),
@@ -1826,11 +1827,41 @@ fn ready(
 /// sends `Approached` to each Live creature whose ring holds it, in spawn order. A
 /// player still loading is only marked: `ready` decides its rings.
 fn stealth_changed(
-  state _state: State,
-  connection _connection: ConnectionId,
-  stealthed _stealthed: Bool,
+  state state: State,
+  connection connection: ConnectionId,
+  stealthed stealthed: Bool,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "shape: #483"
+  case dict.get(state.players, connection) {
+    Error(Nil) -> #(
+      state,
+      Effects([
+        log_error(
+          state:,
+          about: step.About(..step.no_one, connection: Some(connection)),
+          text: "the connection told its stealth to the map, but it is not in it",
+        ),
+      ]),
+    )
+    Ok(player) -> {
+      let stealth = case stealthed {
+        True -> Stealthed
+        False -> NotStealthed
+      }
+      use <- bool.guard(when: player.stealth == stealth, return: #(
+        state,
+        Effects([]),
+      ))
+      let player = Player(..player, stealth:)
+      let #(player, effects) = case player.readiness {
+        StillLoading -> #(player, [])
+        Loaded -> rings_decided(state:, connection:, player:)
+      }
+      #(
+        State(..state, players: dict.insert(state.players, connection, player)),
+        Effects(effects),
+      )
+    }
+  }
 }
 
 /// The rings the ready `player` of `connection` stands in at its place, against
@@ -1868,12 +1899,12 @@ fn rings_decided(
 /// The spawns hostile to the player's faction whose ring holds its place: within
 /// the aggro range of the spawn's place, in three dimensions, found through the cell
 /// index for the stored spawns and by a scan of the run-only ones. A player that
-/// `in_rings` refuses, a stealthed one, stands in no ring. That is Jim's decision of
-/// 2026-11-06 (option A): a creature does not aggro a stealthed player it is not
-/// already fighting, so the map leaves it out of every creature's ring; the client
-/// holds no rule for it (`UnitProperty2.stealth_detection`).
+/// `noticeable_by_rings` refuses stands in no ring: a stealthed one is left out of every
+/// creature's ring, by Jim's decision of 2026-11-06 (option A, issue 483): a creature
+/// does not aggro a stealthed player it is not already fighting. A server choice: the
+/// client holds no rule for it (`UnitProperty2.stealth_detection`).
 fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
-  use <- bool.guard(when: !in_rings(player:), return: set.new())
+  use <- bool.guard(when: !noticeable_by_rings(player:), return: set.new())
   let spawns = state.settings.spawns
   let place = player_unit.place(player.unit)
   let range = state.settings.numbers.aggro_range
@@ -1901,9 +1932,10 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
   })
 }
 
-/// Whether the player can stand in a creature's ring: it is ready and not
-/// stealthed. `rings_holding` reads it; a summon's ring entry reads it the same way.
-fn in_rings(player player: Player) -> Bool {
+/// Whether a ring can notice the player: it is ready and not stealthed. The one
+/// predicate `rings_holding` and `standing_for_players` (a summon's ring entry) share, so
+/// a creature that starts beside a stealthed player is told nothing of it.
+fn noticeable_by_rings(player player: Player) -> Bool {
   case player.readiness, player.stealth {
     Loaded, NotStealthed -> True
     Loaded, Stealthed | StillLoading, _ -> False

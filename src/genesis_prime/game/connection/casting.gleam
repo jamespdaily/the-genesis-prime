@@ -232,8 +232,8 @@ fn carry_cast(
 
 /// The connection's effects for what the cast rule decided, with the session as
 /// they leave it: a write, a tell of news to a viewer in the run of the player's
-/// map, a timer or a log line, a stealth change written to the player and told to its
-/// viewers, a press's costs paid from the class resource and a
+/// map, a timer or a log line, a stealth change written to the player, told to its
+/// viewers and last to the player's map, a press's costs paid from the class resource and a
 /// go's gains given to it (genesis_prime/game/connection/resource), and a go asked,
 /// which selects and strikes its targets
 /// (`strike_begins`). A tell with no player in the world is dropped.
@@ -290,6 +290,18 @@ pub fn cast_effects(
             entered:,
             news: client_connection.Stealth(stealthed:),
           ),
+          // The map keeps a stealthed player out of every creature's ring: Jim's
+          // decision on issue 483, a server choice. Told last, after the owner's
+          // 0x8f5 and the viewers' news.
+          [
+            connection_state.tells_the_map(
+              entered:,
+              request: client_connection.TellStealthChanged(
+                connection: client_connection.connection(session.link),
+                stealthed:,
+              ),
+            ),
+          ],
         ]),
       )
       cast.StealthChanged(..), None -> #(session, [])
