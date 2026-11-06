@@ -1898,7 +1898,7 @@ pub fn unit_property_rows() -> List(List(Cell)) {
 
 /// The Prerequisite row Rampage's caster cast column names, the client's
 /// (`table_rows -- Prerequisite 19750`): type 15, comparison 1, value 42908.
-fn waiver_prerequisite_rows() -> List(List(Cell)) {
+pub fn waiver_prerequisite_rows() -> List(List(Cell)) {
   [prerequisite_row(id: 19_750, flags: 0, conditions: [#(15, 1, 0, 42_908)])]
 }
 

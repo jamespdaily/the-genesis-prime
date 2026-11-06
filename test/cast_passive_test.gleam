@@ -13,8 +13,12 @@
 ////   removed), 104001 (Fluff behind 24595), 108420 (VitalModifier -1200 behind
 ////   24604) and 112840 (removes Spell4 42908, Overdrive).
 //// - `spellId=45000`: 104980, 177521 and 177522 (the same three properties), 108412
-////   (Proxy to 46297 behind Prerequisite 30012, type 11: not read) and 229304
-////   (type 145, not read).
+////   (Proxy to 46297 behind Prerequisite 30012) and 229304 (type 145, not read).
+//// - `table_rows -- Prerequisite 30012 30010 38897 29795`: 30012 negates 30010 (type 11,
+////   comparison 2), which is AND of 38897 and "under Spell4 57168"; 38897 is OR of 29795
+////   and "under a spell of group 503"; 29795 is AND of "slot 1 above 29" and "slot 1 below
+////   71" (type 64). A caster whose slot 1 holds 0 or 1000 and is under no cast fails 29795,
+////   so 38897, 30010 and so passes 30012: the Proxy to 46297 starts.
 //// - `spellId=45057`: 147119, 147132, 159136, 202043 and 211002 (type 14 procs, not
 ////   read), 147125 (Proxy to 60724 after 50 ms, ungated), 173780 (VitalModifier
 ////   behind 37067: in combat) and 173872 (Proxy to 60868 behind 28773); `spellId=60724`:
@@ -107,23 +111,28 @@ pub fn the_warriors_passive_starts_with_0x7ff_no_0x7fd_and_lists_the_fluff_and_t
   assert timers == [] as "no timer is left: its nodes last until removed"
 }
 
-pub fn the_engineers_passive_lists_its_three_properties_and_skips_the_proxy_it_cannot_decide_test() -> Nil {
+pub fn the_engineers_passive_lists_its_three_properties_and_starts_46297_behind_the_nested_gate_it_passes_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(_, effects) = started(base: 29_076)
   assert lines(effects:)
-    == ["started k1 45000 root 45000 parent 0", "went k1 p0"]
-    as "46297 does not start, and 229304 (type 145) is skipped"
+    == [
+      "started k1 45000 root 45000 parent 0",
+      "went k1 p0",
+      "started k2 46297 root 45000 parent 45000",
+      "went k2 p0",
+      "finished k2",
+    ]
+    as "Prerequisite 30012 passes for a caster holding 1000 in slot 1 and under no cast (the module's evidence above), so Proxy 108412 starts 46297; 229304 (type 145) is skipped"
   assert listed(effects:) == [104_980, 177_521, 177_522]
-    as "Spell4Effects 104980, 177521 and 177522: the properties 141 to 143"
-  let assert [line] =
-    list.filter(support.logs(effects:), fn(line) {
-      string.contains(line.1, "46297")
+    as "Spell4Effects 104980, 177521 and 177522: the properties 141 to 143; 46297 lists no row the server reads"
+  assert list.filter(support.logs(effects:), fn(line) {
+      string.contains(line.1, "30012")
     })
-    as "one line says why the Proxy to 46297 does not start"
-  assert line.0 == LogDebug
-  assert string.contains(line.1, "30012") && string.contains(line.1, "type 11")
-    as "Spell4Effects 108412 is behind Prerequisite 30012, of type 11, which the server does not read"
+    == []
+    as "the type 11 gate is read, so no line says it cannot be"
+  assert list.all(support.logs(effects:), fn(line) { line.0 == LogDebug })
+    as "what is skipped is a debug line"
 }
 
 pub fn the_stalkers_passive_lists_nothing_and_starts_60724_50_ms_later_test() -> Nil {

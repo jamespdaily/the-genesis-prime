@@ -132,17 +132,24 @@
 ////   compared with the value by the eval code (`0x1407a1750`: 0 to 4
 ////   on the amount, 5 to 9 the same on the percentage of the slot's maximum, any
 ////   other never passes); type 0 is none; any other type is an
-////   `UnreadRequirement`. The waiver (propertyFlags bit 2 with a
-////   prerequisiteIdCasterCast) is kept and never passes: the waiver's prerequisite
-////   is not checked.
+////   `UnreadRequirement`. A failed requirement is waived when the spell's
+////   `RequirementWaiver` passes (below).
 //// - **No target.** None of the 18 level-1 abilities nor the six innate actives needs a
 ////   target the client picks (`Spell4TargetMechanics.targetType`), so the plan holds
 ////   no range and no target rule.
-//// - **A spell's own cast prerequisite** (`Spell4.prerequisiteIdCasterCast`) is
-////   checked by the client before it sends a press (`0x1403ace00`) and by the server
-////   for no spell: it reads only a waiver's (`requirement_waiver`). Four innate
-////   actives hold one (Warrior 46867, Esper 58586, Stalker 46073, Spellslinger
-////   47273), so the server takes a press the client would not send.
+//// - **A spell's own cast conditions** are its four Prerequisite columns, each loaded with
+////   the rows it nests (genesis_prime/game/prerequisite `load`), and kept on every spell
+////   of a tree, the stages and children too. The press checks the pressed or staged
+////   spell's CasterCast (`CastGate`, failure 151) then its TargetCast (281), after every
+////   other check (`0x1403ace00`); a spell whose propertyFlags has bit 2 and whose
+////   casterInnateRequirement0, casterInnateRequirement1 or targetBeginInnateRequirement
+////   is not 0 holds its CasterCast as a `RequirementWaiver`, which only waives a failed
+////   requirement (`0x1403b1780`; Rampage 58524's 19750). The cast rule checks the other
+////   two columns, CasterPersistence (282) and TargetPersistence (283), at the end of each
+////   input while the cast lasts (genesis_prime/game/cast `persisted`), since the client
+////   never evaluates them (`Spell4.prerequisiteIdCasterPersistence`). Four innate actives
+////   hold a gate (Warrior 46867, Esper 58586, Stalker 46073, Spellslinger 47273) and
+////   Spell Surge's buff 47439 a persistence.
 //// - **The innates.** A slot-0 innate's active spell is held as an ability in the
 ////   bag at the index after the level-1 abilities (genesis_prime/game/loadout), so its
 ////   plan is the ability's. Its passive is never pressed: the server starts it itself
@@ -152,7 +159,9 @@
 ////   (`Spell4.spell4ConditionsIdCaster`, `CasterDeath`); the row's other
 ////   conditions are not read.
 //// - **What fails the load:** a Spell4, Spell4Base, Spell4Conditions, SpellCoolDown,
-////   Class or Prerequisite row the tree names that the tables lack, a cost of a type
+////   Class or Prerequisite row the tree names that the tables lack (a Prerequisite
+////   column of a Spell4 row included), a Prerequisite row that nests itself through the
+////   rows it nests, a cost of a type
 ////   not read, a cycle of Proxy effects, a channel with no pulse time, a gain
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
 ////   target apply prerequisite, and an effect of a spell that spends every point

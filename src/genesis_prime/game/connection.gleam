@@ -404,7 +404,11 @@ fn settled(
   handled handled: client_connection.Handled(Session),
   now now: Now,
 ) -> #(State, ConnectionStep(Request)) {
-  client_connection.settle(handled:, flow: flow(now), carried: [])
+  client_connection.settle(
+    handled: connection_casting.persisted(handled:, now:),
+    flow: flow(now),
+    carried: [],
+  )
 }
 
 /// Whether an ask is in flight, so the frames after the one that asked wait.
@@ -428,7 +432,14 @@ fn flow(now: Now) -> client_connection.Flow(Session, Frame, FrameError, State) {
     pending: fn(session: Session) { session.pending },
     take: frame.take,
     taking: fn(session, whole, rest) {
-      handle(session: Session(..session, pending: rest), now:, frame: whole)
+      connection_casting.persisted(
+        handled: handle(
+          session: Session(..session, pending: rest),
+          now:,
+          frame: whole,
+        ),
+        now:,
+      )
     },
     refused: fn(session, error) {
       connection_state.end_for(
