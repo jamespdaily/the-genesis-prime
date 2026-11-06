@@ -173,7 +173,7 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
     })
   let client = ask_support.connect(server)
   // A transaction in another connection locks the table, so the query waits.
-  let release = lock_table(store.pool)
+  let lock = lock_table(store.pool)
   ask_support.command(client, asking_rule.store_command, 1, wait_ms: 300)
   let assert Ok(#(worker_pid, monitored)) =
     process.receive(workers, within: ask_support.event_wait_ms)
@@ -186,9 +186,21 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
     as "the query was still waiting for the lock at the deadline"
   assert ask_support.ended(worker_ended) == ask_support.shutdown()
     as "the asker ended the worker with exit shutdown, the lock still held"
-  process.send(release, Nil)
+  release_lock(lock)
   ask_support.stop(server)
   stop(store)
+}
+
+/// The pool is stopped the moment the lock is released, as a test's end does;
+/// the locking transaction's commit must already be done, or it reads a closed
+/// socket (`query_timeout`) and its crash ends the test.
+pub fn a_lock_released_and_the_pool_stopped_at_once_does_not_crash_the_test_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(list.repeat(Nil, 20), fn(_) {
+    let store = start_store(pool_size: 2)
+    release_lock(lock_table(store.pool))
+    stop(store)
+  })
 }
 
 pub fn a_worker_that_crashes_gives_ended_before_answer_and_the_store_goes_on_serving_test() -> Nil {
@@ -1985,10 +1997,16 @@ fn execute(pool: pog.Connection, sql: String) -> Nil {
   Nil
 }
 
-/// Locks the account table in a transaction of another connection, until the
-/// returned subject is sent to. Returns once the lock is held.
-fn lock_table(pool: pog.Connection) -> process.Subject(Nil) {
+/// A lock on the account table held by a transaction of another connection.
+type Lock {
+  Lock(release: process.Subject(Nil), committed: process.Subject(Nil))
+}
+
+/// Locks the account table in a transaction of another connection, until
+/// `release_lock`. Returns once the lock is held.
+fn lock_table(pool: pog.Connection) -> Lock {
   let locked = process.new_subject()
+  let committed = process.new_subject()
   let _locker =
     process.spawn(fn() {
       let release = process.new_subject()
@@ -2004,10 +2022,20 @@ fn lock_table(pool: pog.Connection) -> process.Subject(Nil) {
           Ok(Nil)
         })
         as "the locking transaction ran"
-      Nil
+      process.send(committed, Nil)
     })
   let assert Ok(release) =
     process.receive(locked, within: ask_support.event_wait_ms)
     as "the table is locked"
-  release
+  Lock(release:, committed:)
+}
+
+/// Releases the lock and returns once its transaction has committed, so the
+/// pool the test stops next has no commit still on the wire.
+fn release_lock(lock: Lock) -> Nil {
+  process.send(lock.release, Nil)
+  let assert Ok(Nil) =
+    process.receive(lock.committed, within: ask_support.event_wait_ms)
+    as "the locking transaction committed"
+  Nil
 }
