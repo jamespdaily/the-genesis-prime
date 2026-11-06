@@ -90,7 +90,7 @@ fn damage_effect() -> spell_area.DamageEffect {
     delay_ms: 166,
     phase_flags: -1,
     aim: AimsAtArea,
-    formula: damage.Formula(multiplier: 1.0, base: 0, parameters: []),
+    formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: []),
     threat_multiplier: 1.0,
     tag: spend.always,
   )
@@ -290,7 +290,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
       delay_ms: 0,
       phase_flags: -1,
       aim: AimsAtArea,
-      formula: damage.Formula(multiplier: 1.0, base: 0, parameters: [
+      formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
         damage.Parameter(kind: 12, value: 0.0935),
         damage.Parameter(kind: 13, value: 0.0935),
         damage.Parameter(kind: 10, value: 8.14),
@@ -305,7 +305,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
       delay_ms: 0,
       phase_flags: -1,
       aim: AimsAtArea,
-      formula: damage.Formula(multiplier: 1.0, base: 0, parameters: [
+      formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
         damage.Parameter(kind: 12, value: 0.336),
         damage.Parameter(kind: 10, value: 18.0),
       ]),
@@ -1318,7 +1318,7 @@ fn offence_of_caster_with(
   let blow =
     DamageEffect(
       ..damage_effect(),
-      formula: damage.Formula(multiplier: 1.0, base: 10, parameters: []),
+      formula: damage.Formula(multiplier: 1.0, base: 10.0, parameters: []),
     )
   let #(_, effects) =
     strike.begin(

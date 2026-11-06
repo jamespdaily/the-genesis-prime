@@ -257,8 +257,9 @@
 ////   info like a Fluff effect, gives the caster's node its life, and starts a pool on
 ////   the caster, as a shield heal and a property modifier do, from the amount worked out at
 ////   the go from the caster's stats as they stood before the go's own effects
-////   (genesis_prime/game/damage). No rule emits an `Absorb`: the plan reads no
-////   type 29 row. The sequence of one go:
+////   (genesis_prime/game/damage). The plan reads a type 29 row as a property modifier row
+////   whose change is an `AbsorbChange` (genesis_prime/game/spell_plan), so it goes
+////   through the same listing, node life, timers, end and removal. The sequence of one go:
 ////
 ////   ```
 ////   go ─▶ 0x7f4 lists the row on the caster
@@ -4223,7 +4224,7 @@ fn go(
         )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
       let #(cast, never_held) = procs_held(cast:, cast_id:, applied:)
-      let #(cast, modifying) = modifiers_armed(cast:, cast_id:, aimed:)
+      let #(cast, modifying) = modifiers_armed(cast:, cast_id:, caster:, aimed:)
       let #(cast, healing) = heals_armed(cast:, cast_id:, aimed:)
       let #(cast, cooldowns) =
         cooldowns_armed(
@@ -4647,7 +4648,7 @@ fn aimed_at(
   let modifiers =
     rows_with_units(
       rows: applied.modifiers,
-      aim: modifier_aim,
+      aim: fn(row) { spell_plan.modifier_aim(modifier: row) },
       caster:,
       primary_target: live.primary_target,
       struck:,
@@ -4791,17 +4792,6 @@ fn aimed_at(
   )
 }
 
-/// The unit a property modifier row aims at: the caster for a type 11 row, which the plan
-/// reads only when its targetFlags include the caster, and for a type 52 row what its
-/// targetFlags name. Only the caster is changed (`aimed_at`): the server gives no other
-/// unit a property.
-fn modifier_aim(row row: spell_plan.PropertyModifier) -> spell_plan.Aim {
-  case row.armor {
-    Some(armor) -> armor.aim
-    None -> spell_plan.AimsAtCaster
-  }
-}
-
 /// The shield heals a go applies, each on the caster, with the amount the caster's own
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
 /// every gate of the go (`subject_of`). A row's units are those its aim names
@@ -4815,7 +4805,7 @@ fn healed_by(
   live live: Live,
   struck struck: List(Struck),
 ) -> List(#(Healed, Int)) {
-  let on_caster = damage.OnCaster(attacker: caster.stats, vitals: caster.vitals)
+  let on_caster = on_caster_of(caster:)
   rows_with_units(
     rows: applied.shield_heals,
     aim: fn(heal: spell_plan.ShieldHeal) { heal.aim },
@@ -4838,6 +4828,12 @@ fn healed_by(
         Error(Nil)
     }
   })
+}
+
+/// What a formula reads of the caster when it is also the target of its effect: the stats
+/// and the vitals it had before the go's own effects (`subject_of`).
+fn on_caster_of(caster caster: Caster) -> damage.OnCaster {
+  damage.OnCaster(attacker: caster.stats, vitals: caster.vitals)
 }
 
 /// The damage description of a shield heal: the amount as the raw, the scaled raw and the
@@ -4995,11 +4991,13 @@ fn removed_by_go(
 fn modifiers_armed(
   cast cast: State,
   cast_id cast_id: Int,
+  caster caster: Caster,
   aimed aimed: Aimed,
 ) -> #(State, List(Effect)) {
   list.fold(aimed.modifiers, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
     let row = entry.0
+    let change = caster_change_of(change: row.change, caster:)
     let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
     let #(cast, cancels) = cancel_source_timers(cast:, source:)
     let #(cast, starting) = case row.row.delay_ms > 0 {
@@ -5007,14 +5005,12 @@ fn modifiers_armed(
         let #(cast, _, start) =
           armed(
             cast:,
-            due: ModifierStart(source:, change: caster_change_of(row.change)),
+            due: ModifierStart(source:, change:),
             after_ms: row.row.delay_ms,
           )
         #(cast, [start])
       }
-      False -> #(cast, [
-        CasterChangeStarts(source:, change: caster_change_of(row.change)),
-      ])
+      False -> #(cast, [CasterChangeStarts(source:, change:)])
     }
     let #(cast, ending) = case row.row.until_removed {
       True -> #(cast, [])
@@ -5032,11 +5028,24 @@ fn modifiers_armed(
   })
 }
 
-/// What a modifier row's change asks of the connection when it starts.
-fn caster_change_of(change: spell_plan.Change) -> CasterChange {
+/// What a modifier row's change asks of the connection when it starts: an absorb's pool is
+/// worked out at the go from the caster as it stood before the go's own effects, as a shield
+/// heal's amount is (`healed_by`).
+fn caster_change_of(
+  change change: spell_plan.Change,
+  caster caster: Caster,
+) -> CasterChange {
   case change {
     spell_plan.PropertyChange(modifier:) -> Property(modifier:)
     spell_plan.LookChange(disguise:) -> Look(disguise:)
+    spell_plan.AbsorbChange(absorption:) ->
+      Absorb(
+        amount: damage.amount_on_caster(
+          formula: absorption.formula,
+          caster: on_caster_of(caster:),
+        ),
+        mask: absorption.mask,
+      )
   }
 }
 

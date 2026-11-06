@@ -72,7 +72,7 @@ fn heal_of(
     aim: AimsAtCaster,
     condition:,
     tag: spend.always,
-    formula: Formula(multiplier: 1.0, base: 0, parameters: [
+    formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
       Parameter(kind: 22, value: 0.3),
       Parameter(kind: 0, value: 0.0),
       Parameter(kind: 0, value: 0.0),

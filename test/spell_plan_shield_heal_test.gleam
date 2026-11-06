@@ -118,7 +118,7 @@ pub fn a_heal_shields_row_aimed_at_the_caster_is_a_shield_heal_with_its_formula_
       aim: AimsAtCaster,
       condition: Always,
       tag: spend.EqualTo(value: 0),
-      formula: Formula(multiplier: 1.0, base: 0, parameters: [
+      formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
         Parameter(kind: 22, value: 0.3),
         Parameter(kind: 0, value: 0.0),
         Parameter(kind: 0, value: 0.0),
