@@ -517,6 +517,9 @@ pub type Caster {
     /// The player's health (Vital 1) and shield (Vital 3), by Vital id, which a
     /// type 71 or 73 prerequisite reads beside the class resource's slots.
     life_vitals: Dict(Int, prerequisite.Vital),
+    /// The player's faction and base faction, the two faction fields of its 0x262, which
+    /// the type 4 and 250 prerequisites read.
+    factions: prerequisite.Factions,
   )
 }
 
@@ -5085,6 +5088,7 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     }),
     rolls: [],
     positions: prerequisite.Placed(first: pose, second: pose),
+    factions: Some(caster.factions),
     seen: prerequisite.WholeUnit,
   )
 }
