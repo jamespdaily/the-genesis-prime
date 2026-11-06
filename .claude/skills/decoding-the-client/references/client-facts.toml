@@ -9631,3 +9631,141 @@ statement = "The stack groups of the 4,445 spells (with a Spell4 row) that hold 
 proof = "Spell4 spell4StackGroupId, stackPriority and propertyFlags of every row from `gleam run -m genesis_prime/table_rows -- Spell4`, and stackCap and stackTypeEnum from `-- Spell4StackGroup`, joined in the scratch script for session 15a1adef to the rows of Spell4Effects.effectType.11.other_units."
 grade = "fairly sure"
 gap = "Counted by a scratch script, not a test. The stacking rule itself is not in the client (Spell4StackGroup.server_rule): retail recordings of two players putting one capped debuff on one creature settle whether two casters' modifiers both count."
+
+["Class.spell4IdInnateAbilityActive00"]
+statement = "Each class holds up to three innates, slot 0 to 2, each an active spell (spell4IdInnateAbilityActive0n) and a passive spell (spell4IdInnateAbilityPassive0n) with a gate (prerequisiteIdInnateAbility0n, 0 for none). The client takes the slots in order and stops at the first with no active spell. Rows: Warrior (1) 46867 Stance: Onslaught with passive 44926, then 47022 / 44932 gated by 39778; Engineer (2) 47866 Mode: Eradicate with 45000, then 47881 / 41504 gated by 39778; Esper (3) 58586 Spectral Form, no passive, no other slot; Medic (4) 69450 Energize, no passive, no other slot; Stalker (5) 46073 Nano Skin: Lethal (its active enters Stealth) with 45057, then 46074 / 45058 gated by 39778 and 38782 / 46059 gated by 39779; Spellslinger (7) 47273 Spell Surge, no passive, no other slot. Slot 0 has no gate in any row. Gate 39778 is Prerequisite type 1, comparison 4, value 6 and 39779 the same with value 10 (the levels 6 and 10 the step's issue names). No class's innate spell has a SpellLevel row, so a loadout made from SpellLevel holds none."
+proof = "`gleam run -m genesis_prime/table_rows -- Class` (offsets from `-- Class --columns`: active00 28, active01 32, active02 36, passive00 40, passive01 44, passive02 48, prerequisite00 52, 01 56, 02 60). InitClassInnates 0x1405e7330 (listing read with the query process: 0x1405e73a0 cmp dword ptr [rax], 0x0; 0x1405e73ab mov dword ptr [r10 + rax], ecx; 0x1405e73b2 mov dword ptr [r11 + rax], ecx; 0x1405e73bd mov dword ptr [rdx + rax], ecx): for slot n from 0 while row dword (0x1c + 4n) is non-zero, below 3: count (object 0x38) + 1, object 0x8 + 4n = row 0x1c + 4n (active), object 0x14 + 4n = row 0x28 + 4n (passive), object 0x20 + 4n = row 0x34 + 4n (gate) when non-zero. `-- Prerequisite 39778 39779`: prerequisiteTypeId0 1, prerequisiteComparisonId0 4, value0 6 and 10. Names: `client_files.py text` of Spell4Base localizedTextIdName (`-- Spell4Base 30828 29035 31779 29076 38012 46615 30075 29131 31213`): 441689, 423347 Stance: Onslaught; 449959, 423941 Mode: Eradicate; 504980 Spectral Form; 560580 Energize; 436112, 425464 Nano Skin: Lethal; 445007 Spell Surge; 46073's localizedTextIdCasterIconSpellText 760695 'Active: Enter Stealth, ...'. `-- SpellLevel spell4Id=<id>` for 46073 46867 47866 58586 69450 47273 45057: no rows."
+grade = "sure"
+
+["Class.spell4IdInnateAbilityActive00.trees"]
+statement = "The spells each class's slot-0 innate reaches (the spell, its stages and every Proxy child, gated or not), and the types in them the server does not handle (its handled effect types are 1, 3, 4, 8, 11, 17, 26, 73 and 80; its prerequisite types 15, 21, 28, 37, 50, 59, 71, 73 and 179). Warrior 46867: 46867, 42908, 60915, 79875; effect types 18, 52, 90 (decoded, not handled) and 118 not handled; prerequisites all handled (15, 50). Warrior passive 44926: 44926 alone; all handled (effects 1, 11, 17, 80; prerequisite 15). Engineer 47866: 47866, 47860, 79697, 57443, 70599, 52371; effects 14 (decoded, not handled) and 112; prerequisites 243 and 250. Engineer passive 45000: 45000, 46297; effect 145; prerequisite 11. Esper 58586: 58586, 70369, 76766, 78078; effects 29 and 52; prerequisites handled (15, 28). Medic 69450: 69450, 60718, 60796; effects 64 and 118; prerequisites handled (15). Stalker 46073: 46073, 38784, 83850, 38783; effects 14 (decoded), 81 and 83; prerequisites 11, 109, 116 (decoded: stealth) and 129, 46073's own Runner00 6527 (type 116) and CasterCast 39321 (type 11) among them. Stalker passive 45057: 45057, 60724, 60868; effects 14 (decoded) and 24; prerequisite 116. Spellslinger 47273: 47273, 47439, 78307; every effect type handled (11, 17, 26, 80); prerequisites 11 and 64. No slot-0 innate is a staged spell."
+proof = "Scratch module /private/tmp/claude-502/-Users-jimd-Projects-the-genesis-prime/15a1adef-be8b-4d74-aa85-94cace423b59/scratchpad/scratch_innate.gleam run in the worktree with /private/tmp/claude-502/-Users-jimd-Projects-the-genesis-prime/15a1adef-be8b-4d74-aa85-94cace423b59/scratchpad/scratch_plan_one.patch applied (a public spell_plan.scratch_plan_one that calls the plans' own spell_of for one Spell4 id; reverted after): spell_plan.tree(started: always) for each spell, spell_plan.effects_by_spell for the effect types, and coverage/starting_ability.prerequisite_types_of (the measure's own walk) for the prerequisite types. Handled types from `gleam run -m genesis_prime/coverage` (2026-11-06, origin/main eff4c3c8). `gleam run -m genesis_prime/table_rows -- Prerequisite 6527 39321`: types 116 and 11."
+grade = "fairly sure"
+gap = "Read by a scratch walk, not by the measure itself: the coverage measure walks only the SpellLevel abilities' trees. A Proc (type 14) names the spell it fires in dataBits00 as a kind, not a Spell4 id, so spells a proc starts are not in these trees. A tool that walks the trees of named Spell4 ids is asked for as a tool gap on the decoder tools' milestone."
+
+["Class.spell4IdInnateAbilityPassive00"]
+statement = "The client never casts an innate's passive spell and shows no buff for it: nothing in the client reads the passive except GameLib.GetClassInnateAbilitySpells (its list) and the innate switch check (0x1405e7490, which looks at the next slot's passive before switching). Every slot-0 passive (Warrior 44926, Engineer 45000, Stalker 45057) has uiFlags 4, which never makes a buff, and propertyFlags 0x100, which keeps its cast when its caster is removed. So the server alone starts it; the client expects to see nothing for it, and a go of it on the player only adds a target node the client does not draw."
+proof = "Readers of the class innate object's passives (object 0x14 + 4n): the saved C files that name game state 0x6d90 (`rg -l 0x6d90` in the saved C), read one by one: only 0x1406f69e0 (GetClassInnateAbilitySpells, 8eb22adb6de47956) and 0x1405e7490 (FindSpell of object 0x14 + 4n) read 0x14 onward; none calls a cast. `gleam run -m genesis_prime/table_rows -- Spell4 44926 45000 45057`: uiFlags 4; propertyFlags 1049872 (0x100510), 1296 (0x510), 1296. Buff rule: Unit.GetBuffs (uiFlags 0x4 never shows one); cast.target_node_end (propertyFlags 0x100)."
+grade = "fairly sure"
+gap = "A cast through a register or a pointer table that reads the passive would be missed by the text search of 0x6d90 users; a live sitting with a Stalker logged in on a server that sends nothing for 45057 would show whether any client part waits for it."
+
+["0x1405e7330"]
+statement = "Makes a class's innate object from its Class row: the active, passive and gate of each slot until the first slot with no active (Class.spell4IdInnateAbilityActive00), the count of those slots, and the current innate index 4, which names no slot. Every class mechanic object is built on it."
+proof = "Listing read with the query process (disassemble 0x1405e7330): 0x1405e7330 mov qword [rcx+0x30], 4 (the index); 0x1405e7345 count 0x38 = 0; the loop 0x1405e73a0 to 0x1405e73cb as in Class.spell4IdInnateAbilityActive00. Called by MakeClassMechanic 0x1403c9f30 (saved C 8eb22adb6de47956) for every mechanic, the object stored at game state 0x6d90."
+grade = "sure"
+name = "InitClassInnates"
+
+["0x1405e73e0"]
+statement = "The number of innates the player has unlocked: 1 with no player; otherwise slot 0 always, then each next slot while its gate passes for the player, stopping at the first that fails. A slot with gate 0 counts without a check. At level 1 every class has 1."
+proof = "Saved C 0x1405e73e0.c (8eb22adb6de47956): from 1 while below the slot count (object 0x38), the gate at object 0x20 + 4n, non-zero -> the call through the object at 0x140c659a0 slot 0x18 (player, gate, 0, 0, 0); 0 -> return the slots so far. The same object's slot 0x18 is the prerequisite check 0x140758020 (ActionSetLib.IsSlotUnlocked) calls. Class gates 39778 and 39779 need level 6 and 10 (Class.spell4IdInnateAbilityActive00)."
+grade = "fairly sure"
+gap = "That the object at 0x140c659a0 is the prerequisite evaluator is taken from IsSlotUnlocked's use, not read; that type 1 is the player's level and comparison 4 is at least is the issue's reading, not decoded here."
+name = "CountUnlockedInnates"
+
+["0x1405e7490"]
+statement = "Switches the player's current innate (SetStance keys, GameLib.SetCurrentClassInnateAbilityIndex): it refuses (0x80004005, nothing sent) an index not below the unlocked count or a slot with no active spell; an index equal to the current one does nothing. When asked to tell the server, it also refuses while the next slot's passive has global cooldown kind 0 or 2 and the player holds a running timer it checks. Otherwise it sets the index, points the innate button at the new active spell and, when telling the server, sends 0x16f with the index."
+proof = "Saved C 0x1405e7490.c (6ba38d868f75acff): CountUnlockedInnates 0x1405e73e0 <= index -> 0x80004005; index == object 0x30 -> 0; object 0x8 + 4 × index == 0 -> 0x80004005; with the third argument: FindSpell(object 0x14 + 4 × index), record 0x24 (globalCooldownEnum, FillSpellRecord) & ~2 == 0 -> walks player 0x1608 (next at 0x88) for an entry with word 4 == 0, 0x20 set and 0x140195f70(entry + 0x10) non-zero -> 0x80004005; object 0x30 = index; 0x1405c7960(innate shortcut 0x140c89d90, active); SendWorldMessage(0x16f, the index as one byte). Callers: the input dispatcher 0x1404d7a10 cases 0x67 to 0x69 (index = action - 0x67, third argument 1), 0x14063e440 (a chat command's handler, 1) and 0x1406f7080 (the Lua method, 1)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run. What the player list at 0x1608 holds and what 0x140195f70 tests are not read (the switch only matters from level 6); input actions 0x67 to 0x69 are SetStance1 to 3 by the Lua doc's CodeEnumInputAction order plus one, the same offset the limited action set keys have (0x1404da740)."
+name = "SetInnateIndex"
+
+["opcode.0x16f"]
+statement = "Message 0x16f (367), client to world server: the player switches to an innate. Body: the innate index (8 bits, 0 to 2, the Class slot). The client sends it after it has already switched its own index and button (0x1405e7490), so the server must take the index or set it back with 0x19f; it never comes for the index already current, so at level 1, once the server has sent 0x19f with 0, the client never sends it."
+proof = "Registered in 0x14006c290 (saved C line 327, 8eb22adb6de47956): id 0x16f, record 1, sizer 0x140088110 (add 8 to the size in bits), writer 0x140088120 (decoded with the query process: one byte from the record written at the bit position, the position advanced by 8; the slow path calls 0x140336470 with 8 bits), no reader. Sole sender SetInnateIndex 0x1405e7490."
+grade = "fairly sure"
+gap = "Not run, and no sitting holds one (`gleam run -m genesis_prime/unhandled_ranking -- ~/.genesis-prime/sittings/*` lists no 0x016F). The earlier server's ClientSetStance had the same layout (a lead, confirmed here)."
+
+["opcode.0x19f"]
+statement = "Message 0x19f (415), world server to client: the player's current innate. Body: the innate index (2 bits). The client takes it when it is below the unlocked count (0x1405e73e0) and its slot holds an active spell; it then points the innate button at that active spell, unless the index is already the current one, and raises the Lua event StanceChanged either way. An index the client refuses is dropped without error. Until a 0x19f, the client's index is 4 (InitClassInnates), which names no slot."
+proof = "Registered in 0x14006c290 (saved C line 488, 8eb22adb6de47956): id 0x19f, record 1, reader 0x14008e170 (decoded: ReadBits8 0x14006be30 with width 2). HandleWorldMessage 0x1403ec6a0 case 0x1403ef726 (client_trace.py 0x19f, table jmp 0x1403ec719) calls HandleInnateIndex 0x1403b9530 (saved C 8eb22adb6de47956): the class innate object at game state 0x6d90 (none -> 0x80004005), index < CountUnlockedInnates and != object 0x30 and object 0x8 + 4 × index != 0 -> object 0x30 = index and 0x1405c7960(0x140c89d90, active); 'StanceChanged' raised for every index below the count."
+grade = "fairly sure"
+gap = "Read from the decompile; not run. The earlier server sent ServerStanceChanged (2 bits) after the ability messages at world entry (a lead, confirmed here)."
+
+["0x1403b9530"]
+statement = "Handles message 0x19f: sets the player's current innate and its button (opcode.0x19f)."
+proof = "As opcode.0x19f."
+grade = "fairly sure"
+gap = "As opcode.0x19f."
+name = "HandleInnateIndex"
+
+["0x1405b3270"]
+statement = "Makes the game command shortcuts, an array of 36 at 0x140c89d80 indexed by the game command type (GameLib.CodeEnumGameCommandType): entry 2, ClassInnateAbility, is the innate shortcut (0x14077dfa0). An ActionBarButton of ContentType GCBar shows the entry its ContentId names."
+proof = "Saved C 0x1405b3270.c (8eb22adb6de47956): frees the 0x24 entries from 0x140c89d80, then 0x140c89d80 = 0x14077e0c0(...), 0x140c89d88 = 0x14077dd90(...), 0x140c89d90 = 0x14077dfa0(...), 0x140c89d98 a shortcut of type 3 with table 0x140b6d510, and so on. The button resolver 0x1406c5440 (saved C 8eb22adb6de47956 line 154): content type string 0x140b39730 (UTF-16 'GCBar', bytes read with the query process) -> (&0x140c89d80)[content id] when below 0x24. UI/ActionBarFrame/ActionBarFrame.xml: ActionBarInnate is ContentType GCBar, ContentId 2. UI/NonCombatSpellbook/NonCombatSpellbook.lua ktCommandIds lists GadgetAbility, DefaultAttack, ClassInnateAbility first."
+grade = "fairly sure"
+gap = "The enum values (ClassInnateAbility = 2) are taken from ContentId 2 and the list order, not read from the client's enum table."
+name = "MakeGameCommandShortcuts"
+
+["0x14077dfa0"]
+statement = "Makes the innate shortcut (the action bar's innate button, game command 2): an ability shortcut (type 3) whose spell is the active spell of the player's current innate, when there is a player and a class innate object. Its press is an ability press: it goes through AbilityShortcutInput 0x1405c9900 with the shortcut's Spell4Base id, so it casts only when the ability bag holds an item of that Spell4Base and the ability book has a spell for it, and then sends 0x9a with that item's bag index (or 0x4db under hold to continue casting)."
+proof = "Saved C 0x14077dfa0.c (8eb22adb6de47956): base ability shortcut constructor 0x1405c7150, table 0x140b77af0; the spell = innate object 0x8 + 4 × object 0x30; FindPlayerSpell 0x1405a5b90 else 0x1407a0fd0; SetShortcutSpell 0x1405c7620 (saved C 8eb22adb6de47956): shortcut 0x114 = spell record word 0 (the Spell4 id), 0x118 = record word 4 (Spell4Base id: FillSpellRecord line 33 copies Spell4 row dword 4, spell4BaseIdBaseSpell, offset 16 by `table_rows -- Spell4 --columns`). Table 0x140b77af0 read with the query process: slot 0x8 0x14019acd0 (returns 3), slot 0x30 0x14077e040, slot 0x40 0x14077e0b0 (thunk of the input dispatch 0x1405c9b90, whose switch sends type 3 to its default, slot 0x50), slot 0x50 0x1405c9900 (AbilityShortcutInput, the ability shortcut table 0x140b6dce0's own slot 0x50)."
+grade = "fairly sure"
+gap = "Read from the decompile and table bytes; not run. A live press with the innate in the bag would settle it."
+name = "MakeInnateShortcut"
+
+["0x14077e040"]
+statement = "The innate shortcut's refresh: when it has no spell (shortcut 0x114 is 0) it takes the active spell of the current innate index; then it refreshes the usable look as every ability shortcut does. Before any 0x19f the index is 4, so it reads the word after the third active, which is the slot-1 passive (Stalker 45058, Warrior 44932, Engineer 41504; 0 for the other classes)."
+proof = "Saved C 0x14077e040.c (90c9bd90a6f6a3c3): shortcut 0x114 != 0 -> RefreshShortcutUsable 0x1405c8ec0; else object 0x8 + 4 × object 0x30, then 0x1405a5b90 or 0x1407a0fd0, SetShortcutSpell 0x1405c7620. Slot 0x30 of table 0x140b77af0. Object layout from InitClassInnates 0x1405e7330: 0x8 actives[3], 0x14 passives[3], so index 4 reads 0x18, passive slot 1. `table_rows -- Class`: passive01 45058, 44932, 41504, 0, 0, 0."
+grade = "fairly sure"
+gap = "When 0x1405b3270 runs against the player's creation (so whether the button first holds no spell or that passive) is not read; a sitting with no 0x19f would show it."
+name = "RefreshInnateShortcut"
+
+["0x1404da2e0"]
+statement = "The CastInnateAbility key (input action 0x7b): hands the key's state to the innate shortcut as the limited action set keys do for theirs: down -> pressed (1), then held (2) at once or after the hold delay; up -> released (0). So the key and the button press the same shortcut."
+proof = "Saved C 0x1404da2e0.c (8eb22adb6de47956): the innate shortcut 0x140c89d90's slot 0x40 (input dispatch) with param != 0, then with 2 directly under the setting at 0x140c45e50 or by a timer (0x140195960). Input dispatcher 0x1404d7a10 case 0x7b (saved C line 321) calls it with 1 or 0. CodeEnumInputAction in UI/LuaDocData/data.xml: CastInnateAbility at position 122, plus one as for LimitedActionSet (0x1404da740)."
+grade = "fairly sure"
+gap = "The timer path's callback 0x1404da3c0 is not read."
+name = "CastInnateAbilityKey"
+
+["0x1406f7080"]
+statement = "Lua GameLib.SetCurrentClassInnateAbilityIndex(n): switches to innate n (1-based) through SetInnateIndex 0x1405e7490, telling the server (0x16f). The action bar's stance popout calls it with the chosen stance."
+proof = "Name pair 'SetCurrentClassInnateAbilityIndex' 0x140b425e8 with 0x1406f7080 at 0x140b72890 (bytes read with the query process). Saved C 0x1406f7080.c (8eb22adb6de47956): the number argument minus 1 when above 0, 0x1405e7490(game 0x6d90, n, 1). UI/ActionBarFrame/ActionBarFrame.lua OnStanceBtn."
+grade = "fairly sure"
+gap = "Not run."
+name = "LuaGameLibSetCurrentClassInnateAbilityIndex"
+
+["0x1406f6f00"]
+statement = "Lua GameLib.IsCurrentInnateAbilityActive(): true while a cast of the current innate's active spell has a live target node on the player (a go of it struck the player and no finish, failure or 0x811 has ended it). The class resource bars (ClassResources.lua) draw their innate look from it. Before any 0x19f it tests the slot-1 passive (0x14077e040)."
+proof = "Name pair 'IsCurrentInnateAbilityActive' 0x140b425c8 with 0x1406f6f00 at 0x140b728a0. Saved C 0x1406f6f00.c (8eb22adb6de47956): 0x140469920(player, object 0x8 + 4 × object 0x30) != 0. 0x140469920 (saved C 8eb22adb6de47956): walks the unit's target node list (unit 0x15c8, filled by InitCastTargetNode 0x140717990, next at 0x18) for a node whose cast (node 0x38) gives that spell id from its table slot 0x8 or holds it at 0x6c."
+grade = "fairly sure"
+gap = "Which spell id the cast's slot 0x8 and word 0x6c give (the cast's spell or its parent) is not read; for a Proxy child cast it may be the parent's, which would make Stalker's Stealth (Proxy child 38784 of 46073) count."
+name = "LuaGameLibIsCurrentInnateAbilityActive"
+
+["0x140469920"]
+statement = "Finds a target node on a unit whose cast is of a given spell: none when no live cast on the unit matches (0x1406f6f00)."
+proof = "As 0x1406f6f00."
+grade = "fairly sure"
+gap = "As 0x1406f6f00."
+name = "FindUnitNodeCastOfSpell"
+
+["0x1406f69e0"]
+statement = "Lua GameLib.GetClassInnateAbilitySpells(): a table with nSpellCount (the unlocked count, 0x1405e73e0) and tSpells, the spells of each unlocked slot in order, active then passive (so odd Lua indexes are actives); the stance popout lists the actives. A slot whose spell the client cannot find leaves a gap."
+proof = "Name pair 'GetClassInnateAbilitySpells' 0x140b42680 with 0x1406f69e0 at 0x140b72850. Saved C 0x1406f69e0.c (8eb22adb6de47956): L'nSpellCount' = 0x1405e73e0; for each unlocked slot, 0x1403d3470 of object 0x8 + 4n then of 0x14 + 4n into L'tSpells'. ActionBarFrame.lua RedrawStances: idx % 2 == 1."
+grade = "fairly sure"
+gap = "Not run."
+name = "LuaGameLibGetClassInnateAbilitySpells"
+
+["0x1406f7030"]
+statement = "Lua GameLib.GetCurrentClassInnateAbilityIndex(): the current innate index plus 1; 1 with no class innate object, 5 before any 0x19f."
+proof = "Name pair 'GetCurrentClassInnateAbilityIndex' 0x140b42610 with 0x1406f7030 at 0x140b72880. Saved C 0x1406f7030.c (8eb22adb6de47956): object 0x30 + 1."
+grade = "sure"
+name = "LuaGameLibGetCurrentClassInnateAbilityIndex"
+
+["0x1406f6e60"]
+statement = "Lua GameLib.GetNumClassInnateAbilitySpells(): the unlocked innate count (0x1405e73e0), 0 with no class innate object."
+proof = "Name pair at 0x140b72860 (name 0x140b42660). Saved C 0x1406f6e60.c (8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run."
+name = "LuaGameLibGetNumClassInnateAbilitySpells"
+
+["0x1406f6eb0"]
+statement = "Lua GameLib.GetCurrentClassInnateAbilitySpell(): the spell of the current innate's active, or of id 0 with no class innate object."
+proof = "Name pair at 0x140b72870 (name 0x140b42638). Saved C 0x1406f6eb0.c (8eb22adb6de47956): object 0x8 + 4 × object 0x30 through 0x1403d3470."
+grade = "fairly sure"
+gap = "Read from the decompile; not run."
+name = "LuaGameLibGetCurrentClassInnateAbilitySpell"
+
+["lua.ActionBarFrame.ActionBarInnate"]
+statement = "What the server must send for a class's slot-0 innate to be held and pressed: (1) the active spell's Spell4Base (Warrior 30828, Engineer 31779, Esper 38012, Medic 46615, Stalker 30075, Spellslinger 31213) as an ability item, message 0x111 with location 4 at a bag index of the server's choosing; (2) its ability book tier, message 0x1a0 (tier 1) for the action set; (3) message 0x19f with index 0 after the player exists, so the button points at slot 0 and not at the slot-1 passive. The press then arrives as 0x9a (or 0x4db) with that bag index, checked by the client as any ability. The innate is not one of the 0x19d action set slots, and the passive needs no message for the client."
+proof = "The button is ActionBarFrame.xml's ActionBarInnate (ContentType GCBar, ContentId 2) -> MakeGameCommandShortcuts 0x1405b3270 entry 2 -> MakeInnateShortcut 0x14077dfa0 -> AbilityShortcutInput 0x1405c9900 (bag search by Spell4Base, GetAbilityItemSpell 0x1405a4b80, CastAbilityBagSpell 0x14039a040). Ability bag and book: opcode.0x111.ability_bag, opcode.0x1a0. Index: opcode.0x19f, 0x14077e040. Bases: `gleam run -m genesis_prime/table_rows -- Spell4 46867 47866 58586 69450 46073 47273` (spell4BaseIdBaseSpell). Passive: Class.spell4IdInnateAbilityPassive00."
+grade = "fairly sure"
+gap = "Not run. Whether 0x111 alone gives the book a castable tier (no 0x1a0) is opcode.0x1a0's open gap. The earlier server put each class's innate active and passive bases in the ability bag and sent 0x19f after the ability messages (a lead; the bag need is confirmed here for the active only)."
