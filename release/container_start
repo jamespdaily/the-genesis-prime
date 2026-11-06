@@ -7,6 +7,11 @@
 # mount also marks the play container, which turns the development chat commands
 # on (GENESIS_DEV_COMMANDS, genesis_prime/game_settings) unless the operator set
 # the variable: production has no sittings folder, so its commands stay off.
+# The same mount sets GENESIS_CHARACTER_SLOTS to 14, the client's most
+# (genesis_prime/game_settings), unless the operator set it: a play account
+# keeps all its slots across deletes, because the 0x968 after a delete then
+# carries entitlement 12 with a count of 12
+# (lua.CharacterSelection.OnCharacterDeleteResult.slots).
 
 set -eu
 
@@ -15,6 +20,8 @@ if [ -n "${GENESIS_SITTINGS_DIR:-}" ]; then
   export GENESIS_RECORD_DIR
   GENESIS_DEV_COMMANDS="${GENESIS_DEV_COMMANDS:-1}"
   export GENESIS_DEV_COMMANDS
+  GENESIS_CHARACTER_SLOTS="${GENESIS_CHARACTER_SLOTS:-14}"
+  export GENESIS_CHARACTER_SLOTS
 fi
 
 exec "$(dirname "$0")/start"
