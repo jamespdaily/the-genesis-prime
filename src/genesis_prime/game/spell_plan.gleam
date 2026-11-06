@@ -73,6 +73,20 @@
 ////   flags bit 2, which start and end the change and give the caster's node of the cast
 ////   its life. A row aimed only at other units is not read. Its caster apply
 ////   prerequisite, phases and spend tag are a Fluff effect's.
+//// - **The procs.** A Proc effect (`Spell4Effects.effectType.14`) whose targetFlags are the
+////   caster's and whose trigger kind (dataBits00) is one of the holder's own events is a
+////   `ProcRow`: 217 entering stealth, 218 leaving it, 44 leaving combat and 0 dying
+////   (`Spell4Effects.effectType.14.dataBits00.217_218`, `.0_44`), the spell it casts
+////   (dataBits01), planned as a Proxy's child is and on the same chain, so a proc that leads
+////   back to a spell on the way fails as a cycle, and its limit, dataBits05 fires in
+////   dataBits04 ms (`Spell4Effects.effectType.14.limits`). Its chance is 1.0 and draws no
+////   roll. Its delay, durationTime and flags bit 2 give the holder's node its life
+////   (`Spell4Effects.effectType.14.lifetime`), and its caster apply prerequisite is a Fluff
+////   effect's. A Proc row of another kind is in no list and the load goes on
+////   (`proc_read`); a row of these kinds with a chance other than 1.0, a unit bit of the
+////   event's other unit, a window or count at or below 0, a gate or filter column, a target
+////   apply or persistence prerequisite or a delayTime fails the load naming the column
+////   (`ProcNotRead`). The spells the procs cast are in the tree (`tree`).
 //// - **The forced moves.** A ForcedMove effect (`Spell4Effects.effectType.3`) whose
 ////   targetFlags include the caster is a `ForcedMove` row: its delay. The go lists it
 ////   on the caster and the caster's client moves itself and reports the move

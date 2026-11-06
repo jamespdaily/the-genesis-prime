@@ -21,6 +21,7 @@
 ////                                                                             ─▶ 0x937(P, health) to its viewers
 ////                                Answer(C, Landed(descriptions) | Deflected)  ─▶ TellStrikeAnswered to C
 //// Released(C) ─────────────────▶ fighters - C; the last one:                  ─▶ 0x89a(P, 0) to P and its viewers
+////                                                                              CombatLeft (the cast rule's `combat_left`)
 //// the map's Gone(C) ───────────▶ the same as Released(C), and C joins gone
 //// ```
 ////
@@ -96,7 +97,10 @@
 ////   0x262); ShieldTickTime is the player's property, UnitProperty2 177's default unless
 ////   a modifier changes it (`UnitProperty2.176`).
 //// - **The combat flag** has no client timer (`opcode.0x89a`): the server sends it on
-////   with the first fighter and off with the last.
+////   with the first fighter and off with the last. `CombatLeft` follows the flag's news
+////   when it goes off, with the last release and with a death that had a fighter, and
+////   never when the flag was off already; it is the event of a Proc of kind 44
+////   (`Spell4Effects.effectType.14.dataBits00.0_44`).
 //// - **The stream** goes only to fighters: a creature that holds P on its threat list
 ////   is told P's place at once, then each accepted 0x637, and nothing after it releases P.
 //// - **A `Threatened` from a unit the map reported gone** is dropped: the creature

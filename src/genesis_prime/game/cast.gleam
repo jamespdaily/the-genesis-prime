@@ -32,6 +32,10 @@
 //// each input in the world ─▶ `persisted`: a lasting cast whose persistence stopped holding
 ////                            ends ──▶ 0x7f9 {k, 282 or 283, caster, 0}, then 0x7fe {k}; Tell(each viewer, CastFinished)
 ////
+//// each input ─────────────▶ `settled`: the stealth change ──▶ StealthChanged (0x8f5), then the procs held for the
+////                            input's events (Died or LeftCombat, then EnteredStealth or LeftStealth) cast
+////                            their spells ──▶ 0x7ff {k, root and parent the holder's spell}, no 0x7fd
+////
 //// 0x4db held 1 ────────────▶ the ability is held: the same press, with the id k minted and no 0x7fd
 ////                            its cast over and its cooldowns run ─▶ the same press again (StartTimer(repeat))
 //// 0x4db held 0 ────────────▶ the ability is not held: the repeat timer cancelled; a charge fires its stage
@@ -254,9 +258,31 @@
 ////   with it (`effects_ended`), `damage_taken` ends the sources damage breaks, and
 ////   death and leaving drop all. Each input (a press, a timer, a go, the player's death,
 ////   a blow) compares the stealth before and after and ends with one `StealthChanged`
-////   when it moved, so the connection's 0x8f5 follows the 0x811 and 0x7fe it causes. A
+////   when it moved, so the connection's 0x8f5 follows the 0x811 and 0x7fe it causes and
+////   precedes the procs it fires. A
 ////   caster's type 116 prerequisite reads the stealth as it stood before the go's own
 ////   effects, as every gate does (`subject_of`).
+//// - **A player's procs** are the Proc rows (effect type 14, `spell_plan.ProcRow`) its casts hold on
+////   it, by cast id and effect id (`State.procs`), each with the times it fired at. A go lists each
+////   Proc row of its phase whose gate passes in the caster's target info and holds the caster's node
+////   until the row's life ends, as a Stealth row does (`Spell4Effects.effectType.14.lifetime`), and
+////   adds its source; a source leaves where a stealth source leaves (`effects_ended`), at the
+////   caster's death but for the innate passive's, and at leaving. Each input ends in `settled`,
+////   which lists its events, the input's own (`Died` for `died`, `LeftCombat` for `combat_left`)
+////   and then its stealth change (`EnteredStealth` or `LeftStealth`), and, after the
+////   `StealthChanged` it emits, casts the spell of each proc held when the input's own work was
+////   done whose trigger is among them, in event order and then source order (the server's choice,
+////   `Spell4Effects.effectType.14.dataBits00.217_218`, `.0_44`): a proc whose node the same input
+////   took off does not fire, and one the input applied does. The cast starts as a child's does,
+////   from the caster at itself (dataBits03 1 and 9 alike, `Spell4Effects.effectType.14.dataBits03`):
+////   a 0x7ff with the holder's spell as root and parent and no 0x7fd (`opcode.0x7ff.root_parent`).
+////   Its go and finish are inputs of their own, so its own stealth change fires procs too. A proc
+////   fires at most `count` times in any `window_ms`, counted from the fires the rule keeps, and a
+////   fire exactly `window_ms` after the last is allowed (`Spell4Effects.effectType.14.limits`; the
+////   server's choice of the edge). A spell whose caster condition refuses the caster's life (row 1,
+////   mask 225, refuses a dead caster: `Spell4.spell4ConditionsIdCaster`, `cast.dead_player`) does
+////   not fire and records no fire, with a debug line. The chance is 1.0 and draws no roll. A death
+////   leaves the passive's procs with the passive; a camp drops them and their fire times.
 //// - **A cast that lingers** is one whose last go has gone while a node of it still
 ////   has life: every step of its end runs (the current cast cleared, a channel's
 ////   cooldown, a stage's threshold closed) and only its 0x7fe waits, since the client
@@ -387,6 +413,11 @@
 //// | a 0x801 ends a cast of `EndsStealthAfterLastGo` before its first go | the stealth stays held, nothing written |
 //// | the caster dies stealthed | every cast ends, the sources drop, `StealthChanged` last |
 //// | the player leaves stealthed | the sources drop, nothing is written |
+//// | a proc's trigger happens inside its window | nothing is cast, no fire is recorded |
+//// | a proc's trigger and the removal of its holder's node in one input | the removed proc does not fire: procs are matched after the input's work |
+//// | a proc's trigger happens for a caster its spell's condition refuses (a dead caster) | a debug line naming the row and the spell, no cast and no fire recorded |
+//// | the caster dies in combat | `combat_left`, then `died`: 63366 twice, each under its own limit |
+//// | the caster camps or leaves stealthed | the procs drop with every cast, nothing is cast or written |
 //// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
 //// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
 //// | a 0x801 (0, 0) naming no open threshold | no change, a debug line |
@@ -915,9 +946,11 @@ pub fn take(
   })
 }
 
-/// What an input did, with `StealthChanged` as its last effect when the caster's stealth
+/// What an input did, with `StealthChanged` after its own effects when the caster's stealth
 /// is not what it was in `cast`, the state before the input: one per input, however many
-/// Stealth rows came and went. `step` is the input's own work.
+/// Stealth rows came and went; then the casts of the procs the input's events fire
+/// (`procs_fired`): `own` are the input's own events, and the stealth change follows them.
+/// `step` is the input's own work.
 fn settled(
   cast cast: State,
   caster caster: Caster,
@@ -2966,10 +2999,12 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 /// threshold end, and every other timer is cancelled, as when the player leaves
 /// (`left`). The client does not end its own casts when it dies (not read,
 /// `0x14045e740`), so the server's 0x7fe is the end its viewers see. Every stealth
-/// source drops, and a stealthed caster's `StealthChanged` comes last, after the casts'
-/// 0x7fe. The innate passive's cast is the one cast it leaves: it stays live or
-/// lingering with its nodes, its modifiers, its pending timers and its stealth sources,
-/// and nothing is written for it (`passive_set_aside`).
+/// source drops, and a stealthed caster's `StealthChanged` comes after the casts'
+/// 0x7fe, followed by the casts of the procs the death fires: the `Died` procs first,
+/// then those for the stealth it ended. The innate passive's cast is the one cast it
+/// leaves: it stays live or lingering with its nodes, its modifiers, its pending timers,
+/// its stealth sources and its procs, and nothing is written for it
+/// (`passive_set_aside`).
 pub fn died(
   cast cast: State,
   caster caster: Caster,
