@@ -268,3 +268,101 @@ pub fn said(message: map.Outgoing) -> String {
     | map.Left -> "an answer"
   }
 }
+
+/// A move of connection `connection` to `place`, which holds a facing, at time
+/// `at_ms`.
+pub fn move_to(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+  place place: Place,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(
+      Told(message: Moved(
+        connection: ConnectionId(connection),
+        place:,
+        seq: at_ms,
+      )),
+    ),
+  )
+}
+
+/// The first 0xF2 of connection `connection`'s client, at time `at_ms`.
+pub fn ready(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(
+      Told(message: map.Ready(connection: ConnectionId(connection), seq: 0)),
+    ),
+  )
+}
+
+/// A development summon of Creature2 `creature_id` by connection `connection`'s
+/// player, asked by caller `caller`, at time `at_ms`.
+pub fn summon(
+  state state: State,
+  at_ms at_ms: Int,
+  caller caller: Int,
+  connection connection: Int,
+  creature_id creature_id: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(Asked(
+      caller: CallerId(caller),
+      message: map.Summon(
+        connection: ConnectionId(connection),
+        creature_id: id.Creature2Id(creature_id),
+      ),
+    )),
+  )
+}
+
+/// The firing of the timer the map starts for the run-only spawn `spawn`: the
+/// shell gives it after the summon's start is carried out, and a failure of the
+/// start before it.
+pub fn start_settled(
+  state state: State,
+  at_ms at_ms: Int,
+  spawn spawn: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(ServiceTimerFired(timer: step.TimerId(spawn))),
+  )
+}
+
+/// The end of the creature watched under `watch`, at time `at_ms`: its corpse
+/// timer's stop, a crash or any other end ends the watch the same way.
+pub fn creature_ended(
+  state state: State,
+  at_ms at_ms: Int,
+  watch watch: step.WatchId,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(state:, at_ms:, event: step.WatchEnded(watch:))
+}
+
+/// The start of a creature the shell could not carry out, as it gives the rule
+/// that, at time `at_ms`.
+pub fn creature_not_started(
+  state state: State,
+  at_ms at_ms: Int,
+  watch watch: step.WatchId,
+  reason reason: String,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(step.CreatureNotStarted(watch:, reason:)),
+  )
+}

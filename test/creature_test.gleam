@@ -70,13 +70,22 @@ fn creature_at(
   spawn spawn: Spawn,
   viewers viewers: List(ConnectionId),
 ) -> State {
+  creature_from(source: spawn_source.Stored(id: SpawnId(1)), spawn:, viewers:)
+}
+
+/// The same creature, started at this source's spawn.
+fn creature_from(
+  source source: spawn_source.SpawnSource,
+  spawn spawn: Spawn,
+  viewers viewers: List(ConnectionId),
+) -> State {
   creature.new(Settings(
     creature: CreatureStart(
       map: ship,
       incarnation: 1,
       unit_id: 7,
       life: 3,
-      spawn: spawn_source.Stored(id: SpawnId(1)),
+      spawn: source,
       clock_origin_ms:,
       viewers: list.map(viewers, fn(viewer) {
         let ConnectionId(number) = viewer
@@ -455,6 +464,43 @@ pub fn the_corpse_timer_removes_and_creates_the_creature_again_at_full_health_fo
     ..
   ] = outgoing(taken)
   assert creature_unit.health_of(unit:) == 52 && unit.unit_id == 7
+}
+
+pub fn a_run_only_creatures_corpse_timer_removes_it_for_each_viewer_and_stops_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A summon does not respawn (a server choice, it is a test tool): where a
+  // stored spawn's creature stands again at the corpse timer, a run-only one's
+  // 0x355 goes to each viewer and the creature stops, so its map ends the spawn.
+  let beast = spawn_support.battle_beast(number: -1, x: 0.0)
+  let #(state, _) =
+    feed(
+      state: creature_from(
+        source: spawn_source.RunOnly(spawn_source.Summoned(
+          id: SpawnId(-1),
+          creature_id: beast.creature_id,
+          place: beast.place,
+        )),
+        spawn: beast,
+        viewers: [ConnectionId(2), ConnectionId(5)],
+      ),
+      at_ms: 5000,
+      event: OwnEvent(Started),
+    )
+  let #(state, _) =
+    feed(
+      state:,
+      at_ms: 6000,
+      event: OwnEvent(Told(strike_of(damage: 60, cast_id: 1))),
+    )
+  let #(_, taken) =
+    feed(
+      state:,
+      at_ms: 66_000,
+      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
+    )
+  assert kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
+    as "a 0x355 to each viewer, and no 0x262 that stands it again"
+  assert support.stops(taken) as "the creature stops"
 }
 
 pub fn a_creature_that_lies_dead_when_told_to_retire_stops_at_its_respawn_test() -> Nil {

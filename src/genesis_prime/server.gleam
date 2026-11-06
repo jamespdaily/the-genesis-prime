@@ -833,8 +833,15 @@ fn spawn_of_start(
     spawn_source.Stored(id:) ->
       content_spawn.world(world.spawns, wanted.map.world_id).by_id
       |> dict.get(id)
-    spawn_source.RunOnly(summoned:) ->
-      todo as "spawn.summoned with the world's summon checks; the map checked it, so a refusal is a bug"
+    spawn_source.RunOnly(summoned:) -> {
+      let assert Ok(built) =
+        spawn.summoned(
+          checks: content_spawn.summon_checks(world.spawns),
+          summoned:,
+        )
+        as "the map checked this summon with the same checks, so the creature's start finds no refusal"
+      Ok(built)
+    }
   }
 }
 
