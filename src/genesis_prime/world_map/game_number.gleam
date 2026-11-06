@@ -9,7 +9,6 @@
 ////   a name missing or not known                              ─▶ Refusal
 ////   leash_range ≤ aggro_range                                ─▶ Refusal
 ////   aggro_range ≥ the sight range                            ─▶ Refusal
-////   aggro_threat ≤ 0, chase_stop_fraction outside (0, 1)     ─▶ Refusal
 ////   otherwise ─▶ GameNumbers, read by every map and creature of the run
 //// ```
 ////
@@ -18,13 +17,16 @@
 ////   (genesis_prime/world_map/sight).
 //// - **The leash range** lies outside the aggro range, so a creature at home with a
 ////   player in its ring does not leash at once.
-//// - **The aggro threat** is above 0: an entry of 0 threat is not a foe the client
-////   shows hostile (`0x14045a950`), and a target of none is no fight.
-//// - **The chase stop fraction** lies strictly between 0 and 1: at 0 the creature
-////   stops at the edge of its reach, where the target's first step leaves it, and
-////   at 1 it runs onto the target's own place.
-//// - **The unit of each name** is the table's: `game_number_name_has_its_unit`
-////   refuses a row whose unit is not its name's (migration 0014).
+//// - **The aggro threat** is above 0 and **the chase stop fraction** lies strictly
+////   between 0 and 1, each held by the table (`game_number_aggro_threat_is_positive`,
+////   `game_number_chase_stop_fraction_is_between_0_and_1`, migration 0014): an
+////   entry of 0 threat is not a foe the client shows hostile (`0x14045a950`), and a
+////   target of none is no fight; at a fraction of 0 the creature stops at the edge
+////   of its reach, where the target's first step leaves it, and at 1 it runs onto
+////   the target's own place.
+//// - **The unit of each name** is the table's: `game_number_name_has_its_unit`, a
+////   foreign key to `game_number_name`, refuses a row whose unit is not its name's
+////   and a name nobody listed (migration 0014).
 //// - **Every refusal is collected**, as the other content tables' are
 ////   (genesis_prime/content); the ranges are checked once every name is there.
 
@@ -65,9 +67,8 @@ const expected = [
 ]
 
 /// The numbers of the rows, or every refusal: a name missing or not known, a
-/// leash range not above the aggro range, an aggro range not below `sight_range`,
-/// an aggro threat not above 0 and a chase stop fraction not strictly between 0
-/// and 1.
+/// leash range not above the aggro range and an aggro range not below
+/// `sight_range`.
 pub fn select(
   rows rows: List(Row),
   sight_range sight_range: Float,
@@ -127,20 +128,6 @@ fn ranges_checked(
         <> float.to_string(numbers.aggro_range)
         <> " is not below the sight range of "
         <> float.to_string(sight_range),
-    ),
-    #(
-      numbers.aggro_threat <=. 0.0,
-      "aggro_threat",
-      "an aggro threat of "
-        <> float.to_string(numbers.aggro_threat)
-        <> " is not above 0",
-    ),
-    #(
-      numbers.chase_stop_fraction <=. 0.0 || numbers.chase_stop_fraction >=. 1.0,
-      "chase_stop_fraction",
-      "a chase stop fraction of "
-        <> float.to_string(numbers.chase_stop_fraction)
-        <> " is not between 0 and 1",
     ),
   ]
   case

@@ -1671,6 +1671,25 @@ pub fn a_name_that_breaks_rule_0_is_watched_like_any_name_nobody_holds_and_gets_
   })
 }
 
+pub fn a_target_that_folds_to_an_online_name_is_watched_under_that_fold_and_reaches_its_player_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, real) = whisper_to(a_chat(), "Kd Ef")
+  let #(_, kelvin) = whisper_to(a_chat(), "\u{212A}d Ef")
+  let assert [
+    chat.Watch(target: step.CharacterNamed(folded_name: real_fold), ..),
+    _,
+  ] = real
+    as "the player's own spelling is watched under its fold"
+  let assert [
+    chat.Watch(target: step.CharacterNamed(folded_name: kelvin_fold), ..),
+    _,
+  ] = kelvin
+    as "a target with U+212A is watched like any other name"
+  assert real_fold == "kd ef"
+  assert kelvin_fold == "kd ef"
+    as "U+212A KELVIN SIGN lowercases to U+006B (UnicodeData), so the registry's key for it is the real name's: the whisper reaches the same player its real name reaches"
+}
+
 pub fn an_account_whisper_gets_0x1d9_with_bit_1_test() -> Nil {
   use <- owned_test.run(5000)
   let body =

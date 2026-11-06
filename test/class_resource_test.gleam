@@ -559,6 +559,10 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "class_resource_source_is_a_content_source",
       ),
       #(
+        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'nobody_listed', 1, 'points', 'server_choice', 'x')",
+        "class_resource_name_has_its_unit",
+      ),
+      #(
         "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 0, 'points', 'server_choice', 'x')",
         "class_resource_value_is_positive",
       ),

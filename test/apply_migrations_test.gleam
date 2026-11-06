@@ -192,6 +192,29 @@ pub fn a_file_that_fails_is_neither_applied_nor_recorded_test() -> Nil {
     as "the failing file's first statement was rolled back with the rest"
 }
 
+pub fn migration_0014_refuses_a_database_that_is_not_utf8_and_leaves_it_at_0013_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let shared = database_support.shared()
+  let database =
+    database_support.new_empty_database(
+      on: shared,
+      options: "template template0 encoding 'LATIN1' locale_provider libc lc_collate 'C' lc_ctype 'C'",
+    )
+  let output =
+    failed_output(
+      database_support.migrate(with: shared.settings, database:, arguments: []),
+    )
+  assert string.contains(output, "migration 0014 needs a UTF8 database")
+    as "the name check counts characters and matches letters as UTF-8, so the migration stops at its first statement"
+  assert printed_by(
+      shared:,
+      database:,
+      query: "select max(name) from schema_migration",
+    )
+    == "0013_character_health"
+    as "the earlier files are applied and recorded, and 0014 is neither"
+}
+
 pub fn a_file_that_succeeds_whose_record_fails_leaves_nothing_behind_test() -> Nil {
   use <- owned_test.run(60_000)
   let shared = database_support.shared()
