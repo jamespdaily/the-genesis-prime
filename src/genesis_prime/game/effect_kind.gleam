@@ -36,6 +36,16 @@
 ////   case for it, so the server decides every fire; the server reads the rows aimed at
 ////   the caster whose trigger is one of the holder's own events
 ////   (`Spell4Effects.effectType.14`).
+//// - **Scale** (18) resizes the unit it lands on; the client does all of it, so the
+////   server lists the row in the go with its life, as a Fluff row is
+////   (`Spell4Effects.effectType.18`).
+//// - **RavelSignal** (81) signals a script the client does not hold; the client gives
+////   it no class, so the server lists the row with its life and does no more
+////   (`Spell4Effects.effectType.81`).
+//// - **PropertyConversion** (145) adds a share of one property of its holder to
+////   another while it lasts; the client works out no property, so the server computes
+////   the amount and sends the value; the server reads the rows aimed at the caster
+////   (`Spell4Effects.effectType.145`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -96,6 +106,16 @@ pub type Kind {
   /// caster (`is_row_read`); the plan reads only the kinds the holder's own events make
   /// (genesis_prime/game/spell_plan `proc_read`).
   Proc
+  /// A Scale effect (18): resizes the unit it lands on, any unit
+  /// (`Spell4Effects.effectType.18`).
+  Scale
+  /// A RavelSignal effect (81): signals a script the client does not hold
+  /// (`Spell4Effects.effectType.81`).
+  RavelSignal
+  /// A UnitPropertyConversion effect (145): adds a share of one property of its holder to
+  /// another (`Spell4Effects.effectType.145`). A row is read when its targetFlags include
+  /// the caster (`is_row_read`).
+  PropertyConversion
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -117,13 +137,16 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     118 -> ShieldHeal
     64 -> ShieldOverload
     14 -> Proc
+    18 -> Scale
+    81 -> RavelSignal
+    145 -> PropertyConversion
     other -> Unread(effect_type: other)
   }
 }
 
 /// Whether some rule reads the effect type: the coverage measure's "handled". A
-/// PropertyModifier, ForcedMove or CooldownModifier counts as read for its rows aimed
-/// at the caster, which `is_row_read` tells apart from the others.
+/// PropertyModifier, PropertyConversion, ForcedMove or CooldownModifier counts as read for
+/// its rows aimed at the caster, which `is_row_read` tells apart from the others.
 pub fn is_read(effect_type effect_type: Int) -> Bool {
   case kind_of(effect_type:) {
     Proxy
@@ -137,19 +160,22 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | CooldownModifier
     | Stealth
     | RemoveStealth
+    | Proc
+    | Scale
+    | RavelSignal
+    | PropertyConversion
     | ShieldHeal
-    | ShieldOverload
-    | Proc -> True
+    | ShieldOverload -> True
     Unread(..) -> False
   }
 }
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
-/// type `is_read` for, except that a PropertyModifier, ForcedMove, CooldownModifier,
-/// Stealth, RemoveStealth or Proc row is read only when its flags include the caster (bit 1,
-/// `Spell4Effects.targetFlags`), a ShieldHeal row when they include the caster or are
-/// the primary target alone (2), and a ShieldOverload row only when they are the area
-/// alone (4); a row aimed at other units is left out. A plan of
+/// type `is_read` for, except that a PropertyModifier, PropertyConversion, ForcedMove,
+/// CooldownModifier, Stealth, RemoveStealth or Proc row is read only when its flags
+/// include the caster (bit 1, `Spell4Effects.targetFlags`), a ShieldHeal row when they
+/// include the caster or are the primary target alone (2), and a ShieldOverload row only
+/// when they are the area alone (4); a row aimed at other units is left out. A plan of
 /// a spell with a Stealth or RemoveStealth row aimed other than at the caster alone
 /// fails to load (genesis_prime/game/spell_plan `StealthAimNotRead`).
 pub fn is_row_read(
@@ -158,6 +184,7 @@ pub fn is_row_read(
 ) -> Bool {
   case kind_of(effect_type:) {
     PropertyModifier
+    | PropertyConversion
     | ForcedMove
     | CooldownModifier
     | Stealth
@@ -165,7 +192,14 @@ pub fn is_row_read(
     | Proc -> int.bitwise_and(target_flags, 1) == 1
     ShieldHeal -> int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
-    Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
+    Proxy
+    | Damage
+    | VitalModifier
+    | Fluff
+    | ForceRemove
+    | CrowdControl
+    | Scale
+    | RavelSignal -> True
     Unread(..) -> False
   }
 }

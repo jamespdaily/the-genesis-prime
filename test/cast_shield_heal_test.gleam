@@ -30,7 +30,7 @@ import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AimsAtCaster, Always, GatedOnCaster,
 }
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Source, Modifier, Source}
+import genesis_prime/game/unit_properties.{type Source, Change, Source}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
@@ -303,7 +303,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     spell_plan.PropertyModifier(
       effect_id: Spell4EffectsId(99_001),
       phase_flags: -1,
-      modifier: Modifier(
+      modifier: Change(
         property: UnitProperty2Id(41),
         mode: 3,
         multiplier: 1.0,
