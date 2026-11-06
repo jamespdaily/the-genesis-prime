@@ -153,13 +153,18 @@ test_workers=${GENESIS_TEST_WORKERS:-1}
 # main did, at 99.3% (1,066,336,256 bytes), holding 1.0 GiB of live terms (the
 # client's 384 tables 587 MiB, the server's 36 of them again 306 MiB, leaked
 # planted loads 70 MiB and growing). With each table held once and no test
-# leaving terms, the live terms are flat at 637 MiB (59%), and the highest
-# carriers of nine runs with one test worker (the default; more workers run more
-# tests at once) were 65.2%, 66.7%, 67.0%, 67.2%, 67.9%, 68.7%, 72.8%, 75.4% and
-# 76.9% of the region: the rest comes and goes within a run (erased
-# terms waiting for a purge, loads in flight) and differs from run to run by up
-# to 120 MiB. The limit is 85%: it fails at 870 MiB, 8.1 points above the worst
-# run measured, so a good run does not fail, and it leaves 154 MiB free, 1.4
+# leaving terms, what comes and goes above the live terms is the erased terms
+# waiting for the VM to release them (one round over all processes per erased
+# term, taking seconds when a dozen tests end together) and the loads in flight.
+# A test's load starts only when the allocator holds at most 32 MB beyond the
+# live terms and fewer than two tests hold a load (test/owned_key.gleam), which
+# bounds both. The highest carriers of five runs with one test worker (the
+# default; more workers run more tests at once), one on each of five seeds of the
+# test order, were 74.6%, 74.7%, 75.3%, 75.4% and 78.7% of the region, where the
+# same seeds without the gate gave 79.2%, 80.0%, 80.3%, 80.5% and 82.6%, and
+# four workers without it fill the region and end the VM. The limit is 85%: it
+# fails at 870 MiB, 6.3 points above the worst run measured, so a good run does
+# not fail, and it leaves 154 MiB free, 1.4
 # times the largest table the suite puts (Spline2Node, 115.7 MB), and 123 MiB
 # before the 97% where the VM dies. A run over it fails the check, so the margin
 # cannot vanish unnoticed again. The limit is not set from outside: +MIscs is

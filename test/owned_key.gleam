@@ -16,6 +16,15 @@
 ////   `new_shared_key` for content terms, and is never erased.
 //// - **The limit:** a key made in a process the body started is that process's,
 ////   and the body is not asked about it.
+//// - **A key waits for room.** Every key made here first waits for the literal
+////   area to be released (`literal_area.wait_until_released`) and, when the
+////   process holds no load, for the loads held to be fewer than
+////   `loads_held_limit`: a planted load is 6 to 23 MB (its tables are tuples
+////   as long as their highest id), so the loads of twelve tests at once are
+////   most of 100 MB beside the client's tables. A process that holds a load
+////   never waits for another, and a creator of a shared load
+////   (`database_support.once`) never waits, so no wait is for a process that is
+////   itself waiting.
 
 import genesis_prime/table/loader/store
 import gleam/erlang/process.{type Pid}
@@ -70,3 +79,17 @@ pub fn terms_under(key: store.Key) -> Int
 /// the values of content tables written with `store.put_content`.
 @external(erlang, "owned_key_ffi", "erase")
 pub fn erase(key: store.Key) -> Nil
+
+/// How many loads the tests hold now: the keys made through this module that
+/// have a term stored under them.
+@external(erlang, "owned_key_ffi", "loads_held")
+pub fn loads_held() -> Int
+
+/// The most loads that are held when a process holding none makes a key (the
+/// bytes of a planted load, 6 to 23 MB, are why: see the module's doc).
+@external(erlang, "owned_key_ffi", "loads_held_limit")
+pub fn loads_held_limit() -> Int
+
+/// How many processes wait now for the loads held to fall below the limit.
+@external(erlang, "owned_key_ffi", "waiting_for_room")
+pub fn waiting_for_room() -> Int

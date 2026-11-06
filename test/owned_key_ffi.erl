@@ -1,11 +1,21 @@
 -module(owned_key_ffi).
--export([new/0, own/2, left_behind/1, erase_left/1, terms_under/1, erase/1, wait_until_dead/1]).
+-export([new/0, own/2, left_behind/1, erase_left/1, terms_under/1, erase/1, wait_until_dead/1,
+         loads_held/0, loads_held_limit/0, waiting_for_room/0]).
 
 %% The references each process made, kept in a table that outlives the
 %% processes: {Owner, Reference, Kind}. A body that crashes, is killed by a
 %% linked process or runs past its deadline is dead when its terms are counted,
 %% so a process dictionary would be gone with it.
 -define(TABLE, owned_key_references).
+
+%% The keys made and not yet seen with a term stored under them, {Reference,
+%% Owner}, kept beside the table of references. Their owners are about to load,
+%% so each takes a place among the loads held from the moment its key is made.
+-define(PENDING, owned_key_pending).
+
+%% The most processes that hold a load, or are about to, when a process that
+%% holds none makes a key.
+-define(LOADS_HELD_LIMIT, 2).
 
 %% A new reference, remembered as made by the calling process and to be erased
 %% by it.
@@ -25,18 +35,106 @@ own(Key, _Kind) ->
 
 remember(Reference, Kind) ->
     ensure_table(),
+    admit(Reference),
     ets:insert(?TABLE, {self(), Reference, Kind}),
     ok.
 
-%% The table is made by a process that stays for the life of the VM, by the
-%% first caller; a caller that loses the race finds it made.
+loads_held_limit() ->
+    ?LOADS_HELD_LIMIT.
+
+%% What a key waits for before it is made: the literal area's released, and, for
+%% a process that holds no load, is not about to load and is not making a shared
+%% one, a place among the processes that hold a load (see owned_key.gleam). The
+%% place is taken inside one lock, so processes that ask at once are not all let
+%% in.
+admit(Reference) ->
+    literal_area_ffi:wait_until_released(),
+    case erlang:get(owned_key_unlimited) =:= true orelse claims_a_place(self()) of
+        true -> ok;
+        false -> take_a_place(Reference)
+    end.
+
+take_a_place(Reference) ->
+    case try_to_take_a_place(Reference) of
+        true ->
+            ok;
+        false ->
+            Waiting = waiting_counter(),
+            counters:add(Waiting, 1, 1),
+            try wait_for_a_place(Reference) after counters:sub(Waiting, 1, 1) end
+    end.
+
+wait_for_a_place(Reference) ->
+    case try_to_take_a_place(Reference) of
+        true ->
+            ok;
+        false ->
+            timer:sleep(1),
+            wait_for_a_place(Reference)
+    end.
+
+try_to_take_a_place(Reference) ->
+    global:trans({owned_key_admission, self()},
+                 fun() ->
+                     case loads_held() < ?LOADS_HELD_LIMIT of
+                         true ->
+                             ets:insert(?PENDING, {Reference, self()}),
+                             true;
+                         false ->
+                             false
+                     end
+                 end,
+                 [node()],
+                 infinity).
+
+%% How many processes wait now for a place.
+waiting_for_room() ->
+    counters:get(waiting_counter(), 1).
+
+waiting_counter() ->
+    database_support_ffi:once(<<"owned_key_waiting">>,
+                              fun() -> counters:new(1, [write_concurrency]) end).
+
+%% Whether the process holds a load or is about to load.
+claims_a_place(Owner) ->
+    ets:match_object(?PENDING, {'_', Owner}) =/= []
+        orelse stored_under([Reference || {Reference, _Kind} <- owned_by(Owner)]) =/= [].
+
+%% How many processes hold a load (a term stored under a key they made) or are
+%% about to (a key made, no term seen yet). A key that has a term now, or whose
+%% process has ended, is no longer waiting for one.
+loads_held() ->
+    Entries = ets:tab2list(?TABLE),
+    Owners = maps:from_list([{Reference, Owner} || {Owner, Reference, _Kind} <- Entries]),
+    WithTerms = lists:usort([Reference
+                             || {{{load_key, Reference}, _Name}, _Term} <- persistent_term:get(),
+                                maps:is_key(Reference, Owners)]),
+    Waiting = [Owner
+               || {Reference, Owner} <- ets:tab2list(?PENDING),
+                  still_to_load(Reference, Owner, WithTerms)],
+    length(lists:usort([maps:get(Reference, Owners) || Reference <- WithTerms] ++ Waiting)).
+
+still_to_load(Reference, Owner, WithTerms) ->
+    case lists:member(Reference, WithTerms) orelse not is_process_alive(Owner) of
+        true ->
+            ets:delete(?PENDING, Reference),
+            false;
+        false ->
+            true
+    end.
+
+%% The tables are made by a process that stays for the life of the VM, by the
+%% first caller; a caller that loses the race finds them made.
 ensure_table() ->
     case ets:whereis(?TABLE) of
         undefined ->
             Caller = self(),
             Made = make_ref(),
             spawn(fun() ->
-                try ets:new(?TABLE, [named_table, public, bag, {write_concurrency, true}]) of
+                try
+                    ets:new(?PENDING, [named_table, public, set, {write_concurrency, true}]),
+                    ets:new(?TABLE, [named_table, public, bag, {write_concurrency, true}])
+                of
                     _ ->
                         Caller ! {Made, made},
                         receive stop -> ok end
@@ -76,8 +174,11 @@ left_behind(Owner) ->
 erase_left(Owner) ->
     erase_each(stored_under([Reference || {Reference, _Kind} <- owned_by(Owner)])),
     case ets:whereis(?TABLE) of
-        undefined -> ok;
-        _ -> ets:delete(?TABLE, Owner)
+        undefined ->
+            ok;
+        _ ->
+            ets:delete(?TABLE, Owner),
+            ets:match_delete(?PENDING, {'_', Owner})
     end,
     nil.
 

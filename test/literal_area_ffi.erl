@@ -1,6 +1,7 @@
 -module(literal_area_ffi).
 -export([record_peak/1, carriers_peak/0, persistent_term_memory/0, tables_held_twice/0,
-         names_held_twice/1, table_names/0]).
+         names_held_twice/1, table_names/0, pending_bytes/0, pending_limit_bytes/0,
+         wait_until_released/0, admissions/0]).
 
 %% Starts a process that writes the literal allocator's highest carriers size
 %% since the VM started to File whenever it grows, as decimal digits and a line
@@ -73,3 +74,45 @@ names_held_twice(Terms) ->
                              Size <- [erts_debug:flat_size(Term) * erlang:system_info(wordsize)],
                              Size >= Megabyte],
     lists:usort([Name || {Name, _Size} <- Large -- lists:usort(Large)]).
+
+%% What the allocator holds beyond the live persistent terms may be this many
+%% bytes when a load starts: the VM's own literals take about 9 MB of it, and
+%% the rest is room for a planted load's erased terms (6 to 23 MB each).
+-define(PENDING_LIMIT, 33554432).
+
+pending_limit_bytes() ->
+    ?PENDING_LIMIT.
+
+%% The bytes of the allocator's allocated blocks that are not in a live
+%% persistent term: terms erased and not yet released by the literal area
+%% collector, and the VM's own literals. The allocator's own account, read the
+%% way carriers_peak/0 reads it.
+pending_bytes() ->
+    Allocated = lists:sum([Size
+                           || {instance, _, Properties} <- erlang:system_info({allocator_sizes, literal_alloc}),
+                              {Kind, Fields} <- Properties,
+                              Kind =:= mbcs orelse Kind =:= sbcs,
+                              {blocks, [{literal_alloc, Sizes}]} <- [lists:keyfind(blocks, 1, Fields)],
+                              {size, Size, _, _} <- [lists:keyfind(size, 1, Sizes)]]),
+    max(0, Allocated - persistent_term_memory()).
+
+%% Returns when pending_bytes/0 is at most the limit, checking again every
+%% millisecond. The collector releases the erased terms whatever a test does,
+%% so the wait ends; it is the wait of event_wait.until.
+wait_until_released() ->
+    case pending_bytes() =< ?PENDING_LIMIT of
+        true ->
+            counters:add(admission_counter(), 1, 1),
+            nil;
+        false ->
+            timer:sleep(1),
+            wait_until_released()
+    end.
+
+%% How many times wait_until_released/0 has returned in this VM.
+admissions() ->
+    counters:get(admission_counter(), 1).
+
+admission_counter() ->
+    database_support_ffi:once(<<"literal_area_admissions">>,
+                              fun() -> counters:new(1, [write_concurrency]) end).

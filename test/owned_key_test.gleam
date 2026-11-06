@@ -2,10 +2,14 @@
 //// fails (`owned_test.run`), so no test takes room in the literal area for the
 //// rest of the run.
 
+import ask_support
+import event_wait
 import genesis_prime/table/loader/store
-import gleam/erlang/process.{type Pid}
+import gleam/erlang/process.{type Pid, type Subject}
+import gleam/list
 import owned_key
 import owned_test
+import unitest
 
 /// Starts a process that makes a key, writes one content term under it and
 /// stays alive; gives the process and the key.
@@ -145,4 +149,86 @@ pub fn a_body_that_runs_past_its_deadline_has_its_terms_erased_test() -> Nil {
     as "the body made its key"
   assert owned_key.terms_under(key) == 0
     as "the body was ended before its terms were erased, so it put nothing after"
+}
+
+/// A process that holds a load, and what it is asked to do after.
+type Holder {
+  Holder(pid: Pid, key: store.Key, another_key: Subject(Subject(Nil)))
+}
+
+/// Starts a process that makes a key, writes a term under it, and then makes a
+/// second key whenever it is asked, telling the asker. Gives it once its first
+/// key is made.
+fn start_holder() -> Holder {
+  let started = process.new_subject()
+  let pid =
+    process.spawn_unlinked(fn() {
+      let key = owned_key.new_key()
+      store.put_content(key:, table: "Planted", id: 1, value: "a value")
+      let asked = process.new_subject()
+      process.send(started, #(key, asked))
+      let reply = process.receive_forever(asked)
+      let _second = owned_key.new_key()
+      process.send(reply, Nil)
+      process.sleep_forever()
+    })
+  let assert Ok(#(key, another_key)) =
+    process.receive(started, within: ask_support.event_wait_ms)
+    as "the holder made its key"
+  Holder(pid:, key:, another_key:)
+}
+
+/// Starts as many holders as the limit of loads allows.
+fn holders_up_to_the_limit() -> List(Holder) {
+  list.repeat(Nil, owned_key.loads_held_limit())
+  |> list.map(fn(_) { start_holder() })
+}
+
+fn release(holders: List(Holder)) -> Nil {
+  list.each(holders, fn(holder) {
+    owned_key.erase(holder.key)
+    process.kill(holder.pid)
+  })
+}
+
+pub fn a_process_holding_no_load_waits_while_the_limit_of_loads_is_held_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Other tests' loads count too, so only the serial run, which has the VM to
+  // itself, holds exactly the limit.
+  use <- unitest.tag("serial")
+  let holders = holders_up_to_the_limit()
+  assert owned_key.loads_held() == owned_key.loads_held_limit()
+    as "the holders hold the limit"
+  let made = process.new_subject()
+  let waiter =
+    process.spawn_unlinked(fn() {
+      let key = owned_key.new_key()
+      process.send(made, key)
+      process.sleep_forever()
+    })
+  event_wait.until("the waiter is waiting for room", fn() {
+    owned_key.waiting_for_room() == 1
+  })
+  assert process.receive(made, within: 0) == Error(Nil)
+    as "a key is not handed out while the limit of loads is held"
+  let assert [first, ..] = holders
+  owned_key.erase(first.key)
+  let assert Ok(_key) = process.receive(made, within: ask_support.event_wait_ms)
+    as "the waiter gets its key once a load is erased"
+  process.kill(waiter)
+  release(holders)
+}
+
+pub fn a_process_that_holds_a_load_is_not_made_to_wait_for_another_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use <- unitest.tag("serial")
+  let holders = holders_up_to_the_limit()
+  let assert [first, ..] = holders
+  let second = process.new_subject()
+  process.send(first.another_key, second)
+  let assert Ok(Nil) =
+    process.receive(second, within: ask_support.event_wait_ms)
+    as "a holder makes a second key at once, though the limit of loads is held"
+  assert owned_key.waiting_for_room() == 0 as "no process waited for room"
+  release(holders)
 }
