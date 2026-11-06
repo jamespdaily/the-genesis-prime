@@ -394,7 +394,7 @@
 //// | the respawn timer fires with no one in sight | the spawn is dormant |
 //// | a summoned creature does not start | the asker is answered `NotSummoned(CreatureNotStarted(why))`, an error line is written, and the run-only spawn, its state and its unit id are dropped |
 //// | a summoned creature ends before the answer | the run-only spawn is dropped as at any end; the asker is answered `Summoned` when the summon's timer fires, since the start did not fail |
-//// | a summon names a level with no CreatureLevel row, or one whose row holds no health | answered `NotSummoned(CreatureRefused(why))` at once, naming the level; nothing changes |
+//// | a summon names a level with no CreatureLevel row, or the last row, 101, which holds the properties from 100 up and is no level | answered `NotSummoned(CreatureRefused(why))` at once, naming the level; nothing changes |
 //// | a summon is asked for a connection with no player here | answered `NotSummoned(NoPlayerHere)`; nothing changes |
 //// | two summons are asked at once | each takes the next run-only id and unit id, and each caller is held under its own id, so the answers are told apart |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |

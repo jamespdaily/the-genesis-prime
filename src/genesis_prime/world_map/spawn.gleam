@@ -471,6 +471,10 @@ pub type SummonRefusal {
   /// The summon names a level the CreatureLevel table has no row for, so no
   /// level, health or defence follows from it.
   NoCreatureLevelRow(level: Int)
+  /// The summon names the last CreatureLevel row, which holds the values of the
+  /// properties 100 and above for every level (`last_creature_level`) and is no
+  /// level of a creature.
+  NotACreatureLevel(level: Int)
   /// The row the summon would make fails the client's checks of a spawn
   /// (`client_checks`) or the load's (`load_checks`).
   FailsTheChecks(error: SpawnError)
@@ -488,8 +492,8 @@ pub type SummonRefusal {
 /// `load_checks` and `left_out_of`. The row's own health is none, and its level
 /// is the summon's when it names one (stat 10, so the health and the defence
 /// follow the CreatureLevel row of that level) and else none, so the creature
-/// stands at its `minLevel` with its Base Health (`creature_vitals`). The display and the outfit are the first entry of the
-/// creature's groups, a server choice: the client's weighted pick runs only for
+/// stands at its `minLevel` with its Base Health (`creature_vitals`). The
+/// display and the outfit are the first entry of the creature's groups, a server choice: the client's weighted pick runs only for
 /// spawns it makes itself (`0x1404846c0`, `opcode.0x262.creature`), and both
 /// factions are `Creature2.factionId`, as the world database sends them
 /// (`opcode.0x262.creature`).
@@ -505,6 +509,8 @@ pub fn summoned(
   )
   use row_level <- result.try(case level {
     None -> Ok(None)
+    Some(number) if number == last_creature_level ->
+      Error(NotACreatureLevel(level: number))
     Some(number) ->
       case creature_level.get(catalog.tables, CreatureLevelId(number)) {
         Ok(_) -> Ok(Some(int.to_float(number)))
@@ -559,6 +565,10 @@ pub fn describe_refusal(refusal refusal: SummonRefusal) -> String {
   case refusal {
     NoCreatureLevelRow(level:) ->
       "CreatureLevel " <> int.to_string(level) <> " has no row"
+    NotACreatureLevel(level:) ->
+      "CreatureLevel "
+      <> int.to_string(level)
+      <> " holds the values of the properties from 100 up, and is no level"
     FailsTheChecks(error:) -> describe(error:)
     WouldNotStart(creature_id: Creature2Id(creature_id), reason:) ->
       "Creature2 "

@@ -153,6 +153,24 @@ fn frames_of(effects: List(chat.Effect)) -> List(Frame) {
   })
 }
 
+/// Whether the effects ask the map for a summon.
+fn asks_summon(effects: List(chat.Effect)) -> Bool {
+  list.any(effects, fn(effect) {
+    case effect {
+      chat.AskSummon(..) -> True
+      chat.Send(..)
+      | chat.Tell(..)
+      | chat.TellWatched(..)
+      | chat.UnknownZone(..)
+      | chat.Watch(..)
+      | chat.Unwatch(..)
+      | chat.JoinGroup(..)
+      | chat.LeaveGroup(..)
+      | chat.Unhandled(..) -> False
+    }
+  })
+}
+
 /// The tells of the effects, in order.
 fn tells_of(
   effects: List(chat.Effect),
@@ -974,21 +992,7 @@ pub fn with_the_setting_off_a_summon_line_is_a_say_line_and_nothing_is_asked_tes
   let assert [#(_, Said(line:, ..)), ..] = tells_of(effects)
   assert line.text == bit_stream.utf16_units("!summon 75048")
     && line.channel_type == chat_channel.Say
-  assert !list.any(effects, fn(effect) {
-    case effect {
-      chat.AskSummon(..) -> True
-      chat.Send(..)
-      | chat.Tell(..)
-      | chat.TellWatched(..)
-      | chat.UnknownZone(..)
-      | chat.Watch(..)
-      | chat.Unwatch(..)
-      | chat.JoinGroup(..)
-      | chat.LeaveGroup(..)
-      | chat.Unhandled(..) -> False
-    }
-  })
-    as "nothing is asked of the map"
+  assert !asks_summon(effects) as "nothing is asked of the map"
 }
 
 pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_the_summon_last_test() -> Nil {
@@ -1075,21 +1079,7 @@ pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers
         as "chat.system_line: the design's text for the refusal, as a System line"
       assert tells_of(effects) == []
         as "the design: a refused command is not said aloud"
-      assert !list.any(effects, fn(effect) {
-        case effect {
-          chat.AskSummon(..) -> True
-          chat.Send(..)
-          | chat.Tell(..)
-          | chat.TellWatched(..)
-          | chat.UnknownZone(..)
-          | chat.Watch(..)
-          | chat.Unwatch(..)
-          | chat.JoinGroup(..)
-          | chat.LeaveGroup(..)
-          | chat.Unhandled(..) -> False
-        }
-      })
-        as "no summon is asked of the map"
+      assert !asks_summon(effects) as "no summon is asked of the map"
     },
   )
 }

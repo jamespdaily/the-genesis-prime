@@ -60,13 +60,11 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
       case arguments {
         [creature] -> summon(creature:, level: None)
         [creature, level] ->
-          case decimal(units: level) {
-            Ok(number) -> summon(creature:, level: Some(number))
-            Error(Nil) ->
-              case decimal(units: creature) {
-                Ok(_) -> Error(SummonLevelIsNotAWholeNumber)
-                Error(Nil) -> Error(SummonTakesACreature2Id)
-              }
+          case decimal(units: creature), decimal(units: level) {
+            Ok(number), Ok(level) ->
+              Ok(Summon(creature2_id: Creature2Id(number), level: Some(level)))
+            Ok(_), Error(Nil) -> Error(SummonLevelIsNotAWholeNumber)
+            Error(Nil), _ -> Error(SummonTakesACreature2Id)
           }
         [] | [_, _, _, ..] -> Error(SummonTakesACreature2Id)
       }

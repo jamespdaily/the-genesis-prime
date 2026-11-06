@@ -311,8 +311,11 @@ pub fn commander_durek_summons_with_the_client_rows_faction_display_and_outfit_t
   assert spawn.place == summoned_place()
 }
 
-/// The summon of Commander Durek at `level` with the client's real rows.
-fn durek_at(level level: Int) -> Result(Spawn, spawn.SummonRefusal) {
+/// The summon of Creature2 `creature_id` at `level` with the client's real rows.
+fn real_summon_at(
+  creature_id creature_id: Int,
+  level level: Int,
+) -> Result(Spawn, spawn.SummonRefusal) {
   spawn.summoned(
     checks: spawn.summon_checks(
       tables: client_tables.every_table(),
@@ -321,7 +324,7 @@ fn durek_at(level level: Int) -> Result(Spawn, spawn.SummonRefusal) {
     ),
     summoned: Summoned(
       id: SpawnId(-1),
-      creature_id: Creature2Id(durek),
+      creature_id: Creature2Id(creature_id),
       level: Some(level),
       place: summoned_place(),
     ),
@@ -331,7 +334,7 @@ fn durek_at(level level: Int) -> Result(Spawn, spawn.SummonRefusal) {
 pub fn commander_durek_summoned_at_level_3_has_that_levels_health_and_keeps_his_interrupt_armor_of_18_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let assert Ok(spawn) = durek_at(level: 3)
+  let assert Ok(spawn) = real_summon_at(creature_id: durek, level: 3)
     as "Durek at level 3 passes the checks of a spawn and would start as one"
   assert spawn.level == 3 as "stat 10 is the level the summon named"
   // Property 7 of Creature2 75048 at level 3, as three 32-bit products:
@@ -390,16 +393,26 @@ pub fn a_summon_of_the_battle_beast_at_level_3_has_that_levels_health_and_no_arm
     as "the rest of the summon is the Beast's, as at level 1"
 }
 
-pub fn a_summon_at_level_101_the_row_of_the_properties_from_100_up_is_refused_as_a_creature_with_no_health_test() -> Nil {
+pub fn a_summon_at_level_101_the_row_of_the_properties_from_100_up_is_refused_naming_it_test() -> Nil {
   use <- owned_test.run(5000)
-  // CreatureLevel 101 holds the values of the properties 100 and above and none
-  // of the properties below (CreatureLevel.101: its unitPropertyValue07 is 0.0),
-  // so the Base Health at level 101 is 0, which no spawn starts with.
+  // CreatureLevel 101 holds the values of the properties 100 and above for every
+  // level and none of the properties below (CreatureLevel.101), so it is no
+  // level of a creature.
   assert summoned_planted_at(creature_id: beast, level: Some(101))
-    == Error(spawn.WouldNotStart(
-      creature_id: Creature2Id(beast),
-      reason: spawn.Dead,
-    ))
+    == Error(spawn.NotACreatureLevel(level: 101))
+  assert spawn.describe_refusal(spawn.NotACreatureLevel(level: 101))
+    == "CreatureLevel 101 holds the values of the properties from 100 up, and is no level"
+    as "the sentence the player's system line carries"
+}
+
+pub fn a_creature_with_a_base_health_override_is_refused_at_level_101_too_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Creature2OverrideProperties row 2866 gives Creature2 11467 a Base Health
+  // (property 7) of 5000, so its health reads no CreatureLevel row at all and
+  // only the level's own check keeps level 101 out.
+  assert real_summon_at(creature_id: 11_467, level: 101)
+    == Error(spawn.NotACreatureLevel(level: 101))
 }
 
 pub fn a_summon_at_the_level_of_the_creatures_own_row_is_the_summon_with_no_level_test() -> Nil {
