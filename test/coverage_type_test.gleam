@@ -346,7 +346,7 @@ const signal_gap =
 const conversion_gap =
   "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
 
-pub fn the_effect_types_3_11_14_17_18_52_64_73_80_81_83_84_112_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(facts) =
     simplifile.read(
@@ -380,6 +380,11 @@ pub fn the_effect_types_3_11_14_17_18_52_64_73_80_81_83_84_112_118_and_145_are_p
         type_number: 18,
         reason: lasting_gap,
         fact_key: "Spell4Effects.effectType.18",
+      ),
+      Missing(
+        type_number: 29,
+        reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
+        fact_key: "Spell4Effects.effectType.29",
       ),
       Missing(
         type_number: 52,
@@ -432,6 +437,7 @@ pub fn the_effect_types_3_11_14_17_18_52_64_73_80_81_83_84_112_118_and_145_are_p
         fact_key: "Spell4Effects.effectType.145",
       ),
     ]
+  assert has_record(facts:, key: "Spell4Effects.effectType.29")
   assert has_record(facts:, key: "Spell4Effects.effectType.52")
   assert has_record(facts:, key: "Spell4Effects.effectType.64")
   assert has_record(facts:, key: "Spell4Effects.effectType.118")
