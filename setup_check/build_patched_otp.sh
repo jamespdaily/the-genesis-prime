@@ -4,14 +4,15 @@
 # into $GENESIS_OTP_DIR (default $GENESIS_HOME/otp-<version>-gc-marker, with
 # GENESIS_HOME defaulting to ~/.genesis-prime).
 #
-# It downloads otp_src_<version>.tar.gz from the erlang/otp GitHub release,
-# refuses it unless its SHA-256 is the digest GitHub publishes for that release
-# asset, applies every setup_check/*.patch, configures, builds, installs, and
-# writes $GENESIS_OTP_DIR/GENESIS_PATCHES: one line per patch, "NAME SHA-256",
+# It downloads otp_src_<version>.tar.gz from the erlang/otp GitHub release with
+# release/fetch_release.sh, which refuses it unless its SHA-256 is the digest
+# GitHub publishes for that release asset (no GitHub login is needed), applies
+# every setup_check/*.patch, configures, builds, installs, and writes
+# $GENESIS_OTP_DIR/GENESIS_PATCHES: one line per patch, "NAME SHA-256",
 # the hash being that of the patch file in setup_check/. The setup check
 # requires a line with the matching hash for every setup_check/*.patch, so a
 # changed patch asks for a rebuild. Takes minutes, and prints its wall time at
-# the end. Runs on macOS and on Linux (CI, the ubuntu runner). Needs gh and a C
+# the end. Runs on macOS and on Linux (CI, the ubuntu runner). Needs curl, jq and a C
 # toolchain, and OpenSSL 3: on macOS from brew (openssl@3), on Linux from the
 # system (libssl-dev, with libncurses-dev, autoconf and m4 for configure; this
 # script installs nothing).
@@ -65,17 +66,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/genesis-otp-build.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 echo "downloading $tarball from the erlang/otp release $tag"
-gh release download "$tag" --repo erlang/otp --pattern "$tarball" --dir "$work"
-
-published=$(gh api "repos/erlang/otp/releases/tags/$tag" \
-  --jq ".assets[] | select(.name == \"$tarball\") | .digest")
-published=${published#sha256:}
-[ -n "$published" ] || { echo "the release $tag publishes no digest for $tarball" >&2; exit 1; }
-actual=$(sha256 "$work/$tarball")
-if [ "$actual" != "$published" ]; then
-  echo "SHA-256 of $tarball is $actual, the release publishes $published" >&2
-  exit 1
-fi
+"$repository/release/fetch_release.sh" erlang/otp "$tag" "$tarball" "$work"
 
 tar -xzf "$work/$tarball" -C "$work"
 source_dir=$work/otp_src_$version

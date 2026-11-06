@@ -8,13 +8,18 @@
 #
 # The run holds the live lock (live_lock.sh) from before it starts anything until it has ended
 # everything it started: the PC's client, the server's ports and the dev database belong to one run
-# at a time. A second session.sh, or a client.sh start outside the run, refuses and names the owner;
+# at a time. The play server's container (dev/play_service) holds those ports, so the run stops it
+# first (the updater skips while the lock is held) and starts it again once its own server has
+# ended, also when the run fails part-way; the lock's owner record holds that it did, so --recover
+# starts it too. A container that was not running is left alone. A second session.sh, or a client.sh start outside the run, refuses and names the owner;
 # a lock whose owner is gone is never taken over, and the refusal points at --recover. The lock's
 # owner record also holds what the run has started, so --recover can end it. The run works on its own
 # database, a copy of genesis_play made with that as its template (genesis_play is never written, and
 # the copy fails while another session is connected to genesis_play). The server and the verdict read
 # the copy, and it is dropped after the verdict, a failed one too: the recordings and the report keep
 # the evidence, and the verdict's lines name the values it compared. --verdict reads genesis_play.
+# genesis_play is the play Postgres container's database (dev/play_service), reached on 127.0.0.1
+# at GENESIS_PLAY_PGPORT (default 5434) with GENESIS_PLAY_PGPASSWORD.
 #
 # --recover ends what a lock's owner started, a run or a client.sh start outside one. It refuses
 # while the owner's process still runs, and while the lock has no owner record and is under a minute
@@ -48,8 +53,8 @@
 # <folder> keeps the recordings, client-start.txt (the client.sh start line), client-end.txt (what
 # client.sh stop found: closed or gone), failures.txt, report.json and verdict.txt. Needs what the
 # scripts it runs need (GENESIS_PLAY_PC, GENESIS_PLAY_ADDRESS, GENESIS_PLAY_CLIENT_DIR,
-# GENESIS_PLAY_ACCOUNT, GENESIS_PLAY_PASSWORD), read from ~/.genesis-prime/env.sh. The server runs
-# against the run's database on ::1; its port is GENESIS_PLAY_PGPORT (default 5433).
+# GENESIS_PLAY_ACCOUNT, GENESIS_PLAY_PASSWORD, GENESIS_PLAY_PGPASSWORD), read from
+# ~/.genesis-prime/env.sh. The server runs against the run's database in the play Postgres.
 # SELECT_SETTLE_SECONDS (default 5) is how long the select screen is left to show its list after the
 # client's first request on it.
 set -euo pipefail
@@ -69,7 +74,8 @@ cd "$scripts/../../../.."
 : "${GENESIS_PLAY_ACCOUNT:?set GENESIS_PLAY_ACCOUNT (the account the client logs in with) in ~/.genesis-prime/env.sh}"
 export GENESIS_PLAY_ACCOUNT
 dev_database=genesis_play
-export PGHOST=::1 PGPORT=${GENESIS_PLAY_PGPORT:-5433} PGUSER=postgres PGDATABASE=$dev_database
+: "${GENESIS_PLAY_PGPASSWORD:?set GENESIS_PLAY_PGPASSWORD (the password of the play Postgres container) in ~/.genesis-prime/env.sh; dev/play_service/install.sh makes it}"
+export PGHOST=127.0.0.1 PGPORT=${GENESIS_PLAY_PGPORT:-5434} PGUSER=postgres PGPASSWORD=$GENESIS_PLAY_PGPASSWORD PGDATABASE=$dev_database
 tool=session
 . "$scripts/live_lock.sh"
 
@@ -91,7 +97,7 @@ hold_lock=0
 server_ok=1
 
 # What the run has started, which --recover reads back from the lock's owner record (load_record).
-record_keys=(client_before run_database launcher_pid launcher_started vm_pid vm_started client_touched addon_touched)
+record_keys=(client_before run_database launcher_pid launcher_started vm_pid vm_started client_touched addon_touched play_service_stopped)
 for key in "${record_keys[@]}"; do printf -v "$key" '%s' ''; done
 
 step() { echo "session: $*"; }
@@ -261,6 +267,37 @@ stop_client() {
   esac
 }
 
+# Stops the play server's container, which holds the server's ports, and records that this run did.
+# A container that was not running (or none) is left alone and started by no one.
+stop_play_service() {
+  local out
+  out=$(dev/play_service/stop.sh) || fail "the play server's container could not be stopped: $out"
+  case $out in
+    *stopped*) mark play_service_stopped 1; step "play server container: stopped" ;;
+    *) step "play server container: $out" ;;
+  esac
+}
+
+# Starts the play server's container again when this run stopped it, once nothing holds the server's
+# ports. Fails when the container did not start; update.sh starts it within 2 minutes anyway.
+start_play_service() {
+  if [ "$play_service_stopped" != 1 ]; then
+    step "play server container: this run stopped none"
+    return 0
+  fi
+  if ports_held; then
+    echo "session: the play server's container is not started: a process holds the server's ports (above)" >&2
+    return 1
+  fi
+  if dev/play_service/start.sh > /dev/null; then
+    mark play_service_stopped 0
+    step "play server container: started"
+  else
+    echo "session: the play server's container did not start: dev/play_service/start.sh failed" >&2
+    return 1
+  fi
+}
+
 # Ends the run's use of the PC and the server, each step best effort, safe to repeat, and named by
 # its outcome. Returns 1 when a step failed or the client could not be confirmed; hold_lock is set
 # when a step failed that leaves something of the run behind. The first call's status is every later
@@ -385,6 +422,7 @@ drop_run() {
 end_run() {
   local status=0
   stop_run || status=1
+  start_play_service || status=1
   drop_run || status=1
   return "$status"
 }
@@ -454,6 +492,7 @@ if [ -n "$(ls -A "$folder")" ]; then
   exit 2
 fi
 folder_ready=1
+stop_play_service
 if ports_held; then
   echo "session: a process holds one of the server's ports (above); stop it first" >&2
   exit 2

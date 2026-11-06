@@ -1,0 +1,77 @@
+# The play server's image, built from a clean checkout of main by
+# dev/play_service/update.sh:
+#
+#   git archive <sha> | tar -x -C <context>
+#   podman build --build-arg REVISION=<sha> -t genesis-play:<sha> \
+#     -f release/Containerfile <context>
+#
+# Three stages, each a layer the next build reuses while its inputs stand:
+#   otp      the patched OTP, built by setup_check/build_patched_otp.sh; keyed by
+#            .tool-versions, the scripts and the patches
+#   build    gleam and rebar3, the dependencies, then release/build
+#   runtime  the shipment, the patched OTP, psql and the migration script
+#
+# Every download is a public release asset fetched by release/fetch_release.sh,
+# which checks its digest; the build holds no GitHub login. The image holds none
+# of the client's files, no table and no secret: the client's tables are mounted
+# at /tables, the recordings at /sittings, and the database's address and
+# password and the game address come in as environment variables when the
+# container starts.
+
+ARG DEBIAN=docker.io/library/debian:trixie-slim
+
+FROM ${DEBIAN} AS otp
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates curl jq libncurses-dev libssl-dev patch perl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /repository
+COPY .tool-versions ./
+COPY release/fetch_release.sh release/
+COPY setup_check/build_patched_otp.sh setup_check/sha256.sh setup_check/
+COPY setup_check/*.patch setup_check/
+RUN GENESIS_OTP_DIR=/opt/otp setup_check/build_patched_otp.sh
+
+FROM ${DEBIAN} AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates curl jq libncurses-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=otp /opt/otp /opt/otp
+ENV PATH=/opt/otp/bin:/opt/tools:$PATH
+WORKDIR /repository
+COPY .tool-versions ./
+COPY setup_check/sha256.sh setup_check/
+COPY release/fetch_release.sh release/
+RUN set -eu; \
+    mkdir -p /opt/tools /tmp/fetched; \
+    gleam=$(awk '$1 == "gleam" { print $2 }' .tool-versions); \
+    rebar=$(awk '$1 == "rebar" { print $2 }' .tool-versions); \
+    asset=gleam-v$gleam-$(uname -m)-unknown-linux-musl.tar.gz; \
+    release/fetch_release.sh gleam-lang/gleam "v$gleam" "$asset" /tmp/fetched; \
+    tar -xzf "/tmp/fetched/$asset" -C /opt/tools; \
+    release/fetch_release.sh erlang/rebar3 "$rebar" rebar3 /tmp/fetched; \
+    install -m 0755 /tmp/fetched/rebar3 /opt/tools/rebar3; \
+    rm -rf /tmp/fetched
+COPY gleam.toml manifest.toml ./
+RUN gleam deps download
+COPY src src
+COPY priv priv
+COPY release release
+RUN release/build
+
+FROM ${DEBIAN} AS runtime
+ARG REVISION=unknown
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash ca-certificates libncurses6 libssl3t64 postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=otp /opt/otp /opt/otp
+COPY --from=build /repository/build/erlang-shipment /app
+COPY release/container_start /app/container_start
+COPY dev/apply_migrations.sh /migrate/dev/apply_migrations.sh
+COPY setup_check/sha256.sh /migrate/setup_check/sha256.sh
+COPY priv/migrations /migrate/priv/migrations
+RUN ! find / -xdev -type f -name '*.tbl' | grep -q .
+ENV PATH=/opt/otp/bin:$PATH \
+    GENESIS_TABLE_DIR=/tables \
+    GENESIS_REVISION=$REVISION
+LABEL genesis.revision=$REVISION
+ENTRYPOINT ["/app/container_start"]

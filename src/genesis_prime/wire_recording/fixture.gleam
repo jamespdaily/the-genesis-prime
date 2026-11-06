@@ -51,8 +51,8 @@ pub type FixtureError {
 /// `database` reaches, and where its two id sequences stand, as data-only SQL in
 /// the file at `path`, in an order that satisfies each table's references. A
 /// login name the database has no account for is `NoSuchAccount`, and a file
-/// already there is never overwritten. The dev start writes it before it accepts
-/// the first connection.
+/// already there is never overwritten. A sitting writes it before it accepts
+/// the first connection (genesis_prime/sitting).
 pub fn write(
   database database: pog.Connection,
   path path: String,

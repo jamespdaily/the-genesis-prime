@@ -442,17 +442,22 @@ pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests
   ask_support.stop(server)
 }
 
-pub fn the_servers_own_code_never_turns_wire_recording_on_test() -> Nil {
-  use <- owned_test.run(30_000)
+/// The source files that hold `needle`, other than the recorder's own.
+fn callers_of(needle: String) -> List(String) {
   let assert Ok(files) = simplifile.get_files("src")
     as "the source files are listed"
-  let callers =
-    list.filter(files, fn(path) {
-      let assert Ok(text) = simplifile.read(path) as "a source file reads"
-      string.ends_with(path, ".gleam")
-      && path != "src/genesis_prime/wire_recording/recorder.gleam"
-      && string.contains(text, "recorder.new(")
-    })
-  assert callers == []
-    as "only the dev start makes a wire recorder, so the server records nothing"
+  list.filter(files, fn(path) {
+    let assert Ok(text) = simplifile.read(path) as "a source file reads"
+    string.ends_with(path, ".gleam")
+    && path != "src/genesis_prime/wire_recording/recorder.gleam"
+    && string.contains(text, needle)
+  })
+}
+
+pub fn only_a_sitting_makes_a_wire_recorder_and_only_the_servers_start_asks_for_one_test() -> Nil {
+  use <- owned_test.run(30_000)
+  assert callers_of("recorder.new(") == ["src/genesis_prime/sitting.gleam"]
+    as "only a sitting makes a wire recorder"
+  assert callers_of("sitting.recorded(") == ["src/genesis_prime.gleam"]
+    as "only the server's start turns a sitting on, for the folder GENESIS_RECORD_DIR names"
 }

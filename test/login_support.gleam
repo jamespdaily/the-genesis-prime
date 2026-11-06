@@ -208,7 +208,20 @@ pub fn start_with(
   change change: fn(server.Settings) -> server.Settings,
 ) -> Started {
   let shared = database_support.shared()
-  let database = database_support.new_database(on: shared)
+  start_on(
+    shared:,
+    database: database_support.new_database(on: shared),
+    change:,
+  )
+}
+
+/// Starts the server's tree as `start_with` does, on the database `database`
+/// of the test's own, which the test has made and may have filled first.
+pub fn start_on(
+  shared shared: database_support.Shared,
+  database database: String,
+  change change: fn(server.Settings) -> server.Settings,
+) -> Started {
   let settings =
     change(
       settings(pool: database_support.config(
