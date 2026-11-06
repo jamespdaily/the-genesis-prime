@@ -4719,6 +4719,9 @@ fn condition_gate(
       ),
       rolls,
     )
+    // The plan gives only a Proxy a target gate it reads, and `proxy_gates` turns that
+    // into its caster gates (`caster_side`) before this: a row of another kind that holds
+    // one is refused, as a gate nothing here reads.
     spell_plan.GatedOnCasterAndTarget(target:, ..) -> #(
       CannotTell(
         why: what
@@ -4962,7 +4965,9 @@ fn children(
 /// (`Spell4Effects.prerequisiteIdTargetApply`): a struck unit as the caster's picture
 /// shows it (`of_struck`, so a unit with no pose leaves a type 108 condition not read), or
 /// the caster for a Proxy aimed at it, which stands on its own point, as `subject` has it.
-/// A Proxy with no target gate starts.
+/// A Proxy with no target gate starts. The plan gives a Proxy no condition but `Always`,
+/// `GatedOnCaster` and `GatedOnCasterAndTarget`; a Proxy that holds `GatedOnTarget`, which
+/// it never builds for one, is refused, as a gate nothing reads.
 fn target_gate(
   proxy proxy: Proxy,
   caster caster: Caster,
@@ -4978,7 +4983,6 @@ fn target_gate(
           prerequisite.of_struck(
             first: option.from_result(dict.get(poses, primary_target)),
             second: area.pose_of(place: caster.place),
-            second_unit: caster.unit_id,
           )
       }
       case prerequisite.check(prerequisite: target, subject: gate_subject) {
@@ -4998,9 +5002,15 @@ fn target_gate(
           )
       }
     }
-    spell_plan.Always
-    | spell_plan.GatedOnCaster(..)
-    | spell_plan.GatedOnTarget(..) -> Starts
+    spell_plan.GatedOnTarget(prerequisite_id:) ->
+      CannotTell(
+        why: "the Proxy to Spell4 "
+        <> int.to_string(proxy.spell.spell4_id.value)
+        <> " is behind target prerequisite "
+        <> int.to_string(prerequisite_id.value)
+        <> ", which the plan keeps unchecked, so it is not started",
+      )
+    spell_plan.Always | spell_plan.GatedOnCaster(..) -> Starts
   }
 }
 

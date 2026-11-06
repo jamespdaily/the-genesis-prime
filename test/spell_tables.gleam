@@ -53,6 +53,9 @@
 ////   and 43812 (`gain_prerequisite_rows`).
 //// - Charged Shot 34718: ChargeRelease with a thresholdTime of 8200 and the stages
 ////   of Spell4Thresholds 125, 123 and 124.
+//// The PositionalRequirement table is planted with no row: the plan reads it for the arc of a
+//// Proxy's type 108 target gate, and a test that needs one plants its Prerequisite row
+//// naming a row the table lacks.
 
 import database_support
 import genesis_prime/game/spell_area
@@ -62,6 +65,7 @@ import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/level_up_unlock
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
@@ -1952,6 +1956,7 @@ fn entries() -> List(table_store.Entry) {
     spell_phase.entry(),
     spell_cool_down.entry(),
     prerequisite.entry(),
+    positional_requirement.entry(),
     class.entry(),
     unit_property2.entry(),
     eldan_augmentation.entry(),
@@ -1980,6 +1985,7 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),
     planted_table.file(prerequisite.schema, rows.prerequisites),
+    planted_table.file(positional_requirement.schema, []),
     planted_table.file(unit_property2.schema, rows.unit_properties),
     planted_table.file(eldan_augmentation.schema, rows.eldan_augmentations),
     planted_table.file(level_up_unlock.schema, rows.level_up_unlocks),

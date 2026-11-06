@@ -296,14 +296,10 @@ pub type Seen {
 /// holds none of them either: a condition that reads what else it holds is `NotRead`
 /// (`PlaceOnly`), where an empty `under` would read as "under no cast" and pass a
 /// condition that asks for the absence of one.
-pub fn of_struck(
-  first first: Option(Pose),
-  second second: Pose,
-  second_unit second_unit: Int,
-) -> Subject {
+pub fn of_struck(first first: Option(Pose), second second: Pose) -> Subject {
   Subject(
     under: [],
-    second_unit: Some(second_unit),
+    second_unit: None,
     in_combat: False,
     vitals: dict.new(),
     difficulty: None,
@@ -526,28 +522,21 @@ fn condition_of(
 /// reads and the types the client's check has no case for, which fail
 /// (`0x1404a2100`). The coverage measure's "handled".
 pub fn is_read(type_id type_id: Int) -> Bool {
-  case
-    condition_read(
-      type_id:,
-      comparison: 0,
-      object_id: 0,
-      value: 0,
-      find_arc: fn(_) { Error(Nil) },
-    )
-  {
-    Ok(Unread(..)) -> False
-    Ok(TargetOfLiveCast(..))
-    | Ok(UnderCastBy(..))
-    | Ok(StackCount(..))
-    | Ok(InCombat(..))
-    | Ok(Roll(..))
-    | Ok(VitalPercent(..))
-    | Ok(VitalCurrent(..))
-    | Ok(Stealthed(..))
-    | Ok(Difficulty(..))
-    | Ok(InArc(..))
-    | Ok(NoCase)
-    | Error(MissingRow(..)) -> True
+  // Type 108 is decoded by `condition_read`, which needs its arc row.
+  use <- bool.guard(when: type_id == 108, return: True)
+  case condition_of(type_id:, comparison: 0, object_id: 0, value: 0) {
+    Unread(..) -> False
+    TargetOfLiveCast(..)
+    | UnderCastBy(..)
+    | StackCount(..)
+    | InCombat(..)
+    | Roll(..)
+    | VitalPercent(..)
+    | VitalCurrent(..)
+    | Stealthed(..)
+    | Difficulty(..)
+    | InArc(..)
+    | NoCase -> True
   }
 }
 
@@ -778,28 +767,30 @@ fn in_arc(arc arc: Arc, first first: Pose, second second: Pose) -> Bool {
       right: 0.5,
     )
   let start =
-    wrapped(angle: float32.rounded(
-      float32.product(
-        left: float32.rounded(center -. half),
+    wrapped(angle: float32.sum(
+      left: float32.product(
+        left: float32.difference(left: center, right: half),
         right: radians_per_degree,
-      )
-      +. yaw,
+      ),
+      right: yaw,
     ))
   let end =
-    wrapped(angle: float32.rounded(
-      float32.product(
-        left: float32.rounded(half +. center),
+    wrapped(angle: float32.sum(
+      left: float32.product(
+        left: float32.sum(left: half, right: center),
         right: radians_per_degree,
-      )
-      +. yaw,
+      ),
+      right: yaw,
     ))
   let direction =
     float32.rounded(maths.atan2(
-      float.negate(float32.rounded(
-        float32.rounded(other.at.x) -. float32.rounded(turning.at.x),
+      float.negate(float32.difference(
+        left: float32.rounded(other.at.x),
+        right: float32.rounded(turning.at.x),
       )),
-      float.negate(float32.rounded(
-        float32.rounded(other.at.z) -. float32.rounded(turning.at.z),
+      float.negate(float32.difference(
+        left: float32.rounded(other.at.z),
+        right: float32.rounded(turning.at.z),
       )),
     ))
   case end <. start {
@@ -814,12 +805,17 @@ fn in_arc(arc arc: Arc, first first: Pose, second second: Pose) -> Bool {
 fn wrapped(angle angle: Float) -> Float {
   case angle <. 0.0 {
     True ->
-      float32.rounded(
-        remainder(float32.rounded(angle -. half_turn), full_turn) +. half_turn,
+      float32.sum(
+        left: remainder(
+          float32.difference(left: angle, right: half_turn),
+          full_turn,
+        ),
+        right: half_turn,
       )
     False ->
-      float32.rounded(
-        remainder(float32.rounded(angle +. half_turn), full_turn) -. half_turn,
+      float32.difference(
+        left: remainder(float32.sum(left: angle, right: half_turn), full_turn),
+        right: half_turn,
       )
   }
 }

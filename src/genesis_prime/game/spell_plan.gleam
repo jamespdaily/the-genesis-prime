@@ -283,7 +283,7 @@ pub type Condition {
   /// The effect applies only behind this target apply prerequisite, which is not
   /// checked: the effect is not applied. Only an effect that is not a Proxy has it.
   GatedOnTarget(prerequisite_id: PrerequisiteId)
-  /// The Proxy starts its child on a unit when every one of these caster gates passes
+  /// Only a Proxy has it. The Proxy starts its child on a unit when every one of these caster gates passes
   /// against the caster and the target gate passes against that unit, the struck unit for
   /// a Proxy aimed at the area and the caster for one aimed at the caster
   /// (`Spell4Effects.prerequisiteIdTargetApply`). The caster gates are its caster apply

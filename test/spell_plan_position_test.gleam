@@ -21,12 +21,15 @@ import genesis_prime/game/spell_plan.{
   type Proxy, type Spell, GatedOnCasterAndTarget,
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
 import owned_test
+import planted_table.{Integer}
 import prerequisite_support
+import spell_tables
 import unitest
 
 /// Impale's Spell4Base (the Spell4 38779's `spell4BaseIdBaseSpell`).
@@ -143,4 +146,36 @@ pub fn the_only_level_1_proxies_behind_a_target_gate_are_impales_four_and_hold_n
     assert proxy.gains == []
       as "a gain lifted onto such a Proxy would be given once for a go whose children may not all start"
   })
+}
+
+pub fn a_proxys_target_gate_naming_a_positional_requirement_the_table_lacks_fails_the_plan_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A Proxy of Telekinetic Strike to 30900 at the area, behind the planted Prerequisite
+  // 99901 of one type 108 condition (comparison 1) naming PositionalRequirement 999, a row
+  // the planted table lacks.
+  let proxy =
+    planted_table.row(spell4_effects.schema, [
+      #("ID", Integer(99_900)),
+      #("spellId", Integer(32_893)),
+      #("targetFlags", Integer(4)),
+      #("effectType", Integer(26)),
+      #("phaseFlags", Integer(-1)),
+      #("dataBits00", Integer(30_900)),
+      #("prerequisiteIdTargetApply", Integer(99_901)),
+      #("orderIndex", Integer(9)),
+    ])
+  let rows = spell_tables.rows_with_effect(effect: proxy)
+  let rows =
+    spell_tables.Rows(
+      ..rows,
+      prerequisites: spell_tables.sorted_by_id([
+        spell_tables.prerequisite_row(id: 99_901, flags: 0, conditions: [
+          #(108, 1, 999, 0),
+        ]),
+        ..rows.prerequisites
+      ]),
+    )
+  assert spell_tables.planned_strike(rows:)
+    == Error(spell_plan.NoRow(table: "PositionalRequirement", id: 999))
+    as "the load refuses it, as it refuses any table row that is missing"
 }

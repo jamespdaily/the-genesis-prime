@@ -323,7 +323,6 @@ pub fn a_unit_the_picture_no_longer_shows_leaves_type_108_not_read_test() -> Nil
         subject: prerequisite.of_struck(
           first: None,
           second: pose(x: 0.0, z: 5.0, yaw: 0.0),
-          second_unit: 7,
         ),
       )
       == NotRead(prerequisite_type: 108)
@@ -336,11 +335,7 @@ pub fn a_struck_creature_is_placed_and_checked_with_the_caster_as_the_second_uni
   let arc = prerequisite_support.behind_arc()
   let creature = first_at_origin(yaw: 0.0)
   let subject_with = fn(caster) {
-    prerequisite.of_struck(
-      first: Some(creature),
-      second: caster,
-      second_unit: 7,
-    )
+    prerequisite.of_struck(first: Some(creature), second: caster)
   }
   assert prerequisite.check(
       prerequisite: gate_of(comparison: 1, arc:, value: 0),
@@ -363,7 +358,6 @@ pub fn a_struck_creature_gives_not_read_for_every_type_that_reads_what_it_holds_
       ..prerequisite.of_struck(
         first: Some(first_at_origin(yaw: 0.0)),
         second: pose(x: 0.0, z: 5.0, yaw: 0.0),
-        second_unit: 7,
       ),
       rolls: [50],
     )
@@ -440,7 +434,31 @@ pub fn the_clients_72_rows_with_a_type_108_condition_all_decode_test() -> Nil {
     as "the PositionalRequirement table has 52 rows"
 }
 
-pub fn a_row_naming_a_positional_requirement_the_table_lacks_fails_the_load_test() -> Nil {
+pub fn a_row_naming_a_positional_requirement_that_is_not_found_fails_the_decode_test() -> Nil {
+  use <- owned_test.run(5000)
+  let row =
+    prerequisite_support.row(id: 1, flags: 0, conditions: [#(108, 1, 999, 0)])
+  assert prerequisite.of_row_with(row:, find_arc: fn(_) { Error(Nil) })
+    == Error(prerequisite.MissingRow(table: "PositionalRequirement", id: 999))
+    as "the client would read it as no arc, but no row in the game hits that case, so the load refuses it"
+  assert prerequisite.of_row_with(row:, find_arc: fn(arc_id) {
+      list.find(
+        [
+          prerequisite_support.arc_row(
+            id: 998,
+            center: 180,
+            range: 140,
+            flags: 0,
+          ),
+        ],
+        fn(arc) { arc.id == arc_id },
+      )
+    })
+    == Error(prerequisite.MissingRow(table: "PositionalRequirement", id: 999))
+    as "a row of another id does not stand in for it"
+}
+
+pub fn a_row_naming_a_positional_requirement_the_clients_table_lacks_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   assert prerequisite.of_row(
@@ -450,14 +468,7 @@ pub fn a_row_naming_a_positional_requirement_the_table_lacks_fails_the_load_test
       tables: client_tables.shared(),
     )
     == Error(prerequisite.MissingRow(table: "PositionalRequirement", id: 999))
-    as "the client would read it as no arc, but no row in the game hits that case, so the load refuses it"
-  assert prerequisite.of_row_with(
-      row: prerequisite_support.row(id: 1, flags: 0, conditions: [
-        #(108, 1, 999, 0),
-      ]),
-      find_arc: fn(_) { Error(Nil) },
-    )
-    == Error(prerequisite.MissingRow(table: "PositionalRequirement", id: 999))
+    as "the client's table holds 52 rows and none is 999"
 }
 
 pub fn type_108_is_read_by_the_coverage_measure_test() -> Nil {

@@ -139,9 +139,11 @@ pub fn place_of(
 }
 
 /// The ground point and yaw of a shown creature at monotonic time `now_ms`, or `Error(Nil)`
-/// for a unit that is not shown or not a creature: where its path puts it, facing as its
-/// 0x262 gave it, which no path turns (`creature.facing`: a position path moves a creature
-/// without turning it). This is the one place a shown creature's facing is read.
+/// for a unit that is not shown or not a creature: where its path puts it, with the yaw of
+/// that place. The client holds the yaw of the creature's 0x262 and no position path turns
+/// it (`creature.facing`); the place's yaw equals it because every place a creature's path
+/// holds keeps the spawn's facing (`creature_path` `along`, and the home the creature
+/// walks to is its spawn). This is the one place a shown creature's facing is read.
 pub fn pose_of(
   picture picture: Picture,
   unit_id unit_id: Int,
