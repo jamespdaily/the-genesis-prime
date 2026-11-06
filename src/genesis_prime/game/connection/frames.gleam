@@ -5,6 +5,7 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/look
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_properties
@@ -17,6 +18,7 @@ import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
 import genesis_prime/message/half_float
+import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_path.{MovementPath}
@@ -38,6 +40,7 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
+import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_properties_changed.{UnitPropertiesChanged}
 import genesis_prime/message/unit_property.{type UnitProperty}
@@ -324,6 +327,21 @@ pub fn unit_stealth_frame(
   Frame(message_id: unit_stealth.message_id, body:)
 }
 
+/// 0x933 {unit, item visuals}: the unit's item visuals change, a display 0 emptying its
+/// slot (`opcode.0x933`, `opcode.0x933.empty_display`).
+pub fn item_visuals_frame(
+  unit_id unit_id: Int,
+  item_visuals item_visuals: List(ItemVisual),
+) -> Frame {
+  let assert Ok(body) =
+    unit_item_visuals_changed.encode(UnitItemVisualsChanged(
+      unit_id:,
+      item_visuals:,
+    ))
+    as "a unit id of 32 bits and a count of 32 bits fit the message"
+  Frame(message_id: unit_item_visuals_changed.message_id, body:)
+}
+
 /// 0x247 of type 24 for the unit: it entered stealth, or is leaving it
 /// (`opcode.0x247.type24`).
 pub fn stealth_logged_frame(
@@ -349,9 +367,9 @@ const stealthed_create_flag = 16
 
 /// The player's own record at `place`, stamped from the map's clock, from the
 /// origin `Joined` carried (`map.server_time`), with the current base and value of each
-/// property a live modifier changes (`unit_properties.overlay`), and the create flag 16
-/// while the player is stealthed, which a viewer that first sees the unit needs
-/// (`cast.stealthed`).
+/// property a live modifier changes (`unit_properties.overlay`), the item visuals a live
+/// disguise shows (`look.visuals`), and the create flag 16 while the player is stealthed,
+/// which a viewer that first sees the unit needs (`cast.stealthed`).
 pub fn appearance_at(
   entered entered: world_entry.Entered,
   place place: Place,
@@ -371,6 +389,7 @@ pub fn appearance_at(
         listed: entered.unit.tail.properties,
         properties: entered.properties,
       ),
+      item_visuals: look.visuals(look: entered.look),
       movement_commands: [
         start_movement.Position(position),
         start_movement.Rotation(rotation),

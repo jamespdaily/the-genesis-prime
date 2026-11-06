@@ -73,7 +73,7 @@ fn armor_row(
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
-    modifier: raising(points: int.to_float(points)),
+    change: spell_plan.PropertyChange(raising(points: int.to_float(points))),
     row:,
     condition: Always,
     tag: spend.always,
@@ -121,6 +121,7 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Modifier)) {
       cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
         Ok(#(source, modifier))
       cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
+      | cast.CasterChangeStarts(change: cast.Look(..), ..)
       | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
       | cast.CasterChangeEnds(..)
       | cast.Send(..)
@@ -145,7 +146,7 @@ fn timeline(
       list.map(starts(effects: step.1), fn(start) {
         #(step.0, "start", start.0)
       }),
-      list.map(support.property_ends(effects: step.1), fn(source) {
+      list.map(support.caster_change_ends(effects: step.1), fn(source) {
         #(step.0, "end", source)
       }),
     ])
@@ -209,7 +210,7 @@ pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_d
   let source = source_of(cast_id: id, effect_id: 199_192)
   assert starts(effects:) == [#(source, raising(points: 1.0))]
     as "row 199192: x 1.0 + 1 on property 44, in the go's own step"
-  assert support.property_ends(effects:) == []
+  assert support.caster_change_ends(effects:) == []
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   assert timeline(fired:) == [#(6000, "end", source)]
     as "it ends 5000 ms after the go, once"
@@ -269,7 +270,7 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
   assert list.length(starts(effects: first)) == 1
     as "the armor started in the press's go"
   let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
-  assert support.property_ends(effects: removal)
+  assert support.caster_change_ends(effects: removal)
     == [source_of(cast_id: id, effect_id: 199_192)]
     as "taking the cast's node off the caster ends the armor at once"
   assert timer_numbers(timers: support.cancelled_timers(effects: removal))
@@ -308,7 +309,7 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
       caster: cast.Caster(..support.caster(), in_combat: False),
       now: support.at(ms: 2000),
     )
-  assert support.property_ends(effects: ended)
+  assert support.caster_change_ends(effects: ended)
     == [source_of(cast_id: held_id, effect_id: 199_192)]
     as "the persistence ends the cast as a death ends one, and the armor with it"
   assert timer_numbers(timers: support.cancelled_timers(effects: ended))
@@ -345,7 +346,7 @@ pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
       caster: support.dead_caster(),
       now: support.at(ms: 1200),
     )
-  assert support.property_ends(effects: ended)
+  assert support.caster_change_ends(effects: ended)
     == [
       source_of(cast_id: support.pressed_id(effects: first), effect_id: 199_192),
       source_of(

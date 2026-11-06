@@ -316,7 +316,8 @@ fn starts(
       cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
         Ok(#(source, modifier))
       cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-      | cast.CasterChangeStarts(change: cast.Absorb(..), ..) -> Error(Nil)
+      | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
+      | cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
       cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -362,7 +363,7 @@ pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Ni
       caster: cast.Caster(..caster_of_passive(), dead: True),
       now: support.at(ms: 5000),
     )
-  assert list.length(support.property_ends(effects: ordinary_death)) == 1
+  assert list.length(support.caster_change_ends(effects: ordinary_death)) == 1
     as "the control: a death ends an ordinary cast's modifier"
   let #(passive_state, _) = passive_started(plans:, at: 1000)
   let #(_, died) =
@@ -371,6 +372,6 @@ pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Ni
       caster: cast.Caster(..caster_of_passive(), dead: True),
       now: support.at(ms: 5000),
     )
-  assert support.property_ends(effects: died) == []
+  assert support.caster_change_ends(effects: died) == []
     as "cast.died: every modifier ends but the innate passive's, so its conversion stays"
 }

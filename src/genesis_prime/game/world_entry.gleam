@@ -123,6 +123,7 @@ import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
 import genesis_prime/game/innate
 import genesis_prime/game/loadout.{type Loadout}
+import genesis_prime/game/look
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/shown
@@ -292,6 +293,9 @@ pub type Entered {
     /// and the cast, applies a modifier of its own spell to them, and hands the
     /// strike, the damage, the defence and the regeneration the values they read.
     properties: unit_properties.Properties,
+    /// The player's look, its item visuals and the disguises of its own spells held over
+    /// them (genesis_prime/game/look): the connection owns it beside the properties.
+    look: look.Look,
     resources: class_resource.Resources,
     camp: camp.Camp,
     cast: cast.State,
@@ -555,6 +559,7 @@ pub fn joined(
               readiness: readiness_of(entry:),
               life:,
               properties:,
+              look: look.new(base: unit.tail.item_visuals),
               resources: class_resource.new(resource:),
               camp: camp.none(),
               cast: cast.new(),

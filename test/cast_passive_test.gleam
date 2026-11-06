@@ -281,7 +281,7 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
     ))
     == 1
     as "the control: the same spell pressed as an ability lingers, and its caster's death ends it with its 0x7fe (cast.died)"
-  assert list.length(support.property_ends(effects: ordinary_death)) == 3
+  assert list.length(support.caster_change_ends(effects: ordinary_death)) == 3
     as "and takes its three property modifiers off"
   let #(passive, _) = started(base: 29_035)
   let #(left, died) =
@@ -292,7 +292,7 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
     )
   assert support.frames_of(message_id: 0x07FE, effects: died) == []
     as "Spell4.44926: caster condition row 4 holds alive or dead, and propertyFlags 0x100 keeps the cast when its caster is removed, so death leaves the passive"
-  assert support.property_ends(effects: died) == [] as "and its modifiers"
+  assert support.caster_change_ends(effects: died) == [] as "and its modifiers"
   let #(_, after) =
     cast.died(
       cast: left,

@@ -110,7 +110,7 @@ pub fn an_interrupt_armor_row_aimed_at_the_caster_is_read_with_its_points_time_a
       spell_plan.PropertyModifier(
         effect_id: Spell4EffectsId(97_340),
         phase_flags: -1,
-        modifier: raising_property_44(points: 2.0),
+        change: spell_plan.PropertyChange(raising_property_44(points: 2.0)),
         row: LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
         condition: Always,
         tag: spend.EqualTo(value: 0),
@@ -363,7 +363,8 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
   assert esper.row
     == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
     as "5000 ms"
-  assert esper.modifier == raising_property_44(points: 1.0)
+  assert esper.change
+    == spell_plan.PropertyChange(raising_property_44(points: 1.0))
   let assert [warrior] =
     list.filter(planned(base: 30_828, spell4_id: 79_875).modifiers, fn(row) {
       row.effect_id == Spell4EffectsId(210_820)
