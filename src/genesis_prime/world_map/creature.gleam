@@ -58,6 +58,10 @@
 ////   dead when told to retire stops at its respawn, since its map keeps the spawn
 ////   retiring until it ends and a corpse is never shown to a viewer that comes
 ////   after.
+//// - **A strike's crowd-control states** land after its damage, on a creature that
+////   lives and has no Interrupt Armor, and the answer's `Landed` names the ones that
+////   did; while the creature holds one it does not act
+////   (genesis_prime/world_map/creature_control).
 //// - **A strike** is told by the connection of the caster through the creature
 ////   registry with no watch (genesis_prime/world_map/creature_registry `tell`), and
 ////   answered by a send to that connection. A strike for a creature that has ended is
@@ -117,6 +121,7 @@ import genesis_prime/step.{
   CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send, ServiceTimerFired,
   Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded, WatchId,
 }
+import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
   type Fighter, AttackTick, Fighter, HomeArrival, StrikeDeadline,
 }
@@ -195,14 +200,15 @@ pub type Outgoing {
 }
 
 /// A creature's players in sight, each by its connection with the stay the map
-/// named it for, its health, its fight and whether it was told to retire while it
-/// lay dead.
+/// named it for, its health, its fight, the crowd-control states it holds and whether
+/// it was told to retire while it lay dead.
 pub opaque type State {
   State(
     settings: Settings,
     body: Body,
     life: Life,
     fight: creature_fight.State,
+    control: creature_control.State,
     retiring: Bool,
     viewers: Dict(ConnectionId, Stay),
   )
@@ -237,6 +243,7 @@ pub fn new(settings: Settings) -> State {
     body:,
     life: creature_life.new(body:),
     fight: creature_fight.new(home: settings.spawn.place),
+    control: creature_control.new(),
     retiring: False,
     viewers: dict.from_list(settings.creature.viewers),
   )
@@ -355,15 +362,16 @@ pub fn step(
         }
       }
     OwnEvent(ServiceTimerFired(timer:)) ->
-      case fight_timer(timer:) {
-        Ok(timer) ->
+      case creature_control.number_of(timer:), fight_timer(timer:) {
+        Ok(number), _ -> control_ended(state:, number:, now_ms:)
+        Error(Nil), Ok(timer) ->
           fought_alone(
             state:,
             input: creature_fight.TimerFired(timer:),
             now_ms:,
           )
-        Error(Nil) ->
-          panic as "a creature starts no timer but its corpse's and its fight's"
+        Error(Nil), Error(Nil) ->
+          panic as "a creature starts no timer but its corpse's, its fight's and its controls'"
       }
     WatchEnded(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
@@ -390,9 +398,11 @@ fn struck(
     Ok(Nil) -> {
       let reaction =
         creature_life.struck(life: state.life, body: state.body, strike: tell)
+      let #(state, answered, controlled) =
+        controls_after(state:, tell:, reaction:, now_ms:)
       // The answer goes first: the caster's connection then knows the strike
       // before it is told the health it left, one sender in one order.
-      let answer = answer_to(tell:, answered: reaction.answer)
+      let answer = answer_to(tell:, answered:)
       let news =
         list.flat_map(reaction.news, fn(news) {
           to_viewers(state:, news: viewer_news(news))
@@ -411,7 +421,7 @@ fn struck(
         reaction.corpse_for_ms
       {
         _, _, _, Some(..) -> Some(creature_fight.Killed)
-        strike_tell.Landed(descriptions:),
+        strike_tell.Landed(descriptions:, ..),
           PlayerStriker(unit_id:, place:, seq:, stay:, ..),
           Connection(by),
           None
@@ -433,9 +443,46 @@ fn struck(
         Some(input) -> fought(state:, input:, now_ms:)
         None -> #(state, [])
       }
-      #(state, Effects(list.flatten([answer, news, corpse, fought])))
+      #(
+        state,
+        Effects(list.flatten([answer, news, corpse, fought, controlled])),
+      )
     }
   }
+}
+
+/// The creature's controls after a strike and its damage: a strike with states asks
+/// the controls to take them (`creature_control.land`), which land on a creature
+/// the strike left alive and name the ones that did in the answer, and the fight
+/// stops the creature's path when it held no state before; a strike that kills a
+/// creature that holds states drops them with no 0x880 (`creature_control.died`). A
+/// strike with no state that kills no controlled creature touches no control, and its
+/// answer stands.
+fn controls_after(
+  state state: State,
+  tell tell: StrikeTell,
+  reaction reaction: creature_life.Reaction,
+  now_ms now_ms: Int,
+) -> #(State, Answered, List(Effect(ServiceEffect(Outgoing)))) {
+  case
+    tell.controls,
+    reaction.corpse_for_ms,
+    creature_control.holds(state: state.control)
+  {
+    [], None, _ | [], Some(..), False -> #(state, reaction.answer, [])
+    _, _, _ ->
+      todo as "land the states on a living creature with no armor, or drop the controls of a killed one"
+  }
+}
+
+/// A control's timer fired: its state ends with a 0x880, and the fight acts again
+/// when it was the last one held.
+fn control_ended(
+  state state: State,
+  number number: Int,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  todo as "end the control, send its 0x880, tell the fight ControlEnded when none is held"
 }
 
 /// The answer to a strike, sent to the caster's connection for the stay the
@@ -529,12 +576,16 @@ fn fighter_of(state state: State) -> Fighter {
     attack: state.body.combat.attack,
     interval_ms: state.settings.kind.attack_interval_ms,
     numbers: state.settings.numbers,
+    controlled: creature_control.holds(state: state.control),
   )
 }
 
 /// The timer id of a fight timer: 2, 3 and 4 above a multiple of 4 for the attack
 /// tick, the strike deadline and the walk home, by generation, so none is the
-/// corpse timer's 1 and a timer of an old generation is never the new one's.
+/// corpse timer's 1 and a timer of an old generation is never the new one's. The
+/// ids 1 above a multiple of 4 are the corpse timer's (1) and the controls' (5, 9, 13
+/// ...: genesis_prime/world_map/creature_control `timer_id`), so no two timers of a
+/// creature share an id.
 fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
   case timer {
     AttackTick(generation:) -> TimerId(4 * generation + 2)
@@ -543,7 +594,8 @@ fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
   }
 }
 
-/// The fight timer of a timer id, or `Error(Nil)` for one the fight never starts.
+/// The fight timer of a timer id, or `Error(Nil)` for one the fight never starts: the
+/// corpse timer's, a control's, or any other.
 fn fight_timer(timer timer: step.TimerId) -> Result(creature_fight.Timer, Nil) {
   let TimerId(number) = timer
   case number > 4, number % 4 {

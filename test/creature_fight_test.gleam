@@ -173,31 +173,34 @@ fn strike_of(
   cast_id cast_id: Int,
   blows blows: List(#(Int, Int, Float)),
 ) -> creature.Message {
-  creature.Strike(tell: Strike(
-    key: Key(cast_id:, phase: 0, unit_id: unit),
-    from: Connection(ConnectionId(number)),
-    striker: PlayerStriker(
-      unit_id: unit_of(number),
-      place: at(2.0),
-      seq: 1,
-      stay: stay_of(number),
-      rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+  creature.Strike(
+    tell: Strike(
+      key: Key(cast_id:, phase: 0, unit_id: unit),
+      from: Connection(ConnectionId(number)),
+      striker: PlayerStriker(
+        unit_id: unit_of(number),
+        place: at(2.0),
+        seq: 1,
+        stay: stay_of(number),
+        rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+      ),
+      offence: Offence(
+        blows: list.map(blows, fn(blow) {
+          Blow(
+            spell4_effects_id: blow.0,
+            damage_type: 3,
+            damage: blow.1,
+            delay_ms: 0,
+            threat_multiplier: blow.2,
+          )
+        }),
+        crit_chance: 0.0,
+        crit_severity: 1.5,
+        strikethrough: 0.0,
+      ),
+      controls: [],
     ),
-    offence: Offence(
-      blows: list.map(blows, fn(blow) {
-        Blow(
-          spell4_effects_id: blow.0,
-          damage_type: 3,
-          damage: blow.1,
-          delay_ms: 0,
-          threat_multiplier: blow.2,
-        )
-      }),
-      crit_chance: 0.0,
-      crit_severity: 1.5,
-      strikethrough: 0.0,
-    ),
-  ))
+  )
 }
 
 /// The tells of the step to players in the fight, by connection.
@@ -281,7 +284,9 @@ fn name_of(news: News) -> String {
     | client_connection.CameBackLogged
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
-    | client_connection.Shield(..) -> "other"
+    | client_connection.Shield(..)
+    | client_connection.CrowdControlApplied(..)
+    | client_connection.CrowdControlEnded(..) -> "other"
   }
 }
 
@@ -530,8 +535,9 @@ pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_wri
     && start.caster_unit_id == 7
     && start.primary_target_unit_id == 20
     as "the kind's spell, cast by the creature on its target"
-  let assert [#(2, Attacks(tell: Strike(key:, from:, striker:, offence:)))] =
-    fights_told(ticked)
+  let assert [
+    #(2, Attacks(tell: Strike(key:, from:, striker:, offence:, controls: []))),
+  ] = fights_told(ticked)
   assert from == address()
     && striker == CreatureStriker
     && key.cast_id == start.cast_id
@@ -565,13 +571,16 @@ pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_wri
       at_ms: 1600,
       message: creature.StrikeAnswered(answered: Answered(
         key:,
-        outcome: Landed(descriptions: [
-          hit.Description(
-            spell4_effects_id: 184_741,
-            delay_ms: 0,
-            damage: description,
-          ),
-        ]),
+        outcome: Landed(
+          descriptions: [
+            hit.Description(
+              spell4_effects_id: 184_741,
+              delay_ms: 0,
+              damage: description,
+            ),
+          ],
+          controls: [],
+        ),
       )),
     )
   assert said(answered) == ["0x7f4 to 2", "0x7fe to 2"]
@@ -604,7 +613,7 @@ pub fn an_answer_after_the_deadline_is_left_out_of_the_go_test() -> Nil {
       at_ms: 2600,
       message: creature.StrikeAnswered(answered: Answered(
         key:,
-        outcome: Landed(descriptions: []),
+        outcome: Landed(descriptions: [], controls: []),
       )),
     )
   assert said(answer) == [] as "the round is closed: the late answer is dropped"
@@ -628,7 +637,7 @@ pub fn a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test() -> 
       at_ms: 1600,
       message: creature.StrikeAnswered(answered: Answered(
         key:,
-        outcome: Landed(descriptions: []),
+        outcome: Landed(descriptions: [], controls: []),
       )),
     )
   // The deadline's timer was cancelled with the answer, but had already fired and
@@ -1240,13 +1249,16 @@ pub fn a_target_the_strike_killed_is_released_test() -> Nil {
       at_ms: 1600,
       message: creature.StrikeAnswered(answered: Answered(
         key:,
-        outcome: Landed(descriptions: [
-          hit.Description(
-            spell4_effects_id: 184_741,
-            delay_ms: 0,
-            damage: killing,
-          ),
-        ]),
+        outcome: Landed(
+          descriptions: [
+            hit.Description(
+              spell4_effects_id: 184_741,
+              delay_ms: 0,
+              damage: killing,
+            ),
+          ],
+          controls: [],
+        ),
       )),
     )
   assert list.contains(said(answered), "Released(7) to 2")

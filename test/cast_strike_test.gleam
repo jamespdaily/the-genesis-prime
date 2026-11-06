@@ -78,7 +78,10 @@ pub fn a_closed_round_writes_the_go_with_a_target_info_for_each_hit_unit_and_a_0
       now: support.at(ms: 2260),
       cast_id: first_cast,
       phase: 0,
-      struck: [Hit(unit_id: 10, descriptions: []), Deflected(unit_id: 11)],
+      struck: [
+        Hit(unit_id: 10, descriptions: [], controls: []),
+        Deflected(unit_id: 11),
+      ],
     )
   let assert [go, missed, ..] = support.writes(effects:)
     as "the go, then the miss"
@@ -130,12 +133,20 @@ pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a
       cast_id: first_cast,
       phase: 0,
       struck: [
-        Hit(unit_id: 10, descriptions: [
-          tech_hit(combat_result: combat_result.Hit),
-        ]),
-        Hit(unit_id: 11, descriptions: [
-          tech_hit(combat_result: combat_result.Critical),
-        ]),
+        Hit(
+          unit_id: 10,
+          descriptions: [
+            tech_hit(combat_result: combat_result.Hit),
+          ],
+          controls: [],
+        ),
+        Hit(
+          unit_id: 11,
+          descriptions: [
+            tech_hit(combat_result: combat_result.Critical),
+          ],
+          controls: [],
+        ),
       ],
     )
   let assert [go, ..] = support.writes(effects:)
@@ -188,7 +199,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
       now: support.at(ms: 2400),
       cast_id: first_cast,
       phase: 0,
-      struck: [Hit(unit_id: 10, descriptions: [])],
+      struck: [Hit(unit_id: 10, descriptions: [], controls: [])],
     )
   assert closed == [] as "its round closes with nothing to write"
   let #(_, going) =
@@ -198,7 +209,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
       now: support.at(ms: 2400),
       cast_id: first_cast,
       phase: 0,
-      struck: [Hit(unit_id: 10, descriptions: [])],
+      struck: [Hit(unit_id: 10, descriptions: [], controls: [])],
     )
   assert list.take(support.ids(frames: support.writes(effects: going)), 1)
     == [0x07F4]
@@ -215,7 +226,7 @@ pub fn a_struck_unit_the_client_no_longer_shows_is_still_named_in_the_go_test() 
       now: support.at(ms: 2260),
       cast_id: first_cast,
       phase: 0,
-      struck: [Hit(unit_id: 99, descriptions: [])],
+      struck: [Hit(unit_id: 99, descriptions: [], controls: [])],
     )
   let assert [go, ..] = support.writes(effects:)
   let assert Ok(go) = spell_go.decode(go.body)
@@ -247,7 +258,7 @@ pub fn a_0x801_while_a_round_is_open_leaves_the_close_with_nothing_to_write_test
       now: support.at(ms: 2400),
       cast_id: first_cast,
       phase: 0,
-      struck: [Hit(unit_id: 10, descriptions: [])],
+      struck: [Hit(unit_id: 10, descriptions: [], controls: [])],
     )
   assert effects == []
     as "the cast is no longer live: no go and no finish are written, and the hits stand in the creature"
@@ -264,9 +275,9 @@ pub fn a_proxy_aimed_at_the_area_starts_one_child_for_each_hit_unit_and_none_for
       cast_id: first_cast,
       phase: 0,
       struck: [
-        Hit(unit_id: 10, descriptions: []),
+        Hit(unit_id: 10, descriptions: [], controls: []),
         Deflected(unit_id: 11),
-        Hit(unit_id: 12, descriptions: []),
+        Hit(unit_id: 12, descriptions: [], controls: []),
       ],
     )
   let frames = support.writes(effects:)

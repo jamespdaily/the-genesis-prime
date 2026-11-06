@@ -11,6 +11,7 @@ import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
 import genesis_prime/message/half_float
 import genesis_prime/message/leave_world.{LeaveWorld}
@@ -21,6 +22,8 @@ import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/resurrection_window.{ResurrectionWindow}
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
+import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_ghost.{UnitCreateGhost}
@@ -187,6 +190,43 @@ pub fn shield_frame(unit_id unit_id: Int, shield shield: Int) -> Frame {
     unit_stat_changed.encode(UnitStatChanged(unit_id:, value: shield))
     as "a unit id, a stat and a value fit the message"
   Frame(message_id: unit_stat_changed.message_id, body:)
+}
+
+/// 0x87f: the unit holds the crowd-control state, the effect of the go that gave it
+/// `instance_id` (`opcode.0x87f`, `cc_state.instance_id`).
+pub fn control_applied_frame(
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  instance_id instance_id: Int,
+) -> Frame {
+  let assert Ok(body) =
+    unit_cc_state_applied.encode(UnitCcStateApplied(
+      unit_id:,
+      state:,
+      instance_id:,
+    ))
+    as "unit ids and instance ids of 32 bits and a state of 5 fit the message"
+  Frame(message_id: unit_cc_state_applied.message_id, body:)
+}
+
+/// 0x880: the unit's crowd-control state of that cast and instance ends, its last bit
+/// 0 (`opcode.0x880`, `cc_state.end`).
+pub fn control_ended_frame(
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  cast_id cast_id: Int,
+  instance_id instance_id: Int,
+) -> Frame {
+  let assert Ok(body) =
+    unit_cc_state_ended.encode(UnitCcStateEnded(
+      unit_id:,
+      state:,
+      cast_id:,
+      instance_id:,
+      keeps_flag_4_entries: 0,
+    ))
+    as "unit ids, a cast id and an instance id of 32 bits, a state of 5 and a bit fit the message"
+  Frame(message_id: unit_cc_state_ended.message_id, body:)
 }
 
 /// 0x935 of the stat of resource slot `slot`: the unit's slot now holds `value`,

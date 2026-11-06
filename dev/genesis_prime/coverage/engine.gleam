@@ -189,11 +189,6 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
-        type_number: 4,
-        reason: "needs a crowd control state on a unit and its end (0x087F, 0x0880), which a lasting effect on a unit holds",
-        fact_key: "Spell4Effects.effectType.4",
-      ),
-      Missing(
         type_number: 11,
         reason: "needs a unit's property changed and sent (0x093A), which a lasting effect on a unit holds",
         fact_key: "Spell4Effects.effectType.11",

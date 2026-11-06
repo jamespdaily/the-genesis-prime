@@ -392,7 +392,9 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               | client_connection.CameBack
               | client_connection.DeathLogged
               | client_connection.CameBackLogged
-              | client_connection.Shield(..) -> "other"
+              | client_connection.Shield(..)
+              | client_connection.CrowdControlApplied(..)
+              | client_connection.CrowdControlEnded(..) -> "other"
             })
           False -> Error(Nil)
         }
@@ -453,7 +455,7 @@ pub fn cast_ids_are_above_2_pow_31_hold_the_unit_and_never_repeat_among_one_unit
 
 pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_child_starts_on_each_struck_unit_test() -> Nil {
   use <- owned_test.run(5000)
-  let foe = [cast.Hit(unit_id: 10, descriptions: [])]
+  let foe = [cast.Hit(unit_id: 10, descriptions: [], controls: [])]
   let #(state, effects) =
     support.pressed_striking(
       state: cast.new(),
@@ -489,7 +491,7 @@ pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_ch
 
 pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_test() -> Nil {
   use <- owned_test.run(5000)
-  let foe = [cast.Hit(unit_id: 10, descriptions: [])]
+  let foe = [cast.Hit(unit_id: 10, descriptions: [], controls: [])]
   let #(state, effects) =
     support.pressed_striking(
       state: cast.new(),
@@ -516,7 +518,7 @@ pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_t
 
 pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_38791_and_parent_38780_test() -> Nil {
   use <- owned_test.run(5000)
-  let foe = [cast.Hit(unit_id: 10, descriptions: [])]
+  let foe = [cast.Hit(unit_id: 10, descriptions: [], controls: [])]
   let #(state, effects) =
     support.pressed_striking(
       state: cast.new(),

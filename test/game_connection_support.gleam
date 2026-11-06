@@ -1078,7 +1078,7 @@ pub fn landed(
     stay: own_stay(),
     sent: client_connection.SentByTarget(answered: strike_tell.Answered(
       key:,
-      outcome: strike_tell.Landed(descriptions: []),
+      outcome: strike_tell.Landed(descriptions: [], controls: []),
     )),
   )
 }
@@ -1123,12 +1123,15 @@ pub fn a_move(x: Float) -> BitArray {
 /// A creature's strike, of the Beast's offence (12 Physical), on `unit_id`.
 pub fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
   foe(
-    strike_tell.Attacks(tell: strike_tell.Strike(
-      key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id:),
-      from: fighter(),
-      striker: strike_tell.CreatureStriker,
-      offence: spawn_support.beast_attack().offence,
-    )),
+    strike_tell.Attacks(
+      tell: strike_tell.Strike(
+        key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id:),
+        from: fighter(),
+        striker: strike_tell.CreatureStriker,
+        offence: spawn_support.beast_attack().offence,
+        controls: [],
+      ),
+    ),
   )
 }
 
@@ -1162,16 +1165,19 @@ pub fn decoded(
 pub fn a_killing_strike() -> Event(ConnectionEvent(Message, Answer)) {
   let offence = spawn_support.beast_attack().offence
   foe(
-    strike_tell.Attacks(tell: strike_tell.Strike(
-      key: strike_tell.Key(
-        cast_id: 2_147_500_001,
-        phase: 0,
-        unit_id: own_unit_id,
+    strike_tell.Attacks(
+      tell: strike_tell.Strike(
+        key: strike_tell.Key(
+          cast_id: 2_147_500_001,
+          phase: 0,
+          unit_id: own_unit_id,
+        ),
+        from: fighter(),
+        striker: strike_tell.CreatureStriker,
+        offence: spawn_support.dealing(offence:, damage: 100_000),
+        controls: [],
       ),
-      from: fighter(),
-      striker: strike_tell.CreatureStriker,
-      offence: spawn_support.dealing(offence:, damage: 100_000),
-    )),
+    ),
   )
 }
 

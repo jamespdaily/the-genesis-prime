@@ -389,7 +389,7 @@ pub fn struck(
                   to: strike.from,
                   answered: Answered(
                     key: strike.key,
-                    outcome: strike_tell.Landed(descriptions:),
+                    outcome: strike_tell.Landed(descriptions:, controls: []),
                   ),
                 ),
               ],

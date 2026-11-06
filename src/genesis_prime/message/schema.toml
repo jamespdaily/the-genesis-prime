@@ -1983,6 +1983,32 @@ fields = [
 ]
 
 [[message]]
+id = 0x087F
+name = "unit_cc_state_applied"
+direction = "server_to_client"
+evidence = "opcode.0x87f"
+summary = "a unit holds a crowd-control state: the unit, the state and the instance id of the CCStateSet effect the cast's 0x7f4 listed for it; whichever of the 0x7f4 and this message comes second makes the state take hold, so the id must be non-zero and the one the go gave (`cc_state.instance_id`)"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x87f", named_by = "opcode.0x87f" },
+  { name = "state", kind = "unsigned", bits = 5, evidence = "opcode.0x87f", named_by = "opcode.0x87f", values_type = "CrowdControlState", values = [ { value = 0, name = "stun", evidence = "Unit.CodeEnumCCState" }, { value = 1, name = "sleep", evidence = "Unit.CodeEnumCCState" }, { value = 2, name = "root", evidence = "Unit.CodeEnumCCState" }, { value = 3, name = "disarm", evidence = "Unit.CodeEnumCCState" }, { value = 4, name = "silence", evidence = "Unit.CodeEnumCCState" }, { value = 5, name = "polymorph", evidence = "Unit.CodeEnumCCState" }, { value = 6, name = "fear", evidence = "Unit.CodeEnumCCState" }, { value = 7, name = "hold", evidence = "Unit.CodeEnumCCState" }, { value = 8, name = "knockdown", evidence = "Unit.CodeEnumCCState" }, { value = 9, name = "vulnerability", evidence = "Unit.CodeEnumCCState" }, { value = 10, name = "vulnerability_with_act", evidence = "Unit.CodeEnumCCState" }, { value = 11, name = "disorient", evidence = "Unit.CodeEnumCCState" }, { value = 12, name = "disable", evidence = "Unit.CodeEnumCCState" }, { value = 13, name = "taunt", evidence = "Unit.CodeEnumCCState" }, { value = 14, name = "detaunt", evidence = "Unit.CodeEnumCCState" }, { value = 15, name = "blind", evidence = "Unit.CodeEnumCCState" }, { value = 16, name = "knockback", evidence = "Unit.CodeEnumCCState" }, { value = 17, name = "pushback", evidence = "Unit.CodeEnumCCState" }, { value = 18, name = "pull", evidence = "Unit.CodeEnumCCState" }, { value = 19, name = "position_switch", evidence = "Unit.CodeEnumCCState" }, { value = 20, name = "tether", evidence = "Unit.CodeEnumCCState" }, { value = 21, name = "snare", evidence = "Unit.CodeEnumCCState" }, { value = 22, name = "interrupt", evidence = "Unit.CodeEnumCCState" }, { value = 23, name = "daze", evidence = "Unit.CodeEnumCCState" }, { value = 24, name = "subdue", evidence = "Unit.CodeEnumCCState" }, { value = 25, name = "grounded", evidence = "Unit.CodeEnumCCState" }, { value = 26, name = "disable_cinematic", evidence = "Unit.CodeEnumCCState" }, { value = 27, name = "ability_restriction", evidence = "Unit.CodeEnumCCState" } ] },
+  { name = "instance_id", kind = "unsigned", bits = 32, evidence = "opcode.0x87f", named_by = "opcode.0x87f" },
+]
+
+[[message]]
+id = 0x0880
+name = "unit_cc_state_ended"
+direction = "server_to_client"
+evidence = "opcode.0x880"
+summary = "a unit's crowd-control state ends: the unit, the state, the cast id (0 any cast), the effect instance id (0 any) and one bit that keeps an entry whose effect has dataBits02 flag 4; the only message that ends a held state while the unit lives (`cc_state.end`)"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x880", named_by = "opcode.0x880" },
+  { name = "state", kind = "unsigned", bits = 5, evidence = "opcode.0x880", named_by = "opcode.0x880", values_type = "CrowdControlState", values = [ { value = 0, name = "stun", evidence = "Unit.CodeEnumCCState" }, { value = 1, name = "sleep", evidence = "Unit.CodeEnumCCState" }, { value = 2, name = "root", evidence = "Unit.CodeEnumCCState" }, { value = 3, name = "disarm", evidence = "Unit.CodeEnumCCState" }, { value = 4, name = "silence", evidence = "Unit.CodeEnumCCState" }, { value = 5, name = "polymorph", evidence = "Unit.CodeEnumCCState" }, { value = 6, name = "fear", evidence = "Unit.CodeEnumCCState" }, { value = 7, name = "hold", evidence = "Unit.CodeEnumCCState" }, { value = 8, name = "knockdown", evidence = "Unit.CodeEnumCCState" }, { value = 9, name = "vulnerability", evidence = "Unit.CodeEnumCCState" }, { value = 10, name = "vulnerability_with_act", evidence = "Unit.CodeEnumCCState" }, { value = 11, name = "disorient", evidence = "Unit.CodeEnumCCState" }, { value = 12, name = "disable", evidence = "Unit.CodeEnumCCState" }, { value = 13, name = "taunt", evidence = "Unit.CodeEnumCCState" }, { value = 14, name = "detaunt", evidence = "Unit.CodeEnumCCState" }, { value = 15, name = "blind", evidence = "Unit.CodeEnumCCState" }, { value = 16, name = "knockback", evidence = "Unit.CodeEnumCCState" }, { value = 17, name = "pushback", evidence = "Unit.CodeEnumCCState" }, { value = 18, name = "pull", evidence = "Unit.CodeEnumCCState" }, { value = 19, name = "position_switch", evidence = "Unit.CodeEnumCCState" }, { value = 20, name = "tether", evidence = "Unit.CodeEnumCCState" }, { value = 21, name = "snare", evidence = "Unit.CodeEnumCCState" }, { value = 22, name = "interrupt", evidence = "Unit.CodeEnumCCState" }, { value = 23, name = "daze", evidence = "Unit.CodeEnumCCState" }, { value = 24, name = "subdue", evidence = "Unit.CodeEnumCCState" }, { value = 25, name = "grounded", evidence = "Unit.CodeEnumCCState" }, { value = 26, name = "disable_cinematic", evidence = "Unit.CodeEnumCCState" }, { value = 27, name = "ability_restriction", evidence = "Unit.CodeEnumCCState" } ] },
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x880", named_by = "opcode.0x880" },
+  { name = "instance_id", kind = "unsigned", bits = 32, evidence = "opcode.0x880", named_by = "opcode.0x880" },
+  { name = "keeps_flag_4_entries", kind = "unsigned", bits = 1, evidence = "opcode.0x880", named_by = "opcode.0x880" },
+]
+
+[[message]]
 id = 0x0814
 name = "spell_threshold_closed"
 direction = "server_to_client"
@@ -2157,7 +2183,7 @@ id = 0x0247
 name = "combat_log"
 direction = "server_to_client"
 evidence = "opcode.0x247"
-summary = "a combat log entry: the type in 6 bits picks the entry's layout, and the client's reader fails a type above 35; the schema holds types 22 (death) and 23 (resurrect), and a spell hit's line is made by the client from its damage description"
+summary = "a combat log entry: the type in 6 bits picks the entry's layout, and the client's reader fails a type above 35; the schema holds types 1 (crowd-control state), 2 (state break), 22 (death) and 23 (resurrect), and a spell hit's line is made by the client from its damage description"
 fields = [
   { name = "entry", kind = "record", record = "combat_log_entry", evidence = "opcode.0x247", named_by = "opcode.0x247" },
 ]
@@ -2165,11 +2191,40 @@ fields = [
 [[union]]
 name = "combat_log_entry"
 evidence = "opcode.0x247"
-summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 22 and 23, and the client's reader takes 0 to 35"
+summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 1, 2, 22 and 23, and the client's reader takes 0 to 35"
 tag_bits = 6
 variants = [
+  { tag = 1, name = "cc_state", record = "combat_log_cc_state", named_by = "opcode.0x247.cc_state" },
+  { tag = 2, name = "cc_state_break", record = "combat_log_cc_state_break", named_by = "opcode.0x247.cc_state" },
   { tag = 22, name = "death", record = "combat_log_death", named_by = "opcode.0x247.death" },
   { tag = 23, name = "resurrect", record = "combat_log_resurrect", named_by = "opcode.0x247.death" },
+]
+
+[[record]]
+name = "combat_log_cc_state"
+evidence = "opcode.0x247.cc_state"
+summary = "a combat log entry of type 1: a crowd-control state set or removed, the Interrupt Armor it hit, the result of applying it and the diminishing-returns category (0 none), then the cast data: the caster, the target, the Spell4 and the combat result"
+fields = [
+  { name = "kind", kind = "constant", bits = 6, value = 1, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state" },
+  { name = "state", kind = "unsigned", bits = 5, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state", values_type = "CrowdControlState", values = [ { value = 0, name = "stun", evidence = "Unit.CodeEnumCCState" }, { value = 1, name = "sleep", evidence = "Unit.CodeEnumCCState" }, { value = 2, name = "root", evidence = "Unit.CodeEnumCCState" }, { value = 3, name = "disarm", evidence = "Unit.CodeEnumCCState" }, { value = 4, name = "silence", evidence = "Unit.CodeEnumCCState" }, { value = 5, name = "polymorph", evidence = "Unit.CodeEnumCCState" }, { value = 6, name = "fear", evidence = "Unit.CodeEnumCCState" }, { value = 7, name = "hold", evidence = "Unit.CodeEnumCCState" }, { value = 8, name = "knockdown", evidence = "Unit.CodeEnumCCState" }, { value = 9, name = "vulnerability", evidence = "Unit.CodeEnumCCState" }, { value = 10, name = "vulnerability_with_act", evidence = "Unit.CodeEnumCCState" }, { value = 11, name = "disorient", evidence = "Unit.CodeEnumCCState" }, { value = 12, name = "disable", evidence = "Unit.CodeEnumCCState" }, { value = 13, name = "taunt", evidence = "Unit.CodeEnumCCState" }, { value = 14, name = "detaunt", evidence = "Unit.CodeEnumCCState" }, { value = 15, name = "blind", evidence = "Unit.CodeEnumCCState" }, { value = 16, name = "knockback", evidence = "Unit.CodeEnumCCState" }, { value = 17, name = "pushback", evidence = "Unit.CodeEnumCCState" }, { value = 18, name = "pull", evidence = "Unit.CodeEnumCCState" }, { value = 19, name = "position_switch", evidence = "Unit.CodeEnumCCState" }, { value = 20, name = "tether", evidence = "Unit.CodeEnumCCState" }, { value = 21, name = "snare", evidence = "Unit.CodeEnumCCState" }, { value = 22, name = "interrupt", evidence = "Unit.CodeEnumCCState" }, { value = 23, name = "daze", evidence = "Unit.CodeEnumCCState" }, { value = 24, name = "subdue", evidence = "Unit.CodeEnumCCState" }, { value = 25, name = "grounded", evidence = "Unit.CodeEnumCCState" }, { value = 26, name = "disable_cinematic", evidence = "Unit.CodeEnumCCState" }, { value = 27, name = "ability_restriction", evidence = "Unit.CodeEnumCCState" } ] },
+  { name = "removed", kind = "unsigned", bits = 1, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state" },
+  { name = "interrupt_armor_hit", kind = "unsigned", bits = 32, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state" },
+  { name = "result", kind = "unsigned", bits = 4, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state", values_type = "CrowdControlResult", values = [ { value = 0, name = "ok", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 1, name = "invalid_cc_state", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 2, name = "no_target_specified", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 3, name = "target_immune", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 4, name = "target_infinite_interrupt_armor", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 5, name = "target_interrupt_armor_reduced", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 6, name = "target_interrupt_armor_blocked", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 7, name = "stacking_does_not_stack", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 8, name = "stacking_shorter_duration", evidence = "Unit.CodeEnumCCStateApplyRulesResult" }, { value = 9, name = "diminishing_returns_trigger_cap", evidence = "Unit.CodeEnumCCStateApplyRulesResult" } ] },
+  { name = "diminishing_returns_id", kind = "unsigned", bits = 14, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state" },
+  { name = "caster_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247", named_by = "opcode.0x247" },
+  { name = "target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247", named_by = "opcode.0x247" },
+  { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x247", named_by = "opcode.0x247" },
+  { name = "combat_result", kind = "unsigned", bits = 4, evidence = "opcode.0x247", named_by = "opcode.0x247", values_type = "CombatResult", values = [ { value = 0, name = "avoid", evidence = "GameLib.CodeEnumCombatResult" }, { value = 1, name = "critical", evidence = "GameLib.CodeEnumCombatResult" }, { value = 2, name = "hit", evidence = "GameLib.CodeEnumCombatResult" }, { value = 3, name = "needs_telegraph_evaluation", evidence = "GameLib.CodeEnumCombatResult" }, { value = 4, name = "outside_telegraph", evidence = "GameLib.CodeEnumCombatResult" }, { value = 5, name = "outside_telegraph_invalid", evidence = "GameLib.CodeEnumCombatResult" }, { value = 6, name = "inside_telegraph", evidence = "GameLib.CodeEnumCombatResult" }, { value = 7, name = "needs_hit_result_calc", evidence = "GameLib.CodeEnumCombatResult" } ] },
+]
+
+[[record]]
+name = "combat_log_cc_state_break"
+evidence = "opcode.0x247.cc_state"
+summary = "a combat log entry of type 2: the unit whose crowd-control state broke and the state"
+fields = [
+  { name = "kind", kind = "constant", bits = 6, value = 2, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state" },
+  { name = "state", kind = "unsigned", bits = 5, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state", values_type = "CrowdControlState", values = [ { value = 0, name = "stun", evidence = "Unit.CodeEnumCCState" }, { value = 1, name = "sleep", evidence = "Unit.CodeEnumCCState" }, { value = 2, name = "root", evidence = "Unit.CodeEnumCCState" }, { value = 3, name = "disarm", evidence = "Unit.CodeEnumCCState" }, { value = 4, name = "silence", evidence = "Unit.CodeEnumCCState" }, { value = 5, name = "polymorph", evidence = "Unit.CodeEnumCCState" }, { value = 6, name = "fear", evidence = "Unit.CodeEnumCCState" }, { value = 7, name = "hold", evidence = "Unit.CodeEnumCCState" }, { value = 8, name = "knockdown", evidence = "Unit.CodeEnumCCState" }, { value = 9, name = "vulnerability", evidence = "Unit.CodeEnumCCState" }, { value = 10, name = "vulnerability_with_act", evidence = "Unit.CodeEnumCCState" }, { value = 11, name = "disorient", evidence = "Unit.CodeEnumCCState" }, { value = 12, name = "disable", evidence = "Unit.CodeEnumCCState" }, { value = 13, name = "taunt", evidence = "Unit.CodeEnumCCState" }, { value = 14, name = "detaunt", evidence = "Unit.CodeEnumCCState" }, { value = 15, name = "blind", evidence = "Unit.CodeEnumCCState" }, { value = 16, name = "knockback", evidence = "Unit.CodeEnumCCState" }, { value = 17, name = "pushback", evidence = "Unit.CodeEnumCCState" }, { value = 18, name = "pull", evidence = "Unit.CodeEnumCCState" }, { value = 19, name = "position_switch", evidence = "Unit.CodeEnumCCState" }, { value = 20, name = "tether", evidence = "Unit.CodeEnumCCState" }, { value = 21, name = "snare", evidence = "Unit.CodeEnumCCState" }, { value = 22, name = "interrupt", evidence = "Unit.CodeEnumCCState" }, { value = 23, name = "daze", evidence = "Unit.CodeEnumCCState" }, { value = 24, name = "subdue", evidence = "Unit.CodeEnumCCState" }, { value = 25, name = "grounded", evidence = "Unit.CodeEnumCCState" }, { value = 26, name = "disable_cinematic", evidence = "Unit.CodeEnumCCState" }, { value = 27, name = "ability_restriction", evidence = "Unit.CodeEnumCCState" } ] },
 ]
 
 [[record]]

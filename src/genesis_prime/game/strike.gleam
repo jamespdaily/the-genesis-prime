@@ -32,6 +32,12 @@
 ////   A cast that spent points above its base cost (`GoAsked.spent`) strikes with the
 ////   damage effects its points choose and selects the units those effects aim at
 ////   (genesis_prime/game/spend).
+//// - **Crowd-control states** of the phase (`Selection.controls`) are told to each unit
+////   their aim names, with the damage or alone: a phase with a stun and no damage still
+////   tells its units and waits for their answers. Each state gets an instance id from
+////   the caster's own count of the states it told (genesis_prime/game/crowd_control
+////   `instance_id`), and the creature that takes the state answers with it, so the
+////   go lists only the states that landed (genesis_prime/world_map/creature_control).
 //// - **One round for each go.** The key of a strike is (cast, phase, unit). A round
 ////   holds a place for each selected unit, filled in the order of the selection
 ////   whatever order the answers arrive in; the go lists them in that order.
@@ -70,6 +76,7 @@ import genesis_prime/game/hit
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
 import genesis_prime/game/spell_area.{type Areas}
+import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{type Answered, type Tell}
 import genesis_prime/step.{
@@ -116,13 +123,15 @@ pub type Aimed {
 }
 
 /// What a go strikes: the units, nearest first with the primary target after the
-/// area's, and the damage each is struck with. A spell with no damage effect in the
-/// phase selects units and tells none of them.
+/// area's, the damage each is struck with and the crowd-control states each is told
+/// by the aim of its row. A spell with no damage effect and no state in the phase
+/// selects units and tells none of them.
 pub type Selection {
   Selection(
     asked: GoAsked,
     units: List(Aimed),
     blows: List(spell_area.DamageEffect),
+    controls: List(spell_plan.CrowdControl),
   )
 }
 
@@ -143,13 +152,15 @@ pub type Effect {
 }
 
 /// The rounds of a player's strikes that are open, in the order they began, the
-/// monotonic time the strike timer is set to, and the health news held for units of
-/// open rounds.
+/// monotonic time the strike timer is set to, the health news held for units of
+/// open rounds, and how many crowd-control states the player has told, which the
+/// instance ids are made from (genesis_prime/game/crowd_control `instance_id`).
 pub opaque type State {
   State(
     rounds: List(Round),
     armed_for_ms: Option(Int),
     held: List(#(Int, News)),
+    controls_told: Int,
   )
 }
 
@@ -171,7 +182,7 @@ pub type Place {
 
 /// A player that has struck nothing.
 pub fn new() -> State {
-  State(rounds: [], armed_for_ms: None, held: [])
+  State(rounds: [], armed_for_ms: None, held: [], controls_told: 0)
 }
 
 /// Whether the timer is the strike timer.
@@ -189,7 +200,7 @@ pub fn select(
   areas areas: Areas,
   now_ms now_ms: Int,
 ) -> Selection {
-  let empty = Selection(asked:, units: [], blows: [])
+  let empty = Selection(asked:, units: [], blows: [], controls: [])
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
     |> result.try(fn(area) {
@@ -225,6 +236,7 @@ pub fn select(
           |> result.map(fn(life) { Aimed(unit_id:, life:) })
         }),
         blows: phase.damage,
+        controls: phase.controls,
       )
     }
   }
@@ -253,16 +265,16 @@ fn area_selection(
 
 /// The seed bytes the selection's strikes take.
 pub fn entropy_needed(selection selection: Selection) -> Int {
-  case selection.blows {
-    [] -> 0
-    [_, ..] -> list.length(selection.units) * bytes_per_unit
+  case selection.blows, selection.controls {
+    [], [] -> 0
+    _, _ -> list.length(selection.units) * bytes_per_unit
   }
 }
 
 /// A selection begins its round: a strike told to each unit with `entropy`'s rolls
-/// when the phase has damage, the strike timer set to the earliest deadline when it
-/// is not set, and the round closed at once when nothing waits for it and no earlier
-/// round of its cast is open.
+/// when the phase has damage or a state for that unit, the strike timer set to the
+/// earliest deadline when it is not set, and the round closed at once when nothing
+/// waits for it and no earlier round of its cast is open.
 pub fn begin(
   strike strike: State,
   selection selection: Selection,
@@ -272,18 +284,22 @@ pub fn begin(
   now now: Now,
 ) -> #(State, List(Effect)) {
   let offence = offence_of(selection:, attacker:, formulas:)
+  let #(strike, told) = controls_told(strike:, selection:, attacker:)
   let #(places, tells) =
     list.index_fold(selection.units, #([], []), fn(so_far, aimed, index) {
       let #(places, tells) = so_far
-      case selection.blows {
-        [] -> #(
+      let controls = list.key_find(told, aimed.unit_id) |> result.unwrap([])
+      case selection.blows, controls {
+        [], [] -> #(
           [
-            Answered(cast.Hit(unit_id: aimed.unit_id, descriptions: [])),
+            Answered(
+              cast.Hit(unit_id: aimed.unit_id, descriptions: [], controls: []),
+            ),
             ..places
           ],
           tells,
         )
-        [_, ..] ->
+        _, _ ->
           case rolls_at(entropy:, index:) {
             Ok(rolls) -> #([Waiting(unit_id: aimed.unit_id), ..places], [
               TellStrike(
@@ -304,6 +320,7 @@ pub fn begin(
                     rolls:,
                   ),
                   offence:,
+                  controls:,
                 ),
               ),
               ..tells
@@ -327,6 +344,23 @@ pub fn begin(
   let state = State(..strike, rounds: list.append(strike.rounds, [round]))
   let #(state, settled) = settle(state:, now:)
   #(state, list.append(list.reverse(tells), settled))
+}
+
+/// The crowd-control states each selected unit is told: each row of the phase to
+/// the units its aim names (the primary target, the area's units or both), each with
+/// the next instance id of the caster's own count
+/// (genesis_prime/game/crowd_control `instance_id`, `controls_told`), the delay,
+/// duration and armor of its row, and the state. A phase with no state tells none.
+fn controls_told(
+  strike strike: State,
+  selection selection: Selection,
+  attacker attacker: Attacker,
+) -> #(State, List(#(Int, List(strike_tell.ControlTell)))) {
+  case selection.controls {
+    [] -> #(strike, [])
+    [_, ..] ->
+      todo as "tell each row to the units its aim names, minting its instance ids"
+  }
 }
 
 fn offence_of(
@@ -421,8 +455,8 @@ fn fill(
 
 fn filled(unit_id unit_id: Int, outcome outcome: strike_tell.Outcome) -> Place {
   case outcome {
-    strike_tell.Landed(descriptions:) ->
-      Answered(struck: cast.Hit(unit_id:, descriptions:))
+    strike_tell.Landed(descriptions:, controls:) ->
+      Answered(struck: cast.Hit(unit_id:, descriptions:, controls:))
     strike_tell.Deflected -> Answered(struck: cast.Deflected(unit_id:))
     strike_tell.Refused(..) -> LeftOut(unit_id:)
   }

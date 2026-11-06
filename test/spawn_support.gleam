@@ -156,6 +156,7 @@ pub fn beast_combat() -> creature_life.Combat {
       shield_mitigation_max: 0.0,
     ),
     attack: beast_attack(),
+    interrupt_armor: creature_life.NoArmor,
   )
 }
 

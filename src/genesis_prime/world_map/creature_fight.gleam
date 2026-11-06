@@ -88,6 +88,12 @@
 ////   of a round that closed or a home timer of an earlier walk does nothing when it
 ////   fires, though it waited in the mailbox when it was cancelled.
 //// - **A player at 0** answers `Landed` with the killed bit; the creature releases it.
+//// - **While the creature is controlled** (a stun or a knockdown held,
+////   genesis_prime/world_map/creature_control) it starts no strike, chase or walk
+////   home, and a path it runs stops where it stands, as at a death. Its attack tick
+////   goes on and does nothing; threat, targets and the viewers' news are kept as
+////   usual. When the last state ends it acts again from where it stands (`Controlled`,
+////   `ControlEnded`).
 ////
 //// What happens at each deadline and process death:
 ////
@@ -129,9 +135,12 @@ import gleam/order
 import gleam/result
 import gleam/set.{type Set}
 
-/// What the creature fights with, fixed for its life: its unit and address, the
-/// place of its spawn, which is home and the leash circle's centre, its attack, the
-/// time between its attack ticks, and the run's game numbers.
+/// What the creature fights with: its unit and address, the place of its spawn,
+/// which is home and the leash circle's centre, its attack, the time between its
+/// attack ticks and the run's game numbers, which are fixed for its life; and whether
+/// it holds a crowd-control state now, which the creature's rule gives each step
+/// (genesis_prime/world_map/creature_control `holds`). A controlled creature starts
+/// no strike, chase or walk: `ticked`, `chase` and `leash` check it.
 pub type Fighter {
   Fighter(
     unit_id: Int,
@@ -140,6 +149,7 @@ pub type Fighter {
     attack: Attack,
     interval_ms: Int,
     numbers: GameNumbers,
+    controlled: Bool,
   )
 }
 
@@ -225,6 +235,13 @@ pub type Input {
   Killed
   /// creature_life: the corpse timer stood the creature again at its spawn.
   StoodAgain
+  /// creature_control: the creature took a state while it lives. A path it runs
+  /// stops where it stands (0x638 of kind 2 for its viewers, as at a death).
+  Controlled
+  /// creature_control: the last state ended. The creature acts again from where it
+  /// stands: a fight chases its target and goes on; a creature that was to walk home
+  /// when a state held it starts the walk.
+  ControlEnded
 }
 
 /// The fight's timers, each of the generation it was started with: a timer of a
@@ -348,6 +365,8 @@ pub fn step(
         Returning(..) | Resting | Fighting(..) -> #(state, [])
       }
     Killed -> killed(state:, fighter:, now_ms:)
+    Controlled -> stopped(state:, now_ms:)
+    ControlEnded -> resumed(state:, fighter:, now_ms:)
     StoodAgain -> {
       let state =
         State(..state, status: Resting, path: Standing(at: fighter.home))
@@ -769,7 +788,8 @@ fn retargeted(
 
 /// The attack tick: with the target in reach and no round open the creature
 /// strikes; out of reach at the leash circle it leashes; else it chases. The next
-/// tick starts unless it leashed.
+/// tick starts unless it leashed. A controlled creature does none of these: the tick
+/// only starts the next.
 fn ticked(
   state state: State,
   fighter fighter: Fighter,
@@ -779,6 +799,7 @@ fn ticked(
     as "a tick is taken only while Fighting"
   let here = creature_path.place_at(path: state.path, now_ms:)
   case dict.get(state.sightings, target) {
+    _ if fighter.controlled -> next_tick(state:, fighter:, effects: [])
     Error(Nil) -> next_tick(state:, fighter:, effects: [])
     Ok(sighting) -> {
       let in_reach =
@@ -857,12 +878,15 @@ fn strikes(
       ToPlayer(
         to: target,
         stay: sighting.stay,
-        told: Attacks(tell: strike_tell.Strike(
-          key:,
-          from: fighter.address,
-          striker: CreatureStriker,
-          offence: fighter.attack.offence,
-        )),
+        told: Attacks(
+          tell: strike_tell.Strike(
+            key:,
+            from: fighter.address,
+            striker: CreatureStriker,
+            offence: fighter.attack.offence,
+            controls: [],
+          ),
+        ),
       ),
       StartTimer(
         timer: StrikeDeadline(deadline),
@@ -884,8 +908,8 @@ fn answered_strike(
     Fighting(round: Some(round), ..) if round.key == answered.key -> {
       let unit_id = answered.key.unit_id
       let #(struck, ends_target) = case answered.outcome {
-        strike_tell.Landed(descriptions:) -> #(
-          [cast.Hit(unit_id:, descriptions:)],
+        strike_tell.Landed(descriptions:, ..) -> #(
+          [cast.Hit(unit_id:, descriptions:, controls: [])],
           list.any(descriptions, fn(description) {
             description.damage.killed == 1
           }),
@@ -944,12 +968,13 @@ fn round_closed(
 
 /// The creature runs toward its target when the target is beyond reach of where its
 /// path ends: a new path from where it is, stopping short of the target and clipped
-/// at the leash circle, sent as 0x638.
+/// at the leash circle, sent as 0x638. A controlled creature starts no path.
 fn chase(
   state state: State,
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  use <- bool.guard(when: fighter.controlled, return: #(state, []))
   let target_place = case state.status {
     Fighting(target:, ..) ->
       dict.get(state.sightings, target)
@@ -1011,12 +1036,16 @@ fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
 /// The leash: every threat entry erased (0x90a 0), out of combat (0x89a 0), full
 /// health (0x937), the path home (0x638), each threatened player told `Released`,
 /// an open round closed, and the home timer started. The creature takes no strike
-/// until it is home.
+/// until it is home. A controlled creature leashes in everything but the walk
+/// and its timer, which `ControlEnded` starts.
 fn leash(
   state state: State,
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  use <- bool.lazy_guard(when: fighter.controlled, return: fn() {
+    todo as "a leash while controlled: the status, news and health change as usual, the walk home and its home timer wait for ControlEnded"
+  })
   let #(entries, round) = case state.status {
     Fighting(threat:, round:, ..) -> #(map.sorted_by_connection(threat), round)
     Resting | Returning(..) -> #([], None)
@@ -1108,6 +1137,24 @@ fn killed(
     }
     Resting | Returning(..) -> #(State(..state, status: Resting), placed)
   }
+}
+
+/// A state took hold of the creature: the path it runs stops where it stands, and its
+/// viewers are placed there when they still run it (0x638 of kind 2, as `killed`
+/// does). The fight's status and threat are unchanged.
+fn stopped(state state: State, now_ms now_ms: Int) -> #(State, List(Effect)) {
+  todo as "stop the path where the creature stands and place its viewers there"
+}
+
+/// The last state ended: a Fighting creature chases its target again from where it
+/// stands (its attack tick went on), and a Returning one that stands away from home
+/// starts the walk its leash could not, with its home timer.
+fn resumed(
+  state state: State,
+  fighter fighter: Fighter,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  todo as "chase again, or start the walk home a controlled leash left"
 }
 
 fn generation(state: State) -> #(State, Int) {
