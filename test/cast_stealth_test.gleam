@@ -10,9 +10,12 @@
 //// - `Spell4Effects.effectType.83`: a Stealth effect holds the stealth until it is
 ////   removed (no durationTime; the plan reads no flags); dataBits02 1 means damage does
 ////   not end it, 0 means it does.
-//// - `Spell4.spellCastStealthChange.break`: a go of a spell of value 0 or 1 ends the stealth
-////   after its effects, so gates on the caster being stealthed see it; value 2 ends nothing.
-////   The column is read nowhere by the client, so this is the server's rule.
+//// - `Spell4.spellCastStealthChange.break`: a spell of value 1 ends the stealth after the
+////   effects of its last go, so gates on the caster being stealthed in any of its goes see
+////   it (Impale's phase 1 Proxies); value 0 ends it after the effects of a go; value 2
+////   ends nothing. The column is read nowhere by the client, so this is the server's rule,
+////   and so is a cast that stops after one of its goes and before its last ending it as it
+////   stops, while one that stops before its first go leaves it held.
 //// - `opcode.0x811`: a cast whose last node leaves a unit is destroyed by the client when
 ////   its cast method is Normal, so the end of a Normal cast's node is the 0x811 alone;
 ////   `cast.target_node_end`: a 0x7fe destroys every node of a cast, and the client
@@ -26,13 +29,16 @@ import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, Always, BrokenByDamage, EndsStealth, GatedOnCaster,
-  KeepsStealth, KeptOnDamage, Proxy, RemoveStealthRow, Spell,
+  type Plans, type Spell, Always, BrokenByDamage, EndsStealthAfterLastGo,
+  EndsStealthAtEachGo, GatedOnCaster, KeepsStealth, KeptOnDamage, Proxy,
+  RemoveStealthRow, Spell, StealthRow,
 }
 import genesis_prime/game/spend
+import genesis_prime/message/cast_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_target_info
+import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/list
 import owned_test
@@ -441,10 +447,13 @@ pub fn an_attack_from_stealth_reads_the_stealth_in_its_gates_then_ends_it_after_
   use <- owned_test.run(60_000)
   let #(on_gate, off_gate) = impales_gates()
   let impale =
-    Spell(..attack(spell4_id: 38_779, base: 2, change: EndsStealth), proxies: [
-      gated_proxy(child: 39_427, effect: 83_819, gate: on_gate),
-      gated_proxy(child: 39_426, effect: 83_818, gate: off_gate),
-    ])
+    Spell(
+      ..attack(spell4_id: 38_779, base: 2, change: EndsStealthAfterLastGo),
+      proxies: [
+        gated_proxy(child: 39_427, effect: 83_819, gate: on_gate),
+        gated_proxy(child: 39_426, effect: 83_818, gate: off_gate),
+      ],
+    )
   let #(plans, state, entered) = stealthed_by_base_1(others: [impale])
   let held = support.pressed_id(effects: entered)
   let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
@@ -461,24 +470,215 @@ pub fn an_attack_from_stealth_reads_the_stealth_in_its_gates_then_ends_it_after_
     as "the change is the input's last effect"
 }
 
+/// An attack of two goes, as Impale's: phase delays 0 and 300 ms, its two Proxies in
+/// phase 1 (phaseFlags 2) behind the caster gates of 38585 and 38587, with this stealth
+/// change.
+fn two_phase_attack(
+  spell4_id spell4_id: Int,
+  change change: spell_plan.StealthChange,
+) -> Spell {
+  let #(on_gate, off_gate) = impales_gates()
+  Spell(
+    ..attack(spell4_id:, base: 2, change:),
+    phase_delays_ms: [0, 300],
+    proxies: [
+      Proxy(
+        ..gated_proxy(child: 39_427, effect: 83_819, gate: on_gate),
+        phase_flags: 2,
+      ),
+      Proxy(
+        ..gated_proxy(child: 39_426, effect: 83_818, gate: off_gate),
+        phase_flags: 2,
+      ),
+    ],
+  )
+}
+
+/// A press of the two-phase attack by a caster stealthed by base 1, with the first go
+/// answered at once: the state, the effects of the stealthing press, the press's, and
+/// the timer of the second go.
+fn first_phase_gone(
+  spell spell: Spell,
+) -> #(Plans, State, List(Effect), List(Effect), TimerId) {
+  let #(plans, state, entered) = stealthed_by_base_1(others: [spell])
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster: caster(),
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 2000,
+    )
+  let #(state, first) =
+    support.answered_with_no_targets(state:, effects: pressed, at: 2000)
+  let assert [#(second_go, 300)] = support.started_timers(effects: first)
+    as "the second go waits 300 ms (SpellPhase 3716)"
+  #(plans, state, entered, first, second_go)
+}
+
+pub fn an_attack_of_value_1_with_two_phases_reads_the_stealth_in_its_second_phase_gate_and_ends_it_after_that_phase_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(_, state, entered, first, second_go) =
+    first_phase_gone(spell: two_phase_attack(
+      spell4_id: 38_779,
+      change: EndsStealthAfterLastGo,
+    ))
+  assert children_started(effects: first) == []
+    as "the Proxies are phase 1's: the first go starts none"
+  assert changes(effects: first) == [] as "the first go ends no stealth"
+  assert support.removed_targets(support.writes(effects: first)) == []
+  assert cast.stealthed(cast: state)
+    as "the stealth holds while the cast's last go is yet to come"
+  let #(state, second) = support.fired(state:, timer: second_go, at: 2300)
+  assert children_started(effects: second) == [39_427]
+    as "38585 reads the caster stealthed and 38587 does not: only 39427 starts (Spell4.spellCastStealthChange.break: Impale's Proxies still see the stealth)"
+  assert support.removed_targets(support.writes(effects: second))
+    == [#(support.pressed_id(effects: entered), [7])]
+    as "the cast that holds the stealth comes off the caster after the last go"
+  assert changes(effects: second) == [False]
+  assert !cast.stealthed(cast: state)
+  let lines = trace(effects: second)
+  assert last_of(lines:, line: "go") < first_of(lines:, line: "off")
+    as "the 0x811 follows every go of the phase"
+  assert list.last(lines) == Ok("stealth off")
+}
+
+pub fn an_attack_of_value_0_with_two_phases_ends_the_stealth_at_its_first_go_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Value 0 is built as it ends the stealth at a go (the fact's guess, 'when the cast
+  // starts', is not built): the first go ends it, so the second phase's Proxies read
+  // the caster as not stealthed.
+  let #(_, state, entered, first, second_go) =
+    first_phase_gone(spell: two_phase_attack(
+      spell4_id: 38_783,
+      change: EndsStealthAtEachGo,
+    ))
+  assert support.removed_targets(support.writes(effects: first))
+    == [#(support.pressed_id(effects: entered), [7])]
+  assert changes(effects: first) == [False]
+  assert !cast.stealthed(cast: state)
+  let #(_, second) = support.fired(state:, timer: second_go, at: 2300)
+  assert children_started(effects: second) == [39_426]
+    as "38587 passes and 38585 fails once the stealth is gone"
+  assert changes(effects: second) == []
+}
+
+pub fn a_cast_cancelled_after_one_of_its_goes_ends_the_stealth_as_it_stops_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The server's choice, the client giving no case (Spell4.spellCastStealthChange): the
+  // goes that ran applied their effects (Spell4.spellCastStealthChange.break), so a
+  // value 1 cast that stops after one and before its last ends the stealth as it stops.
+  let #(plans, state, entered, first, second_go) =
+    first_phase_gone(spell: two_phase_attack(
+      spell4_id: 38_779,
+      change: EndsStealthAfterLastGo,
+    ))
+  let assert Ok(#(state, cancelled)) =
+    support.cancelled_in(
+      plans:,
+      state:,
+      cast_id: support.pressed_id(effects: first),
+      reason: cast_result.from_value(11),
+      bit: 1,
+      at: 2100,
+    )
+  assert support.cancelled_timers(effects: cancelled) == [second_go]
+    as "the second go was waiting and is cancelled"
+  assert support.removed_targets(support.writes(effects: cancelled))
+    == [#(support.pressed_id(effects: entered), [7])]
+    as "the cast that holds the stealth comes off the caster"
+  assert changes(effects: cancelled) == [False]
+  assert list.last(trace(effects: cancelled)) == Ok("stealth off")
+  assert !cast.stealthed(cast: state)
+}
+
+pub fn a_cast_cancelled_before_its_first_go_keeps_the_stealth_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // No go ran, so none of its effects was applied: the stealth stays.
+  let waiting =
+    Spell(
+      ..two_phase_attack(spell4_id: 38_779, change: EndsStealthAfterLastGo),
+      cast_time_ms: 1000,
+    )
+  let #(plans, state, _) = stealthed_by_base_1(others: [waiting])
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster: caster(),
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 2000,
+    )
+  assert support.started_timers(effects: pressed) != []
+    as "the first go waits for the cast time"
+  let assert Ok(#(state, cancelled)) =
+    support.cancelled_in(
+      plans:,
+      state:,
+      cast_id: support.pressed_id(effects: pressed),
+      reason: cast_result.from_value(11),
+      bit: 1,
+      at: 2500,
+    )
+  assert support.removed_targets(support.writes(effects: cancelled)) == []
+  assert changes(effects: cancelled) == []
+  assert cast.stealthed(cast: state)
+}
+
+pub fn a_stealth_row_of_a_later_phase_of_a_value_1_spell_is_kept_when_the_older_source_ends_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The cast's own Stealth row, applied in phase 1 with the cast's last go, is its own
+  // source: only the casts held before it come off.
+  let makes =
+    Spell(
+      ..two_phase_attack(spell4_id: 38_913, change: EndsStealthAfterLastGo),
+      proxies: [],
+      stealth: [
+        StealthRow(
+          ..support.stealth_row(id: 95_774, breaks: KeptOnDamage),
+          phase_flags: 2,
+        ),
+      ],
+    )
+  let #(_, state, entered, first, second_go) = first_phase_gone(spell: makes)
+  assert changes(effects: first) == []
+  assert cast.stealthed(cast: state)
+  let #(state, second) = support.fired(state:, timer: second_go, at: 2300)
+  assert support.removed_targets(support.writes(effects: second))
+    == [#(support.pressed_id(effects: entered), [7])]
+    as "the older source's cast comes off and the phase's own source stays"
+  assert changes(effects: second) == []
+  assert cast.stealthed(cast: state)
+}
+
 pub fn an_attack_of_value_1_or_0_ends_the_stealth_the_same_way_test() -> Nil {
   use <- owned_test.run(60_000)
   // Shred 38765 holds 1 and Cancel 38783 holds 0 (Spell4.spellCastStealthChange): both
-  // are EndsStealth; the toggle's own cancel is tested above.
-  list.each([#(38_765, "Shred"), #(38_783, "Cancel")], fn(spell) {
-    let #(plans, state, entered) =
-      stealthed_by_base_1(others: [
-        attack(spell4_id: spell.0, base: 2, change: EndsStealth),
-      ])
-    let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
-    assert support.removed_targets(support.writes(effects:))
-      == [#(support.pressed_id(effects: entered), [7])]
-      as {
-        spell.1 <> " ends the stealth with the 0x811 of the cast that holds it"
-      }
-    assert changes(effects:) == [False]
-    assert !cast.stealthed(cast: state)
-  })
+  // end the stealth of their one go; the toggle's own cancel is tested above.
+  list.each(
+    [
+      #(38_765, "Shred", EndsStealthAfterLastGo),
+      #(38_783, "Cancel", EndsStealthAtEachGo),
+    ],
+    fn(spell) {
+      let #(plans, state, entered) =
+        stealthed_by_base_1(others: [
+          attack(spell4_id: spell.0, base: 2, change: spell.2),
+        ])
+      let #(state, effects) =
+        press(plans:, state:, bag: bag_of_base_2, at: 2000)
+      assert support.removed_targets(support.writes(effects:))
+        == [#(support.pressed_id(effects: entered), [7])]
+        as {
+          spell.1
+          <> " ends the stealth with the 0x811 of the cast that holds it"
+        }
+      assert changes(effects:) == [False]
+      assert !cast.stealthed(cast: state)
+    },
+  )
 }
 
 pub fn a_spell_of_value_2_cast_on_its_own_ends_nothing_test() -> Nil {
@@ -496,14 +696,14 @@ pub fn a_spell_of_value_2_cast_on_its_own_ends_nothing_test() -> Nil {
 
 pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_test() -> Nil {
   use <- owned_test.run(60_000)
-  // A spell of value 1 that holds a Stealth row of its own: its break ends what was held
-  // before the go, never the stealth the go made (Spell4.spellCastStealthChange.break).
+  // A spell of value 1 that holds a Stealth row of its own: its break ends the stealth
+  // other casts hold, never the stealth the cast made (Spell4.spellCastStealthChange.break).
   let makes =
     Spell(
       ..support.stealthing(spell4_id: 38_913, base: 2, rows: [
         support.stealth_row(id: 95_774, breaks: KeptOnDamage),
       ]),
-      stealth_change: EndsStealth,
+      stealth_change: EndsStealthAfterLastGo,
     )
   let plans = plans_of([broken(), makes])
   let #(state, alone) =
@@ -527,7 +727,7 @@ pub fn a_go_after_the_stealth_ended_finds_nothing_to_end_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(plans, state, _) =
     stealthed_by_base_1(others: [
-      attack(spell4_id: 38_779, base: 2, change: EndsStealth),
+      attack(spell4_id: 38_779, base: 2, change: EndsStealthAfterLastGo),
     ])
   let #(state, _) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
   let #(_, effects) = press(plans:, state:, bag: bag_of_base_2, at: 3000)

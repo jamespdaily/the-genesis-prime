@@ -467,7 +467,7 @@ pub type Spell {
     stealth: List(StealthRow),
     /// The RemoveStealth effects aimed at the caster, which end every stealth it holds.
     remove_stealth: List(RemoveStealthRow),
-    /// What a go of the spell does to the caster's stealth (`Spell4.spellCastStealthChange`).
+    /// What the spell does to the caster's stealth, and at which go (`StealthChange`).
     stealth_change: StealthChange,
   )
 }
@@ -479,12 +479,17 @@ pub type Breaks {
   KeptOnDamage
 }
 
-/// What a go of a spell does to its caster's stealth, from `Spell4.spellCastStealthChange`:
-/// 0 and 1 end it after the go's effects, 2 leaves it. The client reads the column
-/// nowhere, so ending stealth on a cast is the server's rule
+/// What a spell does to its caster's stealth, from `Spell4.spellCastStealthChange`: the
+/// column is read nowhere by the client, so ending stealth on a cast is the server's rule
 /// (`Spell4.spellCastStealthChange`, `Spell4.spellCastStealthChange.break`).
+/// - 0 ends the stealth of other casts after the effects of a go, at each go.
+/// - 1 ends it after the effects of the cast's last go, so effects of an earlier go
+///   gated on the caster being stealthed (Impale's Proxies, phase 1) still see it.
+/// - 2 leaves it.
+/// The stealth a cast's own Stealth rows give is never ended by the cast.
 pub type StealthChange {
-  EndsStealth
+  EndsStealthAtEachGo
+  EndsStealthAfterLastGo
   KeepsStealth
 }
 
@@ -781,10 +786,6 @@ pub type PlanError {
   /// A Stealth effect of a tree has a delayTime or durationTime: timed stealth is not
   /// built (`Spell4Effects.effectType.83`).
   StealthTimedNotRead(spell4_id: Int, effect_id: Int)
-  /// A spell of a tree ends stealth and holds a Stealth effect that applies in a go after
-  /// its first, whose source would end with the node of an earlier go's
-  /// (`Spell4.spellCastStealthChange.break`).
-  StealthEndsInALaterGo(spell4_id: Int, effect_id: Int)
   /// A Stealth effect of a tree has a dataBits02 that is not 0 or 1, the two values that
   /// say whether damage ends it (`Spell4Effects.effectType.83`).
   StealthBreaksNotRead(spell4_id: Int, effect_id: Int, value: Int)
@@ -960,12 +961,6 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a Stealth effect "
       <> int.to_string(effect_id)
       <> " with a delayTime or durationTime, and timed stealth is not built"
-    StealthEndsInALaterGo(spell4_id:, effect_id:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " ends stealth and holds the Stealth effect "
-      <> int.to_string(effect_id)
-      <> " in a go after its first, and only one go's sources are kept"
     StealthBreaksNotRead(spell4_id:, effect_id:, value:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1360,7 +1355,6 @@ fn spell_of(
       remove_stealth:,
       stealth_change:,
     )
-  use Nil <- result.try(stealth_ends_in_the_first_go(spell:))
   Ok(spell)
 }
 
@@ -1839,15 +1833,16 @@ fn remove_stealth_row_of(
   ))
 }
 
-/// What a go of the spell does to the caster's stealth, from the spell's
-/// spellCastStealthChange: 0 and 1 end it, 2 leaves it, any other value fails the load
-/// (`Spell4.spellCastStealthChange`).
+/// What the spell does to the caster's stealth, from the spell's spellCastStealthChange:
+/// 0 is `EndsStealthAtEachGo`, 1 is `EndsStealthAfterLastGo`, 2 is `KeepsStealth`, and
+/// any other value fails the load (`Spell4.spellCastStealthChange`).
 pub fn stealth_change_of(
   spell4_id spell4_id: Int,
   value value: Int,
 ) -> Result(StealthChange, PlanError) {
   case value {
-    0 | 1 -> Ok(EndsStealth)
+    0 -> Ok(EndsStealthAtEachGo)
+    1 -> Ok(EndsStealthAfterLastGo)
     2 -> Ok(KeepsStealth)
     value -> Error(StealthChangeNotRead(spell4_id:, value:))
   }
@@ -1875,34 +1870,6 @@ pub fn stealth_conditions_read(
       None -> Ok(Nil)
     }
   })
-}
-
-/// A spell that ends stealth and holds a Stealth row in a go after its first fails the
-/// load: its break ends the sources of its own earlier go by taking its node off the
-/// caster, and a node takes every source of its cast with it, so the source the later go
-/// applies would end too, where the rule keeps what a go applies
-/// (`Spell4.spellCastStealthChange.break`). No row of the client's data is such a spell.
-pub fn stealth_ends_in_the_first_go(
-  spell spell: Spell,
-) -> Result(Nil, PlanError) {
-  let later_goes =
-    int.bitwise_shift_left(1, list.length(go_times_ms(spell:))) - 2
-  case spell.stealth_change {
-    KeepsStealth -> Ok(Nil)
-    EndsStealth ->
-      case
-        list.find(spell.stealth, fn(row) {
-          int.bitwise_and(row.phase_flags, later_goes) != 0
-        })
-      {
-        Ok(row) ->
-          Error(StealthEndsInALaterGo(
-            spell4_id: spell.spell4_id.value,
-            effect_id: row.effect_id.value,
-          ))
-        Error(Nil) -> Ok(Nil)
-      }
-  }
 }
 
 /// A cooldown effect's operation (dataBits02) with its float (dataBits03): the 32-bit

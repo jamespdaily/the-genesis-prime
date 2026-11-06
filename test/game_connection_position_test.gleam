@@ -127,3 +127,30 @@ pub fn impale_at_the_side_of_a_creature_starts_39426_on_it_test() -> Nil {
   assert impale_children(steps:) == [#(39_426, beast)]
     as "a quarter turn faces the Beast -x: the Stalker, behind it along z, is outside the arc"
 }
+
+pub fn impale_from_stealth_in_front_of_a_creature_starts_39427_on_it_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let state = stalker_with_a_beast_facing(yaw: 3.1415927410125732)
+  // The Stalker's innate toggle (Spell4Base 30075) enters the stealth that caster gate 38585
+  // reads. Impale's first go does not end it: the stealth ends after Impale's last go, so
+  // the Proxies of phase 1 still see it.
+  let #(state, _) =
+    connection_support.pressed_until(
+      state:,
+      bag_index: bag_index_of(base: 30_075),
+      client_cast_id: 1,
+      ms: 500,
+      until_ms: 900,
+    )
+  let #(_, steps) =
+    connection_support.pressed_until(
+      state:,
+      bag_index: bag_index_of(base: impale_base),
+      client_cast_id: 2,
+      ms: 1000,
+      until_ms: 3000,
+    )
+  assert impale_children(steps:) == [#(39_427, beast)]
+    as "stealthed, 38585 passes and 38587 fails: 83819 starts 39427 on the Beast that faces the Stalker, and 83818 starts nothing"
+}

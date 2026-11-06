@@ -17,15 +17,13 @@
 //// - The server's load rules (the plan's doc): a Stealth or RemoveStealth row aimed other
 ////   than at the caster alone, behind a target apply prerequisite, or (a Stealth row) with
 ////   a delayTime or durationTime, fails the load, and so does a stealth change or a
-////   dataBits02 the plan has no case for, and a spell that ends stealth with a Stealth row
-////   in a go after its first.
+////   dataBits02 the plan has no case for.
 
-import cast_support
 import client_tables
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
-  Always, BrokenByDamage, EndsStealth, GatedOnCaster, KeepsStealth, KeptOnDamage,
-  RemoveStealthRow, StealthRow,
+  Always, BrokenByDamage, EndsStealthAfterLastGo, EndsStealthAtEachGo,
+  GatedOnCaster, KeepsStealth, KeptOnDamage, RemoveStealthRow, StealthRow,
 }
 import genesis_prime/game/spend
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
@@ -119,7 +117,7 @@ pub fn the_toggles_two_stealth_rows_and_its_spells_stealth_changes_are_read_as_t
   assert cancel.spell4_id.value == 38_783
   assert on.stealth_change == KeepsStealth
     as "38784 holds 2: the toggle's own spells do not end the stealth they make"
-  assert cancel.stealth_change == EndsStealth
+  assert cancel.stealth_change == EndsStealthAtEachGo
     as "38783 holds 0, and 0 ends stealth (Spell4.spellCastStealthChange.break)"
   assert on.stealth
     == [
@@ -147,8 +145,8 @@ pub fn the_toggles_two_stealth_rows_and_its_spells_stealth_changes_are_read_as_t
     as "83834 breaks on damage (dataBits02 0) behind 16152 and 95774 is kept (dataBits02 1) behind 16153; both have no durationTime, so they last until removed"
   assert on.remove_stealth == []
   assert cancel.stealth == []
-  assert plans_spell(base: impale_base).stealth_change == EndsStealth
-    as "Impale 38779 holds 1, and 1 ends stealth"
+  assert plans_spell(base: impale_base).stealth_change == EndsStealthAfterLastGo
+    as "Impale 38779 holds 1, and 1 ends stealth after the cast's last go"
 }
 
 pub fn impales_tree_in_the_clients_tables_ends_stealth_in_all_but_its_fluff_child_test() -> Nil {
@@ -169,9 +167,9 @@ pub fn impales_tree_in_the_clients_tables_ends_stealth_in_all_but_its_fluff_chil
     |> list.unique
   assert list.sort(changes, fn(first, second) { int.compare(first.0, second.0) })
     == [
-      #(38_779, EndsStealth),
-      #(39_426, EndsStealth),
-      #(39_427, EndsStealth),
+      #(38_779, EndsStealthAfterLastGo),
+      #(39_426, EndsStealthAtEachGo),
+      #(39_427, EndsStealthAtEachGo),
       #(70_775, KeepsStealth),
     ]
     as "the tree of Impale: 1, 0, 0 and 2"
@@ -306,9 +304,9 @@ pub fn a_stealth_change_of_0_and_1_ends_stealth_2_keeps_it_and_3_fails_the_load_
   // The client's column holds 0 (61356 rows), 1 (533) and 2 (4702) and no other value
   // (Spell4.spellCastStealthChange).
   assert spell_plan.stealth_change_of(spell4_id: strike, value: 0)
-    == Ok(EndsStealth)
+    == Ok(EndsStealthAtEachGo)
   assert spell_plan.stealth_change_of(spell4_id: strike, value: 1)
-    == Ok(EndsStealth)
+    == Ok(EndsStealthAfterLastGo)
   assert spell_plan.stealth_change_of(spell4_id: strike, value: 2)
     == Ok(KeepsStealth)
   assert spell_plan.stealth_change_of(spell4_id: strike, value: 3)
@@ -345,66 +343,4 @@ pub fn a_caster_or_target_conditions_row_with_the_stealth_bit_fails_the_load_nam
     ])
     == refused
     as "the target row"
-}
-
-/// A spell of two goes (phase delays 0 and 300 ms, as Impale's) holding Stealth rows
-/// that apply in these phases, with this stealth change.
-fn two_goes(
-  change change: spell_plan.StealthChange,
-  phases phases: List(Int),
-) -> spell_plan.Spell {
-  spell_plan.Spell(
-    ..cast_support.child(spell4_id: strike, base: strike),
-    phase_delays_ms: [0, 300],
-    stealth_change: change,
-    stealth: list.index_map(phases, fn(flags, index) {
-      StealthRow(
-        effect_id: Spell4EffectsId(99_850 + index),
-        phase_flags: flags,
-        breaks: BrokenByDamage,
-        row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
-        condition: Always,
-        tag: spend.always,
-      )
-    }),
-  )
-}
-
-pub fn a_spell_that_ends_stealth_with_a_stealth_row_in_a_later_go_fails_the_load_naming_the_row_test() -> Nil {
-  use <- owned_test.run(5000)
-  // A node takes every source of its cast with it, so the break of a later go would end
-  // the source that go applies (the plan's doc); no row of the client's data is such a
-  // spell. Phase flags: bit n is phase n, -1 every phase.
-  list.each([2, 3, -1], fn(flags) {
-    assert spell_plan.stealth_ends_in_the_first_go(
-        spell: two_goes(change: EndsStealth, phases: [1, flags]),
-      )
-      == Error(spell_plan.StealthEndsInALaterGo(
-        spell4_id: strike,
-        effect_id: 99_851,
-      ))
-      as "the second row applies in a go after the first"
-  })
-}
-
-pub fn a_stealth_row_in_the_first_go_only_or_a_spell_that_keeps_stealth_loads_test() -> Nil {
-  use <- owned_test.run(5000)
-  assert spell_plan.stealth_ends_in_the_first_go(
-      spell: two_goes(change: EndsStealth, phases: [1]),
-    )
-    == Ok(Nil)
-    as "a row of phase 0 only"
-  assert spell_plan.stealth_ends_in_the_first_go(
-      spell: two_goes(change: KeepsStealth, phases: [1, 2]),
-    )
-    == Ok(Nil)
-    as "a spell of value 2 ends nothing"
-  assert spell_plan.stealth_ends_in_the_first_go(
-      spell: spell_plan.Spell(
-        ..two_goes(change: EndsStealth, phases: [-1]),
-        phase_delays_ms: [],
-      ),
-    )
-    == Ok(Nil)
-    as "a spell of one go has no later go"
 }
