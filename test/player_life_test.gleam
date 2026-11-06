@@ -672,8 +672,8 @@ pub fn the_regeneration_numbers_follow_the_properties_test() -> Nil {
       shield: 0,
       regeneration: quarter_regeneration(),
     )
-  let #(doubled, _) =
-    unit_properties.apply(
+  let doubled =
+    properties_support.with_modifier(
       properties: base_health_100(),
       source: unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(1)),
       modifier: unit_properties.Modifier(

@@ -52,10 +52,7 @@ pub type Formula {
 pub fn formula_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Formula, Nil) {
-  use multiplier <- result.map(
-    float32.bits(int.bitwise_and(effect.data_bits00, 0xFFFFFFFF))
-    |> result.try(float32.value),
-  )
+  use multiplier <- result.map(float32.of_column(number: effect.data_bits00))
   Formula(multiplier:, base: effect.data_bits01, parameters: [
     Parameter(kind: effect.parameter_type00, value: effect.parameter_value00),
     Parameter(kind: effect.parameter_type01, value: effect.parameter_value01),

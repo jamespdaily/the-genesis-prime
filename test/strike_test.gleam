@@ -1341,22 +1341,20 @@ fn offence_of_caster_with(
 }
 
 fn with_crit_modifier(flat flat: Float) -> unit_properties.Properties {
-  let #(properties, _) =
-    unit_properties.apply(
-      properties: properties_support.fresh(level: 1),
-      source: unit_properties.Source(
-        cast_id: 1,
-        effect_id: Spell4EffectsId(135_954),
-      ),
-      modifier: unit_properties.Modifier(
-        property: id.UnitProperty2Id(102),
-        mode: 3,
-        multiplier: 1.0,
-        flat:,
-        per_level: 0.0,
-      ),
-    )
-  properties
+  properties_support.with_modifier(
+    properties: properties_support.fresh(level: 1),
+    source: unit_properties.Source(
+      cast_id: 1,
+      effect_id: Spell4EffectsId(135_954),
+    ),
+    modifier: unit_properties.Modifier(
+      property: id.UnitProperty2Id(102),
+      mode: 3,
+      multiplier: 1.0,
+      flat:,
+      per_level: 0.0,
+    ),
+  )
 }
 
 pub fn a_crit_chance_modifier_on_the_player_changes_the_chance_its_strikes_carry_test() -> Nil {

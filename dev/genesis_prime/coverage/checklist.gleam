@@ -49,8 +49,11 @@ fn render_engine(measurement: Measurement) -> String {
             Handled | HandledWithGap(..) | NotDecoded -> False
           }
         })
+      let unread_rows =
+        list.fold(handled, 0, fn(total, line) { total + unread_rows_of(line) })
       let handled_rows =
         list.fold(handled, 0, fn(total, line) { total + line.rows })
+        - unread_rows
       let summary =
         count_of(count: rows, singular: "row", plural: "rows")
         <> " over "
@@ -75,6 +78,13 @@ fn render_engine(measurement: Measurement) -> String {
         <> case missing {
           0 -> ""
           _ -> "; " <> int.to_string(missing) <> " decoded and missing"
+        }
+        <> case unread_rows {
+          0 -> ""
+          _ ->
+            "; "
+            <> count_of(count: unread_rows, singular: "row", plural: "rows")
+            <> " of the handled types not read"
         }
         <> starting_summary(types)
       string.join(
@@ -177,9 +187,26 @@ fn type_line(line: TypeLine) -> String {
   <> case line.status {
     DecodedMissing(reason:, fact_key:) ->
       "; decoded, not handled: " <> reason <> " (" <> fact_key <> ")"
-    HandledWithGap(reason:, fact_key:) ->
-      "; handled with a gap: " <> reason <> " (" <> fact_key <> ")"
+    HandledWithGap(reason:, fact_key:, unread_rows:) ->
+      "; handled with a gap, "
+      <> int.to_string(unread_rows)
+      <> " of its "
+      <> int.to_string(line.rows)
+      <> " rows not read: "
+      <> reason
+      <> " ("
+      <> fact_key
+      <> ")"
     Handled | NotDecoded -> ""
+  }
+}
+
+/// The rows of a type line that no rule reads: those of a handled type with a gap the
+/// rules leave out whole, and none for any other line.
+fn unread_rows_of(line: TypeLine) -> Int {
+  case line.status {
+    HandledWithGap(unread_rows:, ..) -> unread_rows
+    Handled | DecodedMissing(..) | NotDecoded -> 0
   }
 }
 

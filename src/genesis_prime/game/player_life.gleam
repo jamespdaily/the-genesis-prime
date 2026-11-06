@@ -361,12 +361,18 @@ pub fn regeneration(
     })
   Regeneration(
     health_fraction: numbers.health_regen_fraction,
-    health_multiplier: unit_properties.value(
-      properties:,
-      property: unit_properties.health_regen_multiplier,
-    ),
+    health_multiplier: health_multiplier(properties:),
     health_tick_ms: numbers.health_regen_tick_ms,
     shield:,
+  )
+}
+
+/// The number a health tick's share is multiplied by: the player's
+/// HealthRegenMultiplier.
+fn health_multiplier(properties properties: Properties) -> Float {
+  unit_properties.value(
+    properties:,
+    property: unit_properties.health_regen_multiplier,
   )
 }
 
@@ -402,10 +408,7 @@ pub fn properties_changed(
   let regeneration =
     Regeneration(
       ..life.regeneration,
-      health_multiplier: unit_properties.value(
-        properties:,
-        property: unit_properties.health_regen_multiplier,
-      ),
+      health_multiplier: health_multiplier(properties:),
       shield: option.map(life.regeneration.shield, fn(shield) {
         ShieldRegeneration(..shield, tick_ms: shield_tick_ms(properties:))
       }),
@@ -420,17 +423,11 @@ pub fn properties_changed(
     list.flatten([
       case health == life.health {
         True -> []
-        False -> [
-          ToClient(OwnHealth(health:)),
-          ToViewers(client_connection.Health(health:, dead: False)),
-        ]
+        False -> health_told(health:, dead: False)
       },
       case shield == life.shield {
         True -> []
-        False -> [
-          ToClient(OwnShield(shield:)),
-          ToViewers(client_connection.Shield(shield:)),
-        ]
+        False -> shield_told(shield:)
       },
       timers,
     ]),
@@ -567,10 +564,7 @@ pub fn struck(
         hit.Landed(descriptions:, health: left, shield:, ..) -> {
           let shield_news = case shield == life.shield {
             True -> []
-            False -> [
-              ToClient(OwnShield(shield:)),
-              ToViewers(client_connection.Shield(shield:)),
-            ]
+            False -> shield_told(shield:)
           }
           let lowered = shield != life.shield || left != life.health
           let #(life, after) = case left {
@@ -581,12 +575,8 @@ pub fn struck(
             life,
             list.flatten([
               shield_news,
+              health_told(health: left, dead: left == 0),
               [
-                ToClient(OwnHealth(health: left)),
-                ToViewers(client_connection.Health(
-                  health: left,
-                  dead: left == 0,
-                )),
                 Answer(
                   to: strike.from,
                   answered: Answered(
@@ -687,11 +677,20 @@ fn choice(value value: Int) -> Choice {
 fn came_back(life life: Life) -> #(Life, List(Effect)) {
   let health = life.max_health
   let shield = life.max_shield
-  #(Life(..life, health:, shield:, state: Alive), [
-    ToClient(OwnHealth(health:)),
-    ToViewers(client_connection.Health(health:, dead: False)),
-    ToClient(OwnShield(shield:)),
-    ToViewers(client_connection.Shield(shield:)),
+  #(
+    Life(..life, health:, shield:, state: Alive),
+    list.flatten([
+      health_told(health:, dead: False),
+      shield_told(shield:),
+      came_back_news(),
+    ]),
+  )
+}
+
+/// What the player's coming back tells after its health and shield: the death state,
+/// the resurrection window, the ghost's removal, the body's control and the combat log.
+fn came_back_news() -> List(Effect) {
+  [
     ToClient(OwnDeathState(dead: False)),
     ToViewers(client_connection.CameBack),
     ToClient(OwnResurrectionWindow(dead: False)),
@@ -699,7 +698,21 @@ fn came_back(life life: Life) -> #(Life, List(Effect)) {
     ToClient(ControlGiven(to: ControlBody)),
     ToClient(OwnCameBackLogged),
     ToViewers(client_connection.CameBackLogged),
-  ])
+  ]
+}
+
+/// The player's health written to its own client (0x92f) and told to its viewers (0x937).
+fn health_told(health health: Int, dead dead: Bool) -> List(Effect) {
+  [
+    ToClient(OwnHealth(health:)),
+    ToViewers(client_connection.Health(health:, dead:)),
+  ]
+}
+
+/// The player's shield written to its own client and told to its viewers (0x938 of
+/// stat 20).
+fn shield_told(shield shield: Int) -> List(Effect) {
+  [ToClient(OwnShield(shield:)), ToViewers(client_connection.Shield(shield:))]
 }
 
 /// Whether the player is alive.
@@ -864,11 +877,7 @@ fn health_ticked(life life: Life) -> #(Life, List(Effect)) {
     |> int.max(1)
   let health = int.min(life.health + share, life.max_health)
   let #(life, timers) = health_clock_settled(life: Life(..life, health:))
-  #(life, [
-    ToClient(OwnHealth(health:)),
-    ToViewers(client_connection.Health(health:, dead: False)),
-    ..timers
-  ])
+  #(life, list.append(health_told(health:, dead: False), timers))
 }
 
 /// A blow lowered the health or the shield of a living player: the shield's clock
@@ -926,11 +935,7 @@ fn shield_gained(
     ])
     False -> #(life, [])
   }
-  #(life, [
-    ToClient(OwnShield(shield:)),
-    ToViewers(client_connection.Shield(shield:)),
-    ..timers
-  ])
+  #(life, list.append(shield_told(shield:), timers))
 }
 
 /// Both clocks stopped, each running one cancelled.

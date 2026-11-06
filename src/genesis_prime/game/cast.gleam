@@ -1053,16 +1053,15 @@ fn repeat_after(
   cast cast: State,
   wait_ms wait_ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(cast, timer) = new_timer(cast:)
+  let #(cast, timer, start) = armed(cast:, due: RepeatHeld, after_ms: wait_ms)
   #(
     State(
       ..cast,
-      timers: dict.insert(cast.timers, timer, RepeatHeld),
       holding: option.map(cast.holding, fn(holding) {
         Holding(..holding, repeat_timer: Some(timer))
       }),
     ),
-    [StartTimer(timer:, after_ms: wait_ms)],
+    [start],
   )
 }
 
@@ -1200,14 +1199,14 @@ fn press_of(
       case client_cast_id, is_release {
         None, False -> repeat_after(cast:, wait_ms:)
         Some(_), _ | None, True -> {
-          let #(cast, timer) = new_timer(cast:)
+          let #(cast, _, start) =
+            armed(cast:, due: StartHeld, after_ms: wait_ms)
           #(
             State(
               ..cast,
-              timers: dict.insert(cast.timers, timer, StartHeld),
               held: Some(Held(client_cast_id:, resolution:, until: CooldownEnds)),
             ),
-            [StartTimer(timer:, after_ms: wait_ms)],
+            [start],
           )
         }
       }
@@ -2111,6 +2110,13 @@ fn nodes_ended(
       case ended {
         [] -> rearmed(cast:, cast_id:, now_ms:)
         [_, ..] -> {
+          let #(cast, modifiers) =
+            caster_modifiers_ended(
+              cast:,
+              cast_id:,
+              spell: holder.spell,
+              unit_ids: sorted_units(ended),
+            )
           let #(cast, left) =
             nodes_left(
               cast:,
@@ -2121,10 +2127,11 @@ fn nodes_ended(
             )
           #(
             cast,
-            list.append(
+            list.flatten([
               nodes_ended_frames(cast_id:, holder:, ended:, kept:),
+              modifiers,
               left,
-            ),
+            ]),
           )
         }
       }
@@ -2210,14 +2217,13 @@ fn arm_nodes_end(
   case earliest_end(nodes:) {
     None -> #(cast, [])
     Some(ends_ms) -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(cast.timers, timer, NodesEnd(cast_id:)),
-        ),
-        [StartTimer(timer:, after_ms: int.max(0, ends_ms - now_ms))],
-      )
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: NodesEnd(cast_id:),
+          after_ms: int.max(0, ends_ms - now_ms),
+        )
+      #(cast, [start])
     }
   }
 }
@@ -2360,17 +2366,8 @@ pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
 /// a timer waits for, in timer order; each once.
 fn modifiers_pending(cast cast: State) -> List(Effect) {
   let held =
-    list.flatten([
-      list.map(dict.to_list(cast.casts), fn(entry) {
-        #(entry.0, { entry.1 }.spell)
-      }),
-      list.map(dict.to_list(cast.lingering), fn(entry) {
-        #(entry.0, { entry.1 }.spell)
-      }),
-    ])
-    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
-    |> list.flat_map(fn(entry) {
-      list.map(entry.1.modifiers, fn(row) {
+    list.flat_map(holders(cast:), fn(entry) {
+      list.map({ entry.1 }.spell.modifiers, fn(row) {
         unit_properties.Source(cast_id: entry.0, effect_id: row.effect_id)
       })
     })
@@ -2443,11 +2440,8 @@ fn start(
   let #(cast, timer_effects) =
     list.fold(list.append(gos, finishing), #(cast, []), fn(so_far, wait) {
       let #(cast, effects) = so_far
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(..cast, timers: dict.insert(cast.timers, timer, wait.1)),
-        list.append(effects, [StartTimer(timer:, after_ms: wait.0)]),
-      )
+      let #(cast, _, start) = armed(cast:, due: wait.1, after_ms: wait.0)
+      #(cast, list.append(effects, [start]))
     })
   let start_message =
     started_message(id:, spell:, root:, parent:, primary_target:, caster:)
@@ -2602,18 +2596,13 @@ fn open_threshold(
   let opened = Send(frame: opened_frame(spell4_id: ability.spell4_id, cast_id:))
   case ability.method {
     spell_plan.RapidTap -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(
-            cast.timers,
-            timer,
-            WindowEnd(spell4_id: ability.spell4_id.value),
-          ),
-        ),
-        [opened, StartTimer(timer:, after_ms: ability.threshold_ms)],
-      )
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: WindowEnd(spell4_id: ability.spell4_id.value),
+          after_ms: ability.threshold_ms,
+        )
+      #(cast, [opened, start])
     }
     spell_plan.ChargeRelease -> {
       let #(cast, waiting) = charge_timer(cast:, ability:, level: 1)
@@ -2640,18 +2629,13 @@ fn charge_timer(
   case list.drop(ability.stages, level) |> list.first {
     Error(Nil) -> #(cast, [])
     Ok(stage) -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(
-            cast.timers,
-            timer,
-            ChargeLevel(spell4_id: ability.spell4_id.value, level:),
-          ),
-        ),
-        [StartTimer(timer:, after_ms: stage.duration_ms)],
-      )
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: ChargeLevel(spell4_id: ability.spell4_id.value, level:),
+          after_ms: stage.duration_ms,
+        )
+      #(cast, [start])
     }
   }
 }
@@ -3165,16 +3149,14 @@ fn states_logged(
     let #(cast, effects) = so_far
     let #(landed, unit_id) = entry
     let state = landed.tell.row.state
-    let #(cast, timer) = new_timer(cast:)
+    let #(cast, _, start) =
+      armed(
+        cast:,
+        due: StateEnd(spell4_id:, unit_id:, state:),
+        after_ms: int.max(0, landed.ends_at_ms - now_ms),
+      )
     #(
-      State(
-        ..cast,
-        timers: dict.insert(
-          cast.timers,
-          timer,
-          StateEnd(spell4_id:, unit_id:, state:),
-        ),
-      ),
+      cast,
       list.append(effects, [
         Send(frame: control_logged_frame(
           caster_unit_id: caster.unit_id,
@@ -3183,7 +3165,7 @@ fn states_logged(
           state:,
           removed: False,
         )),
-        StartTimer(timer:, after_ms: int.max(0, landed.ends_at_ms - now_ms)),
+        start,
       ]),
     )
   })
@@ -3275,34 +3257,26 @@ fn modifiers_armed(
     let #(cast, cancels) = cancel_modifier_timers(cast:, source:)
     let #(cast, starting) = case row.row.delay_ms > 0 {
       True -> {
-        let #(cast, timer) = new_timer(cast:)
-        #(
-          State(
-            ..cast,
-            timers: dict.insert(
-              cast.timers,
-              timer,
-              ModifierStart(source:, modifier: row.modifier),
-            ),
-          ),
-          [StartTimer(timer:, after_ms: row.row.delay_ms)],
-        )
+        let #(cast, _, start) =
+          armed(
+            cast:,
+            due: ModifierStart(source:, modifier: row.modifier),
+            after_ms: row.row.delay_ms,
+          )
+        #(cast, [start])
       }
       False -> #(cast, [PropertyStarts(source:, modifier: row.modifier)])
     }
     let #(cast, ending) = case row.row.until_removed {
       True -> #(cast, [])
       False -> {
-        let #(cast, timer) = new_timer(cast:)
-        #(
-          State(
-            ..cast,
-            timers: dict.insert(cast.timers, timer, ModifierEnd(source:)),
-          ),
-          [
-            StartTimer(timer:, after_ms: row.row.delay_ms + row.row.duration_ms),
-          ],
-        )
+        let #(cast, _, start) =
+          armed(
+            cast:,
+            due: ModifierEnd(source:),
+            after_ms: row.row.delay_ms + row.row.duration_ms,
+          )
+        #(cast, [start])
       }
     }
     #(cast, list.flatten([effects, cancels, starting, ending]))
@@ -3338,8 +3312,25 @@ fn modifier_source_of(due due: Due) -> Option(unit_properties.Source) {
   }
 }
 
+/// The property modifiers of the cast `cast_id` ended when its node on the caster is among
+/// the nodes that leave `unit_ids`, whether taken off or ended by time.
+fn caster_modifiers_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  spell spell: Spell,
+  unit_ids unit_ids: List(Int),
+) -> #(State, List(Effect)) {
+  use <- bool.guard(
+    when: !list.contains(unit_ids, caster_of(cast_id:)),
+    return: #(cast, []),
+  )
+  modifiers_ended(cast:, cast_id:, spell:)
+}
+
 /// The property modifiers of the cast `cast_id` ended, as its node leaves the caster:
-/// each source of its spell's rows told ended, and their timers cancelled.
+/// each source of its spell's rows still held, one that lasts until removed or whose
+/// start or end a timer waits for, told ended, and their timers cancelled. A modifier
+/// whose own end already fired is not told again.
 fn modifiers_ended(
   cast cast: State,
   cast_id cast_id: Int,
@@ -3348,8 +3339,16 @@ fn modifiers_ended(
   list.fold(spell.modifiers, #(cast, []), fn(so_far, row) {
     let #(cast, effects) = so_far
     let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+    let held =
+      row.row.until_removed
+      || list.any(dict.values(cast.timers), fn(due) {
+        modifier_source_of(due:) == Some(source)
+      })
     let #(cast, cancels) = cancel_modifier_timers(cast:, source:)
-    #(cast, list.flatten([effects, cancels, [PropertyEnds(source:)]]))
+    #(cast, case held {
+      True -> list.flatten([effects, cancels, [PropertyEnds(source:)]])
+      False -> list.append(effects, cancels)
+    })
   })
 }
 
@@ -3556,10 +3555,10 @@ fn node_off(
           audience: holder.audience,
           destroyed: emptied && !kept,
         )
-      let #(cast, modifiers) = case unit_id == caster_of(cast_id:) {
-        True -> modifiers_ended(cast:, cast_id:, spell: holder.spell)
-        False -> #(cast, [])
-      }
+      let #(cast, modifiers) =
+        caster_modifiers_ended(cast:, cast_id:, spell: holder.spell, unit_ids: [
+          unit_id,
+        ])
       let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
       let ends = case holder.lingering && emptied && kept {
         True -> finished_effects(cast_id:, audience: holder.audience)
@@ -4060,23 +4059,18 @@ fn child(
         spent: None,
       )
     True -> {
-      let #(cast, timer) = new_timer(cast:)
-      #(
-        State(
-          ..cast,
-          timers: dict.insert(
-            cast.timers,
-            timer,
-            StartChild(
-              root: live.root,
-              parent: live.spell.spell4_id,
-              primary_target:,
-              proxy:,
-            ),
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: StartChild(
+            root: live.root,
+            parent: live.spell.spell4_id,
+            primary_target:,
+            proxy:,
           ),
-        ),
-        [StartTimer(timer:, after_ms: proxy.delay_ms)],
-      )
+          after_ms: proxy.delay_ms,
+        )
+      #(cast, [start])
     }
   }
 }
@@ -4183,6 +4177,21 @@ fn finish_or_linger(
 }
 
 /// The next timer's id, and the state counting it.
+/// The timer of `due` started to fire after `after_ms`: the state that keeps it, its id
+/// and the effect that starts it.
+fn armed(
+  cast cast: State,
+  due due: Due,
+  after_ms after_ms: Int,
+) -> #(State, TimerId, Effect) {
+  let #(cast, timer) = new_timer(cast:)
+  #(
+    State(..cast, timers: dict.insert(cast.timers, timer, due)),
+    timer,
+    StartTimer(timer:, after_ms:),
+  )
+}
+
 fn new_timer(cast cast: State) -> #(State, TimerId) {
   #(
     State(..cast, timers_started: cast.timers_started + 1),

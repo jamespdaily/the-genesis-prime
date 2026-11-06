@@ -19,9 +19,14 @@ import genesis_prime/game/unit_properties.{
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/loader/store
+import genesis_prime/table/unit_property2
 import gleam/list
+import owned_key
 import owned_test
+import planted_table
 import properties_support
+import spell_tables
 import unitest
 
 const move_speed = UnitProperty2Id(100)
@@ -30,19 +35,9 @@ const crit_chance = UnitProperty2Id(102)
 
 const base_health = UnitProperty2Id(7)
 
-fn defaults() -> List(#(id.UnitProperty2Id, Float)) {
-  [
-    #(UnitProperty2Id(7), 1.0),
-    #(UnitProperty2Id(41), 0.0),
-    #(UnitProperty2Id(100), 1.0),
-    #(UnitProperty2Id(102), 0.0),
-    #(UnitProperty2Id(127), 1.5),
-    #(UnitProperty2Id(134), 1.0),
-  ]
-}
-
+/// A player of level 5 whose 0x262 lists nothing: every property at the client's default.
 fn fresh() -> Properties {
-  unit_properties.new(defaults: defaults(), listed: [], level: 5)
+  properties_support.fresh(level: 5)
 }
 
 fn modifier(
@@ -71,7 +66,7 @@ pub fn a_property_a_0x262_lists_takes_its_base_and_value_test() -> Nil {
   let bits = float32.to_bits(300.0)
   let properties =
     unit_properties.new(
-      defaults: defaults(),
+      defaults: properties_support.defaults(),
       listed: [UnitProperty(property_id: 7, base: bits, value: bits)],
       level: 1,
     )
@@ -111,7 +106,10 @@ pub fn one_modifier_sets_x_times_the_multiplier_plus_the_flat_amount_test() -> N
 
 pub fn a_modifier_adds_its_amount_for_each_level_of_the_player_test() -> Nil {
   use <- owned_test.run(5000)
-  // The rule x * multiplier + flat + per_level * level, for a player of level 5.
+  // The rule x * multiplier + flat + per_level * level, for a player of level 5, with the
+  // values of the client's row 61528 (`table_rows -- Spell4Effects 61528`): property 41,
+  // mode 1, dataBits02 1.0, dataBits03 80.0 and dataBits04 35.0, on ShieldCapacityMax's
+  // default 0.0: 0.0 * 1.0 + 80.0 + 35.0 * 5.
   let #(leveled, _) =
     unit_properties.apply(
       properties: fresh(),
@@ -265,7 +263,12 @@ pub fn the_overlay_puts_the_current_value_of_a_modified_property_in_a_0x262_list
     UnitProperty(property_id: 7, base: bits, value: bits),
     UnitProperty(property_id: 42, base: bits, value: bits),
   ]
-  let properties = unit_properties.new(defaults: defaults(), listed:, level: 1)
+  let properties =
+    unit_properties.new(
+      defaults: properties_support.defaults(),
+      listed:,
+      level: 1,
+    )
   let #(properties, _) =
     unit_properties.apply(
       properties:,
@@ -324,4 +327,52 @@ pub fn gates_row_sets_falling_damage_to_0_and_the_property_is_held_and_sent_test
     )
   assert unit_properties.value(properties:, property: falling) == 1.0
   assert ended == [Changed(property: falling, base: 1.0, value: 1.0)]
+}
+
+/// The load of planted UnitProperty2 rows with the defaults derivation, the folder and
+/// the tables gone when the result is returned.
+fn loaded_with(
+  rows rows: List(List(planted_table.Cell)),
+) -> Result(List(#(id.UnitProperty2Id, Float)), store.LoadError) {
+  use folder <- planted_table.in_folder([
+    planted_table.file(unit_property2.schema, rows),
+  ])
+  let loaded =
+    store.load(
+      under: owned_key.new(),
+      from: folder,
+      entries: [unit_property2.entry()],
+      requirements: [],
+      derivations: [unit_properties.derivation()],
+    )
+  case loaded {
+    Ok(tables) -> {
+      let defaults = unit_properties.defaults(tables:)
+      store.unload(tables)
+      Ok(defaults)
+    }
+    Error(error) -> Error(error)
+  }
+}
+
+pub fn the_defaults_are_built_once_at_load_from_every_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(defaults) = loaded_with(rows: spell_tables.unit_property_rows())
+    as "the planted rows hold every property the rules read"
+  assert defaults == properties_support.defaults()
+    as "each row's defaultValue, in id order"
+}
+
+pub fn a_table_missing_a_row_the_rules_read_fails_the_load_by_name_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Row 8, HealthRegenMultiplier, is read by the regeneration.
+  assert loaded_with(
+      rows: planted_table.without(rows: spell_tables.unit_property_rows(), ids: [
+        8,
+      ]),
+    )
+    == Error(store.DerivationFailed(
+      name: "UnitPropertyDefaults",
+      reason: "the table UnitProperty2 has no row 8, which the player's rules read",
+    ))
 }

@@ -30,3 +30,12 @@ pub fn wearing(loadout loadout: Loadout) -> Properties {
     level: 1,
   )
 }
+
+/// The properties with `modifier` live from `source`, the changes it reports dropped.
+pub fn with_modifier(
+  properties properties: Properties,
+  source source: unit_properties.Source,
+  modifier modifier: unit_properties.Modifier,
+) -> Properties {
+  unit_properties.apply(properties:, source:, modifier:).0
+}

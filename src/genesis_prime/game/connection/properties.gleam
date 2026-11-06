@@ -63,8 +63,8 @@ pub fn ended(
 }
 
 /// The session with the properties changed by `change`, and for the entries it
-/// reports: 0x93a to the player's client, the news to each viewer, and the life's
-/// follow-up.
+/// reports: the life taken to the new values, 0x93a to the player's client and the news
+/// to each viewer, then what the life writes. The player's `Entered` is updated once.
 fn changed(
   session session: Session,
   now now: Now,
@@ -75,65 +75,69 @@ fn changed(
     None -> #(session, [])
     Some(#(_, entered)) -> {
       let #(properties, entries) = change(entered.properties)
-      let session =
-        connection_state.with_entered(session:, change: fn(entered) {
-          world_entry.Entered(..entered, properties:)
-        })
-      case entries {
-        [] -> #(session, [])
-        [_, ..] -> told(session:, now:, entered:, entries:)
-      }
+      changed_to(session:, now:, entered:, properties:, entries:)
     }
   }
 }
 
-/// The player's client and viewers told the entries that changed, and the life taken
-/// to the properties' new values with what that writes.
+/// The player's `entered` with its properties now `properties`, which changed the
+/// `entries`: held as they are when none changed, else the life taken to the new values
+/// and everything told.
+fn changed_to(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  properties properties: unit_properties.Properties,
+  entries entries: List(unit_properties.Changed),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case entries {
+    [] -> #(
+      connection_state.with_entered(session:, change: fn(entered) {
+        world_entry.Entered(..entered, properties:)
+      }),
+      [],
+    )
+    [_, ..] -> {
+      let #(life, life_effects) =
+        player_life.properties_changed(life: entered.life, properties:)
+      let updated = world_entry.Entered(..entered, properties:, life:)
+      let session =
+        connection_state.with_entered(session:, change: fn(_) { updated })
+      #(
+        session,
+        told(session:, now:, entered: updated, entries:, life_effects:),
+      )
+    }
+  }
+}
+
+/// 0x93a to the player's client and the news to each viewer, the same entries, then what
+/// the life writes for its new maxima and regeneration.
 fn told(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
   entries entries: List(unit_properties.Changed),
-) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  life_effects life_effects: List(player_life.Effect),
+) -> List(Effect(ConnectionEffect(Request))) {
   let sent = unit_properties.entries(changed: entries)
-  let told =
-    list.flatten([
-      [
-        connection_state.to_client(
-          session,
-          connection_frames.properties_changed_frame(
-            unit_id: entered.unit_id,
-            properties: sent,
-          ),
+  list.flatten([
+    [
+      connection_state.to_client(
+        session,
+        connection_frames.properties_changed_frame(
+          unit_id: entered.unit_id,
+          properties: sent,
         ),
-      ],
-      list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
-        connection_state.news_to(
-          entered:,
-          viewer:,
-          news: client_connection.PropertiesChanged(properties: sent),
-        )
-      }),
-    ])
-  let properties = case connection_state.entered_of(session.status) {
-    Some(current) -> current.properties
-    None -> entered.properties
-  }
-  let #(life, life_effects) =
-    player_life.properties_changed(life: entered.life, properties:)
-  let session =
-    connection_state.with_entered(session:, change: fn(entered) {
-      world_entry.Entered(..entered, life:)
-    })
-  let following = case connection_state.entered_of(session.status) {
-    Some(current) ->
-      life_effect.life_effects(
-        session:,
-        now:,
-        entered: current,
-        effects: life_effects,
+      ),
+    ],
+    list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
+      connection_state.news_to(
+        entered:,
+        viewer:,
+        news: client_connection.PropertiesChanged(properties: sent),
       )
-    None -> []
-  }
-  #(session, list.append(told, following))
+    }),
+    life_effect.life_effects(session:, now:, entered:, effects: life_effects),
+  ])
 }

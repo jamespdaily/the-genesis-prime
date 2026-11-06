@@ -30,8 +30,7 @@ import genesis_prime/message/player_health
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/step.{
-  type ConnectionStep, ConnectionId, OwnEffect, OwnEvent, StartTimer, TimerFired,
-  TimerId, Unwatch, Watch,
+  type ConnectionStep, ConnectionId, OwnEvent, TimerFired, TimerId,
 }
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId}
@@ -40,7 +39,6 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/result
 import owned_test
 
 /// 135954's flat amount as the 32-bit float its row holds.
@@ -62,18 +60,12 @@ fn medic_entering(
   )
 }
 
-/// The Medic's maximum health, from the BaseHealth property of its own 0x262.
-fn max_health_of(entering entering: ConnectionStep(Request)) -> Float {
-  let player = support.player_in(entering)
-  let assert Ok(property) =
-    list.find(player.tail.properties, fn(property) {
-      property.property_id == base_health
-    })
-    as "the player's 0x262 lists its BaseHealth"
-  let assert Ok(maximum) =
-    float32.bits(number: property.value) |> result.try(float32.value)
-    as "a finite float"
-  maximum
+/// The player's level 1 maximum health: CreatureLevel row 1's Base Health, 135.97, and
+/// the Novice armor's 600, rounded (`player.level1_base_health`,
+/// `game_connection_support.full_health`). It is the BaseHealth base the player's 0x262
+/// and the 0x93a carry.
+fn maximum_health() -> Float {
+  int.to_float(support.full_health)
 }
 
 fn pressed(
@@ -120,21 +112,10 @@ fn bits(value value: Float) -> Int {
   float32.to_bits(value)
 }
 
-/// The timers a step starts.
-fn timers_started(taken taken: ConnectionStep(Request)) -> List(step.TimerId) {
-  list.filter_map(connection_rule_support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(StartTimer(timer:, ..)) -> Ok(timer)
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
-}
-
 pub fn a_modifier_starting_at_a_go_writes_0x93a_to_the_player_and_tells_each_viewer_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, entering) = medic_entering(saved: None)
-  let maximum = max_health_of(entering:)
+  let #(state, _) = medic_entering(saved: None)
+  let maximum = maximum_health()
   let state = support.watched_by(state:, viewers: [2, 3])
   let #(_, taken) = pressed(state:)
   let crit =
@@ -165,17 +146,21 @@ pub fn a_modifier_starting_at_a_go_writes_0x93a_to_the_player_and_tells_each_vie
 
 pub fn the_modifiers_end_writes_0x93a_with_the_value_back_at_its_base_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, entering) = medic_entering(saved: None)
-  let maximum = max_health_of(entering:)
+  let #(state, _) = medic_entering(saved: None)
+  let maximum = maximum_health()
   let state = support.watched_by(state:, viewers: [2])
   let #(state, started) = pressed(state:)
   // The press started the end of each modifier (2000 and 8000 ms) among its timers.
   let #(_, ended) =
-    list.fold(timers_started(taken: started), #(state, []), fn(so_far, timer) {
-      let #(state, steps) = so_far
-      let #(state, taken) = support.feed(state, OwnEvent(TimerFired(timer)))
-      #(state, [taken, ..steps])
-    })
+    list.fold(
+      connection_rule_support.timers_started(started),
+      #(state, []),
+      fn(so_far, timer) {
+        let #(state, steps) = so_far
+        let #(state, taken) = support.feed(state, OwnEvent(TimerFired(timer)))
+        #(state, [taken, ..steps])
+      },
+    )
   let crit_again =
     UnitProperty(property_id: crit_chance, base: 0x00000000, value: 0x00000000)
   let health_again =
@@ -211,8 +196,8 @@ fn arriving(
 
 pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0x262_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, entering) = medic_entering(saved: None)
-  let maximum = max_health_of(entering:)
+  let #(state, _) = medic_entering(saved: None)
+  let maximum = maximum_health()
   let #(state, started) = pressed(state:)
   let assert [#(4, PeerNews(news: Appeared(unit:), ..))] =
     support.peer_tells(arriving(state:, viewer: 4))
@@ -235,9 +220,13 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
     ))
   // After every modifier ended the next viewer is created with the bases.
   let #(state, _) =
-    list.fold(timers_started(taken: started), #(state, Nil), fn(so_far, timer) {
-      #(support.feed(so_far.0, OwnEvent(TimerFired(timer))).0, Nil)
-    })
+    list.fold(
+      connection_rule_support.timers_started(started),
+      #(state, Nil),
+      fn(so_far, timer) {
+        #(support.feed(so_far.0, OwnEvent(TimerFired(timer))).0, Nil)
+      },
+    )
   let assert [#(5, PeerNews(news: Appeared(unit: later), ..))] =
     support.peer_tells(arriving(state:, viewer: 5))
   assert list.find(later.tail.properties, fn(property) {
@@ -251,8 +240,8 @@ pub fn the_players_health_ticks_by_the_maximum_a_modifier_raised_test() -> Nil {
   use <- owned_test.run(60_000)
   // Saved at 300 of a maximum above it, the player regenerates floor(maximum x 0.025)
   // a tick; while BaseHealth is 100 higher the tick is floor((maximum + 100) x 0.025).
-  let #(state, entering) = medic_entering(saved: Some(300))
-  let maximum = float.round(max_health_of(entering:))
+  let #(state, _) = medic_entering(saved: Some(300))
+  let maximum = support.full_health
   let #(state, _) = pressed(state:)
   let #(_, tick) = support.feed(state, OwnEvent(TimerFired(TimerId(8))))
   let assert [health] =

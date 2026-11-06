@@ -52,23 +52,13 @@ pub type Handling {
   Decoded(is_read: fn(Int) -> Bool)
 }
 
-/// A type the client's code was read for and the engine does not handle.
+/// A type the client's code was read for, with what the engine lacks to handle it: in
+/// `missing` the engine does not handle the type; in `partial` it handles the type but
+/// not every row of it or every part of a row.
 pub type Missing {
   Missing(
     type_number: Int,
     /// What the engine lacks to handle it, in plain words.
-    reason: String,
-    /// The fact file's key of the client's reading of the type.
-    fact_key: String,
-  )
-}
-
-/// A type the engine handles with a gap: a rule reads it, but not every row or every
-/// part of a row of the type.
-pub type Partial {
-  Partial(
-    type_number: Int,
-    /// What the rule does not handle of the type, in plain words.
     reason: String,
     /// The fact file's key of the client's reading of the type.
     fact_key: String,
@@ -86,7 +76,11 @@ pub type EngineDeclaration {
     handled: Handling,
     /// The types handled with a stated gap. A type is never both partial and missing,
     /// and each is one the engine handles.
-    partial: List(Partial),
+    partial: List(Missing),
+    /// How many rows of a partial type no rule of the engine reads, from the tables:
+    /// those rows are counted as not handled. `no_unread_rows` for an engine whose
+    /// partial types leave no row out whole.
+    unread_rows: fn(store.Tables, Int) -> Int,
     /// The types read from the client and not handled. A type is never both.
     missing: List(Missing),
     /// The type values the level-1 abilities' trees use, when the engine's
@@ -95,6 +89,11 @@ pub type EngineDeclaration {
       fn(store.Tables) -> Result(List(Int), List(starting_ability.MissingRow)),
     ),
   )
+}
+
+/// No row of a partial type is left out whole.
+fn no_unread_rows(_tables: store.Tables, _type_number: Int) -> Int {
+  0
 }
 
 /// Whether the engine handles the type.
@@ -139,6 +138,7 @@ fn prerequisites() -> EngineDeclaration {
     ),
     handled: Decoded(is_read: game_prerequisite.is_read),
     partial: [],
+    unread_rows: no_unread_rows,
     missing: [
       Missing(
         type_number: 43,
@@ -177,9 +177,22 @@ fn quest_objectives() -> EngineDeclaration {
     ),
     handled: Listed(ids: []),
     partial: [],
+    unread_rows: no_unread_rows,
     missing: [],
     starting_abilities: None,
   )
+}
+
+/// The rows of the effect type that the effect rule does not read (genesis_prime/game/effect_kind
+/// `is_row_read`): the type 11 rows aimed only at other units.
+fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
+  list.count(spell4_effects.all(tables), fn(row) {
+    row.effect_type == type_number
+    && !effect_kind.is_row_read(
+      effect_type: row.effect_type,
+      target_flags: row.target_flags,
+    )
+  })
 }
 
 /// The spell effect engine: the `effectType` column of Spell4Effects, the
@@ -199,8 +212,9 @@ fn spell_effects() -> EngineDeclaration {
       },
     ),
     handled: Decoded(is_read: effect_kind.is_read),
+    unread_rows: unread_effect_rows,
     partial: [
-      Partial(
+      Missing(
         type_number: 11,
         reason: "rows, or parts of rows, aimed at another unit: the next step",
         fact_key: "Spell4Effects.effectType.11",
@@ -261,6 +275,7 @@ fn spend_scaled_costs() -> EngineDeclaration {
     ),
     handled: Decoded(is_read: spend.is_read),
     partial: [],
+    unread_rows: no_unread_rows,
     missing: list.map([2, 5, 9, 10, 11], unread),
     starting_abilities: Some(starting_ability.spend_ids),
   )
@@ -283,6 +298,7 @@ fn unit_types() -> EngineDeclaration {
     ),
     handled: Listed(ids: []),
     partial: [],
+    unread_rows: no_unread_rows,
     missing: [],
     starting_abilities: None,
   )
@@ -310,6 +326,7 @@ fn messages() -> EngineDeclaration {
     ),
     handled: Listed(ids: handled_client_message_ids()),
     partial: [],
+    unread_rows: no_unread_rows,
     missing: [],
     starting_abilities: None,
   )

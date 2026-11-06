@@ -1174,15 +1174,23 @@ fn lasting_of(
       effect_id: Spell4EffectsId(effect.id),
       phase_flags: effect.phase_flags,
       aim:,
-      row: lasting.LastingRow(
-        delay_ms: effect.delay_time,
-        duration_ms: effect.duration_time,
-        until_removed: has_flag(flags: effect.flags, bit: 2),
-      ),
+      row: lasting_row_of(effect:),
       condition:,
       tag: tag_of(effect:),
     ))
   })
+}
+
+/// The columns of a row that give its node a life: its delay and durationTime and whether
+/// its flags have bit 2, until removed (`Spell4Effects.effectType.17`).
+fn lasting_row_of(
+  effect effect: spell4_effects.Spell4Effects,
+) -> lasting.LastingRow {
+  lasting.LastingRow(
+    delay_ms: effect.delay_time,
+    duration_ms: effect.duration_time,
+    until_removed: has_flag(flags: effect.flags, bit: 2),
+  )
 }
 
 /// The SpellForceRemove effects of a spell (`Spell4Effects.effectType.80`): dataBits00
@@ -1355,11 +1363,7 @@ fn modifiers_of(
         flat:,
         per_level:,
       ),
-      row: lasting.LastingRow(
-        delay_ms: effect.delay_time,
-        duration_ms: effect.duration_time,
-        until_removed: has_flag(flags: effect.flags, bit: 2),
-      ),
+      row: lasting_row_of(effect:),
       condition:,
       tag: tag_of(effect:),
     ))
@@ -1367,16 +1371,14 @@ fn modifiers_of(
 }
 
 /// A modifier row's multiplier, flat amount or per-level amount: the 32-bit float its
-/// column holds, which must be finite. The table column is a signed 32-bit integer, so
-/// the bits of a negative float arrive negative and are masked to 32 bits first.
+/// column holds (`float32.of_column`), which must be finite.
 fn modifier_number(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
   column column: String,
   bits bits: Int,
 ) -> Result(Float, PlanError) {
-  float32.bits(number: int.bitwise_and(bits, 0xFFFFFFFF))
-  |> result.try(float32.value)
+  float32.of_column(number: bits)
   |> result.replace_error(ModifierNumberNotFinite(
     spell4_id:,
     effect_id: effect.id,

@@ -143,13 +143,73 @@ type Live {
   Live(source: Source, modifier: Modifier)
 }
 
-/// Every UnitProperty2 row's defaultValue, the base of a property no 0x262 lists.
+/// Why the defaults cannot be built from the tables.
+type DefaultsError {
+  /// A UnitProperty2 row a rule of the server reads is missing: its id.
+  NoRow(id: Int)
+}
+
+/// The properties the server's rules read, each with a UnitProperty2 row the tables
+/// must hold.
+const named = [
+  base_health,
+  health_regen_multiplier,
+  assault_rating,
+  support_rating,
+  shield_capacity_max,
+  armor,
+  base_crit_chance,
+  base_avoid_reduce_chance,
+  critical_hit_severity_multiplier,
+  shield_mitigation_max,
+  shield_tick_time,
+]
+
+const defaults_key: table_store.DerivedKey(List(#(UnitProperty2Id, Float))) =
+  table_store.DerivedKey("UnitPropertyDefaults")
+
+/// The defaults as a value the tables' load builds once, under the tables' key
+/// (genesis_prime/table/loader/store `derived`). A UnitProperty2 row a rule reads that
+/// the table lacks fails the load.
+pub fn derivation() -> table_store.Derivation {
+  table_store.derivation(key: defaults_key, build: fn(tables) {
+    build(tables:) |> result.map_error(fn(error) { describe(error:) })
+  })
+}
+
+/// Every UnitProperty2 row's defaultValue, the base of a property no 0x262 lists, or
+/// the first row a rule reads that the table lacks; the derivation's body.
+fn build(
+  tables tables: table_store.Tables,
+) -> Result(List(#(UnitProperty2Id, Float)), DefaultsError) {
+  let defaults =
+    list.map(unit_property2.all(tables), fn(row) {
+      #(unit_property2.id(row), row.default_value)
+    })
+  case
+    list.find(named, fn(property) {
+      list.key_find(defaults, property) == Error(Nil)
+    })
+  {
+    Ok(missing) -> Error(NoRow(id: missing.value))
+    Error(Nil) -> Ok(defaults)
+  }
+}
+
+/// A sentence that says why the defaults cannot be built, for the message the server
+/// stops with.
+fn describe(error error: DefaultsError) -> String {
+  let NoRow(id:) = error
+  "the table UnitProperty2 has no row "
+  <> int.to_string(id)
+  <> ", which the player's rules read"
+}
+
+/// The defaults the tables' load built.
 pub fn defaults(
   tables tables: table_store.Tables,
 ) -> List(#(UnitProperty2Id, Float)) {
-  list.map(unit_property2.all(tables), fn(row) {
-    #(unit_property2.id(row), row.default_value)
-  })
+  table_store.derived(tables:, key: defaults_key)
 }
 
 /// The properties of a player entering the world at `level`: each of `defaults` as
@@ -298,13 +358,15 @@ pub fn overlay(
     list.map(properties.live, fn(live) { live.modifier.property })
     |> list.unique
   let current =
-    list.map(held, fn(property) {
-      UnitProperty(
-        property_id: property.value,
-        base: float32.to_bits(base(properties:, property:)),
-        value: float32.to_bits(value(properties:, property:)),
-      )
-    })
+    entries(
+      changed: list.map(held, fn(property) {
+        Changed(
+          property:,
+          base: base(properties:, property:),
+          value: value(properties:, property:),
+        )
+      }),
+    )
   list.append(
     list.filter(listed, fn(entry) {
       !list.contains(held, UnitProperty2Id(entry.property_id))

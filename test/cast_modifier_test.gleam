@@ -23,6 +23,7 @@ import genesis_prime/game/unit_properties.{
 }
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
+import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import gleam/int
 import gleam/list
@@ -354,8 +355,40 @@ pub fn a_type_80_removal_of_the_cast_ends_its_modifiers_and_cancels_their_timers
   let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert ends(effects: removal) == [source_of(cast_id: id, effect_id: 135_954)]
     as "taking the cast's node off the caster ends its modifier at once"
-  assert list.length(support.cancelled_timers(effects: removal)) >= 2
-    as "the modifier's end timer and the node's end are cancelled"
+  let numbers = fn(timers: List(TimerId)) {
+    list.map(timers, fn(timer) {
+      let TimerId(number) = timer
+      number
+    })
+    |> list.sort(int.compare)
+  }
+  assert numbers(support.cancelled_timers(effects: removal))
+    == numbers(
+      list.map(support.started_timers(effects: first), fn(started) { started.0 }),
+    )
+    as "exactly the two timers the first press started are cancelled: the modifier's end and the node's end"
+}
+
+pub fn a_node_that_ends_by_time_ends_its_modifiers_and_cancels_their_timers_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A spell whose propertyFlags have bit 0x2000 takes the larger of delay and duration
+  // for a node's life (`Spell4.propertyFlags`, `opcode.0x7f4.effect_time`): Gate's row
+  // (delay 180, duration 400) gives a node that ends at go + 400, while the modifier's own
+  // end is go + 580. The node's end ends the modifier, as taking the node off does.
+  let plans =
+    plans_of([
+      spell_plan.Spell(
+        ..holder(spell4_id: 34_355, base: 3, modifiers: [falling_row()]),
+        longer_of_delay_and_duration: True,
+      ),
+    ])
+  let #(state, effects) =
+    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+  let id = started_id(effects:)
+  let source = source_of(cast_id: id, effect_id: 67_777)
+  let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
+  assert timeline(fired:) == [#(1180, "start", source), #(1400, "end", source)]
+    as "the modifier ends with its node at go + 400 and its own end timer at go + 580 never fires"
 }
 
 pub fn the_caster_dying_ends_every_modifier_still_pending_test() -> Nil {

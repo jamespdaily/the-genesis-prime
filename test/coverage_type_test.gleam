@@ -19,17 +19,19 @@ import client_tables
 import genesis_prime/coverage
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
-  type EngineDeclaration, EngineDeclaration, Listed, Missing, Partial,
+  type EngineDeclaration, EngineDeclaration, Listed, Missing,
 }
 import genesis_prime/coverage/measurement.{HandledWithGap, Measured}
 import genesis_prime/coverage/starting_ability.{MissingRow}
 import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store
+import genesis_prime/table/spell4_effects
 import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/string
+import owned_key
 import owned_test
 import planted_table
 import simplifile
@@ -208,7 +210,7 @@ pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
       ..engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
       partial: [
-        Partial(type_number: 7, reason: "a gap", fact_key: "a.key"),
+        Missing(type_number: 7, reason: "a gap", fact_key: "a.key"),
       ],
       missing: [],
     )
@@ -217,14 +219,15 @@ pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
   let assert Measured(types:, conflicts:, breaches:, ..) = measured
     as "the engine's source is a table"
   let assert Ok(seven) = list.find(types, fn(line) { line.type_number == 7 })
-  assert seven.status == HandledWithGap(reason: "a gap", fact_key: "a.key")
+  assert seven.status
+    == HandledWithGap(reason: "a gap", fact_key: "a.key", unread_rows: 0)
     as "a partial type is handled, and its line holds the gap's reason and key"
   assert measurement.is_handled(status: seven.status)
   assert conflicts == [] && breaches == []
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 7: 2 rows (66.67%); handled with a gap: a gap (a.key)",
+    "- [x] type 7: 2 rows (66.67%); handled with a gap, 0 of its 2 rows not read: a gap (a.key)",
   )
     as "the checklist marks it [x] and lists its reason"
   assert string.contains(text, "1 of 2 types handled (66.67% of rows)")
@@ -238,8 +241,8 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
       ..engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
       partial: [
-        Partial(type_number: 2, reason: "a gap", fact_key: "a.key"),
-        Partial(type_number: 99, reason: "a gap", fact_key: "a.key"),
+        Missing(type_number: 2, reason: "a gap", fact_key: "a.key"),
+        Missing(type_number: 99, reason: "a gap", fact_key: "a.key"),
       ],
       missing: [],
     )
@@ -262,7 +265,7 @@ pub fn the_effect_type_11_is_partial_with_a_reason_and_a_fact_key_the_file_holds
   let declared = engine_named("Spell effects")
   assert declared.partial
     == [
-      Partial(
+      Missing(
         type_number: 11,
         reason: "rows, or parts of rows, aimed at another unit: the next step",
         fact_key: "Spell4Effects.effectType.11",
@@ -271,6 +274,67 @@ pub fn the_effect_type_11_is_partial_with_a_reason_and_a_fact_key_the_file_holds
   assert has_record(facts:, key: "Spell4Effects.effectType.11")
   assert engine.handles(engine: declared, type_number: 11)
     as "type 11 is handled, with the gap"
+}
+
+pub fn the_type_11_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects.targetFlags: bit 1 is the caster; the plan reads a type 11 row that
+  // includes it (flags 1, 3, 5 and 7) and leaves out one aimed only at others (2, 4 and 6).
+  // Planted: five type 11 rows, flags 1, 3, 2, 4 and 6, and one type 8 row.
+  let row = fn(id, type_, flags) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", planted_table.Integer(id)),
+      #("effectType", planted_table.Integer(type_)),
+      #("targetFlags", planted_table.Integer(flags)),
+    ])
+  }
+  use folder <- planted_table.in_folder([
+    planted_table.file(spell4_effects.schema, [
+      row(1, 11, 1),
+      row(2, 11, 3),
+      row(3, 11, 2),
+      row(4, 11, 4),
+      row(5, 11, 6),
+      row(6, 8, 4),
+    ]),
+  ])
+  let assert Ok(tables) =
+    store.load(
+      under: owned_key.new(),
+      from: folder,
+      entries: [spell4_effects.entry()],
+      requirements: [],
+      derivations: [],
+    )
+    as "a planted Spell4Effects table loads"
+  let measured =
+    measurement.measure(
+      EngineDeclaration(
+        ..engine_named("Spell effects"),
+        starting_abilities: None,
+      ),
+      tables,
+    )
+  store.unload(tables)
+  let assert Measured(types:, ..) = measured as "the planted table is measured"
+  let assert Ok(eleven) = list.find(types, fn(line) { line.type_number == 11 })
+  assert eleven.rows == 5
+  assert eleven.status
+    == HandledWithGap(
+      reason: "rows, or parts of rows, aimed at another unit: the next step",
+      fact_key: "Spell4Effects.effectType.11",
+      unread_rows: 3,
+    )
+    as "three of the five rows aim only at others and are not read"
+  let text = checklist.render([measured])
+  assert string.contains(
+    text,
+    "- [x] type 11: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit: the next step (Spell4Effects.effectType.11)",
+  )
+    as "the line lists the rows left out with the gap's reason"
+  assert string.contains(text, "2 of 2 types handled (50.0% of rows)")
+    as "the handled rows are the type 8 row and the two type 11 rows the plan reads: 3 of 6"
+  assert string.contains(text, "3 rows of the handled types not read")
 }
 
 pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missing_type_a_breach_test() -> Nil {
