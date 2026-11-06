@@ -2,14 +2,14 @@
 //// property modifiers of its own spells that change the value for their time. The
 //// connection keeps one `Properties` for its player (genesis_prime/game/world_entry
 //// `Entered`), applies and removes a modifier when the cast rule says so
-//// (genesis_prime/game/cast `PropertyStarts`, `PropertyEnds`), tells the player's
+//// (genesis_prime/game/cast `CasterChangeStarts`, `PropertyEnds`), tells the player's
 //// client and its viewers the entries that changed (0x93a), and hands each rule the
 //// value it reads. The module is pure.
 ////
 //// ```
 //// cast rule                connection                         clients
 ////  go + delay
-////    PropertyStarts ─────▶ apply(source, modifier) ─────────▶ 0x93a to the player,
+////    CasterChangeStarts ─────▶ apply(source, modifier) ─────────▶ 0x93a to the player,
 ////                            changed entries                   PropertiesChanged to viewers
 ////                            a maximum or a regeneration ───▶ player_life takes the new numbers
 ////  go + delay + duration, a node taken off, the caster dies

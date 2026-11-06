@@ -211,7 +211,7 @@ fn trace(
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
+      | cast.CasterChangeStarts(..)
       | cast.PropertyEnds(..) -> []
     }
   })
@@ -266,7 +266,7 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast.Log(..)
     | cast.Pay(..)
     | cast.Gain(..)
-    | cast.PropertyStarts(..)
+    | cast.CasterChangeStarts(..)
     | cast.PropertyEnds(..)
     | cast.StealthChanged(..) -> False
   }
@@ -478,7 +478,9 @@ fn property_starts(
 ) -> List(#(unit_properties.Source, unit_properties.Modifier)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.PropertyStarts(source:, modifier:) -> Ok(#(source, modifier))
+      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
+        Ok(#(source, modifier))
+      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..) -> Error(Nil)
       cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
