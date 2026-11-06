@@ -250,6 +250,7 @@ fn approaches_in_full(
       map.Approached(by: ConnectionId(by), unit_id:, place:, seq:, stay:) ->
         Ok(#(by, unit_id, start_place.x(place), seq, stay))
       map.Withdrew(..)
+      | map.PlayerDied(..)
       | map.Watched(..)
       | map.Unwatched(..)
       | map.Noticed(..)

@@ -317,6 +317,7 @@ fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
         | player_life.DamageTaken
         | EndCasts
         | GoToHolocrypt
+        | player_life.TellMap(..)
         | StartTimer(..)
         | CancelTimer(..) -> True
       }

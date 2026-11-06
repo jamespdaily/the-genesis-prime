@@ -51,6 +51,9 @@
 ////                                                    ─▶ 0x92f(P, 0)               0x937(P, 0, dead)
 ////                                                    ─▶ 0x88c(P, 1)               0x88c(P, 1)
 ////                                                    ─▶ 0x89a(P, 0)               0x89a(P, 0)
+////                            TellMap(False): the map keeps P out of every ring and tells each
+////                            creature P sees `PlayerDied` (genesis_prime/world_map/map `LifeChanged`),
+////                            before the `StealthChanged` that EndCasts ends a stealthed P's casts with
 ////                            EndCasts: each own cast ─▶ 0x7fe                     0x7fe (those told its start)
 ////                                                    ─▶ 0x247 type 22 P           0x247 type 22 P
 ////                                                    ─▶ 0x262 ghost (type 23)
@@ -66,7 +69,9 @@
 ////                                                    ─▶ 0x355 ghost
 ////                                                    ─▶ 0x636 P
 ////                                                    ─▶ 0x247 type 23 P           0x247 type 23 P
-//// 0x15a {P, 2, 0}       ─▶  the same, then GoToHolocrypt: the connection leaves the map and
+////                            TellMap(True): the map decides P's rings again and sends `Approached`
+////                            to each creature whose ring holds P
+//// 0x15a {P, 2, 0}       ─▶  the same but TellMap, then GoToHolocrypt: the connection leaves the map and
 ////                            joins at the Holocrypt place (genesis_prime/game/connection)
 //// ```
 ////
@@ -289,6 +294,13 @@ pub type Effect {
   /// The player chose the Holocrypt: the connection takes it out of its map and
   /// joins it at the Holocrypt place, whose entry burst follows.
   GoToHolocrypt
+  /// Tell the player's map it died (`alive` False) or woke where its body lies
+  /// (True), so the map keeps a dead player out of every creature's ring and tells the
+  /// creatures it sees (genesis_prime/world_map/map `LifeChanged`). A death puts it before
+  /// `EndCasts`, so the map takes it before the `StealthChanged` that ends a stealthed
+  /// player's casts at its death; a Wake Here puts it after the coming back's news; the
+  /// Holocrypt sends none, since its `Leave` follows at once.
+  TellMap(alive: Bool)
   /// Start a regeneration timer: its firing comes back to `timer_fired`.
   StartTimer(timer: TimerId, after_ms: Int)
   /// Cancel a regeneration timer.
@@ -498,6 +510,13 @@ pub fn entering(
     ])
     _ -> health_clock_settled(life:)
   }
+}
+
+/// Whether a saved health is a player that left dead: 0. `entering` starts such a player
+/// dead, and the map's `Join` names it `alive` False (`death.enter_dead`). No save is a
+/// player that enters alive.
+pub fn saved_dead(saved saved: Option(Int)) -> Bool {
+  saved == Some(0)
 }
 
 /// The health a save keeps: the player's health now, 0 while it is dead, so a

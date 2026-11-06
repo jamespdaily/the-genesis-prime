@@ -109,6 +109,7 @@ pub fn join(
         character: map_support.character(100 + connection),
         place: at(x),
         stay: map_support.stay(count: 1),
+        alive: True,
       ),
     )),
   )
@@ -282,6 +283,8 @@ pub fn said(message: map.Outgoing) -> String {
       "Approached by " <> int.to_string(number)
     map.Withdrew(by: ConnectionId(number)) ->
       "Withdrew by " <> int.to_string(number)
+    map.PlayerDied(by: ConnectionId(number)) ->
+      "PlayerDied by " <> int.to_string(number)
     map.Joined(..)
     | map.NotJoined(..)
     | map.Summoned(..)

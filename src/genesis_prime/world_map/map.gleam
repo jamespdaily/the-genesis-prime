@@ -24,7 +24,7 @@
 ////
 //// ```
 //// connection c1                      map                                      shell
-////   Join(c1, character, place, stay) ─▶ Asked ─▶ loadout of its class and faction, maximum health at its level
+////   Join(c1, character, place, stay, alive) ─▶ Asked ─▶ loadout of its class and faction, maximum health at its level
 ////                                          unit id u = next unit id; next + 1
 ////                                          unit = the character at place as unit u,
 ////                                                 with the body visuals of its look, its loadout
@@ -115,8 +115,8 @@
 ////                                  entered, Live: Approached(c, unit, place, seq) ─▶
 ////                                  left, Live:    Withdrew(c) ──────────────────▶
 ////                                  inside before and after, or outside: nothing
-//// a creature starts             each ready, unstealthed player in its ring: Approached,
-////                               after the start effects
+//// a creature starts             each ready, unstealthed, living player in its ring:
+////                               Approached, after the start effects
 ////
 //// connection c                  map                                          creature
 ////   StealthChanged(c, s)      ─▶ Told ─▶ c not in the map: error line, nothing changes
@@ -145,6 +145,34 @@
 ////                                                   ─▶ no Approached: `inside` holds no ring for c
 //// ```
 ////
+//// connection c                  map                                          creature
+////   LifeChanged(c, a)         ─▶ Told ─▶ c not in the map: error line, nothing changes
+////                                         a as held: nothing
+////                                         a False: c's life = Dead, `inside` emptied, no Withdrew:
+////                                           PlayerDied(c), each Live spawn in c's `seen`, in
+////                                           spawn order, whether or not c stood in its ring
+////                                           ─────────────────────────────▶ c out of near and
+////                                                                          the threat list
+////                                         a True: c's life = Alive; c still loading: nothing more
+////                                           (Ready decides); c ready: the rings it stands in now:
+////                                           Approached(c, unit, place, seq, stay), each Live
+////                                           spawn, in spawn order ─────────▶ may aggro, as a walk-in
+////
+//// Where a dead player's rings are decided, in order (the connection tells `Join`, `Moved`,
+//// `Ready`, `StealthChanged` and `LifeChanged` from one process, and tells `LifeChanged(c, False)`
+//// before the `StealthChanged(c, False)` that ends a stealthed player's casts at its death):
+////
+//// ```
+//// LifeChanged(c, False), then Moved into a ring     ─▶ no Approached: c stands in no ring
+//// Moved into a ring, then LifeChanged(c, False)     ─▶ Approached, then PlayerDied: the creature
+////                                                      aggroed c, then drops c from near and its list
+//// LifeChanged(c, False), then StealthChanged(c, s)  ─▶ nothing: c is in no ring either way
+//// Join(.., alive: False), Ready(c)                  ─▶ nothing at Ready; LifeChanged(c, True) then
+////                                                      sends Approached to each ring c stands in
+//// a creature starts, restarts or respawns, or a summon starts, with c dead in its ring
+////                                                   ─▶ no Approached: `inside` holds no ring for c
+//// ```
+////
 //// - **A player is not ready until its client's first 0xF2 of the stay**
 ////   (`opcode.0xf2`), so no creature fights a loading player.
 //// - **A ring** is a circle of `aggro_range` about the spawn's place, not the
@@ -163,6 +191,33 @@
 ////   its threat list, since `Withdrew` touches only the creature's `near`
 ////   (genesis_prime/world_map/creature_fight). A player's stealth is the connection's
 ////   to decide; the map holds a copy, told one way and in the connection's order.
+//// - **A dead player stands in no ring and is told of to every creature it sees** (server
+////   choice, `LifeChanged`; the client holds no creature rule, and a dead unit is struck
+////   by nothing, `Spell4ValidTargets.targetBitmask`). The map sends `PlayerDied` to each
+////   Live spawn in the player's `seen`, not only the rings it stood in, since a creature
+////   that chased the player out of its ring, or whose `Threatened` was dropped by the dead
+////   player, may still hold it (genesis_prime/world_map/creature_fight: a threat list is
+////   within the viewers, and a viewer sees the spawn). A player that wakes inside a ring is
+////   told to its creatures as `Approached`, as a walk-in or a stealth exit is. A player
+////   that joins dead (`Join` with `alive` False: its saved health is 0,
+////   genesis_prime/game/player_life `entering`) is in no ring until it wakes. The
+////   Holocrypt sends `Leave`, then a `Join` with `alive` True, and no `LifeChanged`.
+//// - **A `LifeChanged` from a connection not in the map** changes nothing and is logged as
+////   an error, as for a `Moved`; one of a value the map already holds sends nothing.
+//// - **When a life tell is late, out of order or lost to a death:**
+////   - A `LifeChanged` is decided on the state the connection had when it sent it, and
+////     cannot cross a `Join`, `Moved`, `Ready` or `StealthChanged` of the same connection.
+////   - A creature's home timer or corpse timer that fires before the `PlayerDied` reaches
+////     it aggroes the body: the death tell is one hop behind. The strike is refused `Dead`,
+////     which releases the player and drops it from `near` (genesis_prime/world_map/creature_fight).
+////   - A `PlayerDied` or `Approached` for a creature that died before it is dropped; the
+////     spawn keeps `inside`, which holds no dead player, and `approaches_at_start` reads it
+////     at the creature's next start.
+////   - A `PlayerDied` that reaches a creature after the player's `Unwatched` finds the player
+////     in neither `near` nor the threat list: nothing.
+////   - A player whose connection ends while dead is removed as any player is: its creatures
+////     are sent `Unwatched`, and no `PlayerDied` follows.
+////   - A map that dies ends every connection in it; no life copy outlives it.
 //// - **A `StealthChanged` from a connection not in the map** changes nothing and is
 ////   logged as an error, as for a `Moved`; one of a value the map already holds sends
 ////   nothing. A player that left and joined again starts `NotStealthed`: its camp
@@ -220,9 +275,9 @@
 ////   rest of the 32 bits (`0x140561c30`): a map that has given them all crashes,
 ////   and its players' connections end.
 //// - **A second Join from a connection in the map** answers the record built
-////   from the unit the map keeps, not from the new Join, keeps the new Join's stay,
-////   sends the joiner a `SeenBy` for each player it sees again, changes nothing
-////   else and logs an error: the connection's rule joins once.
+////   from the unit the map keeps, not from the new Join, keeps the new Join's stay
+////   and `alive`, sends the joiner a `SeenBy` for each player it sees again, changes
+////   nothing else and logs an error: the connection's rule joins once.
 //// - **A Leave** removes the connection's player with its unit and its watch,
 ////   and is answered `Left`, so the player's connection, which lives on in
 ////   character select, is not watched by a map it has left; a later Join from
@@ -406,6 +461,12 @@
 //// | a `Moved` comes before the player's `Ready` | sight is decided; no ring is, and no creature is told |
 //// | a `Ready` comes twice in one stay | the second changes nothing (the connection sends one a stay) |
 //// | a player in a ring leaves, camps or its connection ends | its creatures are told `Unwatched`, which drops it from their threat lists; no `Withdrew` follows |
+//// | a `LifeChanged` reaches the map after that connection's `Leave`, or from a connection never in it | ignored, with an error line |
+//// | a `LifeChanged` of the value the map holds | nothing is sent |
+//// | the player dies in a creature's ring, and the creature's killing answer and the map's `PlayerDied` both reach it | two senders, either order: the first drops the player from `near` and the threat list, the second finds nothing |
+//// | a player that joins dead sends `Ready` | no ring is decided; its `LifeChanged(True)` decides them |
+//// | a dead player's connection ends or camps | its creatures are told `Unwatched`; the next entry's `Join` names `alive` False from its saved health 0 |
+//// | the Holocrypt's `Leave`, then its `Join` | `alive` True; the old map sent no `LifeChanged(True)`, so no ring creature aggroes the player for one step before the leave |
 //// | an `ObjectsSeen` or `ObjectsUnseen` reaches a later stay | dropped by the connection's stay envelope |
 //// | a move crosses an object's sight twice in one `Moved` batch | decided on the final place: at most one entry per object per `Moved` |
 
@@ -493,8 +554,16 @@ pub type Settings {
 pub type Message {
   /// Put the character in the map as the connection's player, placed at
   /// `place`, the bounded place the client is told, for the connection's stay
-  /// `stay`, which every notice to it names. An ask, answered `Joined`.
-  Join(connection: ConnectionId, character: Character, place: Place, stay: Stay)
+  /// `stay`, which every notice to it names. `alive` is False for a player that
+  /// enters dead (its saved health is 0, genesis_prime/game/player_life `entering`),
+  /// True otherwise and for the Holocrypt's join. An ask, answered `Joined`.
+  Join(
+    connection: ConnectionId,
+    character: Character,
+    place: Place,
+    stay: Stay,
+    alive: Bool,
+  )
   /// Take the connection's player out of the map, with its unit and the
   /// watch on the connection. An ask, answered `Left`.
   Leave(connection: ConnectionId)
@@ -519,6 +588,13 @@ pub type Message {
   /// (a server choice: the client holds no rule, `UnitProperty2.stealth_detection`).
   /// Taken only from a connection that is in the map.
   StealthChanged(connection: ConnectionId, stealthed: Bool)
+  /// The connection's player died (`alive` False) or woke where its body lies
+  /// (`alive` True), as its life rule decided (genesis_prime/game/player_life). A
+  /// tell. A dead player stands in no creature's ring, and each creature it sees is
+  /// told `PlayerDied` (a server choice: the client holds no creature rule). A player
+  /// that wakes inside a ring is told to its creatures as `Approached`. Taken only
+  /// from a connection that is in the map.
+  LifeChanged(connection: ConnectionId, alive: Bool)
   /// A development command of the connection's player: start `creature_id` as a
   /// run-only spawn at the place and facing the map holds for the player, and
   /// show it to the players who see that place. An ask, answered `Summoned` or
@@ -600,6 +676,9 @@ pub type Outgoing {
   Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int, stay: Stay)
   /// A send to a creature: the player of connection `by` left its ring.
   Withdrew(by: ConnectionId)
+  /// A send to a creature: the player of connection `by` died. It leaves the
+  /// creature's ring's players and its threat list.
+  PlayerDied(by: ConnectionId)
 }
 
 /// What a map tells the connection of a player in it about who sees whom, for
@@ -685,7 +764,7 @@ pub type SpawnState {
 /// it sees (`objects`, likewise), whether it is ready,
 /// the move sequence number of its place, the hostile spawns whose ring it
 /// stands in, empty until it is ready and while it is stealthed, and whether it is
-/// stealthed, as its connection last told.
+/// stealthed and whether it is alive, as its connection last told.
 type Player {
   Player(
     stay: Stay,
@@ -698,6 +777,7 @@ type Player {
     seq: Int,
     inside: Set(SpawnId),
     stealth: Stealth,
+    life: Life,
   )
 }
 
@@ -706,6 +786,13 @@ type Player {
 type Stealth {
   NotStealthed
   Stealthed
+}
+
+/// Whether a player is alive, as its join or its connection last told (`Join`,
+/// `LifeChanged`): a player that enters dead is `Dead`.
+type Life {
+  Alive
+  Dead
 }
 
 /// A summon whose creature's start has no outcome yet: the connection that asked
@@ -834,7 +921,7 @@ pub fn step(
       }
     OwnEvent(Asked(
       caller:,
-      message: Join(connection:, character:, place:, stay:),
+      message: Join(connection:, character:, place:, stay:, alive:),
     )) ->
       joined(
         state:,
@@ -843,6 +930,7 @@ pub fn step(
         character:,
         place:,
         stay:,
+        alive:,
         now_ms: input.now.monotonic_ms,
       )
     OwnEvent(Asked(caller:, message: Leave(connection:))) ->
@@ -853,15 +941,18 @@ pub fn step(
       ready(state:, connection:, seq:)
     OwnEvent(Told(message: StealthChanged(connection:, stealthed:))) ->
       stealth_changed(state:, connection:, stealthed:)
+    OwnEvent(Told(message: LifeChanged(connection:, alive:))) ->
+      life_changed(state:, connection:, alive:)
     OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:))) ->
       summoned(state:, caller:, connection:, creature_id:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Asked(message: StealthChanged(..), ..))
+    | OwnEvent(Asked(message: LifeChanged(..), ..))
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..)))
     | OwnEvent(Told(message: Summon(..))) ->
-      panic as "a map is asked Join, Leave and Summon and told Moved, Ready and StealthChanged only"
+      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged and LifeChanged only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
@@ -1864,6 +1955,22 @@ fn stealth_changed(
   }
 }
 
+/// The player of `connection` died or woke where its body lies. A connection not in
+/// the map is an error line and changes nothing, as for `Moved`; a value the map
+/// already holds changes nothing and sends nothing. A death is kept, empties the
+/// player's `inside` with no `Withdrew`, and sends `PlayerDied` to each Live creature
+/// whose spawn the player sees, in spawn order, a ring or not. A waking is kept and a
+/// ready player's rings are decided again (`rings_decided`): `Approached` to each Live
+/// creature whose ring holds it, in spawn order; a player still loading is only marked,
+/// and `ready` decides its rings.
+fn life_changed(
+  state _state: State,
+  connection _connection: ConnectionId,
+  alive _alive: Bool,
+) -> #(State, ServiceStep(Outgoing)) {
+  panic as "shape: #496"
+}
+
 /// The rings the ready `player` of `connection` stands in at its place, against
 /// the ones it stood in (`inside`): `Approached` to each Live creature whose ring it
 /// entered and `Withdrew` to each whose ring it left, in the order of the spawns,
@@ -2018,8 +2125,13 @@ fn joined(
   character character: Character,
   place place: Place,
   stay stay: Stay,
+  alive alive: Bool,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
+  let life = case alive {
+    True -> Alive
+    False -> Dead
+  }
   case dict.get(state.players, connection) {
     Ok(player) ->
       joined_again(
@@ -2027,7 +2139,7 @@ fn joined(
         caller:,
         connection:,
         character:,
-        player: Player(..player, stay:),
+        player: Player(..player, stay:, life:),
         now_ms:,
       )
     Error(Nil) ->
@@ -2038,6 +2150,7 @@ fn joined(
         character:,
         place:,
         stay:,
+        life:,
         now_ms:,
       )
   }
@@ -2130,6 +2243,7 @@ fn joined_new(
   character character: Character,
   place place: Place,
   stay stay: Stay,
+  life life: Life,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let tables = state.settings.tables
@@ -2169,6 +2283,7 @@ fn joined_new(
           seq: 0,
           inside: set.new(),
           stealth: NotStealthed,
+          life:,
         ),
       )
     }

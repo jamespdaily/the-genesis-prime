@@ -104,6 +104,7 @@ fn join(run run: MapProcess, connection connection: Int) -> Int {
             z: 0.0,
           ),
           stay: map_support.stay(count: 1),
+          alive: True,
         ),
         reply,
       )

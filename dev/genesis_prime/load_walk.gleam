@@ -235,6 +235,7 @@ fn player(
             character: character(id),
             place: place(x:, y:, z:),
             stay: stay.next(stay.none_yet()),
+            alive: True,
           ),
           fn(answer) { process.send(replies, answer) },
         )

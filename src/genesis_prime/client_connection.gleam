@@ -93,6 +93,12 @@ pub type Request {
   /// stealthed. Told only on a change, once per change, after the player's own
   /// 0x8f5 and the viewers' news; never asked.
   TellStealthChanged(connection: ConnectionId, stealthed: Bool)
+  /// What a `Tell` effect sends the run of a map: the player of `connection` died or
+  /// woke where its body lies, as its life rule decided (genesis_prime/world_map/map
+  /// `LifeChanged`), so the map keeps a dead player out of every creature's ring and
+  /// tells the creatures it sees `PlayerDied`. Told only on a change, once per change,
+  /// before the death's `StealthChanged` and after a waking's frames and news; never asked.
+  TellLifeChanged(connection: ConnectionId, alive: Bool)
   /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): news of this player's unit, which that
   /// connection writes as 0x262, 0x638 or 0x355 when its client can take it, for

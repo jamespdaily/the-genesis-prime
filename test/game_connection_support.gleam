@@ -504,6 +504,7 @@ pub fn map_run_with_four_players(run: Int) -> map.State {
               character: world_character(),
               place:,
               stay: viewer_stay(other),
+              alive: True,
             ),
           )),
         ),
@@ -845,6 +846,7 @@ pub fn mapped(
     | TellMoved(..)
     | client_connection.TellReady(..)
     | client_connection.TellStealthChanged(..)
+    | client_connection.TellLifeChanged(..)
     | TellPeer(..)
     | client_connection.TellStrike(..)
     | client_connection.TellTargetMoved(..)

@@ -7,7 +7,7 @@
 ////
 //// ```
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
-//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay)
+//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive)
 ////                                                 (or Refused: the rule hands back to select)
 //// Joined(unit record, loadout, health, run)
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x111 x 10 (x 11 with an innate), 0x1A0, 0x19D,
@@ -16,7 +16,7 @@
 ////                                                 (a player saved dead: the ghost's 0x262 and
 ////                                                 0x1B3 before 0x636, which names the ghost)
 //// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
-//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place, stay)
+//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place, stay, alive: True)
 ////                                                 (then Joined and NotJoined as above)
 //// ```
 ////
@@ -145,6 +145,7 @@ import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -556,7 +557,8 @@ pub fn joined(
         | map.Unwatched(..)
         | map.Retire
         | map.Approached(..)
-        | map.Withdrew(..) -> Error(Nil)
+        | map.Withdrew(..)
+        | map.PlayerDied(..) -> Error(Nil)
       }
     }
     Loading(..) -> Error(Nil)
@@ -616,6 +618,7 @@ fn joining(
           character:,
           place: start_place.within_the_worlds_box(place),
           stay:,
+          alive: bool.negate(player_life.saved_dead(saved: saved_health)),
         ),
       ),
     ],

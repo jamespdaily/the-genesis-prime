@@ -59,7 +59,8 @@ pub fn life_effects(
       player_life.CancelTimer(timer:) -> [OwnEffect(CancelTimer(timer:))]
       player_life.DamageTaken
       | player_life.EndCasts
-      | player_life.GoToHolocrypt -> []
+      | player_life.GoToHolocrypt
+      | player_life.TellMap(..) -> []
     }
   })
 }

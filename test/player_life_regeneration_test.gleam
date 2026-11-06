@@ -158,7 +158,8 @@ fn timers(effects: List(Effect)) -> List(Effect) {
       | player_life.StreamTo(..)
       | player_life.DamageTaken
       | player_life.EndCasts
-      | player_life.GoToHolocrypt -> False
+      | player_life.GoToHolocrypt
+      | player_life.TellMap(..) -> False
     }
   })
 }

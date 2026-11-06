@@ -253,6 +253,7 @@ fn walker(
             character: character(id),
             place: start,
             stay: stay.next(stay.none_yet()),
+            alive: True,
           ),
           fn(answer) { process.send(replies, answer) },
         )
