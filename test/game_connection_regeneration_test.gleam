@@ -30,6 +30,7 @@ import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/float32
 import genesis_prime/message/player_health.{PlayerHealth}
+import genesis_prime/message/stat_kind
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/step.{
@@ -88,19 +89,22 @@ fn fire(
 /// A creature's strike of `damage` on the tests' player, as the creature sends it.
 fn blow(damage damage: Int) -> Event(ConnectionEvent(Message, Answer)) {
   game_connection_support.foe(
-    strike_tell.Attacks(tell: strike_tell.Strike(
-      key: strike_tell.Key(
-        cast_id: 2_147_500_100,
-        phase: 0,
-        unit_id: game_connection_support.own_unit_id,
+    strike_tell.Attacks(
+      tell: strike_tell.Strike(
+        key: strike_tell.Key(
+          cast_id: 2_147_500_100,
+          phase: 0,
+          unit_id: game_connection_support.own_unit_id,
+        ),
+        from: game_connection_support.fighter(),
+        striker: strike_tell.CreatureStriker,
+        offence: spawn_support.dealing(
+          offence: spawn_support.beast_attack().offence,
+          damage:,
+        ),
+        controls: [],
       ),
-      from: game_connection_support.fighter(),
-      striker: strike_tell.CreatureStriker,
-      offence: spawn_support.dealing(
-        offence: spawn_support.beast_attack().offence,
-        damage:,
-      ),
-    )),
+    ),
   )
 }
 
@@ -193,7 +197,11 @@ pub fn a_blow_starts_the_shield_timer_at_the_items_reboot_time_and_each_tick_aft
   let #(state, first) = fire(state:, timer: shield_timer)
   assert shield_of(first)
     == [
-      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 361),
+      UnitStatChanged(
+        unit_id: game_connection_support.own_unit_id,
+        stat: stat_kind.Shield,
+        value: 361,
+      ),
     ]
     as "294 and 67: 0x938 stat 20, in combat"
   assert list.map(game_connection_support.peer_tells(first), fn(tell) {
@@ -206,12 +214,20 @@ pub fn a_blow_starts_the_shield_timer_at_the_items_reboot_time_and_each_tick_aft
   let #(state, second) = fire(state:, timer: shield_timer)
   assert shield_of(second)
     == [
-      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 428),
+      UnitStatChanged(
+        unit_id: game_connection_support.own_unit_id,
+        stat: stat_kind.Shield,
+        value: 428,
+      ),
     ]
   let #(_, last) = fire(state:, timer: shield_timer)
   assert shield_of(last)
     == [
-      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 450),
+      UnitStatChanged(
+        unit_id: game_connection_support.own_unit_id,
+        stat: stat_kind.Shield,
+        value: 450,
+      ),
     ]
     as "428 and 67 stops at the maximum"
   assert started(last) == [] as "full: no next tick"
@@ -313,7 +329,11 @@ pub fn the_multiplier_and_the_shield_tick_are_the_client_tables_unit_property2_d
       unit_stat_changed.decode,
     )
     == [
-      UnitStatChanged(unit_id: game_connection_support.own_unit_id, value: 361),
+      UnitStatChanged(
+        unit_id: game_connection_support.own_unit_id,
+        stat: stat_kind.Shield,
+        value: 361,
+      ),
     ]
     as "294 and floor(450 x 0.15) = 67: the share is the item's"
   assert started(first) == [#(shield_timer, 750)]
