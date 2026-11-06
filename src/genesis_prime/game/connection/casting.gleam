@@ -251,6 +251,10 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
         ),
       ),
     ]),
+    factions: prerequisite.Factions(
+      current: entered.unit.tail.faction_id,
+      base: entered.unit.tail.base_faction_id,
+    ),
     stats: stats_of(entered:),
   )
 }

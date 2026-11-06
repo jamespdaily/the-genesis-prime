@@ -17,6 +17,7 @@ import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, AtFirstGo, GlobalCooldown, KeepsStealth,
   NoWeaponNeeded, Normal, Spell, StealthRow,
@@ -229,6 +230,7 @@ pub fn caster() -> Caster {
     resources: class_resource.new(resource: full_slot_1()),
     in_combat: False,
     life_vitals: dict.new(),
+    factions: prerequisite.Factions(current: 167, base: 167),
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
   )
 }
