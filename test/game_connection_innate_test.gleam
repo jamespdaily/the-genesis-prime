@@ -17,6 +17,7 @@
 ////   refuses an index at or above the slots unlocked at its level.
 //// Skipped where the client's tables are not on the machine.
 
+import cast_support
 import client_tables
 import connection_rule_support as support
 import game_connection_support as connection_support
@@ -24,6 +25,7 @@ import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
+import genesis_prime/message/unit_stealth
 import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
 import genesis_prime/world_map/map
 import gleam/int
@@ -44,6 +46,16 @@ fn ids(frames frames: List(Frame)) -> List(Int) {
 fn after_0x61(frames frames: List(Frame)) -> List(Int) {
   let #(_, rest) = list.split_while(ids(frames:), fn(id) { id != 0x0061 })
   list.drop(rest, 1)
+}
+
+/// The timers a step starts for casts: the cast rule's ids begin at 1000.
+fn cast_timers_started(
+  taken taken: ConnectionStep(Request),
+) -> List(step.TimerId) {
+  list.filter(support.timers_started(taken), fn(timer) {
+    let step.TimerId(number) = timer
+    number >= 1000
+  })
 }
 
 /// The Spell4 ids of the casts the frames start, in order.
@@ -124,11 +136,7 @@ pub fn a_stalkers_passive_starts_60724_50_ms_later_and_that_cast_ends_test() -> 
   assert started_spells(frames:) == [45_057]
     as "the passive 45057 starts; the Proxy to 60724 waits 50 ms"
   assert listed(frames:) == [] as "its procs are not read"
-  let cast_timers =
-    list.filter(support.timers_started(taken), fn(timer) {
-      let step.TimerId(number) = timer
-      number >= 1000
-    })
+  let cast_timers = cast_timers_started(taken:)
   let assert [timer] = cast_timers as "one cast timer: the 50 ms start of 60724"
   let #(_, later) =
     connection_support.feed(state:, event: OwnEvent(TimerFired(timer)))
@@ -277,4 +285,84 @@ pub fn a_0x16f_before_the_world_is_logged_as_unhandled_test() -> Nil {
   assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x016F))]
     as "routing: 0x016F is taken only with the player in the world"
   assert support.writes(taken) == [] && !support.stops(taken)
+}
+
+// ---- the Stalker's stealth and Impale ----
+
+/// A press of the bag index with the target, as the client sends it.
+fn pressed(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  client_cast_id client_cast_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  connection_support.read(
+    state:,
+    bytes: connection_support.world_message(
+      message_id: 0x009A,
+      body: cast_support.press_body(
+        client_cast_id:,
+        bag_index:,
+        target: 40,
+        press: 1,
+      ),
+    ),
+  )
+}
+
+pub fn a_stealthed_stalkers_impale_ends_the_stealth_after_its_second_phase_and_not_its_first_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // The client's tables: the Stalker's bag is Shred, Impale 38779, Stagger, then the
+  // Nano Skin toggle 46073 (`loadout.of`). Impale holds spellCastStealthChange 1,
+  // SpellPhase 3715 and 3716 (a go at 0 and at 300 ms), and its Proxies, behind
+  // Prerequisite 38585 (the caster stealthed), and its Fluff child 70775 start in phase 1
+  // (phaseFlags 2): `Spell4.spellCastStealthChange.break`, the stealth ends after the
+  // cast's effects, so those still see it. The Proxies' target gates 5734 and 5735 are
+  // not checked, so no Proxy child starts: the stealth's end is read from the frames.
+  let #(state, _) = entered_as(class_id: 5, saved_health: None)
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.beast_appears(unit_id: 40),
+    )
+  let #(state, entering) = pressed(state:, bag_index: 3, client_cast_id: 1)
+  assert stealth_bits(frames: written(taken: entering)) == [1]
+    as "the toggle makes the stealth"
+  let #(state, first) = pressed(state:, bag_index: 1, client_cast_id: 2)
+  assert stealth_bits(frames: written(taken: first)) == []
+    as "Impale's first go ends nothing: its last go is 300 ms later"
+  assert !list.contains(ids(frames: written(taken: first)), 0x0811)
+  let assert [second_go] = cast_timers_started(taken: first)
+    as "one cast timer: the second go"
+  let #(_, second) =
+    connection_support.feed(state:, event: OwnEvent(TimerFired(second_go)))
+  let frames = written(taken: second)
+  assert started_spells(frames:) == [70_775]
+    as "Impale's Fluff child (Spell4Effects 231067, phase 1) starts in the second phase"
+  assert stealth_bits(frames:) == [0]
+  let at = fn(id) {
+    let assert Ok(found) =
+      list.index_map(ids(frames:), fn(found, index) { #(found, index) })
+      |> list.find(fn(entry) { entry.0 == id })
+      as "the message is written"
+    found.1
+  }
+  assert at(0x07FF) < at(0x0811) && at(0x0811) < at(0x08F5)
+    as "the child's start, then the stealth cast taken off, then the change"
+  assert list.last(ids(frames:)) == Ok(0x08F5)
+    as "the change is the step's last frame"
+}
+
+/// The stealthed bits of the 0x8F5 frames, in order.
+fn stealth_bits(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == 0x08F5 {
+      True -> {
+        let assert Ok(change) = unit_stealth.decode(frame.body)
+          as "a 0x8F5 decodes"
+        Ok(change.stealthed)
+      }
+      False -> Error(Nil)
+    }
+  })
 }
