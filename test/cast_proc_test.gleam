@@ -805,7 +805,26 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
-  let #(held, _) = joined(caster:, at: 1000)
+  // The passive's go applies the five procs; the stealth go of 38784 is the input that
+  // fires 60724.
+  let #(held, started) =
+    cast.passive_started(
+      cast: cast.new(),
+      caster:,
+      plans: real_plans(),
+      base: Spell4BaseId(29_131),
+      now: support.at(ms: 1000),
+    )
+  let assert [cast.Strike(passive_go)] = list.filter(started, is_strike)
+  assert cast.rolls_needed(
+      cast: held,
+      cast_id: passive_go.cast_id,
+      phase: passive_go.phase,
+      struck: [],
+    )
+    == 0
+    as "Spell4Effects.effectType.14.limits: every read row has chance 1.0, so the go that applies the procs needs no roll"
+  let #(held, _) = answered(caster:, state: held, effects: started, at: 1000)
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: real_plans(),
@@ -815,18 +834,28 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
       target: 0,
       at: 2000,
     )
-  let assert [cast.Strike(asked:)] = list.filter(pressed, is_strike)
+  let assert [cast.Strike(toggle_go)] = list.filter(pressed, is_strike)
+  let #(state, going) =
+    support.went(
+      cast: state,
+      caster:,
+      now: support.at(ms: 2000),
+      cast_id: toggle_go.cast_id,
+      phase: toggle_go.phase,
+      struck: [],
+    )
+  let assert [cast.Strike(stealth_go)] = list.filter(going, is_strike)
   assert cast.rolls_needed(
       cast: state,
-      cast_id: asked.cast_id,
-      phase: asked.phase,
+      cast_id: stealth_go.cast_id,
+      phase: stealth_go.phase,
       struck: [],
     )
     == 0
-    as "Spell4Effects.effectType.14.limits: every read row has chance 1.0, so no roll is drawn for a go whose input fires procs"
-  let #(_, effects) = answered(caster:, state:, effects: pressed, at: 2000)
+    as "the go that enters stealth and fires 60724 takes no roll either"
+  let #(_, effects) = answered(caster:, state:, effects: going, at: 2000)
   assert starts_of(spell4_id: 60_724, effects:) == 1
-    as "the answers carry rolls: [], and the proc still fires"
+    as "the answer carries rolls: [], and the proc still fires"
 }
 
 pub fn a_procs_cast_names_the_player_as_its_primary_target_for_every_unit_bit_test() -> Nil {

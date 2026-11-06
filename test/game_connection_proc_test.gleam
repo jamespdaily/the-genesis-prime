@@ -20,10 +20,12 @@ import genesis_prime/client_connection.{type Request, CastStarted, PeerNews}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
+import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_started
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_stealth
 import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
+import genesis_prime/world_map/map
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -275,17 +277,53 @@ pub fn a_stalker_killed_in_combat_gets_63366_twice_and_its_stealth_press_after_t
     })
     == []
     as "the dead player's stealth ends with no Empower: row 1 refuses a dead caster"
-  let at = fn(id) {
-    let assert Ok(found) =
-      list.index_map(ids(frames:), fn(found, index) { #(found, index) })
-      |> list.find(fn(entry) { entry.0 == id })
-      as "the message is written"
-    found.1
-  }
-  assert at(0x089A) < at(0x07FF)
-    as "the first cast follows the combat flag's news"
-  assert at(0x07FE) < at(0x0247)
-    as "both casts come before the death's combat log line"
+  let finished_ids =
+    list.filter_map(frames, fn(frame) {
+      case frame.message_id == 0x07FE {
+        True -> {
+          let assert Ok(finished) = spell_finished.decode(frame.body)
+            as "a 0x7fe decodes"
+          Ok(finished.cast_id)
+        }
+        False -> Error(Nil)
+      }
+    })
+  let of_63366 =
+    list.filter_map(frames, fn(frame) {
+      case frame.message_id == spell_started.message_id {
+        True -> {
+          let assert Ok(start) = spell_started.decode(frame.body)
+            as "a 0x7ff decodes"
+          case start.spell4_id == 63_366 {
+            True -> Ok(start.cast_id)
+            False -> Error(Nil)
+          }
+        }
+        False -> Error(Nil)
+      }
+    })
+  let assert [first_63366, second_63366] = of_63366
+  assert list.filter(ids(frames:), fn(id) {
+      list.contains(
+        [0x0811, 0x08F5, 0x089A, 0x07FF, 0x07F4, 0x07FE, 0x0247],
+        id,
+      )
+    })
+    == [
+      0x0811,
+      0x08F5,
+      0x089A,
+      0x07FF,
+      0x07F4,
+      0x07FE,
+      0x07FF,
+      0x07F4,
+      0x07FE,
+      0x0247,
+    ]
+    as "the lethal blow breaks the stealth first (Spell4Effects.effectType.83: dataBits02 0; the blow's damage is taken before the death): the stealth cast's 0x811 and 0x8f5 {P, 0}; then 0x89a; then 63366 for kind 44 and 63366 for kind 0, each with its 0x7ff, 0x7f4 and 0x7fe; then the death's combat log line"
+  assert finished_ids == [first_63366, second_63366]
+    as "a Normal cast the 0x811 destroys has no 0x7fe, so the two 63366 casts are the only ones to end"
   let #(state, _) =
     connection_support.read(state:, bytes: connection_support.wake_here())
   let #(state, press) =
@@ -297,4 +335,39 @@ pub fn a_stalker_killed_in_combat_gets_63366_twice_and_its_stealth_press_after_t
   let #(_, started) = fired_at(state:, timer: held, ms: 1300)
   assert list.contains(ids(frames: written(taken: started)), 0x07FD)
     as "and starts then, confirmed to the client"
+}
+
+pub fn a_stalkers_last_fighter_going_gone_leaves_combat_and_casts_63366_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let state = stalker_in_world()
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  let #(state, one) =
+    connection_support.feed(
+      state:,
+      event: connection_support.foe(strike_tell.Threatened(unit_id: 9, life: 4)),
+    )
+  assert started_spells(frames: written(taken: one)) == []
+  let #(state, first_gone) =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_the_map(map.Gone(unit_id: 7)),
+    )
+  assert started_spells(frames: written(taken: first_gone)) == []
+    as "a fighter is left: the player is still in combat"
+  let #(_, last_gone) =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_the_map(map.Gone(unit_id: 9)),
+    )
+  let frames = written(taken: last_gone)
+  assert list.filter(ids(frames:), fn(id) { id == 0x089A || id == 0x07FF })
+    == [0x089A, 0x07FF]
+    as "the map's Gone of the last fighter is its release: 0x89a (P, 0), then Proc 159136's cast"
+  assert started_spells(frames:) == [63_366]
+    as "Spell4Effects.effectType.14.dataBits00.0_44: leaving combat casts 63366, whether the last fighter released the player or its process went"
 }
