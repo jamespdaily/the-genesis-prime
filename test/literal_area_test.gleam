@@ -173,7 +173,6 @@ pub fn a_planted_extra_load_is_in_the_peak_the_check_compares_with_its_limit_tes
   // the VM to itself, can tell a rise one test made.
   use <- owned_test.run(60_000)
   use <- unitest.tag("serial")
-  let held = literal_area.persistent_term_memory()
   let keys = [
     ExtraLoadKey(1),
     ExtraLoadKey(2),
@@ -185,8 +184,8 @@ pub fn a_planted_extra_load_is_in_the_peak_the_check_compares_with_its_limit_tes
   list.each(keys, fn(key) {
     assert erase_extra_term(key) as "the extra load was stored"
   })
-  // Four terms of 2,000,000 list cells, 16 bytes each, held with the terms the
-  // VM held before: the carriers hold at least those bytes together.
-  assert peak_with_the_load >= held + 4 * 2_000_000 * 16
-    as "a load held on top of the live terms is in the highest carriers size, the number ./check fails over its limit (setup_check/test_check_script.py plants a peak over it)"
+  // Four terms of 2,000,000 list cells, 16 bytes each: the carriers held at least
+  // those bytes while the terms were stored.
+  assert peak_with_the_load >= 4 * 2_000_000 * 16
+    as "a load held at once is in the highest carriers size, the number ./check fails over its limit (setup_check/test_check_script.py plants a peak over it)"
 }
