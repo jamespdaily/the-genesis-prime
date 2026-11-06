@@ -1,0 +1,294 @@
+//// The forced moves of the plan (`genesis_prime/game/spell_plan` `ForcedMove`,
+//// `genesis_prime/game/effect_kind`). Expected values come from these places:
+//// - `Spell4Effects.effectType.3`: a type 3 row names its move kind in dataBits00 and
+////   the minimum and maximum distance in metres in dataBits01 and dataBits02, each a
+////   32-bit float; the kit's one row is 67776 (Gate's blink: kind 0, 20 to 20 m, delay
+////   200 ms, phaseFlags 1, aimed at the caster, 0x41A00000 being 20.0), from
+////   `table_rows -- Spell4Effects 67776`, and its spell 34355 also holds 67777.
+//// - `Spell4Effects.effectType.3.player`: the client moves its own unit for a row aimed
+////   at the caster, so the plan reads those rows and leaves out one aimed only at
+////   others, which the server's 0x638 would carry (the next step).
+//// - `Spell4Effects.targetFlags`: bit 1 is the caster, 2 the primary target, 4 the
+////   area.
+//// - The table columns are signed 32-bit integers (`game_table.column_type`), so a
+////   float's bits above 0x7FFFFFFF arrive negative.
+//// - IEEE 754 binary32: 0x7F800000 is +infinity and 0x7FC00000 a number that is not one;
+////   2.5 is 0x40200000.
+
+import client_tables
+import genesis_prime/game/effect_kind
+import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/spell_plan.{
+  type Spell as PlannedSpell, Always, GatedOnCaster, GatedOnTarget,
+}
+import genesis_prime/game/spend
+import genesis_prime/game/unit_properties.{Modifier}
+import genesis_prime/table/id.{
+  PrerequisiteId, Spell4BaseId, Spell4EffectsId, UnitProperty2Id,
+}
+import genesis_prime/table/spell4_effects
+import gleam/list
+import gleam/option.{None}
+import owned_test
+import planted_table.{type Cell, Integer}
+import spell_tables
+import unitest
+
+/// Telekinetic Strike's Spell4 and base, whose tree the planted rows hold
+/// (`spell_tables`).
+const strike = 32_893
+
+const strike_base = 19_102
+
+/// 20.0 as the client's row holds it (`table_rows -- Spell4Effects 67776`).
+const twenty_metres = 1_101_004_800
+
+/// 2.5 as a 32-bit float's bits.
+const two_and_a_half_metres = 1_075_838_976
+
+/// A type 3 row of a planted spell aimed by `target_flags`, in every phase, as Gate's
+/// 67776 is but for its phase, with these columns beside its id, spell and type.
+fn forced_move_row(
+  id id: Int,
+  target_flags target_flags: Int,
+  columns columns: List(#(String, Cell)),
+) -> List(Cell) {
+  let defaults = [
+    #("ID", Integer(id)),
+    #("spellId", Integer(strike)),
+    #("effectType", Integer(3)),
+    #("targetFlags", Integer(target_flags)),
+    #("phaseFlags", Integer(-1)),
+    #("orderIndex", Integer(9)),
+    #("dataBits00", Integer(0)),
+    #("dataBits01", Integer(twenty_metres)),
+    #("dataBits02", Integer(twenty_metres)),
+  ]
+  planted_table.row(
+    spell4_effects.schema,
+    list.append(
+      list.filter(defaults, fn(default) {
+        !list.any(columns, fn(given) { given.0 == default.0 })
+      }),
+      columns,
+    ),
+  )
+}
+
+fn planned(
+  rows rows: spell_tables.Rows,
+) -> Result(PlannedSpell, spell_plan.PlanError) {
+  spell_tables.with_loaded(rows:, body: fn(tables) {
+    case spell_plan.build(tables:) {
+      Ok(plans) -> {
+        let assert Ok(spell) =
+          spell_plan.in_plans(plans:, base: Spell4BaseId(strike_base))
+          as "the plans hold Telekinetic Strike"
+        Ok(spell)
+      }
+      Error(error) -> Error(error)
+    }
+  })
+}
+
+fn with_row(row row: List(Cell)) -> spell_tables.Rows {
+  let rows = spell_tables.rows()
+  spell_tables.Rows(
+    ..rows,
+    spell4_effects: spell_tables.sorted_by_id([row, ..rows.spell4_effects]),
+  )
+}
+
+fn forced_moves_of(row row: List(Cell)) -> List(spell_plan.ForcedMove) {
+  let assert Ok(spell) = planned(rows: with_row(row:))
+  spell.forced_moves
+}
+
+fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
+  let assert Error(error) = planned(rows: with_row(row:)) as "the build fails"
+  error
+}
+
+// ---- the rows of the plan ----
+
+pub fn gates_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 67776 as the client holds it: kind 0, 20.0 to 20.0, delay 200, phase flags 1.
+  assert forced_moves_of(
+      row: forced_move_row(id: 67_776, target_flags: 1, columns: [
+        #("delayTime", Integer(200)),
+        #("phaseFlags", Integer(1)),
+      ]),
+    )
+    == [
+      spell_plan.ForcedMove(
+        effect_id: Spell4EffectsId(67_776),
+        phase_flags: 1,
+        kind: 0,
+        minimum_distance_metres: 20.0,
+        maximum_distance_metres: 20.0,
+        delay_ms: 200,
+        condition: Always,
+        tag: spend.EqualTo(value: 0),
+      ),
+    ]
+    as "0x41A00000 is 20.0; the row's emmComparison 0 and emmValue 0 are the tag"
+}
+
+pub fn a_row_of_another_kind_and_a_range_of_distances_is_read_as_it_is_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kind 4 (away, over time) with 2.5 to 20.0 m.
+  let assert [row] =
+    forced_moves_of(
+      row: forced_move_row(id: 99_060, target_flags: 1, columns: [
+        #("dataBits00", Integer(4)),
+        #("dataBits01", Integer(two_and_a_half_metres)),
+      ]),
+    )
+  assert row.kind == 4
+  assert row.minimum_distance_metres == 2.5
+  assert row.maximum_distance_metres == 20.0
+}
+
+pub fn a_row_aimed_only_at_other_units_is_not_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The next step moves them by 0x638: 2 the primary target, 4 the area, 6 both.
+  list.each([2, 4, 6], fn(flags) {
+    assert forced_moves_of(
+        row: forced_move_row(id: 99_061, target_flags: flags, columns: []),
+      )
+      == []
+      as "a row aimed only at others is left out of the plan"
+  })
+}
+
+pub fn a_row_aimed_at_the_caster_and_others_is_read_for_the_caster_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 3, 5 and 7 include the caster: its part is read, the rest is not applied.
+  list.each([3, 5, 7], fn(flags) {
+    let assert [row] =
+      forced_moves_of(
+        row: forced_move_row(id: 99_062, target_flags: flags, columns: []),
+      )
+    assert row.effect_id == Spell4EffectsId(99_062)
+  })
+}
+
+pub fn a_distance_that_is_an_infinity_or_not_a_number_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x7F800000 is +infinity and 0x7FC00000 a NaN.
+  assert plan_error(
+      row: forced_move_row(id: 99_063, target_flags: 1, columns: [
+        #("dataBits01", Integer(2_139_095_040)),
+      ]),
+    )
+    == spell_plan.ForcedMoveDistanceNotFinite(
+      spell4_id: strike,
+      effect_id: 99_063,
+      column: "dataBits01",
+    )
+  assert plan_error(
+      row: forced_move_row(id: 99_064, target_flags: 1, columns: [
+        #("dataBits02", Integer(2_143_289_344)),
+      ]),
+    )
+    == spell_plan.ForcedMoveDistanceNotFinite(
+      spell4_id: strike,
+      effect_id: 99_064,
+      column: "dataBits02",
+    )
+}
+
+pub fn a_row_behind_a_caster_prerequisite_is_gated_on_the_caster_and_behind_a_target_one_is_not_applied_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert [caster] =
+    forced_moves_of(
+      row: forced_move_row(id: 99_065, target_flags: 1, columns: [
+        #("prerequisiteIdCasterApply", Integer(17_302)),
+      ]),
+    )
+  let assert GatedOnCaster(gates: [_]) = caster.condition
+  let assert [target] =
+    forced_moves_of(
+      row: forced_move_row(id: 99_066, target_flags: 1, columns: [
+        #("prerequisiteIdTargetApply", Integer(5)),
+      ]),
+    )
+  assert target.condition == GatedOnTarget(prerequisite_id: PrerequisiteId(5))
+}
+
+pub fn the_rows_of_a_phase_are_those_whose_phase_flags_name_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // phaseFlags bit n is phase n (`Spell4Effects.phaseFlags`).
+  let assert Ok(spell) =
+    planned(
+      rows: with_row(
+        row: forced_move_row(id: 99_067, target_flags: 1, columns: [
+          #("phaseFlags", Integer(2)),
+        ]),
+      ),
+    )
+  assert spell_plan.forced_moves_in_phase(spell:, phase: 0, spent: None) == []
+  assert list.length(spell_plan.forced_moves_in_phase(
+      spell:,
+      phase: 1,
+      spent: None,
+    ))
+    == 1
+}
+
+// ---- the effect kind ----
+
+pub fn type_3_is_read_for_the_rows_that_include_the_caster_only_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert effect_kind.kind_of(effect_type: 3) == effect_kind.ForcedMove
+  assert effect_kind.is_read(effect_type: 3)
+  list.each([1, 3, 5, 7], fn(flags) {
+    assert effect_kind.is_row_read(effect_type: 3, target_flags: flags)
+      as "bit 1 of targetFlags is the caster"
+  })
+  list.each([2, 4, 6], fn(flags) {
+    assert !effect_kind.is_row_read(effect_type: 3, target_flags: flags)
+      as "a row aimed only at others is the next step's"
+  })
+  assert effect_kind.is_row_read(effect_type: 11, target_flags: 1)
+    && !effect_kind.is_row_read(effect_type: 11, target_flags: 2)
+    as "type 11 keeps its own reading"
+  assert !effect_kind.is_row_read(effect_type: 14, target_flags: 1)
+    as "an unread type stays unread"
+}
+
+// ---- the client's own rows ----
+
+pub fn gates_two_caster_rows_are_read_from_the_clients_tables_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let plans = spell_plan.plans(tables: client_tables.shared())
+  // Gate, 20325, whose own spell 34355 holds 67776 and 67777.
+  let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
+  assert gate.forced_moves
+    == [
+      spell_plan.ForcedMove(
+        effect_id: Spell4EffectsId(67_776),
+        phase_flags: 1,
+        kind: 0,
+        minimum_distance_metres: 20.0,
+        maximum_distance_metres: 20.0,
+        delay_ms: 200,
+        condition: Always,
+        tag: spend.EqualTo(value: 0),
+      ),
+    ]
+  let assert [falling] = gate.modifiers
+  assert falling.effect_id == Spell4EffectsId(67_777)
+  assert falling.modifier
+    == Modifier(
+      property: UnitProperty2Id(134),
+      mode: 3,
+      multiplier: 0.0,
+      flat: 0.0,
+      per_level: 0.0,
+    )
+  assert falling.row
+    == LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False)
+}
