@@ -32,6 +32,7 @@ import ask_support
 import cast_support
 import character_support
 import character_tables
+import client_tables
 import connection_rule_support as support
 import content_support
 import event_wait
@@ -64,6 +65,7 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
+import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags
@@ -78,6 +80,7 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed
+import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat_change
@@ -1737,6 +1740,73 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
     ),
   ] = game_client.casts_in(frames: own)
     as "the server goes on: the second player's own hold of Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631), is answered with its own 0x7ff, unit 2 casting"
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let started =
+    login_support.start_with(change: fn(settings) {
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..settings.game,
+          settings: connection_state.Settings(
+            ..settings.game.settings,
+            tables: client_tables.shared(),
+          ),
+        ),
+      )
+    })
+  let TwoEntered(first:, second:, second_have:, ..) =
+    two_players_enter(started:, first_class: 2)
+  // Mode: Eradicate is the Engineer's innate, after its three abilities in the bag
+  // (`Class` 2 spell4IdInnateAbilityActive00 47866).
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index: 3,
+    target: 0,
+  )
+  let is_suit = fn(frame: Frame) { frame.message_id == 0x0933 }
+  let #(suited, second_have) =
+    game_client.read_until(
+      game: second,
+      have: second_have,
+      within_ms: 5000,
+      found: fn(frames) { list.any(frames, is_suit) },
+    )
+  let assert [suit] = list.filter(suited, is_suit)
+    as "the watcher's client is written one 0x933 when the suit goes on"
+  assert unit_item_visuals_changed.decode(suit.body)
+    == Ok(
+      UnitItemVisualsChanged(unit_id: 1, item_visuals: [
+        ItemVisual(slot: 64, display_id: 7221, item_color_set_id: 0, dye: 0),
+      ]),
+    )
+    as "opcode.0x933: unit 1 in slot 64 with ItemDisplay 7221, the Dominion Engineer's suit (112543 and 178142 of Spell4 47860)"
+  game_client.close(game: first)
+  let #(after, second_have) =
+    game_client.read_until(
+      game: second,
+      have: second_have,
+      within_ms: 5000,
+      found: fn(frames) {
+        list.any(frames, fn(frame) { frame.message_id == 0x0355 })
+      },
+    )
+  assert list.any(after, fn(frame) {
+    frame.message_id == 0x0355
+    && unit_destroyed.decode(frame.body)
+    == Ok(unit_destroyed.UnitDestroyed(unit_id: 1, field_2: 0))
+  })
+    as "opcode.0x355: the map removes the suited unit when its connection ended"
+  let #(rest, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  assert list.filter(list.append(after, rest), is_suit) == []
+    as "no 0x933 follows the end of the suited player's connection, the restore included: its unit is gone"
   game_client.close(game: second)
   login_support.stop(started)
 }
