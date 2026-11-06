@@ -2,18 +2,18 @@
 //// property modifiers of its own spells that change the value for their time. The
 //// connection keeps one `Properties` for its player (genesis_prime/game/world_entry
 //// `Entered`), applies and removes a modifier when the cast rule says so
-//// (genesis_prime/game/cast `PropertyStarts`, `PropertyEnds`), tells the player's
+//// (genesis_prime/game/cast `CasterChangeStarts`, `CasterChangeEnds`), tells the player's
 //// client and its viewers the entries that changed (0x93a), and hands each rule the
 //// value it reads. The module is pure.
 ////
 //// ```
 //// cast rule                connection                         clients
 ////  go + delay
-////    PropertyStarts ─────▶ apply(source, modifier) ─────────▶ 0x93a to the player,
+////    CasterChangeStarts ─────▶ apply(source, modifier) ─────────▶ 0x93a to the player,
 ////                            changed entries                   PropertiesChanged to viewers
 ////                            a maximum or a regeneration ───▶ player_life takes the new numbers
 ////  go + delay + duration, a node taken off, the caster dies
-////    PropertyEnds ───────▶ remove(source) ──────────────────▶ 0x93a, PropertiesChanged
+////    CasterChangeEnds ───────▶ remove(source) ──────────────────▶ 0x93a, PropertiesChanged
 ////
 //// strike, damage, defence, regeneration ◀── value(property)
 //// ```
@@ -32,14 +32,36 @@
 ////   client has no value for it, and the mode of a row (dataBits01) does not change the
 ////   formula. A retail 0x93a recording of Swiftness 10663 with Sprint 1921 on
 ////   MoveSpeedMultiplier would settle it (`Spell4Effects.effectType.11.change`).
+//// - **A conversion adds a share of one property to another.** A UnitPropertyConversion
+////   row makes property `to` gain `share` times the value of property `from`
+////   (`Spell4Effects.effectType.145`). The client works out no property, so the server
+////   works out the amount. This is the server's choice, with its gap: values are worked out
+////   from the bases in two passes after any start or end, first each change in the order
+////   it started, then each conversion in the order it started, each adding its share of the
+////   source's value as the values stand at that point, so a conversion sees a change that
+////   started after it and a pair of conversions runs once each with no loop. A chain does
+////   not settle: a conversion into another conversion's source that started later is not
+////   seen by the earlier one (row 228153, 34 into 47, started after row 229304, 47 into 60,
+////   leaves 60 as 47 stood before it; no level-1 tree holds 228153's spell 87367). Whether
+////   the source is the property's base or its value, when the share is recomputed and how
+////   the rows' orderIndex orders conversions are not read; a retail 0x93a of an Engineer's
+////   property 60 with Critical Severity gear would settle them.
 //// - **A change reports the property's base and value** as the 0x93a carries them, for
-////   the properties whose value changed, so a modifier that leaves the value as it was
-////   reports nothing.
+////   the properties whose value changed, in property order, so a modifier that leaves the
+////   value as it was reports nothing.
 //// - **A modifier is read by a rule only for the properties the rules name.** The
 ////   constants below name them; a modifier on any other property is held and sent, and
 ////   no rule reads it (for example MoveSpeedMultiplier, 100: the client moves at it and
 ////   the server checks no speed; FallingDamageMultiplier, 134: falling damage is not
 ////   handled).
+//// - **An Interrupt Armor row is a modifier of property 44** (InterruptArmor_Threshold),
+////   x * 1.0 + its points, built by `interrupt_armor_modifier`: the client clamps the armor
+////   to this property, whose default for a player is 0.0, so the armor shows only while the
+////   property is raised, and the player's armor follows it
+////   (`Spell4Effects.effectType.52`, `opcode.0x938.interrupt_armor`). A modifier applied
+////   to a maximum of -1 (infinite) gives a finite number: a player's base is the default
+////   0.0, and a row that sets -1 (Unstoppable Force) is not kept infinite under a later
+////   change; that is a gap.
 ////
 //// What happens at each failure point:
 ////
@@ -47,7 +69,7 @@
 //// |---|---|---|---|
 //// | A modifier starts | the connection restarts from storage with the table's bases and no modifier, and the client is created again | the same source applied twice is held once | n/a |
 //// | A modifier ends | as above | the same source removed twice changes nothing the second time | removing a source that is not held changes nothing |
-//// | The caster dies | each modifier of its casts is removed by the cast rule's `PropertyEnds`, each reported | | |
+//// | The caster dies | each modifier of its casts is removed by the cast rule's `CasterChangeEnds`, each reported | | |
 //// | The caster leaves | the connection's `Entered` goes with its properties; the next entry starts from the bases | | |
 
 import genesis_prime/message/float32
@@ -61,6 +83,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/result
 
 /// BaseHealth (7): the maximum health `Unit:GetMaxHealth` reads
@@ -82,6 +105,10 @@ pub const shield_capacity_max = UnitProperty2Id(41)
 /// Armor (42): the rating the defence formulas read.
 pub const armor = UnitProperty2Id(42)
 
+/// InterruptArmor_Threshold (44): the most Interrupt Armor a unit holds, which the client
+/// clamps stat 21 to (`opcode.0x938.interrupt_armor`).
+pub const interrupt_armor_threshold = UnitProperty2Id(44)
+
 /// BaseCritChance (102): the base the critical hit chance formula takes.
 pub const base_crit_chance = UnitProperty2Id(102)
 
@@ -98,19 +125,38 @@ pub const shield_mitigation_max = UnitProperty2Id(175)
 /// ShieldTickTime (177): the milliseconds between the shield's regeneration ticks.
 pub const shield_tick_time = UnitProperty2Id(177)
 
-/// One UnitPropertyModifier row's change to one property: x becomes x * multiplier +
-/// flat + per_level * level (`Spell4Effects.effectType.11.change`: dataBits00 the
-/// property, dataBits02 the multiplier, dataBits03 the flat amount, dataBits04 the
-/// amount for each level of the unit). `mode` is the row's dataBits01, 1 to 4, named by
-/// its number because the client does not settle its meaning and the server's order of
-/// application ignores it.
+/// A change a spell's row makes to the player's properties for its time.
 pub type Modifier {
-  Modifier(
+  /// One UnitPropertyModifier row's change to one property: x becomes x * multiplier +
+  /// flat + per_level * level (`Spell4Effects.effectType.11.change`: dataBits00 the
+  /// property, dataBits02 the multiplier, dataBits03 the flat amount, dataBits04 the
+  /// amount for each level of the unit). `mode` is the row's dataBits01, 1 to 4, named by
+  /// its number because the client does not settle its meaning and the server's order of
+  /// application ignores it.
+  Change(
     property: UnitProperty2Id,
     mode: Int,
     multiplier: Float,
     flat: Float,
     per_level: Float,
+  )
+  /// One UnitPropertyConversion row (`Spell4Effects.effectType.145`): property `to`
+  /// gains `share` times the value of property `from` (dataBits01, dataBits02 and
+  /// dataBits00). The server works the amount out after every change of the properties,
+  /// as the module's doc says.
+  Conversion(from: UnitProperty2Id, to: UnitProperty2Id, share: Float)
+}
+
+/// The change a type 52 Interrupt Armor row of `points` makes to the maximum, property 44:
+/// x * 1.0 + points, a type 11 row's formula, which a plan and a player's armor share. It
+/// has no row's mode (0), which the order of application ignores.
+pub fn interrupt_armor_modifier(points points: Int) -> Modifier {
+  Change(
+    property: interrupt_armor_threshold,
+    mode: 0,
+    multiplier: 1.0,
+    flat: int.to_float(points),
+    per_level: 0.0,
   )
 }
 
@@ -158,6 +204,7 @@ const named = [
   support_rating,
   shield_capacity_max,
   armor,
+  interrupt_armor_threshold,
   base_crit_chance,
   base_avoid_reduce_chance,
   critical_hit_severity_multiplier,
@@ -277,7 +324,6 @@ pub fn apply(
   recomputed(
     properties:,
     live: list.append(properties.live, [Live(source:, modifier:)]),
-    property: modifier.property,
   )
 }
 
@@ -290,48 +336,93 @@ pub fn remove(
 ) -> #(Properties, List(Changed)) {
   case list.find(properties.live, fn(live) { live.source == source }) {
     Error(Nil) -> #(properties, [])
-    Ok(taken) ->
+    Ok(_) ->
       recomputed(
         properties:,
         live: list.filter(properties.live, fn(live) { live.source != source }),
-        property: taken.modifier.property,
       )
   }
 }
 
-/// The properties with `live` as the modifiers held and the value of `property` worked
-/// out again from its base in start order, with the entry it changed, if it did.
+/// The property a modifier changes: the one a Change is on and the one a Conversion
+/// adds to.
+pub fn changed_property(modifier modifier: Modifier) -> UnitProperty2Id {
+  case modifier {
+    Change(property:, ..) -> property
+    Conversion(to:, ..) -> to
+  }
+}
+
+/// The properties with `live` as the modifiers held and every value worked out again
+/// from the bases in two passes, with the entries whose value changed, in property
+/// order: first each Change in start order, then each Conversion in start order,
+/// which adds its share of the source's value as the values stand at that point. Only
+/// the properties a modifier held before or holds now are worked out; any other keeps its
+/// value.
 fn recomputed(
   properties properties: Properties,
   live live: List(Live),
-  property property: UnitProperty2Id,
 ) -> #(Properties, List(Changed)) {
-  let before = value(properties:, property:)
+  let touched =
+    list.append(properties.live, live)
+    |> list.map(fn(held) { changed_property(modifier: held.modifier).value })
+    |> list.unique
+    |> list.sort(int.compare)
   let level = int.to_float(properties.level)
-  let after =
-    list.fold(live, base(properties:, property:), fn(x, held) {
-      case held.modifier.property == property {
-        True ->
-          x
-          *. held.modifier.multiplier
-          +. held.modifier.flat
-          +. held.modifier.per_level
-          *. level
-        False -> x
+  let changed =
+    list.map(touched, fn(id) {
+      let property = UnitProperty2Id(id)
+      let after =
+        list.fold(live, base(properties:, property:), fn(x, held) {
+          case held.modifier {
+            Change(property: on, multiplier:, flat:, per_level:, ..)
+              if on == property
+            -> x *. multiplier +. flat +. per_level *. level
+            Change(..) | Conversion(..) -> x
+          }
+        })
+      #(id, after)
+    })
+    |> dict.from_list
+  let converted =
+    list.fold(live, changed, fn(values, held) {
+      case held.modifier {
+        Conversion(from:, to:, share:) -> {
+          let source =
+            dict.get(values, from.value)
+            |> result.lazy_unwrap(fn() { value(properties:, property: from) })
+          dict.upsert(values, to.value, fn(so_far) {
+            let assert Some(target) = so_far
+              as "a conversion's target is among the properties worked out"
+            target +. share *. source
+          })
+        }
+        Change(..) -> values
       }
     })
-  let updated =
+  let reported =
+    list.filter_map(touched, fn(id) {
+      let property = UnitProperty2Id(id)
+      let assert Ok(after) = dict.get(converted, id)
+        as "every touched property was worked out"
+      case after == value(properties:, property:) {
+        True -> Error(Nil)
+        False ->
+          Ok(Changed(
+            property:,
+            base: base(properties:, property:),
+            value: after,
+          ))
+      }
+    })
+  #(
     Properties(
       ..properties,
-      value: dict.insert(properties.value, property.value, after),
+      value: dict.merge(properties.value, converted),
       live:,
-    )
-  case after == before {
-    True -> #(updated, [])
-    False -> #(updated, [
-      Changed(property:, base: base(properties:, property:), value: after),
-    ])
-  }
+    ),
+    reported,
+  )
 }
 
 /// The 0x93a entries for the changed properties, base and value as the client holds
@@ -355,7 +446,9 @@ pub fn overlay(
   properties properties: Properties,
 ) -> List(UnitProperty) {
   let held =
-    list.map(properties.live, fn(live) { live.modifier.property })
+    list.map(properties.live, fn(live) {
+      changed_property(modifier: live.modifier)
+    })
     |> list.unique
   let current =
     entries(

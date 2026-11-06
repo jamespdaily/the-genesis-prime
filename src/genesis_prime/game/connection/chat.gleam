@@ -23,7 +23,7 @@
 ////   line.
 ////
 //// ```
-//// InWorld ─ !summon id ─▶ 0x1c2, AskMapRun(Summon) ─▶ Summoning ─ answer ─▶ InWorld
+//// InWorld ─ !summon id [level] ─▶ 0x1c2, AskMapRun(Summon) ─▶ Summoning ─ answer ─▶ InWorld
 ////                                                               Summoned: nothing
 ////                                                               otherwise: one System line
 //// ```
@@ -52,7 +52,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/set
 
 /// What the chat messages do, taken from inside 0x038C, in the world
@@ -79,11 +79,11 @@ pub fn chat_message(
   {
     Ok(#(updated, effects)) ->
       case list.reverse(effects) {
-        [chat.AskSummon(creature2_id:), ..before] -> {
+        [chat.AskSummon(creature2_id:, level:), ..before] -> {
           let session = with_chat(session:, chat: updated)
           let #(session, written) =
             chat_effects(session:, effects: list.reverse(before))
-          summoning(session:, now:, creature2_id:, before: written)
+          summoning(session:, now:, creature2_id:, level:, before: written)
         }
         _ -> carry_chat(session: with_chat(session:, chat: updated), effects:)
       }
@@ -102,6 +102,7 @@ fn summoning(
   session session: Session,
   now now: Now,
   creature2_id creature2_id: Creature2Id,
+  level level: Option(Int),
   before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   case session.status {
@@ -115,6 +116,7 @@ fn summoning(
           message: map.Summon(
             connection: client_connection.connection(session.link),
             creature_id: creature2_id,
+            level:,
           ),
         ),
         before:,

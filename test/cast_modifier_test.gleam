@@ -1,5 +1,5 @@
-//// The cast rule's property modifiers (`genesis_prime/game/cast` `PropertyStarts`,
-//// `PropertyEnds`). Expected values come from these places:
+//// The cast rule's property modifiers (`genesis_prime/game/cast` `CasterChangeStarts`,
+//// `CasterChangeEnds`). Expected values come from these places:
 //// - `Spell4Effects.effectType.11.change`: a type 11 row applies at its go plus its
 ////   delayTime for its durationTime; the kit's two rows are 135954 (BaseCritChance,
 ////   multiplier 1.0, flat 0.08, no delay, 8000 ms, every phase) and 67777
@@ -19,13 +19,14 @@ import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{
-  type Modifier, type Source, Modifier, Source,
+  type Modifier, type Source, Change, Source,
 }
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import owned_test
 
 /// 135954 as the client holds it: BaseCritChance, multiplier 1.0, flat 0.08, 8000 ms.
@@ -33,15 +34,16 @@ fn crit_row() -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(135_954),
     phase_flags: -1,
-    modifier: crit_modifier(),
+    change: spell_plan.PropertyChange(crit_modifier()),
     row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
     condition: Always,
     tag: spend.always,
+    armor: None,
   )
 }
 
 fn crit_modifier() -> Modifier {
-  Modifier(
+  Change(
     property: UnitProperty2Id(102),
     mode: 3,
     multiplier: 1.0,
@@ -56,16 +58,17 @@ fn falling_row() -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(67_777),
     phase_flags: 1,
-    modifier: Modifier(
+    change: spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,
       flat: 0.0,
       per_level: 0.0,
-    ),
+    )),
     row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
     condition: Always,
     tag: spend.always,
+    armor: None,
   )
 }
 
@@ -114,8 +117,11 @@ type Change {
 
 fn change_of(effect effect: Effect) -> Result(Change, Nil) {
   case effect {
-    cast.PropertyStarts(source:, modifier:) -> Ok(Started(source:, modifier:))
-    cast.PropertyEnds(source:) -> Ok(Ended(source:))
+    cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
+      Ok(Started(source:, modifier:))
+    cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..) -> Error(Nil)
+    cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
+    cast.CasterChangeEnds(source:) -> Ok(Ended(source:))
     cast.Send(..)
     | cast.Tell(..)
     | cast.StartTimer(..)

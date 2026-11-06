@@ -390,7 +390,8 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               | client_connection.CrowdControlEnded(..)
               | client_connection.InterruptArmor(..)
               | client_connection.PropertiesChanged(..)
-              | client_connection.Stealth(..) -> "other"
+              | client_connection.Stealth(..)
+              | client_connection.LookChanged(..) -> "other"
             })
           False -> Error(Nil)
         }
@@ -652,8 +653,8 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
         | cast.Strike(..)
         | cast.Pay(..)
         | cast.Gain(..)
-        | cast.PropertyStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeStarts(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> False
       }
     })

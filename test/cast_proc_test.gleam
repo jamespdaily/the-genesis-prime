@@ -211,8 +211,8 @@ fn trace(
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..) -> []
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..) -> []
     }
   })
 }
@@ -266,8 +266,8 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast.Log(..)
     | cast.Pay(..)
     | cast.Gain(..)
-    | cast.PropertyStarts(..)
-    | cast.PropertyEnds(..)
+    | cast.CasterChangeStarts(..)
+    | cast.CasterChangeEnds(..)
     | cast.StealthChanged(..) -> False
   }
 }
@@ -478,7 +478,10 @@ fn property_starts(
 ) -> List(#(unit_properties.Source, unit_properties.Modifier)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.PropertyStarts(source:, modifier:) -> Ok(#(source, modifier))
+      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
+        Ok(#(source, modifier))
+      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..) -> Error(Nil)
+      cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
       cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -487,7 +490,7 @@ fn property_starts(
       | cast.Strike(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -499,7 +502,7 @@ fn modifier(
   multiplier multiplier: Float,
   flat flat: Float,
 ) -> unit_properties.Modifier {
-  unit_properties.Modifier(
+  unit_properties.Change(
     property: UnitProperty2Id(property),
     mode:,
     multiplier:,
@@ -538,7 +541,10 @@ pub fn leaving_stealth_by_the_second_press_casts_60769_then_79932_and_empower_la
     property_starts(effects:)
     |> list.map(fn(start) { start.1 })
     |> list.sort(fn(first, second) {
-      int.compare(first.property.value, second.property.value)
+      int.compare(
+        unit_properties.changed_property(modifier: first).value,
+        unit_properties.changed_property(modifier: second).value,
+      )
     })
   assert starts
     == [
@@ -571,16 +577,18 @@ pub fn leaving_stealth_by_the_second_press_casts_60769_then_79932_and_empower_la
   let #(_, early) =
     support.run_timers_until(state:, effects:, from_ms: 3000, until_ms: 5999)
   assert list.all(early, fn(step) {
-    support.property_ends(effects: step.1) == []
+    support.caster_change_ends(effects: step.1) == []
   })
     as "nothing ends before the 3000 ms"
   let #(_, later) = support.run_timers(state:, effects:, from_ms: 3000)
   let ended =
-    list.filter(later, fn(step) { support.property_ends(effects: step.1) != [] })
+    list.filter(later, fn(step) {
+      support.caster_change_ends(effects: step.1) != []
+    })
   assert list.unique(list.map(ended, fn(step) { step.0 })) == [6000]
     as "Spell4.79932: durationTime 3000 after the go at 3000"
   let ending = list.flat_map(ended, fn(step) { step.1 })
-  assert list.map(support.property_ends(effects: ending), fn(source) {
+  assert list.map(support.caster_change_ends(effects: ending), fn(source) {
       source.effect_id.value
     })
     |> list.sort(int.compare)

@@ -753,13 +753,14 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
         character: game_connection_support.world_character(),
         place: start,
         stay: map_support.stay(count: 2),
+        alive: True,
       ),
     )
     as "a Dominion Cassian in World 3460: the Novice start's row 51596 is that world's start of its race and faction"
   let #(state, taken) = game_connection_support.at_the_holocrypt()
   assert game_connection_support.written_ids(taken)
-    == game_client.world_entry_ids
-    as "the entry burst, 0xAD first: the client removes every unit and loads again (0x1403b6de0)"
+    == game_client.holocrypt_entry_ids()
+    as "the entry burst, 0xAD first: the client removes every unit and loads again (0x1403b6de0); no 0x25E, which the client's same game object already holds (opcode.0x25e.entry_order)"
   let assert [entered] =
     game_connection_support.decoded(
       game_connection_support.heard(taken, game_connection_support.keyed()),
@@ -845,7 +846,7 @@ pub fn what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_
     && support.logs_of(step: burst, level: LogError) == []
     as "nothing the client may send while dead ends the connection"
   assert game_connection_support.written_ids(burst)
-    == game_client.world_entry_ids
+    == game_client.holocrypt_entry_ids()
     && game_connection_support.moves_told(burst) == []
     as "the ghost's move is dropped, as every 0x637 while dead: the body stands at the Holocrypt"
   assert list.length(support.logs_of(step: burst, level: LogWarning)) == 1
@@ -907,6 +908,7 @@ pub fn the_holocrypt_of_a_world_with_no_start_of_the_race_and_faction_is_the_pla
         character: game_connection_support.world_character(),
         place: game_connection_support.entry_place(),
         stay: map_support.stay(count: 2),
+        alive: True,
       ),
     )
 }
@@ -1071,6 +1073,7 @@ const dead_entry_ids = [
   0x00AD,
   0x0262,
   0x019B,
+  0x025E,
   0x0111,
   0x0111,
   0x0111,
@@ -1353,8 +1356,8 @@ pub fn a_player_that_entered_dead_chooses_the_holocrypt_and_joins_there_alive_an
     as "then the run of the map is asked to take the player out"
   let #(_, taken) = game_connection_support.at_the_holocrypt_from(dead:)
   assert game_connection_support.written_ids(taken)
-    == game_client.world_entry_ids
-    as "the join at the Holocrypt place is a living entry: no ghost, no 0x1b3"
+    == game_client.holocrypt_entry_ids()
+    as "the join at the Holocrypt place is a living entry: no ghost, no 0x1b3, and no second 0x25E"
   assert unit_fields.stat(
       tail: game_connection_support.player_in(taken).tail,
       stat_id: 0,
@@ -1410,4 +1413,101 @@ pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never
     )
     == Ok(game_connection_support.full_health)
     as "at full health"
+}
+
+// ------------------------------------------- the map is told the life (issue 496)
+//
+// What the connection tells its map when its player dies or wakes: a tell to the run of
+// the player's map, for the player's connection (`world_map/map` `LifeChanged`), so the map
+// keeps a dead player out of every creature's ring. A server choice (the Design of issue
+// 496, section 2): the client holds no creature rule. The order is one sender's: the death's
+// tell goes before the `StealthChanged(False)` that a death ends a stealthed player's casts
+// with (`cast.died` tells the stealth last), and a waking's goes after its frames and news.
+
+pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths_end_and_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    game_connection_support.stealthed_medic_in(
+      tables: character_tables.shared_with_kept_stealth(),
+    )
+  let #(state, killed) = game_connection_support.killed(state)
+  assert game_connection_support.told_the_map(killed)
+    == [
+      game_connection_support.map_tell(
+        request: client_connection.TellLifeChanged(
+          connection: ConnectionId(1),
+          alive: False,
+        ),
+      ),
+      game_connection_support.map_tell(
+        request: client_connection.TellStealthChanged(
+          connection: ConnectionId(1),
+          stealthed: False,
+        ),
+      ),
+    ]
+    as "the death tells the map False before the stealth's end that the casts' end tells last (cast.died)"
+  let #(_, refused) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.a_beast_strike(
+        game_connection_support.own_unit_id,
+      ),
+    )
+  assert game_connection_support.told_the_map(refused) == []
+    as "a second strike is refused Dead: the player died once, so the map is told once"
+}
+
+pub fn wake_here_tells_the_map_life_changed_true_after_the_coming_backs_frames_and_the_holocrypt_tells_only_its_leave_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = game_connection_support.dead_in_world()
+  let #(_, woke) =
+    game_connection_support.read(state, game_connection_support.wake_here())
+  assert game_connection_support.told_the_map(woke)
+    == [
+      game_connection_support.map_tell(
+        request: client_connection.TellLifeChanged(
+          connection: ConnectionId(1),
+          alive: True,
+        ),
+      ),
+    ]
+    as "Wake Here tells the map True once"
+  assert game_connection_support.writes_or_viewer_tells_after_the_map_tell(
+      taken: woke,
+    )
+    == []
+    as "after the coming back's frames and the viewers' news: the tell is the last effect"
+  let #(_, chosen) = game_connection_support.holocrypt_chosen()
+  assert game_connection_support.told_the_map(chosen) == []
+    as "the Holocrypt tells the map no life: the Leave follows at once"
+  assert game_connection_support.ask_request(chosen)
+    == game_connection_support.leave_asked()
+    as "it asks the map for the Leave, which removes the player with its life copy"
+}
+
+pub fn an_entry_at_a_saved_health_of_0_joins_its_map_dead_and_any_other_entry_and_the_holocrypts_join_alive_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let join_of = fn(saved_health) {
+    let #(_, joining) =
+      game_connection_support.joining_saved(
+        in_character_select: game_connection_support.in_select(),
+        character: game_connection_support.world_character(),
+        saved_health:,
+      )
+    let assert AskMap(message: Join(alive:, ..), ..) =
+      game_connection_support.ask_request(joining)
+      as "the entry asks the map to take the player"
+    alive
+  }
+  assert join_of(Some(0)) == False
+    as "death.enter_dead: a player saved at health 0 enters dead"
+  assert join_of(Some(500)) == True && join_of(None) == True
+    as "a player saved above 0, or never saved, enters alive"
+  let #(_, joining) = game_connection_support.holocrypt_joining()
+  let assert AskMap(message: Join(alive:, ..), ..) =
+    game_connection_support.ask_request(joining)
+    as "the Holocrypt joins the map again"
+  assert alive == True
+    as "the Holocrypt comes back as Wake Here first: it joins alive"
 }

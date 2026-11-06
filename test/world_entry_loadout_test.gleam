@@ -30,6 +30,7 @@
 //// - The shield on entry is full (stat 20 equal to property 41): a server
 ////   choice, the client holding no shield rule (`regen.client`).
 
+import cast_support
 import character_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/world_entry
@@ -41,16 +42,14 @@ import genesis_prime/message/float32
 import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
-import genesis_prime/store.{type Character, Character, CharacterId, NameStands}
-import genesis_prime/table/id.{ClassId, Item2Id, RaceId, Spell4BaseId}
+import genesis_prime/store.{type Character}
+import genesis_prime/table/id.{Item2Id, Spell4BaseId}
 import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
 import novice_tables
 import owned_test
-import place_support
 import world_entry_support
 
 /// A class's id, its armor and its three Spell4Base ids (the SpellLevel rows of
@@ -76,33 +75,6 @@ fn classes() -> List(Class) {
   ]
 }
 
-fn character(
-  class class: Int,
-  faction faction: Int,
-  level level: Int,
-) -> Character {
-  Character(
-    character_id: CharacterId(42),
-    name: "Ab Cd",
-    gender: 0,
-    race_id: RaceId(1),
-    class_id: ClassId(class),
-    faction_id: faction,
-    level:,
-    path: 3,
-    place: Some(place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 29.0,
-      y: -853.0,
-      z: -560.0,
-    )),
-    look: [],
-    bones: [],
-    naming: NameStands,
-  )
-}
-
 /// What a character's entry sends and keeps: the entry's frames, in order, and
 /// the player the connection keeps.
 fn entering(
@@ -117,12 +89,10 @@ fn entering(
 /// the order sent.
 fn equipped(frames frames: List(Frame)) -> List(#(Int, Int)) {
   items_added(frames:)
-  |> list.filter(fn(added) { added.item.location == 0 })
-  |> list.map(fn(added) { #(added.item.bag_index, added.item.item_id) })
-}
-
-fn ids(frames frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
+  |> list.filter(fn(added) { added.held_item.item.location == 0 })
+  |> list.map(fn(added) {
+    #(added.held_item.item.bag_index, added.held_item.item.item_id)
+  })
 }
 
 /// The 0x111 frames of an entry, decoded, in order.
@@ -151,22 +121,28 @@ fn player_of(frames frames: List(Frame)) -> UnitCreatePlayer {
 pub fn the_novice_weapon_is_sent_as_an_item_at_location_0_index_16_before_the_abilities_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(frames, _) =
-    entering(character: character(class: 2, faction: 166, level: 1))
+    entering(character: world_entry_support.character(
+      class: 2,
+      faction: 166,
+      level: 1,
+    ))
   let items = items_added(frames:)
-  assert list.map(items, fn(added) { added.item.location })
+  assert list.map(items, fn(added) { added.held_item.item.location })
     == [0, 0, 0, 0, 0, 0, 0, 4, 4, 4]
     as "the equipped items come before the abilities: seven at location 0, then three at location 4"
   let assert [weapon] =
     list.filter(items, fn(added) {
-      added.item.location == 0 && added.item.bag_index == 16
+      added.held_item.item.location == 0 && added.held_item.item.bag_index == 16
     })
     as "one item is equipped in slot 16"
-  let abilities = list.filter(items, fn(added) { added.item.location == 4 })
-  assert weapon.item.location == 0 && weapon.item.bag_index == 16
+  let abilities =
+    list.filter(items, fn(added) { added.held_item.item.location == 4 })
+  assert weapon.held_item.item.location == 0
+    && weapon.held_item.item.bag_index == 16
     as "0x1403afb10: the cast check looks up location 0, index 16; lua.ActionBarFrame.InitializeBars: slot 16 holds the weapon"
-  assert weapon.item.item_id == 81_353
+  assert weapon.held_item.item.item_id == 81_353
     as "CharacterCreation row 479, the Engineer of faction 166: itemId04 is the weapon 81353"
-  assert list.all(abilities, fn(added) { added.item.location == 4 })
+  assert list.all(abilities, fn(added) { added.held_item.item.location == 4 })
     as "opcode.0x111.ability_bag: an ability's item is at location 4"
   assert list.length(abilities) == 3 as "SpellLevel: three abilities at level 1"
 }
@@ -175,20 +151,25 @@ pub fn an_item_for_each_ability_at_location_4_holds_the_spell4_base_id_of_each_l
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
-      entering(character: character(class: class.id, faction: 166, level: 1))
+      entering(character: world_entry_support.character(
+        class: class.id,
+        faction: 166,
+        level: 1,
+      ))
     let abilities =
       items_added(frames:)
-      |> list.filter(fn(added) { added.item.location == 4 })
-    assert list.map(abilities, fn(added) { added.item.item_id })
+      |> list.filter(fn(added) { added.held_item.item.location == 4 })
+    assert list.map(abilities, fn(added) { added.held_item.item.item_id })
       == class.abilities
       as {
         "SpellLevel.spell4Id: class "
         <> int.to_string(class.id)
         <> " has three level-1 spells, whose Spell4Base ids are these"
       }
-    assert list.map(abilities, fn(added) { added.item.bag_index }) == [0, 1, 2]
+    assert list.map(abilities, fn(added) { added.held_item.item.bag_index })
+      == [0, 1, 2]
       as "opcode.0x111.ability_bag: the bag index is the slot a press names, from 0"
-    assert list.all(abilities, fn(added) { added.reason == 49 })
+    assert list.all(abilities, fn(added) { added.held_item.reason == 49 })
       as "opcode.0x111.ability_bag: reason 49 adds the item without raising the ability book's change"
   })
 }
@@ -198,14 +179,19 @@ pub fn the_weapon_is_the_classes_and_factions_item_04_for_every_class_and_factio
   list.each(classes(), fn(class) {
     list.each([167, 166], fn(faction) {
       let #(frames, _) =
-        entering(character: character(class: class.id, faction:, level: 1))
+        entering(character: world_entry_support.character(
+          class: class.id,
+          faction:,
+          level: 1,
+        ))
       let assert [weapon] =
         items_added(frames:)
         |> list.filter(fn(added) {
-          added.item.location == 0 && added.item.bag_index == 16
+          added.held_item.item.location == 0
+          && added.held_item.item.bag_index == 16
         })
         as "the entry sends the weapon in slot 16"
-      assert weapon.item.item_id
+      assert weapon.held_item.item.item_id
         == case faction {
           167 -> class.weapon_167
           _ -> class.weapon_166
@@ -219,7 +205,11 @@ pub fn one_0x1a0_sets_tier_1_of_each_ability_in_action_sets_0_to_3_test() -> Nil
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
-      entering(character: character(class: class.id, faction: 166, level: 1))
+      entering(character: world_entry_support.character(
+        class: class.id,
+        faction: 166,
+        level: 1,
+      ))
     let assert Ok(tiers) =
       ability_tiers.decode({ only(frames:, message_id: 0x01A0) }.body)
       as "0x1a0 decodes"
@@ -238,7 +228,11 @@ pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
-      entering(character: character(class: class.id, faction: 166, level: 1))
+      entering(character: world_entry_support.character(
+        class: class.id,
+        faction: 166,
+        level: 1,
+      ))
     let assert Ok(set) =
       action_set.decode({ only(frames:, message_id: 0x019D) }.body)
       as "0x19d decodes"
@@ -262,12 +256,17 @@ pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_
 pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_equipped_items_first_and_the_set_last_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(frames, _) =
-    entering(character: character(class: 4, faction: 166, level: 1))
-  assert ids(frames:)
+    entering(character: world_entry_support.character(
+      class: 4,
+      faction: 166,
+      level: 1,
+    ))
+  assert cast_support.ids(frames:)
     == [
       0x00AD,
       0x0262,
       0x019B,
+      0x025E,
       0x0111,
       0x0111,
       0x0111,
@@ -315,7 +314,11 @@ pub fn property_7_and_stat_0_are_736_for_every_class_and_faction_test() -> Nil {
   list.each(classes(), fn(class) {
     list.each([167, 166], fn(faction) {
       let #(frames, _) =
-        entering(character: character(class: class.id, faction:, level: 1))
+        entering(character: world_entry_support.character(
+          class: class.id,
+          faction:,
+          level: 1,
+        ))
       let player = player_of(frames:)
       assert property_value(properties: player.tail.properties, id: 7) == 736.0
         as "player.level1_base_health: 135.97 (CreatureLevel row 1) and 600 (the Novice armor), 736; Unit:GetMaxHealth reads property 7 (0x14064a6d0)"
@@ -330,7 +333,11 @@ pub fn properties_35_and_36_are_203_0625_and_55_6875_for_every_class_and_faction
   list.each(classes(), fn(class) {
     list.each([167, 166], fn(faction) {
       let #(frames, _) =
-        entering(character: character(class: class.id, faction:, level: 1))
+        entering(character: world_entry_support.character(
+          class: class.id,
+          faction:,
+          level: 1,
+        ))
       let properties = player_of(frames:).tail.properties
       assert property_value(properties: properties, id: 35)
         == float32.rounded(203.0625)
@@ -346,7 +353,11 @@ pub fn property_42_is_250_for_heavy_200_for_medium_and_150_for_light_armor_test(
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
-      entering(character: character(class: class.id, faction: 166, level: 1))
+      entering(character: world_entry_support.character(
+        class: class.id,
+        faction: 166,
+        level: 1,
+      ))
     assert property_value(
         properties: player_of(frames:).tail.properties,
         id: 42,
@@ -360,7 +371,11 @@ pub fn property_41_is_450_and_properties_175_176_and_178_are_the_shield_items_va
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
-      entering(character: character(class: class.id, faction: 166, level: 1))
+      entering(character: world_entry_support.character(
+        class: class.id,
+        faction: 166,
+        level: 1,
+      ))
     let properties = player_of(frames:).tail.properties
     assert property_value(properties: properties, id: 41)
       == float32.rounded(450.0)
@@ -380,7 +395,11 @@ pub fn stat_20_the_current_shield_equals_property_41_at_entry_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
-      entering(character: character(class: class.id, faction: 166, level: 1))
+      entering(character: world_entry_support.character(
+        class: class.id,
+        faction: 166,
+        level: 1,
+      ))
     let player = player_of(frames:)
     assert stat(player:, id: 20) == 450
       && float.round(property_value(properties: player.tail.properties, id: 41))
@@ -392,7 +411,11 @@ pub fn stat_20_the_current_shield_equals_property_41_at_entry_test() -> Nil {
 pub fn the_unit_the_player_keeps_for_those_who_see_it_is_the_unit_it_was_sent_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(frames, entered) =
-    entering(character: character(class: 1, faction: 167, level: 1))
+    entering(character: world_entry_support.character(
+      class: 1,
+      faction: 167,
+      level: 1,
+    ))
   assert entered.unit == player_of(frames:)
     as "a player that sees another is sent the same 0x262, gear included"
 }
@@ -400,7 +423,11 @@ pub fn the_unit_the_player_keeps_for_those_who_see_it_is_the_unit_it_was_sent_te
 pub fn a_level_9_players_health_adds_the_armors_600_to_the_creature_level_rows_base_health_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(frames, _) =
-    entering(character: character(class: 4, faction: 166, level: 9))
+    entering(character: world_entry_support.character(
+      class: 4,
+      faction: 166,
+      level: 9,
+    ))
   let player = player_of(frames:)
   assert stat(player:, id: 0) == 2895
     && property_value(properties: player.tail.properties, id: 7) == 2895.0
@@ -410,7 +437,11 @@ pub fn a_level_9_players_health_adds_the_armors_600_to_the_creature_level_rows_b
 pub fn the_player_the_connection_keeps_holds_its_loadout_and_its_max_health_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, entered) =
-    entering(character: character(class: 2, faction: 166, level: 1))
+    entering(character: world_entry_support.character(
+      class: 2,
+      faction: 166,
+      level: 1,
+    ))
   assert entered.loadout.weapon == Item2Id(81_353)
     && entered.loadout.weapon_slot == 16
     && entered.loadout.abilities
@@ -426,7 +457,7 @@ pub fn the_whole_novice_set_is_held_at_location_0_in_the_bag_index_of_each_slot_
   use <- owned_test.run(10_000)
   list.each(novice_tables.sets(), fn(set) {
     let #(frames, _) =
-      entering(character: character(
+      entering(character: world_entry_support.character(
         class: set.class_id,
         faction: set.faction_id,
         level: 1,
@@ -450,9 +481,15 @@ pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
-      entering(character: character(class: class.id, faction: 167, level: 1))
+      entering(character: world_entry_support.character(
+        class: class.id,
+        faction: 167,
+        level: 1,
+      ))
     let guids =
-      list.map(items_added(frames:), fn(added) { added.item.item_guid })
+      list.map(items_added(frames:), fn(added) {
+        added.held_item.item.item_guid
+      })
     assert list.length(guids) == 10
       as "seven equipped items and three abilities"
     assert list.length(list.unique(guids)) == 10

@@ -42,6 +42,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import map_support
 import owned_test
 import place_support
@@ -104,6 +105,7 @@ fn join(run run: MapProcess, connection connection: Int) -> Int {
             z: 0.0,
           ),
           stay: map_support.stay(count: 1),
+          alive: True,
         ),
         reply,
       )
@@ -565,6 +567,7 @@ fn summon(
         map.Summon(
           connection: ConnectionId(connection),
           creature_id: Creature2Id(creature_id),
+          level: None,
         ),
         reply,
       )

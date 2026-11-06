@@ -15,6 +15,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/class_resource
+import genesis_prime/game/damage
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
@@ -88,6 +89,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     controls: [],
     stealth: [],
     remove_stealth: [],
+    shield_heals: [],
     stealth_change: spell_plan.EndsStealthAtEachGo,
     procs: [],
     cooldown_start: AtFirstGo,
@@ -230,6 +232,8 @@ pub fn caster() -> Caster {
     in_combat: False,
     life_vitals: dict.new(),
     factions: prerequisite.Factions(current: 167, base: 167),
+    stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
+    vitals: damage.Vitals(health: 0, max_health: 0, shield: 0, max_shield: 0),
   )
 }
 
@@ -304,8 +308,8 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.Strike(..)
       | cast.Gain(..)
       | cast.Log(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> []
     }
   })
@@ -323,20 +327,20 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.Strike(..)
       | cast.Pay(..)
       | cast.Log(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
 }
 
 /// The sources whose property modifier the effects end, in order.
-pub fn property_ends(
+pub fn caster_change_ends(
   effects effects: List(Effect),
 ) -> List(unit_properties.Source) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.PropertyEnds(source:) -> Ok(source)
+      cast.CasterChangeEnds(source:) -> Ok(source)
       cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -345,7 +349,7 @@ pub fn property_ends(
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.Log(..)
-      | cast.PropertyStarts(..)
+      | cast.CasterChangeStarts(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -565,8 +569,8 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -641,8 +645,8 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -660,8 +664,8 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.Strike(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -679,8 +683,8 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -698,8 +702,8 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -717,8 +721,8 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -742,7 +746,17 @@ pub fn fired_raw(
   timer timer: TimerId,
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  cast.timer_fired(cast: state, timer:, caster: caster(), now: at(ms:))
+  fired_raw_as(caster: caster(), state:, timer:, at: ms)
+}
+
+/// The same for this caster.
+pub fn fired_raw_as(
+  caster caster: Caster,
+  state state: State,
+  timer timer: TimerId,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  cast.timer_fired(cast: state, timer:, caster:, now: at(ms:))
 }
 
 /// Each `Strike` effect replaced, in place, by what `went` gives for a round that struck
@@ -853,8 +867,8 @@ pub fn answered_posed(
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
   })

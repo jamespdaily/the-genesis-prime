@@ -17,6 +17,7 @@ import genesis_prime/step.{
   StartTimer,
 }
 import gleam/list
+import gleam/option.{None, Some}
 
 /// What player_life decided, as the connection's effects: its own unit's messages
 /// to its client, its news to its viewers, the answer told to the creature, and the
@@ -60,7 +61,30 @@ pub fn life_effects(
       player_life.DamageTaken
       | player_life.CombatLeft
       | player_life.EndCasts
-      | player_life.GoToHolocrypt -> []
+      | player_life.GoToHolocrypt
+      | player_life.TellMap(..) -> []
     }
   })
+}
+
+/// The session with the player's life changed by `change`, which reads the player as it
+/// stands, and what the life decided carried out (`life_effects`). With no player held in
+/// the world (a save, a leave) the change is dropped.
+pub fn life_changed(
+  session session: Session,
+  now now: Now,
+  change change: fn(world_entry.Entered) ->
+    #(player_life.Life, List(player_life.Effect)),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case connection_state.held_in_the_world(session.status) {
+    None -> #(session, [])
+    Some(#(_, entered)) -> {
+      let #(life, effects) = change(entered)
+      let session =
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(..entered, life:)
+        })
+      #(session, life_effects(session:, now:, entered:, effects:))
+    }
+  }
 }

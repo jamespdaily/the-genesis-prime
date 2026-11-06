@@ -39,6 +39,31 @@
 ////   NotJoined        ─▶ 0x0594, character select
 ////   no answer        ─▶ 0x036A reason 8, as the camp's leave or a play's join
 ////   ```
+////
+//// - **The map is told the life** as it is decided (genesis_prime/world_map/map
+////   `LifeChanged`), once per change, from the connection's own process, so the map takes
+////   it in the order the connection decided it, after the `Join`, `Moved`, `Ready` and
+////   `StealthChanged` it sent before:
+////
+////   ```
+////   a strike leaves P at 0 ─▶ player_life `died`: the death's frames, in the client's order
+////                              TellMap(False) ─▶ Tell(map, TellLifeChanged(P, False))
+////                              EndCasts ─▶ cast.died: 0x7fe, and last StealthChanged(False) when P
+////                                          was stealthed ─▶ Tell(map, TellStealthChanged(P, False))
+////   0x15a {P, 1, 0} (Wake Here) ─▶ the coming back's frames and news
+////                              TellMap(True) ─▶ Tell(map, TellLifeChanged(P, True))
+////   0x15a {P, 2, 0} (Holocrypt) ─▶ the coming back's frames and news, GoToHolocrypt: Leave, then
+////                              the join with `alive` True; no TellLifeChanged
+////   an entry with saved health 0 ─▶ Join(.., alive: False) (`player_life.saved_dead`); no tell
+////   ```
+////
+////   - A death tells once: `died` runs only from Alive, and a strike on a dead player is
+////     refused. A Wake Here is refused while alive, so it tells once.
+////   - A connection that ends or camps while dead tells nothing: the map's watch or its
+////     `Leave` removes the player with its copy, and the next entry's `Join` names its life.
+////   - A tell the map takes after the connection's `Leave` is an error line in the map and
+////     changes nothing; the connection sends none, and a map that is not running is the
+////     tell's dropped send, as for `Moved`.
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame}
@@ -124,20 +149,11 @@ pub fn regeneration_due(
   now now: Now,
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
-  case connection_state.held_in_the_world(session.status) {
-    Some(#(_, entered)) -> {
-      let #(life, effects) = player_life.timer_fired(life: entered.life, timer:)
-      let session =
-        connection_state.with_entered(session:, change: fn(entered) {
-          world_entry.Entered(..entered, life:)
-        })
-      Continue(
-        session,
-        life_effect.life_effects(session:, now:, entered:, effects:),
-      )
-    }
-    None -> Continue(session, [])
-  }
+  let #(session, effects) =
+    life_effect.life_changed(session:, now:, change: fn(entered) {
+      player_life.timer_fired(life: entered.life, timer:)
+    })
+  Continue(session, effects)
 }
 
 /// The player's 0x15a, taken from inside 0x038C in the world
@@ -276,6 +292,19 @@ pub fn carried(
               #(session, list.append(written, more), to_the_holocrypt)
             }
             player_life.GoToHolocrypt -> #(session, written, True)
+            player_life.TellMap(alive:) -> #(
+              session,
+              list.append(written, [
+                connection_state.tells_the_map(
+                  entered:,
+                  request: client_connection.TellLifeChanged(
+                    connection: client_connection.connection(session.link),
+                    alive:,
+                  ),
+                ),
+              ]),
+              to_the_holocrypt,
+            )
             player_life.ToClient(..)
             | player_life.ToViewers(..)
             | player_life.Answer(..)

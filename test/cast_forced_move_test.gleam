@@ -20,11 +20,12 @@ import genesis_prime/game/cast.{type State}
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{Modifier}
+import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/message/spell_go
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId, UnitProperty2Id}
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import owned_test
 import prerequisite_support
 
@@ -45,16 +46,17 @@ fn falling_row() -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(67_777),
     phase_flags: 1,
-    modifier: Modifier(
+    change: spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,
       flat: 0.0,
       per_level: 0.0,
-    ),
+    )),
     row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
     condition: Always,
     tag: spend.always,
+    armor: None,
   )
 }
 
@@ -108,7 +110,7 @@ fn listed(
 /// Whether the effect starts or ends a change of one of the caster's properties.
 fn changes_a_property(effect effect: cast.Effect) -> Bool {
   case effect {
-    cast.PropertyStarts(..) | cast.PropertyEnds(..) -> True
+    cast.CasterChangeStarts(..) | cast.CasterChangeEnds(..) -> True
     cast.Send(..)
     | cast.Tell(..)
     | cast.StartTimer(..)
@@ -205,8 +207,8 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
         | cast.Log(..)
         | cast.Pay(..)
         | cast.Gain(..)
-        | cast.PropertyStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeStarts(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })

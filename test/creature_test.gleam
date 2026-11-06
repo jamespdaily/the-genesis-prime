@@ -38,6 +38,7 @@ import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import map_support
 import owned_test
 import place_support
@@ -478,6 +479,7 @@ pub fn a_run_only_creatures_corpse_timer_removes_it_for_each_viewer_and_stops_it
         source: spawn_source.RunOnly(spawn_source.Summoned(
           id: SpawnId(-1),
           creature_id: beast.creature_id,
+          level: None,
           place: beast.place,
         )),
         spawn: beast,

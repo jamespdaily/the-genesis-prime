@@ -6,6 +6,7 @@
 //// ```
 //// Spell4Effects row ─▶ Formula (once, in genesis_prime/game/spell_area)
 //// Formula + Attacker ─▶ value = M x (S + R)
+//// Formula + OnCaster ─▶ the same, F also reading the caster's vitals
 ////   S = sum of each parameter value x the caster's stat for types 12 and 13, rounded
 ////   R = (dataBits01 + F) x dataBits00 as a float, F = sum of each parameter value x the caster's level for type 10
 //// ```
@@ -21,6 +22,10 @@
 ////   `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
 ////   1.0 for a player (UnitProperty2 140 to 143: the multiplier's default).
+//// - **An effect on its caster** (`value_on_caster`): the caster is also the target, so
+////   the flat part F also reads the caster's own health, shield and maxima by the kinds
+////   the client names (`0x140566ad0`), and the amount is the value rounded half away
+////   from zero (a HealShields effect aimed at the caster, genesis_prime/game/cast).
 //// - **A creature caster** has its own formula (`creature_value`): the stat part
 ////   reads Strength and Assault Power and is held under a cap that grows with the
 ////   level by GameFormula 712 (`0x140565600`).
@@ -107,6 +112,21 @@ fn is_read(kind: Int) -> Bool {
 /// (`0x140565600`): Kick 4.16, Zap 9.08, Telekinetic Strike 18.0, Crush 8.94,
 /// Paralytic Surge 8.14 and Stagger 3.0 at level 1 and rating 0.
 pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
+  value_with(formula:, attacker:, flat_of: fn(kind) {
+    case kind {
+      10 -> int.to_float(attacker.level)
+      _ -> 0.0
+    }
+  })
+}
+
+/// The value of a player caster's effect, the flat part reading what `flat_of` gives for
+/// each parameter type (0.0 for a type that is no flat unit value).
+fn value_with(
+  formula formula: Formula,
+  attacker attacker: Attacker,
+  flat_of flat_of: fn(Int) -> Float,
+) -> Float {
   let stat_part =
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
       case parameter.kind {
@@ -119,14 +139,87 @@ pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
     })
   let flat_part =
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
-      case parameter.kind {
-        10 -> sum +. parameter.value *. int.to_float(attacker.level)
-        _ -> sum
-      }
+      sum +. parameter.value *. flat_of(parameter.kind)
     })
   let row_part =
     { int.to_float(formula.base) +. flat_part } *. formula.multiplier
   int.to_float(float.round(stat_part)) +. row_part
+}
+
+/// What the formula reads of a caster that is also the target of its effect: its
+/// stats and its own health and shield, each with its maximum.
+pub type OnCaster {
+  OnCaster(attacker: Attacker, vitals: Vitals)
+}
+
+/// A unit's health and shield as the formula's flat kinds read them.
+pub type Vitals {
+  Vitals(health: Int, max_health: Int, shield: Int, max_shield: Int)
+}
+
+/// The first parameter type of the formula that an effect on its caster does not read,
+/// or `None`: it reads the stat kinds 12 and 13 and the flat kinds 7, 8, 10, 14 to 17,
+/// 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566ad0`); the attributes (1 to 5 and
+/// 11) and the passed-in value (18) are not read.
+pub fn caster_unread(formula formula: Formula) -> Option(Unread) {
+  first_unread(formula:, is_read: is_read_on_caster)
+}
+
+fn is_read_on_caster(kind: Int) -> Bool {
+  case kind {
+    0
+    | 7
+    | 8
+    | 10
+    | 12
+    | 13
+    | 14
+    | 15
+    | 16
+    | 17
+    | 19
+    | 21
+    | 22
+    | 23
+    | 25
+    | 26 -> True
+    _ -> False
+  }
+}
+
+/// The effect's value for a caster that is also its target, before any rounding
+/// (`0x140565600`): the value of a player caster with the flat kinds reading the caster's
+/// own vitals, as the client reads them of the one unit it passes as caster and as
+/// target (`0x140566ad0`: 7 and 8 the maximum health, 10 the level, 14 and 15 the shield,
+/// 16 and 17 the maximum shield, 19 and 23 the health, 21 and 25 the maximum health less
+/// the health, 22 and 26 the maximum shield less the shield).
+pub fn value_on_caster(
+  formula formula: Formula,
+  caster caster: OnCaster,
+) -> Float {
+  let vitals = caster.vitals
+  value_with(formula:, attacker: caster.attacker, flat_of: fn(kind) {
+    case kind {
+      7 | 8 -> int.to_float(vitals.max_health)
+      10 -> int.to_float(caster.attacker.level)
+      14 | 15 -> int.to_float(vitals.shield)
+      16 | 17 -> int.to_float(vitals.max_shield)
+      19 | 23 -> int.to_float(vitals.health)
+      21 | 25 -> int.to_float(vitals.max_health - vitals.health)
+      22 | 26 -> int.to_float(vitals.max_shield - vitals.shield)
+      _ -> 0.0
+    }
+  })
+}
+
+/// The whole number an effect on its caster gives: `value_on_caster` rounded half away
+/// from zero (the server's choice, as each damage step rounds), and never below 0, since
+/// the fields that carry it are unsigned.
+pub fn amount_on_caster(
+  formula formula: Formula,
+  caster caster: OnCaster,
+) -> Int {
+  int.max(0, float.round(value_on_caster(formula:, caster:)))
 }
 
 /// A stat part above the creature's cap: ((1 - e^(-(S - c) / c)) x overflow + 1) x

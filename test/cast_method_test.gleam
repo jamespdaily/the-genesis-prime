@@ -721,7 +721,8 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.CrowdControlEnded(..)
         | client_connection.InterruptArmor(..)
         | client_connection.PropertiesChanged(..)
-        | client_connection.Stealth(..) -> False
+        | client_connection.Stealth(..)
+        | client_connection.LookChanged(..) -> False
       }
     })
     |> list.length
@@ -878,8 +879,8 @@ fn count_logs(effects effects: List(cast.Effect)) -> Int {
       | cast.CancelTimer(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> False
     }
   })

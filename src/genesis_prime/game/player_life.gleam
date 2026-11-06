@@ -41,6 +41,11 @@
 ////                ─▶ 0x938(P, 20, shield) to P and to its viewers
 ////                below the max still ─▶ StartTimer(shield_timer, ShieldTickTime)
 //// death ─▶ both cancelled;  coming back is full: nothing started
+//// a heal of the shield (genesis_prime/game/cast `ShieldHeal`) ─▶ + amount, capped
+////                ─▶ 0x938(P, 20, shield) to P and to its viewers; the clocks as they were
+//// property 44 (InterruptArmor_Threshold) rises or falls (a type 11 or a type 52 row)
+////                ─▶ the armor follows it: 0x938(P, 21, armor) to P and to its viewers,
+////                after the 0x93a that raised the maximum and before the one that lowers it
 //// ```
 ////
 //// Death and coming back, when a strike leaves P at 0:
@@ -52,6 +57,10 @@
 ////                                                    ─▶ 0x92f(P, 0)               0x937(P, 0, dead)
 ////                                                    ─▶ 0x88c(P, 1)               0x88c(P, 1)
 ////                                                    ─▶ 0x89a(P, 0)               0x89a(P, 0)
+////                            CombatLeft, when P was in combat: the cast rule's `combat_left`
+////                            TellMap(False): the map keeps P out of every ring and tells each
+////                            creature P sees `PlayerDied` (genesis_prime/world_map/map `LifeChanged`),
+////                            before the `StealthChanged` that EndCasts ends a stealthed P's casts with
 ////                            EndCasts: each own cast ─▶ 0x7fe                     0x7fe (those told its start)
 ////                                                    ─▶ 0x247 type 22 P           0x247 type 22 P
 ////                                                    ─▶ 0x262 ghost (type 23)
@@ -67,7 +76,9 @@
 ////                                                    ─▶ 0x355 ghost
 ////                                                    ─▶ 0x636 P
 ////                                                    ─▶ 0x247 type 23 P           0x247 type 23 P
-//// 0x15a {P, 2, 0}       ─▶  the same, then GoToHolocrypt: the connection leaves the map and
+////                            TellMap(True): the map decides P's rings again and sends `Approached`
+////                            to each creature whose ring holds P
+//// 0x15a {P, 2, 0}       ─▶  the same but TellMap, then GoToHolocrypt: the connection leaves the map and
 ////                            joins at the Holocrypt place (genesis_prime/game/connection)
 //// ```
 ////
@@ -81,6 +92,17 @@
 ////   up to ShieldMitigationMax of each blow (genesis_prime/game/hit). Armor,
 ////   ShieldMitigationMax, the maxima and the regeneration numbers are the player's
 ////   properties (genesis_prime/game/unit_properties).
+//// - **Interrupt Armor** is the maximum, property 44, unless worn below it: a raised
+////   maximum is a raised armor, as the Soldier's Clear the Lines (Spell4 36861, row 78035:
+////   a type 11 row of +2 on property 44, no type 52 row) says in its tooltip, text 298981,
+////   "Interrupt Armor rises by 2", and as a creature's armor is (`creature_control`: none
+////   worn is the maximum). Stat 21 follows the maximum up and down (`armor_followed`),
+////   clamped by the client to 0 and the maximum when a 0x938 arrives
+////   (`opcode.0x938.interrupt_armor`). Nothing wears a player's armor down: no strike
+////   carries a crowd-control state onto a player yet (`struck` answers `controls: []`),
+////   so the armor worn is none, and whether a type 52 row's end takes its points back
+////   (dataBits01) or keeps them matters only once armor is worn. An infinite maximum (-1)
+////   shows 0.
 //// - **Health** stays in [0, max]. At 0 the answer is `Landed` with the killed bit,
 ////   the creature releases the player, and a later strike is refused `Dead`.
 //// - **Health regenerates** while P is alive, out of combat and below its maximum,
@@ -164,6 +186,7 @@ import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
 import genesis_prime/step.{type Address, type TimerId, TimerId}
+import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -188,6 +211,10 @@ pub opaque type Life {
     regeneration: Regeneration,
     health_clock: Clock,
     shield_clock: Clock,
+    /// The Interrupt Armor worn below its maximum; none is the maximum.
+    armor_worn: Option(Int),
+    /// The armor the player's client was last told (stat 21).
+    armor_shown: Int,
   )
 }
 
@@ -297,6 +324,13 @@ pub type Effect {
   /// The player chose the Holocrypt: the connection takes it out of its map and
   /// joins it at the Holocrypt place, whose entry burst follows.
   GoToHolocrypt
+  /// Tell the player's map it died (`alive` False) or woke where its body lies
+  /// (True), so the map keeps a dead player out of every creature's ring and tells the
+  /// creatures it sees (genesis_prime/world_map/map `LifeChanged`). A death puts it before
+  /// `EndCasts`, so the map takes it before the `StealthChanged` that ends a stealthed
+  /// player's casts at its death; a Wake Here puts it after the coming back's news; the
+  /// Holocrypt sends none, since its `Leave` follows at once.
+  TellMap(alive: Bool)
   /// Start a regeneration timer: its firing comes back to `timer_fired`.
   StartTimer(timer: TimerId, after_ms: Int)
   /// Cancel a regeneration timer.
@@ -323,6 +357,8 @@ pub type Written {
   OwnCombatState(in_combat: Bool)
   /// 0x938 of stat 20: the player's shield.
   OwnShield(shield: Int)
+  /// 0x938 of stat 21: the player's Interrupt Armor.
+  OwnInterruptArmor(armor: Int)
   /// 0x92f: the player's health.
   OwnHealth(health: Int)
   /// 0x88c {P, dead, 0, 0}: the player died or came back. The 5-bit value is
@@ -435,6 +471,7 @@ pub fn properties_changed(
   let shield = int.min(life.shield, max_shield)
   let changed =
     Life(..life, max_health:, max_shield:, health:, shield:, regeneration:)
+  let #(changed, armor_effects) = armor_followed(life: changed, properties:)
   let #(changed, timers) = health_clock_settled(life: changed)
   #(
     changed,
@@ -447,6 +484,7 @@ pub fn properties_changed(
         True -> []
         False -> shield_told(shield:)
       },
+      armor_effects,
       timers,
     ]),
   )
@@ -469,6 +507,8 @@ pub fn new(
     regeneration:,
     health_clock: Idle,
     shield_clock: Idle,
+    armor_worn: None,
+    armor_shown: 0,
   )
 }
 
@@ -498,14 +538,21 @@ pub fn entering(
 ) -> #(Life, List(Effect)) {
   let health = int.min(option.unwrap(saved, or: max_health), max_health)
   let life = Life(..new(health: max_health, shield:, regeneration:), health:)
-  case health {
-    0 -> #(Life(..life, shield: 0, state: Dead), [
+  case saved_dead(saved:) {
+    True -> #(Life(..life, shield: 0, state: Dead), [
       ToClient(GhostCreated(place:)),
       ToClient(OwnResurrectionWindow(dead: True)),
       ToClient(ControlGiven(to: ControlGhost)),
     ])
-    _ -> health_clock_settled(life:)
+    False -> health_clock_settled(life:)
   }
+}
+
+/// Whether a saved health is a player that left dead: 0. `entering` starts such a player
+/// dead, and the map's `Join` names it `alive` False (`death.enter_dead`). No save is a
+/// player that enters alive.
+pub fn saved_dead(saved saved: Option(Int)) -> Bool {
+  saved == Some(0)
 }
 
 /// The health a save keeps: the player's health now, 0 while it is dead, so a
@@ -663,6 +710,7 @@ fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
       ],
       combat_left,
       [
+        TellMap(alive: False),
         EndCasts,
         ToClient(OwnDeathLogged),
         ToViewers(client_connection.DeathLogged),
@@ -701,7 +749,10 @@ pub fn take(
     return: Error(NonzeroValue(value: chosen.field_3)),
   )
   case choice(value: chosen.choice) {
-    WakeHere -> Ok(came_back(life:))
+    WakeHere -> {
+      let #(life, effects) = came_back(life:)
+      Ok(#(life, list.append(effects, [TellMap(alive: True)])))
+    }
     Holocrypt -> {
       let #(life, effects) = came_back(life:)
       Ok(#(life, list.append(effects, [GoToHolocrypt])))
@@ -986,6 +1037,73 @@ fn shield_gained(
     False -> #(life, [])
   }
   #(life, list.append(shield_told(shield:), timers))
+}
+
+/// A heal of the player's own shield by `amount` (genesis_prime/game/cast `ShieldHeal`):
+/// the shield rises by it, capped at its maximum (`Spell4Effects.effectType.118`), and
+/// is written to the player's client and told to its viewers as a tick's is. A heal
+/// that moves nothing, on a full shield or a dead player, is not told, and the shield's
+/// clock is left as it was: only a blow restarts the reboot (text 531855).
+pub fn shield_healed(
+  life life: Life,
+  amount amount: Int,
+) -> #(Life, List(Effect)) {
+  let shield = int.min(life.shield + amount, life.max_shield)
+  use <- bool.guard(
+    when: life.state == Dead || amount <= 0 || shield <= life.shield,
+    return: #(life, []),
+  )
+  #(Life(..life, shield:), shield_told(shield:))
+}
+
+/// The player's Interrupt Armor as its client was last told it: stat 21.
+pub fn interrupt_armor(life life: Life) -> Int {
+  life.armor_shown
+}
+
+/// The player's armor written to its own client (0x938 of stat 21) and told to its
+/// viewers.
+fn armor_told(armor armor: Int) -> List(Effect) {
+  [
+    ToClient(OwnInterruptArmor(armor:)),
+    ToViewers(client_connection.InterruptArmor(armor:)),
+  ]
+}
+
+/// The armor the maximum `properties` hold gives the player: the maximum, or what is worn
+/// of it when that is less. A maximum of 0 is none and an infinite one (-1) shows 0.
+fn armor_of(life life: Life, properties properties: Properties) -> Int {
+  let maximum =
+    unit_properties.value(
+      properties:,
+      property: unit_properties.interrupt_armor_threshold,
+    )
+  case creature_life.interrupt_armor_of(maximum:) {
+    creature_life.NoArmor | creature_life.InfiniteArmor -> 0
+    creature_life.Armor(points:) ->
+      case life.armor_worn {
+        None -> points
+        Some(worn) -> int.min(worn, points)
+      }
+  }
+}
+
+/// The armor follows the maximum, property 44, in `properties`: a raised maximum is a
+/// raised armor, a lowered one lowers it, and the player's client and its viewers are
+/// told the new armor when it moved, once (0x938 of stat 21). The client clamps the armor
+/// it is sent to the maximum it holds and keeps an armor above a lowered maximum until
+/// the next 0x938 (`opcode.0x938.interrupt_armor`), so the connection tells the armor
+/// before the maximum falls, with the properties the end leaves, and after the maximum
+/// has risen, with `properties_changed`, which follows too.
+pub fn armor_followed(
+  life life: Life,
+  properties properties: Properties,
+) -> #(Life, List(Effect)) {
+  let armor = armor_of(life:, properties:)
+  case armor == life.armor_shown {
+    True -> #(life, [])
+    False -> #(Life(..life, armor_shown: armor), armor_told(armor:))
+  }
 }
 
 /// Both clocks stopped, each running one cancelled.

@@ -374,8 +374,8 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
         | cast.Log(..)
         | cast.Pay(..)
         | cast.Gain(..)
-        | cast.PropertyStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeStarts(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })

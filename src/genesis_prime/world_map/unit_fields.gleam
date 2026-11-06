@@ -41,7 +41,7 @@ pub const shield_stat = 20
 
 /// The stat the client keeps a unit's current Interrupt Armor in: set by the create's
 /// stat list and by a 0x938 (`opcode.0x938.interrupt_armor`).
-const interrupt_armor_stat = 21
+pub const interrupt_armor_stat = 21
 
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).

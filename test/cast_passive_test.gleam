@@ -111,7 +111,7 @@ pub fn the_warriors_passive_starts_with_0x7ff_no_0x7fd_and_lists_the_fluff_and_t
   assert timers == [] as "no timer is left: its nodes last until removed"
 }
 
-pub fn the_engineers_passive_lists_its_three_properties_and_starts_46297_behind_the_nested_gate_it_passes_test() -> Nil {
+pub fn the_engineers_passive_lists_its_three_properties_and_its_conversion_and_starts_46297_behind_the_nested_gate_it_passes_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(_, effects) = started(base: 29_076)
@@ -123,9 +123,9 @@ pub fn the_engineers_passive_lists_its_three_properties_and_starts_46297_behind_
       "went k2 p0",
       "finished k2",
     ]
-    as "Prerequisite 30012 passes for a caster holding 1000 in slot 1 and under no cast (the module's evidence above), so Proxy 108412 starts 46297; 229304 (type 145) is skipped"
-  assert listed(effects:) == [104_980, 177_521, 177_522]
-    as "Spell4Effects 104980, 177521 and 177522: the properties 141 to 143; 46297 lists no row the server reads"
+    as "Prerequisite 30012 passes for a caster holding 1000 in slot 1 and under no cast (the module's evidence above), so Proxy 108412 starts 46297"
+  assert listed(effects:) == [104_980, 177_521, 177_522, 229_304]
+    as "Spell4Effects 104980, 177521 and 177522: the properties 141 to 143, and 229304, the conversion of property 47 into 60 (type 145); 46297 lists no row the server reads"
   assert list.filter(support.logs(effects:), fn(line) {
       string.contains(line.1, "30012")
     })
@@ -281,7 +281,7 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
     ))
     == 1
     as "the control: the same spell pressed as an ability lingers, and its caster's death ends it with its 0x7fe (cast.died)"
-  assert list.length(support.property_ends(effects: ordinary_death)) == 3
+  assert list.length(support.caster_change_ends(effects: ordinary_death)) == 3
     as "and takes its three property modifiers off"
   let #(passive, _) = started(base: 29_035)
   let #(left, died) =
@@ -292,7 +292,7 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
     )
   assert support.frames_of(message_id: 0x07FE, effects: died) == []
     as "Spell4.44926: caster condition row 4 holds alive or dead, and propertyFlags 0x100 keeps the cast when its caster is removed, so death leaves the passive"
-  assert support.property_ends(effects: died) == [] as "and its modifiers"
+  assert support.caster_change_ends(effects: died) == [] as "and its modifiers"
   let #(_, after) =
     cast.died(
       cast: left,

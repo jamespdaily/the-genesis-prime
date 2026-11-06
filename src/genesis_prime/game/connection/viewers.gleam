@@ -91,6 +91,26 @@
 ////     viewers `Removed` and nothing about stealth, and the next stay starts unstealthed.
 ////   - A `Stealth` news for a unit the viewer does not show, or no longer shows, is
 ////     dropped and writes nothing.
+//// - **A player's look** is the cast rule's too (genesis_prime/game/look): the owner's
+////   connection writes 0x933 to its own client and tells each viewer `LookChanged`, which
+////   the viewer writes as 0x933 for a unit it shows and drops otherwise. A viewer that
+////   first sees the owner mid-disguise gets its 0x262 with the disguised slots' visuals
+////   already in its list (`frames.appearance_at`), so it needs no 0x933; one that comes
+////   after the end gets the base visuals:
+////
+////   ```
+////   owner's connection                                viewer's connection              viewer's client
+////   a disguise starts or ends
+////     0x933 {owner, visuals} ─────────────────────────────────────────────────────────▶ the owner's client
+////     Tell(each viewer, LookChanged(visuals)) ─▶ shown? 0x933 {owner, visuals} ────────▶ the unit changes
+////   SeenBy(v) mid-disguise ─▶ Tell(v, Appeared(0x262 with the overlay)) ─▶ writes 0x262 if not shown
+////   ```
+////
+////   - A `LookChanged` for a unit the viewer does not show, or no longer shows, is dropped
+////     and writes nothing; a viewer that shows the owner again gets a new `Appeared`
+////     with the overlay.
+////   - The owner dying ends its disguise in the death's step (the 0x933 restore); a camp
+////     or the Holocrypt sends the viewers `Removed` and no 0x933.
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
@@ -309,7 +329,8 @@ pub fn viewer_takes(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..) -> False
+    | client_connection.Stealth(..)
+    | client_connection.LookChanged(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && names_own_unit(entered:, unit_id:),
@@ -570,6 +591,15 @@ pub fn viewer_takes(
         ),
       ])
     }
+    client_connection.LookChanged(item_visuals:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.item_visuals_frame(unit_id:, item_visuals:),
+        ),
+      ])
+    }
     client_connection.CrowdControlApplied(state:, instance_id:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
@@ -670,7 +700,8 @@ fn creature_news(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..) -> session
+    | client_connection.Stealth(..)
+    | client_connection.LookChanged(..) -> session
   }
   case strike.holds(strike: entered.strike, unit_id:) {
     True ->
@@ -757,7 +788,8 @@ fn life_news(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..) -> Continue(session, [])
+    | client_connection.Stealth(..)
+    | client_connection.LookChanged(..) -> Continue(session, [])
   }
 }
 
@@ -808,8 +840,9 @@ fn finishes_of_forgotten_casts(
 
 /// The unit of the player's own record as another player is created with it: at
 /// the place the player stands at now, with its health now as stat 0, so a dead
-/// player is created dead (`0x140457bc5`), and its shield now as stat 20
-/// (`opcode.0x938`), without its class resource: the stat and the ResourceMax
+/// player is created dead (`0x140457bc5`), its shield now as stat 20
+/// (`opcode.0x938`) and its Interrupt Armor as stat 21 while it is above 0
+/// (`opcode.0x938.interrupt_armor`: the create's stat list sets it), without its class resource: the stat and the ResourceMax
 /// property of the player's own 0x262 are left out, since a 0x935 goes to the
 /// player alone (`opcode.0x262.resource_stats`), and stamped from the map's clock,
 /// from the origin `Joined` carried (`map.server_time`).
@@ -825,6 +858,7 @@ fn appearance(
     )
   let health = player_life.health(life: entered.life)
   let shield = player_life.shield(life: entered.life)
+  let armor = player_life.interrupt_armor(life: entered.life)
   let slot = class_resource.slot(resources: entered.resources)
   let resource_stat = unit_fields.resource_stat_id(slot:)
   let resource_max = unit_fields.resource_max_property(slot:)
@@ -832,16 +866,27 @@ fn appearance(
     ..unit,
     tail: UnitCreateTail(
       ..unit.tail,
-      stats: list.filter_map(unit.tail.stats, fn(stat) {
-        case stat.stat_id {
-          id if id == unit_fields.health_stat ->
-            Ok(unit_fields.integer_stat(stat_id: id, value: health))
-          id if id == unit_fields.shield_stat ->
-            Ok(unit_fields.integer_stat(stat_id: id, value: shield))
-          id if id == resource_stat -> Error(Nil)
-          _ -> Ok(stat)
-        }
-      }),
+      stats: list.append(
+        list.filter_map(unit.tail.stats, fn(stat) {
+          case stat.stat_id {
+            id if id == unit_fields.health_stat ->
+              Ok(unit_fields.integer_stat(stat_id: id, value: health))
+            id if id == unit_fields.shield_stat ->
+              Ok(unit_fields.integer_stat(stat_id: id, value: shield))
+            id if id == resource_stat -> Error(Nil)
+            _ -> Ok(stat)
+          }
+        }),
+        case armor > 0 {
+          True -> [
+            unit_fields.integer_stat(
+              stat_id: unit_fields.interrupt_armor_stat,
+              value: armor,
+            ),
+          ]
+          False -> []
+        },
+      ),
       properties: list.filter(unit.tail.properties, fn(property) {
         property.property_id != resource_max
       }),

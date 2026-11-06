@@ -373,6 +373,7 @@ pub fn leave_answered(
     | step.Answer(FromMap(map.Retire))
     | step.Answer(FromMap(map.Approached(..)))
     | step.Answer(FromMap(map.Withdrew(..)))
+    | step.Answer(FromMap(map.PlayerDied(..)))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) ->
@@ -459,6 +460,7 @@ pub fn entry_answered(
           answer:,
           connection: client_connection.connection(session.link),
           stay:,
+          tables: session.settings.tables,
         )
       {
         Ok(world_entry.Join(state:, effects:)) ->

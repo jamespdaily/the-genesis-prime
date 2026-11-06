@@ -23,6 +23,17 @@
 ////   picture at that moment (`shown.poses_of`) for its Proxies' target gates. A viewer
 ////   writes a creature's health and
 ////   death (`Health`, `Died`) for a creature it shows, whatever its own casts.
+//// - **Heals** are the cast rule's: a `CasterChangeStarts` whose change is a `ShieldHeal`
+////   raises the player's shield by its amount and tells the player's client and its viewers
+////   (genesis_prime/game/connection/healing), where one whose change is a `Property` is
+////   applied to the player's properties (genesis_prime/game/connection/properties).
+//// - **Disguises** are the cast rule's too: a `CasterChangeStarts` whose change is a `Look`
+////   starts the disguise on the player's look and tells the player's client and its
+////   viewers the slots that changed, and each `CasterChangeEnds` ends a property modifier
+////   and a disguise of its source, whichever the source holds
+////   (genesis_prime/game/connection/look). A death, a type 80 removal, a persistence end
+////   and the node's end by time end the disguise as they end a modifier; a camp sends no
+////   0x933.
 //// - **Stealth** is the cast rule's (genesis_prime/game/cast): its `StealthChanged` is
 ////   carried out as the owner's 0x8f5, the viewers' news, and last a tell to the run of
 ////   the player's map, so the map keeps the player out of every creature's ring
@@ -60,6 +71,8 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/healing as connection_healing
+import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
@@ -217,12 +230,6 @@ pub fn persisted(
   }
 }
 
-/// The Vital id of Health and of Shield Capacity
-/// (`Prerequisite.prerequisiteTypeId.71`: Vital.tbl ids 1 and 3).
-const health_vital = 1
-
-const shield_vital = 3
-
 /// The player as its cast rule takes it: who it is, where it stands, what it
 /// holds, who sees it, whether it is dead or in combat and its health and shield.
 pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
@@ -238,14 +245,14 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
     in_combat: player_life.in_combat(life:),
     life_vitals: dict.from_list([
       #(
-        health_vital,
+        cast.health_vital,
         prerequisite.Vital(
           current: int.to_float(player_life.health(life:)),
           maximum: int.to_float(player_life.max_health(life:)),
         ),
       ),
       #(
-        shield_vital,
+        cast.shield_vital,
         prerequisite.Vital(
           current: int.to_float(player_life.shield(life:)),
           maximum: int.to_float(player_life.max_shield(life:)),
@@ -255,6 +262,29 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
     factions: prerequisite.Factions(
       current: entered.unit.tail.faction_id,
       base: entered.unit.tail.base_faction_id,
+    ),
+    stats: stats_of(entered:),
+    vitals: damage.Vitals(
+      health: player_life.health(life:),
+      max_health: player_life.max_health(life:),
+      shield: player_life.shield(life:),
+      max_shield: player_life.max_shield(life:),
+    ),
+  )
+}
+
+/// What the player's damage and heals read of it: its level and its Assault and Support
+/// Rating.
+fn stats_of(entered entered: world_entry.Entered) -> damage.Attacker {
+  damage.Attacker(
+    level: connection_state.level_of(entered:),
+    assault_rating: unit_properties.value(
+      properties: entered.properties,
+      property: unit_properties.assault_rating,
+    ),
+    support_rating: unit_properties.value(
+      properties: entered.properties,
+      property: unit_properties.support_rating,
     ),
   )
 }
@@ -316,10 +346,18 @@ pub fn cast_effects(
       cast.Strike(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
       cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
-      cast.PropertyStarts(source:, modifier:), _ ->
+      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)), _ ->
         connection_properties.started(session:, now:, source:, modifier:)
-      cast.PropertyEnds(source:), _ ->
-        connection_properties.ended(session:, now:, source:)
+      cast.CasterChangeStarts(change: cast.ShieldHeal(amount:), ..), _ ->
+        connection_healing.shield_healed(session:, now:, amount:)
+      cast.CasterChangeStarts(source:, change: cast.Look(disguise:)), _ ->
+        connection_look.started(session:, source:, disguise:)
+      cast.CasterChangeEnds(source:), _ -> {
+        let #(session, properties) =
+          connection_properties.ended(session:, now:, source:)
+        let #(session, look) = connection_look.ended(session:, source:)
+        #(session, list.append(properties, look))
+      }
       cast.StealthChanged(stealthed:), Some(entered) -> #(
         session,
         list.flatten([
@@ -411,17 +449,7 @@ fn attacker_of(
     move_seq: session.move_seq,
     stay: entered.stay,
     faction:,
-    stats: damage.Attacker(
-      level: connection_state.level_of(entered:),
-      assault_rating: unit_properties.value(
-        properties: entered.properties,
-        property: unit_properties.assault_rating,
-      ),
-      support_rating: unit_properties.value(
-        properties: entered.properties,
-        property: unit_properties.support_rating,
-      ),
-    ),
+    stats: stats_of(entered:),
     properties: entered.properties,
   )
 }
@@ -566,6 +594,7 @@ pub fn creature_news_frames(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..) -> []
+    | client_connection.Stealth(..)
+    | client_connection.LookChanged(..) -> []
   }
 }

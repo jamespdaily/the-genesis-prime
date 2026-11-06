@@ -94,8 +94,8 @@ fn asked_goes(effects effects: List(cast.Effect)) -> List(GoAsked) {
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyStarts(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })

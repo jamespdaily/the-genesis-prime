@@ -1066,8 +1066,8 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.Log(..)
         | cast.Pay(..)
         | cast.Gain(..)
-        | cast.PropertyStarts(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeStarts(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })
@@ -1348,7 +1348,7 @@ fn with_crit_modifier(flat flat: Float) -> unit_properties.Properties {
       cast_id: 1,
       effect_id: Spell4EffectsId(135_954),
     ),
-    modifier: unit_properties.Modifier(
+    modifier: unit_properties.Change(
       property: id.UnitProperty2Id(102),
       mode: 3,
       multiplier: 1.0,

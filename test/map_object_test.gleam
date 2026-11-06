@@ -87,7 +87,8 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       | map.Unwatched(..)
       | map.Retire
       | map.Approached(..)
-      | map.Withdrew(..) -> Error(Nil)
+      | map.Withdrew(..)
+      | map.PlayerDied(..) -> Error(Nil)
     }
   })
 }
@@ -181,7 +182,8 @@ pub fn objects_creatures_and_players_share_one_id_space_test() -> Nil {
           | map.Unwatched(..)
           | map.Retire
           | map.Approached(..)
-          | map.Withdrew(..) -> Error(Nil)
+          | map.Withdrew(..)
+          | map.PlayerDied(..) -> Error(Nil)
         }
       })
     })
@@ -244,6 +246,7 @@ pub fn a_leave_sends_nothing_about_objects_and_a_join_again_sees_them_under_the_
           character: map_support.character(101),
           place: spawns.at(0.0),
           stay: map_support.stay(count: 2),
+          alive: True,
         ),
       )),
     )

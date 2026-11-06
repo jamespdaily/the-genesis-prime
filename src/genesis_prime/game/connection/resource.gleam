@@ -125,6 +125,7 @@ pub fn life_effects(
           player_life.OwnCombatState(in_combat:) ->
             apply(class_resource.combat_changed(resources: _, in_combat:))
           player_life.OwnShield(..)
+          | player_life.OwnInterruptArmor(..)
           | player_life.OwnHealth(..)
           | player_life.OwnDeathLogged
           | player_life.OwnCameBackLogged
@@ -140,6 +141,7 @@ pub fn life_effects(
       | player_life.CombatLeft
       | player_life.EndCasts
       | player_life.GoToHolocrypt
+      | player_life.TellMap(..)
       | player_life.StartTimer(..)
       | player_life.CancelTimer(..) -> so_far
     }

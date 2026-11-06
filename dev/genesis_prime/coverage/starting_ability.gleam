@@ -380,9 +380,11 @@ pub fn unread_effect_rows(
   type_number type_number: Int,
 ) -> Result(Int, List(MissingRow)) {
   use spells <- result.map(spells(tables:))
-  effects_of(tables:, spells:)
-  |> list.count(fn(effect) {
-    effect.effect_type == type_number && !spell_plan.effect_row_read(effect:)
+  let effects = effects_of(tables:, spells:)
+  let struck_children = spell_plan.struck_unit_children(effects:)
+  list.count(effects, fn(effect) {
+    effect.effect_type == type_number
+    && !spell_plan.effect_row_read(effect:, struck_children:)
   })
 }
 
@@ -561,7 +563,14 @@ fn counted_namings(
         | effect_kind.CooldownModifier
         | effect_kind.Stealth
         | effect_kind.RemoveStealth
+        | effect_kind.ShieldHeal
+        | effect_kind.ShieldOverload
         | effect_kind.Proc
+        | effect_kind.InterruptArmor
+        | effect_kind.Scale
+        | effect_kind.RavelSignal
+        | effect_kind.PropertyConversion
+        | effect_kind.DisguiseOutfit
         | effect_kind.Unread(..) -> []
       }
       named(table: "Spell4Effects", id: effect.id, columns: [

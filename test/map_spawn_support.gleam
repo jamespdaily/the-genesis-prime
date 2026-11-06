@@ -19,6 +19,7 @@ import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None}
 import gleam/string
 import map_support
 import place_support
@@ -99,6 +100,18 @@ pub fn join(
   connection connection: Int,
   x x: Float,
 ) -> #(State, ServiceStep(map.Outgoing)) {
+  join_as(state:, at_ms:, connection:, x:, alive: True)
+}
+
+/// A join of connection `connection` at `x`, at time `at_ms`, of a player that enters
+/// alive or, with `alive` False, dead.
+pub fn join_as(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+  x x: Float,
+  alive alive: Bool,
+) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -109,6 +122,7 @@ pub fn join(
         character: map_support.character(100 + connection),
         place: at(x),
         stay: map_support.stay(count: 1),
+        alive:,
       ),
     )),
   )
@@ -251,6 +265,33 @@ pub fn ring_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
   })
 }
 
+/// What the step tells creatures of the rings and of a death, by the creature's unit id
+/// and what it says (`Approached by 1`, `PlayerDied by 1`), in the order sent.
+pub fn ring_and_death_sends(
+  taken: ServiceStep(map.Outgoing),
+) -> List(#(Int, String)) {
+  creature_sends(taken)
+  |> list.filter(fn(sent) {
+    case sent.1 {
+      "Approached by " <> _ | "Withdrew by " <> _ | "PlayerDied by " <> _ ->
+        True
+      _ -> False
+    }
+  })
+}
+
+/// What the step tells creatures of a death, by the creature's unit id and what it
+/// says (`PlayerDied by 1`), in the order sent.
+pub fn death_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+  creature_sends(taken)
+  |> list.filter(fn(sent) {
+    case sent.1 {
+      "PlayerDied by " <> _ -> True
+      _ -> False
+    }
+  })
+}
+
 /// What the step sends to players' connections, by the connection's number and
 /// what it says, in connection order.
 pub fn player_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
@@ -282,6 +323,8 @@ pub fn said(message: map.Outgoing) -> String {
       "Approached by " <> int.to_string(number)
     map.Withdrew(by: ConnectionId(number)) ->
       "Withdrew by " <> int.to_string(number)
+    map.PlayerDied(by: ConnectionId(number)) ->
+      "PlayerDied by " <> int.to_string(number)
     map.Joined(..)
     | map.NotJoined(..)
     | map.Summoned(..)
@@ -346,14 +389,53 @@ pub fn stealth(
   )
 }
 
+/// The connection's tell that its player died (`alive` False) or woke where its body
+/// lies, at time `at_ms`.
+pub fn life(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+  alive alive: Bool,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(
+      Told(message: map.LifeChanged(
+        connection: ConnectionId(connection),
+        alive:,
+      )),
+    ),
+  )
+}
+
 /// A development summon of Creature2 `creature_id` by connection `connection`'s
-/// player, asked by caller `caller`, at time `at_ms`.
+/// player, asked by caller `caller`, at time `at_ms`, with no level.
 pub fn summon(
   state state: State,
   at_ms at_ms: Int,
   caller caller: Int,
   connection connection: Int,
   creature_id creature_id: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  summon_at_level(
+    state:,
+    at_ms:,
+    caller:,
+    connection:,
+    creature_id:,
+    level: None,
+  )
+}
+
+/// A development summon as `summon` is, at `level` when there is one.
+pub fn summon_at_level(
+  state state: State,
+  at_ms at_ms: Int,
+  caller caller: Int,
+  connection connection: Int,
+  creature_id creature_id: Int,
+  level level: Option(Int),
 ) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state:,
@@ -363,6 +445,7 @@ pub fn summon(
       message: map.Summon(
         connection: ConnectionId(connection),
         creature_id: id.Creature2Id(creature_id),
+        level:,
       ),
     )),
   )

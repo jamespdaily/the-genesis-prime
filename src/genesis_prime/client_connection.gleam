@@ -32,6 +32,7 @@ import genesis_prime/game/strike_tell.{
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_missed.{type SpellMissed}
@@ -93,6 +94,12 @@ pub type Request {
   /// stealthed. Told only on a change, once per change, after the player's own
   /// 0x8f5 and the viewers' news; never asked.
   TellStealthChanged(connection: ConnectionId, stealthed: Bool)
+  /// What a `Tell` effect sends the run of a map: the player of `connection` died or
+  /// woke where its body lies, as its life rule decided (genesis_prime/world_map/map
+  /// `LifeChanged`), so the map keeps a dead player out of every creature's ring and
+  /// tells the creatures it sees `PlayerDied`. Told only on a change, once per change,
+  /// before the death's `StealthChanged` and after a waking's frames and news; never asked.
+  TellLifeChanged(connection: ConnectionId, alive: Bool)
   /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): news of this player's unit, which that
   /// connection writes as 0x262, 0x638 or 0x355 when its client can take it, for
@@ -233,6 +240,12 @@ pub type News {
   /// `StealthChanged`); the unit's own client gets the 0x8f5 alone, since it logs its
   /// own change.
   Stealth(stealthed: Bool)
+  /// Some of the unit's item visuals changed, the slots whose shown display moved with
+  /// what shows now: 0x933 (opcode.0x933), written when the viewer's client shows the
+  /// unit and dropped otherwise. Only a player's connection sends it, for its own unit
+  /// (genesis_prime/game/look); a viewer that first sees the unit gets the current
+  /// visuals in its 0x262 instead.
+  LookChanged(item_visuals: List(ItemVisual))
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).

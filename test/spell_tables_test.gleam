@@ -21,6 +21,7 @@ import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import novice_tables
 import owned_test
 import planted_table.{type Cell}
 import spell_tables
@@ -172,6 +173,11 @@ pub fn every_planted_spell_row_holds_the_clients_values_in_each_column_it_sets_o
         "vitalEnumResource03", "vitalEnumResource04", "vitalEnumResource05",
         "vitalEnumResource06", "vitalEnumResource07",
       ]),
+      differences(
+        schema: class.schema,
+        rows: novice_tables.class_proficiency_rows(),
+        read: ["startingItemProficiencies"],
+      ),
     ])
   // The planted Pulse Blast 42276's CasterPersistence 390 is test data
   // (`spell_tables.waiver_prerequisite_rows`): the client's Pulse Blast holds none.
