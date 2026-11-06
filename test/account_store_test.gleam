@@ -1534,13 +1534,14 @@ pub fn the_table_refuses_a_position_a_rotation_or_a_save_sequence_it_cannot_hold
     assert update("rotation_pitch = " <> value <> "::real")
       == Error("character_rotation_is_finite")
   })
-  assert update("health = 0") == Error("character_health_is_positive")
-    as "a saved health is above 0: a dead player saves none"
-  assert update("health = -1") == Error("character_health_is_positive")
+  assert update("health = -1") == Error("character_health_is_not_negative")
+    as "a saved health is never below 0"
+  assert update("health = 0") == Ok(Nil)
+    as "0 is a player who left dead (the client's own meaning: health 0 is dead)"
   assert update("health = 1") == Ok(Nil)
     as "the least health a living player has"
   assert update("health = null") == Ok(Nil)
-    as "NULL is nothing saved, which a check passes: the character enters at full health"
+    as "NULL is nothing saved, which a check passes: the character enters alive at full health"
   assert update("save_sequence = -1")
     == Error("character_save_sequence_is_not_negative")
   assert update("position_y = -2048, rotation_yaw = 3.5, save_sequence = 0")
@@ -1597,12 +1598,25 @@ pub fn a_save_writes_the_health_with_the_place_and_the_next_load_reads_it_test()
       epoch: 2,
       sequence: 1,
       place: here,
+      health: Some(0),
+    )
+    == ForMove(PlaceSaved)
+  assert health_row_and_load(store:, account:, character_id: id)
+    == #(Some(0), Some(0))
+    as "a dead player's save writes 0 with the place, and the next login's load answers 0, which enters dead"
+  assert save_keeping(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 3,
+      sequence: 1,
+      place: here,
       health: None,
     )
     == ForMove(PlaceSaved)
   assert health_row_and_load(store:, account:, character_id: id)
     == #(None, None)
-    as "a save with no health to keep, the dead player's, clears the saved one, so the next entry is at full health"
+    as "a save that asks to keep no health clears the saved one: nothing saved enters alive at full health"
   stop(store)
 }
 
@@ -1620,10 +1634,10 @@ pub fn a_save_with_a_health_the_table_refuses_is_answered_health_refused_and_sav
       epoch: 1,
       sequence: 1,
       place: there,
-      health: Some(0),
+      health: Some(-1),
     )
     == ForMove(HealthRefused)
-    as "character_health_is_positive refused a 0 planted straight into the query: its own answer, not the place's, and the worker does not crash"
+    as "character_health_is_not_negative refused a -1 planted straight into the query: its own answer, not the place's, and the worker does not crash"
   assert save_keeping(
       store:,
       account:,
@@ -1770,9 +1784,9 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
     == [
       "character_name_unique",
       "character_name_follows_rule_0",
-      "character_health_is_positive",
+      "character_health_is_not_negative",
     ]
-    as "the three refusals the worker answers for: a name taken, a name that breaks rule 0, and a health of 0 or below"
+    as "the three refusals the worker answers for: a name taken, a name that breaks rule 0, and a health below 0"
   list.each(worker.mapped_constraints, fn(name) {
     let assert Ok(returned) =
       pog.query(

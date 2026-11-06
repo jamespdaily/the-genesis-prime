@@ -109,6 +109,11 @@
 ////   choice: viewers need only the body), with the id `map.ghost_unit_id` gives,
 ////   at the body's place (`0x140096970`). 0x1b3 hands the client's control to it
 ////   (`opcode.0x1b3`) and 0x636 its movement (`opcode.0x636`).
+//// - **Entering dead**: a save while dead keeps health 0 and the body's place, and
+////   an entry at a saved health of 0 (`entering`) is dead, with the ghost at the
+////   saved place and the window open, with a shield of 0, and no 0x88c, no 0x89a and
+////   no regeneration:
+////   the client creates a unit of health 0 dead (`0x140457bc5`, `death.enter_dead`).
 //// - **The window's values** are the server's choices (`death.server_choices`):
 ////   no cost, penalty, cooldown or forced release, since any cost disables Wake
 ////   Here with no currency sent (`death.window`); the choices Wake Here and
@@ -141,7 +146,7 @@
 //// | the dead client's frames wait while the Holocrypt's leave and join are asked | taken after the join: a ghost's 0x637 is dropped, until the stay's first 0xF2; nothing the dead client may send ends the connection | `what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_as_from_the_dead_test` |
 //// | the Holocrypt's leave has no answer by its deadline | the connection ends, as the camp's leave does | `a_holocrypt_leave_with_no_answer_ends_the_connection_test` |
 //// | the Holocrypt's join is refused or has no answer | refused: 0x0594 and character select; no answer: the connection ends, as entry's join does | `a_refused_holocrypt_join_returns_to_character_select_test`, `a_holocrypt_join_with_no_answer_ends_the_connection_test` |
-//// | P's connection ends while dead | the map's `Leave` as for any end; the ghost was P's client's alone; the next entry is alive and full | `a_player_dead_at_camp_enters_again_alive_and_full_test` |
+//// | P's connection ends while dead | the map's `Leave` as for any end; the ghost was P's client's alone; the save keeps health 0 and the body's place, and the next entry is dead at the body (`entering`) | `a_save_while_dead_keeps_0_and_the_place_of_the_body_test`, `a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never_saved_enters_alive_and_full_test` |
 //// | the map crashes while P is dead | the connection ends, as for any player in the world, after the save of the place the body lies at | `the_map_ending_while_the_player_is_dead_saves_where_the_body_lies_and_ends_the_connection_test` |
 //// | C's killing strike reaches P mid-cast | each live cast ends with 0x7fe to P and the viewers told its start, its timers cancelled; a round that closes later has no go | `a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test`, `a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test` |
 //// | the map's notice, a peer's news or a creature's threat, release or strike sent for P's earlier stay arrives after the Holocrypt's join, a camp and a new entry, or a join to a restarted run that gives the same unit id | dropped: it names the earlier stay | `messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`, `messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test` |
@@ -458,30 +463,45 @@ pub fn new(
 /// capped at `max_health`, or `max_health` when nothing was saved, alive and
 /// fighting no one, with a full `shield`. The cap and "nothing saved is full" are
 /// the server's choices: the client holds no saved health (the stat 0 of the
-/// player's 0x262 is the health it shows, `opcode.0x262`), and the health a
-/// player comes back with is the server's choice (`death.server_choices`). Below
-/// its maximum, out of combat, the player starts regenerating: the effect starts
-/// its health timer.
+/// player's 0x262 is the health it shows, `opcode.0x262`). Below its maximum, out
+/// of combat, the player starts regenerating: the effect starts its health timer.
+///
+/// A saved health of 0 is a player that left dead: it enters dead with its body
+/// at `place`, where the character is saved. The client creates a unit with
+/// health 0 dead and refuses nothing for it (`0x140457bc5`), so the entry sends
+/// no 0x88c and no 0x89a, which would run the death branch again, and no timer
+/// starts; its effects are the ghost's 0x262 at `place`, 0x1b3 with dead 1 and
+/// control of the ghost, which the entry burst places before its 0x636
+/// (`death.enter_dead`, `death.player_branch`). Its shield is 0: a death in the
+/// world leaves what the killing blow left, which no save keeps, so a player that
+/// enters dead holds none (the server's choice, as the save holds no shield),
+/// and coming back gives it the maximum.
 pub fn entering(
   saved saved: Option(Int),
   max_health max_health: Int,
   shield shield: Int,
   regeneration regeneration: Regeneration,
+  place place: Place,
 ) -> #(Life, List(Effect)) {
   let health = int.min(option.unwrap(saved, or: max_health), max_health)
-  health_clock_settled(
-    life: Life(..new(health: max_health, shield:, regeneration:), health:),
-  )
+  let life = Life(..new(health: max_health, shield:, regeneration:), health:)
+  case health {
+    0 -> #(Life(..life, shield: 0, state: Dead), [
+      ToClient(GhostCreated(place:)),
+      ToClient(OwnResurrectionWindow(dead: True)),
+      ToClient(ControlGiven(to: ControlGhost)),
+    ])
+    _ -> health_clock_settled(life:)
+  }
 }
 
-/// The health a save keeps: the player's health now, or none while it is dead,
-/// so a player who camps or drops dead comes back at full health
-/// (`death.server_choices`). A living player holds more than 0, which the table
-/// requires of a saved health (`character_health_is_positive`).
-pub fn saved_health(life life: Life) -> Option(Int) {
+/// The health a save keeps: the player's health now, 0 while it is dead, so a
+/// player who camps or drops dead comes back dead (`death.enter_dead`). The table
+/// holds 0 and above (`character_health_is_not_negative`).
+pub fn saved_health(life life: Life) -> Int {
   case life.state {
-    Alive -> Some(life.health)
-    Dead -> None
+    Alive -> life.health
+    Dead -> 0
   }
 }
 

@@ -51,7 +51,7 @@
 ////   the epoch the saving login was told and the save's own sequence number, so
 ////   a save from an older login, or one that reaches the database after a newer
 ////   save of its own login, matches no row and changes nothing. It writes the
-////   health with the place. A save that `character_health_is_positive` refuses
+////   health with the place. A save that `character_health_is_not_negative` refuses
 ////   is `HealthRefused`; one that any other check constraint of the table
 ////   refuses is `PlaceRefused` with that constraint's name; the worker does not
 ////   crash for either.
@@ -111,15 +111,15 @@ const character_name_unique = "character_name_unique"
 /// (migration 0014), which a create or a rename refused is a name that breaks it.
 const character_name_follows_rule_0 = "character_name_follows_rule_0"
 
-/// The table's check that a saved health is above 0 (migration 0013).
-const character_health_is_positive = "character_health_is_positive"
+/// The table's check that a saved health is not below 0 (migration 0017).
+const character_health_is_not_negative = "character_health_is_not_negative"
 
 /// Every constraint or unique index the worker answers for by name. The schema
 /// holds each by this name, which a test reads from the catalogue.
 pub const mapped_constraints = [
   character_name_unique,
   character_name_follows_rule_0,
-  character_health_is_positive,
+  character_health_is_not_negative,
 ]
 
 /// What one worker is started with: a rule's ask and how to answer it, or the
@@ -340,7 +340,7 @@ fn world(
 /// names the account, the character, the epoch and the save's sequence
 /// (save_place.sql), answering `PlaceSaved` when it changed a row and
 /// `NothingSaved` when it matched none, `HealthRefused` when the table's
-/// `character_health_is_positive` refused the health and `PlaceRefused` when
+/// `character_health_is_not_negative` refused the health and `PlaceRefused` when
 /// another check of the table refused the place; `Error(Nil)` when the database
 /// is away.
 fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
@@ -385,7 +385,7 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     Ok(_) -> panic as "a character id is unique, so a save changes at most one"
     Error(Unreachable) -> Error(Nil)
     Error(Refused(constraint:, ..))
-      if constraint == character_health_is_positive
+      if constraint == character_health_is_not_negative
     -> Ok(HealthRefused)
     Error(Refused(constraint:, ..)) -> Ok(PlaceRefused(constraint:))
     Error(Unexpected(error:)) -> exit_with(error)
