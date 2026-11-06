@@ -7,7 +7,7 @@
 ////
 //// ```
 //// entry ─▶ new(the class's resource): the slot at its start ─▶ the 0x262's stat slot + 2 (float) and ResourceMax_slot
-//// a cast accepted (genesis_prime/game/cast Pay) ─▶ pay ─▶ Changed(slot, value)            ─▶ 0x935 to the player
+//// a cast's first go (genesis_prime/game/cast Pay) ─▶ pay ─▶ Changed(slot, value)         ─▶ 0x935 to the player
 ////                                                 a slot that refills over time: StartTimer(regen_timer, tick)
 ////                                                 a Medic out of combat: StartTimer(refill_timer, 3000)
 //// a go's gains (genesis_prime/game/cast Gain) ─▶ gain ─▶ Changed, clamped to the max
@@ -35,7 +35,9 @@
 ////   Spellslinger with a row of their refill missing (`select`).
 //// - **The value** is held as the 32-bit float the client holds, so a check here and
 ////   the client's own read the same number.
-//// - **Paying** is at the accept, in the step of the cost check (genesis_prime/game/cast).
+//// - **Paying** is at the cast's first go, which is the accept's own step for a spell
+////   that goes at once (genesis_prime/game/cast). Until then the slot holds the points
+////   the cast has reserved, so each timer below sees them as held.
 //// - **Gaining** is at a go, by the VitalModifiers the cast rule gives
 ////   (`Spell4Effects.effectType.1`): the client applies none itself, so each is the
 ////   server's to apply and send, clamped to [0, max].
