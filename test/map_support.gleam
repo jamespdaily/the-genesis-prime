@@ -76,6 +76,7 @@ pub fn with_objects(
     realm_id:,
     tables: character_tables.shared(),
     spawns: spawn.world_spawns(spawns:, objects:),
+    summons: spawn_support.summon_checks(),
     kinds:,
     numbers: spawn_support.numbers,
     idle_stop_ms:,

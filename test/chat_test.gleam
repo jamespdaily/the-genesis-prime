@@ -119,6 +119,7 @@ fn take(
       realm_name: "Test Realm",
       connection: ConnectionId(1),
       tables: character_tables.shared(),
+      dev_commands: False,
     )
     as "the body decodes"
   taken
@@ -135,7 +136,8 @@ fn frames_of(effects: List(chat.Effect)) -> List(Frame) {
       | chat.Unwatch(..)
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
-      | chat.Unhandled(..) -> Error(Nil)
+      | chat.Unhandled(..)
+      | chat.AskSummon(..) -> Error(Nil)
     }
   })
 }
@@ -154,7 +156,8 @@ fn tells_of(
       | chat.Unwatch(..)
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
-      | chat.Unhandled(..) -> Error(Nil)
+      | chat.Unhandled(..)
+      | chat.AskSummon(..) -> Error(Nil)
     }
   })
 }
@@ -1008,7 +1011,8 @@ fn unknown_zones_of(effects: List(chat.Effect)) -> List(Int) {
       | chat.Unwatch(..)
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
-      | chat.Unhandled(..) -> Error(Nil)
+      | chat.Unhandled(..)
+      | chat.AskSummon(..) -> Error(Nil)
     }
   })
 }
@@ -1360,7 +1364,8 @@ pub fn the_memberships_one_player_holds_after_entering_changing_zone_camping_and
         | chat.UnknownZone(..)
         | chat.Watch(..)
         | chat.Unwatch(..)
-        | chat.Unhandled(..) -> groups
+        | chat.Unhandled(..)
+        | chat.AskSummon(..) -> groups
       }
     })
   }
@@ -1591,7 +1596,8 @@ fn drop_unwatch(effects: List(chat.Effect)) -> List(chat.Effect) {
       | chat.Watch(..)
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
-      | chat.Unhandled(..) -> True
+      | chat.Unhandled(..)
+      | chat.AskSummon(..) -> True
     }
   })
 }
@@ -2046,7 +2052,8 @@ pub fn every_0x1d4_gets_exactly_one_answer_except_an_empty_whisper_to_a_found_ta
         | chat.Unwatch(..)
         | chat.JoinGroup(..)
         | chat.LeaveGroup(..)
-        | chat.Unhandled(..) -> False
+        | chat.Unhandled(..)
+        | chat.AskSummon(..) -> False
       }
     })
   case waits_on_a_target {

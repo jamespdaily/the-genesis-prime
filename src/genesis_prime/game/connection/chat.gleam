@@ -17,17 +17,21 @@
 ////   joins again (genesis_prime/game/chat has the sequences, the refusals and
 ////   the failure table).
 
-import genesis_prime/client_connection.{type Request, Continue, TellChat}
+import genesis_prime/client_connection.{
+  type Answer, type Request, Continue, TellChat,
+}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/world_entry
+import genesis_prime/hand_off.{type Holder}
 import genesis_prime/step.{
-  type ConnectionEffect, type Effect, type Now, LogWarning, OwnEffect, Unwatch,
-  Watch,
+  type ConnectionEffect, type Effect, type Now, type Outcome, LogWarning,
+  OwnEffect, Unwatch, Watch,
 }
+import genesis_prime/table/id.{type Creature2Id}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -52,13 +56,56 @@ pub fn chat_message(
       realm_name: session.settings.realm_name,
       connection: client_connection.connection(session.link),
       tables: session.settings.tables,
+      dev_commands: session.settings.game.dev_commands,
     )
   {
     Ok(#(updated, effects)) ->
-      carry_chat(session: with_chat(session:, chat: updated), effects:)
+      case list.reverse(effects) {
+        [chat.AskSummon(creature2_id:), ..before] -> {
+          let session = with_chat(session:, chat: updated)
+          let #(session, written) =
+            chat_effects(session:, effects: list.reverse(before))
+          summoning(session:, now:, creature2_id:, before: written)
+        }
+        _ -> carry_chat(session: with_chat(session:, chat: updated), effects:)
+      }
     Error(refusal) ->
       connection_state.end_for(session:, now:, text: chat.describe(refusal))
   }
+}
+
+/// The connection asks the run of its player's map to start the creature of a
+/// `!summon` line (`map.Summon`), after the effects `before`, with the settings'
+/// ask deadline, and waits in `Summoning`: the player stays in the world with the
+/// client's frames held, as in a save, and the shell takes no other input
+/// until the outcome. A status other than `InWorld` cannot have taken the line,
+/// so it is a bug that ends the connection.
+pub fn summoning(
+  session session: Session,
+  now now: Now,
+  creature2_id creature2_id: Creature2Id,
+  before before: List(Effect(ConnectionEffect(Request))),
+) -> client_connection.Handled(Session) {
+  todo as "InWorld: status Summoning, ask AskMapRun(entered.map, entered.incarnation, map.Summon(connection, creature2_id)) after before; any other status: end_for"
+}
+
+/// The outcome of the summon ask. `Summoned` writes nothing: the creature sent
+/// its 0x262 as it started, and that waits in the mailbox for the status to
+/// return to `InWorld`. `NotSummoned` writes one system line naming the
+/// refusal (`spawn.describe_refusal`), or that the player is not in the map. A
+/// map that is not running, that ended before it answered or that gave no
+/// answer in time writes the system line "not summoned" and the connection goes
+/// on, since the map's own end ends the connection by its watch; the server
+/// stopping ends it as a stop does. An answer that is none a summon asks for
+/// ends the connection as a bug, as a save's does.
+pub fn summon_answered(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  outcome outcome: Outcome(Answer),
+) -> client_connection.Handled(Session) {
+  todo as "status back to InWorld; Summoned: nothing; NotSummoned and the outcomes with no answer: chat.system_line_frame; StoppedWaiting: stopped; a foreign answer: told"
 }
 
 /// What another player's connection told this one about chat
@@ -144,6 +191,8 @@ pub fn chat_effects(
           OwnEffect(step.LeaveGroup(address:)),
           ..written
         ])
+        chat.AskSummon(..) ->
+          panic as "an ask for a summon is made by chat_message, which ends the step with it"
         chat.UnknownZone(world_zone_id:) ->
           case set.contains(session.unknown_zones_logged, world_zone_id) {
             True -> #(session, written)

@@ -139,6 +139,13 @@ pub type Status {
   /// The player is in the world, in `entered`'s map, which the connection
   /// watches (`map_watch`).
   InWorld(holder: Holder, entered: world_entry.Entered)
+  /// The player is in the world and its map's run is asked to start a creature
+  /// for a development command (`world_map/map.Summon`, genesis_prime/game/dev_command),
+  /// whose answer is awaited with the client's frames held. The player's place is
+  /// not saved yet, so a connection that ends in this status saves it as one in
+  /// `InWorld` does; the shell takes no other input during the ask, so the
+  /// creature's news of its unit waits until the status is `InWorld` again.
+  Summoning(holder: Holder, entered: world_entry.Entered)
   /// The store is asked to save where the player stands, and its answer is
   /// awaited; `then` says what follows it. A connection in this status ends
   /// without a second save: the save out is the one its end waits for.
@@ -239,6 +246,7 @@ pub fn standing(status: Status) -> Standing {
     TakingSessionKey
     | ClaimingSession(..)
     | EnteringWorld(..)
+    | Summoning(..)
     | SavingPlace(..)
     | LeavingMap(..) -> Busy(text: "a frame was taken while an ask was out")
     WaitingToClaim(..) ->
@@ -329,6 +337,7 @@ pub fn held_in_the_world(
     | ClaimingSession(..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
+    | Summoning(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -397,6 +406,7 @@ pub fn with_entered(
     | ClaimingSession(..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
+    | Summoning(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -524,6 +534,7 @@ pub fn holds_a_player(
 ) -> Option(#(Holder, world_entry.Entered)) {
   case status {
     InWorld(holder:, entered:)
+    | Summoning(holder:, entered:)
     | ClaimingSession(holder:, resume: ResumeWorld(entered:), ..)
     | WaitingToClaim(holder:, resume: ResumeWorld(entered:), ..) ->
       Some(#(holder, entered))
@@ -614,6 +625,7 @@ pub fn about_of(session: Session) -> About {
 pub fn entered_of(status: Status) -> Option(world_entry.Entered) {
   case status {
     InWorld(entered:, ..)
+    | Summoning(entered:, ..)
     | SavingPlace(entered:, ..)
     | LeavingMap(entered:, ..)
     | ClaimingSession(resume: ResumeWorld(entered:), ..)
@@ -640,6 +652,10 @@ fn account_id_of(status: Status) -> Option(Int) {
         ..,
       )
     | InWorld(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
+    | Summoning(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      )
     | SavingPlace(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,

@@ -28,10 +28,18 @@ fn environment(
 pub fn no_variables_give_the_defaults_test() -> Nil {
   use <- owned_test.run(5000)
   assert game_settings.from_environment(environment([]))
-    == Ok(GameSettings(camp_countdown_ms: 10_000, character_slots: 2))
+    == Ok(GameSettings(
+      camp_countdown_ms: 10_000,
+      character_slots: 2,
+      dev_commands: False,
+    ))
     as "10 s is Jim's choice for the camp, and 2 slots is the client's count for an account with no entitlement"
   assert game_settings.defaults()
-    == GameSettings(camp_countdown_ms: 10_000, character_slots: 2)
+    == GameSettings(
+      camp_countdown_ms: 10_000,
+      character_slots: 2,
+      dev_commands: False,
+    )
 }
 
 pub fn a_countdown_of_0_and_of_59999_is_taken_test() -> Nil {
@@ -39,17 +47,29 @@ pub fn a_countdown_of_0_and_of_59999_is_taken_test() -> Nil {
   assert game_settings.from_environment(
       environment([#("GENESIS_CAMP_COUNTDOWN_MS", "0")]),
     )
-    == Ok(GameSettings(camp_countdown_ms: 0, character_slots: 2))
+    == Ok(GameSettings(
+      camp_countdown_ms: 0,
+      character_slots: 2,
+      dev_commands: False,
+    ))
     as "opcode.0x92.countdown_range: a countdown of 0 after 0xBF 1 is a camp due at once"
   assert game_settings.from_environment(
       environment([#("GENESIS_CAMP_COUNTDOWN_MS", "59999")]),
     )
-    == Ok(GameSettings(camp_countdown_ms: 59_999, character_slots: 2))
+    == Ok(GameSettings(
+      camp_countdown_ms: 59_999,
+      character_slots: 2,
+      dev_commands: False,
+    ))
     as "the longest the exit window lays out: 00:59"
   assert game_settings.from_environment(
       environment([#("GENESIS_CAMP_COUNTDOWN_MS", "12345")]),
     )
-    == Ok(GameSettings(camp_countdown_ms: 12_345, character_slots: 2))
+    == Ok(GameSettings(
+      camp_countdown_ms: 12_345,
+      character_slots: 2,
+      dev_commands: False,
+    ))
     as "a value in between replaces the default"
 }
 
@@ -119,7 +139,11 @@ pub fn slots_of_2_and_14_are_taken_and_6_gives_6_test() -> Nil {
     assert game_settings.from_environment(
         environment([#("GENESIS_CHARACTER_SLOTS", text)]),
       )
-      == Ok(GameSettings(camp_countdown_ms: 10_000, character_slots: slots))
+      == Ok(GameSettings(
+        camp_countdown_ms: 10_000,
+        character_slots: slots,
+        dev_commands: False,
+      ))
       as "RewardPropertyPremiumModifier rows 117 and 118: the client offers 2 slots up to 14, its most"
   })
 }

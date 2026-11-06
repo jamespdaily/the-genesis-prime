@@ -134,6 +134,7 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
+import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict.{type Dict}
 import gleam/list
@@ -277,6 +278,7 @@ pub fn step(
 ) -> #(State, ServiceStep(Outgoing)) {
   let creature = state.settings.creature
   let now_ms = input.now.monotonic_ms
+  let run_only = spawn_source.is_run_only(creature.spawn)
   case input.event {
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Started) -> #(
@@ -343,6 +345,8 @@ pub fn step(
         input: creature_fight.StrikeAnswered(answered:),
         now_ms:,
       )
+    OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer && run_only ->
+      todo as "a run-only creature does not stand again: send each viewer Removed and Stop"
     OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer ->
       case
         creature_life.corpse_timer_fired(
@@ -808,7 +812,11 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
       Ok(Approached(by:, unit_id:, place:, seq:, stay:))
     map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.Retire -> Ok(Retire)
-    map.Joined(..) | map.NotJoined(..) | map.Left | map.Noticed(..) ->
-      Error(Nil)
+    map.Joined(..)
+    | map.NotJoined(..)
+    | map.Summoned(..)
+    | map.NotSummoned(..)
+    | map.Left
+    | map.Noticed(..) -> Error(Nil)
   }
 }

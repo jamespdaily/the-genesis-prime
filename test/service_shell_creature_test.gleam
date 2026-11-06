@@ -18,6 +18,7 @@ import genesis_prime/service
 import genesis_prime/step.{type Address, Creature, CreatureStart}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source
 import gleam/erlang/process.{type Subject}
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -31,7 +32,7 @@ fn a_creature() -> step.CreatureStart {
     incarnation: 1,
     unit_id: 7,
     life: 3,
-    spawn_id: SpawnId(1),
+    spawn: spawn_source.Stored(id: SpawnId(1)),
     clock_origin_ms: 0,
     viewers: [],
   )

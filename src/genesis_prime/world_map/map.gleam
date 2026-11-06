@@ -273,6 +273,34 @@
 ////   leaves the world. A second join sends the objects it sees again; the
 ////   connection writes none its client shows.
 ////
+//// A development summon (genesis_prime/game/dev_command), asked by a connection that
+//// has a player here:
+////
+//// ```
+//// connection c                     map                                          shell
+////   Summon(c, creature2 id) ─▶ Asked ─▶ place = c's player's place and facing
+////                                      spawn.summoned(checks, Summoned(id s, creature2 id, place))
+////                                      refused ─▶ Reply(NotSummoned(CreatureRefused(why))); nothing changes
+////                                      s = next run-only id (-1, -2, ...); run_spawns[s] = the spawn
+////                                      the players who see place (sight, exact) are its first viewers:
+////                                      u = next unit id; life w = next watch
+////                                      StartCreature(w, spawn: RunOnly(summoned), u, life w, viewers) ─▶ started
+////   ◀─ Summoned(u)             ◀─ Reply(Summoned(u))
+////   no player here for c       ─▶ Reply(NotSummoned(NoPlayerHere))
+//// the creature ends (death's corpse timer, or a crash) ─▶ Gone(u) to every player; run_spawns[s], its
+////                                      state and its unit id dropped; no restart timer
+//// ```
+////
+//// - **A run-only spawn id is negative** (`spawn_source`): never a stored id, which is
+////   above 0, nor the sweep timer's 0, so the spawn tables, the timers and the unit ids
+////   never meet it. It counts down from -1 in `next_run_only_id` and is never given twice.
+//// - **Sight and rings read `run_spawns` beside the stored spawns**, so the usual sight
+////   rules show the creature and a hostile one attacks on sight, as any spawn does; the
+////   cell index holds only stored spawns, so a move scans the few run spawns too.
+//// - **A summon does not respawn**: its creature's end drops the spawn (a server choice, it
+////   is a test tool). The creature's own corpse timer ends it after the kind's respawn time.
+//// - **A map that ends or restarts** loses its run spawns; nothing is saved.
+////
 //// Order, in short: every 0x262, 0x638 and 0x355 about a live unit comes from its
 //// owner's process, a player's connection, a creature or, for a static object,
 //// the map itself, so for one viewer they
@@ -331,15 +359,17 @@ import genesis_prime/step.{
   Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, CharacterId}
+import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import genesis_prime/world_map/sight
-import genesis_prime/world_map/spawn.{type WorldSpawns}
+import genesis_prime/world_map/spawn.{type Spawn, type WorldSpawns}
 import genesis_prime/world_map/spawn_cell
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
@@ -377,7 +407,8 @@ pub const sweep_timer = TimerId(0)
 /// creature crashed waits before a creature is started there again, how long a
 /// creature that no player sees keeps running, and how often the map looks for
 /// one. The two times are the server's choice, settings so a test can shorten
-/// them: 60 s and 10 s.
+/// them: 60 s and 10 s. `summons` is what a development summon is checked with
+/// (genesis_prime/world_map/spawn `SummonChecks`), the content load's term.
 pub type Settings {
   Settings(
     map: MapId,
@@ -385,6 +416,7 @@ pub type Settings {
     realm_id: Int,
     tables: table_store.Tables,
     spawns: WorldSpawns,
+    summons: spawn.SummonChecks,
     kinds: Kinds,
     numbers: GameNumbers,
     idle_stop_ms: Int,
@@ -415,6 +447,13 @@ pub type Message {
   /// entered again and has not moved is told to creatures with it, not with an
   /// earlier stay's lower one. A tell.
   Ready(connection: ConnectionId, seq: Int)
+  /// A development command of the connection's player: start `creature_id` as a
+  /// run-only spawn at the place and facing the map holds for the player, and
+  /// show it to the players who see that place. An ask, answered `Summoned` or
+  /// `NotSummoned`, with the connection's ask deadline; a map that is not running
+  /// or ends before it answers is the asker's outcome, not a `NotSummoned`.
+  /// Taken only from a connection that is in the map.
+  Summon(connection: ConnectionId, creature_id: Creature2Id)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -427,6 +466,17 @@ pub type NotJoined {
   /// CreatureLevel has no row for the character's level, so its health is
   /// unknown (`loadout.max_health`).
   NoBaseHealth(level: Int)
+}
+
+/// Why a summon is refused: the data of the one request, since the command's
+/// text is the player's to get wrong.
+pub type NotSummoned {
+  /// The connection has no player in this run of the map (it left, or it never
+  /// joined), so there is no place to stand the creature at.
+  NoPlayerHere
+  /// The creature does not pass a spawn's checks (genesis_prime/world_map/spawn
+  /// `summoned`).
+  CreatureRefused(refusal: spawn.SummonRefusal)
 }
 
 /// What a map answers and sends.
@@ -446,6 +496,12 @@ pub type Outgoing {
   /// The character cannot be in the map: nothing was kept, no unit id was
   /// given and no watch was opened. An answer to a join, never a send.
   NotJoined(reason: NotJoined)
+  /// The summoned creature starts under this unit id, as a run-only spawn at the
+  /// player's place and facing: the answer to a `Summon`, never a send.
+  Summoned(unit_id: Int)
+  /// No creature was started and nothing in the map changed: an answer to a
+  /// `Summon`, never a send.
+  NotSummoned(reason: NotSummoned)
   /// The connection's player is not in the map any more, whether it was there
   /// or not.
   Left
@@ -511,6 +567,8 @@ pub opaque type State {
     spawns: Dict(SpawnId, SpawnState),
     creature_watches: Dict(WatchId, SpawnId),
     unit_of_spawn: Dict(SpawnId, Int),
+    run_spawns: Dict(SpawnId, Spawn),
+    next_run_only_id: SpawnId,
     next_unit_id: Int,
     next_watch: Int,
     started_ms: Int,
@@ -595,6 +653,7 @@ pub fn rule(
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
   spawns spawns: WorldSpawns,
+  summons summons: spawn.SummonChecks,
   kinds kinds: Kinds,
   numbers numbers: GameNumbers,
   idle_stop_ms idle_stop_ms: Int,
@@ -608,6 +667,7 @@ pub fn rule(
       realm_id:,
       tables:,
       spawns:,
+      summons:,
       kinds:,
       numbers:,
       idle_stop_ms:,
@@ -628,6 +688,8 @@ pub fn new(settings: Settings) -> State {
     spawns: dict.new(),
     creature_watches: dict.new(),
     unit_of_spawn: dict.new(),
+    run_spawns: dict.new(),
+    next_run_only_id: spawn_source.first_run_only_id,
     next_unit_id: 1,
     next_watch: 1,
     started_ms: 0,
@@ -674,17 +736,48 @@ pub fn step(
       moved(state:, connection:, place:, seq:, now_ms: input.now.monotonic_ms)
     OwnEvent(Told(message: Ready(connection:, seq:))) ->
       ready(state:, connection:, seq:)
+    OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:))) ->
+      summoned(
+        state:,
+        caller:,
+        connection:,
+        creature_id:,
+        now_ms: input.now.monotonic_ms,
+      )
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Told(message: Join(..)))
-    | OwnEvent(Told(message: Leave(..))) ->
-      panic as "a map is asked Join and Leave and told Moved and Ready only"
+    | OwnEvent(Told(message: Leave(..)))
+    | OwnEvent(Told(message: Summon(..))) ->
+      panic as "a map is asked Join, Leave and Summon and told Moved and Ready only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
         Error(Nil) -> ended(state:, watch:, now_ms: input.now.monotonic_ms)
       }
   }
+}
+
+/// A development summon: the creature is made a run-only spawn at the place and
+/// facing the map holds for the connection's player, under the next run-only id
+/// (`spawn_source.run_only_id_after`, so never a stored id), checked as a spawn
+/// is (`spawn.summoned`), and started for the players who see that place under a
+/// new life, as a dormant spawn is started when its first viewer comes; the
+/// answer is `Summoned(unit id)`. A creature that fails the checks, or a
+/// connection with no player here, is `NotSummoned` and changes nothing: no id is
+/// taken and no creature starts. The spawn is kept in `run_spawns` for as long as
+/// its creature lives: sight and rings read it beside the stored spawns, and the
+/// creature's end, a corpse's timer included, drops it with no restart timer,
+/// since a run-only spawn does not respawn (a server choice: it is a test tool).
+/// A map that ends or restarts loses its run-only spawns.
+fn summoned(
+  state state: State,
+  caller caller: CallerId,
+  connection connection: ConnectionId,
+  creature_id creature_id: Creature2Id,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  todo as "check, take the ids, keep the run spawn, start the creature for those who see it, answer"
 }
 
 /// A map's start: its clock is set and the sweep timer starts. No creature
@@ -1025,7 +1118,7 @@ fn start_creature(
         incarnation: state.settings.incarnation,
         unit_id:,
         life:,
-        spawn_id: spawn,
+        spawn: spawn_source.Stored(id: spawn),
         clock_origin_ms: state.started_ms,
         viewers:,
       ),

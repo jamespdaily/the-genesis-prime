@@ -30,6 +30,7 @@ import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -70,8 +71,12 @@ pub fn a_join_starts_exactly_the_spawns_within_1024_with_the_player_as_first_vie
   let #(state, _) = spawns.started(at: [0.0, 500.0, 1024.0, 1024.5, 5000.0])
   let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let creatures = spawns.starts(taken)
-  assert list.map(creatures, fn(start) { { start.1 }.spawn_id })
-    == [SpawnId(1), SpawnId(2), SpawnId(3)]
+  assert list.map(creatures, fn(start) { { start.1 }.spawn })
+    == [
+      spawn_source.Stored(id: SpawnId(1)),
+      spawn_source.Stored(id: SpawnId(2)),
+      spawn_source.Stored(id: SpawnId(3)),
+    ]
     as "the three spawns in sight start, in the order of the spawns, and no other"
   let units = list.map(creatures, fn(start) { { start.1 }.unit_id })
   assert list.length(list.unique(list.prepend(units, 1))) == 4
@@ -119,7 +124,7 @@ pub fn a_move_into_sight_starts_the_creature_with_the_player_as_first_viewer_tes
   assert spawns.starts(taken) == [] as "far from every spawn, nothing starts"
   let #(_, taken) = spawns.move(state:, at_ms: 7000, connection: 1, x: 0.0)
   let #(_, creature) = the_start(taken)
-  assert creature.spawn_id == SpawnId(1)
+  assert creature.spawn == spawn_source.Stored(id: SpawnId(1))
   assert creature.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
     as "the creature starts for the player and sends its one 0x262 as it starts"
   assert spawns.creature_sends(taken) == []

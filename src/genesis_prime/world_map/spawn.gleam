@@ -97,6 +97,7 @@ import genesis_prime/world_map/creature_life.{
 }
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_source.{type Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject}
 import genesis_prime/world_map/unit_fields.{
   type HealthSource, ClientDefault, Recorded,
@@ -251,7 +252,7 @@ pub type WorldCoverage {
 }
 
 /// Why a row fails the load.
-type SpawnError {
+pub type SpawnError {
   /// The creature has no Creature2 row.
   NoCreatureRow(creature_id: Creature2Id)
   /// The client would not load the creature's row (`0x140485790`).
@@ -292,7 +293,7 @@ type SpawnError {
 }
 
 /// The client's rule a creature's row fails (`0x140485790`).
-type ValidityRule {
+pub type ValidityRule {
   ModelScaleNotAbove0
   CreationTypeNotBelow26
   NoArcheTypeRow
@@ -441,6 +442,67 @@ pub fn select(
 
 /// Message 0x262's unit type of a NonPlayer unit (`0x140649e20`).
 const non_player = 0
+
+/// What a summon of a creature is checked with, built once at the content load
+/// from the same tables, formulas and kinds the stored spawns are checked with,
+/// and put in a term beside them (genesis_prime/content/spawn `put_summon_checks`):
+/// the map reads it to answer a summon and the creature's start to build the
+/// spawn again.
+pub opaque type SummonChecks {
+  SummonChecks(catalog: Catalog, formulas: Formulas, kinds: Kinds)
+}
+
+/// The checks a summon is made with.
+pub fn summon_checks(
+  tables tables: table_store.Tables,
+  formulas formulas: Formulas,
+  kinds kinds: Kinds,
+) -> SummonChecks {
+  SummonChecks(catalog: catalog(tables:), formulas:, kinds:)
+}
+
+/// Why a summon makes no spawn.
+pub type SummonRefusal {
+  /// The row the summon would make fails the client's checks of a spawn
+  /// (`client_checks`) or the load's (`load_checks`).
+  FailsTheChecks(error: SpawnError)
+  /// The row passes them, but a stored spawn of it would not start
+  /// (`left_out_of`): a creature with no faction, one friendly to both player
+  /// factions, an NPC with a link, or one with no health. A summon is refused
+  /// for the same reason, a server choice, so it starts only what a spawn
+  /// starts.
+  WouldNotStart(creature_id: Creature2Id, reason: LeftOut)
+}
+
+/// The run-only spawn of a summon, checked as a spawn is: a row of entity type 0
+/// (NonPlayer) for the creature at the summoned place and facing, with the
+/// display, outfit and factions the creature's Creature2 row gives, through
+/// `load_checks` and `left_out_of`. The row's own level and health are none, so
+/// the creature stands at its `minLevel` with its Base Health
+/// (`creature_vitals`). The display and the outfit are the first entry of the
+/// creature's groups, a server choice: the client's weighted pick runs only for
+/// spawns it makes itself (`0x1404846c0`, `opcode.0x262.creature`), and both
+/// factions are `Creature2.factionId`, as the world database sends them
+/// (`opcode.0x262.creature`).
+pub fn summoned(
+  checks checks: SummonChecks,
+  summoned summoned: Summoned,
+) -> Result(Spawn, SummonRefusal) {
+  todo as "build the Row from the Creature2 row, then load_checks and left_out_of"
+}
+
+/// A sentence that says why a summon makes no spawn, which the player's system
+/// chat line carries.
+pub fn describe_refusal(refusal refusal: SummonRefusal) -> String {
+  case refusal {
+    FailsTheChecks(error:) -> describe(error:)
+    WouldNotStart(creature_id: Creature2Id(creature_id), reason:) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> " would not start as a spawn: "
+      <> describe_left_out(reason)
+  }
+}
 
 /// What the selection found of one row.
 type Judged {
@@ -1725,7 +1787,7 @@ fn describe_left_out(reason: LeftOut) -> String {
 
 /// A sentence that says why a row fails the load, for the log and the message the
 /// start stops with.
-fn describe(error error: SpawnError) -> String {
+pub fn describe(error error: SpawnError) -> String {
   case error {
     NoCreatureRow(creature_id: Creature2Id(creature_id)) ->
       "Creature2 " <> int.to_string(creature_id) <> " has no row"

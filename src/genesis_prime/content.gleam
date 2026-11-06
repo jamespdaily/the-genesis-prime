@@ -240,6 +240,18 @@ fn read(
       })
       log_levels_out_of_range(selection)
       content_spawn.put(key:, selection:)
+      case kinds_for_spawns {
+        Ok(kinds) ->
+          content_spawn.put_summon_checks(
+            key:,
+            checks: spawn.summon_checks(
+              tables:,
+              formulas: rating.formulas(tables:),
+              kinds:,
+            ),
+          )
+        Error(Nil) -> Nil
+      }
       case kinds {
         Ok(kinds) -> content_creature_kind.put(key:, kinds:)
         Error(..) -> Nil

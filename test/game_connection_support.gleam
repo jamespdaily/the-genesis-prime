@@ -76,7 +76,11 @@ pub fn settings() -> game_connection.Settings {
   Settings(
     realm_id: 5,
     max_characters: 9,
-    game: GameSettings(camp_countdown_ms: 12_345, character_slots: 3),
+    game: GameSettings(
+      camp_countdown_ms: 12_345,
+      character_slots: 3,
+      dev_commands: False,
+    ),
     realm_name: "Test Realm",
     tables: character_tables.shared(),
     ask_deadline_ms: 4000,
@@ -460,6 +464,7 @@ pub fn map_run_with_four_players(run: Int) -> map.State {
       realm_id: settings().realm_id,
       tables: settings().tables,
       spawns: spawn.no_spawns(),
+      summons: spawn_support.summon_checks(),
       kinds: Kinds(
         default: Kind(
           respawn_ms: 60_000,

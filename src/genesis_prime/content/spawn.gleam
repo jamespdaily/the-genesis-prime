@@ -6,18 +6,24 @@
 //// ```
 //// content.load ─▶ rows(db) ─▶ spawn.select(rows, tables) ─▶ put(key, selection)
 //// a map's start ─▶ world(key, its world id) ─▶ WorldSpawns: no copy, no query
+//// the same load  ─▶ spawn.summon_checks(tables, formulas, kinds) ─▶ put_summon_checks(key, checks)
+//// a map's start, a creature's start ─▶ summon_checks(key): what a run-only spawn is checked with
 //// ```
 ////
 //// - **The term** of a world is `WorldSpawns(by_id, objects, cells)`, put once for every
 ////   row of the client's World table, empty for a world with no spawn that
 ////   starts.
+//// - **The summon checks** are one term (id 0 of table `spawn_summon_checks`),
+////   put with the worlds' terms, so a map answers a development summon and a
+////   creature's start builds the same run-only spawn from them, with no table
+////   read during play.
 //// - **The query** is `sql/load_spawns.sql`, run by the load's own pool before
 ////   the tree starts; nothing queries the table during play.
 
 import genesis_prime/content/sql
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/spawn.{
-  type Row, type Selection, type WorldSpawns, Row,
+  type Row, type Selection, type SummonChecks, type WorldSpawns, Row,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
@@ -80,4 +86,18 @@ pub fn put_world(
 /// with no spawn, so a world with no term is a bug and crashes the reader.
 pub fn world(key key: Key, world_id world_id: Int) -> WorldSpawns {
   store.content(key:, table:, id: world_id)
+}
+
+/// The table name of the summon checks in a term.
+const summon_checks_table = "spawn_summon_checks"
+
+/// Writes the summon checks under the key, once.
+pub fn put_summon_checks(key key: Key, checks checks: SummonChecks) -> Nil {
+  store.put_content(key:, table: summon_checks_table, id: 0, value: checks)
+}
+
+/// The summon checks the load put under the key. The load puts the term before
+/// the tree starts, so a reader that finds none is a bug and crashes.
+pub fn summon_checks(key key: Key) -> SummonChecks {
+  store.content(key:, table: summon_checks_table, id: 0)
 }

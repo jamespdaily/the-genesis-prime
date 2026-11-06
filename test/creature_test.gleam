@@ -33,6 +33,7 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/int
@@ -75,7 +76,7 @@ fn creature_at(
       incarnation: 1,
       unit_id: 7,
       life: 3,
-      spawn_id: SpawnId(1),
+      spawn: spawn_source.Stored(id: SpawnId(1)),
       clock_origin_ms:,
       viewers: list.map(viewers, fn(viewer) {
         let ConnectionId(number) = viewer

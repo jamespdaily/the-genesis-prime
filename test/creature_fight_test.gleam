@@ -51,6 +51,7 @@ import genesis_prime/world_map/creature_path.{Running}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/int
@@ -91,7 +92,7 @@ fn beast_with(
         incarnation: 1,
         unit_id: unit,
         life:,
-        spawn_id: SpawnId(1),
+        spawn: spawn_source.Stored(id: SpawnId(1)),
         clock_origin_ms: 5000,
         viewers: list.map(viewers, fn(viewer) {
           #(ConnectionId(viewer), stay_of(viewer))

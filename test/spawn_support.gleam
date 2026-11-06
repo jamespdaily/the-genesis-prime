@@ -5,6 +5,7 @@
 //// truncated to 52), so a test of the rule reads what the real spawn would carry
 //// without the client's tables.
 
+import character_tables
 import class_resource_support
 import database_support
 import genesis_prime/content/class_resource as content_class_resource
@@ -29,6 +30,7 @@ import gleam/list
 import gleam/option
 import owned_key
 import place_support
+import rating_support
 
 /// Warfare Woods, WorldZone 5967 (Quest2.10518).
 pub const warfare_woods = 5967
@@ -161,6 +163,16 @@ pub fn beast_combat() -> creature_life.Combat {
     ),
     attack: beast_attack(),
     interrupt_armor: creature_life.NoArmor,
+  )
+}
+
+/// What a summon is checked with: the content tables, the rating formulas and
+/// the kinds of `kinds`.
+pub fn summon_checks() -> spawn.SummonChecks {
+  spawn.summon_checks(
+    tables: character_tables.content_tables(),
+    formulas: rating_support.formulas(),
+    kinds: kinds(),
   )
 }
 

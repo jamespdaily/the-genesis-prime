@@ -261,6 +261,10 @@ pub fn said(message: map.Outgoing) -> String {
       "Approached by " <> int.to_string(number)
     map.Withdrew(by: ConnectionId(number)) ->
       "Withdrew by " <> int.to_string(number)
-    map.Joined(..) | map.NotJoined(..) | map.Left -> "an answer"
+    map.Joined(..)
+    | map.NotJoined(..)
+    | map.Summoned(..)
+    | map.NotSummoned(..)
+    | map.Left -> "an answer"
   }
 }
