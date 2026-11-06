@@ -14,7 +14,7 @@
 
 import client_tables
 import genesis_prime/game/unit_properties.{
-  type Properties, type Source, Changed, Modifier, Source,
+  type Properties, type Source, Change, Changed, Source,
 }
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
@@ -45,7 +45,7 @@ fn modifier(
   multiplier multiplier: Float,
   flat flat: Float,
 ) -> unit_properties.Modifier {
-  Modifier(property:, mode: 3, multiplier:, flat:, per_level: 0.0)
+  Change(property:, mode: 3, multiplier:, flat:, per_level: 0.0)
 }
 
 fn source(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
@@ -114,7 +114,7 @@ pub fn a_modifier_adds_its_amount_for_each_level_of_the_player_test() -> Nil {
     unit_properties.apply(
       properties: fresh(),
       source: source(cast_id: 1, effect_id: 61_528),
-      modifier: Modifier(
+      modifier: Change(
         property: UnitProperty2Id(41),
         mode: 1,
         multiplier: 1.0,

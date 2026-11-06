@@ -43,9 +43,9 @@
 ////   tickTime is a `TickingGain`, which the cast rule does not apply. The effect's
 ////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
 ////   a client frame).
-//// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`) of a tree
-////   is a `Lasting` row: the unit its targetFlags aim at, its delay, durationTime and
-////   flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
+//// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`), a Scale
+////   effect (18) and a RavelSignal effect (81) of a tree are each a `Lasting` row: the unit
+////   its targetFlags aim at, its delay, durationTime and flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
 ////   SpellForceRemove effect (`Spell4Effects.effectType.80`) is a `ForceRemove` row:
 ////   dataBits00 picks a spell group (1), a Spell4 (2) or a Spell4Base (3) by
 ////   dataBits01, which must name a row, and the count of stacks is read only where
@@ -72,7 +72,11 @@
 ////   each level (genesis_prime/game/unit_properties), and its delay, durationTime and
 ////   flags bit 2, which start and end the change and give the caster's node of the cast
 ////   its life. A row aimed only at other units is not read. Its caster apply
-////   prerequisite, phases and spend tag are a Fluff effect's.
+////   prerequisite, phases and spend tag are a Fluff effect's. A UnitPropertyConversion
+////   effect (`Spell4Effects.effectType.145`) whose targetFlags include the caster is a
+////   `PropertyModifier` row too, whose change is a `Conversion` of property dataBits00
+////   into dataBits01 at the 32-bit float dataBits02; both properties must have a
+////   UnitProperty2 row.
 //// - **The shield heals.** A HealShields effect (`Spell4Effects.effectType.118`) whose
 ////   targetFlags include the caster (bit 1), or are the primary target alone (2) in a spell
 ////   cast on the caster, is a `ShieldHeal` row: its formula (dataBits00 as a float,
@@ -221,8 +225,9 @@ import genesis_prime/message/float32
 import genesis_prime/table/class
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
-  ClassId, PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId,
-  Spell4Id, Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
+  type UnitProperty2Id, ClassId, PrerequisiteId, Spell4BaseId,
+  Spell4ConditionsId, Spell4EffectsId, Spell4Id, Spell4StackGroupId,
+  SpellCoolDownId, UnitProperty2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/positional_requirement
@@ -515,14 +520,15 @@ pub type Spell {
     /// The spell's stack group and its cap (`Spell4.spell4StackGroupId`,
     /// `Spell4StackGroup.stackCap`).
     stack: lasting.Stack,
-    /// The Fluff effects that give the spell a life on a unit.
+    /// The Fluff, Scale, RavelSignal and area ShieldOverload effects that give the spell a
+    /// life on a unit.
     lasting: List(Lasting),
     /// The SpellForceRemove effects that take casts off a unit.
     removes: List(ForceRemove),
     /// The CCStateSet effects that hold a stun or a knockdown on a unit.
     controls: List(CrowdControl),
-    /// The UnitPropertyModifier effects aimed at the caster, which change one of its
-    /// properties for their time.
+    /// The UnitPropertyModifier and UnitPropertyConversion effects aimed at the caster,
+    /// which change its properties for their time.
     modifiers: List(PropertyModifier),
     /// The ForcedMove effects aimed at the caster, which the go lists and the caster's
     /// client carries out.
@@ -689,9 +695,9 @@ pub type ForcedMove {
   )
 }
 
-/// A UnitPropertyModifier effect (`Spell4Effects.effectType.11`) of a spell whose
-/// targetFlags include the caster: the change it makes to one property
-/// (`modifier`), its delay, durationTime and flags bit 2 (`row`, which also give the
+/// A UnitPropertyModifier effect (`Spell4Effects.effectType.11`) or a
+/// UnitPropertyConversion effect (`Spell4Effects.effectType.145`) of a spell whose
+/// targetFlags include the caster: the change it makes to the properties (`modifier`), its delay, durationTime and flags bit 2 (`row`, which also give the
 /// caster's node of the cast its life, as a Fluff effect's do), the phases of
 /// `phase_flags` it applies in, when its `condition` holds (its caster apply
 /// prerequisite against the caster; one behind a target apply prerequisite is not
@@ -725,12 +731,15 @@ pub type CrowdControl {
   )
 }
 
-/// A Fluff effect (`Spell4Effects.effectType.17`) of a spell: it names the unit it
-/// aims at in the go's target info and gives the spell a life there, from its
-/// `row`, in the phases of `phase_flags`, when its `condition` holds (its caster
-/// apply prerequisite against the caster; one behind a target apply prerequisite is
-/// not applied), and when its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend). Its dataBits need no handling.
+/// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), RavelSignal effect
+/// (81) or area ShieldOverload effect (64) of a spell: it names the unit it aims at in the go's target info and gives the
+/// spell a life there, from its `row`, in the phases of `phase_flags`, when its
+/// `condition` holds (its caster apply prerequisite against the caster; one behind a
+/// target apply prerequisite is not applied), and when its `tag` holds for the points
+/// the cast spent (genesis_prime/game/spend). Its dataBits need no handling: the client
+/// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), and a
+/// RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
+/// ShieldOverload unit itself (`Spell4Effects.effectType.64`).
 pub type Lasting {
   Lasting(
     effect_id: Spell4EffectsId,
@@ -917,8 +926,8 @@ pub type PlanError {
     data_bits03: Int,
     data_bits04: Int,
   )
-  /// A Fluff or SpellForceRemove effect of a tree is aimed by a flag value that is
-  /// not read (`Spell4Effects.targetFlags`).
+  /// A Fluff, SpellForceRemove, Scale or RavelSignal effect of a tree is aimed by a flag
+  /// value that is not read (`Spell4Effects.targetFlags`).
   LastingAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree holds a state other than Stun and Knockdown,
   /// which no rule of the server holds on a creature (`Unit.CodeEnumCCState`).
@@ -929,11 +938,13 @@ pub type PlanError {
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
   ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
-  /// A UnitPropertyModifier effect of a tree names a property that UnitProperty2 has no
-  /// row for, which the client's 0x93a refuses from id 197 (`opcode.0x93a`).
+  /// A UnitPropertyModifier or UnitPropertyConversion effect of a tree names a property
+  /// that UnitProperty2 has no row for, which the client's 0x93a refuses from id 197
+  /// (`opcode.0x93a`).
   ModifierPropertyHasNoRow(spell4_id: Int, effect_id: Int, property: Int)
   /// A UnitPropertyModifier effect of a tree has a multiplier, flat amount or per-level
-  /// amount that is not a finite number: `column` is its dataBits column.
+  /// amount, or a UnitPropertyConversion effect a share, that is not a finite number:
+  /// `column` is its dataBits column.
   ModifierNumberNotFinite(spell4_id: Int, effect_id: Int, column: String)
   /// A ModifySpellCooldown effect of a tree has a dataBits03 that is not a finite
   /// number, for an operation that reads it (`Spell4Effects.effectType.73`).
@@ -1075,7 +1086,7 @@ pub fn describe(error error: PlanError) -> String {
     LastingAimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a Fluff or SpellForceRemove effect "
+      <> " has a Fluff, SpellForceRemove, Scale or RavelSignal effect "
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
@@ -1105,7 +1116,7 @@ pub fn describe(error error: PlanError) -> String {
     ModifierPropertyHasNoRow(spell4_id:, effect_id:, property:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a UnitPropertyModifier effect "
+      <> " has a UnitPropertyModifier or UnitPropertyConversion effect "
       <> int.to_string(effect_id)
       <> " of property "
       <> int.to_string(property)
@@ -1113,7 +1124,7 @@ pub fn describe(error error: PlanError) -> String {
     ModifierNumberNotFinite(spell4_id:, effect_id:, column:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a UnitPropertyModifier effect "
+      <> " has a UnitPropertyModifier or UnitPropertyConversion effect "
       <> int.to_string(effect_id)
       <> " whose "
       <> column
@@ -1805,8 +1816,9 @@ pub fn proxy_heals_read(
   }
 }
 
-/// The Fluff effects of a spell: each aimed at a unit the plan reads, with the
-/// columns that give its node a life (`Spell4Effects.effectType.17`).
+/// The Fluff, Scale, RavelSignal and area ShieldOverload effects of a spell: each aimed at a
+/// unit the plan reads, with the columns that give its node a life (`Spell4Effects.effectType.17`,
+/// `.18` and `.81`).
 fn lasting_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -1817,8 +1829,8 @@ fn lasting_of(
   })
 }
 
-/// The Fluff rows among `effects` and the ShieldOverload rows aimed at the area, with the
-/// condition `condition` gives each.
+/// The Fluff, Scale and RavelSignal rows among `effects` and the ShieldOverload rows aimed
+/// at the area, with the condition `condition` gives each.
 pub fn lasting_in(
   spell4_id spell4_id: Int,
   effects effects: List(spell4_effects.Spell4Effects),
@@ -1829,6 +1841,8 @@ pub fn lasting_in(
   |> list.filter(fn(effect) {
     let kind = effect_kind.kind_of(effect.effect_type)
     kind == effect_kind.Fluff
+    || kind == effect_kind.Scale
+    || kind == effect_kind.RavelSignal
     || kind == effect_kind.ShieldOverload
     && effect_kind.is_row_read(
       effect_type: effect.effect_type,
@@ -1883,16 +1897,7 @@ fn removes_of(
       spell4_id:,
       effect:,
     ))
-    use Nil <- result.try(case effect.data_bits03 == effect.data_bits04 {
-      True -> Ok(Nil)
-      False ->
-        Error(ForceRemoveCountsDiffer(
-          spell4_id:,
-          effect_id: effect.id,
-          data_bits03: effect.data_bits03,
-          data_bits04: effect.data_bits04,
-        ))
-    })
+    use Nil <- result.try(force_remove_counts_read(spell4_id:, effect:))
     use condition <- result.try(condition_of(
       tables:,
       effect:,
@@ -1908,6 +1913,24 @@ fn removes_of(
       tag: tag_of(effect:),
     ))
   })
+}
+
+/// A type 80 row's count of stacks is read only where dataBits03 and dataBits04 agree
+/// (`Spell4Effects.effectType.80`); a row where they differ fails the load.
+fn force_remove_counts_read(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Nil, PlanError) {
+  use <- bool.guard(
+    when: effect.data_bits03 == effect.data_bits04,
+    return: Ok(Nil),
+  )
+  Error(ForceRemoveCountsDiffer(
+    spell4_id:,
+    effect_id: effect.id,
+    data_bits03: effect.data_bits03,
+    data_bits04: effect.data_bits04,
+  ))
 }
 
 /// The CCStateSet effects of a spell (`Spell4Effects.effectType.4`): dataBits00 must be
@@ -1968,11 +1991,12 @@ fn controls_of(
   })
 }
 
-/// The UnitPropertyModifier effects of a spell whose targetFlags include the caster
-/// (`effect_kind.is_row_read`; `Spell4Effects.effectType.11.change`): dataBits00 is the
-/// property, which UnitProperty2 must have a row for, dataBits01 the mode, dataBits02
-/// the multiplier, dataBits03 the flat amount and dataBits04 the amount for each level,
-/// all three as the 32-bit floats their columns hold, which must be finite. Its caster
+/// The UnitPropertyModifier and UnitPropertyConversion effects of a spell whose
+/// targetFlags include the caster (`effect_kind.is_row_read`). A type 11 row
+/// (`Spell4Effects.effectType.11.change`): dataBits00 is the property, which UnitProperty2
+/// must have a row for, dataBits01 the mode, dataBits02 the multiplier, dataBits03 the
+/// flat amount and dataBits04 the amount for each level, all three as the 32-bit floats
+/// their columns hold, which must be finite. A type 145 row (`conversion_of`). Its caster
 /// apply prerequisite is read as a Fluff effect's is (`condition_of`); a row aimed only
 /// at other units is left out.
 fn modifiers_of(
@@ -1982,40 +2006,26 @@ fn modifiers_of(
 ) -> Result(List(PropertyModifier), PlanError) {
   effects
   |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.PropertyModifier
+    let kind = effect_kind.kind_of(effect.effect_type)
+    {
+      kind == effect_kind.PropertyModifier
+      || kind == effect_kind.PropertyConversion
+    }
     && effect_kind.is_row_read(
       effect_type: effect.effect_type,
       target_flags: effect.target_flags,
     )
   })
   |> list.try_map(fn(effect) {
-    let property = UnitProperty2Id(effect.data_bits00)
-    use _ <- result.try(
-      unit_property2.get(tables:, id: property)
-      |> result.replace_error(ModifierPropertyHasNoRow(
-        spell4_id:,
-        effect_id: effect.id,
-        property: effect.data_bits00,
-      )),
+    use modifier <- result.try(
+      case
+        effect_kind.kind_of(effect.effect_type)
+        == effect_kind.PropertyConversion
+      {
+        True -> conversion_of(tables:, spell4_id:, effect:)
+        False -> change_of(tables:, spell4_id:, effect:)
+      },
     )
-    use multiplier <- result.try(modifier_number(
-      spell4_id:,
-      effect:,
-      column: "dataBits02",
-      bits: effect.data_bits02,
-    ))
-    use flat <- result.try(modifier_number(
-      spell4_id:,
-      effect:,
-      column: "dataBits03",
-      bits: effect.data_bits03,
-    ))
-    use per_level <- result.try(modifier_number(
-      spell4_id:,
-      effect:,
-      column: "dataBits04",
-      bits: effect.data_bits04,
-    ))
     use condition <- result.try(condition_of(
       tables:,
       effect:,
@@ -2024,18 +2034,98 @@ fn modifiers_of(
     Ok(PropertyModifier(
       effect_id: Spell4EffectsId(effect.id),
       phase_flags: effect.phase_flags,
-      modifier: unit_properties.Modifier(
-        property:,
-        mode: effect.data_bits01,
-        multiplier:,
-        flat:,
-        per_level:,
-      ),
+      modifier:,
       row: lasting_row_of(effect:),
       condition:,
       tag: tag_of(effect:),
     ))
   })
+}
+
+/// A UnitPropertyModifier row's change (`Spell4Effects.effectType.11.change`): dataBits00
+/// is the property, which UnitProperty2 must have a row for.
+fn change_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(unit_properties.Modifier, PlanError) {
+  use property <- result.try(property_of(
+    tables:,
+    spell4_id:,
+    effect:,
+    id: effect.data_bits00,
+  ))
+  use multiplier <- result.try(modifier_number(
+    spell4_id:,
+    effect:,
+    column: "dataBits02",
+    bits: effect.data_bits02,
+  ))
+  use flat <- result.try(modifier_number(
+    spell4_id:,
+    effect:,
+    column: "dataBits03",
+    bits: effect.data_bits03,
+  ))
+  use per_level <- result.try(modifier_number(
+    spell4_id:,
+    effect:,
+    column: "dataBits04",
+    bits: effect.data_bits04,
+  ))
+  Ok(unit_properties.Change(
+    property:,
+    mode: effect.data_bits01,
+    multiplier:,
+    flat:,
+    per_level:,
+  ))
+}
+
+/// A UnitPropertyConversion row's change (`Spell4Effects.effectType.145`): property
+/// dataBits01 gains the 32-bit float dataBits02, which must be finite, times property
+/// dataBits00; UnitProperty2 must have a row for each property.
+fn conversion_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(unit_properties.Modifier, PlanError) {
+  use from <- result.try(property_of(
+    tables:,
+    spell4_id:,
+    effect:,
+    id: effect.data_bits00,
+  ))
+  use to <- result.try(property_of(
+    tables:,
+    spell4_id:,
+    effect:,
+    id: effect.data_bits01,
+  ))
+  use share <- result.try(modifier_number(
+    spell4_id:,
+    effect:,
+    column: "dataBits02",
+    bits: effect.data_bits02,
+  ))
+  Ok(unit_properties.Conversion(from:, to:, share:))
+}
+
+/// The UnitProperty2 id a modifier row names, which the table must have a row for.
+fn property_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  id id: Int,
+) -> Result(UnitProperty2Id, PlanError) {
+  let property = UnitProperty2Id(id)
+  unit_property2.get(tables:, id: property)
+  |> result.replace(property)
+  |> result.replace_error(ModifierPropertyHasNoRow(
+    spell4_id:,
+    effect_id: effect.id,
+    property: id,
+  ))
 }
 
 /// The ForcedMove effects of a spell whose targetFlags include the caster
@@ -2398,8 +2488,12 @@ pub fn struck_unit_children(
 /// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
 /// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
 /// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
-/// struck unit, which fails the load, `proxy_heals_read`). The coverage measure counts the
-/// other rows as not read, so it and the plan cannot disagree.
+/// struck unit, which fails the load, `proxy_heals_read`). A Fluff, Scale or RavelSignal
+/// row is read when its aim is one the plan reads (`lasting_aim_of`) and no target apply
+/// prerequisite stands before it, which no go applies; a SpellForceRemove row also when its
+/// counts agree (`force_remove_counts_read`). A SpellForceRemove row whose dataBits01 names
+/// no row fails the load too, which this check cannot see without the tables. The coverage
+/// measure counts the other rows as not read, so it and the plan cannot disagree.
 pub fn effect_row_read(
   effect effect: spell4_effects.Spell4Effects,
   struck_children struck_children: Set(Int),
@@ -2415,6 +2509,14 @@ pub fn effect_row_read(
       result.is_ok(stealth_on_the_caster(spell4_id: effect.spell_id, effect:))
     effect_kind.Proc ->
       result.is_ok(proc_read(spell4_id: effect.spell_id, effect:))
+    effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
+      lasting_row_applied(effect:)
+    effect_kind.ForceRemove ->
+      lasting_row_applied(effect:)
+      && result.is_ok(force_remove_counts_read(
+        spell4_id: effect.spell_id,
+        effect:,
+      ))
     effect_kind.ShieldHeal ->
       shield_heal_of(spell4_id: effect.spell_id, effect:, condition: Always)
       |> result.map(fn(heal) {
@@ -2429,15 +2531,21 @@ pub fn effect_row_read(
     effect_kind.Proxy
     | effect_kind.Damage
     | effect_kind.VitalModifier
-    | effect_kind.Fluff
-    | effect_kind.ForceRemove
     | effect_kind.CrowdControl
     | effect_kind.PropertyModifier
+    | effect_kind.PropertyConversion
     | effect_kind.ForcedMove
     | effect_kind.CooldownModifier
     | effect_kind.ShieldOverload
     | effect_kind.Unread(..) -> True
   }
+}
+
+/// Whether a lasting row's aim is one the plan reads and no target apply prerequisite
+/// stands before it, which no go applies.
+fn lasting_row_applied(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  result.is_ok(lasting_aim_of(spell4_id: effect.spell_id, effect:))
+  && effect.prerequisite_id_target_apply == 0
 }
 
 /// What the spell does to the caster's stealth, from the spell's spellCastStealthChange:
@@ -2534,8 +2642,8 @@ fn modifier_number(
   ))
 }
 
-/// The aim of a Fluff or SpellForceRemove effect: the caster, the primary target, the
-/// area or both of those; any other flag value fails the load.
+/// The aim of a Fluff, SpellForceRemove, Scale or RavelSignal effect: the caster, the
+/// primary target, the area or both of those; any other flag value fails the load.
 fn lasting_aim_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,

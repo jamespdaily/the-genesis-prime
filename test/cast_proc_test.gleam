@@ -501,7 +501,7 @@ fn modifier(
   multiplier multiplier: Float,
   flat flat: Float,
 ) -> unit_properties.Modifier {
-  unit_properties.Modifier(
+  unit_properties.Change(
     property: UnitProperty2Id(property),
     mode:,
     multiplier:,
@@ -540,7 +540,10 @@ pub fn leaving_stealth_by_the_second_press_casts_60769_then_79932_and_empower_la
     property_starts(effects:)
     |> list.map(fn(start) { start.1 })
     |> list.sort(fn(first, second) {
-      int.compare(first.property.value, second.property.value)
+      int.compare(
+        unit_properties.changed_property(modifier: first).value,
+        unit_properties.changed_property(modifier: second).value,
+      )
     })
   assert starts
     == [
