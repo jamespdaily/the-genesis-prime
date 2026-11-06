@@ -34,11 +34,13 @@ import character_support
 import character_tables
 import connection_rule_support as support
 import content_support
+import driven_time
 import event_wait
 import game_client
 import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
+import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/content
 import genesis_prime/game/cast
 import genesis_prime/game/connection/state as connection_state
@@ -1330,12 +1332,26 @@ fn two_players_enter_one_map() -> TwoEntered {
 fn two_players_of_class_enter_one_map(
   first_class first_class: Int,
 ) -> TwoEntered {
+  two_players_of_class_enter_one_map_with(
+    first_class:,
+    scripts: script.operating_system,
+  )
+}
+
+/// As `two_players_of_class_enter_one_map`, the game connections taking their time
+/// and their timers from `scripts`, which a test that drives them gives
+/// (`driven_time.scripts`).
+fn two_players_of_class_enter_one_map_with(
+  first_class first_class: Int,
+  scripts scripts: Scripts,
+) -> TwoEntered {
   let started =
     login_support.start_with(change: fn(settings) {
       server.Settings(
         ..settings,
         game: server.Served(
           ..settings.game,
+          scripts:,
           settings: connection_state.Settings(
             ..settings.game.settings,
             tables: character_tables.shared_with_spell_trees(),
@@ -1637,12 +1653,23 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
 
 pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_the_same_casts_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map(first_class: 5)
+    two_players_of_class_enter_one_map_with(
+      first_class: 5,
+      scripts: driven_time.scripts(time),
+    )
   game_client.hold_ability(game: first, bag_index: 0, target: 0, held: 1)
-  let #(own, first_have) =
-    game_client.read_kept(game: first, have: first_have, count: 9)
-  assert cast_support.cast_lines(frames: own)
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  // The global cooldown of the first cast is 1000 ms (Spell4.38765: SpellCoolDown
+  // 115); the clock moves that far, so the Proxy's phases and the repeat fire in the
+  // order of their times.
+  driven_time.advance(time:, ms: 1000)
+  let #(later, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let own = cast_support.cast_lines(frames: list.append(pressed, later))
+  assert list.take(own, 9)
     == [
       "started k1 38765 root 38765 parent 0",
       "opened 38765 k1",
@@ -1655,27 +1682,28 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
       "finished k2",
     ]
     as "opcode.0x4db and cast.hold_answer: held 1 starts Shred with a cast id of the server's, no 0x7fd, and opens the threshold (opcode.0x816); Spell4.38765 thresholdTime 4000, its Proxy 38767 goes in three phases (SpellPhase 3712 to 3714)"
-  let #(repeat, _) =
-    game_client.read_kept(game: first, have: first_have, count: 5)
-  assert cast_support.cast_lines(frames: repeat)
+  assert list.drop(own, 9)
     == [
-      "started k1 38766 root 38765 parent 38765",
-      "went k1 p0",
-      "started k2 39467 root 38765 parent 38766",
-      "finished k1",
+      "started k3 38766 root 38765 parent 38765",
+      "went k3 p0",
+      "started k4 39467 root 38765 parent 38766",
+      "finished k3",
       "closed 38765 1",
     ]
     as "cast.hold_repeat: with the key still down, one global cooldown later (Spell4.38765: SpellCoolDown 115, 1000 ms) the next tap casts the stage 38766 (Spell4Thresholds 238), the last, and 0x814 closes the threshold (opcode.0x814)"
-  // The release is sent, but the test cannot show that no cast follows it: a
-  // repeat the release failed to stop would come one global cooldown (1000 ms)
-  // later, after any answer the server could give to a message sent now, so only
-  // a wait past that time would show it on the wire, and the parallel suite
-  // waits on no clock. The pure-rule tests do: the release cancels the repeat
-  // timer, and a timer that fires after the release starts nothing
-  // (cast_hold_test).
+  // The server has taken the release before the clock moves on, so a repeat it
+  // failed to stop would fire inside the next global cooldown.
   game_client.hold_ability(game: first, bag_index: 0, target: 0, held: 0)
+  let #(_, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 3)
+  driven_time.advance(time:, ms: 1000)
+  let #(after_release, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 4)
+  assert cast_support.cast_lines(frames: after_release)
+    == ["went k1 p0", "went k1 p1", "went k1 p2", "finished k1"]
+    as "cast.hold_stop: held 0 cuts no cast short, so the stage's Proxy 39467 goes in its three phases (SpellPhase 4032 to 4034), and it ends the repeats, so no cast starts one global cooldown later"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 12)
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 38765 root 38765 parent 0",
@@ -1690,6 +1718,10 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
       "went k3 p0",
       "started k4 39467 root 38765 parent 38766",
       "finished k3",
+      "went k4 p0",
+      "went k4 p1",
+      "went k4 p2",
+      "finished k4",
     ]
     as "opcode.0x7ff.root_parent: a player in sight reads the same casts, the base cast with parent 0 and the repeat's stage with root and parent 38765"
   game_client.close(game: first)
@@ -1738,8 +1770,12 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
 
 pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_held_until_the_release_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map(first_class: 7)
+    two_players_of_class_enter_one_map_with(
+      first_class: 7,
+      scripts: driven_time.scripts(time),
+    )
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
@@ -1768,12 +1804,18 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
       child(5, 43_500),
       ["went k1 p4", "finished k1"],
     ])
-  let #(own, first_have) =
-    game_client.read_kept(game: first, have: first_have, count: 19)
-  assert cast_support.cast_lines(frames: own) == ["confirmed k1", ..quick_draw]
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  // The phases of Quick Draw come 0, 366, 200, 200 and 234 ms after one another
+  // (SpellPhase 5882 to 5886), 1000 ms in all.
+  driven_time.advance(time:, ms: 1000)
+  let #(later, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  assert cast_support.cast_lines(frames: list.append(pressed, later))
+    == ["confirmed k1", ..quick_draw]
     as "Spell4.43468, Quick Draw (SpellLevel 1011): five gos, the phase indexes 0 to 4 (SpellPhase 5882 to 5886), and the children whose caster apply gate passes: no cast of 43500 is live, so 17301 (type 15, comparison 2 on 43500) passes and 17302 (comparison 1) fails: 43498 by Spell4Effects 196513 in phase 1, 43499 by 196514 in phase 2, 43498 by 196515 and 43500 by 196516 in phase 3, each with its own go and finish, then Quick Draw's finish"
   let #(seen, second_have) =
-    game_client.read_kept(game: second, have: second_have, count: 19)
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 43468 root 43468 parent 0", ..quick_draw]
   game_client.press_ability(
@@ -1782,9 +1824,14 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     bag_index: 1,
     target: 0,
   )
-  let #(own, first_have) =
-    game_client.read_kept(game: first, have: first_have, count: 3)
-  assert cast_support.cast_lines(frames: own)
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 3)
+  // Spell4Thresholds 123 raises the charge to level 1 after its thresholdDuration,
+  // 1000 ms; the level after it (Spell4Thresholds 124) comes 1400 ms later.
+  driven_time.advance(time:, ms: 1000)
+  let #(later, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 4)
+  assert cast_support.cast_lines(frames: list.append(pressed, later))
     == ["confirmed k1", "opened 34718 k1", "index 34718 1"]
     as "Spell4.34718, Charged Shot (SpellLevel 1036): the press opens the threshold with the cast's id and holds the cast; Spell4Thresholds 123 raises the level to 1 after thresholdDuration 1000 (opcode.0x817)"
   game_client.press_ability(
@@ -1793,7 +1840,8 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     bag_index: 1,
     target: 0,
   )
-  let #(own, _) = game_client.read_kept(game: first, have: first_have, count: 5)
+  let #(own, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 5)
   assert cast_support.cast_lines(frames: own)
     == [
       "confirmed k1",
@@ -1804,7 +1852,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     ]
     as "the release casts the row at level 1, 34722 (Spell4Thresholds 123), then 0x814 closes the threshold and the base cast ends with its 0x7fe (cast.charge_release_base)"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 5)
+    game_client.read_until_pong(game: second, have: second_have, number: 2)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 34718 root 34718 parent 0",
