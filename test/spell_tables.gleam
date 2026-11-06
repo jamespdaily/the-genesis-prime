@@ -55,8 +55,10 @@
 ////   of Spell4Thresholds 125, 123 and 124.
 
 import database_support
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/table/class
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
@@ -2199,6 +2201,23 @@ pub fn plans_with_mind_burst_spend() -> spell_plan.Plans {
       as "the planted rows with Mind Burst's spend build"
     plans
   })
+}
+
+/// The area of Mind Burst in the planted rows with its spend, its damage effects as
+/// (emmComparison, emmValue, targetFlags).
+pub fn mind_burst_area(
+  damage damage: List(#(Int, Int, Int)),
+) -> spell_area.SpellArea {
+  let assert Ok(areas) =
+    with_loaded_deriving(
+      rows: rows_with_mind_burst_spend(emm_id: 4, cost: #(6, 1), damage:),
+      derivations: [spell_plan.derivation()],
+      body: fn(tables) { spell_area.build(tables:) },
+    )
+    as "the planted Mind Burst builds its areas"
+  let assert Ok(area) = spell_area.of_spell(areas:, spell4_id: Spell4Id(32_809))
+    as "Mind Burst is in the areas"
+  area
 }
 
 /// The plans of `rows_with_energize`.

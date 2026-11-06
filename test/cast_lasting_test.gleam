@@ -27,7 +27,6 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/game/spend
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_confirmed
-import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
@@ -734,19 +733,6 @@ fn channel(
   )
 }
 
-fn refusal_results(
-  effects effects: List(Effect),
-) -> List(cast_result.CastResult) {
-  list.map(
-    support.frames_of(message_id: spell_cast_refused.message_id, effects:),
-    fn(frame) {
-      let assert Ok(refused) = spell_cast_refused.decode(frame.body)
-        as "a 0x7fc the rule wrote decodes"
-      refused.result
-    },
-  )
-}
-
 pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_test() -> Nil {
   use <- owned_test.run(5000)
   // Pulses at 0 and 1000 after the press at 1000 and a channelMaxTime of 1500: the
@@ -790,12 +776,12 @@ pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_t
   assert list.contains(written_ids(effects: free), 0x07FD)
     as "the current cast is clear while the buff lingers"
   let #(_, refused) = press(plans:, state:, bag: bag_of_base_3, at: 2500)
-  assert refusal_results(effects: refused) == [cast_result.SpellCooldown]
+  assert support.refusals(effects: refused) == [cast_result.SpellCooldown]
     as "the cooldown started when the cast lingered, at 2500 (0x14053e1b0)"
   // At 8000 the cooldown (5000 from 2500) has ended while the buff still lingers: a
   // cooldown that started at the 0x7fe, at 10000, would still refuse.
   let #(_, again) = press(plans:, state:, bag: bag_of_base_3, at: 8000)
-  assert refusal_results(effects: again) == []
+  assert support.refusals(effects: again) == []
     as "the press is taken: the cooldown ran from the linger, not from the 0x7fe"
 }
 
