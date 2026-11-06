@@ -35,7 +35,8 @@
 ////   0x1B3 with dead 1 (after 0x19B, before which it fails quietly,
 ////   `opcode.0x1b3.before_player`) and the entry's 0x636, which names the ghost,
 ////   follow the 0x6BC in that order; no 0x88C and no 0x89A is sent
-////   (`death.enter_dead`, `death.player_branch`), and no regeneration starts.
+////   (`death.enter_dead`, `death.player_branch`), and no regeneration starts. Its
+////   shield is 0 in its own 0x262 and its viewers' (`player_life.entering`).
 //// - **The order** is the client's: 0xAD first; 0x262 before 0x19B; 0x19B
 ////   before the loadout, 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
@@ -154,14 +155,12 @@ pub type Effect {
   /// Watch the run of the map that took the player: its end comes back to the
   /// connection's rule.
   WatchMap(map: MapId, incarnation: Int)
-  /// Start a timer of the player's life (genesis_prime/game/player_life): a player
-  /// that enters below its maximum health starts regenerating.
-  StartTimer(timer: step.TimerId, after_ms: Int)
-  /// A message about the player's own unit for its own client that the player's
-  /// life decided at entry: a player that enters dead is written its ghost, the
-  /// window and control of the ghost, which the connection turns into frames
-  /// (genesis_prime/game/connection/frames `own_unit_frame`).
-  OwnUnit(written: player_life.Written)
+  /// What the player's life decided at entry (`player_life.entering`), which the
+  /// connection carries out as it does a fight's (genesis_prime/game/connection/
+  /// life_effect): a player that enters below its maximum health starts its
+  /// health timer, and one that enters dead is written its ghost, the window and
+  /// control of the ghost.
+  Life(effects: List(player_life.Effect))
 }
 
 /// Why the client's request to play is refused: its body is one the client's
@@ -280,50 +279,15 @@ pub type Readiness {
   ClientReady
 }
 
-/// The entry's effect for what the player's life asked at entry: the timer it
-/// starts. Entry cancels no timer, and the life's other effects are its fights'
-/// or `life_written`'s.
-fn life_timer(effect effect: player_life.Effect) -> Result(Effect, Nil) {
-  case effect {
-    player_life.StartTimer(timer:, after_ms:) ->
-      Ok(StartTimer(timer:, after_ms:))
-    player_life.ToClient(..)
-    | player_life.CancelTimer(..)
-    | player_life.ToViewers(..)
-    | player_life.Answer(..)
-    | player_life.StreamTo(..)
-    | player_life.EndCasts
-    | player_life.GoToHolocrypt -> Error(Nil)
-  }
-}
-
-/// What the player's life writes its own client at entry: for a player that
-/// enters dead, its ghost, the window and control of the ghost, in that order
-/// (`death.enter_dead`).
-fn life_written(effect effect: player_life.Effect) -> Result(Effect, Nil) {
-  case effect {
-    player_life.ToClient(written:) -> Ok(OwnUnit(written:))
-    player_life.StartTimer(..)
-    | player_life.CancelTimer(..)
-    | player_life.ToViewers(..)
-    | player_life.Answer(..)
-    | player_life.StreamTo(..)
-    | player_life.EndCasts
-    | player_life.GoToHolocrypt -> Error(Nil)
-  }
-}
-
-/// What gives the player's client its unit to move at entry: 0x636 for the body
-/// of a player that enters alive, and for one that enters dead what its life
-/// writes, ending in 0x636 for the ghost.
+/// 0x636 for the body of a player that enters alive. A player that enters dead
+/// is given control of its ghost by its life's effects.
 fn control_at_entry(
   life life: player_life.Life,
   unit_id unit_id: Int,
-  effects effects: List(player_life.Effect),
 ) -> List(Effect) {
   case player_life.state(life:) {
     player_life.Alive -> [control_granted(unit_id:)]
-    player_life.Dead -> list.filter_map(effects, life_written)
+    player_life.Dead -> []
   }
 }
 
@@ -495,9 +459,12 @@ pub fn joined(
               place: sent,
             )
           let unit =
-            player_unit.with_health(
-              record: unit,
-              health: player_life.health(life:),
+            player_unit.with_shield(
+              record: player_unit.with_health(
+                record: unit,
+                health: player_life.health(life:),
+              ),
+              shield: player_life.shield(life:),
             )
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
@@ -547,13 +514,13 @@ pub fn joined(
               ],
               loadout_sent(character_number: character_id_number, loadout:),
               [player_path(character:)],
-              control_at_entry(life:, unit_id:, effects: life_effects),
+              control_at_entry(life:, unit_id:),
               [
+                Life(effects: life_effects),
                 movement_interval(),
                 entered_world(),
                 WatchMap(map:, incarnation:),
               ],
-              list.filter_map(life_effects, life_timer),
             ]),
           ))
         }

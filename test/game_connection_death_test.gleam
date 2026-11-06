@@ -1104,6 +1104,8 @@ pub fn an_entry_at_a_saved_health_of_0_creates_the_player_dead_and_its_ghost_and
   assert player.unit_id == game_connection_support.own_unit_id
     && unit_fields.stat(tail: player.tail, stat_id: 0) == Ok(0)
     as "the player's own 0x262 carries stat 0 = 0: the client creates the unit dead (0x140457bc5)"
+  assert unit_fields.stat(tail: player.tail, stat_id: 20) == Ok(0)
+    as "and stat 20, the shield, 0: a player that enters dead holds none (the server's choice, player_life.entering)"
   let assert [ghost] =
     game_connection_support.decoded(frames, 0x0262, unit_create_ghost.decode)
     as "one 0x262 of type 23, the ghost's"
@@ -1150,6 +1152,71 @@ pub fn an_entry_at_a_saved_health_of_0_creates_the_player_dead_and_its_ghost_and
       ),
     ]
     as "the entry's 0x636 names the ghost: one for the player after 0x1b3 would hand control back to the body"
+}
+
+pub fn a_viewer_that_arrives_while_the_player_entered_dead_gets_health_0_and_shield_0_and_no_ghost_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = entered_dead()
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(3),
+        stay: game_connection_support.viewer_stay(3),
+      )),
+    )
+  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:))] =
+    game_connection_support.peer_tells(taken)
+  assert unit_id == game_connection_support.own_unit_id
+    as "the body, not the ghost"
+  assert list.contains(
+      unit.tail.stats,
+      unit_fields.integer_stat(stat_id: 0, value: 0),
+    )
+    && list.contains(
+      unit.tail.stats,
+      unit_fields.integer_stat(stat_id: 20, value: 0),
+    )
+    as "stat 0, the health, and stat 20, the shield, are 0"
+}
+
+/// The place the body lies at in the tests that move it: not the entry place.
+fn body_place() -> start_place.Place {
+  game_connection_support.standing_at(x: 11.5, y: 12.5, z: 13.5)
+}
+
+pub fn a_save_while_dead_carries_the_place_the_body_lies_at_not_the_ghosts_nor_the_entry_place_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(dead, _) =
+    game_connection_support.killed(game_connection_support.moved_to(
+      state: game_connection_support.in_world(),
+      x: 11.5,
+      y: 12.5,
+      z: 13.5,
+    ))
+  let #(dead, _) =
+    game_connection_support.read(
+      dead,
+      game_connection_support.moves_message([
+        game_client.position_command(x: 500.0, y: 300.0, z: 500.0),
+      ]),
+    )
+  let at_the_body =
+    game_connection_support.save_asked_keeping(
+      sequence: 1,
+      place: body_place(),
+      health: Some(0),
+    )
+  assert game_connection_support.ask_request(camp_finished(dead)) == at_the_body
+    as "the camp's save: where the body fell, health 0; the ghost's run to 500, 300, 500 moved nothing, and the entry place is not saved"
+  assert game_connection_support.ask_request(
+      game_connection_support.feed(
+        dead,
+        step.OwnEvent(step.TimerFired(step.TimerId(2))),
+      ).1,
+    )
+    == at_the_body
+    as "and the 60 s save's"
 }
 
 pub fn an_entry_at_a_saved_health_of_0_starts_no_regeneration_and_saves_0_and_the_body_again_test() -> Nil {
@@ -1227,6 +1294,18 @@ pub fn a_player_that_entered_dead_wakes_here_as_after_a_death_in_the_world_test(
       ),
     ]
     as "full health"
+  assert game_connection_support.decoded(
+      frames,
+      0x0938,
+      unit_stat_changed.decode,
+    )
+    == [
+      UnitStatChanged(
+        unit_id: game_connection_support.own_unit_id,
+        change: unit_stat_change.Shield(UnitStatShield(value: 450)),
+      ),
+    ]
+    as "and the maximum shield, from the 0 it entered with"
   let #(_, struck) =
     game_connection_support.feed(
       state,
@@ -1286,15 +1365,36 @@ pub fn a_player_that_entered_dead_chooses_the_holocrypt_and_joins_there_alive_an
 
 pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never_saved_enters_alive_and_full_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(state, _) = game_connection_support.dead_in_world()
+  let #(state, _) =
+    game_connection_support.killed(game_connection_support.moved_to(
+      state: game_connection_support.in_world(),
+      x: 11.5,
+      y: 12.5,
+      z: 13.5,
+    ))
+  let body =
+    store.Character(
+      ..game_connection_support.world_character(),
+      place: Some(body_place()),
+    )
   let #(_, entry) =
     game_connection_support.entered_saved(
       in_character_select: game_connection_support.camp_from(state),
-      character: game_connection_support.world_character(),
+      character: body,
       saved_health: Some(0),
     )
   assert game_connection_support.written_ids(entry) == dead_entry_ids
     as "the store's 0 from the dead save of the camp enters dead again"
+  let frames =
+    game_connection_support.heard(entry, game_connection_support.keyed())
+  let assert [ghost] =
+    game_connection_support.decoded(frames, 0x0262, unit_create_ghost.decode)
+    as "one 0x262 of type 23"
+  let assert [start_movement.Position(at), _] = ghost.tail.movement_commands
+  assert at.x == float32.to_bits(start_place.x(body_place()))
+    && at.y == float32.to_bits(start_place.y(body_place()))
+    && at.z == float32.to_bits(start_place.z(body_place()))
+    as "the ghost stands at the saved place, where the body fell, not at the first entry's place"
   let #(_, never_saved) =
     game_connection_support.entered_saved(
       in_character_select: game_connection_support.in_select(),

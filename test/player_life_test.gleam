@@ -586,6 +586,9 @@ pub fn a_player_entering_at_a_saved_health_of_0_enters_dead_with_its_ghost_at_th
     && player_life.fighters(life: dead) == []
     && !player_life.in_combat(life: dead)
     as "health 0 is dead (0x140457bc5), the maximum stays the level's, and it fights no one"
+  assert player_life.shield(life: dead) == 0
+    && player_life.max_shield(life: dead) == 450
+    as "a death in the world leaves what the killing blow left, which no save keeps: the server's choice is a shield of 0 with the level's maximum"
   assert effects
     == [
       ToClient(GhostCreated(place: test_place())),
@@ -620,8 +623,18 @@ pub fn a_player_that_entered_dead_refuses_a_strike_takes_no_threat_and_comes_bac
       rolls:,
       place: test_place(),
     )
-  assert after_strike == dead && list.length(effects) == 1
-    as "a dead player is refused the strike and changes nothing"
+  assert after_strike == dead
+    && effects
+    == [
+      Answer(
+        to: beast(),
+        answered: Answered(
+          key: Key(cast_id: 1, phase: 0, unit_id: 20),
+          outcome: Refused(why: strike_tell.Dead),
+        ),
+      ),
+    ]
+    as "a dead player is refused the strike Dead and changes nothing"
   let #(threatened, effects) =
     player_life.threatened(
       life: dead,
@@ -642,7 +655,7 @@ pub fn a_player_that_entered_dead_refuses_a_strike_takes_no_threat_and_comes_bac
   assert player_life.state(life: alive) == player_life.Alive
     && player_life.health(life: alive) == 736
     && player_life.shield(life: alive) == 450
-    as "Wake Here brings it back at full health and shield, as after a death in the world"
+    as "Wake Here brings it back at full health and the maximum shield, as after a death in the world"
   assert list.contains(came_back, ToClient(OwnDeathState(dead: False)))
     && list.contains(came_back, ToClient(ControlGiven(to: ControlBody)))
     as "0x88c (P, 0) and control of the body"

@@ -111,7 +111,8 @@
 ////   (`opcode.0x1b3`) and 0x636 its movement (`opcode.0x636`).
 //// - **Entering dead**: a save while dead keeps health 0 and the body's place, and
 ////   an entry at a saved health of 0 (`entering`) is dead, with the ghost at the
-////   saved place and the window open, and no 0x88c, no 0x89a and no regeneration:
+////   saved place and the window open, with a shield of 0, and no 0x88c, no 0x89a and
+////   no regeneration:
 ////   the client creates a unit of health 0 dead (`0x140457bc5`, `death.enter_dead`).
 //// - **The window's values** are the server's choices (`death.server_choices`):
 ////   no cost, penalty, cooldown or forced release, since any cost disables Wake
@@ -471,7 +472,10 @@ pub fn new(
 /// no 0x88c and no 0x89a, which would run the death branch again, and no timer
 /// starts; its effects are the ghost's 0x262 at `place`, 0x1b3 with dead 1 and
 /// control of the ghost, which the entry burst places before its 0x636
-/// (`death.enter_dead`, `death.player_branch`).
+/// (`death.enter_dead`, `death.player_branch`). Its shield is 0: a death in the
+/// world leaves what the killing blow left, which no save keeps, so a player that
+/// enters dead holds none (the server's choice, as the save holds no shield),
+/// and coming back gives it the maximum.
 pub fn entering(
   saved saved: Option(Int),
   max_health max_health: Int,
@@ -482,7 +486,7 @@ pub fn entering(
   let health = int.min(option.unwrap(saved, or: max_health), max_health)
   let life = Life(..new(health: max_health, shield:, regeneration:), health:)
   case health {
-    0 -> #(Life(..life, state: Dead), [
+    0 -> #(Life(..life, shield: 0, state: Dead), [
       ToClient(GhostCreated(place:)),
       ToClient(OwnResurrectionWindow(dead: True)),
       ToClient(ControlGiven(to: ControlGhost)),

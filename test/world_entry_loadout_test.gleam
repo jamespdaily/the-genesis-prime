@@ -176,8 +176,7 @@ fn entering(
         world_entry.AskStore(..)
         | world_entry.AskMap(..)
         | world_entry.WatchMap(..)
-        | world_entry.StartTimer(..)
-        | world_entry.OwnUnit(..) -> Error(Nil)
+        | world_entry.Life(..) -> Error(Nil)
       }
     })
   #(frames, entered)
