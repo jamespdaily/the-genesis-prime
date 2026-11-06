@@ -14,6 +14,8 @@
 #                                                            at once, players connected or not
 #   main's commit new, check red or not finished           nothing for that commit; it is asked again
 #                                                            at the next run
+#   main's commit holds no release/Containerfile           nothing, and it is not asked about again
+#                                                            (the commits before the service existed)
 #   this Mac's address changed, or the server stopped      replaces the server container with the same
 #                                                            image, no build
 #   none of these                                          nothing
@@ -25,7 +27,8 @@
 # copies of these scripts are replaced with the new commit's. A second run at the
 # same time exits at once. Needs git, gh (logged in: it reads the commit's check
 # runs and gives the build its token), podman, and ~/.genesis-prime/play-service/
-# config.sh from install.sh (remote and repository). Exits 0 when it did nothing
+# config.sh from install.sh: the remote, the repository and, to follow a branch
+# other than main before it merges, a `branch=` line. Exits 0 when it did nothing
 # or deployed, 1 when a step failed (the log says which; the running server is
 # left as it was).
 #
@@ -67,6 +70,7 @@ load_environment
 # shellcheck source=/dev/null
 . "$state/config.sh"
 : "${remote:?config.sh sets no remote}" "${repository:?config.sh sets no repository}"
+branch=${branch:-main}
 
 machine_up || { log "the Podman machine could not be started"; exit 1; }
 ensure_postgres || exit 1
@@ -91,11 +95,16 @@ build_image() {
   # each step that can fail ends it with return.
   context=$(mktemp -d "$state/context.XXXXXX") || return 1
   if [ -d "$state/repository.git" ]; then
-    git -C "$state/repository.git" fetch --quiet origin "+refs/heads/main:refs/heads/main" || return 1
+    git -C "$state/repository.git" fetch --quiet origin "+refs/heads/$branch:refs/heads/$branch" || return 1
   else
     git clone --quiet --bare "$remote" "$state/repository.git" || return 1
   fi
   git -C "$state/repository.git" archive "$commit" | tar -x -C "$context" || return 1
+  if [ ! -f "$context/release/Containerfile" ]; then
+    echo "$commit" >"$state/not_deployable"
+    log "$commit holds no release/Containerfile, so it is not deployed and not asked about again"
+    return 2
+  fi
   token=$(gh auth token) || return 1
   log "building genesis-play:$commit"
   GH_TOKEN=$token podman build --quiet \
@@ -132,8 +141,11 @@ deployed_address=${deployed_address:-}
 running=${running:-}
 
 main_commit=
-if ! main_commit=$(git ls-remote "$remote" refs/heads/main | cut -f1) || [ -z "$main_commit" ]; then
-  log "could not read main from $remote; nothing built"
+if ! main_commit=$(git ls-remote "$remote" "refs/heads/$branch" | cut -f1) || [ -z "$main_commit" ]; then
+  log "could not read $branch from $remote; nothing built"
+  main_commit=
+fi
+if [ -n "$main_commit" ] && [ "$main_commit" = "$(cat "$state/not_deployable" 2>/dev/null || true)" ]; then
   main_commit=
 fi
 
@@ -143,7 +155,13 @@ if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
   case $status in
     0)
       if ! podman image exists "genesis-play:$main_commit"; then
-        build_image "$main_commit" || { log "building $main_commit failed; the running server is left as it was"; exit 1; }
+        built=0
+        build_image "$main_commit" || built=$?
+        case $built in
+          0) ;;
+          2) exit 0 ;;
+          *) log "building $main_commit failed; the running server is left as it was"; exit 1 ;;
+        esac
       fi
       log "applying the migrations of $main_commit to $play_database"
       migrate "genesis-play:$main_commit" || { log "the migrations of $main_commit failed; the running server is left as it was"; exit 1; }

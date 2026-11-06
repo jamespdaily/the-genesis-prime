@@ -169,6 +169,8 @@ class Planted:
             "remote='https://example.invalid/owner/name.git'\nrepository='owner/name'\n",
         )
         self.write(os.path.join(self.home, "tables", "Spell4.tbl"), "table bytes of the client")
+        os.makedirs(os.path.join(self.plant, "archive", "release"))
+        self.write(os.path.join(self.plant, "archive", "release", "Containerfile"), "FROM scratch\n")
         self.touch("exists_genesis-play-postgres")
         self.touch("running_genesis-play-postgres")
         self.set("main_commit", NEW_COMMIT)
@@ -292,6 +294,30 @@ class UpdaterTest(unittest.TestCase):
     def test_a_commit_whose_checks_cannot_be_asked_for_does_nothing(self):
         # No planted answer: the planted gh fails, as it does with GitHub unreachable.
         self.assertEqual(self.planted.update().returncode, 0)
+        self.assert_nothing_built_migrated_or_replaced()
+
+    def test_the_branch_the_config_names_is_the_one_followed_and_main_when_it_names_none(self):
+        self.planted.update()
+        self.assertGreaterEqual(self.planted.index_of("git ls-remote https://example.invalid/owner/name.git refs/heads/main"), 0)
+        Planted.write(
+            os.path.join(self.planted.state, "config.sh"),
+            "remote='https://example.invalid/owner/name.git'\nrepository='owner/name'\nbranch='feature'\n",
+        )
+        os.makedirs(os.path.join(self.planted.state, "repository.git"))
+        self.green()
+        self.planted.update()
+        self.assertGreaterEqual(self.planted.index_of("git ls-remote https://example.invalid/owner/name.git refs/heads/feature"), 0)
+        fetch = self.planted.index_of("git -C ")
+        self.assertIn("+refs/heads/feature:refs/heads/feature", self.planted.calls()[fetch])
+
+    def test_a_commit_with_no_containerfile_is_left_alone_and_not_asked_about_again(self):
+        self.green()
+        os.remove(os.path.join(self.planted.plant, "archive", "release", "Containerfile"))
+        self.assertEqual(self.planted.update().returncode, 0)
+        self.assert_nothing_built_migrated_or_replaced()
+        asked = len([c for c in self.planted.calls() if c.startswith("gh api")])
+        self.assertEqual(self.planted.update().returncode, 0)
+        self.assertEqual(len([c for c in self.planted.calls() if c.startswith("gh api")]), asked, "no second question to GitHub")
         self.assert_nothing_built_migrated_or_replaced()
 
     def test_a_main_that_cannot_be_read_does_nothing(self):
