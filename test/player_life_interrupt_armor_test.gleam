@@ -23,7 +23,7 @@ import genesis_prime/game/player_life.{
   type Life, OwnInterruptArmor, Regeneration, ToClient, ToViewers,
 }
 import genesis_prime/game/unit_properties.{
-  type Changed, type Properties, type Source, Changed, Modifier, Source,
+  type Changed, type Properties, type Source, Change, Changed, Source,
 }
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
@@ -271,7 +271,7 @@ pub fn a_type_11_raising_property_44_raises_the_armor_too_test() -> Nil {
       life: player(),
       properties: properties_support.fresh(level: 1),
       source: row,
-      modifier: Modifier(
+      modifier: Change(
         property: UnitProperty2Id(44),
         mode: 3,
         multiplier: 1.0,
@@ -299,7 +299,7 @@ pub fn a_lowered_interrupt_armor_maximum_from_a_property_change_lowers_the_armor
       life: player(),
       properties: properties_support.fresh(level: 1),
       source: type_11,
-      modifier: Modifier(
+      modifier: Change(
         property: unit_properties.interrupt_armor_threshold,
         mode: 3,
         multiplier: 1.0,

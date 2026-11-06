@@ -20,7 +20,7 @@ import genesis_prime/game/cast.{type State}
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{Modifier}
+import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/message/spell_go
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId, UnitProperty2Id}
 import gleam/int
@@ -46,7 +46,7 @@ fn falling_row() -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(67_777),
     phase_flags: 1,
-    modifier: Modifier(
+    modifier: Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,

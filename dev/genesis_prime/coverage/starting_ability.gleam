@@ -567,6 +567,9 @@ fn counted_namings(
         | effect_kind.ShieldOverload
         | effect_kind.Proc
         | effect_kind.InterruptArmor
+        | effect_kind.Scale
+        | effect_kind.RavelSignal
+        | effect_kind.PropertyConversion
         | effect_kind.Unread(..) -> []
       }
       named(table: "Spell4Effects", id: effect.id, columns: [

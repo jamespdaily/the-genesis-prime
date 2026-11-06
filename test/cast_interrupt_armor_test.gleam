@@ -25,7 +25,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{
-  type Modifier, type Source, Modifier, Source,
+  type Modifier, type Source, Change, Source,
 }
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_result
@@ -45,7 +45,7 @@ const bag_of_base_1 = 8
 
 /// The change an armor row of `points` makes to property 44: x * 1.0 + points.
 fn raising(points points: Float) -> Modifier {
-  Modifier(
+  Change(
     property: UnitProperty2Id(44),
     mode: 0,
     multiplier: 1.0,

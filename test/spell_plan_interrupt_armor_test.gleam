@@ -31,7 +31,7 @@ import genesis_prime/game/spell_plan.{
   OnCaster, OnEachStruck,
 }
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Modifier, Modifier}
+import genesis_prime/game/unit_properties.{type Modifier, Change}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, UnitProperty2Id}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/list
@@ -86,7 +86,7 @@ fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
 /// The change an Interrupt Armor row of `points` makes to property 44: x * 1.0 + points,
 /// the type 11 formula, with no row mode.
 fn raising_property_44(points points: Float) -> Modifier {
-  Modifier(
+  Change(
     property: UnitProperty2Id(44),
     mode: 0,
     multiplier: 1.0,

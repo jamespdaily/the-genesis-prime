@@ -19,7 +19,7 @@ import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{
-  type Modifier, type Source, Modifier, Source,
+  type Modifier, type Source, Change, Source,
 }
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type TimerId, TimerId}
@@ -43,7 +43,7 @@ fn crit_row() -> spell_plan.PropertyModifier {
 }
 
 fn crit_modifier() -> Modifier {
-  Modifier(
+  Change(
     property: UnitProperty2Id(102),
     mode: 3,
     multiplier: 1.0,
@@ -58,7 +58,7 @@ fn falling_row() -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(67_777),
     phase_flags: 1,
-    modifier: Modifier(
+    modifier: Change(
       property: UnitProperty2Id(134),
       mode: 3,
       multiplier: 0.0,

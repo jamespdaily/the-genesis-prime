@@ -107,7 +107,7 @@ pub fn a_warriors_entry_ends_with_its_passives_0x7ff_and_0x7f4_and_no_property_o
     as "UnitProperty2 141 to 143 hold their default 1.0 under x 1.0 + 0, so no 0x93A; Kinetic Energy 0 less 1200 clamps at 0, so no 0x935; nothing ends"
 }
 
-pub fn an_engineers_entry_lists_its_three_properties_and_starts_46297_test() -> Nil {
+pub fn an_engineers_entry_lists_its_three_properties_and_its_conversion_and_starts_46297_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(_, taken) =
@@ -118,7 +118,7 @@ pub fn an_engineers_entry_lists_its_three_properties_and_starts_46297_test() -> 
   let frames = written(taken:)
   assert started_spells(frames:) == [45_000, 46_297]
     as "Proxy 108412 starts 46297 behind Prerequisite 30012, which an Engineer with 0 in slot 1 (Volatility, the start of its resource) and under no cast passes: 29795, the innermost row, wants slot 1 above 29 (cast_passive_test)"
-  assert listed(frames:) == [104_980, 177_521, 177_522]
+  assert listed(frames:) == [104_980, 177_521, 177_522, 229_304]
   assert list.all(support.logs(taken), fn(line) {
     line.level != step.LogError && line.level != step.LogWarning
   })

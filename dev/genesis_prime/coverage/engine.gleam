@@ -189,11 +189,13 @@ fn quest_objectives() -> EngineDeclaration {
 
 /// The rows of the effect type that the effect rule does not read
 /// (genesis_prime/game/spell_plan `effect_row_read`): the type 3, type 11, type 73, type 83,
-/// type 84 and type 14 rows aimed only at other units, the type 118 rows aimed at the area
-/// and the type 64 rows aimed at the caster or its target, and the Stealth, RemoveStealth,
-/// Proc and HealShields rows the plan refuses, skips or holds, among them a heal aimed at
-/// the primary target of a spell a Proxy starts on each struck unit, and the type 52 rows
-/// aimed at the units a go strikes.
+/// type 84 and type 14 rows aimed only at other units, the type 145 rows aimed only at other
+/// units, the type 118 rows aimed at the area and the type 64 rows aimed at the caster or its
+/// target, the Stealth, RemoveStealth, Proc and HealShields rows the plan refuses, skips or
+/// holds, among them a heal aimed at the primary target of a spell a Proxy starts on each
+/// struck unit, the type 52 rows aimed at the units a go strikes or at the primary target
+/// of such a spell, and the type 17, 18, 80 and 81 rows aimed by flags the plan refuses or
+/// behind a target apply prerequisite.
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   let rows = spell4_effects.all(tables)
   let struck_children = spell_plan.struck_unit_children(effects: rows)
@@ -202,6 +204,25 @@ fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
     && !spell_plan.effect_row_read(effect: row, struck_children:)
   })
 }
+
+/// What a type 17 or 18 row the plan does not read leaves out: its go lists no row aimed
+/// by flags the plan refuses, and applies none behind a target apply prerequisite.
+const lasting_gap =
+  "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies"
+
+/// The same for type 80, whose rows the plan also refuses where the two columns that hold
+/// the count of stacks differ. A selector that names no row fails the load too, which the
+/// measure cannot see without the tables, so those rows count as read.
+const force_remove_gap =
+  "rows aimed by flags the plan refuses, behind a target prerequisite or with differing stack counts (dataBits03 and dataBits04), which no go applies or the plan refuses; a selector that names no row fails the load and is not counted"
+
+/// The same for type 81, whose script the client does not hold either.
+const signal_gap =
+  "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies; the script a signal stands for is not in the client"
+
+/// What type 145 reads of a row, whose computation is the server's choice.
+const conversion_gap =
+  "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
 
 /// The spell effect engine: the `effectType` column of Spell4Effects, the
 /// client's own column name (`game_table.schema`). No fact records the code that
@@ -239,6 +260,16 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
+        type_number: 17,
+        reason: lasting_gap,
+        fact_key: "Spell4Effects.effectType.17",
+      ),
+      Missing(
+        type_number: 18,
+        reason: lasting_gap,
+        fact_key: "Spell4Effects.effectType.18",
+      ),
+      Missing(
         type_number: 52,
         reason: "rows aimed at the units a go strikes, or at the primary target of a spell started on each struck unit, whose armor the server does not hold",
         fact_key: "Spell4Effects.effectType.52",
@@ -254,6 +285,16 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.73",
       ),
       Missing(
+        type_number: 80,
+        reason: force_remove_gap,
+        fact_key: "Spell4Effects.effectType.80",
+      ),
+      Missing(
+        type_number: 81,
+        reason: signal_gap,
+        fact_key: "Spell4Effects.effectType.81",
+      ),
+      Missing(
         type_number: 83,
         reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
         fact_key: "Spell4Effects.effectType.83",
@@ -267,6 +308,11 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 118,
         reason: "rows aimed at another unit, periodic (tickTime) or with a formula parameter the plan refuses",
         fact_key: "Spell4Effects.effectType.118",
+      ),
+      Missing(
+        type_number: 145,
+        reason: conversion_gap,
+        fact_key: "Spell4Effects.effectType.145",
       ),
     ],
     missing: [

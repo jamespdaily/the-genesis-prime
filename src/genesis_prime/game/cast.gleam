@@ -193,20 +193,20 @@
 ////   server choice, since the client applies no Proxy itself
 ////   (`Spell4Effects.effectType.26.dataBits06`). A gain that asks to be "not under"
 ////   a spell this same go starts is given (`cast_gate_test`).
-//// - **A go's lasting effects** (genesis_prime/game/lasting): each Fluff (17) and
-////   SpellForceRemove (80) effect of the phase whose gate against the caster passes
-////   is listed in the target info of each unit its targetFlags aim at, with the
-////   effect's delay, a result bit, the instance count 1 and the lifetime 0 the client
+//// - **A go's lasting effects** (genesis_prime/game/lasting): each Fluff (17), Scale (18),
+////   RavelSignal (81) and SpellForceRemove (80) effect of the phase whose gate against the
+////   caster passes is listed in the target info of each unit its targetFlags aim at, with
+////   the effect's delay, a result bit, the instance count 1 and the lifetime 0 the client
 ////   works out itself; a unit the round did not strike gets an info of its own
-////   (`opcode.0x7f4.target_info`, `opcode.0x7f4.effect_time`). A Fluff effect gives
-////   the unit a node of the cast that lives as long as its longest effect, kept on the
-////   live cast; a type 80 effect takes the matching nodes of the caster's casts off the
+////   (`opcode.0x7f4.target_info`, `opcode.0x7f4.effect_time`). A Fluff, Scale or
+////   RavelSignal effect gives the unit a node of the cast that lives as long as its
+////   longest effect, kept on the live cast; a type 80 effect takes the matching nodes of the caster's casts off the
 ////   unit, oldest cast first, each written 0x811 (`opcode.0x811`); and a cast that
 ////   gives a unit a node it holds none on takes off the caster's oldest casts of its
 ////   stack at the stack's cap (Jim's decision, `Spell4StackGroup.stackCap`).
 //// - **A go's property modifiers** (genesis_prime/game/unit_properties): each type 11
-////   effect of the phase that has a life (a durationTime, or flags bit 2) and whose gate
-////   against the caster passes is listed on the caster like a Fluff effect, gives the
+////   and type 145 effect of the phase that has a life (a durationTime, or flags bit 2) and
+////   whose gate against the caster passes is listed on the caster like a Fluff effect, gives the
 ////   caster's node its life, and starts at the go plus its delay and ends after its
 ////   duration, as `CasterChangeStarts` and `PropertyEnds` for the connection to apply to the
 ////   player's properties. A modifier ends on a timer of its own and not with the node's
@@ -612,8 +612,8 @@ pub type Caster {
 /// has its end tied to its source (`PropertyEnds`, `Due.ModifierEnd`); a shield heal has
 /// none.
 pub type CasterChange {
-  /// A property modifier (a UnitPropertyModifier effect): the connection applies it to
-  /// the player's properties (genesis_prime/game/unit_properties `apply`).
+  /// A property modifier (a UnitPropertyModifier or UnitPropertyConversion effect): the
+  /// connection applies it to the player's properties (genesis_prime/game/unit_properties `apply`).
   Property(modifier: unit_properties.Modifier)
   /// A shield heal (a HealShields effect): the connection raises the player's shield by
   /// `amount`, capped at its maximum (genesis_prime/game/player_life `shield_healed`).
@@ -4345,7 +4345,7 @@ fn lasting_applied(
       rows: spell_plan.lasting_in_phase(spell:, phase:, spent:),
       condition: fn(row: spell_plan.Lasting) { row.condition },
       what: fn(row: spell_plan.Lasting) {
-        "the Fluff effect " <> int.to_string(row.effect_id.value)
+        "the lasting effect " <> int.to_string(row.effect_id.value)
       },
       outcome: "so it is not applied",
       subject:,
@@ -4370,7 +4370,8 @@ fn lasting_applied(
       ),
       condition: fn(row: spell_plan.PropertyModifier) { row.condition },
       what: fn(row: spell_plan.PropertyModifier) {
-        "the UnitPropertyModifier effect " <> int.to_string(row.effect_id.value)
+        "the UnitPropertyModifier or UnitPropertyConversion effect "
+        <> int.to_string(row.effect_id.value)
       },
       outcome: "so it is not applied",
       subject:,
