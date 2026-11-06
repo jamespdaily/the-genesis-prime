@@ -12,6 +12,8 @@
 ////   (`Spell4Effects.effectType.17`).
 //// - **ForceRemove** (80) takes spells already on a unit off it
 ////   (`Spell4Effects.effectType.80`).
+//// - **CrowdControl** (4) holds a crowd-control state on the unit it aims at for its
+////   time (`Spell4Effects.effectType.4`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -29,6 +31,9 @@ pub type Kind {
   /// A SpellForceRemove effect (80): takes casts off the unit it aims at
   /// (`Spell4Effects.effectType.80`).
   ForceRemove
+  /// A CCStateSet effect (4): holds a crowd-control state, a stun or a knockdown, on
+  /// the unit it aims at (`Spell4Effects.effectType.4`).
+  CrowdControl
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -41,6 +46,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     1 -> VitalModifier
     17 -> Fluff
     80 -> ForceRemove
+    4 -> CrowdControl
     other -> Unread(effect_type: other)
   }
 }
@@ -48,7 +54,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
 /// Whether some rule reads the effect type: the coverage measure's "handled".
 pub fn is_read(effect_type effect_type: Int) -> Bool {
   case kind_of(effect_type:) {
-    Proxy | Damage | VitalModifier | Fluff | ForceRemove -> True
+    Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
     Unread(..) -> False
   }
 }

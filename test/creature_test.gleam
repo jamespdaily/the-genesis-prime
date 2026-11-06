@@ -262,37 +262,40 @@ fn outgoing(
 /// A strike of the caster's connection 2 with one blow of `damage` on the Beast
 /// unit 7, with rolls no deflect and no crit.
 fn strike_of(damage damage: Int, cast_id cast_id: Int) -> creature.Message {
-  creature.Strike(tell: Strike(
-    key: Key(cast_id:, phase: 0, unit_id: 7),
-    from: step.Connection(ConnectionId(2)),
-    offence: Offence(
-      blows: [
-        Blow(
-          spell4_effects_id: 1,
-          damage_type: 3,
-          damage:,
-          delay_ms: 0,
-          threat_multiplier: 1.0,
-        ),
-      ],
-      crit_chance: 0.0,
-      crit_severity: 1.5,
-      strikethrough: 0.0,
-    ),
-    striker: strike_tell.PlayerStriker(
-      unit_id: 1,
-      place: place_support.at(
-        world_id: 3460,
-        world_zone_id: 5967,
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
+  creature.Strike(
+    tell: Strike(
+      key: Key(cast_id:, phase: 0, unit_id: 7),
+      from: step.Connection(ConnectionId(2)),
+      offence: Offence(
+        blows: [
+          Blow(
+            spell4_effects_id: 1,
+            damage_type: 3,
+            damage:,
+            delay_ms: 0,
+            threat_multiplier: 1.0,
+          ),
+        ],
+        crit_chance: 0.0,
+        crit_severity: 1.5,
+        strikethrough: 0.0,
       ),
-      seq: 1,
-      stay: stay_of(2),
-      rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+      striker: strike_tell.PlayerStriker(
+        unit_id: 1,
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: 5967,
+          x: 0.0,
+          y: 0.0,
+          z: 0.0,
+        ),
+        seq: 1,
+        stay: stay_of(2),
+        rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+      ),
+      controls: [],
     ),
-  ))
+  )
 }
 
 /// The creature started for the viewers 2 and 5, standing.

@@ -397,37 +397,40 @@ fn strike_with(
       incarnation: run.incarnation,
       unit_id:,
       life:,
-      message: creature.Strike(tell: Strike(
-        key: Key(cast_id:, phase: 0, unit_id:),
-        from: step.Connection(ConnectionId(1)),
-        offence: Offence(
-          blows: [
-            Blow(
-              spell4_effects_id: 1,
-              damage_type: 3,
-              damage:,
-              delay_ms: 0,
-              threat_multiplier: 1.0,
-            ),
-          ],
-          crit_chance: 0.0,
-          crit_severity: 1.5,
-          strikethrough: 0.0,
-        ),
-        striker: strike_tell.PlayerStriker(
-          unit_id: 1,
-          place: place_support.at(
-            world_id: 3460,
-            world_zone_id: 5967,
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
+      message: creature.Strike(
+        tell: Strike(
+          key: Key(cast_id:, phase: 0, unit_id:),
+          from: step.Connection(ConnectionId(1)),
+          offence: Offence(
+            blows: [
+              Blow(
+                spell4_effects_id: 1,
+                damage_type: 3,
+                damage:,
+                delay_ms: 0,
+                threat_multiplier: 1.0,
+              ),
+            ],
+            crit_chance: 0.0,
+            crit_severity: 1.5,
+            strikethrough: 0.0,
           ),
-          seq: 1,
-          stay: map_support.stay(count: 1),
-          rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+          striker: strike_tell.PlayerStriker(
+            unit_id: 1,
+            place: place_support.at(
+              world_id: 3460,
+              world_zone_id: 5967,
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            ),
+            seq: 1,
+            stay: map_support.stay(count: 1),
+            rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+          ),
+          controls: [],
         ),
-      )),
+      ),
     )
     as "the creature is found by its address and told"
   Nil
@@ -460,7 +463,7 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
       }
     })
   let assert Answered(key: Key(cast_id: 1, ..), outcome:) = answer
-  let assert Landed(descriptions: [description]) = outcome
+  let assert Landed(descriptions: [description], controls: []) = outcome
   assert description.damage.killed == 1
     as "the 60 damage takes the Beast's 52 health to 0"
   let again =

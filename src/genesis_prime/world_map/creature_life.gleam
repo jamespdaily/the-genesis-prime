@@ -36,6 +36,7 @@ import genesis_prime/game/strike_tell.{
   Refused,
 }
 import genesis_prime/table/id.{type Spell4Id}
+import gleam/float
 import gleam/option.{type Option, None, Some}
 
 /// Whether a creature may be attacked by a player of each faction, from its
@@ -69,10 +70,35 @@ pub type Attack {
   Attack(spell4_id: Spell4Id, offence: Offence, run_speed: Float, reach: Float)
 }
 
+/// A creature's Interrupt Armor maximum, unit property 44
+/// (`UnitProperty2.InterruptArmor_Threshold`): its Creature2OverrideProperties value
+/// when one is listed (-1 is infinite), else its level's value times its archetype's,
+/// difficulty's and tier's multipliers, 0 for most ordinary difficulties. The client
+/// decides nothing with it; the server's rule for a state landing on armor is
+/// genesis_prime/world_map/creature_control's.
+pub type InterruptArmor {
+  /// A maximum of 0: the creature takes every crowd-control state.
+  NoArmor
+  /// A maximum above 0, in points.
+  Armor(points: Int)
+  /// A maximum of -1: no state wears it down.
+  InfiniteArmor
+}
+
+/// The armor a property-44 value of a creature means: below 0 is infinite, 0 none,
+/// else its points rounded.
+pub fn interrupt_armor_of(maximum maximum: Float) -> InterruptArmor {
+  case maximum <. 0.0, float.round(maximum) {
+    True, _ -> InfiniteArmor
+    False, 0 -> NoArmor
+    False, points -> Armor(points:)
+  }
+}
+
 /// What a creature brings to a fight, worked out when the content loads
 /// (genesis_prime/world_map/spawn): the hit radius of its display
 /// (Creature2DisplayInfo.hitRadius), whom it may be attacked by, whom it fights on
-/// sight, its defence, and its own attack.
+/// sight, its defence, its own attack and its Interrupt Armor.
 pub type Combat {
   Combat(
     hit_radius: Float,
@@ -80,6 +106,7 @@ pub type Combat {
     hostile_to: Hostile,
     defence: Defence,
     attack: Attack,
+    interrupt_armor: InterruptArmor,
   )
 }
 
@@ -176,14 +203,20 @@ pub fn struck(
         hit.Landed(descriptions:, health: left, killed: True, ..) ->
           Reaction(
             life: Dead,
-            answer: Answered(key: strike.key, outcome: Landed(descriptions:)),
+            answer: Answered(
+              key: strike.key,
+              outcome: Landed(descriptions:, controls: []),
+            ),
             news: [Health(health: left, dead: True), Died],
             corpse_for_ms: Some(body.respawn_ms),
           )
         hit.Landed(descriptions:, health: left, killed: False, ..) ->
           Reaction(
             life: Alive(health: left),
-            answer: Answered(key: strike.key, outcome: Landed(descriptions:)),
+            answer: Answered(
+              key: strike.key,
+              outcome: Landed(descriptions:, controls: []),
+            ),
             news: [Health(health: left, dead: False)],
             corpse_for_ms: None,
           )

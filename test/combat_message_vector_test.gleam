@@ -76,7 +76,10 @@ import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property
 import genesis_prime/message/unit_stat.{type UnitStat}
+import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
+import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/world_map/static_object
@@ -662,7 +665,20 @@ pub fn a_stat_change_is_a_unit_a_stat_in_5_bits_and_a_value_test() -> Nil {
   message_support.assert_codec(
     name: "opcode.0x938: unit id, stat 20 (shield) in 5 bits, value 123 in 32",
     body: message_support.hex("01 10 00 00 74 0f 00 00 00"),
-    value: UnitStatChanged(unit_id: 0x1001, value: 123),
+    value: UnitStatChanged(
+      unit_id: 0x1001,
+      change: unit_stat_change.Shield(UnitStatShield(value: 123)),
+    ),
+    encode: unit_stat_changed.encode,
+    decode: unit_stat_changed.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0x938.interrupt_armor: stat 21 (Interrupt Armor) in the same 5 bits, value 123 in 32",
+    body: message_support.hex("01 10 00 00 75 0f 00 00 00"),
+    value: UnitStatChanged(
+      unit_id: 0x1001,
+      change: unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value: 123)),
+    ),
     encode: unit_stat_changed.encode,
     decode: unit_stat_changed.decode,
   )

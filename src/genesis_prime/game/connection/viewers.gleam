@@ -283,7 +283,10 @@ pub fn viewer_takes(
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
-    | client_connection.Shield(..) -> False
+    | client_connection.Shield(..)
+    | client_connection.CrowdControlApplied(..)
+    | client_connection.CrowdControlEnded(..)
+    | client_connection.InterruptArmor(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && names_own_unit(entered:, unit_id:),
@@ -513,6 +516,42 @@ pub fn viewer_takes(
         ),
       ])
     }
+    client_connection.InterruptArmor(armor:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.interrupt_armor_frame(unit_id:, armor:),
+        ),
+      ])
+    }
+    client_connection.CrowdControlApplied(state:, instance_id:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.control_applied_frame(
+            unit_id:,
+            state:,
+            instance_id:,
+          ),
+        ),
+      ])
+    }
+    client_connection.CrowdControlEnded(state:, cast_id:, instance_id:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.control_ended_frame(
+            unit_id:,
+            state:,
+            cast_id:,
+            instance_id:,
+          ),
+        ),
+      ])
+    }
   }
 }
 
@@ -581,7 +620,10 @@ fn creature_news(
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
-    | client_connection.Shield(..) -> session
+    | client_connection.Shield(..)
+    | client_connection.CrowdControlApplied(..)
+    | client_connection.CrowdControlEnded(..)
+    | client_connection.InterruptArmor(..) -> session
   }
   case strike.holds(strike: entered.strike, unit_id:) {
     True ->
@@ -663,7 +705,10 @@ fn life_news(
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
-    | client_connection.Shield(..) -> Continue(session, [])
+    | client_connection.Shield(..)
+    | client_connection.CrowdControlApplied(..)
+    | client_connection.CrowdControlEnded(..)
+    | client_connection.InterruptArmor(..) -> Continue(session, [])
   }
 }
 

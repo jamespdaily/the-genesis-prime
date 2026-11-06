@@ -15,9 +15,10 @@
 ////
 //// - **Who an effect aims at** is its `targetFlags`: 1 the caster, 2 the cast's own
 ////   target, 4 the area, 6 both (`Spell4Effects.targetFlags`, a reading of the rows).
-////   A phase with a damage effect or a Proxy aimed at the area selects units; one aimed
-////   at the cast's target strikes the primary target; with neither it strikes nobody
-////   and its go is written at once (Gate's Stun child).
+////   A phase with a damage effect, a crowd-control state or a Proxy aimed at the area
+////   selects units; one aimed at the cast's target strikes the primary target; with
+////   neither it strikes nobody and its go is written at once. A stun with no damage
+////   still selects and strikes (Gate's 30436, Stagger's 38780).
 //// - **Who is inside** is the telegraph's shape capped by the area row: the never-drawn
 ////   twin rows (flag 0x40) are the hit shapes, or the drawn rows where a spell has no
 ////   twin, and a unit must also be within the area row's range. A spell with no
@@ -98,11 +99,15 @@ pub type PhaseStrike {
     /// The damage effects that fire in the phase and aim at the area or the cast's
     /// target.
     damage: List(DamageEffect),
-    /// Whether the phase selects units from the area: a damage effect aimed at the
-    /// area, or a Proxy that starts its spell on each struck unit
-    /// (genesis_prime/game/spell_plan `OnEachStruck`).
+    /// The crowd-control states that fire in the phase, which aim at the area, the
+    /// cast's target or both.
+    controls: List(spell_plan.CrowdControl),
+    /// Whether the phase selects units from the area: a damage effect or a
+    /// crowd-control state aimed at the area, or a Proxy that starts its spell on each
+    /// struck unit (genesis_prime/game/spell_plan `OnEachStruck`).
     selects_area: Bool,
-    /// Whether the phase strikes the cast's own target.
+    /// Whether the phase strikes the cast's own target: a damage effect or a
+    /// crowd-control state aimed at it.
     strikes_primary_target: Bool,
   )
 }
@@ -531,7 +536,7 @@ fn damage_effects_of(
 
 /// What the spell's phase strikes with the effects a cast that spent `spent` points
 /// chooses (genesis_prime/game/spend `applies`); the flags are worked out from the
-/// effects and Proxies that are left.
+/// effects, crowd-control states and Proxies that are left.
 fn phase_of(
   spell spell: SpellArea,
   phase phase: Int,
@@ -543,13 +548,17 @@ fn phase_of(
       spell_plan.has_flag(flags: effect.phase_flags, bit:)
       && spend.applies(tag: effect.tag, spent:)
     })
+  let controls =
+    spell_plan.controls_in_phase(spell: spell.spell, phase:, spent:)
   let strikes = fn(aims) {
     list.any(firing, fn(effect) { list.contains(aims, effect.aim) })
+    || list.any(controls, fn(control) { list.contains(aims, control.aim) })
   }
   PhaseStrike(
     damage: list.filter(firing, fn(effect) {
       list.contains([AimsAtPrimaryTarget, AimsAtArea, AimsAtBoth], effect.aim)
     }),
+    controls:,
     selects_area: strikes([AimsAtArea, AimsAtBoth])
       || list.any(
       spell_plan.proxies_in_phase(spell: spell.spell, phase:, spent:),
