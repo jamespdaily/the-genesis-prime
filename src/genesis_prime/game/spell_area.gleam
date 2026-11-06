@@ -269,16 +269,11 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
 }
 
 /// The spell, the stage spells a RapidTap or ChargeRelease ability casts and every
-/// spell the Proxies of any of them start, below them: a Proxy behind a target
-/// prerequisite is never started (genesis_prime/game/spell_plan `GatedOnTarget`), so
-/// its spell is not read; one behind a caster prerequisite may start, so it is.
+/// spell the Proxies of any of them start, below them. A Proxy behind a prerequisite may
+/// start its child, so the child is read: one behind a target prerequisite starts it on a
+/// unit that passes (genesis_prime/game/spell_plan `GatedOnCasterAndTarget`).
 fn spells_of_tree(spell: Spell) -> List(Spell) {
-  spell_plan.tree(spell:, started: fn(proxy) {
-    case proxy.condition {
-      spell_plan.Always | spell_plan.GatedOnCaster(..) -> True
-      spell_plan.GatedOnTarget(..) -> False
-    }
-  })
+  spell_plan.tree(spell:, started: fn(_) { True })
 }
 
 /// The Spell4Telegraph rows of each spell, in table order, grouped once.

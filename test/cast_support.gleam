@@ -12,13 +12,15 @@ import class_resource_support
 import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/class_resource
-import genesis_prime/game/lasting
+import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, AtFirstGo, GlobalCooldown, NoWeaponNeeded, Normal,
-  Spell,
+  type Plans, type Spell, Always, AtFirstGo, GlobalCooldown, KeepsStealth,
+  NoWeaponNeeded, Normal, Spell, StealthRow,
 }
+import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
@@ -31,7 +33,7 @@ import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, ConnectionId, Now,
 }
 import genesis_prime/table/id.{
-  type Spell4BaseId, Item2Id, Spell4BaseId, Spell4Id,
+  type Spell4BaseId, Item2Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
 import gleam/dict
 import gleam/int
@@ -100,6 +102,32 @@ pub fn exempt() -> Spell {
     cast_bar: spell_plan.ShowsCastBar,
     free_while_live: True,
   )
+}
+
+/// A Stealth row as 83834 holds it (until removed, no delay), with this effect id and
+/// whether damage ends it.
+pub fn stealth_row(
+  id id: Int,
+  breaks breaks: spell_plan.Breaks,
+) -> spell_plan.StealthRow {
+  StealthRow(
+    effect_id: Spell4EffectsId(id),
+    phase_flags: -1,
+    breaks:,
+    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    condition: Always,
+    tag: spend.always,
+  )
+}
+
+/// A spell that holds these Stealth rows and, like the toggle's own spells, ends no
+/// stealth (value 2).
+pub fn stealthing(
+  spell4_id spell4_id: Int,
+  base base: Int,
+  rows rows: List(spell_plan.StealthRow),
+) -> Spell {
+  Spell(..child(spell4_id:, base:), stealth: rows, stealth_change: KeepsStealth)
 }
 
 /// A planted spell of global cooldown kind 2: refused while it runs, starting none.
@@ -630,6 +658,25 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
   })
 }
 
+/// The goes the effects ask for, in order: the strikes the connection has not yet answered.
+pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast.Strike(asked:) -> Ok(asked)
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Log(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.PropertyStarts(..)
+      | cast.PropertyEnds(..)
+      | cast.StealthChanged(..) -> Error(Nil)
+    }
+  })
+}
+
 /// The timers started, with their delays, in order.
 pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
   list.filter_map(effects, fn(effect) {
@@ -708,7 +755,16 @@ pub fn went(
   phase phase: Int,
   struck struck: List(cast.Struck),
 ) -> #(State, List(Effect)) {
-  cast.went(cast:, caster:, now:, cast_id:, phase:, struck:, rolls: [])
+  cast.went(
+    cast:,
+    caster:,
+    now:,
+    cast_id:,
+    phase:,
+    struck:,
+    poses: dict.new(),
+    rolls: [],
+  )
 }
 
 /// Each `Strike` effect replaced, in place, by what `went` gives for a round that struck
@@ -732,6 +788,28 @@ pub fn answered_as(
   struck struck: List(cast.Struck),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
+  answered_posed(
+    caster:,
+    state:,
+    effects:,
+    at: ms,
+    struck:,
+    rolls:,
+    poses: dict.new(),
+  )
+}
+
+/// The same, with the poses the Hit units had in the caster's picture when the round
+/// closed, by unit id.
+pub fn answered_posed(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+  struck struck: List(cast.Struck),
+  rolls rolls: List(Int),
+  poses poses: dict.Dict(Int, Pose),
+) -> #(State, List(Effect)) {
   list.fold(effects, #(state, []), fn(so_far, effect) {
     let #(state, done) = so_far
     case effect {
@@ -744,10 +822,19 @@ pub fn answered_as(
             cast_id: asked.cast_id,
             phase: asked.phase,
             struck:,
+            poses:,
             rolls:,
           )
         let #(state, more) =
-          answered_as(caster:, state:, effects: going, at: ms, struck:, rolls:)
+          answered_posed(
+            caster:,
+            state:,
+            effects: going,
+            at: ms,
+            struck:,
+            rolls:,
+            poses:,
+          )
         #(state, list.append(done, more))
       }
       cast.Send(..)

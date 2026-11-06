@@ -82,16 +82,18 @@ pub fn load(tables tables: store.Tables) -> Result(Gates, Nil) {
 }
 
 /// The gate prerequisite that keeps a level-1 character from starting the Proxy,
-/// with why, or an error when the Proxy can start. Only a gate on the caster is
-/// read; a gate on the target, which the plan does not check, leaves the Proxy
-/// counted.
+/// with why, or an error when the Proxy can start. Only the gates on the caster are
+/// read, those of a Proxy that also has a target gate included; the target gate decides
+/// by where a struck unit stands, which no level-1 gate rule closes, so it leaves the
+/// Proxy counted.
 pub fn closed_by(
   gates gates: Gates,
   tables tables: store.Tables,
   proxy proxy: Proxy,
 ) -> Result(#(Int, Closed), Nil) {
   case proxy.condition {
-    spell_plan.GatedOnCaster(gates: prerequisites) ->
+    spell_plan.GatedOnCaster(gates: prerequisites)
+    | spell_plan.GatedOnCasterAndTarget(caster: prerequisites, ..) ->
       list.find_map(prerequisites, fn(prerequisite) {
         let prerequisite_id = prerequisite.id(prerequisite)
         use row <- result.try(prerequisite_table.get(

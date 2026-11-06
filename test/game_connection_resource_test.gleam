@@ -33,7 +33,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId}
-import gleam/int
 import gleam/list
 import owned_test
 
@@ -137,119 +136,6 @@ pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_wri
     as "the refill's tick, a timer of the connection: +7"
 }
 
-/// A step of the connection at the monotonic time `ms`.
-fn at(
-  state state: game_connection.State,
-  ms ms: Int,
-  event event: step.Event(
-    step.ConnectionEvent(client_connection.Message, client_connection.Answer),
-  ),
-) -> #(game_connection.State, ConnectionStep(Request)) {
-  game_connection.step(state, support.input_at_ms(ms:, event:))
-}
-
-/// The step, and each strike it and the steps after it tell a creature answered as
-/// landed at `ms`, in order.
-fn landing(
-  state state: game_connection.State,
-  ms ms: Int,
-  taken taken: ConnectionStep(Request),
-) -> #(game_connection.State, List(ConnectionStep(Request))) {
-  list.fold(
-    game_connection_support.strikes_told(taken),
-    #(state, [taken]),
-    fn(so_far, strike) {
-      let #(state, steps) = so_far
-      let #(state, answered) =
-        at(state:, ms:, event: game_connection_support.landed(key: strike.1))
-      let #(state, more) = landing(state:, ms:, taken: answered)
-      #(state, list.append(steps, more))
-    },
-  )
-}
-
-/// The cast rule's timers the steps start, due from `ms`, less those they cancel.
-fn cast_timers(
-  steps steps: List(ConnectionStep(Request)),
-  ms ms: Int,
-) -> List(#(Int, TimerId)) {
-  let effects = list.flat_map(steps, support.effects_of)
-  let cancelled =
-    list.filter_map(effects, fn(effect) {
-      case effect {
-        OwnEffect(CancelTimer(timer:)) -> Ok(timer)
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
-      }
-    })
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      OwnEffect(StartTimer(timer:, after_ms:)) ->
-        case cast.owns(timer:) && !list.contains(cancelled, timer) {
-          True -> Ok(#(ms + after_ms, timer))
-          False -> Error(Nil)
-        }
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
-}
-
-/// The cast rule's timers fired in time order up to `until_ms`, with every strike
-/// landing: the connection and every step taken.
-fn casts_run(
-  state state: game_connection.State,
-  pending pending: List(#(Int, TimerId)),
-  until_ms until_ms: Int,
-  steps steps: List(ConnectionStep(Request)),
-) -> #(game_connection.State, List(ConnectionStep(Request))) {
-  case
-    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
-  {
-    [#(due, timer), ..rest] if due <= until_ms -> {
-      let #(state, fired) =
-        at(state:, ms: due, event: OwnEvent(TimerFired(timer:)))
-      let #(state, more) = landing(state:, ms: due, taken: fired)
-      casts_run(
-        state:,
-        pending: list.append(rest, cast_timers(steps: more, ms: due)),
-        until_ms:,
-        steps: list.append(steps, more),
-      )
-    }
-    _ -> #(state, steps)
-  }
-}
-
-/// A press of the bag index at `ms`, and the cast timers it leads to up to
-/// `until_ms`, each strike landing.
-fn pressed_until(
-  state state: game_connection.State,
-  bag_index bag_index: Int,
-  client_cast_id client_cast_id: Int,
-  ms ms: Int,
-  until_ms until_ms: Int,
-) -> #(game_connection.State, List(ConnectionStep(Request))) {
-  let #(state, pressed) =
-    at(
-      state:,
-      ms:,
-      event: OwnEvent(
-        step.Read(game_connection_support.world_message(
-          message_id: 0x009A,
-          body: cast_support.press_body(
-            client_cast_id:,
-            bag_index:,
-            target: 0,
-            press: 1,
-          ),
-        )),
-      ),
-    )
-  let #(state, steps) = landing(state:, ms:, taken: pressed)
-  casts_run(state:, pending: cast_timers(steps:, ms:), until_ms:, steps:)
-}
-
 fn all_changes(
   steps: List(ConnectionStep(Request)),
 ) -> List(UnitFloatStatChanged) {
@@ -274,13 +160,13 @@ pub fn a_warriors_relentless_strikes_on_a_beast_fills_kinetic_energy_and_rampage
       ability: rampage_base,
     )
   let #(state, _) =
-    at(
+    game_connection_support.at(
       state:,
       ms: 1000,
       event: game_connection_support.beast_appears(unit_id: 40),
     )
   let #(state, first) =
-    pressed_until(
+    game_connection_support.pressed_until(
       state:,
       bag_index: strikes_index,
       client_cast_id: 1,
@@ -293,7 +179,7 @@ pub fn a_warriors_relentless_strikes_on_a_beast_fills_kinetic_energy_and_rampage
     ]
     as "the first tap's stage spell 70033 strikes the Beast 3 m ahead and gives +180 Kinetic Energy (Spell4Effects 127603), one 0x935 of stat 3 (slot 1) to the Warrior's own client"
   let #(state, second) =
-    pressed_until(
+    game_connection_support.pressed_until(
       state:,
       bag_index: strikes_index,
       client_cast_id: 2,
@@ -306,7 +192,7 @@ pub fn a_warriors_relentless_strikes_on_a_beast_fills_kinetic_energy_and_rampage
     ]
     as "the second tap's 70045 strikes it again: 360"
   let #(_, rampage) =
-    pressed_until(
+    game_connection_support.pressed_until(
       state:,
       bag_index: rampage_index,
       client_cast_id: 3,
@@ -367,7 +253,7 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
   assert resource_timers_started(threatened) == []
     as "a Medic starts nothing while it is full"
   let #(state, pressed) =
-    pressed_until(
+    game_connection_support.pressed_until(
       state:,
       bag_index:,
       client_cast_id: 1,
@@ -377,9 +263,9 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
   assert all_changes(pressed) == []
     as "Spell4.innateCost0.timing: the press takes no Actuator and sends no 0x935"
   let #(state, going) =
-    casts_run(
+    game_connection_support.casts_run(
       state:,
-      pending: cast_timers(steps: pressed, ms: 1000),
+      pending: game_connection_support.cast_timers(steps: pressed, ms: 1000),
       until_ms: 2250,
       steps: [],
     )
@@ -430,7 +316,7 @@ pub fn a_player_killed_and_brought_back_gets_each_slot_at_its_start_in_one_0x935
       game_connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
     )
   let #(state, _) =
-    pressed_until(
+    game_connection_support.pressed_until(
       state:,
       bag_index:,
       client_cast_id: 1,
@@ -492,7 +378,7 @@ pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> N
       ability: gamma_rays_base,
     )
   let #(state, pressed) =
-    pressed_until(
+    game_connection_support.pressed_until(
       state:,
       bag_index:,
       client_cast_id: 1,
@@ -575,7 +461,7 @@ fn surge_at(
   ms ms: Int,
   client_cast_id client_cast_id: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  at(
+  game_connection_support.at(
     state:,
     ms:,
     event: OwnEvent(
@@ -595,7 +481,7 @@ fn surge_at(
 pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_follow_the_last_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, _) =
-    at(
+    game_connection_support.at(
       state: game_connection_support.medic_in_world(),
       ms: 1000,
       event: game_connection_support.beast_appears(unit_id: 40),
@@ -604,7 +490,11 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
   let assert [#(40, key)] = game_connection_support.strikes_told(first)
     as "the press strikes the Beast"
   let #(state, landed) =
-    at(state:, ms: 1100, event: game_connection_support.landed(key:))
+    game_connection_support.at(
+      state:,
+      ms: 1100,
+      event: game_connection_support.landed(key:),
+    )
   assert list.any(
     game_client.casts_in(frames: game_connection_support.heard(
       landed,
@@ -640,7 +530,7 @@ pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_leaves_the_actuators_and_w
       ability: gamma_rays_base,
     )
   let #(state, pressed) =
-    pressed_until(
+    game_connection_support.pressed_until(
       state:,
       bag_index:,
       client_cast_id: 1,
@@ -648,7 +538,7 @@ pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_leaves_the_actuators_and_w
       until_ms: 1000,
     )
   let #(state, cancelled) =
-    at(
+    game_connection_support.at(
       state:,
       ms: 1500,
       event: OwnEvent(
@@ -663,9 +553,9 @@ pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_leaves_the_actuators_and_w
       ),
     )
   let #(_, later) =
-    casts_run(
+    game_connection_support.casts_run(
       state:,
-      pending: cast_timers(steps: pressed, ms: 1000),
+      pending: game_connection_support.cast_timers(steps: pressed, ms: 1000),
       until_ms: 5000,
       steps: [],
     )

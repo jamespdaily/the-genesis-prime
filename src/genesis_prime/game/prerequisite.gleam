@@ -6,9 +6,11 @@
 ////
 //// ```
 //// Prerequisite row ─▶ load: the conditions kept up to the first type 0, AND or OR,
-////                          each nested row (type 11) loaded in place; a cycle fails
+////                          each nested row (type 11) loaded in place, each type 108
+////                          condition finding its PositionalRequirement row; a cycle
+////                          fails
 //// a Subject: the casts it is under, in combat, its vitals, its resource slots,
-////            its difficulty, its rolls
+////            its difficulty, its rolls, where its two units stand
 ////                  ─▶ check ─▶ Passes | Fails | NotRead(type)
 //// ```
 ////
@@ -68,18 +70,36 @@
 ////   so a subject with none gives `NotRead` (`0x14049eeb0`, `of_difficulty`).
 //// - **A vital the server does not hold** is `NotRead`, as is a type the client
 ////   decides and the server does not read.
+//// - **Type 108** passes, by comparison 1, when the check's second unit stands in the arc
+////   of the PositionalRequirement row in its objectId around the first unit's facing, and
+////   by comparison 2 when it does not; any other comparison fails, and its value is not
+////   read. The arc runs from angleCenter - angleRange / 2 to angleCenter + angleRange / 2
+////   degrees off the facing, the direction runs from the first unit to the second as
+////   atan2(-(x2 - x1), -(z2 - z1)), flags bit 0 swaps the units, each arc end is wrapped
+////   into -pi..pi, and an arc whose end is below its start crosses the wrap; both ends are
+////   inside. With no second unit, objectId 0 or no row, comparison 2 passes and any other
+////   fails. The arithmetic is in 32-bit floats in the client's order, with `atan2` taken
+////   in 64 bits and rounded to 32 (the BEAM has no atan2f), so a direction within one
+////   32-bit step of an arc end may fall on the other side than the client's
+////   (`Prerequisite.prerequisiteTypeId.108`, `0x14049d940`). The client reads an objectId
+////   with no row as no arc; no row of the game names one, so the load refuses it
+////   (`load`), as it refuses any table row that is missing.
 //// - **A type with no case** in the client, 0 or one above 295, fails
 ////   (`0x1404a2100`).
-//// - **The units:** a check's first unit is its subject, and this module checks
-////   caster-side prerequisites only, where the second unit is the caster too
-////   (`Spell4Effects.prerequisiteIdTargetApply`): the subject's `second_unit`.
+//// - **The units:** a check's first unit is its subject. A caster-side check has the
+////   caster for both units (`Spell4Effects.prerequisiteIdTargetApply` gives the target
+////   first and the caster second for a target-side one): the subject's `second_unit` and
+////   `positions`. A struck creature is known by its place alone (`of_struck`), so every
+////   condition that reads what else it holds is `NotRead`.
 
+import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/lasting
 import genesis_prime/message/float32
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4Id, PrerequisiteId, Spell4Id,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -89,6 +109,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
+import gleam_community/maths
 
 /// A Prerequisite row as the client keeps it: its id, whether any condition is
 /// enough (flags bit 0), and its conditions up to the first of type 0.
@@ -205,10 +226,20 @@ type Condition {
   /// Type 179: the unit's difficulty against the objectId
   /// (`Prerequisite.prerequisiteTypeId.179`, `0x14049eeb0`).
   Difficulty(relation: Relation, object_id: Int)
+  /// Type 108: whether the second unit stands in the arc around the first unit's
+  /// facing, `None` for the objectId 0 that names no arc
+  /// (`Prerequisite.prerequisiteTypeId.108`, `0x14049d940`).
+  InArc(comparison: Comparison, arc: Option(Arc))
   /// A type the client's check has no case for (`0x1404a2100`): it fails.
   NoCase
   /// A type the client decides and the server does not read.
   Unread(prerequisite_type: Int)
+}
+
+/// A PositionalRequirement row, decoded once: the arc's centre and range in degrees and
+/// whether it turns with the check's second unit (flags bit 0).
+type Arc {
+  Arc(center: Int, range: Int, turns_with_second: Bool)
 }
 
 /// A comparison of a condition that asks whether something holds: 1 passes when it
@@ -273,6 +304,53 @@ pub type Subject {
     /// The rolls for the type 37 conditions of the check, one for each, in the
     /// order the conditions are tested (`rolls_needed`).
     rolls: List(Int),
+    /// Where the check's two units stand, for type 108.
+    positions: Positions,
+    /// What the check knows of the subject.
+    seen: Seen,
+  )
+}
+
+/// Where the check's units stand, for type 108.
+pub type Positions {
+  /// Each unit's ground point and yaw.
+  Placed(first: Pose, second: Pose)
+  /// The check has no second unit.
+  NoSecondUnit
+  /// A unit's place is not held.
+  NotPlaced
+}
+
+/// What a check knows of its subject.
+pub type Seen {
+  /// Every field of the subject holds.
+  WholeUnit
+  /// Only the place of the subject holds.
+  PlaceOnly
+}
+
+/// The subject of a unit the caster struck, for a target-side check (a Proxy's target apply
+/// prerequisite): the struck unit first with the pose its place and facing give in the
+/// caster's picture, `None` when the picture no longer shows it, and the caster second.
+/// The connection holds none of a creature's casts, combat state or vitals, so the subject
+/// holds none of them either: a condition that reads what else it holds is `NotRead`
+/// (`PlaceOnly`), where an empty `under` would read as "under no cast" and pass a
+/// condition that asks for the absence of one.
+pub fn of_struck(first first: Option(Pose), second second: Pose) -> Subject {
+  Subject(
+    under: [],
+    second_unit: None,
+    in_combat: False,
+    vitals: dict.new(),
+    difficulty: None,
+    stealthed: None,
+    resource_slots: None,
+    rolls: [],
+    positions: case first {
+      Some(first) -> Placed(first:, second:)
+      None -> NotPlaced
+    },
+    seen: PlaceOnly,
   )
 }
 
@@ -289,6 +367,8 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     stealthed: None,
     resource_slots: None,
     rolls: [],
+    positions: NotPlaced,
+    seen: WholeUnit,
   )
 }
 
@@ -309,6 +389,10 @@ pub type LoadError {
   /// A row nests itself through the rows on the way, the ids in order with the
   /// repeated one last.
   PrerequisiteCycle(path: List(PrerequisiteId))
+  /// A type 108 condition names a PositionalRequirement row the table lacks. The client
+  /// reads an objectId with no row as no arc; no row of the game names one, so the load
+  /// refuses it.
+  NoPositionalRequirementRow(id: Int)
 }
 
 /// The Prerequisite rows of the loaded tables by id, for `load`.
@@ -318,16 +402,28 @@ pub fn table_rows(
   fn(id) { prerequisite_table.get(tables:, id:) |> result.replace_error(Nil) }
 }
 
+/// The PositionalRequirement rows of the loaded tables by id, for `load`.
+pub fn table_arcs(
+  tables tables: table_store.Tables,
+) -> fn(Int) -> Result(positional_requirement.PositionalRequirement, Nil) {
+  fn(arc_id) {
+    positional_requirement.get(tables:, id: id.PositionalRequirementId(arc_id))
+  }
+}
+
 /// The prerequisite with this id as the client keeps it (`0x1404a5190`), from the
-/// table `rows` reads, each nested row loaded in place.
+/// tables `rows` and `arcs` read, each nested row loaded in place and each type 108
+/// condition holding the arc of its PositionalRequirement row.
 pub fn load(
   id id: PrerequisiteId,
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+  arcs arcs: fn(Int) ->
+    Result(positional_requirement.PositionalRequirement, Nil),
 ) -> Result(Prerequisite, LoadError) {
   use row <- result.try(
     rows(id) |> result.replace_error(NoPrerequisiteRow(id:)),
   )
-  loaded(row:, rows:, above: [id])
+  loaded(row:, rows:, arcs:, above: [id])
 }
 
 /// The PrerequisiteType of a nested prerequisite (`Prerequisite.prerequisiteTypeId.11`),
@@ -339,6 +435,8 @@ pub const nested_type = 11
 fn loaded(
   row row: prerequisite_table.Prerequisite,
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+  arcs arcs: fn(Int) ->
+    Result(positional_requirement.PositionalRequirement, Nil),
   above above: List(PrerequisiteId),
 ) -> Result(Prerequisite, LoadError) {
   use conditions <- result.map(
@@ -348,15 +446,17 @@ fn loaded(
           comparison: comparison_of(condition.1),
           id: PrerequisiteId(condition.2),
           rows:,
+          arcs:,
           above:,
         )
       })
-      Ok(condition_of(
+      condition_read(
         type_id: condition.0,
         comparison: condition.1,
         object_id: condition.2,
         value: condition.3,
-      ))
+        arcs:,
+      )
     }),
   )
   Prerequisite(id: PrerequisiteId(row.id), any: is_any(row:), conditions:)
@@ -368,6 +468,8 @@ fn nested_loaded(
   comparison comparison: Comparison,
   id id: PrerequisiteId,
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+  arcs arcs: fn(Int) ->
+    Result(positional_requirement.PositionalRequirement, Nil),
   above above: List(PrerequisiteId),
 ) -> Result(Condition, LoadError) {
   use <- bool.guard(
@@ -377,7 +479,7 @@ fn nested_loaded(
   case rows(id) {
     Error(Nil) -> Ok(Nested(comparison:, id: id.value, row: None))
     Ok(row) ->
-      loaded(row:, rows:, above: [id, ..above])
+      loaded(row:, rows:, arcs:, above: [id, ..above])
       |> result.map(fn(nested) {
         Nested(comparison:, id: id.value, row: Some(nested))
       })
@@ -421,6 +523,50 @@ pub fn kept_conditions(
     ),
   ]
   |> list.take_while(fn(condition) { condition.0 != 0 })
+}
+
+/// A condition decoded: type 108 reads its arc through `arcs`, every other type is
+/// `condition_of`.
+fn condition_read(
+  type_id type_id: Int,
+  comparison comparison: Int,
+  object_id object_id: Int,
+  value value: Int,
+  arcs arcs: fn(Int) ->
+    Result(positional_requirement.PositionalRequirement, Nil),
+) -> Result(Condition, LoadError) {
+  case type_id {
+    108 ->
+      arc_of(object_id:, arcs:)
+      |> result.map(fn(arc) {
+        InArc(comparison: comparison_of(comparison), arc:)
+      })
+    _ -> Ok(condition_of(type_id:, comparison:, object_id:, value:))
+  }
+}
+
+/// The arc a type 108 condition's objectId names: none for 0, which the client reads as no
+/// arc (`0x14049d96b`), else the row's.
+fn arc_of(
+  object_id object_id: Int,
+  arcs arcs: fn(Int) ->
+    Result(positional_requirement.PositionalRequirement, Nil),
+) -> Result(Option(Arc), LoadError) {
+  case object_id {
+    0 -> Ok(None)
+    arc_id ->
+      case arcs(arc_id) {
+        Ok(row) ->
+          Ok(
+            Some(Arc(
+              center: row.angle_center,
+              range: row.angle_range,
+              turns_with_second: int.bitwise_and(row.flags, 1) == 1,
+            )),
+          )
+        Error(Nil) -> Error(NoPositionalRequirementRow(id: arc_id))
+      }
+  }
 }
 
 /// The one decode of a condition's type: every type the server reads has its own
@@ -490,6 +636,8 @@ fn condition_of(
 /// reads and the types the client's check has no case for, which fail
 /// (`0x1404a2100`). The coverage measure's "handled".
 pub fn is_read(type_id type_id: Int) -> Bool {
+  // Type 108 is decoded by `condition_read`, which needs its arc row.
+  use <- bool.guard(when: type_id == 108, return: True)
   case condition_of(type_id:, comparison: 0, object_id: 0, value: 0) {
     Unread(..) -> False
     TargetOfLiveCast(..)
@@ -504,6 +652,7 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | UnderGroup(..)
     | Stealthed(..)
     | Difficulty(..)
+    | InArc(..)
     | NoCase -> True
   }
 }
@@ -531,6 +680,7 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | UnderGroup(..)
       | Stealthed(..)
       | Difficulty(..)
+      | InArc(..)
       | NoCase
       | Unread(..) -> 0
     }
@@ -592,8 +742,45 @@ fn evaluated(
   )
 }
 
-/// One condition's verdict, and the rolls left after it.
+/// One condition's verdict, and the rolls left after it. A subject known by its place alone
+/// gives `NotRead` for a condition that reads what else the unit holds, and takes no roll.
 fn condition_check(
+  condition condition: Condition,
+  subject subject: Subject,
+  rolls rolls: List(Int),
+) -> #(List(Int), Verdict) {
+  case subject.seen, reads_held_state(condition:) {
+    PlaceOnly, Some(prerequisite_type) -> #(rolls, NotRead(prerequisite_type:))
+    PlaceOnly, None | WholeUnit, _ ->
+      condition_decided(condition:, subject:, rolls:)
+  }
+}
+
+/// The type of a condition that reads the casts, combat state, vitals or rolls of its
+/// unit, which a subject known by its place alone does not hold. A nested row decides by
+/// its own conditions, and a resource slot, a stealth and a difficulty that the subject
+/// holds none of are not read by their own check.
+fn reads_held_state(condition condition: Condition) -> Option(Int) {
+  case condition {
+    TargetOfLiveCast(..) -> Some(15)
+    UnderCastBy(..) -> Some(50)
+    StackCount(..) -> Some(59)
+    InCombat(..) -> Some(28)
+    Roll(..) -> Some(37)
+    VitalPercent(..) -> Some(71)
+    VitalCurrent(..) -> Some(73)
+    UnderGroup(..) -> Some(129)
+    Nested(..)
+    | ResourceSlot(..)
+    | Stealthed(..)
+    | Difficulty(..)
+    | InArc(..)
+    | NoCase
+    | Unread(..) -> None
+  }
+}
+
+fn condition_decided(
   condition condition: Condition,
   subject subject: Subject,
   rolls rolls: List(Int),
@@ -689,10 +876,127 @@ fn condition_check(
         verdict_of(compare(relation:, measured: difficulty, value: object_id))
       None -> NotRead(prerequisite_type: 179)
     })
+    InArc(comparison:, arc:) -> #(
+      rolls,
+      arc_verdict(comparison:, arc:, positions: subject.positions),
+    )
     NoCase -> #(rolls, Fails)
     Unread(prerequisite_type:) -> #(rolls, NotRead(prerequisite_type:))
   }
 }
+
+/// Type 108's verdict (`0x14049d940`). The client decides "no arc" first, with no unit's
+/// place read: no second unit or no arc, and comparison 2 passes while any other fails. Else
+/// comparison 1 passes inside the arc and 2 outside it, and any other fails; a unit whose
+/// place is not held leaves it `NotRead(108)`.
+fn arc_verdict(
+  comparison comparison: Comparison,
+  arc arc: Option(Arc),
+  positions positions: Positions,
+) -> Verdict {
+  case arc, positions {
+    None, _ | Some(_), NoSecondUnit ->
+      case comparison {
+        NotFound -> Passes
+        Found | OtherComparison(..) -> Fails
+      }
+    Some(_), NotPlaced -> NotRead(prerequisite_type: 108)
+    Some(arc), Placed(first:, second:) ->
+      case comparison {
+        Found -> verdict_of(in_arc(arc:, first:, second:))
+        NotFound -> verdict_of(!in_arc(arc:, first:, second:))
+        OtherComparison(..) -> Fails
+      }
+  }
+}
+
+/// pi, 2 pi and 1/180 as the client holds them, 32-bit floats: 0x40490fdb at 0x140b79fac
+/// and 0x140c3b438, 0x40c90fdb at 0x140b7a018 and 0x3bb60b61 at 0x140b79d28.
+const half_turn = 3.1415927410125732
+
+const full_turn = 6.2831854820251465
+
+const one_over_180 = 0.0055555556900799274
+
+/// Whether the direction from the turning unit to the other lies in the arc turned by the
+/// turning unit's yaw, in 32-bit floats in the client's order (`0x14049d940`): the arc's
+/// ends are `(center - half) * radians_per_degree + yaw` and `(half + center) *
+/// radians_per_degree + yaw` for half the range and radians_per_degree = pi * (1/180), each
+/// wrapped into -pi..pi; an end below the start crosses the wrap.
+/// Flags bit 0 makes the second unit the turning one. `atan2` has no 32-bit form in the
+/// BEAM: it is taken in 64 bits and rounded.
+fn in_arc(arc arc: Arc, first first: Pose, second second: Pose) -> Bool {
+  let #(turning, other) = case arc.turns_with_second {
+    False -> #(first, second)
+    True -> #(second, first)
+  }
+  let yaw = float32.rounded(turning.yaw)
+  let radians_per_degree = float32.product(left: half_turn, right: one_over_180)
+  let center = float32.rounded(int.to_float(unsigned(arc.center)))
+  let half =
+    float32.product(
+      left: float32.rounded(int.to_float(unsigned(arc.range))),
+      right: 0.5,
+    )
+  let start =
+    wrapped(angle: float32.sum(
+      left: float32.product(
+        left: float32.difference(left: center, right: half),
+        right: radians_per_degree,
+      ),
+      right: yaw,
+    ))
+  let end =
+    wrapped(angle: float32.sum(
+      left: float32.product(
+        left: float32.sum(left: half, right: center),
+        right: radians_per_degree,
+      ),
+      right: yaw,
+    ))
+  let direction =
+    float32.rounded(maths.atan2(
+      float.negate(float32.difference(
+        left: float32.rounded(other.at.x),
+        right: float32.rounded(turning.at.x),
+      )),
+      float.negate(float32.difference(
+        left: float32.rounded(other.at.z),
+        right: float32.rounded(turning.at.z),
+      )),
+    ))
+  case end <. start {
+    True -> direction >=. start || direction <=. end
+    False -> direction >=. start && direction <=. end
+  }
+}
+
+/// An arc end wrapped into -pi..pi: for x at least 0, fmod(x + pi, 2 pi) - pi, else
+/// fmod(x - pi, 2 pi) + pi, each step in 32 bits (`0x14049d940`). The remainder of two
+/// 32-bit floats is exact.
+fn wrapped(angle angle: Float) -> Float {
+  case angle <. 0.0 {
+    True ->
+      float32.sum(
+        left: remainder(
+          float32.difference(left: angle, right: half_turn),
+          full_turn,
+        ),
+        right: half_turn,
+      )
+    False ->
+      float32.difference(
+        left: remainder(float32.sum(left: angle, right: half_turn), full_turn),
+        right: half_turn,
+      )
+  }
+}
+
+/// C's `fmod`: the remainder of x over y with the sign of x. No Gleam library has it:
+/// `float.modulo` is the floored modulo, which differs for a negative x, and the maths
+/// package's modulo is Euclidean.
+@external(erlang, "math", "fmod")
+fn remainder(x: Float, y: Float) -> Float
 
 /// A nested row's verdict under comparison 2: passes when it fails, and a row that is
 /// not read stays not read.

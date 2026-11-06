@@ -50,6 +50,12 @@ pub type Unevaluated {
   /// The prerequisite nests itself through the rows it nests (type 11): the ids from the
   /// named row to the one that repeats.
   NestedCycle(spell4_effects_id: Int, path: List(Int))
+  /// The prerequisite nests a row with a type 108 condition naming a PositionalRequirement
+  /// row the client's table lacks.
+  NoPositionalRequirementRow(
+    spell4_effects_id: Int,
+    positional_requirement_id: Int,
+  )
   /// The spell's Spell4 row holds an innate cost EMM id, which would choose its
   /// damage effects by points a creature's attack does not spend.
   SpendsByEmmId(spell4_id: Int, emm_id: Int)
@@ -188,6 +194,7 @@ fn loaded(
   game_prerequisite.load(
     id: PrerequisiteId(id),
     rows: game_prerequisite.table_rows(tables:),
+    arcs: game_prerequisite.table_arcs(tables:),
   )
   |> result.map(fn(loaded) { Gated(prerequisite: loaded) })
   |> result.map_error(fn(error) {
@@ -198,6 +205,11 @@ fn loaded(
         NestedCycle(
           spell4_effects_id: effect.id,
           path: list.map(path, fn(on_the_way) { on_the_way.value }),
+        )
+      game_prerequisite.NoPositionalRequirementRow(id: arc_id) ->
+        NoPositionalRequirementRow(
+          spell4_effects_id: effect.id,
+          positional_requirement_id: arc_id,
         )
     }
   })
@@ -225,6 +237,12 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> int.to_string(spell4_effects_id)
       <> " has a caster prerequisite whose rows nest each other round a cycle: "
       <> string.join(list.map(path, int.to_string), " to ")
+    NoPositionalRequirementRow(spell4_effects_id:, positional_requirement_id:) ->
+      "Spell4Effects "
+      <> int.to_string(spell4_effects_id)
+      <> " has a caster prerequisite with a type 108 condition naming PositionalRequirement "
+      <> int.to_string(positional_requirement_id)
+      <> ", which the client's table does not hold"
     SpendsByEmmId(spell4_id:, emm_id:) ->
       "Spell4 "
       <> int.to_string(spell4_id)

@@ -19,7 +19,9 @@
 ////   creature a `TellStrike` through the creature registry with no watch. The creature
 ////   answers by a send, taken as `SentByTarget`; the round closes when each answer is in
 ////   or the one strike timer, `strike.strike_timer`, fires for its deadline, and the
-////   closed round is the cast rule's `went`. A viewer writes a creature's health and
+////   closed round is the cast rule's `went`, given the pose each Hit creature has in the
+////   picture at that moment (`shown.poses_of`) for its Proxies' target gates. A viewer
+////   writes a creature's health and
 ////   death (`Health`, `Died`) for a creature it shows, whatever its own casts.
 //// - **Stealth** is the cast rule's (genesis_prime/game/cast): its `StealthChanged` is
 ////   carried out as the owner's 0x8f5, the viewers' news, and last a tell to the run of
@@ -55,7 +57,7 @@
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/area.{Pose}
+import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/properties as connection_properties
@@ -70,7 +72,6 @@ import genesis_prime/game/rating
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
-import genesis_prime/game/start_place
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/unit_properties
@@ -401,7 +402,7 @@ fn attacker_of(
   strike.Attacker(
     unit_id: entered.unit_id,
     connection: client_connection.connection(session.link),
-    pose: Pose(at: area.point_of(place), yaw: start_place.facing(place).yaw),
+    pose: area.pose_of(place:),
     place:,
     move_seq: session.move_seq,
     stay: entered.stay,
@@ -482,6 +483,11 @@ pub fn carry_strike(
             cast_id: asked.cast_id,
             phase: asked.phase,
             struck:,
+            poses: shown.poses_of(
+              picture: entered.shown,
+              unit_ids: cast.hit_units(struck:),
+              now_ms: now.monotonic_ms,
+            ),
             rolls: prerequisite.rolls_of(bytes:),
           )
         cast_effects(

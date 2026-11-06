@@ -39,6 +39,18 @@ pub fn product(left left: Float, right right: Float) -> Float {
   rounded(value: left *. right)
 }
 
+/// The 32-bit sum of two 32-bit floats: the exact 64-bit sum rounded once to 32 bits, as
+/// the client's single-precision add gives.
+pub fn sum(left left: Float, right right: Float) -> Float {
+  rounded(value: left +. right)
+}
+
+/// The 32-bit difference of two 32-bit floats: the exact 64-bit difference rounded once to
+/// 32 bits, as the client's single-precision subtract gives.
+pub fn difference(left left: Float, right right: Float) -> Float {
+  rounded(value: left -. right)
+}
+
 /// The 32 bits a message carries a float in: 0 to 0xFFFFFFFF, so a value wider
 /// than 32 bits is never held. Any pattern is held, a float that is infinite or
 /// not a number among them, so a rule that takes a client's float can refuse it.

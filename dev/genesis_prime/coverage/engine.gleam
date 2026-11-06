@@ -146,11 +146,6 @@ fn prerequisites() -> EngineDeclaration {
         reason: "needs the player's quest log and its done marks",
         fact_key: "Prerequisite.prerequisiteTypeId.43",
       ),
-      Missing(
-        type_number: 108,
-        reason: "needs a creature's facing, which the creature's fight behaviour holds",
-        fact_key: "Prerequisite.prerequisiteTypeId.108",
-      ),
     ],
     starting_abilities: Some(starting_ability.prerequisite_types),
   )

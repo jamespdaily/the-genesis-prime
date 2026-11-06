@@ -19,6 +19,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/loadout
@@ -44,9 +45,10 @@ import genesis_prime/message/unit_create_player.{
 }
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, type Outcome, CallerId,
-  ConnectionId, EndedBeforeAnswer, Map, NoAnswerInTime, NotRunning, OwnEffect,
-  OwnEvent, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
+  type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
+  type TimerId, CallerId, CancelTimer, ConnectionId, EndedBeforeAnswer, Map,
+  NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, StartTimer, TimerFired,
+  TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterId, CharacterLoaded, ForMove, ForSelect,
@@ -1050,13 +1052,25 @@ pub fn medic_with_beast_in_world(
 pub fn beast_appears(
   unit_id unit_id: Int,
 ) -> Event(ConnectionEvent(Message, Answer)) {
+  beast_appears_facing(unit_id:, yaw: 0.0)
+}
+
+/// The 0x262 news of a Beast standing where `beast_appears` puts it, its 0x262 giving it
+/// the yaw `yaw`.
+pub fn beast_appears_facing(
+  unit_id unit_id: Int,
+  yaw yaw: Float,
+) -> Event(ConnectionEvent(Message, Answer)) {
   let place =
-    place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 29.128599166870117,
-      y: -853.87158203125,
-      z: -563.18798828125,
+    start_place.turned(
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 29.128599166870117,
+        y: -853.87158203125,
+        z: -563.18798828125,
+      ),
+      facing: start_place.Facing(yaw:, pitch: 0.0, roll: 0.0),
     )
   let beast = spawn_support.beast_at(number: 1, place:)
   sent_by_a_peer(news_of(
@@ -1418,4 +1432,112 @@ pub fn entered_with_spell_trees(
     |> list.key_find(Spell4BaseId(ability))
     as "a level-1 player of the class holds the ability"
   #(state, unit_id, bag_index)
+}
+
+/// A step of the connection at the monotonic time `ms`.
+pub fn at(
+  state state: game_connection.State,
+  ms ms: Int,
+  event event: step.Event(
+    step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+  ),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  game_connection.step(state, support.input_at_ms(ms:, event:))
+}
+
+/// The step, and each strike it and the steps after it tell a creature answered as
+/// landed at `ms`, in order.
+pub fn landing(
+  state state: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  list.fold(strikes_told(taken), #(state, [taken]), fn(so_far, strike) {
+    let #(state, steps) = so_far
+    let #(state, answered) = at(state:, ms:, event: landed(key: strike.1))
+    let #(state, more) = landing(state:, ms:, taken: answered)
+    #(state, list.append(steps, more))
+  })
+}
+
+/// The cast rule's timers the steps start, due from `ms`, less those they cancel.
+pub fn cast_timers(
+  steps steps: List(ConnectionStep(Request)),
+  ms ms: Int,
+) -> List(#(Int, TimerId)) {
+  let effects = list.flat_map(steps, support.effects_of)
+  let cancelled =
+    list.filter_map(effects, fn(effect) {
+      case effect {
+        OwnEffect(CancelTimer(timer:)) -> Ok(timer)
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      OwnEffect(StartTimer(timer:, after_ms:)) ->
+        case cast.owns(timer:) && !list.contains(cancelled, timer) {
+          True -> Ok(#(ms + after_ms, timer))
+          False -> Error(Nil)
+        }
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The cast rule's timers fired in time order up to `until_ms`, with every strike
+/// landing: the connection and every step taken.
+pub fn casts_run(
+  state state: game_connection.State,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+  steps steps: List(ConnectionStep(Request)),
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  case
+    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
+  {
+    [#(due, timer), ..rest] if due <= until_ms -> {
+      let #(state, fired) =
+        at(state:, ms: due, event: OwnEvent(TimerFired(timer:)))
+      let #(state, more) = landing(state:, ms: due, taken: fired)
+      casts_run(
+        state:,
+        pending: list.append(rest, cast_timers(steps: more, ms: due)),
+        until_ms:,
+        steps: list.append(steps, more),
+      )
+    }
+    _ -> #(state, steps)
+  }
+}
+
+/// A press of the bag index at `ms`, and the cast timers it leads to up to
+/// `until_ms`, each strike landing.
+pub fn pressed_until(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  client_cast_id client_cast_id: Int,
+  ms ms: Int,
+  until_ms until_ms: Int,
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  let #(state, pressed) =
+    at(
+      state:,
+      ms:,
+      event: OwnEvent(
+        step.Read(world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id:,
+            bag_index:,
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  let #(state, steps) = landing(state:, ms:, taken: pressed)
+  casts_run(state:, pending: cast_timers(steps:, ms:), until_ms:, steps:)
 }

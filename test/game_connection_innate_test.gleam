@@ -342,8 +342,8 @@ pub fn a_stealthed_stalkers_impale_ends_the_stealth_after_its_second_phase_and_n
   let #(_, second) =
     connection_support.feed(state:, event: OwnEvent(TimerFired(second_go)))
   let frames = written(taken: second)
-  assert started_spells(frames:) == [70_775]
-    as "Impale's Fluff child (Spell4Effects 231067, phase 1) starts in the second phase"
+  assert started_spells(frames:) == [39_427, 70_775]
+    as "Impale's Proxy child 39427 (stealthed and behind) and its Fluff child (Spell4Effects 231067) start in the second phase"
   assert stealth_bits(frames:) == [0]
   let at = fn(id) {
     let assert Ok(found) =
