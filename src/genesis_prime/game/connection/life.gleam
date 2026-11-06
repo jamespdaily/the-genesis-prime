@@ -213,27 +213,24 @@ fn life_carried(
         Some(entered) ->
           case effect {
             player_life.EndCasts -> {
-              let #(updated, ended) = cast.died(cast: entered.cast, now:)
               let #(session, more) =
-                connection_casting.cast_effects(
-                  session: connection_casting.with_cast(session:, cast: updated),
+                cast_carried(
+                  session:,
                   now:,
-                  effects: ended,
+                  taken: cast.died(cast: entered.cast, now:),
                 )
               #(session, list.append(written, more), to_the_holocrypt)
             }
             player_life.DamageTaken -> {
-              let #(updated, broken) =
-                cast.damage_taken(
-                  cast: entered.cast,
-                  caster: connection_casting.caster_of(entered:),
-                  now:,
-                )
               let #(session, more) =
-                connection_casting.cast_effects(
-                  session: connection_casting.with_cast(session:, cast: updated),
+                cast_carried(
+                  session:,
                   now:,
-                  effects: broken,
+                  taken: cast.damage_taken(
+                    cast: entered.cast,
+                    caster: connection_casting.caster_of(entered:),
+                    now:,
+                  ),
                 )
               #(session, list.append(written, more), to_the_holocrypt)
             }
@@ -270,6 +267,21 @@ fn life_carried(
       )
     True, None | False, _ -> Continue(session, written)
   }
+}
+
+/// A step of the cast rule that the player's life asked for: the rule's new state kept
+/// in the session, and its effects carried out.
+fn cast_carried(
+  session session: Session,
+  now now: Now,
+  taken taken: #(cast.State, List(cast.Effect)),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let #(updated, effects) = taken
+  connection_casting.cast_effects(
+    session: connection_casting.with_cast(session:, cast: updated),
+    now:,
+    effects:,
+  )
 }
 
 /// The Holocrypt's first step: the place is the start of the player's race and

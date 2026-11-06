@@ -8,8 +8,8 @@
 ////   Cancel' when it is (8127, comparison 1); 38783 force-removes 38784, which ends the
 ////   stealth; 38784's cooldown effect 159128 clears the toggle's cooldown out of combat.
 //// - `Spell4Effects.effectType.83`: a Stealth effect holds the stealth until it is
-////   removed (flags 2, no duration); dataBits02 1 means damage does not end it, 0 means it
-////   does.
+////   removed (no durationTime; the plan reads no flags); dataBits02 1 means damage does
+////   not end it, 0 means it does.
 //// - `Spell4.spellCastStealthChange.break`: a go of a spell of value 0 or 1 ends the stealth
 ////   after its effects, so gates on the caster being stealthed see it; value 2 ends nothing.
 ////   The column is read nowhere by the client, so this is the server's rule.
@@ -30,7 +30,6 @@ import genesis_prime/game/spell_plan.{
   KeepsStealth, KeptOnDamage, Proxy, RemoveStealthRow, Spell, StealthRow,
 }
 import genesis_prime/game/spend
-import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_target_info
@@ -204,16 +203,6 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
   })
 }
 
-/// The cast id of the press the effects confirm: the server's id in its 0x7fd.
-fn pressed_id(effects effects: List(Effect)) -> Int {
-  let assert [frame, ..] =
-    support.frames_of(message_id: spell_cast_confirmed.message_id, effects:)
-    as "a press was confirmed"
-  let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
-    as "a 0x7fd the rule wrote decodes"
-  confirmed.server_cast_id
-}
-
 /// The casts the step started with a 0x7ff, in order, as (Spell4 id, cast id).
 fn children_started_with_ids(
   effects effects: List(Effect),
@@ -372,7 +361,7 @@ pub fn a_press_of_the_toggle_when_not_stealthed_starts_38784_whose_go_lists_8383
   assert !list.contains(support.finished_ids(support.writes(effects:)), on)
     as "the stealth's node lasts until removed, so 38784's 0x7fe waits"
   assert support.started_timers(effects:) == []
-    as "a node until removed arms no timer (Spell4Effects.effectType.83: flags 2)"
+    as "a node until removed arms no timer (Spell4Effects.effectType.83: no durationTime)"
   assert changes(effects:) == [True] as "one change, to stealthed"
 }
 
@@ -411,6 +400,8 @@ pub fn a_press_of_the_toggle_when_stealthed_takes_38784_off_and_ends_the_stealth
     as "8127 passes and 7050 fails: only 38783 starts"
   assert support.removed_targets(support.writes(effects:)) == [#(on, [7])]
     as "38783's 83832 takes 38784 off the caster: 0x811 naming its unit"
+  assert !list.contains(support.finished_ids(support.writes(effects:)), on)
+    as "and no 0x7fe for 38784: the client destroys a Normal cast whose last node goes (opcode.0x811)"
   assert changes(effects:) == [False]
   let assert Ok(last_input) = list.last(inputs)
   assert list.drop(trace(effects: last_input), 1)
@@ -485,7 +476,7 @@ pub fn an_attack_from_stealth_reads_the_stealth_in_its_gates_then_ends_it_after_
       gated_proxy(child: 39_426, effect: 83_818, gate: off_gate),
     ])
   let #(plans, state, entered) = stealthed_by_base_1(others: [impale])
-  let held = pressed_id(effects: entered)
+  let held = support.pressed_id(effects: entered)
   let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
   assert children_started(effects:) == [39_427]
     as "38585 passes against the caster stealthed before the go and 38587 fails: only 39427 starts, though the cast ends the stealth"
@@ -511,7 +502,7 @@ pub fn an_attack_of_value_1_or_0_ends_the_stealth_the_same_way_test() -> Nil {
       ])
     let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
     assert support.removed_targets(support.writes(effects:))
-      == [#(pressed_id(effects: entered), [7])]
+      == [#(support.pressed_id(effects: entered), [7])]
       as {
         spell.1 <> " ends the stealth with the 0x811 of the cast that holds it"
       }
@@ -555,7 +546,7 @@ pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_
     press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
   let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
   assert support.removed_targets(support.writes(effects:))
-    == [#(pressed_id(effects: first), [7])]
+    == [#(support.pressed_id(effects: first), [7])]
     as "the older source's cast comes off and the go's own stays"
   assert changes(effects:) == []
     as "the caster is stealthed before and after the go: no change is written"
@@ -585,7 +576,7 @@ pub fn damage_takes_the_cast_of_a_source_it_breaks_off_and_ends_the_stealth_test
   let #(_, state, entered) = stealthed_by_base_1(others: [])
   let #(state, effects) = damaged(state:, at: 3000)
   assert support.removed_targets(support.writes(effects:))
-    == [#(pressed_id(effects: entered), [7])]
+    == [#(support.pressed_id(effects: entered), [7])]
     as "the stealth cast's node comes off the caster: 0x811 (Spell4Effects.effectType.83: dataBits02 0)"
   assert changes(effects:) == [False]
   assert list.last(trace(effects:)) == Ok("stealth off")
@@ -612,7 +603,7 @@ pub fn damage_ends_the_cast_it_breaks_and_keeps_the_stealth_another_cast_holds_t
   let #(state, _) = press(plans:, state:, bag: bag_of_base_3, at: 2000)
   let #(state, effects) = damaged(state:, at: 3000)
   assert support.removed_targets(support.writes(effects:))
-    == [#(pressed_id(effects: entered), [7])]
+    == [#(support.pressed_id(effects: entered), [7])]
     as "only the cast whose source damage breaks comes off"
   assert changes(effects:) == []
     as "the kept source still holds the stealth: no change"
@@ -656,7 +647,10 @@ pub fn a_remove_stealth_row_on_the_caster_ends_a_broken_source_and_a_kept_one_wi
   let #(state, second) = press(plans:, state:, bag: bag_of_base_3, at: 2000)
   let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 3000)
   assert support.removed_targets(support.writes(effects:))
-    == [#(pressed_id(effects: first), [7]), #(pressed_id(effects: second), [7])]
+    == [
+      #(support.pressed_id(effects: first), [7]),
+      #(support.pressed_id(effects: second), [7]),
+    ]
     as "both casts come off, the older first (Spell4Effects.effectType.84)"
   assert changes(effects:) == [False] as "one change for the one input"
   assert !cast.stealthed(cast: state)
@@ -675,14 +669,14 @@ pub fn a_second_stealth_cast_at_the_stack_cap_takes_the_first_off_with_no_change
     press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
   let #(state, second) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert support.removed_targets(support.writes(effects: second))
-    == [#(pressed_id(effects: first), [7])]
+    == [#(support.pressed_id(effects: first), [7])]
     as "the cap takes the first cast's node off: one 0x811"
   assert changes(effects: second) == []
     as "stealthed before and after the input: no 0x8f5"
   assert cast.stealthed(cast: state)
   let #(state, cancel) = press(plans:, state:, bag: bag_of_base_2, at: 3000)
   assert support.removed_targets(support.writes(effects: cancel))
-    == [#(pressed_id(effects: second), [7])]
+    == [#(support.pressed_id(effects: second), [7])]
   assert changes(effects: cancel) == [False] as "one cancel, one change"
   assert !cast.stealthed(cast: state)
 }
@@ -697,7 +691,7 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_ch
   let #(state, effects) = cast.died(cast: state, now: support.at(ms: 2000))
   assert list.contains(
     support.finished_ids(support.writes(effects:)),
-    pressed_id(effects: entered),
+    support.pressed_id(effects: entered),
   )
     as "the stealth cast's 0x7fe destroys its node and the buff goes (cast.target_node_end)"
   assert changes(effects:) == [False] as "the change is told once"

@@ -18,9 +18,7 @@
 import client_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/spell_plan.{
-  type Spell as PlannedSpell, Always, GatedOnCaster, GatedOnTarget,
-}
+import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{Modifier}
 import genesis_prime/table/id.{
@@ -37,8 +35,6 @@ import unitest
 /// Telekinetic Strike's Spell4 and base, whose tree the planted rows hold
 /// (`spell_tables`).
 const strike = 32_893
-
-const strike_base = 19_102
 
 /// 1.0 and 0.08 as the client's rows hold them (`table_rows -- Spell4Effects 135954`).
 const one = 1_065_353_216
@@ -74,37 +70,16 @@ fn modifier_row(
   )
 }
 
-fn planned(
-  rows rows: spell_tables.Rows,
-) -> Result(PlannedSpell, spell_plan.PlanError) {
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    case spell_plan.build(tables:) {
-      Ok(plans) -> {
-        let assert Ok(spell) =
-          spell_plan.in_plans(plans:, base: Spell4BaseId(strike_base))
-          as "the plans hold Telekinetic Strike"
-        Ok(spell)
-      }
-      Error(error) -> Error(error)
-    }
-  })
-}
-
-fn with_row(row row: List(Cell)) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
-  spell_tables.Rows(
-    ..rows,
-    spell4_effects: spell_tables.sorted_by_id([row, ..rows.spell4_effects]),
-  )
-}
-
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.PropertyModifier) {
-  let assert Ok(spell) = planned(rows: with_row(row:))
+  let assert Ok(spell) =
+    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
   spell.modifiers
 }
 
 fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
-  let assert Error(error) = planned(rows: with_row(row:)) as "the build fails"
+  let assert Error(error) =
+    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
+    as "the build fails"
   error
 }
 
@@ -286,9 +261,9 @@ pub fn the_rows_of_a_phase_are_those_whose_phase_flags_name_it_test() -> Nil {
   use <- owned_test.run(60_000)
   // phaseFlags bit n is phase n (`Spell4Effects.phaseFlags`).
   let assert Ok(spell) =
-    planned(
-      rows: with_row(
-        row: modifier_row(id: 99_050, target_flags: 1, columns: [
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
+        effect: modifier_row(id: 99_050, target_flags: 1, columns: [
           #("phaseFlags", Integer(2)),
         ]),
       ),

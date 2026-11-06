@@ -26,7 +26,6 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/game/spend
 import genesis_prime/message/cast_result
-import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
@@ -138,16 +137,6 @@ fn press_striking(
 
 fn written_ids(effects effects: List(Effect)) -> List(Int) {
   support.ids(frames: support.writes(effects:))
-}
-
-/// The cast id of the first press the effects confirm: the server's id in its 0x7fd.
-fn started_id(effects effects: List(Effect)) -> Int {
-  let assert [frame, ..] =
-    support.frames_of(message_id: spell_cast_confirmed.message_id, effects:)
-    as "a press was confirmed"
-  let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
-    as "a 0x7fd the rule wrote decodes"
-  confirmed.server_cast_id
 }
 
 // ---- what a go lists ----
@@ -266,7 +255,7 @@ pub fn a_cast_with_a_node_that_has_life_left_sends_no_finish_after_its_last_go_t
     as "the client ends no buff on time, so the 0x7fe waits (cast.target_node_end)"
   assert list.contains(support.tells(effects:), #(
       ConnectionId(2),
-      CastFinished(cast_id: started_id(effects:)),
+      CastFinished(cast_id: support.pressed_id(effects:)),
     ))
     == False
   assert list.map(support.started_timers(effects:), fn(timer) { timer.1 })
@@ -283,7 +272,7 @@ pub fn the_finish_and_the_audiences_news_come_when_the_life_is_over_and_not_befo
       bag: bag_of_base_3,
       at: 1000,
     )
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let assert [#(timer, 8000)] = support.started_timers(effects:)
   let #(state, early) = support.fired(state:, timer:, at: 8999)
   assert support.writes(effects: early) == []
@@ -325,7 +314,7 @@ pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> 
       struck: [cast.Hit(unit_id: 20, descriptions: [], controls: [])],
       at: 1000,
     )
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   assert support.finished_ids(support.writes(effects:)) == []
   let assert [#(first, 3000)] = support.started_timers(effects:)
   let #(state, at_3000) = support.fired(state:, timer: first, at: 4000)
@@ -375,7 +364,7 @@ pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil
       ],
       at: 1000,
     )
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let assert [#(timer, 3000)] = support.started_timers(effects:)
   let #(_, ended) = support.fired(state:, timer:, at: 4000)
   assert support.removed_targets(support.writes(effects: ended))
@@ -427,7 +416,7 @@ pub fn a_removal_takes_the_casts_of_a_spell_off_and_a_later_timer_finds_nothing_
     ])
   let #(state, first) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects: first)
+  let id = support.pressed_id(effects: first)
   let assert [#(timer, 5000)] = support.started_timers(effects: first)
   let #(state, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert support.removed_targets(support.writes(effects: removal))
@@ -465,10 +454,11 @@ pub fn a_removal_takes_the_older_of_two_casts_whole_and_leaves_the_newer_test() 
   let #(state, second) = press(plans:, state:, bag: bag_of_base_3, at: 1100)
   let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 1200)
   assert support.removed_targets(support.writes(effects: removal))
-    == [#(started_id(effects: first), [7])]
+    == [#(support.pressed_id(effects: first), [7])]
     as "count 1 takes the older cast's whole node"
   assert support.removed_stacks(support.writes(effects: removal)) == []
-  assert started_id(effects: second) != started_id(effects: first)
+  assert support.pressed_id(effects: second)
+    != support.pressed_id(effects: first)
 }
 
 pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test() -> Nil {
@@ -506,7 +496,7 @@ pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test(
   let #(state, marker) = press(plans:, state:, bag: bag_of_base_3, at: 1100)
   let #(_, with) = press(plans:, state:, bag: bag_of_base_1, at: 1200)
   assert support.removed_targets(support.writes(effects: with))
-    == [#(started_id(effects: marker), [7])]
+    == [#(support.pressed_id(effects: marker), [7])]
     as "with the marker held, the removal takes it off"
 }
 
@@ -574,11 +564,11 @@ pub fn a_third_copy_of_a_cap_2_group_takes_the_casters_oldest_off_test() -> Nil 
     as "two casts are within the cap"
   let #(state, third) = press(plans:, state:, bag: bag_of_base_3, at: 1200)
   assert support.removed_targets(support.writes(effects: third))
-    == [#(started_id(effects: first), [7])]
+    == [#(support.pressed_id(effects: first), [7])]
     as "the third takes the oldest off the caster"
   let #(_, fourth) = press(plans:, state:, bag: bag_of_base_3, at: 1300)
   assert support.removed_targets(support.writes(effects: fourth))
-    == [#(started_id(effects: second), [7])]
+    == [#(support.pressed_id(effects: second), [7])]
     as "and the fourth takes the next oldest: two stay"
 }
 
@@ -597,7 +587,7 @@ pub fn a_second_cast_of_a_cap_0_spell_takes_the_first_one_off_and_another_spell_
     as "a cast of another spell of the group stays"
   let #(_, again) = press(plans:, state:, bag: bag_of_base_3, at: 1200)
   assert support.removed_targets(support.writes(effects: again))
-    == [#(started_id(effects: first), [7])]
+    == [#(support.pressed_id(effects: first), [7])]
     as "the second Charged Shot takes the first one's marker off"
 }
 
@@ -612,7 +602,7 @@ pub fn the_caster_dying_finishes_a_lingering_cast_with_its_0x7fe_test() -> Nil {
       bag: bag_of_base_3,
       at: 1000,
     )
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let #(_, ended) = cast.died(cast: state, now: support.at(ms: 2000))
   assert support.finished_ids(support.writes(effects: ended)) == [id]
     as "the server's choice: the client has no path that ends a buff on a unit's death (cast.target_node_end)"
@@ -661,7 +651,7 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
       struck: [cast.Hit(unit_id: 20, descriptions: [], controls: [])],
       at: 1000,
     )
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let assert [#(timer, 8000)] = support.started_timers(effects:)
   let #(state, other) =
     cast.unit_removed(cast: state, unit_id: 21, now_ms: 2000)
@@ -817,7 +807,7 @@ pub fn a_node_whose_life_ends_while_its_cast_is_live_is_ended_and_the_cast_goes_
   let plans = short_buff_on_a_long_channel()
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let #(_, timers) = support.run_timers(state:, effects:, from_ms: 1000)
   assert list.map(timers, fn(fired) {
       #(
@@ -879,7 +869,7 @@ pub fn a_cancel_of_a_cast_holding_nodes_lets_them_linger_test() -> Nil {
     ])
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   let assert Ok(#(state, cancelled)) =
     support.cancelled_in(
       plans:,
@@ -959,7 +949,7 @@ pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> 
       at: 3000,
     )
   assert support.removed_targets(support.writes(effects: removal))
-    == [#(started_id(effects:), [7])]
+    == [#(support.pressed_id(effects:), [7])]
     as "the node is still held: a removal takes it off"
 }
 
@@ -987,7 +977,7 @@ pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
     ])
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let id = started_id(effects:)
+  let id = support.pressed_id(effects:)
   assert list.map(support.started_timers(effects:), fn(timer) { timer.1 })
     == [1000, 5000]
     as "the later go's timer and the first node's end, 5 s from the go"

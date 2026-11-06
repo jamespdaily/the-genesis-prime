@@ -19,15 +19,12 @@
 import client_tables
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting.{Group, LastingRow, Spell, Stack}
-import genesis_prime/game/spell_plan.{
-  type Spell as PlannedSpell, Always, GatedOnCaster, GatedOnTarget,
-}
+import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
 import genesis_prime/game/spend
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
-import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
 import genesis_prime/table/spell4_stack_group
@@ -62,47 +59,9 @@ fn effect(
   ])
 }
 
-fn rows_with(effect effect: List(Cell)) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
-  spell_tables.Rows(
-    ..rows,
-    spell4_effects: spell_tables.sorted_by_id([effect, ..rows.spell4_effects]),
-  )
-}
-
-fn planned(
-  rows rows: spell_tables.Rows,
-) -> Result(PlannedSpell, spell_plan.PlanError) {
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    case spell_plan.build(tables:) {
-      Ok(plans) -> {
-        let assert Ok(spell) =
-          spell_plan.in_plans(plans:, base: Spell4BaseId(strike_base))
-          as "the plans hold Telekinetic Strike"
-        Ok(spell)
-      }
-      Error(error) -> Error(error)
-    }
-  })
-}
-
-/// The planted Spell4 row with one column set.
-fn with_column(
-  row row: List(Cell),
-  name name: String,
-  cell cell: Cell,
-) -> List(Cell) {
-  list.zip(spell4.schema.columns, row)
-  |> list.map(fn(pair) {
-    case pair.0.name == name {
-      True -> cell
-      False -> pair.1
-    }
-  })
-}
-
 fn plan_error(rows rows: spell_tables.Rows) -> spell_plan.PlanError {
-  let assert Error(error) = planned(rows:) as "the build fails"
+  let assert Error(error) = spell_tables.planned_strike(rows:)
+    as "the build fails"
   error
 }
 
@@ -112,8 +71,8 @@ pub fn a_fluff_row_aimed_at_the_caster_that_lasts_until_removed_is_read_test() -
   use <- owned_test.run(60_000)
   // Power Charge's 96819: targetFlags 1, flags 2.
   let assert Ok(spell) =
-    planned(
-      rows: rows_with(
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
         effect: effect(id: 96_819, type_: 17, target_flags: 1, columns: [
           #("flags", Integer(2)),
         ]),
@@ -137,8 +96,8 @@ pub fn a_fluff_row_reads_its_delay_and_duration_test() -> Nil {
   use <- owned_test.run(60_000)
   // Mental Overflow's 200468: 8 s, aimed at the caster.
   let assert Ok(spell) =
-    planned(
-      rows: rows_with(
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
         effect: effect(id: 200_468, type_: 17, target_flags: 1, columns: [
           #("durationTime", Integer(8000)),
           #("delayTime", Integer(100)),
@@ -153,7 +112,7 @@ pub fn a_fluff_row_reads_its_delay_and_duration_test() -> Nil {
 pub fn a_spell_with_propertyflags_bit_0x2000_takes_the_larger_of_delay_and_duration_test() -> Nil {
   use <- owned_test.run(60_000)
   let rows = spell_tables.rows()
-  let assert Ok(without) = planned(rows:)
+  let assert Ok(without) = spell_tables.planned_strike(rows:)
   assert without.longer_of_delay_and_duration == False
   let with_flag =
     spell_tables.Rows(
@@ -161,12 +120,16 @@ pub fn a_spell_with_propertyflags_bit_0x2000_takes_the_larger_of_delay_and_durat
       spell4: list.map(rows.spell4, fn(row) {
         case row {
           [planted_table.Integer(32_893), ..] ->
-            with_column(row:, name: "propertyFlags", cell: Integer(0x4002002))
+            spell_tables.with_column(
+              row:,
+              name: "propertyFlags",
+              cell: Integer(0x4002002),
+            )
           other -> other
         }
       }),
     )
-  let assert Ok(spell) = planned(rows: with_flag)
+  let assert Ok(spell) = spell_tables.planned_strike(rows: with_flag)
   assert spell.longer_of_delay_and_duration
     as "Spell4.propertyFlags 0x2000 is the record's flag 0x10000000 (0x140568540)"
 }
@@ -174,7 +137,7 @@ pub fn a_spell_with_propertyflags_bit_0x2000_takes_the_larger_of_delay_and_durat
 pub fn a_fluff_row_aimed_by_flags_that_are_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   assert plan_error(
-      rows: rows_with(
+      rows: spell_tables.rows_with_effect(
         effect: effect(id: 99_010, type_: 17, target_flags: 3, columns: []),
       ),
     )
@@ -198,11 +161,15 @@ pub fn a_fluff_row_behind_a_caster_prerequisite_is_gated_on_the_caster_and_behin
     )
   }
   let assert Ok(caster) =
-    planned(rows: with_gate([#("prerequisiteIdCasterApply", Integer(17_302))]))
+    spell_tables.planned_strike(
+      rows: with_gate([#("prerequisiteIdCasterApply", Integer(17_302))]),
+    )
   let assert [row] = caster.lasting
   let assert GatedOnCaster(gates: [_]) = row.condition
   let assert Ok(target) =
-    planned(rows: with_gate([#("prerequisiteIdTargetApply", Integer(5))]))
+    spell_tables.planned_strike(
+      rows: with_gate([#("prerequisiteIdTargetApply", Integer(5))]),
+    )
   let assert [row] = target.lasting
   assert row.condition == GatedOnTarget(prerequisite_id: PrerequisiteId(5))
 }
@@ -226,8 +193,8 @@ pub fn a_removal_of_a_spell4_is_read_with_its_count_test() -> Nil {
   use <- owned_test.run(60_000)
   // Telekinetic Strike's own tree holds Spell4 30900.
   let assert Ok(spell) =
-    planned(
-      rows: rows_with(
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
         effect: removal(selector: 2, named: 30_900, counts: #(3, 3)),
       ),
     )
@@ -241,8 +208,8 @@ pub fn a_removal_of_a_spell4_is_read_with_its_count_test() -> Nil {
 pub fn a_removal_of_a_spell4_base_and_of_a_group_are_read_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(by_base) =
-    planned(
-      rows: rows_with(
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
         effect: removal(selector: 3, named: 19_102, counts: #(1, 1)),
       ),
     )
@@ -254,9 +221,11 @@ pub fn a_removal_of_a_spell4_base_and_of_a_group_are_read_test() -> Nil {
       #("spellGroupId00", Integer(51)),
     ])
   let assert Ok(by_group) =
-    planned(
+    spell_tables.planned_strike(
       rows: spell_tables.Rows(
-        ..rows_with(effect: removal(selector: 1, named: 51, counts: #(1, 1))),
+        ..spell_tables.rows_with_effect(
+          effect: removal(selector: 1, named: 51, counts: #(1, 1)),
+        ),
         spell4_group_lists: [group_row],
       ),
     )
@@ -276,14 +245,19 @@ pub fn a_removal_row_in_a_spell_outside_the_tree_is_not_read_test() -> Nil {
       #("targetFlags", Integer(1)),
       #("dataBits00", Integer(4)),
     ])
-  let assert Ok(_) = planned(rows: rows_with(effect: stray))
+  let assert Ok(_) =
+    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(
+      effect: stray,
+    ))
   Nil
 }
 
 pub fn a_removal_selector_other_than_1_to_3_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   assert plan_error(
-      rows: rows_with(effect: removal(selector: 4, named: 1, counts: #(1, 1))),
+      rows: spell_tables.rows_with_effect(
+        effect: removal(selector: 4, named: 1, counts: #(1, 1)),
+      ),
     )
     == spell_plan.ForceRemoveSelectorNotRead(
       spell4_id: strike,
@@ -295,19 +269,19 @@ pub fn a_removal_selector_other_than_1_to_3_fails_the_load_test() -> Nil {
 pub fn a_removal_that_names_no_row_fails_the_load_naming_the_table_and_id_test() -> Nil {
   use <- owned_test.run(60_000)
   assert plan_error(
-      rows: rows_with(
+      rows: spell_tables.rows_with_effect(
         effect: removal(selector: 2, named: 77_777, counts: #(1, 1)),
       ),
     )
     == spell_plan.NoRow(table: "Spell4", id: 77_777)
   assert plan_error(
-      rows: rows_with(
+      rows: spell_tables.rows_with_effect(
         effect: removal(selector: 3, named: 77_777, counts: #(1, 1)),
       ),
     )
     == spell_plan.NoRow(table: "Spell4Base", id: 77_777)
   assert plan_error(
-      rows: rows_with(
+      rows: spell_tables.rows_with_effect(
         effect: removal(selector: 1, named: 77_777, counts: #(1, 1)),
       ),
     )
@@ -317,7 +291,7 @@ pub fn a_removal_that_names_no_row_fails_the_load_naming_the_table_and_id_test()
 pub fn a_removal_whose_two_counts_differ_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   assert plan_error(
-      rows: rows_with(
+      rows: spell_tables.rows_with_effect(
         effect: removal(selector: 2, named: 30_900, counts: #(1, 5)),
       ),
     )
@@ -371,14 +345,14 @@ pub fn a_spell_reads_its_spell_groups_and_its_stack_group_and_cap_test() -> Nil 
         ]),
       ],
     )
-  let assert Ok(spell) = planned(rows: with_groups)
+  let assert Ok(spell) = spell_tables.planned_strike(rows: with_groups)
   assert spell.groups == [51, 52]
   assert spell.stack == Stack(group_id: 1450, cap: 2)
 }
 
 pub fn a_spell_with_no_group_or_stack_row_ids_holds_none_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(spell) = planned(rows: spell_tables.rows())
+  let assert Ok(spell) = spell_tables.planned_strike(rows: spell_tables.rows())
   assert spell.groups == []
   assert spell.stack == Stack(group_id: 0, cap: 0)
 }
@@ -501,8 +475,8 @@ fn knockdown_row(
 pub fn a_crowd_control_row_is_read_with_its_state_time_armor_and_aim_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(spell) =
-    planned(
-      rows: rows_with(
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
         effect: knockdown_row(state: 8, target_flags: 4, columns: []),
       ),
     )
@@ -527,7 +501,7 @@ pub fn a_crowd_control_row_is_read_with_its_state_time_armor_and_aim_test() -> N
 pub fn a_crowd_control_row_of_a_state_other_than_a_stun_or_a_knockdown_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   assert plan_error(
-      rows: rows_with(
+      rows: spell_tables.rows_with_effect(
         effect: knockdown_row(state: 21, target_flags: 4, columns: []),
       ),
     )
@@ -543,7 +517,7 @@ pub fn a_crowd_control_row_aimed_at_the_caster_or_by_other_flags_fails_the_load_
   use <- owned_test.run(60_000)
   list.each([1, 3], fn(flags) {
     assert plan_error(
-        rows: rows_with(
+        rows: spell_tables.rows_with_effect(
           effect: knockdown_row(state: 8, target_flags: flags, columns: []),
         ),
       )
@@ -562,7 +536,7 @@ pub fn a_crowd_control_row_behind_an_apply_prerequisite_fails_the_load_test() ->
     ["prerequisiteIdCasterApply", "prerequisiteIdTargetApply"],
     fn(column) {
       assert plan_error(
-          rows: rows_with(
+          rows: spell_tables.rows_with_effect(
             effect: knockdown_row(state: 8, target_flags: 4, columns: [
               #(column, Integer(17_302)),
             ]),

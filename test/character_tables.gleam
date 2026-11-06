@@ -194,30 +194,71 @@ pub fn shared_with_property_modifiers() -> store.Tables {
 }
 
 /// The planted tables with a Stealth effect (type 83) aimed at the caster, as the
-/// Stalker's 83834 holds it (flags 2: until removed; dataBits02 0: damage ends it), added
-/// to Paralytic Surge 42352, which holds none: test data, since no pressable planted
-/// ability holds one, so the Medic's press enters stealth. Loaded once under a key of its
-/// own.
+/// Stalker's 83834 holds it (no durationTime: until removed; dataBits02 0: damage ends
+/// it) and behind the caster prerequisite 7050 (type 116 comparison 2: not stealthed, the
+/// client's row), added to Paralytic Surge 42352, which holds none: test data, since no
+/// pressable planted ability holds one, so the Medic's first press enters stealth and a
+/// second, which the gate stops from adding a source, ends it. Loaded once under a key of
+/// its own.
 pub fn shared_with_stealth() -> store.Tables {
   database_support.once("character_tables_stealth", fn() {
-    let stealth =
-      planted_table.row(spell4_effects.schema, [
-        #("ID", Integer(99_903)),
-        #("spellId", Integer(42_352)),
-        #("targetFlags", Integer(1)),
-        #("effectType", Integer(83)),
-        #("flags", Integer(2)),
-        #("phaseFlags", Integer(-1)),
-        #("orderIndex", Integer(3)),
-      ])
-    load_files(files_replacing(
+    load_stealth(broken_by_damage: True)
+  })
+}
+
+/// The same with the Stealth effect kept on damage (dataBits02 1, as 95774 holds it).
+pub fn shared_with_kept_stealth() -> store.Tables {
+  database_support.once("character_tables_kept_stealth", fn() {
+    load_stealth(broken_by_damage: False)
+  })
+}
+
+fn load_stealth(broken_by_damage broken_by_damage: Bool) -> store.Tables {
+  let stealth =
+    planted_table.row(spell4_effects.schema, [
+      #("ID", Integer(99_903)),
+      #("spellId", Integer(42_352)),
+      #("targetFlags", Integer(1)),
+      #("effectType", Integer(83)),
+      #("flags", Integer(2)),
+      #("phaseFlags", Integer(-1)),
+      #("orderIndex", Integer(3)),
+      #("prerequisiteIdCasterApply", Integer(7050)),
+      #(
+        "dataBits02",
+        Integer(case broken_by_damage {
+          True -> 0
+          False -> 1
+        }),
+      ),
+    ])
+  let not_stealthed =
+    planted_table.row(prerequisite.schema, [
+      #("ID", Integer(7050)),
+      #("prerequisiteTypeId0", Integer(116)),
+      #("prerequisiteComparisonId0", Integer(2)),
+      #("value0", Integer(28_455)),
+    ])
+  let files =
+    files_replacing(
       schema: spell4_effects.schema,
       rows: spell_tables.sorted_by_id([
         stealth,
         ..novice_tables.spell4_effects_rows()
       ]),
-    ))
-  })
+    )
+  load_files(
+    list.map(files, fn(file) {
+      case file.0 == prerequisite.schema.file {
+        True ->
+          planted_table.file(
+            prerequisite.schema,
+            spell_tables.sorted_by_id([not_stealthed, ..prerequisite_rows()]),
+          )
+        False -> file
+      }
+    }),
+  )
 }
 
 /// The planted tables with Gate's forced move, row 67776 as the client holds it (delay

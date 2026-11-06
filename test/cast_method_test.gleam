@@ -182,14 +182,6 @@ fn result_value(result: CastResult) -> String {
   int.to_string(cast_result.to_value(result))
 }
 
-/// The server id 0x7fd gave the pressed cast.
-fn pressed_id_of(effects effects: List(cast.Effect)) -> Int {
-  let assert [confirmed, ..] = support.writes(effects:)
-    as "a press writes its 0x7fd first"
-  let assert Ok(id) = cast_id_of(confirmed)
-  id
-}
-
 /// The spell, root and parent of each cast started, as the first viewer is told.
 fn started_by_viewer(
   effects effects: List(cast.Effect),
@@ -413,7 +405,7 @@ pub fn a_0x801_for_a_live_channel_cancels_its_pulses_and_finish_and_ends_it_for_
   list.each([#(SpellCancelled, 1), #(Other(11), 1)], fn(cancel) {
     let #(state, pressed) =
       press(state: cast.new(), bag_index: support.discharge, at: 1000)
-    let id = pressed_id_of(effects: pressed)
+    let id = support.pressed_id(effects: pressed)
     let assert Ok(#(_, effects)) =
       support.cancelled(
         state:,
@@ -472,7 +464,7 @@ pub fn a_channels_cooldown_starts_at_its_count_go_or_at_a_cancels_finish_test() 
   assert refusal_line(effects: after_count) == "7fc 58832 15"
     as "the third pulse starts the cooldown: 20000 ms from 2230 leaves 19930 at 2300"
   let #(state, pressed) = press_in(cast.new(), support.discharge, 1000)
-  let id = pressed_id_of(effects: pressed)
+  let id = support.pressed_id(effects: pressed)
   let assert Ok(#(state, _)) =
     support.cancelled(
       state:,
@@ -787,7 +779,7 @@ pub fn a_cancel_of_the_charge_closes_the_threshold_and_ends_only_the_base_cast_t
   list.each([#(Other(0), 0), #(SpellCancelled, 1), #(Other(11), 1)], fn(cancel) {
     let #(state, pressed) =
       press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
-    let id = pressed_id_of(effects: pressed)
+    let id = support.pressed_id(effects: pressed)
     let assert Ok(#(state, effects)) =
       support.cancelled(
         state:,
@@ -987,7 +979,7 @@ pub fn a_held_press_behind_a_multiphase_cast_starts_when_the_last_cast_that_is_c
 pub fn a_held_press_behind_a_cast_the_client_cancels_starts_after_its_finish_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) = press(state: cast.new(), bag_index: 0, at: 1000)
-  let id = pressed_id_of(effects: pressed)
+  let id = support.pressed_id(effects: pressed)
   let #(state, _) = press(state:, bag_index: 3, at: 1800)
   let assert Ok(#(_, cancelled)) =
     support.cancelled(
@@ -1060,7 +1052,7 @@ pub fn a_multiphase_cast_cancelled_after_its_0x200_phase_starts_its_cooldown_at_
   }
   let cancel_after = fn(fired_phases, cancel_at) {
     let #(state, pressed) = press_in(cast.new(), 1000)
-    let id = pressed_id_of(effects: pressed)
+    let id = support.pressed_id(effects: pressed)
     let state =
       list.fold(
         list.take(support.started_timers(effects: pressed), fired_phases),

@@ -258,13 +258,10 @@ pub fn cast_effects(
               ),
             ),
           ],
-          list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
-            connection_state.news_to(
-              entered:,
-              viewer:,
-              news: client_connection.Stealth(stealthed:),
-            )
-          }),
+          connection_state.news_to_viewers(
+            entered:,
+            news: client_connection.Stealth(stealthed:),
+          ),
         ]),
       )
       cast.StealthChanged(..), None -> #(session, [])

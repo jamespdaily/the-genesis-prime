@@ -63,11 +63,15 @@ fn medic_in_world(
 /// A press of Paralytic Surge by a Medic whose spell holds the planted Stealth effect,
 /// seen by the connections 2 and 3.
 fn stealthed() -> #(game_connection.State, ConnectionStep(Request)) {
+  stealthed_in(tables: character_tables.shared_with_stealth())
+}
+
+/// The same with the tables given, whose Stealth effect may be kept on damage.
+fn stealthed_in(
+  tables tables: table_store.Tables,
+) -> #(game_connection.State, ConnectionStep(Request)) {
   support.press_paralytic_surge(
-    state: medic_in_world(
-      tables: character_tables.shared_with_stealth(),
-      viewers: [2, 3],
-    ),
+    state: medic_in_world(tables:, viewers: [2, 3]),
     client_cast_id: 1,
   )
 }
@@ -157,10 +161,48 @@ pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5
   assert unit_stealth.decode(stealth.body)
     == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 0))
   list.each([2, 3], fn(viewer) {
-    let told = news_told(taken:, viewer:)
-    assert list.last(told) == Ok(Stealth(stealthed: False))
-      as "each viewer is told last, after the blow's own news"
-    assert list.length(told) > 1
+    let assert [
+      client_connection.Shield(..),
+      client_connection.Health(dead: False, ..),
+      client_connection.CastTargetsRemoved(..),
+      Stealth(stealthed: False),
+    ] = news_told(taken:, viewer:)
+      as "each viewer is told the blow's shield and health (0x938 and 0x937), the stealth cast taken off (0x811) and then the stealth"
+  })
+}
+
+pub fn a_blow_does_not_end_a_stealth_kept_on_damage_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) =
+    stealthed_in(tables: character_tables.shared_with_kept_stealth())
+  let taken = support.feed(state, support.a_beast_strike(support.own_unit_id)).1
+  assert only(frames: written(taken:), ids: [0x092F, 0x0811, 0x08F5])
+    == [0x092F]
+    as "the blow's health is written and the kept stealth holds (Spell4Effects.effectType.83: dataBits02 1)"
+  list.each([2, 3], fn(viewer) {
+    assert !list.contains(news_told(taken:, viewer:), Stealth(stealthed: False))
+  })
+}
+
+// ---- a go that ends the stealth ----
+
+pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The second press of Paralytic Surge: its Stealth effect is behind 7050, not
+  // stealthed, so it adds no source, and the spell's stealth change 0 ends the one held.
+  let #(state, _) = stealthed()
+  let #(_, taken) = support.press_paralytic_surge(state:, client_cast_id: 2)
+  let frames = written(taken:)
+  assert only(frames:, ids: [0x0811, 0x08F5]) == [0x0811, 0x08F5]
+    as "the stealth cast taken off, then the change"
+  let assert [stealth] =
+    list.filter(frames, fn(frame) { frame.message_id == 0x08F5 })
+  assert unit_stealth.decode(stealth.body)
+    == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 0))
+  list.each([2, 3], fn(viewer) {
+    assert list.last(news_told(taken:, viewer:))
+      == Ok(Stealth(stealthed: False))
+      as "each viewer is told the change last"
   })
 }
 
@@ -207,6 +249,16 @@ pub fn a_lethal_blow_ends_the_stealth_before_the_death_is_written_test() -> Nil 
   assert only(frames: written(taken:), ids: [0x0811, 0x08F5, 0x088C, 0x0247])
     == [0x0811, 0x08F5, 0x088C, 0x0247]
     as "the stealth cast off, the change, then the death 0x88c and its log 0x247 of type 22"
+}
+
+pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_the_stealth_before_the_log_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) =
+    stealthed_in(tables: character_tables.shared_with_kept_stealth())
+  let taken = support.killed(state).1
+  assert only(frames: written(taken:), ids: [0x07FE, 0x08F5, 0x0247])
+    == [0x07FE, 0x08F5, 0x0247]
+    as "the stealth cast's 0x7fe, then 0x8f5, then the death's log entry of type 22"
 }
 
 // ---- a viewer ----

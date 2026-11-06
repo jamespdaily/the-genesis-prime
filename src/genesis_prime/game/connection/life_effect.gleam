@@ -37,9 +37,7 @@ pub fn life_effects(
         ),
       ]
       player_life.ToViewers(news:) ->
-        list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
-          connection_state.news_to(entered:, viewer:, news:)
-        })
+        connection_state.news_to_viewers(entered:, news:)
       player_life.Answer(to:, answered:) -> [
         OwnEffect(step.Tell(
           to:,

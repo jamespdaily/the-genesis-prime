@@ -2353,6 +2353,64 @@ pub fn plans_with_energize() -> spell_plan.Plans {
   plans
 }
 
+/// Telekinetic Strike's Spell4Base, whose tree the planted rows hold, which the plan
+/// tests of one effect type add a row to.
+const strike_base = 19_102
+
+/// The plan of Telekinetic Strike built from these planted rows, or why the build fails:
+/// each call loads the planted tables once, so a test that needs it asks for it once.
+pub fn planned_strike(
+  rows rows: Rows,
+) -> Result(spell_plan.Spell, spell_plan.PlanError) {
+  with_loaded(rows:, body: fn(tables) {
+    case spell_plan.build(tables:) {
+      Ok(plans) -> {
+        let assert Ok(spell) =
+          spell_plan.in_plans(plans:, base: id.Spell4BaseId(strike_base))
+          as "the plans hold Telekinetic Strike"
+        Ok(spell)
+      }
+      Error(error) -> Error(error)
+    }
+  })
+}
+
+/// The planted rows with this Spell4Effects row added; its spell is Telekinetic Strike
+/// when the row says so.
+pub fn rows_with_effect(effect effect: List(Cell)) -> Rows {
+  let rows = rows()
+  Rows(..rows, spell4_effects: sorted_by_id([effect, ..rows.spell4_effects]))
+}
+
+/// A planted Spell4 row with one column set.
+pub fn with_column(
+  row row: List(Cell),
+  name name: String,
+  cell cell: Cell,
+) -> List(Cell) {
+  list.zip(spell4.schema.columns, row)
+  |> list.map(fn(pair) {
+    case pair.0.name == name {
+      True -> cell
+      False -> pair.1
+    }
+  })
+}
+
+/// The planted rows with Telekinetic Strike's Spell4 row changed in one column.
+pub fn rows_with_strike(name name: String, cell cell: Cell) -> Rows {
+  let rows = rows()
+  Rows(
+    ..rows,
+    spell4: list.map(rows.spell4, fn(row) {
+      case row {
+        [Integer(32_893), ..] -> with_column(row:, name:, cell:)
+        other -> other
+      }
+    }),
+  )
+}
+
 /// The plans the planted rows build, built once per run from one load of the
 /// planted tables that is erased after the build; every test that reads the
 /// plans of the unchanged rows takes them from here, so it puts no terms of its

@@ -131,13 +131,10 @@ fn told(
         ),
       ),
     ],
-    list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
-      connection_state.news_to(
-        entered:,
-        viewer:,
-        news: client_connection.PropertiesChanged(properties: sent),
-      )
-    }),
+    connection_state.news_to_viewers(
+      entered:,
+      news: client_connection.PropertiesChanged(properties: sent),
+    ),
     life_effect.life_effects(session:, now:, entered:, effects: life_effects),
   ])
 }

@@ -310,13 +310,6 @@ pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_o
   assert first.initial_positions == [] && first.telegraph_positions == []
 }
 
-/// The server id 0x7fd gave the pressed cast.
-fn pressed_id_of(effects effects: List(cast.Effect)) -> Int {
-  let assert [confirmed, ..] = support.writes(effects:)
-    as "a press writes its 0x7fd first"
-  cast_id_of(confirmed)
-}
-
 /// What the client is sent and each viewer told of each cast, by the cast's id:
 /// the messages in order.
 fn per_cast(effects: List(cast.Effect)) -> List(#(Int, List(Int))) {
@@ -579,7 +572,8 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
       }),
       list.map(children, fn(child) { child.cast_id }),
     )
-  assert list.length(list.unique([pressed_id_of(effects:), ..every_start])) == 6
+  assert list.length(list.unique([support.pressed_id(effects:), ..every_start]))
+    == 6
     as "Stagger, 38780 and the four 38781 are six casts of one caster, each with an id of its own (0x140561c30: one table for every unit)"
 }
 

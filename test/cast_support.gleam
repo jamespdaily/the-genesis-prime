@@ -21,6 +21,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
+import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_stack_removed
@@ -515,6 +516,16 @@ pub fn frames_of(
   effects effects: List(Effect),
 ) -> List(Frame) {
   list.filter(writes(effects:), fn(frame) { frame.message_id == message_id })
+}
+
+/// The cast id of the first press the effects confirm: the server's id in its 0x7fd.
+pub fn pressed_id(effects effects: List(Effect)) -> Int {
+  let assert [frame, ..] =
+    frames_of(message_id: spell_cast_confirmed.message_id, effects:)
+    as "a press was confirmed"
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
+    as "a 0x7fd the rule wrote decodes"
+  confirmed.server_cast_id
 }
 
 /// The cast id of a 0x7fe frame.

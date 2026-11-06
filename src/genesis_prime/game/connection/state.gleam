@@ -272,7 +272,7 @@ pub fn misrouted(
 
 /// The connections that see the player, each with its player's stay, in the
 /// order of their numbers.
-pub fn sorted_viewers(
+fn sorted_viewers(
   entered entered: world_entry.Entered,
 ) -> List(#(ConnectionId, Stay)) {
   map.sorted_by_connection(entered.viewers)
@@ -381,8 +381,17 @@ pub fn news_to_connection(
 pub fn removes_its_unit_from_the_viewers(
   entered entered: world_entry.Entered,
 ) -> List(Effect(ConnectionEffect(Request))) {
+  news_to_viewers(entered:, news: client_connection.Removed)
+}
+
+/// The tell of `news` about the player's own unit to each player who sees it, in
+/// connection order.
+pub fn news_to_viewers(
+  entered entered: world_entry.Entered,
+  news news: client_connection.News,
+) -> List(Effect(ConnectionEffect(Request))) {
   list.map(sorted_viewers(entered:), fn(viewer) {
-    news_to(entered:, viewer:, news: client_connection.Removed)
+    news_to(entered:, viewer:, news:)
   })
 }
 

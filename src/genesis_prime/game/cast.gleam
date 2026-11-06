@@ -805,7 +805,6 @@ pub fn take(
   now now: Now,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let now_ms = now.monotonic_ms
-  let before = stealthed(cast:)
   case message {
     Pressed -> pressed(cast:, body:, caster:, plans:, now:)
     KeyHeld -> key_held(cast:, body:, caster:, plans:, now:)
@@ -814,22 +813,22 @@ pub fn take(
       |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
   }
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) { settled(before:, taken:) })
+  |> result.map(fn(taken) { settled(cast:, step: fn() { taken }) })
 }
 
 /// What an input did, with `StealthChanged` as its last effect when the caster's stealth
-/// is not what it was before the input (`before`): one per input, however many Stealth
-/// rows came and went.
+/// is not what it was in `cast`, the state before the input: one per input, however many
+/// Stealth rows came and went. `step` is the input's own work.
 fn settled(
-  before before: Bool,
-  taken taken: #(State, List(Effect)),
+  cast cast: State,
+  step step: fn() -> #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
-  let #(cast, effects) = taken
-  case stealthed(cast:) == before {
-    True -> taken
+  let #(after, effects) = step()
+  case stealthed(cast: after) == stealthed(cast:) {
+    True -> #(after, effects)
     False -> #(
-      cast,
-      list.append(effects, [StealthChanged(stealthed: stealthed(cast:))]),
+      after,
+      list.append(effects, [StealthChanged(stealthed: stealthed(cast: after))]),
     )
   }
 }
@@ -1924,15 +1923,13 @@ pub fn timer_fired(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  let before = stealthed(cast:)
-  let taken =
-    released(
-      taken: fire(cast:, timer:, caster:, now:),
-      caster:,
-      now_ms: now.monotonic_ms,
-    )
-    |> continued(caster:, now_ms: now.monotonic_ms)
-  settled(before:, taken:)
+  use <- settled(cast:)
+  released(
+    taken: fire(cast:, timer:, caster:, now:),
+    caster:,
+    now_ms: now.monotonic_ms,
+  )
+  |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
 fn fire(
@@ -2160,23 +2157,21 @@ pub fn went(
   struck struck: List(Struck),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
-  let before = stealthed(cast:)
-  let taken =
-    released(
-      taken: go(
-        cast:,
-        caster:,
-        now_ms: now.monotonic_ms,
-        cast_id:,
-        phase:,
-        struck:,
-        rolls:,
-      ),
+  use <- settled(cast:)
+  released(
+    taken: go(
+      cast:,
       caster:,
       now_ms: now.monotonic_ms,
-    )
-    |> continued(caster:, now_ms: now.monotonic_ms)
-  settled(before:, taken:)
+      cast_id:,
+      phase:,
+      struck:,
+      rolls:,
+    ),
+    caster:,
+    now_ms: now.monotonic_ms,
+  )
+  |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
 /// A go of a live cast is asked: its first go pays the cast's reserved costs, then
@@ -2552,8 +2547,8 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 /// source drops, and a stealthed caster's `StealthChanged` comes last, after the casts'
 /// 0x7fe.
 pub fn died(cast cast: State, now now: Now) -> #(State, List(Effect)) {
-  let before = stealthed(cast:)
-  settled(before:, taken: all_ended(cast:, now:))
+  use <- settled(cast:)
+  all_ended(cast:, now:)
 }
 
 /// The caster's casts, press, hold, thresholds and timers ended by its death.
@@ -2592,11 +2587,8 @@ pub fn damage_taken(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  let before = stealthed(cast:)
-  settled(
-    before:,
-    taken: broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms),
-  )
+  use <- settled(cast:)
+  broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms)
 }
 
 /// Takes the node off the caster of each cast that holds a source damage breaks
@@ -2607,35 +2599,31 @@ fn broken_by_damage(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let sources =
-    dict.to_list(cast.stealth)
-    |> list.filter_map(fn(held) {
-      case held.1 {
-        spell_plan.BrokenByDamage -> Ok(held.0)
-        spell_plan.KeptOnDamage -> Error(Nil)
-      }
+    dict.filter(cast.stealth, fn(_, breaks) {
+      breaks == spell_plan.BrokenByDamage
     })
+    |> dict.keys
   stealth_ended(cast:, caster:, sources:, now_ms:)
 }
 
 /// The casts that hold the stealth sources taken off the caster, oldest cast first, each
 /// as a type 80 removal takes a cast off a unit (`node_off`: 0x811, and the 0x7fe of a
 /// lingering cast of a method the client keeps), which drops every source of the cast
-/// with its node; nothing for a source whose cast is gone.
+/// with its node (`effects_ended`).
 fn stealth_ended(
   cast cast: State,
   caster caster: Caster,
   sources sources: List(unit_properties.Source),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  list.map(sources, fn(source) { source.cast_id })
-  |> list.unique
-  |> list.sort(int.compare)
-  |> list.fold(#(cast, []), fn(so_far, cast_id) {
-    let #(cast, effects) = so_far
-    let #(cast, more) =
-      node_off(cast:, cast_id:, unit_id: caster.unit_id, now_ms:)
-    #(stealth_dropped(cast:, cast_id:), list.append(effects, more))
-  })
+  let removals =
+    list.map(sources, fn(source) { source.cast_id })
+    |> list.unique
+    |> list.sort(int.compare)
+    |> list.map(fn(cast_id) {
+      lasting.NodeOff(cast_id:, unit_id: caster.unit_id)
+    })
+  apply_removals(cast:, removals:, now_ms:)
 }
 
 /// Each property modifier the caster's casts may still hold, told ended in order: those
