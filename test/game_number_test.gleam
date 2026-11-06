@@ -10,6 +10,8 @@
 ////   sight each stop the start, named, and the table refuses a threat of 0 or
 ////   below, a fraction outside (0, 1) and a name with a unit that is not its own
 ////   or that no one listed (migration 0014).
+//// - Migration 0016: interrupt_armor_refill_ms, 10000 ms, a server choice (no client value
+////   says when armor returns, `opcode.0x938.interrupt_armor`), a whole number above 0.
 //// - The shared pattern of the content tables (`genesis_prime/content`): every
 ////   refusal is collected and named by its table, its row and its rule.
 //// - Sight is 1024 units (`genesis_prime/world_map/sight.range`, unit.range).
@@ -34,6 +36,7 @@ fn seeded() -> List(Row) {
     Row(name: "chase_stop_fraction", value: 0.5, unit: "fraction"),
     Row(name: "health_regen_fraction", value: 0.025, unit: "fraction"),
     Row(name: "health_regen_tick_ms", value: 500.0, unit: "ms"),
+    Row(name: "interrupt_armor_refill_ms", value: 10_000.0, unit: "ms"),
     Row(name: "leash_range", value: 55.0, unit: "units"),
   ]
 }
@@ -56,6 +59,7 @@ pub fn the_seeded_rows_select_into_the_numbers_a_fight_reads_test() -> Nil {
       chase_stop_fraction: 0.5,
       health_regen_fraction: 0.025,
       health_regen_tick_ms: 500,
+      interrupt_armor_refill_ms: 10_000,
     ))
 }
 
@@ -68,6 +72,15 @@ pub fn a_missing_and_an_unknown_number_are_each_refused_by_name_test() -> Nil {
   let assert Error(refusals) = game_number.select(rows:, sight_range:)
   assert names_of(refusals) == ["evade_range", "aggro_threat"]
     as "one bad row shows its neighbours: the number the server knows no use of, and the missing threat"
+}
+
+pub fn a_missing_refill_time_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows =
+    list.filter(seeded(), fn(row) { row.name != "interrupt_armor_refill_ms" })
+  let assert Error(refusals) = game_number.select(rows:, sight_range:)
+  assert names_of(refusals) == ["interrupt_armor_refill_ms"]
+    as "the creature starts a timer of that many milliseconds, and the client holds none"
 }
 
 pub fn a_leash_range_not_above_the_aggro_range_is_refused_test() -> Nil {
@@ -118,19 +131,19 @@ pub fn an_aggro_range_not_below_sight_is_refused_test() -> Nil {
   assert string.contains(refused.rule, "1024")
 }
 
-pub fn a_migrated_database_holds_the_six_seeded_numbers_test() -> Nil {
+pub fn a_migrated_database_holds_the_seven_seeded_numbers_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
     content_game_number.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == seeded()
-    as "migration 0010's four rows and migration 0015's two, in name order"
+    as "migration 0010's four rows, migration 0015's two and migration 0016's refill time, in name order"
   assert content_support.count(
       database:,
       sql: "select count(*) from game_number where source = 'server_choice' and reason is not null",
     )
-    == 6
+    == 7
     as "each is a server choice that states its reason"
 }
 
@@ -239,6 +252,18 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "update game_number set unit = 'fraction' where name = 'health_regen_tick_ms'",
         "game_number_name_has_its_unit",
       ),
+      #(
+        "update game_number set value = 0 where name = 'interrupt_armor_refill_ms'",
+        "game_number_interrupt_armor_refill_ms_is_a_whole_positive_ms",
+      ),
+      #(
+        "update game_number set value = 1500.5 where name = 'interrupt_armor_refill_ms'",
+        "game_number_interrupt_armor_refill_ms_is_a_whole_positive_ms",
+      ),
+      #(
+        "update game_number set unit = 'units' where name = 'interrupt_armor_refill_ms'",
+        "game_number_name_has_its_unit",
+      ),
     ],
     fn(bad) {
       let assert Error(failed) =
@@ -265,6 +290,7 @@ pub fn the_numbers_put_under_a_key_are_read_back_test() -> Nil {
       chase_stop_fraction: 0.5,
       health_regen_fraction: 0.025,
       health_regen_tick_ms: 500,
+      interrupt_armor_refill_ms: 10_000,
     )
   content_game_number.put(key:, numbers:)
   assert content_game_number.numbers(key:) == numbers

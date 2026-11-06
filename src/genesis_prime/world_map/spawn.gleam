@@ -599,7 +599,8 @@ const last_creature_level = 101
 /// creature's base and rating properties at its level (`0x140463340` deflect,
 /// `0x140463ac0` critical deflect, `0x140461a30` glance chance, `0x1404615f0` glance
 /// amount); a mitigation is the formula of GameFormula 1234 from Armor plus the
-/// resist of its damage type and the two offsets (`0x140464240`).
+/// resist of its damage type and the two offsets (`0x140464240`). Its Interrupt Armor
+/// is its property 44 (`UnitProperty2.InterruptArmor_Threshold`).
 fn combat_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
@@ -637,6 +638,7 @@ fn combat_of(
   use physical_resist <- result.try(property(26))
   use tech_resist <- result.try(property(27))
   use magic_resist <- result.try(property(28))
+  use armor_maximum <- result.try(property(44))
   use attack <- result.try(attack_of(
     catalog:,
     formulas:,
@@ -698,6 +700,7 @@ fn combat_of(
       shield_mitigation_max: 0.0,
     ),
     attack:,
+    interrupt_armor: creature_life.interrupt_armor_of(maximum: armor_maximum),
   ))
 }
 
@@ -1002,6 +1005,15 @@ fn creature_property(
               difficulty.unit_property_multiplier058
             }),
             tier: tier.unit_property_multiplier058,
+          )
+        44 ->
+          scaled(
+            value: level.unit_property_value44,
+            archetype: arche.unit_property_multiplier044,
+            difficulty: through(difficulty:, column: fn(difficulty) {
+              difficulty.unit_property_multiplier044
+            }),
+            tier: tier.unit_property_multiplier044,
           )
         61 ->
           scaled(

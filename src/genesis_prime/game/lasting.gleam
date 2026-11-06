@@ -90,7 +90,9 @@ pub type Life {
 
 /// A cast's hold on one unit: the node the client keeps for it, with the stacks
 /// the cast gave there, the life of its effects, the effects it holds and the time
-/// they were last armed from (the cast's latest go on the unit).
+/// they were last armed from (the cast's latest go on the unit), and the latest time
+/// a crowd-control state of the cast lasts to there. A state's end is the creature's
+/// own time, so it is kept apart from the effects a later go arms again.
 pub type Node {
   Node(
     unit_id: Int,
@@ -98,6 +100,7 @@ pub type Node {
     life: Life,
     effects: List(LastingRow),
     armed_ms: Int,
+    held_until_ms: Option(Int),
   )
 }
 
@@ -150,12 +153,16 @@ fn lifetime_of(
 /// effect that lasts until removed keeps the node and a go whose effects have no life
 /// never drops or shortens it. An effect whose lifetime ended before this go has left
 /// the node and is not re-armed. A unit that is left with no effect that has a life
-/// holds no node (`opcode.0x7f4.instance_count`, `Spell4Effects.effectType.17`).
+/// holds no node (`opcode.0x7f4.instance_count`, `Spell4Effects.effectType.17`). The
+/// crowd-control states the go landed (`held_until_ms`, absolute times) are not armed
+/// again by a later go: the node lasts at least until the latest of them that is still
+/// to come, and at least as long as the effects do.
 pub fn given(
   held held: Option(Node),
   unit_id unit_id: Int,
   count count: Int,
   effects effects: List(LastingRow),
+  held_until_ms held_until_ms: List(Int),
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
   go_ms go_ms: Int,
 ) -> Result(Node, Nil) {
@@ -169,10 +176,38 @@ pub fn given(
     None -> []
   }
   let all = list.append(earlier, effects)
-  case life_of(effects: all, longer_of_delay_and_duration:, go_ms:) {
-    NoLife -> Error(Nil)
-    EndsAt(..) as life | UntilRemoved as life ->
-      Ok(Node(unit_id:, count:, life:, effects: all, armed_ms: go_ms))
+  let held_until =
+    list.append(
+      case held {
+        Some(Node(held_until_ms: Some(until), ..)) -> [until]
+        Some(Node(held_until_ms: None, ..)) | None -> []
+      },
+      held_until_ms,
+    )
+    |> list.filter(fn(ms) { ms > go_ms })
+    |> list.reduce(int.max)
+    |> option.from_result
+  let life = case
+    life_of(effects: all, longer_of_delay_and_duration:, go_ms:),
+    held_until
+  {
+    UntilRemoved, _ -> Ok(UntilRemoved)
+    EndsAt(ms:), Some(until) -> Ok(EndsAt(ms: int.max(ms, until)))
+    EndsAt(..) as life, None -> Ok(life)
+    NoLife, Some(until) -> Ok(EndsAt(ms: until))
+    NoLife, None -> Error(Nil)
+  }
+  case life {
+    Ok(life) ->
+      Ok(Node(
+        unit_id:,
+        count:,
+        life:,
+        effects: all,
+        armed_ms: go_ms,
+        held_until_ms: held_until,
+      ))
+    Error(Nil) -> Error(Nil)
   }
 }
 

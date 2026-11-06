@@ -80,7 +80,9 @@ import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
+import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/whisper_failed
 import genesis_prime/readiness
 import genesis_prime/server
@@ -3712,9 +3714,13 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
       let assert Ok(health) = player_health.decode(health)
       let assert [Frame(body: shield, ..)] =
         list.filter(back, fn(frame) { frame.message_id == 0x0938 })
-      let assert Ok(shield) = unit_stat_changed.decode(shield)
+      let assert Ok(unit_stat_changed.UnitStatChanged(
+        change: unit_stat_change.Shield(UnitStatShield(value: shield)),
+        ..,
+      )) = unit_stat_changed.decode(shield)
+        as "the 0x938 is the shield's"
       assert health.health == entry_stat(entry:, stat_id: 0)
-        && shield.value == entry_stat(entry:, stat_id: 20)
+        && shield == entry_stat(entry:, stat_id: 20)
         as { class <> ": at the full health and shield it entered with" }
       game_client.close(game:)
     },

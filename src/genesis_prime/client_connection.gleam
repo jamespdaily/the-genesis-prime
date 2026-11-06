@@ -31,6 +31,7 @@ import genesis_prime/game/strike_tell.{
 }
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_missed.{type SpellMissed}
@@ -204,6 +205,16 @@ pub type News {
   CombatState(in_combat: Bool)
   /// The unit's shield: 0x938 of stat 20 (opcode.0x938).
   Shield(shield: Int)
+  /// The unit's current Interrupt Armor: 0x938 of stat 21 (opcode.0x938.interrupt_armor),
+  /// written when the viewer's client shows the unit.
+  InterruptArmor(armor: Int)
+  /// The unit holds a crowd-control state: 0x87f with the instance id of the effect the
+  /// caster's go listed (opcode.0x87f), written when the viewer's client shows the unit.
+  CrowdControlApplied(state: CrowdControlState, instance_id: Int)
+  /// The unit's crowd-control state ends: 0x880 naming the state, the cast and the
+  /// instance id, with its last bit 0 (opcode.0x880), written when the viewer's client
+  /// shows the unit.
+  CrowdControlEnded(state: CrowdControlState, cast_id: Int, instance_id: Int)
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).

@@ -821,6 +821,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       unit_id: 40,
       health: 52,
+      interrupt_armor: option.None,
       server_time_estimate_start: 0,
     )
   let beast = spawn_support.battle_beast(number: 1, x: 0.0)

@@ -32,10 +32,15 @@
 //// - **The struck unit's owner rolls when the striker is a creature**: a creature
 ////   keeps no random state, so the struck player's connection draws the rolls from
 ////   its own seed, and a recording of that connection replays them.
+//// - **A strike carries the crowd-control states** of its phase (`ControlTell`) beside
+////   its damage, or alone: a phase with a stun and no damage still tells the unit
+////   (Stagger's 38780). The creature answers `Landed` with the states it took, and
+////   only those are listed in the caster's go (genesis_prime/world_map/creature_control).
 //// - **A player's strike carries its place and move sequence number**, so a
 ////   creature it puts on a fight finds it, ordered with the moves its connection
 ////   tells (genesis_prime/world_map/creature_fight).
 
+import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type Address}
@@ -52,9 +57,34 @@ pub type Key {
 }
 
 /// What a striker tells the unit it strikes: the strike's key, the striker's
-/// address, which the answer goes to, who the striker is, and its offence.
+/// address, which the answer goes to, who the striker is, its offence, and the
+/// crowd-control states its phase puts on the unit.
 pub type Tell {
-  Strike(key: Key, from: Address, striker: Striker, offence: Offence)
+  Strike(
+    key: Key,
+    from: Address,
+    striker: Striker,
+    offence: Offence,
+    controls: List(ControlTell),
+  )
+}
+
+/// A state the unit took: the effect as it was told, and the monotonic time in
+/// milliseconds the creature holds it until (its arrival plus delay plus duration,
+/// on the clock the creature and the caster's connection share), so the caster's
+/// node for the state lives exactly as long as the state does.
+pub type ControlLanded {
+  ControlLanded(tell: ControlTell, ends_at_ms: Int)
+}
+
+/// One CCStateSet effect a strike puts on the unit: its Spell4Effects id, the instance
+/// id the caster gave it for the go, and its row (genesis_prime/game/crowd_control
+/// `Row`: the state, the delay before and the duration of the effect in milliseconds,
+/// and the Interrupt Armor it removes). The cast id is the strike's key's. The creature
+/// holds the state from the tell until the delay and duration have passed and sends the
+/// state's 0x87f and 0x880 with this instance id (`cc_state.instance_id`).
+pub type ControlTell {
+  ControlTell(effect_id: Int, instance_id: Int, row: crowd_control.Row)
 }
 
 /// Who strikes, with what the struck unit's owner needs of it.
@@ -80,8 +110,10 @@ pub type Refusal {
 
 /// What a creature answers a strike with.
 pub type Outcome {
-  /// The blows landed: a description for each (genesis_prime/game/hit).
-  Landed(descriptions: List(Description))
+  /// The blows landed: a description for each (genesis_prime/game/hit), and the
+  /// states the unit took of the strike's `controls` (a unit that takes none
+  /// answers `[]`).
+  Landed(descriptions: List(Description), controls: List(ControlLanded))
   /// The creature deflected the whole strike.
   Deflected
   /// The creature took no strike.

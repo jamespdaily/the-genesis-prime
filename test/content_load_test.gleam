@@ -291,6 +291,20 @@ pub fn a_missing_and_an_unknown_game_number_stop_the_load_each_named_test() -> N
     as "each refusal names the table and the number by its name"
 }
 
+pub fn a_missing_armor_refill_time_stops_the_load_named_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  change(
+    database,
+    "delete from game_number where name = 'interrupt_armor_refill_ms'",
+  )
+  let #(loaded, _key) = load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a creature that cannot refill its armor stops the start (migration 0016)"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [#("game_number", refusal.RowName("interrupt_armor_refill_ms"))]
+}
+
 pub fn the_load_puts_each_playable_classs_resource_in_a_term_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())

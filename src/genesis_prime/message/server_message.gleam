@@ -57,6 +57,8 @@ import genesis_prime/message/spell_threshold_closed.{type SpellThresholdClosed}
 import genesis_prime/message/spell_threshold_ended.{type SpellThresholdEnded}
 import genesis_prime/message/spell_threshold_index.{type SpellThresholdIndex}
 import genesis_prime/message/spell_threshold_opened.{type SpellThresholdOpened}
+import genesis_prime/message/unit_cc_state_applied.{type UnitCcStateApplied}
+import genesis_prime/message/unit_cc_state_ended.{type UnitCcStateEnded}
 import genesis_prime/message/unit_combat_state.{type UnitCombatState}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_ghost.{type UnitCreateGhost}
@@ -123,6 +125,8 @@ pub type ServerMessage {
   SpellFinished(message: SpellFinished)
   SpellTargetsRemoved(message: SpellTargetsRemoved)
   SpellStackRemoved(message: SpellStackRemoved)
+  UnitCcStateApplied(message: UnitCcStateApplied)
+  UnitCcStateEnded(message: UnitCcStateEnded)
   SpellThresholdClosed(message: SpellThresholdClosed)
   SpellThresholdEnded(message: SpellThresholdEnded)
   SpellThresholdOpened(message: SpellThresholdOpened)
@@ -270,6 +274,15 @@ pub fn decode(
       )
     0x0813 ->
       decoded(body, message_id, spell_stack_removed.decode, SpellStackRemoved)
+    0x087F ->
+      decoded(
+        body,
+        message_id,
+        unit_cc_state_applied.decode,
+        UnitCcStateApplied,
+      )
+    0x0880 ->
+      decoded(body, message_id, unit_cc_state_ended.decode, UnitCcStateEnded)
     0x0814 ->
       decoded(
         body,
@@ -371,6 +384,8 @@ pub fn name(message: ServerMessage) -> String {
     SpellFinished(..) -> "spell_finished"
     SpellTargetsRemoved(..) -> "spell_targets_removed"
     SpellStackRemoved(..) -> "spell_stack_removed"
+    UnitCcStateApplied(..) -> "unit_cc_state_applied"
+    UnitCcStateEnded(..) -> "unit_cc_state_ended"
     SpellThresholdClosed(..) -> "spell_threshold_closed"
     SpellThresholdEnded(..) -> "spell_threshold_ended"
     SpellThresholdOpened(..) -> "spell_threshold_opened"

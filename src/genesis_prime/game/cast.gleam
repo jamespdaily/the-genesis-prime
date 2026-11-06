@@ -274,11 +274,17 @@ import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike_tell
 import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_result
+import genesis_prime/message/combat_log.{CombatLog}
+import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
+import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_result
+import genesis_prime/message/crowd_control_result
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
 import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
@@ -311,6 +317,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{
   type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
+  Spell4EffectsId,
 }
 import genesis_prime/world_map/map
 import gleam/bool
@@ -402,8 +409,14 @@ pub type GoAsked {
 /// A unit a go names, from the round that closed (genesis_prime/game/strike).
 pub type Struck {
   /// The unit is named in the 0x7f4 with the damage that landed on it, which is
-  /// none for a spell that only selects it (Crush's first spell).
-  Hit(unit_id: Int, descriptions: List(hit.Description))
+  /// none for a spell that only selects it (Crush's first spell), and the
+  /// crowd-control states it took, each listed as an effect of the go with the
+  /// instance id its tell gave (genesis_prime/game/strike_tell `Landed`).
+  Hit(
+    unit_id: Int,
+    descriptions: List(hit.Description),
+    controls: List(strike_tell.ControlLanded),
+  )
   /// The unit deflected the strike: an entry of the 0x7fb, no description and no
   /// child (`opcode.0x7fb`).
   Deflected(unit_id: Int)
@@ -440,6 +453,9 @@ pub type Due {
   /// The earliest node of the lingering cast `cast_id` ends: its units' 0x811, or
   /// the finish when no node is left.
   NodesEnd(cast_id: Int)
+  /// The crowd-control state `state` the cast `spell4_id` put on the unit `unit_id`
+  /// ends on the creature: the caster's combat log gets its end entry.
+  StateEnd(spell4_id: Spell4Id, unit_id: Int, state: CrowdControlState)
   /// The held press starts.
   StartHeld
   /// The ability the player holds down casts again: its cooldowns have ended.
@@ -1686,6 +1702,7 @@ fn stop_pending(
       Go(cast_id: waiting, ..) | Finish(cast_id: waiting) -> waiting == cast_id
       StartChild(..)
       | NodesEnd(..)
+      | StateEnd(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -1765,6 +1782,15 @@ fn fire(
             spent: None,
           )
         NodesEnd(cast_id:) -> nodes_ended(cast:, cast_id:, now_ms:)
+        StateEnd(spell4_id:, unit_id:, state:) -> #(cast, [
+          Send(frame: control_logged_frame(
+            caster_unit_id: caster.unit_id,
+            unit_id:,
+            spell4_id:,
+            state:,
+            removed: True,
+          )),
+        ])
         RepeatHeld -> #(repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
@@ -2183,6 +2209,7 @@ fn cancel_nodes_end(
       Go(..)
       | Finish(..)
       | StartChild(..)
+      | StateEnd(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -2203,10 +2230,24 @@ pub fn unit_removed(
   unit_id unit_id: Int,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  let #(cast, cancels) =
+    cancel_timers(cast:, matching: fn(due) {
+      case due {
+        StateEnd(unit_id: waiting, ..) -> waiting == unit_id
+        Go(..)
+        | Finish(..)
+        | StartChild(..)
+        | NodesEnd(..)
+        | StartHeld
+        | RepeatHeld
+        | WindowEnd(..)
+        | ChargeLevel(..) -> False
+      }
+    })
   list.filter(holders(cast:), fn(entry) {
     dict.has_key({ entry.1 }.nodes, unit_id)
   })
-  |> list.fold(#(cast, []), fn(so_far, entry) {
+  |> list.fold(#(cast, cancels), fn(so_far, entry) {
     let #(cast, effects) = so_far
     let #(cast_id, holder) = entry
     let nodes = dict.delete(holder.nodes, unit_id)
@@ -2596,6 +2637,7 @@ fn close_threshold(
             | Finish(..)
             | StartChild(..)
             | NodesEnd(..)
+            | StateEnd(..)
             | StartHeld
             | RepeatHeld -> False
           }
@@ -2763,6 +2805,14 @@ fn go(
           },
         ])
       let #(cast, removed) = removed_by_go(cast:, aimed:, now_ms:)
+      let #(cast, logged) =
+        states_logged(
+          cast:,
+          caster:,
+          spell4_id: spell.spell4_id,
+          aimed:,
+          now_ms:,
+        )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
       let #(cast, children) =
         list.fold(starting, #(cast, []), fn(so_far, proxy) {
@@ -2785,7 +2835,7 @@ fn go(
       // A cast that goes on after this go has its `NodesEnd` timer started for the
       // earliest end of its nodes; one that ended or lingers did that in its end.
       let #(cast, armed) = case
-        aimed.lasting != [] && dict.has_key(cast.casts, cast_id)
+        nodes_aimed(aimed:) != [] && dict.has_key(cast.casts, cast_id)
       {
         True -> rearmed(cast:, cast_id:, now_ms:)
         False -> #(cast, [])
@@ -2794,6 +2844,7 @@ fn go(
         cast,
         list.flatten([
           going,
+          logged,
           removed,
           given,
           gains,
@@ -2853,18 +2904,22 @@ fn lasting_applied(
   #(Applied(lasting:, removes:), list.append(logs, more_logs), rolls)
 }
 
-/// What a go lists on one unit beside the damage it struck: the effect and its delay.
+/// What a go lists on one unit beside the damage it struck: the effect, its delay
+/// and, for a crowd-control state, the instance id its tell gave (the other effects
+/// are numbered by their place in the list, `target_info`).
 type Listed {
-  Listed(effect_id: Spell4EffectsId, delay_ms: Int)
+  Listed(effect_id: Spell4EffectsId, delay_ms: Int, instance_id: Option(Int))
 }
 
 /// The units a go's applied effects aim at: each Fluff and type 80 row with the unit
-/// it aims at, and the effects listed on each unit in the order the units are listed.
+/// it aims at, each crowd-control state a unit took with that unit, and the effects
+/// listed on each unit in the order the units are listed.
 type Aimed {
   Aimed(
     units: List(#(Int, List(Listed))),
     lasting: List(#(spell_plan.Lasting, Int)),
     removes: List(#(spell_plan.ForceRemove, Int)),
+    controls: List(#(strike_tell.ControlLanded, Int)),
   )
 }
 
@@ -2876,13 +2931,12 @@ fn units_aimed_at(
   primary_target primary_target: Int,
   struck struck: List(Struck),
 ) -> List(Int) {
-  case aim {
-    spell_plan.AimsAtCaster -> [caster.unit_id]
-    spell_plan.AimsAtPrimaryTarget -> [primary_target]
-    spell_plan.AimsAtArea -> hit_units(struck:)
-    spell_plan.AimsAtBoth -> list.unique([primary_target, ..hit_units(struck:)])
-    spell_plan.OtherAim(..) -> []
-  }
+  spell_plan.units_aimed_at(
+    aim:,
+    caster: caster.unit_id,
+    primary_target:,
+    area: hit_units(struck:),
+  )
 }
 
 /// Each row with each unit its aim names.
@@ -2921,18 +2975,36 @@ fn aimed_at(
       primary_target: live.primary_target,
       struck:,
     )
+  let controls = controls_landed(struck:)
   let listed =
-    list.append(
+    list.flatten([
       list.map(lasting, fn(entry) {
         #(
           entry.1,
-          Listed(effect_id: entry.0.effect_id, delay_ms: entry.0.row.delay_ms),
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.row.delay_ms,
+            instance_id: None,
+          ),
         )
       }),
       list.map(removes, fn(entry) {
-        #(entry.1, Listed(effect_id: entry.0.effect_id, delay_ms: 0))
+        #(
+          entry.1,
+          Listed(effect_id: entry.0.effect_id, delay_ms: 0, instance_id: None),
+        )
       }),
-    )
+      list.map(controls, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: Spell4EffectsId(entry.0.tell.effect_id),
+            delay_ms: entry.0.tell.row.delay_ms,
+            instance_id: Some(entry.0.tell.instance_id),
+          ),
+        )
+      }),
+    ])
   let units =
     list.fold(listed, [], fn(units: List(#(Int, List(Listed))), entry) {
       case list.key_find(units, entry.0) {
@@ -2941,7 +3013,93 @@ fn aimed_at(
         Error(Nil) -> list.append(units, [#(entry.0, [entry.1])])
       }
     })
-  Aimed(units:, lasting:, removes:)
+  Aimed(units:, lasting:, removes:, controls:)
+}
+
+/// The caster's combat log of the states a go landed: an entry for each (0x247 of
+/// type 1, removed 0), and a timer for each state's end entry (removed 1) at the time
+/// the creature holds it until (`opcode.0x247.cc_state`). A state's end entry is never
+/// written for a unit the caster's client stopped showing: `unit_removed` cancels it.
+fn states_logged(
+  cast cast: State,
+  caster caster: Caster,
+  spell4_id spell4_id: Spell4Id,
+  aimed aimed: Aimed,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.controls, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let #(landed, unit_id) = entry
+    let state = landed.tell.row.state
+    let #(cast, timer) = new_timer(cast:)
+    #(
+      State(
+        ..cast,
+        timers: dict.insert(
+          cast.timers,
+          timer,
+          StateEnd(spell4_id:, unit_id:, state:),
+        ),
+      ),
+      list.append(effects, [
+        Send(frame: control_logged_frame(
+          caster_unit_id: caster.unit_id,
+          unit_id:,
+          spell4_id:,
+          state:,
+          removed: False,
+        )),
+        StartTimer(timer:, after_ms: int.max(0, landed.ends_at_ms - now_ms)),
+      ]),
+    )
+  })
+}
+
+/// 0x247 of type 1: the state set on the unit by the caster's spell, or ended. The
+/// Interrupt Armor it hit is 0 and its result Ok: a creature takes a state only with no
+/// armor, and no diminishing returns apply (`opcode.0x247.cc_state`).
+fn control_logged_frame(
+  caster_unit_id caster_unit_id: Int,
+  unit_id unit_id: Int,
+  spell4_id spell4_id: Spell4Id,
+  state state: CrowdControlState,
+  removed removed: Bool,
+) -> Frame {
+  let assert Ok(body) =
+    combat_log.encode(
+      CombatLog(
+        entry: combat_log_entry.CcState(CombatLogCcState(
+          state:,
+          removed: case removed {
+            True -> 1
+            False -> 0
+          },
+          interrupt_armor_hit: 0,
+          result: crowd_control_result.Ok,
+          diminishing_returns_id: 0,
+          caster_unit_id:,
+          target_unit_id: unit_id,
+          spell4_id: spell4_id.value,
+          combat_result: combat_result.Hit,
+        )),
+      ),
+    )
+    as "unit ids and a Spell4 id that fit their fields"
+  Frame(message_id: combat_log.message_id, body:)
+}
+
+/// The crowd-control states the units of a go took, each with its unit, in the order
+/// of the units.
+fn controls_landed(
+  struck struck: List(Struck),
+) -> List(#(strike_tell.ControlLanded, Int)) {
+  list.flat_map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, controls:, ..) ->
+        list.map(controls, fn(control) { #(control, unit_id) })
+      Deflected(..) -> []
+    }
+  })
 }
 
 /// The type 80 effects of a go taken off the units they aim at, in order: each takes
@@ -2967,22 +3125,23 @@ fn removed_by_go(
   })
 }
 
-/// The nodes a go gives, one for each unit a Fluff row aims at: count 1 and the longest
-/// life of its rows with the effects the cast's node on the unit already holds
-/// (`lasting.given`: a later go keeps and re-arms them, as on the client,
-/// `opcode.0x7f4.instance_count`); a unit left with no effect that has a life holds no
-/// node of the cast.
+/// The nodes a go gives, one for each unit a Fluff row aims at or a crowd-control state
+/// landed on: count 1 and the longest life of its rows with the effects the cast's node on
+/// the unit already holds (`lasting.given`: a later go keeps and re-arms them, as on the
+/// client, `opcode.0x7f4.instance_count`), and at least until the time the creature
+/// holds each state, which no later go moves; a unit left with no effect that has a life
+/// and no state holds no node of the cast.
 fn nodes_given(
   cast cast: State,
   cast_id cast_id: Int,
   aimed aimed: Aimed,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  case dict.get(cast.casts, cast_id), aimed.lasting {
+  case dict.get(cast.casts, cast_id), nodes_aimed(aimed:) {
     Error(Nil), _ | _, [] -> #(cast, [])
-    Ok(live), _ -> {
+    Ok(live), units -> {
       let given =
-        list.unique(list.map(aimed.lasting, fn(entry) { entry.1 }))
+        units
         |> list.map(fn(unit_id) {
           #(
             unit_id,
@@ -3018,6 +3177,17 @@ fn nodes_given(
   }
 }
 
+/// The units a go gives a node: those a Fluff row aims at and those that took a
+/// crowd-control state, each once, in that order. The state's life is its delay plus
+/// its duration, so the caster's cast lingers until the state's effect is over and its
+/// time readout stays right (`cc_state.end`).
+fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
+  list.unique(list.append(
+    list.map(aimed.lasting, fn(entry) { entry.1 }),
+    list.map(aimed.controls, fn(entry) { entry.1 }),
+  ))
+}
+
 /// The node a go gives one unit from the node its cast holds there and the Fluff rows
 /// the go lists for it (`lasting.given`); none when no effect has a life.
 fn node_of(
@@ -3034,11 +3204,19 @@ fn node_of(
         False -> Error(Nil)
       }
     })
+  let held_until_ms =
+    list.filter_map(aimed.controls, fn(entry) {
+      case entry.1 == unit_id {
+        True -> Ok(entry.0.ends_at_ms)
+        False -> Error(Nil)
+      }
+    })
   lasting.given(
     held:,
     unit_id:,
     count: 1,
     effects: rows,
+    held_until_ms:,
     longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
     go_ms: now_ms,
   )
@@ -3828,7 +4006,7 @@ fn go_message(
   let hits =
     list.filter_map(struck, fn(one) {
       case one {
-        Hit(unit_id:, descriptions:) -> Ok(#(unit_id, descriptions))
+        Hit(unit_id:, descriptions:, ..) -> Ok(#(unit_id, descriptions))
         Deflected(..) -> Error(Nil)
       }
     })
@@ -4048,7 +4226,8 @@ pub fn describe(refusal refusal: Refusal) -> String {
 /// (`opcode.0x7f4.target_info`), the combat result of the strike, and an effect
 /// info for each landed blow with its damage description and delay. The instance
 /// count and the effects' instance ids number from 1 (kept by the client, no reader
-/// traced).
+/// traced), except a crowd-control state's, which is the id its tell gave
+/// (genesis_prime/game/crowd_control `instance_id`).
 fn target_info(
   index index: Int,
   unit_id unit_id: Int,
@@ -4083,7 +4262,10 @@ fn target_info(
       list.index_map(listed, fn(effect, effect_index) {
         SpellEffectInfo(
           spell4_effects_id: effect.effect_id.value,
-          instance_id: list.length(descriptions) + effect_index + 1,
+          instance_id: option.unwrap(
+            effect.instance_id,
+            list.length(descriptions) + effect_index + 1,
+          ),
           delay_ms: effect.delay_ms,
           field_4: 0,
           result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
