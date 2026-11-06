@@ -1855,9 +1855,10 @@ pub fn rows() -> Rows {
 }
 
 /// The UnitProperty2 defaults of the properties the server's rules and plans name, the
-/// client's (`table_rows -- UnitProperty2 7 8 35 36 41 42 100 102 104 127 134 175
-/// 177`): BaseHealth 1.0, HealthRegenMultiplier 1.0, AssaultRating 0.0, SupportRating
-/// 0.0, ShieldCapacityMax 0.0, Armor 0.0, MoveSpeedMultiplier 1.0, BaseCritChance 0.0,
+/// client's (`table_rows -- UnitProperty2 7 8 35 36 41 42 47 60 100 102 104 127 134
+/// 175 177`): BaseHealth 1.0, HealthRegenMultiplier 1.0, AssaultRating 0.0, SupportRating
+/// 0.0, ShieldCapacityMax 0.0, Armor 0.0, RatingCritSeverityIncrease 0.0,
+/// RatingMultiHitAmount 0.0, MoveSpeedMultiplier 1.0, BaseCritChance 0.0,
 /// BaseAvoidReduceChance 0.0, CriticalHitSeverityMultiplier 1.5,
 /// FallingDamageMultiplier 1.0, ShieldMitigationMax 0.0 and ShieldTickTime 500.0.
 pub fn unit_property_defaults() -> List(#(Int, Float)) {
@@ -1868,6 +1869,8 @@ pub fn unit_property_defaults() -> List(#(Int, Float)) {
     #(36, 0.0),
     #(41, 0.0),
     #(42, 0.0),
+    #(47, 0.0),
+    #(60, 0.0),
     #(100, 1.0),
     #(102, 0.0),
     #(104, 0.0),
@@ -2399,6 +2402,34 @@ pub fn planned_strike(
 pub fn rows_with_effect(effect effect: List(Cell)) -> Rows {
   let rows = rows()
   Rows(..rows, spell4_effects: sorted_by_id([effect, ..rows.spell4_effects]))
+}
+
+/// A Spell4Effects row of Telekinetic Strike's planted spell of this type aimed by
+/// `target_flags`, in every phase, with these columns beside its id, spell and type: the
+/// row a plan test of one effect type adds (`rows_with_effect`).
+pub fn effect_row_with(
+  id id: Int,
+  effect_type effect_type: Int,
+  target_flags target_flags: Int,
+  columns columns: List(#(String, Cell)),
+) -> List(Cell) {
+  let defaults = [
+    #("ID", Integer(id)),
+    #("spellId", Integer(32_893)),
+    #("effectType", Integer(effect_type)),
+    #("targetFlags", Integer(target_flags)),
+    #("phaseFlags", Integer(-1)),
+    #("orderIndex", Integer(9)),
+  ]
+  planted_table.row(
+    spell4_effects.schema,
+    list.append(
+      list.filter(defaults, fn(default) {
+        !list.any(columns, fn(given) { given.0 == default.0 })
+      }),
+      columns,
+    ),
+  )
 }
 
 /// A planted Spell4 row with one column set.
