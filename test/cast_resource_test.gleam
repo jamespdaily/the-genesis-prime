@@ -71,12 +71,21 @@ fn press_in(
 
 pub fn impale_is_accepted_with_35_suit_power_and_paid_and_refused_53_at_34_test() -> Nil {
   use <- owned_test.run(5000)
-  assert press(resources: support.holding(5, 100.0), bag_index: support.impale)
+  assert press(
+      resources: support.holding(class_id: 5, value: 100.0),
+      bag_index: support.impale,
+    )
     == #([], [Payment(slot: 3, amount: 35)])
     as "0x1403b3320: slot 3 at 100 holds 35; Impale's first phase is at 0 ms, so its cost is paid at the accept (cast_cost_timing_test)"
-  assert press(resources: support.holding(5, 35.0), bag_index: support.impale)
+  assert press(
+      resources: support.holding(class_id: 5, value: 35.0),
+      bag_index: support.impale,
+    )
     == #([], [Payment(slot: 3, amount: 35)])
-  assert press(resources: support.holding(5, 34.9), bag_index: support.impale)
+  assert press(
+      resources: support.holding(class_id: 5, value: 34.9),
+      bag_index: support.impale,
+    )
     == #([53], [])
     as "0x1403b3320: the slot is read as a whole number, 34 < 35, refused 53 (CasterVitalCostResource3)"
 }
@@ -105,10 +114,16 @@ pub fn electrocute_and_mind_burst_are_refused_51_at_their_empty_start_test() -> 
 
 pub fn gamma_rays_passes_at_2_actuators_is_refused_55_at_1_and_at_3_with_a_max_of_0_test() -> Nil {
   use <- owned_test.run(5000)
-  assert press(resources: support.holding(4, 2.0), bag_index: gamma_rays)
+  assert press(
+      resources: support.holding(class_id: 4, value: 2.0),
+      bag_index: gamma_rays,
+    )
     == #([], [Payment(slot: 1, amount: 2)])
     as "0x1405e7980: 2 - 2 = 0 lies in [0, 4]; slot 1 is the slot that passed and pays"
-  assert press(resources: support.holding(4, 1.0), bag_index: gamma_rays)
+  assert press(
+      resources: support.holding(class_id: 4, value: 1.0),
+      bag_index: gamma_rays,
+    )
     == #([55], [])
     as "1 - 2 < 0 in slot 1, and slots 2 to 5 hold 0: the last of them, slot 5, gives 55"
   let max_0 =
@@ -127,10 +142,16 @@ pub fn gamma_rays_passes_at_2_actuators_is_refused_55_at_1_and_at_3_with_a_max_o
 
 pub fn rampage_is_refused_51_at_249_kinetic_energy_and_accepted_at_250_test() -> Nil {
   use <- owned_test.run(5000)
-  assert press(resources: support.holding(1, 249.0), bag_index: support.rampage)
+  assert press(
+      resources: support.holding(class_id: 1, value: 249.0),
+      bag_index: support.rampage,
+    )
     == #([51], [])
     as "0x1403b1780: type 6 (slot 1) at least 250 (eval 2); 249 fails with 51, and the waiver (prerequisite 19750) never passes: the server holds no prerequisite engine"
-  assert press(resources: support.holding(1, 250.0), bag_index: support.rampage)
+  assert press(
+      resources: support.holding(class_id: 1, value: 250.0),
+      bag_index: support.rampage,
+    )
     == #([], [])
     as "250 meets it; a requirement takes nothing"
 }
@@ -231,7 +252,7 @@ pub fn a_press_failing_two_checks_gets_the_first_the_clients_order_gives_test() 
     ])
   assert press_in(
       plans: both,
-      resources: support.holding(5, 0.0),
+      resources: support.holding(class_id: 5, value: 0.0),
       bag_index: kick,
     )
     == #([51], [])
@@ -250,7 +271,10 @@ pub fn a_press_failing_two_checks_gets_the_first_the_clients_order_gives_test() 
       effects: support.pressed_raw_in(
         plans: both,
         state:,
-        caster: support.caster_holding(resources: support.holding(1, 0.0)),
+        caster: support.caster_holding(resources: support.holding(
+          class_id: 1,
+          value: 0.0,
+        )),
         bag_index: kick,
         target: 0,
         at: 2000,
@@ -260,7 +284,10 @@ pub fn a_press_failing_two_checks_gets_the_first_the_clients_order_gives_test() 
   assert result == 15
     as "0x1403afb10.order: the cooldowns before the requirement: Kick's own 20 s cooldown runs, 15"
   let unarmed =
-    cast.Caster(..support.caster_holding(support.holding(5, 0.0)), weapon: None)
+    cast.Caster(
+      ..support.caster_holding(support.holding(class_id: 5, value: 0.0)),
+      weapon: None,
+    )
   let #(_, effects) =
     support.pressed_raw_in(
       plans: support.plans(),
@@ -279,7 +306,7 @@ pub fn a_press_refused_for_its_cost_pays_nothing_test() -> Nil {
   let #(_, effects) =
     support.pressed_raw(
       state: cast.new(),
-      caster: support.caster_holding(support.holding(5, 20.0)),
+      caster: support.caster_holding(support.holding(class_id: 5, value: 20.0)),
       bag_index: support.impale,
       target: 0,
       at: 1000,
@@ -303,7 +330,8 @@ pub fn two_presses_accepted_in_one_step_cannot_spend_one_payment_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
     support.with_spells(plans: support.plans(), spells: [quick_impale()])
-  let caster = support.caster_holding(resources: support.holding(5, 40.0))
+  let caster =
+    support.caster_holding(resources: support.holding(class_id: 5, value: 40.0))
   let take = fn(state, message, body, at) {
     let assert Ok(taken) =
       cast.take(

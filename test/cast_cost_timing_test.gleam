@@ -42,7 +42,7 @@ const gamma_rays = 6
 const first_cast = 2_147_497_984
 
 fn holding(class_id class_id: Int, points points: Int) -> Resources {
-  support.holding(class_id, int.to_float(points))
+  support.holding(class_id:, value: int.to_float(points))
 }
 
 fn medic_holding(points points: Int) -> cast.Caster {

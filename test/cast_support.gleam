@@ -213,7 +213,10 @@ pub fn caster_holding(resources resources: class_resource.Resources) -> Caster {
 }
 
 /// The class's resource with its slot at `value`.
-pub fn holding(class_id: Int, value: Float) -> class_resource.Resources {
+pub fn holding(
+  class_id class_id: Int,
+  value value: Float,
+) -> class_resource.Resources {
   class_resource.new(
     resource: class_resource.Resource(
       ..class_resource_support.resource_of(class_id),

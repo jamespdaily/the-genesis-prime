@@ -61,7 +61,7 @@ fn plans_with(spell spell: Spell) -> Plans {
 
 /// The Esper's resource (Class 3: slot 1, a maximum of 5) holding `points`.
 fn esper_holding(points points: Int) -> Resources {
-  support.holding(3, int.to_float(points))
+  support.holding(class_id: 3, value: int.to_float(points))
 }
 
 fn caster_holding(points points: Int) -> cast.Caster {
