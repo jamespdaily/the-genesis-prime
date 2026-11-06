@@ -862,8 +862,8 @@ pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil
       areas:,
       now_ms: 0,
     )
-  assert list.map(chosen.units, fn(aimed) { aimed.unit_id }) == [21, 22, 23]
-    as "Kick's cone is 1 to 7 m over 100 degrees ahead: units 21, 22 and 23; 24 is behind, 25 past 7 m, 26 is dead, 27 is Friendly to Exiles and 28 is a player (Spell4.58591.area)"
+  assert list.map(chosen.units, fn(aimed) { aimed.unit_id }) == [21, 22, 23, 25]
+    as "Kick's cone is 1 to 7 m over 100 degrees ahead: units 21, 22 and 23, and 25, which is 8 m ahead, past the cone by less than its hit radius of 3 (a unit's radius counts for every shape); 24 is behind, 26 is dead, 27 is Friendly to Exiles and 28 is a player (Spell4.58591.area)"
   assert list.length(chosen.blows) == 1
     as "Kick's one damage effect, aimed at the area"
 }

@@ -14,7 +14,7 @@
 import area_tables
 import client_tables
 import genesis_prime/game/area.{
-  Box, Cone, InsideRow, InsideShapes, Placement, Row,
+  Box, Cone, InsideRow, InsideShapes, Placement, Rectangle, Row,
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/spell_area.{
@@ -54,7 +54,6 @@ pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() ->
         ahead: 0.0,
         aside: 0.0,
         turn_degrees: 0.0,
-        grows_by_hit_radius: False,
       ),
     ]
     as "Spell4.58591.area: telegraph 168, a cone 1 to 7 m over 100 degrees, flag 0x200 so it does not grow"
@@ -62,6 +61,80 @@ pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() ->
   assert phase.selects_area as "Spell4Effects.targetFlags 4 aims at the area"
   let assert [effect] = phase.damage
   assert effect.aim == spell_plan.AimsAtArea
+}
+
+/// The shape, the offset ahead and the offset aside of each hit shape of a real
+/// spell, in the order the build keeps them.
+fn real_shapes(spell4_id spell4_id: Int) -> List(#(area.Shape, Float, Float)) {
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(found) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+    as "the spell is in the areas of the level-1 abilities"
+  list.map(found.shapes, fn(placement) {
+    #(placement.shape, placement.ahead, placement.aside)
+  })
+}
+
+pub fn gamma_rays_centre_spell_strikes_through_its_own_row_and_each_side_spell_through_its_own_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  assert real_shapes(spell4_id: 29_874)
+    == [#(Rectangle(width: 0.8999999761581421, length: 19.0), 1.0, 0.0)]
+    as "Spell4.29874.area: the centre spell has the drawn rows 310 (flags 512), 311 and 312 (flags 544, bit 0x20, drawn as copies of the side beams); it strikes through 310 only (TelegraphDamage.telegraphDamageFlags.0x20.rows)"
+  assert real_shapes(spell4_id: 34_775)
+    == [
+      #(
+        Rectangle(width: 0.8999999761581421, length: 20.0),
+        0.0,
+        1.2000000476837158,
+      ),
+    ]
+    as "Spell4.29874.area: the side spell 34775 strikes through its never-drawn row 2451 (flags 576)"
+  assert real_shapes(spell4_id: 35_886)
+    == [
+      #(
+        Rectangle(width: 0.8999999761581421, length: 20.0),
+        0.0,
+        -1.2000000476837158,
+      ),
+    ]
+    as "Spell4.29874.area: the side spell 35886 strikes through its never-drawn row 2452 (flags 576)"
+}
+
+/// The offsets aside of the planted Kick's hit shapes, whose telegraph rows have
+/// `telegraph_flags`: the planted row at index i has the x offset i
+/// (`area_tables.Kick`).
+fn planted_asides(telegraph_flags telegraph_flags: List(Int)) -> List(Float) {
+  let assert Ok(areas) =
+    area_tables.built(
+      kick: area_tables.Kick(..area_tables.kick(), telegraph_flags:),
+    )
+    as "the planted Kick builds"
+  let assert Ok(found) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
+    as "Kick is in the areas"
+  list.map(found.shapes, fn(placement) { placement.aside })
+}
+
+pub fn a_drawn_row_with_bit_0x20_is_left_out_while_the_spell_has_another_drawn_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert planted_asides(telegraph_flags: [0x220, 0x200, 0x220]) == [1.0]
+    as "TelegraphDamage.telegraphDamageFlags.0x20.rows: a drawn row with 0x20 is the picture of another spell's beam; the spell strikes through the drawn row without it"
+}
+
+pub fn a_spell_whose_drawn_rows_all_have_bit_0x20_keeps_them_all_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert planted_asides(telegraph_flags: [0x220, 0x20, 0x220])
+    == [0.0, 1.0, 2.0]
+    as "TelegraphDamage.telegraphDamageFlags.0x20.rows: a spell with no child telegraph has every drawn row marked 0x20 (368 area spells); leaving them all out would leave it with no shape, so it keeps them all"
+}
+
+pub fn a_spell_with_a_never_drawn_row_strikes_through_it_whatever_its_drawn_rows_hold_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert planted_asides(telegraph_flags: [0x200, 0x240, 0x220]) == [1.0]
+    as "Spell4.38791.area: the never-drawn row (flag 0x40) is the hit shape, as before"
+  assert planted_asides(telegraph_flags: [0x200, 0x260]) == [1.0]
+    as "a never-drawn row that also has bit 0x20 is still the hit shape"
 }
 
 pub fn a_spell_with_a_telegraph_is_struck_by_its_hit_shapes_test() -> Nil {
@@ -75,7 +148,7 @@ pub fn a_spell_with_no_telegraph_row_is_read_by_its_area_row_test() -> Nil {
   use <- owned_test.run(60_000)
   let kicked =
     kick_area(
-      plant: area_tables.Kick(..area_tables.kick(), has_telegraph: False),
+      plant: area_tables.Kick(..area_tables.kick(), telegraph_flags: []),
     )
   assert spell_area.inside(spell: kicked) == InsideRow
     as "Crush's 42297 has no telegraph row (Spell4.32812.area)"
@@ -212,14 +285,12 @@ pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and
         ahead: 9.300000190734863,
         aside: 0.0,
         turn_degrees: 45.0,
-        grows_by_hit_radius: False,
       ),
       Placement(
         shape: Cone(inner: 1.0, outer: 10.75, degrees: 62.5),
         ahead: 0.0,
         aside: 0.0,
         turn_degrees: 0.0,
-        grows_by_hit_radius: False,
       ),
     ]
     as "Spell4.42352.area: telegraph 2888, a box 8 wide and 8 long centred 9.3 m ahead and turned 45 degrees, and 2889, a cone from 1 to 10.75 m over 62.5 degrees, both with flag 0x200; it has no never-drawn twin, so both drawn shapes are its hit shapes"

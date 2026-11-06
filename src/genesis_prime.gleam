@@ -15,10 +15,12 @@
 //// client would refuse, makes `main` stop with the reason and the node end with
 //// status 1, with no ready line, however late the database answers.
 //// It serves the client's STS and auth logins (`login`) and the game server
-//// (`game`).
+//// (`game`). When GENESIS_RECORD_DIR names a folder it records each connection
+//// into it (genesis_prime/sitting).
 
 import envoy
 import genesis_prime/application
+import genesis_prime/client_archive
 import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
@@ -35,6 +37,7 @@ import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/migration
 import genesis_prime/readiness
 import genesis_prime/server
+import genesis_prime/sitting
 import genesis_prime/step
 import genesis_prime/step/runtime
 import genesis_prime/store/worker
@@ -55,9 +58,53 @@ import pog
 import simplifile
 
 pub fn main() -> Nil {
+  run(change: fn(settings) { settings })
+}
+
+/// Starts the server as `main` does, with `change` applied to its settings
+/// last (the dev start plants a frame this way). The settings record the
+/// connections on the wire when GENESIS_RECORD_DIR names a folder
+/// (genesis_prime/sitting), which stops the program with the reason when the
+/// sitting cannot begin.
+pub fn run(change change: fn(server.Settings) -> server.Settings) -> Nil {
   let #(tables, count) = load_tables()
   let spawns = load_content(tables:)
-  start(settings: settings(tables:, spawns:), tables: count)
+  let settings =
+    with_sitting(
+      settings: settings(tables:, spawns:),
+      tables:,
+      database: pool(),
+      read: envoy.get,
+    )
+  start(settings: change(settings), tables: count)
+}
+
+/// The settings, with each STS, auth and game connection recorded on the wire
+/// when `read` gives GENESIS_RECORD_DIR (genesis_prime/sitting), and as they are
+/// when it does not. The fixture is saved from a pool of its own on `database`,
+/// whose name is not the settings' pool's. A sitting that cannot begin stops the
+/// program with the reason.
+pub fn with_sitting(
+  settings settings: server.Settings,
+  tables tables: store.Tables,
+  database database: pog.Config,
+  read read: fn(String) -> Result(String, Nil),
+) -> server.Settings {
+  case sitting.record_folder(read:) {
+    None -> settings
+    Some(folder) -> {
+      let assert Ok(Nil) =
+        sitting.begin(folder:, database:, read:)
+        |> result.map_error(sitting.describe)
+        as "the sitting could not begin"
+      sitting.recorded(
+        settings:,
+        folder:,
+        client_build: client_archive.target_build,
+        tables_digest: store.digest(tables),
+      )
+    }
+  }
 }
 
 /// Loads the content tables (genesis_prime/content) into the server's own
@@ -142,7 +189,7 @@ pub fn load_migrations() -> List(migration.Migration) {
 /// root (genesis_prime/application), says whether the server can serve, and
 /// keeps the node alive until the tree ends, which the host's SIGTERM makes
 /// through OTP. It reads the migration files once, before the tree starts.
-pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
+fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   runtime.show_info_lines()
   runtime.keep_mailboxes_out_of_crash_reports()
   let migrations = load_migrations()
@@ -302,7 +349,7 @@ pub fn settings(
 /// s: the idle stop is the server's choice, since no one sees a stopped creature
 /// and the delay only bounds how often a spawn starts and stops as a player
 /// walks by. The world stands the creatures of the spawns the content load put
-/// under `spawns`. Recording is off; the dev start changes it.
+/// under `spawns`. Recording is off; `run` turns it on.
 fn world(spawns: store.Key) -> server.World {
   server.World(
     maps: process.new_name("maps"),
@@ -483,8 +530,8 @@ fn realm_name() -> String {
 /// The login's listeners from the environment: GENESIS_GAME_ADDRESS, the IPv4
 /// address the client reaches the game server at, and GENESIS_REALM_NAME; the
 /// ports are the client's defaults (6600, 23115), each key good for 60 s and
-/// each ask given 5 s. Recording is off and nothing is planted; the dev start
-/// (dev/genesis_prime/dev_start) changes both.
+/// each ask given 5 s. Recording is off and nothing is planted; `run` turns
+/// recording on, and the dev start (dev/genesis_prime/dev_start) plants.
 fn login() -> server.Login {
   let address = case envoy.get("GENESIS_GAME_ADDRESS") {
     Ok(text) ->
@@ -539,7 +586,7 @@ fn login() -> server.Login {
 /// reason when a variable's value is refused), the game tables and each ask
 /// given 5 s, and each playable class's resource and the game numbers the content
 /// load put under `spawns`'s key (genesis_prime/content/class_resource,
-/// genesis_prime/content/game_number). Recording is off; the dev start changes it.
+/// genesis_prime/content/game_number). Recording is off; `run` turns it on.
 fn game(
   tables tables: store.Tables,
   spawns spawns: store.Key,

@@ -222,8 +222,8 @@ pub type Login {
 /// `process.new_name`, the port it listens on (0 for one the system picks),
 /// the most connections it holds at once (`genesis_prime/connection/listener`),
 /// the settings its rule is made with, where the bytes of each connection's
-/// socket are recorded (`wire_recorder`), `None` unless the dev start turns
-/// recording on, and where each accepted connection gets its script, its seed, the time of
+/// socket are recorded (`wire_recorder`), `None` unless GENESIS_RECORD_DIR turns
+/// recording on (genesis_prime/sitting), and where each accepted connection gets its script, its seed, the time of
 /// each input and its timers (`scripts`): the server's own in the server
 /// (`script.operating_system`), each connection's recorded one in a replay.
 pub type Served(settings) {

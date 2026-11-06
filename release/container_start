@@ -1,0 +1,15 @@
+#!/bin/sh
+# The image's entry point: starts the server (release/start) in the shipment's
+# folder. When GENESIS_SITTINGS_DIR names a folder (the play container's mount),
+# each start records into a folder of its own under it, named for the time and
+# the revision, as GENESIS_RECORD_DIR (genesis_prime/sitting): a server that
+# restarts after a crash must not find the fixture of its earlier sitting.
+
+set -eu
+
+if [ -n "${GENESIS_SITTINGS_DIR:-}" ]; then
+  GENESIS_RECORD_DIR="$GENESIS_SITTINGS_DIR/$(date -u +%Y-%m-%d-%H%M%S)-play-${GENESIS_REVISION:-unknown}"
+  export GENESIS_RECORD_DIR
+fi
+
+exec "$(dirname "$0")/start"

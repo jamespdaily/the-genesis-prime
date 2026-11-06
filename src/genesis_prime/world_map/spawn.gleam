@@ -62,6 +62,7 @@
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/damage
 import genesis_prime/game/hit
+import genesis_prime/game/hit_radius
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
@@ -656,7 +657,7 @@ fn combat_of(
     )
   }
   Ok(Combat(
-    hit_radius: display.hit_radius,
+    hit_radius: hit_radius.of_creature(display:),
     attackable: Attackable(
       exile: attackable_by(catalog:, player: exile_faction, unit: faction_id),
       dominion: attackable_by(
@@ -822,7 +823,7 @@ fn attack_of(
       ),
     ),
     run_speed: display.run_land *. move_speed,
-    reach: spell.target_max_range +. display.hit_radius,
+    reach: spell.target_max_range +. hit_radius.of_creature(display:),
   ))
 }
 
