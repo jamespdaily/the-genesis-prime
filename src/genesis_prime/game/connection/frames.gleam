@@ -44,6 +44,7 @@ import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_properties_changed.{UnitPropertiesChanged}
 import genesis_prime/message/unit_property.{type UnitProperty}
+import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
@@ -163,6 +164,8 @@ pub fn own_unit_frame(
     player_life.OwnShield(shield:) -> shield_frame(unit_id:, shield:)
     player_life.OwnInterruptArmor(armor:) ->
       interrupt_armor_frame(unit_id:, armor:)
+    player_life.OwnAbsorption(absorption:) ->
+      absorption_frame(unit_id:, absorption:)
     player_life.OwnHealth(health:) -> {
       let assert Ok(body) =
         player_health.encode(PlayerHealth(unit_id:, health:, reason_mask: 0))
@@ -213,6 +216,18 @@ pub fn interrupt_armor_frame(unit_id unit_id: Int, armor armor: Int) -> Frame {
   stat_frame(
     unit_id:,
     change: unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value: armor)),
+  )
+}
+
+/// 0x938 of stat 22: the unit's absorption, the sum of its absorb pools, which the client
+/// stores as sent (`opcode.0x938`, `0x14064fb40`).
+pub fn absorption_frame(
+  unit_id unit_id: Int,
+  absorption absorption: Int,
+) -> Frame {
+  stat_frame(
+    unit_id:,
+    change: unit_stat_change.Absorption(UnitStatAbsorption(value: absorption)),
   )
 }
 

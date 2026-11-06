@@ -2,14 +2,15 @@
 //// never edited by hand.
 ////
 //// A union inside a message body: the stat of a 0x938 in 5 bits picks the
-//// layout of its value. Gap: the schema holds stats 20 and 21; the client's
-//// ApplyUnitStat takes others too (10, 22), which the server never writes. Its
-//// variants are listed in `schema.toml` with the client's evidence, and the
-//// fact file's `opcode.0x938` names the union.
+//// layout of its value. Gap: the schema holds stats 20, 21 and 22; the
+//// client's ApplyUnitStat takes the level (10) too, which the server never
+//// writes. Its variants are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `opcode.0x938` names the union.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
+import genesis_prime/message/unit_stat_absorption.{type UnitStatAbsorption}
 import genesis_prime/message/unit_stat_interrupt_armor.{
   type UnitStatInterruptArmor,
 }
@@ -27,6 +28,9 @@ pub type UnitStatChange {
   /// Kind 21, read by `unit_stat_interrupt_armor`. The fact file's
   /// `opcode.0x938.interrupt_armor` names the kind.
   InterruptArmor(UnitStatInterruptArmor)
+  /// Kind 22, read by `unit_stat_absorption`. The fact file's `opcode.0x938`
+  /// names the kind.
+  Absorption(UnitStatAbsorption)
 }
 
 /// Writes the variant's record to the stream.
@@ -34,6 +38,7 @@ pub fn write(writer writer: Writer, record record: UnitStatChange) -> Writer {
   case record {
     Shield(variant) -> unit_stat_shield.write(writer, variant)
     InterruptArmor(variant) -> unit_stat_interrupt_armor.write(writer, variant)
+    Absorption(variant) -> unit_stat_absorption.write(writer, variant)
   }
 }
 
@@ -49,6 +54,10 @@ pub fn read(reader: Reader) -> Result(#(UnitStatChange, Reader), DecodeError) {
       reader
       |> unit_stat_interrupt_armor.read
       |> result.map(pair.map_first(_, InterruptArmor))
+    22 ->
+      reader
+      |> unit_stat_absorption.read
+      |> result.map(pair.map_first(_, Absorption))
     _ ->
       Error(bit_stream.UnexpectedValue(field: "unit_stat_change", value: kind))
   }

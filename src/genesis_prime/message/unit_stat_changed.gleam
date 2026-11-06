@@ -3,10 +3,10 @@
 ////
 //// Message 0x0938 (unit_stat_changed), server to client: a unit's stat
 //// changed, as an integer: the unit and the stat in 5 bits, which picks the
-//// value's layout. The schema holds stat 20, the shield, and stat 21, the
-//// Interrupt Armor (clamped by the client to 0 and the unit's maximum); the
-//// client also takes 22, the absorption, and 10, the level, and stat 0
-//// (health) is not taken here. The server writes only 20 and 21, since for
+//// value's layout. The schema holds stat 20, the shield, stat 21, the
+//// Interrupt Armor (clamped by the client to 0 and the unit's maximum) and
+//// stat 22, the absorption; the client also takes 10, the level, and stat 0
+//// (health) is not taken here. The server writes only 20, 21 and 22, since for
 //// stats 2 to 9 it sets the resource slot to 0 (0x935 sets those), so any
 //// other stat is refused. Its fields are listed in `schema.toml` with the
 //// client's evidence, and the fact file's `opcode.0x938` names the message.

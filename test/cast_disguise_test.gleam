@@ -23,14 +23,12 @@ import genesis_prime/game/look.{type Disguise, Disguise}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Source, Source}
+import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/message/spell_go
-import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{
   ItemDisplayId, ItemSlotId, Spell4EffectsId, Spell4Id,
 }
-import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import owned_test
@@ -127,10 +125,6 @@ fn press(
   support.answered_as(caster:, state:, effects:, at: ms, struck: [], rolls: [])
 }
 
-fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
-  Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
-}
-
 fn dominion() -> cast.Caster {
   cast.Caster(
     ..support.caster(),
@@ -140,48 +134,12 @@ fn dominion() -> cast.Caster {
 
 /// The disguises the effects start, with their sources.
 fn starts(effects effects: List(Effect)) -> List(#(Source, Disguise)) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      cast.CasterChangeStarts(source:, change: cast.Look(disguise:)) ->
-        Ok(#(source, disguise))
-      cast.CasterChangeStarts(change: cast.Property(..), ..)
-      | cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-      | cast.CasterChangeEnds(..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.StealthChanged(..)
-      | cast.Gain(..) -> Error(Nil)
+  list.filter_map(support.caster_change_starts(effects:), fn(start) {
+    case start.1 {
+      cast.Look(disguise:) -> Ok(#(start.0, disguise))
+      cast.Property(..) | cast.ShieldHeal(..) | cast.Absorb(..) -> Error(Nil)
     }
   })
-}
-
-/// The time each step's effects were taken at, with a disguise starting or ending.
-fn timeline(
-  fired fired: List(#(Int, List(Effect))),
-) -> List(#(Int, String, Source)) {
-  list.flat_map(fired, fn(step) {
-    list.flatten([
-      list.map(starts(effects: step.1), fn(start) {
-        #(step.0, "start", start.0)
-      }),
-      list.map(support.caster_change_ends(effects: step.1), fn(source) {
-        #(step.0, "end", source)
-      }),
-    ])
-  })
-}
-
-fn timer_numbers(timers timers: List(TimerId)) -> List(Int) {
-  list.map(timers, fn(timer) {
-    let TimerId(number) = timer
-    number
-  })
-  |> list.sort(int.compare)
 }
 
 /// The spell4_effects_id of each effect the go lists on the caster.
@@ -210,7 +168,10 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
     as "the Exile's go lists 112543 and not 178142, whose gate wants faction 166"
   assert starts(effects: exile)
     == [
-      #(source_of(cast_id: id, effect_id: 112_543), disguise_of(display: 4807)),
+      #(
+        support.source_of(cast_id: id, effect_id: 112_543),
+        disguise_of(display: 4807),
+      ),
     ]
     as "its look change starts in the go's own step, with ItemDisplay 4807"
   let #(_, other) =
@@ -226,7 +187,7 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
   assert starts(effects: other)
     == [
       #(
-        source_of(cast_id: other_id, effect_id: 178_142),
+        support.source_of(cast_id: other_id, effect_id: 178_142),
         disguise_of(display: 7221),
       ),
     ]
@@ -246,9 +207,9 @@ pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_
       at: 1000,
     )
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 112_543)
+  let source = support.source_of(cast_id: id, effect_id: 112_543)
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:) == [#(11_250, "end", source)]
+  assert support.timeline(fired:) == [#(11_250, "end", source)]
     as "the suit ends 10,250 ms after the go (Spell4Effects 112543 durationTime)"
   // The same row with a delay: it starts after it and ends a duration later.
   let delayed =
@@ -275,8 +236,8 @@ pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_
   assert starts(effects:) == [] as "nothing starts at the go: the row waits"
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 112_543)
-  assert timeline(fired:)
+  let source = support.source_of(cast_id: id, effect_id: 112_543)
+  assert support.timeline(fired:)
     == [#(1500, "start", source), #(11_750, "end", source)]
     as "it starts at go + 500 and ends 10,250 ms later"
 }
@@ -309,7 +270,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
       at: 1000,
     )
   let id = support.pressed_id(effects: first)
-  let source = source_of(cast_id: id, effect_id: 112_543)
+  let source = support.source_of(cast_id: id, effect_id: 112_543)
   let timers_started =
     list.map(support.started_timers(effects: first), fn(started) { started.0 })
   // A type 80 removal of the cast.
@@ -323,8 +284,10 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
     )
   assert support.caster_change_ends(effects: removal) == [source]
     as "taking the cast's node off the caster ends the disguise at once"
-  assert timer_numbers(timers: support.cancelled_timers(effects: removal))
-    == timer_numbers(timers: timers_started)
+  assert support.timer_numbers(timers: support.cancelled_timers(
+      effects: removal,
+    ))
+    == support.timer_numbers(timers: timers_started)
     as "and cancels the two timers the go started: the disguise's end and the node's end"
   // The caster's death.
   let #(_, died) =
@@ -335,8 +298,8 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
     )
   assert support.caster_change_ends(effects: died) == [source]
     as "death ends the disguise"
-  assert timer_numbers(timers: support.cancelled_timers(effects: died))
-    == timer_numbers(timers: timers_started)
+  assert support.timer_numbers(timers: support.cancelled_timers(effects: died))
+    == support.timer_numbers(timers: timers_started)
     as "and cancels the two timers the go started"
   // A persistence that stops holding: prerequisite 903, the caster in combat.
   let in_combat = prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
@@ -364,10 +327,10 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
       now: support.at(ms: 2000),
     )
   assert support.caster_change_ends(effects: ended)
-    == [source_of(cast_id: held_id, effect_id: 112_543)]
+    == [support.source_of(cast_id: held_id, effect_id: 112_543)]
     as "the persistence ends the cast, and the disguise with it"
-  assert timer_numbers(timers: support.cancelled_timers(effects: ended))
-    == timer_numbers(
+  assert support.timer_numbers(timers: support.cancelled_timers(effects: ended))
+    == support.timer_numbers(
       timers: list.map(support.started_timers(effects: pressed), fn(started) {
         started.0
       }),
@@ -405,9 +368,9 @@ pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_no
       at: 1000,
     )
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 112_543)
+  let source = support.source_of(cast_id: id, effect_id: 112_543)
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:)
+  assert support.timeline(fired:)
     == [#(1500, "start", source), #(11_250, "end", source)]
     as "the disguise ends with its node at go + 10,250; its own end at go + 10,750 never fires"
   let #(_, left) = cast.left(cast: state)

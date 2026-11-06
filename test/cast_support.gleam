@@ -33,6 +33,7 @@ import genesis_prime/message/spell_stack_removed
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, ConnectionId, Now,
+  TimerId,
 }
 import genesis_prime/table/id.{
   type Spell4BaseId, Item2Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
@@ -353,6 +354,61 @@ pub fn caster_change_ends(
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
+}
+
+/// The changes of the caster's own that the effects start, with their sources, in order.
+pub fn caster_change_starts(
+  effects effects: List(Effect),
+) -> List(#(unit_properties.Source, cast.CasterChange)) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast.CasterChangeStarts(source:, change:) -> Ok(#(source, change))
+      cast.CasterChangeEnds(..)
+      | cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.Log(..)
+      | cast.StealthChanged(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The source of the effect row `effect_id` of the cast `cast_id`.
+pub fn source_of(
+  cast_id cast_id: Int,
+  effect_id effect_id: Int,
+) -> unit_properties.Source {
+  unit_properties.Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
+}
+
+/// The time each step's effects were taken at, with a change of the caster starting
+/// ("start") or ending ("end"), in order.
+pub fn timeline(
+  fired fired: List(#(Int, List(Effect))),
+) -> List(#(Int, String, unit_properties.Source)) {
+  list.flat_map(fired, fn(step) {
+    list.flatten([
+      list.map(caster_change_starts(effects: step.1), fn(start) {
+        #(step.0, "start", start.0)
+      }),
+      list.map(caster_change_ends(effects: step.1), fn(source) {
+        #(step.0, "end", source)
+      }),
+    ])
+  })
+}
+
+/// The numbers of these timers, sorted.
+pub fn timer_numbers(timers timers: List(TimerId)) -> List(Int) {
+  list.map(timers, fn(timer) {
+    let TimerId(number) = timer
+    number
+  })
+  |> list.sort(int.compare)
 }
 
 /// The input time: a monotonic time, the system time 0.

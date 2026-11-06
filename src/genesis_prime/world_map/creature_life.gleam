@@ -188,6 +188,7 @@ pub fn struck(
         hit.apply(
           health:,
           shield: 0,
+          absorbs: [],
           offence: strike.offence,
           defence: body.combat.defence,
           rolls: rolls_of(strike),

@@ -22,6 +22,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/hit.{Blow, Offence}
 import genesis_prime/game/loadout
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
@@ -1238,6 +1239,39 @@ pub fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
         from: fighter(),
         striker: strike_tell.CreatureStriker,
         offence: spawn_support.beast_attack().offence,
+        controls: [],
+      ),
+    ),
+  )
+}
+
+/// A creature's strike of one blow of `damage` of the damage type `damage_type` (1 Physical,
+/// 2 Tech, 3 Magic) on `unit_id`, with no crit chance.
+pub fn a_creatures_blow(
+  unit_id unit_id: Int,
+  damage_type damage_type: Int,
+  damage damage: Int,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  foe(
+    strike_tell.Attacks(
+      tell: strike_tell.Strike(
+        key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id:),
+        from: fighter(),
+        striker: strike_tell.CreatureStriker,
+        offence: Offence(
+          blows: [
+            Blow(
+              spell4_effects_id: 62_159,
+              damage_type:,
+              damage:,
+              delay_ms: 0,
+              threat_multiplier: 1.0,
+            ),
+          ],
+          crit_chance: 0.0,
+          crit_severity: 1.5,
+          strikethrough: 0.0,
+        ),
         controls: [],
       ),
     ),

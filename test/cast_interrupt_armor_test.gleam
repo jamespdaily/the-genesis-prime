@@ -24,13 +24,10 @@ import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AimsAtCaster, Always, InterruptArmor,
 }
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{
-  type Modifier, type Source, Change, Source,
-}
+import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import gleam/int
 import gleam/list
@@ -109,55 +106,15 @@ fn press(
   )
 }
 
-fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
-  Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
-}
-
 /// The property changes the effects start, with their sources: the armor rows are changes
 /// of property 44, which the player's armor follows.
 fn starts(effects effects: List(Effect)) -> List(#(Source, Modifier)) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
-        Ok(#(source, modifier))
-      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-      | cast.CasterChangeStarts(change: cast.Look(..), ..)
-      | cast.CasterChangeEnds(..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.StealthChanged(..)
-      | cast.Gain(..) -> Error(Nil)
+  list.filter_map(support.caster_change_starts(effects:), fn(start) {
+    case start.1 {
+      cast.Property(modifier:) -> Ok(#(start.0, modifier))
+      cast.ShieldHeal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
     }
   })
-}
-
-/// The time each step's effects were taken at, with an armor starting or ending.
-fn timeline(
-  fired fired: List(#(Int, List(Effect))),
-) -> List(#(Int, String, Source)) {
-  list.flat_map(fired, fn(step) {
-    list.flatten([
-      list.map(starts(effects: step.1), fn(start) {
-        #(step.0, "start", start.0)
-      }),
-      list.map(support.caster_change_ends(effects: step.1), fn(source) {
-        #(step.0, "end", source)
-      }),
-    ])
-  })
-}
-
-fn timer_numbers(timers timers: List(TimerId)) -> List(Int) {
-  list.map(timers, fn(timer) {
-    let TimerId(number) = timer
-    number
-  })
-  |> list.sort(int.compare)
 }
 
 // ---- what a go lists and how long the cast lasts ----
@@ -206,12 +163,12 @@ pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_d
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 199_192)
+  let source = support.source_of(cast_id: id, effect_id: 199_192)
   assert starts(effects:) == [#(source, raising(points: 1.0))]
     as "row 199192: x 1.0 + 1 on property 44, in the go's own step"
   assert support.caster_change_ends(effects:) == []
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:) == [#(6000, "end", source)]
+  assert support.timeline(fired:) == [#(6000, "end", source)]
     as "it ends 5000 ms after the go, once"
 }
 
@@ -230,14 +187,14 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 210_961)
+  let source = support.source_of(cast_id: id, effect_id: 210_961)
   assert starts(effects:) == []
     as "nothing starts at the go: the row waits its delay"
   assert list.map(support.started_timers(effects:), fn(timer) { timer.1 })
     == [150_000]
     as "one start timer, and no end timer or node end for a row that never ends"
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert timeline(fired:) == [#(151_000, "start", source)]
+  assert support.timeline(fired:) == [#(151_000, "start", source)]
     as "it starts at go + 150000 and never ends"
   assert list.flat_map(fired, fn(step) { starts(effects: step.1) })
     == [#(source, raising(points: 1.0))]
@@ -270,10 +227,12 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
     as "the armor started in the press's go"
   let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert support.caster_change_ends(effects: removal)
-    == [source_of(cast_id: id, effect_id: 199_192)]
+    == [support.source_of(cast_id: id, effect_id: 199_192)]
     as "taking the cast's node off the caster ends the armor at once"
-  assert timer_numbers(timers: support.cancelled_timers(effects: removal))
-    == timer_numbers(
+  assert support.timer_numbers(timers: support.cancelled_timers(
+      effects: removal,
+    ))
+    == support.timer_numbers(
       timers: list.map(support.started_timers(effects: first), fn(started) {
         started.0
       }),
@@ -309,10 +268,10 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
       now: support.at(ms: 2000),
     )
   assert support.caster_change_ends(effects: ended)
-    == [source_of(cast_id: held_id, effect_id: 199_192)]
+    == [support.source_of(cast_id: held_id, effect_id: 199_192)]
     as "the persistence ends the cast as a death ends one, and the armor with it"
-  assert timer_numbers(timers: support.cancelled_timers(effects: ended))
-    == timer_numbers(
+  assert support.timer_numbers(timers: support.cancelled_timers(effects: ended))
+    == support.timer_numbers(
       timers: list.map(support.started_timers(effects: pressed), fn(started) {
         started.0
       }),
@@ -347,8 +306,11 @@ pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
     )
   assert support.caster_change_ends(effects: ended)
     == [
-      source_of(cast_id: support.pressed_id(effects: first), effect_id: 199_192),
-      source_of(
+      support.source_of(
+        cast_id: support.pressed_id(effects: first),
+        effect_id: 199_192,
+      ),
+      support.source_of(
         cast_id: support.pressed_id(effects: second),
         effect_id: 210_961,
       ),
@@ -368,13 +330,13 @@ pub fn a_later_go_of_the_same_cast_arms_the_armor_again_and_holds_it_once_test()
   let #(state, effects) =
     press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
-  let source = source_of(cast_id: id, effect_id: 199_192)
+  let source = support.source_of(cast_id: id, effect_id: 199_192)
   assert list.map(starts(effects:), fn(start) { start.0 }) == [source]
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
-  assert list.filter(timeline(fired:), fn(entry) { entry.1 == "start" })
+  assert list.filter(support.timeline(fired:), fn(entry) { entry.1 == "start" })
     == [#(2000, "start", source)]
     as "the second go names the same source again, which the player's properties and life hold once (unit_properties: the same source applied twice is held once)"
-  assert list.filter(timeline(fired:), fn(entry) { entry.1 == "end" })
+  assert list.filter(support.timeline(fired:), fn(entry) { entry.1 == "end" })
     == [#(7000, "end", source)]
     as "the armor ends 5000 ms after the second go, once: the first go's end timer was cancelled"
 }

@@ -315,8 +315,9 @@ fn starts(
     case effect {
       cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
         Ok(#(source, modifier))
-      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..) -> Error(Nil)
-      cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
+      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
+      | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
+      | cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
       cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)

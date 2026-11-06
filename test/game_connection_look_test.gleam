@@ -198,6 +198,7 @@ fn look_visuals(news news: News) -> Result(List(ItemVisual), Nil) {
     | client_connection.DeathLogged
     | client_connection.CameBackLogged
     | client_connection.Shield(..)
+    | client_connection.Absorption(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
