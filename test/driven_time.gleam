@@ -13,9 +13,12 @@
 ////
 //// - **Contract:** a script's clock gives each input its `Now`, and its scheduler
 ////   starts each timer (genesis_prime/connection/script).
-//// - **Time** starts at the node's own reading when the clock is made, then moves only
-////   by `advance`. The node's time for an input, which the shell counts an ask's
-////   wait from, stays the node's own, as a replay's does.
+//// - **Time** starts an hour after the node's own reading when the clock is made, then
+////   moves only by `advance`. The hour keeps it ahead of a map the server starts
+////   later, which counts its clock from the node's own time: a connection's time
+////   before the map's start would make the unit's server time negative, which the
+////   0x262 cannot hold. The node's time for an input, which the shell counts an
+////   ask's wait from, stays the node's own, as a replay's does.
 //// - **Order:** timers fire in the order of their due times, equal times in the order
 ////   they were started, and a timer a step starts inside the advance fires in it when
 ////   it is due within it, so a connection takes the timers of a stretch of time as a
@@ -35,6 +38,9 @@ import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/otp/actor
 import gleam/otp/system
+
+/// How far ahead of the node's own time the clock starts.
+const ahead_ms = 3_600_000
 
 /// A driven clock and its timers.
 pub opaque type Time {
@@ -80,6 +86,8 @@ type Message {
 /// test, which ends it.
 pub fn new() -> Time {
   let Now(monotonic_ms:, filetime:) = runtime.now()
+  let monotonic_ms = monotonic_ms + ahead_ms
+  let filetime = filetime + ahead_ms * 10_000
   let assert Ok(started) =
     actor.new(
       State(
