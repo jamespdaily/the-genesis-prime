@@ -32,6 +32,7 @@ import ask_support
 import cast_support
 import character_support
 import character_tables
+import client_tables
 import connection_rule_support as support
 import content_support
 import driven_time
@@ -66,6 +67,7 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
+import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags
@@ -80,6 +82,7 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed
+import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat_change
@@ -1340,6 +1343,19 @@ fn two_players_of_class_enter_one_map_with(
   first_class first_class: Int,
   scripts scripts: Scripts,
 ) -> TwoEntered {
+  two_players_enter_on(
+    tables: character_tables.shared_with_spell_trees(),
+    first_class:,
+    scripts:,
+  )
+}
+
+/// As `two_players_of_class_enter_one_map_with`, on these tables.
+fn two_players_enter_on(
+  tables tables: table_store.Tables,
+  first_class first_class: Int,
+  scripts scripts: Scripts,
+) -> TwoEntered {
   let started =
     login_support.start_with(change: fn(settings) {
       server.Settings(
@@ -1347,10 +1363,7 @@ fn two_players_of_class_enter_one_map_with(
         game: server.Served(
           ..settings.game,
           scripts:,
-          settings: connection_state.Settings(
-            ..settings.game.settings,
-            tables: character_tables.shared_with_spell_trees(),
-          ),
+          settings: connection_state.Settings(..settings.game.settings, tables:),
         ),
       )
     })
@@ -1796,6 +1809,95 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
     as "the server goes on: the second player's own hold of Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631), is answered with its own 0x7ff, unit 2 casting"
   game_client.close(game: second)
   login_support.stop(started)
+}
+
+/// A suited player's connection ends before the suit's 10,250 ms are up, on a clock the
+/// test moves by hand: the watcher is written the suit once, then 0x355 for the unit and
+/// no 0x933 after, and the server goes on. The first player's class presses the ability
+/// at `bag_index` that puts the suit of `display` on it.
+fn a_suited_players_connection_ends(
+  tables tables: table_store.Tables,
+  first_class first_class: Int,
+  bag_index bag_index: Int,
+  display display: Int,
+) -> Nil {
+  let time = driven_time.new()
+  let TwoEntered(started:, first:, second:, second_have:, ..) =
+    two_players_enter_on(
+      tables:,
+      first_class:,
+      scripts: driven_time.scripts(time),
+    )
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: 0,
+  )
+  let is_suit = fn(frame: Frame) { frame.message_id == 0x0933 }
+  let #(suited, second_have) =
+    game_client.read_until(
+      game: second,
+      have: second_have,
+      within_ms: 5000,
+      found: fn(frames) { list.any(frames, is_suit) },
+    )
+  let assert [suit] = list.filter(suited, is_suit)
+    as "the watcher's client is written one 0x933 when the suit goes on"
+  assert unit_item_visuals_changed.decode(suit.body)
+    == Ok(
+      UnitItemVisualsChanged(unit_id: 1, item_visuals: [
+        ItemVisual(slot: 64, display_id: display, item_color_set_id: 0, dye: 0),
+      ]),
+    )
+    as "opcode.0x933: unit 1 in slot 64 with the suit of a faction 166 player, ItemDisplay 7221 (178142 of Spell4 47860)"
+  // The clock is the test's and has not moved, so the suit's 10,250 ms are not up: the
+  // connection ends in the middle of the suit.
+  game_client.close(game: first)
+  let #(after, second_have) =
+    game_client.read_until(
+      game: second,
+      have: second_have,
+      within_ms: 5000,
+      found: fn(frames) {
+        list.any(frames, fn(frame) { frame.message_id == 0x0355 })
+      },
+    )
+  assert list.any(after, fn(frame) {
+    frame.message_id == 0x0355
+    && unit_destroyed.decode(frame.body)
+    == Ok(unit_destroyed.UnitDestroyed(unit_id: 1, field_2: 0))
+  })
+    as "opcode.0x355: the map removes the suited unit when its connection ended"
+  let #(rest, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  assert list.filter(list.append(after, rest), is_suit) == []
+    as "no 0x933 follows the end of the suited player's connection, the restore included: its unit is gone"
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+pub fn a_suited_players_connection_ending_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  a_suited_players_connection_ends(
+    tables: character_tables.shared_with_disguise(),
+    first_class: 4,
+    bag_index: 2,
+    display: 7221,
+  )
+}
+
+pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Mode: Eradicate is the Engineer's innate, after its three abilities in the bag
+  // (`Class` 2 spell4IdInnateAbilityActive00 47866).
+  a_suited_players_connection_ends(
+    tables: client_tables.shared(),
+    first_class: 2,
+    bag_index: 3,
+    display: 7221,
+  )
 }
 
 pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_held_until_the_release_on_the_whole_server_test() -> Nil {

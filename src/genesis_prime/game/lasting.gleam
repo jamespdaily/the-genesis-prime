@@ -111,6 +111,13 @@ pub type LastingRow {
   LastingRow(delay_ms: Int, duration_ms: Int, until_removed: Bool)
 }
 
+/// Whether the row has a life: a durationTime, or flags bit 2 (until removed). A
+/// property modifier or disguise with none is no time to be changed for, and no go
+/// applies it.
+pub fn has_life(row row: LastingRow) -> Bool {
+  row.until_removed || row.duration_ms > 0
+}
+
 /// The life of a node from the effects a go lists for its unit: each effect's
 /// delay plus durationTime, counted from `go_ms`, the larger of the two instead of
 /// their sum when `longer_of_delay_and_duration` (a spell whose propertyFlags have

@@ -27,6 +27,13 @@
 ////   raises the player's shield by its amount and tells the player's client and its viewers
 ////   (genesis_prime/game/connection/healing), where one whose change is a `Property` is
 ////   applied to the player's properties (genesis_prime/game/connection/properties).
+//// - **Disguises** are the cast rule's too: a `CasterChangeStarts` whose change is a `Look`
+////   starts the disguise on the player's look and tells the player's client and its
+////   viewers the slots that changed, and each `CasterChangeEnds` ends a property modifier
+////   and a disguise of its source, whichever the source holds
+////   (genesis_prime/game/connection/look). A death, a type 80 removal, a persistence end
+////   and the node's end by time end the disguise as they end a modifier; a camp sends no
+////   0x933.
 //// - **Stealth** is the cast rule's (genesis_prime/game/cast): its `StealthChanged` is
 ////   carried out as the owner's 0x8f5, the viewers' news, and last a tell to the run of
 ////   the player's map, so the map keeps the player out of every creature's ring
@@ -65,6 +72,7 @@ import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
+import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
@@ -342,8 +350,14 @@ pub fn cast_effects(
         connection_properties.started(session:, now:, source:, modifier:)
       cast.CasterChangeStarts(change: cast.ShieldHeal(amount:), ..), _ ->
         connection_healing.shield_healed(session:, now:, amount:)
-      cast.PropertyEnds(source:), _ ->
-        connection_properties.ended(session:, now:, source:)
+      cast.CasterChangeStarts(source:, change: cast.Look(disguise:)), _ ->
+        connection_look.started(session:, source:, disguise:)
+      cast.CasterChangeEnds(source:), _ -> {
+        let #(session, properties) =
+          connection_properties.ended(session:, now:, source:)
+        let #(session, look) = connection_look.ended(session:, source:)
+        #(session, list.append(properties, look))
+      }
       cast.StealthChanged(stealthed:), Some(entered) -> #(
         session,
         list.flatten([
@@ -580,6 +594,7 @@ pub fn creature_news_frames(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..) -> []
+    | client_connection.Stealth(..)
+    | client_connection.LookChanged(..) -> []
   }
 }

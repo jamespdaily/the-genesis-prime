@@ -76,7 +76,14 @@
 ////   effect (`Spell4Effects.effectType.145`) whose targetFlags include the caster is a
 ////   `PropertyModifier` row too, whose change is a `Conversion` of property dataBits00
 ////   into dataBits01 at the 32-bit float dataBits02; both properties must have a
-////   UnitProperty2 row.
+////   UnitProperty2 row. A DisguiseOutfit effect (`Spell4Effects.effectType.112`) whose
+////   targetFlags include the caster is a `PropertyModifier` row too, whose change is a
+////   `LookChange`: the displays it shows (genesis_prime/game/look), each in the slot of
+////   its item type, from dataBits02 or dataBits01. It starts, ends and gives the node its
+////   life as a property change does. A row with an outfit (dataBits00 or dataBits08), no
+////   display, or a display whose item type has no slot fails the load
+////   (`DisguiseNotRead`); dataBits03 is read as nothing, since no client code reads a
+////   type 112 row.
 //// - **The Interrupt Armor rows.** A ModifyInterruptArmor effect
 ////   (`Spell4Effects.effectType.52`) whose targetFlags include the caster (bit 1), or are
 ////   the primary target alone (2) in a spell cast on the caster, is a `PropertyModifier`
@@ -229,18 +236,23 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/innate
 import genesis_prime/game/lasting
 import genesis_prime/game/loadout
+import genesis_prime/game/look
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
+import genesis_prime/game/worn_visual
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/table/class
 import genesis_prime/table/id.{
-  type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
-  type UnitProperty2Id, ClassId, PrerequisiteId, Spell4BaseId,
-  Spell4ConditionsId, Spell4EffectsId, Spell4Id, Spell4StackGroupId,
-  SpellCoolDownId, UnitProperty2Id,
+  type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
+  type Spell4Id, type UnitProperty2Id, ClassId, ItemDisplayId, PrerequisiteId,
+  Spell4BaseId, Spell4ConditionsId, Spell4EffectsId, Spell4Id,
+  Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
 }
+import genesis_prime/table/item2_type
+import genesis_prime/table/item_display
+import genesis_prime/table/item_slot
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -707,9 +719,19 @@ pub type ForcedMove {
   )
 }
 
-/// A UnitPropertyModifier effect (`Spell4Effects.effectType.11`) or a
-/// UnitPropertyConversion effect (`Spell4Effects.effectType.145`) of a spell whose
-/// targetFlags include the caster: the change it makes to the properties (`modifier`), its delay, durationTime and flags bit 2 (`row`, which also give the
+/// What a timed row of a spell changes on its caster: a property of the unit
+/// (`unit_properties`) or the unit's look (`look`).
+pub type Change {
+  /// A UnitPropertyModifier or UnitPropertyConversion row's change.
+  PropertyChange(modifier: unit_properties.Modifier)
+  /// A DisguiseOutfit row's change (`Spell4Effects.effectType.112`).
+  LookChange(disguise: look.Disguise)
+}
+
+/// A UnitPropertyModifier effect (`Spell4Effects.effectType.11`), a
+/// UnitPropertyConversion effect (`Spell4Effects.effectType.145`) or a DisguiseOutfit
+/// effect (`Spell4Effects.effectType.112`) of a spell whose
+/// targetFlags include the caster: the change it makes to the caster (`change`), its delay, durationTime and flags bit 2 (`row`, which also give the
 /// caster's node of the cast its life, as a Fluff effect's do), the phases of
 /// `phase_flags` it applies in, when its `condition` holds (its caster apply
 /// prerequisite against the caster; one behind a target apply prerequisite is not
@@ -720,7 +742,7 @@ pub type PropertyModifier {
   PropertyModifier(
     effect_id: Spell4EffectsId,
     phase_flags: Int,
-    modifier: unit_properties.Modifier,
+    change: Change,
     row: lasting.LastingRow,
     condition: Condition,
     tag: spend.Tag,
@@ -906,6 +928,16 @@ pub type Proxy {
   )
 }
 
+/// Why a DisguiseOutfit row cannot be drawn with 0x933 (`Spell4Effects.effectType.112`).
+pub type DisguiseGap {
+  /// dataBits00 or dataBits08 names an outfit, which only 0x905 draws.
+  OutfitNeedsMessage0x905
+  /// Neither dataBits01 nor dataBits02 names an ItemDisplay.
+  NamesNoDisplay
+  /// The display's item type has no ItemSlot (itemSlotId 0).
+  DisplayHasNoSlot(item_display_id: Int)
+}
+
 /// Why the plans cannot be built from the tables.
 pub type PlanError {
   /// A table row the tree names is missing: the table, and the id.
@@ -1022,6 +1054,9 @@ pub type PlanError {
   /// A Proc effect of a kind the server reads has a column the plan does not read: its
   /// name and value. The load fails (`proc_read`).
   ProcNotRead(spell4_id: Int, effect_id: Int, column: String, value: Int)
+  /// A DisguiseOutfit effect of a tree aimed at the caster shows nothing the server can
+  /// draw with 0x933 (`Spell4Effects.effectType.112`).
+  DisguiseNotRead(spell4_id: Int, effect_id: Int, reason: DisguiseGap)
   /// A class's innate cannot be held (genesis_prime/game/innate).
   InnateFailed(error: innate.InnateError)
   /// A Prerequisite row a spell or effect names nests itself through the rows it
@@ -1266,6 +1301,19 @@ pub fn describe(error error: PlanError) -> String {
       <> " is "
       <> int.to_string(value)
       <> ", which is not read"
+    DisguiseNotRead(spell4_id:, effect_id:, reason:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a DisguiseOutfit effect "
+      <> int.to_string(effect_id)
+      <> case reason {
+        OutfitNeedsMessage0x905 -> " with an outfit, which only 0x905 draws"
+        NamesNoDisplay -> " that names no ItemDisplay"
+        DisplayHasNoSlot(item_display_id:) ->
+          " whose ItemDisplay "
+          <> int.to_string(item_display_id)
+          <> " has an item type with no ItemSlot"
+      }
     InnateFailed(error:) -> innate.describe(error:)
     PrerequisiteCycle(path:) ->
       "the Prerequisite rows nest each other round a cycle: " <> string_of(path)
@@ -2073,6 +2121,7 @@ fn modifiers_of(
     {
       kind == effect_kind.PropertyModifier
       || kind == effect_kind.PropertyConversion
+      || kind == effect_kind.DisguiseOutfit
     }
     && effect_kind.is_row_read(
       effect_type: effect.effect_type,
@@ -2080,30 +2129,139 @@ fn modifiers_of(
     )
   })
   |> list.try_map(fn(effect) {
-    use modifier <- result.try(
-      case
-        effect_kind.kind_of(effect.effect_type)
-        == effect_kind.PropertyConversion
-      {
-        True -> conversion_of(tables:, spell4_id:, effect:)
-        False -> change_of(tables:, spell4_id:, effect:)
-      },
-    )
     use condition <- result.try(condition_of(
       tables:,
       effect:,
       data_bits06_names_a_gate: False,
     ))
-    Ok(PropertyModifier(
-      effect_id: Spell4EffectsId(effect.id),
-      phase_flags: effect.phase_flags,
-      modifier:,
-      row: lasting_row_of(effect:),
-      condition:,
-      tag: tag_of(effect:),
-      armor: None,
-    ))
+    modifier_of(tables:, spell4_id:, effect:, condition:)
   })
+}
+
+/// One UnitPropertyModifier, UnitPropertyConversion or DisguiseOutfit row as a
+/// `PropertyModifier` that holds the caster `condition` it was given, or the error
+/// that fails the load (`modifiers_of`).
+pub fn modifier_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  condition condition: Condition,
+) -> Result(PropertyModifier, PlanError) {
+  use change <- result.map(case effect_kind.kind_of(effect.effect_type) {
+    effect_kind.DisguiseOutfit ->
+      disguise_of(tables:, spell4_id:, effect:)
+      |> result.map(LookChange)
+    effect_kind.PropertyConversion ->
+      conversion_of(tables:, spell4_id:, effect:)
+      |> result.map(PropertyChange)
+    effect_kind.PropertyModifier
+    | effect_kind.Proxy
+    | effect_kind.Damage
+    | effect_kind.VitalModifier
+    | effect_kind.Fluff
+    | effect_kind.ForceRemove
+    | effect_kind.CrowdControl
+    | effect_kind.ForcedMove
+    | effect_kind.CooldownModifier
+    | effect_kind.Stealth
+    | effect_kind.RemoveStealth
+    | effect_kind.ShieldHeal
+    | effect_kind.ShieldOverload
+    | effect_kind.InterruptArmor
+    | effect_kind.Proc
+    | effect_kind.Scale
+    | effect_kind.RavelSignal
+    | effect_kind.Unread(..) ->
+      change_of(tables:, spell4_id:, effect:)
+      |> result.map(PropertyChange)
+  })
+  PropertyModifier(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    change:,
+    row: lasting_row_of(effect:),
+    condition:,
+    tag: tag_of(effect:),
+    armor: None,
+  )
+}
+
+/// A DisguiseOutfit row's change (`Spell4Effects.effectType.112`): dataBits02 is an
+/// ItemDisplay worn in its item type's slot and dataBits01 an ItemDisplay of a
+/// WeaponPrimary item, each shown in the ItemSlot of its ItemDisplay's item2TypeId. A row
+/// with dataBits00 or dataBits08 set is an outfit (`OutfitNeedsMessage0x905`), one with
+/// neither display `NamesNoDisplay`, a display with no ItemDisplay, Item2Type or ItemSlot
+/// row `NoRow` and a type with no slot `DisplayHasNoSlot`. dataBits03 is not read.
+fn disguise_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(look.Disguise, PlanError) {
+  use displays <- result.try(disguise_displays_of(spell4_id:, effect:))
+  use shown <- result.map(
+    list.try_map(displays, fn(display) {
+      use item_slot <- result.map(display_slot(
+        tables:,
+        spell4_id:,
+        effect:,
+        display:,
+      ))
+      worn_visual.WornVisual(slot: item_slot, display: ItemDisplayId(display))
+    }),
+  )
+  look.Disguise(shown:)
+}
+
+/// The ItemDisplay ids a DisguiseOutfit row shows, dataBits01 then dataBits02, or why
+/// 0x933 cannot draw it: dataBits00 or dataBits08 set is an outfit, which only 0x905 draws,
+/// and a row with neither display names nothing to show.
+fn disguise_displays_of(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(List(Int), PlanError) {
+  let refused = fn(reason) {
+    Error(DisguiseNotRead(spell4_id:, effect_id: effect.id, reason:))
+  }
+  use <- bool.guard(
+    when: effect.data_bits00 != 0 || effect.data_bits08 != 0,
+    return: refused(OutfitNeedsMessage0x905),
+  )
+  case list.filter([effect.data_bits01, effect.data_bits02], fn(d) { d != 0 }) {
+    [] -> refused(NamesNoDisplay)
+    displays -> Ok(displays)
+  }
+}
+
+/// The ItemSlot an ItemDisplay is worn in: its row's item type's itemSlotId, which
+/// must name an ItemSlot row (`0x140466d20`: the slot of an item visual is an ItemSlot
+/// id). A missing row fails the load, and an item type with itemSlotId 0 has no slot.
+fn display_slot(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  display display: Int,
+) -> Result(ItemSlotId, PlanError) {
+  use row <- result.try(
+    item_display.get(tables:, id: ItemDisplayId(display))
+    |> result.replace_error(NoRow(table: "ItemDisplay", id: display)),
+  )
+  let item_type = item_display.item2_type_id(row)
+  use item_type_row <- result.try(
+    item2_type.get(tables:, id: item_type)
+    |> result.replace_error(NoRow(table: "Item2Type", id: item_type.value)),
+  )
+  let slot = item2_type.item_slot_id(item_type_row)
+  use <- bool.guard(
+    when: slot.value == 0,
+    return: Error(DisguiseNotRead(
+      spell4_id:,
+      effect_id: effect.id,
+      reason: DisplayHasNoSlot(item_display_id: display),
+    )),
+  )
+  item_slot.get(tables:, id: slot)
+  |> result.replace(slot)
+  |> result.replace_error(NoRow(table: "ItemSlot", id: slot.value))
 }
 
 /// The ModifyInterruptArmor effects of a spell that reach the caster, each with its caster
@@ -2155,7 +2313,9 @@ pub fn interrupt_armor_of(
   PropertyModifier(
     effect_id: Spell4EffectsId(effect.id),
     phase_flags: effect.phase_flags,
-    modifier: unit_properties.interrupt_armor_modifier(points: armor.points),
+    change: PropertyChange(modifier: unit_properties.interrupt_armor_modifier(
+      points: armor.points,
+    )),
     row: lasting_row_of(effect:),
     condition:,
     tag: tag_of(effect:),
@@ -2664,7 +2824,9 @@ pub fn struck_unit_children(
 }
 
 /// Whether the plan reads this effect row: its type is read for its aim
-/// (`effect_kind.is_row_read`) and, for a Stealth, RemoveStealth, Proc or HealShields row,
+/// (`effect_kind.is_row_read`) and, for a DisguiseOutfit row, it names no outfit and a display
+/// (`disguise_displays_of`), has no target apply prerequisite and has a life (a durationTime or
+/// flags bit 2, `lasting.has_life`, which the cast rule applies too), and, for a Stealth, RemoveStealth, Proc or HealShields row,
 /// the plan does not refuse, skip or hold it (`stealth_read`, `stealth_on_the_caster`,
 /// `proc_read`, `shield_heal_of`: a periodic heal is held and not applied; and a heal aimed
 /// at the primary target of a spell in `struck_children`, the spells a Proxy starts on each
@@ -2674,7 +2836,9 @@ pub fn struck_unit_children(
 /// row is read when its aim is one the plan reads (`lasting_aim_of`) and no target apply
 /// prerequisite stands before it, which no go applies; a SpellForceRemove row also when its
 /// counts agree (`force_remove_counts_read`). A SpellForceRemove row whose dataBits01 names
-/// no row fails the load too, which this check cannot see without the tables. The coverage
+/// no row fails the load too, and so does a DisguiseOutfit row whose display has no ItemDisplay,
+/// Item2Type or ItemSlot row or whose item type has no slot (`display_slot`), which this check
+/// cannot see without the tables. The coverage
 /// measure counts the other rows as not read, so it and the plan cannot disagree.
 pub fn effect_row_read(
   effect effect: spell4_effects.Spell4Effects,
@@ -2717,6 +2881,10 @@ pub fn effect_row_read(
         || !set.contains(struck_children, effect.spell_id)
       })
       |> result.unwrap(or: False)
+    effect_kind.DisguiseOutfit ->
+      result.is_ok(disguise_displays_of(spell4_id: effect.spell_id, effect:))
+      && effect.prerequisite_id_target_apply == 0
+      && { effect.duration_time > 0 || has_flag(flags: effect.flags, bit: 2) }
     effect_kind.Proxy
     | effect_kind.Damage
     | effect_kind.VitalModifier

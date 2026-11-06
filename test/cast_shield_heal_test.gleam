@@ -147,6 +147,7 @@ fn heals(effects effects: List(Effect)) -> List(#(Source, Int)) {
       cast.CasterChangeStarts(source:, change: cast.ShieldHeal(amount:)) ->
         Ok(#(source, amount))
       cast.CasterChangeStarts(change: cast.Property(..), ..)
+      | cast.CasterChangeStarts(change: cast.Look(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -155,7 +156,7 @@ fn heals(effects effects: List(Effect)) -> List(#(Source, Int)) {
       | cast.Strike(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -261,7 +262,7 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
         | cast.Strike(..)
         | cast.Pay(..)
         | cast.Gain(..)
-        | cast.PropertyEnds(..)
+        | cast.CasterChangeEnds(..)
         | cast.StealthChanged(..) -> False
       }
     })
@@ -303,13 +304,13 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     spell_plan.PropertyModifier(
       effect_id: Spell4EffectsId(99_001),
       phase_flags: -1,
-      modifier: Change(
+      change: spell_plan.PropertyChange(Change(
         property: UnitProperty2Id(41),
         mode: 3,
         multiplier: 1.0,
         flat: 100.0,
         per_level: 0.0,
-      ),
+      )),
       row: lasting.LastingRow(
         delay_ms: 0,
         duration_ms: 8000,
@@ -340,6 +341,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     case effect {
       cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
       cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
+      | cast.CasterChangeStarts(change: cast.Look(..), ..)
       | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
@@ -348,7 +350,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
       | cast.Strike(..)
       | cast.Pay(..)
       | cast.Gain(..)
-      | cast.PropertyEnds(..)
+      | cast.CasterChangeEnds(..)
       | cast.StealthChanged(..) -> False
     }
   })
@@ -742,7 +744,8 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
         | client_connection.CrowdControlEnded(..)
         | client_connection.InterruptArmor(..)
         | client_connection.PropertiesChanged(..)
-        | client_connection.Stealth(..) -> Error(Nil)
+        | client_connection.Stealth(..)
+        | client_connection.LookChanged(..) -> Error(Nil)
       }
     })
   assert list.length(told) == 2 as "the caster's audience is two connections"

@@ -2,7 +2,7 @@
 //// property modifiers of its own spells that change the value for their time. The
 //// connection keeps one `Properties` for its player (genesis_prime/game/world_entry
 //// `Entered`), applies and removes a modifier when the cast rule says so
-//// (genesis_prime/game/cast `CasterChangeStarts`, `PropertyEnds`), tells the player's
+//// (genesis_prime/game/cast `CasterChangeStarts`, `CasterChangeEnds`), tells the player's
 //// client and its viewers the entries that changed (0x93a), and hands each rule the
 //// value it reads. The module is pure.
 ////
@@ -13,7 +13,7 @@
 ////                            changed entries                   PropertiesChanged to viewers
 ////                            a maximum or a regeneration ───▶ player_life takes the new numbers
 ////  go + delay + duration, a node taken off, the caster dies
-////    PropertyEnds ───────▶ remove(source) ──────────────────▶ 0x93a, PropertiesChanged
+////    CasterChangeEnds ───────▶ remove(source) ──────────────────▶ 0x93a, PropertiesChanged
 ////
 //// strike, damage, defence, regeneration ◀── value(property)
 //// ```
@@ -69,7 +69,7 @@
 //// |---|---|---|---|
 //// | A modifier starts | the connection restarts from storage with the table's bases and no modifier, and the client is created again | the same source applied twice is held once | n/a |
 //// | A modifier ends | as above | the same source removed twice changes nothing the second time | removing a source that is not held changes nothing |
-//// | The caster dies | each modifier of its casts is removed by the cast rule's `PropertyEnds`, each reported | | |
+//// | The caster dies | each modifier of its casts is removed by the cast rule's `CasterChangeEnds`, each reported | | |
 //// | The caster leaves | the connection's `Entered` goes with its properties; the next entry starts from the bases | | |
 
 import genesis_prime/message/float32

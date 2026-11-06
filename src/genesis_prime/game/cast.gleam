@@ -208,7 +208,7 @@
 ////   and type 145 effect of the phase that has a life (a durationTime, or flags bit 2) and
 ////   whose gate against the caster passes is listed on the caster like a Fluff effect, gives the
 ////   caster's node its life, and starts at the go plus its delay and ends after its
-////   duration, as `CasterChangeStarts` and `PropertyEnds` for the connection to apply to the
+////   duration, as `CasterChangeStarts` and `CasterChangeEnds` for the connection to apply to the
 ////   player's properties. A modifier ends on a timer of its own and not with the node's
 ////   time (a node can outlive it, or end before it when the spell takes the larger of
 ////   delay and duration); taking the cast's node off the caster ends its modifiers and
@@ -216,6 +216,13 @@
 ////   innate passive's, and every one still pending but the passive's; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
+//// - **A go's disguises** (genesis_prime/game/look): each type 112 effect of the phase
+////   that has a life and whose gate against the caster passes is a modifier row whose change is a
+////   `Look`, so it is listed, started, ended, cancelled with the node and ended at death
+////   by the modifiers' rules above, as `CasterChangeStarts` and `CasterChangeEnds`; the
+////   connection turns them into the player's 0x933 and its viewers' `LookChanged`
+////   (genesis_prime/game/connection/look). The rule keeps no look: two disguises on one
+////   slot, the base and what shows are the look's.
 //// - **A go's Interrupt Armor** (`Spell4Effects.effectType.52`): each ModifyInterruptArmor
 ////   row of the phase that reaches the caster (genesis_prime/game/spell_plan
 ////   `PropertyModifier.armor`) is a property modifier of property 44, the armor's maximum,
@@ -486,6 +493,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
+import genesis_prime/game/look
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
@@ -609,12 +617,17 @@ pub type Caster {
 
 /// What a caster's spell changes on the caster itself, which starts after the effect's
 /// delay: the payload of `CasterChangeStarts` and `Due.ModifierStart`. A change that ends
-/// has its end tied to its source (`PropertyEnds`, `Due.ModifierEnd`); a shield heal has
+/// has its end tied to its source (`CasterChangeEnds`, `Due.ModifierEnd`); a shield heal has
 /// none.
 pub type CasterChange {
   /// A property modifier (a UnitPropertyModifier or UnitPropertyConversion effect): the
   /// connection applies it to the player's properties (genesis_prime/game/unit_properties `apply`).
   Property(modifier: unit_properties.Modifier)
+  /// A disguise (a DisguiseOutfit effect): the connection starts it on the player's look,
+  /// writes the slots that changed to the player's client and tells its viewers
+  /// (genesis_prime/game/look `start`). It ends with the modifiers' own end,
+  /// `CasterChangeEnds`.
+  Look(disguise: look.Disguise)
   /// A shield heal (a HealShields effect): the connection raises the player's shield by
   /// `amount`, capped at its maximum (genesis_prime/game/player_life `shield_healed`).
   /// The amount is worked out at the go, the amount the go's 0x7f4 shows.
@@ -646,9 +659,10 @@ pub type Effect {
   /// the entries that changed (genesis_prime/game/unit_properties `apply`), and raises
   /// the shield for a shield heal (genesis_prime/game/player_life `shield_healed`).
   CasterChangeStarts(source: unit_properties.Source, change: CasterChange)
-  /// A property modifier of the caster's spell ends, or is told ended for a source the
-  /// properties may not hold (`unit_properties.remove` changes nothing then).
-  PropertyEnds(source: unit_properties.Source)
+  /// A property modifier or disguise of the caster's spell ends, or is told ended for a
+  /// source the properties and the look may not hold (`unit_properties.remove` and
+  /// `look.end` change nothing then).
+  CasterChangeEnds(source: unit_properties.Source)
   /// The caster entered or left stealth, the last effect of the input that moved it:
   /// the connection writes 0x8f5 to the caster's client and tells each viewer
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
@@ -2173,7 +2187,7 @@ pub fn after_payments(
         | Log(..)
         | Strike(..)
         | CasterChangeStarts(..)
-        | PropertyEnds(..)
+        | CasterChangeEnds(..)
         | StealthChanged(..) -> resources
       }
     }),
@@ -2494,7 +2508,7 @@ fn fire(
         ModifierStart(source:, change:) -> #(cast, [
           CasterChangeStarts(source:, change:),
         ])
-        ModifierEnd(source:) -> #(cast, [PropertyEnds(source:)])
+        ModifierEnd(source:) -> #(cast, [CasterChangeEnds(source:)])
         CooldownModifierStarts(source:, modifier:, kept:) ->
           cooldown_applied(cast:, source:, modifier:, kept:, now_ms:)
         CooldownModifierEnds(source:) -> #(
@@ -3647,7 +3661,7 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
       }
     })
   list.unique(list.append(held, waiting))
-  |> list.map(fn(source) { PropertyEnds(source:) })
+  |> list.map(fn(source) { CasterChangeEnds(source:) })
 }
 
 /// The timers the rule waits on with what each is for, in the order they were started.
@@ -4809,7 +4823,7 @@ fn heal_description(amount amount: Int) -> SpellDamageDescription {
 /// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
 /// A row with neither changes nothing and gives its node no life.
 fn modifier_has_life(row: spell_plan.PropertyModifier) -> Bool {
-  row.row.until_removed || row.row.duration_ms > 0
+  lasting.has_life(row: row.row)
 }
 
 /// Whether a cooldown row is kept for the cooldowns that start after it takes effect:
@@ -4947,18 +4961,19 @@ fn modifiers_armed(
     let row = entry.0
     let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
     let #(cast, cancels) = cancel_source_timers(cast:, source:)
-    let change = Property(modifier: row.modifier)
     let #(cast, starting) = case row.row.delay_ms > 0 {
       True -> {
         let #(cast, _, start) =
           armed(
             cast:,
-            due: ModifierStart(source:, change:),
+            due: ModifierStart(source:, change: caster_change_of(row.change)),
             after_ms: row.row.delay_ms,
           )
         #(cast, [start])
       }
-      False -> #(cast, [CasterChangeStarts(source:, change:)])
+      False -> #(cast, [
+        CasterChangeStarts(source:, change: caster_change_of(row.change)),
+      ])
     }
     let #(cast, ending) = case row.row.until_removed {
       True -> #(cast, [])
@@ -4974,6 +4989,14 @@ fn modifiers_armed(
     }
     #(cast, list.flatten([effects, cancels, starting, ending]))
   })
+}
+
+/// What a modifier row's change asks of the connection when it starts.
+fn caster_change_of(change: spell_plan.Change) -> CasterChange {
+  case change {
+    spell_plan.PropertyChange(modifier:) -> Property(modifier:)
+    spell_plan.LookChange(disguise:) -> Look(disguise:)
+  }
 }
 
 /// The shield heals a go applies: a heal with no delay lands in this step, after the go's
@@ -5169,7 +5192,7 @@ fn caster_modifiers_ended(
 /// A row of a spell that ends with its node on the caster: a property modifier, which
 /// is told ended, or a cooldown effect, which is dropped from the kept list.
 type Ending {
-  PropertyEnding(source: unit_properties.Source, until_removed: Bool)
+  CasterChangeEnding(source: unit_properties.Source, until_removed: Bool)
   CooldownEnding(source: unit_properties.Source)
 }
 
@@ -5187,7 +5210,7 @@ fn effects_ended(
   let endings =
     list.append(
       list.map(spell.modifiers, fn(row) {
-        PropertyEnding(
+        CasterChangeEnding(
           source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
           until_removed: row.row.until_removed,
         )
@@ -5208,11 +5231,11 @@ fn effects_ended(
         })
       let #(cast, cancels) = cancel_source_timers(cast:, source: ending.source)
       case ending {
-        PropertyEnding(source:, until_removed:) if until_removed || held -> #(
+        CasterChangeEnding(source:, until_removed:) if until_removed || held -> #(
           cast,
-          list.flatten([effects, cancels, [PropertyEnds(source:)]]),
+          list.flatten([effects, cancels, [CasterChangeEnds(source:)]]),
         )
-        PropertyEnding(..) -> #(cast, list.append(effects, cancels))
+        CasterChangeEnding(..) -> #(cast, list.append(effects, cancels))
         CooldownEnding(source:) -> #(
           State(..cast, cooldowns: cooldown.drop(book: cast.cooldowns, source:)),
           list.append(effects, cancels),
@@ -5266,6 +5289,7 @@ fn pending_heals_cancelled(
       ModifierStart(source:, change: ShieldHeal(..)) ->
         source.cast_id == cast_id
       ModifierStart(change: Property(..), ..)
+      | ModifierStart(change: Look(..), ..)
       | ModifierEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)

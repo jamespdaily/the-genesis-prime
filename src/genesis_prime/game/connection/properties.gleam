@@ -5,7 +5,7 @@
 ////
 //// ```
 //// the cast rule's CasterChangeStarts ─▶ unit_properties.apply  ─┐
-//// the cast rule's PropertyEnds   ─▶ unit_properties.remove ─┤ changed entries
+//// the cast rule's CasterChangeEnds   ─▶ unit_properties.remove ─┤ changed entries
 ////                                                           ├─▶ 0x93a to the player's client
 ////                                                           ├─▶ PropertiesChanged to each viewer
 ////                                                           └─▶ player_life.properties_changed:
@@ -58,7 +58,7 @@ pub fn started(
 }
 
 /// A modifier of the player's own spell ends (genesis_prime/game/cast
-/// `PropertyEnds`). The armor follows the maximum down first, and the maximum's 0x93a
+/// `CasterChangeEnds`). The armor follows the maximum down first, and the maximum's 0x93a
 /// comes after: the client clamps the armor it is sent to the maximum it holds, and keeps
 /// an armor above a lowered maximum until the next 0x938
 /// (`opcode.0x938.interrupt_armor`).

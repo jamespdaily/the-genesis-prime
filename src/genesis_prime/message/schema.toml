@@ -2311,6 +2311,17 @@ fields = [
 ]
 
 [[message]]
+id = 0x0933
+name = "unit_item_visuals_changed"
+direction = "server_to_client"
+evidence = "opcode.0x933"
+summary = "some of a unit's item visuals change: the unit and the visuals, each a slot with a display, a colour set and a dye. The client ignores an unknown unit, sets each visual in order and stops at the first it refuses; a display 0 empties the slot (opcode.0x933.empty_display)"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x933", named_by = "opcode.0x933" },
+  { name = "item_visuals", kind = "array", count_bits = 32, element = "item_visual", evidence = "opcode.0x933", named_by = "opcode.0x933" },
+]
+
+[[message]]
 id = 0x01B3
 name = "resurrection_window"
 direction = "server_to_client"
