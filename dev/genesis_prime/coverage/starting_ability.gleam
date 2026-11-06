@@ -30,6 +30,11 @@
 ////   each condition that holds it (`0x1404a5190`: the conditions before the first of
 ////   type 0). A row a tree names that its table lacks is an error, never a type
 ////   left out.
+//// - **A nested prerequisite** (type 11) is followed: the Prerequisite its objectId
+////   names is evaluated whole by the client, so its conditions are counted too, each
+////   row once however many conditions nest it (`Prerequisite.prerequisiteTypeId.11`).
+////   A nested id whose row the table lacks names nothing to count: the client's
+////   evaluator fails it (`0x1404a1ca0`).
 
 import genesis_prime/coverage/level_one_gate
 import genesis_prime/game/effect_kind
@@ -41,7 +46,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/spell4.{type Spell4}
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/result
@@ -216,10 +221,7 @@ fn runner_columns_only(
   spells spells: List(Spell),
   rows rows: List(Spell4),
 ) -> List(LeftOut) {
-  let counted =
-    set.from_list(
-      list.map(counted_namings(tables:, spells:, rows:), fn(named) { named.0 }),
-    )
+  let counted = set.from_list(dict.keys(counted_ids(tables:, spells:, rows:)))
   list.flat_map(rows, fn(row) {
     named(table: "Spell4", id: row.id, columns: [
       #("prerequisiteIdRunner00", row.prerequisite_id_runner00),
@@ -367,13 +369,7 @@ pub fn prerequisite_types_of(
 ) -> Result(List(Int), List(MissingRow)) {
   let #(rows, spells_missing) = spell4_rows(tables:, spells:)
   let #(types, prerequisites_missing) =
-    counted_namings(tables:, spells:, rows:)
-    |> list.fold(dict.new(), fn(found, named) {
-      case dict.has_key(found, named.0) {
-        True -> found
-        False -> dict.insert(found, named.0, named.1)
-      }
-    })
+    counted_ids(tables:, spells:, rows:)
     |> dict.to_list
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     |> list.map(fn(named) {
@@ -392,7 +388,78 @@ pub fn prerequisite_types_of(
   }
 }
 
-/// The Prerequisite ids the measure counts for these spells, each with the row and
+/// The Prerequisite ids the measure counts for these spells, each once, with the
+/// first row and column that name it, and the rows they nest followed (`followed`).
+fn counted_ids(
+  tables tables: store.Tables,
+  spells spells: List(Spell),
+  rows rows: List(Spell4),
+) -> Dict(Int, String) {
+  let named =
+    list.fold(
+      counted_namings(tables:, spells:, rows:),
+      dict.new(),
+      fn(found, named) {
+        case dict.has_key(found, named.0) {
+          True -> found
+          False -> dict.insert(found, named.0, named.1)
+        }
+      },
+    )
+  followed(tables:, found: named, pending: dict.keys(named))
+}
+
+/// The ids with the rows they nest (type 11) added, each named by the nesting row, until
+/// no row nests one not yet found. A nested id whose row the table lacks is left out.
+fn followed(
+  tables tables: store.Tables,
+  found found: Dict(Int, String),
+  pending pending: List(Int),
+) -> Dict(Int, String) {
+  let nested =
+    list.flat_map(pending, fn(id) {
+      case prerequisite_table.get(tables:, id: PrerequisiteId(id)) {
+        Ok(row) ->
+          prerequisite.kept_conditions(row:)
+          |> list.filter(fn(condition) { condition.0 == 11 })
+          |> list.map(fn(condition) {
+            #(
+              condition.2,
+              "Prerequisite "
+                <> int.to_string(id)
+                <> " nested by a type 11 condition",
+            )
+          })
+        Error(Nil) -> []
+      }
+    })
+    |> list.filter(fn(named) {
+      !dict.has_key(found, named.0)
+      && result.is_ok(prerequisite_table.get(
+        tables:,
+        id: PrerequisiteId(named.0),
+      ))
+    })
+  case nested {
+    [] -> found
+    [_, ..] -> {
+      let found =
+        list.fold(nested, found, fn(found, named) {
+          case dict.has_key(found, named.0) {
+            True -> found
+            False -> dict.insert(found, named.0, named.1)
+          }
+        })
+      followed(
+        tables:,
+        found:,
+        pending: list.unique(list.map(nested, fn(named) { named.0 })),
+      )
+    }
+  }
+}
+
+/// The Prerequisite ids the columns name, each with the row and
 /// column that name it: the columns of the Spell4 rows but the runner columns, and
 /// the columns of each effect, a Proxy's dataBits06 included.
 fn counted_namings(

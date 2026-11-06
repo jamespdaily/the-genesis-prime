@@ -452,18 +452,18 @@ fn gated_proxy(
 /// not under a cast by 39407), as `table_rows -- Prerequisite 38585 38587` prints them.
 fn impales_gates() -> #(prerequisite.Prerequisite, prerequisite.Prerequisite) {
   #(
-    prerequisite.of_row(
-      row: prerequisite_support.row(id: 38_585, flags: 1, conditions: [
+    prerequisite_support.loaded(id: 38_585, rows: [
+      prerequisite_support.row(id: 38_585, flags: 1, conditions: [
         #(116, 1, 0, 28_455),
         #(15, 1, 0, 39_407),
       ]),
-    ),
-    prerequisite.of_row(
-      row: prerequisite_support.row(id: 38_587, flags: 0, conditions: [
+    ]),
+    prerequisite_support.loaded(id: 38_587, rows: [
+      prerequisite_support.row(id: 38_587, flags: 0, conditions: [
         #(116, 2, 0, 28_455),
         #(50, 2, 0, 39_407),
       ]),
-    ),
+    ]),
   )
 }
 

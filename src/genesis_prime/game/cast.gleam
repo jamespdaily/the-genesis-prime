@@ -4523,7 +4523,9 @@ fn finished_effects(
 /// `0x1403b3320`: the cost check reads Vitals 5 to 11 as the caster's resource slots
 /// 0 to 6; the getter type 71 and 73 call is not read case by case, so the same
 /// mapping is taken for it). A slot the class does not hold is no vital, so a
-/// prerequisite of it is not read. A player holds no difficulty.
+/// prerequisite of it is not read. The same slot is the resource slot a type 64 condition
+/// names by its number, and every other slot reads 0.0 as the client's unit holds it
+/// (`class_resource`, `0x140454380`). A player holds no difficulty.
 fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
   let slot = class_resource.slot(resources: caster.resources)
   let held = case slot >= 0 && slot <= 6 {
@@ -4546,6 +4548,7 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
           spell4_id: live.spell.spell4_id,
           caster: caster.unit_id,
           count: 0,
+          groups: live.spell.groups,
         )
       })
       |> list.append(nodes_held(cast:, caster:)),
@@ -4554,6 +4557,13 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     vitals: dict.merge(dict.from_list(held), caster.life_vitals),
     difficulty: None,
     stealthed: Some(stealthed(cast:)),
+    resource_slots: Some(case slot >= 0 {
+      True ->
+        dict.from_list([
+          #(slot, class_resource.value(resources: caster.resources, slot:)),
+        ])
+      False -> dict.new()
+    }),
     rolls: [],
   )
 }
@@ -4566,6 +4576,7 @@ fn nodes_held(cast cast: State, caster caster: Caster) -> List(lasting.Held) {
       spell4_id: hold.spell4_id,
       caster: caster.unit_id,
       count: hold.node.count,
+      groups: hold.groups,
     )
   })
 }

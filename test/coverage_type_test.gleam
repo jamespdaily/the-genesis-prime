@@ -91,17 +91,18 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_73_80_83_and_84
     as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), Stealth 83 (Spell4Effects.effectType.83) and RemoveStealth 84 (Spell4Effects.effectType.84) for the rows aimed at the caster; every other type is unread"
 }
 
-pub fn the_prerequisite_types_the_measure_handles_are_the_nine_read_and_those_with_no_case_test() -> Nil {
+pub fn the_prerequisite_types_the_measure_handles_are_the_twelve_read_and_those_with_no_case_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Prerequisites"),
       types: numbers(from: 1, to: 295),
     )
     == [
-      15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 71, 72, 73, 75, 116, 132, 144,
-      156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258, 274, 282, 284,
+      11, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 64, 71, 72, 73, 75, 116,
+      129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 247, 249, 257, 258,
+      274, 282, 284,
     ]
-    as "the server reads 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 71, 73, 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116) and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+    as "the server reads 11 (a nested prerequisite, Prerequisite.prerequisiteTypeId.11), 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 64 (a resource slot, Prerequisite.prerequisiteTypeId.64), 71, 73, 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116), 129 (under a spell of a group, Prerequisite.prerequisiteTypeId.129) and 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
 }
 
 // ---- the starting abilities' column ----
@@ -155,22 +156,22 @@ pub fn the_starting_abilities_column_holds_the_issues_prerequisite_counts_test()
   use <- unitest.guard(client_tables.present())
   assert starting_counts(engine: engine_named("Prerequisites"))
     == [
-      #(11, 3),
-      #(15, 31),
+      #(11, 5),
+      #(15, 32),
       #(28, 3),
       #(37, 1),
       #(50, 12),
       #(59, 4),
-      #(64, 2),
+      #(64, 4),
       #(73, 2),
       #(108, 2),
       #(109, 2),
       #(116, 5),
-      #(129, 1),
+      #(129, 3),
       #(243, 2),
       #(250, 2),
     ]
-    as "the 26 conditions of the 18 abilities' walk (15 12, 28 1, 37 1, 50 3, 59 4, 73 1, 108 2, 116 2: the 39 conditions less the runner columns' 13) and the 46 the 20 innate spells add, each prerequisite counted once however many columns name it (counted from `table_rows -- Prerequisite` of the ids their Spell4 and Spell4Effects columns name): 11 3, 15 19, 28 2 (903 is named by an ability's spell already), 50 9, 64 2, 73 1, 109 2, 116 3, 129 1, 243 2, 250 2: 72 conditions"
+    as "the 26 conditions of the 18 abilities' walk (15 12, 28 1, 37 1, 50 3, 59 4, 73 1, 108 2, 116 2: the 39 conditions less the runner columns' 13) and the 46 the 20 innate spells add, each prerequisite counted once however many columns name it (counted from `table_rows -- Prerequisite` of the ids their Spell4 and Spell4Effects columns name): 11 3, 15 19, 28 2 (903 is named by an ability's spell already), 50 9, 64 2, 73 1, 109 2, 116 3, 129 1, 243 2, 250 2: 72 conditions; and the 7 conditions of the rows those nest (type 11, followed once each: `table_rows -- Prerequisite 30012 30010 38897 29795 12939`: 12939 holds a 129, 30010 an 11 and a 15, 38897 an 11 and a 129, 29795 two 64): 11 2, 15 1, 64 2, 129 2, which gives 79 conditions"
 }
 
 pub fn the_starting_abilities_and_innates_reach_79_spells_with_the_gates_a_level_1_character_can_open_test() -> Nil {
@@ -720,7 +721,7 @@ pub fn the_checklist_marks_handled_missing_and_undecoded_types_with_the_starting
 
 /// The planted rows with Energize's Spell4 row (69450, a level-1 ability of the
 /// Medic) naming this Prerequisite id in this column, which the plan's load does
-/// not read.
+/// not read (the plan reads the cast and persistence columns, not the area ones).
 fn rows_naming(
   column column: String,
   prerequisite_id prerequisite_id: Int,
@@ -761,20 +762,20 @@ pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row
     MissingRow(
       table: "Prerequisite",
       id: 77_777,
-      named_by: "Spell4 69450 column prerequisiteIdCasterCast",
+      named_by: "Spell4 69450 column prerequisiteIdAoeTarget",
     )
   assert with_trees_loaded(
       rows: rows_naming(
-        column: "prerequisiteIdCasterCast",
+        column: "prerequisiteIdAoeTarget",
         prerequisite_id: 77_777,
       ),
       body: fn(tables) { starting_ability.prerequisite_types(tables) },
     )
     == Error([lacking])
-    as "Spell4 69450 names Prerequisite 77777 in prerequisiteIdCasterCast and the table has no such row: it is reported with the row and the column, not left out of the starting abilities' types"
+    as "Spell4 69450 names Prerequisite 77777 in prerequisiteIdAoeTarget and the table has no such row: it is reported with the row and the column, not left out of the starting abilities' types"
   assert with_trees_loaded(
       rows: rows_naming(
-        column: "prerequisiteIdCasterCast",
+        column: "prerequisiteIdAoeTarget",
         prerequisite_id: 43_811,
       ),
       body: starting_ability.prerequisite_types,
@@ -810,7 +811,7 @@ pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
   let measured =
     with_trees_loaded(
       rows: rows_naming(
-        column: "prerequisiteIdCasterCast",
+        column: "prerequisiteIdAoeTarget",
         prerequisite_id: 77_777,
       ),
       body: fn(tables) {
@@ -824,14 +825,14 @@ pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
       MissingRow(
         table: "Prerequisite",
         id: 77_777,
-        named_by: "Spell4 69450 column prerequisiteIdCasterCast",
+        named_by: "Spell4 69450 column prerequisiteIdAoeTarget",
       ),
     ]
     as "the measure keeps the missing row"
   assert list.any(coverage.breaches([measured]), fn(line) {
     string.contains(
       line,
-      "Prerequisites reaches rows the client's tables lack: Prerequisite 77777, named by Spell4 69450 column prerequisiteIdCasterCast, is not in the client's tables",
+      "Prerequisites reaches rows the client's tables lack: Prerequisite 77777, named by Spell4 69450 column prerequisiteIdAoeTarget, is not in the client's tables",
     )
   })
     as "the tool's breaches, which end it with exit 1, name the row"
@@ -1285,6 +1286,81 @@ pub fn a_prerequisite_only_the_runner_columns_name_is_not_counted_and_is_listed_
     as "the measure prints the heading and one line for each part left out"
 }
 
+/// The planted rows with Spell4 69450 naming these Prerequisite ids in the area
+/// columns, which the plan's load does not read, and these Prerequisite rows (id,
+/// flags, conditions as (type, comparison, objectId, value)).
+fn rows_nesting(
+  named named: List(Int),
+  prerequisites prerequisites: List(#(Int, Int, List(#(Int, Int, Int, Int)))),
+) -> spell_tables.Rows {
+  let rows = spell_tables.rows_with_energize()
+  spell_tables.Rows(
+    ..rows,
+    spell4: spell_tables.sorted_by_id([
+      spell_tables.method_spell_row(
+        id: 69_450,
+        base: 46_615,
+        cast_time: 0,
+        cooldown: 30_000,
+        kind: 3,
+        global: 0,
+        cost: #(0, 0),
+        more: list.zip(
+          ["prerequisiteIdAoeTarget", "prerequisiteIdAoePreferredTarget"],
+          named,
+        ),
+      ),
+      ..planted_table.without(rows.spell4, ids: [69_450])
+    ]),
+    prerequisites: spell_tables.sorted_by_id(list.append(
+      list.map(prerequisites, fn(row) {
+        spell_tables.prerequisite_row(
+          id: row.0,
+          flags: row.1,
+          conditions: row.2,
+        )
+      }),
+      rows.prerequisites,
+    )),
+  )
+}
+
+pub fn a_nested_prerequisite_is_followed_and_each_row_counts_once_however_many_nest_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 900 nests 901 and 902, which nests 901 again; a second column names 901
+  // directly. 901 holds a type 243 and a type 129 (Prerequisite 12939's type); no planted
+  // row holds either.
+  let rows =
+    rows_nesting(named: [900, 901], prerequisites: [
+      #(900, 0, [#(11, 1, 901, 0), #(11, 2, 902, 0)]),
+      #(901, 0, [#(243, 1, 0, 100), #(129, 2, 313, 0)]),
+      #(902, 0, [#(11, 1, 901, 0)]),
+    ])
+  let assert Ok(types) =
+    with_trees_loaded(rows:, body: starting_ability.prerequisite_types)
+    as "the planted rows hold what the walk names"
+  assert list.count(types, fn(type_number) { type_number == 11 }) == 3
+    as "the type 11 conditions of 900 (two) and 902 (one) are each counted"
+  assert list.count(types, fn(type_number) { type_number == 243 }) == 1
+    && list.count(types, fn(type_number) { type_number == 129 }) == 1
+    as "901's two conditions are counted once: three rows nest it and a column names it, and a prerequisite counts once (Prerequisite.prerequisiteTypeId.11: the client evaluates each nested row whole)"
+}
+
+pub fn a_nested_id_with_no_row_is_not_a_missing_row_and_a_cycle_ends_the_walk_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let rows =
+    rows_nesting(named: [903, 910], prerequisites: [
+      #(903, 0, [#(11, 1, 77_777, 0)]),
+      #(910, 0, [#(11, 1, 911, 0)]),
+      #(911, 0, [#(11, 1, 910, 0)]),
+    ])
+  let assert Ok(types) =
+    with_trees_loaded(rows:, body: starting_ability.prerequisite_types)
+    as "a nested id the table lacks is no error: the client's evaluator fails it (0x1404a1ca0), so there is nothing to count"
+  assert list.count(types, fn(type_number) { type_number == 11 }) == 3
+    as "903's one condition and the two rows of the cycle count once each"
+}
+
 pub fn a_runner_column_naming_a_row_the_table_lacks_is_not_a_missing_row_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(types, left) =
@@ -1579,7 +1655,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_58_of_72_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_71_of_79_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1597,9 +1673,9 @@ pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_58_of_72_co
     as "190 effect rows are left, 21 of them not handled (types 14 x7, 90 x4, 112 x2, 118 x2, and 18, 24, 29, 52, 81 and 145 once); the whole-game columns are the walk's of 2026-11-05, with types 83 and 84 handled beside the nine"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 10 | 58 of 72 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 13 | 71 of 79 |",
   )
-    as "72 conditions are left, 14 of them not handled (types 11 x3, 64, 108, 109, 243 and 250 twice, and 129 once); type 116 is read (Prerequisite.prerequisiteTypeId.116)"
+    as "79 conditions are left, 8 of them not handled (types 108, 109, 243 and 250, twice each); types 11, 64 and 129 are read beside the ten handled before (Prerequisite.prerequisiteTypeId.11, .64, .129), so 13 types are handled"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {

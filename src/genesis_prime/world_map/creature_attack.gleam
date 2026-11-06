@@ -158,7 +158,7 @@ fn condition(
       )
       case game_prerequisite.condition_types(row:) {
         [type_id] if type_id == difficulty_type ->
-          Ok(Gated(prerequisite: game_prerequisite.of_row(row:)))
+          Ok(Gated(prerequisite: loaded(row:)))
         [type_id, ..] ->
           Error(OtherType(
             spell4_effects_id: effect.id,
@@ -174,6 +174,17 @@ fn condition(
       }
     }
   }
+}
+
+/// The row, which holds one condition of type 179 and names no nested row, as the game
+/// rule keeps it.
+fn loaded(
+  row row: prerequisite.Prerequisite,
+) -> game_prerequisite.Prerequisite {
+  let assert Ok(loaded) =
+    game_prerequisite.load(id: PrerequisiteId(row.id), rows: fn(_) { Ok(row) })
+    as "a row of one type 179 condition names no row of its own to look up"
+  loaded
 }
 
 /// A sentence for the load's refusal.

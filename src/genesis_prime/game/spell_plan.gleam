@@ -411,10 +411,18 @@ pub type Spell {
     /// The caster vital requirements a press is checked against
     /// (`0x1403b1780`).
     requirements: List(Requirement),
-    /// The prerequisite that would waive a failed requirement: the spell's
-    /// prerequisiteIdCasterCast when its propertyFlags has bit 2 (`0x1403b1780`).
-    /// The waiver's prerequisite is not checked, so it never passes.
-    requirement_waiver: Option(PrerequisiteId),
+    /// What the spell's prerequisiteIdCasterCast is to a press (`0x1403ace00`,
+    /// `0x1403b1780`).
+    caster_cast: CasterCast,
+    /// The spell's prerequisiteIdTargetCast, which the press checks after
+    /// `caster_cast`: failure 281 (`0x1403ace00`).
+    target_cast: Option(Prerequisite),
+    /// The spell's prerequisiteIdCasterPersistence, which the server checks while the
+    /// cast lasts: failure 282 (the client never evaluates it,
+    /// `Spell4.prerequisiteIdCasterPersistence`).
+    caster_persistence: Option(Prerequisite),
+    /// The spell's prerequisiteIdTargetPersistence: failure 283.
+    target_persistence: Option(Prerequisite),
     /// The gap before each phase's go, in order; empty for a spell that is not
     /// Multiphase.
     phase_delays_ms: List(Int),
@@ -460,6 +468,17 @@ pub type Spell {
     /// What a go of the spell does to the caster's stealth (`Spell4.spellCastStealthChange`).
     stealth_change: StealthChange,
   )
+}
+
+/// What a spell's prerequisiteIdCasterCast is to a press (`0x1403ace00`,
+/// `0x1403b1780`).
+pub type CasterCast {
+  NoCasterCast
+  /// Checked at the press after every other check: 151 when it fails.
+  CastGate(prerequisite: Prerequisite)
+  /// propertyFlags bit 2 with a caster requirement block: it only waives a failed
+  /// requirement.
+  RequirementWaiver(prerequisite: Prerequisite)
 }
 
 /// Whether taking damage ends a stealth: a Stealth effect's dataBits02, 0 for
@@ -787,6 +806,9 @@ pub type PlanError {
   StealthChangeNotRead(spell4_id: Int, value: Int)
   /// A class's innate cannot be held (genesis_prime/game/innate).
   InnateFailed(error: innate.InnateError)
+  /// A Prerequisite row a spell or effect names nests itself through the rows it
+  /// nests (type 11): the ids from the named row to the one that repeats.
+  PrerequisiteCycle(path: List(Int))
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -977,6 +999,8 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(value)
       <> ", and only 0, 1 and 2 are read"
     InnateFailed(error:) -> innate.describe(error:)
+    PrerequisiteCycle(path:) ->
+      "the Prerequisite rows nest each other round a cycle: " <> string_of(path)
   }
 }
 
@@ -1176,6 +1200,29 @@ fn spell_of(
     )),
   )
   use global_cooldown <- result.try(global_cooldown_of(tables:, row:))
+  let rows = prerequisite_rows(tables:)
+  use caster_cast <- result.try(caster_cast_of(
+    prerequisite_id: row.prerequisite_id_caster_cast,
+    property_flags: row.property_flags,
+    requirement_block: #(
+      row.caster_innate_requirement0,
+      row.caster_innate_requirement1,
+      row.target_begin_innate_requirement,
+    ),
+    rows:,
+  ))
+  use target_cast <- result.try(column_of(
+    id: row.prerequisite_id_target_cast,
+    rows:,
+  ))
+  use caster_persistence <- result.try(column_of(
+    id: row.prerequisite_id_caster_persistence,
+    rows:,
+  ))
+  use target_persistence <- result.try(column_of(
+    id: row.prerequisite_id_target_persistence,
+    rows:,
+  ))
   use caster_conditions <- result.try(conditions_row_of(
     tables:,
     id: row.spell4_conditions_id_caster,
@@ -1327,14 +1374,10 @@ fn spell_of(
       global_cooldown:,
       costs:,
       requirements:,
-      requirement_waiver: case
-        has_flag(flags: row.property_flags, bit: 0x4),
-        row.prerequisite_id_caster_cast
-      {
-        True, prerequisite if prerequisite != 0 ->
-          Some(PrerequisiteId(prerequisite))
-        True, _ | False, _ -> None
-      },
+      caster_cast:,
+      target_cast:,
+      caster_persistence:,
+      target_persistence:,
       phase_delays_ms: delays,
       threshold_ms: row.threshold_time,
       stages:,
@@ -2346,9 +2389,67 @@ fn prerequisite_of(
   tables tables: table_store.Tables,
   id id: Int,
 ) -> Result(Prerequisite, PlanError) {
-  prerequisite_table.get(tables:, id: PrerequisiteId(id))
-  |> result.map(fn(row) { prerequisite.of_row(row:) })
-  |> result.replace_error(NoRow(table: "Prerequisite", id:))
+  prerequisite_in(rows: prerequisite_rows(tables:), id:)
+}
+
+/// The Prerequisite rows of the tables, by id.
+fn prerequisite_rows(
+  tables tables: table_store.Tables,
+) -> fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil) {
+  fn(id) { prerequisite_table.get(tables:, id:) |> result.replace_error(Nil) }
+}
+
+/// The Prerequisite with this id, nested rows loaded, from the rows given: a row
+/// the rows lack and a cycle fail the load.
+fn prerequisite_in(
+  rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+  id id: Int,
+) -> Result(Prerequisite, PlanError) {
+  prerequisite.load(id: PrerequisiteId(id), rows:)
+  |> result.map_error(fn(error) {
+    case error {
+      prerequisite.NoPrerequisiteRow(id: missing) ->
+        NoRow(table: "Prerequisite", id: missing.value)
+      prerequisite.PrerequisiteCycle(path:) ->
+        PrerequisiteCycle(
+          path: list.map(path, fn(on_the_way) { on_the_way.value }),
+        )
+    }
+  })
+}
+
+/// What a Spell4 row's prerequisite column holds: none for 0, else the row it names,
+/// which the rows must hold.
+pub fn column_of(
+  id id: Int,
+  rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+) -> Result(Option(Prerequisite), PlanError) {
+  case id {
+    0 -> Ok(None)
+    _ -> prerequisite_in(rows:, id:) |> result.map(Some)
+  }
+}
+
+/// What a spell's prerequisiteIdCasterCast is to a press (`0x1403ace00`): a waiver
+/// when propertyFlags has bit 2 and its caster requirement block is set
+/// (casterInnateRequirement0, casterInnateRequirement1 or targetBeginInnateRequirement
+/// is not 0, the block the client tests), else a gate.
+pub fn caster_cast_of(
+  prerequisite_id prerequisite_id: Int,
+  property_flags property_flags: Int,
+  requirement_block block: #(Int, Int, Int),
+  rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+) -> Result(CasterCast, PlanError) {
+  use column <- result.map(column_of(id: prerequisite_id, rows:))
+  let has_block = block.0 != 0 || block.1 != 0 || block.2 != 0
+  case column {
+    None -> NoCasterCast
+    Some(prerequisite) ->
+      case has_flag(flags: property_flags, bit: 0x4) && has_block {
+        True -> RequirementWaiver(prerequisite:)
+        False -> CastGate(prerequisite:)
+      }
+  }
 }
 
 fn global_cooldown_of(

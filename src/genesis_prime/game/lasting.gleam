@@ -212,11 +212,11 @@ pub fn given(
 }
 
 /// What a cast holds on a unit as a prerequisite reads it: the Spell4 it casts,
-/// its caster's unit id and the stacks the cast gave there. A live cast whose
-/// primary target is the unit holds a node with count 0 (the same test type 15
-/// has always made).
+/// its caster's unit id, the spell groups of the spell (a type 129 prerequisite
+/// tests them) and the stacks the cast gave there. A live cast whose primary target
+/// is the unit holds a node with count 0 (the same test type 15 has always made).
 pub type Held {
-  Held(spell4_id: Spell4Id, caster: Int, count: Int)
+  Held(spell4_id: Spell4Id, caster: Int, count: Int, groups: List(Int))
 }
 
 /// Which casts a type 80 row takes off (`Spell4Effects.effectType.80`, dataBits00
