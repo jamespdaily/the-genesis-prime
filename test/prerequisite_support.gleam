@@ -163,6 +163,7 @@ pub fn holding(
     stealthed: None,
     resource_slots: None,
     positions: prerequisite.NotPlaced,
+    factions: None,
     seen: prerequisite.WholeUnit,
   )
 }
