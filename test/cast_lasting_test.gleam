@@ -19,7 +19,6 @@ import cast_support as support
 import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast.{type Effect, type State}
 import genesis_prime/game/lasting.{LastingRow, Stack}
-import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, ForceRemove, GatedOnCaster, GatedOnTarget,
   Lasting,
@@ -466,11 +465,11 @@ pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test(
   // Quick Draw's removal 196521: it runs only behind prerequisite 17302, type 15 of
   // 43500, the caster under Quick Draw's marker.
   let gate =
-    prerequisite.of_row(
-      row: prerequisite_support.row(id: 17_302, flags: 0, conditions: [
+    prerequisite_support.loaded(id: 17_302, rows: [
+      prerequisite_support.row(id: 17_302, flags: 0, conditions: [
         #(15, 1, 0, 43_500),
       ]),
-    )
+    ])
   let plans =
     plans_of([
       buff(spell4_id: 43_500, base: 3, lasting: [

@@ -24,76 +24,16 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/loadout
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/unit_stealth
 import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
-import genesis_prime/store.{Character}
-import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import unitest
-
-/// The connection of the client's tables in character select, as the entry of
-/// a class needs it.
-fn fresh() -> game_connection.State {
-  connection_support.in_select_from(
-    connection_support.accepted(
-      Settings(..connection_support.settings(), tables: client_tables.shared()),
-    ).0,
-  )
-}
-
-/// The map's answer to the join, with the loadout the client's tables give
-/// the character's class and faction in place of the planted one.
-fn with_the_real_loadout(
-  joined joined: map.Outgoing,
-  class_id class_id: Int,
-) -> map.Outgoing {
-  let assert map.Joined(unit:, max_health:, incarnation:, clock_origin_ms:, ..) =
-    joined
-    as "the map took the player"
-  let assert Ok(held) =
-    loadout.of(
-      tables: client_tables.shared(),
-      class_id: ClassId(class_id),
-      faction_id: 166,
-    )
-    as "the client's tables hold a Novice set for the class"
-  map.Joined(unit:, loadout: held, max_health:, incarnation:, clock_origin_ms:)
-}
-
-/// The connection after the map took a character of the class, with its entry
-/// burst.
-fn entered_as(
-  class_id class_id: Int,
-  saved_health saved_health: option.Option(Int),
-) -> #(game_connection.State, ConnectionStep(Request)) {
-  let #(state, taken) =
-    connection_support.joining_saved(
-      in_character_select: fresh(),
-      character: Character(
-        ..connection_support.world_character(),
-        class_id: ClassId(class_id),
-      ),
-      saved_health:,
-    )
-  let joined =
-    with_the_real_loadout(
-      joined: connection_support.map_answer(taken),
-      class_id:,
-    )
-  connection_support.answer(
-    state:,
-    taken:,
-    outcome: step.Answer(FromMap(joined)),
-  )
-}
 
 fn written(taken taken: ConnectionStep(Request)) -> List(Frame) {
   connection_support.heard(taken, connection_support.keyed())
@@ -150,7 +90,11 @@ fn listed(frames frames: List(Frame)) -> List(Int) {
 pub fn a_warriors_entry_ends_with_its_passives_0x7ff_and_0x7f4_and_no_property_or_resource_news_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let #(_, taken) = entered_as(class_id: 1, saved_health: None)
+  let #(_, taken) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 1,
+      saved_health: None,
+    )
   let frames = written(taken:)
   assert list.take(after_0x61(frames:), 2) == [0x07FF, 0x07F4]
     as "after 0x61 the passive 44926 starts with 0x7ff, and no 0x7fd (no press made it), then its go"
@@ -163,13 +107,17 @@ pub fn a_warriors_entry_ends_with_its_passives_0x7ff_and_0x7f4_and_no_property_o
     as "UnitProperty2 141 to 143 hold their default 1.0 under x 1.0 + 0, so no 0x93A; Kinetic Energy 0 less 1200 clamps at 0, so no 0x935; nothing ends"
 }
 
-pub fn an_engineers_entry_lists_its_three_properties_and_starts_no_child_test() -> Nil {
+pub fn an_engineers_entry_lists_its_three_properties_and_starts_46297_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let #(_, taken) = entered_as(class_id: 2, saved_health: None)
+  let #(_, taken) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 2,
+      saved_health: None,
+    )
   let frames = written(taken:)
-  assert started_spells(frames:) == [45_000]
-    as "46297 is behind Prerequisite 30012 of type 11, which the server does not read"
+  assert started_spells(frames:) == [45_000, 46_297]
+    as "Proxy 108412 starts 46297 behind Prerequisite 30012, which an Engineer with 0 in slot 1 (Volatility, the start of its resource) and under no cast passes: 29795, the innermost row, wants slot 1 above 29 (cast_passive_test)"
   assert listed(frames:) == [104_980, 177_521, 177_522]
   assert list.all(support.logs(taken), fn(line) {
     line.level != step.LogError && line.level != step.LogWarning
@@ -180,7 +128,11 @@ pub fn an_engineers_entry_lists_its_three_properties_and_starts_no_child_test() 
 pub fn a_stalkers_passive_starts_60724_50_ms_later_and_that_cast_ends_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let #(state, taken) = entered_as(class_id: 5, saved_health: None)
+  let #(state, taken) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 5,
+      saved_health: None,
+    )
   let frames = written(taken:)
   assert started_spells(frames:) == [45_057]
     as "the passive 45057 starts; the Proxy to 60724 waits 50 ms"
@@ -199,7 +151,11 @@ pub fn a_class_with_no_passive_starts_no_cast_at_entry_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   list.each([3, 4, 7], fn(class_id) {
-    let #(_, taken) = entered_as(class_id:, saved_health: None)
+    let #(_, taken) =
+      connection_support.entered_on_the_clients_tables(
+        class_id:,
+        saved_health: None,
+      )
     assert started_spells(frames: written(taken:)) == []
       as {
         "Class row " <> int.to_string(class_id) <> " names no slot-0 passive"
@@ -210,7 +166,11 @@ pub fn a_class_with_no_passive_starts_no_cast_at_entry_test() -> Nil {
 pub fn a_player_saved_dead_starts_its_passive_at_entry_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let #(_, taken) = entered_as(class_id: 1, saved_health: Some(0))
+  let #(_, taken) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 1,
+      saved_health: Some(0),
+    )
   assert started_spells(frames: written(taken:)) == [44_926]
     as "Spell4.44926: the caster condition row 4 holds alive or dead"
 }
@@ -218,7 +178,11 @@ pub fn a_player_saved_dead_starts_its_passive_at_entry_test() -> Nil {
 pub fn the_holocrypts_join_starts_the_passive_again_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let #(state, _) = entered_as(class_id: 1, saved_health: None)
+  let #(state, _) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 1,
+      saved_health: None,
+    )
   let #(dead, _) =
     connection_support.killed(
       connection_support.watched_by(state:, viewers: [2]),
@@ -240,7 +204,12 @@ pub fn the_holocrypts_join_starts_the_passive_again_test() -> Nil {
     connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromMap(with_the_real_loadout(joined:, class_id: 1))),
+      outcome: step.Answer(
+        FromMap(connection_support.with_the_clients_loadout(
+          joined:,
+          class_id: 1,
+        )),
+      ),
     )
   let frames = written(taken: joined_taken)
   assert started_spells(frames:) == [44_926]
@@ -258,7 +227,11 @@ fn chosen(index index: Int) -> BitArray {
 pub fn a_0x16f_of_index_0_writes_nothing_and_is_a_debug_line_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let #(state, _) = entered_as(class_id: 1, saved_health: None)
+  let #(state, _) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 1,
+      saved_health: None,
+    )
   let #(_, taken) = connection_support.read(state:, bytes: chosen(index: 0))
   assert support.writes(taken) == []
     as "opcode.0x16f: the client sent 0 before 0x19F set its index and has switched itself already"
@@ -271,7 +244,11 @@ pub fn a_0x16f_of_index_0_writes_nothing_and_is_a_debug_line_test() -> Nil {
 pub fn a_0x16f_of_an_index_above_0_ends_the_connection_with_an_error_line_and_nothing_written_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let #(state, _) = entered_as(class_id: 1, saved_health: None)
+  let #(state, _) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 1,
+      saved_health: None,
+    )
   list.each([1, 2, 255], fn(index) {
     let #(_, taken) = connection_support.read(state:, bytes: chosen(index:))
     let assert [line] = support.logs_of(step: taken, level: step.LogError)
@@ -343,7 +320,11 @@ pub fn a_stealthed_stalkers_impale_ends_the_stealth_after_its_second_phase_and_n
   // (phaseFlags 2): `Spell4.spellCastStealthChange.break`, the stealth ends after the
   // cast's effects, so those still see it. The Proxies' target gates 5734 and 5735 are
   // not checked, so no Proxy child starts: the stealth's end is read from the frames.
-  let #(state, _) = entered_as(class_id: 5, saved_health: None)
+  let #(state, _) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 5,
+      saved_health: None,
+    )
   let #(state, _) =
     connection_support.feed(
       state:,

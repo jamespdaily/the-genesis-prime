@@ -5,8 +5,10 @@
 //// connection supplies the rolls from its seed.
 ////
 //// ```
-//// Prerequisite row ─▶ of_row: the conditions kept up to the first type 0, AND or OR
-//// a Subject: the casts it is under, in combat, its vitals, its difficulty, its rolls
+//// Prerequisite row ─▶ load: the conditions kept up to the first type 0, AND or OR,
+////                          each nested row (type 11) loaded in place; a cycle fails
+//// a Subject: the casts it is under, in combat, its vitals, its resource slots,
+////            its difficulty, its rolls
 ////                  ─▶ check ─▶ Passes | Fails | NotRead(type)
 //// ```
 ////
@@ -32,6 +34,22 @@
 //// - **Type 28** passes, by comparison 1, when the unit is in combat and by
 ////   comparison 2 when it is not; any other comparison fails
 ////   (`Prerequisite.prerequisiteTypeId.28`).
+//// - **Type 11** evaluates the Prerequisite its objectId names, whole, with its own
+////   flags and the same two units and rolls; comparison 2 passes when it fails and
+////   any other comparison gives its result, `NotRead` staying `NotRead`; its value is
+////   not read, and an id with no row fails (`Prerequisite.prerequisiteTypeId.11`,
+////   `0x1404a1ca0`). The rows are loaded in place, so a check needs no table, and a
+////   row that nests itself through the rows on its way fails the load: the server's
+////   choice, since the client's evaluator has no guard and its table has no cycle.
+//// - **Type 64** compares the subject's resource slot the objectId names (0 to 10; 11 or
+////   more reads 0.0, and so does a slot the class does not hold) as a 32-bit float with
+////   the value read as a signed 32-bit number, by comparisons 1 to 6; any other fails.
+////   A subject that holds no resource slots gives `NotRead`
+////   (`Prerequisite.prerequisiteTypeId.64`, `0x1404a24ad`).
+//// - **Type 129** passes, by comparison 1, when the unit is under a cast whose spell is in
+////   the spell group the objectId names and by comparison 2 when it is under none; any
+////   other comparison fails, group 0 matches no spell and the value is not read
+////   (`Prerequisite.prerequisiteTypeId.129`, `0x1404a2b5a`).
 //// - **Type 37** compares a roll from 1 to 100 with the value, a new roll for each
 ////   such condition tested; the roll is the server's, 1 + floor(100 r) of a draw r
 ////   in [0, 1) as the client makes it (`Prerequisite.prerequisiteTypeId.37`).
@@ -61,6 +79,7 @@ import genesis_prime/message/float32
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4Id, PrerequisiteId, Spell4Id,
 }
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -69,6 +88,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
+import gleam/result
 
 /// A Prerequisite row as the client keeps it: its id, whether any condition is
 /// enough (flags bit 0), and its conditions up to the first of type 0.
@@ -137,6 +157,14 @@ fn unsigned(number: Int) -> Int {
   int.bitwise_and(number, 0xFFFFFFFF)
 }
 
+/// The same 32 bits read as a signed number.
+fn signed(number: Int) -> Int {
+  case unsigned(number) {
+    bits if bits >= 0x80000000 -> bits - 0x100000000
+    bits -> bits
+  }
+}
+
 /// One condition as the client's check reads it, decoded once from its
 /// PrerequisiteType, comparison, objectId and value.
 type Condition {
@@ -161,6 +189,16 @@ type Condition {
   /// Type 73: the vital's current value, cut to a whole number, against the
   /// value (`Prerequisite.prerequisiteTypeId.73`).
   VitalCurrent(relation: Relation, vital: Int, value: Int)
+  /// Type 11: the Prerequisite `id` evaluated whole with the same units; `row` is
+  /// none when the table holds no such row, which fails
+  /// (`Prerequisite.prerequisiteTypeId.11`, `0x1404a1ca0`).
+  Nested(comparison: Comparison, id: Int, row: Option(Prerequisite))
+  /// Type 64: the resource slot of the unit against the value, as floats
+  /// (`Prerequisite.prerequisiteTypeId.64`).
+  ResourceSlot(relation: Relation, slot: Int, value: Int)
+  /// Type 129: whether the unit is under a cast whose spell is in the spell group
+  /// (`Prerequisite.prerequisiteTypeId.129`).
+  UnderGroup(comparison: Comparison, group: Int)
   /// Type 116: whether the unit is stealthed
   /// (`Prerequisite.prerequisiteTypeId.116`).
   Stealthed(comparison: Comparison)
@@ -228,6 +266,10 @@ pub type Subject {
     /// for a creature's side, so type 116 is not read for it
     /// (genesis_prime/game/cast `stealthed`).
     stealthed: Option(Bool),
+    /// The caster's resource slots by slot number, which only a player's cast rule
+    /// holds: `None` for a creature's side, so type 64 is not read for it. A slot
+    /// the class does not hold is left out and reads 0.0.
+    resource_slots: Option(Dict(Int, Float)),
     /// The rolls for the type 37 conditions of the check, one for each, in the
     /// order the conditions are tested (`rolls_needed`).
     rolls: List(Int),
@@ -245,6 +287,7 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     vitals: dict.new(),
     difficulty: Some(difficulty),
     stealthed: None,
+    resource_slots: None,
     rolls: [],
   )
 }
@@ -259,18 +302,86 @@ const types_without_a_case = [
 /// The highest type the client's condition check has a case for (`0x1404a2100`).
 const highest_type = 295
 
-/// The row as the client keeps it (`0x1404a5190`).
-pub fn of_row(row row: prerequisite_table.Prerequisite) -> Prerequisite {
-  let conditions =
-    list.map(kept_conditions(row:), fn(condition) {
-      condition_of(
+/// Why a prerequisite does not load.
+pub type LoadError {
+  /// The row the load started from is not in the table.
+  NoPrerequisiteRow(id: PrerequisiteId)
+  /// A row nests itself through the rows on the way, the ids in order with the
+  /// repeated one last.
+  PrerequisiteCycle(path: List(PrerequisiteId))
+}
+
+/// The Prerequisite rows of the loaded tables by id, for `load`.
+pub fn table_rows(
+  tables tables: table_store.Tables,
+) -> fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil) {
+  fn(id) { prerequisite_table.get(tables:, id:) |> result.replace_error(Nil) }
+}
+
+/// The prerequisite with this id as the client keeps it (`0x1404a5190`), from the
+/// table `rows` reads, each nested row loaded in place.
+pub fn load(
+  id id: PrerequisiteId,
+  rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+) -> Result(Prerequisite, LoadError) {
+  use row <- result.try(
+    rows(id) |> result.replace_error(NoPrerequisiteRow(id:)),
+  )
+  loaded(row:, rows:, above: [id])
+}
+
+/// The PrerequisiteType of a nested prerequisite (`Prerequisite.prerequisiteTypeId.11`),
+/// whose row `load` follows.
+pub const nested_type = 11
+
+/// The row as a prerequisite; `above` holds the ids of the rows it is nested in,
+/// nearest first.
+fn loaded(
+  row row: prerequisite_table.Prerequisite,
+  rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+  above above: List(PrerequisiteId),
+) -> Result(Prerequisite, LoadError) {
+  use conditions <- result.map(
+    list.try_map(kept_conditions(row:), fn(condition) {
+      use <- bool.lazy_guard(when: condition.0 == nested_type, return: fn() {
+        nested_loaded(
+          comparison: comparison_of(condition.1),
+          id: PrerequisiteId(condition.2),
+          rows:,
+          above:,
+        )
+      })
+      Ok(condition_of(
         type_id: condition.0,
         comparison: condition.1,
         object_id: condition.2,
         value: condition.3,
-      )
-    })
+      ))
+    }),
+  )
   Prerequisite(id: PrerequisiteId(row.id), any: is_any(row:), conditions:)
+}
+
+/// A type 11 condition with the row it names loaded, none when the table has none; a
+/// row already on the way is a cycle.
+fn nested_loaded(
+  comparison comparison: Comparison,
+  id id: PrerequisiteId,
+  rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
+  above above: List(PrerequisiteId),
+) -> Result(Condition, LoadError) {
+  use <- bool.guard(
+    when: list.contains(above, id),
+    return: Error(PrerequisiteCycle(path: list.reverse([id, ..above]))),
+  )
+  case rows(id) {
+    Error(Nil) -> Ok(Nested(comparison:, id: id.value, row: None))
+    Ok(row) ->
+      loaded(row:, rows:, above: [id, ..above])
+      |> result.map(fn(nested) {
+        Nested(comparison:, id: id.value, row: Some(nested))
+      })
+  }
 }
 
 /// The PrerequisiteTypes of the conditions the client keeps from the row, in
@@ -352,6 +463,15 @@ fn condition_of(
         vital: object_id,
         value:,
       )
+    11 ->
+      Nested(comparison: comparison_of(comparison), id: object_id, row: None)
+    64 ->
+      ResourceSlot(
+        relation: relation_of(code: comparison),
+        slot: signed(object_id),
+        value:,
+      )
+    129 -> UnderGroup(comparison: comparison_of(comparison), group: object_id)
     116 -> Stealthed(comparison: comparison_of(comparison))
     179 -> Difficulty(relation: relation_of(code: comparison), object_id:)
     _ ->
@@ -379,6 +499,9 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | Roll(..)
     | VitalPercent(..)
     | VitalCurrent(..)
+    | Nested(..)
+    | ResourceSlot(..)
+    | UnderGroup(..)
     | Stealthed(..)
     | Difficulty(..)
     | NoCase -> True
@@ -391,23 +514,28 @@ pub fn id(prerequisite prerequisite: Prerequisite) -> PrerequisiteId {
 }
 
 /// How many rolls a check of the prerequisite takes: one for each type 37
-/// condition kept.
+/// condition kept, in the rows it nests too.
 pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
-  list.count(prerequisite.conditions, fn(condition) {
+  list.map(prerequisite.conditions, fn(condition) {
     case condition {
-      Roll(..) -> True
-      TargetOfLiveCast(..)
+      Roll(..) -> 1
+      Nested(row: Some(nested), ..) -> rolls_needed(prerequisite: nested)
+      Nested(row: None, ..)
+      | TargetOfLiveCast(..)
       | UnderCastBy(..)
       | StackCount(..)
       | InCombat(..)
       | VitalPercent(..)
       | VitalCurrent(..)
+      | ResourceSlot(..)
+      | UnderGroup(..)
       | Stealthed(..)
       | Difficulty(..)
       | NoCase
-      | Unread(..) -> False
+      | Unread(..) -> 0
     }
   })
+  |> int.sum
 }
 
 /// The bytes of one roll: 4, a draw r of a multiple of 2^-32 in [0, 1).
@@ -432,22 +560,36 @@ pub fn check(
   prerequisite prerequisite: Prerequisite,
   subject subject: Subject,
 ) -> Verdict {
-  let #(_, verdicts) =
-    list.map_fold(prerequisite.conditions, subject.rolls, fn(rolls, condition) {
+  let #(verdict, _) = evaluated(prerequisite:, subject:, rolls: subject.rolls)
+  verdict
+}
+
+/// The prerequisite's verdict and the rolls left after the conditions took theirs, in
+/// order.
+fn evaluated(
+  prerequisite prerequisite: Prerequisite,
+  subject subject: Subject,
+  rolls rolls: List(Int),
+) -> #(Verdict, List(Int)) {
+  let #(left, verdicts) =
+    list.map_fold(prerequisite.conditions, rolls, fn(rolls, condition) {
       condition_check(condition:, subject:, rolls:)
     })
   let #(decides, otherwise) = case prerequisite.any {
     True -> #(Passes, Fails)
     False -> #(Fails, Passes)
   }
-  case list.contains(verdicts, decides) {
-    True -> decides
-    False ->
-      case list.find(verdicts, fn(verdict) { verdict != otherwise }) {
-        Ok(not_read) -> not_read
-        Error(Nil) -> otherwise
-      }
-  }
+  #(
+    case list.contains(verdicts, decides) {
+      True -> decides
+      False ->
+        case list.find(verdicts, fn(verdict) { verdict != otherwise }) {
+          Ok(not_read) -> not_read
+          Error(Nil) -> otherwise
+        }
+    },
+    left,
+  )
 }
 
 /// One condition's verdict, and the rolls left after it.
@@ -514,6 +656,33 @@ fn condition_check(
         Error(Nil) -> NotRead(prerequisite_type: 73)
       },
     )
+    Nested(comparison:, row:, ..) -> {
+      let #(nested, rolls) = case row {
+        Some(nested) -> evaluated(prerequisite: nested, subject:, rolls:)
+        None -> #(Fails, rolls)
+      }
+      #(rolls, case comparison {
+        NotFound -> negated(verdict: nested)
+        Found | OtherComparison(..) -> nested
+      })
+    }
+    ResourceSlot(relation:, slot:, value:) -> #(
+      rolls,
+      case subject.resource_slots {
+        None -> NotRead(prerequisite_type: 64)
+        Some(slots) ->
+          verdict_of(floats_compare(
+            relation:,
+            measured: float32.rounded(slot_value(slots:, slot:)),
+            value: float32.rounded(int.to_float(signed(value))),
+          ))
+      },
+    )
+    UnderGroup(comparison:, group:) -> #(rolls, case comparison {
+      Found -> verdict_of(is_under_group(subject:, group:))
+      NotFound -> verdict_of(!is_under_group(subject:, group:))
+      OtherComparison(..) -> Fails
+    })
     Stealthed(comparison:) -> #(rolls, stealthed_verdict(comparison:, subject:))
     Difficulty(relation:, object_id:) -> #(rolls, case subject.difficulty {
       Some(difficulty) ->
@@ -523,6 +692,31 @@ fn condition_check(
     NoCase -> #(rolls, Fails)
     Unread(prerequisite_type:) -> #(rolls, NotRead(prerequisite_type:))
   }
+}
+
+/// A nested row's verdict under comparison 2: passes when it fails, and a row that is
+/// not read stays not read.
+fn negated(verdict verdict: Verdict) -> Verdict {
+  case verdict {
+    Passes -> Fails
+    Fails -> Passes
+    NotRead(..) -> verdict
+  }
+}
+
+/// The slot's value, read from the slots the subject holds: a slot from 0 to 10 the
+/// class does not hold, 11 or more and a number below 0 (the server's choice: no row
+/// names one) read 0.0 (`0x1404a24bd`).
+fn slot_value(slots slots: Dict(Int, Float), slot slot: Int) -> Float {
+  use <- bool.guard(when: slot < 0 || slot >= 11, return: 0.0)
+  result.unwrap(dict.get(slots, slot), 0.0)
+}
+
+/// Whether the subject is under a cast whose spell is in the spell group; group 0
+/// matches none.
+fn is_under_group(subject subject: Subject, group group: Int) -> Bool {
+  group != 0
+  && list.any(subject.under, fn(held) { list.contains(held.groups, group) })
 }
 
 /// Type 116's verdict: comparison 1 passes for a stealthed subject and 2 for one that is

@@ -11,7 +11,6 @@
 //// bytes (`hit.roll_bytes`).
 
 import cast_support
-import character_tables
 import connection_rule_support as support
 import game_client
 import game_connection_support
@@ -20,9 +19,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/hit
-import genesis_prime/game/loadout
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
 import genesis_prime/message/float32
@@ -35,7 +32,7 @@ import genesis_prime/step.{
   StartTimer, TimerFired, Unwatch, Watch,
 }
 import genesis_prime/store.{Character}
-import genesis_prime/table/id.{ClassId, Spell4BaseId}
+import genesis_prime/table/id.{ClassId}
 import gleam/int
 import gleam/list
 import owned_test
@@ -52,43 +49,6 @@ fn resource_changes(frames: List(Frame)) -> List(UnitFloatStatChanged) {
       False -> Error(Nil)
     }
   })
-}
-
-/// The tests' player of this class in the world, its connection reading the
-/// starting abilities' trees (`character_tables.shared_with_spell_trees`), with
-/// its unit id and the bag index of the ability of this Spell4Base.
-fn entered_with_trees(
-  class_id class_id: Int,
-  ability ability: Int,
-) -> #(game_connection.State, Int, Int) {
-  let fresh =
-    game_connection_support.accepted(
-      Settings(
-        ..game_connection_support.settings(),
-        tables: character_tables.shared_with_spell_trees(),
-      ),
-    ).0
-  let #(state, entered) =
-    game_connection_support.entered_from(
-      in_character_select: game_connection_support.in_select_from(fresh),
-      character: Character(
-        ..game_connection_support.world_character(),
-        class_id: ClassId(class_id),
-      ),
-    )
-  let unit_id = game_connection_support.player_in(entered).unit_id
-  let assert Ok(set) =
-    loadout.of(
-      tables: character_tables.shared(),
-      class_id: ClassId(class_id),
-      faction_id: 166,
-    )
-    as "the tables hold the class's Novice set"
-  let assert Ok(bag_index) =
-    list.index_map(set.abilities, fn(base, index) { #(base, index) })
-    |> list.key_find(Spell4BaseId(ability))
-    as "a level-1 player of the class holds the ability"
-  #(state, unit_id, bag_index)
 }
 
 /// The press of the ability at this bag index, as a client sends it.
@@ -155,7 +115,10 @@ fn resource_timers_cancelled(taken: ConnectionStep(Request)) -> List(TimerId) {
 pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_writes_72_a_second_later_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
-    entered_with_trees(class_id: 5, ability: 23_161)
+    game_connection_support.entered_with_spell_trees(
+      class_id: 5,
+      ability: 23_161,
+    )
   let #(state, pressed) = press(state:, bag_index:)
   assert changes_written(pressed)
     == [
@@ -301,9 +264,15 @@ const rampage_base = 37_968
 pub fn a_warriors_relentless_strikes_on_a_beast_fills_kinetic_energy_and_rampage_then_casts_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, unit_id, strikes_index) =
-    entered_with_trees(class_id: 1, ability: relentless_strikes_base)
+    game_connection_support.entered_with_spell_trees(
+      class_id: 1,
+      ability: relentless_strikes_base,
+    )
   let #(_, _, rampage_index) =
-    entered_with_trees(class_id: 1, ability: rampage_base)
+    game_connection_support.entered_with_spell_trees(
+      class_id: 1,
+      ability: rampage_base,
+    )
   let #(state, _) =
     at(
       state:,
@@ -386,7 +355,10 @@ const gamma_rays_base = 16_322
 pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_after_the_combat_flag_clears_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
-    entered_with_trees(class_id: 4, ability: gamma_rays_base)
+    game_connection_support.entered_with_spell_trees(
+      class_id: 4,
+      ability: gamma_rays_base,
+    )
   let #(state, threatened) =
     game_connection_support.feed(
       state,
@@ -448,7 +420,10 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
 pub fn a_player_killed_and_brought_back_gets_each_slot_at_its_start_in_one_0x935_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
-    entered_with_trees(class_id: 4, ability: gamma_rays_base)
+    game_connection_support.entered_with_spell_trees(
+      class_id: 4,
+      ability: gamma_rays_base,
+    )
   let #(state, _) =
     game_connection_support.feed(
       state,
@@ -512,7 +487,10 @@ fn warrior_killed_and_back() -> #(
 pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, _, bag_index) =
-    entered_with_trees(class_id: 4, ability: gamma_rays_base)
+    game_connection_support.entered_with_spell_trees(
+      class_id: 4,
+      ability: gamma_rays_base,
+    )
   let #(state, pressed) =
     pressed_until(
       state:,
@@ -657,7 +635,10 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
 pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_leaves_the_actuators_and_writes_no_0x935_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
-    entered_with_trees(class_id: 4, ability: gamma_rays_base)
+    game_connection_support.entered_with_spell_trees(
+      class_id: 4,
+      ability: gamma_rays_base,
+    )
   let #(state, pressed) =
     pressed_until(
       state:,

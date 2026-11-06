@@ -48,6 +48,10 @@
 ////   - A tell the map takes after the connection's `Leave` is an error line in the map and
 ////     changes nothing; the connection sends none, and a map that is not running is
 ////     the tell's dropped send, as for `Moved`.
+//// - **Persistence** is checked at the end of each input of a player in the world
+////   (`persisted`, called by the connection's two places that settle an input: the
+////   frames it takes and everything else), and the casts it ends are written after what
+////   the input wrote itself.
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -172,6 +176,43 @@ pub fn cast_due(
         )
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     }
+  }
+}
+
+/// What an input decided, with the casts whose persistence stopped holding ended after
+/// the input's own effects (genesis_prime/game/cast `persisted`). It runs at the end of
+/// each input of a player in the world that goes on: with no player in the world, or no
+/// cast whose spell has a persistence column, it changes nothing. The input's effects
+/// come first, as the server writes them in order.
+pub fn persisted(
+  handled handled: client_connection.Handled(Session),
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  case handled {
+    Continue(session:, effects:) ->
+      case connection_state.held_in_the_world(session.status) {
+        Some(#(_, entered)) ->
+          case cast.persists(cast: entered.cast) {
+            False -> handled
+            True -> {
+              let #(updated, ended) =
+                cast.persisted(
+                  cast: entered.cast,
+                  caster: caster_of(entered:),
+                  now:,
+                )
+              let #(session, written) =
+                cast_effects(
+                  session: with_cast(session:, cast: updated),
+                  now:,
+                  effects: ended,
+                )
+              Continue(session, list.append(effects, written))
+            }
+          }
+        None -> handled
+      }
+    client_connection.Asking(..) | client_connection.Done(..) -> handled
   }
 }
 

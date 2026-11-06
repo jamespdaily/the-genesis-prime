@@ -19,7 +19,7 @@ import genesis_prime/game/spell_plan.{
   type Spell, Always, AtFirstGo, AtLastGo, Channel, Channeled, ChargeRelease,
   GlobalCooldown, Multiphase, Normal, NotAtAGo, PrimaryWeapon, RapidTap,
 }
-import genesis_prime/table/id.{ClassId, PrerequisiteId, Spell4BaseId, Spell4Id}
+import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
@@ -28,6 +28,7 @@ import gleam/result
 import gleam/string
 import owned_test
 import planted_table
+import prerequisite_support
 import qcheck
 import spell_tables
 import unitest
@@ -546,13 +547,21 @@ pub fn rampage_requires_at_least_250_of_slot_1_its_stages_require_nothing_and_it
       ),
     ]
     as "Spell4.casterInnateRequirement0: Rampage 58524 has type 6 (slot 1), value 250, eval 2 (at least), failing with 51 (0x1403b1780, 0x1407a1750)"
-  assert rampage.requirement_waiver == Some(PrerequisiteId(19_750))
-    as "propertyFlags 0x4100006 has bit 2, so prerequisiteIdCasterCast 19750 would waive it (0x1403b1780)"
+  assert rampage.caster_cast
+    == spell_plan.RequirementWaiver(
+      prerequisite: prerequisite_support.single(id: 19_750, condition: #(
+        15,
+        1,
+        0,
+        42_908,
+      )),
+    )
+    as "propertyFlags 0x4100006 has bit 2 and the requirement block is set, so prerequisiteIdCasterCast 19750 (Prerequisite 19750: type 15 comparison 1 of 42908) waives a failed requirement and is no gate (0x1403b1780)"
   assert list.map(rampage.stages, fn(stage) { stage.spell.requirements })
     == [[], [], []]
     as "a requirement of type 0 is none: the stages 66987, 71125 and 71126 carry none (Spell4.casterInnateRequirement0)"
-  assert planted(base: 19_102).requirement_waiver == None
-    as "Telekinetic Strike's propertyFlags 0x4000002 lack bit 2"
+  assert planted(base: 19_102).caster_cast == spell_plan.NoCasterCast
+    as "Telekinetic Strike's propertyFlags 0x4000002 lack bit 2 and it names no prerequisiteIdCasterCast"
 }
 
 /// The planted rows with Rampage's requirement of this type and eval, value 250.

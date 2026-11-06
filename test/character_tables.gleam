@@ -32,8 +32,10 @@
 ////   Faction2Relationship rows among them (684, 691, 726, 944 and 2943 to 2948),
 ////   no Creature2OutfitInfo row, and the World rows the tests' maps run in.
 //// - Prerequisite: the creature attack's rows (`prerequisite_rows`) and the rows
-////   the planted spells' gains name (`spell_tables.gain_prerequisite_rows`) and
-////   their Proxies' caster apply columns (`spell_tables.proxy_prerequisite_rows`).
+////   the planted spells' gains name (`spell_tables.gain_prerequisite_rows`), their
+////   Proxies' caster apply columns (`spell_tables.proxy_prerequisite_rows`) and
+////   Rampage's cast prerequisite (`spell_tables.waiver_prerequisite_rows`), which the
+////   plan loads with the spell.
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
 ////   and 48 for race 1, sex 0. The planted maps are that many rows of one
 ////   parameter that sets one part, which carry those counts; the real
@@ -747,6 +749,7 @@ fn files_with_looks(
         list.flatten([
           spell_tables.proxy_prerequisite_rows(),
           spell_tables.gain_prerequisite_rows(),
+          spell_tables.waiver_prerequisite_rows(),
           prerequisite_rows(),
         ]),
       ),
