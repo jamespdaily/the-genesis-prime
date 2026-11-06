@@ -38,6 +38,7 @@ import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
+import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
@@ -92,9 +93,11 @@ import gleam/erlang/reference.{type Reference}
 /// - GameFormula and UnitProperty2: the hit rule's rating formulas and a player's
 ///   bases (genesis_prime/game/rating); with CreatureLevel and the creature tables, a
 ///   creature's defence (genesis_prime/world_map/spawn).
-/// - Prerequisite: the gate of a spell's resource gains (genesis_prime/game/spell_plan)
-///   and the caster prerequisite of a creature attack's damage effects, which the
-///   content load reads (genesis_prime/world_map/creature_attack).
+/// - Prerequisite: the gate of a spell's resource gains and Proxies
+///   (genesis_prime/game/spell_plan) and the caster prerequisite of a creature attack's
+///   damage effects, which the content load reads (genesis_prime/world_map/creature_attack).
+/// - PositionalRequirement: the arc a type 108 prerequisite condition names
+///   (genesis_prime/game/prerequisite).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -126,6 +129,7 @@ pub fn entries() -> List(store.Entry) {
     item_display_source_entry.entry(),
     item_slot.entry(),
     path_mission.entry(),
+    positional_requirement.entry(),
     prerequisite.entry(),
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),

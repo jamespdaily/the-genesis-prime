@@ -1,14 +1,13 @@
 //// The gates a go checks against the caster (`genesis_prime/game/cast`): a Proxy
 //// behind a caster apply prerequisite or one named by its dataBits06 starts its
-//// child only when the gate passes, one behind a target apply prerequisite never
-//// starts, a gain behind a prerequisite of a vital reads the caster's vitals, and
+//// child only when the gate passes (a Proxy's target gate is `cast_position_test`'s), a
+//// gain behind a prerequisite of a vital reads the caster's vitals, and
 //// a type 37 condition takes a roll only when one is checked. Expected values come
 //// from these places, each named at its assertion:
 //// - The client's rows: Prerequisite 903 (`Prerequisite.prerequisiteTypeId.28`,
 ////   comparison 1: in combat), 4585 (type 37, comparison 6, value 50), 11153
 ////   (type 73, comparison 4, vital 6, value 100), 4918 (type 71, comparison 1,
-////   vital 6, value 100), 33154 (type 59, which the server does not read) and 5734
-////   (type 108 in a target apply column, `Spell4Effects.prerequisiteIdTargetApply`),
+////   vital 6, value 100), and 33154 (type 59, which the server does not read),
 ////   copied as `table_rows -- Prerequisite <id>` prints them.
 //// - The client's code: `0x1403b3320` (Vitals 5 to 11 are the caster's resource
 ////   slots 0 to 6) and `0x14049eeb0` (type 179 reads the unit's difficulty, which a
@@ -16,8 +15,7 @@
 //// - The design of the step: a gate decides on the state before the go's own
 ////   effects (the casts as they stood before its children start and before its
 ////   finish), a Proxy's caster-side gates are checked at its
-////   phase's go with the caster as subject, a Proxy with a target apply
-////   prerequisite is not started, and a prerequisite of a type or a vital not read
+////   phase's go with the caster as subject, and a prerequisite of a type or a vital not read
 ////   leaves one debug line (`Spell4Effects.effectType.26.dataBits06`).
 //// The bag index 8 is the exempt spell, which these tests replace with a spell of no
 //// cast time and one Proxy.
@@ -30,7 +28,7 @@ import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
-import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
+import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/dict
 import gleam/list
 import gleam/option.{Some}
@@ -203,22 +201,6 @@ pub fn a_gate_of_a_type_the_server_does_not_read_starts_nothing_and_leaves_one_d
     && string.contains(line, "of type 43")
   })
     as "one line names the child, the prerequisite and its type"
-}
-
-pub fn a_proxy_behind_a_target_apply_prerequisite_is_not_started_test() -> Nil {
-  use <- owned_test.run(5000)
-  let spell =
-    spell_with(
-      proxies: [
-        proxy(spell_plan.GatedOnTarget(prerequisite_id: PrerequisiteId(5734))),
-      ],
-      gains: [],
-    )
-  let effects = pressed(spell:, caster: in_combat(), rolls: [])
-  assert children_started(effects) == 0
-    as "Prerequisite 5734 sits in Spell4Effects.prerequisiteIdTargetApply: the server checks no target-side prerequisite"
-  assert list.length(debug_lines(effects)) == 1
-    as "one debug line says it is not started"
 }
 
 pub fn a_proxy_with_no_gate_starts_as_before_test() -> Nil {

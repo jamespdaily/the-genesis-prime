@@ -65,6 +65,11 @@ pub type Pose {
   Pose(at: Point, yaw: Float)
 }
 
+/// The pose of a place: its ground point and its facing's yaw.
+pub fn pose_of(place place: Place) -> Pose {
+  Pose(at: point_of(place:), yaw: start_place.facing(place).yaw)
+}
+
 /// A telegraph's damage shape (`TelegraphDamage.damageShapeEnum`).
 pub type Shape {
   /// Shape 0.

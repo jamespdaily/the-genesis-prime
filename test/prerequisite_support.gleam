@@ -4,6 +4,7 @@
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject, Subject}
 import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
+import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/dict
 import gleam/list
@@ -53,15 +54,33 @@ pub fn single(
   loaded(id:, rows: [row(id:, flags: 0, conditions: [condition])])
 }
 
+/// The PositionalRequirement rows of a planted table that holds none.
+pub fn no_arcs() -> fn(Int) ->
+  Result(positional_requirement.PositionalRequirement, Nil) {
+  fn(_) { Error(Nil) }
+}
+
 /// The prerequisite with this id as `load` makes it from rows held in memory: the
-/// planted table is these rows.
+/// planted table is these rows, and it holds no PositionalRequirement row.
 pub fn load_from(
   id id: Int,
   rows rows: List(prerequisite_table.Prerequisite),
 ) -> Result(Prerequisite, prerequisite.LoadError) {
-  prerequisite.load(id: PrerequisiteId(id), rows: fn(wanted) {
-    list.find(rows, fn(row) { row.id == wanted.value })
-  })
+  load_with_arcs(id:, rows:, arcs: [])
+}
+
+/// The same, whose type 108 conditions find their PositionalRequirement rows among
+/// `arcs`, as the client's table holds them (`table_rows -- PositionalRequirement 53`).
+pub fn load_with_arcs(
+  id id: Int,
+  rows rows: List(prerequisite_table.Prerequisite),
+  arcs arcs: List(positional_requirement.PositionalRequirement),
+) -> Result(Prerequisite, prerequisite.LoadError) {
+  prerequisite.load(
+    id: PrerequisiteId(id),
+    rows: fn(wanted) { list.find(rows, fn(row) { row.id == wanted.value }) },
+    arcs: fn(wanted) { list.find(arcs, fn(arc) { arc.id == wanted }) },
+  )
 }
 
 /// The same, which must load.
@@ -69,9 +88,56 @@ pub fn loaded(
   id id: Int,
   rows rows: List(prerequisite_table.Prerequisite),
 ) -> Prerequisite {
-  let assert Ok(loaded) = load_from(id:, rows:)
+  loaded_with_arcs(id:, rows:, arcs: [])
+}
+
+/// The same with the arcs, which must load.
+pub fn loaded_with_arcs(
+  id id: Int,
+  rows rows: List(prerequisite_table.Prerequisite),
+  arcs arcs: List(positional_requirement.PositionalRequirement),
+) -> Prerequisite {
+  let assert Ok(loaded) = load_with_arcs(id:, rows:, arcs:)
     as "the rows held in memory load: every id they name has a row"
   loaded
+}
+
+/// The prerequisite of a row that holds no nested row and no type 108 condition.
+pub fn prerequisite_of(
+  row row: prerequisite_table.Prerequisite,
+) -> Prerequisite {
+  loaded(id: row.id, rows: [row])
+}
+
+/// The prerequisite of a row whose type 108 conditions find their PositionalRequirement
+/// rows among `arcs`.
+pub fn prerequisite_of_arcs(
+  row row: prerequisite_table.Prerequisite,
+  arcs arcs: List(positional_requirement.PositionalRequirement),
+) -> Prerequisite {
+  loaded_with_arcs(id: row.id, rows: [row], arcs:)
+}
+
+/// A PositionalRequirement row: its id, angleCenter, angleRange and flags.
+pub fn arc_row(
+  id id: Int,
+  center center: Int,
+  range range: Int,
+  flags flags: Int,
+) -> positional_requirement.PositionalRequirement {
+  positional_requirement.PositionalRequirement(
+    id:,
+    angle_center: center,
+    angle_range: range,
+    flags:,
+  )
+}
+
+/// Row 53 of the client's PositionalRequirement table: the 140 degrees behind the first
+/// unit (`table_rows -- PositionalRequirement 53`: angleCenter 180, angleRange 140,
+/// flags 0).
+pub fn behind_arc() -> positional_requirement.PositionalRequirement {
+  arc_row(id: 53, center: 180, range: 140, flags: 0)
 }
 
 /// A subject holding these nodes (spell, caster, stack count), whose second unit is
@@ -96,6 +162,8 @@ pub fn holding(
     difficulty: None,
     stealthed: None,
     resource_slots: None,
+    positions: prerequisite.NotPlaced,
+    seen: prerequisite.WholeUnit,
   )
 }
 

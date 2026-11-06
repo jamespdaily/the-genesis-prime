@@ -104,8 +104,8 @@ import genesis_prime/client_connection.{
   type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
   AskMapRun, AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions,
   FromStore, SentByChat, SentByFoe, SentByMap, SentByPeer, SentBySessions,
-  SentByTarget, TellChat, TellMoved, TellPeer, TellReady, TellStrike,
-  TellStrikeAnswered, TellTargetMoved,
+  SentByTarget, TellChat, TellMoved, TellPeer, TellReady, TellStealthChanged,
+  TellStrike, TellStrikeAnswered, TellTargetMoved,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -338,6 +338,7 @@ fn directory(settings: Settings) -> Directory {
         )
       TellMoved(..)
       | TellReady(..)
+      | TellStealthChanged(..)
       | TellPeer(..)
       | TellChat(..)
       | TellStrike(..)
@@ -442,6 +443,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     TellChat(tell:) -> registry.deliver_to(pid, SentByChat(tell:))
     TellMoved(..)
     | TellReady(..)
+    | TellStealthChanged(..)
     | TellPeer(..)
     | TellStrike(..)
     | TellTargetMoved(..)
@@ -459,8 +461,8 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
   }
 }
 
-/// Tells the run of a map what the request says: that a player moved, or is
-/// ready. Any other request is an ask, which a tell never carries: a rule that
+/// Tells the run of a map what the request says: that a player moved, is
+/// ready, or entered or left stealth. Any other request is an ask, which a tell never carries: a rule that
 /// tells one has a bug, logged as an error, and nothing is sent.
 pub fn tell_the_run(
   subject subject: Subject(Call(map.Message, map.Outgoing)),
@@ -474,6 +476,14 @@ pub fn tell_the_run(
     }
     TellReady(connection:, seq:) -> {
       let _sent = service.tell_subject(subject, map.Ready(connection:, seq:))
+      Nil
+    }
+    TellStealthChanged(connection:, stealthed:) -> {
+      let _sent =
+        service.tell_subject(
+          subject,
+          map.StealthChanged(connection:, stealthed:),
+        )
       Nil
     }
     TellPeer(..)
@@ -554,6 +564,7 @@ fn connection_deliver(
       | TellStrikeAnswered(..), _
       | TellMoved(..), _
       | TellReady(..), _
+      | TellStealthChanged(..), _
       | AskStore(..), _
       | AskHandOff(..), _
       | AskSessions(..), _

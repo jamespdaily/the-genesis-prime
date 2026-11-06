@@ -24,10 +24,12 @@ import genesis_prime/game/area.{
   type Candidate, type Inside, type Point, Box, Candidate, Circle, Cone,
   InsideRow, InsideShapes, Placement, Point, Pose, Rectangle, Row,
 }
+import genesis_prime/game/start_place
 import gleam/float
 import gleam/list
 import gleam_community/maths
 import owned_test
+import place_support
 import qcheck
 
 const beast_hit_radius = 3.0
@@ -419,4 +421,21 @@ pub fn a_unit_straight_ahead_of_any_facing_is_at_bearing_zero_test() -> Nil {
         as "a unit at d x (-sin yaw, -cos yaw) lies at angle 0 (0x1401b3170)"
     },
   )
+}
+
+pub fn a_places_pose_is_its_ground_point_and_its_yaw_test() -> Nil {
+  use <- owned_test.run(5000)
+  let place =
+    start_place.turned(
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 12.5,
+        y: -7.0,
+        z: -30.25,
+      ),
+      facing: start_place.Facing(yaw: 1.25, pitch: 0.5, roll: 0.25),
+    )
+  assert area.pose_of(place:) == Pose(at: Point(x: 12.5, z: -30.25), yaw: 1.25)
+    as "the point on the ground (x and z) and the yaw; pitch, roll and the height play no part"
 }

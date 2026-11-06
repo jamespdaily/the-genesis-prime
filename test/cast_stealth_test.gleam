@@ -26,7 +26,7 @@
 
 import cast_support as support
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
-import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, BrokenByDamage, EndsStealthAfterLastGo,
@@ -87,36 +87,6 @@ fn press(
   )
 }
 
-/// A Stealth row as 83834 holds it (until removed, no delay), with this effect id and
-/// whether damage ends it.
-fn stealth_row(
-  id id: Int,
-  breaks breaks: spell_plan.Breaks,
-) -> spell_plan.StealthRow {
-  StealthRow(
-    effect_id: Spell4EffectsId(id),
-    phase_flags: -1,
-    breaks:,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
-    condition: Always,
-    tag: spend.always,
-  )
-}
-
-/// A spell that holds these Stealth rows and, like the toggle's own spells, ends no
-/// stealth (value 2).
-fn stealthing(
-  spell4_id spell4_id: Int,
-  base base: Int,
-  rows rows: List(spell_plan.StealthRow),
-) -> Spell {
-  Spell(
-    ..support.child(spell4_id:, base:),
-    stealth: rows,
-    stealth_change: KeepsStealth,
-  )
-}
-
 /// A spell with no stealth row whose go does what its value says to the stealth.
 fn attack(
   spell4_id spell4_id: Int,
@@ -148,15 +118,15 @@ fn cancelling(
 
 /// The spell of base 1: Spell4 38784's Stealth row 83834, broken by damage.
 fn broken() -> Spell {
-  stealthing(spell4_id: 38_784, base: 1, rows: [
-    stealth_row(id: 83_834, breaks: BrokenByDamage),
+  support.stealthing(spell4_id: 38_784, base: 1, rows: [
+    support.stealth_row(id: 83_834, breaks: BrokenByDamage),
   ])
 }
 
 /// The spell of base 3: a Stealth row damage does not end, as 95774.
 fn kept() -> Spell {
-  stealthing(spell4_id: 38_913, base: 3, rows: [
-    stealth_row(id: 95_774, breaks: KeptOnDamage),
+  support.stealthing(spell4_id: 38_913, base: 3, rows: [
+    support.stealth_row(id: 95_774, breaks: KeptOnDamage),
   ])
 }
 
@@ -667,7 +637,7 @@ pub fn a_stealth_row_of_a_later_phase_of_a_value_1_spell_is_kept_when_the_older_
       proxies: [],
       stealth: [
         StealthRow(
-          ..stealth_row(id: 95_774, breaks: KeptOnDamage),
+          ..support.stealth_row(id: 95_774, breaks: KeptOnDamage),
           phase_flags: 2,
         ),
       ],
@@ -730,8 +700,8 @@ pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_
   // other casts hold, never the stealth the cast made (Spell4.spellCastStealthChange.break).
   let makes =
     Spell(
-      ..stealthing(spell4_id: 38_913, base: 2, rows: [
-        stealth_row(id: 95_774, breaks: KeptOnDamage),
+      ..support.stealthing(spell4_id: 38_913, base: 2, rows: [
+        support.stealth_row(id: 95_774, breaks: KeptOnDamage),
       ]),
       stealth_change: EndsStealthAfterLastGo,
     )
@@ -814,9 +784,9 @@ pub fn a_cast_that_holds_both_a_broken_and_a_kept_source_loses_both_with_its_nod
   use <- owned_test.run(60_000)
   // Both rows are of the one cast, as 38784 holds 83834 and 95774: its node holds both.
   let both =
-    stealthing(spell4_id: 38_784, base: 1, rows: [
-      stealth_row(id: 83_834, breaks: BrokenByDamage),
-      stealth_row(id: 95_774, breaks: KeptOnDamage),
+    support.stealthing(spell4_id: 38_784, base: 1, rows: [
+      support.stealth_row(id: 83_834, breaks: BrokenByDamage),
+      support.stealth_row(id: 95_774, breaks: KeptOnDamage),
     ])
   let plans = plans_of([both])
   let #(state, _) =

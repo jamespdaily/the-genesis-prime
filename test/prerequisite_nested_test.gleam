@@ -233,14 +233,24 @@ pub fn the_clients_rows_39321_and_29484_load_with_their_nested_rows_test() -> Ni
     prerequisite_table.get(tables:, id: wanted) |> result.replace_error(Nil)
   }
   list.each([39_321, 29_484], fn(row_id) {
-    assert prerequisite.load(id: PrerequisiteId(row_id), rows:) |> result.is_ok
+    assert prerequisite.load(
+        id: PrerequisiteId(row_id),
+        rows:,
+        arcs: prerequisite.table_arcs(tables:),
+      )
+      |> result.is_ok
       as {
         "Prerequisite "
         <> int.to_string(row_id)
         <> " loads: it nests 12939 or 20117 and neither reaches a cycle"
       }
   })
-  let assert Ok(stealth) = prerequisite.load(id: PrerequisiteId(39_321), rows:)
+  let assert Ok(stealth) =
+    prerequisite.load(
+      id: PrerequisiteId(39_321),
+      rows:,
+      arcs: prerequisite.table_arcs(tables:),
+    )
   assert prerequisite.check(
       prerequisite: stealth,
       subject: subject(under: [], rolls: []),

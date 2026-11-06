@@ -60,7 +60,9 @@ fn caster_gates(proxy: Proxy) -> Result(List(Int), Nil) {
       Ok(
         list.map(gates, fn(gate) { prerequisite.id(prerequisite: gate).value }),
       )
-    spell_plan.Always | spell_plan.GatedOnTarget(..) -> Error(Nil)
+    spell_plan.Always
+    | spell_plan.GatedOnTarget(..)
+    | spell_plan.GatedOnCasterAndTarget(..) -> Error(Nil)
   }
 }
 
