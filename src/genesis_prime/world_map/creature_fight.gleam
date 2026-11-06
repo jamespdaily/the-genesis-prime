@@ -43,7 +43,13 @@
 //// - **Aggro** comes only from a viewer, by `Approached` while Resting: the map
 ////   sends it for a hostile creature (faction level 0 to 2) only. A Neutral creature
 ////   (3 to 7) enters a fight only by a player's strike (`0x1403ad540`). Any threat
-////   above 0 shows the creature hostile (`0x14045a950`).
+////   above 0 shows the creature hostile (`0x14045a950`). The map leaves a stealthed
+////   player out of every ring (genesis_prime/world_map/map `StealthChanged`, Jim's
+////   decision, a server choice): it sends `Withdrew` when the player enters stealth and
+////   `Approached` when it leaves stealth inside the ring. So the home timer and the
+////   respawn, which aggro the players in `near`, do not aggro a stealthed one, and a
+////   creature already fighting it keeps it on its threat list, since `Withdrew`
+////   touches only `near`.
 //// - **Threat** added by a strike is the damage taken times the effect's
 ////   `Spell4Effects.threatMultiplier`. The top entry is the target: a change of target
 ////   sends 0x908, and every other entry 0x90a (`opcode.0x908`, `opcode.0x90a`).

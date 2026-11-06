@@ -844,6 +844,7 @@ pub fn mapped(
     | AskSessions(..)
     | TellMoved(..)
     | client_connection.TellReady(..)
+    | client_connection.TellStealthChanged(..)
     | TellPeer(..)
     | client_connection.TellStrike(..)
     | client_connection.TellTargetMoved(..)

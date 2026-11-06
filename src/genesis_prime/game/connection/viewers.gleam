@@ -80,6 +80,7 @@
 ////   a go, a blow or the death moves the stealth
 ////     StealthChanged(s) ─▶ 0x8f5 {owner, s}  ─────────────────────────────────────▶ the owner's client
 ////                       ─▶ Tell(each viewer, Stealth(s)) ─▶ shown? 0x8f5 {owner, s}, 0x247 type 24 {owner, exiting = !s}
+////                       ─▶ Tell(the owner's map, TellStealthChanged(owner, s))  (genesis_prime/game/connection/casting)
 ////   SeenBy(v) while stealthed ─▶ Tell(v, Appeared(0x262, flag 16)) ─▶ writes 0x262 if not shown
 ////   ```
 ////

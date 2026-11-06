@@ -135,11 +135,12 @@ fn body_moving(
             [_, ..] ->
               list.flatten([
                 [
-                  tells_the_map_moved(
-                    connection:,
+                  // The player's connection, the place the movement now keeps and the
+                  // move's sequence number, for the map to decide who sees whom and
+                  // whose ring the player stands in.
+                  connection_state.tells_the_map(
                     entered:,
-                    place:,
-                    seq: move_seq,
+                    request: TellMoved(connection:, place:, seq: move_seq),
                   ),
                 ],
                 sends_the_move_to_the_viewers(entered:, now:, commands:),
@@ -196,22 +197,6 @@ fn moving(
   )
 }
 
-/// The tell to the run of the player's map that the player moved: it names
-/// the player's connection, the place the movement now keeps and the move's
-/// sequence number, for the map to decide who sees whom and whose ring the player
-/// stands in, and no answer comes (`step.Tell`).
-fn tells_the_map_moved(
-  connection connection: ConnectionId,
-  entered entered: world_entry.Entered,
-  place place: Place,
-  seq seq: Int,
-) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Map(map: entered.map, incarnation: entered.incarnation),
-    request: TellMoved(connection:, place:, seq:),
-  ))
-}
-
 /// The tell to a creature that holds the player on its threat list of the place the
 /// player stands at and the move's sequence number, through the creature registry
 /// with no watch.
@@ -249,13 +234,13 @@ fn tells_the_map_ready(
       world_entry.Entered(..entered, readiness: world_entry.ClientReady)
     }),
     [
-      OwnEffect(step.Tell(
-        to: step.Map(map: entered.map, incarnation: entered.incarnation),
+      connection_state.tells_the_map(
+        entered:,
         request: client_connection.TellReady(
           connection: client_connection.connection(session.link),
           seq: session.move_seq,
         ),
-      )),
+      ),
     ],
   )
 }

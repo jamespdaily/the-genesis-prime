@@ -129,16 +129,88 @@ pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_
   })
 }
 
-pub fn a_press_that_makes_the_stealth_tells_the_map_what_a_press_without_it_tells_test() -> Nil {
+/// What the connection tells the map when its player's stealth changes to `stealthed`:
+/// a tell to the run of the player's map, for the player's connection.
+fn the_map_told(
+  stealthed stealthed: Bool,
+) -> step.Effect(step.ConnectionEffect(Request)) {
+  step.OwnEffect(step.Tell(
+    to: step.Map(map: support.camp_map(), incarnation: support.incarnation),
+    request: client_connection.TellStealthChanged(
+      connection: step.ConnectionId(1),
+      stealthed:,
+    ),
+  ))
+}
+
+/// The step's effects after the tell to the map that its stealth change makes: none
+/// writes to the client or tells a viewer.
+fn writes_or_viewer_tells_after_the_map_tell(
+  taken taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  connection_rule_support.effects_of(taken)
+  |> list.drop_while(fn(effect) {
+    case effect {
+      step.OwnEffect(step.Tell(to: step.Map(..), ..)) -> False
+      step.OwnEffect(_)
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | step.Stop -> True
+    }
+  })
+  |> list.drop(1)
+  |> list.filter(fn(effect) {
+    case effect {
+      step.OwnEffect(step.Write(..))
+      | step.OwnEffect(step.Tell(to: step.Connection(..), ..)) -> True
+      step.OwnEffect(_)
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | step.Stop -> False
+    }
+  })
+}
+
+pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_viewers_news_once_for_entering_and_once_for_leaving_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(_, with) = stealthed()
-  let #(_, without) =
-    support.press_paralytic_surge(
-      state: medic_in_world(tables: character_tables.shared(), viewers: [2, 3]),
-      client_cast_id: 1,
-    )
-  assert support.told_the_map(with) == support.told_the_map(without)
-    as "creatures' sight of a stealthed player is not changed: the map is told nothing of the stealth (map.rings_holding)"
+  let #(state, entering) = stealthed()
+  assert support.told_the_map(entering) == [the_map_told(stealthed: True)]
+    as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
+  assert writes_or_viewer_tells_after_the_map_tell(taken: entering) == []
+    as "after the 0x8f5 to the player and the viewers' news: the tell is the stealth change's last effect"
+  list.each([2, 3], fn(viewer) {
+    assert list.contains(news_told(taken: entering, viewer:), Stealth(True))
+      as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"
+  })
+  let #(_, leaving) = support.press_paralytic_surge(state:, client_cast_id: 2)
+  assert support.told_the_map(leaving) == [the_map_told(stealthed: False)]
+    as "the second press ends the stealth (Spell4.46073): one tell, False"
+  assert writes_or_viewer_tells_after_the_map_tell(taken: leaving) == []
+  let blow = struck_while_stealthed()
+  assert support.told_the_map(blow) == [the_map_told(stealthed: False)]
+    as "a landed blow on a stealth that ends on damage taken (Spell4Effects.effectType.83, 83834: dataBits02 0) tells the map False once"
+  assert writes_or_viewer_tells_after_the_map_tell(taken: blow) == []
+}
+
+pub fn a_camp_while_stealthed_tells_the_map_no_stealth_changed_and_only_the_leave_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) = stealthed()
+  let #(state, requested) =
+    support.read(state:, bytes: support.camp_request_message(True))
+  let #(state, finished) =
+    support.read(state:, bytes: support.camp_finished_message())
+  let #(state, saved) =
+    support.answer(state:, taken: finished, outcome: support.place_saved())
+  let #(_, left) =
+    support.answer(state:, taken: saved, outcome: step.Answer(FromMap(Left)))
+  list.each([requested, finished, saved, left], fn(taken) {
+    assert support.told_the_map(taken) == []
+      as "cast.left clears the stealth with no StealthChanged (#474), so the camp tells the map no stealth"
+  })
+  assert support.ask_request(saved) == support.leave_asked()
+    as "the map gets only the ask of the player's Leave, which removes the player with its stealth copy"
 }
 
 // ---- a blow ----
