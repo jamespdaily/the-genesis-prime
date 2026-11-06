@@ -50,8 +50,10 @@ import genesis_prime/table/id.{
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import owned_test
+import prerequisite_support
 import unitest
 
 // ---- the Stalker, from the client's tables ----
@@ -1339,4 +1341,45 @@ pub fn a_camp_ends_a_procs_fire_history_with_the_proc_test() -> Nil {
   let #(_, again) = planted_press(plans:, state:, bag: bag_of_base_1, at: 2200)
   assert starts_of(spell4_id: 250_201, effects: again) == 1
     as "Spell4Effects.effectType.14.limits: the fire 200 ms ago left with the camp, so the 217 proc fires at once"
+}
+
+pub fn a_stealth_ended_by_a_failing_persistence_fires_the_procs_for_leaving_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Prerequisite 903 (type 28, comparison 1) holds while the caster is in combat; the
+  // stealth cast holds it as its caster persistence, so it ends when combat does
+  // (`Spell4.prerequisiteIdCasterPersistence`, the cast rule's `persisted`).
+  let left = cast_of_proc(spell4_id: 250_202)
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      proc(id: 1, trigger: LeftStealth, casts: left, window_ms: 500, count: 1),
+    ])
+  let bound =
+    Spell(
+      ..stealthing(),
+      caster_persistence: Some(
+        prerequisite_support.single(id: 903, condition: #(28, 1, 0, 0)),
+      ),
+    )
+  let plans = plans_of([bound, holder])
+  let in_combat = cast.Caster(..planted_caster(), in_combat: True)
+  let out = cast.Caster(..planted_caster(), in_combat: False)
+  let #(state, joined_effects) = planted_joined(plans:, spell: holder, at: 1000)
+  let #(state, pressed) =
+    support.pressed_in(
+      plans:,
+      state:,
+      caster: in_combat,
+      bag_index: bag_of_base_1,
+      target: 0,
+      at: 2000,
+    )
+  assert cast.stealthed(cast: state)
+  let #(state, effects) =
+    cast.persisted(cast: state, caster: out, now: support.at(ms: 3000))
+  let #(_, effects) = answered(caster: out, state:, effects:, at: 3000)
+  let lines =
+    trace(effects:, earlier: [joined_effects, pressed], pressed: 38_913)
+  assert from(lines:, line: "stealth off")
+    == ["stealth off", "start 250202", "go 250202", "end 250202"]
+    as "the persistence end drops the stealth source, and the input that did it fires the 218 proc after its 0x8f5"
 }
