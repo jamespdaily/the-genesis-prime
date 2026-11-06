@@ -36,6 +36,7 @@ import genesis_prime/message/login_refused.{type LoginRefused}
 import genesis_prime/message/max_character_level.{type MaxCharacterLevel}
 import genesis_prime/message/movement_send_interval.{type MovementSendInterval}
 import genesis_prime/message/play_character_refused.{type PlayCharacterRefused}
+import genesis_prime/message/player_character_state.{type PlayerCharacterState}
 import genesis_prime/message/player_entered_world.{type PlayerEnteredWorld}
 import genesis_prime/message/player_health.{type PlayerHealth}
 import genesis_prime/message/player_path.{type PlayerPath}
@@ -105,6 +106,7 @@ pub type ServerMessage {
   DisconnectNotice(message: DisconnectNotice)
   UnitCreatePlayer(message: UnitCreatePlayer)
   UnitIsPlayer(message: UnitIsPlayer)
+  PlayerCharacterState(message: PlayerCharacterState)
   PlayerPath(message: PlayerPath)
   ClientControlGranted(message: ClientControlGranted)
   UnitMovement(message: UnitMovement)
@@ -244,6 +246,13 @@ pub fn decode(
         decoded(body, message_id, unit_create_static.decode, UnitCreateStatic)
       })
     0x019B -> decoded(body, message_id, unit_is_player.decode, UnitIsPlayer)
+    0x025E ->
+      decoded(
+        body,
+        message_id,
+        player_character_state.decode,
+        PlayerCharacterState,
+      )
     0x06BC -> decoded(body, message_id, player_path.decode, PlayerPath)
     0x0636 ->
       decoded(
@@ -386,6 +395,7 @@ pub fn name(message: ServerMessage) -> String {
     DisconnectNotice(..) -> "disconnect_notice"
     UnitCreatePlayer(..) -> "unit_create_player"
     UnitIsPlayer(..) -> "unit_is_player"
+    PlayerCharacterState(..) -> "player_character_state"
     PlayerPath(..) -> "player_path"
     ClientControlGranted(..) -> "client_control_granted"
     UnitMovement(..) -> "unit_movement"

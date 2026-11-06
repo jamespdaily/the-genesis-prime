@@ -1042,7 +1042,19 @@ pub fn spell_tree_files() -> List(#(String, BitArray)) {
     planted_table.file(telegraph_damage.schema, rows.telegraph_damage),
     planted_table.file(spell_phase.schema, rows.spell_phases),
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
-    planted_table.file(class.schema, rows.classes),
+    planted_table.file(
+      class.schema,
+      list.append(
+        rows.classes,
+        list.filter(class_proficiency_rows(), fn(row) {
+          case row {
+            [Integer(id), ..] -> !list.contains([3, 4, 5], id)
+            _ -> True
+          }
+        }),
+      )
+        |> list.sort(by_id),
+    ),
   ]
 }
 
@@ -1077,7 +1089,21 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(spell4_thresholds.schema, []),
     planted_table.file(spell_phase.schema, []),
     planted_table.file(spell_cool_down.schema, []),
-    planted_table.file(class.schema, []),
+    planted_table.file(class.schema, class_proficiency_rows()),
     planted_table.file(spell_level.schema, spell_level_rows()),
   ]
+}
+
+/// The Class rows of the six playable classes, each with the
+/// startingItemProficiencies of the client's row (`table_rows -- Class 1 2 3 4 5
+/// 7`): Warrior 18, Engineer 66, Esper 262152, Medic 260, Stalker 1048580 and
+/// Spellslinger 4104, which message 0x025E carries. Every other column is 0, so
+/// a class has no innate and no vital slot.
+pub fn class_proficiency_rows() -> List(List(Cell)) {
+  list.map(spell_tables.class_proficiencies(), fn(class) {
+    planted_table.row(class.schema, [
+      #("ID", Integer(class.0)),
+      #("startingItemProficiencies", Integer(class.1)),
+    ])
+  })
 }

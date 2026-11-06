@@ -25,6 +25,7 @@ import genesis_prime/message/spell_go
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId, UnitProperty2Id}
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import owned_test
 import prerequisite_support
 
@@ -55,6 +56,7 @@ fn falling_row() -> spell_plan.PropertyModifier {
     row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
     condition: Always,
     tag: spend.always,
+    armor: None,
   )
 }
 

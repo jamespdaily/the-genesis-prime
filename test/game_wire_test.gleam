@@ -12,7 +12,7 @@
 ////   (lua.CharacterSelection.OnLoadFromCharacter); the place a create saves is
 ////   the WorldLocation2 row of its start (`character_tables`).
 //// - World entry: the client's 0x07DD is answered with 0xAD, 0x262, 0x19B,
-////   0x6BC, 0x636, 0xF1 and 0x61 (opcode.0xad and the others), the refusal of
+////   0x25E, 0x6BC, 0x636, 0xF1 and 0x61 (opcode.0xad and the others), the refusal of
 ////   a play of a character the account does not have with 0x0162, 0x097F, 0x0968, 0x0036 and 0x0117
 ////   (opcode.0x162.after_create, opcode.0x36), and the end of the player's map
 ////   with 0x036A reason 8 (0x1400168a0).
@@ -1246,6 +1246,11 @@ type TwoEntered {
 /// The messages of an entry burst the client reads before the zone channel's.
 fn burst_length() -> Int {
   list.length(game_client.world_entry_ids)
+}
+
+/// The messages of the Holocrypt's join: an entry burst without 0x25E.
+fn holocrypt_burst_length() -> Int {
+  list.length(game_client.holocrypt_entry_ids())
 }
 
 /// A player of an account of its own with a character, connected in character
@@ -3970,15 +3975,15 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
         list.drop_while(frames, fn(frame) { frame.message_id != 0x00AD }),
         fn(_) { True },
       )
-      >= burst_length()
+      >= holocrypt_burst_length()
     })
   let burst =
     list.take(
       list.drop_while(frames, fn(frame) { frame.message_id != 0x00AD }),
-      burst_length(),
+      holocrypt_burst_length(),
     )
-  assert cast_support.ids(frames: burst) == game_client.world_entry_ids
-    as "the Spellslinger comes back by the Holocrypt: the entry burst, 0xAD first"
+  assert cast_support.ids(frames: burst) == game_client.holocrypt_entry_ids()
+    as "the Spellslinger comes back by the Holocrypt: the entry burst, 0xAD first, with no second 0x25E (opcode.0x25e.entry_order)"
   let assert [Frame(body:, ..), ..] = burst
   let assert Ok(entered) = enter_world.decode(body)
   assert entered.world_id == 1387

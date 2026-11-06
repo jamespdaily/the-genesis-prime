@@ -26,8 +26,9 @@ import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
   Answer, CancelTimer, ControlBody, ControlGhost, ControlGiven, EndCasts,
   GhostCreated, GhostRemoved, GoToHolocrypt, OwnCameBackLogged, OwnCombatState,
-  OwnDeathLogged, OwnDeathState, OwnHealth, OwnResurrectionWindow, OwnShield,
-  Regeneration, ShieldRegeneration, StartTimer, StreamTo, ToClient, ToViewers,
+  OwnDeathLogged, OwnDeathState, OwnHealth, OwnInterruptArmor,
+  OwnResurrectionWindow, OwnShield, Regeneration, ShieldRegeneration, StartTimer,
+  StreamTo, ToClient, ToViewers,
 }
 import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
@@ -841,4 +842,59 @@ pub fn the_regeneration_numbers_follow_the_properties_test() -> Nil {
   let #(life, _) = player_life.properties_changed(life:, properties: doubled)
   let #(life, _) = player_life.timer_fired(life:, timer: TimerId(8))
   assert player_life.health(life:) == 60 as "the multiplier 2.0 adds 50 to 10"
+}
+
+pub fn a_creatures_strike_leaves_a_players_interrupt_armor_test() -> Nil {
+  use <- owned_test.run(5000)
+  // No creature's strike carries a crowd-control state today (`player_life.struck`
+  // answers `controls: []`), so nothing wears a player's Interrupt Armor down: the
+  // armor a type 52 row gave is held and shown (the gap is stated in `struck`).
+  let source =
+    unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(199_192))
+  // The maximum the row raises (property 44) comes first, as the connection does it.
+  let raised =
+    properties_support.with_modifier(
+      properties: base_health_100(),
+      source:,
+      modifier: unit_properties.interrupt_armor_modifier(points: 1),
+    )
+  let #(armed, _) =
+    player_life.properties_changed(
+      life: player_life.new(health: 100, shield: 0, regeneration:),
+      properties: raised,
+    )
+  assert player_life.interrupt_armor(life: armed) == 1
+    as "the armor follows the raised maximum"
+  let #(life, effects) =
+    player_life.struck(
+      life: armed,
+      defence: defence_of(3),
+      strike: attack(1),
+      rolls:,
+      place: test_place(),
+    )
+  assert player_life.health(life:) < 100
+    as "the blow landed: the Esper's health fell"
+  assert player_life.interrupt_armor(life:) == 1
+    as "and its armor is as the row gave it"
+  assert !list.any(effects, writes_armor) as "no stat 21 is written for a blow"
+}
+
+/// Whether the effect writes the player's Interrupt Armor, to it or to a viewer.
+fn writes_armor(effect: player_life.Effect) -> Bool {
+  case effect {
+    ToClient(OwnInterruptArmor(..)) -> True
+    ToViewers(client_connection.InterruptArmor(..)) -> True
+    ToClient(..) -> False
+    ToViewers(..) -> False
+    Answer(..)
+    | StreamTo(..)
+    | player_life.DamageTaken
+    | player_life.CombatLeft
+    | EndCasts
+    | GoToHolocrypt
+    | player_life.TellMap(..)
+    | StartTimer(..)
+    | CancelTimer(..) -> False
+  }
 }
