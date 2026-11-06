@@ -114,7 +114,9 @@ type Change {
 
 fn change_of(effect effect: Effect) -> Result(Change, Nil) {
   case effect {
-    cast.PropertyStarts(source:, modifier:) -> Ok(Started(source:, modifier:))
+    cast.PropertyStarts(source:, change: cast.Property(modifier:)) ->
+      Ok(Started(source:, modifier:))
+    cast.PropertyStarts(change: cast.ShieldHeal(..), ..) -> Error(Nil)
     cast.PropertyEnds(source:) -> Ok(Ended(source:))
     cast.Send(..)
     | cast.Tell(..)

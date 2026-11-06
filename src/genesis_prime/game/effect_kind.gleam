@@ -27,6 +27,11 @@
 ////   **RemoveStealth** (84) ends the stealth its unit holds; the client has no case
 ////   for either, so the server tells it with 0x8f5; the server reads the rows aimed at
 ////   the caster (`Spell4Effects.effectType.83`, `Spell4Effects.effectType.84`).
+//// - **ShieldHeal** (118) restores the shield of the unit it aims at; the server reads
+////   the rows whose aim reaches the caster (`Spell4Effects.effectType.118`).
+//// - **ShieldOverload** (64) overloads the shield of the units it aims at for its time;
+////   the client marks and clears the overload itself, so the server lists the rows aimed
+////   at the area on each struck unit (`Spell4Effects.effectType.64`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -72,6 +77,16 @@ pub type Kind {
   /// A RemoveStealth effect (84): ends the stealth of the unit it aims at
   /// (`Spell4Effects.effectType.84`). Read as Stealth is.
   RemoveStealth
+  /// A HealShields effect (118): restores shield to the unit it aims at
+  /// (`Spell4Effects.effectType.118`). A row is read when its targetFlags include the
+  /// caster (bit 1) or name the primary target alone (2), which a spell cast on the
+  /// caster makes the caster; a row aimed only at the area or at the primary target and
+  /// the area is not read (`is_row_read`).
+  ShieldHeal
+  /// A ShieldOverload effect (64): the units it aims at are overloaded while it lasts
+  /// (`Spell4Effects.effectType.64`). A row is read when it aims at the area alone
+  /// (`is_row_read`).
+  ShieldOverload
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -90,6 +105,8 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     73 -> CooldownModifier
     83 -> Stealth
     84 -> RemoveStealth
+    118 -> ShieldHeal
+    64 -> ShieldOverload
     other -> Unread(effect_type: other)
   }
 }
@@ -109,7 +126,9 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | ForcedMove
     | CooldownModifier
     | Stealth
-    | RemoveStealth -> True
+    | RemoveStealth
+    | ShieldHeal
+    | ShieldOverload -> True
     Unread(..) -> False
   }
 }
@@ -117,7 +136,9 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
 /// type `is_read` for, except that a PropertyModifier, ForcedMove, CooldownModifier,
 /// Stealth or RemoveStealth row is read only when its flags include the caster (bit 1,
-/// `Spell4Effects.targetFlags`); a row aimed only at other units is left out. A plan of
+/// `Spell4Effects.targetFlags`), a ShieldHeal row when they include the caster or are
+/// the primary target alone (2), and a ShieldOverload row only when they are the area
+/// alone (4); a row aimed at other units is left out. A plan of
 /// a spell with a Stealth or RemoveStealth row aimed other than at the caster alone
 /// fails to load (genesis_prime/game/spell_plan `StealthAimNotRead`).
 pub fn is_row_read(
@@ -130,6 +151,8 @@ pub fn is_row_read(
     | CooldownModifier
     | Stealth
     | RemoveStealth -> int.bitwise_and(target_flags, 1) == 1
+    ShieldHeal -> int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
+    ShieldOverload -> target_flags == 4
     Proxy | Damage | VitalModifier | Fluff | ForceRemove | CrowdControl -> True
     Unread(..) -> False
   }

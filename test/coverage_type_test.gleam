@@ -81,14 +81,14 @@ fn handled_over(
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_73_80_83_and_84_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_17_26_64_73_80_83_84_and_118_test() -> Nil {
   use <- owned_test.run(10_000)
   assert handled_over(
       engine: engine_named("Spell effects"),
       types: numbers(from: 1, to: 200),
     )
-    == [1, 3, 4, 8, 11, 17, 26, 73, 80, 83, 84]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), Stealth 83 (Spell4Effects.effectType.83) and RemoveStealth 84 (Spell4Effects.effectType.84) for the rows aimed at the caster; every other type is unread"
+    == [1, 3, 4, 8, 11, 17, 26, 64, 73, 80, 83, 84, 118]
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), Stealth 83 (Spell4Effects.effectType.83) and RemoveStealth 84 (Spell4Effects.effectType.84) for the rows aimed at the caster, and HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster; every other type is unread"
 }
 
 pub fn the_prerequisite_types_the_measure_handles_are_the_thirteen_read_and_those_with_no_case_test() -> Nil {
@@ -284,7 +284,7 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
     as "no row uses 99, so listing it as partial is a declaration no data supports"
 }
 
-pub fn the_effect_types_3_11_73_83_and_84_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+pub fn the_effect_types_3_11_64_73_83_84_and_118_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(facts) =
     simplifile.read(
@@ -305,6 +305,11 @@ pub fn the_effect_types_3_11_73_83_and_84_are_partial_with_a_reason_and_a_fact_k
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
+        type_number: 64,
+        reason: "rows aimed at the caster or its target, whose shield the server does not hold at 0",
+        fact_key: "Spell4Effects.effectType.64",
+      ),
+      Missing(
         type_number: 73,
         reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
         fact_key: "Spell4Effects.effectType.73",
@@ -319,7 +324,14 @@ pub fn the_effect_types_3_11_73_83_and_84_are_partial_with_a_reason_and_a_fact_k
         reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
       ),
+      Missing(
+        type_number: 118,
+        reason: "rows aimed at another unit, periodic (tickTime) or with a formula parameter the plan refuses",
+        fact_key: "Spell4Effects.effectType.118",
+      ),
     ]
+  assert has_record(facts:, key: "Spell4Effects.effectType.64")
+  assert has_record(facts:, key: "Spell4Effects.effectType.118")
   assert has_record(facts:, key: "Spell4Effects.effectType.3")
   assert has_record(facts:, key: "Spell4Effects.effectType.11")
   assert has_record(facts:, key: "Spell4Effects.effectType.73")
@@ -327,10 +339,12 @@ pub fn the_effect_types_3_11_73_83_and_84_are_partial_with_a_reason_and_a_fact_k
   assert has_record(facts:, key: "Spell4Effects.effectType.84")
   assert engine.handles(engine: declared, type_number: 3)
     && engine.handles(engine: declared, type_number: 11)
+    && engine.handles(engine: declared, type_number: 64)
+    && engine.handles(engine: declared, type_number: 118)
     && engine.handles(engine: declared, type_number: 73)
     && engine.handles(engine: declared, type_number: 83)
     && engine.handles(engine: declared, type_number: 84)
-    as "types 3, 11, 73, 83 and 84 are handled, with the gap"
+    as "types 3, 11, 64, 73, 83, 84 and 118 are handled, with the gap"
 }
 
 pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
@@ -583,6 +597,92 @@ fn measured_stealth_rows(
     )
   store.unload(tables)
   measured
+}
+
+/// The measure of planted type 118 or 64 rows beside a type 8 row, for the line of the
+/// type given, each row as (targetFlags, tickTime, parameterType00): Spell4Effects.targetFlags
+/// bit 1 is the caster, 2 the primary target and 4 the area; the plan reads a type 118 row
+/// that reaches the caster, is not periodic and has a formula the caster's value reads, and
+/// a type 64 row aimed at the area alone.
+fn measured_shield_rows(
+  type_ type_: Int,
+  rows rows: List(#(Int, Int, Int)),
+) -> measurement.Measurement {
+  let row = fn(id, type_, flags, tick, parameter) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", planted_table.Integer(id)),
+      #("effectType", planted_table.Integer(type_)),
+      #("targetFlags", planted_table.Integer(flags)),
+      #("tickTime", planted_table.Integer(tick)),
+      #("parameterType00", planted_table.Integer(parameter)),
+      #("parameterValue00", planted_table.Float(0.3)),
+    ])
+  }
+  use folder <- planted_table.in_folder([
+    planted_table.file(
+      spell4_effects.schema,
+      list.append(
+        list.index_map(rows, fn(planted, index) {
+          row(index + 1, type_, planted.0, planted.1, planted.2)
+        }),
+        [row(99, 8, 4, 0, 0)],
+      ),
+    ),
+  ])
+  let assert Ok(tables) =
+    store.load(
+      under: owned_key.new(),
+      from: folder,
+      entries: [spell4_effects.entry()],
+      requirements: [],
+      derivations: [],
+    )
+    as "a planted Spell4Effects table loads"
+  let measured =
+    measurement.measure(
+      EngineDeclaration(
+        ..engine_named("Spell effects"),
+        starting_abilities: None,
+      ),
+      tables,
+    )
+  store.unload(tables)
+  measured
+}
+
+pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Planted: four type 118 rows, one for each case the plan leaves out or refuses and
+  // one it reads: flags 4 (aimed at the area), flags 1 with a tickTime of 1000
+  // (periodic), flags 1 with parameter type 18 (a passed-in value) and flags 1 with
+  // parameter type 22 (target missing shield); and a type 64 pair, flags 4 and 2.
+  let assert Measured(types:, ..) =
+    measured_shield_rows(type_: 118, rows: [
+      #(4, 0, 22),
+      #(1, 1000, 16),
+      #(1, 0, 18),
+      #(1, 0, 22),
+    ])
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 118 })
+  assert line.rows == 4
+  assert line.status
+    == HandledWithGap(
+      reason: "rows aimed at another unit, periodic (tickTime) or with a formula parameter the plan refuses",
+      fact_key: "Spell4Effects.effectType.118",
+      unread_rows: 3,
+    )
+    as "the area row is aimed at others, the periodic row is held and not applied, and the kind 18 row fails the plan's formula: three of four are not read"
+  let assert Measured(types:, ..) =
+    measured_shield_rows(type_: 64, rows: [#(4, 0, 0), #(2, 0, 0)])
+  let assert Ok(overload) =
+    list.find(types, fn(line) { line.type_number == 64 })
+  assert overload.status
+    == HandledWithGap(
+      reason: "rows aimed at the caster or its target, whose shield the server does not hold at 0",
+      fact_key: "Spell4Effects.effectType.64",
+      unread_rows: 1,
+    )
+    as "the row aimed at the primary target is not read; the one aimed at the area is"
 }
 
 pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled_test() -> Nil {
@@ -1655,7 +1755,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_73_of_79_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_171_of_190_effect_rows_and_73_of_79_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
@@ -1668,9 +1768,9 @@ pub fn the_starting_abilities_totals_hold_169_of_190_effect_rows_and_73_of_79_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 11 | 169 of 190 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 13 | 171 of 190 |",
   )
-    as "190 effect rows are left, 21 of them not handled (types 14 x7, 90 x4, 112 x2, 118 x2, and 18, 24, 29, 52, 81 and 145 once); the whole-game columns are the walk's of 2026-11-05, with types 83 and 84 handled beside the nine"
+    as "190 effect rows are left, 19 of them not handled (types 14 x7, 90 x4, 112 x2, and 18, 24, 29, 52, 81 and 145 once; the two type 118 rows are read); the whole-game columns are the walk's of 2026-11-05, with types 64 and 118 handled beside the eleven"
   assert string.contains(
     totals,
     "| Prerequisites (#47) | 232 | 49184 | 47209 | 14 | 73 of 79 |",

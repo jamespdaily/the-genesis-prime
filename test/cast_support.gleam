@@ -15,6 +15,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/class_resource
+import genesis_prime/game/damage
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, AtFirstGo, GlobalCooldown, KeepsStealth,
@@ -87,6 +88,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     controls: [],
     stealth: [],
     remove_stealth: [],
+    shield_heals: [],
     stealth_change: spell_plan.EndsStealthAtEachGo,
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
@@ -227,6 +229,7 @@ pub fn caster() -> Caster {
     resources: class_resource.new(resource: full_slot_1()),
     in_combat: False,
     life_vitals: dict.new(),
+    stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
   )
 }
 

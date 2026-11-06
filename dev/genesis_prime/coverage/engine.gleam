@@ -176,7 +176,9 @@ fn quest_objectives() -> EngineDeclaration {
 
 /// The rows of the effect type that the effect rule does not read (genesis_prime/game/effect_kind
 /// `is_row_read`): the type 3, type 11, type 73, type 83 and type 84 rows aimed only at other
-/// units, and the Stealth and RemoveStealth rows the plan refuses (`refused_by_the_plan`).
+/// units, the type 118 rows aimed at the area and the type 64 rows aimed at the caster or its
+/// target, and the Stealth, RemoveStealth and HealShields rows the plan refuses
+/// (`refused_by_the_plan`).
 fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   list.count(spell4_effects.all(tables), fn(row) {
     row.effect_type == type_number
@@ -190,10 +192,13 @@ fn unread_effect_rows(tables: store.Tables, type_number: Int) -> Int {
   })
 }
 
-/// Whether the plan refuses a Stealth or RemoveStealth row, by the plan's own check
-/// (genesis_prime/game/spell_plan `stealth_read`, `stealth_on_the_caster`): a row aimed other
-/// than at the caster alone or behind a target prerequisite, and a Stealth row with a
-/// delayTime or durationTime (timed stealth) or a dataBits02 the plan has no case for.
+/// Whether the plan refuses a Stealth, RemoveStealth or HealShields row, by the plan's own
+/// check (genesis_prime/game/spell_plan `stealth_read`, `stealth_on_the_caster`,
+/// `shield_heal_of`): a Stealth or RemoveStealth row aimed other than at the caster alone or
+/// behind a target prerequisite, a Stealth row with a delayTime or durationTime (timed
+/// stealth) or a dataBits02 the plan has no case for, and a HealShields row that is
+/// periodic (a tickTime, held and not applied) or has a dataBits00 that is not a number or a
+/// formula parameter the caster's value does not read.
 fn refused_by_the_plan(row row: spell4_effects.Spell4Effects) -> Bool {
   case effect_kind.kind_of(row.effect_type) {
     effect_kind.Stealth ->
@@ -206,6 +211,19 @@ fn refused_by_the_plan(row row: spell4_effects.Spell4Effects) -> Bool {
         spell4_id: row.spell_id,
         effect: row,
       ))
+    effect_kind.ShieldHeal ->
+      spell_plan.shield_heal_of(
+        spell4_id: row.spell_id,
+        effect: row,
+        condition: spell_plan.Always,
+      )
+      |> result.map(fn(heal) {
+        case heal {
+          spell_plan.ShieldHeal(..) -> False
+          spell_plan.TickingShieldHeal(..) -> True
+        }
+      })
+      |> result.unwrap(or: True)
     effect_kind.Proxy
     | effect_kind.Damage
     | effect_kind.VitalModifier
@@ -215,6 +233,7 @@ fn refused_by_the_plan(row row: spell4_effects.Spell4Effects) -> Bool {
     | effect_kind.PropertyModifier
     | effect_kind.ForcedMove
     | effect_kind.CooldownModifier
+    | effect_kind.ShieldOverload
     | effect_kind.Unread(..) -> False
   }
 }
@@ -249,6 +268,11 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
+        type_number: 64,
+        reason: "rows aimed at the caster or its target, whose shield the server does not hold at 0",
+        fact_key: "Spell4Effects.effectType.64",
+      ),
+      Missing(
         type_number: 73,
         reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps",
         fact_key: "Spell4Effects.effectType.73",
@@ -262,6 +286,11 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 84,
         reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
+      ),
+      Missing(
+        type_number: 118,
+        reason: "rows aimed at another unit, periodic (tickTime) or with a formula parameter the plan refuses",
+        fact_key: "Spell4Effects.effectType.118",
       ),
     ],
     missing: [

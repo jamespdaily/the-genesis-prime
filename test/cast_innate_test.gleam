@@ -14,18 +14,26 @@
 ////   cooldown out of combat (behind Prerequisite 390, type 28 comparison 2), so
 ////   the toggle's own cooldown stands only in combat.
 //// - `Spell4.46867` (Warrior): the effects of type 90 (192556, 192608, 192609) and
-////   118 (210834); `Spell4.58586` (Esper): 178144, type 29; `Spell4.69450`
-////   (Medic): 228914, type 118. No effect type of those is read by the server
-////   (`effect_kind.kind_of`), so a go lists no row of them and no line says so.
+////   118 (210834); `Spell4.58586` (Esper): 178144, type 29. No effect type of those is
+////   read by the server (`effect_kind.kind_of`), except that 210834 is a periodic
+////   HealShields row, which the plan holds and no go lists or applies, so a go lists no
+////   row of them and no line says so.
+//// - `Spell4.69450` (Medic): 228914, type 118, 0.3 of the missing shield aimed at the
+////   caster (`table_rows -- Spell4Effects spellId=69450`): its go lists it with a heal
+////   description of the amount.
 //// Skipped where the client's tables are not on the machine.
 
 import cast_support as support
 import client_tables
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans}
+import genesis_prime/message/damage_type
+import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/table/id.{Spell4BaseId}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/string
@@ -215,7 +223,11 @@ fn innate_pressed(
   bag bag: List(Int),
   in_combat in_combat: Bool,
 ) -> List(Effect) {
-  let caster = caster_with(bag:, in_combat:)
+  innate_pressed_by(caster: caster_with(bag:, in_combat:))
+}
+
+/// The same for a caster given.
+fn innate_pressed_by(caster caster: Caster) -> List(Effect) {
   let #(state, effects) =
     pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
   let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
@@ -229,17 +241,14 @@ pub fn the_unread_rows_of_a_pressed_innate_are_listed_nowhere_and_write_no_line_
     innate_pressed(bag: [18_309, 37_968, 38_017, 30_828], in_combat: False)
   let esper =
     innate_pressed(bag: [19_102, 19_019, 19_022, 38_012], in_combat: True)
-  let medic =
-    innate_pressed(bag: [38_201, 16_322, 26_543, 46_615], in_combat: False)
   let unread = [
     #(warrior, [192_556, 192_608, 192_609, 210_834, 109_482]),
     #(esper, [178_144, 199_192]),
-    #(medic, [228_914]),
   ]
   list.each(unread, fn(pressed) {
     let #(effects, rows) = pressed
     assert list.all(rows, fn(row) { !list.contains(listed(effects:), row) })
-      as "Spell4Effects 192556, 192608 and 192609 (type 90), 210834 (type 118) and 109482 (type 18) of the Warrior's, 178144 (type 29) and 199192 (type 52) of the Esper's and 228914 (type 118) of the Medic's are not read (effect_kind.kind_of): no go lists one"
+      as "Spell4Effects 192556, 192608 and 192609 (type 90), 109482 (type 18) of the Warrior's, 178144 (type 29) and 199192 (type 52) of the Esper's are not read (effect_kind.kind_of), and 210834 (type 118, tickTime 1000) is held and not applied: no go lists one"
     assert support.frames_of(message_id: 0x07FD, effects:) != []
       as "each press was taken"
     assert list.all(rows, fn(row) {
@@ -267,10 +276,29 @@ pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
     as "Spell4.58586 holds Proxies 166935, 178143 and 204548 and the type 29 row 178144: the children list no row, and no row of the go itself is read"
   assert started_spells(effects: esper) == [70_369, 76_766]
     as "Proxy 166935 starts 70369 and Proxy 178143 starts 76766; Proxy 204548 to 78078 is behind Prerequisite 36531 (type 15, comparison 1: a live cast of Spell4 41590 on the caster), which a caster with no such cast fails"
+  // A Medic with 250 of its 450 shield, struck.
   let medic =
-    innate_pressed(bag: [38_201, 16_322, 26_543, 46_615], in_combat: False)
-  assert listed(effects: medic) == [228_911, 228_912]
-    as "Spell4.69450's type 11 rows 228911 and 228912 (properties 35 and 36, for 8 s, aimed at the caster) are listed; 228914 (type 118) is not"
+    innate_pressed_by(
+      caster: cast.Caster(
+        ..caster_with(bag: [38_201, 16_322, 26_543, 46_615], in_combat: False),
+        life_vitals: dict.from_list([
+          #(3, prerequisite.Vital(current: 250.0, maximum: 450.0)),
+        ]),
+      ),
+    )
+  assert listed(effects: medic) == [228_911, 228_912, 228_914]
+    as "Spell4.69450's type 11 rows 228911 and 228912 (properties 35 and 36, for 8 s, aimed at the caster) and its type 118 row 228914 are listed"
+  let assert [go, ..] =
+    support.frames_of(message_id: spell_go.message_id, effects: medic)
+  let assert Ok(decoded) = spell_go.decode(go.body)
+  let assert Ok(heal) =
+    list.flat_map(decoded.targets, fn(target) { target.effects })
+    |> list.find(fn(effect) { effect.spell4_effects_id == 228_914 })
+  let assert spell_effect_result.Damage(shown) = heal.result
+    as "the heal is listed with a damage description"
+  assert shown.description.damage_type == damage_type.HealShields
+    && shown.description.health_damage_with_overkill == 60
+    as "row 228914 is 0.3 x the missing shield: 0.3 x (450 - 250) = 60"
   assert started_spells(effects: medic) == []
     as "Proxies 228915 and 228917 are behind Prerequisites 24356 and 24445 (type 15, comparison 1: an AMP's spell), which a caster with none fails"
 }

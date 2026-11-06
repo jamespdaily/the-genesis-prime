@@ -212,6 +212,25 @@
 ////   innate passive's, and every one still pending but the passive's; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
+//// - **A go's shield heals** (`Spell4Effects.effectType.118`): each HealShields effect of the
+////   phase that reaches the caster (genesis_prime/game/spell_plan `ShieldHeal`) whose gate
+////   against the caster passes is listed in the caster's target info with a damage
+////   description of its amount (type HealShields, result Hit, the amount as the raw, the
+////   scaled raw and the health change), which the client shows as a floater and a combat
+////   log line and never applies. The amount is worked out at the go from the caster's own
+////   shield, health and stats as they stood before the go's own effects
+////   (genesis_prime/game/damage `amount_on_caster`: Energize is 0.3 of the missing
+////   shield), and lands at the go plus the row's delay as `PropertyStarts` with a
+////   `ShieldHeal` change, for the connection to raise the player's shield by
+////   (genesis_prime/game/player_life `shield_healed`): in the go's step, after its 0x7f4,
+////   with no delay, else on a timer. A heal gives the caster's node a life of its delay, so
+////   the 0x7fe waits for it; when the node's end and a pending heal are due in the same
+////   millisecond the end lands the heal first. A node taken off the caster, a persistence
+////   that stops holding and the caster's death drop a pending heal with its timer; a later
+////   go of the cast heals again and cancels no earlier heal. A periodic heal (a
+////   tickTime) is not applied, and a debug line says so: each tick needs a 0x7f8. The
+////   server rolls no critical for a heal: the description is always a Hit, so the seed
+////   draws nothing for it (the server's choice).
 //// - **A go's forced moves** (`Spell4Effects.effectType.3.player`): each type 3 effect of
 ////   the phase aimed at the caster whose gate against the caster passes is listed in the
 ////   caster's target info with its delay, and nothing more: the caster's client works out
@@ -381,6 +400,9 @@
 //// | two casts whose persistence fails in one input, or one that fails because the other ended | both end in that input, the lower cast id first |
 //// | a persistence check while the player is leaving or dead | nothing: `left` and `died` have already dropped every cast |
 //// | a press while one is held | 0x7fc 13 |
+//// | a go lists a shield heal while the caster's shield is full | the description is written with amount 0; the shield writes nothing (genesis_prime/game/player_life) |
+//// | a heal's timer fires after its cast's node was taken off, the caster died or its persistence ended | no timer: it was cancelled with the node; nothing lands |
+//// | a heal's start and its node's end fire in either order | the heal lands once, in the step of whichever is delivered first |
 //// | a go adds a Stealth source while the stack cap of its spell takes the first cast off | one source left, one 0x811, no `StealthChanged` |
 //// | a go of a spell that ends stealth after the stealth ended | nothing to end, nothing written |
 //// | a 0x801 ends a cast of `EndsStealthAfterLastGo` after one of its goes and before its last | the other casts' stealth ends as the cast stops, the 0x811 and the change after the cast's own end |
@@ -417,6 +439,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/area
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/cooldown
+import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
@@ -434,10 +457,14 @@ import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
+import genesis_prime/message/spell_damage_description.{
+  type SpellDamageDescription, SpellDamageDescription,
+}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
@@ -491,6 +518,12 @@ pub type Message {
   Cancelled
 }
 
+/// The Vital id of Health and of Shield Capacity in `Caster.life_vitals`
+/// (`Prerequisite.prerequisiteTypeId.71`: Vital.tbl ids 1 and 3).
+pub const health_vital = 1
+
+pub const shield_vital = 3
+
 /// The player that casts, as the connection holds it when it takes an input.
 pub type Caster {
   Caster(
@@ -517,7 +550,24 @@ pub type Caster {
     /// The player's health (Vital 1) and shield (Vital 3), by Vital id, which a
     /// type 71 or 73 prerequisite reads beside the class resource's slots.
     life_vitals: Dict(Int, prerequisite.Vital),
+    /// What a damage or heal formula reads of the player: its level and its Assault
+    /// and Support Rating (genesis_prime/game/damage).
+    stats: damage.Attacker,
   )
+}
+
+/// What a caster's spell changes on the caster itself, which starts after the effect's
+/// delay: the payload of `PropertyStarts` and `Due.ModifierStart`. A change that ends
+/// has its end tied to its source (`PropertyEnds`, `Due.ModifierEnd`); a shield heal has
+/// none.
+pub type CasterChange {
+  /// A property modifier (a UnitPropertyModifier effect): the connection applies it to
+  /// the player's properties (genesis_prime/game/unit_properties `apply`).
+  Property(modifier: unit_properties.Modifier)
+  /// A shield heal (a HealShields effect): the connection raises the player's shield by
+  /// `amount`, capped at its maximum (genesis_prime/game/player_life `shield_healed`).
+  /// The amount is worked out at the go, the amount the go's 0x7f4 shows.
+  ShieldHeal(amount: Int)
 }
 
 /// What the rule asks the connection to do, in order.
@@ -543,10 +593,7 @@ pub type Effect {
   /// A property modifier of the caster's spell starts: the connection applies it to the
   /// player's properties, tells its client and its viewers the entries that changed
   /// (genesis_prime/game/unit_properties `apply`).
-  PropertyStarts(
-    source: unit_properties.Source,
-    modifier: unit_properties.Modifier,
-  )
+  PropertyStarts(source: unit_properties.Source, change: CasterChange)
   /// A property modifier of the caster's spell ends, or is told ended for a source the
   /// properties may not hold (`unit_properties.remove` changes nothing then).
   PropertyEnds(source: unit_properties.Source)
@@ -621,11 +668,8 @@ pub type Due {
   /// The crowd-control state `state` the cast `spell4_id` put on the unit `unit_id`
   /// ends on the creature: the caster's combat log gets its end entry.
   StateEnd(spell4_id: Spell4Id, unit_id: Int, state: CrowdControlState)
-  /// The property modifier `source` starts, after its delay.
-  ModifierStart(
-    source: unit_properties.Source,
-    modifier: unit_properties.Modifier,
-  )
+  /// The change of the caster `source` names starts, after its delay.
+  ModifierStart(source: unit_properties.Source, change: CasterChange)
   /// The property modifier `source` ends, after its duration.
   ModifierEnd(source: unit_properties.Source)
   /// The cooldown effect `source` takes effect, after its delay: it changes the
@@ -2198,8 +2242,8 @@ fn fire(
             removed: True,
           )),
         ])
-        ModifierStart(source:, modifier:) -> #(cast, [
-          PropertyStarts(source:, modifier:),
+        ModifierStart(source:, change:) -> #(cast, [
+          PropertyStarts(source:, change:),
         ])
         ModifierEnd(source:) -> #(cast, [PropertyEnds(source:)])
         CooldownModifierStarts(source:, modifier:, kept:) ->
@@ -2290,6 +2334,10 @@ pub fn rolls_needed(
               phase:,
               spent: live.spent,
             ),
+            fn(row) { condition_rolls_needed(row.condition) },
+          ),
+          list.map(
+            spell_plan.shield_heals_in_phase(spell:, phase:, spent: live.spent),
             fn(row) { condition_rolls_needed(row.condition) },
           ),
         ]),
@@ -2545,6 +2593,12 @@ fn nodes_ended(
               unit_ids: sorted_units(ended),
               now_ms:,
             )
+          let #(cast, healed) =
+            heals_landed_at_node_end(
+              cast:,
+              cast_id:,
+              unit_ids: sorted_units(ended),
+            )
           let #(cast, modifiers) =
             caster_modifiers_ended(
               cast:,
@@ -2565,6 +2619,7 @@ fn nodes_ended(
             list.flatten([
               nodes_ended_frames(cast_id:, holder:, ended:, kept:),
               started,
+              healed,
               modifiers,
               left,
             ]),
@@ -3835,6 +3890,7 @@ fn go(
         )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
       let #(cast, modifying) = modifiers_armed(cast:, cast_id:, aimed:)
+      let #(cast, healing) = heals_armed(cast:, cast_id:, aimed:)
       let #(cast, cooldowns) =
         cooldowns_armed(
           cast:,
@@ -3896,6 +3952,7 @@ fn go(
           removed,
           given,
           modifying,
+          healing,
           cooldowns,
           gains,
           gate_logs,
@@ -3986,14 +4043,15 @@ type Applied {
     cooldowns: List(spell_plan.CooldownModifier),
     stealth: List(spell_plan.StealthRow),
     remove_stealth: List(spell_plan.RemoveStealthRow),
+    shield_heals: List(spell_plan.ShieldHeal),
   )
 }
 
-/// The Fluff, SpellForceRemove, property modifier, forced move, cooldown, Stealth and
-/// RemoveStealth effects of the phase whose gates pass against the caster, a debug line
-/// for each that cannot be decided, and the rolls left. Their gates are checked after the
-/// Proxies' and the gains', in that order, the RemoveStealth effects' last
-/// (`rolls_needed`).
+/// The Fluff, SpellForceRemove, property modifier, forced move, cooldown, Stealth,
+/// RemoveStealth and HealShields effects of the phase whose gates pass against the caster,
+/// a debug line for each that cannot be decided, and for each periodic heal that passes,
+/// and the rolls left. Their gates are checked after the Proxies' and the gains', in that
+/// order, the HealShields effects' last (`rolls_needed`).
 fn lasting_applied(
   spell spell: Spell,
   phase phase: Int,
@@ -4081,6 +4139,18 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
+  let #(heals, heal_logs, rolls) =
+    gated(
+      rows: spell_plan.shield_heals_in_phase(spell:, phase:, spent:),
+      condition: fn(row: spell_plan.ShieldHeal) { row.condition },
+      what: fn(row: spell_plan.ShieldHeal) {
+        "the HealShields effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(shield_heals, ticking_logs) = ticking_heals_logged(heals:)
   #(
     Applied(
       lasting:,
@@ -4090,6 +4160,7 @@ fn lasting_applied(
       cooldowns:,
       stealth:,
       remove_stealth:,
+      shield_heals:,
     ),
     list.flatten([
       logs,
@@ -4099,16 +4170,51 @@ fn lasting_applied(
       cooldown_logs,
       stealth_logs,
       remove_stealth_logs,
+      heal_logs,
+      ticking_logs,
     ]),
     rolls,
   )
 }
 
+/// The heals of a go that apply, and a debug line for each periodic heal whose gate
+/// passed: a periodic heal needs a 0x7f8 for each tick, which the server does not send, so
+/// it is not applied.
+fn ticking_heals_logged(
+  heals heals: List(spell_plan.ShieldHeal),
+) -> #(List(spell_plan.ShieldHeal), List(Effect)) {
+  let #(applying, ticking) =
+    list.partition(heals, fn(heal) {
+      case heal {
+        spell_plan.ShieldHeal(..) -> True
+        spell_plan.TickingShieldHeal(..) -> False
+      }
+    })
+  #(
+    applying,
+    list.map(ticking, fn(heal) {
+      Log(
+        level: LogDebug,
+        text: "the HealShields effect "
+          <> int.to_string(heal.effect_id.value)
+          <> " is periodic, and a periodic shield heal needs a 0x7f8 for each tick, which is not sent, so it is not applied",
+      )
+    }),
+  )
+}
+
 /// What a go lists on one unit beside the damage it struck: the effect, its delay
 /// and, for a crowd-control state, the instance id its tell gave (the other effects
-/// are numbered by their place in the list, `target_info`).
+/// are numbered by their place in the list, `target_info`) and, for a shield heal, the
+/// damage description that shows it.
 type Listed {
-  Listed(effect_id: Spell4EffectsId, delay_ms: Int, instance_id: Option(Int))
+  Listed(
+    effect_id: Spell4EffectsId,
+    delay_ms: Int,
+    instance_id: Option(Int),
+    /// The description a heal carries, in place of the plain bit of the other effects.
+    damage: Option(SpellDamageDescription),
+  )
 }
 
 /// The units a go's applied effects aim at: each Fluff and type 80 row with the unit
@@ -4122,8 +4228,16 @@ type Aimed {
     modifiers: List(#(spell_plan.PropertyModifier, Int)),
     cooldowns: List(#(spell_plan.CooldownModifier, Int, Bool)),
     stealth: List(#(spell_plan.StealthRow, Int)),
+    heals: List(#(Healed, Int)),
     controls: List(#(strike_tell.ControlLanded, Int)),
   )
+}
+
+/// A shield heal a go applies: its row, its delay and the amount worked out at the go from
+/// the caster as it stood before the go's own effects (genesis_prime/game/damage
+/// `amount_on_caster`).
+type Healed {
+  Healed(effect_id: Spell4EffectsId, delay_ms: Int, amount: Int)
 }
 
 /// The units an effect aims at (`Spell4Effects.targetFlags`): the caster, the cast's
@@ -4194,6 +4308,7 @@ fn aimed_at(
       )
     })
   let stealth = list.map(applied.stealth, fn(row) { #(row, caster.unit_id) })
+  let heals = healed_by(applied:, caster:)
   let listed =
     list.flatten([
       list.map(stealth, fn(entry) {
@@ -4203,6 +4318,7 @@ fn aimed_at(
             effect_id: entry.0.effect_id,
             delay_ms: entry.0.row.delay_ms,
             instance_id: None,
+            damage: None,
           ),
         )
       }),
@@ -4213,6 +4329,7 @@ fn aimed_at(
             effect_id: entry.0.effect_id,
             delay_ms: entry.0.row.delay_ms,
             instance_id: None,
+            damage: None,
           ),
         )
       }),
@@ -4223,6 +4340,7 @@ fn aimed_at(
             effect_id: entry.0.effect_id,
             delay_ms: entry.0.row.delay_ms,
             instance_id: None,
+            damage: None,
           ),
         )
       }),
@@ -4233,6 +4351,7 @@ fn aimed_at(
             effect_id: row.effect_id,
             delay_ms: row.delay_ms,
             instance_id: None,
+            damage: None,
           ),
         )
       }),
@@ -4243,13 +4362,30 @@ fn aimed_at(
             effect_id: entry.0.effect_id,
             delay_ms: entry.0.row.delay_ms,
             instance_id: None,
+            damage: None,
           ),
         )
       }),
       list.map(removes, fn(entry) {
         #(
           entry.1,
-          Listed(effect_id: entry.0.effect_id, delay_ms: 0, instance_id: None),
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: 0,
+            instance_id: None,
+            damage: None,
+          ),
+        )
+      }),
+      list.map(heals, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.delay_ms,
+            instance_id: None,
+            damage: Some(heal_description(amount: entry.0.amount)),
+          ),
         )
       }),
       list.map(controls, fn(entry) {
@@ -4259,6 +4395,7 @@ fn aimed_at(
             effect_id: Spell4EffectsId(entry.0.tell.effect_id),
             delay_ms: entry.0.tell.row.delay_ms,
             instance_id: Some(entry.0.tell.instance_id),
+            damage: None,
           ),
         )
       }),
@@ -4271,7 +4408,87 @@ fn aimed_at(
         Error(Nil) -> list.append(units, [#(entry.0, [entry.1])])
       }
     })
-  Aimed(units:, lasting:, removes:, modifiers:, cooldowns:, stealth:, controls:)
+  Aimed(
+    units:,
+    lasting:,
+    removes:,
+    modifiers:,
+    cooldowns:,
+    stealth:,
+    heals:,
+    controls:,
+  )
+}
+
+/// The shield heals a go applies, each on the caster, with the amount the caster's own
+/// vitals and stats give: the caster as it stood before the go's own effects, the rule of
+/// every gate of the go (`subject_of`). A row aimed at the primary target heals the
+/// caster too: the plan reads it only in a spell cast on the caster
+/// (genesis_prime/game/spell_plan `proxy_heals_read`).
+fn healed_by(
+  applied applied: Applied,
+  caster caster: Caster,
+) -> List(#(Healed, Int)) {
+  let on_caster = on_caster_of(caster:)
+  list.filter_map(applied.shield_heals, fn(heal) {
+    case heal {
+      spell_plan.ShieldHeal(effect_id:, formula:, delay_ms:, ..) ->
+        Ok(#(
+          Healed(
+            effect_id:,
+            delay_ms:,
+            amount: damage.amount_on_caster(formula:, caster: on_caster),
+          ),
+          caster.unit_id,
+        ))
+      spell_plan.TickingShieldHeal(..) -> Error(Nil)
+    }
+  })
+}
+
+/// What a formula reads of the caster that is also its effect's target.
+fn on_caster_of(caster caster: Caster) -> damage.OnCaster {
+  let vital = fn(id) {
+    case dict.get(caster.life_vitals, id) {
+      Ok(prerequisite.Vital(current:, maximum:)) -> #(
+        float.round(current),
+        float.round(maximum),
+      )
+      Error(Nil) -> #(0, 0)
+    }
+  }
+  let health = vital(health_vital)
+  let shield = vital(shield_vital)
+  damage.OnCaster(
+    attacker: caster.stats,
+    vitals: damage.Vitals(
+      health: health.0,
+      max_health: health.1,
+      shield: shield.0,
+      max_shield: shield.1,
+    ),
+  )
+}
+
+/// The damage description of a shield heal: the amount as the raw, the scaled raw and the
+/// health change, a Hit of damage type HealShields (5), nothing absorbed or killed and no
+/// hit entries (`Spell4Effects.effectType.118`, `GameLib.CodeEnumDamageType`,
+/// `GameLib.CodeEnumCombatResult`). The raw values are the server's choice: the client
+/// reads only the health change for a heal (`0x1405d8350`).
+fn heal_description(amount amount: Int) -> SpellDamageDescription {
+  SpellDamageDescription(
+    raw_damage: amount,
+    scaled_raw_damage: amount,
+    absorbed: 0,
+    shield_absorbed: 0,
+    health_damage_with_overkill: amount,
+    overkill: 0,
+    glance: 0,
+    killed: 0,
+    combat_result: combat_result.Hit,
+    damage_type: damage_type.HealShields,
+    hits: [],
+  )
 }
 
 /// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
@@ -4420,12 +4637,17 @@ fn modifiers_armed(
         let #(cast, _, start) =
           armed(
             cast:,
-            due: ModifierStart(source:, modifier: row.modifier),
+            due: ModifierStart(
+              source:,
+              change: Property(modifier: row.modifier),
+            ),
             after_ms: row.row.delay_ms,
           )
         #(cast, [start])
       }
-      False -> #(cast, [PropertyStarts(source:, modifier: row.modifier)])
+      False -> #(cast, [
+        PropertyStarts(source:, change: Property(modifier: row.modifier)),
+      ])
     }
     let #(cast, ending) = case row.row.until_removed {
       True -> #(cast, [])
@@ -4440,6 +4662,37 @@ fn modifiers_armed(
       }
     }
     #(cast, list.flatten([effects, cancels, starting, ending]))
+  })
+}
+
+/// The shield heals a go applies: a heal with no delay lands in this step, after the go's
+/// 0x7f4, and any other on a timer of its delay (the client adds the delay before it
+/// applies a result, `0x1405d77a0`). Each go's heal is its own, so a later go of the cast
+/// heals again and no earlier heal is cancelled; a pending heal is dropped with the node
+/// of the cast on the caster (`effects_ended`), and lands when the node ends by time
+/// (`heals_landed_at_node_end`).
+fn heals_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  aimed aimed: Aimed,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.heals, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let healed = entry.0
+    let source = unit_properties.Source(cast_id:, effect_id: healed.effect_id)
+    let change = ShieldHeal(amount: healed.amount)
+    case healed.delay_ms > 0 {
+      True -> {
+        let #(cast, _, start) =
+          armed(
+            cast:,
+            due: ModifierStart(source:, change:),
+            after_ms: healed.delay_ms,
+          )
+        #(cast, list.append(effects, [start]))
+      }
+      False -> #(cast, list.append(effects, [PropertyStarts(source:, change:)]))
+    }
   })
 }
 
@@ -4651,7 +4904,83 @@ fn effects_ended(
         )
       }
     })
-  #(stealth_dropped(cast:, cast_id:), effects)
+  let #(cast, heal_cancels) = pending_heals_cancelled(cast:, cast_id:)
+  #(stealth_dropped(cast:, cast_id:), list.append(effects, heal_cancels))
+}
+
+/// The shield heals of the cast `cast_id` that a timer still waits to land, by timer id.
+fn pending_heals(
+  cast cast: State,
+  cast_id cast_id: Int,
+) -> List(#(TimerId, unit_properties.Source, Int)) {
+  dict.to_list(cast.timers)
+  |> list.sort(fn(first, second) {
+    let TimerId(first_number) = first.0
+    let TimerId(second_number) = second.0
+    int.compare(first_number, second_number)
+  })
+  |> list.filter_map(fn(entry) {
+    case entry.1 {
+      ModifierStart(source:, change: ShieldHeal(amount:))
+        if source.cast_id == cast_id
+      -> Ok(#(entry.0, source, amount))
+      ModifierStart(..)
+      | ModifierEnd(..)
+      | CooldownModifierStarts(..)
+      | CooldownModifierEnds(..)
+      | Go(..)
+      | Finish(..)
+      | StartChild(..)
+      | NodesEnd(..)
+      | StateEnd(..)
+      | StartHeld
+      | RepeatHeld
+      | WindowEnd(..)
+      | ChargeLevel(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The pending shield heals of the cast `cast_id` cancelled with their timers: the node
+/// of the cast on the caster is gone, and the client's 0x811 or 0x7fe destroys the effect
+/// still pending (`opcode.0x7fe`).
+fn pending_heals_cancelled(
+  cast cast: State,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  let pending = pending_heals(cast:, cast_id:)
+  let timers = list.map(pending, fn(heal) { heal.0 })
+  #(
+    State(..cast, timers: dict.drop(cast.timers, timers)),
+    list.map(timers, fn(timer) { CancelTimer(timer:) }),
+  )
+}
+
+/// The shield heals of the cast `cast_id` that a timer still waits to land, landed now,
+/// as the caster's node ends by time: a node lives as long as its longest effect, so a
+/// heal's start falls in the millisecond of the node's end or before it, and the end
+/// applies it first, whichever timer the shell delivers first. A node taken off lands
+/// none (`effects_ended`).
+fn heals_landed_at_node_end(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_ids unit_ids: List(Int),
+) -> #(State, List(Effect)) {
+  use <- bool.guard(
+    when: !list.contains(unit_ids, caster_of(cast_id:)),
+    return: #(cast, []),
+  )
+  let pending = pending_heals(cast:, cast_id:)
+  let #(cast, cancels) = pending_heals_cancelled(cast:, cast_id:)
+  #(
+    cast,
+    list.append(
+      cancels,
+      list.map(pending, fn(heal) {
+        PropertyStarts(source: heal.1, change: ShieldHeal(amount: heal.2))
+      }),
+    ),
+  )
 }
 
 /// The stealth sources of the cast `cast_id` dropped, as its node leaves the caster: the
@@ -4769,6 +5098,7 @@ fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
       list.map(aimed.modifiers, fn(entry) { entry.1 }),
       list.map(aimed.cooldowns, fn(entry) { entry.1 }),
       list.map(aimed.stealth, fn(entry) { entry.1 }),
+      list.map(aimed.heals, fn(entry) { entry.1 }),
       list.map(aimed.controls, fn(entry) { entry.1 }),
     ]),
   )
@@ -4806,6 +5136,17 @@ fn node_of(
       list.filter_map(aimed.stealth, fn(entry) {
         case entry.1 == unit_id {
           True -> Ok(entry.0.row)
+          False -> Error(Nil)
+        }
+      }),
+      list.filter_map(aimed.heals, fn(entry) {
+        case entry.1 == unit_id {
+          True ->
+            Ok(lasting.LastingRow(
+              delay_ms: { entry.0 }.delay_ms,
+              duration_ms: 0,
+              until_removed: False,
+            ))
           False -> Error(Nil)
         }
       }),
@@ -6014,7 +6355,11 @@ fn target_info(
           ),
           delay_ms: effect.delay_ms,
           field_4: 0,
-          result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+          result: case effect.damage {
+            Some(description) ->
+              spell_effect_result.Damage(SpellEffectDamage(description:))
+            None -> spell_effect_result.Bit(SpellEffectBit(field_2: 0))
+          },
         )
       }),
     ),
