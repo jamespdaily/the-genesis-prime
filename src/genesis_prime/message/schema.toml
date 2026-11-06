@@ -701,10 +701,10 @@ fields = [
 [[record]]
 name = "unit_property"
 evidence = "0x1404584b0"
-summary = "one property of a new unit: its id (a UnitProperty2 id) and two values; the second is the one Unit:GetMaxHealth reads for id 7"
+summary = "one property of a unit in a 0x262 or a 0x93a: its id (a UnitProperty2 id), its base and its value; the value is the one Unit:GetMaxHealth reads for id 7"
 fields = [
   { name = "property_id", kind = "unsigned", bits = 8, evidence = "0x1404584b0", named_by = "0x1404584b0" },
-  { name = "field_2", kind = "float32", evidence = "0x1404584b0", safe_by = "vector.opcode.0x262.health" },
+  { name = "base", kind = "float32", evidence = "0x1404584b0", named_by = "Unit.GetUnitProperty" },
   { name = "value", kind = "float32", evidence = "0x1404584b0", named_by = "0x1404584b0" },
 ]
 
@@ -2126,6 +2126,17 @@ fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x1400975b0", named_by = "opcode.0x935" },
   { name = "stat_id", kind = "unsigned", bits = 5, evidence = "0x1400975b0", named_by = "opcode.0x935" },
   { name = "value", kind = "float32", evidence = "0x1400975b0", named_by = "opcode.0x935" },
+]
+
+[[message]]
+id = 0x093A
+name = "unit_properties_changed"
+direction = "server_to_client"
+evidence = "opcode.0x93a"
+summary = "some of a unit's properties changed: the unit and the entries, each a UnitProperty2 id with its base and value. The client stores both words as sent and works none out; it ignores an unknown unit, and an id of 197 or more fails the message at that entry, after the entries before it are stored"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x93a", named_by = "opcode.0x93a" },
+  { name = "properties", kind = "array", count_bits = 8, element = "unit_property", evidence = "opcode.0x93a", named_by = "opcode.0x93a" },
 ]
 
 [[message]]

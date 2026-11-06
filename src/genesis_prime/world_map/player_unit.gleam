@@ -205,7 +205,7 @@ pub fn create(
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     |> list.map(fn(pair) {
       let bits = float32.to_bits(pair.1)
-      UnitProperty(property_id: pair.0, field_2: bits, value: bits)
+      UnitProperty(property_id: pair.0, base: bits, value: bits)
     })
   UnitCreatePlayer(
     unit_id:,
@@ -302,7 +302,7 @@ pub fn with_resource(
       properties: [
           UnitProperty(
             property_id: unit_fields.resource_max_property(slot: resource.slot),
-            field_2: bits,
+            base: bits,
             value: bits,
           ),
           ..record.tail.properties

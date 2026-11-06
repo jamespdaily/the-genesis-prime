@@ -368,7 +368,7 @@ fn property_value(
   let assert Ok(bits) = float32.bits(property.value)
     as "a property value is 32 bits"
   let assert Ok(value) = float32.value(bits) as "a property value is finite"
-  assert property.field_2 == property.value
+  assert property.base == property.value
     as "0x1404584b0: a property sets its base and its value, which a worn item gives alike"
   value
 }

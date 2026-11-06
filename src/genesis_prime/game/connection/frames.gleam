@@ -36,6 +36,8 @@ import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
 import genesis_prime/message/unit_movement.{UnitMovement}
+import genesis_prime/message/unit_properties_changed.{UnitPropertiesChanged}
+import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
@@ -202,6 +204,18 @@ pub fn interrupt_armor_frame(unit_id unit_id: Int, armor armor: Int) -> Frame {
     unit_id:,
     change: unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value: armor)),
   )
+}
+
+/// 0x93a: the unit's `properties` changed, each with its base and its value, which the
+/// client stores as sent (`opcode.0x93a`).
+pub fn properties_changed_frame(
+  unit_id unit_id: Int,
+  properties properties: List(UnitProperty),
+) -> Frame {
+  let assert Ok(body) =
+    unit_properties_changed.encode(UnitPropertiesChanged(unit_id:, properties:))
+    as "a unit id of 32 bits and at most 197 entries, one for each property id, fit the message"
+  Frame(message_id: unit_properties_changed.message_id, body:)
 }
 
 fn stat_frame(

@@ -61,6 +61,13 @@
 ////   landed in the go and keeps a node for their life (genesis_prime/game/cast).
 ////   Each state's `Spell4Effects.emmComparison` tag chooses it by the points spent,
 ////   as a gain's does.
+//// - **The property modifiers.** A UnitPropertyModifier effect
+////   (`Spell4Effects.effectType.11`) whose targetFlags include the caster is a
+////   `PropertyModifier` row: the property, mode, multiplier, flat amount and amount for
+////   each level (genesis_prime/game/unit_properties), and its delay, durationTime and
+////   flags bit 2, which start and end the change and give the caster's node of the cast
+////   its life. A row aimed only at other units is not read. Its caster apply
+////   prerequisite, phases and spend tag are a Fluff effect's.
 //// - **The phases** of a Multiphase spell (`Spell.CodeEnumCastMethod` 8) are the
 ////   SpellPhase rows of its owner kept by the client's rule (`0x14055e180`: order
 ////   index below 32, and index 0 or a non-zero delay), each delay the gap after
@@ -139,12 +146,14 @@ import genesis_prime/game/lasting
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spend
+import genesis_prime/game/unit_properties
 import genesis_prime/message/crowd_control_state
+import genesis_prime/message/float32
 import genesis_prime/table/class
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
   ClassId, PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId,
-  Spell4Id, Spell4StackGroupId, SpellCoolDownId,
+  Spell4Id, Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -158,6 +167,7 @@ import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
+import genesis_prime/table/unit_property2
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -405,6 +415,29 @@ pub type Spell {
     removes: List(ForceRemove),
     /// The CCStateSet effects that hold a stun or a knockdown on a unit.
     controls: List(CrowdControl),
+    /// The UnitPropertyModifier effects aimed at the caster, which change one of its
+    /// properties for their time.
+    modifiers: List(PropertyModifier),
+  )
+}
+
+/// A UnitPropertyModifier effect (`Spell4Effects.effectType.11`) of a spell whose
+/// targetFlags include the caster: the change it makes to one property
+/// (`modifier`), its delay, durationTime and flags bit 2 (`row`, which also give the
+/// caster's node of the cast its life, as a Fluff effect's do), the phases of
+/// `phase_flags` it applies in, when its `condition` holds (its caster apply
+/// prerequisite against the caster; one behind a target apply prerequisite is not
+/// applied), and when its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend). A row aimed only at other units is not read, and the
+/// part of a row's aim that is not the caster is not applied (`effect_kind.is_row_read`).
+pub type PropertyModifier {
+  PropertyModifier(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    modifier: unit_properties.Modifier,
+    row: lasting.LastingRow,
+    condition: Condition,
+    tag: spend.Tag,
   )
 }
 
@@ -595,6 +628,12 @@ pub type PlanError {
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
   ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
+  /// A UnitPropertyModifier effect of a tree names a property that UnitProperty2 has no
+  /// row for, which the client's 0x93a refuses from id 197 (`opcode.0x93a`).
+  ModifierPropertyHasNoRow(spell4_id: Int, effect_id: Int, property: Int)
+  /// A UnitPropertyModifier effect of a tree has a multiplier, flat amount or per-level
+  /// amount that is not a finite number: `column` is its dataBits column.
+  ModifierNumberNotFinite(spell4_id: Int, effect_id: Int, column: String)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -716,6 +755,22 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a CCStateSet effect "
       <> int.to_string(effect_id)
       <> " behind an apply prerequisite, which is not read"
+    ModifierPropertyHasNoRow(spell4_id:, effect_id:, property:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a UnitPropertyModifier effect "
+      <> int.to_string(effect_id)
+      <> " of property "
+      <> int.to_string(property)
+      <> ", which UnitProperty2 has no row for"
+    ModifierNumberNotFinite(spell4_id:, effect_id:, column:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a UnitPropertyModifier effect "
+      <> int.to_string(effect_id)
+      <> " whose "
+      <> column
+      <> " is not a finite number"
   }
 }
 
@@ -929,6 +984,7 @@ fn spell_of(
   use lasting <- result.try(lasting_of(tables:, spell4_id:, effects:))
   use removes <- result.try(removes_of(tables:, sources:, spell4_id:, effects:))
   use controls <- result.try(controls_of(spell4_id:, effects:))
+  use modifiers <- result.try(modifiers_of(tables:, spell4_id:, effects:))
   use groups <- result.try(groups_of(sources:, row:))
   use stack <- result.try(stack_of(tables:, row:))
   use proxies <- result.try(
@@ -1038,6 +1094,7 @@ fn spell_of(
     lasting:,
     removes:,
     controls:,
+    modifiers:,
   ))
 }
 
@@ -1233,6 +1290,97 @@ fn controls_of(
       tag: tag_of(effect:),
     ))
   })
+}
+
+/// The UnitPropertyModifier effects of a spell whose targetFlags include the caster
+/// (`effect_kind.is_row_read`; `Spell4Effects.effectType.11.change`): dataBits00 is the
+/// property, which UnitProperty2 must have a row for, dataBits01 the mode, dataBits02
+/// the multiplier, dataBits03 the flat amount and dataBits04 the amount for each level,
+/// all three as the 32-bit floats their columns hold, which must be finite. Its caster
+/// apply prerequisite is read as a Fluff effect's is (`condition_of`); a row aimed only
+/// at other units is left out.
+fn modifiers_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Result(List(PropertyModifier), PlanError) {
+  effects
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.PropertyModifier
+    && effect_kind.is_row_read(
+      effect_type: effect.effect_type,
+      target_flags: effect.target_flags,
+    )
+  })
+  |> list.try_map(fn(effect) {
+    let property = UnitProperty2Id(effect.data_bits00)
+    use _ <- result.try(
+      unit_property2.get(tables:, id: property)
+      |> result.replace_error(ModifierPropertyHasNoRow(
+        spell4_id:,
+        effect_id: effect.id,
+        property: effect.data_bits00,
+      )),
+    )
+    use multiplier <- result.try(modifier_number(
+      spell4_id:,
+      effect:,
+      column: "dataBits02",
+      bits: effect.data_bits02,
+    ))
+    use flat <- result.try(modifier_number(
+      spell4_id:,
+      effect:,
+      column: "dataBits03",
+      bits: effect.data_bits03,
+    ))
+    use per_level <- result.try(modifier_number(
+      spell4_id:,
+      effect:,
+      column: "dataBits04",
+      bits: effect.data_bits04,
+    ))
+    use condition <- result.try(condition_of(
+      tables:,
+      effect:,
+      data_bits06_names_a_gate: False,
+    ))
+    Ok(PropertyModifier(
+      effect_id: Spell4EffectsId(effect.id),
+      phase_flags: effect.phase_flags,
+      modifier: unit_properties.Modifier(
+        property:,
+        mode: effect.data_bits01,
+        multiplier:,
+        flat:,
+        per_level:,
+      ),
+      row: lasting.LastingRow(
+        delay_ms: effect.delay_time,
+        duration_ms: effect.duration_time,
+        until_removed: has_flag(flags: effect.flags, bit: 2),
+      ),
+      condition:,
+      tag: tag_of(effect:),
+    ))
+  })
+}
+
+/// A modifier row's multiplier, flat amount or per-level amount: the 32-bit float its
+/// column holds, which must be finite.
+fn modifier_number(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  column column: String,
+  bits bits: Int,
+) -> Result(Float, PlanError) {
+  float32.bits(number: bits)
+  |> result.try(float32.value)
+  |> result.replace_error(ModifierNumberNotFinite(
+    spell4_id:,
+    effect_id: effect.id,
+    column:,
+  ))
 }
 
 /// The aim of a Fluff or SpellForceRemove effect: the caster, the primary target, the
@@ -2028,6 +2176,22 @@ pub fn lasting_in_phase(
     rows: spell.lasting,
     phase_flags: fn(lasting) { lasting.phase_flags },
     tag: fn(lasting) { lasting.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The UnitPropertyModifier effects of the spell that apply in phase `phase`, those
+/// whose tag holds for the points the cast spent.
+pub fn modifiers_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(PropertyModifier) {
+  in_phase(
+    rows: spell.modifiers,
+    phase_flags: fn(modifier) { modifier.phase_flags },
+    tag: fn(modifier) { modifier.tag },
     phase:,
     spent:,
   )

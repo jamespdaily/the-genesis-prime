@@ -286,7 +286,8 @@ pub fn viewer_takes(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
-    | client_connection.InterruptArmor(..) -> False
+    | client_connection.InterruptArmor(..)
+    | client_connection.PropertiesChanged(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && names_own_unit(entered:, unit_id:),
@@ -525,6 +526,15 @@ pub fn viewer_takes(
         ),
       ])
     }
+    client_connection.PropertiesChanged(properties:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.properties_changed_frame(unit_id:, properties:),
+        ),
+      ])
+    }
     client_connection.CrowdControlApplied(state:, instance_id:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
@@ -623,7 +633,8 @@ fn creature_news(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
-    | client_connection.InterruptArmor(..) -> session
+    | client_connection.InterruptArmor(..)
+    | client_connection.PropertiesChanged(..) -> session
   }
   case strike.holds(strike: entered.strike, unit_id:) {
     True ->
@@ -708,7 +719,8 @@ fn life_news(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
-    | client_connection.InterruptArmor(..) -> Continue(session, [])
+    | client_connection.InterruptArmor(..)
+    | client_connection.PropertiesChanged(..) -> Continue(session, [])
   }
 }
 

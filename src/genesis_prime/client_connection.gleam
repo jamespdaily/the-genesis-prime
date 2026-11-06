@@ -40,6 +40,7 @@ import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/message/spell_targets_removed.{type SpellTargetsRemoved}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -215,6 +216,11 @@ pub type News {
   /// instance id, with its last bit 0 (opcode.0x880), written when the viewer's client
   /// shows the unit.
   CrowdControlEnded(state: CrowdControlState, cast_id: Int, instance_id: Int)
+  /// Some of the unit's properties changed, each with its base and its value as the
+  /// client holds them: 0x93a (opcode.0x93a), written when the viewer's client shows
+  /// the unit. A player's connection sends it for a property a lasting modifier of
+  /// its own spell changed (genesis_prime/game/unit_properties).
+  PropertiesChanged(properties: List(UnitProperty))
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).

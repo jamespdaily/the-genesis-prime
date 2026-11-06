@@ -189,11 +189,6 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
-        type_number: 11,
-        reason: "needs a unit's property changed and sent (0x093A), which a lasting effect on a unit holds",
-        fact_key: "Spell4Effects.effectType.11",
-      ),
-      Missing(
         type_number: 14,
         reason: "needs a trigger on a unit that casts a spell, which a lasting effect on a unit holds",
         fact_key: "Spell4Effects.effectType.14",
