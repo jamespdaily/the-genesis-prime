@@ -5,8 +5,10 @@ Each case runs the real script with a planted `podman`, `git`, `gh`, `lsof` and 
 A planted program appends each call to one log (plant/calls.log) and answers from files in plant/, so
 a case plants what GitHub, Podman and the folders say, runs the script, and reads what it called and
 in what order. Expected values come from these places.
-- The design's rules for the updater: a new commit whose check runs all finished well is built,
-  migrated and deployed; a red, unfinished or unknown check does nothing; the same commit does
+- The design's rules for the updater: a new commit whose server check run (the `check` job of
+  .github/workflows/check.yml) finished well is built, migrated and deployed, whatever became of
+  the docs workflow's jobs (`build` and `publish` of .github/workflows/docs.yml); a red,
+  unfinished, missing or unknown server check does nothing; the same commit does
   nothing; an address change replaces the container without a build; a held live lock skips
   everything; the server's container is not started until Postgres answers.
 - GitHub's check-runs answer: a run has a status and a conclusion, and a conclusion is null until
@@ -131,10 +133,17 @@ exit 0
 """
 
 
-def checks(*runs: tuple[str, str | None]) -> str:
-    """A check-runs answer of GitHub's for runs given as (status, conclusion)."""
+def checks(*runs: tuple) -> str:
+    """A check-runs answer of GitHub's for runs given as (status, conclusion) or (status, conclusion,
+    name); a run with no name is the server's own, the `check` job of .github/workflows/check.yml."""
     return json.dumps(
-        {"total_count": len(runs), "check_runs": [{"status": s, "conclusion": c} for s, c in runs]}
+        {
+            "total_count": len(runs),
+            "check_runs": [
+                {"name": run[2] if len(run) > 2 else "check", "status": run[0], "conclusion": run[1]}
+                for run in runs
+            ],
+        }
     )
 
 
@@ -305,6 +314,39 @@ class UpdaterTest(unittest.TestCase):
 
     def test_a_commit_with_one_red_check_among_green_ones_does_nothing(self):
         self.planted.set(f"checks_{NEW_COMMIT}.json", checks(("completed", "success"), ("completed", "failure")))
+        self.assertEqual(self.planted.update().returncode, 0)
+        self.assert_nothing_built_migrated_or_replaced()
+
+    def test_a_commit_whose_server_check_passed_is_deployed_though_the_docs_publish_was_cancelled(self):
+        self.planted.set(
+            f"checks_{NEW_COMMIT}.json",
+            checks(("completed", "success"), ("completed", "success", "build"), ("completed", "cancelled", "publish")),
+        )
+        done = self.planted.update()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(len(self.planted.server_runs()), 1, self.planted.calls())
+
+    def test_a_commit_whose_server_check_failed_does_nothing_though_the_docs_jobs_passed(self):
+        self.planted.set(
+            f"checks_{NEW_COMMIT}.json",
+            checks(("completed", "failure"), ("completed", "success", "build"), ("completed", "success", "publish")),
+        )
+        self.assertEqual(self.planted.update().returncode, 0)
+        self.assert_nothing_built_migrated_or_replaced()
+
+    def test_a_commit_whose_server_check_has_not_finished_does_nothing_though_the_docs_jobs_passed(self):
+        self.planted.set(
+            f"checks_{NEW_COMMIT}.json",
+            checks(("in_progress", None), ("completed", "success", "build"), ("completed", "success", "publish")),
+        )
+        self.assertEqual(self.planted.update().returncode, 0)
+        self.assert_nothing_built_migrated_or_replaced()
+
+    def test_a_commit_with_docs_check_runs_but_no_server_check_run_does_nothing(self):
+        self.planted.set(
+            f"checks_{NEW_COMMIT}.json",
+            checks(("completed", "success", "build"), ("completed", "success", "publish")),
+        )
         self.assertEqual(self.planted.update().returncode, 0)
         self.assert_nothing_built_migrated_or_replaced()
 
