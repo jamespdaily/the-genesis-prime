@@ -33,6 +33,7 @@ import genesis_prime/game/strike_tell.{
   Released, Strike, Threatened,
 }
 import genesis_prime/message/combat_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/step.{
@@ -41,10 +42,13 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature.{type State, Settings}
+import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_kind.{Kind}
+import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path.{Running}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
@@ -69,6 +73,15 @@ const start_ms = 10_000
 
 /// A Beast at x = 0 started for these viewers, its `Started` taken.
 fn beast(viewers viewers: List(Int)) -> State {
+  beast_with(viewers:, armor: creature_life.NoArmor)
+}
+
+/// A Beast with this Interrupt Armor.
+fn beast_with(
+  viewers viewers: List(Int),
+  armor armor: creature_life.InterruptArmor,
+) -> State {
+  let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
   let state =
     creature.new(Settings(
       creature: CreatureStart(
@@ -82,7 +95,10 @@ fn beast(viewers viewers: List(Int)) -> State {
           #(ConnectionId(viewer), stay_of(viewer))
         }),
       ),
-      spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+      spawn: Spawn(
+        ..spawn,
+        combat: creature_life.Combat(..spawn.combat, interrupt_armor: armor),
+      ),
       kind: Kind(
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
@@ -284,9 +300,9 @@ fn name_of(news: News) -> String {
     | client_connection.CameBackLogged
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
-    | client_connection.Shield(..)
-    | client_connection.CrowdControlApplied(..)
-    | client_connection.CrowdControlEnded(..) -> "other"
+    | client_connection.Shield(..) -> "other"
+    client_connection.CrowdControlApplied(..) -> "0x87f"
+    client_connection.CrowdControlEnded(..) -> "0x880"
   }
 }
 
@@ -1399,4 +1415,504 @@ pub fn a_player_that_stops_seeing_the_creature_is_told_its_release_for_the_stay_
     tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
   assert fights_told_for(unwatched)
     == [#(2, stay_of(2), Released(unit_id: unit))]
+}
+
+// A crowd-control state: the creature does not act until it ends
+// (`genesis_prime/world_map/creature_control`, `cc_state.end`).
+
+/// Stagger's Stun, Spell4Effects 83827: durationTime 2500, delayTime 0, state 0
+/// (`table_rows -- Spell4Effects 83827`), with this instance id.
+fn stagger_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
+  strike_tell.ControlTell(
+    effect_id: 83_827,
+    state: crowd_control_state.Stun,
+    instance_id:,
+    delay_ms: 0,
+    duration_ms: 2500,
+    armor_removed: 1,
+  )
+}
+
+/// A strike of the player of connection `number` that carries these states and no
+/// damage.
+fn controlling(
+  number number: Int,
+  cast_id cast_id: Int,
+  controls controls: List(strike_tell.ControlTell),
+) -> creature.Message {
+  let assert creature.Strike(tell:) = strike_of(number:, cast_id:, blows: [])
+    as "strike_of gives a strike"
+  creature.Strike(tell: Strike(..tell, controls:))
+}
+
+pub fn a_stunned_creature_starts_no_attack_until_the_state_ends_and_then_attacks_from_where_it_stands_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2 stands 5 units off, within reach 8: the first tick would strike.
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let first_tick = timer_for(aggro, 1500)
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  assert list.contains(said(stunned), "0x87f to 2")
+    as "its viewers are told the state took hold"
+  let state_ends = timer_for(stunned, 2500)
+  let #(state, ticked) = fire(state:, at_ms: 1500, timer: first_tick)
+  assert !list.contains(said(ticked), "0x7ff to 2") && fights_told(ticked) == []
+    as "the tick finds the player in reach and strikes nothing: the creature is stunned"
+  let second_tick = timer_for(ticked, 1500)
+  let #(state, ended) = fire(state:, at_ms: 2600, timer: state_ends)
+  assert list.contains(said(ended), "0x880 to 2")
+    as "the state ends with its 0x880"
+  let #(_, acted) = fire(state:, at_ms: 3000, timer: second_tick)
+  assert list.contains(said(acted), "0x7ff to 2")
+    as "the next tick strikes again from where the creature stands"
+}
+
+pub fn a_stunned_creature_starts_no_chase_and_a_running_one_stops_where_it_stands_then_chases_from_there_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2 is 30 units off: the creature runs at 10 units a second toward 26.
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  assert list.contains(said(aggro), "0x638 to 2")
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 500,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let assert [CreaturePlaced(place:, ..)] =
+    list.filter(news_to(stunned, 2), fn(news) {
+      name_of(news) == "0x638(placed)"
+    })
+    as "a running path stops with 0x638 of kind 2 where the creature stands"
+  assert x_of(place) == 5.0 as "10 units a second for 500 ms from x = 0"
+  let #(state, moved_away) =
+    tell(state:, at_ms: 700, message: moved(number: 2, x: 35.0, seq: 2))
+  assert said(moved_away) == []
+    as "the player moves and the stunned creature starts no chase"
+  let #(_, ended) = fire(state:, at_ms: 3000, timer: timer_for(stunned, 2500))
+  let path = path_sent(ended)
+  let assert Running(from:, ..) = path as "when the state ends it chases again"
+  assert x_of(from) == 5.0 as "from where it stood"
+  assert x_of(creature_path.end(path:)) == 31.0
+    as "toward 35, 0.5 x reach 8 short"
+}
+
+pub fn a_stunned_creature_whose_threat_is_gone_leashes_but_starts_the_walk_home_when_the_state_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Viewer 5 watches player 2's fight. The creature runs, is stunned at x = 5 and
+  // loses its last threat while held.
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 500,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(state, leashed) =
+    tell(state:, at_ms: 600, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    && fights_told(leashed) == [#(2, Released(unit_id: unit))]
+    as "the leash changes the status and tells as usual"
+  assert !list.contains(said(leashed), "0x638 to 5")
+    && !list.contains(said(leashed), "0x638(placed) to 5")
+    && timers(leashed) == []
+    as "but the stunned creature starts no walk and no home timer"
+  let #(_, ended) = fire(state:, at_ms: 3000, timer: timer_for(stunned, 2500))
+  assert list.contains(said(ended), "0x638 to 5")
+    as "the walk home starts when the state ends"
+  assert list.map(timers(ended), fn(started) { started.1 }) == [500]
+    as "5 units home at 10 a second: the home timer"
+}
+
+pub fn two_players_stuns_hold_the_creature_until_the_later_one_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let first_tick = timer_for(aggro, 1500)
+  let #(state, first) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(state, second) =
+    tell(
+      state:,
+      at_ms: 700,
+      message: controlling(number: 5, cast_id: 2, controls: [
+        stagger_stun(instance_id: 49_153),
+      ]),
+    )
+  assert list.count(said(first), fn(line) { line == "0x87f to 2" }) == 1
+    && list.count(said(second), fn(line) { line == "0x87f to 2" }) == 1
+    as "two 0x87f, one for each player's state"
+  let #(state, ticked) = fire(state:, at_ms: 1500, timer: first_tick)
+  let #(state, first_ended) =
+    fire(state:, at_ms: 2600, timer: timer_for(first, 2500))
+  assert list.contains(said(first_ended), "0x880 to 2")
+  let #(state, ticked_again) =
+    fire(state:, at_ms: 3000, timer: timer_for(ticked, 1500))
+  assert !list.contains(said(ticked_again), "0x7ff to 2")
+    as "the first state ended and the second still holds: no attack"
+  let #(state, second_ended) =
+    fire(state:, at_ms: 3200, timer: timer_for(second, 2500))
+  assert list.contains(said(second_ended), "0x880 to 2")
+  let #(_, acted) =
+    fire(state:, at_ms: 4500, timer: timer_for(ticked_again, 1500))
+  assert list.contains(said(acted), "0x7ff to 2")
+    as "after the later state the creature acts"
+}
+
+// ---- crowd-control states (`genesis_prime/world_map/creature_control`) ----
+//
+// Expected values come from these places: Kick's Knockdown, Spell4Effects 140382
+// (delayTime 166, durationTime 3000, state 8), and Stagger's Stun, Spell4Effects 83827
+// (delayTime 0, durationTime 2500, state 0), read with `table_rows`; the creature holds
+// a state from the tell's arrival to delay plus duration (the module's doc) and ends it
+// only with the server's 0x880 (`cc_state.end`); a creature with Interrupt Armor takes
+// none and logs one line (Design 445 section 3); the client clears every state at a
+// death, so none is ended then (`cc_state.end`).
+
+fn kick_knockdown(instance_id instance_id: Int) -> strike_tell.ControlTell {
+  strike_tell.ControlTell(
+    effect_id: 140_382,
+    state: crowd_control_state.Knockdown,
+    instance_id:,
+    delay_ms: 166,
+    duration_ms: 3000,
+    armor_removed: 1,
+  )
+}
+
+/// A strike of the player of connection `number` that carries these states and
+/// kills with its damage.
+fn killing(
+  number number: Int,
+  cast_id cast_id: Int,
+  controls controls: List(strike_tell.ControlTell),
+) -> creature.Message {
+  let assert creature.Strike(tell:) =
+    strike_of(number:, cast_id:, blows: [#(1, 1000, 1.0)])
+    as "strike_of gives a strike"
+  creature.Strike(tell: Strike(..tell, controls:))
+}
+
+/// The Beast started for viewers 2 and 5 with this Interrupt Armor.
+fn armored(armor armor: creature_life.InterruptArmor) -> State {
+  beast_with(viewers: [2, 5], armor:)
+}
+
+/// The states' news the step sends to viewer `number`: `0x87f` and `0x880`, in order.
+fn state_news(
+  taken: ServiceStep(creature.Outgoing),
+  number: Int,
+) -> List(client_connection.News) {
+  list.filter(news_to(taken, number), fn(news) {
+    list.contains(["0x87f", "0x880"], name_of(news))
+  })
+}
+
+/// The states the step's answer to the caster says landed.
+fn landed_in(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(strike_tell.ControlLanded) {
+  list.flat_map(support.sends(taken), fn(sent) {
+    case sent.1 {
+      creature.Struck(
+        answered: Answered(outcome: Landed(controls:, ..), ..),
+        ..,
+      ) -> controls
+      creature.Struck(..) | creature.News(..) | creature.FightTold(..) -> []
+    }
+  })
+}
+
+/// The timers of the creature's states the step starts, with their times.
+fn control_timers(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(step.TimerId, Int)) {
+  list.filter(timers(taken), fn(started) {
+    creature_control.number_of(timer: started.0) != Error(Nil)
+  })
+}
+
+fn timers_cancelled(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(step.TimerId) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.CancelServiceTimer(timer:)) -> Ok(timer)
+      OwnEffect(step.Send(..))
+      | OwnEffect(step.Reply(..))
+      | OwnEffect(step.StartCreature(..))
+      | OwnEffect(StartServiceTimer(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | step.Stop -> Error(Nil)
+    }
+  })
+}
+
+fn log_lines(taken: ServiceStep(creature.Outgoing)) -> List(String) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      step.Log(line:) -> Ok(line.text)
+      OwnEffect(step.Send(..))
+      | OwnEffect(step.Reply(..))
+      | OwnEffect(step.StartCreature(..))
+      | OwnEffect(StartServiceTimer(..))
+      | OwnEffect(step.CancelServiceTimer(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Stop -> Error(Nil)
+    }
+  })
+}
+
+pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f_and_the_answer_names_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    tell(
+      state: armored(armor: creature_life.NoArmor),
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        kick_knockdown(instance_id: 28_673),
+      ]),
+    )
+  let applied =
+    client_connection.CrowdControlApplied(
+      state: crowd_control_state.Knockdown,
+      instance_id: 28_673,
+    )
+  assert state_news(taken, 2) == [applied] && state_news(taken, 5) == [applied]
+    as "0x87f with the go's instance id for each viewer"
+  assert landed_in(taken)
+    == [
+      strike_tell.ControlLanded(
+        tell: kick_knockdown(instance_id: 28_673),
+        ends_at_ms: 14_166,
+      ),
+    ]
+    as "the answer names it, with the time the creature holds it until: its arrival, 10000 + 1000, plus 166 plus 3000"
+  assert creature.controlled(state:)
+  assert control_timers(taken) == [#(step.TimerId(5), 3166)]
+    as "one timer for the state, 166 + 3000 from the tell; ids 4n + 1 from 5"
+  assert log_lines(taken) == []
+}
+
+pub fn a_creature_with_armor_above_0_or_infinite_takes_no_state_and_logs_one_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [creature_life.Armor(points: 3), creature_life.InfiniteArmor],
+    fn(armor) {
+      let #(state, first) =
+        tell(
+          state: armored(armor:),
+          at_ms: 1000,
+          message: controlling(number: 2, cast_id: 1, controls: [
+            stagger_stun(instance_id: 28_673),
+          ]),
+        )
+      assert landed_in(first) == [] && state_news(first, 2) == []
+        as "nothing lands and no 0x87f is sent"
+      assert !creature.controlled(state:) && control_timers(first) == []
+      assert list.length(log_lines(first)) == 1
+        as "one line says the armor rules are not built"
+      let #(_, second) =
+        tell(
+          state:,
+          at_ms: 2000,
+          message: controlling(number: 2, cast_id: 2, controls: [
+            stagger_stun(instance_id: 28_674),
+          ]),
+        )
+      assert log_lines(second) == []
+        as "and the line is logged once for the creature"
+    },
+  )
+}
+
+pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_before_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    tell(
+      state: armored(armor: creature_life.NoArmor),
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 77, controls: [
+        kick_knockdown(instance_id: 28_673),
+      ]),
+    )
+  assert list.map(state_news(taken, 2), name_of) == ["0x87f"]
+    as "no 0x880 comes with the strike: the state ends only at its timer, 3166 ms on (Kick: 166 + 3000)"
+  let #(state, ended) = fire(state:, at_ms: 4166, timer: timer_for(taken, 3166))
+  let over =
+    client_connection.CrowdControlEnded(
+      state: crowd_control_state.Knockdown,
+      cast_id: 77,
+      instance_id: 28_673,
+    )
+  assert state_news(ended, 2) == [over] && state_news(ended, 5) == [over]
+    as "0x880 names the unit's state, the strike's cast and the go's instance id"
+  assert !creature.controlled(state:)
+  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(5))
+  assert support.effects_of(again) == []
+    as "a timer that fires for a state already ended writes nothing"
+}
+
+pub fn two_states_of_one_kind_from_one_caster_are_held_separately_and_two_ending_together_are_two_0x880_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    tell(
+      state: armored(armor: creature_life.NoArmor),
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+        stagger_stun(instance_id: 28_674),
+      ]),
+    )
+  assert list.length(state_news(taken, 2)) == 2
+    && control_timers(taken)
+    == [#(step.TimerId(5), 2500), #(step.TimerId(9), 2500)]
+    as "two 0x87f and a timer for each state"
+  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  assert list.map(state_news(first, 2), name_of) == ["0x880"]
+    && creature.controlled(state:)
+    as "one 0x880 for the first, and the second still holds"
+  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
+  assert list.map(state_news(second, 2), name_of) == ["0x880"]
+    && !creature.controlled(state:)
+    as "each ends with its own 0x880, though both end in one millisecond"
+}
+
+pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instance_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) =
+    tell(
+      state: armored(armor: creature_life.NoArmor),
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(state, second) =
+    tell(
+      state:,
+      at_ms: 1500,
+      message: controlling(number: 3, cast_id: 2, controls: [
+        stagger_stun(instance_id: 40_961),
+      ]),
+    )
+  assert list.map(state_news(first, 5), name_of) == ["0x87f"]
+    && list.map(state_news(second, 5), name_of) == ["0x87f"]
+  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  assert list.map(state_news(one, 5), name_of) == ["0x880"]
+    && creature.controlled(state:)
+  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(9))
+  assert list.map(state_news(two, 5), name_of) == ["0x880"]
+    && !creature.controlled(state:)
+    as "each state ends with its own 0x880; the creature is held until the later one"
+}
+
+pub fn a_creature_that_dies_stunned_sends_no_0x880_and_a_timer_after_death_writes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: armored(armor: creature_life.NoArmor),
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: strike_of(number: 2, cast_id: 2, blows: [#(1, 1000, 1.0)]),
+    )
+  assert state_news(killed, 5) == []
+    as "the client clears every state at a death: no 0x880"
+  assert list.contains(timers_cancelled(killed), step.TimerId(5))
+    as "the state's timer is cancelled"
+  assert !creature.controlled(state:)
+  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  assert support.effects_of(late) == []
+    as "a timer already waiting in the mailbox writes nothing"
+}
+
+pub fn a_strike_that_kills_the_creature_lands_no_state_and_one_on_a_corpse_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, killed) =
+    tell(
+      state: armored(armor: creature_life.NoArmor),
+      at_ms: 1000,
+      message: killing(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  assert landed_in(killed) == [] && state_news(killed, 5) == []
+    as "a creature the strike kills takes no state"
+  let #(state, corpse) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: controlling(number: 2, cast_id: 2, controls: [
+        stagger_stun(instance_id: 28_674),
+      ]),
+    )
+  assert said(corpse) == ["Refused(Dead) to 2"] && !creature.controlled(state:)
+    as "a strike after the death is refused as always: no state"
+}
+
+pub fn a_viewer_arriving_while_a_state_is_held_is_not_told_it_and_a_new_creature_holds_none_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: armored(armor: creature_life.NoArmor),
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(_, arrived) =
+    tell(
+      state:,
+      at_ms: 1500,
+      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+    )
+  let names = list.map(news_to(arrived, 9), name_of)
+  assert list.first(names) == Ok("0x262") && !list.contains(names, "0x87f")
+    as "the creature's 0x262 does not carry a state: a viewer that arrives mid-state is not told (a gap)"
+  assert !creature.controlled(state: beast(viewers: []))
+    as "a creature that crashed is started again from its spawn with no state"
 }

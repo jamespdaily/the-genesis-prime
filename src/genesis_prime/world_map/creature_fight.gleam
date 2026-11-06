@@ -1043,9 +1043,6 @@ fn leash(
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  use <- bool.lazy_guard(when: fighter.controlled, return: fn() {
-    todo as "a leash while controlled: the status, news and health change as usual, the walk home and its home timer wait for ControlEnded"
-  })
   let #(entries, round) = case state.status {
     Fighting(threat:, round:, ..) -> #(map.sorted_by_connection(threat), round)
     Resting | Returning(..) -> #([], None)
@@ -1058,13 +1055,16 @@ fn leash(
     None -> #(state, [])
   }
   let here = creature_path.place_at(path: state.path, now_ms:)
-  let path =
-    creature_path.straight(
-      from: here,
-      to: fighter.home,
-      speed: fighter.attack.run_speed,
-      now_ms:,
-    )
+  let path = case fighter.controlled {
+    True -> Standing(at: here)
+    False ->
+      creature_path.straight(
+        from: here,
+        to: fighter.home,
+        speed: fighter.attack.run_speed,
+        now_ms:,
+      )
+  }
   let #(state, home) = generation(state)
   let moved = path_news(was: state.path, now: path, now_ms:)
   #(
@@ -1089,12 +1089,15 @@ fn leash(
           told: Released(unit_id: fighter.unit_id),
         )
       }),
-      [
-        StartTimer(
-          timer: HomeArrival(home),
-          after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
-        ),
-      ],
+      case fighter.controlled {
+        True -> []
+        False -> [
+          StartTimer(
+            timer: HomeArrival(home),
+            after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
+          ),
+        ]
+      },
     ]),
   )
 }
@@ -1143,7 +1146,9 @@ fn killed(
 /// viewers are placed there when they still run it (0x638 of kind 2, as `killed`
 /// does). The fight's status and threat are unchanged.
 fn stopped(state state: State, now_ms now_ms: Int) -> #(State, List(Effect)) {
-  todo as "stop the path where the creature stands and place its viewers there"
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  let placed = path_news(was: state.path, now: Standing(at: here), now_ms:)
+  #(State(..state, path: Standing(at: here)), placed)
 }
 
 /// The last state ended: a Fighting creature chases its target again from where it
@@ -1154,7 +1159,29 @@ fn resumed(
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  todo as "chase again, or start the walk home a controlled leash left"
+  case state.status {
+    Fighting(..) -> chase(state:, fighter:, now_ms:)
+    Returning(home:) -> {
+      let here = creature_path.place_at(path: state.path, now_ms:)
+      let path =
+        creature_path.straight(
+          from: here,
+          to: fighter.home,
+          speed: fighter.attack.run_speed,
+          now_ms:,
+        )
+      #(
+        State(..state, path:),
+        list.append(path_news(was: state.path, now: path, now_ms:), [
+          StartTimer(
+            timer: HomeArrival(home),
+            after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
+          ),
+        ]),
+      )
+    }
+    Resting -> #(state, [])
+  }
 }
 
 fn generation(state: State) -> #(State, Int) {

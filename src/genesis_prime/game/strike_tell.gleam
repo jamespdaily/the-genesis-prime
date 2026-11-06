@@ -69,6 +69,14 @@ pub type Tell {
   )
 }
 
+/// A state the unit took: the effect as it was told, and the monotonic time in
+/// milliseconds the creature holds it until (its arrival plus delay plus duration,
+/// on the clock the creature and the caster's connection share), so the caster's
+/// node for the state lives exactly as long as the state does.
+pub type ControlLanded {
+  ControlLanded(tell: ControlTell, ends_at_ms: Int)
+}
+
 /// One CCStateSet effect a strike puts on the unit (genesis_prime/game/crowd_control
 /// `Row`), with the instance id the caster gave it for the go: the state, the
 /// delay before and the duration of the effect in milliseconds, and the Interrupt
@@ -110,9 +118,9 @@ pub type Refusal {
 /// What a creature answers a strike with.
 pub type Outcome {
   /// The blows landed: a description for each (genesis_prime/game/hit), and the
-  /// states the unit took of the strike's `controls`, each as it was told (a unit
-  /// that takes none answers `[]`).
-  Landed(descriptions: List(Description), controls: List(ControlTell))
+  /// states the unit took of the strike's `controls` (a unit that takes none
+  /// answers `[]`).
+  Landed(descriptions: List(Description), controls: List(ControlLanded))
   /// The creature deflected the whole strike.
   Deflected
   /// The creature took no strike.

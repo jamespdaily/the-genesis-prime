@@ -16,12 +16,14 @@ import client_tables
 import genesis_prime/game/area.{
   Box, Cone, InsideRow, InsideShapes, Placement, Row,
 }
+import genesis_prime/game/crowd_control
 import genesis_prime/game/spell_area.{
   AimNotRead, MultiplierNotFinite, SelectionNotClosest, ShapeNotBuilt,
   TelegraphNotOnCaster, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
+import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/list
 import gleam/option.{None, Some}
@@ -404,4 +406,83 @@ pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
     && !none_at_0.selects_area
     && !none_at_0.strikes_primary_target
     as "the only area-aimed effect is excluded at n 0, so the phase selects no area"
+}
+
+// ---- the kit's crowd-control rows ----
+
+/// The kit's six CCStateSet rows as the client's tables hold them
+/// (`table_rows -- Spell4Effects 100836 125183 83827 96126 140382 95949`): the Spell4,
+/// the effect, the state (dataBits00), delayTime, durationTime and targetFlags. Every
+/// row removes 1 Interrupt Armor (dataBits03).
+fn kit_controls() -> List(
+  #(Int, Int, crowd_control_state.CrowdControlState, Int, Int, spell_plan.Aim),
+) {
+  [
+    #(30_436, 100_836, crowd_control_state.Stun, 0, 3250, spell_plan.AimsAtArea),
+    #(41_438, 125_183, crowd_control_state.Stun, 0, 2500, spell_plan.AimsAtArea),
+    #(38_780, 83_827, crowd_control_state.Stun, 0, 2500, spell_plan.AimsAtArea),
+    #(42_352, 96_126, crowd_control_state.Stun, 0, 2700, spell_plan.AimsAtArea),
+    #(
+      58_591,
+      140_382,
+      crowd_control_state.Knockdown,
+      166,
+      3000,
+      spell_plan.AimsAtArea,
+    ),
+    #(
+      42_297,
+      95_949,
+      crowd_control_state.Knockdown,
+      0,
+      4000,
+      spell_plan.AimsAtBoth,
+    ),
+  ]
+}
+
+pub fn each_kit_crowd_control_row_decodes_as_a_stun_or_a_knockdown_with_its_time_and_aim_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  list.each(kit_controls(), fn(kit) {
+    let #(spell4_id, effect_id, state, delay_ms, duration_ms, aim) = kit
+    let assert Ok(area) =
+      spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+      as "the spell is in a level-1 ability's tree"
+    let assert [control] =
+      spell_plan.controls_in_phase(spell: area.spell, phase: 0, spent: None)
+      as "one CCStateSet row fires in the spell's first phase"
+    assert control.effect_id == Spell4EffectsId(effect_id)
+    assert control.row
+      == crowd_control.Row(state:, delay_ms:, duration_ms:, armor_removed: 1)
+    assert control.aim == aim
+  })
+}
+
+pub fn gates_stun_and_staggers_stun_select_their_area_and_strike_though_they_carry_no_damage_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  list.each([30_436, 38_780], fn(spell4_id) {
+    let assert Ok(area) =
+      spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+      as "the spell is in a level-1 ability's tree"
+    let assert Ok(phase) = spell_area.phase(spell: area, phase: 0, spent: None)
+    assert phase.damage == [] && list.length(phase.controls) == 1
+      as "no damage effect and one stun (Spell4Effects 100836, 83827)"
+    assert phase.selects_area
+      as "the stun is aimed at the area (targetFlags 4), so the phase selects the area's units"
+  })
+}
+
+pub fn crushs_knockdown_aimed_at_both_selects_the_area_and_strikes_the_primary_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(area) = spell_area.of_spell(areas:, spell4_id: Spell4Id(42_297))
+    as "Crush's second spell"
+  let assert Ok(phase) = spell_area.phase(spell: area, phase: 0, spent: None)
+  assert phase.selects_area && phase.strikes_primary_target
+    as "Spell4Effects 95949: targetFlags 6 aims at the cast's target and the area"
 }

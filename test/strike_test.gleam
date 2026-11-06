@@ -25,6 +25,7 @@ import genesis_prime/client_connection
 import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast.{type GoAsked, GoAsked}
 import genesis_prime/game/class_resource.{Resource}
+import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/shown.{Exile, ShownCreature, ShownPlayer}
@@ -38,6 +39,7 @@ import genesis_prime/game/strike.{
 import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused,
 }
+import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
@@ -1124,4 +1126,148 @@ pub fn a_go_with_no_n_strikes_with_every_damage_effect_the_spell_holds_test() ->
   assert list.map(chosen.blows, fn(blow) { blow.effect_id.value })
     == [61_993, 61_994, 61_995, 61_996, 61_997]
     as "Spell4Effects.emmComparison: a cast with no n chooses nothing, so none of the five is left out"
+}
+
+// ---- crowd-control states (`genesis_prime/game/crowd_control`) ----
+//
+// Expected values come from these places: Gate's Stun, Spell4Effects 100836 (state 0,
+// durationTime 3250, delayTime 0, dataBits03 1, aimed at the area) from
+// `table_rows -- Spell4Effects 100836`; the instance id is the caster's unit id x 4096
+// plus its count of the states it told, from 1 (the doc of `crowd_control.instance_id`:
+// non-zero, within 32 bits, and a different caster's ids differ).
+
+fn stun_row(aim aim: spell_plan.Aim) -> spell_plan.CrowdControl {
+  spell_plan.CrowdControl(
+    effect_id: Spell4EffectsId(100_836),
+    phase_flags: -1,
+    aim:,
+    row: crowd_control.Row(
+      state: crowd_control_state.Stun,
+      delay_ms: 0,
+      duration_ms: 3250,
+      armor_removed: 1,
+    ),
+    tag: spend.always,
+  )
+}
+
+fn told_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
+  strike_tell.ControlTell(
+    effect_id: 100_836,
+    state: crowd_control_state.Stun,
+    instance_id:,
+    delay_ms: 0,
+    duration_ms: 3250,
+    armor_removed: 1,
+  )
+}
+
+/// A selection of these units, with no damage and Gate's Stun aimed so.
+fn stunning(
+  asked asked: GoAsked,
+  units units: List(Int),
+  aim aim: spell_plan.Aim,
+) -> Selection {
+  Selection(..selection(asked:, units:, damaging: False), controls: [
+    stun_row(aim:),
+  ])
+}
+
+pub fn a_stun_with_no_damage_is_told_to_each_unit_with_the_next_instance_ids_of_the_casters_count_test() -> Nil {
+  use <- owned_test.run(5000)
+  let chosen =
+    stunning(
+      asked: asked(cast_id: 5, phase: 0),
+      units: [10, 11],
+      aim: AimsAtArea,
+    )
+  assert strike.entropy_needed(selection: chosen) == 24
+    as "a strike takes its rolls: 12 seed bytes for each unit, though it has no damage"
+  let #(state, effects) =
+    begun(state: strike.new(), selection: chosen, now_ms: 1000)
+  let assert [
+    strike.TellStrike(unit_id: 10, tell: first, ..),
+    strike.TellStrike(unit_id: 11, tell: second, ..),
+  ] = tells(effects:)
+    as "each unit is told, though the phase has no damage"
+  assert first.controls == [told_stun(instance_id: 28_673)]
+    && second.controls == [told_stun(instance_id: 28_674)]
+    as "unit 7's first and second state: 7 x 4096 + 1 and + 2, each unit its own"
+  assert first.offence.blows == []
+  assert went(effects:) == [] as "the round waits for the creatures' answers"
+  let #(_, later) =
+    begun(
+      state:,
+      selection: stunning(
+        asked: asked(cast_id: 6, phase: 0),
+        units: [10],
+        aim: AimsAtArea,
+      ),
+      now_ms: 1100,
+    )
+  let assert [strike.TellStrike(tell: third, ..)] = tells(effects: later)
+  assert third.controls == [told_stun(instance_id: 28_675)]
+    as "the count goes on from one go to the next"
+}
+
+pub fn two_casters_instance_ids_for_one_creature_differ_test() -> Nil {
+  use <- owned_test.run(5000)
+  let chosen =
+    stunning(asked: asked(cast_id: 5, phase: 0), units: [10], aim: AimsAtArea)
+  let told_by = fn(attacker: Attacker) {
+    let #(_, effects) =
+      strike.begin(
+        strike: strike.new(),
+        selection: chosen,
+        attacker:,
+        formulas: rating_support.formulas(),
+        entropy: entropy(rolls: [#(0, 0, 0)]),
+        now: at(ms: 1000),
+      )
+    let assert [strike.TellStrike(tell:, ..)] = tells(effects:)
+    tell.controls
+  }
+  let first = told_by(attacker())
+  let second = told_by(Attacker(..attacker(), unit_id: 8))
+  assert first == [told_stun(instance_id: 28_673)]
+    && second == [told_stun(instance_id: 32_769)]
+    as "7 x 4096 + 1 and 8 x 4096 + 1: no id is shared, and none is 0"
+}
+
+pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
+  use <- owned_test.run(5000)
+  let goes = GoAsked(..asked(cast_id: 5, phase: 0), primary_target: 11)
+  let #(state, effects) =
+    begun(
+      state: strike.new(),
+      selection: stunning(
+        asked: goes,
+        units: [10, 11],
+        aim: spell_plan.AimsAtPrimaryTarget,
+      ),
+      now_ms: 1000,
+    )
+  let assert [strike.TellStrike(unit_id: 11, tell:, ..)] = tells(effects:)
+    as "only the primary target is told"
+  assert tell.controls == [told_stun(instance_id: 28_673)]
+  let landed =
+    strike_tell.ControlLanded(
+      tell: told_stun(instance_id: 28_673),
+      ends_at_ms: 4250,
+    )
+  let #(_, closed) =
+    answer(
+      state:,
+      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      outcome: Landed(descriptions: [], controls: [landed]),
+      now_ms: 1050,
+    )
+  assert went(effects: closed)
+    == [
+      #(5, 0, [
+        cast.Hit(unit_id: 10, descriptions: [], controls: []),
+        cast.Hit(unit_id: 11, descriptions: [], controls: [landed]),
+      ]),
+    ]
+    as "the go names the states that landed, as the creature answered them"
 }

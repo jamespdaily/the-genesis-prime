@@ -27,8 +27,9 @@
 ////   not built.
 //// - **How long** a creature holds a state is the row's delay plus durationTime from the
 ////   tell's arrival: a creature's CC resilience is 0 and its duration modifier 1
-////   (`cc_state.duration_on_creature`). The arrival is when the strike's phase began,
-////   which is before the go is written by the time the round waited for answers.
+////   (`cc_state.duration_on_creature`). Counting from the arrival is the server's choice:
+////   the creature does not know when the go is written, which is later by the time the
+////   round waited for answers, and the caster's node takes the creature's end time.
 //// - **A state ends only by the server's 0x880**, which the creature sends when its timer
 ////   fires, naming the state, the cast and the instance id the go gave (`cc_state.end`,
 ////   `cc_state.instance_id`). A creature that dies sends none: the client clears every
@@ -56,10 +57,13 @@
 //// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/game/lasting) | | |
 
 import genesis_prime/client_connection.{type News}
-import genesis_prime/game/strike_tell.{type ControlTell, type Tell}
+import genesis_prime/game/strike_tell.{
+  type ControlLanded, type Tell, ControlLanded,
+}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/step.{type Address, type LogLevel, type TimerId, TimerId}
 import genesis_prime/world_map/creature_life.{type InterruptArmor}
+import gleam/list
 
 /// One state a creature holds: the state, the cast it came from (the strike's cast id,
 /// which its 0x880 names), the instance id the caster's go gave it, the address of the
@@ -91,10 +95,10 @@ pub type Effect {
   Log(level: LogLevel, text: String)
 }
 
-/// What a strike's states came to: the new state, the states that landed, as they were
-/// told, for the answer's `Landed`, and the effects to carry out.
+/// What a strike's states came to: the new state, the states that landed, each with the
+/// time it ends at, for the answer's `Landed`, and the effects to carry out.
 pub type Landing {
-  Landing(state: State, landed: List(ControlTell), effects: List(Effect))
+  Landing(state: State, landed: List(ControlLanded), effects: List(Effect))
 }
 
 /// A creature that holds no state.
@@ -120,25 +124,105 @@ pub fn land(
   alive alive: Bool,
   now_ms now_ms: Int,
 ) -> Landing {
-  todo as "hold a control for each state of a living creature with no armor, start its timer, send its 0x87f"
+  case alive, armor {
+    False, _ -> Landing(state:, landed: [], effects: [])
+    True, creature_life.NoArmor -> {
+      let #(state, landed, effects) =
+        list.fold(tell.controls, #(state, [], []), fn(so_far, told) {
+          let #(state, landed, effects) = so_far
+          let hold_ms = told.delay_ms + told.duration_ms
+          let control =
+            Control(
+              number: state.next_number,
+              state: told.state,
+              cast_id: tell.key.cast_id,
+              instance_id: told.instance_id,
+              caster: tell.from,
+              ends_at_ms: now_ms + hold_ms,
+            )
+          #(
+            State(
+              ..state,
+              controls: list.append(state.controls, [control]),
+              next_number: state.next_number + 1,
+            ),
+            [
+              ControlLanded(tell: told, ends_at_ms: control.ends_at_ms),
+              ..landed
+            ],
+            [
+              StartTimer(
+                timer: timer_id(number: control.number),
+                after_ms: hold_ms,
+              ),
+              ToViewers(client_connection.CrowdControlApplied(
+                state: told.state,
+                instance_id: told.instance_id,
+              )),
+              ..effects
+            ],
+          )
+        })
+      Landing(
+        state:,
+        landed: list.reverse(landed),
+        effects: list.reverse(effects),
+      )
+    }
+    True, creature_life.Armor(..) | True, creature_life.InfiniteArmor ->
+      case state.logged_armor {
+        True -> Landing(state:, landed: [], effects: [])
+        False ->
+          Landing(
+            state: State(..state, logged_armor: True),
+            landed: [],
+            effects: [
+              Log(
+                level: step.LogWarning,
+                text: "a creature with Interrupt Armor was struck by a crowd-control state, which it takes none of: the armor rules are not built",
+              ),
+            ],
+          )
+      }
+  }
 }
 
 /// The control numbered `number` ended: it is dropped and its viewers are sent the 0x880
 /// (unit, state, cast id, instance id, 0). A number that names no control, because the
 /// creature died or the control was ended already, does nothing.
 pub fn ended(state state: State, number number: Int) -> #(State, List(Effect)) {
-  todo as "drop the control and send its 0x880"
+  case list.find(state.controls, fn(control) { control.number == number }) {
+    Error(Nil) -> #(state, [])
+    Ok(control) -> #(
+      State(
+        ..state,
+        controls: list.filter(state.controls, fn(held) { held.number != number }),
+      ),
+      [
+        ToViewers(client_connection.CrowdControlEnded(
+          state: control.state,
+          cast_id: control.cast_id,
+          instance_id: control.instance_id,
+        )),
+      ],
+    )
+  }
 }
 
 /// The creature died: every control is dropped and its timer cancelled, and no 0x880
 /// is sent (`cc_state.end`).
 pub fn died(state state: State) -> #(State, List(Effect)) {
-  todo as "drop every control and cancel its timer"
+  #(
+    State(..state, controls: []),
+    list.map(state.controls, fn(control) {
+      CancelTimer(timer: timer_id(number: control.number))
+    }),
+  )
 }
 
 /// The timer of the control numbered `number`: 4 times it plus 1, so a number from 1
 /// gives 5, 9, 13 and none meets the corpse timer's 1 or a fight timer.
-pub fn timer_id(number number: Int) -> TimerId {
+fn timer_id(number number: Int) -> TimerId {
   TimerId(4 * number + 1)
 }
 

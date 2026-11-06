@@ -71,6 +71,7 @@
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose, Pose}
 import genesis_prime/game/cast.{type GoAsked, type Struck}
+import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/rating.{type Formulas}
@@ -356,10 +357,58 @@ fn controls_told(
   selection selection: Selection,
   attacker attacker: Attacker,
 ) -> #(State, List(#(Int, List(strike_tell.ControlTell)))) {
-  case selection.controls {
-    [] -> #(strike, [])
-    [_, ..] ->
-      todo as "tell each row to the units its aim names, minting its instance ids"
+  let #(strike, told) =
+    list.fold(selection.units, #(strike, []), fn(so_far, aimed) {
+      let #(strike, told) = so_far
+      let rows =
+        list.filter(selection.controls, fn(row) {
+          reaches(
+            aim: row.aim,
+            unit_id: aimed.unit_id,
+            primary_target: selection.asked.primary_target,
+          )
+        })
+      case rows {
+        [] -> so_far
+        [_, ..] -> {
+          let #(strike, controls) =
+            list.fold(rows, #(strike, []), fn(inner, row) {
+              let #(strike, controls) = inner
+              let count = strike.controls_told + 1
+              #(State(..strike, controls_told: count), [
+                strike_tell.ControlTell(
+                  effect_id: row.effect_id.value,
+                  state: row.row.state,
+                  instance_id: crowd_control.instance_id(
+                    caster_unit_id: attacker.unit_id,
+                    count:,
+                  ),
+                  delay_ms: row.row.delay_ms,
+                  duration_ms: row.row.duration_ms,
+                  armor_removed: row.row.armor_removed,
+                ),
+                ..controls
+              ])
+            })
+          #(strike, [#(aimed.unit_id, list.reverse(controls)), ..told])
+        }
+      }
+    })
+  #(strike, list.reverse(told))
+}
+
+/// Whether a state aimed by `aim` is told to the unit: one aimed at the primary target
+/// to that unit alone, one aimed at the area or at both to every unit the go selected
+/// (the damage effects, too, are told to each selected unit).
+fn reaches(
+  aim aim: spell_plan.Aim,
+  unit_id unit_id: Int,
+  primary_target primary_target: Int,
+) -> Bool {
+  case aim {
+    spell_plan.AimsAtPrimaryTarget -> unit_id == primary_target
+    spell_plan.AimsAtArea | spell_plan.AimsAtBoth -> True
+    spell_plan.AimsAtCaster | spell_plan.OtherAim(..) -> False
   }
 }
 

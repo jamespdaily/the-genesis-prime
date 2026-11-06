@@ -254,6 +254,11 @@ pub fn fight(state state: State) -> creature_fight.State {
   state.fight
 }
 
+/// Whether the creature holds a crowd-control state, for a test.
+pub fn controlled(state state: State) -> Bool {
+  creature_control.holds(state: state.control)
+}
+
 /// The connections whose players see the creature.
 pub fn viewers(state state: State) -> Set(ConnectionId) {
   set.from_list(dict.keys(state.viewers))
@@ -470,9 +475,81 @@ fn controls_after(
     creature_control.holds(state: state.control)
   {
     [], None, _ | [], Some(..), False -> #(state, reaction.answer, [])
-    _, _, _ ->
-      todo as "land the states on a living creature with no armor, or drop the controls of a killed one"
+    _, Some(..), _ -> {
+      let #(control, dropped) = creature_control.died(state: state.control)
+      #(
+        State(..state, control:),
+        reaction.answer,
+        carried(state:, effects: dropped),
+      )
+    }
+    [_, ..], None, _ ->
+      case reaction.answer.outcome {
+        strike_tell.Landed(descriptions:, ..) -> {
+          let held = creature_control.holds(state: state.control)
+          let landing =
+            creature_control.land(
+              state: state.control,
+              tell:,
+              armor: state.body.combat.interrupt_armor,
+              alive: True,
+              now_ms:,
+            )
+          let state = State(..state, control: landing.state)
+          let #(state, stopped) = case
+            !held && creature_control.holds(state: state.control)
+          {
+            True -> fought(state:, input: creature_fight.Controlled, now_ms:)
+            False -> #(state, [])
+          }
+          #(
+            state,
+            Answered(
+              key: reaction.answer.key,
+              outcome: strike_tell.Landed(
+                descriptions:,
+                controls: landing.landed,
+              ),
+            ),
+            list.append(carried(state:, effects: landing.effects), stopped),
+          )
+        }
+        strike_tell.Deflected | strike_tell.Refused(..) -> #(
+          state,
+          reaction.answer,
+          [],
+        )
+      }
   }
+}
+
+/// The effects the creature's controls ask for, carried out: news to every viewer,
+/// the control timers, and a log line about this creature's map.
+fn carried(
+  state state: State,
+  effects effects: List(creature_control.Effect),
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  list.flat_map(effects, fn(effect) {
+    case effect {
+      creature_control.ToViewers(news:) -> to_viewers(state:, news:)
+      creature_control.StartTimer(timer:, after_ms:) -> [
+        OwnEffect(step.StartServiceTimer(timer:, after_ms:)),
+      ]
+      creature_control.CancelTimer(timer:) -> [
+        OwnEffect(step.CancelServiceTimer(timer:)),
+      ]
+      creature_control.Log(level:, text:) -> [
+        step.Log(line: step.LogLine(
+          level:,
+          text:,
+          about: step.About(
+            ..step.no_one,
+            map: Some(state.settings.creature.map),
+          ),
+        )),
+      ]
+    }
+  })
 }
 
 /// A control's timer fired: its state ends with a 0x880, and the fight acts again
@@ -482,7 +559,17 @@ fn control_ended(
   number number: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  todo as "end the control, send its 0x880, tell the fight ControlEnded when none is held"
+  let held = creature_control.holds(state: state.control)
+  let #(control, effects) =
+    creature_control.ended(state: state.control, number:)
+  let state = State(..state, control:)
+  let #(state, resumed) = case
+    held && !creature_control.holds(state: state.control)
+  {
+    True -> fought(state:, input: creature_fight.ControlEnded, now_ms:)
+    False -> #(state, [])
+  }
+  #(state, Effects(list.append(carried(state:, effects:), resumed)))
 }
 
 /// The answer to a strike, sent to the caster's connection for the stay the

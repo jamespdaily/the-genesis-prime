@@ -279,7 +279,12 @@ import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_result
+import genesis_prime/message/combat_log.{CombatLog}
+import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
+import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_result
+import genesis_prime/message/crowd_control_result
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
 import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
@@ -410,7 +415,7 @@ pub type Struck {
   Hit(
     unit_id: Int,
     descriptions: List(hit.Description),
-    controls: List(strike_tell.ControlTell),
+    controls: List(strike_tell.ControlLanded),
   )
   /// The unit deflected the strike: an entry of the 0x7fb, no description and no
   /// child (`opcode.0x7fb`).
@@ -448,6 +453,9 @@ pub type Due {
   /// The earliest node of the lingering cast `cast_id` ends: its units' 0x811, or
   /// the finish when no node is left.
   NodesEnd(cast_id: Int)
+  /// The crowd-control state `state` the cast `spell4_id` put on the unit `unit_id`
+  /// ends on the creature: the caster's combat log gets its end entry.
+  StateEnd(spell4_id: Spell4Id, unit_id: Int, state: CrowdControlState)
   /// The held press starts.
   StartHeld
   /// The ability the player holds down casts again: its cooldowns have ended.
@@ -1694,6 +1702,7 @@ fn stop_pending(
       Go(cast_id: waiting, ..) | Finish(cast_id: waiting) -> waiting == cast_id
       StartChild(..)
       | NodesEnd(..)
+      | StateEnd(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -1773,6 +1782,15 @@ fn fire(
             spent: None,
           )
         NodesEnd(cast_id:) -> nodes_ended(cast:, cast_id:, now_ms:)
+        StateEnd(spell4_id:, unit_id:, state:) -> #(cast, [
+          Send(frame: control_logged_frame(
+            caster_unit_id: caster.unit_id,
+            unit_id:,
+            spell4_id:,
+            state:,
+            removed: True,
+          )),
+        ])
         RepeatHeld -> #(repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
@@ -2191,6 +2209,7 @@ fn cancel_nodes_end(
       Go(..)
       | Finish(..)
       | StartChild(..)
+      | StateEnd(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -2211,10 +2230,24 @@ pub fn unit_removed(
   unit_id unit_id: Int,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  let #(cast, cancels) =
+    cancel_timers(cast:, matching: fn(due) {
+      case due {
+        StateEnd(unit_id: waiting, ..) -> waiting == unit_id
+        Go(..)
+        | Finish(..)
+        | StartChild(..)
+        | NodesEnd(..)
+        | StartHeld
+        | RepeatHeld
+        | WindowEnd(..)
+        | ChargeLevel(..) -> False
+      }
+    })
   list.filter(holders(cast:), fn(entry) {
     dict.has_key({ entry.1 }.nodes, unit_id)
   })
-  |> list.fold(#(cast, []), fn(so_far, entry) {
+  |> list.fold(#(cast, cancels), fn(so_far, entry) {
     let #(cast, effects) = so_far
     let #(cast_id, holder) = entry
     let nodes = dict.delete(holder.nodes, unit_id)
@@ -2604,6 +2637,7 @@ fn close_threshold(
             | Finish(..)
             | StartChild(..)
             | NodesEnd(..)
+            | StateEnd(..)
             | StartHeld
             | RepeatHeld -> False
           }
@@ -2771,6 +2805,14 @@ fn go(
           },
         ])
       let #(cast, removed) = removed_by_go(cast:, aimed:, now_ms:)
+      let #(cast, logged) =
+        states_logged(
+          cast:,
+          caster:,
+          spell4_id: spell.spell4_id,
+          aimed:,
+          now_ms:,
+        )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
       let #(cast, children) =
         list.fold(starting, #(cast, []), fn(so_far, proxy) {
@@ -2802,6 +2844,7 @@ fn go(
         cast,
         list.flatten([
           going,
+          logged,
           removed,
           given,
           gains,
@@ -2876,7 +2919,7 @@ type Aimed {
     units: List(#(Int, List(Listed))),
     lasting: List(#(spell_plan.Lasting, Int)),
     removes: List(#(spell_plan.ForceRemove, Int)),
-    controls: List(#(strike_tell.ControlTell, Int)),
+    controls: List(#(strike_tell.ControlLanded, Int)),
   )
 }
 
@@ -2956,9 +2999,9 @@ fn aimed_at(
         #(
           entry.1,
           Listed(
-            effect_id: Spell4EffectsId(entry.0.effect_id),
-            delay_ms: entry.0.delay_ms,
-            instance_id: Some(entry.0.instance_id),
+            effect_id: Spell4EffectsId(entry.0.tell.effect_id),
+            delay_ms: entry.0.tell.delay_ms,
+            instance_id: Some(entry.0.tell.instance_id),
           ),
         )
       }),
@@ -2974,11 +3017,83 @@ fn aimed_at(
   Aimed(units:, lasting:, removes:, controls:)
 }
 
+/// The caster's combat log of the states a go landed: an entry for each (0x247 of
+/// type 1, removed 0), and a timer for each state's end entry (removed 1) at the time
+/// the creature holds it until (`opcode.0x247.cc_state`). A state's end entry is never
+/// written for a unit the caster's client stopped showing: `unit_removed` cancels it.
+fn states_logged(
+  cast cast: State,
+  caster caster: Caster,
+  spell4_id spell4_id: Spell4Id,
+  aimed aimed: Aimed,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.controls, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let #(landed, unit_id) = entry
+    let state = landed.tell.state
+    let #(cast, timer) = new_timer(cast:)
+    #(
+      State(
+        ..cast,
+        timers: dict.insert(
+          cast.timers,
+          timer,
+          StateEnd(spell4_id:, unit_id:, state:),
+        ),
+      ),
+      list.append(effects, [
+        Send(frame: control_logged_frame(
+          caster_unit_id: caster.unit_id,
+          unit_id:,
+          spell4_id:,
+          state:,
+          removed: False,
+        )),
+        StartTimer(timer:, after_ms: int.max(0, landed.ends_at_ms - now_ms)),
+      ]),
+    )
+  })
+}
+
+/// 0x247 of type 1: the state set on the unit by the caster's spell, or ended. The
+/// Interrupt Armor it hit is 0 and its result Ok: a creature takes a state only with no
+/// armor, and no diminishing returns apply (`opcode.0x247.cc_state`).
+fn control_logged_frame(
+  caster_unit_id caster_unit_id: Int,
+  unit_id unit_id: Int,
+  spell4_id spell4_id: Spell4Id,
+  state state: CrowdControlState,
+  removed removed: Bool,
+) -> Frame {
+  let assert Ok(body) =
+    combat_log.encode(
+      CombatLog(
+        entry: combat_log_entry.CcState(CombatLogCcState(
+          state:,
+          removed: case removed {
+            True -> 1
+            False -> 0
+          },
+          interrupt_armor_hit: 0,
+          result: crowd_control_result.Ok,
+          diminishing_returns_id: 0,
+          caster_unit_id:,
+          target_unit_id: unit_id,
+          spell4_id: spell4_id.value,
+          combat_result: combat_result.Hit,
+        )),
+      ),
+    )
+    as "unit ids and a Spell4 id that fit their fields"
+  Frame(message_id: combat_log.message_id, body:)
+}
+
 /// The crowd-control states the units of a go took, each with its unit, in the order
 /// of the units.
 fn controls_landed(
   struck struck: List(Struck),
-) -> List(#(strike_tell.ControlTell, Int)) {
+) -> List(#(strike_tell.ControlLanded, Int)) {
   list.flat_map(struck, fn(one) {
     case one {
       Hit(unit_id:, controls:, ..) ->
@@ -3094,8 +3209,8 @@ fn node_of(
         case entry.1 == unit_id {
           True ->
             Ok(lasting.LastingRow(
-              delay_ms: entry.0.delay_ms,
-              duration_ms: entry.0.duration_ms,
+              delay_ms: 0,
+              duration_ms: entry.0.ends_at_ms - now_ms,
               until_removed: False,
             ))
           False -> Error(Nil)
