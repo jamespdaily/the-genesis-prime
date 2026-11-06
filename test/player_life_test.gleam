@@ -849,16 +849,22 @@ pub fn a_creatures_strike_leaves_a_players_interrupt_armor_test() -> Nil {
   // No creature's strike carries a crowd-control state today (`player_life.struck`
   // answers `controls: []`), so nothing wears a player's Interrupt Armor down: the
   // armor a type 52 row gave is held and shown (the gap is stated in `struck`).
-  let #(armed, _) =
-    player_life.armor_given(
-      life: player_life.new(health: 736, shield: 450, regeneration:),
-      source: unit_properties.Source(
-        cast_id: 1,
-        effect_id: Spell4EffectsId(199_192),
-      ),
-      points: 1,
-      takes_back: False,
+  let source =
+    unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(199_192))
+  // The maximum the row raises (property 44) comes first, as the connection does it.
+  let raised =
+    properties_support.with_modifier(
+      properties: base_health_100(),
+      source:,
+      modifier: unit_properties.interrupt_armor_modifier(points: 1),
     )
+  let #(life, _) =
+    player_life.properties_changed(
+      life: player_life.new(health: 100, shield: 0, regeneration:),
+      properties: raised,
+    )
+  let #(armed, _) =
+    player_life.armor_given(life:, source:, points: 1, takes_back: False)
   assert player_life.interrupt_armor(life: armed) == 1
   let #(life, effects) =
     player_life.struck(
@@ -868,7 +874,7 @@ pub fn a_creatures_strike_leaves_a_players_interrupt_armor_test() -> Nil {
       rolls:,
       place: test_place(),
     )
-  assert player_life.health(life:) < 736
+  assert player_life.health(life:) < 100
     as "the blow landed: the Esper's health fell"
   assert player_life.interrupt_armor(life:) == 1
     as "and its armor is as the row gave it"
