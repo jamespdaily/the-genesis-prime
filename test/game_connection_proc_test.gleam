@@ -21,6 +21,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
 import genesis_prime/message/spell_finished
+import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_stealth
@@ -370,4 +371,128 @@ pub fn a_stalkers_last_fighter_going_gone_leaves_combat_and_casts_63366_test() -
     as "the map's Gone of the last fighter is its release: 0x89a (P, 0), then Proc 159136's cast"
   assert started_spells(frames:) == [63_366]
     as "Spell4Effects.effectType.14.dataBits00.0_44: leaving combat casts 63366, whether the last fighter released the player or its process went"
+}
+
+/// A creature's strike on the tests' player at this monotonic time: the Beast's own blow,
+/// which lowers its shield or health.
+fn struck_at(
+  state state: game_connection.State,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  game_connection.step(
+    state,
+    support.input_at_ms(
+      ms:,
+      event: connection_support.a_beast_strike(connection_support.own_unit_id),
+    ),
+  )
+}
+
+/// The Spell4Effects ids the 0x7f4 of the cast `cast_id` lists on the unit, sorted.
+fn listed_on_unit(
+  taken taken: ConnectionStep(Request),
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+) -> List(Int) {
+  connection_support.decoded(
+    written(taken:),
+    spell_go.message_id,
+    spell_go.decode,
+  )
+  |> list.filter(fn(go: spell_go.SpellGo) { go.cast_id == cast_id })
+  |> list.flat_map(fn(go) { go.targets })
+  |> list.filter(fn(target) { target.unit_id == unit_id })
+  |> list.flat_map(fn(target) {
+    list.map(target.effects, fn(effect) { effect.spell4_effects_id })
+  })
+  |> list.sort(int.compare)
+}
+
+pub fn a_stalker_in_combat_whose_stealth_a_creatures_blow_ends_gets_empower_listed_on_it_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let state = stalker_in_world()
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  let #(state, entering) =
+    pressed(state:, bag_index: 3, client_cast_id: 1, ms: 1000)
+  assert stealth_bits(frames: written(taken: entering)) == [1]
+    as "the setup: Stealth is accepted in combat"
+  let #(_, struck) = struck_at(state:, ms: 5000)
+  let frames = written(taken: struck)
+  assert stealth_bits(frames:) == [0]
+    as "Spell4Effects.effectType.83: dataBits02 0 of 83834 ends the stealth on the blow"
+  assert started_spells(frames:) == [60_769, 79_932]
+    as "Procs 147132 and 211002 of 45057 cast 60769 and 79932 for leaving stealth, whichever way it ended"
+  assert property_values(taken: struck)
+    == [
+      #(102, 1_045_220_557),
+      #(141, 1_066_024_305),
+      #(142, 1_066_024_305),
+      #(143, 1_066_024_305),
+    ]
+    as "Spell4.79932: BaseCritChance 0.2 and the three DamageDealtMultipliers 1.08 as 0x93a entries"
+  assert listed_on_unit(
+      taken: struck,
+      cast_id: start_of(taken: struck, spell4_id: 79_932).cast_id,
+      unit_id: connection_support.own_unit_id,
+    )
+    == [210_998, 212_528, 212_529, 212_530]
+    as "Spell4.79932: its four type 11 rows are listed on the caster in a 0x7f4, which is what the client shows as the buff"
+}
+
+pub fn a_stalker_whose_stealth_press_timers_have_fired_still_gets_empower_when_a_blow_ends_the_stealth_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let state = stalker_in_world()
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  let #(state, entering) =
+    pressed(state:, bag_index: 3, client_cast_id: 1, ms: 1000)
+  assert stealth_bits(frames: written(taken: entering)) == [1]
+  let #(state, fired_frames) =
+    list.fold(cast_timers(taken: entering), #(state, []), fn(so_far, timer) {
+      let #(state, frames) = so_far
+      let #(state, taken) = fired_at(state:, timer:, ms: 4000)
+      #(state, list.append(frames, written(taken:)))
+    })
+  assert stealth_bits(frames: fired_frames) == []
+    as "the press's own timers end nothing of the stealth"
+  let #(_, struck) = struck_at(state:, ms: 5000)
+  assert stealth_bits(frames: written(taken: struck)) == [0]
+  assert started_spells(frames: written(taken: struck)) == [60_769, 79_932]
+    as "Procs 147132 and 211002 cast 60769 and 79932 after the press's timers have fired"
+}
+
+pub fn a_stalker_alone_in_sight_gets_empower_listed_on_it_when_a_blow_ends_the_stealth_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let #(state, _) =
+    connection_support.entered_on_the_clients_tables(
+      class_id: 5,
+      saved_health: None,
+    )
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  let #(state, entering) =
+    pressed(state:, bag_index: 3, client_cast_id: 1, ms: 1000)
+  assert stealth_bits(frames: written(taken: entering)) == [1]
+  let #(_, struck) = struck_at(state:, ms: 5000)
+  assert started_spells(frames: written(taken: struck)) == [60_769, 79_932]
+    as "with no viewer, the player's own client still gets both procs' casts"
+  assert listed_on_unit(
+      taken: struck,
+      cast_id: start_of(taken: struck, spell4_id: 79_932).cast_id,
+      unit_id: connection_support.own_unit_id,
+    )
+    == [210_998, 212_528, 212_529, 212_530]
 }
