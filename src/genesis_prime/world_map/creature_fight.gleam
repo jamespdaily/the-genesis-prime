@@ -357,7 +357,7 @@ pub fn step(
       }
     }
     Withdrew(by:) -> #(State(..state, near: set.delete(state.near, by)), [])
-    PlayerDied(..) -> panic as "shape: #496"
+    PlayerDied(by:) -> fell(state:, fighter:, by:, now_ms:)
     TargetMoved(by:, place:, seq:, stay:) -> {
       use <- bool.guard(
         when: !in_stay(viewers:, by:, stay:),
@@ -382,7 +382,7 @@ pub fn step(
         True -> threatened_by(state:, fighter:, by:, stay:, threat:, now_ms:)
       }
     }
-    Unwatched(by:) -> unwatched(state:, fighter:, by:, now_ms:)
+    Unwatched(by:) -> fell(state:, fighter:, by:, now_ms:)
     StrikeAnswered(answered:) ->
       answered_strike(state:, fighter:, answered:, now_ms:)
     TimerFired(timer: AttackTick(generation:)) ->
@@ -753,10 +753,11 @@ fn top_of(entries: Dict(ConnectionId, Threat)) -> #(ConnectionId, Threat) {
   top
 }
 
-/// A viewer that no longer sees the creature leaves the near players and the threat
-/// list, and is told `Released`; the last one leashes the creature, and a new top
-/// entry is named its target.
-fn unwatched(
+/// A player that is no longer a foe of the creature leaves the near players and the
+/// threat list, and is told `Released`: a viewer that no longer sees the creature
+/// (`Unwatched`), or a player that died (`PlayerDied`). The last one leashes the
+/// creature, and a new top entry is named its target.
+fn fell(
   state state: State,
   fighter fighter: Fighter,
   by by: ConnectionId,
@@ -945,7 +946,8 @@ fn strikes(
 }
 
 /// The target's answer to the open round: its go names what landed, and a target
-/// the strike killed, or found dead, is released.
+/// the strike killed, or found dead, is released and leaves the near players, so the
+/// creature's home timer or corpse timer does not aggro the body.
 fn answered_strike(
   state state: State,
   fighter fighter: Fighter,
@@ -955,21 +957,27 @@ fn answered_strike(
   case state.status {
     Fighting(round: Some(round), ..) if round.key == answered.key -> {
       let unit_id = answered.key.unit_id
-      let #(struck, ends_target) = case answered.outcome {
-        strike_tell.Landed(descriptions:, ..) -> #(
-          [cast.Hit(unit_id:, descriptions:, controls: [])],
-          list.any(descriptions, fn(description) {
-            description.damage.killed == 1
-          }),
-        )
-        strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False)
-        strike_tell.Refused(..) -> #([], True)
+      let #(struck, ends_target, target_dead) = case answered.outcome {
+        strike_tell.Landed(descriptions:, ..) -> {
+          let killed =
+            list.any(descriptions, fn(description) {
+              description.damage.killed == 1
+            })
+          #([cast.Hit(unit_id:, descriptions:, controls: [])], killed, killed)
+        }
+        strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
+        strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
+        strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
       }
       let #(state, closed) = round_closed(state:, round:, struck:, now_ms:)
       let cancel = CancelTimer(timer: StrikeDeadline(round.deadline))
       case ends_target {
         False -> #(state, [cancel, ..closed])
         True -> {
+          let state = case target_dead {
+            True -> State(..state, near: set.delete(state.near, round.target))
+            False -> state
+          }
           let #(state, released) =
             released(state:, fighter:, by: round.target, now_ms:)
           #(state, list.flatten([[cancel], closed, released]))
