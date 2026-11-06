@@ -124,6 +124,7 @@ fn join_as(
         character:,
         place: place_support.live_character_place(),
         stay: map_support.stay(count: 1),
+        alive: True,
       ),
     )),
   )

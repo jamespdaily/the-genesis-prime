@@ -41,7 +41,7 @@
 ////                                    killed: Send(each viewer, Died); StartServiceTimer(corpse, respawn_ms); the fight takes Killed
 ////                                    dead:  Send(c0, Struck(Refused(Dead)))
 ////                                    walking home: Send(c0, Struck(Refused(Returning)))
-//// Approached(c, unit, place, seq), Withdrew(c) from the map,
+//// Approached(c, unit, place, seq), Withdrew(c), PlayerDied(c) from the map,
 //// TargetMoved(c, place, seq), StrikeAnswered(answered) from a connection,
 //// the attack tick, the strike deadline, the home timer ─▶ the fight (genesis_prime/world_map/creature_fight)
 //// the corpse timer ─────▶ alive again at full health      Send(each viewer, Removed), then CreatureAppeared
@@ -183,6 +183,9 @@ pub type Message {
   Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int, stay: Stay)
   /// The map: the player of connection `by` left the creature's ring.
   Withdrew(by: ConnectionId)
+  /// The map: the player of connection `by` died, so it leaves the creature's ring's
+  /// players and its threat list.
+  PlayerDied(by: ConnectionId)
   /// The connection of a player on the creature's threat list: its player, in its
   /// stay `stay`, stands at `place`, its move `seq`.
   TargetMoved(by: ConnectionId, place: Place, seq: Int, stay: Stay)
@@ -333,6 +336,8 @@ pub fn step(
       )
     OwnEvent(Told(message: Withdrew(by:))) ->
       fought_alone(state:, input: creature_fight.Withdrew(by:), now_ms:)
+    OwnEvent(Told(message: PlayerDied(by:))) ->
+      fought_alone(state:, input: creature_fight.PlayerDied(by:), now_ms:)
     OwnEvent(Told(message: TargetMoved(by:, place:, seq:, stay:))) ->
       fought_alone(
         state:,
@@ -811,8 +816,8 @@ fn news_to(
 
 /// What the map's `Outgoing` means to a creature: `Watched` and `Unwatched`,
 /// each by the connection whose player sees or stops seeing it, `Approached` and
-/// `Withdrew`, by the connection whose ready player entered or left its ring, and
-/// `Retire`. Any other is no message to a creature, and `Error(Nil)`.
+/// `Withdrew`, by the connection whose ready player entered or left its ring,
+/// `PlayerDied`, by the connection whose player died, and `Retire`. Any other is no message to a creature, and `Error(Nil)`.
 pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Watched(by:, stay:) -> Ok(Watched(by:, stay:))
@@ -820,6 +825,7 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     map.Approached(by:, unit_id:, place:, seq:, stay:) ->
       Ok(Approached(by:, unit_id:, place:, seq:, stay:))
     map.Withdrew(by:) -> Ok(Withdrew(by:))
+    map.PlayerDied(by:) -> Ok(PlayerDied(by:))
     map.Retire -> Ok(Retire)
     map.Joined(..)
     | map.NotJoined(..)

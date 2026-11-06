@@ -280,9 +280,11 @@ pub fn a_death_with_no_fighter_is_no_combat_left_and_a_death_with_one_is_test() 
       place: test_place(),
     )
   let combat_flag =
-    list.take_while(with_fighter, fn(effect) { effect != player_life.EndCasts })
+    list.take_while(with_fighter, fn(effect) {
+      effect != player_life.TellMap(alive: False)
+    })
   assert list.last(combat_flag) == Ok(player_life.CombatLeft)
-    as "a player with a fighter leaves combat as it dies, right after the flag's news and before its casts end"
+    as "a player with a fighter leaves combat as it dies, right after the flag's news and before the map is told and its casts end"
   assert list.count(with_fighter, fn(effect) {
       effect == player_life.CombatLeft
     })
@@ -361,6 +363,7 @@ fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
         | player_life.CombatLeft
         | EndCasts
         | GoToHolocrypt
+        | player_life.TellMap(..)
         | StartTimer(..)
         | CancelTimer(..) -> True
       }
@@ -411,6 +414,7 @@ pub fn a_player_at_0_dies_ends_its_casts_and_sees_its_ghost_and_the_window_in_th
       ToClient(OwnCombatState(in_combat: False)),
       ToViewers(client_connection.CombatState(in_combat: False)),
       player_life.CombatLeft,
+      player_life.TellMap(alive: False),
       EndCasts,
       ToClient(OwnDeathLogged),
       ToViewers(client_connection.DeathLogged),
@@ -419,7 +423,7 @@ pub fn a_player_at_0_dies_ends_its_casts_and_sees_its_ghost_and_the_window_in_th
       ToClient(ControlGiven(to: ControlGhost)),
       CancelTimer(timer: shield_timer),
     ]
-    as "0x88c (P, 1) and 0x89a (P, 0) to the player and its viewers, its casts ended, 0x247 type 22 to both, then for its own client alone the ghost's 0x262 at the body's place, 0x1b3 and 0x636 for the ghost, and the shield's regeneration timer, armed by the earlier blows, cancelled"
+    as "0x88c (P, 1) and 0x89a (P, 0) to the player and its viewers, the map told the death before the casts end, its casts ended, 0x247 type 22 to both, then for its own client alone the ghost's 0x262 at the body's place, 0x1b3 and 0x636 for the ghost, and the shield's regeneration timer, armed by the earlier blows, cancelled"
   assert player_life.state(life:) == player_life.Dead
     && player_life.fighters(life:) == []
     as "dead, and fighting no one: its fighters stream nothing more"
@@ -526,8 +530,9 @@ pub fn wake_here_brings_the_player_back_at_full_health_and_full_shield_where_its
       dead,
       message_support.choice_body(unit_id: own_unit, choice: 1, value: 0),
     )
-  assert effects == came_back_effects()
-    as "0x92f full and the full shield, 0x88c (P, 0) to the player and its viewers, 0x1b3 dead 0, the ghost's 0x355, 0x636 for the body, 0x247 type 23 to both, in that order"
+  assert effects
+    == list.append(came_back_effects(), [player_life.TellMap(alive: True)])
+    as "0x92f full and the full shield, 0x88c (P, 0) to the player and its viewers, 0x1b3 dead 0, the ghost's 0x355, 0x636 for the body, 0x247 type 23 to both, in that order, then the map told the waking"
   assert player_life.state(life:) == player_life.Alive
     && player_life.health(life:) == 736
     && player_life.shield(life:) == 450

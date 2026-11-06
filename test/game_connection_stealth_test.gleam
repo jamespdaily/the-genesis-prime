@@ -26,7 +26,6 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_entry
@@ -35,45 +34,18 @@ import genesis_prime/message/unit_stealth.{UnitStealth}
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{Character, ForSelect, Listed}
 import genesis_prime/table/id.{ClassId}
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map.{Left, SeenBy}
 import gleam/int
 import gleam/list
-import gleam/option.{None}
 import owned_test
 import spawn_support
 
 // ---- the owner ----
 
-/// The Medic of the tests' tables in the world, seen by the connections `viewers`.
-fn medic_in_world(
-  tables tables: table_store.Tables,
-  viewers viewers: List(Int),
-) -> game_connection.State {
-  let fresh = support.accepted(Settings(..support.settings(), tables:)).0
-  let #(state, _) =
-    support.entered_saved(
-      in_character_select: support.in_select_from(fresh),
-      character: Character(..support.world_character(), class_id: ClassId(4)),
-      saved_health: None,
-    )
-  support.watched_by(state:, viewers:)
-}
-
 /// A press of Paralytic Surge by a Medic whose spell holds the planted Stealth effect,
 /// seen by the connections 2 and 3.
 fn stealthed() -> #(game_connection.State, ConnectionStep(Request)) {
-  stealthed_in(tables: character_tables.shared_with_stealth())
-}
-
-/// The same with the tables given, whose Stealth effect may be kept on damage.
-fn stealthed_in(
-  tables tables: table_store.Tables,
-) -> #(game_connection.State, ConnectionStep(Request)) {
-  support.press_paralytic_surge(
-    state: medic_in_world(tables:, viewers: [2, 3]),
-    client_cast_id: 1,
-  )
+  support.stealthed_medic_in(tables: character_tables.shared_with_stealth())
 }
 
 fn written(taken taken: ConnectionStep(Request)) -> List(Frame) {
@@ -129,69 +101,36 @@ pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_
   })
 }
 
-/// What the connection tells the map when its player's stealth changes to `stealthed`:
-/// a tell to the run of the player's map, for the player's connection.
-fn the_map_told(
+/// What the connection tells the map when its player's stealth changes to `stealthed`.
+fn stealth_told(
   stealthed stealthed: Bool,
 ) -> step.Effect(step.ConnectionEffect(Request)) {
-  step.OwnEffect(step.Tell(
-    to: step.Map(map: support.camp_map(), incarnation: support.incarnation),
-    request: client_connection.TellStealthChanged(
-      connection: step.ConnectionId(1),
-      stealthed:,
-    ),
+  support.map_tell(request: client_connection.TellStealthChanged(
+    connection: step.ConnectionId(1),
+    stealthed:,
   ))
-}
-
-/// The step's effects after the tell to the map that its stealth change makes: none
-/// writes to the client or tells a viewer.
-fn writes_or_viewer_tells_after_the_map_tell(
-  taken taken: ConnectionStep(Request),
-) -> List(step.Effect(step.ConnectionEffect(Request))) {
-  connection_rule_support.effects_of(taken)
-  |> list.drop_while(fn(effect) {
-    case effect {
-      step.OwnEffect(step.Tell(to: step.Map(..), ..)) -> False
-      step.OwnEffect(_)
-      | step.Watch(..)
-      | step.Unwatch(..)
-      | step.Log(..)
-      | step.Stop -> True
-    }
-  })
-  |> list.drop(1)
-  |> list.filter(fn(effect) {
-    case effect {
-      step.OwnEffect(step.Write(..))
-      | step.OwnEffect(step.Tell(to: step.Connection(..), ..)) -> True
-      step.OwnEffect(_)
-      | step.Watch(..)
-      | step.Unwatch(..)
-      | step.Log(..)
-      | step.Stop -> False
-    }
-  })
 }
 
 pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_viewers_news_once_for_entering_and_once_for_leaving_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, entering) = stealthed()
-  assert support.told_the_map(entering) == [the_map_told(stealthed: True)]
+  assert support.told_the_map(entering) == [stealth_told(stealthed: True)]
     as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
-  assert writes_or_viewer_tells_after_the_map_tell(taken: entering) == []
+  assert support.writes_or_viewer_tells_after_the_map_tell(taken: entering)
+    == []
     as "after the 0x8f5 to the player and the viewers' news: the tell is the stealth change's last effect"
   list.each([2, 3], fn(viewer) {
     assert list.contains(news_told(taken: entering, viewer:), Stealth(True))
       as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"
   })
   let #(_, leaving) = support.press_paralytic_surge(state:, client_cast_id: 2)
-  assert support.told_the_map(leaving) == [the_map_told(stealthed: False)]
+  assert support.told_the_map(leaving) == [stealth_told(stealthed: False)]
     as "the second press ends the stealth (Spell4.46073): one tell, False"
-  assert writes_or_viewer_tells_after_the_map_tell(taken: leaving) == []
+  assert support.writes_or_viewer_tells_after_the_map_tell(taken: leaving) == []
   let blow = struck_while_stealthed()
-  assert support.told_the_map(blow) == [the_map_told(stealthed: False)]
+  assert support.told_the_map(blow) == [stealth_told(stealthed: False)]
     as "a landed blow on a stealth that ends on damage taken (Spell4Effects.effectType.83, 83834: dataBits02 0) tells the map False once"
-  assert writes_or_viewer_tells_after_the_map_tell(taken: blow) == []
+  assert support.writes_or_viewer_tells_after_the_map_tell(taken: blow) == []
 }
 
 pub fn a_camp_while_stealthed_tells_the_map_no_stealth_changed_and_only_the_leave_test() -> Nil {
@@ -246,7 +185,9 @@ pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5
 pub fn a_blow_does_not_end_a_stealth_kept_on_damage_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, _) =
-    stealthed_in(tables: character_tables.shared_with_kept_stealth())
+    support.stealthed_medic_in(
+      tables: character_tables.shared_with_kept_stealth(),
+    )
   let taken = support.feed(state, support.a_beast_strike(support.own_unit_id)).1
   assert only(frames: written(taken:), ids: [0x092F, 0x0811, 0x08F5])
     == [0x092F]
@@ -326,7 +267,9 @@ pub fn a_lethal_blow_ends_the_stealth_before_the_death_is_written_test() -> Nil 
 pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_the_stealth_before_the_log_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, _) =
-    stealthed_in(tables: character_tables.shared_with_kept_stealth())
+    support.stealthed_medic_in(
+      tables: character_tables.shared_with_kept_stealth(),
+    )
   let taken = support.killed(state).1
   assert only(frames: written(taken:), ids: [0x07FE, 0x08F5, 0x0247])
     == [0x07FE, 0x08F5, 0x0247]

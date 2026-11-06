@@ -1,19 +1,22 @@
-//// The map's rings under random moves, readiness and stealth
+//// The map's rings under random moves, readiness, stealth, life and creature starts
 //// (`genesis_prime/world_map/map`), the rule run with the shell's part played by the
 //// test. Expected values come from these places.
 //// - A stealthed player stands in no ring: Jim's decision on issue 483 (Discord,
 ////   2026-11-06, option A), a server choice, since the client holds no rule
 ////   (`UnitProperty2.stealth_detection`).
+//// - A dead player stands in no ring and the creatures it sees are sent `PlayerDied`
+////   instead of `Withdrew`: a server choice (the Design of issue 496, section 2); a
+////   dead unit is struck by nothing (`Spell4ValidTargets.targetBitmask`).
 //// - The ring rule (`genesis_prime/world_map/map` module doc): a ready player is in
 ////   a hostile creature's ring while within the aggro range of its place, and the map
 ////   sends `Approached` when it enters a ring and `Withdrew` when it leaves, to Live
 ////   creatures.
 //// - The aggro range is 10 units (migration 0010); the Virtual Defense Dagun is
 ////   hostile to the Dominion, whose faction is the tests' players' (`Creature2.73465`).
-//// The two Dagun spawns stand at x = 100 and 104 and their creatures stay Live: the
-//// test fires no sweep and crashes none.
+//// The two Dagun spawns stand at x = 100 and 104. A creature is Live except between a
+//// crash and its restart, which the test gives together; it fires no sweep.
 
-import genesis_prime/step
+import genesis_prime/step.{OwnEvent}
 import genesis_prime/world_map/map.{type State}
 import gleam/dict.{type Dict}
 import gleam/float
@@ -22,6 +25,7 @@ import gleam/list
 import gleam/result
 import gleam/string
 import map_spawn_support
+import map_support
 import owned_test
 import qcheck
 import spawn_support
@@ -43,11 +47,19 @@ type Op {
   Moves(player: Int, stop: Int)
   Readies(player: Int)
   Stealths(player: Int, stealthed: Bool)
+  Lives(player: Int, alive: Bool)
+  /// The creature of this spawn (an index) crashes and starts again.
+  Restarts(spawn: Int)
 }
 
 /// What the test knows of a player from the inputs it has given.
 type Standing {
-  Standing(x: Float, ready: Bool, stealthed: Bool)
+  Standing(x: Float, ready: Bool, stealthed: Bool, alive: Bool)
+}
+
+/// A creature the map started: its unit id, its spawn's x and the watch it runs under.
+type Creature {
+  Creature(unit_id: Int, x: Float, watch: step.WatchId)
 }
 
 type Play {
@@ -55,8 +67,8 @@ type Play {
     state: State,
     now_ms: Int,
     standing: Dict(Int, Standing),
-    /// The creatures, by unit id, with the spawn's x.
-    creatures: List(#(Int, Float)),
+    /// The creatures, in spawn order.
+    creatures: List(Creature),
     /// The last ring message each creature was sent for each player.
     last: Dict(#(Int, Int), String),
     violations: List(String),
@@ -66,10 +78,12 @@ type Play {
 fn op_of(n: Int) -> Op {
   let player = n % list.length(players) + 1
   let argument = n / list.length(players)
-  case argument % 4 {
-    0 | 1 -> Moves(player:, stop: { argument / 4 } % list.length(stops))
+  case argument % 6 {
+    0 | 1 -> Moves(player:, stop: { argument / 6 } % list.length(stops))
     2 -> Readies(player:)
-    _ -> Stealths(player:, stealthed: { argument / 4 } % 2 == 0)
+    3 -> Stealths(player:, stealthed: { argument / 6 } % 2 == 0)
+    4 -> Lives(player:, alive: { argument / 6 } % 2 == 0)
+    _ -> Restarts(spawn: { argument / 6 } % list.length(spawn_xs))
   }
 }
 
@@ -102,7 +116,7 @@ fn begin() -> Play {
         list.append(
           creatures,
           list.map(map_spawn_support.starts(joined), fn(start) {
-            start.1.unit_id
+            #(start.1.unit_id, start.0)
           }),
         ),
       )
@@ -113,10 +127,17 @@ fn begin() -> Play {
     now_ms: map_spawn_support.started_at_ms + list.length(players),
     standing: dict.from_list(
       list.map(players, fn(player) {
-        #(player, Standing(x: 60.0, ready: False, stealthed: False))
+        #(
+          player,
+          Standing(x: 60.0, ready: False, stealthed: False, alive: True),
+        )
       }),
     ),
-    creatures: list.zip(list.sort(creatures, int.compare), spawn_xs),
+    creatures: list.map2(
+      list.sort(creatures, fn(first, second) { int.compare(first.0, second.0) }),
+      spawn_xs,
+      fn(started, x) { Creature(unit_id: started.0, x:, watch: started.1) },
+    ),
     last: dict.new(),
     violations: [],
   )
@@ -141,46 +162,59 @@ fn parse(said: String) -> Result(#(String, Int), Nil) {
 
 /// The step's ring messages kept in `last`, with a violation for each that does not
 /// follow the one before: the first to a creature for a player is `Approached`, and
-/// they alternate.
+/// they alternate, a `PlayerDied` ending a ring as a `Withdrew` does and following
+/// anything; and one for each `Approached` that names a player that is not ready, not
+/// stealthed and alive.
 fn noted(
   play play: Play,
   taken taken: step.ServiceStep(map.Outgoing),
   after after: String,
 ) -> Play {
-  list.fold(map_spawn_support.ring_sends(taken), play, fn(play, sent) {
+  list.fold(map_spawn_support.ring_and_death_sends(taken), play, fn(play, sent) {
     let assert Ok(#(kind, player)) = parse(sent.1)
       as "a ring send says who it is by"
     let before = dict.get(play.last, #(sent.0, player))
+    let noticeable = case dict.get(play.standing, player) {
+      Ok(standing) -> standing.ready && !standing.stealthed && standing.alive
+      Error(Nil) -> False
+    }
     let follows = case kind, before {
-      "Approached", Error(Nil) | "Approached", Ok("Withdrew") -> True
+      "Approached", Error(Nil) | "Approached", Ok("Withdrew") -> noticeable
       "Withdrew", Ok("Approached") -> True
+      "PlayerDied", _ -> True
       _, _ -> False
     }
-    Play(
-      ..play,
-      last: dict.insert(play.last, #(sent.0, player), kind),
-      violations: case follows {
-        True -> play.violations
-        False -> [
-          after
-            <> ": creature "
-            <> int.to_string(sent.0)
-            <> " was sent "
-            <> kind
-            <> " for player "
-            <> int.to_string(player)
-            <> " after "
-            <> last_said(before),
-          ..play.violations
-        ]
-      },
-    )
+    let last = case kind, before {
+      "PlayerDied", Ok("Approached") ->
+        dict.insert(play.last, #(sent.0, player), "Withdrew")
+      "PlayerDied", _ -> play.last
+      _, _ -> dict.insert(play.last, #(sent.0, player), kind)
+    }
+    Play(..play, last:, violations: case follows {
+      True -> play.violations
+      False -> [
+        after
+          <> ": creature "
+          <> int.to_string(sent.0)
+          <> " was sent "
+          <> kind
+          <> " for player "
+          <> int.to_string(player)
+          <> " after "
+          <> last_said(before)
+          <> case kind == "Approached" && !noticeable {
+          True -> ", a player that is not ready, unstealthed and alive"
+          False -> ""
+        },
+        ..play.violations
+      ]
+    })
   })
 }
 
 /// A violation for each creature and player whose last ring message is not what the
-/// ring rule says: `Approached` exactly when the player is ready, not stealthed and
-/// within the aggro range of the creature's spawn.
+/// ring rule says: `Approached` exactly when the player is ready, not stealthed, alive
+/// and within the aggro range of the creature's spawn.
 fn checked(play play: Play, after after: String) -> Play {
   let found =
     list.flat_map(play.creatures, fn(creature) {
@@ -189,9 +223,10 @@ fn checked(play play: Play, after after: String) -> Play {
         let in_ring =
           standing.ready
           && !standing.stealthed
-          && float.absolute_value(standing.x -. creature.1) <=. aggro_range
+          && standing.alive
+          && float.absolute_value(standing.x -. creature.x) <=. aggro_range
         let told =
-          dict.get(play.last, #(creature.0, entry.0)) == Ok("Approached")
+          dict.get(play.last, #(creature.unit_id, entry.0)) == Ok("Approached")
         case in_ring == told {
           True -> Error(Nil)
           False ->
@@ -205,9 +240,9 @@ fn checked(play play: Play, after after: String) -> Play {
                 False -> "not in"
               }
               <> " the ring of creature "
-              <> int.to_string(creature.0)
+              <> int.to_string(creature.unit_id)
               <> " but its last send was "
-              <> last_said(dict.get(play.last, #(creature.0, entry.0))),
+              <> last_said(dict.get(play.last, #(creature.unit_id, entry.0))),
             )
         }
       })
@@ -307,6 +342,78 @@ fn apply(play play: Play, op op: Op) -> Play {
         after:,
       )
     }
+    Lives(player:, alive:) -> {
+      let #(state, taken) =
+        map_spawn_support.life(
+          state: play.state,
+          at_ms:,
+          connection: player,
+          alive:,
+        )
+      let assert Ok(held) = dict.get(play.standing, player)
+      let after =
+        "life "
+        <> int.to_string(player)
+        <> case alive {
+          True -> " wakes"
+          False -> " dies"
+        }
+      checked(
+        play: noted(
+          play: Play(
+            ..play,
+            state:,
+            standing: dict.insert(
+              play.standing,
+              player,
+              Standing(..held, alive:),
+            ),
+          ),
+          taken:,
+          after:,
+        ),
+        after:,
+      )
+    }
+    Restarts(spawn:) -> {
+      let #(before, rest) = list.split(play.creatures, spawn)
+      let assert [crashed, ..after_it] = rest as "a spawn's creature"
+      let #(state, ended) =
+        map_spawn_support.creature_ended(
+          state: play.state,
+          at_ms:,
+          watch: crashed.watch,
+        )
+      let assert [#(restart, _)] = map_spawn_support.timers(ended)
+        as "the crashed spawn waits for its restart timer"
+      let at_ms = at_ms + map_support.respawn_ms
+      let #(state, restarted) =
+        map_spawn_support.feed(
+          state:,
+          at_ms:,
+          event: OwnEvent(step.ServiceTimerFired(timer: step.TimerId(restart))),
+        )
+      let assert [#(watch, start)] = map_spawn_support.starts(restarted)
+        as "the spawn's creature starts again for the players that see it"
+      let after = "restart of spawn " <> int.to_string(spawn)
+      checked(
+        play: noted(
+          play: Play(
+            ..play,
+            state:,
+            now_ms: at_ms,
+            creatures: list.flatten([
+              before,
+              [Creature(unit_id: start.unit_id, x: crashed.x, watch:)],
+              after_it,
+            ]),
+          ),
+          taken: restarted,
+          after:,
+        ),
+        after:,
+      )
+    }
   }
 }
 
@@ -314,12 +421,12 @@ fn run(ops ops: List(Op)) -> List(String) {
   list.fold(ops, begin(), fn(play, op) { apply(play:, op:) }).violations
 }
 
-pub fn over_random_moves_readies_and_stealth_changes_the_ring_sends_alternate_and_the_last_is_approached_exactly_for_a_ready_unstealthed_player_in_the_ring_test() -> Nil {
+pub fn over_random_moves_readies_stealth_and_life_changes_and_creature_starts_the_ring_sends_alternate_and_the_last_is_approached_exactly_for_a_ready_unstealthed_living_player_in_the_ring_test() -> Nil {
   use <- owned_test.run(60_000)
   use numbers <- qcheck.given(qcheck.generic_list(
     qcheck.bounded_int(from: 0, to: 1_000_000),
     qcheck.bounded_int(from: 1, to: 60),
   ))
   assert run(ops: list.map(numbers, op_of)) == []
-    as "each creature is sent Approached, Withdrew in turn for each player, starting with Approached, and after each input the last one sent is Approached exactly when the player is ready, not stealthed and within 10 of the spawn"
+    as "each creature is sent Approached, Withdrew in turn for each player, starting with Approached, and after each input the last one sent is Approached exactly when the player is ready, not stealthed, alive and within 10 of the spawn, and no Approached names another"
 }
