@@ -5,7 +5,7 @@
 //// and a read that held more than one message keeps the bytes beyond them
 //// (`game_client.read_kept`), which a later read must use.
 
-import game_client.{Game}
+import game_client
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/message/unit_destroyed
@@ -21,7 +21,7 @@ pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_
   // a client sends it.
   let socket = login_client.connect(login_support.ports(started).sts_port)
   let cipher = game_client.session_cipher(session_key: <<1:128>>)
-  let game = Game(socket:, cipher:)
+  let game = game_client.new(socket:, cipher:)
   let assert Ok(body) =
     unit_destroyed.encode(unit_destroyed.UnitDestroyed(unit_id: 9, field_2: 0))
   let assert Ok(whole) =
