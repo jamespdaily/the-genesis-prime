@@ -81,46 +81,59 @@ fn changed(
         })
       case entries {
         [] -> #(session, [])
-        [_, ..] -> {
-          let sent = unit_properties.entries(changed: entries)
-          let told =
-            list.flatten([
-              [
-                connection_state.to_client(
-                  session,
-                  connection_frames.properties_changed_frame(
-                    unit_id: entered.unit_id,
-                    properties: sent,
-                  ),
-                ),
-              ],
-              list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
-                connection_state.news_to(
-                  entered:,
-                  viewer:,
-                  news: client_connection.PropertiesChanged(properties: sent),
-                )
-              }),
-            ])
-          let #(life, life_effects) =
-            player_life.properties_changed(life: entered.life, properties:)
-          let session =
-            connection_state.with_entered(session:, change: fn(entered) {
-              world_entry.Entered(..entered, life:)
-            })
-          let following = case connection_state.entered_of(session.status) {
-            Some(entered) ->
-              life_effect.life_effects(
-                session:,
-                now:,
-                entered:,
-                effects: life_effects,
-              )
-            None -> []
-          }
-          #(session, list.append(told, following))
-        }
+        [_, ..] -> told(session:, now:, entered:, entries:)
       }
     }
   }
+}
+
+/// The player's client and viewers told the entries that changed, and the life taken
+/// to the properties' new values with what that writes.
+fn told(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  entries entries: List(unit_properties.Changed),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let sent = unit_properties.entries(changed: entries)
+  let told =
+    list.flatten([
+      [
+        connection_state.to_client(
+          session,
+          connection_frames.properties_changed_frame(
+            unit_id: entered.unit_id,
+            properties: sent,
+          ),
+        ),
+      ],
+      list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
+        connection_state.news_to(
+          entered:,
+          viewer:,
+          news: client_connection.PropertiesChanged(properties: sent),
+        )
+      }),
+    ])
+  let properties = case connection_state.entered_of(session.status) {
+    Some(current) -> current.properties
+    None -> entered.properties
+  }
+  let #(life, life_effects) =
+    player_life.properties_changed(life: entered.life, properties:)
+  let session =
+    connection_state.with_entered(session:, change: fn(entered) {
+      world_entry.Entered(..entered, life:)
+    })
+  let following = case connection_state.entered_of(session.status) {
+    Some(current) ->
+      life_effect.life_effects(
+        session:,
+        now:,
+        entered: current,
+        effects: life_effects,
+      )
+    None -> []
+  }
+  #(session, list.append(told, following))
 }

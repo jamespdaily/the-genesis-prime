@@ -28,7 +28,7 @@ import genesis_prime/game/cast.{type GoAsked, GoAsked}
 import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
-import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls}
 import genesis_prime/game/shown.{Exile, ShownCreature, ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
@@ -40,6 +40,8 @@ import genesis_prime/game/strike.{
 import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused,
 }
+import genesis_prime/game/unit_properties
+import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
@@ -1303,4 +1305,97 @@ pub fn a_state_aimed_at_the_area_does_not_reach_a_primary_target_outside_it_but_
     as "targetFlags 6 aims at the area's units and the cast's target"
   assert told_to(spell_plan.AimsAtPrimaryTarget) == [11]
     as "targetFlags 2 aims at the cast's target alone"
+}
+
+// ---- the caster's properties ----
+
+/// The offence the strike carries to one unit for a caster with these properties, the
+/// round's one blow of 10 damage.
+fn offence_of_caster_with(
+  properties properties: unit_properties.Properties,
+) -> Offence {
+  let blow =
+    DamageEffect(
+      ..damage_effect(),
+      formula: damage.Formula(multiplier: 1.0, base: 10, parameters: []),
+    )
+  let #(_, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection: Selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [strike.Aimed(unit_id: 10, life: 3)],
+        area: [10],
+        blows: [blow],
+        controls: [],
+      ),
+      attacker: Attacker(..attacker(), properties:),
+      formulas: rating_support.formulas(),
+      entropy: entropy(rolls: [#(0, 0, 0)]),
+      now: at(ms: 1000),
+    )
+  let assert [strike.TellStrike(tell: strike_tell.Strike(offence:, ..), ..)] =
+    tells(effects:)
+    as "one strike for the one selected unit"
+  offence
+}
+
+fn with_crit_modifier(flat flat: Float) -> unit_properties.Properties {
+  let #(properties, _) =
+    unit_properties.apply(
+      properties: properties_support.fresh(level: 1),
+      source: unit_properties.Source(
+        cast_id: 1,
+        effect_id: Spell4EffectsId(135_954),
+      ),
+      modifier: unit_properties.Modifier(
+        property: id.UnitProperty2Id(102),
+        mode: 3,
+        multiplier: 1.0,
+        flat:,
+        per_level: 0.0,
+      ),
+    )
+  properties
+}
+
+pub fn a_crit_chance_modifier_on_the_player_changes_the_chance_its_strikes_carry_test() -> Nil {
+  use <- owned_test.run(5000)
+  // BaseCritChance is 0.0 and 135954 adds 0.08, as a 32-bit float (0x3da3d70a,
+  // `table_rows -- Spell4Effects 135954`). The chance a strike carries is the formula's
+  // at rating 0, which is the base alone: 0.0, then 0.08 while the modifier lasts.
+  assert offence_of_caster_with(properties: properties_support.fresh(level: 1)).crit_chance
+    == 0.0
+  assert offence_of_caster_with(properties: with_crit_modifier(
+      flat: 0.07999999821186066,
+    )).crit_chance
+    == 0.07999999821186066
+    as "the base of the hit chance is the property's value, 0.0 + 0.08 while the modifier lasts"
+}
+
+pub fn a_planted_100_percent_crit_modifier_makes_every_blow_crit_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The hit rule: a blow is critical when the crit roll is below the crit chance
+  // (genesis_prime/game/hit), at a severity of 1.5. A roll of 0.99 never crits at a
+  // chance of 0.0 and always at a chance of 1.0.
+  let roll = Rolls(crit: 0.99, deflect: 0.5, glance: 0.5)
+  let outcome = fn(properties) {
+    hit.apply(
+      health: 100,
+      shield: 0,
+      offence: offence_of_caster_with(properties:),
+      defence: hit.unprotected,
+      rolls: roll,
+    )
+  }
+  let assert hit.Landed(descriptions: [plain], ..) =
+    outcome(properties_support.fresh(level: 1))
+  assert plain.damage.combat_result == combat_result.Hit
+  assert plain.damage.raw_damage == 10
+  let assert hit.Landed(descriptions: [critical], ..) =
+    outcome(with_crit_modifier(flat: 1.0))
+  assert critical.damage.combat_result == combat_result.Critical
+    as "the modified chance is 1.0, so the roll 0.99 crits"
+  assert critical.damage.raw_damage == 15
+    as "at the player's severity, 1.5 (UnitProperty2 127's default)"
 }

@@ -12,6 +12,7 @@
 ////   once.
 //// - `opcode.0x93a`: an entry is the id, then the base and the value as 32-bit floats.
 
+import client_tables
 import genesis_prime/game/unit_properties.{
   type Properties, type Source, Changed, Modifier, Source,
 }
@@ -20,6 +21,8 @@ import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import gleam/list
 import owned_test
+import properties_support
+import unitest
 
 const move_speed = UnitProperty2Id(100)
 
@@ -282,7 +285,43 @@ pub fn the_overlay_puts_the_current_value_of_a_modified_property_in_a_0x262_list
       UnitProperty(property_id: 102, base: 0x00000000, value: 0x3E800000),
     ]
     as "a listed property keeps its place unless a modifier holds it; one the 0x262 does not list is added; in id order"
-  assert list.length(unit_properties.overlay(listed: [], properties: fresh()))
-    == 0
+  assert unit_properties.overlay(listed: [], properties: fresh()) == []
     as "no modifier live: nothing is added"
+}
+
+pub fn the_test_support_defaults_are_the_clients_unitproperty2_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // UnitProperty2 8, 102, 104, 127 and 177 are the defaults the hit rule and the
+  // regeneration read (0x140463e80, `UnitProperty2.176`); each planted default is the
+  // client's row.
+  let real = unit_properties.defaults(tables: client_tables.shared())
+  list.each(properties_support.defaults(), fn(planted) {
+    assert list.key_find(real, planted.0) == Ok(planted.1)
+      as "a planted default is the client's"
+  })
+}
+
+pub fn gates_row_sets_falling_damage_to_0_and_the_property_is_held_and_sent_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 67777: multiplier 0.0 and flat 0.0 on FallingDamageMultiplier (134), whose default
+  // is 1.0. The properties hold the 0.0 and report it so it is sent; no rule reads
+  // property 134 (falling damage is not handled), which `unit_properties` states.
+  let falling = UnitProperty2Id(134)
+  let #(properties, changed) =
+    unit_properties.apply(
+      properties: fresh(),
+      source: source(cast_id: 1, effect_id: 67_777),
+      modifier: modifier(property: falling, multiplier: 0.0, flat: 0.0),
+    )
+  assert unit_properties.value(properties:, property: falling) == 0.0
+  assert changed == [Changed(property: falling, base: 1.0, value: 0.0)]
+    as "base 1.0, value 0.0: the entry the client is sent"
+  let #(properties, ended) =
+    unit_properties.remove(
+      properties:,
+      source: source(cast_id: 1, effect_id: 67_777),
+    )
+  assert unit_properties.value(properties:, property: falling) == 1.0
+  assert ended == [Changed(property: falling, base: 1.0, value: 1.0)]
 }

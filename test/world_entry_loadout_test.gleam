@@ -34,7 +34,6 @@ import character_support
 import character_tables
 import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/rating
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}

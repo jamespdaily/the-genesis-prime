@@ -159,6 +159,40 @@ pub fn shared_with_a_lasting_effect() -> store.Tables {
   })
 }
 
+/// The planted tables with two type 11 effects aimed at the caster added to Paralytic
+/// Surge 42352, which holds none: row 135954 as the client holds it on Mind Burst's
+/// child 57030 (BaseCritChance, mode 3, multiplier 1.0, flat 0.08, 8000 ms), and a row
+/// that raises BaseHealth (property 7, mode 3, multiplier 1.0, flat 100.0) for 2000
+/// ms, which is test data, since no kit row changes a maximum. Loaded once under a key of
+/// its own.
+pub fn shared_with_property_modifiers() -> store.Tables {
+  database_support.once("character_tables_property_modifiers", fn() {
+    let modifier = fn(id, property, flat_bits, duration) {
+      planted_table.row(spell4_effects.schema, [
+        #("ID", Integer(id)),
+        #("spellId", Integer(42_352)),
+        #("targetFlags", Integer(1)),
+        #("effectType", Integer(11)),
+        #("phaseFlags", Integer(-1)),
+        #("durationTime", Integer(duration)),
+        #("dataBits00", Integer(property)),
+        #("dataBits01", Integer(3)),
+        #("dataBits02", Integer(1_065_353_216)),
+        #("dataBits03", Integer(flat_bits)),
+        #("orderIndex", Integer(2)),
+      ])
+    }
+    load_files(files_replacing(
+      schema: spell4_effects.schema,
+      rows: spell_tables.sorted_by_id([
+        modifier(135_954, 102, 1_034_147_594, 8000),
+        modifier(99_901, 7, 1_120_403_456, 2000),
+        ..novice_tables.spell4_effects_rows()
+      ]),
+    ))
+  })
+}
+
 /// The planted tables with UnitProperty2 rows 8 (HealthRegenMultiplier) at 2.0 and
 /// 177 (ShieldTickTime) at 750.0 in place of their defaults 1.0 and 500.0: test
 /// data, so a test can tell the regeneration reads them from the table. Loaded once

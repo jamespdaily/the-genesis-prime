@@ -23,7 +23,6 @@ import genesis_prime/game/unit_properties.{
 }
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
-import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import gleam/int
 import gleam/list
@@ -116,12 +115,33 @@ fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
   Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
 }
 
+/// A modifier an effect starts or ends.
+type Change {
+  Started(source: Source, modifier: Modifier)
+  Ended(source: Source)
+}
+
+fn change_of(effect effect: Effect) -> Result(Change, Nil) {
+  case effect {
+    cast.PropertyStarts(source:, modifier:) -> Ok(Started(source:, modifier:))
+    cast.PropertyEnds(source:) -> Ok(Ended(source:))
+    cast.Send(..)
+    | cast.Tell(..)
+    | cast.StartTimer(..)
+    | cast.CancelTimer(..)
+    | cast.Log(..)
+    | cast.Strike(..)
+    | cast.Pay(..)
+    | cast.Gain(..) -> Error(Nil)
+  }
+}
+
 /// The modifiers the effects start, with their sources.
 fn starts(effects effects: List(Effect)) -> List(#(Source, Modifier)) {
   list.filter_map(effects, fn(effect) {
-    case effect {
-      cast.PropertyStarts(source:, modifier:) -> Ok(#(source, modifier))
-      _ -> Error(Nil)
+    case change_of(effect:) {
+      Ok(Started(source:, modifier:)) -> Ok(#(source, modifier))
+      Ok(Ended(..)) | Error(Nil) -> Error(Nil)
     }
   })
 }
@@ -129,9 +149,9 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Modifier)) {
 /// The sources the effects end.
 fn ends(effects effects: List(Effect)) -> List(Source) {
   list.filter_map(effects, fn(effect) {
-    case effect {
-      cast.PropertyEnds(source:) -> Ok(source)
-      _ -> Error(Nil)
+    case change_of(effect:) {
+      Ok(Ended(source:)) -> Ok(source)
+      Ok(Started(..)) | Error(Nil) -> Error(Nil)
     }
   })
 }
@@ -153,18 +173,6 @@ fn timeline(
 fn all_timer_delays(effects effects: List(Effect)) -> List(Int) {
   list.map(support.started_timers(effects:), fn(timer) { timer.1 })
   |> list.sort(int.compare)
-}
-
-fn timer_of_delay(
-  effects effects: List(Effect),
-  after_ms after_ms: Int,
-) -> List(TimerId) {
-  list.filter_map(support.started_timers(effects:), fn(timer) {
-    case timer.1 == after_ms {
-      True -> Ok(timer.0)
-      False -> Error(Nil)
-    }
-  })
 }
 
 // ---- what a go lists and how long the cast lasts ----

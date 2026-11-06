@@ -21,7 +21,7 @@ import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
   type EngineDeclaration, EngineDeclaration, Listed, Missing, Partial,
 }
-import genesis_prime/coverage/measurement.{Handled, HandledWithGap, Measured}
+import genesis_prime/coverage/measurement.{HandledWithGap, Measured}
 import genesis_prime/coverage/starting_ability.{MissingRow}
 import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/table/id.{Spell4Id}

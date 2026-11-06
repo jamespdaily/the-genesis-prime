@@ -57,6 +57,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/unit_property2
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -81,11 +82,6 @@ pub const shield_capacity_max = UnitProperty2Id(41)
 /// Armor (42): the rating the defence formulas read.
 pub const armor = UnitProperty2Id(42)
 
-/// MoveSpeedMultiplier (100): what the client multiplies the player's own movement
-/// speed by. The server holds and sends it and checks no speed
-/// (`UnitProperty2.client_value`).
-pub const move_speed_multiplier = UnitProperty2Id(100)
-
 /// BaseCritChance (102): the base the critical hit chance formula takes.
 pub const base_crit_chance = UnitProperty2Id(102)
 
@@ -95,10 +91,6 @@ pub const base_avoid_reduce_chance = UnitProperty2Id(104)
 /// CriticalHitSeverityMultiplier (127): the base the critical hit severity formula
 /// takes.
 pub const critical_hit_severity_multiplier = UnitProperty2Id(127)
-
-/// FallingDamageMultiplier (134): held and sent; falling damage is not handled, so no
-/// rule reads it.
-pub const falling_damage_multiplier = UnitProperty2Id(134)
 
 /// ShieldMitigationMax (175): the most of a blow the shield takes.
 pub const shield_mitigation_max = UnitProperty2Id(175)
@@ -218,15 +210,15 @@ pub fn apply(
   source source: Source,
   modifier modifier: Modifier,
 ) -> #(Properties, List(Changed)) {
-  case list.any(properties.live, fn(live) { live.source == source }) {
-    True -> #(properties, [])
-    False ->
-      recomputed(
-        properties:,
-        live: list.append(properties.live, [Live(source:, modifier:)]),
-        property: modifier.property,
-      )
-  }
+  use <- bool.guard(
+    when: list.any(properties.live, fn(live) { live.source == source }),
+    return: #(properties, []),
+  )
+  recomputed(
+    properties:,
+    live: list.append(properties.live, [Live(source:, modifier:)]),
+    property: modifier.property,
+  )
 }
 
 /// The properties with the modifier of `source` taken off, and the entries whose value
