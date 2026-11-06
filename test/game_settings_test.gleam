@@ -28,10 +28,18 @@ fn environment(
 pub fn no_variables_give_the_defaults_test() -> Nil {
   use <- owned_test.run(5000)
   assert game_settings.from_environment(environment([]))
-    == Ok(GameSettings(camp_countdown_ms: 10_000, character_slots: 2))
+    == Ok(GameSettings(
+      camp_countdown_ms: 10_000,
+      character_slots: 2,
+      dev_commands: False,
+    ))
     as "10 s is Jim's choice for the camp, and 2 slots is the client's count for an account with no entitlement"
   assert game_settings.defaults()
-    == GameSettings(camp_countdown_ms: 10_000, character_slots: 2)
+    == GameSettings(
+      camp_countdown_ms: 10_000,
+      character_slots: 2,
+      dev_commands: False,
+    )
 }
 
 pub fn a_countdown_of_0_and_of_59999_is_taken_test() -> Nil {
@@ -39,17 +47,29 @@ pub fn a_countdown_of_0_and_of_59999_is_taken_test() -> Nil {
   assert game_settings.from_environment(
       environment([#("GENESIS_CAMP_COUNTDOWN_MS", "0")]),
     )
-    == Ok(GameSettings(camp_countdown_ms: 0, character_slots: 2))
+    == Ok(GameSettings(
+      camp_countdown_ms: 0,
+      character_slots: 2,
+      dev_commands: False,
+    ))
     as "opcode.0x92.countdown_range: a countdown of 0 after 0xBF 1 is a camp due at once"
   assert game_settings.from_environment(
       environment([#("GENESIS_CAMP_COUNTDOWN_MS", "59999")]),
     )
-    == Ok(GameSettings(camp_countdown_ms: 59_999, character_slots: 2))
+    == Ok(GameSettings(
+      camp_countdown_ms: 59_999,
+      character_slots: 2,
+      dev_commands: False,
+    ))
     as "the longest the exit window lays out: 00:59"
   assert game_settings.from_environment(
       environment([#("GENESIS_CAMP_COUNTDOWN_MS", "12345")]),
     )
-    == Ok(GameSettings(camp_countdown_ms: 12_345, character_slots: 2))
+    == Ok(GameSettings(
+      camp_countdown_ms: 12_345,
+      character_slots: 2,
+      dev_commands: False,
+    ))
     as "a value in between replaces the default"
 }
 
@@ -119,7 +139,11 @@ pub fn slots_of_2_and_14_are_taken_and_6_gives_6_test() -> Nil {
     assert game_settings.from_environment(
         environment([#("GENESIS_CHARACTER_SLOTS", text)]),
       )
-      == Ok(GameSettings(camp_countdown_ms: 10_000, character_slots: slots))
+      == Ok(GameSettings(
+        camp_countdown_ms: 10_000,
+        character_slots: slots,
+        dev_commands: False,
+      ))
       as "RewardPropertyPremiumModifier rows 117 and 118: the client offers 2 slots up to 14, its most"
   })
 }
@@ -148,4 +172,46 @@ pub fn slots_below_2_or_above_14_or_not_a_whole_number_are_refused_with_their_va
       least: 2,
       most: 14,
     ))
+}
+
+pub fn the_development_commands_are_off_unset_and_on_only_for_1_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert game_settings.from_environment(environment([]))
+    == Ok(GameSettings(..game_settings.defaults(), dev_commands: False))
+    as "the module's doc comment: unset is 0, off, so production, which does not set it, runs no development command"
+  assert !game_settings.defaults().dev_commands
+  assert game_settings.from_environment(
+      environment([#("GENESIS_DEV_COMMANDS", "0")]),
+    )
+    == Ok(GameSettings(..game_settings.defaults(), dev_commands: False))
+    as "0 is off"
+  assert game_settings.from_environment(
+      environment([#("GENESIS_DEV_COMMANDS", "1")]),
+    )
+    == Ok(GameSettings(..game_settings.defaults(), dev_commands: True))
+    as "1 is on, and changes no other setting"
+}
+
+pub fn a_development_commands_value_of_2_or_x_refuses_the_start_with_its_variable_and_range_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert game_settings.from_environment(
+      environment([#("GENESIS_DEV_COMMANDS", "2")]),
+    )
+    == Error(OutOfRange(
+      variable: "GENESIS_DEV_COMMANDS",
+      value: 2,
+      least: 0,
+      most: 1,
+    ))
+    as "the module's doc comment: a whole number outside 0 to 1 is refused with the range, so a typo never turns the commands on"
+  assert game_settings.from_environment(
+      environment([#("GENESIS_DEV_COMMANDS", "x")]),
+    )
+    == Error(NotAWholeNumber(
+      variable: "GENESIS_DEV_COMMANDS",
+      value: "x",
+      least: 0,
+      most: 1,
+    ))
+    as "a value that is not a whole number is refused with the range"
 }

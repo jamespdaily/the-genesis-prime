@@ -18,7 +18,9 @@ import genesis_prime/service
 import genesis_prime/step.{type Address, Creature, CreatureStart}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source
 import gleam/erlang/process.{type Subject}
+import gleam/list
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import owned_test
@@ -31,7 +33,7 @@ fn a_creature() -> step.CreatureStart {
     incarnation: 1,
     unit_id: 7,
     life: 3,
-    spawn_id: SpawnId(1),
+    spawn: spawn_source.Stored(id: SpawnId(1)),
     clock_origin_ms: 0,
     viewers: [],
   )
@@ -132,6 +134,53 @@ pub fn a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_
     as "the failed start reached the rule as CreatureNotStarted with the watch's id"
   assert process.receive(located, within: 0) == Error(Nil)
     as "no watch was opened for a creature that did not start: its address was never looked up"
+  process.kill(target)
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+pub fn a_timer_of_the_step_that_started_a_creature_fires_after_the_creatures_failed_start_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // The map answers a development summon by the timer it starts with the
+  // creature: the failure of the start is the rule's next input after the step
+  // (`genesis_prime/service/shell` `take`), so the timer, even one of 0 ms, is
+  // the first input that says the start did not fail.
+  let target = process.spawn_unlinked(process.sleep_forever)
+  let gate = process.new_name("gate")
+  let started = process.new_subject()
+  let located = process.new_subject()
+  let tree =
+    start_tree(starting_creatures(
+      gate:,
+      starting: Error(service.SupervisorNotRunning),
+      started:,
+      located:,
+      at: target,
+    ))
+  let arrivals = process.new_subject()
+  list.each([-4, gate_rule.timer_key_base + 9], fn(key) {
+    let assert Ok(service.ToService(_)) =
+      service.call(gate, gate_rule.Await(key:), fn(answer) {
+        process.send(arrivals, answer)
+      })
+      as "the gate took the wait"
+  })
+  assert ask_support.call_gate(
+      gate,
+      gate_rule.StartCreatureThenTimer(
+        watch: 4,
+        creature: a_creature(),
+        timer: 9,
+        after_ms: 0,
+      ),
+    )
+    == gate_rule.Echoed(4)
+  assert process.receive(arrivals, within: ask_support.event_wait_ms)
+    == Ok(gate_rule.Opened(-4))
+    as "the failed start comes first"
+  assert process.receive(arrivals, within: ask_support.event_wait_ms)
+    == Ok(gate_rule.Opened(gate_rule.timer_key_base + 9))
+    as "the timer of the same step comes after it"
   process.kill(target)
   let _reason = ask_support.stop_tree(tree)
   Nil

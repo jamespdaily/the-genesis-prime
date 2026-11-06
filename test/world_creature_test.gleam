@@ -27,9 +27,12 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_position_command
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
+import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
@@ -174,6 +177,12 @@ fn move_to(run run: MapProcess, connection connection: Int, x x: Float) -> Nil {
       ),
     )
   Nil
+}
+
+/// A world with no stored spawn, whose creatures stop on the short times and
+/// whose spawns come back after 100 ms.
+fn no_spawns() -> World {
+  world_support.start(spawns: [], respawn_ms: 100, idle_stop_ms:, sweep_ms:)
 }
 
 /// Far from every spawn the tests stand.
@@ -540,4 +549,86 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
     )
   assert second.unit_id == first.unit_id
     as "a clean stop keeps the spawn's unit id, and the creature that starts is at full health (the corpse died with its process)"
+}
+
+/// The summon of Creature2 `creature_id` by the connection's player, answered
+/// with the unit id the creature starts under.
+fn summon(
+  run run: MapProcess,
+  connection connection: Int,
+  creature_id creature_id: Int,
+) -> Int {
+  let #(_, answer) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      service.call_subject(
+        run.subject,
+        map.Summon(
+          connection: ConnectionId(connection),
+          creature_id: Creature2Id(creature_id),
+        ),
+        reply,
+      )
+    })
+  let assert map.Summoned(unit_id:) = answer
+    as "the map answered the summon: the creature started"
+  unit_id
+}
+
+pub fn a_summoned_creature_runs_under_the_creature_supervisor_and_sends_its_0x262_at_the_players_place_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A summon is rebuilt in the creature's start from the summon the map checked
+  // (`server` `spawn_of_start`), so the creature's 0x262 is the Creature2 row's,
+  // at the player's place (the join's: x 100, y 0, z 0, whose float32 bits are
+  // 1120403456, 0 and 0). The Dagun is Creature2 73465: faction 1442, display
+  // 26578 (`spawn_support`, held to the client's rows by `character_tables_test`).
+  let world = no_spawns()
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let player = join(run:, connection: 1)
+  let unit_id = summon(run:, connection: 1, creature_id: 73_465)
+  assert unit_id != player as "the creature has a unit id of its own"
+  let creature =
+    next(received:, what: "the summoned creature's 0x262", wanted: appearance)
+  assert creature.unit_id == unit_id && creature.creature_id == 73_465
+    as "the 0x262 is of the creature the answer names"
+  assert creature.tail.faction_id == 1442
+    && creature.tail.base_faction_id == 1442
+    && creature.tail.display_info_id == 26_578
+    as "the Creature2 row's faction and the first entry of its display group"
+  assert list.contains(
+    creature.tail.movement_commands,
+    start_movement.Position(unit_position_command.UnitPositionCommand(
+      x: 1_120_403_456,
+      y: 0,
+      z: 0,
+      blends: 0,
+    )),
+  )
+    as "it stands where the player does"
+  let _pid = creature_pid(world:, run:, unit_id:, life: 2)
+  Nil
+}
+
+pub fn a_summoned_creature_that_crashes_under_its_supervisor_is_gone_to_the_players_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // That no creature stands there again is the map rule's (`map_summon_test`):
+  // a negative cannot be waited for.
+  let world = no_spawns()
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let unit_id = summon(run:, connection: 1, creature_id: 73_465)
+  let _first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  process.kill(creature_pid(world:, run:, unit_id:, life: 2))
+  let gone =
+    next(received:, what: "Gone for the summoned creature", wanted: fn(message) {
+      case message {
+        ForStay(sent: SentByMap(map.Gone(unit_id:)), ..) -> Ok(unit_id)
+        ForStay(..)
+        | client_connection.SentBySessions(..)
+        | client_connection.SentByChat(..) -> Error(Nil)
+      }
+    })
+  assert gone == unit_id
+    as "the map speaks of the unit once its owner has ended, as for a stored spawn's"
 }

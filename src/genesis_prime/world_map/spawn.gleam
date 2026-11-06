@@ -97,6 +97,7 @@ import genesis_prime/world_map/creature_life.{
 }
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_source.{type Summoned, Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject}
 import genesis_prime/world_map/unit_fields.{
   type HealthSource, ClientDefault, Recorded,
@@ -251,7 +252,7 @@ pub type WorldCoverage {
 }
 
 /// Why a row fails the load.
-type SpawnError {
+pub type SpawnError {
   /// The creature has no Creature2 row.
   NoCreatureRow(creature_id: Creature2Id)
   /// The client would not load the creature's row (`0x140485790`).
@@ -292,7 +293,7 @@ type SpawnError {
 }
 
 /// The client's rule a creature's row fails (`0x140485790`).
-type ValidityRule {
+pub type ValidityRule {
   ModelScaleNotAbove0
   CreationTypeNotBelow26
   NoArcheTypeRow
@@ -312,15 +313,16 @@ type Checked {
 /// What the checks and the selection read of the client's tables by something
 /// other than a row's id, built once for a load so no check scans a table for
 /// each of the 77,794 rows: each creature's override of Base Health, the display
-/// ids of each display group, the outfit groups that have entries, each
-/// faction's parent, and the level of each pair of factions that has a
+/// ids of each display group, the first display and the first outfit of each
+/// group, each faction's parent, and the level of each pair of factions that has a
 /// relationship, filed under both orders as the client files it.
 type Catalog {
   Catalog(
     tables: table_store.Tables,
     overrides: Dict(#(Int, Int), Float),
     display_groups: Dict(Int, Set(Int)),
-    outfit_groups: Set(Int),
+    first_displays: Dict(Int, Int),
+    first_outfits: Dict(Int, Int),
     parents: Dict(Int, Int),
     levels: Dict(#(Int, Int), Int),
     worlds: Set(Int),
@@ -442,6 +444,112 @@ pub fn select(
 /// Message 0x262's unit type of a NonPlayer unit (`0x140649e20`).
 const non_player = 0
 
+/// What a summon of a creature is checked with, built once at the content load
+/// from the same tables, formulas and kinds the stored spawns are checked with,
+/// and put in a term beside them (genesis_prime/content/spawn `put_summon_checks`):
+/// the map reads it to answer a summon and the creature's start to build the
+/// spawn again.
+pub opaque type SummonChecks {
+  SummonChecks(catalog: Catalog, formulas: Formulas, kinds: Kinds)
+}
+
+/// The checks a summon is made with.
+pub fn summon_checks(
+  tables tables: table_store.Tables,
+  formulas formulas: Formulas,
+  kinds kinds: Kinds,
+) -> SummonChecks {
+  SummonChecks(catalog: catalog(tables:), formulas:, kinds:)
+}
+
+/// Why a summon makes no spawn.
+pub type SummonRefusal {
+  /// The row the summon would make fails the client's checks of a spawn
+  /// (`client_checks`) or the load's (`load_checks`).
+  FailsTheChecks(error: SpawnError)
+  /// The row passes them, but a stored spawn of it would not start
+  /// (`left_out_of`): a creature with no faction, one friendly to both player
+  /// factions, an NPC with a link, or one with no health. A summon is refused
+  /// for the same reason, a server choice, so it starts only what a spawn
+  /// starts.
+  WouldNotStart(creature_id: Creature2Id, reason: LeftOut)
+}
+
+/// The run-only spawn of a summon, checked as a spawn is: a row of entity type 0
+/// (NonPlayer) for the creature at the summoned place and facing, with the
+/// display, outfit and factions the creature's Creature2 row gives, through
+/// `load_checks` and `left_out_of`. The row's own level and health are none, so
+/// the creature stands at its `minLevel` with its Base Health
+/// (`creature_vitals`). The display and the outfit are the first entry of the
+/// creature's groups, a server choice: the client's weighted pick runs only for
+/// spawns it makes itself (`0x1404846c0`, `opcode.0x262.creature`), and both
+/// factions are `Creature2.factionId`, as the world database sends them
+/// (`opcode.0x262.creature`).
+pub fn summoned(
+  checks checks: SummonChecks,
+  summoned summoned: Summoned,
+) -> Result(Spawn, SummonRefusal) {
+  let SummonChecks(catalog:, formulas:, kinds:) = checks
+  let Summoned(id:, creature_id:, place:) = summoned
+  use creature <- result.try(
+    valid_creature(catalog:, creature_id:)
+    |> result.map_error(FailsTheChecks),
+  )
+  let facing = start_place.facing(place)
+  let row =
+    Row(
+      id:,
+      entity_type: non_player,
+      creature_id: creature_id.value,
+      world_id: start_place.world_id(place),
+      area_id: start_place.world_zone_id(place),
+      x: start_place.x(place),
+      y: start_place.y(place),
+      z: start_place.z(place),
+      rotation_x: facing.yaw,
+      rotation_y: facing.pitch,
+      rotation_z: facing.roll,
+      display_info_id: dict.get(
+        catalog.first_displays,
+        creature.creature2_display_group_id,
+      )
+        |> result.unwrap(0),
+      outfit_info_id: dict.get(
+        catalog.first_outfits,
+        creature.creature2_outfit_group_id,
+      )
+        |> result.unwrap(0),
+      faction_id: creature.faction_id,
+      base_faction_id: creature.faction_id,
+      checklist_index: 0,
+      world_object_id: 0,
+      world_socket_id: 0,
+      health: None,
+      level: None,
+    )
+  use #(checked, _shared) <- result.try(
+    load_checks(catalog:, formulas:, kinds:, shared: dict.new(), row:)
+    |> result.map_error(FailsTheChecks),
+  )
+  case left_out_of(catalog:, checked:) {
+    Ok(reason) -> Error(WouldNotStart(creature_id:, reason:))
+    Error(Nil) -> Ok(checked.spawn)
+  }
+}
+
+/// A sentence that says why a summon makes no spawn, which the player's system
+/// chat line carries.
+pub fn describe_refusal(refusal refusal: SummonRefusal) -> String {
+  case refusal {
+    FailsTheChecks(error:) -> describe(error:)
+    WouldNotStart(creature_id: Creature2Id(creature_id), reason:) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> " would not start as a spawn: "
+      <> describe_left_out(reason)
+  }
+}
+
 /// What the selection found of one row.
 type Judged {
   /// A row of another entity type, counted and nothing else.
@@ -499,10 +607,27 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
         })
       },
     ),
-    outfit_groups: list.fold(
+    first_displays: list.fold(
+      creature2_display_group_entry.all(tables),
+      dict.new(),
+      fn(found, entry) {
+        first_kept(
+          found:,
+          group: entry.creature2_display_group_id,
+          entry: entry.creature2_display_info_id,
+        )
+      },
+    ),
+    first_outfits: list.fold(
       creature2_outfit_group_entry.all(tables),
-      set.new(),
-      fn(found, entry) { set.insert(found, entry.creature2_outfit_group_id) },
+      dict.new(),
+      fn(found, entry) {
+        first_kept(
+          found:,
+          group: entry.creature2_outfit_group_id,
+          entry: entry.creature2_outfit_info_id,
+        )
+      },
     ),
     parents: list.fold(faction2.all(tables), dict.new(), fn(found, faction) {
       dict.insert(found, faction.id, faction.faction2_id_parent)
@@ -520,6 +645,16 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
       )
     }),
   )
+}
+
+/// The entries of a group by group, with the first one met kept: the tables'
+/// rows come in id order, so it is the entry of the lowest id.
+fn first_kept(
+  found found: Dict(Int, Int),
+  group group: Int,
+  entry entry: Int,
+) -> Dict(Int, Int) {
+  dict.upsert(found, group, option.unwrap(_, entry))
 }
 
 /// A faction and its parents, nearest first: the chain the client walks
@@ -1632,7 +1767,7 @@ fn valid_creature(
     ),
     #(
       row.creature2_outfit_group_id == 0
-        || set.contains(catalog.outfit_groups, row.creature2_outfit_group_id),
+        || dict.has_key(catalog.first_outfits, row.creature2_outfit_group_id),
       NoOutfitEntries,
     ),
   ]

@@ -7,6 +7,7 @@
 //// | --- | --- | --- | --- |
 //// | `camp_countdown_ms` | `GENESIS_CAMP_COUNTDOWN_MS` | 10,000: Jim's choice, 2026-11-03; no retail record, and the client has none (opcode.0x92.countdown_source) | 0 to 59,999: the exit window shows only seconds, as `00:SS`, with no minutes field (opcode.0x92.countdown_range) |
 //// | `character_slots` | `GENESIS_CHARACTER_SLOTS` | 2: the client's count for an account with no entitlement (lua.CharacterSelection.OnLoadFromCharacter) | 2 to 14: the client offers at least 2 and counts its most as 14 (RewardPropertyPremiumModifier rows 117 and 118, Entitlement 12's maxCount) |
+//// | `dev_commands` | `GENESIS_DEV_COMMANDS` | 0, off: a server choice (a test tool for the play container), so a `!` line is a Say line | 0 or 1: 1 turns the development chat commands on (genesis_prime/game/dev_command); the play container sets it (release/container_start), production does not |
 ////
 //// - **A variable that is set** replaces its setting's default. A value that
 ////   is not a whole number, or lies outside the allowed range, is refused with
@@ -32,9 +33,11 @@ const client_most_character_slots = 14
 
 /// The game's settings. `camp_countdown_ms` is the countdown the server gives
 /// a camp, in milliseconds; `character_slots` is the number of characters an
-/// account may have.
+/// account may have; `dev_commands` is whether a Say line that starts with `!`
+/// is a development command (genesis_prime/game/dev_command) and not a line to
+/// say.
 pub type GameSettings {
-  GameSettings(camp_countdown_ms: Int, character_slots: Int)
+  GameSettings(camp_countdown_ms: Int, character_slots: Int, dev_commands: Bool)
 }
 
 /// Why a variable's value is refused.
@@ -51,6 +54,7 @@ pub fn defaults() -> GameSettings {
   GameSettings(
     camp_countdown_ms: 10_000,
     character_slots: client_base_character_slots,
+    dev_commands: False,
   )
 }
 
@@ -68,14 +72,28 @@ pub fn from_environment(
     least: 0,
     most: 59_999,
   ))
-  use character_slots <- result.map(whole_number(
+  use character_slots <- result.try(whole_number(
     read:,
     variable: "GENESIS_CHARACTER_SLOTS",
     default: defaults.character_slots,
     least: client_base_character_slots,
     most: client_most_character_slots,
   ))
-  GameSettings(camp_countdown_ms:, character_slots:)
+  use dev_commands <- result.map(whole_number(
+    read:,
+    variable: "GENESIS_DEV_COMMANDS",
+    default: case defaults.dev_commands {
+      True -> 1
+      False -> 0
+    },
+    least: 0,
+    most: 1,
+  ))
+  GameSettings(
+    camp_countdown_ms:,
+    character_slots:,
+    dev_commands: dev_commands == 1,
+  )
 }
 
 /// The whole number the variable holds, from `least` to `most`, or `default`

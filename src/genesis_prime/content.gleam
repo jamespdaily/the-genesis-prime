@@ -240,6 +240,16 @@ fn read(
       })
       log_levels_out_of_range(selection)
       content_spawn.put(key:, selection:)
+      let assert Ok(kinds_of_summons) = kinds_for_spawns
+        as "no kinds were taken, which refuses the kind rows, so the load has refusals and does not reach here"
+      content_spawn.put_summon_checks(
+        key:,
+        checks: spawn.summon_checks(
+          tables:,
+          formulas: rating.formulas(tables:),
+          kinds: kinds_of_summons,
+        ),
+      )
       case kinds {
         Ok(kinds) -> content_creature_kind.put(key:, kinds:)
         Error(..) -> Nil

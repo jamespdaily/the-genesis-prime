@@ -79,6 +79,8 @@ fn approaches(taken: step.ServiceStep(map.Outgoing)) -> List(#(Float, Int)) {
       | map.Retire
       | map.Joined(..)
       | map.NotJoined(..)
+      | map.Summoned(..)
+      | map.NotSummoned(..)
       | map.Left -> Error(Nil)
     }
   })

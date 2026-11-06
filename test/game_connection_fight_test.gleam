@@ -53,6 +53,7 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Left}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
+import genesis_prime/world_map/spawn_source
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -886,7 +887,7 @@ fn a_beast_of(
         incarnation: game_connection_support.incarnation,
         unit_id: 7,
         life: 3,
-        spawn_id: spawn_id.SpawnId(1),
+        spawn: spawn_source.Stored(id: spawn_id.SpawnId(1)),
         clock_origin_ms: 0,
         viewers: [#(ConnectionId(1), game_connection_support.own_stay())],
       ),

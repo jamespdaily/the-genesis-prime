@@ -273,6 +273,44 @@
 ////   leaves the world. A second join sends the objects it sees again; the
 ////   connection writes none its client shows.
 ////
+//// A development summon (genesis_prime/game/dev_command), asked by a connection that
+//// has a player here:
+////
+//// ```
+//// connection c                     map                                          shell
+////   Summon(c, creature2 id) ─▶ Asked ─▶ place = c's player's place and facing
+////                                      spawn.summoned(checks, Summoned(id s, creature2 id, place))
+////                                      refused ─▶ Reply(NotSummoned(CreatureRefused(why))); nothing changes
+////                                      s = next run-only id (-1, -2, ...); run_spawns[s] = the spawn
+////                                      the players who see place (sight, exact) are its first viewers:
+////                                      u = next unit id; life w = next watch
+////                                      StartCreature(w, spawn: RunOnly(summoned), u, life w, viewers) ─▶ started
+////                                      StartServiceTimer(TimerId(s), 0); c's caller held in `summoning[s]`
+////                                      CreatureNotStarted(w, why) (the shell gives it before any timer's firing)
+////   ◀─ NotSummoned(CreatureNotStarted(why)) ◀─ Reply; the timer cancelled; run_spawns[s], its state and its unit id dropped
+////                                      ServiceTimerFired(TimerId(s)) (no failure came)
+////   ◀─ Summoned(u)             ◀─ Reply(Summoned(u))
+////   no player here for c       ─▶ Reply(NotSummoned(NoPlayerHere))
+//// the creature ends (death's corpse timer, or a crash) ─▶ Gone(u) to every player; run_spawns[s], its
+////                                      state and its unit id dropped; no restart timer
+//// ```
+////
+//// - **A run-only spawn id is negative** (`spawn_source`): never a stored id, which is
+////   above 0, nor the sweep timer's 0, so the spawn tables, the timers and the unit ids
+////   never meet it. It counts down from -1 in `next_run_only_id` and is never given twice.
+//// - **Sight and rings read `run_spawns` beside the stored spawns**, so the usual sight
+////   rules show the creature and a hostile one attacks on sight, as any spawn does; the
+////   cell index holds only stored spawns, so a move scans the few run spawns too.
+//// - **A summon does not respawn**: its creature's end drops the spawn (a server choice, it
+////   is a test tool). The creature's own corpse timer ends it after the kind's respawn time.
+////   The sweep never retires a run-only creature, since a retired spawn goes dormant and a
+////   creature would stand there again at full health.
+//// - **The answer waits for the start's outcome**: the shell reports only a start that
+////   failed, as the next input after the step (genesis_prime/service/shell `take`), so the
+////   summon's timer under its run-only id (0 ms, which no stored spawn or sweep uses)
+////   is the first input that says it did not fail.
+//// - **A map that ends or restarts** loses its run spawns; nothing is saved.
+////
 //// Order, in short: every 0x262, 0x638 and 0x355 about a live unit comes from its
 //// owner's process, a player's connection, a creature or, for a static object,
 //// the map itself, so for one viewer they
@@ -303,6 +341,10 @@
 //// | a creature crashes while retiring | taken as retired: the spawn is dormant, or a new creature starts if a player sees it |
 //// | a creature crashes while live | every player is sent `Gone`; the spawn waits the respawn time, then a new unit is started there if a player sees it, and it is dormant if none does |
 //// | the respawn timer fires with no one in sight | the spawn is dormant |
+//// | a summoned creature does not start | the asker is answered `NotSummoned(CreatureNotStarted(why))`, an error line is written, and the run-only spawn, its state and its unit id are dropped |
+//// | a summoned creature ends before the answer | the run-only spawn is dropped as at any end; the asker is answered `Summoned` when the summon's timer fires, since the start did not fail |
+//// | a summon is asked for a connection with no player here | answered `NotSummoned(NoPlayerHere)`; nothing changes |
+//// | two summons are asked at once | each takes the next run-only id and unit id, and each caller is held under its own id, so the answers are told apart |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
 //// | the respawn timer fires after the map ended | not possible: the timer lives in the process |
 //// | a joining character's class and faction have no Novice set, or its level has no Base Health row | the join is answered `NotJoined`, with an error line, no unit id given and no player kept: the player's connection tells its client the server failed, and the map does not crash on one character's data |
@@ -325,21 +367,23 @@ import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
-  Connection, ConnectionId, CreatureNotStarted, CreatureStart, Effects, Log,
+  CancelServiceTimer, Connection, ConnectionId, CreatureStart, Effects, Log,
   LogError, LogLine, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired,
   StartCreature, StartServiceTimer, Started, Stop, Stopping, TimerId, Told,
   Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, CharacterId}
+import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import genesis_prime/world_map/sight
-import genesis_prime/world_map/spawn.{type WorldSpawns}
+import genesis_prime/world_map/spawn.{type Spawn, type WorldSpawns}
 import genesis_prime/world_map/spawn_cell
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
@@ -377,7 +421,8 @@ pub const sweep_timer = TimerId(0)
 /// creature crashed waits before a creature is started there again, how long a
 /// creature that no player sees keeps running, and how often the map looks for
 /// one. The two times are the server's choice, settings so a test can shorten
-/// them: 60 s and 10 s.
+/// them: 60 s and 10 s. `summons` is what a development summon is checked with
+/// (genesis_prime/world_map/spawn `SummonChecks`), the content load's term.
 pub type Settings {
   Settings(
     map: MapId,
@@ -385,6 +430,7 @@ pub type Settings {
     realm_id: Int,
     tables: table_store.Tables,
     spawns: WorldSpawns,
+    summons: spawn.SummonChecks,
     kinds: Kinds,
     numbers: GameNumbers,
     idle_stop_ms: Int,
@@ -415,6 +461,13 @@ pub type Message {
   /// entered again and has not moved is told to creatures with it, not with an
   /// earlier stay's lower one. A tell.
   Ready(connection: ConnectionId, seq: Int)
+  /// A development command of the connection's player: start `creature_id` as a
+  /// run-only spawn at the place and facing the map holds for the player, and
+  /// show it to the players who see that place. An ask, answered `Summoned` or
+  /// `NotSummoned`, with the connection's ask deadline; a map that is not running
+  /// or ends before it answers is the asker's outcome, not a `NotSummoned`.
+  /// Taken only from a connection that is in the map.
+  Summon(connection: ConnectionId, creature_id: Creature2Id)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -427,6 +480,21 @@ pub type NotJoined {
   /// CreatureLevel has no row for the character's level, so its health is
   /// unknown (`loadout.max_health`).
   NoBaseHealth(level: Int)
+}
+
+/// Why a summon is refused: the data of the one request, since the command's
+/// text is the player's to get wrong.
+pub type NotSummoned {
+  /// The connection has no player in this run of the map (it left, or it never
+  /// joined), so there is no place to stand the creature at.
+  NoPlayerHere
+  /// The creature does not pass a spawn's checks (genesis_prime/world_map/spawn
+  /// `summoned`).
+  CreatureRefused(refusal: spawn.SummonRefusal)
+  /// The creature was made a run-only spawn and its start failed, as the creature
+  /// supervisor reported it (`step.CreatureNotStarted`): the spawn was dropped and
+  /// nothing stands there.
+  CreatureNotStarted(reason: String)
 }
 
 /// What a map answers and sends.
@@ -446,6 +514,12 @@ pub type Outgoing {
   /// The character cannot be in the map: nothing was kept, no unit id was
   /// given and no watch was opened. An answer to a join, never a send.
   NotJoined(reason: NotJoined)
+  /// The summoned creature starts under this unit id, as a run-only spawn at the
+  /// player's place and facing: the answer to a `Summon`, never a send.
+  Summoned(unit_id: Int)
+  /// No creature was started and nothing in the map changed: an answer to a
+  /// `Summon`, never a send.
+  NotSummoned(reason: NotSummoned)
   /// The connection's player is not in the map any more, whether it was there
   /// or not.
   Left
@@ -511,6 +585,9 @@ pub opaque type State {
     spawns: Dict(SpawnId, SpawnState),
     creature_watches: Dict(WatchId, SpawnId),
     unit_of_spawn: Dict(SpawnId, Int),
+    run_spawns: Dict(SpawnId, Spawn),
+    summoning: Dict(SpawnId, Summoning),
+    next_run_only_id: SpawnId,
     next_unit_id: Int,
     next_watch: Int,
     started_ms: Int,
@@ -564,6 +641,14 @@ type Player {
   )
 }
 
+/// A summon whose creature's start has no outcome yet: the connection that asked
+/// and the unit id the creature started under, held under the run-only spawn id
+/// until the timer started with the creature fires or its start is found to have
+/// failed.
+type Summoning {
+  Summoning(caller: CallerId, unit_id: Int)
+}
+
 /// Whether a player's client has finished loading the world: a creature fights
 /// only a ready player.
 type Readiness {
@@ -588,6 +673,22 @@ pub fn spawn_state(
   dict.get(state.spawns, spawn)
 }
 
+/// The run-only spawn the map keeps under the id, or `Error(Nil)`, for a test.
+pub fn run_spawn(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> Result(Spawn, Nil) {
+  dict.get(state.run_spawns, spawn)
+}
+
+/// The unit id the map holds for the spawn this run, or `Error(Nil)`, for a test.
+pub fn unit_id_of(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> Result(Int, Nil) {
+  dict.get(state.unit_of_spawn, spawn)
+}
+
 /// The map's rule, as its service shell runs it.
 pub fn rule(
   map map: MapId,
@@ -595,6 +696,7 @@ pub fn rule(
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
   spawns spawns: WorldSpawns,
+  summons summons: spawn.SummonChecks,
   kinds kinds: Kinds,
   numbers numbers: GameNumbers,
   idle_stop_ms idle_stop_ms: Int,
@@ -608,6 +710,7 @@ pub fn rule(
       realm_id:,
       tables:,
       spawns:,
+      summons:,
       kinds:,
       numbers:,
       idle_stop_ms:,
@@ -628,6 +731,9 @@ pub fn new(settings: Settings) -> State {
     spawns: dict.new(),
     creature_watches: dict.new(),
     unit_of_spawn: dict.new(),
+    run_spawns: dict.new(),
+    summoning: dict.new(),
+    next_run_only_id: spawn_source.first_run_only_id,
     next_unit_id: 1,
     next_watch: 1,
     started_ms: 0,
@@ -645,14 +751,18 @@ pub fn step(
     OwnEvent(Started) ->
       started(State(..state, started_ms: input.now.monotonic_ms))
     Stopping(..) -> #(state, Effects([Stop]))
-    OwnEvent(CreatureNotStarted(watch:, reason:)) ->
+    OwnEvent(step.CreatureNotStarted(watch:, reason:)) ->
       creature_not_started(state:, watch:, reason:)
     OwnEvent(ServiceTimerFired(timer:)) ->
       case timer == sweep_timer {
         True -> swept(state:, now_ms: input.now.monotonic_ms)
         False -> {
           let TimerId(number) = timer
-          restart_due(state:, spawn: SpawnId(number))
+          let spawn = SpawnId(number)
+          case spawn_source.is_run_only_id(id: spawn) {
+            True -> summon_settled(state:, spawn:)
+            False -> restart_due(state:, spawn:)
+          }
         }
       }
     OwnEvent(Asked(
@@ -674,17 +784,142 @@ pub fn step(
       moved(state:, connection:, place:, seq:, now_ms: input.now.monotonic_ms)
     OwnEvent(Told(message: Ready(connection:, seq:))) ->
       ready(state:, connection:, seq:)
+    OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:))) ->
+      summoned(state:, caller:, connection:, creature_id:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Told(message: Join(..)))
-    | OwnEvent(Told(message: Leave(..))) ->
-      panic as "a map is asked Join and Leave and told Moved and Ready only"
+    | OwnEvent(Told(message: Leave(..)))
+    | OwnEvent(Told(message: Summon(..))) ->
+      panic as "a map is asked Join, Leave and Summon and told Moved and Ready only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
         Error(Nil) -> ended(state:, watch:, now_ms: input.now.monotonic_ms)
       }
   }
+}
+
+/// A development summon: the creature is made a run-only spawn at the place and
+/// facing the map holds for the connection's player, under the next run-only id
+/// (`spawn_source.run_only_id_after`, so never a stored id), checked as a spawn
+/// is (`spawn.summoned`), and started for the players who see that place under a
+/// new life, as a dormant spawn is started when its first viewer comes; the
+/// answer waits for the start's outcome (`summon_settled`, `summon_not_started`):
+/// the asker is held in `summoning`, and a timer of 0 ms under the run-only id is
+/// started with the creature, which the shell fires after the start's failure, if
+/// there was one. A creature that fails the checks, or a connection with no player
+/// here, is `NotSummoned` at once and changes nothing: no id is taken and no
+/// creature starts. The spawn is kept in `run_spawns` for as long as its creature
+/// lives: sight and rings read it beside the stored spawns, and the creature's
+/// end, a corpse's timer included, drops it with no restart timer, since a
+/// run-only spawn does not respawn (a server choice: it is a test tool). A map
+/// that ends or restarts loses its run-only spawns.
+fn summoned(
+  state state: State,
+  caller caller: CallerId,
+  connection connection: ConnectionId,
+  creature_id creature_id: Creature2Id,
+) -> #(State, ServiceStep(Outgoing)) {
+  let refused = fn(reason) {
+    #(state, Effects([OwnEffect(Reply(caller, NotSummoned(reason:)))]))
+  }
+  case dict.get(state.players, connection) {
+    Error(Nil) -> refused(NoPlayerHere)
+    Ok(summoner) -> {
+      let id = state.next_run_only_id
+      let place = player_unit.place(summoner.unit)
+      case
+        spawn.summoned(
+          checks: state.settings.summons,
+          summoned: spawn_source.Summoned(id:, creature_id:, place:),
+        )
+      {
+        Error(refusal) -> refused(CreatureRefused(refusal:))
+        Ok(run_spawn) -> {
+          let state =
+            State(
+              ..state,
+              run_spawns: dict.insert(state.run_spawns, id, run_spawn),
+              next_run_only_id: spawn_source.run_only_id_after(id:),
+            )
+          let state = standing_for_players(state:, spawn: id, run_spawn:)
+          let #(state, started) = started_for_those_who_see(state:, spawn: id)
+          let assert Effects(started_effects) = started
+            as "a service rule's step makes no ask"
+          let assert Ok(unit_id) = dict.get(state.unit_of_spawn, id)
+            as "the summoner sees the place, so the creature started"
+          let SpawnId(number) = id
+          #(
+            State(
+              ..state,
+              summoning: dict.insert(
+                state.summoning,
+                id,
+                Summoning(caller:, unit_id:),
+              ),
+            ),
+            Effects(
+              list.append(started_effects, [
+                OwnEffect(StartServiceTimer(timer: TimerId(number), after_ms: 0)),
+              ]),
+            ),
+          )
+        }
+      }
+    }
+  }
+}
+
+/// The state with each player who sees the new run-only spawn's place having it in
+/// `seen`, and each ready one that stands in its ring having it in `inside`, as a
+/// move into that place would have left them: the cell index does not hold the
+/// spawn, so no later move finds it entered.
+fn standing_for_players(
+  state state: State,
+  spawn spawn: SpawnId,
+  run_spawn run_spawn: spawn.Spawn,
+) -> State {
+  let range = state.settings.numbers.aggro_range
+  State(
+    ..state,
+    players: dict.map_values(state.players, fn(_connection, player) {
+      let place = player_unit.place(player.unit)
+      let seen = case sight.sees(place, run_spawn.place) {
+        True -> set.insert(player.seen, spawn)
+        False -> player.seen
+      }
+      let inside = case
+        player.readiness,
+        in_ring(
+          spawn: run_spawn,
+          place:,
+          faction_id: player_unit.faction_id(player.unit),
+          range:,
+        )
+      {
+        Loaded, True -> set.insert(player.inside, spawn)
+        Loaded, False | StillLoading, _ -> player.inside
+      }
+      Player(..player, seen:, inside:)
+    }),
+  )
+}
+
+/// A summon's timer fired: the shell has carried out the start, and gave the
+/// rule its failure before this input, so the start did not fail and the asker is
+/// answered `Summoned` with the unit id the creature started under, whatever has
+/// become of the creature since.
+fn summon_settled(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> #(State, ServiceStep(Outgoing)) {
+  let assert Ok(Summoning(caller:, unit_id:)) = dict.get(state.summoning, spawn)
+    as "a summon's timer fires only for a summon that waits for it"
+  #(
+    State(..state, summoning: dict.delete(state.summoning, spawn)),
+    Effects([OwnEffect(Reply(caller, Summoned(unit_id:)))]),
+  )
 }
 
 /// A map's start: its clock is set and the sweep timer starts. No creature
@@ -736,6 +971,10 @@ fn creature_not_started(
   case dict.get(state.creature_watches, watch) {
     Ok(spawn) -> {
       let SpawnId(number) = spawn
+      use <- bool.lazy_guard(
+        when: dict.has_key(state.run_spawns, spawn),
+        return: fn() { summon_not_started(state:, spawn:, watch:, reason:) },
+      )
       #(
         State(
           ..state,
@@ -758,9 +997,63 @@ fn creature_not_started(
   }
 }
 
+/// A summoned creature that did not start: an error line, the asker is answered
+/// `NotSummoned` with the reason, the timer that would have answered it is
+/// cancelled, and the run-only spawn is dropped as if it had never been made.
+fn summon_not_started(
+  state state: State,
+  spawn spawn: SpawnId,
+  watch watch: WatchId,
+  reason reason: String,
+) -> #(State, ServiceStep(Outgoing)) {
+  let SpawnId(number) = spawn
+  let assert Ok(Summoning(caller:, ..)) = dict.get(state.summoning, spawn)
+    as "a run-only creature is started for a summon whose asker waits"
+  let state =
+    State(
+      ..without_run_spawn(state:, spawn:),
+      creature_watches: dict.delete(state.creature_watches, watch),
+      summoning: dict.delete(state.summoning, spawn),
+    )
+  #(
+    state,
+    Effects([
+      log_error(
+        state:,
+        about: step.no_one,
+        text: "the creature summoned as run-only spawn "
+          <> int.to_string(number)
+          <> " did not start: "
+          <> reason,
+      ),
+      OwnEffect(CancelServiceTimer(timer: TimerId(number))),
+      OwnEffect(Reply(caller, NotSummoned(reason: CreatureNotStarted(reason:)))),
+    ]),
+  )
+}
+
+/// The state with the run-only spawn, its spawn state and its unit id dropped,
+/// and the spawn out of every player's `seen` and `inside`.
+fn without_run_spawn(state state: State, spawn spawn: SpawnId) -> State {
+  State(
+    ..state,
+    run_spawns: dict.delete(state.run_spawns, spawn),
+    spawns: dict.delete(state.spawns, spawn),
+    unit_of_spawn: dict.delete(state.unit_of_spawn, spawn),
+    players: dict.map_values(state.players, fn(_connection, player) {
+      Player(
+        ..player,
+        seen: set.delete(player.seen, spawn),
+        inside: set.delete(player.inside, spawn),
+      )
+    }),
+  )
+}
+
 /// The sweep: every live spawn idle for `idle_stop_ms` or more is sent `Retire`
 /// and becomes retiring, in the order of the spawns, and the sweep timer starts
-/// again.
+/// again. A run-only spawn is never retired: its spawn would go dormant and a
+/// creature would stand there again at full health, which is a respawn.
 fn swept(
   state state: State,
   now_ms now_ms: Int,
@@ -775,6 +1068,7 @@ fn swept(
         Live(..) | Retiring(..) | WaitingForRestart | Failed -> Error(Nil)
       }
     })
+    |> list.filter(fn(idle) { !dict.has_key(state.run_spawns, idle.0) })
     |> list.sort(fn(first, second) { compare_spawns(first.0, second.0) })
   let spawns =
     list.fold(idle, state.spawns, fn(spawns, retired) {
@@ -809,7 +1103,8 @@ fn swept(
 
 /// A creature's watch ended. A live creature crashed: every player is sent
 /// `Gone` of its unit, the unit id is given up, and the spawn's restart timer
-/// starts. A retiring one ended cleanly, whatever the reason: the spawn is
+/// starts. A live run-only creature ended, by its corpse timer or a crash: every
+/// player is sent `Gone`, and the run-only spawn is dropped with no timer. A retiring one ended cleanly, whatever the reason: the spawn is
 /// dormant with its unit id kept, or, when a player sees it now, a creature
 /// starts at once under the same unit id and a new life, with those players as
 /// its first viewers.
@@ -827,6 +1122,10 @@ fn creature_ended(
         list.map(players_in_order(state), fn(player) {
           notify(to: player, notice: Gone(unit_id:))
         })
+      use <- bool.lazy_guard(
+        when: dict.has_key(state.run_spawns, spawn),
+        return: fn() { #(without_run_spawn(state:, spawn:), Effects(gone)) },
+      )
       #(
         State(
           ..state,
@@ -989,6 +1288,23 @@ fn compare_spawns(first: SpawnId, second: SpawnId) -> order.Order {
   int.compare(first, second)
 }
 
+/// Where the spawn's creature is started from: the run-only spawn the map keeps,
+/// carried whole, or the stored spawn by its id.
+fn source_of(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> spawn_source.SpawnSource {
+  case dict.get(state.run_spawns, spawn) {
+    Ok(run_spawn) ->
+      spawn_source.RunOnly(summoned: spawn_source.Summoned(
+        id: spawn,
+        creature_id: run_spawn.creature_id,
+        place: run_spawn.place,
+      ))
+    Error(Nil) -> spawn_source.Stored(id: spawn)
+  }
+}
+
 /// Starts a creature at the spawn with these players as its first viewers, each
 /// by its connection and its stay: under the spawn's unit id for the run, taken
 /// from the counter when the spawn has had none (the first creature there, or the
@@ -1025,7 +1341,7 @@ fn start_creature(
         incarnation: state.settings.incarnation,
         unit_id:,
         life:,
-        spawn_id: spawn,
+        spawn: source_of(state:, spawn:),
         clock_origin_ms: state.started_ms,
         viewers:,
       ),
@@ -1035,8 +1351,27 @@ fn start_creature(
 
 /// What the player at `place` sees of the map's world: the creatures' spawns and
 /// the static objects the cell index finds near it, with one `near`, that are
-/// within sight, exactly.
+/// within sight, exactly, and the run-only spawns in sight, which the cell index
+/// does not hold.
 fn world_in_sight(
+  state state: State,
+  place place: Place,
+) -> #(Set(SpawnId), Set(SpawnId)) {
+  let #(creatures, objects) = stored_in_sight(state:, place:)
+  #(
+    dict.fold(state.run_spawns, creatures, fn(found, id, run_spawn) {
+      case sight.sees(place, run_spawn.place) {
+        True -> set.insert(found, id)
+        False -> found
+      }
+    }),
+    objects,
+  )
+}
+
+/// The stored creature spawns and static objects of the map's world within sight
+/// of `place`, through the cell index.
+fn stored_in_sight(
   state state: State,
   place place: Place,
 ) -> #(Set(SpawnId), Set(SpawnId)) {
@@ -1447,28 +1782,47 @@ fn rings_decided(
 
 /// The spawns hostile to the player's faction whose ring holds its place: within
 /// the aggro range of the spawn's place, in three dimensions, found through the cell
-/// index.
+/// index for the stored spawns and by a scan of the run-only ones.
 fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
   let spawns = state.settings.spawns
   let place = player_unit.place(player.unit)
   let range = state.settings.numbers.aggro_range
   let faction_id = player_unit.faction_id(player.unit)
-  spawn_cell.near(
-    cells: spawns.cells,
-    x: start_place.x(place),
-    z: start_place.z(place),
-    range:,
-  )
-  |> list.filter(fn(id) {
-    case dict.get(spawns.by_id, id) {
-      Ok(found) ->
-        hostile(spawn: found, faction_id:)
-        && sight.squared_distance(first: place, second: found.place)
-        <=. range *. range
-      Error(Nil) -> False
+  let holds = in_ring(spawn: _, place:, faction_id:, range:)
+  let stored =
+    spawn_cell.near(
+      cells: spawns.cells,
+      x: start_place.x(place),
+      z: start_place.z(place),
+      range:,
+    )
+    |> list.filter(fn(id) {
+      case dict.get(spawns.by_id, id) {
+        Ok(found) -> holds(found)
+        Error(Nil) -> False
+      }
+    })
+    |> set.from_list
+  dict.fold(state.run_spawns, stored, fn(found, id, run_spawn) {
+    case holds(run_spawn) {
+      True -> set.insert(found, id)
+      False -> found
     }
   })
-  |> set.from_list
+}
+
+/// Whether the place is in the spawn's ring for a player of the faction: the
+/// spawn is hostile to the faction and the place is within `range` of the spawn's
+/// place, in three dimensions.
+fn in_ring(
+  spawn spawn: spawn.Spawn,
+  place place: Place,
+  faction_id faction_id: Int,
+  range range: Float,
+) -> Bool {
+  hostile(spawn:, faction_id:)
+  && sight.squared_distance(first: place, second: spawn.place)
+  <=. range *. range
 }
 
 /// Whether the spawn's creature fights a player of the faction on sight.

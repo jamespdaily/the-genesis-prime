@@ -283,6 +283,25 @@ pub fn file(
   #(schema.file, bytes(table(schema:, rows:)))
 }
 
+/// The files with the file of `schema` holding `rows` in place of its own, or
+/// added when there is none.
+pub fn replacing(
+  files files: List(#(String, BitArray)),
+  schema schema: Schema,
+  rows rows: List(List(Cell)),
+) -> List(#(String, BitArray)) {
+  case list.any(files, fn(held) { held.0 == schema.file }) {
+    True ->
+      list.map(files, fn(held) {
+        case held.0 == schema.file {
+          True -> file(schema:, rows:)
+          False -> held
+        }
+      })
+    False -> list.append(files, [file(schema:, rows:)])
+  }
+}
+
 /// The rows without the ones with these ids: every planted row holds its ID in
 /// its first cell.
 pub fn without(

@@ -152,8 +152,8 @@ import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type Ending, type Session, type Status, AwaitingHelloReply, Busy,
   ClaimingSession, Ending, EnteringWorld, Greeting, InCharacterSelect, InWorld,
-  LeavingMap, Present, SavingPlace, Selecting, Session, TakingSessionKey,
-  WaitingToClaim,
+  LeavingMap, Present, SavingPlace, Selecting, Session, Summoning,
+  TakingSessionKey, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/viewers as connection_viewers
 import genesis_prime/game/connection/world as connection_world
@@ -414,6 +414,7 @@ fn asking(status: Status) -> Bool {
     | ClaimingSession(..)
     | WaitingToClaim(..)
     | EnteringWorld(..)
+    | Summoning(..)
     | SavingPlace(..)
     | LeavingMap(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
@@ -798,6 +799,14 @@ fn answered(
         holder:,
         entry:,
         from:,
+        outcome:,
+      )
+    Summoning(holder:, entered:) ->
+      connection_chat.summon_answered(
+        session:,
+        now:,
+        holder:,
+        entered:,
         outcome:,
       )
     SavingPlace(holder:, entered:, then:) ->

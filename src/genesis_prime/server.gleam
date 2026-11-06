@@ -134,6 +134,8 @@ import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
+import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/erlang/process.{type Name, type Subject}
@@ -617,6 +619,8 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Noticed(stay:, notice:) -> Ok(ForStay(stay:, sent: SentByMap(notice:)))
     map.Joined(..)
+    | map.Summoned(..)
+    | map.NotSummoned(..)
     | map.NotJoined(..)
     | map.Left
     | map.Watched(..)
@@ -696,6 +700,7 @@ pub fn add_world(
             realm_id:,
             tables:,
             spawns: content_spawn.world(world.spawns, start.map.world_id),
+            summons: content_spawn.summon_checks(world.spawns),
             kinds: content_creature_kind.kinds(world.spawns),
             numbers: content_game_number.numbers(world.spawns),
             idle_stop_ms: world.idle_stop_ms,
@@ -781,8 +786,7 @@ fn start_creature_process(
   start start: creature_supervisor.CreatureProcessStart,
 ) -> actor.StartResult(Subject(Call(creature.Message, creature.Outgoing))) {
   let wanted = start.creature
-  let spawns = content_spawn.world(world.spawns, wanted.map.world_id)
-  case dict.get(spawns.by_id, wanted.spawn_id) {
+  case spawn_of_start(world:, wanted:) {
     Error(Nil) ->
       Error(actor.InitFailed(
         "the creature names a spawn the world does not hold",
@@ -813,6 +817,31 @@ fn start_creature_process(
         )
         started
       })
+  }
+}
+
+/// The spawn a creature is started at: a stored one is read from its world's
+/// term, and a run-only one is built again from the summon the map checked, with
+/// the world's summon checks, so the map and the creature hold the same spawn
+/// (genesis_prime/world_map/spawn_source). `Error(Nil)` for a stored id the
+/// world does not hold.
+fn spawn_of_start(
+  world world: World,
+  wanted wanted: step.CreatureStart,
+) -> Result(spawn.Spawn, Nil) {
+  case wanted.spawn {
+    spawn_source.Stored(id:) ->
+      content_spawn.world(world.spawns, wanted.map.world_id).by_id
+      |> dict.get(id)
+    spawn_source.RunOnly(summoned:) -> {
+      let assert Ok(built) =
+        spawn.summoned(
+          checks: content_spawn.summon_checks(world.spawns),
+          summoned:,
+        )
+        as "the map checked this summon with the same checks, so the creature's start finds no refusal"
+      Ok(built)
+    }
   }
 }
 

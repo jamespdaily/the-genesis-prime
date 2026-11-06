@@ -3,13 +3,18 @@
 # folder. When GENESIS_SITTINGS_DIR names a folder (the play container's mount),
 # each start records into a folder of its own under it, named for the time and
 # the revision, as GENESIS_RECORD_DIR (genesis_prime/sitting): a server that
-# restarts after a crash must not find the fixture of its earlier sitting.
+# restarts after a crash must not find the fixture of its earlier sitting. That
+# mount also marks the play container, which turns the development chat commands
+# on (GENESIS_DEV_COMMANDS, genesis_prime/game_settings) unless the operator set
+# the variable: production has no sittings folder, so its commands stay off.
 
 set -eu
 
 if [ -n "${GENESIS_SITTINGS_DIR:-}" ]; then
   GENESIS_RECORD_DIR="$GENESIS_SITTINGS_DIR/$(date -u +%Y-%m-%d-%H%M%S)-play-${GENESIS_REVISION:-unknown}"
   export GENESIS_RECORD_DIR
+  GENESIS_DEV_COMMANDS="${GENESIS_DEV_COMMANDS:-1}"
+  export GENESIS_DEV_COMMANDS
 fi
 
 exec "$(dirname "$0")/start"
