@@ -395,9 +395,7 @@ pub fn effect_kind_reads_absorption_aimed_at_the_caster_and_the_measure_counts_t
     as "read for the caster (bit 1) or the primary target alone (2); 4 and 6 aim only at struck units"
   // Each refusal of the plan is counted as not read, in a spell no Proxy starts on each
   // struck unit.
-  let counted = fn(row: Spell4Effects, place) {
-    spell_tables.measure_reads(effect: row, place:)
-  }
+  use counted <- spell_tables.with_measure
   let none = spell_tables.pressed
   assert counted(spectral_form_row(), none) as "row 178144 is read"
   assert !counted(Spell4Effects(..spectral_form_row(), tick_time: 1000), none)
