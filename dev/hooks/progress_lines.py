@@ -12,6 +12,8 @@ card:
                                           and, when P closes n, `dev/step_measure.py n` as a
                                           comment headed "Measure (draft for the closing summary)"
   (at the merge, the CI line of the merged head comes first, when the issue lacks it)
+  after a merge, any merge: the branch's worktree and local branch are cleaned up
+  (merge_cleanup), and each result is a note shown to Claude (`additionalContext`)
 
   Bash call ends
     -> events_of(hook json)           which of the four tools ran at a command's start, from the
@@ -21,6 +23,7 @@ card:
                                       checks and run attempt, the card's status
     -> lines_for(event, comments)     the lines not yet posted for that event
     -> the shell posts them           gh issue comment; dev/card.sh status; step_measure.py
+    -> after a merge                  merge_cleanup.clean_up (git decides what it may remove)
 
 Rules:
   - The hook's stdin JSON has tool_name, tool_input.command, cwd and tool_response (stdout,
@@ -46,6 +49,8 @@ Rules:
     the same sha; a pull request: opened once). The card move and the measure at a merge are
     each keyed on their own state (the card not Done; no comment headed "### Measure (draft"),
     so a retry finishes what a failure left.
+  - The clean-up runs only for a branch `jimd/<n>-...`: a merge whose branch has no issue
+    number is not read at all.
   - A merged pull request closes the step only when it closes issue n; a fix branch's merge
     posts its CI and merge lines and nothing else.
   - Settings hooks fire for a subagent's tool calls too, so a builder's push is seen.
@@ -56,21 +61,27 @@ it ends; the merge posts the CI line instead.
 
   python3 -I dev/hooks/progress_lines.py            hook JSON on stdin, posts
   python3 -I dev/hooks/progress_lines.py --dry-run  prints "#n: line" instead of posting, and
-                                                    runs no card move and no measure
+                                                    runs no card move, measure or clean-up
 """
 
 import argparse
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-REPOSITORY = "jamespdaily/the-genesis-prime"
-PROJECT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shell_command import Simple, git_pushes, simple_commands  # noqa: E402
+from step_issue import (  # noqa: E402
+    PROJECT, REPOSITORY, Failure, GitHub, current_branch, issue_of, last_line,
+    names_repository,
+)
+import merge_cleanup  # noqa: E402
+
 MEASURE_HEADING = "Measure (draft for the closing summary)"
 MEASURE_PREFIX = "### Measure (draft"
 
@@ -81,32 +92,13 @@ _REF_LINE = re.compile(
     re.MULTILINE,
 )
 _PULL_REQUEST_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
-_THIS_REMOTE = re.compile(r"github\.com[:/]" + re.escape(REPOSITORY) + r"(?:\.git)?/?$", re.I)
-_STEP_BRANCH = re.compile(r"jimd/(\d+)-")
 _PUSH_LINE = re.compile(r"^pushed ([0-9a-f]{7}) \(", re.MULTILINE)
-_RUN_ID = re.compile(r"/actions/runs/(\d+)")
-_HEREDOC = re.compile(r"(?<!<)<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
-_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
-_KEYWORDS = {"then", "do", "else", "elif", "if", "while", "until", "{", "!", "time"}
 
-_GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
-_PUSH_OPTIONS_WITH_VALUE = {"-o", "--push-option", "--repo", "--receive-pack", "--exec"}
-_PUSH_SKIPPED = {"-d", "--delete", "-n", "--dry-run", "--all", "--mirror", "--tags"}
 _GH_OPTIONS_WITH_VALUE = {
     "-b", "--body", "-F", "--body-file", "-t", "--title", "-A", "--author-email",
     "--match-head-commit", "--subject", "-B", "--base", "-H", "--head", "-a", "--assignee",
     "-l", "--label", "-m", "--milestone", "-p", "--project", "-r", "--reviewer", "--template",
 }
-
-
-class Failure(Exception):
-    """A step the hook could not finish, as one line for the agent that ran the command."""
-
-
-def _last_line(text: str, fallback: str) -> str:
-    """The last non-empty line of a program's stderr, else `fallback`."""
-    lines = [line for line in text.strip().splitlines() if line.strip()]
-    return lines[-1].strip() if lines else fallback
 
 
 @dataclass(frozen=True)
@@ -158,132 +150,9 @@ class Merged(Pull):
     commit: str = ""
 
 
-def issue_of(branch: str) -> int | None:
-    """The issue number n of a branch `jimd/<n>-...`."""
-    found = _STEP_BRANCH.match(branch)
-    return int(found.group(1)) if found else None
-
-
 def pushed_shas(comments: list[str]) -> list[str]:
     """The sha7 of every push line among an issue's comments, oldest first."""
     return [m for body in comments for m in _PUSH_LINE.findall(body)]
-
-
-def _without_heredocs(command: str) -> str:
-    """The command with each heredoc's body cut, so its text is not read as commands."""
-    kept: list[str] = []
-    waiting: list[tuple[str, bool]] = []
-    for line in command.split("\n"):
-        if waiting:
-            delimiter, dashed = waiting[0]
-            if (line.strip() if dashed else line) == delimiter:
-                waiting.pop(0)
-            continue
-        kept.append(line)
-        waiting += [(m[3], bool(m[1])) for m in _HEREDOC.finditer(line)]
-    return "\n".join(kept)
-
-
-def _tokens(command: str) -> list[str]:
-    """The words of a shell command, with `&&`, `||`, `;`, `|`, parentheses, redirections and
-    newlines as words of their own."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars="();<>|&\n")
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    lexer.whitespace = " \t\r"
-    try:
-        words = list(lexer)
-    except ValueError:
-        words = command.replace("\n", " ; ").split()
-    # `2>&1` comes out as "2", ">&", "1": the file descriptor is not an argument.
-    return [
-        w for i, w in enumerate(words)
-        if not (w in {"0", "1", "2"} and i + 1 < len(words) and words[i + 1][:1] in "<>")
-    ]
-
-
-def _is_operator(word: str) -> bool:
-    """Whether a word ends a command's arguments: a separator, a newline or a redirection."""
-    return bool(word) and (
-        all(c in "();<>|&\n" for c in word) or re.match(r"\d*[<>]", word) is not None
-    )
-
-
-def _in_folder(path: str, folder: str | None) -> str | None:
-    """The folder a `cd path` or `-C path` leads to from `folder`; None when the path is a
-    variable, a substitution or `-`, or is relative to an unknown folder."""
-    if re.search(r"[$`]", path) or path == "-":
-        return None
-    path = os.path.expanduser(path)
-    if os.path.isabs(path):
-        return os.path.normpath(path)
-    return os.path.normpath(os.path.join(folder, path)) if folder else None
-
-
-@dataclass(frozen=True)
-class Simple:
-    """One simple command: its words, from its command word on, and the folder it runs in."""
-
-    words: list[str]
-    folder: str | None
-
-
-def _simple_commands(command: str, folder: str | None) -> list[Simple]:
-    """The commands of a command line, each with the folder the line's `cd`s lead it to."""
-    found: list[Simple] = []
-    current: list[str] = []
-
-    def finish() -> None:
-        nonlocal folder, current
-        words = current
-        current = []
-        while words and (_ASSIGNMENT.match(words[0]) or words[0] in _KEYWORDS):
-            words = words[1:]
-        if not words:
-            return
-        if words[0] == "cd":
-            paths = [w for w in words[1:] if w not in {"-P", "-L", "-e", "-@"}]
-            folder = _in_folder(paths[0] if paths else "~", folder)
-        else:
-            found.append(Simple(words, folder))
-
-    for word in _tokens(_without_heredocs(command)):
-        if _is_operator(word):
-            finish()
-        else:
-            current.append(word)
-    finish()
-    return found
-
-
-def _git_pushes(simple: Simple) -> list[Push]:
-    """The pushes `git [options] push [options] remote refspec...` a simple command makes."""
-    words, where = simple.words, simple.folder
-    i = 1
-    while i < len(words) and words[i].startswith("-"):
-        if words[i] == "-C" and i + 1 < len(words):
-            where = _in_folder(words[i + 1], where)
-        i += 2 if words[i] in _GIT_OPTIONS_WITH_VALUE else 1
-    if i >= len(words) or words[i] != "push":
-        return []
-    rest, skip = [], False
-    for word in words[i + 1 :]:
-        if skip:
-            skip = False
-        elif word in _PUSH_OPTIONS_WITH_VALUE:
-            skip = True
-        else:
-            rest.append(word)
-    if {w for w in rest if w.startswith("-")} & _PUSH_SKIPPED:
-        return []
-    positional = [w for w in rest if not w.startswith("-")]
-    remote = positional[0] if positional else "origin"
-    pushes = []
-    for refspec in positional[1:] or ["HEAD"]:
-        destination = refspec.lstrip("+").split(":")[-1].removeprefix("refs/heads/")
-        if destination:
-            pushes.append(Push(destination, where, remote))
-    return pushes
 
 
 def _pull_named(kind, repo: str | None, selector: str | None, folder: str | None):
@@ -351,10 +220,10 @@ def events_of(hook) -> list:
 
     others: list = []
     pushes: list[Push] = []
-    for simple in _simple_commands(command, folder):
+    for simple in simple_commands(command, folder):
         program = os.path.basename(simple.words[0])
         if program == "git":
-            pushes += _git_pushes(simple)
+            pushes += [Push(t.branch, t.folder, t.remote) for t in git_pushes(simple)]
         elif program == "gh":
             others += _gh_pull_events(simple, output)
         elif program == "pr_wait.sh":
@@ -394,135 +263,6 @@ def lines_for(event, comments: list[str]) -> list[str]:
             return []
     posted = any(body.strip().startswith(key) for body in comments)
     return [] if posted else [line]
-
-
-class GitHub:
-    """The calls the hook makes, as the jamespdaily login, to this repository."""
-
-    def __init__(self) -> None:
-        self._environment: dict | None = None
-
-    @property
-    def environment(self) -> dict:
-        """The process's environment with GH_TOKEN, read from gh's jamespdaily login on first use."""
-        if self._environment is None:
-            environment = dict(os.environ)
-            if not environment.get("GH_TOKEN"):
-                done = subprocess.run(
-                    ["gh", "auth", "token", "--user", "jamespdaily"],
-                    capture_output=True, text=True, timeout=30,
-                )
-                if done.returncode != 0 or not done.stdout.strip():
-                    raise Failure("no jamespdaily login in gh")
-                environment["GH_TOKEN"] = done.stdout.strip()
-            self._environment = environment
-        return self._environment
-
-    def execute(self, *args: str, input: str | None = None, cwd: str | None = None):
-        """gh's finished process; a gh that cannot run or runs too long is a Failure."""
-        try:
-            return subprocess.run(
-                ["gh", *args], capture_output=True, text=True, input=input,
-                env=self.environment, timeout=120, cwd=cwd,
-            )
-        except (OSError, subprocess.TimeoutExpired) as problem:
-            raise Failure(f"gh {args[0]}: {problem}") from problem
-
-    def run(self, *args: str, input: str | None = None, cwd: str | None = None) -> str:
-        """gh's stdout. A failure raises with gh's last stderr line."""
-        done = self.execute(*args, input=input, cwd=cwd)
-        if done.returncode != 0:
-            raise Failure(f"gh {' '.join(args[:2])}: {_last_line(done.stderr, f'exit {done.returncode}')}")
-        return done.stdout
-
-    def api(self, path: str, jq: str) -> str:
-        return self.run("api", f"repos/{REPOSITORY}/{path}", "--jq", jq).strip()
-
-    def head(self, ref: str) -> tuple[str, str] | None:
-        """The full sha and subject of a branch's head or of a commit; None when GitHub has no
-        such branch or commit."""
-        done = self.execute("api", f"repos/{REPOSITORY}/commits/{ref}", "--jq", "[.sha,.commit.message]")
-        if done.returncode != 0:
-            if "HTTP 404" in done.stderr or "No commit found" in done.stderr:
-                return None
-            raise Failure(f"gh api commits/{ref}: {_last_line(done.stderr, f'exit {done.returncode}')}")
-        sha, message = json.loads(done.stdout)
-        return sha, (message.splitlines() or [""])[0]
-
-    def comments(self, issue: int) -> list[str]:
-        out = self.run(
-            "issue", "view", str(issue), "-R", REPOSITORY, "--json", "comments",
-            "--jq", "[.comments[].body]",
-        )
-        return json.loads(out)
-
-    def pull_request(self, target: list[str], folder: str | None) -> dict:
-        """`gh pr view` of a number, URL or branch of this repository, or (no target) of the
-        folder's branch."""
-        fields = "number,state,headRefName,headRefOid,mergeCommit,closingIssuesReferences"
-        if target:
-            return json.loads(self.run("pr", "view", *target, "-R", REPOSITORY, "--json", fields))
-        return json.loads(self.run("pr", "view", "--json", fields, cwd=folder))
-
-    def checks(self, number: int) -> list[dict]:
-        """A pull request's checks: gh exits 0 (all passed), 1 (one failed, or none reported) or
-        8 (pending) with the JSON; anything else is a failure."""
-        done = self.execute("pr", "checks", str(number), "-R", REPOSITORY, "--json", "bucket,link")
-        if done.returncode in (0, 1, 8):
-            try:
-                checks = json.loads(done.stdout)
-                if isinstance(checks, list):
-                    return checks
-            except json.JSONDecodeError:
-                pass
-            if done.returncode == 1 and "no checks reported" in done.stderr:
-                return []
-        raise Failure(f"gh pr checks {number}: {_last_line(done.stderr, f'exit {done.returncode}')}")
-
-    def run_attempt(self, links: list[str]) -> int:
-        runs = {m.group(1) for link in links if (m := _RUN_ID.search(link))}
-        return max((int(self.api(f"actions/runs/{r}", ".run_attempt")) for r in runs), default=1)
-
-    def card_status(self, issue: int) -> str:
-        """The card's board status, from dev/card.sh."""
-        done = subprocess.run(
-            [str(PROJECT / "dev" / "card.sh"), "get", str(issue)],
-            capture_output=True, text=True, env=self.environment, timeout=120,
-        )
-        if done.returncode != 0:
-            raise Failure(f"card #{issue}: {_last_line(done.stderr, f'exit {done.returncode}')}")
-        return done.stdout.strip()
-
-
-def names_repository(folder: str | None, remote: str) -> bool:
-    """Whether `remote` of the git folder is this repository. A folder that is a variable
-    (cd or -C) is a Failure; a folder that is not a git folder is not this repository."""
-    if folder is None:
-        raise Failure("the command's folder (cd or -C) is a variable: cannot tell its repository")
-    url = remote
-    if "/" not in remote and ":" not in remote:
-        try:
-            done = subprocess.run(
-                ["git", "-C", folder, "remote", "get-url", remote],
-                capture_output=True, text=True, timeout=10,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        if done.returncode != 0:
-            return False
-        url = done.stdout
-    return _THIS_REMOTE.search(url.strip()) is not None
-
-
-def current_branch(push: Push) -> str:
-    """The pushed branch's name: "HEAD" is the current branch of the push's folder."""
-    if push.branch != "HEAD":
-        return push.branch
-    done = subprocess.run(
-        ["git", "-C", push.folder, "symbolic-ref", "--short", "HEAD"],
-        capture_output=True, text=True, timeout=10,
-    )
-    return done.stdout.strip()
 
 
 def ahead_of(github: GitHub, event: Push, comments: list[str], full: str) -> int:
@@ -591,7 +331,7 @@ def move_card(github: GitHub, issue: int, status: str, when: str | None, dry_run
         capture_output=True, text=True, env=github.environment, timeout=120,
     )
     if done.returncode != 0:
-        raise Failure(f"card #{issue} to {status}: {_last_line(done.stderr, f'exit {done.returncode}')}")
+        raise Failure(f"card #{issue} to {status}: {last_line(done.stderr, f'exit {done.returncode}')}")
 
 
 def post_measure(github: GitHub, issue: int, comments: list[str], dry_run: bool) -> None:
@@ -606,7 +346,7 @@ def post_measure(github: GitHub, issue: int, comments: list[str], dry_run: bool)
         capture_output=True, text=True, cwd=PROJECT, timeout=300,
     )
     if done.returncode != 0 or not done.stdout.strip():
-        raise Failure(f"measure of #{issue}: {_last_line(done.stderr, f'exit {done.returncode}')}")
+        raise Failure(f"measure of #{issue}: {last_line(done.stderr, f'exit {done.returncode}')}")
     post(github, issue, f"### {MEASURE_HEADING}\n\n{done.stdout.strip()}", dry_run)
 
 
@@ -615,7 +355,7 @@ def report_push(event: Push, github: GitHub, dry_run: bool) -> None:
     (a push that failed) posts nothing."""
     if not names_repository(event.folder, event.remote):
         return
-    branch = current_branch(event)
+    branch = current_branch(event.branch, event.folder)
     issue = issue_of(branch)
     if issue is None:
         return
@@ -630,8 +370,9 @@ def report_push(event: Push, github: GitHub, dry_run: bool) -> None:
     move_card(github, issue, "In progress", "To do", dry_run)
 
 
-def report_pull(event: Pull, github: GitHub, dry_run: bool) -> None:
-    """A pull request opened, its checks waited on, or its merge."""
+def report_pull(event: Pull, github: GitHub, dry_run: bool, notes: list[str]) -> None:
+    """A pull request opened, its checks waited on, or its merge. `notes` collects what Claude
+    is told besides the posted lines (the clean-up after a merge)."""
     pull = pull_of(github, event)
     if pull is None:
         return
@@ -648,11 +389,12 @@ def report_pull(event: Pull, github: GitHub, dry_run: bool) -> None:
             for line in lines_for(checked, github.comments(issue)):
                 post(github, issue, line, dry_run)
     else:
-        report_merge(github, pull, issue, dry_run)
+        report_merge(github, pull, issue, dry_run, notes)
 
 
-def report_merge(github: GitHub, pull: dict, issue: int, dry_run: bool) -> None:
-    """A merged pull request: the CI line of its head, the merge line, and, when it closes the
+def report_merge(github: GitHub, pull: dict, issue: int, dry_run: bool, notes: list[str]) -> None:
+    """A merged pull request: the clean-up of its branch (on any merge, and first, so the slow
+    measure cannot cost it), the CI line of its head, the merge line, and, when it closes the
     issue, the card to Done and the measure. Each part is attempted whatever the others do, and
     the failures are raised together."""
     if pull["state"] != "MERGED":
@@ -678,6 +420,12 @@ def report_merge(github: GitHub, pull: dict, issue: int, dry_run: bool) -> None:
             for line in lines_for(event, comments):
                 post(github, issue, line, dry_run)
 
+    # First: the measure below may run long, and the hook's own timeout ends the process.
+    if not dry_run:
+        try:
+            notes += merge_cleanup.clean_up(PROJECT, pull["headRefName"], pull["headRefOid"])
+        except (OSError, subprocess.SubprocessError) as problem:
+            problems.append(f"clean-up of {pull['headRefName']}: {type(problem).__name__}: {problem}")
     attempt(lines)
     if closes:
         attempt(lambda: move_card(github, issue, "Done", None, dry_run))
@@ -686,12 +434,12 @@ def report_merge(github: GitHub, pull: dict, issue: int, dry_run: bool) -> None:
         raise Failure("; ".join(problems))
 
 
-def report(event, github: GitHub, dry_run: bool) -> None:
+def report(event, github: GitHub, dry_run: bool, notes: list[str]) -> None:
     """Posts what one event owes."""
     if isinstance(event, Push):
         report_push(event, github, dry_run)
     else:
-        report_pull(event, github, dry_run)
+        report_pull(event, github, dry_run, notes)
 
 
 def main(argv: list[str] | None = None, stdin=None) -> int:
@@ -707,17 +455,25 @@ def main(argv: list[str] | None = None, stdin=None) -> int:
     if not events:
         return 0
     problems = []
+    notes: list[str] = []
     github = GitHub()
     for event in events:
         try:
-            report(event, github, options.dry_run)
+            report(event, github, options.dry_run, notes)
         except Failure as problem:
             problems.append(str(problem))
         except (KeyError, ValueError, OSError, subprocess.SubprocessError) as problem:
             problems.append(f"{type(problem).__name__}: {problem}")
     if problems:
-        print("progress_lines: " + "; ".join(problems).replace("\n", " "), file=sys.stderr)
+        print("progress_lines: " + "; ".join(problems + notes).replace("\n", " "), file=sys.stderr)
         return 2
+    if notes and options.dry_run:
+        print("\n".join(notes))
+    elif notes:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": hook.get("hook_event_name") or "PostToolUse",
+            "additionalContext": " ".join(notes),
+        }}))
     return 0
 
 
