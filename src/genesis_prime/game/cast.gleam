@@ -2419,7 +2419,7 @@ fn end_live_cast(
   let stopped_early =
     live.spell.stealth_change == spell_plan.EndsStealthAfterLastGo
     && live.gone > 0
-    && live.gone < list.length(spell_plan.go_times_ms(spell: live.spell))
+    && live.gone < spell_plan.go_count(spell: live.spell)
   let #(cast, broken) = case stopped_early {
     True ->
       stealth_ended(
@@ -4141,7 +4141,7 @@ fn go(
     Error(Nil) -> #(cast, [])
     Ok(live) -> {
       let spell = live.spell
-      let go_count = list.length(spell_plan.go_times_ms(spell:))
+      let go_count = spell_plan.go_count(spell:)
       let cast = case spell.cooldown_start {
         spell_plan.AtFirstGo if live.gone == 0 ->
           start_cooldown(cast:, spell:, now_ms:)

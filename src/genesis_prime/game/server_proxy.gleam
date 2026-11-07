@@ -37,7 +37,7 @@
 ////   phases.
 //// - **A row is refused** when its base has no plan (it is not a class's level-1
 ////   ability or innate), when its phase is not a go of that plan
-////   (`spell_plan.go_times_ms`), or when its spell has no row or its tree cannot be
+////   (`spell_plan.go_count`, the length of `spell_plan.go_times_ms`), or when its spell has no row or its tree cannot be
 ////   planned, for the plan's own reason; a tree that leads back to the ability or to the
 ////   spell that strikes fails as a cycle.
 //// - **The areas are the client's.** The planted spell has no area row of its own, so
@@ -157,7 +157,7 @@ fn planned_of(
     spell_plan.in_plans(plans:, base: Spell4BaseId(row.spell4_base_id))
     |> result.replace_error(NoPlan),
   )
-  let goes = list.length(spell_plan.go_times_ms(spell: ability))
+  let goes = spell_plan.go_count(spell: ability)
   use <- bool.guard(
     when: row.phase < 0 || row.phase >= goes,
     return: Error(NotAGo(phase: row.phase, goes:)),
@@ -191,7 +191,7 @@ fn host_of(ability ability: Spell, phase phase: Int) -> Result(Proxy, Nil) {
 /// The index of a spell's last go; a spell with no go of its own (a charge held until its
 /// release) has go 0.
 fn last_go_of(spell spell: Spell) -> Int {
-  int.max(0, list.length(spell_plan.go_times_ms(spell:)) - 1)
+  int.max(0, spell_plan.go_count(spell:) - 1)
 }
 
 /// The plans with each ability's Proxies of the server's added to its tree: after the

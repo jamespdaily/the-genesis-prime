@@ -25,6 +25,8 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
@@ -99,6 +101,80 @@ pub fn gamma_rays_centre_spell_strikes_through_its_own_row_and_each_side_spell_t
       ),
     ]
     as "Spell4.29874.area: the side spell 35886 strikes through its never-drawn row 2452 (flags 576)"
+}
+
+pub fn every_pulse_of_electrocutes_channel_strikes_through_its_one_damage_effect_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(electrocute) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(41_276))
+    as "Electrocute is in the areas of the level-1 abilities"
+  // Spell4.41276: channelInitialDelay 500, channelMaxTime 3000 and channelPulseTime
+  // 500 give the pulses 0 to 5 of the recording's cast 2147485756 (0x7f4 phases 0 to 5).
+  list.each([0, 1, 2, 3, 4, 5], fn(pulse) {
+    let assert Ok(strike) =
+      spell_area.phase(spell: electrocute, phase: pulse, spent: None)
+      as {
+        "Spell4.41276.area: the channel has a go at its pulse "
+        <> int.to_string(pulse)
+        <> " (pulses 0 to 5)"
+      }
+    assert strike.selects_area
+      && list.map(strike.damage, fn(effect) { effect.effect_id })
+      == [Spell4EffectsId(92_587)]
+      as {
+        "Spell4Effects 92587: targetFlags 4 aims at the area and phaseFlags -1 fires it in every phase, pulse "
+        <> int.to_string(pulse)
+      }
+  })
+}
+
+pub fn a_channel_of_the_level_1_abilities_has_a_phase_for_each_pulse_and_none_after_the_last_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  // Spell4 41276: (3000 - 500 + 500) / 500 pulses, the recording's phases 0 to 5.
+  // Spell4 58832: (1250 - 410 + 410) / 410 pulses, three gos of Discharge
+  // (`cast_hold_test`: a go for each of its three pulses).
+  let channels = [#(41_276, 6), #(58_832, 3)]
+  list.each(channels, fn(channel) {
+    let #(spell4_id, pulses) = channel
+    let assert Ok(found) =
+      spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+      as "the channel is in the areas of the level-1 abilities"
+    list.each(
+      list.index_map(list.repeat(Nil, pulses), fn(_, pulse) { pulse }),
+      fn(pulse) {
+        assert result.is_ok(spell_area.phase(
+          spell: found,
+          phase: pulse,
+          spent: None,
+        ))
+          as {
+            "Spell4."
+            <> int.to_string(spell4_id)
+            <> " has a go at pulse "
+            <> int.to_string(pulse)
+          }
+      },
+    )
+    assert spell_area.phase(spell: found, phase: pulses, spent: None)
+      == Error(Nil)
+      as {
+        "Spell4."
+        <> int.to_string(spell4_id)
+        <> " has no go after its pulse "
+        <> int.to_string(pulses - 1)
+      }
+  })
+  assert list.length(
+      list.filter(dict.values(areas), fn(found) {
+        option.is_some(found.spell.channel)
+      }),
+    )
+    == list.length(channels)
+    as "Electrocute and Discharge are the only Channeled spells among the level-1 abilities' trees"
 }
 
 /// The offsets aside of the planted Kick's hit shapes, whose telegraph rows have
