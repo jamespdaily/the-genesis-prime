@@ -13,8 +13,8 @@ that already existed is told apart from a missing one.
 
 Exit 0 when every listed test is defined in the diff, 1 when one is not,
 2 when the issue holds no test list. It replaces the reviewers' by-hand test
-list check (Fight retro item C5, 2026-11-07); it gates no merge, so it has no
-tests of its own and is checked by use.
+list check; it gates no merge, so it has no tests of its own and is checked by
+use.
 """
 
 import json
