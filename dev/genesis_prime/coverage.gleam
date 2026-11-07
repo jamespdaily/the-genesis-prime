@@ -17,6 +17,12 @@
 //// a Proxy's child behind a gate a level-1 character cannot open
 //// (genesis_prime/coverage/starting_ability).
 ////
+//// It then lists the spells the reached spells' tooltips name that no row reaches, with the
+//// server's Proxies (the play database's server_proxy table) planted into the trees, and a
+//// count line under the totals (genesis_prime/coverage/named_unreached). A play database,
+//// a Proxy row or the committed token list (test/fixture/tooltip_tokens/tokens.tsv) the
+//// measure cannot take is said in place of the list and counts as a breach.
+////
 //// It then prints the coverage of the world's spawns, a line for each world: how
 //// many start as fight creatures, how many NonPlayer rows are left out and why,
 //// and how many rows each other entity type has (genesis_prime/world_map/spawn,
@@ -30,18 +36,23 @@
 
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal
+import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
+import genesis_prime/coverage/named_unreached
 import genesis_prime/coverage/starting_ability
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
 import genesis_prime/game/rating
+import genesis_prime/game/server_proxy
+import genesis_prime/game/spell_plan
 import genesis_prime/store/worker
 import genesis_prime/table
 import genesis_prime/table/loader/store
 import genesis_prime/table_folder
+import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
 import gleam/erlang/reference
@@ -50,6 +61,7 @@ import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
+import pog
 import simplifile
 
 /// Runs the measure.
@@ -72,9 +84,15 @@ pub fn main() -> Nil {
           measurement.measure(declared, tables)
         })
       let left_out = left_out_report(tables:)
+      let named = named_by_tooltips(tables:)
       let spawns = spawn_coverage(tables:)
       store.unload(tables)
       io.println(checklist.totals(measurements))
+      io.println("")
+      io.println(case named {
+        Ok(#(count, _)) -> count
+        Error(why) -> describe_named_failure(why)
+      })
       io.println("")
       io.println(checklist.legend)
       io.println("")
@@ -82,10 +100,20 @@ pub fn main() -> Nil {
       io.println("")
       io.println(left_out)
       io.println("")
+      io.println(case named {
+        Ok(#(_, named_list)) -> named_list
+        Error(why) -> describe_named_failure(why)
+      })
+      io.println("")
       io.println(spawns)
-      case breaches(measurements) {
+      let found = case named {
+        Ok(_) -> breaches(measurements)
+        Error(why) ->
+          list.append(breaches(measurements), [describe_named_failure(why)])
+      }
+      case found {
         [] -> Nil
-        found -> {
+        _ -> {
           list.each(found, io.println)
           dev_exit.halt(1)
         }
@@ -112,6 +140,82 @@ pub fn left_out_report(tables tables: store.Tables) -> String {
         "\n",
       )
   }
+}
+
+/// Why the list of tooltip-named spells cannot be made.
+type NamedFailure {
+  TokenListRefused(tooltip_token.ListError)
+  DatabaseUnavailable(dev_database.Failure)
+  ProxyTableUnreadable(pog.QueryError)
+  ProxiesRefused(List(refusal.Refusal))
+  RowsMissing(List(starting_ability.MissingRow))
+}
+
+fn describe_named_failure(failure: NamedFailure) -> String {
+  case failure {
+    TokenListRefused(error) -> tooltip_token.describe_error(error)
+    DatabaseUnavailable(failure) ->
+      "The tooltip list needs the play database: "
+      <> dev_database.describe(failure, "read the server's Proxies")
+    ProxyTableUnreadable(error) ->
+      "The tooltip list needs the server_proxy table (run the migrations on the play database): "
+      <> worker.describe_query_error(error)
+    ProxiesRefused(refusals) ->
+      "The tooltip list needs Proxies the load takes: "
+      <> string.join(list.map(refusals, refusal.describe), "; ")
+    RowsMissing(missing) ->
+      "The tooltip list needs rows the tables lack: "
+      <> string.join(list.map(missing, starting_ability.describe), "; ")
+  }
+}
+
+/// The count line and the list of the spells the reached spells' tooltips name that no row
+/// reaches, or why they cannot be made: the play database, its Proxy rows, the token list
+/// or the walk. The reached spells are those of the trees with the server's Proxies
+/// planted, as the server's load plants them.
+fn named_by_tooltips(
+  tables tables: store.Tables,
+) -> Result(#(String, String), NamedFailure) {
+  named_find(tables:)
+  |> result.map(fn(named) {
+    #(
+      named_unreached.count_line(named:),
+      named_unreached.report(tables:, named:),
+    )
+  })
+}
+
+fn named_find(
+  tables tables: store.Tables,
+) -> Result(named_unreached.Named, NamedFailure) {
+  use tokens <- result.try(
+    tooltip_token.load() |> result.map_error(TokenListRefused),
+  )
+  use db <- result.try(
+    dev_database.connect() |> result.map_error(DatabaseUnavailable),
+  )
+  use rows <- result.try(
+    content_server_proxy.rows(db) |> result.map_error(ProxyTableUnreadable),
+  )
+  let plans = spell_plan.plans(tables:)
+  use selected <- result.try(
+    server_proxy.select(rows:, tables:, plans:)
+    |> result.map_error(ProxiesRefused),
+  )
+  let plans = server_proxy.planted_into(plans:, proxies: selected)
+  use reached <- result.try(
+    starting_ability.spells_in(tables:, plans:)
+    |> result.map_error(RowsMissing),
+  )
+  use left_out <- result.map(
+    starting_ability.left_out(tables:) |> result.map_error(RowsMissing),
+  )
+  named_unreached.find(
+    tables:,
+    tokens:,
+    reached: list.map(reached, fn(spell) { spell.spell4_id.value }),
+    left_out:,
+  )
 }
 
 /// The coverage of the play database's spawns, a line for each world, or why it

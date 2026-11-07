@@ -102,7 +102,8 @@ pub fn left_out(
   tables tables: store.Tables,
 ) -> Result(List(LeftOut), List(MissingRow)) {
   use gates <- result.try(amp_gates(tables:))
-  let reached = reached_spells(tables:, gates:)
+  let reached =
+    reached_spells(tables:, gates:, plans: spell_plan.plans(tables:))
   let reached_ids = set.from_list(list.map(reached, spell_id))
   let #(rows, _) = spell4_rows(tables:, spells: reached)
   let closed =
@@ -285,6 +286,18 @@ fn runner_columns_only(
         |> list.sort(string.compare),
     )
   })
+}
+
+/// The spells a part left out does not count: the spell a Proc of a kind the plan does
+/// not read would cast, those below a Proxy's closed gate, an innate slot's active and
+/// passive spell; none for a Prerequisite only a runner column names.
+pub fn left_out_spells(left_out left_out: LeftOut) -> List(Int) {
+  case left_out {
+    RunnerColumnsOnly(..) -> []
+    ProxyGateClosed(spells:, ..) -> spells
+    ProcKindNotRead(casts:, ..) -> [casts]
+    InnateSlotClosed(active:, passive:, ..) -> [active, passive]
+  }
 }
 
 /// A sentence for a part left out.
@@ -623,8 +636,17 @@ fn effects_of(
 pub fn spells(
   tables tables: store.Tables,
 ) -> Result(List(Spell), List(MissingRow)) {
+  spells_in(tables:, plans: spell_plan.plans(tables:))
+}
+
+/// The same walk over these plans: the derived ones with the server's Proxies planted
+/// (genesis_prime/game/server_proxy `planted_into`) reach the spells those cast.
+pub fn spells_in(
+  tables tables: store.Tables,
+  plans plans: spell_plan.Plans,
+) -> Result(List(Spell), List(MissingRow)) {
   use gates <- result.map(amp_gates(tables:))
-  reached_spells(tables:, gates:)
+  reached_spells(tables:, gates:, plans:)
 }
 
 /// The AMP gates the tree walk reads, or the AMP unlock row the table lacks.
@@ -645,11 +667,12 @@ fn amp_gates(
 fn reached_spells(
   tables tables: store.Tables,
   gates gates: level_one_gate.Gates,
+  plans plans: spell_plan.Plans,
 ) -> List(Spell) {
   let started = fn(proxy) {
     result.is_error(level_one_gate.closed_by(gates:, tables:, proxy:))
   }
-  dict.values(spell_plan.plans(tables:))
+  dict.values(plans)
   |> list.flat_map(fn(ability) { spell_plan.tree(spell: ability, started:) })
   |> list.fold(dict.new(), fn(found, spell) {
     dict.insert(found, spell.spell4_id.value, spell)

@@ -183,6 +183,7 @@ PYTHON_STUB = """#!/bin/sh
 echo "python3.13 $*" >>"$PLANT_LOG"
 case "$*" in
   *check_facts.py*) exit 0 ;;
+  *client_files.py*) [ -n "$PLANT_TOKENS_STALE" ] && exit 1; exit 0 ;;
 esac
 exec "$PLANT_REAL_PYTHON" "$@"
 """
@@ -664,6 +665,20 @@ class ClientSuiteTest(unittest.TestCase):
 
     def test_an_exported_genesis_integration_does_not_open_the_gate_of_the_unit_suite(self):
         self.assert_gate_held(self.gate_holds("gate-no-client", client=False))
+
+    def test_with_the_client_the_part_also_checks_the_committed_token_list(self):
+        run = shared_run("tokens-on", client=True)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertIn("python3.13 -I .claude/skills/decoding-the-client/scripts/client_files.py tokens --check", run.commands)
+
+    def test_without_the_client_the_token_list_is_not_checked(self):
+        run = shared_run("full")
+        self.assertFalse([c for c in run.commands if "client_files.py" in c], run.commands)
+
+    def test_a_stale_token_list_fails_the_client_suite_part_and_no_other(self):
+        run = shared_run("tokens-stale", client=True, PLANT_TOKENS_STALE="1")
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: client-suite$")
 
 
 def advance_origin_main(case: PlantedCheckCase, commits: int) -> None:

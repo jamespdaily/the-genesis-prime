@@ -1,0 +1,8 @@
+test/fixture/tooltip_tokens/tokens.tsv lists the $(kind=id.field) tokens of every text that a
+tooltip column of Spell4 names (the seven localizedTextId columns ActionBarTooltip,
+CasterIconSpellText, PrimaryTargetIconSpellText, SecondaryTargetIconSpellText,
+TooltipCastInfo, TooltipCostInfo and LASTier), read from en-US.bin of the WildStar client
+build 16042 (ClientDataEN) and Spell4.tbl of the same build. Only the text id, the token's kind,
+its id and its field name are kept: no English text of the client is copied. Written and
+checked by `python3.13 -I .claude/skills/decoding-the-client/scripts/client_files.py tokens
+--write` and `tokens --check`; the full check runs --check when the client's files are present.

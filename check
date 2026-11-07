@@ -87,7 +87,10 @@
 #   squirrel       squirrel check, started on the built code, against that database
 #                                                       (after gleam-build and migrations)
 #   client-suite   the client scripts' tests that need no Ghidra (run with
-#                  GENESIS_INTEGRATION=0, whatever the caller exported)
+#                  GENESIS_INTEGRATION=0, whatever the caller exported), then, except
+#                  where GENESIS_NO_CLIENT=1, `client_files.py tokens --check`: the
+#                  committed test/fixture/tooltip_tokens/tokens.tsv against the client's
+#                  en-US.bin and Spell4.tbl
 #   fact-checker   check_facts.py over the fact file
 #
 # The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
@@ -610,9 +613,15 @@ literal_area_check() {
   return $status
 }
 
-# The client scripts' tests that need no Ghidra.
+# The client scripts' tests that need no Ghidra, then, where the client's files are (not
+# GENESIS_NO_CLIENT=1), the committed list of the tooltip tokens against a fresh read of them.
 client_suite() {
-  env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py'
+  local status=0
+  env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py' || status=1
+  if [ "${GENESIS_NO_CLIENT:-}" != 1 ]; then
+    python3.13 -I "$client_scripts/client_files.py" tokens --check || status=1
+  fi
+  return $status
 }
 
 squirrel_check() {
