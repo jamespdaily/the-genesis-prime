@@ -10,11 +10,10 @@ card:
                                           (or "CI failed on ...")
   its merge (gh pr merge P)               merged: pull request <P> (<merge sha7>)           Done, when P closes n
                                           and, when P closes n, `dev/step_measure.py n` as a
-                                          comment headed "Measure (draft for the closing summary)",
-                                          then the coverage and ranking comment (merge_measures)
+                                          comment headed "Measure (draft for the closing summary)"
   (at the merge, the CI line of the merged head comes first, when the issue lacks it)
   after a merge, any merge: the branch's worktree and local branch are cleaned up
-  (merge_cleanup), and each result is a line shown to Claude (`additionalContext`)
+  (merge_cleanup), and each result is a note shown to Claude (`additionalContext`)
 
   Bash call ends
     -> events_of(hook json)           which of the four tools ran at a command's start, from the
@@ -23,12 +22,8 @@ card:
     -> the shell reads GitHub         issue n's comments, the branch head, the pull request, its
                                       checks and run attempt, the card's status
     -> lines_for(event, comments)     the lines not yet posted for that event
-    -> the shell posts them           gh issue comment; dev/card.sh status; step_measure.py;
-                                      merge_measures (two `gleam run` reads from the main
-                                      checkout, 60 s each; skipped with a reason when it is not
-                                      on the merged main yet)
-    -> after a merge                  merge_cleanup.clean_up: remove a clean worktree, delete the
-                                      branch; a dirty or locked worktree is left, and said so
+    -> the shell posts them           gh issue comment; dev/card.sh status; step_measure.py
+    -> after a merge                  merge_cleanup.clean_up (git decides what it may remove)
 
 Rules:
   - The hook's stdin JSON has tool_name, tool_input.command, cwd and tool_response (stdout,
@@ -51,12 +46,11 @@ Rules:
   - A pull request number that is not a literal (`$P`, none, a URL, a branch) is read from
     `gh pr view` for the folder's branch, or the URL or branch given.
   - A line is posted once: a comment that already starts with the event's key stops it (a push:
-    the same sha; a pull request: opened once). The card move and the measures at a merge are
-    each keyed on their own state (the card not Done; no comment headed "### Measure (draft" or
-    "### Coverage and unhandled ranking (draft"), so a retry finishes what a failure left. A
-    "skipped" coverage comment does not stop a later try, but is not posted twice unchanged.
-  - The clean-up and the coverage comment run only for a branch `jimd/<n>-...`: a merge whose
-    branch has no issue number is not read at all.
+    the same sha; a pull request: opened once). The card move and the measure at a merge are
+    each keyed on their own state (the card not Done; no comment headed "### Measure (draft"),
+    so a retry finishes what a failure left.
+  - The clean-up runs only for a branch `jimd/<n>-...`: a merge whose branch has no issue
+    number is not read at all.
   - A merged pull request closes the step only when it closes issue n; a fix branch's merge
     posts its CI and merge lines and nothing else.
   - Settings hooks fire for a subagent's tool calls too, so a builder's push is seen.
@@ -67,7 +61,7 @@ it ends; the merge posts the CI line instead.
 
   python3 -I dev/hooks/progress_lines.py            hook JSON on stdin, posts
   python3 -I dev/hooks/progress_lines.py --dry-run  prints "#n: line" instead of posting, and
-                                                    runs no card move and no measure
+                                                    runs no card move, measure or clean-up
 """
 
 import argparse
@@ -87,7 +81,6 @@ from step_issue import (  # noqa: E402
     names_repository,
 )
 import merge_cleanup  # noqa: E402
-import merge_measures  # noqa: E402
 
 MEASURE_HEADING = "Measure (draft for the closing summary)"
 MEASURE_PREFIX = "### Measure (draft"
@@ -377,24 +370,9 @@ def report_push(event: Push, github: GitHub, dry_run: bool) -> None:
     move_card(github, issue, "In progress", "To do", dry_run)
 
 
-def post_merge_measures(
-    github: GitHub, issue: int, commit: str, comments: list[str], dry_run: bool,
-) -> None:
-    """Posts the coverage counts and the unhandled ranking's top as one comment, run from the
-    main checkout once it holds the merge commit (merge_measures). A comment that already has
-    the measures stops it; a skipped one is not posted twice with the same reason."""
-    if any(body.strip().startswith(merge_measures.PREFIX) for body in comments):
-        return
-    main, reason = merge_measures.main_checkout_on(PROJECT, commit)
-    body = merge_measures.comment(main, commit, reason)
-    if body.startswith(merge_measures.SKIPPED_PREFIX) and any(c.strip() == body for c in comments):
-        return
-    post(github, issue, body, dry_run)
-
-
 def report_pull(event: Pull, github: GitHub, dry_run: bool, notes: list[str]) -> None:
     """A pull request opened, its checks waited on, or its merge. `notes` collects what Claude
-    is told besides the posted lines (the cleanup after a merge)."""
+    is told besides the posted lines (the clean-up after a merge)."""
     pull = pull_of(github, event)
     if pull is None:
         return
@@ -411,16 +389,14 @@ def report_pull(event: Pull, github: GitHub, dry_run: bool, notes: list[str]) ->
             for line in lines_for(checked, github.comments(issue)):
                 post(github, issue, line, dry_run)
     else:
-        report_merge(github, pull, issue, dry_run, event.folder, notes)
+        report_merge(github, pull, issue, dry_run, notes)
 
 
-def report_merge(
-    github: GitHub, pull: dict, issue: int, dry_run: bool, folder: str | None, notes: list[str],
-) -> None:
-    """A merged pull request: the clean-up of its branch's worktree (on any merge, and first, so
-    the slow parts below cannot cost it), the CI line of its head, the merge line, and, when it
-    closes the issue, the card to Done, the measure and the coverage and ranking comment. Each
-    part is attempted whatever the others do, and the failures are raised together."""
+def report_merge(github: GitHub, pull: dict, issue: int, dry_run: bool, notes: list[str]) -> None:
+    """A merged pull request: the clean-up of its branch (on any merge, and first, so the slow
+    measure cannot cost it), the CI line of its head, the merge line, and, when it closes the
+    issue, the card to Done and the measure. Each part is attempted whatever the others do, and
+    the failures are raised together."""
     if pull["state"] != "MERGED":
         return
     number = pull["number"]
@@ -444,19 +420,16 @@ def report_merge(
             for line in lines_for(event, comments):
                 post(github, issue, line, dry_run)
 
-    # The clean-up comes first: the measures below may run long, and the hook's own timeout
-    # ends the process.
-    try:
-        notes += merge_cleanup.clean_up(
-            PROJECT, pull["headRefName"], pull["headRefOid"], folder, dry_run,
-        )
-    except (OSError, subprocess.SubprocessError) as problem:
-        problems.append(f"clean-up of {pull['headRefName']}: {type(problem).__name__}: {problem}")
+    # First: the measure below may run long, and the hook's own timeout ends the process.
+    if not dry_run:
+        try:
+            notes += merge_cleanup.clean_up(PROJECT, pull["headRefName"], pull["headRefOid"])
+        except (OSError, subprocess.SubprocessError) as problem:
+            problems.append(f"clean-up of {pull['headRefName']}: {type(problem).__name__}: {problem}")
     attempt(lines)
     if closes:
         attempt(lambda: move_card(github, issue, "Done", None, dry_run))
         attempt(lambda: post_measure(github, issue, comments, dry_run))
-        attempt(lambda: post_merge_measures(github, issue, commit, comments, dry_run))
     if problems:
         raise Failure("; ".join(problems))
 
