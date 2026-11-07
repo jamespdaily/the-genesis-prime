@@ -38,11 +38,13 @@ import gleam/float
 import gleam/list
 import owned_test
 import pog
+import unitest
 
 // ---- what the bot is run with ----
 
 pub fn the_bot_takes_the_named_character_and_a_default_of_30_minutes_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert sitting_bot.parse_arguments(["--near", "Zed Qu"])
     == Ok(Options(near: "Zed Qu", minutes: 30, walk: sitting_bot.client_follow))
     as "the tool's contract: minutes default to 30 and the walk follows the named character"
@@ -50,6 +52,7 @@ pub fn the_bot_takes_the_named_character_and_a_default_of_30_minutes_test() -> N
 
 pub fn the_bot_walks_a_circle_when_it_is_told_to_and_follows_when_it_is_told_to_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert sitting_bot.parse_arguments(["--near", "Zed Qu", "--walk", "circle"])
     == Ok(Options(near: "Zed Qu", minutes: 30, walk: sitting_bot.client_circle))
   assert sitting_bot.parse_arguments(["--walk", "follow", "--near", "Zed Qu"])
@@ -62,6 +65,7 @@ pub fn the_bot_walks_a_circle_when_it_is_told_to_and_follows_when_it_is_told_to_
 
 pub fn the_follow_walk_delays_a_replay_by_2_s_and_the_circle_moves_every_125_ms_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert sitting_bot.client_follow == sitting_bot.Follow(delay_ms: 2000)
     as "the coordinator's choice for the follow walk: about 2 s"
   assert sitting_bot.client_circle == sitting_bot.Circle(move_every_ms: 125)
@@ -70,12 +74,14 @@ pub fn the_follow_walk_delays_a_replay_by_2_s_and_the_circle_moves_every_125_ms_
 
 pub fn the_bot_takes_the_number_of_minutes_it_is_given_in_either_order_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert sitting_bot.parse_arguments(["--minutes", "5", "--near", "Zed Qu"])
     == Ok(Options(near: "Zed Qu", minutes: 5, walk: sitting_bot.client_follow))
 }
 
 pub fn a_missing_name_a_bad_minute_count_and_an_unknown_argument_are_refused_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert sitting_bot.parse_arguments([]) == Error(sitting_bot.MissingNear)
   assert sitting_bot.parse_arguments(["--minutes", "5"])
     == Error(sitting_bot.MissingNear)
@@ -95,6 +101,7 @@ pub fn a_missing_name_a_bad_minute_count_and_an_unknown_argument_are_refused_tes
 
 pub fn the_chat_lines_go_say_yell_emote_zone_in_turn_with_the_channels_name_and_a_counter_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let lines = list.map(character_support.numbers(5), sitting_bot.chat_line)
   assert list.map(lines, fn(line) { line.text })
     == ["bot say 1", "bot yell 2", "bot emote 3", "bot zone 4", "bot say 5"]
@@ -170,6 +177,7 @@ fn is_move(duty: sitting_bot.Duty) -> Bool {
 
 pub fn the_client_schedule_moves_every_125_ms_says_every_10_s_and_whispers_every_30_s_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let found =
     duties(sitting_bot.client_schedule(walk: sitting_bot.client_circle), 30_000)
   assert times(found, is_chat) == [10_000, 20_000, 30_000]
@@ -184,6 +192,7 @@ pub fn the_client_schedule_moves_every_125_ms_says_every_10_s_and_whispers_every
 
 pub fn a_follow_walk_has_no_move_duty_of_its_own_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let found =
     duties(sitting_bot.client_schedule(walk: sitting_bot.client_follow), 30_000)
   assert times(found, is_move) == []
@@ -194,6 +203,7 @@ pub fn a_follow_walk_has_no_move_duty_of_its_own_test() -> Nil {
 
 pub fn duties_due_at_one_time_go_chat_then_whisper_then_move_and_each_kind_in_its_own_order_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let schedule =
     Schedule(
       walk: sitting_bot.Circle(move_every_ms: 100),
@@ -238,6 +248,7 @@ fn distance(ax ax: Float, az az: Float, bx bx: Float, bz bz: Float) -> Float {
 
 pub fn the_walk_starts_where_the_bot_stands_and_comes_back_to_it_after_a_turn_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let #(x, y, z) = sitting_bot.circle_position(start: start(), step: 0)
   assert #(x, y, z) == #(10.0, 20.0, 30.0)
     as "the first step is where the bot was seated"
@@ -249,6 +260,7 @@ pub fn the_walk_starts_where_the_bot_stands_and_comes_back_to_it_after_a_turn_te
 
 pub fn every_step_of_the_walk_is_a_radius_from_the_centre_at_the_bots_height_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let points =
     list.map(steps(sitting_bot.circle_steps + 1), fn(step) {
       sitting_bot.circle_position(start: start(), step:)
@@ -277,6 +289,7 @@ pub fn every_step_of_the_walk_is_a_radius_from_the_centre_at_the_bots_height_tes
 
 pub fn the_first_move_of_another_unit_and_every_20th_after_it_are_shown_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let #(held, shown) =
     list.fold(
       character_support.numbers(41),
@@ -305,6 +318,7 @@ pub fn the_first_move_of_another_unit_and_every_20th_after_it_are_shown_test() -
 
 pub fn the_summary_counts_the_lines_sent_the_answers_got_the_lines_heard_and_the_units_seen_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let heard =
     HeardLine(channel_type: 4, channel_id: 0, sender: "Zed Qu", text: "hi")
   let events = [
@@ -378,6 +392,7 @@ fn heard_frame(sender: String) -> Frame {
 
 pub fn a_line_heard_is_shown_by_its_channel_sender_and_text_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let heard =
     HeardLine(channel_type: 5, channel_id: 0, sender: "Zed Qu", text: "look")
   assert sitting_bot.events_of(heard_frame("Zed Qu"))
@@ -394,6 +409,7 @@ pub fn a_line_heard_is_shown_by_its_channel_sender_and_text_test() -> Nil {
 
 pub fn a_line_with_no_sender_name_is_also_the_lookup_of_0x597_the_client_would_ask_for_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let heard =
     HeardLine(channel_type: 5, channel_id: 0, sender: "", text: "look")
   assert sitting_bot.events_of(heard_frame(""))
@@ -406,6 +422,7 @@ pub fn a_line_with_no_sender_name_is_also_the_lookup_of_0x597_the_client_would_a
 
 pub fn a_removal_an_accept_a_refusal_and_a_failed_whisper_are_read_from_their_messages_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert sitting_bot.events_of(frame_of(
       0x0355,
       unit_destroyed.encode(unit_destroyed.UnitDestroyed(unit_id: 9, field_2: 0)),
@@ -520,6 +537,7 @@ fn bot_row(pool: pog.Connection) -> #(String, Int, Int, Float, Float, Float) {
 
 pub fn the_bot_is_seated_at_the_named_characters_own_place_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let pool = pool()
   insert_named(pool, "Zed Qu")
   let assert Ok(seat) = sitting_bot.seat(pool:, near: "zed QU")
@@ -533,6 +551,7 @@ pub fn the_bot_is_seated_at_the_named_characters_own_place_test() -> Nil {
 
 pub fn a_sitting_bot_character_of_another_account_is_refused_and_left_as_it_is_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let pool = pool()
   insert_named(pool, "Zed Qu")
   // Another account owns the character named "Sitting Bot", in another case.
@@ -559,6 +578,7 @@ pub fn a_sitting_bot_character_of_another_account_is_refused_and_left_as_it_is_t
 
 pub fn seating_the_bot_again_reuses_its_account_and_character_and_moves_it_to_the_new_place_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let pool = pool()
   insert_named(pool, "Zed Qu")
   let assert Ok(first) = sitting_bot.seat(pool:, near: "Zed Qu")
@@ -577,6 +597,7 @@ pub fn seating_the_bot_again_reuses_its_account_and_character_and_moves_it_to_th
 
 pub fn seating_the_bot_twice_at_once_leaves_one_account_and_one_character_for_it_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let pool = pool()
   insert_named(pool, "Zed Qu")
   let seated = process.new_subject()
@@ -602,6 +623,7 @@ pub fn seating_the_bot_twice_at_once_leaves_one_account_and_one_character_for_it
 
 pub fn a_bot_account_with_no_character_gets_its_character_and_no_second_account_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let pool = pool()
   insert_named(pool, "Zed Qu")
   let #(_game_account_id, query) =
@@ -616,6 +638,7 @@ pub fn a_bot_account_with_no_character_gets_its_character_and_no_second_account_
 
 pub fn a_named_character_that_does_not_exist_is_refused_and_nothing_is_added_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let pool = pool()
   assert sitting_bot.seat(pool:, near: "No One")
     == Error(sitting_bot.NoSuchCharacter(name: "No One"))
@@ -625,6 +648,7 @@ pub fn a_named_character_that_does_not_exist_is_refused_and_nothing_is_added_tes
 
 pub fn a_named_character_with_no_saved_place_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let pool = pool()
   insert_named(pool, "Zed Qu")
   let assert Ok(_) =
