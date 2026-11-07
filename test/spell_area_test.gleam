@@ -25,6 +25,7 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
@@ -99,6 +100,33 @@ pub fn gamma_rays_centre_spell_strikes_through_its_own_row_and_each_side_spell_t
       ),
     ]
     as "Spell4.29874.area: the side spell 35886 strikes through its never-drawn row 2452 (flags 576)"
+}
+
+pub fn every_pulse_of_electrocutes_channel_strikes_through_its_one_damage_effect_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(electrocute) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(41_276))
+    as "Electrocute is in the areas of the level-1 abilities"
+  // Spell4.41276: channelInitialDelay 500, channelMaxTime 3000 and channelPulseTime
+  // 500 give the pulses 0 to 5 of the recording's cast 2147485756 (0x7f4 phases 0 to 5).
+  list.each([0, 1, 2, 3, 4, 5], fn(pulse) {
+    let assert Ok(strike) =
+      spell_area.phase(spell: electrocute, phase: pulse, spent: None)
+      as {
+        "Spell4.41276.area: the channel has a go at its pulse "
+        <> int.to_string(pulse)
+        <> " (pulses 0 to 5)"
+      }
+    assert strike.selects_area
+      && list.map(strike.damage, fn(effect) { effect.effect_id })
+      == [Spell4EffectsId(92_587)]
+      as {
+        "Spell4Effects 92587: targetFlags 4 aims at the area and phaseFlags -1 fires it in every phase, pulse "
+        <> int.to_string(pulse)
+      }
+  })
 }
 
 /// The offsets aside of the planted Kick's hit shapes, whose telegraph rows have
