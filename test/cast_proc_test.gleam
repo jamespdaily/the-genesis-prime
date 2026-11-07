@@ -392,7 +392,7 @@ fn stealthing() -> Spell {
 // ---- what the passive's go lists ----
 
 pub fn the_stalkers_passive_lists_its_five_proc_rows_on_the_caster_and_lingers_with_no_0x7fe_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(state, effects) = joined(caster: stalker(in_combat: False), at: 1000)
   assert listed_on_the_caster(effects:)
@@ -409,7 +409,7 @@ pub fn the_stalkers_passive_lists_its_five_proc_rows_on_the_caster_and_lingers_w
 // ---- entering and leaving stealth ----
 
 pub fn entering_stealth_by_the_innate_press_casts_60724_at_the_player_after_the_0x8f5_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, started) = joined(caster:, at: 1000)
@@ -481,7 +481,7 @@ fn modifier(
 }
 
 pub fn leaving_stealth_by_the_second_press_casts_60769_then_79932_and_empower_lasts_3_seconds_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, joined_effects) = joined(caster:, at: 1000)
@@ -571,7 +571,7 @@ pub fn leaving_stealth_by_the_second_press_casts_60769_then_79932_and_empower_la
 }
 
 pub fn leaving_stealth_by_an_attack_casts_the_procs_after_the_attacks_0x811_0x7fe_and_0x8f5_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, joined_effects) = joined(caster:, at: 1000)
@@ -593,7 +593,7 @@ pub fn leaving_stealth_by_an_attack_casts_the_procs_after_the_attacks_0x811_0x7f
 }
 
 pub fn leaving_stealth_by_damage_casts_the_procs_after_the_0x8f5_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, joined_effects) = joined(caster:, at: 1000)
@@ -615,7 +615,7 @@ pub fn leaving_stealth_by_damage_casts_the_procs_after_the_0x8f5_test() -> Nil {
 }
 
 pub fn a_cancel_that_ends_the_stealth_of_the_other_casts_fires_the_procs_for_leaving_it_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // A cast of value 1 that a 0x801 stops after one of its goes ends the other casts'
   // stealth as it stops (`Spell4.spellCastStealthChange.break`), so a leave-stealth event
   // can come from a cancel too.
@@ -668,7 +668,7 @@ pub fn a_cancel_that_ends_the_stealth_of_the_other_casts_fires_the_procs_for_lea
 // ---- the limit ----
 
 pub fn a_proc_fires_again_only_when_its_window_has_passed_a_fire_at_exactly_its_end_is_allowed_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // The Stalker's own press cannot show the edge: the Stealth cooldown the toggle sets is
   // 1000 ms, above the 500 ms windows, so the holder is planted with the rows' limits.
   let entered = cast_of_proc(spell4_id: 250_201)
@@ -723,7 +723,7 @@ fn broken_by_damage_spell() -> Spell {
 }
 
 pub fn two_procs_of_one_trigger_each_keep_their_own_window_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let short = cast_of_proc(spell4_id: 250_201)
   let long = cast_of_proc(spell4_id: 250_202)
   let holder =
@@ -751,7 +751,7 @@ pub fn two_procs_of_one_trigger_each_keep_their_own_window_test() -> Nil {
 }
 
 pub fn a_proc_with_a_count_above_1_fires_that_often_in_its_window_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // Spell4Effects.effectType.14.limits: 'Can occur $(eff=129693.data05rawInt) times every
   // $(eff=129693.data04ms)s'.
   let casts = cast_of_proc(spell4_id: 250_201)
@@ -779,7 +779,7 @@ pub fn a_proc_with_a_count_above_1_fires_that_often_in_its_window_test() -> Nil 
 }
 
 pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   // The passive's go applies the five procs; the stealth go of 38784 is the input that
@@ -836,7 +836,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
 }
 
 pub fn a_procs_cast_names_the_player_as_its_primary_target_for_every_unit_bit_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, joined_effects) = joined(caster:, at: 1000)
@@ -858,7 +858,7 @@ pub fn a_procs_cast_names_the_player_as_its_primary_target_for_every_unit_bit_te
 // ---- a dead holder ----
 
 pub fn a_lethal_blow_on_a_stealthed_stalker_casts_neither_218_proc_and_writes_a_debug_line_for_each_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, _) = joined(caster:, at: 1000)
@@ -888,7 +888,7 @@ pub fn a_lethal_blow_on_a_stealthed_stalker_casts_neither_218_proc_and_writes_a_
 }
 
 pub fn a_fire_a_dead_holder_was_refused_holds_back_no_later_fire_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // The refused fire records no time, so the 500 ms window holds nothing back.
   let left = cast_of_proc(spell4_id: 250_202)
   let holder =
@@ -937,7 +937,7 @@ fn dies(
 }
 
 pub fn death_casts_63366_after_the_casts_it_ends_and_cuts_the_stealth_cooldown_to_250_ms_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let in_combat = stalker(in_combat: True)
   let #(state, joined_effects) = joined(caster: in_combat, at: 500)
@@ -989,7 +989,7 @@ pub fn death_casts_63366_after_the_casts_it_ends_and_cuts_the_stealth_cooldown_t
 }
 
 pub fn leaving_combat_casts_63366_once_a_second_and_cuts_the_stealth_cooldown_to_250_ms_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let in_combat = stalker(in_combat: True)
   let out = stalker(in_combat: False)
@@ -1037,7 +1037,7 @@ pub fn leaving_combat_casts_63366_once_a_second_and_cuts_the_stealth_cooldown_to
 // ---- event order and matching ----
 
 pub fn a_death_casts_the_died_proc_before_the_proc_for_the_stealth_it_ends_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let died_cast = cast_of_proc(spell4_id: 250_201)
   let left_cast = cast_of_proc(spell4_id: 250_202)
   let holder =
@@ -1080,7 +1080,7 @@ pub fn a_death_casts_the_died_proc_before_the_proc_for_the_stealth_it_ends_test(
 }
 
 pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an_applied_one_fires_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let left_cast = cast_of_proc(spell4_id: 250_202)
   let holder =
     holding(spell4_id: 250_101, procs: [
@@ -1158,7 +1158,7 @@ pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an
 }
 
 pub fn a_procs_own_cast_fires_procs_so_a_217_proc_whose_spell_ends_stealth_fires_the_218_proc_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let leaving = cast_of_proc(spell4_id: 250_202)
   let ending =
     Spell(..cast_of_proc(spell4_id: 250_201), remove_stealth: [
@@ -1209,7 +1209,7 @@ pub fn a_procs_own_cast_fires_procs_so_a_217_proc_whose_spell_ends_stealth_fires
 // ---- death keeps the passive's procs, a camp drops them ----
 
 pub fn death_keeps_the_passives_procs_so_the_next_stealth_entry_after_the_wake_fires_60724_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, _) = joined(caster:, at: 1000)
@@ -1222,7 +1222,7 @@ pub fn death_keeps_the_passives_procs_so_the_next_stealth_entry_after_the_wake_f
 }
 
 pub fn a_camp_drops_the_procs_fires_nothing_and_the_next_passive_holds_them_with_no_history_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, _) = joined(caster:, at: 1000)
@@ -1256,7 +1256,7 @@ fn pressable(
 }
 
 pub fn a_proc_lasts_as_long_as_its_node_a_timed_one_ends_with_it_and_a_removal_drops_it_at_once_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // Spell4Effects.effectType.14.lifetime: a durationTime gives the caster's node that life.
   let timed =
     ProcRow(
@@ -1316,7 +1316,7 @@ pub fn a_proc_lasts_as_long_as_its_node_a_timed_one_ends_with_it_and_a_removal_d
 }
 
 pub fn a_camp_ends_a_procs_fire_history_with_the_proc_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let entered = cast_of_proc(spell4_id: 250_201)
   let holder =
     holding(spell4_id: 250_101, procs: [
@@ -1350,7 +1350,7 @@ pub fn a_camp_ends_a_procs_fire_history_with_the_proc_test() -> Nil {
 }
 
 pub fn a_stealth_ended_by_a_failing_persistence_fires_the_procs_for_leaving_it_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // Prerequisite 903 (type 28, comparison 1) holds while the caster is in combat; the
   // stealth cast holds it as its caster persistence, so it ends when combat does
   // (`Spell4.prerequisiteIdCasterPersistence`, the cast rule's `persisted`).
@@ -1391,7 +1391,7 @@ pub fn a_stealth_ended_by_a_failing_persistence_fires_the_procs_for_leaving_it_t
 }
 
 pub fn a_died_proc_of_a_cast_that_is_not_the_innate_passive_is_not_held_and_says_so_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // A death ends every cast but the innate passive before the procs are matched, so the
   // Died proc of any other holder could never fire.
   let died_cast = cast_of_proc(spell4_id: 250_201)

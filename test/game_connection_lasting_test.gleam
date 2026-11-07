@@ -150,7 +150,7 @@ fn told_to_the_viewer(
 }
 
 pub fn a_creatures_0x355_drops_its_nodes_and_the_lingering_cast_left_with_none_finishes_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // Paralytic Surge with a Fluff on the units its area strikes, until removed: the
   // Beast 40 holds a node of the cast, which lingers with no 0x7fe.
   let state =

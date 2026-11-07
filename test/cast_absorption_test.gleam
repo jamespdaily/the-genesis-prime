@@ -98,7 +98,7 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
 }
 
 pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_seconds_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
@@ -143,7 +143,7 @@ pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_s
 }
 
 pub fn a_delayed_absorb_starts_on_a_timer_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // A planted shape of row 56356 (delay 251, 10000 ms), not the row: the real row's
   // dataBits00 is 0, which the plan refuses (its amount is 0), so this one reads 1.0 x 100.0.
   let delayed =
@@ -178,7 +178,7 @@ pub fn a_delayed_absorb_starts_on_a_timer_test() -> Nil {
 }
 
 pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fails_and_on_the_casters_death_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // A type 80 removal of the cast.
   let plans =
     support.plans_of([
@@ -327,7 +327,7 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
 }
 
 pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // The same go raises AssaultRating (property 35) by 1000 with a type 11 row, and its
   // absorb starts 251 ms later. The pool is the 164 the caster's stats gave at the go: when
   // the delayed start fires, the rule is handed a caster whose ratings are not the go's

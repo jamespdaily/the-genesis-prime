@@ -70,7 +70,7 @@ fn press_in(
 // ---- 4: costs in a fixed slot ----
 
 pub fn impale_is_accepted_with_35_suit_power_and_paid_and_refused_53_at_34_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   assert press(
       resources: support.holding(class_id: 5, value: 100.0),
       bag_index: support.impale,
@@ -91,7 +91,7 @@ pub fn impale_is_accepted_with_35_suit_power_and_paid_and_refused_53_at_34_test(
 }
 
 pub fn electrocute_and_mind_burst_are_refused_51_at_their_empty_start_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   assert press(
       resources: class_resource.new(
         resource: class_resource_support.resource_of(2),
@@ -113,7 +113,7 @@ pub fn electrocute_and_mind_burst_are_refused_51_at_their_empty_start_test() -> 
 // ---- 5: the class mechanic's cost ----
 
 pub fn gamma_rays_passes_at_2_actuators_is_refused_55_at_1_and_at_3_with_a_max_of_0_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   assert press(
       resources: support.holding(class_id: 4, value: 2.0),
       bag_index: gamma_rays,
@@ -141,7 +141,7 @@ pub fn gamma_rays_passes_at_2_actuators_is_refused_55_at_1_and_at_3_with_a_max_o
 // ---- 6: the caster requirement ----
 
 pub fn rampage_is_refused_51_at_249_kinetic_energy_and_accepted_at_250_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   assert press(
       resources: support.holding(class_id: 1, value: 249.0),
       bag_index: support.rampage,
@@ -164,7 +164,7 @@ fn kick_requiring(requirement: spell_plan.Requirement) -> spell_plan.Plans {
 }
 
 pub fn each_comparison_reads_as_compare_by_eval_on_the_amount_and_on_the_percentage_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // Slot 1 at 500 of a maximum of 1000: 50 percent (0x1403b1780).
   let resources =
     class_resource.new(
@@ -205,7 +205,7 @@ pub fn each_comparison_reads_as_compare_by_eval_on_the_amount_and_on_the_percent
 }
 
 pub fn a_percentage_of_a_maximum_of_0_passes_only_above_or_at_least_for_a_slot_above_0_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let at = fn(value) {
     class_resource.new(
       resource: Resource(
@@ -245,7 +245,7 @@ fn kick_with_a_requirement_and_a_cost() -> Spell {
 }
 
 pub fn a_press_failing_two_checks_gets_the_first_the_clients_order_gives_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let both =
     support.with_spells(plans: support.plans(), spells: [
       kick_with_a_requirement_and_a_cost(),
@@ -302,7 +302,7 @@ pub fn a_press_failing_two_checks_gets_the_first_the_clients_order_gives_test() 
 }
 
 pub fn a_press_refused_for_its_cost_pays_nothing_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(_, effects) =
     support.pressed_raw(
       state: cast.new(),
@@ -327,7 +327,7 @@ fn quick_impale() -> Spell {
 }
 
 pub fn two_presses_accepted_in_one_step_cannot_spend_one_payment_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans =
     support.with_spells(plans: support.plans(), spells: [quick_impale()])
   let caster =

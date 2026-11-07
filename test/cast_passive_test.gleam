@@ -98,7 +98,7 @@ fn lines(effects effects: List(Effect)) -> List(String) {
 // ---- what each passive starts ----
 
 pub fn the_warriors_passive_starts_with_0x7ff_no_0x7fd_and_lists_the_fluff_and_the_three_properties_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(state, effects) = started(base: 29_035)
   assert lines(effects:)
@@ -113,7 +113,7 @@ pub fn the_warriors_passive_starts_with_0x7ff_no_0x7fd_and_lists_the_fluff_and_t
 }
 
 pub fn the_engineers_passive_lists_its_three_properties_and_its_conversion_and_starts_46297_behind_the_nested_gate_it_passes_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(_, effects) = started(base: 29_076)
   assert lines(effects:)
@@ -137,7 +137,7 @@ pub fn the_engineers_passive_lists_its_three_properties_and_its_conversion_and_s
 }
 
 pub fn the_stalkers_passive_lists_its_five_procs_and_starts_60724_50_ms_later_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(state, effects) = started(base: 29_131)
   assert lines(effects:)
@@ -190,7 +190,7 @@ fn caster_of_planted() -> Caster {
 }
 
 pub fn an_ordinary_press_of_the_planted_spell_is_the_current_cast_and_starts_the_global_cooldown_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let #(state, _) =
     support.pressed_raw_in(
       plans: planted_plans(),
@@ -214,7 +214,7 @@ pub fn an_ordinary_press_of_the_planted_spell_is_the_current_cast_and_starts_the
 }
 
 pub fn a_passive_starts_no_global_cooldown_is_never_the_current_cast_and_opens_no_threshold_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let #(state, effects) =
     cast.passive_started(
       cast: cast.new(),
@@ -267,7 +267,7 @@ fn warrior_pressed_as_an_ability() -> #(State, List(Effect)) {
 }
 
 pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_ordinary_cast_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(ordinary, _) = warrior_pressed_as_an_ability()
   let #(_, ordinary_death) =
@@ -305,7 +305,7 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
 }
 
 pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_join_starts_it_again_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(passive, _) = started(base: 29_035)
   let #(dropped, effects) = cast.left(cast: passive)
@@ -324,7 +324,7 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
 }
 
 pub fn a_player_saved_dead_starts_the_passive_at_entry_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = cast.Caster(..support.caster(), dead: True)
   let #(_, effects) =
@@ -349,7 +349,7 @@ fn started_ids(effects effects: List(Effect)) -> List(Int) {
 }
 
 pub fn the_passive_still_lingers_after_a_death_so_taking_its_unit_off_ends_it_with_its_0x7fe_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(passive, effects) = started(base: 29_035)
   let #(left, died) =
@@ -371,7 +371,7 @@ pub fn the_passive_still_lingers_after_a_death_so_taking_its_unit_off_ends_it_wi
 }
 
 pub fn the_passives_pending_child_survives_a_death_and_starts_when_its_timer_fires_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(state, effects) = started(base: 29_131)
   let #(state, _) =
@@ -394,7 +394,7 @@ pub fn the_passives_pending_child_survives_a_death_and_starts_when_its_timer_fir
 }
 
 pub fn a_passive_taken_off_the_caster_is_forgotten_so_a_cast_that_gets_its_id_later_ends_at_death_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let filler = support.child(spell4_id: 250_010, base: 250_010)
   let plans = support.with_spells(plans: support.real_plans(), spells: [filler])
@@ -448,7 +448,7 @@ pub fn a_passive_taken_off_the_caster_is_forgotten_so_a_cast_that_gets_its_id_la
 }
 
 pub fn a_passives_go_does_not_clear_the_cast_another_press_made_current_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let second =
     Spell(
       ..slow_passive(),

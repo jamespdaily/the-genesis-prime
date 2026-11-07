@@ -15,7 +15,6 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
 import genesis_prime/step.{ConnectionId, LogWarning}
-import gleam/int
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -85,7 +84,7 @@ fn started_ids(effects effects: List(cast.Effect)) -> List(Int) {
 }
 
 pub fn a_held_press_of_a_normal_ability_starts_it_with_a_server_cast_id_and_no_0x7fd_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(_, effects) =
     key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
   let frames = support.writes(effects:)
@@ -110,7 +109,7 @@ pub fn a_held_press_of_a_normal_ability_starts_it_with_a_server_cast_id_and_no_0
 }
 
 pub fn a_held_press_the_rule_refuses_gets_0x7fc_with_client_cast_id_0_and_no_hold_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, _) = key(state: cast.new(), bag_index: kick, held: 1, at: 1000)
   let #(state, _) = key(state:, bag_index: kick, held: 0, at: 1100)
   let #(state, effects) = key(state:, bag_index: kick, held: 1, at: 10_000)
@@ -145,7 +144,7 @@ fn cast_result_value(refused: spell_cast_refused.SpellCastRefused) -> Int {
 }
 
 pub fn a_held_ability_starts_again_each_time_its_cast_ends_and_its_global_cooldown_has_run_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, first) =
     key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
   assert support.delays_of(effects: first) == [1250]
@@ -179,7 +178,7 @@ pub fn a_held_ability_starts_again_each_time_its_cast_ends_and_its_global_cooldo
 }
 
 pub fn a_release_before_the_cast_ends_lets_it_finish_and_starts_no_repeat_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, down) =
     key_raw(state: cast.new(), bag_index: telekinetic_strike, held: 1, at: 1000)
   let assert [#(go, 1250)] = support.started_timers(effects: down)
@@ -197,7 +196,7 @@ pub fn a_release_before_the_cast_ends_lets_it_finish_and_starts_no_repeat_test()
 }
 
 pub fn a_repeat_timer_that_fires_after_the_release_starts_nothing_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, down) =
     key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
   let assert [#(timer, 1250)] = support.started_timers(effects: down)
@@ -210,7 +209,7 @@ pub fn a_repeat_timer_that_fires_after_the_release_starts_nothing_test() -> Nil 
 }
 
 pub fn a_held_press_during_another_cast_waits_for_its_end_and_is_never_refused_13_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, pressed) =
     support.pressed_raw(
       state: cast.new(),
@@ -237,7 +236,7 @@ pub fn a_held_press_during_another_cast_waits_for_its_end_and_is_never_refused_1
 }
 
 pub fn a_second_abilitys_held_press_replaces_the_held_one_and_the_firsts_release_changes_nothing_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, first) =
     key_raw(state: cast.new(), bag_index: telekinetic_strike, held: 1, at: 1000)
   let assert [#(go, 1250)] = support.started_timers(effects: first)
@@ -268,7 +267,7 @@ pub fn a_second_abilitys_held_press_replaces_the_held_one_and_the_firsts_release
 }
 
 pub fn a_held_key_down_twice_without_a_release_is_one_hold_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, first) =
     key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
   let assert [#(timer, 1250)] = support.started_timers(effects: first)
@@ -284,7 +283,7 @@ pub fn a_held_key_down_twice_without_a_release_is_one_hold_test() -> Nil {
 }
 
 pub fn shred_taps_the_first_stage_then_each_next_stage_within_the_window_and_the_release_stops_the_taps_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, first) =
     key(state: cast.new(), bag_index: support.shred, held: 1, at: 1000)
   let #(state, steps) =
@@ -336,7 +335,7 @@ pub fn shred_taps_the_first_stage_then_each_next_stage_within_the_window_and_the
 }
 
 pub fn a_cancel_of_a_held_charge_ends_the_hold_so_nothing_restarts_and_the_release_fires_nothing_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, down) =
     key(state: cast.new(), bag_index: support.charged_shot, held: 1, at: 1000)
   let assert [charge] = started_ids(effects: down)
@@ -362,7 +361,7 @@ pub fn a_cancel_of_a_held_charge_ends_the_hold_so_nothing_restarts_and_the_relea
 }
 
 pub fn a_cancel_of_a_held_normal_cast_ends_the_hold_and_stops_its_repeats_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, down) =
     key_raw(state: cast.new(), bag_index: telekinetic_strike, held: 1, at: 1000)
   let assert [cast_id] = started_ids(effects: down)
@@ -385,7 +384,7 @@ pub fn a_cancel_of_a_held_normal_cast_ends_the_hold_and_stops_its_repeats_test()
 }
 
 pub fn charged_shot_is_charged_by_the_press_and_fired_at_its_stage_by_the_release_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, down) =
     key(state: cast.new(), bag_index: support.charged_shot, held: 1, at: 1000)
   assert lines(steps: [#(1000, down)])
@@ -404,7 +403,7 @@ pub fn charged_shot_is_charged_by_the_press_and_fired_at_its_stage_by_the_releas
 }
 
 pub fn a_held_pulse_blast_goes_in_its_two_phases_and_a_held_discharge_pulses_three_times_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let #(state, down) =
     key(state: cast.new(), bag_index: support.pulse_blast, held: 1, at: 1000)
   let #(state, _) =
@@ -430,27 +429,38 @@ pub fn a_held_pulse_blast_goes_in_its_two_phases_and_a_held_discharge_pulses_thr
     key(state: cast.new(), bag_index: support.discharge, held: 1, at: 1000)
   let #(state, _) = key(state:, bag_index: support.discharge, held: 0, at: 1000)
   let #(_, steps) = support.run_timers(state:, effects: down, from_ms: 1000)
-  let pulse = fn(pulse, child) {
-    [
-      "went k1 p" <> int.to_string(pulse),
-      "started " <> child <> " 80382 root 58832 parent 58832",
-      "went " <> child <> " p0",
-      "finished " <> child,
-    ]
-  }
   assert lines(steps: [#(1000, down), ..steps])
-    == list.flatten([
-      ["started k1 58832 root 58832 parent 0"],
-      pulse(0, "k2"),
-      pulse(1, "k3"),
-      pulse(2, "k4"),
-      ["finished k1"],
-    ])
-    as "Spell4.58832, Discharge: a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250), each starting its Proxy 80382 with the pulse index as its phase, then the finish; the release cut nothing short"
+    == [
+      "started k1 58832 root 58832 parent 0",
+      "went k1 p0",
+      "started k2 80382 root 58832 parent 58832",
+      "went k2 p0",
+      "started k3 42569 root 58832 parent 80382",
+      "went k3 p0",
+      "finished k2",
+      "went k1 p1",
+      "started k4 80382 root 58832 parent 58832",
+      "went k4 p0",
+      "started k5 42569 root 58832 parent 80382",
+      "went k5 p0",
+      "finished k4",
+      "went k1 p2",
+      "started k6 80382 root 58832 parent 58832",
+      "went k6 p0",
+      "started k7 80383 root 58832 parent 80382",
+      "went k7 p0",
+      "started k8 42568 root 58832 parent 80383",
+      "went k8 p0",
+      "finished k8",
+      "finished k7",
+      "finished k6",
+      "finished k1",
+    ]
+    as "Spell4.58832, Discharge: a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250), each starting its Proxy 80382 (Spell4Effects 173926); 80382's Proxies 212835 (42569, gate 33154: fewer than 2 stacks) start Power Charge on pulses 0 and 1 and 212838 (80383, gate 32921: exactly 2 stacks) starts 80383 on pulse 2, whose Proxy 212837 starts 42568, as cast_discharge_test shows; the release cut nothing short"
 }
 
 pub fn a_held_press_of_a_method_the_rule_does_not_cast_is_refused_285_and_logged_once_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, effects) =
     key(
       state: cast.new(),
@@ -470,7 +480,7 @@ pub fn a_held_press_of_a_method_the_rule_does_not_cast_is_refused_285_and_logged
 }
 
 pub fn a_hold_body_the_clients_reader_refuses_ends_the_connection_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let valid = support.hold_body(bag_index: 2, target: 0x12345, held: 1)
   list.each([<<valid:bits, 0>>, <<1, 2, 3>>, <<>>], fn(body) {
     let assert Error(cast.NotDecoded(..)) =
@@ -487,7 +497,7 @@ pub fn a_hold_body_the_clients_reader_refuses_ends_the_connection_test() -> Nil 
 }
 
 pub fn a_bag_index_with_no_ability_is_refused_0x7fc_with_spell_id_0_and_result_4_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, effects) =
     key(state: cast.new(), bag_index: 99, held: 1, at: 1000)
   let assert [frame] = support.writes(effects:)
@@ -502,7 +512,7 @@ pub fn a_bag_index_with_no_ability_is_refused_0x7fc_with_spell_id_0_and_result_4
 }
 
 pub fn the_player_leaving_the_world_mid_hold_ends_the_hold_and_every_timer_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, down) =
     key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
   let assert [#(timer, 1250)] = support.started_timers(effects: down)

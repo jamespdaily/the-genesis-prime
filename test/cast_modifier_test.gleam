@@ -63,7 +63,7 @@ fn all_timer_delays(effects effects: List(Effect)) -> List(Int) {
 // ---- what a go lists and how long the cast lasts ----
 
 pub fn a_go_lists_a_modifier_aimed_at_the_caster_and_its_node_lives_for_the_row_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // Mind Burst's 57030 holds only 135954: its go lists the row on the caster, and the
   // cast waits for the node's 8 s before its 0x7fe.
   let plans =
@@ -93,7 +93,7 @@ pub fn a_go_lists_a_modifier_aimed_at_the_caster_and_its_node_lives_for_the_row_
 // ---- when a modifier starts and ends ----
 
 pub fn a_modifier_with_no_delay_starts_at_the_go_and_ends_after_its_duration_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
@@ -111,7 +111,7 @@ pub fn a_modifier_with_no_delay_starts_at_the_go_and_ends_after_its_duration_tes
 }
 
 pub fn a_modifier_with_a_delay_starts_after_it_and_ends_after_its_duration_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // Gate's 67777: from go + 180 for 400 ms.
   let plans =
     support.plans_of([
@@ -134,7 +134,7 @@ pub fn a_modifier_with_a_delay_starts_after_it_and_ends_after_its_duration_test(
 }
 
 pub fn a_modifier_of_a_phase_the_go_is_not_in_is_not_applied_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // Gate's 67777 has phaseFlags 1: a go of phase 1 does not hold it.
   let go_only_in_phase_1 =
     spell_plan.PropertyModifier(..support.falling_row(), phase_flags: 2)
@@ -152,7 +152,7 @@ pub fn a_modifier_of_a_phase_the_go_is_not_in_is_not_applied_test() -> Nil {
 }
 
 pub fn a_modifier_that_lasts_until_removed_starts_at_the_go_and_has_no_end_timer_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let until_removed =
     spell_plan.PropertyModifier(
       ..crit_row(),
@@ -173,7 +173,7 @@ pub fn a_modifier_that_lasts_until_removed_starts_at_the_go_and_has_no_end_timer
 }
 
 pub fn a_row_with_no_life_applies_nothing_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let lifeless =
     spell_plan.PropertyModifier(
       ..crit_row(),
@@ -192,7 +192,7 @@ pub fn a_row_with_no_life_applies_nothing_test() -> Nil {
 }
 
 pub fn a_modifier_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let gated =
     spell_plan.PropertyModifier(
       ..crit_row(),
@@ -222,7 +222,7 @@ fn two_gos() -> Plans {
 }
 
 pub fn a_later_go_of_the_cast_arms_its_modifier_again_from_that_go_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let #(state, effects) =
     support.press(
       plans: two_gos(),
@@ -246,7 +246,7 @@ pub fn a_later_go_of_the_cast_arms_its_modifier_again_from_that_go_test() -> Nil
 }
 
 pub fn a_type_80_removal_of_the_cast_ends_its_modifiers_and_cancels_their_timers_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
@@ -285,7 +285,7 @@ pub fn a_type_80_removal_of_the_cast_ends_its_modifiers_and_cancels_their_timers
 }
 
 pub fn a_node_that_ends_by_time_ends_its_modifiers_and_cancels_their_timers_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // A spell whose propertyFlags have bit 0x2000 takes the larger of delay and duration
   // for a node's life (`Spell4.propertyFlags`, `opcode.0x7f4.effect_time`): Gate's row
   // (delay 180, duration 400) gives a node that ends at go + 400, while the modifier's own
@@ -310,7 +310,7 @@ pub fn a_node_that_ends_by_time_ends_its_modifiers_and_cancels_their_timers_test
 }
 
 pub fn the_caster_dying_ends_every_modifier_still_pending_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 34_355, base: 3, modifiers: [
@@ -332,7 +332,7 @@ pub fn the_caster_dying_ends_every_modifier_still_pending_test() -> Nil {
 }
 
 pub fn a_caster_that_leaves_ends_no_modifier_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),

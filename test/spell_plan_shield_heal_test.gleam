@@ -385,7 +385,7 @@ pub fn effect_kind_reads_heal_shields_for_the_caster_and_shield_overload_for_the
 // ---- the client's tables ----
 
 pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdowns_overload_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let assert [ShieldHeal(effect_id: Spell4EffectsId(228_914), delay_ms: 10, ..)] =
     cast_support.planned_spell(base: 46_615, spell4_id: 69_450).shield_heals

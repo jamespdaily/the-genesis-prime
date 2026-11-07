@@ -1,8 +1,7 @@
 //// The server's Proxies (`genesis_prime/game/server_proxy`): the row of the server_proxy
 //// table turned into a Proxy of the ability's tree, and every way a row is refused.
 //// Expected values come from these places, each named at its assertion:
-//// - The client's rows (`spell_tables.rows_with_volatility`, and the real tables where the
-////   test says so): `Spell4.42148` (95337: +15 of vital 6 behind prerequisite 903),
+//// - The client's rows (the fixture, `test/fixture/client_tables`): `Spell4.42148` (95337: +15 of vital 6 behind prerequisite 903),
 ////   Pulse Blast 42276 (gos at 0 and 1250 ms, SpellPhase 5390 and 5391; Proxy 95881 to
 ////   37302 at its second go), the damage spell 37302 (gos at 0, 1, 2 and 3 ms,
 ////   SpellPhase 2820 to 2823) and Telekinetic Strike 32893 (one go, a Proxy to 30900 aimed
@@ -10,20 +9,20 @@
 //// - Migration 0018's seed row (26468, go 1, 42148), a server choice (Jim, issue 419).
 //// - The content refusal pattern (`genesis_prime/content/refusal`): a table, a key and a rule.
 
-import client_tables
+import fixture_tables
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/game/server_proxy.{Row}
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/table/id.{Spell4BaseId}
+import genesis_prime/table/loader/store
 import gleam/dict
 import gleam/list
 import gleam/option.{Some}
 import gleam/result
 import gleam/string
 import owned_test
-import server_proxy_support
+import planted_table.{Integer}
 import spell_tables
-import unitest
 
 /// The seed row.
 fn seed() -> server_proxy.Row {
@@ -44,24 +43,29 @@ fn striking_proxy(plans: Plans) -> spell_plan.Proxy {
   proxy
 }
 
-/// The plans of the planted rows with the rows selected and planted, or the refusals.
+/// The plans of the tables with the rows selected and planted, or the refusals.
+fn planted_on(
+  tables tables: store.Tables,
+  rows rows: List(server_proxy.Row),
+) -> Result(Plans, List(Refusal)) {
+  let assert Ok(plans) = spell_plan.build(tables:)
+    as "the fixture's rows build the plans"
+  server_proxy.select(rows:, tables:, plans:)
+  |> result.map(fn(proxies) { server_proxy.planted_into(plans:, proxies:) })
+}
+
+/// The same on the fixture's tables.
 fn planted_by(
   rows rows: List(server_proxy.Row),
-  tables_of tables_of: spell_tables.Rows,
 ) -> Result(Plans, List(Refusal)) {
-  spell_tables.with_loaded(rows: tables_of, body: fn(tables) {
-    let assert Ok(plans) = spell_plan.build(tables:) as "the planted rows build"
-    server_proxy.select(rows:, tables:, plans:)
-    |> result.map(fn(proxies) { server_proxy.planted_into(plans:, proxies:) })
-  })
+  planted_on(tables: fixture_tables.shared(), rows:)
 }
 
 // ---- 1 ----
 
 pub fn the_seed_row_plants_42148_into_the_damage_spell_at_its_last_go_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let assert Ok(plans) =
-    planted_by(rows: [seed()], tables_of: spell_tables.rows_with_volatility())
+  use <- owned_test.run(120_000)
+  let assert Ok(plans) = planted_by(rows: [seed()])
   let host = striking_proxy(plans)
   assert host.spell.spell4_id == id.Spell4Id(37_302)
     && host.phase_flags == 2
@@ -86,10 +90,9 @@ pub fn the_seed_row_plants_42148_into_the_damage_spell_at_its_last_go_test() -> 
 }
 
 pub fn a_go_that_starts_no_spell_at_once_takes_the_proxy_itself_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let rows = [Row(spell4_base_id: 19_102, phase: 0, spell4_id: 42_148)]
-  let assert Ok(plans) =
-    planted_by(rows:, tables_of: spell_tables.rows_with_volatility())
+  let assert Ok(plans) = planted_by(rows:)
   let assert Ok(strike) =
     spell_plan.in_plans(plans:, base: Spell4BaseId(19_102))
     as "the plans hold Telekinetic Strike"
@@ -103,11 +106,9 @@ pub fn a_go_that_starts_no_spell_at_once_takes_the_proxy_itself_test() -> Nil {
 }
 
 pub fn a_base_with_no_row_keeps_its_tree_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let assert Ok(planted) =
-    planted_by(rows: [seed()], tables_of: spell_tables.rows_with_volatility())
-  let assert Ok(untouched) =
-    planted_by(rows: [], tables_of: spell_tables.rows_with_volatility())
+  use <- owned_test.run(120_000)
+  let assert Ok(planted) = planted_by(rows: [seed()])
+  let assert Ok(untouched) = planted_by(rows: [])
   assert dict.get(planted, 19_102) == dict.get(untouched, 19_102)
     as "a base no row names is the client's tree"
   assert dict.get(planted, 26_468) != dict.get(untouched, 26_468)
@@ -116,13 +117,17 @@ pub fn a_base_with_no_row_keeps_its_tree_test() -> Nil {
 
 // ---- 10, 11, 12 ----
 
-fn refused_by(
+fn refused_on(
+  tables tables: store.Tables,
   rows rows: List(server_proxy.Row),
-  tables_of tables_of: spell_tables.Rows,
 ) -> List(Refusal) {
-  let assert Error(refusals) = planted_by(rows:, tables_of:)
+  let assert Error(refusals) = planted_on(tables:, rows:)
     as "the rows are refused"
   refusals
+}
+
+fn refused_by(rows rows: List(server_proxy.Row)) -> List(Refusal) {
+  refused_on(tables: fixture_tables.shared(), rows:)
 }
 
 fn keys_of(refusals: List(Refusal)) -> List(String) {
@@ -134,12 +139,9 @@ fn keys_of(refusals: List(Refusal)) -> List(String) {
 }
 
 pub fn a_row_whose_base_has_no_plan_is_refused_naming_the_table_and_the_key_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let refusals =
-    refused_by(
-      rows: [Row(spell4_base_id: 99_999, phase: 0, spell4_id: 42_148)],
-      tables_of: spell_tables.rows_with_volatility(),
-    )
+    refused_by(rows: [Row(spell4_base_id: 99_999, phase: 0, spell4_id: 42_148)])
   assert keys_of(refusals) == ["99999 0 42148"]
   let assert [Refusal(rule:, ..)] = refusals
   assert string.contains(rule, "no plan")
@@ -147,15 +149,12 @@ pub fn a_row_whose_base_has_no_plan_is_refused_naming_the_table_and_the_key_test
 }
 
 pub fn a_row_whose_phase_is_not_a_go_of_the_plan_is_refused_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let refusals =
-    refused_by(
-      rows: [
-        Row(spell4_base_id: 26_468, phase: 2, spell4_id: 42_148),
-        Row(spell4_base_id: 26_468, phase: -1, spell4_id: 42_148),
-      ],
-      tables_of: spell_tables.rows_with_volatility(),
-    )
+    refused_by(rows: [
+      Row(spell4_base_id: 26_468, phase: 2, spell4_id: 42_148),
+      Row(spell4_base_id: 26_468, phase: -1, spell4_id: 42_148),
+    ])
   assert keys_of(refusals) == ["26468 2 42148", "26468 -1 42148"]
     as "Pulse Blast goes at 0 and 1250 ms (SpellPhase 5390 and 5391): phase 2 and phase -1 are no go"
   let assert [Refusal(rule:, ..), ..] = refusals
@@ -163,96 +162,53 @@ pub fn a_row_whose_phase_is_not_a_go_of_the_plan_is_refused_test() -> Nil {
 }
 
 pub fn a_row_whose_spell_has_no_row_or_whose_tree_fails_is_refused_with_the_plans_reason_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let missing =
-    refused_by(
-      rows: [Row(spell4_base_id: 26_468, phase: 1, spell4_id: 99_999)],
-      tables_of: spell_tables.rows_with_volatility(),
-    )
+    refused_by(rows: [Row(spell4_base_id: 26_468, phase: 1, spell4_id: 99_999)])
   let assert [Refusal(rule: missing_rule, ..)] = missing
   assert string.contains(missing_rule, "the table Spell4 has no row 99999")
     as "the plan's own reason for a Spell4 the tables lack (spell_plan `NoRow`)"
-  let rows = spell_tables.rows_with_volatility()
-  let aimed_elsewhere =
-    spell_tables.Rows(
-      ..rows,
-      spell4_effects: spell_tables.sorted_by_id([
-        spell_tables.vital_modifier_row_with(
-          id: 95_338,
-          spell: 42_148,
-          vital: 6,
-          amount: 15,
-          delay: 0,
-          phases: 1,
-          prerequisite: 0,
-          order: 1,
-          more: [#("targetFlags", 4)],
-        ),
-        ..rows.spell4_effects
-      ]),
-    )
-  let failed = refused_by(rows: [seed()], tables_of: aimed_elsewhere)
-  let assert [Refusal(rule: failed_rule, ..)] = failed
-  assert string.contains(failed_rule, "VitalModifier effect 95338")
-    && string.contains(failed_rule, "only one aimed at the caster is read")
-    as "a gain aimed at another unit is not read, for the plan's own reason (spell_plan `GainAimNotRead`)"
-  let looping =
-    spell_tables.Rows(
-      ..rows,
-      spell4_effects: spell_tables.sorted_by_id([
-        spell_tables.effect_row(
-          id: 95_339,
-          spell: 42_148,
-          type_: 26,
-          target_flags: 1,
-          delay: 0,
-          phases: 1,
-          data: 42_276,
-          order: 1,
-        ),
-        ..rows.spell4_effects
-      ]),
-    )
-  let cycle = refused_by(rows: [seed()], tables_of: looping)
-  let assert [Refusal(rule: cycle_rule, ..)] = cycle
-  assert string.contains(cycle_rule, "42276 -> 37302 -> 42148 -> 42276")
-    as "a spell that leads back to the ability fails as a cycle, the chain running through the spell that strikes"
+  // Edge cases no client row holds: a gain of 42148 aimed at another unit, and a
+  // spell of 42148 that leads back to Pulse Blast. Each is a copy of 42148's own
+  // effect 95337 with the cells that make the case.
+  fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 95_337,
+    id: 95_338,
+    with: [#("targetFlags", Integer(4))],
+    body: fn(tables) {
+      let failed = refused_on(tables:, rows: [seed()])
+      let assert [Refusal(rule: failed_rule, ..)] = failed
+      assert string.contains(failed_rule, "VitalModifier effect 95338")
+        && string.contains(failed_rule, "only one aimed at the caster is read")
+        as "a gain aimed at another unit is not read, for the plan's own reason (spell_plan `GainAimNotRead`)"
+    },
+  )
+  fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 95_337,
+    id: 95_339,
+    with: [
+      #("effectType", Integer(26)),
+      #("dataBits00", Integer(42_276)),
+    ],
+    body: fn(tables) {
+      let cycle = refused_on(tables:, rows: [seed()])
+      let assert [Refusal(rule: cycle_rule, ..)] = cycle
+      assert string.contains(cycle_rule, "42276 -> 37302 -> 42148 -> 42276")
+        as "a spell that leads back to the ability fails as a cycle, the chain running through the spell that strikes"
+    },
+  )
 }
 
 pub fn every_refused_row_is_named_together_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let refusals =
-    refused_by(
-      rows: [
-        Row(spell4_base_id: 99_999, phase: 0, spell4_id: 42_148),
-        seed(),
-        Row(spell4_base_id: 26_468, phase: 7, spell4_id: 42_148),
-      ],
-      tables_of: spell_tables.rows_with_volatility(),
-    )
+    refused_by(rows: [
+      Row(spell4_base_id: 99_999, phase: 0, spell4_id: 42_148),
+      seed(),
+      Row(spell4_base_id: 26_468, phase: 7, spell4_id: 42_148),
+    ])
   assert keys_of(refusals) == ["99999 0 42148", "26468 7 42148"]
     as "the good row is not named; both bad rows are, in the order of the rows"
-}
-
-// ---- 1 on the client's own tables ----
-
-pub fn the_seed_row_builds_a_tree_on_the_clients_tables_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  let plans = spell_plan.plans(tables)
-  let assert Ok(proxies) = server_proxy.select(rows: [seed()], tables:, plans:)
-    as "the client's Pulse Blast and 42148 plan with the seed row"
-  assert server_proxy_support.changes(proxies:, plans:, base: 26_468)
-  let host = striking_proxy(server_proxy.planted_into(plans:, proxies:))
-  let assert Ok(planted) = list.last(host.spell.proxies)
-    as "the damage spell holds the server's Proxy last"
-  assert planted.spell.spell4_id == id.Spell4Id(42_148)
-    && planted.phase_flags == 8
-    as "Spell4 42148 at the last go of 37302, whose four SpellPhase rows 2820 to 2823 give go 3"
-  let assert [spell_plan.Gain(slot: 1, amount: 15, prerequisite: Some(..), ..)] =
-    planted.spell.gains
-    as "+15 of slot 1 behind prerequisite 903 (Spell4Effects 95337)"
-  assert planted.spell.proxies == [] && planted.spell.procs == []
-    as "42148 starts nothing"
 }

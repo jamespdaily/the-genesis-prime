@@ -1,0 +1,7 @@
+The .tsv files in this folder hold rows of the tables of the WildStar client, extracted
+by setup_check/extract_tables.py from the client's own game table files and read with
+the server's table reader (genesis_prime/table/loader/tbl_file). Each row is copied as the
+client holds it. roots.tsv names the rows the tests ask for; the generator
+(dev/genesis_prime/fixture_rows.gleam) adds the rows they reach and the small tables
+whole. Run `gleam run -m genesis_prime/fixture_rows` to make them again. The tests read
+them as the client's rows (test/fixture_tables.gleam).

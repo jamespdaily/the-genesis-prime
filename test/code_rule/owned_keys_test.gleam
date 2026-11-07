@@ -113,6 +113,7 @@ pub fn the_modules_that_make_the_shared_loads_are_not_read_test() -> Nil {
   assert owned_keys.breaches([
       test_module("test/client_tables.gleam", lines),
       test_module("test/character_tables.gleam", lines),
+      test_module("test/fixture_tables.gleam", lines),
     ])
     == []
 }

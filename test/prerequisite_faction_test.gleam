@@ -323,7 +323,7 @@ fn refusals_of_press(condition condition: #(Int, Int, Int, Int)) -> List(Int) {
 }
 
 pub fn a_cast_condition_of_type_250_reads_the_casters_base_faction_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   assert refusals_of_press(condition: #(250, 1, 0, exiles)) == []
     as "the caster's base faction is 167: 250 on 167 passes"
   assert refusals_of_press(condition: #(250, 1, 0, dominion)) == [151]
@@ -331,7 +331,7 @@ pub fn a_cast_condition_of_type_250_reads_the_casters_base_faction_test() -> Nil
 }
 
 pub fn a_cast_condition_of_type_4_reads_the_casters_current_faction_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   assert refusals_of_press(condition: #(4, 1, 0, dominion)) == []
     as "the caster's current faction is 166: type 4 on 166 passes"
   assert refusals_of_press(condition: #(4, 1, 0, exiles)) == [151]

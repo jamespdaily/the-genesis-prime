@@ -60,7 +60,7 @@ fn blank(id id: Int) -> Spell4Effects {
 fn plans_spell(base base: Int) -> spell_plan.Spell {
   let assert Ok(spell) =
     spell_plan.in_plans(
-      plans: spell_tables.plans_with_stealth(),
+      plans: spell_tables.fixture_plans(),
       base: Spell4BaseId(base),
     )
     as "the planted plans hold the ability"

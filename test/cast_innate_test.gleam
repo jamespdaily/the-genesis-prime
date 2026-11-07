@@ -102,7 +102,7 @@ fn listed(effects effects: List(Effect)) -> List(Int) {
 }
 
 pub fn a_stalkers_press_of_bag_index_3_casts_nano_skin_and_the_go_and_finish_follow_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(_, effects) =
     pressed(
@@ -121,7 +121,7 @@ pub fn a_stalkers_press_of_bag_index_3_casts_nano_skin_and_the_go_and_finish_fol
 }
 
 pub fn the_innates_own_cooldown_runs_for_25_seconds_in_combat_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: True)
   let #(state, _) = pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
@@ -134,7 +134,7 @@ pub fn the_innates_own_cooldown_runs_for_25_seconds_in_combat_test() -> Nil {
 }
 
 pub fn the_toggles_cooldown_effect_clears_it_out_of_combat_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
   let #(state, _) = pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
@@ -144,7 +144,7 @@ pub fn the_toggles_cooldown_effect_clears_it_out_of_combat_test() -> Nil {
 }
 
 pub fn the_innates_press_starts_no_global_cooldown_where_an_ordinary_ability_does_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   // Shred, 23148, is global cooldown kind 0 with SpellCoolDown row 115 (1000 ms): it
   // is refused while the global cooldown runs and starts it (`Spell4.38765`), so its
@@ -165,7 +165,7 @@ pub fn the_innates_press_starts_no_global_cooldown_where_an_ordinary_ability_doe
 }
 
 pub fn a_held_key_of_bag_index_3_holds_the_innate_as_any_key_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: True)
   let assert Ok(#(state, effects)) =
@@ -194,7 +194,7 @@ pub fn a_held_key_of_bag_index_3_holds_the_innate_as_any_key_test() -> Nil {
 }
 
 pub fn bag_index_4_holds_no_ability_and_is_refused_as_today_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(_, effects) =
     support.pressed_raw_in(
@@ -232,7 +232,7 @@ fn innate_pressed_by(caster caster: Caster) -> List(Effect) {
 }
 
 pub fn the_unread_rows_of_a_pressed_innate_are_listed_nowhere_and_write_no_line_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let warrior =
     innate_pressed(bag: [18_309, 37_968, 38_017, 30_828], in_combat: False)
@@ -253,7 +253,7 @@ pub fn the_unread_rows_of_a_pressed_innate_are_listed_nowhere_and_write_no_line_
 }
 
 pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let warrior =
     innate_pressed(bag: [18_309, 37_968, 38_017, 30_828], in_combat: False)

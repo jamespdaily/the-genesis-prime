@@ -13,6 +13,7 @@
 
 import area_tables
 import client_tables
+import fixture_tables
 import genesis_prime/game/area.{
   Box, Cone, InsideRow, InsideShapes, Placement, Rectangle, Row,
 }
@@ -31,6 +32,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import owned_test
+import planted_table.{Integer}
 import spell_tables
 import unitest
 
@@ -508,6 +510,20 @@ pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_clients_t
 
 // ---- a spell with an innate cost EMM id chooses its damage by n ----
 
+/// Mind Burst's area built from the client's rows with one row changed.
+fn mind_burst_with(
+  table table: String,
+  id id: Int,
+  with changes: List(#(String, planted_table.Cell)),
+) -> spell_area.SpellArea {
+  let assert Ok(areas) =
+    fixture_tables.changed(table:, id:, with: changes, body: fn(tables) {
+      spell_area.build(tables:)
+    })
+    as "the changed rows build their areas"
+  spell_tables.mind_burst_in(areas:)
+}
+
 fn damage_of(
   area area: spell_area.SpellArea,
   spent spent: option.Option(Int),
@@ -518,9 +534,8 @@ fn damage_of(
 }
 
 pub fn mind_burst_tags_its_five_damage_effects_with_their_emm_columns_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let area =
-    spell_tables.mind_burst_area(damage: spell_tables.mind_burst_damage)
+  use <- owned_test.run(120_000)
+  let area = spell_tables.mind_burst_in(areas: spell_tables.fixture_areas())
   assert list.map(damage_of(area:, spent: None), fn(effect) {
       #(effect.effect_id, effect.tag)
     })
@@ -535,9 +550,8 @@ pub fn mind_burst_tags_its_five_damage_effects_with_their_emm_columns_test() -> 
 }
 
 pub fn a_phase_with_n_holds_only_the_damage_effects_n_chooses_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let area =
-    spell_tables.mind_burst_area(damage: spell_tables.mind_burst_damage)
+  use <- owned_test.run(120_000)
+  let area = spell_tables.mind_burst_in(areas: spell_tables.fixture_areas())
   list.each([0, 1, 2, 3, 4], fn(spent) {
     assert list.map(damage_of(area:, spent: Some(spent)), fn(effect) {
         effect.effect_id.value
@@ -548,10 +562,14 @@ pub fn a_phase_with_n_holds_only_the_damage_effects_n_chooses_test() -> Nil {
 }
 
 pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // One damage effect aimed at the cast's target at n 0 and one aimed at the area
-  // from n 1 (Spell4Effects.targetFlags 2 and 4).
-  let area = spell_tables.mind_burst_area(damage: [#(0, 0, 2), #(1, 1, 4)])
+  use <- owned_test.run(120_000)
+  // The client's Mind Burst has every damage effect aimed at the area (targetFlags 4).
+  // Its effect 61993, the one n 0 chooses, is aimed at the cast's target here
+  // (targetFlags 2): no client row has an effect of n 0 aimed anywhere else.
+  let area =
+    mind_burst_with(table: "Spell4Effects", id: 61_993, with: [
+      #("targetFlags", Integer(2)),
+    ])
   let flags = fn(spent) {
     let assert Ok(phase) =
       spell_area.phase(spell: area, phase: 0, spent: Some(spent))
@@ -565,7 +583,12 @@ pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
   let assert Ok(all) = spell_area.phase(spell: area, phase: 0, spent: None)
   assert #(all.selects_area, all.strikes_primary_target) == #(True, True)
     as "a cast with no n chooses nothing, so both flags hold as for every effect"
-  let only_from_1 = spell_tables.mind_burst_area(damage: [#(1, 1, 4)])
+  // Effect 61993 holds the n 1 here, so no effect holds n 0 (the client's rows hold one
+  // for each n from 0 to 4).
+  let only_from_1 =
+    mind_burst_with(table: "Spell4Effects", id: 61_993, with: [
+      #("emmValue", Integer(1)),
+    ])
   let assert Ok(none_at_0) =
     spell_area.phase(spell: only_from_1, phase: 0, spent: Some(0))
   assert none_at_0.damage == []

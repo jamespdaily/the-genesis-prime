@@ -1,0 +1,40 @@
+ID	enumName	universalCommand00	universalCommand01	localizedTextIdName	localizedTextIdCommand	localizedTextIdAbbreviation	localizedTextIdAlternate00	localizedTextIdAlternate01	flags
+1	Command			207720	0	0	0	0	8
+2	System			207721	0	0	0	0	8
+3	Debug			207722	207723	207724	0	0	57
+4	Say	say	s	207725	207726	207727	0	0	29
+5	Yell	yell	y	207728	207729	207730	0	0	30
+6	Whisper	whisper	w	207731	207732	207733	213682	213683	12
+7	Party	party	p	207734	207735	207736	0	0	28
+8	Emote	emote	e	207737	207738	207739	0	0	13
+9	Zone	zone	z	207740	207741	207742	0	0	1676
+10	ZonePvP	pvp	v	207743	207744	207745	0	0	1676
+11	Trade	trade	tr	207746	207747	207748	0	0	1676
+12	LFG			207749	207750	207751	0	0	64
+13	Class			207752	207753	207754	0	0	64
+14	GuildRecruit			207755	207756	0	0	0	64
+15	Guild	guild	g	207757	207758	207759	0	0	4
+16	GuildOfficer	gofficer	go	207760	207761	207762	0	0	4
+17	Society	c$1c		207763	207764	0	0	0	4
+18	Custom	$1c		0	207765	0	0	0	132
+19	Support			207766	0	0	0	0	268
+20	NPCSay			207767	0	0	0	0	24
+21	NPCYell			207768	0	0	0	0	24
+22	NPCWhisper			207769	0	0	0	0	24
+23	Datachron			207770	0	0	0	0	8
+24	Combat			207771	0	0	0	0	8
+25	Realm			207772	0	0	0	0	8
+26	Loot			208872	0	0	0	0	8
+27	AnimatedEmote			216116	0	0	0	0	8
+28	ActionEmote			218204	0	0	0	0	64
+29	WarParty	warparty	wp	282101	282102	282103	0	0	4
+30	WarPartyOfficer	wpofficer	wpo	282104	282105	282106	0	0	4
+31	PlayerPath			319712	0	0	0	0	8
+32	Instance	instance	i	394424	394425	394426	0	0	28
+33	Nexus	nexus	n	439026	439027	439028	759667	0	2220
+34	AccountWhisper	awhisper	aw	517541	517542	517543	517544	517545	44
+43	ZoneGerman			639628	639629	639630	0	0	1676
+44	ZoneFrench			639631	639632	639633	0	0	1676
+45	NexusGerman			639634	639635	639636	759668	0	2220
+46	NexusFrench			639637	639638	639639	759669	0	2220
+47	Community	community	com	734253	734254	734255	0	0	4

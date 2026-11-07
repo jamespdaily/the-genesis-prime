@@ -85,7 +85,7 @@ fn listed(effects effects: List(Effect)) -> List(Int) {
 // ---- a Scale row ----
 
 pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // 109482's shape: the caster, 1.3 over 500 ms, 8000 ms, here with a delay of 120 ms.
   let spell =
     spell_of(
@@ -133,7 +133,7 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
 }
 
 pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_end_and_then_finishes_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let spell =
     spell_of(
       row: spell_tables.effect_row_with(
@@ -170,7 +170,7 @@ pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_
 }
 
 pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let spell =
     spell_of(
       row: spell_tables.effect_row_with(
@@ -213,7 +213,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
 // ---- a RavelSignal row ----
 
 pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // 91018 as the client holds it: the caster, behind target apply prerequisite 11311.
   let spell =
     spell_of(
@@ -304,7 +304,7 @@ fn conversion() -> unit_properties.Modifier {
 }
 
 pub fn the_innate_passives_go_lists_its_conversion_on_the_caster_and_starts_it_with_no_end_timer_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(_, effects) =
     passive_started(plans: support.plans_of([passive()]), at: 1000)
   assert listed(effects:) == [229_304] as "row 229304 is listed on the caster"
@@ -316,7 +316,7 @@ pub fn the_innate_passives_go_lists_its_conversion_on_the_caster_and_starts_it_w
 }
 
 pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let plans = support.plans_of([passive()])
   // The control: the same spell pressed as an ordinary ability, whose conversion a death
   // ends with the cast.

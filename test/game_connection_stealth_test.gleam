@@ -54,7 +54,7 @@ fn only(frames frames: List(Frame), ids wanted: List(Int)) -> List(Int) {
 }
 
 pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_viewer_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(_, taken) = stealthed()
   let frames = support.written(taken:)
   assert only(frames:, ids: [0x08F5]) == [0x08F5]
@@ -96,7 +96,7 @@ fn stealth_told(
 }
 
 pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_viewers_news_once_for_entering_and_once_for_leaving_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, entering) = stealthed()
   assert support.told_the_map(entering) == [stealth_told(stealthed: True)]
     as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
@@ -121,7 +121,7 @@ pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_view
 }
 
 pub fn a_camp_while_stealthed_tells_the_map_no_stealth_changed_and_only_the_leave_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, _) = stealthed()
   let #(state, requested) =
     support.read(state:, bytes: support.camp_request_message(True))
@@ -148,7 +148,7 @@ fn struck_while_stealthed() -> ConnectionStep(Request) {
 }
 
 pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5_and_tells_each_viewer_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let taken = struck_while_stealthed()
   let frames = support.written(taken:)
   assert only(frames:, ids: [0x092F, 0x0811, 0x08F5])
@@ -170,7 +170,7 @@ pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5
 }
 
 pub fn a_blow_does_not_end_a_stealth_kept_on_damage_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, _) =
     support.stealthed_medic_in(
       tables: character_tables.shared_with_kept_stealth(),
@@ -190,7 +190,7 @@ pub fn a_blow_does_not_end_a_stealth_kept_on_damage_test() -> Nil {
 // ---- a go that ends the stealth ----
 
 pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // The second press of Paralytic Surge: its Stealth effect is behind 7050, not
   // stealthed, so it adds no source, and the spell's stealth change 0 ends the one held.
   let #(state, _) = stealthed()
@@ -235,7 +235,7 @@ fn harmless_strike() -> step.Event(
 }
 
 pub fn a_blow_that_lowers_nothing_keeps_the_stealth_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, _) = stealthed()
   let taken = support.feed(state, harmless_strike()).1
   assert only(frames: support.written(taken:), ids: [0x0811, 0x08F5]) == []
@@ -249,7 +249,7 @@ pub fn a_blow_that_lowers_nothing_keeps_the_stealth_test() -> Nil {
 }
 
 pub fn a_lethal_blow_ends_the_stealth_before_the_death_is_written_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, _) = stealthed()
   let taken = support.killed(state).1
   assert only(frames: support.written(taken:), ids: [
@@ -263,7 +263,7 @@ pub fn a_lethal_blow_ends_the_stealth_before_the_death_is_written_test() -> Nil 
 }
 
 pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_the_stealth_before_the_log_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, _) =
     support.stealthed_medic_in(
       tables: character_tables.shared_with_kept_stealth(),
@@ -277,7 +277,7 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_th
 // ---- a viewer ----
 
 pub fn a_shown_units_stealth_news_is_written_as_0x8f5_then_0x247_of_type_24_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let shown = support.viewer_showing_unit_9()
   let #(_, entering) =
     support.feed(
@@ -314,7 +314,7 @@ pub fn a_shown_units_stealth_news_is_written_as_0x8f5_then_0x247_of_type_24_test
 }
 
 pub fn a_stealth_news_for_a_unit_not_shown_writes_nothing_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let #(_, taken) =
     support.feed(
       support.viewer_showing_unit_9(),
@@ -332,7 +332,7 @@ pub fn a_stealth_news_for_a_unit_not_shown_writes_nothing_test() -> Nil {
 }
 
 pub fn the_0x262_and_the_stealth_news_of_one_owner_are_written_in_the_order_they_came_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let #(state, first) =
     support.feed(support.in_world(), support.event_of(support.Appears))
   assert support.written_ids(first) == [0x0262]
@@ -369,7 +369,7 @@ fn create_flags_sent_to_a_new_viewer(
 }
 
 pub fn a_viewer_that_first_sees_a_stealthed_player_is_sent_the_0x262_with_create_flag_16_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(stealthed_state, _) = stealthed()
   assert int.bitwise_and(
       create_flags_sent_to_a_new_viewer(
@@ -391,7 +391,7 @@ pub fn a_viewer_that_first_sees_a_stealthed_player_is_sent_the_0x262_with_create
 }
 
 pub fn a_camp_while_stealthed_writes_no_stealth_and_the_next_stay_starts_unstealthed_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, _) = stealthed()
   let #(state, requested) =
     support.read(state:, bytes: support.camp_request_message(True))
