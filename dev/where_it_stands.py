@@ -5,8 +5,9 @@
 PARENT is the milestone parent's issue number. The script reads GitHub through `gh` and prints
 Markdown; it posts nothing, so the coordinator adds the notes and posts it. Sections: the pull
 requests merged since the parent's newest "Where it stands" comment (the last 24 hours when it
-has none, and the line says so), the open pull requests with their checks, then the milestone's
-open issues on the board (project 2) that are in progress, waiting on Jim, or next in order
+has none, and the line says so), the open pull requests with their checks, the pushed `jimd/*`
+branches with no pull request (work that is not a board issue: those with a commit since the
+earlier of that window's start and 24 hours ago), then the milestone's open issues on the board (project 2) that are in progress, waiting on Jim, or next in order
 (to do, with those that have no open blocker first, in the parent's sub-issue order). It exits
 non-zero when a `gh` call fails.
 """
@@ -64,6 +65,28 @@ def open_blockers(number):
     return [node["number"] for node in data["blockedBy"]["nodes"] if node["state"] == "OPEN"]
 
 
+def pushed_branches(cutoff):
+    """The remote `jimd/*` branches with commits beyond main, no open pull request and a commit after `cutoff`."""
+    root = session_state.ROOT
+    session_state.run(["git", "fetch", "--prune", "origin"], cwd=root)
+    listing = session_state.run(
+        ["git", "for-each-ref", "--format=%(refname:short)|%(objectname:short)|%(committerdate:iso-strict)|%(contents:subject)",
+         "refs/remotes/origin/jimd"],
+        cwd=root,
+    )
+    with_pull_request = {row["headRefName"] for row in gh_json("pr", "list", "--json", "headRefName")}
+    found = []
+    for row in listing.splitlines():
+        ref, short, date, subject = row.split("|", 3)
+        branch = ref.removeprefix("origin/")
+        committed = parse_time(date).astimezone(timezone.utc)
+        if branch in with_pull_request or committed <= cutoff:
+            continue
+        if int(session_state.run(["git", "rev-list", "--count", f"origin/main..{ref}"], cwd=root)) > 0:
+            found.append((committed, f"- {branch} ({short}, {committed.strftime('%Y-%m-%d %H:%M')} UTC, {subject})"))
+    return [line for _, line in sorted(found)] or ["- none"]
+
+
 def issue_lines(items, status):
     return [f"- #{number} {title}" for number, title, item_status in items if item_status == status] or ["- none"]
 
@@ -94,10 +117,12 @@ def draft(parent):
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         merged_job = pool.submit(merged_since, since)
         pulls_job = pool.submit(session_state.pull_requests)
+        pushed_job = pool.submit(pushed_branches, min(since, now - WITHOUT_COMMENT))
         items = board_items(milestone_title, parent)
         found = dict(zip((item[0] for item in items), pool.map(open_blockers, (item[0] for item in items))))
         merged = merged_job.result()
         pulls = pulls_job.result()
+        pushed = pushed_job.result()
     open_items = [item for item in items if found[item[0]] is not None]
 
     pull_lines = [line.strip().replace("#", "- #", 1) for line in pulls[1:]] or ["- none"]
@@ -106,6 +131,7 @@ def draft(parent):
     lines += [f"  - #{number} {title}" for number, title in merged] or ["  - none"]
     sections = (
         ("Open pull requests", pull_lines),
+        ("Pushed, no pull request", pushed),
         ("In progress", issue_lines(open_items, "In progress")),
         ("Waiting on Jim", issue_lines(open_items, "Waiting on Jim")),
         ("Next in order", next_in_order(open_items, found, order)),
