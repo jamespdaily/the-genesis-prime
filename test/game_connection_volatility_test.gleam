@@ -173,84 +173,47 @@ fn pressed_with(
   until_ms until_ms: Int,
   threatened threatened: Bool,
 ) -> #(game_connection.State, List(ConnectionStep(Request))) {
-  let #(state, pressed) =
-    game_connection_support.at(
+  let #(state, _, steps) =
+    game_connection_support.pressed_until_answered(
       state:,
+      world: threatened,
+      bag_index:,
+      client_cast_id:,
       ms:,
-      event: OwnEvent(
-        step.Read(game_connection_support.world_message(
-          message_id: 0x009A,
-          body: cast_support.press_body(
-            client_cast_id:,
-            bag_index:,
-            target: 0,
-            press: 1,
-          ),
-        )),
-      ),
+      until_ms:,
+      answer: landed_and_threatened,
     )
-  let #(state, landed) =
-    game_connection_support.landing(state:, ms:, taken: pressed)
-  run(
-    state:,
-    pending: game_connection_support.cast_timers(steps: landed, ms:),
-    until_ms:,
-    steps: landed,
-    threatened:,
-  )
+  #(state, steps)
 }
 
-fn run(
-  state state: game_connection.State,
-  pending pending: List(#(Int, TimerId)),
-  until_ms until_ms: Int,
-  steps steps: List(ConnectionStep(Request)),
+/// Every strike of the step lands, and the creature's `Threatened` follows the first
+/// strike a cast tells while the player is not yet threatened; the world is whether the
+/// creature has threatened the player.
+fn landed_and_threatened(
   threatened threatened: Bool,
-) -> #(game_connection.State, List(ConnectionStep(Request))) {
-  case
-    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
-  {
-    [#(due, timer), ..rest] if due <= until_ms -> {
-      let #(state, fired) =
+  state state: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+) -> #(Bool, game_connection.State, List(ConnectionStep(Request))) {
+  let #(state, landed) = game_connection_support.landing(state:, ms:, taken:)
+  let struck =
+    list.any(landed, fn(step) {
+      game_connection_support.strikes_told(step) != []
+    })
+  case struck && !threatened {
+    True -> {
+      let #(state, told) =
         game_connection_support.at(
           state:,
-          ms: due,
-          event: OwnEvent(TimerFired(timer:)),
+          ms:,
+          event: game_connection_support.foe(strike_tell.Threatened(
+            unit_id: beast,
+            life: 4,
+          )),
         )
-      let #(state, landed) =
-        game_connection_support.landing(state:, ms: due, taken: fired)
-      let struck =
-        list.any(landed, fn(taken) {
-          game_connection_support.strikes_told(taken) != []
-        })
-      let #(state, threat) = case struck && !threatened {
-        True -> {
-          let #(state, told) =
-            game_connection_support.at(
-              state:,
-              ms: due,
-              event: game_connection_support.foe(strike_tell.Threatened(
-                unit_id: beast,
-                life: 4,
-              )),
-            )
-          #(state, [told])
-        }
-        False -> #(state, [])
-      }
-      let more = list.append(landed, threat)
-      run(
-        state:,
-        pending: list.append(
-          rest,
-          game_connection_support.cast_timers(steps: more, ms: due),
-        ),
-        until_ms:,
-        steps: list.append(steps, more),
-        threatened: threatened || threat != [],
-      )
+      #(True, state, list.append(landed, [told]))
     }
-    [_, ..] | [] -> #(state, steps)
+    False -> #(threatened, state, landed)
   }
 }
 

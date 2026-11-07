@@ -4235,6 +4235,13 @@ pub fn go_times_ms(spell spell: Spell) -> List(Int) {
   }
 }
 
+/// How many gos a cast of the spell has: a channel's pulses, a Multiphase spell's
+/// phases, none for a ChargeRelease ability held until its release, else one
+/// (`go_times_ms`).
+pub fn go_count(spell spell: Spell) -> Int {
+  list.length(go_times_ms(spell:))
+}
+
 /// The times of a channel's pulses: (channelMaxTime - channelInitialDelay +
 /// channelPulseTime) / channelPulseTime of them, in whole numbers
 /// (`0x14053d1f0`), at the initial delay plus each pulse time (the times are the

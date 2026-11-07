@@ -5,6 +5,7 @@
 //// both rules.
 
 import cast_support
+import client_tables
 import connection_rule_support as support
 import game_client
 import game_connection_support
@@ -15,6 +16,8 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/loadout
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
@@ -45,7 +48,7 @@ import genesis_prime/step.{
   OwnEffect, OwnEvent, TimerId, Unwatch, Watch, Woken,
 }
 import genesis_prime/store.{Character}
-import genesis_prime/table/id.{ClassId, Spell4Id}
+import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_path
@@ -56,10 +59,12 @@ import genesis_prime/world_map/spawn_id
 import genesis_prime/world_map/spawn_source
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import owned_test
 import place_support
 import spawn_support
+import spell_tables
+import unitest
 
 fn spell_go_of(cast_id cast_id: Int) -> spell_go.SpellGo {
   spell_go.SpellGo(
@@ -1422,4 +1427,137 @@ pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_
   assert game_connection_support.written_ids(burst)
     == game_client.holocrypt_entry_ids()
     as "the Spellslinger comes back at the Holocrypt: the entry burst, with no second 0x25E (opcode.0x25e.entry_order)"
+}
+
+// ---- Electrocute: a channel's every pulse strikes the creature ----
+
+/// The answer where the creature of the world takes the tells of the player's steps
+/// at `ms` and its messages go back to the player, until nothing is told
+/// (`game_connection_support.Answering`).
+fn answered_by_the_beast(
+  beast beast: creature.State,
+  player player: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+) -> #(creature.State, game_connection.State, List(ConnectionStep(Request))) {
+  case to_the_beast(taken) {
+    [] -> #(beast, player, [taken])
+    tells -> {
+      let #(beast, beast_steps) =
+        beast_takes(state: beast, at_ms: ms, messages: tells)
+      let #(beast, player, later) =
+        list.fold(
+          list.flat_map(beast_steps, to_the_medic),
+          #(beast, player, []),
+          fn(held, message) {
+            let #(beast, player, later) = held
+            let #(player, answer) =
+              game_connection_support.at(
+                state: player,
+                ms:,
+                event: OwnEvent(Woken(message)),
+              )
+            let #(beast, player, more) =
+              answered_by_the_beast(beast:, player:, ms:, taken: answer)
+            #(beast, player, list.append(later, more))
+          },
+        )
+      #(beast, player, [taken, ..later])
+    }
+  }
+}
+
+pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let #(engineer, _) =
+    game_connection_support.entered_with(
+      settings: Settings(
+        ..game_connection_support.settings(),
+        tables: client_tables.shared(),
+        server_proxies: spell_tables.server_proxies_with_volatility(),
+      ),
+      class_id: 2,
+      saved_health: None,
+    )
+  let assert Ok(set) =
+    loadout.of(
+      tables: client_tables.shared(),
+      class_id: ClassId(2),
+      faction_id: 166,
+    )
+    as "the client's tables hold the Engineer's Novice set"
+  let bag_index = fn(base) {
+    let assert Ok(index) =
+      list.index_map(set.abilities, fn(held, index) { #(held, index) })
+      |> list.key_find(Spell4BaseId(base))
+      as "a level-1 Engineer holds the ability"
+    index
+  }
+  let pulse_blast = bag_index(26_468)
+  let electrocute = bag_index(25_473)
+  let #(beast, started) =
+    a_beast_of(
+      spawn.Spawn(
+        ..spawn_support.beast_at(number: 1, place: beast_spawn_place()),
+        health: 5000,
+      ),
+    )
+  let #(engineer, shown, _) = medic_takes(engineer, to_the_medic(started))
+  assert shown != [] as "the client is shown the Beast"
+  // Electrocute costs 8 of the Volatility a Pulse Blast that opens a fight gives
+  // (Spell4 41276 innateCostType0 6; Spell4.42148).
+  let #(engineer, beast, _) =
+    game_connection_support.pressed_until_answered(
+      state: engineer,
+      world: beast,
+      bag_index: pulse_blast,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 2500,
+      answer: answered_by_the_beast,
+    )
+  let #(_, _, steps) =
+    game_connection_support.pressed_until_answered(
+      state: engineer,
+      world: beast,
+      bag_index: electrocute,
+      client_cast_id: 2,
+      ms: 4000,
+      until_ms: 8000,
+      answer: answered_by_the_beast,
+    )
+  let frames =
+    list.flat_map(steps, game_connection_support.heard(
+      _,
+      game_connection_support.keyed(),
+    ))
+  let goes = game_connection_support.decoded(frames, 0x07F4, spell_go.decode)
+  assert list.map(goes, fn(go) { go.phase }) == [0, 1, 2, 3, 4, 5]
+    as "Spell4.41276: channelInitialDelay 500, channelMaxTime 3000 and channelPulseTime 500 give six goes, the recording's phases 0 to 5"
+  list.each(goes, fn(go) {
+    assert list.map(go.targets, fn(target) {
+        #(
+          target.unit_id,
+          list.map(target.effects, fn(effect) { effect.spell4_effects_id }),
+        )
+      })
+      == [#(7, [92_587])]
+      as "Spell4Effects 92587 (targetFlags 4, phaseFlags -1) strikes the Beast at every pulse"
+  })
+  let healths =
+    list.filter_map(
+      game_connection_support.decoded(frames, 0x0937, unit_health.decode),
+      fn(health) {
+        case health.unit_id == 7 {
+          True -> Ok(health.health)
+          False -> Error(Nil)
+        }
+      },
+    )
+  assert list.length(healths) == 6
+    && list.sort(healths, fn(first, second) { int.compare(second, first) })
+    == healths
+    && list.unique(healths) == healths
+    as "each pulse's damage lowers the Beast's health: six strictly falling values"
 }

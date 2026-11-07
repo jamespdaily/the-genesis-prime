@@ -1011,6 +1011,47 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
     as "38781 damages its own target, the unit it was started on (Spell4Effects 83829: targetFlags 2)"
 }
 
+pub fn each_pulse_of_electrocutes_channel_selects_the_foes_its_area_row_names_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let close_by =
+    dict.from_list([
+      #(21, foe_at(x: 0.0, z: -1.0)),
+      #(22, foe_at(x: 0.0, z: -2.0)),
+      #(23, foe_at(x: 0.0, z: -3.0)),
+      #(24, foe_at(x: 0.0, z: -4.0)),
+      #(25, foe_at(x: 0.0, z: -5.0)),
+      #(26, foe_at(x: 0.0, z: -6.0)),
+    ])
+  // Spell4.41276: channelInitialDelay 500, channelMaxTime 3000 and channelPulseTime
+  // 500 give the pulses 0 to 5 of the recording's cast 2147485756 (0x7f4 phases 0 to 5).
+  list.each([0, 1, 2, 3, 4, 5], fn(pulse) {
+    let chosen =
+      strike.select(
+        asked: GoAsked(
+          cast_id: 5,
+          phase: pulse,
+          spell4_id: Spell4Id(41_276),
+          primary_target: 7,
+          spent: None,
+        ),
+        attacker: attacker(),
+        picture: close_by,
+        areas:,
+        now_ms: 0,
+      )
+    assert list.map(chosen.units, fn(aimed) { aimed.unit_id })
+      == [21, 22, 23, 24, 25]
+      && list.map(chosen.blows, fn(blow) { blow.effect_id })
+      == [Spell4EffectsId(92_587)]
+      as {
+        "Spell4.41276.area: area row 411 (5 units, 0 to 25 m, 360 degrees), and its one damage effect 92587 (targetFlags 4, phaseFlags -1: every pulse) strikes the 5 nearest foes at each pulse, as it does at pulse 0; pulse "
+        <> int.to_string(pulse)
+      }
+  })
+}
+
 // ---- a spell with an innate cost EMM id strikes with the effects its n chooses ----
 
 /// The areas of the planted rows with Mind Burst's spend as the client's rows hold it
