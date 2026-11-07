@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  # tested reads the check runs of the pull request head a merge came from.
+  checks: read
 
 # A newer push to the same branch cancels the run it replaces.
 concurrency:
@@ -14,12 +16,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # On a push to main: whether the commit holds the files a passed run of the check
+  # and tools jobs tested (the merge commit of a pull request that was current with
+  # main does, and each job records the tree it tested as a notice). Then those two
+  # jobs skip and warm-caches runs instead: a second run of the same files only adds
+  # the chance of a flaky failure. Any error here leaves `tested` empty, and both
+  # jobs run.
+  tested:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      tested: ${{ steps.tree.outputs.tested }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: dev/play_service/tested_tree.sh
+          sparse-checkout-cone-mode: false
+      - id: tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if parent=$(dev/play_service/tested_tree.sh "$GITHUB_REPOSITORY" "$GITHUB_SHA" check tools); then
+            echo "$GITHUB_SHA has the files that passed runs of check and tools tested on $parent"
+            echo "tested=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no tested pull request head holds the files of $GITHUB_SHA (status $?)"
+          fi
+
+  # The tests of the tools that gate a merge (the check script, the setup check,
+  # the table extractor). None needs the client, the database or the patched OTP, so
+  # this job runs beside check instead of after it.
+  tools:
+    name: tools
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Record the tree tested
+        run: echo "::notice title=tested tree::tested tree $(git rev-parse 'HEAD^{tree}')"
+      - run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
+
   check:
+    name: check
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     # A cold run builds the patched OTP in 146 seconds on the runner and the
-    # whole cold job takes 3 minutes 11 seconds (run 40316762854); the tool
-    # tests take 2 minutes on the development Mac. 15 minutes is about 3 times
-    # the two together.
+    # whole cold job takes 3 minutes 11 seconds (run 40316762854). 15 minutes is
+    # about 4 times that.
     timeout-minutes: 15
     services:
       postgres:
@@ -35,7 +88,7 @@ jobs:
           --health-retries 15
     env:
       # No client on this machine; the patched OTP is still required, from
-      # GENESIS_OTP_DIR (set below), and first on PATH for ./check.
+      # GENESIS_OTP_DIR (set by the toolchain action), and first on PATH for ./check.
       GENESIS_NO_CLIENT: "1"
       PGHOST: localhost
       PGPORT: "5432"
@@ -44,46 +97,51 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
-        with:
-          version-file: .tool-versions
-          version-type: strict
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
-      - name: Name the patched OTP
-        run: |
-          echo "GENESIS_OTP_DIR=$HOME/patched-otp" >> "$GITHUB_ENV"
-          echo "OTP_VERSION=$(awk '$1 == "erlang" { print $2 }' .tool-versions)" >> "$GITHUB_ENV"
-          # The runner image, so a new image builds afresh; the env context
-          # holds only what the workflow sets, so it is copied in here.
-          echo "IMAGE_OS=$ImageOS" >> "$GITHUB_ENV"
-      # Rebuilt only when the OTP version, a patch or the build script changes.
-      # Saved right after the build, so a failing check does not lose it.
-      - name: Restore the patched OTP
-        id: otp
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.GENESIS_OTP_DIR }}
-          key: patched-otp-${{ runner.os }}-${{ env.IMAGE_OS }}-${{ env.OTP_VERSION }}-${{ hashFiles('setup_check/*.patch', 'setup_check/build_patched_otp.sh') }}
-      - name: Install what the OTP build needs
-        if: steps.otp.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libncurses-dev libssl-dev
-      - name: Build the patched OTP
-        if: steps.otp.outputs.cache-hit != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: setup_check/build_patched_otp.sh
-      - name: Save the patched OTP
-        if: steps.otp.outputs.cache-hit != 'true'
+      - id: toolchain
+        uses: ./.github/actions/toolchain
+      - name: Record the tree tested
+        run: echo "::notice title=tested tree::tested tree $(git rev-parse 'HEAD^{tree}')"
+      - run: ./check
+      # Saved after the check (also a failed one) when the key was new.
+      - name: Save the Gleam build
+        if: ${{ always() && steps.toolchain.outputs.gleam-cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.GENESIS_OTP_DIR }}
-          key: ${{ steps.otp.outputs.cache-primary-key }}
-      - run: ./check
-      # The tests of the tools that gate a merge (the check script, the setup
-      # check, the table extractor). None needs the client or the database.
-      - name: Test the tools
-        run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
+          path: |
+            build
+            !build/test_folder
+            !build/apply_migrations_*
+          key: ${{ steps.toolchain.outputs.gleam-cache-key }}
+
+  # On a push to main whose check was skipped: the caches a pull request restores
+  # are only those saved on main, so this builds and saves what the key says is
+  # missing, and does nothing when both are there.
+  warm-caches:
+    name: warm-caches
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: toolchain
+        uses: ./.github/actions/toolchain
+        with:
+          gleam-lookup-only: "true"
+      - name: Build the Gleam build
+        if: steps.toolchain.outputs.gleam-cache-hit != 'true'
+        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" gleam build
+      - name: Save the Gleam build
+        if: steps.toolchain.outputs.gleam-cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build
+            !build/test_folder
+            !build/apply_migrations_*
+          key: ${{ steps.toolchain.outputs.gleam-cache-key }}

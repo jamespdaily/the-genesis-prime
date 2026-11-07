@@ -2545,8 +2545,11 @@ pub fn a_member_whose_connection_crashes_leaves_its_groups_and_later_lines_reach
       have: speaker.have,
       chat_message_id: 1,
     )
-  let #(heard, _) = written_to(seat: survivor, number: 3)
-  assert list.map(chat_lines(heard), fn(line) { line.text }) == ["still here"]
+  // The speaker's accept is written before the line is told to the group, so
+  // the survivor's line is waited for, not a pong after the accept.
+  let #(heard, _) = wait_for_frame(seat: survivor, message_id: 0x01C8)
+  let assert Ok(line) = game_client.heard_line(frame: heard)
+  assert line.text == "still here"
     as "the design's failure table: a later line goes to the others, and the dead member is no longer in the group"
   list.each(seats, fn(seat) { game_client.close(game: seat.game) })
   login_support.stop(started)
