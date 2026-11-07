@@ -12,15 +12,16 @@
 ////  ├─ creature supervisor ...
 ////  └─ map supervisor ...
 ////
-//// creature supervisor      scope                         a shell
-////   starts the creature ─▶ join(map, run, unit, pid)
-////                          find(map, run, unit)  ◀───── the group's one member
-////                          tell(map, run, unit, message) ─▶ {woken, TellCall(message)} to it
+//// a creature's shell       scope                         a finder
+////   as it starts, before
+////   its rule's first step ─▶ joins Creature(map, run, unit, life)
+////                          find(map, run, unit, life)  ◀───── the group's one member
+////                          tell(map, run, unit, life, message) ─▶ {woken, TellCall(message)} to it
 //// ```
 ////
-//// - **Join.** The creature supervisor's start function joins the new
-////   process under its address as the process returns, so the creature is found
-////   from the moment `StartCreature` has been carried out.
+//// - **Join.** A creature's shell joins its own address before its rule's first
+////   step (genesis_prime/service/shell `FoundAt`), so a creature is found
+////   before anything it sends reaches another process.
 //// - **An address is one creature process in one run.** A spawn keeps its unit id
 ////   across a clean stop, so a creature that stops and the creature started in
 ////   its place have one unit id and two lives, and so two addresses: a find
@@ -69,24 +70,6 @@ pub fn supervised(
 /// (`group_registry.select_delivered`).
 pub fn scope(registry registry: CreatureRegistry) -> Scope(Delivered) {
   registry.scope
-}
-
-/// Makes the process the member of the group of the creature that is unit
-/// `unit_id` in this run of the map under this life; the creature supervisor's start function
-/// calls it once for each creature.
-pub fn join(
-  registry registry: CreatureRegistry,
-  map map: MapId,
-  incarnation incarnation: Int,
-  unit_id unit_id: Int,
-  life life: Int,
-  pid pid: Pid,
-) -> Nil {
-  group_registry.join(
-    registry.scope,
-    Creature(map:, incarnation:, unit_id:, life:),
-    pid,
-  )
 }
 
 /// The process of the creature that is unit `unit_id` in this run of the map

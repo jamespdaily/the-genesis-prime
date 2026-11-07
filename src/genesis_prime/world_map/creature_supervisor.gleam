@@ -15,7 +15,8 @@
 ////   StartCreature(watch, creature)
 ////   start_creature(creature) ──call──▶ start(CreatureProcessStart(creature, run: the map's pid))
 ////                                       starts the shell with the creature's rule
-////                                       joins the creature's address ──────▶ member
+////                                         the shell joins its address ──────▶ member
+////                                         then takes its rule's first step
 ////   ◀── Ok / Error(reason) ◀────────────
 ////   Ok: the shell watches Creature(map, run, unit)
 ////   Error: CreatureNotStarted(watch, reason) is the rule's next input

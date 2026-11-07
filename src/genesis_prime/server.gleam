@@ -269,7 +269,7 @@ pub fn start(
       rule: hand_off.rule(),
       reach: service.watch_only(locate: locate(settings)),
       shutdown_ms: settings.hand_off_shutdown_ms,
-      told_through: None,
+      found_at: None,
     ),
   ))
   |> supervisor.add(service_shell.supervised(
@@ -280,7 +280,7 @@ pub fn start(
         Ok(SentBySessions(message))
       }),
       shutdown_ms: settings.sessions_shutdown_ms,
-      told_through: None,
+      found_at: None,
     ),
   ))
   |> supervisor.add(world(settings))
@@ -728,7 +728,7 @@ pub fn add_world(
           ),
           reach: map_reach(world:, reach:),
           shutdown_ms: world.map_shutdown_ms,
-          told_through: None,
+          found_at: None,
         ))
       },
     ),
@@ -797,7 +797,7 @@ fn map_reach(
 }
 
 /// Starts one creature as the creature supervisor asks: the shell of its rule,
-/// then its address joined in the registry.
+/// which joins the creature's address in the registry as it starts.
 fn start_creature_process(
   world world: World,
   reach reach: Reach(map.Outgoing),
@@ -824,19 +824,16 @@ fn start_creature_process(
         ),
         reach: creature_reach(world:, reach:, to_connection:, start:),
         shutdown_ms: world.creature_shutdown_ms,
-        told_through: Some(creature_registry.scope(world.creatures)),
+        found_at: Some(service_shell.FoundAt(
+          scope: creature_registry.scope(world.creatures),
+          address: step.Creature(
+            map: wanted.map,
+            incarnation: wanted.incarnation,
+            unit_id: wanted.unit_id,
+            life: wanted.life,
+          ),
+        )),
       ))
-      |> result.map(fn(started) {
-        creature_registry.join(
-          world.creatures,
-          map: wanted.map,
-          incarnation: wanted.incarnation,
-          unit_id: wanted.unit_id,
-          life: wanted.life,
-          pid: started.pid,
-        )
-        started
-      })
   }
 }
 

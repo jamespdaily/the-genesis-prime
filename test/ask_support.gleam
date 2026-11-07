@@ -380,7 +380,7 @@ fn gate_settings(
     rule: gate_as_rule(),
     reach:,
     shutdown_ms:,
-    told_through: None,
+    found_at: None,
   )
 }
 
