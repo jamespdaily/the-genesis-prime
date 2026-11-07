@@ -2183,13 +2183,21 @@ pub fn measure_reads(
   effect effect: spell4_effects.Spell4Effects,
   place place: spell_plan.RowPlace,
 ) -> Bool {
-  with_loaded(rows: rows(), body: fn(tables) {
-    effect_row.is_read(
-      tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
-      place:,
-      effect:,
-    )
+  use reads <- with_measure
+  reads(effect, place)
+}
+
+/// The body gets the measure's per-row answer over the planted tables, loaded once:
+/// each load takes about 0.15 s, and a test that loaded once per row ran past its 5 s
+/// deadline on CI.
+pub fn with_measure(
+  body body: fn(fn(spell4_effects.Spell4Effects, spell_plan.RowPlace) -> Bool) ->
+    a,
+) -> a {
+  use tables <- with_loaded(rows: rows())
+  let spell_groups = spell_plan.spell_groups(tables:)
+  body(fn(effect, place) {
+    effect_row.is_read(tables:, spell_groups:, place:, effect:)
   })
 }
 
