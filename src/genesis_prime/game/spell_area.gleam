@@ -600,10 +600,11 @@ pub fn inside(spell spell: SpellArea) -> Inside {
   }
 }
 
-/// How many gos the spell has, one for each phase of a Multiphase spell and one for
-/// any other.
+/// How many gos the spell has (`spell_plan.go_count`): a pulse of a channel and a
+/// phase of a Multiphase spell are each a go, and a spell held until its release
+/// has one go to select with.
 pub fn phase_count(spell spell: SpellArea) -> Int {
-  int.max(1, list.length(spell.spell.phase_delays_ms))
+  int.max(1, spell_plan.go_count(spell: spell.spell))
 }
 
 /// What the spell's go of `phase` strikes when the cast spent `spent` points above
