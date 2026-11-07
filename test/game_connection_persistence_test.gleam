@@ -180,14 +180,12 @@ pub fn a_connection_with_no_player_in_the_world_checks_nothing_test() -> Nil {
 
 // ---- a cast that ends when its player enters combat ----
 //
-// The client's Pulse Blast 42276 (the Engineer's, a cast time of 1250 ms and a global
-// cooldown of 1250 ms) holds no CasterPersistence, and no cast of a starting ability
-// holds one that ends when the player enters combat: Prerequisite 390 (type 28,
-// comparison 2: not in combat) is the client's row, and these tests edit Pulse Blast's
-// Spell4 row to name it in prerequisiteIdCasterPersistence
-// (`fixture_tables.changed`), so a connection test has a cast that ends when the
-// player enters combat. Each test gives a different kind of input the end of one such
-// cast, and checks the input's own writes come first.
+// The client gives Prerequisite 390 (type 28, comparison 2: not in combat) as
+// CasterPersistence only to spells no class's Novice set reaches, such as Summon
+// Mammodin 31607 (a 5000 ms cast), so these tests name it in the client's Pulse Blast
+// 42276 (the Engineer's, a cast time and a global cooldown of 1250 ms), which holds no
+// CasterPersistence (`fixture_tables.changed`). Each test gives a different kind of
+// input the end of one such cast, and checks the input's own writes come first.
 
 const pulse_blast_base = 26_468
 

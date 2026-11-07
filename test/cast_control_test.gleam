@@ -36,6 +36,14 @@ import genesis_prime/message/spell_go
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/list
 import owned_test
+import spell_tables
+
+/// Runs `body` once the client's plans are built, so a test's deadline times the cast
+/// rule and not the plans' one build for the run.
+fn plans_built(body: fn() -> Nil) -> Nil {
+  let _ = spell_tables.fixture_plans()
+  body()
+}
 
 /// Kick's spell, base 3, planted with no effect of its own: what a go lists comes from
 /// the creature's answer.
@@ -97,6 +105,7 @@ fn entry(removed removed: Int) -> combat_log_entry.CombatLogEntry {
 }
 
 pub fn a_go_lists_a_state_the_creature_took_with_the_instance_id_its_strike_gave_test() -> Nil {
+  use <- plans_built()
   use <- owned_test.run(5000)
   let #(_, effects) = kicked(go_ms: 1000, ends_at_ms: 4166)
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
@@ -117,6 +126,7 @@ pub fn a_go_lists_a_state_the_creature_took_with_the_instance_id_its_strike_gave
 }
 
 pub fn a_creature_that_took_no_state_has_no_effect_listed_for_it_test() -> Nil {
+  use <- plans_built()
   use <- owned_test.run(5000)
   let #(state, effects) =
     support.pressed_raw_in(
@@ -140,6 +150,7 @@ pub fn a_creature_that_took_no_state_has_no_effect_listed_for_it_test() -> Nil {
 }
 
 pub fn the_cast_lingers_until_the_states_own_end_and_then_sends_its_0x7fe_test() -> Nil {
+  use <- plans_built()
   use <- owned_test.run(5000)
   // The round waited 900 ms for a slow creature: the go is at 1900 and the creature
   // holds the state until 4166 (its arrival at 1000, plus 166, plus 3000).
@@ -166,6 +177,7 @@ pub fn the_cast_lingers_until_the_states_own_end_and_then_sends_its_0x7fe_test()
 }
 
 pub fn the_caster_logs_the_state_with_its_go_and_again_when_it_ends_test() -> Nil {
+  use <- plans_built()
   use <- owned_test.run(5000)
   let #(state, effects) = kicked(go_ms: 1000, ends_at_ms: 4166)
   assert logged(effects:) == [entry(removed: 0)]
@@ -186,6 +198,7 @@ pub fn the_caster_logs_the_state_with_its_go_and_again_when_it_ends_test() -> Ni
 }
 
 pub fn a_unit_that_left_the_casters_sight_gets_no_end_entry_test() -> Nil {
+  use <- plans_built()
   use <- owned_test.run(5000)
   let #(state, effects) = kicked(go_ms: 1000, ends_at_ms: 4166)
   let ends =
@@ -210,6 +223,7 @@ pub fn a_unit_that_left_the_casters_sight_gets_no_end_entry_test() -> Nil {
 }
 
 pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> Nil {
+  use <- plans_built()
   use <- owned_test.run(5000)
   // A Multiphase spell: its first go lands the Knockdown, held until 4000, and its
   // second go, at 2000, adds a Fluff effect of 100 ms. `lasting.given` arms the Fluff
