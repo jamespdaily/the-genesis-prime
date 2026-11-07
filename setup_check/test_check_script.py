@@ -25,8 +25,8 @@ the real toolchain, the real database or the real client:
   check_support.integration_only, so the gate is the real one.
 
 - the planted repository is a git repository on a branch `feature` of `main`
-  (the planted files are the first commit), because the integration tests run
-  only when the branch changes a file under the client scripts folder.
+  (the planted files are the first commit), because branch-current and the
+  scope compare the branch with its merge base with main.
 
 A planted run costs about two seconds, so tests that only read what one run
 printed or logged share it (`shared_run`), the whole file stays under a minute,
@@ -56,7 +56,6 @@ HERE = Path(__file__).resolve().parent
 REPOSITORY = HERE.parent
 CHECK = REPOSITORY / "check"
 SCRIPTS = Path(".claude") / "skills" / "decoding-the-client" / "scripts"
-PLAYING_LIVE_SCRIPTS = Path(".claude") / "skills" / "playing-live" / "scripts"
 PYTHON = shutil.which("python3.13")
 
 RUNNABLE = PYTHON is not None and shutil.which("bash") is not None and CHECK.is_file()
@@ -222,10 +221,6 @@ class PlantedCheckCase(unittest.TestCase):
         scripts.mkdir(parents=True)
         for name in ("check_support.py", "query_client.py", "ghidra_env.py", "formulas_by_hand.py"):
             shutil.copyfile(REPOSITORY / SCRIPTS / name, scripts / name)
-        # The playing-live scripts' folder, whose tests the client-suite part finds by discovery, after
-        # the client scripts': one planted test stands for whatever the folder holds.
-        (repository / PLAYING_LIVE_SCRIPTS).mkdir(parents=True)
-        self.plant_playing_live_test(fails=False)
         self.plant_integration_test(fails=False)
         tools = self.root / "tools"
         executable(tools / "gleam", GLEAM_STUB)
@@ -257,13 +252,6 @@ class PlantedCheckCase(unittest.TestCase):
         with open(self.repository / path, "a") as changed:
             changed.write("\n# changed on the branch\n")
         self.git("commit", "-q", "-am", "change %s" % path)
-
-    def plant_playing_live_test(self, fails: bool) -> None:
-        body = 'self.fail("planted playing-live failure")' if fails else "pass"
-        (self.repository / PLAYING_LIVE_SCRIPTS / "test_planted_playing_live.py").write_text(
-            "import unittest\n\n\nclass PlantedPlayingLiveTest(unittest.TestCase):\n"
-            "    def test_it_ran_and_it_%s(self):\n        %s\n" % ("fails" if fails else "passes", body)
-        )
 
     def plant_integration_test(self, fails: bool) -> None:
         test = INTEGRATION_TEST % {
@@ -498,16 +486,6 @@ class BudgetTest(unittest.TestCase):
         run = shared_run("slow-setup", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="3", PLANT_SETUP_SECONDS="4")
         self.assert_passed_with_the_warning(run, budget=3)
 
-    def test_the_warning_names_the_raised_budget_when_the_integration_tests_run(self):
-        # The usual budget is 1 s, the raised one 3 s: the 4 s of delay is over the raised
-        # one and 5 s under three times it (9 s).
-        run = shared_run(
-            "slow-raised", client=True, prepare=lambda case: case.commit_change(SCRIPTS_FILE),
-            GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="3",
-            PLANT_FORMAT_SECONDS="4",
-        )
-        self.assert_passed_with_the_warning(run, budget=3)
-
     @staticmethod
     def quick_polls(case: PlantedCheckCase) -> None:
         """Plants a `sleep` that returns at once for the 0.2 second poll of a part's
@@ -617,16 +595,6 @@ class HungPartTest(unittest.TestCase):
         self.assert_stopped_as_hung(run, None)
         self.assertEqual(run.commands, [], "no part ran after a setup check that did not end")
 
-    def test_the_deadline_is_three_times_the_raised_budget_when_the_integration_tests_run(self):
-        # The usual budget is 1 s, the raised one 4 s: a hung setup check is stopped at 12,
-        # not at 3.
-        run = shared_run(
-            "hung-raised", client=True, prepare=lambda case: case.commit_change(SCRIPTS_FILE),
-            hang=lambda seconds: dict(PLANT_SETUP_SECONDS=seconds), timeout=40,
-            GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="4",
-        )
-        self.assert_stopped_as_hung(run, None, budget=4)
-
     def test_a_database_drop_that_hangs_does_not_hold_a_check_that_ended_in_time(self):
         run = shared_run(
             "hung-drop-in-time", hang=lambda seconds: dict(PLANT_PSQL_DROP_SECONDS=seconds), timeout=30,
@@ -636,22 +604,8 @@ class HungPartTest(unittest.TestCase):
         self.assertEqual(run.left_running, [], "the planted sleep is still running")
 
 
-SCRIPTS_FILE = str(SCRIPTS / "formulas_by_hand.py")
-
-
 def plant_failing_gated_test(case: PlantedCheckCase) -> None:
     case.plant_integration_test(fails=True)
-
-
-def change_the_scripts(case: PlantedCheckCase) -> None:
-    case.commit_change(SCRIPTS_FILE)
-
-
-def change_something_else(case: PlantedCheckCase) -> None:
-    case.settle()
-    (case.repository / "src" / "planted.gleam").write_text("// a file outside the scripts folder\n")
-    case.git("add", "-A")
-    case.git("commit", "-q", "-m", "a change outside the scripts folder")
 
 
 def part_line(output: str, part: str) -> str:
@@ -665,138 +619,22 @@ def set_origin_main(case: PlantedCheckCase, revision: str) -> None:
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
-class PlayingLiveSuiteTest(unittest.TestCase):
-    """The playing-live scripts' tests run in the client-suite part, found by discovery in their
-    folder, so a test added there needs no change to ./check, and one that fails fails the part."""
+class ClientSuiteTest(unittest.TestCase):
+    """The client-suite part runs the client scripts' tests that need no Ghidra with
+    GENESIS_INTEGRATION=0, whatever the caller exported: an exported GENESIS_INTEGRATION=1
+    would open the gate of check_support.integration_only and run the Ghidra tests inside
+    the client-suite part, in the usual budget."""
 
-    def failing(self) -> Run:
-        return shared_run("playing-live-fails", prepare=lambda case: case.plant_playing_live_test(fails=True))
+    def gate_holds(self, key: str, client: bool) -> Run:
+        return shared_run(key, client=client, prepare=plant_failing_gated_test, GENESIS_INTEGRATION="1")
 
-    def test_a_failing_test_in_the_playing_live_scripts_fails_the_check_by_part_name(self):
-        run = self.failing()
-        self.assertNotEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(failed_line(self, run.output), r"client-suite")
-        self.assertNotIn("hung", failed_line(self, run.output))
-        self.assertIn("planted playing-live failure", run.output, "the failed part's log is printed")
-
-    def test_only_the_client_suite_part_fails_for_it(self):
-        self.assertNotIn(",", failed_line(self, self.failing().output).split("FAILED:", 1)[1])
-
-
-@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
-class ClientIntegrationTest(unittest.TestCase):
-    """The query process's integration
-    tests run in the full check when the branch changes a file under the client
-    scripts folder, compared with its merge base with main (origin/main when
-    there is one); otherwise they are skipped and the output says so. Where they
-    run, the budget is raised and the output says why."""
-
-    def changed(self) -> Run:
-        # The planted gated test fails; the usual budget (1 s) is raised to 30 s, which
-        # holds the 3 s the planted format part takes.
-        return shared_run(
-            "integration-changed", client=True,
-            prepare=lambda case: (plant_failing_gated_test(case), change_the_scripts(case)),
-            GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="30",
-            PLANT_FORMAT_SECONDS="3",
-        )
-
-    def test_where_the_branch_changes_a_file_of_the_scripts_folder_a_gated_test_runs(self):
-        run = self.changed()
-        self.assertTrue(run.marker_ran, "the planted integration test did not run:\n" + run.output)
-
-    def test_a_planted_failing_integration_test_fails_the_check_by_part_name(self):
-        run = self.changed()
-        self.assertNotEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(failed_line(self, run.output), r"client-integration")
-        self.assertNotIn("hung", failed_line(self, run.output))
-        self.assertIn("planted integration failure", run.output, "the failed part's log is printed")
-
-    def test_where_they_run_the_budget_is_raised_and_the_output_says_why(self):
-        raised = [line for line in self.changed().output.splitlines() if "budget" in line.lower() and "raised" in line.lower()]
-        self.assertTrue(raised, "a line says the budget was raised:\n" + self.changed().output)
-        self.assertRegex(raised[0], r"\b30\s*s", "it names the raised budget")
-        self.assertIn("integration", raised[0].lower(), "and the reason")
-
-    def test_a_change_made_but_not_yet_committed_counts_as_a_change(self):
-        def edit(case):
-            case.settle()
-            with open(case.repository / SCRIPTS_FILE, "a") as changed:
-                changed.write("\n# edited, not committed\n")
-
-        run = shared_run("integration-uncommitted", client=True, prepare=edit)
+    def assert_gate_held(self, run: Run) -> None:
         self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertTrue(run.marker_ran, "an edit under the scripts folder did not start the gated tests")
-
-    def unchanged(self) -> Run:
-        # A change outside the scripts folder, a failing gated test, and an exported
-        # GENESIS_INTEGRATION=1, which would open the gate of the unit suite.
-        return shared_run(
-            "integration-unchanged", client=True,
-            prepare=lambda case: (plant_failing_gated_test(case), change_something_else(case)),
-            GENESIS_INTEGRATION="1",
-        )
-
-    def test_where_the_branch_changes_nothing_there_the_gated_tests_are_skipped_and_the_output_says_so(self):
-        run = self.unchanged()
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertFalse(run.marker_ran, "an integration test ran with no change under the scripts folder")
-        line = part_line(run.output, "client-integration")
-        self.assertIn("skipped", line, "the part's line says it was skipped:\n" + run.output)
-        self.assertIn("unchanged", line, "and why:\n" + run.output)
-
-    def test_where_they_are_skipped_the_budget_is_not_raised(self):
-        self.assertFalse([l for l in self.unchanged().output.splitlines() if "raised" in l.lower()])
+        self.assertFalse(run.marker_ran, "an integration test ran inside the client-suite part")
+        self.assertRegex(run.output, r"(?m)^  client-suite +ok\b")
 
     def test_an_exported_genesis_integration_does_not_open_the_gate_of_the_unit_suite(self):
-        # GENESIS_INTEGRATION=1 in the caller's environment would run the 450 s tests
-        # inside the client-suite part, in the usual budget: with the client present
-        # (the unchanged run above) and without it.
-        run = shared_run(
-            "integration-no-client", prepare=lambda case: (plant_failing_gated_test(case), change_the_scripts(case)),
-            GENESIS_INTEGRATION="1",
-        )
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertFalse(run.marker_ran, "an integration test ran with GENESIS_NO_CLIENT=1")
-
-    def test_where_there_is_no_client_the_gated_tests_are_skipped_and_the_output_says_so(self):
-        run = shared_run(
-            "integration-no-client", prepare=lambda case: (plant_failing_gated_test(case), change_the_scripts(case)),
-            GENESIS_INTEGRATION="1",
-        )
-        line = part_line(run.output, "client-integration")
-        self.assertIn("skipped", line, "the part's line says it was skipped:\n" + run.output)
-        self.assertIn("GENESIS_NO_CLIENT", line, "and why:\n" + run.output)
-
-    def test_the_merge_base_is_with_origin_main_when_there_is_one(self):
-        # origin/main is at the first commit, while the local main has moved on with
-        # the change: against origin/main the branch changes the scripts folder.
-        def plant(case):
-            case.settle()
-            case.git("checkout", "-q", "main")
-            case.commit_change(SCRIPTS_FILE)
-            set_origin_main(case, "main~1")
-            case.git("checkout", "-q", "feature")
-            case.git("reset", "-q", "--hard", "main")
-
-        run = shared_run("integration-origin", client=True, prepare=plant)
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertTrue(run.marker_ran, "the merge base was taken with main, not origin/main")
-
-    def test_without_a_main_to_compare_with_they_run_and_the_output_says_the_base_was_not_found(self):
-        def plant(case):
-            case.settle()
-            case.git("branch", "-q", "-m", "main", "trunk")
-
-        run = shared_run("integration-no-main", client=True, prepare=plant)
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertTrue(run.marker_ran, "with no merge base, the safe course is to run them")
-        self.assertIn("main", part_line(run.output, "client-integration") + run.output)
-
-    def test_the_fast_check_does_not_run_the_integration_tests(self):
-        run = shared_run("fast-changed", "fast", client=True, prepare=change_the_scripts)
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertFalse(run.marker_ran)
+        self.assert_gate_held(self.gate_holds("gate-no-client", client=False))
 
 
 def advance_origin_main(case: PlantedCheckCase, commits: int) -> None:
@@ -970,7 +808,7 @@ def scope_line(output: str) -> str:
 # The full check's parts, in the order ./check prints them after branch-current.
 EVERY_PART = [
     "format", "gleam-build", "glinter", "generated-tables", "gleam-test", "world-data", "literal-area",
-    "migrations", "squirrel", "client-suite", "client-integration", "fact-checker",
+    "migrations", "squirrel", "client-suite", "fact-checker",
 ]
 QUICK_PARTS = ["format", "gleam-build", "glinter", "code-rules"]
 
@@ -1023,8 +861,7 @@ def without_branch_current(output: str) -> list[str]:
 class LightScopeTest(unittest.TestCase):
     """When every file the branch changes since its merge base with main is guidance
     or a tool no part tests, the full check runs the fast parts and says so; any other
-    changed file, or none at all, runs every part. The merge base is the one the
-    client scripts' integration tests use. CI's machine always runs every part."""
+    changed file, or none at all, runs every part. CI's machine always runs every part."""
 
     def light(self) -> Run:
         return scoped_run("light-only", plant_light_changes)
