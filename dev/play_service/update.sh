@@ -20,6 +20,8 @@
 #   a deploy came up                                       removes dangling images and every
 #                                                            genesis-play image but the running one and
 #                                                            the last good one
+#   main's commit new and its tree equal to the tree of a   deploys it as above, without waiting for its own
+#     commit whose check and tools jobs passed (tested_tree.sh)  run (a pull request merged by a merge commit)
 #   main's commit new, server check red, missing or not    nothing for that commit; it is asked again
 #     finished                                               at the next run (a docs job's result is not looked at)
 #   main's commit holds no release/Containerfile           nothing, and it is not asked about again
@@ -262,6 +264,13 @@ fi
 if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
   status=0
   ci_passed "$main_commit" || status=$?
+  # Reason: a merge commit whose files are those of its pull request's head (one that was
+  # current with main) holds nothing the head's passed check did not test, so it is
+  # deployed without waiting for, or whatever the result of, its own run.
+  if [ "$status" = 1 ] && tested=$("$here/tested_tree.sh" "$repository" "$main_commit" check tools); then
+    log "$main_commit has the files of $tested, whose check passed; not waiting for its own run"
+    status=0
+  fi
   case $status in
     0)
       if ! podman image exists "genesis-play:$main_commit"; then

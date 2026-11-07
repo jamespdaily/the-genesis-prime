@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  # tested reads the check runs of the pull request head a merge came from.
+  checks: read
 
 # A newer push to the same branch cancels the run it replaces.
 concurrency:
@@ -14,12 +16,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # On a push to main: whether the commit holds the files of a pull request head
+  # whose check and tools jobs passed (the merge commit of a pull request that was
+  # current with main does). Then the two jobs below skip: they would test the
+  # same files again (56 of the last 60 merges had a tree identical to their tested
+  # pull request head, and each of the 9 failed second runs on main was a flaky
+  # test). Any error here leaves `tested` empty, and both jobs run.
+  tested:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      tested: ${{ steps.tree.outputs.tested }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: dev/play_service/tested_tree.sh
+          sparse-checkout-cone-mode: false
+      - id: tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if parent=$(dev/play_service/tested_tree.sh "$GITHUB_REPOSITORY" "$GITHUB_SHA" check tools); then
+            echo "$GITHUB_SHA has the files of $parent, whose check and tools jobs passed"
+            echo "tested=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no tested pull request head holds the files of $GITHUB_SHA (status $?)"
+          fi
+
+  # The tests of the tools that gate a merge (the check script, the setup check,
+  # the table extractor). None needs the client, the database or the patched OTP, so
+  # this job runs beside check instead of after it.
+  tools:
+    name: tools
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
+
   check:
+    name: check
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     # A cold run builds the patched OTP in 146 seconds on the runner and the
-    # whole cold job takes 3 minutes 11 seconds (run 40316762854); the tool
-    # tests take 2 minutes on the development Mac. 15 minutes is about 3 times
-    # the two together.
+    # whole cold job takes 3 minutes 11 seconds (run 40316762854). 15 minutes is
+    # about 4 times that.
     timeout-minutes: 15
     services:
       postgres:
@@ -82,8 +133,19 @@ jobs:
         with:
           path: ${{ env.GENESIS_OTP_DIR }}
           key: ${{ steps.otp.outputs.cache-primary-key }}
+      # The dependencies and the compiled packages, which a cold build spends 29-39
+      # seconds on; the project's own modules are compiled afresh by the checkout's
+      # file times. Saved after the check (also a failed one) when the key was new.
+      - name: Restore the Gleam build
+        id: gleam
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build
+          key: gleam-build-${{ runner.os }}-${{ env.IMAGE_OS }}-${{ env.OTP_VERSION }}-${{ hashFiles('manifest.toml', 'gleam.toml', 'setup_check/*.patch') }}
       - run: ./check
-      # The tests of the tools that gate a merge (the check script, the setup
-      # check, the table extractor). None needs the client or the database.
-      - name: Test the tools
-        run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
+      - name: Save the Gleam build
+        if: ${{ always() && steps.gleam.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build
+          key: ${{ steps.gleam.outputs.cache-primary-key }}
