@@ -15,15 +15,17 @@ shows Claude that line. Every other case, a failed `ps` included, exits 0.
 
 A test run is:
   gleam test ...                           the test suite
-  ./check, bash ./check (no `fast`)        the full check, which runs the suite
+  ./check, bash ./check ...                the check, in any form (`fast` runs tests too), but
+                                           not `--help`, `-h` or `help`
   gleam run -m genesis_prime/load_...      a load run
   gleam run -m genesis_prime/wire_replay   a recording replayed through the server
 
-`./check fast` is not one: it runs format, build, glinter and the code-rule tests only.
-`timeout`, `nice`, `env` and `time` in front of the command are read through. A run started
+`timeout`, `nice`, `env`, `time`, `nohup` and `caffeinate`, with their options, in front of
+the command are read through. A run started
 inside `sh -c "..."` or a script is not seen at the start, but is counted once it runs, as
 its `gleam` or `check` process. A run is counted once: `./check` and the `gleam test` it starts
-are one run (a process whose parent is a test run is not another). Every worktree counts.
+are one run (a process whose parent is a test run is not another). Every worktree counts. A run
+whose folder `lsof` cannot read in time is still counted, with an unknown folder.
 Two commands that start together can both pass; the second one's `ps` sees the first only
 once it is running.
 """
@@ -41,7 +43,12 @@ from shell_command import simple_commands  # noqa: E402
 
 SLOTS = 2
 _INTERPRETERS = {"bash", "sh", "zsh", "dash"}
-_WRAPPERS = {"time", "nice", "command", "exec", "env", "timeout", "caffeinate"}
+# Each wrapper's options that take a value as the next word.
+_WRAPPERS = {
+    "time": {"-f", "-o"}, "nice": {"-n"}, "command": set(), "exec": set(), "nohup": set(),
+    "env": {"-u", "-C", "-S"}, "timeout": {"-k", "-s"}, "caffeinate": {"-t", "-w"},
+}
+_HELP = {"--help", "-h", "help"}
 _LOAD_MODULES = ("genesis_prime/load_", "genesis_prime/wire_replay")
 
 
@@ -54,7 +61,7 @@ def starts_test_run(words: list[str]) -> bool:
         return False
     program, arguments = os.path.basename(words[0]), words[1:]
     if program == "check":
-        return "fast" not in arguments
+        return not _HELP & set(arguments)
     if program != "gleam" or not arguments:
         return False
     if arguments[0] == "test":
@@ -66,12 +73,13 @@ def starts_test_run(words: list[str]) -> bool:
 
 
 def _without_wrappers(words: list[str]) -> list[str]:
-    """The words after `timeout N`, `nice -n N`, `env A=b`, `time` and the like."""
+    """The words after `timeout -k 5 10`, `nice -n 5`, `env A=b`, `caffeinate -i -t 60`, `nohup`,
+    `time` and the like."""
     while words and os.path.basename(words[0]) in _WRAPPERS:
         wrapper, words = os.path.basename(words[0]), words[1:]
-        while words and (words[0].startswith("-") or "=" in words[0].split("/")[0]):
-            words = words[2:] if wrapper == "nice" and words[0] == "-n" else words[1:]
-        if wrapper in {"timeout", "nice"} and words and words[0][:1].isdigit():
+        while words and (words[0].startswith("-") or (wrapper == "env" and "=" in words[0].split("/")[0])):
+            words = words[2:] if words[0] in _WRAPPERS[wrapper] else words[1:]
+        if wrapper == "timeout" and words:
             words = words[1:]
     return words
 
@@ -115,13 +123,17 @@ def running_tests(everything: list[Process]) -> list[Process]:
 
 
 def folders(pids: list[int]) -> dict[int, str]:
-    """The working folder of each process, from `lsof`; a process it cannot read is missing."""
+    """The working folder of each process, from `lsof`; a process it cannot read, or all of them
+    when `lsof` fails or runs over 10 s, is missing."""
     if not pids:
         return {}
-    done = subprocess.run(
-        ["lsof", "-a", "-d", "cwd", "-Fpn", "-p", ",".join(map(str, pids))],
-        capture_output=True, text=True, timeout=10,
-    )
+    try:
+        done = subprocess.run(
+            ["lsof", "-a", "-d", "cwd", "-Fpn", "-p", ",".join(map(str, pids))],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
     result, pid = {}, None
     for line in done.stdout.splitlines():
         if line.startswith("p"):
@@ -150,7 +162,7 @@ def refusal(runs: list[Process], folder_of: dict[int, str]) -> str:
     )
     return (
         f"{len(runs)} test runs already run on this machine and it has {SLOTS} test slots: {named}. "
-        "Wait for one to end, then start this one (three agents tested at once on 2026-11-06)."
+        "Wait for one to end, then start this one (three agents once tested at once and had to be told)."
     )
 
 

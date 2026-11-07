@@ -81,7 +81,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shell_command import git_pushes, simple_commands  # noqa: E402
+from shell_command import Simple, git_pushes, simple_commands  # noqa: E402
 from step_issue import (  # noqa: E402
     PROJECT, REPOSITORY, Failure, GitHub, current_branch, issue_of, last_line,
     names_repository,
@@ -417,10 +417,10 @@ def report_pull(event: Pull, github: GitHub, dry_run: bool, notes: list[str]) ->
 def report_merge(
     github: GitHub, pull: dict, issue: int, dry_run: bool, folder: str | None, notes: list[str],
 ) -> None:
-    """A merged pull request: the CI line of its head, the merge line, and, when it closes the
-    issue, the card to Done, the measure and the coverage and ranking comment; then the clean-up
-    of its branch's worktree, on any merge. Each part is attempted whatever the others do, and
-    the failures are raised together."""
+    """A merged pull request: the clean-up of its branch's worktree (on any merge, and first, so
+    the slow parts below cannot cost it), the CI line of its head, the merge line, and, when it
+    closes the issue, the card to Done, the measure and the coverage and ranking comment. Each
+    part is attempted whatever the others do, and the failures are raised together."""
     if pull["state"] != "MERGED":
         return
     number = pull["number"]
@@ -444,17 +444,19 @@ def report_merge(
             for line in lines_for(event, comments):
                 post(github, issue, line, dry_run)
 
-    attempt(lines)
-    if closes:
-        attempt(lambda: move_card(github, issue, "Done", None, dry_run))
-        attempt(lambda: post_measure(github, issue, comments, dry_run))
-        attempt(lambda: post_merge_measures(github, issue, commit, comments, dry_run))
+    # The clean-up comes first: the measures below may run long, and the hook's own timeout
+    # ends the process.
     try:
         notes += merge_cleanup.clean_up(
             PROJECT, pull["headRefName"], pull["headRefOid"], folder, dry_run,
         )
     except (OSError, subprocess.SubprocessError) as problem:
         problems.append(f"clean-up of {pull['headRefName']}: {type(problem).__name__}: {problem}")
+    attempt(lines)
+    if closes:
+        attempt(lambda: move_card(github, issue, "Done", None, dry_run))
+        attempt(lambda: post_measure(github, issue, comments, dry_run))
+        attempt(lambda: post_merge_measures(github, issue, commit, comments, dry_run))
     if problems:
         raise Failure("; ".join(problems))
 

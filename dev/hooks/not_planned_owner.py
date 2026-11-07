@@ -1,12 +1,13 @@
 """PreToolUse hook for the Bash tool: refuses to close an issue as not planned with no owner.
 
-An issue closed as not planned with open items and no owner loses them (the Volatility gain,
-2026-11-06). Claude Code passes the hook's JSON on stdin (`tool_name`, `tool_input.command`,
+An issue closed as not planned with open items and no owner loses them (the Volatility gain
+was lost that way). Claude Code passes the hook's JSON on stdin (`tool_name`, `tool_input.command`,
 `cwd`). For each `gh issue close <issue> ... ` in the command whose reason is "not planned"
 (`--reason`, `-r`, with a space or `=`; case, `_` and `-` for the space are accepted), the
-`--comment` / `-c` text must either hold an `#N` reference to another issue (the one that takes
-the open items) or say "no open items". Otherwise the hook prints one stderr line and exits 2,
-which blocks the call and shows Claude that line. Every other case exits 0.
+`--comment` / `-c` text must either name another issue (the one that takes the open items) as
+`#N`, `owner/repo#N` or an issue URL (`https://github.com/.../issues/N`), or say "no open
+items". Otherwise the hook prints one stderr line and exits 2, which blocks the call and shows
+Claude that line. Every other case exits 0.
 
   - A reference to the issue being closed does not count as its owner.
   - A comment that is not literal (`$(...)`, a variable, backticks, a heredoc) cannot be read
@@ -23,8 +24,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shell_command import simple_commands  # noqa: E402
+from step_issue import REPOSITORY  # noqa: E402
 
-_REFERENCE = re.compile(r"(?<![\w&/])#(\d+)\b")
+# An issue URL (groups 1, 2: repository, number) or `#N` / `owner/repo#N` (groups 3, 4).
+_REFERENCE = re.compile(
+    r"https?://github\.com/([\w.-]+/[\w.-]+)/issues/(\d+)\b"
+    r"|(?<![\w&/])(?:([\w.-]+/[\w.-]+))?#(\d+)\b"
+)
 _NO_OPEN_ITEMS = re.compile(r"\bno\s+open\s+items\b", re.IGNORECASE)
 
 
@@ -56,10 +62,14 @@ def is_not_planned(reason: str | None) -> bool:
 
 
 def names_owner(text: str, own_issue: int | None) -> bool:
-    """Whether a close comment names the issue that takes the open items (an `#N` other than
-    the closed issue) or says there are none."""
-    others = [int(n) for n in _REFERENCE.findall(text) if int(n) != own_issue]
-    return bool(others) or _NO_OPEN_ITEMS.search(text) is not None
+    """Whether a close comment names the issue that takes the open items (an issue other than
+    the closed one, in this repository or another) or says there are none."""
+    for found in _REFERENCE.finditer(text):
+        repository = (found.group(1) or found.group(3) or REPOSITORY).lower()
+        number = int(found.group(2) or found.group(4))
+        if number != own_issue or repository != REPOSITORY:
+            return True
+    return _NO_OPEN_ITEMS.search(text) is not None
 
 
 def refusal_for(command: str, folder: str | None) -> str | None:

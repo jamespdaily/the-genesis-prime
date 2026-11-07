@@ -125,13 +125,6 @@ class GitHub:
         sha, message = json.loads(done.stdout)
         return sha, (message.splitlines() or [""])[0]
 
-    def comments(self, issue: int) -> list[str]:
-        out = self.run(
-            "issue", "view", str(issue), "-R", REPOSITORY, "--json", "comments",
-            "--jq", "[.comments[].body]",
-        )
-        return json.loads(out)
-
     def texts(self, issue: int) -> list[str]:
         """An issue's body followed by its comments' bodies."""
         out = self.run(
@@ -139,6 +132,10 @@ class GitHub:
             "--jq", "[.body] + [.comments[].body]",
         )
         return json.loads(out)
+
+    def comments(self, issue: int) -> list[str]:
+        """An issue's comments' bodies."""
+        return self.texts(issue)[1:]
 
     def pull_request(self, target: list[str], folder: str | None) -> dict:
         """`gh pr view` of a number, URL or branch of this repository, or (no target) of the

@@ -1,6 +1,6 @@
 """Reads a shell command line the way the hooks need: its simple commands and `git push`es.
 
-Shared by the Bash hooks in this folder (progress_lines, test_slots, not_planned_owner,
+Shared by the Bash hooks in this folder (progress_lines, limit_test_runs, not_planned_owner,
 push_needs_test_list). A hook script puts this folder on `sys.path` first, because
 `python3 -I` leaves the script's folder off it.
 
@@ -14,7 +14,8 @@ Rules:
   - A `cd X` sets the folder of the commands after it, and `-C X` sets it for one git call;
     `~` is expanded. A path that is a variable, a substitution or `-` gives folder None.
   - `git push -d`, `--delete`, `-n`, `--dry-run`, `--all`, `--mirror` and `--tags` send no
-    named branch, so they give no push.
+    named branch, so they give no push. Neither does a refspec with an empty source
+    (`:branch` deletes it) or a tag (`tag <name>`, `refs/tags/...`).
 """
 
 import os
@@ -150,9 +151,15 @@ def git_pushes(simple: Simple) -> list[PushTarget]:
         return []
     positional = [w for w in rest if not w.startswith("-")]
     remote = positional[0] if positional else "origin"
+    refspecs = positional[1:] or ["HEAD"]
+    if refspecs[0] == "tag":
+        return []
     pushes = []
-    for refspec in positional[1:] or ["HEAD"]:
-        destination = refspec.lstrip("+").split(":")[-1].removeprefix("refs/heads/")
-        if destination:
+    for refspec in refspecs:
+        source, colon, destination = refspec.lstrip("+").partition(":")
+        if colon and not source:
+            continue
+        destination = (destination if colon else source).removeprefix("refs/heads/")
+        if destination and not destination.startswith("refs/tags/"):
             pushes.append(PushTarget(destination, where, remote))
     return pushes

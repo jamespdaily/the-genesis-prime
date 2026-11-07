@@ -1,6 +1,6 @@
 """After a merge: removes the merged branch's worktree when it is clean, and deletes the local branch.
 
-Old worktrees holding branch names made new builders work under other names (2026-11-06).
+Old worktrees holding branch names made new builders work under other names.
 progress_lines calls `clean_up` once it has seen a pull request MERGED; each result is one
 line for Claude (the hook's `additionalContext`), and a step that fails is a line, not a crash.
 
