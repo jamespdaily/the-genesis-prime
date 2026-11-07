@@ -1,6 +1,7 @@
 import envoy
 import gleam/list
 import literal_area
+import spell_tables
 import unitest
 
 /// Runs the tests. The tests tagged `serial` share a machine-wide resource (a
@@ -20,6 +21,9 @@ import unitest
 /// with `gleam test -- --tag dev_tool`; the coverage measure's own are also
 /// tagged `coverage` (`gleam test -- --tag coverage`).
 ///
+/// The client's spell plans are built before the first test starts: their one
+/// build for the run is setup, so no test's deadline holds it.
+///
 /// With `GENESIS_LITERAL_PEAK_FILE` set to a file, the run keeps the literal
 /// allocator's highest carriers size in it (`literal_area`), which `./check`
 /// reads when the run has ended.
@@ -28,6 +32,7 @@ pub fn main() -> Nil {
     Ok(file) -> literal_area.record_peak(into: file)
     Error(Nil) -> Nil
   }
+  let _plans = spell_tables.fixture_plans()
   unitest.run(
     unitest.Options(
       ..unitest.default_options(),

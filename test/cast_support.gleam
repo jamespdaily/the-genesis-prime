@@ -196,8 +196,7 @@ pub fn unbuilt() -> Spell {
 }
 
 /// The plans of the abilities above: the client's trees as `spell_plan.build`
-/// makes them from the planted rows (`spell_tables`, each value the client's own
-/// row), and the three planted spells by hand.
+/// makes them from the client's rows, and the three planted spells by hand.
 pub fn plans() -> Plans {
   with_spells(plans: spell_tables.fixture_plans(), spells: [
     exempt(),
