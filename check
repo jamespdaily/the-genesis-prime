@@ -48,20 +48,20 @@
 # script exits non-zero:
 #   format         gleam format --check src test dev
 #   gleam-build    gleam build --warnings-as-errors
-#   glinter        gleam run -m glinter                 (after gleam-build)
-#   generated-tables  gleam run -m genesis_prime/table_generator check
+#   glinter        glinter, started on the built code    (after gleam-build)
+#   generated-tables  genesis_prime/table_generator check, started on the built code
 #                  regenerates src/genesis_prime/table* from the client's
 #                  game tables in $GENESIS_TABLE_DIR (setup_check/extract_tables.py
 #                  fills it) and compares; skipped where GENESIS_NO_CLIENT=1
 #                                                       (after gleam-build)
-#   gleam-test     gleam test, with GENESIS_TEST_WORKERS module groups at
+#   gleam-test     the tests, started on the built code, with GENESIS_TEST_WORKERS module groups at
 #                  once (default 2; each group also runs its tests at once),
 #                  then the tests tagged serial, one at a time; the test tagged
 #                  world_data is left to the world-data part, and the tests tagged
 #                  dev_tool (the developer tools' own, run by hand with
 #                  `gleam test -- --tag dev_tool`) are skipped
 #                                                       (after gleam-build)
-#   world-data     gleam test -- --tag world_data, the whole world database's
+#   world-data     the tests tagged world_data, the whole world database's
 #                  spawn counts, in a VM of its own beside gleam-test (about a
 #                  minute alone); skipped where the test cannot run:
 #                  GENESIS_NO_CLIENT=1 or GENESIS_WORLD_DATA unset
@@ -76,7 +76,7 @@
 #                  the default region. Prints the peak and its share, for the
 #                  world-data run too (a VM with a region of its own)
 #                                                       (after gleam-test and world-data)
-#   code-rules     fast mode only: gleam test -- --tag code_rule, the tests of
+#   code-rules     fast mode only: the tests tagged code_rule, the tests of
 #                  test/code_rule, each tagged with unitest.tag("code_rule")
 #                  (`./check fast` has its own budget, GENESIS_CHECK_FAST_BUDGET_SECONDS)
 #                                                       (after gleam-build)
@@ -84,7 +84,7 @@
 #                  priv/migrations/*.sql applied in name order and recorded in
 #                  schema_migration by dev/apply_migrations.sh, each file and
 #                  its record in one psql --single-transaction
-#   squirrel       gleam run -m squirrel check, against that database
+#   squirrel       squirrel check, started on the built code, against that database
 #                                                       (after gleam-build and migrations)
 #   client-suite   the client scripts' tests that need no Ghidra (run with
 #                  GENESIS_INTEGRATION=0, whatever the caller exported)
@@ -99,10 +99,15 @@
 # everywhere else a missing client fails the part that reads it. It does not
 # turn off the patched OTP: CI sets GENESIS_OTP_DIR to the build it caches.
 #
-# gleam holds a lock on its build directory only while it compiles, not while a
-# test runs: gleam-build runs first, then glinter, generated-tables, gleam-test,
-# world-data and squirrel run beside each other, and literal-area follows the two
-# test runs. Every other part runs beside the chain.
+# gleam-build is the only part that compiles. Every `gleam build`, `gleam run` and
+# `gleam test` rewrites each package's .app file, even with nothing changed (gleam
+# 1.19.2), and not atomically, so a VM that is loading its applications while another
+# gleam compiles reads an empty .app file and dies at start (the first gleam-test run
+# of CI run 42349388041). So after gleam-build the parts start the built code
+# themselves (run_built: the same erl command gleam starts, without the compile) and
+# run beside each other: glinter, generated-tables, gleam-test, world-data and
+# squirrel, and literal-area follows the two test runs. Every other part runs beside
+# the chain.
 #
 # The committed message codec equals what the schema generates: the test
 # the_committed_codec_is_what_the_schema_generates_test (test/message_codec_test.gleam)
@@ -465,6 +470,22 @@ if [ "$setup_status" != 0 ]; then
 fi
 
 
+# run_built MODULE [ARGUMENTS...]: starts the code `gleam build` already built, the way
+# `gleam run -m MODULE -- ARGUMENTS` does (`gleam test` is the module
+# genesis_prime_test), without compiling: erl with -pa for each package's ebin, the
+# entry module genesis_prime@@main (the package's name) running MODULE, -noshell, and
+# the arguments after -extra, where the argv package reads them. The program's exit
+# status is the function's. MODULE is written as gleam's -m takes it (a folder
+# separator is `/`).
+run_built() {
+  local module=$1 dir paths=()
+  shift
+  for dir in "$PWD"/build/dev/erlang/*/ebin; do
+    [ -d "$dir" ] && paths+=(-pa "$dir")
+  done
+  erl "${paths[@]}" -eval "genesis_prime@@main:run(${module//\//@})" -noshell -extra "$@"
+}
+
 # step NAME COMMAND...: runs the command here, its output to a log, and records
 # its status and seconds under NAME; a part with a started record and no status
 # was running when the check stopped.
@@ -534,12 +555,12 @@ gleam_test() {
   local status=0
   if [ -n "$test_workers" ]; then
     GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
-      gleam test -- --workers "$test_workers" || status=1
+      run_built genesis_prime_test --workers "$test_workers" || status=1
   else
     GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
-      gleam test || status=1
+      run_built genesis_prime_test || status=1
   fi
-  gleam test -- --tag serial || status=1
+  run_built genesis_prime_test --tag serial || status=1
   return $status
 }
 
@@ -547,7 +568,7 @@ gleam_test() {
 # test run, with its own literal peak file: its VM has a literal region of its own,
 # the test alone holds 62% of it, and the first run's peak does not include it.
 world_data_test() {
-  GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-world-data" gleam test -- --tag world_data
+  GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-world-data" run_built genesis_prime_test --tag world_data
 }
 
 # literal_peak_within_limit FILE RUN LABEL: prints the peak the run RUN recorded in
@@ -595,7 +616,7 @@ client_suite() {
 }
 
 squirrel_check() {
-  DATABASE_URL=$(database_url) gleam run -m squirrel check
+  DATABASE_URL=$(database_url) run_built squirrel check
 }
 
 # squirrel_after_migrations: squirrel reads the database the migrations part made.
@@ -613,16 +634,16 @@ world_data_wanted() {
   [ "${GENESIS_NO_CLIENT:-}" != 1 ] && [ -n "${GENESIS_WORLD_DATA:-}" ]
 }
 
-# gleam_chain: the gleam parts. gleam holds its build directory's lock only while it
-# compiles, not while a test runs, so after gleam-build the parts that read the build
+# gleam_chain: the gleam parts. gleam-build compiles; after it no part compiles again
+# (see the note above), so the parts that read the build start it with run_built and
 # run beside each other (glinter, generated-tables, the tests, the world-data test,
 # squirrel), and literal-area follows the two test runs.
 gleam_chain() {
   local pids=() world_data_pid=""
   if step gleam-build gleam build --warnings-as-errors; then
-    ( step glinter gleam run -m glinter ) &
+    ( step glinter run_built glinter ) &
     pids+=("$!")
-    ( step generated-tables gleam run -m genesis_prime/table_generator check ) &
+    ( step generated-tables run_built genesis_prime/table_generator check ) &
     pids+=("$!")
     ( squirrel_after_migrations ) &
     pids+=("$!")
@@ -647,11 +668,12 @@ gleam_chain() {
   fi
 }
 
-# fast_chain: after gleam-build, glinter and the code-rule tests run beside each other.
+# fast_chain: after gleam-build, glinter and the code-rule tests run beside each other,
+# started on the built code.
 fast_chain() {
   if step gleam-build gleam build --warnings-as-errors; then
-    ( step glinter gleam run -m glinter ) &
-    step code-rules gleam test -- --tag code_rule
+    ( step glinter run_built glinter ) &
+    step code-rules run_built genesis_prime_test --tag code_rule
     wait
   else
     skip glinter "a part it needs failed: gleam-build"
