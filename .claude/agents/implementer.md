@@ -24,8 +24,19 @@ Record the live session again once, after the last fix round, not after each cha
 
 Write the tests from the list first, then the code, running only the named tests.
 
-Run `gleam build`, the tests you touch and `./check fast` as you go, then `./check` once on the commit you hand back. A check that fails once is reported with its cause, not rerun until green. Keep each command's output in a log in your scratch subfolder and read only the failing lines. Push after every commit. Hand back once: each function you added, the closest existing function or library call and why it is not used, each failure-table row's test, and the check results.
+Run `gleam build`, the tests you touch and `./check fast` as you go, then `./check` once on the commit you hand back. A check that fails once is reported with its cause, not rerun until green. Keep each command's output in a log in your scratch subfolder and read only the failing lines. Push after every commit.
+
+Hand back once, as a comment on the step's issue, then return the same text. A lost or compacted message then loses nothing. (The Podman step's hand-back never arrived and the coordinator waited two hours, 2026-11-06.) Use this block, every field filled or "none":
+
+```
+**Hand-back** <branch> @ <commit>
+- Check: ./check passed | failed (<part>: <cause>), wall time <s>
+- Tests seen failing first: <name> for each listed test
+- Test list: each listed test, present or missing
+- Functions added: <name> - closest existing function or library call, and why it is not used
+- Failure-table rows: <row> - <test>
+- Deviations from the brief: <what and why>
+- Found outside the list: <failure, gap or question, with evidence>
+```
 
 Leave pull requests to the coordinator: do not open, merge or close one.
-
-Report anything found outside the list, with its evidence: a failure, something missing, or a question.
