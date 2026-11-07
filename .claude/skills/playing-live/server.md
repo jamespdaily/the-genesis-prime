@@ -40,6 +40,7 @@ The server records each connection into a folder of its own under `~/.genesis-pr
 
 - `gleam run -m genesis_prime/recording_dump -- <folder or .jsonl> [--from <ms>] [--to <ms>] [--unit <id>]`: the sitting as messages, one line each (its header gives the columns).
 - `gleam run -m genesis_prime/unhandled_ranking -- <folder>...`: the client's messages the server does not handle, most frequent first, with their system's group.
+- `python3 -I dev/live_watch.py .`: while Jim plays, decodes the newest sitting every 30 s and prints each refused press, cast that struck nobody, and player death once.
 
 A sitting still being recorded is read up to its last whole line, and each of its connections ends with a line saying it has no closing line yet.
 
