@@ -160,11 +160,11 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
 
 pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_test() -> Nil {
   use <- owned_test.run(30_000)
-  // The pause is far longer than an attempt, so an ask that paused for an
-  // attempt's time would come much sooner than a pause after the one before.
+  // Every attempt is answered at once, so the ask is back in a few
+  // milliseconds: only the time it was given keeps it from giving up after the
+  // first failure.
   let settings =
     readiness.Settings(within_ms: 500, attempt_ms: 20, pause_ms: 100)
-  let asked = process.new_subject()
   let outcomes = process.new_subject()
   let tree = process.spawn_unlinked(process.sleep_forever)
   let started_ms = runtime.now().monotonic_ms
@@ -174,7 +174,6 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
         outcomes,
         readiness.await(
           probe: fn(reply) {
-            process.send(asked, runtime.now().monotonic_ms)
             Ok(answering(reply:, probed: Unreached, times: 1))
           },
           tree: option.Some(process.monitor(tree)),
@@ -187,10 +186,48 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
     == Ok(readiness.DatabaseUnreachable)
     as "no attempt reached the database, so the ask gives up"
   assert runtime.now().monotonic_ms - started_ms >= settings.within_ms
-    as "and only when its time has run out"
+    as "and only when its time has run out, not at the first failure"
+}
+
+pub fn an_ask_waits_a_whole_pause_after_each_attempt_that_failed_before_it_asks_again_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // The pause is far longer than an attempt, so an ask that paused for an
+  // attempt's time would come much sooner than a pause after the one before.
+  let settings =
+    readiness.Settings(within_ms: 30_000, attempt_ms: 20, pause_ms: 100)
+  let asked = process.new_subject()
+  let outcomes = process.new_subject()
+  let tree = process.spawn_unlinked(process.sleep_forever)
+  let _asker =
+    process.spawn_unlinked(fn() {
+      // The first two attempts fail and the one after them reaches the
+      // database. The asker takes each in turn, so what an attempt gets does
+      // not depend on how long any attempt waited.
+      let answers = process.new_subject()
+      list.each([Unreached, Unreached], process.send(answers, _))
+      process.send(
+        outcomes,
+        readiness.await(
+          probe: fn(reply) {
+            process.send(asked, runtime.now().monotonic_ms)
+            let probed = case process.receive(answers, within: 0) {
+              Ok(failed) -> failed
+              Error(Nil) -> Reached(recorded: Recorded([]))
+            }
+            Ok(answering(reply:, probed:, times: 1))
+          },
+          tree: option.Some(process.monitor(tree)),
+          settings: settings,
+          files: [],
+        ),
+      )
+    })
+  assert process.receive(outcomes, ask_support.event_wait_ms)
+    == Ok(readiness.Ready)
+    as "the third attempt reached the database"
   let times = mailbox_support.drain(asked)
-  assert list.length(times) >= 2
-    as "having asked again after a failure, not once"
+  assert list.length(times) >= 3
+    as "the ask asked again after each failure, one attempt for each failed answer"
   assert list.all(list.window_by_2(times), fn(pair) {
     pair.1 - pair.0 >= settings.pause_ms
   })
