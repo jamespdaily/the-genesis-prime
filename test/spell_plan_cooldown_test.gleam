@@ -322,7 +322,7 @@ pub fn the_rows_of_a_phase_are_those_whose_phase_flags_name_it_test() -> Nil {
 // ---- the cooldown groups ----
 
 pub fn a_spell_holds_the_cooldown_groups_its_row_names_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // The kit's Charged Shot 34718 holds the group 133 (`table_rows -- Spell4 34718`); the
   // planted Telekinetic Strike names 133 and 134, with rows for both.
   let rows =
@@ -361,7 +361,7 @@ pub fn a_spell_holds_the_cooldown_groups_its_row_names_test() -> Nil {
 }
 
 pub fn a_cooldown_group_with_no_spellcooldown_row_fails_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let assert Error(error) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_strike(
       name: "spellCoolDownId01",

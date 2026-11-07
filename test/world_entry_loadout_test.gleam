@@ -243,7 +243,7 @@ pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_
 }
 
 pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_equipped_items_first_and_the_set_last_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let #(frames, _) =
     entering(character: world_entry_support.character(
       class: 4,

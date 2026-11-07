@@ -36,7 +36,7 @@ import unitest
 fn planted(base base: Int) -> Spell {
   let assert Ok(spell) =
     spell_plan.in_plans(
-      plans: spell_tables.default_plans(),
+      plans: spell_tables.fixture_plans(),
       base: Spell4BaseId(base),
     )
     as "the planted class holds the ability"
@@ -44,7 +44,7 @@ fn planted(base base: Int) -> Spell {
 }
 
 pub fn telekinetic_strike_takes_1250_ms_has_a_global_cooldown_of_1000_ms_that_blocks_and_one_child_on_the_caster_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let spell = planted(base: 19_102)
   assert spell.spell4_id == Spell4Id(32_893)
   assert spell.method == Normal
@@ -71,7 +71,7 @@ pub fn telekinetic_strike_takes_1250_ms_has_a_global_cooldown_of_1000_ms_that_bl
 }
 
 pub fn crush_starts_its_child_100_ms_after_its_go_and_blocks_and_starts_no_global_cooldown_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let spell = planted(base: 19_022)
   assert spell.cooldown_ms == 35_000 as "Spell4.32812: cooldown 35 s"
   assert spell.global_cooldown
@@ -85,7 +85,7 @@ pub fn crush_starts_its_child_100_ms_after_its_go_and_blocks_and_starts_no_globa
 }
 
 pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_each_start_the_damage_spell_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let spell = planted(base: 23_173)
   assert spell.ignores_casting
     as "Spell4.38791: propertyFlags 0x4000003 has 0x1, so a press of Stagger is never refused 13"
@@ -94,7 +94,10 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
   assert spell.global_cooldown
     == GlobalCooldown(refused_while_running: False, starts_for_ms: Some(750))
     as "kind 1 starts the global cooldown and is not refused by it; row 180 is 750 ms"
-  let assert [staggering] = spell.proxies
+  let assert [staggering, fluff] = spell.proxies
+    as "Spell4Effects 83853 and 114677 are the two Proxies of Spell4 38791"
+  assert fluff.spell.spell4_id == Spell4Id(48_585) && fluff.phase_flags == -1
+    as "Spell4Effects 114677: a Proxy to 48585 (the Stalker's Assault Consumer Fluff) in every phase"
   assert staggering.spell.spell4_id == Spell4Id(38_780)
   assert staggering.spell.cast_bar == spell_plan.HidesCastBar
     as "Spell4Base 23162: castBarType 0, so the client never makes 38780 the current cast (Spell4Base.castBarType)"
@@ -105,23 +108,30 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
   assert spell_plan.go_times_ms(spell: staggering.spell) == [166, 366, 533, 700]
     as "each delay is the gap after the phase before (SpellPhase.phaseDelay)"
   list.each([0, 1, 2, 3], fn(phase) {
-    let assert [hit] =
+    let assert [hit, ..others] =
       spell_plan.proxies_in_phase(spell: staggering.spell, phase:, spent: None)
       as {
         "phase "
         <> int.to_string(phase)
-        <> " has one Proxy (phaseFlags 1, 2, 4, 8)"
+        <> " has a Proxy (phaseFlags 1, 2, 4, 8)"
       }
     assert hit.spell.spell4_id == Spell4Id(38_781)
       as "Spell4.38791: each phase proxies 38781"
+    // The last phase (flag 8) holds two Proxies more, 208128 to 79220 and 208198 to
+    // 79229, each behind Prerequisite 37037 (Spell4Effects, spellId 38780).
+    assert list.map(others, fn(other) { other.spell.spell4_id })
+      == case phase {
+        3 -> [Spell4Id(79_220), Spell4Id(79_229)]
+        _ -> []
+      }
   })
 }
 
 pub fn a_cost_reads_its_resource_slot_and_the_result_of_that_slot_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   assert planted(base: 19_019).costs
-    == [spell_plan.SlotCost(slot: 1, amount: 1, result: 51)]
-    as "Spell4CastResult.vital_cost: Mind Burst, type 6 (Resource1) of 1, slot 1, gives 51 (0x1403b3320)"
+    == [spell_plan.SpendAllCost(slot: 1, amount: 1, result: 51)]
+    as "Spell4CastResult.vital_cost: Mind Burst, type 6 (Resource1) of 1, slot 1, gives 51 (0x1403b3320); Spell4 32809 has innateCostEMMId0 4, which takes every point"
   let gamma_rays = planted(base: 16_322)
   assert gamma_rays.costs
     == [
@@ -134,7 +144,7 @@ pub fn a_cost_reads_its_resource_slot_and_the_result_of_that_slot_test() -> Nil 
 }
 
 pub fn a_spell_row_a_tree_names_that_the_tables_lack_fails_the_build_naming_the_table_and_row_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let rows = spell_tables.rows()
   let result =
     spell_tables.with_loaded(
@@ -217,7 +227,7 @@ pub fn a_multiphase_spell_with_no_kept_phase_row_fails_the_load_naming_the_table
 }
 
 pub fn the_load_fails_with_the_builds_reason_naming_the_table_and_row_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let rows = spell_tables.rows()
   let assert Error(error) =
     spell_tables.derivation_result(
@@ -324,7 +334,7 @@ fn stages_of(spell spell: Spell) -> List(#(Int, Int)) {
 }
 
 pub fn the_stages_of_a_tap_or_charge_ability_are_the_rows_of_spell4_thresholds_in_order_index_order_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   assert stages_of(spell: planted(base: 23_148)) == [#(38_766, 0)]
     as "Spell4Thresholds 238: Shred casts 38766"
   assert stages_of(spell: planted(base: 18_309)) == [#(32_079, 0), #(32_080, 0)]
@@ -340,7 +350,7 @@ pub fn the_stages_of_a_tap_or_charge_ability_are_the_rows_of_spell4_thresholds_i
 }
 
 pub fn a_stage_spell_is_a_full_tree_with_its_own_proxy_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let assert [stage] = planted(base: 23_148).stages
   let assert [proxy] = stage.spell.proxies
     as "Spell4Effects 83782: the stage 38766 proxies 39467"
@@ -363,7 +373,7 @@ pub fn a_stage_spell4_row_the_tables_lack_fails_the_build_naming_the_row_test() 
 }
 
 pub fn the_stage_resolver_gives_the_row_at_the_index_the_ability_at_minus_1_and_nothing_past_the_end_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let charged_shot = planted(base: 20_684)
   let spell4_id_at = fn(index) {
     spell_plan.stage_at(spell: charged_shot, index:)
@@ -380,7 +390,7 @@ pub fn the_stage_resolver_gives_the_row_at_the_index_the_ability_at_minus_1_and_
 }
 
 pub fn a_cost_in_a_stage_row_gives_the_result_of_its_vital_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let rows = spell_tables.rows()
   let costly =
     list.map(rows.spell4_thresholds, fn(row) {
@@ -415,7 +425,7 @@ pub fn a_cost_in_a_stage_row_gives_the_result_of_its_vital_test() -> Nil {
 }
 
 pub fn the_phases_channel_and_threshold_of_each_method_are_read_from_the_rows_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let pulse_blast = planted(base: 26_468)
   assert pulse_blast.method == Multiphase
   assert spell_plan.go_times_ms(spell: pulse_blast) == [0, 1250]
@@ -463,7 +473,7 @@ pub fn the_phases_channel_and_threshold_of_each_method_are_read_from_the_rows_te
 }
 
 pub fn a_channels_gos_fall_at_the_initial_delay_plus_each_pulse_and_its_finish_at_the_max_time_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let discharge = planted(base: 38_201)
   assert spell_plan.go_times_ms(spell: discharge) == [410, 820, 1230]
     as "Spell4.58832: (1250 - 410 + 410) / 410 = 3 gos (0x14053d1f0), at the initial delay plus each pulse (the times are a server choice)"
@@ -536,7 +546,7 @@ pub fn a_channeled_spell_with_no_pulse_time_fails_the_load_naming_the_spell_test
 }
 
 pub fn rampage_requires_at_least_250_of_slot_1_its_stages_require_nothing_and_its_waiver_is_kept_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let rampage = planted(base: 37_968)
   assert rampage.requirements
     == [
@@ -606,7 +616,7 @@ fn rampage_rows_costing(
 }
 
 pub fn each_eval_code_reads_as_compare_by_eval_does_and_above_4_on_the_percentage_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // 0x1407a1750: 0 and 5 equal, 1 and 6 greater, 2 and 7 at least, 3 and 8 less, 4
   // and 9 at most, any other false; 0x1403b1780: above 4 on the percentage.
   let expected = [
@@ -639,7 +649,7 @@ pub fn each_eval_code_reads_as_compare_by_eval_does_and_above_4_on_the_percentag
 }
 
 pub fn a_requirement_of_a_vital_the_server_does_not_read_fails_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   assert spell_tables.with_loaded(rows: rampage_rows(1, 2), body: fn(tables) {
       spell_plan.build(tables:)
     })
@@ -651,7 +661,7 @@ pub fn a_requirement_of_a_vital_the_server_does_not_read_fails_the_load_test() -
 }
 
 pub fn a_requirement_of_a_slot_the_step_does_not_hold_fails_the_load_each_named_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // 0x1403b1780 reads types 16 and 27 to 29 as slots 7 to 10; the server holds
   // the resource of slots 0 to 6 only, so a requirement of another slot is not read.
   list.each([16, 27, 28, 29], fn(requirement_type) {
@@ -699,7 +709,7 @@ pub fn a_cost_of_type_16_is_refused_177_as_a_vital_no_rule_of_the_server_holds_t
 }
 
 pub fn the_costs_of_impale_and_electrocute_give_the_results_of_their_vital_slots_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   assert planted(base: 23_161).costs
     == [spell_plan.SlotCost(slot: 3, amount: 35, result: 53)]
     as "Spell4.38779: an innate cost of type 8 (Resource3) of 35 gives 53"
@@ -709,7 +719,7 @@ pub fn the_costs_of_impale_and_electrocute_give_the_results_of_their_vital_slots
 }
 
 pub fn the_cast_bar_of_each_method_follows_what_the_client_shows_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let shows = fn(base, pressed) {
     spell_plan.shows_cast_bar(spell: planted(base:), pressed:)
   }

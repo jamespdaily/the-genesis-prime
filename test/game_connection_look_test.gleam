@@ -232,7 +232,7 @@ fn writes_the_suit_then_the_empty_slot(world world: World) -> Nil {
 }
 
 pub fn a_players_suit_is_written_then_the_empty_slot_to_itself_and_each_viewer_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   writes_the_suit_then_the_empty_slot(world: planted_world())
 }
 
@@ -294,7 +294,7 @@ fn a_late_viewer_gets_the_suit_or_the_base_list(world world: World) -> Nil {
 }
 
 pub fn a_viewer_that_arrives_mid_suit_is_created_with_it_and_one_after_the_end_with_the_base_list_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   a_late_viewer_gets_the_suit_or_the_base_list(world: planted_world())
 }
 
@@ -321,7 +321,7 @@ fn a_viewer_that_sees_the_player_again_gets_the_suit(
 }
 
 pub fn a_viewer_that_stops_seeing_the_player_and_sees_it_again_mid_suit_gets_a_new_0x262_with_the_suit_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   a_viewer_that_sees_the_player_again_gets_the_suit(world: planted_world())
 }
 
@@ -408,7 +408,7 @@ fn the_death_writes_the_restore_to_the_player_and_each_viewer(
 }
 
 pub fn the_death_mid_suit_writes_the_restore_to_the_player_and_each_viewer_and_a_later_viewer_gets_the_base_list_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   the_death_writes_the_restore_to_the_player_and_each_viewer(
     world: planted_world(),
   )
@@ -463,7 +463,7 @@ fn a_camp_tells_the_viewers_removed_and_no_look(world world: World) -> Nil {
 }
 
 pub fn a_camp_mid_suit_tells_each_viewer_removed_with_no_look_and_the_next_entry_has_the_base_look_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   a_camp_tells_the_viewers_removed_and_no_look(world: planted_world())
 }
 

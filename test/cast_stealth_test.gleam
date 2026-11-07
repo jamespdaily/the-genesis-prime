@@ -1,6 +1,6 @@
 //// The cast rule's stealth (`genesis_prime/game/cast` `State.stealth`, `stealthed`,
-//// `damage_taken`, `StealthChanged`). The Stalker's toggle is the planted rows of
-//// 46073, 38784 and 38783 with the client's values (`spell_tables.rows_with_stealth`);
+//// `damage_taken`, `StealthChanged`). The Stalker's toggle is the client's rows of
+//// 46073, 38784 and 38783 (`spell_tables.fixture_plans`);
 //// every other spell is planted by hand (`cast_support.child` with a Stealth row), on a
 //// clock the test drives. Expected values come from these places:
 //// - `Spell4.46073`: a press of the toggle proxies 38784 'Stealth - On' when the caster
@@ -68,7 +68,7 @@ fn caster() -> Caster {
 /// The plans of the planted Stalker toggle with these spells in place of the planted
 /// bases they name.
 fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: spell_tables.plans_with_stealth(), spells:)
+  support.with_spells(plans: spell_tables.fixture_plans(), spells:)
 }
 
 /// A spell with no stealth row whose go does what its value says to the stealth.
@@ -311,7 +311,7 @@ fn toggled() -> #(State, List(Effect)) {
 }
 
 pub fn a_press_of_the_toggle_when_not_stealthed_starts_38784_whose_go_lists_83834_and_holds_the_stealth_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, effects) = toggled()
   assert children_started(effects:) == [38_784]
     as "7050 (type 116, comparison 2) passes and 8127 (comparison 1) fails: only 38784 starts"
@@ -332,7 +332,7 @@ pub fn a_press_of_the_toggle_when_not_stealthed_starts_38784_whose_go_lists_8383
 }
 
 pub fn the_stealth_change_is_the_last_effect_of_38784s_go_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(_, inputs) =
     press_by_inputs(
       plans: plans_of([]),
@@ -352,7 +352,7 @@ pub fn the_stealth_change_is_the_last_effect_of_38784s_go_test() -> Nil {
 }
 
 pub fn a_press_of_the_toggle_when_stealthed_takes_38784_off_and_ends_the_stealth_after_it_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(state, entered) = toggled()
   let on = child_of(spell4_id: 38_784, effects: entered)
   // The toggle's own cooldown of 25 s would refuse this press, but 159128 cleared it
@@ -446,7 +446,7 @@ fn impales_gates() -> #(prerequisite.Prerequisite, prerequisite.Prerequisite) {
 }
 
 pub fn an_attack_from_stealth_reads_the_stealth_in_its_gates_then_ends_it_after_its_effects_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(on_gate, off_gate) = impales_gates()
   let impale =
     Spell(
@@ -527,7 +527,7 @@ fn first_phase_gone(
 }
 
 pub fn an_attack_of_value_1_with_two_phases_reads_the_stealth_in_its_second_phase_gate_and_ends_it_after_that_phase_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(_, state, entered, first, second_go) =
     first_phase_gone(spell: two_phase_attack(
       spell4_id: 38_779,
@@ -554,7 +554,7 @@ pub fn an_attack_of_value_1_with_two_phases_reads_the_stealth_in_its_second_phas
 }
 
 pub fn an_attack_of_value_0_with_two_phases_ends_the_stealth_at_its_first_go_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // Value 0 is built as it ends the stealth at a go (the fact's guess, 'when the cast
   // starts', is not built): the first go ends it, so the second phase's Proxies read
   // the caster as not stealthed.
@@ -574,7 +574,7 @@ pub fn an_attack_of_value_0_with_two_phases_ends_the_stealth_at_its_first_go_tes
 }
 
 pub fn a_cast_cancelled_after_one_of_its_goes_ends_the_stealth_as_it_stops_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // The server's choice, the client giving no case (Spell4.spellCastStealthChange): the
   // goes that ran applied their effects (Spell4.spellCastStealthChange.break), so a
   // value 1 cast that stops after one and before its last ends the stealth as it stops.
@@ -603,7 +603,7 @@ pub fn a_cast_cancelled_after_one_of_its_goes_ends_the_stealth_as_it_stops_test(
 }
 
 pub fn a_cast_cancelled_before_its_first_go_keeps_the_stealth_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // No go ran, so none of its effects was applied: the stealth stays.
   let waiting =
     Spell(
@@ -637,7 +637,7 @@ pub fn a_cast_cancelled_before_its_first_go_keeps_the_stealth_test() -> Nil {
 }
 
 pub fn a_stealth_row_of_a_later_phase_of_a_value_1_spell_is_kept_when_the_older_source_ends_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // The cast's own Stealth row, applied in phase 1 with the cast's last go, is its own
   // source: only the casts held before it come off.
   let makes =
@@ -663,7 +663,7 @@ pub fn a_stealth_row_of_a_later_phase_of_a_value_1_spell_is_kept_when_the_older_
 }
 
 pub fn an_attack_of_value_1_or_0_ends_the_stealth_the_same_way_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // Shred 38765 holds 1 and Cancel 38783 holds 0 (Spell4.spellCastStealthChange): both
   // end the stealth of their one go; the toggle's own cancel is tested above.
   list.each(
@@ -697,7 +697,7 @@ pub fn an_attack_of_value_1_or_0_ends_the_stealth_the_same_way_test() -> Nil {
 }
 
 pub fn a_spell_of_value_2_cast_on_its_own_ends_nothing_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // 70775, Impale's Fluff child, holds 2 (Spell4.spellCastStealthChange).
   let #(plans, state, _) =
     stealthed_by_base_1(others: [
@@ -717,7 +717,7 @@ pub fn a_spell_of_value_2_cast_on_its_own_ends_nothing_test() -> Nil {
 }
 
 pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // A spell of value 1 that holds a Stealth row of its own: its break ends the stealth
   // other casts hold, never the stealth the cast made (Spell4.spellCastStealthChange.break).
   let makes =
@@ -765,7 +765,7 @@ pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_
 }
 
 pub fn a_go_after_the_stealth_ended_finds_nothing_to_end_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(plans, state, _) =
     stealthed_by_base_1(others: [
       attack(spell4_id: 38_779, base: 2, change: EndsStealthAfterLastGo),
@@ -797,7 +797,7 @@ fn damaged(state state: State, at ms: Int) -> #(State, List(Effect)) {
 }
 
 pub fn damage_takes_the_cast_of_a_source_it_breaks_off_and_ends_the_stealth_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(_, state, entered) = stealthed_by_base_1(others: [])
   let #(state, effects) = damaged(state:, at: 3000)
   assert support.removed_targets(support.writes(effects:))
@@ -811,7 +811,7 @@ pub fn damage_takes_the_cast_of_a_source_it_breaks_off_and_ends_the_stealth_test
 }
 
 pub fn damage_does_not_end_a_stealth_kept_on_damage_or_one_not_held_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let plans = plans_of([kept()])
   let #(state, _) =
     support.press_by(
@@ -829,7 +829,7 @@ pub fn damage_does_not_end_a_stealth_kept_on_damage_or_one_not_held_test() -> Ni
 }
 
 pub fn damage_ends_the_cast_it_breaks_and_keeps_the_stealth_another_cast_holds_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(plans, state, entered) = stealthed_by_base_1(others: [kept()])
   let #(state, _) =
     support.press_by(
@@ -849,7 +849,7 @@ pub fn damage_ends_the_cast_it_breaks_and_keeps_the_stealth_another_cast_holds_t
 }
 
 pub fn a_cast_that_holds_both_a_broken_and_a_kept_source_loses_both_with_its_node_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // Both rows are of the one cast, as 38784 holds 83834 and 95774: its node holds both.
   let both =
     support.stealthing(spell4_id: 38_784, base: 1, rows: [
@@ -874,7 +874,7 @@ pub fn a_cast_that_holds_both_a_broken_and_a_kept_source_loses_both_with_its_nod
 // ---- RemoveStealth ----
 
 pub fn a_remove_stealth_row_on_the_caster_ends_a_broken_source_and_a_kept_one_with_one_change_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let removes =
     Spell(
       ..attack(spell4_id: 51_908, base: 2, change: KeepsStealth),
@@ -917,7 +917,7 @@ pub fn a_remove_stealth_row_on_the_caster_ends_a_broken_source_and_a_kept_one_wi
 // ---- settled once for each input ----
 
 pub fn a_second_stealth_cast_at_the_stack_cap_takes_the_first_off_with_no_change_and_one_cancel_ends_it_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // 38784 holds stack group 173 of cap 1 (Spell4StackGroup 173): a second cast pushes
   // the first off the caster.
   let stacking = Spell(..broken(), stack: lasting.Stack(group_id: 173, cap: 1))
@@ -962,7 +962,7 @@ pub fn a_second_stealth_cast_at_the_stack_cap_takes_the_first_off_with_no_change
 // ---- death and leaving ----
 
 pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_changes_once_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let plans = plans_of([kept()])
   let #(state, entered) =
     support.press_by(
@@ -1000,7 +1000,7 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_ch
 }
 
 pub fn leaving_while_stealthed_writes_nothing_and_the_next_stay_starts_unstealthed_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(_, state, _) = stealthed_by_base_1(others: [])
   let #(left, effects) = cast.left(cast: state)
   assert support.writes(effects:) == []

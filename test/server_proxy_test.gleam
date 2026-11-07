@@ -64,7 +64,7 @@ fn planted_by(
 // ---- 1 ----
 
 pub fn the_seed_row_plants_42148_into_the_damage_spell_at_its_last_go_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let assert Ok(plans) = planted_by(rows: [seed()])
   let host = striking_proxy(plans)
   assert host.spell.spell4_id == id.Spell4Id(37_302)
@@ -90,7 +90,7 @@ pub fn the_seed_row_plants_42148_into_the_damage_spell_at_its_last_go_test() -> 
 }
 
 pub fn a_go_that_starts_no_spell_at_once_takes_the_proxy_itself_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let rows = [Row(spell4_base_id: 19_102, phase: 0, spell4_id: 42_148)]
   let assert Ok(plans) = planted_by(rows:)
   let assert Ok(strike) =
@@ -106,7 +106,7 @@ pub fn a_go_that_starts_no_spell_at_once_takes_the_proxy_itself_test() -> Nil {
 }
 
 pub fn a_base_with_no_row_keeps_its_tree_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let assert Ok(planted) = planted_by(rows: [seed()])
   let assert Ok(untouched) = planted_by(rows: [])
   assert dict.get(planted, 19_102) == dict.get(untouched, 19_102)
@@ -139,7 +139,7 @@ fn keys_of(refusals: List(Refusal)) -> List(String) {
 }
 
 pub fn a_row_whose_base_has_no_plan_is_refused_naming_the_table_and_the_key_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let refusals =
     refused_by(rows: [Row(spell4_base_id: 99_999, phase: 0, spell4_id: 42_148)])
   assert keys_of(refusals) == ["99999 0 42148"]
@@ -149,7 +149,7 @@ pub fn a_row_whose_base_has_no_plan_is_refused_naming_the_table_and_the_key_test
 }
 
 pub fn a_row_whose_phase_is_not_a_go_of_the_plan_is_refused_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let refusals =
     refused_by(rows: [
       Row(spell4_base_id: 26_468, phase: 2, spell4_id: 42_148),
@@ -162,7 +162,7 @@ pub fn a_row_whose_phase_is_not_a_go_of_the_plan_is_refused_test() -> Nil {
 }
 
 pub fn a_row_whose_spell_has_no_row_or_whose_tree_fails_is_refused_with_the_plans_reason_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let missing =
     refused_by(rows: [Row(spell4_base_id: 26_468, phase: 1, spell4_id: 99_999)])
   let assert [Refusal(rule: missing_rule, ..)] = missing
@@ -202,7 +202,7 @@ pub fn a_row_whose_spell_has_no_row_or_whose_tree_fails_is_refused_with_the_plan
 }
 
 pub fn every_refused_row_is_named_together_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let refusals =
     refused_by(rows: [
       Row(spell4_base_id: 99_999, phase: 0, spell4_id: 42_148),

@@ -305,7 +305,7 @@ pub fn effect_kind_reads_interrupt_armor_aimed_at_the_caster_test() -> Nil {
 // ---- the client's tables ----
 
 pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let assert [esper] =
     list.filter(

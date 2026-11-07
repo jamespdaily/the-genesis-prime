@@ -22,6 +22,7 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_rows
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/reference
 import gleam/int
@@ -32,7 +33,7 @@ import planted_table.{type Cell}
 import simplifile
 
 /// Where the committed files are.
-pub const folder = "test/fixture/client_tables"
+pub const folder = fixture_rows.fixture_folder
 
 /// Every table's rows in the fixture, by the table's name: one list of cells
 /// per row, in the table's column order.
@@ -150,16 +151,17 @@ pub fn check_root(
   table table: String,
   id id: Int,
 ) -> Result(Int, Refusal) {
-  case list.any(roots, fn(root) { root.table == table && root.id == id }) {
-    True -> Ok(id)
-    False -> Error(NotARoot(table:, id:))
-  }
+  use <- bool.guard(
+    when: !list.any(roots, fn(root) { root.table == table && root.id == id }),
+    return: Error(NotARoot(table:, id:)),
+  )
+  Ok(id)
 }
 
 /// A row of the fixture a test names: `id` of `table`, which must be a root of
 /// `roots.tsv`, so the row is in the fixture whatever else it reaches. A row
 /// that is not one stops the test with the fix.
-pub fn root(table: String, id: Int) -> Int {
+pub fn root(table table: String, id id: Int) -> Int {
   case check_root(roots: roots(), table:, id:) {
     Ok(id) -> id
     Error(refusal) -> panic as describe(refusal)
@@ -223,15 +225,15 @@ pub fn rows() -> Rows {
 
 /// The index of a column of the table.
 fn column_index(
-  schema: tbl_file.Schema,
-  column: String,
+  schema schema: tbl_file.Schema,
+  column column: String,
 ) -> Result(Int, Refusal) {
   list.index_map(schema.columns, fn(held, index) { #(held.name, index) })
   |> list.key_find(column)
   |> result.replace_error(NoColumn(table: schema.table, column:))
 }
 
-fn id_of(row: List(Cell)) -> Int {
+fn id_of(row row: List(Cell)) -> Int {
   case row {
     [planted_table.Integer(id), ..] -> id
     _ -> panic as "a fixture row holds its id first"
@@ -240,13 +242,13 @@ fn id_of(row: List(Cell)) -> Int {
 
 /// The row with the cells of the named columns replaced.
 fn with_cells(
-  schema: tbl_file.Schema,
-  row: List(Cell),
+  schema schema: tbl_file.Schema,
+  row row: List(Cell),
   with changes: List(#(String, Cell)),
 ) -> Result(List(Cell), Refusal) {
   use indexed <- result.map(
     list.try_map(changes, fn(change) {
-      column_index(schema, change.0)
+      column_index(schema:, column: change.0)
       |> result.map(fn(index) { #(index, change.1) })
     }),
   )
@@ -258,16 +260,19 @@ fn with_cells(
   })
 }
 
-fn rows_of(rows: Rows, schema: tbl_file.Schema) -> List(List(Cell)) {
+fn rows_of(
+  rows rows: Rows,
+  schema schema: tbl_file.Schema,
+) -> List(List(Cell)) {
   result.unwrap(dict.get(rows, schema.table), [])
 }
 
 fn row_of(
-  rows: Rows,
-  schema: tbl_file.Schema,
-  id: Int,
+  rows rows: Rows,
+  schema schema: tbl_file.Schema,
+  id id: Int,
 ) -> Result(List(Cell), Refusal) {
-  list.find(rows_of(rows, schema), fn(row) { id_of(row) == id })
+  list.find(rows_of(rows:, schema:), fn(row) { id_of(row:) == id })
   |> result.replace_error(NoRow(table: schema.table, id:))
 }
 
@@ -280,13 +285,13 @@ pub fn change(
   with changes: List(#(String, Cell)),
 ) -> Result(Rows, Refusal) {
   use schema <- result.try(schema_of(table))
-  use row <- result.try(row_of(rows, schema, id))
-  use changed_row <- result.map(with_cells(schema, row, changes))
+  use row <- result.try(row_of(rows:, schema:, id:))
+  use changed_row <- result.map(with_cells(schema:, row:, with: changes))
   dict.insert(
     rows,
     table,
-    list.map(rows_of(rows, schema), fn(held) {
-      case id_of(held) == id {
+    list.map(rows_of(rows:, schema:), fn(held) {
+      case id_of(row: held) == id {
         True -> changed_row
         False -> held
       }
@@ -304,18 +309,24 @@ pub fn add(
   with changes: List(#(String, Cell)),
 ) -> Result(Rows, Refusal) {
   use schema <- result.try(schema_of(table))
-  use row <- result.try(row_of(rows, schema, copy_of))
-  use _ <- result.try(case row_of(rows, schema, id) {
-    Ok(_) -> Error(RowHeld(table:, id:))
-    Error(_) -> Ok(Nil)
-  })
-  use new_row <- result.map(
-    with_cells(schema, row, [#("ID", planted_table.Integer(id)), ..changes]),
+  use row <- result.try(row_of(rows:, schema:, id: copy_of))
+  use <- bool.guard(
+    when: result.is_ok(row_of(rows:, schema:, id:)),
+    return: Error(RowHeld(table:, id:)),
   )
-  dict.insert(rows, table, list.append(rows_of(rows, schema), [new_row]))
+  use new_row <- result.map(
+    with_cells(schema:, row:, with: [
+      #("ID", planted_table.Integer(id)),
+      ..changes
+    ]),
+  )
+  dict.insert(rows, table, list.append(rows_of(rows:, schema:), [new_row]))
 }
 
-fn run_on(rows: Rows, body: fn(store.Tables) -> a) -> a {
+/// Runs the body on these rows loaded under a key of their own and unloaded
+/// afterwards, for a case that needs more than one edit (`change` and `add`
+/// make them); the shared load is not touched.
+pub fn on_rows(rows rows: Rows, body body: fn(store.Tables) -> a) -> a {
   let tables = loaded(rows, owned_key.new())
   let result = body(tables)
   store.unload(tables)
@@ -333,7 +344,7 @@ pub fn changed(
   body body: fn(store.Tables) -> a,
 ) -> a {
   case change(rows: rows(), table:, id:, with: changes) {
-    Ok(rows) -> run_on(rows, body)
+    Ok(rows) -> on_rows(rows:, body:)
     Error(refusal) -> panic as describe(refusal)
   }
 }
@@ -351,7 +362,7 @@ pub fn added(
   body body: fn(store.Tables) -> a,
 ) -> a {
   case add(rows: rows(), table:, copy_of:, id:, with: changes) {
-    Ok(rows) -> run_on(rows, body)
+    Ok(rows) -> on_rows(rows:, body:)
     Error(refusal) -> panic as describe(refusal)
   }
 }

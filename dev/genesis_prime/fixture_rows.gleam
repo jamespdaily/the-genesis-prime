@@ -100,6 +100,8 @@ pub type Refusal {
   ClientFile(table: String, reason: String)
   /// A rule names a column a table does not have.
   RuleColumnMissing(table: String, column: String)
+  /// A file could not be read or written.
+  FileFailed(path: String, reason: String)
 }
 
 /// How to say why a refusal happened.
@@ -118,6 +120,8 @@ pub fn describe(refusal: Refusal) -> String {
       <> " has no row in the client"
     ClientFile(table:, reason:) ->
       "the client's table " <> table <> " could not be read: " <> reason
+    FileFailed(path:, reason:) ->
+      "the file " <> path <> " could not be used: " <> reason
     RuleColumnMissing(table:, column:) ->
       "a closure rule names the column "
       <> column
@@ -150,7 +154,7 @@ pub fn parse_roots(text: String) -> Result(List(Root), Refusal) {
 // ---------------------------------------------------------------- the text
 
 /// What a cell's text says, by the type of its column.
-pub type Field {
+type Field {
   /// An integer column's number.
   Number(Int)
   /// A float column's 32 bits.
@@ -179,17 +183,39 @@ fn cell_text(value: table_rows.Value) -> String {
   }
 }
 
+/// Why the text of a cell is not a value of its column's type.
+pub type CellRefusal {
+  NotADecimalInteger
+  NotEightHexCharacters
+  NotHexWithItsPrefix
+  NotTrueOrFalse
+  BadEscape
+  NotAFiniteFloat
+}
+
+/// What a cell refusal says.
+fn describe_cell(refusal: CellRefusal) -> String {
+  case refusal {
+    NotADecimalInteger -> "not a decimal integer"
+    NotEightHexCharacters -> "not 8 hex characters"
+    NotHexWithItsPrefix -> "not `0x` and 8 hex characters"
+    NotTrueOrFalse -> "not true or false"
+    BadEscape -> "an escape that is not \\\\, \\t, \\n or \\r"
+    NotAFiniteFloat -> "the bits are not a finite 32-bit float"
+  }
+}
+
 /// What the text of a cell in a column of this type says, or why it is not a
 /// value of the type.
-pub fn parse_field(
-  column_type: tbl_file.ColumnType,
-  text: String,
-) -> Result(Field, String) {
+fn parse_field(
+  column_type column_type: tbl_file.ColumnType,
+  text text: String,
+) -> Result(Field, CellRefusal) {
   case column_type {
     tbl_file.Integer32 | tbl_file.Integer64 ->
       int.parse(text)
       |> result.map(Number)
-      |> result.replace_error("not a decimal integer")
+      |> result.replace_error(NotADecimalInteger)
     tbl_file.Float32 ->
       case text {
         "0x" <> hex ->
@@ -197,16 +223,16 @@ pub fn parse_field(
             8 ->
               int.base_parse(hex, 16)
               |> result.map(Bits)
-              |> result.replace_error("not 8 hex characters")
-            _ -> Error("not 8 hex characters")
+              |> result.replace_error(NotEightHexCharacters)
+            _ -> Error(NotEightHexCharacters)
           }
-        _ -> Error("not `0x` and 8 hex characters")
+        _ -> Error(NotHexWithItsPrefix)
       }
     tbl_file.Boolean32 ->
       case text {
         "true" -> Ok(Flag(True))
         "false" -> Ok(Flag(False))
-        _ -> Error("not true or false")
+        _ -> Error(NotTrueOrFalse)
       }
     tbl_file.Utf16Text ->
       unescape(string.to_graphemes(text), "")
@@ -214,14 +240,17 @@ pub fn parse_field(
   }
 }
 
-fn unescape(letters: List(String), done: String) -> Result(String, String) {
+fn unescape(
+  letters: List(String),
+  done: String,
+) -> Result(String, CellRefusal) {
   case letters {
     [] -> Ok(done)
     ["\\", "\\", ..rest] -> unescape(rest, done <> "\\")
     ["\\", "t", ..rest] -> unescape(rest, done <> "\t")
     ["\\", "n", ..rest] -> unescape(rest, done <> "\n")
     ["\\", "r", ..rest] -> unescape(rest, done <> "\r")
-    ["\\", ..] -> Error("an escape that is not \\\\, \\t, \\n or \\r")
+    ["\\", ..] -> Error(BadEscape)
     [letter, ..rest] -> unescape(rest, done <> letter)
   }
 }
@@ -235,7 +264,7 @@ pub type TextRefusal {
   /// A row has not as many cells as the table has columns.
   WrongCellCount(table: String, line: Int, expected: Int, found: Int)
   /// A cell is not a value of its column's type.
-  BadCell(table: String, line: Int, column: String, reason: String)
+  BadCell(table: String, line: Int, column: String, reason: CellRefusal)
 }
 
 /// What a refusal of a file's text says, with the fix.
@@ -269,15 +298,15 @@ pub fn describe_text(refusal: TextRefusal) -> String {
       <> ", column "
       <> column
       <> ": "
-      <> reason
+      <> describe_cell(reason)
   }
 }
 
 fn value_of(
   column_type: tbl_file.ColumnType,
   text: String,
-) -> Result(table_rows.Value, String) {
-  use field <- result.try(parse_field(column_type, text))
+) -> Result(table_rows.Value, CellRefusal) {
+  use field <- result.try(parse_field(column_type:, text:))
   case column_type, field {
     tbl_file.Integer64, Number(number) -> Ok(table_rows.Integer64(number))
     _, Number(number) -> Ok(table_rows.Integer32(number))
@@ -286,7 +315,7 @@ fn value_of(
     _, Bits(bits) ->
       case <<bits:size(32)>> {
         <<value:float-size(32)>> -> Ok(table_rows.Float32(value:, bits:))
-        _ -> Error("the bits are not a finite 32-bit float")
+        _ -> Error(NotAFiniteFloat)
       }
   }
 }
@@ -296,57 +325,68 @@ pub fn parse_table(
   schema schema: tbl_file.Schema,
   text text: String,
 ) -> Result(List(List(Cell)), TextRefusal) {
-  let table = schema.table
   case string.split(text, "\n") {
     [] -> Ok([])
     [header, ..lines] -> {
       use _ <- result.try(check_columns(
-        table,
-        1,
-        list.map(schema.columns, fn(column) { column.name }),
-        string.split(header, "\t"),
+        table: schema.table,
+        position: 1,
+        expected: list.map(schema.columns, fn(column) { column.name }),
+        found: string.split(header, "\t"),
       ))
       lines
       |> list.filter(fn(line) { line != "" })
       |> list.index_map(fn(line, index) { #(line, index + 2) })
       |> list.try_map(fn(numbered) {
-        let #(line, number) = numbered
-        let texts = string.split(line, "\t")
-        let expected = list.length(schema.columns)
-        case list.length(texts) == expected {
-          False ->
-            Error(WrongCellCount(
-              table:,
-              line: number,
-              expected:,
-              found: list.length(texts),
-            ))
-          True ->
-            list.zip(schema.columns, texts)
-            |> list.try_map(fn(pair) {
-              let #(column, text) = pair
-              value_of(column.column_type, text)
-              |> result.map(table_rows.Cell(column.name, _))
-              |> result.map_error(fn(reason) {
-                BadCell(table:, line: number, column: column.name, reason:)
-              })
-            })
-        }
+        parse_line(schema:, line: numbered.0, number: numbered.1)
       })
     }
   }
 }
 
+/// The cells of a line of a table's file, which is line `number` of it.
+fn parse_line(
+  schema schema: tbl_file.Schema,
+  line line: String,
+  number number: Int,
+) -> Result(List(Cell), TextRefusal) {
+  let texts = string.split(line, "\t")
+  let expected = list.length(schema.columns)
+  use <- bool.guard(
+    when: list.length(texts) != expected,
+    return: Error(WrongCellCount(
+      table: schema.table,
+      line: number,
+      expected:,
+      found: list.length(texts),
+    )),
+  )
+  list.zip(schema.columns, texts)
+  |> list.try_map(fn(pair) {
+    let #(column, text) = pair
+    value_of(column.column_type, text)
+    |> result.map(table_rows.Cell(column.name, _))
+    |> result.map_error(fn(reason) {
+      BadCell(table: schema.table, line: number, column: column.name, reason:)
+    })
+  })
+}
+
 fn check_columns(
-  table: String,
-  position: Int,
-  expected: List(String),
-  found: List(String),
+  table table: String,
+  position position: Int,
+  expected expected: List(String),
+  found found: List(String),
 ) -> Result(Nil, TextRefusal) {
   case expected, found {
     [], [] -> Ok(Nil)
     [name, ..more_expected], [same, ..more_found] if name == same ->
-      check_columns(table, position + 1, more_expected, more_found)
+      check_columns(
+        table:,
+        position: position + 1,
+        expected: more_expected,
+        found: more_found,
+      )
     [name, ..], [other, ..] ->
       Error(HeaderDiffers(table:, position:, expected: name, found: other))
     [name, ..], [] ->
@@ -453,6 +493,27 @@ type UntypedReference {
 }
 
 const untyped_references = [
+  UntypedReference(
+    "Prerequisite",
+    [#("prerequisiteTypeId0", 11)],
+    "objectId0",
+    "Prerequisite",
+    "prerequisite.nested_loaded (a type 11 condition names a row; a missing row fails it)",
+  ),
+  UntypedReference(
+    "Prerequisite",
+    [#("prerequisiteTypeId1", 11)],
+    "objectId1",
+    "Prerequisite",
+    "prerequisite.nested_loaded (a type 11 condition names a row; a missing row fails it)",
+  ),
+  UntypedReference(
+    "Prerequisite",
+    [#("prerequisiteTypeId2", 11)],
+    "objectId2",
+    "Prerequisite",
+    "prerequisite.nested_loaded (a type 11 condition names a row; a missing row fails it)",
+  ),
   UntypedReference(
     "Spell4Effects",
     [#("effectType", 26)],
@@ -807,42 +868,53 @@ fn walk(
         dict.get(selected, table)
         |> result.map(set.contains(_, id))
         |> result.unwrap(False)
+      // `bool.guard` computes its `return` before it tests, so a guard whose
+      // return is the recursive call would walk the rest of the queue twice.
       case already {
-        True -> walk(rest, selected, digests)
-        False -> {
-          let assert Ok(digest) = dict.get(digests, table)
-          case set.contains(digest.ids, id) {
-            False -> Error(RootRowMissing(table:, id:))
-            True -> {
-              let selected =
-                dict.upsert(selected, table, fn(ids) {
-                  set.insert(option.unwrap(ids, set.new()), id)
-                })
-              let reached =
-                dict.get(digest.reaches, id)
-                |> result.unwrap([])
-                |> list.filter(fn(target) { exists(digests, target) })
-              walk(
-                queue: list.append(
-                  list.append(reached, children_of(digest, id, digests)),
-                  rest,
-                ),
-                selected:,
-                digests:,
-              )
-            }
-          }
-        }
+        True -> walk(queue: rest, selected:, digests:)
+        False -> visit(table:, id:, rest:, selected:, digests:)
       }
     }
   }
 }
 
+/// Selects a row not yet selected, then walks what it reaches before the rest
+/// of the queue.
+fn visit(
+  table table: String,
+  id id: Int,
+  rest rest: List(#(String, Int)),
+  selected selected: Selection,
+  digests digests: Dict(String, Digest),
+) -> Result(Selection, Refusal) {
+  let assert Ok(digest) = dict.get(digests, table)
+  use <- bool.guard(
+    when: !set.contains(digest.ids, id),
+    return: Error(RootRowMissing(table:, id:)),
+  )
+  let selected =
+    dict.upsert(selected, table, fn(ids) {
+      set.insert(option.unwrap(ids, set.new()), id)
+    })
+  let reached =
+    dict.get(digest.reaches, id)
+    |> result.unwrap([])
+    |> list.filter(fn(target) { exists(digests, target) })
+  walk(
+    queue: list.append(
+      list.append(reached, children_of(digest:, id:, digests:)),
+      rest,
+    ),
+    selected:,
+    digests:,
+  )
+}
+
 /// The child rows of a row, by each child rule whose parent is the row's table.
 fn children_of(
-  digest: Digest,
-  id: Int,
-  digests: Dict(String, Digest),
+  digest digest: Digest,
+  id id: Int,
+  digests digests: Dict(String, Digest),
 ) -> List(#(String, Int)) {
   dict.get(digest.keys, id)
   |> result.unwrap([])
@@ -1150,36 +1222,45 @@ pub fn files() -> List(#(String, String)) {
 }
 
 /// What `NOTICE` says.
-pub fn notice() -> String {
-  "The .tsv files in this folder hold rows of the tables of the WildStar client, extracted\n"
-  <> "by setup_check/extract_tables.py from the client's own game table files and read with\n"
-  <> "the server's table reader (genesis_prime/table/loader/tbl_file). Each row is copied as the\n"
-  <> "client holds it. roots.tsv names the rows the tests ask for; the generator\n"
-  <> "(dev/genesis_prime/fixture_rows.gleam) adds the rows they reach and the small tables\n"
-  <> "whole. Run `gleam run -m genesis_prime/fixture_rows` to make them again. The tests read\n"
-  <> "them as the client's rows (test/fixture_tables.gleam).\n"
+fn notice() -> String {
+  "The .tsv files in this folder hold rows of the tables of the WildStar client, extracted
+by setup_check/extract_tables.py from the client's own game table files and read with
+the server's table reader (genesis_prime/table/loader/tbl_file). Each row is copied as the
+client holds it. roots.tsv names the rows the tests ask for; the generator
+(dev/genesis_prime/fixture_rows.gleam) adds the rows they reach and the small tables
+whole. Run `gleam run -m genesis_prime/fixture_rows` to make them again. The tests read
+them as the client's rows (test/fixture_tables.gleam).
+"
+}
+
+/// Writes one file of the fixture.
+fn write_file(path: String, text: String) -> Result(Nil, Refusal) {
+  simplifile.write(path, text)
+  |> result.map_error(fn(error) {
+    FileFailed(path:, reason: simplifile.describe_error(error))
+  })
 }
 
 /// Writes the fixture's files into the folder.
-fn write(fixture: Fixture, folder: String) -> Result(Nil, String) {
+fn write(fixture: Fixture, folder: String) -> Result(Nil, Refusal) {
   use _ <- result.try(
     simplifile.create_directory_all(folder)
-    |> result.map_error(simplifile.describe_error),
+    |> result.map_error(fn(error) {
+      FileFailed(path: folder, reason: simplifile.describe_error(error))
+    }),
   )
   use _ <- result.try(
     list.try_each(files(), fn(pair) {
       let #(table, file) = pair
       let assert Ok(text) = dict.get(fixture.tables, table)
-      simplifile.write(folder <> "/" <> file <> ".tsv", text)
-      |> result.map_error(simplifile.describe_error)
+      write_file(folder <> "/" <> file <> ".tsv", text)
     }),
   )
-  use _ <- result.try(
-    simplifile.write(folder <> "/" <> stale_file <> ".tsv", fixture.stale)
-    |> result.map_error(simplifile.describe_error),
-  )
-  simplifile.write(folder <> "/NOTICE", notice())
-  |> result.map_error(simplifile.describe_error)
+  use _ <- result.try(write_file(
+    folder <> "/" <> stale_file <> ".tsv",
+    fixture.stale,
+  ))
+  write_file(folder <> "/NOTICE", notice())
 }
 
 /// Makes the files again from `roots.tsv` and the client's tables.
@@ -1187,13 +1268,15 @@ pub fn main() -> Nil {
   let outcome = {
     use text <- result.try(
       simplifile.read(fixture_folder <> "/roots.tsv")
-      |> result.map_error(simplifile.describe_error),
+      |> result.map_error(fn(error) {
+        FileFailed(
+          path: fixture_folder <> "/roots.tsv",
+          reason: simplifile.describe_error(error),
+        )
+      }),
     )
-    use roots <- result.try(parse_roots(text) |> result.map_error(describe))
-    use fixture <- result.try(
-      generate(roots:, folder: table_folder.path())
-      |> result.map_error(describe),
-    )
+    use roots <- result.try(parse_roots(text))
+    use fixture <- result.try(generate(roots:, folder: table_folder.path()))
     use _ <- result.map(write(fixture, fixture_folder))
     list.each(files(), fn(pair) {
       let assert Ok(text) = dict.get(fixture.tables, pair.0)
@@ -1209,8 +1292,8 @@ pub fn main() -> Nil {
   }
   case outcome {
     Ok(Nil) -> Nil
-    Error(reason) -> {
-      io.println_error(reason)
+    Error(refusal) -> {
+      io.println_error(describe(refusal))
       dev_exit.halt(1)
     }
   }

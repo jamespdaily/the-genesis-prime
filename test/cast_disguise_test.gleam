@@ -130,7 +130,7 @@ fn listed(effects effects: List(Effect)) -> List(Int) {
 // ---- the gates ----
 
 pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans =
     support.plans_of([holder(modifiers: [exile_row(), dominion_row()])])
   let #(_, exile) =
@@ -174,7 +174,7 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
 // ---- the time ----
 
 pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_after_its_delay_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans = support.plans_of([holder(modifiers: [exile_row()])])
   let #(state, effects) =
     support.press_as(
@@ -223,7 +223,7 @@ pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_
 // ---- the end ----
 
 pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_and_cancel_its_timers_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans =
     support.plans_of([
       holder(modifiers: [exile_row()]),
@@ -317,7 +317,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
 }
 
 pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_none_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // A spell whose propertyFlags have bit 0x2000 takes the larger of delay and duration
   // for the node's life: with a delay of 500 the node ends at go + 10,250 and the row's
   // own end is go + 10,750, so the node's end ends the disguise first.
@@ -359,7 +359,7 @@ pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_no
 // ---- the aim and the gate on the target ----
 
 pub fn a_disguise_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let gated =
     suit_row(
       id: 112_543,

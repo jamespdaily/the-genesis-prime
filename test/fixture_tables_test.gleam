@@ -7,6 +7,7 @@ import genesis_prime/fixture_rows
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
+import genesis_prime/table_rows
 import gleam/dict
 import gleam/list
 import gleam/result
@@ -36,7 +37,7 @@ pub fn the_committed_rows_load_with_the_servers_requirements_and_derivations_tes
 
 // 2
 pub fn a_file_whose_header_differs_from_the_schema_names_the_table_and_the_first_column_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   // The second column of the client's Spell4 table is `description`
   // (`spell4.schema`, from the client file's header).
   assert fixture_tables.parse_table(
@@ -65,8 +66,8 @@ pub fn a_file_whose_header_differs_from_the_schema_names_the_table_and_the_first
 
 // 3
 pub fn the_committed_files_are_what_the_generator_makes_from_the_client_test() -> Nil {
+  use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
-  use <- owned_test.run(1_200_000)
   let assert Ok(fixture) =
     fixture_rows.generate(
       roots: fixture_tables.roots(),
@@ -147,7 +148,10 @@ pub fn every_reference_of_a_committed_row_reaches_a_committed_row_or_one_the_cli
 }
 
 /// The committed rows as the generator reads the client's.
-fn fixture_rows_of_folder() {
+fn fixture_rows_of_folder() -> Result(
+  dict.Dict(String, List(List(table_rows.Cell))),
+  fixture_rows.TextRefusal,
+) {
   list.try_map(fixture_tables.schemas(), fn(schema) {
     let assert Ok(text) =
       simplifile.read(fixture_tables.folder <> "/" <> schema.file <> ".tsv")
@@ -159,7 +163,7 @@ fn fixture_rows_of_folder() {
 
 // 5
 pub fn a_row_that_is_not_a_root_fails_with_the_fix_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let roots = fixture_tables.roots()
   assert fixture_tables.check_root(roots:, table: "Spell4", id: 1)
     == Error(fixture_tables.NotARoot(table: "Spell4", id: 1))
@@ -181,9 +185,10 @@ pub fn a_float_cells_bits_are_written_back_unchanged_test() -> Nil {
   // table (`gleam run -m genesis_prime/table_rows -- Spell4Effects 178144`).
   let expected = <<0x4021fbe7:size(32)>>
   let id = Spell4EffectsId(178_144)
-  let _ = fixture_tables.root("Spell4", 58_586)
+  let spell = fixture_tables.root("Spell4", 58_586)
   let assert Ok(effect) =
     spell4_effects.get(tables: fixture_tables.shared(), id:)
+  assert effect.spell_id == spell as "the effect is a row of the root's spell"
   assert <<effect.parameter_value00:float-size(32)>> == expected
     as "the loaded float has the client's 32 bits"
 }
@@ -228,7 +233,7 @@ pub fn changed_and_added_load_under_their_own_key_and_leave_the_shared_load_alon
 }
 
 pub fn an_edit_of_an_unknown_table_row_or_column_is_refused_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let rows = fixture_tables.rows()
   let id = fixture_tables.root("Spell4", 41_276)
   let cell = planted_table.Integer(1)
@@ -271,7 +276,7 @@ pub fn an_edit_of_an_unknown_table_row_or_column_is_refused_test() -> Nil {
 }
 
 pub fn a_row_added_under_an_id_the_table_holds_is_refused_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let id = fixture_tables.root("Spell4", 41_276)
   assert fixture_tables.add(
       rows: fixture_tables.rows(),
@@ -287,10 +292,11 @@ pub fn a_row_added_under_an_id_the_table_holds_is_refused_test() -> Nil {
 pub fn the_fixture_is_loaded_once_and_no_client_table_is_held_twice_test() -> Nil {
   use <- owned_test.run(120_000)
   let key = fixture_tables.shared_key()
-  let _ = fixture_tables.shared()
+  let first = fixture_tables.shared()
   let held = planted_table.persistent_terms_under(key)
-  let _ = fixture_tables.shared()
   assert held > 0 as "the shared load stores its tables under its key"
+  assert fixture_tables.shared() == first
+    as "a second call to shared() returns the same tables"
   assert planted_table.persistent_terms_under(key) == held
     as "a second call to shared() stores nothing more"
   assert literal_area.tables_held_twice() == []

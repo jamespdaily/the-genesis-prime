@@ -12,6 +12,7 @@
 ////   point held, which gives each effect of the spell a tag the rule must read (0 or 1).
 //// The rows are planted on Telekinetic Strike's spell (`spell_tables`).
 
+import fixture_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/spell_plan.{
   Applied, Held, LeftOut, PlannedProc, PlannedProxy, ProcOfAnotherKind,
@@ -19,7 +20,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/spell4
-import genesis_prime/table/spell4_effects.{type Spell4Effects}
+import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -210,54 +211,51 @@ fn first_of(effects effects: List(Spell4Effects), id id: Int) -> Spell4Effects {
 }
 
 pub fn a_spend_all_spell_refuses_an_effect_tag_the_rule_does_not_read_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Mind Burst's planted Spell4 32809 spends every point of slot 1 (innateCostEMMId0 4 on a
-  // cost of type 6, `Spell4.32809`), and its damage effects 61993 and 61994 hold
-  // emmComparison 2 and 1 (`spell_tables.rows_with_mind_burst_spend`).
-  let rows =
-    spell_tables.rows_with_mind_burst_spend(emm_id: 4, cost: #(6, 1), damage: [
-      #(2, 0, 4),
-      #(1, 0, 4),
-    ])
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    let assert Ok(mind_burst) = spell4.get(tables:, id: Spell4Id(32_809))
-      as "the planted Mind Burst"
-    assert spell_plan.spends_all(tables:, row: mind_burst)
-      as "innateCostEMMId0 4 on a slot cost is a spend of every point held"
-    let effects =
-      spell4_effects.all(tables)
-      |> list.filter(fn(effect) {
-        effect.spell_id == 32_809 && effect.effect_type == 8
-      })
-    let assert [refused, read] = effects
-      as "the planted spell holds the two damage effects"
-    let spends = spell_plan.RowPlace(struck_by: None, spends_all: True)
-    assert spell_plan.read_row(
-        tables:,
-        spell_groups: spell_plan.spell_groups(tables:),
-        place: spends,
-        effect: refused,
-      )
-      == Error(spell_plan.SpendComparisonNotRead(
-        spell4_id: 32_809,
-        effect_id: refused.id,
-        comparison: 2,
-      ))
-      as "emmComparison 2 chooses nothing the rule reads (Spell4Effects.emmComparison)"
-    assert spell_plan.read_row(
-        tables:,
-        spell_groups: spell_plan.spell_groups(tables:),
-        place: spends,
-        effect: read,
-      )
-      == Ok(ReadByArea)
-      as "emmComparison 1 is read"
-    assert effect_row.unread_by_type(tables:, effects:)
-      == dict.from_list([#(8, 1)])
-      as "the measure counts the refused row not read and the other read, the spell's cost read from its Spell4 row"
-    assert result.is_error(spell_plan.build(tables:))
-      as "the plan of the spell fails its load on the row"
-  })
+  use <- owned_test.run(120_000)
+  // Mind Burst's Spell4 32809 spends every point of slot 1 (innateCostEMMId0 4 on a
+  // cost of type 6, `Spell4.32809`). Its damage effects 61993 and 61994 hold
+  // emmComparison 0 in the client's rows; no client row holds a 2, and the server's
+  // load refuses one (`spell_plan_spend_test`), so the two effects here are those rows
+  // as records with emmComparison 2 and 1, read without a load.
+  let tables = fixture_tables.shared()
+  let assert Ok(mind_burst) = spell4.get(tables:, id: Spell4Id(32_809))
+    as "Mind Burst is in the client's rows"
+  assert spell_plan.spends_all(tables:, row: mind_burst)
+    as "innateCostEMMId0 4 on a slot cost is a spend of every point held"
+  let effect_of = fn(id) {
+    let assert Ok(found) =
+      list.find(spell4_effects.all(tables), fn(effect) { effect.id == id })
+      as "the client's row is there"
+    found
+  }
+  let refused =
+    Spell4Effects(..effect_of(61_993), emm_comparison: 2, emm_value: 0)
+  let read = Spell4Effects(..effect_of(61_994), emm_comparison: 1, emm_value: 0)
+  let effects = [refused, read]
+  let spends = spell_plan.RowPlace(struck_by: None, spends_all: True)
+  assert spell_plan.read_row(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place: spends,
+      effect: refused,
+    )
+    == Error(spell_plan.SpendComparisonNotRead(
+      spell4_id: 32_809,
+      effect_id: refused.id,
+      comparison: 2,
+    ))
+    as "emmComparison 2 chooses nothing the rule reads (Spell4Effects.emmComparison)"
+  assert spell_plan.read_row(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place: spends,
+      effect: read,
+    )
+    == Ok(ReadByArea)
+    as "emmComparison 1 is read"
+  assert effect_row.unread_by_type(tables:, effects:)
+    == dict.from_list([#(8, 1)])
+    as "the measure counts the refused row not read and the other read, the spell's cost read from its Spell4 row"
 }
 
 pub fn a_row_whose_tables_lack_its_prerequisite_is_not_read_test() -> Nil {

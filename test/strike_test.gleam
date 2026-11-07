@@ -1012,7 +1012,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
 }
 
 pub fn each_pulse_of_electrocutes_channel_selects_the_foes_its_area_row_names_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   let close_by =
@@ -1054,21 +1054,10 @@ pub fn each_pulse_of_electrocutes_channel_selects_the_foes_its_area_row_names_te
 
 // ---- a spell with an innate cost EMM id strikes with the effects its n chooses ----
 
-/// The areas of the planted rows with Mind Burst's spend as the client's rows hold it
-/// (`spell_tables.rows_with_mind_burst_spend`).
+/// The areas of the client's rows, where Mind Burst spends every Psi Point held
+/// (`Spell4.32809`).
 fn mind_burst_areas() -> spell_area.Areas {
-  let assert Ok(areas) =
-    spell_tables.with_loaded_deriving(
-      rows: spell_tables.rows_with_mind_burst_spend(
-        emm_id: 4,
-        cost: #(6, 1),
-        damage: spell_tables.mind_burst_damage,
-      ),
-      derivations: [spell_plan.derivation()],
-      body: fn(tables) { spell_area.build(tables:) },
-    )
-    as "the planted Mind Burst builds its areas"
-  areas
+  spell_tables.fixture_areas()
 }
 
 /// The go the cast rule asks for when an Esper holding `points` Psi Points presses
@@ -1076,7 +1065,7 @@ fn mind_burst_areas() -> spell_area.Areas {
 fn mind_burst_go(points points: Int) -> GoAsked {
   let assert Ok(mind_burst) =
     spell_plan.in_plans(
-      plans: spell_tables.plans_with_mind_burst_spend(),
+      plans: spell_tables.fixture_plans(),
       base: id.Spell4BaseId(19_019),
     )
     as "the planted Esper holds Mind Burst"
@@ -1117,7 +1106,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
 }
 
 pub fn mind_burst_at_p_points_strikes_with_only_the_damage_effect_of_p_minus_1_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let areas = mind_burst_areas()
   list.each([1, 2, 3, 4, 5], fn(points) {
     let chosen =
@@ -1135,7 +1124,7 @@ pub fn mind_burst_at_p_points_strikes_with_only_the_damage_effect_of_p_minus_1_t
 }
 
 pub fn a_3_point_mind_burst_tells_its_creature_only_effect_61995_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let picture = dict.from_list([#(21, foe_at(x: 0.0, z: -3.0))])
   let chosen =
     strike.select(
@@ -1165,7 +1154,7 @@ pub fn a_3_point_mind_burst_tells_its_creature_only_effect_61995_test() -> Nil {
 }
 
 pub fn a_go_with_no_n_strikes_with_every_damage_effect_the_spell_holds_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let go = mind_burst_go(points: 3)
   let chosen =
     strike.select(

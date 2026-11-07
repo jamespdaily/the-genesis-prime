@@ -105,7 +105,7 @@ fn differences(
 pub fn every_planted_spell_row_holds_the_clients_values_in_each_column_it_sets_or_the_plan_reads_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let rows = spell_tables.rows_with_stealth()
+  let rows = spell_tables.rows()
   let found =
     list.flatten([
       differences(schema: spell4.schema, rows: rows.spell4, read: [
@@ -156,18 +156,12 @@ pub fn every_planted_spell_row_holds_the_clients_values_in_each_column_it_sets_o
       differences(schema: prerequisite.schema, rows: rows.prerequisites, read: [
         "flags",
       ]),
-      // The SpellLevel row 99421 is test data (`spell_tables.rows_with_stealth`): the
-      // client holds none for 46073.
-      differences(
-        schema: spell_level.schema,
-        rows: list.filter(rows.spell_levels, fn(row) {
-          case row {
-            [planted_table.Integer(99_421), ..] -> False
-            _ -> True
-          }
-        }),
-        read: ["classId", "characterLevel", "prerequisiteId", "spell4Id"],
-      ),
+      differences(schema: spell_level.schema, rows: rows.spell_levels, read: [
+        "classId",
+        "characterLevel",
+        "prerequisiteId",
+        "spell4Id",
+      ]),
       differences(schema: class.schema, rows: rows.classes, read: [
         "vitalEnumResource00", "vitalEnumResource01", "vitalEnumResource02",
         "vitalEnumResource03", "vitalEnumResource04", "vitalEnumResource05",

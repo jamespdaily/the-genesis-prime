@@ -202,7 +202,7 @@ pub fn an_esper_struck_through_its_absorb_sees_stat_22_fall_and_so_does_its_view
 }
 
 pub fn a_medic_struck_through_its_planted_absorb_sees_stat_22_fall_and_so_does_its_viewer_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   a_struck_pool_falls_for_the_player_and_its_viewer(
     world: planted_world(),
     left_after: 89,
@@ -222,7 +222,7 @@ fn an_absorb_that_ends_tells_zero(world world: World) -> Nil {
 }
 
 pub fn an_absorb_that_ends_tells_zero_to_the_client_and_viewers_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   an_absorb_that_ends_tells_zero(world: planted_world())
 }
 
@@ -252,7 +252,7 @@ fn a_late_viewer_is_created_with_the_pool(world world: World) -> Nil {
 }
 
 pub fn a_viewer_arriving_while_an_absorb_holds_is_created_with_stat_22_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   a_late_viewer_is_created_with_the_pool(world: planted_world())
 }
 

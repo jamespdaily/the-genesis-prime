@@ -53,7 +53,7 @@ fn state_of(frames frames: List(Frame)) -> PlayerCharacterState {
 const classes = [1, 2, 3, 4, 5, 7]
 
 pub fn the_entry_writes_0x25e_once_right_after_0x19b_before_the_loadout_for_every_class_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   list.each(classes, fn(class) {
     let sent =
       cast_support.ids(frames: frames(

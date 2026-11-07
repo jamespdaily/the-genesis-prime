@@ -46,7 +46,7 @@ fn classes() -> List(#(Int, List(Int), Int, option.Option(Int))) {
 }
 
 pub fn the_entry_sends_the_innate_after_the_abilities_and_0x19f_after_0x19d_for_each_class_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   list.each(classes(), fn(class) {
     let #(class_id, _, _, _) = class
@@ -241,7 +241,7 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
 }
 
 pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_starts_no_passive_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(120_000)
   let #(effects, entered) =
     world_entry_support.entry(
       tables: character_tables.shared(),

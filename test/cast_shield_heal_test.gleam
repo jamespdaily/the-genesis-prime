@@ -167,7 +167,7 @@ fn heal_description(
 // ---- what the go lists ----
 
 pub fn a_go_with_a_shield_heal_lists_it_on_the_caster_with_a_heal_description_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans = support.plans_of([healer(heals: [energize(delay_ms: 10)])])
   let #(_, effects) =
     support.press_as(
@@ -195,7 +195,7 @@ pub fn a_go_with_a_shield_heal_lists_it_on_the_caster_with_a_heal_description_te
 }
 
 pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans = support.plans_of([healer(heals: [energize(delay_ms: 0)])])
   let #(_, effects) =
     support.press_as(
@@ -237,7 +237,7 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
 }
 
 pub fn a_shield_heal_with_a_delay_lands_on_a_timer_of_its_delay_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans = support.plans_of([healer(heals: [energize(delay_ms: 10)])])
   let #(state, effects) =
     support.press_as(
@@ -262,7 +262,7 @@ pub fn a_shield_heal_with_a_delay_lands_on_a_timer_of_its_delay_test() -> Nil {
 }
 
 pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // The same go raises ShieldCapacityMax (property 41) by 100: the heal is still 0.3 of
   // the missing shield the caster had when the go began, 200, not 0.3 of 300.
   let raising =
@@ -327,7 +327,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
 // ---- the caster's node ----
 
 pub fn a_delayed_shield_heal_holds_the_casters_node_until_it_lands_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans = support.plans_of([healer(heals: [energize(delay_ms: 500)])])
   let #(state, effects) =
     support.press_as(
@@ -353,7 +353,7 @@ pub fn a_delayed_shield_heal_holds_the_casters_node_until_it_lands_test() -> Nil
 }
 
 pub fn a_heal_whose_nodes_end_fires_first_still_lands_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // The node's end and the heal's start are due in the same millisecond; whichever the
   // shell delivers first, the heal lands once.
   let plans = support.plans_of([healer(heals: [energize(delay_ms: 10)])])
@@ -394,7 +394,7 @@ fn last_of(timers: List(TimerId)) -> TimerId {
 // ---- gates ----
 
 pub fn a_shield_heal_behind_a_caster_gate_that_fails_is_neither_listed_nor_applied_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // Row 210834's prerequisite 24571: type 50 on the AMP spell 59178, which this caster
   // does not hold.
   let gate = prerequisites.single(id: 24_571, condition: #(50, 1, 0, 59_178))
@@ -438,7 +438,7 @@ pub fn a_shield_heal_behind_a_caster_gate_that_fails_is_neither_listed_nor_appli
 // ---- dropped heals ----
 
 pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_taken_off_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let delayed = healer(heals: [energize(delay_ms: 500)])
   let started_by = fn(effects) {
     support.timer_numbers(
@@ -555,7 +555,7 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
 // ---- rows the rule does not apply ----
 
 pub fn a_ticking_shield_heal_whose_gate_passes_is_not_applied_and_writes_one_debug_line_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // Row 210834: 0.125 of the maximum shield each 1000 ms for 8000 ms; a periodic heal
   // needs a 0x7f8 for each tick, which no rule of the server sends.
   let ticking =
@@ -586,7 +586,7 @@ pub fn a_ticking_shield_heal_whose_gate_passes_is_not_applied_and_writes_one_deb
 }
 
 pub fn two_shield_heal_rows_of_one_go_each_land_and_a_later_go_heals_again_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let second = heal_of(id: 228_999, delay_ms: 0, condition: Always)
   let plans =
     support.plans_of([
@@ -616,7 +616,7 @@ pub fn two_shield_heal_rows_of_one_go_each_land_and_a_later_go_heals_again_test(
 }
 
 pub fn two_goes_with_overlapping_delayed_heals_both_land_each_at_its_own_delay_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   // Goes at 1000 and 1100 of a Multiphase-like cast, each with a heal of delay 500: the
   // second go cancels nothing of the first.
   let plans =
@@ -674,7 +674,7 @@ pub fn two_goes_with_overlapping_delayed_heals_both_land_each_at_its_own_delay_t
 // ---- viewers ----
 
 pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(120_000)
   let plans = support.plans_of([healer(heals: [energize(delay_ms: 10)])])
   let #(_, effects) =
     support.press_as(
