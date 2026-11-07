@@ -1,11 +1,12 @@
 -module(database_support_ffi).
--export([once/2, run_identifier/0, run_command/3, open_watcher/3, environment/1]).
+-export([once/2, lock_waiters/1, run_identifier/0, run_command/3, open_watcher/3, environment/1]).
 
 %% Runs Create once in this VM, whichever test asks first, and gives every
 %% later caller the same value. The value lives in a persistent term, written
 %% once per key; a lock on the key makes a second caller wait for the first and
-%% wakes it when the first ends (local_lock_ffi). The keys are a small fixed set
-%% of literals in the tests, so the atom made from each is bounded.
+%% wakes it when the first ends (local_lock_ffi). The atom made from each key is
+%% bounded by the repository's files and literals: the keys are literals, and
+%% some are made per source file or per label count.
 once(Key, Create) ->
     Slot = {?MODULE, Key},
     case persistent_term:get(Slot, none) of
@@ -13,7 +14,7 @@ once(Key, Create) ->
             Value;
         none ->
             local_lock_ffi:with_lock(
-                binary_to_atom(<<"database_support_once ", Key/binary>>),
+                lock_name(Key),
                 fun() ->
                     case persistent_term:get(Slot, none) of
                         {value, Value} ->
@@ -25,6 +26,23 @@ once(Key, Create) ->
                     end
                 end
             )
+    end.
+
+%% The name of the lock on a key.
+lock_name(Key) ->
+    binary_to_atom(<<"database_support_once ", Key/binary>>).
+
+%% The processes waiting for the lock on Key: those monitoring the gate that
+%% holds its name. None when the lock is free.
+lock_waiters(Key) ->
+    case whereis(lock_name(Key)) of
+        undefined ->
+            [];
+        Gate ->
+            case process_info(Gate, monitored_by) of
+                {monitored_by, Waiters} -> Waiters;
+                undefined -> []
+            end
     end.
 
 %% Runs Create while the process holds the lock that every other caller of the

@@ -13,9 +13,9 @@
 %% Runs Fun while holding the lock Name and returns what Fun returns. A caller
 %% that finds the lock held waits for its holder to end and tries again. The
 %% lock is not re-entrant: a Fun that takes the same Name again waits forever.
-%% Name is an atom the caller made from a small fixed set, since atoms are never
+%% Name is an atom the caller made from a bounded set, since atoms are never
 %% collected.
-with_lock(Name, Fun) when is_atom(Name) ->
+with_lock(Name, Fun) when is_atom(Name), Name =/= undefined ->
     Caller = self(),
     Gate = spawn(fun() -> gate(Caller) end),
     try register(Name, Gate) of
