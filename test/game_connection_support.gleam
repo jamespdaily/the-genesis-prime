@@ -1524,22 +1524,19 @@ pub fn spell_started_of(
   )
 }
 
-/// The map's answer to the join, with the loadout the client's tables give the
+/// The map's answer to the join, with the loadout these tables give the
 /// character's class and faction in place of the planted one.
-pub fn with_the_clients_loadout(
+pub fn with_the_tables_loadout(
   joined joined: map.Outgoing,
+  tables tables: store_tables.Tables,
   class_id class_id: Int,
 ) -> map.Outgoing {
   let assert map.Joined(unit:, max_health:, incarnation:, clock_origin_ms:, ..) =
     joined
     as "the map took the player"
   let assert Ok(held) =
-    loadout.of(
-      tables: client_tables.shared(),
-      class_id: ClassId(class_id),
-      faction_id: 166,
-    )
-    as "the client's tables hold a Novice set for the class"
+    loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
+    as "the tables hold a Novice set for the class"
   map.Joined(unit:, loadout: held, max_health:, incarnation:, clock_origin_ms:)
 }
 
@@ -1556,8 +1553,8 @@ pub fn entered_on_the_clients_tables(
   )
 }
 
-/// The same with these settings, whose tables must be the client's (the map's answer
-/// carries the loadout the client's tables give the class).
+/// The same with these settings; the map's answer carries the loadout their
+/// tables give the class.
 pub fn entered_with(
   settings settings: game_connection.Settings,
   class_id class_id: Int,
@@ -1573,7 +1570,11 @@ pub fn entered_with(
     state:,
     taken:,
     outcome: step.Answer(
-      FromMap(with_the_clients_loadout(joined: map_answer(taken), class_id:)),
+      FromMap(with_the_tables_loadout(
+        joined: map_answer(taken),
+        tables: settings.tables,
+        class_id:,
+      )),
     ),
   )
 }
