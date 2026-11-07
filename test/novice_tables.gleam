@@ -1007,19 +1007,40 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
 /// about 1.5 MB: only the tests that cast an ability of another method load these
 /// (`character_tables.shared_with_spell_trees`), and the plain `files` stay small.
 pub fn spell_tree_files() -> List(#(String, BitArray)) {
-  let rows = spell_tables.rows()
+  spell_tree_files_of(rows: spell_tables.rows(), creature_attack: False)
+}
+
+/// The same from these planted rows (`spell_tables.rows_with_volatility`), with the
+/// creature auto-attack's rows too when `creature_attack` (`with_creature_attack`), for the
+/// tables the content load reads the creature kinds from.
+pub fn spell_tree_files_of(
+  rows rows: spell_tables.Rows,
+  creature_attack creature_attack: Bool,
+) -> List(#(String, BitArray)) {
+  let attack_spells = case creature_attack {
+    True -> creature_attack_spell4_rows()
+    False -> []
+  }
+  let attack_effects = case creature_attack {
+    True -> creature_attack_effect_rows_of(multiplier_bits: 1_065_353_216)
+    False -> []
+  }
   [
     planted_table.file(
       spell4.schema,
-      list.append(rows.spell4, [
-        planted_table.row(spell4.schema, [
-          #("ID", Integer(42_352)),
-          #("spell4BaseIdBaseSpell", Integer(26_543)),
-          #(
-            "spell4ConditionsIdCaster",
-            Integer(spell_tables.caster_conditions(42_352)),
-          ),
-        ]),
+      list.flatten([
+        rows.spell4,
+        attack_spells,
+        [
+          planted_table.row(spell4.schema, [
+            #("ID", Integer(42_352)),
+            #("spell4BaseIdBaseSpell", Integer(26_543)),
+            #(
+              "spell4ConditionsIdCaster",
+              Integer(spell_tables.caster_conditions(42_352)),
+            ),
+          ]),
+        ],
       ])
         |> list.sort(by_id),
     ),
@@ -1030,7 +1051,10 @@ pub fn spell_tree_files() -> List(#(String, BitArray)) {
       ])
         |> list.sort(by_id),
     ),
-    planted_table.file(spell4_effects.schema, rows.spell4_effects),
+    planted_table.file(
+      spell4_effects.schema,
+      list.append(rows.spell4_effects, attack_effects) |> list.sort(by_id),
+    ),
     planted_table.file(spell4_group_list.schema, rows.spell4_group_lists),
     planted_table.file(spell4_stack_group.schema, rows.spell4_stack_groups),
     planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),

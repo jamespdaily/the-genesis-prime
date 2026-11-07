@@ -16,6 +16,7 @@
 //// drain_timer ─▶ - per tick, clamped to 0 ─▶ Changed; above 0 still ─▶ StartTimer(drain_timer, tick)
 //// the combat flag clears (player_life) ─▶ a Medic below its max: StartTimer(refill_timer)
 ////                                         an Esper above 0: StartTimer(empty_timer, 10000)
+////                                         an Engineer above 0: StartTimer(empty_timer, 5000)
 //// the combat flag sets ─▶ CancelTimer(refill_timer), CancelTimer(empty_timer)
 //// refill_timer ─▶ the slot at its max ─▶ Changed
 //// empty_timer ─▶ the slot at 0 ─▶ Changed
@@ -30,9 +31,11 @@
 ////   start full, the Warrior's, Engineer's and Esper's empty
 ////   (`LocalizedEnum.CRB_StalkerResource`).
 //// - **The maximum and the refill** are content rows the client lacks
-////   (`UnitProperty2.ResourceMax_0`), each with its source (migration 0011): the
-////   load refuses a playable class with no maximum, and the Medic, Stalker and
-////   Spellslinger with a row of their refill missing (`select`).
+////   (`UnitProperty2.ResourceMax_0`), each with its source (migrations 0011, 0012 and
+////   0018): the load refuses a playable class with no maximum, and a class with a row of
+////   its refill missing (`select`): the Warrior's drain, the Engineer's and Esper's empty
+////   wait, the Medic's refill after combat, and the Stalker's and Spellslinger's
+////   regeneration.
 //// - **The value** is held as the 32-bit float the client holds, so a check here and
 ////   the client's own read the same number.
 //// - **Paying** is at the cast's first go, which is the accept's own step for a spell
@@ -46,7 +49,11 @@
 ////   combat, down to 0 (Jim's choice, migration 0012; 500714 gives no rate).
 //// - **The Esper's empty** sets the slot to 0 `empty_after_combat_ms` after it
 ////   leaves combat, and combat again stops the wait (a retail record, migration
-////   0012; 500718).
+////   0012; 500718). **The Engineer's Volatility** goes the same way, after 5000 ms
+////   (the server's choice from the rows of Volatility Resource Control, which lets all of
+////   it go in one step 5 to 6 s after combat: migration 0018, `Spell4.34630`; 472510
+////   and 500719 say it dissipates out of combat). A gain out of combat starts the
+////   wait at once, and combat again stops it.
 //// - **Over time** the refill ticks each `regen_tick_ms`, in and out of combat; the
 ////   Medic's slot fills to its max `refill_after_combat_ms` after it is out of
 ////   combat, from the combat flag clearing or from a payment made out of combat (the
@@ -129,8 +136,6 @@ pub type Row {
 
 /// How a class's resource changes with no press, which decides the rows it needs.
 type Refill {
-  /// Never: the class needs only its maximum.
-  Never
   /// The slot drains each tick after its last gain: the amount, its period, the
   /// tick and the wait.
   DrainAfterGain
@@ -148,7 +153,7 @@ type Refill {
 /// refills (the design): Warrior, Engineer, Esper, Medic, Stalker and Spellslinger.
 const playable = [
   #(1, #(1, Empty, DrainAfterGain)),
-  #(2, #(1, Empty, Never)),
+  #(2, #(1, Empty, EmptyAfterCombat)),
   #(3, #(1, Empty, EmptyAfterCombat)),
   #(4, #(1, Full, AfterCombat)),
   #(5, #(3, Full, OverTime)),
@@ -181,7 +186,6 @@ const expected = [
 /// The numbers a class's refill needs.
 fn needed(refill refill: Refill) -> List(String) {
   case refill {
-    Never -> ["max"]
     OverTime -> ["max", "regen_amount", "regen_period_ms", "regen_tick_ms"]
     AfterCombat -> ["max", "refill_after_combat_ms"]
     DrainAfterGain -> [

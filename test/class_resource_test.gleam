@@ -18,7 +18,7 @@
 ////   after the last gain, in and out of combat (Jim's choice), ticked once a second
 ////   (a server choice); the Esper's Psi Points go to 0 ten seconds after it leaves
 ////   combat (a retail record).
-//// - The design's rows of migrations 0011 and 0012, with their names and units.
+//// - The design's rows of migrations 0011, 0012 and 0018, with their names and units.
 
 import class_resource_support
 import content_support
@@ -444,7 +444,113 @@ pub fn death_cancels_the_drain_and_empty_timers_and_coming_back_sets_0_test() ->
   assert back_again == [] as "already at its start, 0: no change sent"
 }
 
+// ---- issue 419: the Engineer's Volatility empties after combat ----
+
+pub fn an_engineer_leaving_combat_with_30_volatility_empties_5_seconds_later_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) =
+    class_resource.combat_changed(resources: new(2), in_combat: True)
+  let #(resources, gained) = gain(resources:, slot: 1, amount: 30)
+  assert gained == [Changed(slot: 1, value: 30.0)]
+    as "a gain in combat starts no wait"
+  let #(resources, left) =
+    class_resource.combat_changed(resources:, in_combat: False)
+  assert left == [StartTimer(timer: class_resource.empty_timer, after_ms: 5000)]
+    as "Volatility's 34688 lasts 5000 ms after leaving combat, then 34693 removes 100 (Spell4.34630); no 0x935 before the wait ends"
+  let #(resources, emptied) = empty_fired(resources)
+  assert emptied == [Changed(slot: 1, value: 0.0)]
+    as "one change of slot 1 to 0 when the wait ends"
+  assert class_resource.value(resources:, slot: 1) == 0.0
+}
+
+pub fn an_engineer_back_in_combat_during_the_wait_keeps_its_volatility_and_leaving_again_waits_anew_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) =
+    class_resource.combat_changed(resources: new(2), in_combat: True)
+  let #(resources, _) = gain(resources:, slot: 1, amount: 30)
+  let #(resources, _) =
+    class_resource.combat_changed(resources:, in_combat: False)
+  let #(resources, again) =
+    class_resource.combat_changed(resources:, in_combat: True)
+  assert again == [CancelTimer(timer: class_resource.empty_timer)]
+    as "34630's 11835 gives no drain in combat (Spell4.34630)"
+  let #(resources, late) = empty_fired(resources)
+  assert late == [] as "a fire after the cancel changes nothing"
+  assert class_resource.value(resources:, slot: 1) == 30.0
+  let #(_, left_again) =
+    class_resource.combat_changed(resources:, in_combat: False)
+  assert started(left_again) == [#(empty, 5000)]
+    as "73621 casts 34688 again on each leaving of combat: a new 5000 ms wait"
+}
+
+pub fn an_engineer_leaving_combat_at_0_starts_no_wait_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, _) =
+    class_resource.combat_changed(resources: new(2), in_combat: True)
+  let #(_, left) = class_resource.combat_changed(resources:, in_combat: False)
+  assert left == [] as "an empty slot has nothing to drain"
+}
+
+pub fn an_engineers_death_cancels_the_wait_and_coming_back_sets_0_with_a_change_only_when_it_moved_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(engineer, _) =
+    class_resource.combat_changed(resources: new(2), in_combat: True)
+  let #(engineer, _) = gain(resources: engineer, slot: 1, amount: 45)
+  let #(engineer, _) =
+    class_resource.combat_changed(resources: engineer, in_combat: False)
+  let #(engineer, died) = class_resource.died(resources: engineer)
+  assert cancelled(died) == [empty]
+  let #(engineer, late) = empty_fired(engineer)
+  assert late == [] as "a wait that fires after the death changes nothing"
+  assert class_resource.value(resources: engineer, slot: 1) == 45.0
+  let #(engineer, back) = class_resource.came_back(resources: engineer)
+  assert back == [Changed(slot: 1, value: 0.0)]
+    as "back at the start, empty (LocalizedEnum.CRB_StalkerResource)"
+  let #(dead_again, _) = class_resource.died(resources: engineer)
+  let #(_, back_again) = class_resource.came_back(resources: dead_again)
+  assert back_again == [] as "already at 0: no change sent"
+}
+
+pub fn an_engineer_leaving_the_world_during_the_wait_cancels_it_and_writes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(engineer, _) =
+    class_resource.combat_changed(resources: new(2), in_combat: True)
+  let #(engineer, _) = gain(resources: engineer, slot: 1, amount: 45)
+  let #(engineer, _) =
+    class_resource.combat_changed(resources: engineer, in_combat: False)
+  let #(engineer, left) = class_resource.left(resources: engineer)
+  assert left == [CancelTimer(timer: class_resource.empty_timer)]
+  let #(_, late) = empty_fired(engineer)
+  assert late == [] as "a wait that fires after the leave changes nothing"
+}
+
+pub fn an_engineer_gaining_out_of_combat_waits_5_seconds_and_the_threat_that_follows_cancels_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(resources, gained) = gain(resources: new(2), slot: 1, amount: 15)
+  assert gained
+    == [
+      Changed(slot: 1, value: 15.0),
+      StartTimer(timer: class_resource.empty_timer, after_ms: 5000),
+    ]
+    as "points held out of combat wait 5000 ms to empty"
+  let #(_, threatened) =
+    class_resource.combat_changed(resources:, in_combat: True)
+  assert threatened == [CancelTimer(timer: class_resource.empty_timer)]
+    as "the creature's Threatened that follows its answer ends the wait: the opener's 15 stay"
+}
+
 // ---- 14: the content rows ----
+
+pub fn an_engineer_without_its_empty_wait_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows =
+    list.filter(design_rows(), fn(row) {
+      !{ row.class_id == 2 && row.name == "empty_after_combat_ms" }
+    })
+  let assert Error(refusals) = class_resource.select(rows:)
+  assert names_of(refusals) == ["2 empty_after_combat_ms"]
+    as "the Engineer empties after combat as the Esper does, so it needs its wait (issue 419)"
+}
 
 fn names_of(refusals: List(Refusal)) -> List(String) {
   list.map(refusals, fn(refused) {
@@ -508,12 +614,12 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
     content_class_resource.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == design_rows()
-    as "the rows of migrations 0011 and 0012, in class and name order: the values tables of the designs of issues 403 and 418"
+    as "the rows of migrations 0011, 0012 and 0018, in class and name order: the values tables of the designs of issues 403, 418 and 419"
   assert content_support.count(
       database:,
       sql: "select count(*) from class_resource where source in ('client', 'retail_record', 'server_choice') and reason is not null",
     )
-    == 18
+    == 19
     as "each row is the client's, a retail record or a server choice and states its reason"
   assert content_support.count(
       database:,
@@ -525,8 +631,8 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
       database:,
       sql: "select count(*) from class_resource where source = 'server_choice'",
     )
-    == 7
-    as "the Medic's refill, the three ticks and the Warrior's drain amount, period and wait (Jim's choices) are the server's"
+    == 8
+    as "the Medic's refill, the three ticks, the Warrior's drain amount, period and wait (Jim's choices) and the Engineer's empty wait (Jim's decision, issue 419) are the server's"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {

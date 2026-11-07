@@ -26,8 +26,10 @@
 ////   absorb aimed at its primary target, and a spell that spends every point held refuses
 ////   an effect with a tag the rule does not read.
 //// - **The tree.** A Proxy effect (`Spell4Effects.effectType.26`, dataBits00 the
-////   Spell4 id; 0 names none) starts that spell as a cast of its own, so a `Spell`
-////   holds its `Proxy` children, each with the delay the effect gives after its
+////   Spell4 id; a row with dataBits00 0 names its spell in dataBits01 and ticks, which
+////   the plan does not start: `Spell4Effects.effectType.26.periodic`) starts that spell
+////   as a cast of its own, so a `Spell` holds its `Proxy` children, each with the delay
+////   the effect gives after its
 ////   parent's go (`delayTime`) and the phases it fires in (`phaseFlags`: bit n is
 ////   phase n, every bit for -1, the reading `Spell4.38791` gives). A Proxy with a
 ////   target apply prerequisite is kept as `GatedOnCasterAndTarget`, with its caster
@@ -1591,6 +1593,23 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
   )
 }
 
+/// A Proxy the server adds to a tree, which starts `child` on the caster at once at
+/// each go of the phases `phase_flags` names, with no gate and no gain lifted. It
+/// stands for no Spell4Effects row, so its effect id is 0
+/// (genesis_prime/game/server_proxy).
+pub fn server_proxy(child child: Spell, phase_flags phase_flags: Int) -> Proxy {
+  Proxy(
+    effect_id: Spell4EffectsId(0),
+    delay_ms: 0,
+    phase_flags:,
+    condition: Always,
+    tag: spend.always,
+    target: OnCaster,
+    spell: child,
+    gains: [],
+  )
+}
+
 /// A RapidTap or ChargeRelease ability opens a threshold of its thresholdTime, so
 /// a press of one with none is refused by the client (`0x1403bfd60`).
 fn has_threshold_time(spell spell: Spell) -> Result(Nil, PlanError) {
@@ -2940,17 +2959,21 @@ pub fn spends_all(
 }
 
 /// Plans one spell on its own, as a pressed ability, and every spell below it, or why it
-/// cannot be planned: the plan's load of a spell, whichever Spell4 row names it.
+/// cannot be planned: the plan's load of a spell, whichever Spell4 row names it. `chain`
+/// holds the Spell4 ids from the pressed ability to the spell that casts it, none for a
+/// spell planned as an ability, so a tree that leads back to one of them fails as a
+/// `ProxyCycle` (genesis_prime/game/server_proxy).
 pub fn spell_alone(
   tables tables: table_store.Tables,
   sources sources: Sources,
   spell4_id spell4_id: Int,
+  chain chain: List(Int),
 ) -> Result(Spell, PlanError) {
   spell_of(
     tables:,
     sources:,
     spell4_id:,
-    chain: [],
+    chain:,
     threshold_costs: [],
     struck_by: None,
   )
@@ -3575,7 +3598,7 @@ fn in_phase(
   spent spent: Option(Int),
 ) -> List(row) {
   list.filter(rows, fn(row) {
-    has_flag(flags: phase_flags(row), bit: int.bitwise_shift_left(1, phase))
+    has_flag(flags: phase_flags(row), bit: phase_bit(phase:))
     && spend.applies(tag: tag(row), spent:)
   })
 }
@@ -4170,6 +4193,11 @@ fn comparison_of(eval eval: Int) -> Comparison {
     4 | 9 -> AtMost
     other -> NeverPasses(eval: other)
   }
+}
+
+/// The Spell4Effects phase flag of a go: bit n is phase n.
+pub fn phase_bit(phase phase: Int) -> Int {
+  int.bitwise_shift_left(1, phase)
 }
 
 /// Whether the flags hold the bit.

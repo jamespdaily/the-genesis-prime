@@ -33,6 +33,7 @@ import login_client.{type Ports, Ports}
 import login_vectors as vector
 import pog
 import readiness_support
+import server_proxy_support
 import spawn_support
 
 /// The most connections each test listener holds, a different number for each
@@ -128,6 +129,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       ask_deadline_ms: 5000,
       rate: support.roomy(),
       class_resources: class_resource_support.classes(),
+      server_proxies: server_proxy_support.none(),
       numbers: spawn_support.numbers,
     ),
     wire_recorder: None,

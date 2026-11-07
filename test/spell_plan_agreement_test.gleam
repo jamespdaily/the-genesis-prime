@@ -430,7 +430,7 @@ pub fn every_planned_spell_holds_exactly_the_rows_read_row_keeps_test() -> Nil {
       effects:,
       children: children_of(tables:, effects:),
       plan: fn(spell4_id) {
-        spell_plan.spell_alone(tables:, sources:, spell4_id:)
+        spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
       },
       read: fn(effect, planned) {
         let place = place_of(effect.spell_id)
@@ -493,7 +493,13 @@ pub fn the_agreement_test_reports_a_spell_the_plan_refuses_for_a_row_read_row_re
         plan: fn(spell4_id) {
           case spell4_id {
             32_893 -> Error(refused)
-            other -> spell_plan.spell_alone(tables:, sources:, spell4_id: other)
+            other ->
+              spell_plan.spell_alone(
+                tables:,
+                sources:,
+                spell4_id: other,
+                chain: [],
+              )
           }
         },
         read: fn(effect, _planned) {
@@ -522,7 +528,7 @@ pub fn the_agreement_test_reports_a_spell_the_plan_refuses_for_a_row_read_row_re
         children: fn(_) { [] },
         plan: fn(spell4_id) {
           let assert Ok(spell) =
-            spell_plan.spell_alone(tables:, sources:, spell4_id:)
+            spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
             as "the planted strike loads"
           Ok(spell_plan.Spell(..spell, lasting: []))
         },

@@ -13,6 +13,8 @@ import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/server_proxy.{type ServerProxies}
+import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{type GameSettings}
@@ -64,10 +66,23 @@ pub type Settings {
     /// (genesis_prime/content/class_resource), which a player entering the world
     /// starts with.
     class_resources: class_resource.Classes,
+    /// The spells the server casts with a go of an ability where the client's
+    /// tables link none, from the content load (genesis_prime/content/server_proxy),
+    /// which the ability trees the cast rule reads hold (`plans_of`).
+    server_proxies: ServerProxies,
     /// The numbers the server chose, from the content load
     /// (genesis_prime/content/game_number), of which a player entering the world
     /// reads its health regeneration (genesis_prime/game/player_life).
     numbers: GameNumbers,
+  )
+}
+
+/// The ability trees the cast rule reads: the client's, with the server's Proxies
+/// planted into them (genesis_prime/game/server_proxy).
+pub fn plans_of(session session: Session) -> spell_plan.Plans {
+  server_proxy.planted_into(
+    plans: spell_plan.plans(session.settings.tables),
+    proxies: session.settings.server_proxies,
   )
 }
 

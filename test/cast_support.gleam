@@ -167,6 +167,8 @@ pub fn abilities() -> List(Spell4BaseId) {
   )
 }
 
+pub const electrocute = 7
+
 pub const pulse_blast = 12
 
 pub const quick_draw = 13
@@ -889,6 +891,28 @@ pub fn answered_posed(
   rolls rolls: List(Int),
   poses poses: dict.Dict(Int, Pose),
 ) -> #(State, List(Effect)) {
+  answered_each(
+    caster:,
+    state:,
+    effects:,
+    at: ms,
+    struck_of: fn(_) { struck },
+    rolls:,
+    poses:,
+  )
+}
+
+/// The same, with the units each go struck chosen by the go asked: a spell that strikes
+/// the area is answered with its foes and one with no area with none.
+pub fn answered_each(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+  struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
+  rolls rolls: List(Int),
+  poses poses: dict.Dict(Int, Pose),
+) -> #(State, List(Effect)) {
   list.fold(effects, #(state, []), fn(so_far, effect) {
     let #(state, done) = so_far
     case effect {
@@ -900,17 +924,17 @@ pub fn answered_posed(
             now: at(ms:),
             cast_id: asked.cast_id,
             phase: asked.phase,
-            struck:,
+            struck: struck_of(asked),
             poses:,
             rolls:,
           )
         let #(state, more) =
-          answered_posed(
+          answered_each(
             caster:,
             state:,
             effects: going,
             at: ms,
-            struck:,
+            struck_of:,
             rolls:,
             poses:,
           )
@@ -953,11 +977,29 @@ pub fn run_timers_striking(
   from_ms from_ms: Int,
   struck struck: List(cast.Struck),
 ) -> #(State, List(#(Int, List(Effect)))) {
+  run_timers_each(
+    caster: caster(),
+    state:,
+    effects:,
+    from_ms:,
+    struck_of: fn(_) { struck },
+  )
+}
+
+/// The same, with the units each go struck chosen by the go asked (`answered_each`).
+pub fn run_timers_each(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
+) -> #(State, List(#(Int, List(Effect)))) {
   run_pending(
+    caster:,
     state:,
     pending: due_of(effects:, now_ms: from_ms),
     fired_so_far: [],
-    struck:,
+    struck_of:,
     until_ms: None,
   )
 }
@@ -972,10 +1014,11 @@ pub fn run_timers_until(
   until_ms until_ms: Int,
 ) -> #(State, List(#(Int, List(Effect)))) {
   run_pending(
+    caster: caster(),
     state:,
     pending: due_of(effects:, now_ms: from_ms),
     fired_so_far: [],
-    struck: [],
+    struck_of: fn(_) { [] },
     until_ms: Some(until_ms),
   )
 }
@@ -990,10 +1033,11 @@ fn due_of(
 }
 
 fn run_pending(
+  caster caster: Caster,
   state state: State,
   pending pending: List(#(Int, TimerId)),
   fired_so_far fired_so_far: List(#(Int, List(Effect))),
-  struck struck: List(cast.Struck),
+  struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
   until_ms until_ms: Option(Int),
 ) -> #(State, List(#(Int, List(Effect)))) {
   let limit = option.unwrap(until_ms, 9_007_199_254_740_991)
@@ -1003,18 +1047,27 @@ fn run_pending(
     [] -> #(state, list.reverse(fired_so_far))
     [#(due, _), ..] if due > limit -> #(state, list.reverse(fired_so_far))
     [#(due, timer), ..rest] -> {
-      let #(state, raw) = fired_raw(state:, timer:, at: due)
+      let #(state, raw) = fired_raw_as(caster:, state:, timer:, at: due)
       let #(state, effects) =
-        answered_by(state:, effects: raw, at: due, struck:)
+        answered_each(
+          caster:,
+          state:,
+          effects: raw,
+          at: due,
+          struck_of:,
+          rolls: [],
+          poses: dict.new(),
+        )
       let cancelled = cancelled_timers(effects:)
       run_pending(
+        caster:,
         state:,
         pending: list.append(
           list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
           due_of(effects:, now_ms: due),
         ),
         fired_so_far: [#(due, effects), ..fired_so_far],
-        struck:,
+        struck_of:,
         until_ms:,
       )
     }

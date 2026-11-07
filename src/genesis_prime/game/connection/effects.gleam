@@ -16,7 +16,6 @@ import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Camped, Session} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
 import genesis_prime/step.{
@@ -137,7 +136,7 @@ pub fn carry_out(
         cast.passive_started(
           cast: entered.cast,
           caster: connection_casting.caster_of(entered:),
-          plans: spell_plan.plans(session.settings.tables),
+          plans: connection_state.plans_of(session:),
           base:,
           now:,
         )
