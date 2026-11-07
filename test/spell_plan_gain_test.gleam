@@ -176,6 +176,7 @@ fn load_reason(effect: List(planted_table.Cell)) -> String {
   let rows = spell_tables.fixture_rows()
   let assert Error(error) =
     spell_tables.derivation_result(
+      reaching: [#("SpellLevel", 647)],
       rows: spell_tables.Rows(
         ..rows,
         spell4_effects: spell_tables.sorted_by_id([

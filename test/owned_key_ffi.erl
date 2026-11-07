@@ -1,6 +1,6 @@
 -module(owned_key_ffi).
 -export([new/0, own/2, left_behind/1, erase_left/1, terms_under/1, erase/1, wait_until_dead/1,
-         loads_held/0, loads_held_limit/0, waiting_for_room/0, waited_ms/1, unlimited/1]).
+         loads_held/0, loads_held_limit/0, waiting_for_room/0, waited_ms/1]).
 
 %% The references each process made, kept in a table that outlives the
 %% processes: {Owner, Reference, Kind}. A body that crashes, is killed by a
@@ -43,11 +43,6 @@ remember(Reference, Kind) ->
 
 loads_held_limit() ->
     ?LOADS_HELD_LIMIT.
-
-%% Runs Body with the keys the process makes taking no place among the loads.
-unlimited(Body) ->
-    Before = erlang:put(owned_key_unlimited, true),
-    try Body() after erlang:put(owned_key_unlimited, Before =:= true) end.
 
 %% What a key waits for before it is made: the literal area's released, and, for
 %% a process that holds no place and is not making a shared load, a place among

@@ -144,7 +144,9 @@ pub fn a_comparison_other_than_0_or_1_on_a_spell_with_no_emm_id_is_not_read_test
       #("emmComparison", Integer(2)),
     ])
   let assert Ok(plans) =
-    fixture_tables.on_rows(rows:, body: fn(tables) { spell_plan.build(tables:) })
+    fixture_tables.on_rows(rows:, reaching: [], body: fn(tables) {
+      spell_plan.build(tables:)
+    })
   assert mind_burst_of(plans:).costs
     == [spell_plan.SlotCost(slot: 1, amount: 1, result: 51)]
     as "Spell4Effects.emmComparison: a spell with no EMM id has no n, so its tags choose nothing and none is refused"

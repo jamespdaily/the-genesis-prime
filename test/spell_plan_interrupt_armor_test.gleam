@@ -128,7 +128,7 @@ pub fn an_interrupt_armor_row_aimed_at_the_caster_is_read_with_its_points_time_a
 }
 
 pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_the_caster_is_read_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // Row 199192 of Spell4 76766, as the client holds it: targetFlags 2, +1, 5000 ms,
   // dataBits01 0.
   let row =
@@ -161,7 +161,7 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_the_cast
 }
 
 pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_each_struck_unit_fails_the_load_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let row =
     spell4_effects_row(
       id: 199_192,

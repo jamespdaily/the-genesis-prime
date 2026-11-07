@@ -50,7 +50,8 @@ lock_waiters(Key) ->
 %% room among the loads held (owned_key_ffi): the processes that hold those
 %% loads may be waiting on this lock.
 unlimited_loads(Create) ->
-    owned_key_ffi:unlimited(Create).
+    Before = erlang:put(owned_key_unlimited, true),
+    try Create() after erlang:put(owned_key_unlimited, Before =:= true) end.
 
 %% The operating system process id and start time of this VM, as one word that
 %% is safe in a database name.

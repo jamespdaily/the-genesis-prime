@@ -137,7 +137,7 @@ pub fn a_heal_shields_row_aimed_at_the_caster_is_a_shield_heal_with_its_formula_
 }
 
 pub fn a_heal_shields_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_the_caster_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let assert Ok(heal) =
     spell_plan.shield_heal_of(
       spell4_id: 69_450,
@@ -155,7 +155,7 @@ pub fn a_heal_shields_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on
 }
 
 pub fn a_heal_shields_row_aimed_at_the_primary_target_of_a_child_on_each_struck_unit_fails_the_load_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let on_each_struck =
     spell_tables.started_on_each_struck(
       spell4_id: 69_450,
@@ -184,7 +184,7 @@ pub fn a_heal_shields_row_aimed_at_the_primary_target_of_a_child_on_each_struck_
 }
 
 pub fn a_heal_shields_row_aimed_only_at_other_units_is_left_out_and_one_with_the_caster_bit_keeps_its_caster_part_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let rows =
     list.map([4, 5, 6, 7], fn(flags) {
       Spell4Effects(
@@ -201,7 +201,7 @@ pub fn a_heal_shields_row_aimed_only_at_other_units_is_left_out_and_one_with_the
 }
 
 pub fn a_periodic_heal_shields_row_is_held_as_ticking_and_not_applied_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   assert heals_of(effects: [onslaught_row()])
     == [
       TickingShieldHeal(
@@ -267,7 +267,7 @@ pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fail
 }
 
 pub fn a_shield_overload_row_aimed_at_the_area_is_a_lasting_row_on_each_struck_unit_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let meltdown =
     Spell4Effects(
       ..spell_tables.blank_effect(
@@ -310,7 +310,7 @@ pub fn a_shield_overload_row_aimed_at_the_area_is_a_lasting_row_on_each_struck_u
 }
 
 pub fn a_heal_in_a_struck_unit_child_is_refused_by_place_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // Row 205411 of Spell4 78280 is aimed at the primary target (flags 2); Proxy 137988 of
   // Spell4 57685 starts 78280 on each unit its area strikes (flags 4), and the plan fails
   // the load on the shape, so the measure counts the row as not read.

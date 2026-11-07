@@ -992,13 +992,14 @@ fn with_trees_loaded(
 ) -> a {
   spell_tables.with_loaded_deriving(
     rows:,
+    reaching: [#("SpellLevel", 1086)],
     derivations: [spell_plan.derivation()],
     body:,
   )
 }
 
 pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let lacking =
     MissingRow(
@@ -1030,7 +1031,7 @@ pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row
 }
 
 pub fn a_spell_of_the_tree_the_spell4_table_lacks_is_a_missing_row_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   assert with_trees_loaded(rows: spell_tables.fixture_rows(), body: fn(tables) {
       let assert Ok([spell, ..]) = starting_ability.spells(tables:)
@@ -1050,7 +1051,7 @@ pub fn a_spell_of_the_tree_the_spell4_table_lacks_is_a_missing_row_test() -> Nil
 }
 
 pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let measured =
     with_trees_loaded(
@@ -1398,7 +1399,7 @@ fn rows_with_three_proxies() -> spell_tables.Rows {
 }
 
 pub fn a_proxy_behind_a_gate_that_cannot_open_is_left_out_with_its_subtree_whichever_gate_column_holds_it_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let assert Ok(spells) =
     with_trees_loaded(
@@ -1419,7 +1420,7 @@ pub fn a_proxy_behind_a_gate_that_cannot_open_is_left_out_with_its_subtree_which
 }
 
 pub fn each_proxy_left_out_is_listed_with_its_gate_and_what_is_below_it_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let assert Ok(left) =
     with_trees_loaded(rows: rows_with_three_proxies(), body: fn(tables) {
@@ -1483,7 +1484,7 @@ pub fn each_proxy_left_out_is_listed_with_its_gate_and_what_is_below_it_test() -
 }
 
 pub fn a_missing_amp_unlock_row_is_a_missing_row_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let rows = rows_with_three_proxies()
   assert with_trees_loaded(
@@ -1539,7 +1540,7 @@ fn client_type_count(number number: Int) -> Int {
 }
 
 pub fn a_prerequisite_only_the_runner_columns_name_is_not_counted_and_is_listed_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let assert #(types, Ok(left), report) =
     with_trees_loaded(
@@ -1617,7 +1618,7 @@ fn rows_nesting(
 }
 
 pub fn a_nested_prerequisite_is_followed_and_each_row_counts_once_however_many_nest_it_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   // 990900 nests 990901 and 990902, which nests 990901 again; a second column names
   // 990901 directly. 990901 holds a type 243 and a type 129 (Prerequisite 12939's
@@ -1643,7 +1644,7 @@ pub fn a_nested_prerequisite_is_followed_and_each_row_counts_once_however_many_n
 }
 
 pub fn a_nested_id_with_no_row_is_not_a_missing_row_and_a_cycle_ends_the_walk_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let rows =
     rows_nesting(named: [990_903, 990_910], prerequisites: [
@@ -1661,7 +1662,7 @@ pub fn a_nested_id_with_no_row_is_not_a_missing_row_and_a_cycle_ends_the_walk_te
 }
 
 pub fn a_runner_column_naming_a_row_the_table_lacks_is_not_a_missing_row_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let #(types, left) =
     with_trees_loaded(
@@ -1686,7 +1687,7 @@ pub fn a_runner_column_naming_a_row_the_table_lacks_is_not_a_missing_row_test() 
 }
 
 pub fn a_prerequisite_a_runner_column_and_another_column_name_is_counted_and_not_left_out_test() -> Nil {
-  use <- owned_test.run(30_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let both =
     with_quest_copy(

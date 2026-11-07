@@ -12,23 +12,15 @@ import owned_test
 import unitest
 
 /// Starts a process that makes a key, writes one content term under it and
-/// stays alive until the process that started it ends, however it ends, so it
-/// holds no place among the loads past its test; gives the process and the key.
+/// stays alive; gives the process and the key.
 fn owner_with_a_term() -> #(Pid, store.Key) {
   let reply = process.new_subject()
-  let starter = process.self()
   let owner =
     process.spawn_unlinked(fn() {
-      let key = owned_key.unlimited(owned_key.new_key)
+      let key = owned_key.new_key()
       store.put_content(key:, table: "Planted", id: 1, value: "a value")
       process.send(reply, key)
-      let _down =
-        process.new_selector()
-        |> process.select_specific_monitor(process.monitor(starter), fn(down) {
-          down
-        })
-        |> process.selector_receive_forever
-      Nil
+      process.sleep_forever()
     })
   let assert Ok(key) = process.receive(reply, within: 5000)
     as "the owner made its key"
@@ -46,23 +38,6 @@ pub fn a_term_stored_under_a_key_a_process_made_is_counted_as_left_behind_test()
   assert owned_key.left_behind(owner) == 0
     as "nothing is left once it is erased"
   process.kill(owner)
-}
-
-pub fn an_owner_ends_when_the_body_that_started_it_ends_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let started = process.new_subject()
-  let body =
-    process.spawn_unlinked(fn() {
-      let #(owner, _key) = owner_with_a_term()
-      process.send(started, owner)
-      process.sleep_forever()
-    })
-  let assert Ok(owner) = process.receive(started, within: 5000)
-    as "the body started its owner"
-  process.kill(body)
-  event_wait.until("the owner ended with the body that started it", fn() {
-    !process.is_alive(owner)
-  })
 }
 
 pub fn a_term_under_a_key_no_process_made_through_owned_key_is_not_counted_test() -> Nil {

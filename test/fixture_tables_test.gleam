@@ -71,11 +71,11 @@ pub fn a_file_whose_header_differs_from_the_schema_names_the_table_and_the_first
 }
 
 // 3
-// The generator reads the client's whole tables: 42 s on an idle machine (alone, 2026-11-07),
-// and past 300 s beside the rest of the suite in the first full `./check` of this fix round.
-// The deadline is a hang guard set at about 14 times the idle run.
+// The generator reads the client's whole tables, so the test runs alone in the
+// client-suite part of `./check` (tag `client_rows`).
 pub fn the_committed_files_are_what_the_generator_makes_from_the_client_test() -> Nil {
-  use <- owned_test.run(600_000)
+  use <- owned_test.run(300_000)
+  use <- unitest.tag("client_rows")
   use <- unitest.guard(client_tables.present())
   let assert Ok(fixture) =
     fixture_rows.generate(
@@ -99,11 +99,19 @@ pub fn the_committed_files_are_what_the_generator_makes_from_the_client_test() -
           key_columns: 1,
         )
       }),
-      fixture_rows.differences(
-        file: fixture_rows.stale_file,
-        committed: read(fixture_rows.stale_file),
-        regenerated: fixture.stale,
-        key_columns: 4,
+      list.append(
+        fixture_rows.differences(
+          file: fixture_rows.stale_file,
+          committed: read(fixture_rows.stale_file),
+          regenerated: fixture.stale,
+          key_columns: 4,
+        ),
+        fixture_rows.differences(
+          file: fixture_rows.whole_file,
+          committed: read(fixture_rows.whole_file),
+          regenerated: fixture.whole,
+          key_columns: 1,
+        ),
       ),
     )
   assert differences == []
@@ -333,7 +341,7 @@ pub fn a_body_that_crashes_leaves_its_tables_unloaded_test() -> Nil {
   let sent = process.new_subject()
   let worker =
     process.spawn_unlinked(fn() {
-      fixture_tables.on_rows_under(rows:, key:, body: fn(tables) {
+      fixture_tables.on_rows_under(rows:, reaching: [], key:, body: fn(tables) {
         process.send(sent, tables)
         panic as "the body crashes on purpose, to see its tables unloaded"
       })

@@ -190,7 +190,7 @@ fn caster_of_planted() -> Caster {
 }
 
 pub fn an_ordinary_press_of_the_planted_spell_is_the_current_cast_and_starts_the_global_cooldown_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(10_000)
   let #(state, _) =
     support.pressed_raw_in(
       plans: planted_plans(),
@@ -214,7 +214,7 @@ pub fn an_ordinary_press_of_the_planted_spell_is_the_current_cast_and_starts_the
 }
 
 pub fn a_passive_starts_no_global_cooldown_is_never_the_current_cast_and_opens_no_threshold_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(10_000)
   let #(state, effects) =
     cast.passive_started(
       cast: cast.new(),
@@ -448,7 +448,7 @@ pub fn a_passive_taken_off_the_caster_is_forgotten_so_a_cast_that_gets_its_id_la
 }
 
 pub fn a_passives_go_does_not_clear_the_cast_another_press_made_current_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(10_000)
   let second =
     Spell(
       ..slow_passive(),

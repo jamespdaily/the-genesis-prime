@@ -463,13 +463,7 @@ fn all_held(
 
 pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_fixtures_rows_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(areas) =
-    spell_tables.with_loaded_deriving(
-      rows: spell_tables.fixture_rows(),
-      derivations: [spell_plan.derivation()],
-      body: fn(tables) { spell_area.build(tables:) },
-    )
-    as "the fixture's rows build their areas"
+  let areas = spell_tables.fixture_areas()
   let with_row = [39_467, 70_045, 70_054]
   assert area_rows_held(areas:, spells: with_row)
     == all_held(spells: with_row, row: True)

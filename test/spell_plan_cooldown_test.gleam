@@ -345,8 +345,7 @@ pub fn a_spell_holds_the_cooldown_groups_its_row_names_test() -> Nil {
   let assert Ok(spell) = spell_tables.planned_strike(rows:)
   assert spell.cooldown_groups == [133, 134]
     as "the non-zero of spellCoolDownId00 to 02, in column order (0x14055e180 lines 898-913)"
-  let assert Ok(without) =
-    spell_tables.planned_strike(rows: spell_tables.fixture_rows())
+  let without = spell_tables.fixture_strike()
   assert without.cooldown_groups == [] as "a column holding 0 names no group"
 }
 

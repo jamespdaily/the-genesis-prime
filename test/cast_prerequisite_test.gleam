@@ -179,7 +179,7 @@ fn second_press_result(
 }
 
 pub fn a_press_that_fails_its_cooldown_and_the_cast_condition_gets_15_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     Spell(
       ..gated(
@@ -198,7 +198,7 @@ pub fn a_press_that_fails_its_cooldown_and_the_cast_condition_gets_15_test() -> 
 }
 
 pub fn a_press_that_fails_its_cost_and_the_cast_condition_gets_50_plus_the_slot_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     Spell(
       ..gated(
@@ -220,7 +220,7 @@ pub fn a_press_that_fails_its_cost_and_the_cast_condition_gets_50_plus_the_slot_
 }
 
 pub fn a_press_that_fails_the_weapon_and_the_cast_condition_gets_169_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     Spell(
       ..gated(
@@ -245,7 +245,7 @@ pub fn a_press_that_fails_the_weapon_and_the_cast_condition_gets_169_test() -> N
 }
 
 pub fn a_dead_caster_whose_press_also_fails_the_cast_condition_gets_57_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     gated(caster_cast: CastGate(prerequisite: in_combat()), target_cast: None)
   let #(_, effects) =
@@ -264,7 +264,7 @@ pub fn a_dead_caster_whose_press_also_fails_the_cast_condition_gets_57_test() ->
 }
 
 pub fn a_press_that_fails_both_cast_conditions_gets_151_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     gated(
       caster_cast: CastGate(prerequisite: in_combat()),
@@ -283,7 +283,7 @@ pub fn a_press_that_fails_both_cast_conditions_gets_151_test() -> Nil {
 }
 
 pub fn a_press_that_fails_the_target_cast_alone_gets_281_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell = gated(caster_cast: NoCasterCast, target_cast: Some(in_combat()))
   let #(_, effects) =
     support.press_by(
@@ -298,7 +298,7 @@ pub fn a_press_that_fails_the_target_cast_alone_gets_281_test() -> Nil {
 }
 
 pub fn a_refused_press_changes_nothing_else_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     gated(caster_cast: CastGate(prerequisite: in_combat()), target_cast: None)
   let plans = support.plans_with(spell:)
@@ -346,7 +346,7 @@ fn fired_by(
 }
 
 pub fn a_press_within_500_ms_of_its_cooldowns_end_is_held_with_nothing_written_and_checked_at_the_end_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     Spell(
       ..gated(
@@ -391,7 +391,7 @@ pub fn a_press_within_500_ms_of_its_cooldowns_end_is_held_with_nothing_written_a
 }
 
 pub fn a_held_press_whose_condition_passes_at_its_start_casts_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     Spell(
       ..gated(
@@ -438,7 +438,7 @@ fn blocker() -> Spell {
 }
 
 pub fn a_press_held_behind_the_current_cast_is_checked_again_when_that_cast_clears_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let gate =
     gated(caster_cast: CastGate(prerequisite: in_combat()), target_cast: None)
   let plans =
@@ -474,7 +474,7 @@ pub fn a_press_held_behind_the_current_cast_is_checked_again_when_that_cast_clea
 }
 
 pub fn a_held_key_whose_repeat_fails_the_condition_gets_0x7fc_with_client_id_0_and_the_hold_ends_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let spell =
     Spell(
       ..gated(
@@ -676,7 +676,7 @@ fn rampage_press(caster caster: Caster, under under: Bool) -> List(Int) {
 }
 
 pub fn rampage_at_249_kinetic_energy_is_refused_51_unless_the_caster_is_under_overdrive_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   assert rampage_press(caster: kinetic_energy(value: 249.0), under: False)
     == [51]
     as "0x1403b1780: the requirement (250) fails and the waiver 19750 (under 42908) does not pass"
@@ -687,7 +687,7 @@ pub fn rampage_at_249_kinetic_energy_is_refused_51_unless_the_caster_is_under_ov
 }
 
 pub fn a_waiver_of_a_type_the_server_does_not_read_refuses_with_the_requirements_result_and_one_warning_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let rampage =
     Spell(
       ..support.ability(base: 37_968),
@@ -742,7 +742,7 @@ fn unread_refusal(spell spell: Spell, expecting expecting: Int) -> Nil {
 }
 
 pub fn a_cast_condition_of_an_unread_type_refuses_151_with_one_warning_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   unread_refusal(
     spell: gated(
       caster_cast: CastGate(prerequisite: unread()),
@@ -753,7 +753,7 @@ pub fn a_cast_condition_of_an_unread_type_refuses_151_with_one_warning_test() ->
 }
 
 pub fn a_target_cast_of_an_unread_type_refuses_281_with_one_warning_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   unread_refusal(
     spell: gated(caster_cast: NoCasterCast, target_cast: Some(unread())),
     expecting: 281,
@@ -761,7 +761,7 @@ pub fn a_target_cast_of_an_unread_type_refuses_281_with_one_warning_test() -> Ni
 }
 
 pub fn a_type_37_roll_in_a_cast_condition_is_not_read_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   unread_refusal(
     spell: gated(
       caster_cast: CastGate(

@@ -103,7 +103,7 @@ fn went(
 // ---- 1: the accept reserves, the first go pays ----
 
 pub fn gamma_rays_pays_its_actuators_at_its_go_and_not_at_the_press_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let caster = medic_holding(points: 4)
   let #(state, pressed) =
     support.pressed_raw_in(
@@ -140,7 +140,7 @@ pub fn gamma_rays_pays_its_actuators_at_its_go_and_not_at_the_press_test() -> Ni
 }
 
 pub fn a_cast_pays_once_at_its_first_go_and_not_at_a_later_one_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let caster = esper_holding(points: 5)
   let discharge = charging_discharge()
   let #(state, pressed) =
@@ -166,7 +166,7 @@ pub fn a_cast_pays_once_at_its_first_go_and_not_at_a_later_one_test() -> Nil {
 // ---- 2: a cast that ends before its go pays nothing ----
 
 pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_pays_nothing_and_frees_its_actuators_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let caster = medic_holding(points: 2)
   let plans = support.plans_with(spell: free_gamma_rays())
   let #(state, pressed) =
@@ -206,7 +206,7 @@ pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_pays_nothing_and_frees_its
 }
 
 pub fn a_caster_that_dies_before_the_go_pays_nothing_for_a_channel_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let caster = esper_holding(points: 5)
   let discharge = charging_discharge()
   let #(state, pressed) =
@@ -233,7 +233,7 @@ pub fn a_caster_that_dies_before_the_go_pays_nothing_for_a_channel_test() -> Nil
 }
 
 pub fn a_caster_that_leaves_before_the_go_pays_nothing_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let caster = medic_holding(points: 4)
   let #(state, pressed) =
     support.pressed_raw_in(
@@ -253,7 +253,7 @@ pub fn a_caster_that_leaves_before_the_go_pays_nothing_test() -> Nil {
 }
 
 pub fn a_cast_cancelled_while_the_round_of_its_go_is_open_still_pays_for_the_hits_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let caster = medic_holding(points: 4)
   let #(state, pressed) =
     support.pressed_raw_in(
@@ -297,7 +297,7 @@ pub fn a_cast_cancelled_while_the_round_of_its_go_is_open_still_pays_for_the_hit
 // ---- 3: a reservation is checked against ----
 
 pub fn a_second_press_is_refused_at_its_accept_for_points_a_live_cast_has_reserved_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans = support.plans_with(spell: free_gamma_rays())
   let caster = medic_holding(points: 3)
   let #(state, first) =
@@ -325,7 +325,7 @@ pub fn a_second_press_is_refused_at_its_accept_for_points_a_live_cast_has_reserv
 }
 
 pub fn two_presses_that_the_slot_meets_together_are_both_accepted_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans = support.plans_with(spell: free_gamma_rays())
   let caster = medic_holding(points: 4)
   let #(state, _) =
@@ -353,7 +353,7 @@ pub fn two_presses_that_the_slot_meets_together_are_both_accepted_test() -> Nil 
 // ---- 4: an instant spell pays at its accept ----
 
 pub fn an_instant_spell_pays_at_its_accept_before_it_writes_anything_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(_, effects) =
     support.pressed_raw_in(
       plans: support.plans(),
@@ -512,7 +512,7 @@ pub fn a_spend_of_every_point_leaves_nothing_for_a_second_press_test() -> Nil {
 // ---- 7: the class resource's timers see a reservation as held ----
 
 pub fn the_esper_empty_runs_for_points_a_live_cast_has_reserved_and_the_go_pays_what_is_left_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let in_combat =
     class_resource.combat_changed(
       resources: holding(class_id: 3, points: 3),
@@ -552,7 +552,7 @@ pub fn the_esper_empty_runs_for_points_a_live_cast_has_reserved_and_the_go_pays_
 }
 
 pub fn the_warriors_drain_runs_down_points_a_live_cast_has_reserved_and_the_go_pays_what_is_left_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(resources, started) =
     class_resource.gain(resources: holding(class_id: 1, points: 100), gains: [
       class_resource.Gain(slot: 1, amount: 200),
@@ -596,7 +596,7 @@ pub fn the_warriors_drain_runs_down_points_a_live_cast_has_reserved_and_the_go_p
 }
 
 pub fn the_medic_refill_starts_at_the_payment_and_not_at_the_press_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let caster = medic_holding(points: 4)
   let #(state, pressed) =
     support.pressed_raw_in(
@@ -629,7 +629,7 @@ pub fn the_medic_refill_starts_at_the_payment_and_not_at_the_press_test() -> Nil
 // ---- at one go the cost comes before the gains ----
 
 pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let giving =
     Spell(..support.ability(base: 16_322), gains: [
       spell_plan.Gain(

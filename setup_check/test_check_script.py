@@ -72,7 +72,7 @@ NOT_TEST_RUNS = ("glinter", "squirrel", "genesis_prime/table_generator")
 GLEAM_STUB = """#!/bin/sh
 as=${PLANT_AS:-gleam}
 echo "$as $*" >>"$PLANT_LOG"
-echo "$as $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL GENESIS_TEST_SKIP_WORLD_DATA=$GENESIS_TEST_SKIP_WORLD_DATA" >>"$PLANT_LOG.environment"
+echo "$as $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL GENESIS_TEST_SKIP_WORLD_DATA=$GENESIS_TEST_SKIP_WORLD_DATA GENESIS_TEST_SKIP_CLIENT_ROWS=$GENESIS_TEST_SKIP_CLIENT_ROWS" >>"$PLANT_LOG.environment"
 if [ -n "$PLANT_RENDEZVOUS" ]; then
   rendezvous="$PLANT_LOG.rendezvous"
   mkdir -p "$rendezvous"
@@ -132,6 +132,10 @@ if [ "$1" = test ]; then
   if [ -n "$GENESIS_LITERAL_PEAK_FILE" ] && [ "$peak" != none ]; then
     echo "$peak" >"$GENESIS_LITERAL_PEAK_FILE"
   fi
+fi
+if [ "$*" = "test -- --tag client_rows" ] && [ -n "$PLANT_CLIENT_ROWS_FAILS" ]; then
+  echo "planted stale client rows"
+  exit 1
 fi
 if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
   sleep "$PLANT_GLEAM_TEST_SECONDS"
@@ -675,6 +679,22 @@ class ClientSuiteTest(unittest.TestCase):
         run = shared_run("full")
         self.assertFalse([c for c in run.commands if "client_files.py" in c], run.commands)
 
+    def test_with_the_client_the_part_runs_the_client_rows_test_and_the_first_test_run_skips_it(self):
+        run = shared_run("tokens-on", client=True)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        runs = [line for line in run.environment.splitlines() if line.startswith("built test")]
+        self.assertIn("built test -- --tag client_rows GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA= GENESIS_TEST_SKIP_CLIENT_ROWS=", runs)
+        self.assertIn("GENESIS_TEST_SKIP_CLIENT_ROWS=1", next(line for line in runs if "--workers" in line))
+
+    def test_without_the_client_the_client_rows_test_never_starts(self):
+        run = shared_run("full")
+        self.assertFalse([c for c in run.commands if "--tag client_rows" in c], run.commands)
+
+    def test_a_failing_client_rows_test_fails_the_client_suite_part_and_no_other(self):
+        run = shared_run("client-rows-fails", client=True, PLANT_CLIENT_ROWS_FAILS="1")
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: client-suite$")
+
     def test_a_stale_token_list_fails_the_client_suite_part_and_no_other(self):
         run = shared_run("tokens-stale", client=True, PLANT_TOKENS_STALE="1")
         self.assertNotEqual(run.done.returncode, 0, run.output)
@@ -1098,8 +1118,8 @@ class SerialTestsTest(unittest.TestCase):
 
     def test_the_run_of_the_other_tests_skips_the_serial_ones(self):
         runs = [line for line in shared_run("full").environment.splitlines() if line.startswith("built test")]
-        self.assertEqual(runs[0], "built test -- --workers %s GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1" % TEST_WORKERS)
-        self.assertEqual(runs[1], "built test -- --tag serial GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA=")
+        self.assertEqual(runs[0], "built test -- --workers %s GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1" % TEST_WORKERS)
+        self.assertEqual(runs[1], "built test -- --tag serial GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA= GENESIS_TEST_SKIP_CLIENT_ROWS=")
 
     def test_a_failure_in_the_serial_run_fails_the_gleam_test_part(self):
         def plant(case):
@@ -1219,6 +1239,7 @@ class LiteralAreaTest(unittest.TestCase):
         self.assertEqual(peak_log, sorted([
             "built test -- --workers %s peak_file=given" % TEST_WORKERS,
             "built test -- --tag serial peak_file=",
+            "built test -- --tag client_rows peak_file=",
             "built test -- --tag world_data peak_file=given"]))
 
     def test_the_part_is_skipped_when_the_build_it_needs_failed(self):
@@ -1324,6 +1345,7 @@ class BuiltCodeTest(unittest.TestCase):
                 "built run -m squirrel check",
                 "built test -- --workers %s" % TEST_WORKERS,
                 "built test -- --tag serial",
+                "built test -- --tag client_rows",
                 "built test -- --tag world_data",
             ]))
 
@@ -1415,10 +1437,11 @@ class WorldDataPartTest(unittest.TestCase):
         self.assertRegex(run.output, r"(?m)^  world-data +ok\b")
         runs = {line.split(" GENESIS_TEST_SKIP_SERIAL")[0]: line for line in run.environment.splitlines() if line.startswith("built test")}
         self.assertEqual(sorted(runs), sorted([
-            "built test -- --workers %s" % TEST_WORKERS, "built test -- --tag serial", "built test -- --tag world_data"]))
+            "built test -- --workers %s" % TEST_WORKERS, "built test -- --tag serial", "built test -- --tag client_rows",
+            "built test -- --tag world_data"]))
         self.assertIn("GENESIS_TEST_SKIP_WORLD_DATA=1", runs["built test -- --workers %s" % TEST_WORKERS])
         for tagged in ("built test -- --tag serial", "built test -- --tag world_data"):
-            self.assertTrue(runs[tagged].endswith("GENESIS_TEST_SKIP_WORLD_DATA="), runs[tagged])
+            self.assertIn("GENESIS_TEST_SKIP_WORLD_DATA= ", runs[tagged])
 
     def test_without_the_client_the_part_is_skipped_and_its_run_never_starts(self):
         run = shared_run("full")

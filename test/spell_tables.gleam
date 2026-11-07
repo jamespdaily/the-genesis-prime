@@ -2012,18 +2012,19 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
   int.compare(first_id, second_id)
 }
 
-/// The load of the planted tables with the plan's derivation, which fails when
-/// the plan cannot be built: the load's error, or `Ok(Nil)`.
+/// The load of these rows and the rows these roots reach with the plan's
+/// derivation, which fails when the plan cannot be built: the load's error, or
+/// `Ok(Nil)`.
 pub fn derivation_result(
   rows rows: Rows,
+  reaching roots: List(#(String, Int)),
 ) -> Result(Nil, table_store.LoadError) {
-  let files = files_with_the_fixtures_others(rows:)
-  use folder <- planted_table.in_folder(files)
+  use folder <- planted_table.in_folder(reached_files(rows:, roots:))
   case
     table_store.load(
       under: owned_key.new(),
       from: folder,
-      entries: entries_with_the_servers_others(),
+      entries: server_entries(),
       requirements: [],
       derivations: [spell_plan.derivation()],
     )
@@ -2036,9 +2037,8 @@ pub fn derivation_result(
   }
 }
 
-/// The server's tables other than the spell tables, which the spell rows name, so
-/// that a load of those rows needs them.
-fn entries_with_the_servers_others() -> List(table_store.Entry) {
+/// The spell tables, then the server's other tables, which the spell rows name.
+fn server_entries() -> List(table_store.Entry) {
   let spell_tables =
     list.map(entries(), fn(entry) { table_store.schema(entry).table })
   list.append(
@@ -2049,26 +2049,38 @@ fn entries_with_the_servers_others() -> List(table_store.Entry) {
   )
 }
 
-/// The files of these rows and of the server's other tables, which are the client's.
-fn files_with_the_fixtures_others(
+/// The files of the rows a load of these rows holds: the rows the roots reach,
+/// each row the client's rows do not hold as it is, the rows those reach, and
+/// the tables that go in whole.
+fn reached_files(
   rows rows: Rows,
+  roots roots: List(#(String, Int)),
 ) -> List(#(String, BitArray)) {
-  let spell_tables =
-    list.map(entries(), fn(entry) { table_store.schema(entry).table })
-  let held = fixture_tables.rows()
-  list.append(
-    files_of(rows:),
-    list.filter_map(server_table.entries(), fn(entry) {
-      let schema = table_store.schema(entry)
-      case list.contains(spell_tables, schema.table) {
-        True -> Error(Nil)
-        False ->
-          Ok(planted_table.file(
-            schema,
-            result.unwrap(dict.get(held, schema.table), []),
-          ))
-      }
-    }),
+  let given =
+    list.fold(tables_of(rows:), fixture_tables.rows(), fn(held, table) {
+      dict.insert(held, { table.0 }.table, table.1)
+    })
+  // The plan's build reads the innate of every class.
+  let classes =
+    result.unwrap(dict.get(fixture_tables.rows(), class.schema.table), [])
+    |> list.map(fn(row) {
+      let assert [Integer(id), ..] = row as "a client row holds its ID first"
+      #(class.schema.table, id)
+    })
+  let kept =
+    fixture_tables.reached(rows: given, roots: list.append(roots, classes))
+  list.map(
+    list.append(
+      list.map(server_entries(), table_store.schema),
+      list.map(tables_of(rows:), fn(table) { table.0 }),
+    )
+      |> list.unique,
+    fn(schema) {
+      planted_table.file(
+        schema,
+        result.unwrap(dict.get(kept, schema.table), []),
+      )
+    },
   )
 }
 
@@ -2097,63 +2109,60 @@ fn entries() -> List(table_store.Entry) {
   ]
 }
 
-fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
+fn tables_of(rows rows: Rows) -> List(#(tbl_file.Schema, List(List(Cell)))) {
   [
-    planted_table.file(spell_level.schema, rows.spell_levels),
-    planted_table.file(spell4.schema, rows.spell4),
-    planted_table.file(spell4_base.schema, rows.spell4_base),
-    planted_table.file(spell4_conditions.schema, rows.spell4_conditions),
-    planted_table.file(spell4_effects.schema, rows.spell4_effects),
-    planted_table.file(spell4_group_list.schema, rows.spell4_group_lists),
-    planted_table.file(spell4_stack_group.schema, rows.spell4_stack_groups),
-    planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
-    planted_table.file(
-      spell4_aoe_target_constraints.schema,
-      rows.spell4_aoe_target_constraints,
-    ),
-    planted_table.file(spell4_valid_targets.schema, rows.spell4_valid_targets),
-    planted_table.file(spell4_telegraph.schema, rows.spell4_telegraph),
-    planted_table.file(telegraph_damage.schema, rows.telegraph_damage),
-    planted_table.file(spell_phase.schema, rows.spell_phases),
-    planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
-    planted_table.file(class.schema, rows.classes),
-    planted_table.file(prerequisite.schema, rows.prerequisites),
-    planted_table.file(
-      positional_requirement.schema,
-      rows.positional_requirements,
-    ),
-    planted_table.file(unit_property2.schema, rows.unit_properties),
-    planted_table.file(eldan_augmentation.schema, rows.eldan_augmentations),
-    planted_table.file(level_up_unlock.schema, rows.level_up_unlocks),
+    #(spell_level.schema, rows.spell_levels),
+    #(spell4.schema, rows.spell4),
+    #(spell4_base.schema, rows.spell4_base),
+    #(spell4_conditions.schema, rows.spell4_conditions),
+    #(spell4_effects.schema, rows.spell4_effects),
+    #(spell4_group_list.schema, rows.spell4_group_lists),
+    #(spell4_stack_group.schema, rows.spell4_stack_groups),
+    #(spell4_thresholds.schema, rows.spell4_thresholds),
+    #(spell4_aoe_target_constraints.schema, rows.spell4_aoe_target_constraints),
+    #(spell4_valid_targets.schema, rows.spell4_valid_targets),
+    #(spell4_telegraph.schema, rows.spell4_telegraph),
+    #(telegraph_damage.schema, rows.telegraph_damage),
+    #(spell_phase.schema, rows.spell_phases),
+    #(spell_cool_down.schema, rows.spell_cool_downs),
+    #(class.schema, rows.classes),
+    #(prerequisite.schema, rows.prerequisites),
+    #(positional_requirement.schema, rows.positional_requirements),
+    #(unit_property2.schema, rows.unit_properties),
+    #(eldan_augmentation.schema, rows.eldan_augmentations),
+    #(level_up_unlock.schema, rows.level_up_unlocks),
   ]
 }
 
-/// The planted tables the plan reads, loaded from these rows under a key of
-/// their own, for the body to run on; unloaded afterwards.
+/// The tables the plan reads, loaded under a key of their own for the body to
+/// run on, then unloaded. The load holds the rows these roots reach, each row
+/// the client's rows do not hold as it is, and the rows those reach.
 pub fn with_loaded(
   rows rows: Rows,
+  reaching roots: List(#(String, Int)),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  with_loaded_deriving(rows:, derivations: [], body:)
+  with_loaded_deriving(rows:, reaching: roots, derivations: [], body:)
 }
 
-/// The same with these derivations run on the load, which fails when one does.
+/// The same, with the rows these roots reach also loaded and these derivations
+/// run on the load, which fails when one does.
 pub fn with_loaded_deriving(
   rows rows: Rows,
+  reaching roots: List(#(String, Int)),
   derivations derivations: List(table_store.Derivation),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  let files = files_with_the_fixtures_others(rows:)
-  use folder <- planted_table.in_folder(files)
+  use folder <- planted_table.in_folder(reached_files(rows:, roots:))
   let assert Ok(tables) =
     table_store.load(
       under: owned_key.new(),
       from: folder,
-      entries: entries_with_the_servers_others(),
+      entries: server_entries(),
       requirements: [],
       derivations:,
     )
-    as "the planted spell tables load"
+    as "the spell tables load"
   let result = body(tables)
   table_store.unload(tables)
   result
@@ -2254,17 +2263,22 @@ const strike_base = 19_102
 pub fn planned_strike(
   rows rows: Rows,
 ) -> Result(spell_plan.Spell, spell_plan.PlanError) {
-  with_loaded(rows:, body: fn(tables) {
-    case spell_plan.build(tables:) {
-      Ok(plans) -> {
-        let assert Ok(spell) =
-          spell_plan.in_plans(plans:, base: id.Spell4BaseId(strike_base))
-          as "the plans hold Telekinetic Strike"
-        Ok(spell)
-      }
-      Error(error) -> Error(error)
+  // SpellLevel 647 is Telekinetic Strike's level-one row, which the plan
+  // builds from.
+  use tables <- with_loaded_deriving(
+    rows:,
+    reaching: [#("SpellLevel", 647)],
+    derivations: [],
+  )
+  case spell_plan.build(tables:) {
+    Ok(plans) -> {
+      let assert Ok(spell) =
+        spell_plan.in_plans(plans:, base: id.Spell4BaseId(strike_base))
+        as "the plans hold Telekinetic Strike"
+      Ok(spell)
     }
-  })
+    Error(error) -> Error(error)
+  }
 }
 
 /// The client's rows of the tables the plan reads, which a test may change or add
@@ -2386,6 +2400,17 @@ pub fn fixture_plans() -> spell_plan.Plans {
       as "the fixture's spell rows build"
     plans
   })
+}
+
+/// Telekinetic Strike's plan from the client's rows, built once.
+pub fn fixture_strike() -> spell_plan.Spell {
+  let assert Ok(spell) =
+    spell_plan.in_plans(
+      plans: fixture_plans(),
+      base: id.Spell4BaseId(strike_base),
+    )
+    as "the plans hold Telekinetic Strike"
+  spell
 }
 
 /// The areas the client's rows build, built once.

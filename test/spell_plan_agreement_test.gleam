@@ -476,78 +476,82 @@ pub fn the_agreement_test_reports_a_spell_the_plan_refuses_for_a_row_read_row_re
         ..spell_tables.fixture_rows().spell4_effects
       ]),
     )
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    let sources = spell_plan.sources_of(tables:)
-    let effects = spell4_effects.all(tables)
-    let refused =
-      spell_plan.GainAimNotRead(
-        spell4_id: 32_893,
-        effect_id: 90_001,
-        target_flags: 1,
-      )
-    let compared =
-      compare(
-        spell4_ids: [32_893],
-        effects:,
-        children: fn(_) { [] },
-        plan: fn(spell4_id) {
-          case spell4_id {
-            32_893 -> Error(refused)
-            other ->
-              spell_plan.spell_alone(
-                tables:,
-                sources:,
-                spell4_id: other,
-                chain: [],
-              )
-          }
-        },
-        read: fn(effect, _planned) {
-          spell_plan.read_row(
-            tables:,
-            spell_groups: spell_plan.spell_groups(tables:),
-            place: spell_tables.pressed,
-            effect:,
-          )
-        },
-      )
-    assert compared.disagreements
-      == [
-        Disagreement(
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 647)],
+    rows:,
+    body: fn(tables) {
+      let sources = spell_plan.sources_of(tables:)
+      let effects = spell4_effects.all(tables)
+      let refused =
+        spell_plan.GainAimNotRead(
           spell4_id: 32_893,
           effect_id: 90_001,
-          plan: "refused: " <> spell_plan.describe(error: refused),
-          read_row: "Applied",
-        ),
-      ]
-      as "the test names the spell, the row and both verdicts"
-    let listed =
-      compare(
-        spell4_ids: [32_893],
-        effects:,
-        children: fn(_) { [] },
-        plan: fn(spell4_id) {
-          let assert Ok(spell) =
-            spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
-            as "the planted strike loads"
-          Ok(spell_plan.Spell(..spell, lasting: []))
-        },
-        read: fn(effect, _planned) {
-          spell_plan.read_row(
-            tables:,
-            spell_groups: spell_plan.spell_groups(tables:),
-            place: spell_tables.pressed,
-            effect:,
-          )
-        },
-      )
-    assert list.any(listed.disagreements, fn(disagreement) {
-      disagreement.effect_id == 90_001
-      && disagreement.plan == "in no list"
-      && disagreement.read_row == "Applied"
-    })
-      as "a row read_row applies that the plan holds in no list is reported too"
-  })
+          target_flags: 1,
+        )
+      let compared =
+        compare(
+          spell4_ids: [32_893],
+          effects:,
+          children: fn(_) { [] },
+          plan: fn(spell4_id) {
+            case spell4_id {
+              32_893 -> Error(refused)
+              other ->
+                spell_plan.spell_alone(
+                  tables:,
+                  sources:,
+                  spell4_id: other,
+                  chain: [],
+                )
+            }
+          },
+          read: fn(effect, _planned) {
+            spell_plan.read_row(
+              tables:,
+              spell_groups: spell_plan.spell_groups(tables:),
+              place: spell_tables.pressed,
+              effect:,
+            )
+          },
+        )
+      assert compared.disagreements
+        == [
+          Disagreement(
+            spell4_id: 32_893,
+            effect_id: 90_001,
+            plan: "refused: " <> spell_plan.describe(error: refused),
+            read_row: "Applied",
+          ),
+        ]
+        as "the test names the spell, the row and both verdicts"
+      let listed =
+        compare(
+          spell4_ids: [32_893],
+          effects:,
+          children: fn(_) { [] },
+          plan: fn(spell4_id) {
+            let assert Ok(spell) =
+              spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
+              as "the planted strike loads"
+            Ok(spell_plan.Spell(..spell, lasting: []))
+          },
+          read: fn(effect, _planned) {
+            spell_plan.read_row(
+              tables:,
+              spell_groups: spell_plan.spell_groups(tables:),
+              place: spell_tables.pressed,
+              effect:,
+            )
+          },
+        )
+      assert list.any(listed.disagreements, fn(disagreement) {
+        disagreement.effect_id == 90_001
+        && disagreement.plan == "in no list"
+        && disagreement.read_row == "Applied"
+      })
+        as "a row read_row applies that the plan holds in no list is reported too"
+    },
+  )
 }
 
 /// The planted strike with this Fluff row 90001 added, compared where the planner refuses
@@ -569,22 +573,26 @@ fn refused_with(
         ..spell_tables.fixture_rows().spell4_effects
       ]),
     )
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    compare(
-      spell4_ids: [32_893],
-      effects: spell4_effects.all(tables),
-      children: fn(_) { [] },
-      plan: fn(_) { Error(refusal) },
-      read: fn(effect, _planned) {
-        spell_plan.read_row(
-          tables:,
-          spell_groups: spell_plan.spell_groups(tables:),
-          place: spell_tables.pressed,
-          effect:,
-        )
-      },
-    )
-  })
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 647)],
+    rows:,
+    body: fn(tables) {
+      compare(
+        spell4_ids: [32_893],
+        effects: spell4_effects.all(tables),
+        children: fn(_) { [] },
+        plan: fn(_) { Error(refusal) },
+        read: fn(effect, _planned) {
+          spell_plan.read_row(
+            tables:,
+            spell_groups: spell_plan.spell_groups(tables:),
+            place: spell_tables.pressed,
+            effect:,
+          )
+        },
+      )
+    },
+  )
 }
 
 pub fn a_missing_table_row_is_matched_to_a_row_of_the_tree_that_gives_it_test() -> Nil {

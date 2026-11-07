@@ -166,63 +166,67 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
       90_010, 90_011, 90_012, 90_013, 90_014,
     ]
     as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, held and applied by no go, `cast.condition_gate`) and the periodic heal (90014, a `TickingShieldHeal`); the Proc of kind 12 (`proc_read`) and the Proxy that names no spell are in no list"
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    let spell_groups = spell_plan.spell_groups(tables:)
-    let effects =
-      spell4_effects.all(tables)
-      |> list.filter(fn(effect) {
-        planted_between(id: effect.id, low: 90_000, high: 91_000)
-      })
-    let read = fn(effect: Spell4Effects) {
-      spell_plan.read_row(
-        tables:,
-        spell_groups:,
-        place: spell_tables.pressed,
-        effect:,
-      )
-    }
-    let verdicts =
-      list.map(effects, fn(effect) {
-        let kind = case read(effect) {
-          Ok(Applied(..)) -> "applied"
-          Ok(Held(..)) -> "held"
-          Ok(LeftOut(..)) -> "left out"
-          Ok(ReadByArea) -> "area"
-          Error(error) -> "refused: " <> spell_plan.describe(error:)
-        }
-        #(effect.id, kind)
-      })
-    assert verdicts
-      == list.append(
-        list.map(
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 647)],
+    rows:,
+    body: fn(tables) {
+      let spell_groups = spell_plan.spell_groups(tables:)
+      let effects =
+        spell4_effects.all(tables)
+        |> list.filter(fn(effect) {
+          planted_between(id: effect.id, low: 90_000, high: 91_000)
+        })
+      let read = fn(effect: Spell4Effects) {
+        spell_plan.read_row(
+          tables:,
+          spell_groups:,
+          place: spell_tables.pressed,
+          effect:,
+        )
+      }
+      let verdicts =
+        list.map(effects, fn(effect) {
+          let kind = case read(effect) {
+            Ok(Applied(..)) -> "applied"
+            Ok(Held(..)) -> "held"
+            Ok(LeftOut(..)) -> "left out"
+            Ok(ReadByArea) -> "area"
+            Error(error) -> "refused: " <> spell_plan.describe(error:)
+          }
+          #(effect.id, kind)
+        })
+      assert verdicts
+        == list.append(
+          list.map(
+            [
+              90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_008,
+              90_009, 90_010, 90_011, 90_012,
+            ],
+            fn(id) { #(id, "applied") },
+          ),
           [
-            90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_008,
-            90_009, 90_010, 90_011, 90_012,
+            #(90_013, "held"),
+            #(90_014, "held"),
+            #(90_015, "left out"),
+            #(90_016, "left out"),
           ],
-          fn(id) { #(id, "applied") },
-        ),
-        [
-          #(90_013, "held"),
-          #(90_014, "held"),
-          #(90_015, "left out"),
-          #(90_016, "left out"),
-        ],
-      )
-      as "the rule each row checks: a gate behind a target apply prerequisite, a periodic heal, a Proc of a kind not read and a Proxy that names no spell"
-    let assert Ok(Applied(PlannedProc(..))) =
-      read(first_of(effects:, id: 90_011))
-      as "the Proc of kind 217 is read and its spell is planned from the reading"
-    assert read(first_of(effects:, id: 90_015))
-      == Ok(LeftOut(why: ProcOfAnotherKind(kind: 12)))
-    assert read(first_of(effects:, id: 90_016))
-      == Ok(LeftOut(why: ProxyNamesNoSpell))
-    let assert Ok(Applied(PlannedProxy(..))) =
-      read(first_of(effects:, id: 90_012))
-      as "the Proxy that names a spell is read"
-    assert effect_row.unread_by_type(tables:, effects:)
-      == dict.from_list([#(17, 1), #(118, 1), #(14, 1), #(26, 1)])
-      as "the measure counts only the rows a go applies as read: one Fluff behind a target prerequisite, the periodic heal, the Proc of kind 12 and the Proxy with dataBits00 0 are not"
-  })
+        )
+        as "the rule each row checks: a gate behind a target apply prerequisite, a periodic heal, a Proc of a kind not read and a Proxy that names no spell"
+      let assert Ok(Applied(PlannedProc(..))) =
+        read(first_of(effects:, id: 90_011))
+        as "the Proc of kind 217 is read and its spell is planned from the reading"
+      assert read(first_of(effects:, id: 90_015))
+        == Ok(LeftOut(why: ProcOfAnotherKind(kind: 12)))
+      assert read(first_of(effects:, id: 90_016))
+        == Ok(LeftOut(why: ProxyNamesNoSpell))
+      let assert Ok(Applied(PlannedProxy(..))) =
+        read(first_of(effects:, id: 90_012))
+        as "the Proxy that names a spell is read"
+      assert effect_row.unread_by_type(tables:, effects:)
+        == dict.from_list([#(17, 1), #(118, 1), #(14, 1), #(26, 1)])
+        as "the measure counts only the rows a go applies as read: one Fluff behind a target prerequisite, the periodic heal, the Proc of kind 12 and the Proxy with dataBits00 0 are not"
+    },
+  )
 }
 
 fn first_of(effects effects: List(Spell4Effects), id id: Int) -> Spell4Effects {
@@ -290,20 +294,24 @@ pub fn a_row_whose_tables_lack_its_prerequisite_is_not_read_test() -> Nil {
       #("prerequisiteIdCasterApply", Integer(99)),
     ])
   let rows = rows_with(effects: [planted_row])
-  assert spell_tables.derivation_result(rows:)
+  assert spell_tables.derivation_result(reaching: [#("SpellLevel", 647)], rows:)
     |> result.is_error
     as "the plan's load fails on the row"
   assert spell_tables.planned_strike(rows:)
     == Error(spell_plan.NoRow(table: "Prerequisite", id: 99))
     as "Spell4Effects.prerequisiteIdCasterApply names a Prerequisite row the table lacks"
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    let effects =
-      spell4_effects.all(tables)
-      |> list.filter(fn(effect) { effect.id == 90_021 })
-    assert effect_row.unread_by_type(tables:, effects:)
-      == dict.from_list([#(17, 1)])
-      as "the measure counts the row not read, without stopping"
-  })
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 647)],
+    rows:,
+    body: fn(tables) {
+      let effects =
+        spell4_effects.all(tables)
+        |> list.filter(fn(effect) { effect.id == 90_021 })
+      assert effect_row.unread_by_type(tables:, effects:)
+        == dict.from_list([#(17, 1)])
+        as "the measure counts the row not read, without stopping"
+    },
+  )
 }
 
 pub fn a_row_whose_prerequisites_nest_each_other_is_not_read_test() -> Nil {
@@ -333,14 +341,18 @@ pub fn a_row_whose_prerequisites_nest_each_other_is_not_read_test() -> Nil {
   assert spell_tables.planned_strike(rows:)
     == Error(spell_plan.PrerequisiteCycle(path: [910, 911, 910]))
     as "the rows nest each other round a cycle"
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    let effects =
-      spell4_effects.all(tables)
-      |> list.filter(fn(effect) { effect.id == 90_031 })
-    assert effect_row.unread_by_type(tables:, effects:)
-      == dict.from_list([#(17, 1)])
-      as "the measure counts the row not read, without stopping"
-  })
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 647)],
+    rows:,
+    body: fn(tables) {
+      let effects =
+        spell4_effects.all(tables)
+        |> list.filter(fn(effect) { effect.id == 90_031 })
+      assert effect_row.unread_by_type(tables:, effects:)
+        == dict.from_list([#(17, 1)])
+        as "the measure counts the row not read, without stopping"
+    },
+  )
 }
 
 pub fn a_property_row_with_no_life_is_held_whatever_its_type_test() -> Nil {
@@ -367,43 +379,47 @@ pub fn a_property_row_with_no_life_is_held_whatever_its_type_test() -> Nil {
         row(id: 91_100 + effect_type, effect_type:, target_flags: 1, columns:),
       ]
     })
-  spell_tables.with_loaded(rows: rows_with(effects:), body: fn(tables) {
-    let planted_effects =
-      spell4_effects.all(tables)
-      |> list.filter(fn(effect) {
-        planted_between(id: effect.id, low: 90_100, high: 92_000)
-      })
-    let spell_groups = spell_plan.spell_groups(tables:)
-    let verdicts =
-      list.map(planted_effects, fn(effect) {
-        let reading =
-          spell_plan.read_row(
-            tables:,
-            spell_groups:,
-            place: spell_tables.pressed,
-            effect:,
-          )
-        #(effect.id, case reading {
-          Ok(Applied(..)) -> "applied"
-          Ok(Held(..)) -> "held"
-          Ok(LeftOut(..)) | Ok(ReadByArea) | Error(..) -> "other"
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 647)],
+    rows: rows_with(effects:),
+    body: fn(tables) {
+      let planted_effects =
+        spell4_effects.all(tables)
+        |> list.filter(fn(effect) {
+          planted_between(id: effect.id, low: 90_100, high: 92_000)
         })
-      })
-    assert verdicts
-      == [
-        #(90_152, "applied"),
-        #(90_111, "applied"),
-        #(90_245, "applied"),
-        #(91_152, "held"),
-        #(91_111, "held"),
-        #(91_245, "held"),
-      ]
-      |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
-      as "a row with a durationTime is applied, one with no life is held: the plan lists both"
-    assert effect_row.unread_by_type(tables:, effects: planted_effects)
-      == dict.from_list([#(52, 1), #(11, 1), #(145, 1)])
-      as "the measure counts the three rows with no life not read"
-  })
+      let spell_groups = spell_plan.spell_groups(tables:)
+      let verdicts =
+        list.map(planted_effects, fn(effect) {
+          let reading =
+            spell_plan.read_row(
+              tables:,
+              spell_groups:,
+              place: spell_tables.pressed,
+              effect:,
+            )
+          #(effect.id, case reading {
+            Ok(Applied(..)) -> "applied"
+            Ok(Held(..)) -> "held"
+            Ok(LeftOut(..)) | Ok(ReadByArea) | Error(..) -> "other"
+          })
+        })
+      assert verdicts
+        == [
+          #(90_152, "applied"),
+          #(90_111, "applied"),
+          #(90_245, "applied"),
+          #(91_152, "held"),
+          #(91_111, "held"),
+          #(91_245, "held"),
+        ]
+        |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+        as "a row with a durationTime is applied, one with no life is held: the plan lists both"
+      assert effect_row.unread_by_type(tables:, effects: planted_effects)
+        == dict.from_list([#(52, 1), #(11, 1), #(145, 1)])
+        as "the measure counts the three rows with no life not read"
+    },
+  )
 }
 
 pub fn a_row_no_phase_selects_is_held_and_a_damage_row_left_out_test() -> Nil {
@@ -434,29 +450,33 @@ pub fn a_row_no_phase_selects_is_held_and_a_damage_row_left_out_test() -> Nil {
     |> list.sort(int.compare)
     == [92_001, 92_002, 92_004]
     as "the plan lists the Fluff and the Proxy of phaseFlags 0, which no phase applies, beside the Fluff of -1; the damage row is in no list"
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    let planted_effects =
-      spell4_effects.all(tables)
-      |> list.filter(fn(effect) {
-        planted_between(id: effect.id, low: 92_000, high: 93_000)
-      })
-    let spell_groups = spell_plan.spell_groups(tables:)
-    let read = fn(id) {
-      spell_plan.read_row(
-        tables:,
-        spell_groups:,
-        place: spell_tables.pressed,
-        effect: first_of(effects: planted_effects, id:),
-      )
-    }
-    let assert Ok(Held(..)) = read(92_001)
-      as "a lasting row no phase selects is held"
-    let assert Ok(Held(PlannedProxy(..))) = read(92_002)
-      as "so is a Proxy, and its child is still planned"
-    assert read(92_003) == Ok(LeftOut(why: spell_plan.InNoPhase))
-    let assert Ok(Applied(..)) = read(92_004)
-    assert effect_row.unread_by_type(tables:, effects: planted_effects)
-      == dict.from_list([#(17, 1), #(26, 1), #(8, 1)])
-      as "the measure counts the three rows no phase selects not read, and the Fluff of -1 read"
-  })
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 647)],
+    rows:,
+    body: fn(tables) {
+      let planted_effects =
+        spell4_effects.all(tables)
+        |> list.filter(fn(effect) {
+          planted_between(id: effect.id, low: 92_000, high: 93_000)
+        })
+      let spell_groups = spell_plan.spell_groups(tables:)
+      let read = fn(id) {
+        spell_plan.read_row(
+          tables:,
+          spell_groups:,
+          place: spell_tables.pressed,
+          effect: first_of(effects: planted_effects, id:),
+        )
+      }
+      let assert Ok(Held(..)) = read(92_001)
+        as "a lasting row no phase selects is held"
+      let assert Ok(Held(PlannedProxy(..))) = read(92_002)
+        as "so is a Proxy, and its child is still planned"
+      assert read(92_003) == Ok(LeftOut(why: spell_plan.InNoPhase))
+      let assert Ok(Applied(..)) = read(92_004)
+      assert effect_row.unread_by_type(tables:, effects: planted_effects)
+        == dict.from_list([#(17, 1), #(26, 1), #(8, 1)])
+        as "the measure counts the three rows no phase selects not read, and the Fluff of -1 read"
+    },
+  )
 }

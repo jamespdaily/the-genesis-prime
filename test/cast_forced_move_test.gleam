@@ -99,7 +99,7 @@ fn changes_a_property(effect effect: cast.Effect) -> Bool {
 // ---- what a go lists ----
 
 pub fn gates_go_lists_the_blink_in_the_casters_target_info_beside_the_modifier_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(_, effects) =
     press(
       spell: holder(forced_moves: [blink_row()], modifiers: [
@@ -111,14 +111,14 @@ pub fn gates_go_lists_the_blink_in_the_casters_target_info_beside_the_modifier_t
 }
 
 pub fn a_forced_move_alone_is_listed_on_the_caster_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(_, effects) =
     press(spell: holder(forced_moves: [blink_row()], modifiers: []))
   assert listed(effects:) == [#(7, [#(67_776, 200)])]
 }
 
 pub fn a_forced_move_of_a_phase_the_go_is_not_in_is_not_listed_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // The row is moved to phaseFlags 2 (phase 1 only), which a go of phase 0 does not hold.
   let later = spell_plan.ForcedMove(..blink_row(), phase_flags: 2)
   let #(_, effects) = press(spell: holder(forced_moves: [later], modifiers: []))
@@ -126,7 +126,7 @@ pub fn a_forced_move_of_a_phase_the_go_is_not_in_is_not_listed_test() -> Nil {
 }
 
 pub fn a_forced_move_behind_a_target_prerequisite_is_not_listed_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let gated =
     spell_plan.ForcedMove(
       ..blink_row(),
@@ -140,7 +140,7 @@ pub fn a_forced_move_behind_a_target_prerequisite_is_not_listed_test() -> Nil {
 // ---- what a forced move starts ----
 
 pub fn a_forced_move_gives_the_caster_no_node_timer_or_property_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(_, effects) =
     press(spell: holder(forced_moves: [blink_row()], modifiers: []))
   assert support.started_timers(effects:) == []
@@ -154,7 +154,7 @@ pub fn a_forced_move_gives_the_caster_no_node_timer_or_property_test() -> Nil {
 // ---- the rolls ----
 
 pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let chance = prerequisite_support.single(id: 4585, condition: #(37, 6, 0, 50))
   let gated =
     spell_plan.ForcedMove(

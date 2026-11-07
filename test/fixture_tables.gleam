@@ -9,6 +9,7 @@
 
 import database_support
 import genesis_prime/fixture_rows
+import genesis_prime/message/float32
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
@@ -19,6 +20,7 @@ import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/set.{type Set}
 import owned_key
 import planted_table.{type Cell}
 import simplifile
@@ -100,21 +102,6 @@ pub fn parse_table(
   |> result.map_error(Malformed)
 }
 
-/// The rows read from a folder.
-pub fn read_folder(folder: String) -> Result(Rows, Refusal) {
-  schemas()
-  |> list.try_map(fn(schema) {
-    let path = folder <> "/" <> schema.file <> ".tsv"
-    use text <- result.try(
-      simplifile.read(path)
-      |> result.replace_error(Unreadable(table: schema.table, path:)),
-    )
-    use rows <- result.map(parse_table(schema:, text:))
-    #(schema.table, rows)
-  })
-  |> result.map(dict.from_list)
-}
-
 /// The schema of each table the server loads, in the order of its entries.
 pub fn schemas() -> List(tbl_file.Schema) {
   list.map(server_table.entries(), store.schema)
@@ -161,37 +148,169 @@ pub fn root(table table: String, id id: Int) -> Int {
 
 // ---------------------------------------------------------------- loading
 
+/// The rows as the files hold them, with what they reach, read once.
+type Committed {
+  Committed(rows: Rows, reach: fixture_rows.Reach)
+}
+
+fn committed() -> Committed {
+  database_support.once("fixture_tables_committed", fn() {
+    let read =
+      schemas()
+      |> list.try_map(fn(schema) {
+        let path = folder <> "/" <> schema.file <> ".tsv"
+        use text <- result.try(
+          simplifile.read(path)
+          |> result.replace_error(Unreadable(table: schema.table, path:)),
+        )
+        use rows <- result.map(
+          fixture_rows.parse_table(schema:, text:)
+          |> result.map_error(Malformed),
+        )
+        #(schema.table, rows)
+      })
+      |> result.map(dict.from_list)
+    let whole_path = folder <> "/" <> fixture_rows.whole_file <> ".tsv"
+    let whole =
+      simplifile.read(whole_path)
+      |> result.map_error(fn(error) {
+        fixture_rows.FileFailed(
+          path: whole_path,
+          reason: simplifile.describe_error(error),
+        )
+      })
+      |> result.try(fixture_rows.parse_whole)
+    let whole = case whole {
+      Ok(whole) -> whole
+      Error(refusal) -> panic as fixture_rows.describe(refusal)
+    }
+    case read {
+      Ok(read) -> {
+        let reach = case fixture_rows.reach_of(rows: read, whole:) {
+          Ok(reach) -> reach
+          Error(refusal) -> panic as fixture_rows.describe(refusal)
+        }
+        Committed(
+          rows: dict.map_values(read, fn(_, rows) {
+            list.map(rows, list.map(_, planted))
+          }),
+          reach:,
+        )
+      }
+      Error(refusal) -> panic as describe(refusal)
+    }
+  })
+}
+
+/// The rows, read once.
+pub fn rows() -> Rows {
+  committed().rows
+}
+
+/// The rows of `rows` a load of them holds: the rows the roots reach, each row
+/// the files do not hold as it is, the rows those reach, and the tables that go
+/// in whole. A table the server does not load is kept whole.
+pub fn reached(rows rows: Rows, roots roots: List(#(String, Int))) -> Rows {
+  select(rows:, roots:, with: fixture_rows.reached)
+}
+
+/// The rows `reached` keeps, with the fixture's roots, the rows the server's
+/// load reads, and the rows those reach.
+pub fn closure(rows rows: Rows, roots given: List(#(String, Int))) -> Rows {
+  let fixture_roots = list.map(roots(), fn(root) { #(root.table, root.id) })
+  select(
+    rows:,
+    roots: list.append(given, fixture_roots),
+    with: fixture_rows.closure_of,
+  )
+}
+
+fn select(
+  rows rows: Rows,
+  roots roots: List(#(String, Int)),
+  with walk: fn(fixture_rows.Reach, List(#(String, Int))) ->
+    Result(Dict(String, Set(Int)), fixture_rows.Refusal),
+) -> Rows {
+  let held = committed()
+  let #(reach, edited) =
+    list.fold(schemas(), #(held.reach, []), fn(state, schema) {
+      let #(reach, edited) = state
+      let given = rows_of(rows:, schema:)
+      let kept = rows_of(rows: held.rows, schema:)
+      case given == kept {
+        True -> state
+        False -> #(
+          fixture_rows.with_rows(
+            reach:,
+            table: schema.table,
+            rows: list.map(given, client_cells(schema:, row: _)),
+          ),
+          list.append(edited, edited_ids(schema:, given:, kept:)),
+        )
+      }
+    })
+  let selected = case walk(reach, list.append(roots, edited)) {
+    Ok(selected) -> selected
+    Error(refusal) -> panic as fixture_rows.describe(refusal)
+  }
+  let loaded = list.map(schemas(), fn(schema) { schema.table })
+  dict.map_values(rows, fn(table, table_rows) {
+    case list.contains(loaded, table), dict.get(selected, table) {
+      False, _ -> table_rows
+      True, Ok(ids) ->
+        list.filter(table_rows, fn(row) { set.contains(ids, id_of(row:)) })
+      True, Error(Nil) -> []
+    }
+  })
+}
+
+/// The ids of the rows of `given` that `kept` does not hold as they are.
+fn edited_ids(
+  schema schema: tbl_file.Schema,
+  given given: List(List(Cell)),
+  kept kept: List(List(Cell)),
+) -> List(#(String, Int)) {
+  let by_id = dict.from_list(list.map(kept, fn(row) { #(id_of(row:), row) }))
+  list.filter_map(given, fn(row) {
+    let id = id_of(row:)
+    case dict.get(by_id, id) == Ok(row) {
+      True -> Error(Nil)
+      False -> Ok(#(schema.table, id))
+    }
+  })
+}
+
+/// A row as the client's table holds it.
+fn client_cells(
+  schema schema: tbl_file.Schema,
+  row row: List(Cell),
+) -> List(table_rows.Cell) {
+  list.map2(schema.columns, row, fn(column, cell) {
+    table_rows.Cell(column: column.name, value: case column.column_type, cell {
+      tbl_file.Integer64, planted_table.Integer(number) ->
+        table_rows.Integer64(number)
+      _, planted_table.Integer(number) -> table_rows.Integer32(number)
+      _, planted_table.Float(value) ->
+        table_rows.Float32(value:, bits: float32.to_bits(value:))
+      _, planted_table.Boolean(value) -> table_rows.Boolean(value)
+      _, planted_table.Text(text) -> table_rows.Text(text)
+      _, planted_table.TextAt(..) -> table_rows.Text("")
+    })
+  })
+}
+
 /// Loads the rows as the server's tables under this key, with the server's own
 /// requirements and derivations.
 pub fn load(
-  rows wanted: Rows,
+  rows rows: Rows,
   under key: reference.Reference,
 ) -> Result(store.Tables, store.LoadError) {
-  let committed = rows()
   let files =
-    list.zip(schemas(), committed_files())
-    |> list.map(fn(held) {
-      let #(schema, committed_file) = held
-      let table_rows = rows_of(rows: wanted, schema:)
-      case table_rows == rows_of(rows: committed, schema:) {
-        True -> committed_file
-        False -> planted_table.file(schema:, rows: table_rows)
-      }
+    list.map(schemas(), fn(schema) {
+      planted_table.file(schema:, rows: rows_of(rows:, schema:))
     })
   use folder <- planted_table.in_folder(files)
   server_table.load_under(under: key, from: folder)
-}
-
-/// The file of each server table made from the committed rows, in the order of
-/// `schemas`, made once: a load that edits one table writes the other tables'
-/// files from here instead of making them again.
-fn committed_files() -> List(#(String, BitArray)) {
-  database_support.once("fixture_tables_files", fn() {
-    let committed = rows()
-    list.map(schemas(), fn(schema) {
-      planted_table.file(schema:, rows: rows_of(rows: committed, schema:))
-    })
-  })
 }
 
 fn loaded(rows: Rows, key: reference.Reference) -> store.Tables {
@@ -212,25 +331,6 @@ pub fn shared_key() -> reference.Reference {
 pub fn shared() -> store.Tables {
   database_support.once("fixture_tables", fn() { loaded(rows(), shared_key()) })
 }
-
-/// The rows, read once. They are held packed and unpacked at each call, which
-/// keeps the test VM's literal area small.
-pub fn rows() -> Rows {
-  unpack(
-    database_support.once("fixture_tables_rows", fn() {
-      case read_folder(folder) {
-        Ok(rows) -> pack(rows)
-        Error(refusal) -> panic as describe(refusal)
-      }
-    }),
-  )
-}
-
-@external(erlang, "fixture_tables_ffi", "pack")
-fn pack(rows: Rows) -> BitArray
-
-@external(erlang, "fixture_tables_ffi", "unpack")
-fn unpack(packed: BitArray) -> Rows
 
 // ---------------------------------------------------------------- edits
 
@@ -339,21 +439,26 @@ pub fn add(
   dict.insert(rows, table, list.append(rows_of(rows:, schema:), [new_row]))
 }
 
-/// Runs the body on these rows loaded under a key of their own and unloaded
-/// afterwards, for a case that needs more than one edit (`change` and `add`
-/// make them); the shared load is not touched.
-pub fn on_rows(rows rows: Rows, body body: fn(store.Tables) -> a) -> a {
-  on_rows_under(rows:, key: owned_key.new(), body:)
+/// Runs the body on the `closure` of these rows and roots, loaded under a key
+/// of their own and unloaded afterwards, for a case that needs more than one
+/// edit (`change` and `add` make them); the shared load is not touched.
+pub fn on_rows(
+  rows rows: Rows,
+  reaching roots: List(#(String, Int)),
+  body body: fn(store.Tables) -> a,
+) -> a {
+  on_rows_under(rows:, reaching: roots, key: owned_key.new(), body:)
 }
 
 /// `on_rows` under a key the caller made. The tables are unloaded also when the
 /// body crashes, so the failure that shows is the body's.
 pub fn on_rows_under(
   rows rows: Rows,
+  reaching roots: List(#(String, Int)),
   key key: reference.Reference,
   body body: fn(store.Tables) -> a,
 ) -> a {
-  let tables = loaded(rows, key)
+  let tables = loaded(closure(rows:, roots:), key)
   after_body(fn() { body(tables) }, fn() { store.unload(tables) })
 }
 
@@ -372,7 +477,7 @@ pub fn changed(
   body body: fn(store.Tables) -> a,
 ) -> a {
   case change(rows: rows(), table:, id:, with: changes) {
-    Ok(rows) -> on_rows(rows:, body:)
+    Ok(rows) -> on_rows(rows:, reaching: [], body:)
     Error(refusal) -> panic as describe(refusal)
   }
 }
@@ -388,7 +493,7 @@ pub fn added(
   body body: fn(store.Tables) -> a,
 ) -> a {
   case add(rows: rows(), table:, copy_of:, id:, with: changes) {
-    Ok(rows) -> on_rows(rows:, body:)
+    Ok(rows) -> on_rows(rows:, reaching: [], body:)
     Error(refusal) -> panic as describe(refusal)
   }
 }

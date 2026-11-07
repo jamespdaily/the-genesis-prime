@@ -126,6 +126,7 @@ fn kick_rows(kick kick: Kick) -> spell_tables.Rows {
 pub fn built(kick kick: Kick) -> Result(Areas, AreaError) {
   spell_tables.with_loaded_deriving(
     rows: kick_rows(kick:),
+    reaching: [#("SpellLevel", 925)],
     derivations: [spell_plan.derivation()],
     body: fn(tables) { spell_area.build(tables:) },
   )
@@ -135,15 +136,19 @@ pub fn built(kick kick: Kick) -> Result(Areas, AreaError) {
 /// decision about the row in a spell nothing starts on each struck unit
 /// (`genesis_prime/coverage/effect_row`).
 pub fn read_by_the_measure(kick kick: Kick) -> Bool {
-  spell_tables.with_loaded(rows: kick_rows(kick:), body: fn(tables) {
-    let assert Ok(row) =
-      spell4_effects.get(tables:, id: Spell4EffectsId(140_383))
-      as "Kick holds its damage effect, row 140383"
-    effect_row.is_read(
-      tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
-      place: spell_tables.pressed,
-      effect: row,
-    )
-  })
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 925)],
+    rows: kick_rows(kick:),
+    body: fn(tables) {
+      let assert Ok(row) =
+        spell4_effects.get(tables:, id: Spell4EffectsId(140_383))
+        as "Kick holds its damage effect, row 140383"
+      effect_row.is_read(
+        tables:,
+        spell_groups: spell_plan.spell_groups(tables:),
+        place: spell_tables.pressed,
+        effect: row,
+      )
+    },
+  )
 }

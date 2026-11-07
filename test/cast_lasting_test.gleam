@@ -117,7 +117,7 @@ fn press_striking(
 // ---- what a go lists ----
 
 pub fn a_go_lists_a_fluff_effect_on_the_caster_with_count_1_and_no_lifetime_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // Power Charge's Fluff 96819 aims at the caster and lasts until removed.
   let plans =
     support.plans_of([
@@ -152,7 +152,7 @@ pub fn a_go_lists_a_fluff_effect_on_the_caster_with_count_1_and_no_lifetime_test
 }
 
 pub fn a_struck_unit_keeps_its_damage_info_and_an_aimed_unit_that_was_not_struck_gets_its_own_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
@@ -191,7 +191,7 @@ pub fn a_struck_unit_keeps_its_damage_info_and_an_aimed_unit_that_was_not_struck
 }
 
 pub fn a_spell_with_no_lasting_effect_finishes_after_its_last_go_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(_, effects) =
     support.press(
       plans: support.plans_of([buff(spell4_id: 101, base: 3, lasting: [])]),
@@ -218,7 +218,7 @@ fn eight_seconds_on_the_caster() -> Plans {
 }
 
 pub fn a_cast_with_a_node_that_has_life_left_sends_no_finish_after_its_last_go_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(_, effects) =
     support.press(
       plans: eight_seconds_on_the_caster(),
@@ -239,7 +239,7 @@ pub fn a_cast_with_a_node_that_has_life_left_sends_no_finish_after_its_last_go_t
 }
 
 pub fn the_finish_and_the_audiences_news_come_when_the_life_is_over_and_not_before_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(state, effects) =
     support.press(
       plans: eight_seconds_on_the_caster(),
@@ -263,7 +263,7 @@ pub fn the_finish_and_the_audiences_news_come_when_the_life_is_over_and_not_befo
 }
 
 pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
@@ -304,7 +304,7 @@ pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> 
 }
 
 pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
@@ -349,7 +349,7 @@ pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil
 }
 
 pub fn a_node_until_removed_arms_no_timer_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       buff(spell4_id: 42_569, base: 3, lasting: [
@@ -370,7 +370,7 @@ pub fn a_node_until_removed_arms_no_timer_test() -> Nil {
 // ---- a type 80 removal ----
 
 pub fn a_removal_takes_the_casts_of_a_spell_off_and_a_later_timer_finds_nothing_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
@@ -411,7 +411,7 @@ pub fn a_removal_takes_the_casts_of_a_spell_off_and_a_later_timer_finds_nothing_
 }
 
 pub fn a_removal_takes_the_older_of_two_casts_whole_and_leaves_the_newer_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // A node's count is 1 per application, so two casts hold 1 each, and a count of 1
   // over them takes the older one's whole node and none of the newer one's.
   let plans =
@@ -440,7 +440,7 @@ pub fn a_removal_takes_the_older_of_two_casts_whole_and_leaves_the_newer_test() 
 }
 
 pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // Quick Draw's removal 196521: it runs only behind prerequisite 17302, type 15 of
   // 43500, the caster under Quick Draw's marker.
   let gate =
@@ -480,7 +480,7 @@ pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test(
 }
 
 pub fn a_removal_behind_a_target_prerequisite_is_not_applied_with_a_debug_line_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
@@ -533,7 +533,7 @@ fn stacked(
 }
 
 pub fn a_third_copy_of_a_cap_2_group_takes_the_casters_oldest_off_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // Power Charge 42569 is in stack group 1450, cap 2 (Spell4StackGroup).
   let plans =
     support.plans_of([stacked(spell4_id: 42_569, base: 3, group: 1450, cap: 2)])
@@ -555,7 +555,7 @@ pub fn a_third_copy_of_a_cap_2_group_takes_the_casters_oldest_off_test() -> Nil 
 }
 
 pub fn a_second_cast_of_a_cap_0_spell_takes_the_first_one_off_and_another_spell_stays_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // Charged Shot 34718 is in group 2, cap 0: one cast per spell.
   let plans =
     support.plans_of([
@@ -577,7 +577,7 @@ pub fn a_second_cast_of_a_cap_0_spell_takes_the_first_one_off_and_another_spell_
 // ---- the caster, and the units in sight ----
 
 pub fn the_caster_dying_finishes_a_lingering_cast_with_its_0x7fe_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(state, effects) =
     support.press(
       plans: eight_seconds_on_the_caster(),
@@ -602,7 +602,7 @@ pub fn the_caster_dying_finishes_a_lingering_cast_with_its_0x7fe_test() -> Nil {
 }
 
 pub fn a_caster_that_leaves_writes_nothing_for_its_lingering_casts_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let #(state, effects) =
     support.press(
       plans: eight_seconds_on_the_caster(),
@@ -619,7 +619,7 @@ pub fn a_caster_that_leaves_writes_nothing_for_its_lingering_casts_test() -> Nil
 }
 
 pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
@@ -657,7 +657,7 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
 }
 
 pub fn a_node_removed_with_its_unit_leaves_the_casts_other_nodes_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
@@ -712,7 +712,7 @@ fn channel(
 }
 
 pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // Pulses at 0 and 1000 after the press at 1000 and a channelMaxTime of 1500: the
   // channel ends at 2500, its last go at 2000 gives an 8 s node that ends at 10000.
   let plans =
@@ -792,7 +792,7 @@ fn short_buff_on_a_long_channel() -> Plans {
 }
 
 pub fn a_node_whose_life_ends_while_its_cast_is_live_is_ended_and_the_cast_goes_on_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans = short_buff_on_a_long_channel()
   let #(state, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -816,7 +816,7 @@ pub fn a_node_whose_life_ends_while_its_cast_is_live_is_ended_and_the_cast_goes_
 }
 
 pub fn a_node_ended_by_time_is_no_longer_held_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.with_spells(plans: short_buff_on_a_long_channel(), spells: [
       remover(
@@ -838,7 +838,7 @@ pub fn a_node_ended_by_time_is_no_longer_held_test() -> Nil {
 }
 
 pub fn a_cancel_of_a_cast_holding_nodes_lets_them_linger_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   let plans =
     support.plans_of([
       channel(
@@ -880,7 +880,7 @@ pub fn a_cancel_of_a_cast_holding_nodes_lets_them_linger_test() -> Nil {
 }
 
 pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // opcode.0x7f4.instance_count: a later go of the same cast keeps the node's effects
   // and adds the go's; Spell4Effects.effectType.17: the node's life is the longest. So
   // the phase 1 go, whose Fluff has no life, leaves the until-removed node, and the cast
@@ -944,7 +944,7 @@ pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> 
 }
 
 pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(5000)
   // A Fluff of 5 s in both phases, gos at 1000 and 2000: the node of the first go would
   // end at 6000; the later go arms its effect again from 2000, so it ends at 7000.
   let plans =

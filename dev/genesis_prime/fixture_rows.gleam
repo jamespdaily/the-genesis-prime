@@ -71,11 +71,16 @@ pub type Fixture {
     /// The references of the rows chosen to an id the client's table has no
     /// row for.
     stale: String,
+    /// The names of the tables that go in whole.
+    whole: String,
   )
 }
 
 /// The name of the file of the references to ids the client has no row for.
 pub const stale_file = "stale"
+
+/// The name of the file of the tables that go in whole.
+pub const whole_file = "whole"
 
 /// A reference of a row chosen to an id the client's table has no row for, so no
 /// closure can reach it: a row of the client that names a row the client lacks.
@@ -97,6 +102,8 @@ pub type Refusal {
   RuleColumnMissing(table: String, column: String)
   /// A file could not be read or written.
   FileFailed(path: String, reason: String)
+  /// The file of the tables that go in whole does not start with its header.
+  WholeHeader
 }
 
 /// How to say why a refusal happened.
@@ -123,6 +130,7 @@ pub fn describe(refusal: Refusal) -> String {
       <> " of "
       <> table
       <> ", which has no such column"
+    WholeHeader -> whole_file <> ".tsv does not start with the line `table`"
   }
 }
 
@@ -779,15 +787,23 @@ fn text_size(rows: List(List(Cell))) -> Int {
   })
 }
 
-/// What the closure keeps of a table whose rows are read.
-fn digest_of(
+/// Whether the client's table goes in whole: a table the load reads by what
+/// its columns hold never does.
+fn goes_whole(
   table table: String,
   rows rows: List(List(Cell)),
   plan plan: Plan,
+) -> Bool {
+  plan.load == []
+  && { list.contains(whole_tables, table) || text_size(rows) < whole_limit }
+}
+
+/// What the closure keeps of a table whose rows are read.
+fn digest_of(
+  rows rows: List(List(Cell)),
+  plan plan: Plan,
+  whole whole: Bool,
 ) -> Digest {
-  let whole =
-    plan.load == []
-    && { list.contains(whole_tables, table) || text_size(rows) < whole_limit }
   let wanted =
     list.filter_map(rows, fn(row) {
       case
@@ -857,8 +873,8 @@ fn digest_of(
   )
 }
 
-/// The rows the roots reach, and the rows of the tables that go in whole, by
-/// table.
+/// The rows the roots reach, the rows of the tables that go in whole and the
+/// rows the server's load reads, and every row those reach, by table.
 fn closure(
   digests digests: Dict(String, Digest),
   roots roots: List(#(String, Int)),
@@ -954,6 +970,87 @@ fn exists(digests: Dict(String, Digest), target: #(String, Int)) -> Bool {
     Ok(digest) -> set.contains(digest.ids, target.1)
     Error(Nil) -> False
   }
+}
+
+/// What a set of rows of the server's tables reaches: each table's ids, the
+/// rows each row names and the child rows of each row.
+pub opaque type Reach {
+  Reach(digests: Dict(String, Digest), plans: Dict(String, Plan))
+}
+
+/// The reach of these rows, by the name of their table; a table not given has
+/// no rows. The tables named in `whole` go in whole.
+pub fn reach_of(
+  rows rows: Dict(String, List(List(Cell))),
+  whole whole: List(String),
+) -> Result(Reach, Refusal) {
+  let #(entries, loaded, known) = context()
+  use plans <- result.map(
+    list.try_map(entries, fn(entry) {
+      let schema = store.schema(entry)
+      plan_of(table: schema.table, schema:, known:, loaded:)
+      |> result.map(fn(plan) { #(schema.table, plan) })
+    })
+    |> result.map(dict.from_list),
+  )
+  Reach(
+    digests: dict.map_values(plans, fn(table, plan) {
+      digest_of(
+        rows: result.unwrap(dict.get(rows, table), []),
+        plan:,
+        whole: list.contains(whole, table),
+      )
+    }),
+    plans:,
+  )
+}
+
+/// The reach with the rows of one table replaced by these.
+pub fn with_rows(
+  reach reach: Reach,
+  table table: String,
+  rows rows: List(List(Cell)),
+) -> Reach {
+  let assert Ok(plan) = dict.get(reach.plans, table)
+    as "a reach holds every table the server loads"
+  let assert Ok(held) = dict.get(reach.digests, table)
+    as "a reach holds every table the server loads"
+  Reach(
+    ..reach,
+    digests: dict.insert(
+      reach.digests,
+      table,
+      digest_of(rows:, plan:, whole: held.whole),
+    ),
+  )
+}
+
+/// The rows the roots reach, and every row those reach, with the rows of the
+/// tables that go in whole, by table. A root no row holds is refused.
+pub fn reached(
+  reach reach: Reach,
+  roots roots: List(#(String, Int)),
+) -> Result(Dict(String, Set(Int)), Refusal) {
+  use selected <- result.map(walk(
+    queue: roots,
+    selected: dict.new(),
+    digests: reach.digests,
+  ))
+  dict.fold(reach.digests, selected, fn(selected, table, digest) {
+    case digest.whole {
+      True -> dict.insert(selected, table, digest.ids)
+      False -> selected
+    }
+  })
+}
+
+/// The rows the roots reach, with the tables that go in whole and the rows the
+/// server's load reads, and every row those reach.
+pub fn closure_of(
+  reach reach: Reach,
+  roots roots: List(#(String, Int)),
+) -> Result(Dict(String, Set(Int)), Refusal) {
+  closure(digests: reach.digests, roots:)
 }
 
 // --------------------------------------------------------------- the rows
@@ -1071,28 +1168,11 @@ pub fn stale_text(stale: List(Stale)) -> String {
 pub fn stale_in(
   rows: Dict(String, List(List(Cell))),
 ) -> Result(List(Stale), Refusal) {
-  let #(entries, loaded, known) = context()
-  use digests <- result.map(
-    list.try_map(entries, fn(entry) {
-      let schema = store.schema(entry)
-      use plan <- result.map(plan_of(
-        table: schema.table,
-        schema:,
-        known:,
-        loaded:,
-      ))
-      #(
-        schema.table,
-        digest_of(
-          table: schema.table,
-          rows: result.unwrap(dict.get(rows, schema.table), []),
-          plan:,
-        ),
-      )
-    })
-    |> result.map(dict.from_list),
+  use reach <- result.map(reach_of(rows:, whole: []))
+  stale_of(
+    reach.digests,
+    dict.map_values(reach.digests, fn(_, digest) { digest.ids }),
   )
-  stale_of(digests, dict.map_values(digests, fn(_, digest) { digest.ids }))
 }
 
 /// The text of every file for these roots, from the client's tables in
@@ -1120,12 +1200,13 @@ pub fn generate(
         known:,
         loaded:,
       ))
+      let rows = list.map(read.rows, table_rows.cells)
       #(
         schema.table,
         digest_of(
-          table: schema.table,
-          rows: list.map(read.rows, table_rows.cells),
+          rows:,
           plan:,
+          whole: goes_whole(table: schema.table, rows:, plan:),
         ),
       )
     })
@@ -1148,7 +1229,31 @@ pub fn generate(
     })
     |> result.map(dict.from_list),
   )
-  Fixture(tables:, stale: stale_text(stale_of(digests, selected)))
+  Fixture(
+    tables:,
+    stale: stale_text(stale_of(digests, selected)),
+    whole: whole_text(
+      dict.fold(digests, [], fn(found, table, digest) {
+        case digest.whole {
+          True -> [table, ..found]
+          False -> found
+        }
+      }),
+    ),
+  )
+}
+
+/// The text of the file of the tables that go in whole, by name.
+fn whole_text(tables: List(String)) -> String {
+  string.join(["table", ..list.sort(tables, string.compare)], "\n") <> "\n"
+}
+
+/// The names of the tables a file of the tables that go in whole holds.
+pub fn parse_whole(text: String) -> Result(List(String), Refusal) {
+  case string.split(string.trim_end(text), "\n") {
+    ["table", ..tables] -> Ok(tables)
+    _ -> Error(WholeHeader)
+  }
 }
 
 // ------------------------------------------------------------ differences
@@ -1271,6 +1376,10 @@ fn write(fixture: Fixture, folder: String) -> Result(Nil, Refusal) {
   use _ <- result.try(write_file(
     folder <> "/" <> stale_file <> ".tsv",
     fixture.stale,
+  ))
+  use _ <- result.try(write_file(
+    folder <> "/" <> whole_file <> ".tsv",
+    fixture.whole,
   ))
   write_file(folder <> "/NOTICE", notice())
 }
