@@ -50,6 +50,37 @@
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/worktree_from_project.py"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -f \"$CLAUDE_PROJECT_DIR\"/dev/hooks/limit_test_runs.py || exit 0; python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/limit_test_runs.py",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "test -f \"$CLAUDE_PROJECT_DIR\"/dev/hooks/not_planned_owner.py || exit 0; python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/not_planned_owner.py",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "test -f \"$CLAUDE_PROJECT_DIR\"/dev/hooks/push_needs_test_list.py || exit 0; python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/push_needs_test_list.py",
+            "timeout": 40
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -f \"$CLAUDE_PROJECT_DIR\"/dev/hooks/bare_numbers_in_reply.py || exit 0; python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/bare_numbers_in_reply.py",
+            "timeout": 30
+          }
+        ]
       }
     ]
   }
