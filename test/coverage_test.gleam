@@ -98,6 +98,7 @@ const planted_types = [7, 0, 2, 7, 5, 7, 0, 9, 2, 7, 0]
 
 pub fn types_are_counted_by_rows_heaviest_first_with_ties_by_type_number_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let measured =
     measured_over_planted_objectives(
       engine_named("Quest objectives"),
@@ -115,6 +116,7 @@ pub fn types_are_counted_by_rows_heaviest_first_with_ties_by_type_number_test() 
 
 pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   // Prerequisite.prerequisiteTypeId0 to 2: each row holds up to three
   // conditions, so the table's types are the values of all three columns.
   let triples = [#(4, 5, 7), #(4, 0, 0), #(5, 4, 6), #(4, 0, 0)]
@@ -159,6 +161,7 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
 
 pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let declared =
     EngineDeclaration(
       ..engine_named("Quest objectives"),
@@ -208,6 +211,7 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
 
 pub fn a_declared_type_no_row_uses_is_a_breach_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let declared =
     EngineDeclaration(
       ..engine_named("Quest objectives"),
@@ -239,6 +243,7 @@ fn schema_of(table_name: String) -> Schema {
 
 pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let declared = engine.all()
   assert list.map(declared, fn(declaration) { declaration.area_issue })
     == [47, 48, 49, 50, 51, 437]
@@ -342,6 +347,7 @@ fn heaviest_first(types: List(TypeLine)) -> Bool {
 
 pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_rows_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
   list.each(engine.all(), fn(declared) {
@@ -416,6 +422,7 @@ fn quest_objectives_over(types: List(Int)) -> Measurement {
 
 pub fn the_checklist_lists_each_type_heaviest_first_with_its_rows_share_and_whether_it_is_handled_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let text = checklist.render([quest_objectives_over(planted_types)])
   let expected_lines = [
     "- [x] type 7: 4 rows (50.0%)",
@@ -438,6 +445,7 @@ pub fn the_checklist_lists_each_type_heaviest_first_with_its_rows_share_and_whet
 
 pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let text =
     checklist.totals([
       quest_objectives_over(planted_types),
@@ -461,6 +469,7 @@ pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test()
 
 pub fn an_engine_whose_cases_are_not_recorded_says_what_is_needed_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let text =
     checklist.render([
       Unmeasured(
@@ -478,6 +487,7 @@ pub fn an_engine_whose_cases_are_not_recorded_says_what_is_needed_test() -> Nil 
 
 pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let text =
     checklist.render([
       measurement.from_values(
@@ -505,6 +515,7 @@ pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> 
 
 pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_code_take_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let routing = engine_named("Client message routing")
   let assert Listed(ids: handled_ids) = routing.handled
     as "the routing engine lists the ids its rules name"
@@ -531,6 +542,7 @@ pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_co
 
 pub fn a_handled_type_with_unread_rows_and_no_stated_gap_stops_the_measure_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   // The planted engine handles type 7 and states no gap for it, and its rule leaves one of
   // the two type 7 rows unread: the declaration says a type is read for every row or states
   // what it leaves out.

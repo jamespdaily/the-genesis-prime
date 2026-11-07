@@ -39,10 +39,12 @@ import message_support
 import owned_test
 import recording_support
 import simplifile
+import unitest
 import wire_replay_support as support
 
 pub fn the_dump_names_the_players_unit_and_lists_a_message_with_no_decoder_by_its_number_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   let assert Ok(names) = named_fields.from_schema_file()
     as "the schema the codec is generated from reads"
   let connections =
@@ -153,6 +155,7 @@ fn no_filter() -> recording_dump.Filter {
 
 pub fn a_server_frame_cut_mid_frame_ends_the_dump_with_a_stopped_line_that_says_server_to_client_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let whole = base_written(id: 0x0036, body: level_3_body)
   let assert Ok(cut) = bit_array.slice(whole, 0, bit_array.byte_size(whole) - 1)
@@ -182,6 +185,7 @@ pub fn a_server_frame_cut_mid_frame_ends_the_dump_with_a_stopped_line_that_says_
 
 pub fn a_client_frame_the_reader_refuses_ends_the_dump_with_a_stopped_line_that_says_client_to_server_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
@@ -199,6 +203,7 @@ pub fn a_client_frame_the_reader_refuses_ends_the_dump_with_a_stopped_line_that_
 
 pub fn a_server_frame_the_reader_refuses_ends_the_dump_with_a_stopped_line_that_says_server_to_client_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
@@ -214,6 +219,7 @@ pub fn a_server_frame_the_reader_refuses_ends_the_dump_with_a_stopped_line_that_
 
 pub fn a_server_body_that_is_not_its_message_is_printed_as_malformed_and_the_dump_goes_on_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
@@ -235,6 +241,7 @@ pub fn a_server_body_that_is_not_its_message_is_printed_as_malformed_and_the_dum
 
 pub fn a_server_message_with_no_decoder_is_printed_as_unhandled_with_its_size_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
@@ -252,6 +259,7 @@ pub fn a_server_message_with_no_decoder_is_printed_as_unhandled_with_its_size_te
 
 pub fn the_servers_writes_after_0x058f_are_read_under_the_session_key_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let assert Ok(hello_body) =
     game_hello_reply.encode(game_hello_reply.GameHelloReply(
@@ -354,6 +362,7 @@ fn unit_of(line: String) -> String {
 
 pub fn the_unit_filter_keeps_the_messages_of_that_unit_and_the_stopped_line_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   assert kept(folder, [])
     == ["+0ms 0x1001", "+100ms 0x1002", "+500ms 0x1001", "stopped"]
@@ -368,6 +377,7 @@ pub fn the_unit_filter_keeps_the_messages_of_that_unit_and_the_stopped_line_test
 
 pub fn the_time_filters_keep_the_messages_within_them_and_the_stopped_line_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   assert kept(folder, ["--from", "100", "--to", "100"])
     == ["+100ms 0x1002", "stopped"]
@@ -380,6 +390,7 @@ pub fn the_time_filters_keep_the_messages_within_them_and_the_stopped_line_test(
 
 pub fn arguments_the_dump_does_not_take_are_refused_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert recording_dump.parse([]) == Error(Nil) as "a path is needed"
   assert recording_dump.parse(["p", "--from"]) == Error(Nil)
     as "an option needs a value"
@@ -392,6 +403,7 @@ pub fn arguments_the_dump_does_not_take_are_refused_test() -> Nil {
 
 pub fn a_float_field_prints_as_its_bits_and_as_the_float_they_hold_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
@@ -458,6 +470,7 @@ fn unfinished_lines(
 
 pub fn a_recording_with_no_closing_line_is_read_to_its_last_line_and_says_so_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines =
     unfinished_lines(
@@ -479,6 +492,7 @@ pub fn a_recording_with_no_closing_line_is_read_to_its_last_line_and_says_so_tes
 
 pub fn a_recording_whose_last_line_is_cut_is_unfinished_not_malformed_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines =
     unfinished_lines(
@@ -500,6 +514,7 @@ pub fn a_recording_whose_last_line_is_cut_is_unfinished_not_malformed_test() -> 
 
 pub fn a_recording_with_only_its_header_prints_the_unfinished_line_alone_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines = unfinished_lines(folder:, steps: [], cut: 0, arguments: [])
   let assert [last] = lines as "no message came before"
@@ -508,6 +523,7 @@ pub fn a_recording_with_only_its_header_prints_the_unfinished_line_alone_test() 
 
 pub fn the_unfinished_line_is_kept_under_every_filter_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let lines =
     unfinished_lines(

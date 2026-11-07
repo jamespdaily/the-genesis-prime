@@ -27,6 +27,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import owned_test
+import unitest
 
 /// The whole numbers from `first` to `last`.
 fn through(first: Int, last: Int) -> List(Int) {
@@ -116,11 +117,13 @@ fn waiting(pid: process.Pid, mailbox: Int) -> fn(Sample) -> Sample {
 
 pub fn a_calm_step_is_kept_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert load_step.judge(kept()) == Kept
 }
 
 pub fn one_player_failure_fails_the_step_and_none_passes_it_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert load_step.judge(Observation(..kept(), failures: 1))
     == Failed([PlayerFailed])
   assert load_step.judge(Observation(..kept(), failures: 0)) == Kept
@@ -128,6 +131,7 @@ pub fn one_player_failure_fails_the_step_and_none_passes_it_test() -> Nil {
 
 pub fn two_logins_in_a_hundred_over_1000_ms_fail_and_one_passes_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let slow = fn(over: Int) {
     Observation(
       ..kept(),
@@ -143,6 +147,7 @@ pub fn two_logins_in_a_hundred_over_1000_ms_fail_and_one_passes_test() -> Nil {
 
 pub fn two_pings_in_a_hundred_over_500_ms_fail_and_one_passes_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let slow = fn(over: Int) {
     Observation(
       ..kept(),
@@ -158,6 +163,7 @@ pub fn two_pings_in_a_hundred_over_500_ms_fail_and_one_passes_test() -> Nil {
 
 pub fn a_process_waiting_in_every_sample_of_the_last_10_s_of_the_hold_fails_and_one_missing_once_passes_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let stuck = process.spawn_unlinked(process.sleep_forever)
   let other = process.spawn_unlinked(process.sleep_forever)
   let always =
@@ -195,6 +201,7 @@ pub fn a_process_waiting_in_every_sample_of_the_last_10_s_of_the_hold_fails_and_
 
 pub fn the_mailbox_window_includes_the_sample_10_s_before_the_hold_ends_and_no_older_one_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let stuck = process.spawn_unlinked(process.sleep_forever)
   let long = Observation(..kept(), server: seconds(20), held_ms: 20_000)
   let waiting_from = fn(first: Int) {
@@ -225,6 +232,7 @@ pub fn the_mailbox_window_includes_the_sample_10_s_before_the_hold_ends_and_no_o
 
 pub fn store_workers_waiting_in_every_sample_of_the_arrival_fail_and_one_empty_sample_passes_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let queued = fn(sample: Sample) { with_store_waiting(sample, 2) }
   let in_arrival = fn(missing: Int) {
     Observation(
@@ -249,6 +257,7 @@ pub fn store_workers_waiting_in_every_sample_of_the_arrival_fail_and_one_empty_s
 
 pub fn one_error_or_warning_line_during_the_step_fails_it_and_none_passes_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let lines = fn(count) {
     changing(last: 10, changed: fn(second) { second == 10 }, change: fn(sample) {
       Sample(..sample, log_lines: count)
@@ -261,6 +270,7 @@ pub fn one_error_or_warning_line_during_the_step_fails_it_and_none_passes_test()
 
 pub fn a_warning_line_only_while_the_players_leave_fails_the_step_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let leaving = fn(count) {
     list.append(seconds(10), [
       calm(11_000),
@@ -275,6 +285,7 @@ pub fn a_warning_line_only_while_the_players_leave_fails_the_step_test() -> Nil 
 
 pub fn connections_still_held_when_the_wait_ends_fail_the_step_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let ending = fn(held: List(Int)) {
     list.append(seconds(10), [with_connections(calm(11_000), held)])
   }
@@ -286,6 +297,7 @@ pub fn connections_still_held_when_the_wait_ends_fail_the_step_test() -> Nil {
 
 pub fn a_step_whose_clients_used_over_half_their_cores_is_clients_limited_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let busy = fn(share_of_cores: Int) {
     [
       Sample(..calm(0), busy_us: 0, total_us: 0),
@@ -308,6 +320,7 @@ pub fn a_step_whose_clients_used_over_half_their_cores_is_clients_limited_test()
 
 pub fn a_step_that_began_a_player_over_500_ms_late_is_clients_limited_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert load_step.judge(Observation(..kept(), start_lag_ms: 501))
     == ClientsLimited
   assert load_step.judge(Observation(..kept(), start_lag_ms: 500)) == Kept
@@ -315,6 +328,7 @@ pub fn a_step_that_began_a_player_over_500_ms_late_is_clients_limited_test() -> 
 
 pub fn a_player_the_machine_had_no_local_port_for_makes_the_step_clients_limited_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert load_step.judge(Observation(..kept(), unconnected: 1))
     == ClientsLimited
     as "eaddrnotavail: the clients' machine ran out of ports, which says nothing of the server"
@@ -322,6 +336,7 @@ pub fn a_player_the_machine_had_no_local_port_for_makes_the_step_clients_limited
 
 pub fn a_step_on_a_negative_monotonic_clock_is_judged_the_same_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   // The monotonic clock can be negative, so no time is taken to start at 0.
   let earlier = fn(sample: Sample) {
     Sample(..sample, at_ms: sample.at_ms - 1_000_000)

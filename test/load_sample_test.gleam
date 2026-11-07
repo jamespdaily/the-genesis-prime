@@ -15,9 +15,11 @@ import login_client
 import login_support
 import mailbox_support
 import owned_test
+import unitest
 
 pub fn the_sampler_reports_a_planted_processs_mailbox_and_heap_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let ready = process.new_subject()
   let planted =
     process.spawn_unlinked(fn() {
@@ -43,6 +45,7 @@ pub fn the_sampler_reports_a_planted_processs_mailbox_and_heap_test() -> Nil {
 
 pub fn the_sampler_reports_each_listeners_connections_and_an_idle_stores_workers_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let started = login_support.start()
   let ports = login_support.ports(started)
   let login = started.settings.login

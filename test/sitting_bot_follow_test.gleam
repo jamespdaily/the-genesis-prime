@@ -29,6 +29,7 @@ import genesis_prime/message/unit_position_command.{
 import genesis_prime/sitting_bot/follow
 import gleam/option.{None, Some}
 import owned_test
+import unitest
 
 fn position(x x: Float, y y: Float, z z: Float) -> UnitPositionCommand {
   UnitPositionCommand(
@@ -70,6 +71,7 @@ fn relayed() -> List(RelayedMovement) {
 
 pub fn a_replay_is_every_command_as_relayed_the_position_too_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert follow.replayed(relayed())
     == [
       movement_command.Platform(MovementPlatform(unit_id: 0)),
@@ -100,6 +102,7 @@ pub fn a_replay_is_every_command_as_relayed_the_position_too_test() -> Nil {
 
 pub fn a_replay_is_sent_with_a_time_command_twice_the_send_interval_after_the_bots_clock_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let commands = follow.replayed(relayed())
   assert follow.stamped(commands:, clock_ms: 5000)
     == [movement_command.Time(MovementTime(time: 5250)), ..commands]
@@ -133,6 +136,7 @@ fn following() -> follow.Following {
 
 pub fn each_replay_is_due_the_delay_after_the_first_stamp_at_the_stamps_spacing_in_order_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   // Three moves stamped 125 and 375 ms apart; the second and third are read
   // late and together (the bot's clock 10,900 and 10,901), which changes nothing.
   let held =
@@ -177,6 +181,7 @@ pub fn each_replay_is_due_the_delay_after_the_first_stamp_at_the_stamps_spacing_
 
 pub fn stamps_that_wrap_past_2_to_the_32_keep_their_spacing_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let held =
     following()
     |> follow.moved(
@@ -198,6 +203,7 @@ pub fn stamps_that_wrap_past_2_to_the_32_keep_their_spacing_test() -> Nil {
 
 pub fn a_move_of_another_unit_or_before_the_named_unit_is_shown_is_not_followed_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let strangers =
     follow.new(near: "Zed Qu", delay_ms: 2000)
     |> follow.moved(
@@ -223,12 +229,14 @@ pub fn a_move_of_another_unit_or_before_the_named_unit_is_shown_is_not_followed_
 
 pub fn a_unit_that_stands_still_leaves_nothing_to_replay_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert follow.next_due_ms(following()) == None
     as "a standing unit sends no 0x0638 (opcode.0x637), so the bot stands still"
 }
 
 pub fn the_followed_units_removal_stops_the_follow_and_drops_what_waited_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let held =
     following()
     |> follow.moved(
@@ -257,6 +265,7 @@ pub fn the_followed_units_removal_stops_the_follow_and_drops_what_waited_test() 
 
 pub fn the_named_character_shown_again_is_followed_from_a_new_first_stamp_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let held =
     following()
     |> follow.moved(
