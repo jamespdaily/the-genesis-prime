@@ -72,6 +72,9 @@ fn message_queue_data(pid: Pid) -> QueueData
 @external(erlang, "connection_actor_support_ffi", "socket_buffer")
 fn socket_buffer(pid: Pid) -> Int
 
+@external(erlang, "connection_actor_support_ffi", "socket_armed")
+fn socket_armed(pid: Pid) -> Bool
+
 @external(erlang, "connection_actor_support_ffi", "hang_up")
 fn hang_up(port: Int, kind: HangUp) -> Int
 
@@ -460,6 +463,11 @@ pub fn a_crash_report_leaves_out_the_messages_waiting_in_the_mailbox_test() -> N
   let #(client, connection) = greeted(server)
   let lines = process.new_subject()
   let capture = log_capture.start_with_metadata(from: connection, into: lines)
+  // The shell writes its reply before it arms the socket's next read, so the
+  // client can hold the reply while the socket is still passive. The state is
+  // read between steps, after the arm.
+  assert socket_armed(connection)
+    as "the socket is armed before the shell is suspended, so the byte reaches its mailbox"
   // The connection is suspended, so the byte that crashes the rule is taken
   // first and the message behind it, which holds a fake session key, is still
   // waiting when the process crashes.
