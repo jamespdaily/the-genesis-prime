@@ -6100,8 +6100,8 @@ gap = "What stat 11 means (a scaled or mentored level) is not read."
 name = "GetUnitFormulaLevel"
 
 ["0x1404de8d0"]
-statement = "Evaluates one spell effect token of a tooltip text, such as $(eff=83788.input0pct): input, data, tickTimeMS, durationMS, durationM, durationH, delayMS and threat, with the modifiers pct, pctAdd, pctSub, rawInt and actual. An input token shows, by a client option or the actual modifier, either the effect's computed value (ComputeEffectValue for the player) or the parameter as '[x% stat name]'."
-proof = "Decompiled: the token names as wide strings; the input branch reads the parameter type at row 0x88 + 4i and value at 0x98 + 4i and formats '[%.*f%% %s]', or calls 0x1405654a0. Reached only through a class table (query callers: none)."
+statement = "Evaluates one spell effect token of a tooltip text, such as $(eff=83788.input0pct): input, data, tickTimeMS, durationMS, durationM, durationH, delayMS and threat, with the modifiers pct, pctAdd, pctSub, rawInt and actual. An input token shows, by a client option or the actual modifier, either the effect's computed value (ComputeEffectValue for the player) or the parameter as '[x% stat name]'. Its field is the text from the first '.' to the first ')' anywhere in the rest of the text (no '.' before that ')', or no ')', gives no value); field names are found anywhere in it ignoring case, in the order input, data, tickTimeMS, durationMS, durationM, durationH, delayMS, threat, with pctAdd, pctSub, pct, msf, ms, rawInt and actual likewise; the data and input index is read only when the field starts with data or input, else it is 0. A field naming none of these prints an empty value."
+proof = "Decompiled: the token names as wide strings; the input branch reads the parameter type at row 0x88 + 4i and value at 0x98 + 4i and formats '[%.*f%% %s]', or calls 0x1405654a0. Reached only through a class table (query callers: none). Saved C 0x1404de8d0.c (hash 49fd5a78aaad3411): FUN_14002c8a0 for 0x2e then 0x29 over the whole rest, uVar14 < uVar16 required, else uVar16 = 0 returned; FUN_14018e5e0 for each name; the index through slot 0xb8 (0x1400b7710 -> 0x1400b7f50) with L\"data\" / L\"input\"; no name -> LAB_1404df1e9 with the buffer at param_1[0x18] cleared."
 grade = "fairly sure"
 gap = "The option's name is not read."
 name = "EvaluateEffectToken"
@@ -10290,3 +10290,58 @@ statement = "The client holds no rate for Spell Power's regeneration: no class p
 proof = "Rows: `gleam run -m genesis_prime/table_rows -- Spell4Effects effectType=1` filtered by scratch script to dataBits00 9 or 19 (23 rows on 19, 105 on 9; the live Spellslinger ones listed by spell description); `-- Class 7` (no innate passive); texts 500721, 532579. Properties and slot writers: UnitProperty2.ResourceMax_0, regen.client, Spell4.innateCost0."
 grade = "fairly sure"
 gap = "Tables other than Spell4Effects and Class were not searched for a regeneration of slot 4. The rate is not in the client; a retail recording of a Spellslinger after one surged cast (the 0x935 values over time) settles it."
+
+["0x1400c12b0"]
+statement = "Formats a localized text's $ tokens (the en-US formatter, language ids other than 2, 3 and 5): copies the text, turning a literal backslash-n into a line break; at '$(' it hands the text from '(' to the token reader (ReadParenToken), prints what it returns (formatted again as a text of its own) or nothing when it returns no value, then goes on after what the reader says it consumed; a ']' straight after a token is dropped. '$$' prints '$'; '$[' goes to the format block reader (ReadFormatBlockToken)."
+proof = "Saved C 0x1400c12b0.c (hash 8eb22adb6de47956): the 0x24 test, the 0x5c/0x6e pair, case 0x28 -> FUN_1400b7780 then slot 0 (0x1400b7d60) on the result and slot 0x30 (0x1400c2500, which appends only a non-null text), param_2 += the reader's count, `if (*param_2 == 0x5d) param_2++`; default case -> slot 0x40 (0x1400c1980). It is slot 0x38 of the vtable 0x140b564f0 that 0x1400c2ac0 builds; 0x140010820 picks 0x1400c2ac0 unless the language id at DAT_140c7aac0+8 is 2, 3 or 5 (0x1400bfd20, 0x1400beff0, 0x1400c1240, whose parsers 0x1400bfd90 and 0x1400bd6c0 call the same token reader)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. That en-US is not language id 2, 3 or 5 is not read; the other parsers share the token reader, so the token behaviour holds either way."
+name = "FormatTextTokens"
+
+["0x1400b7780"]
+statement = "Reads one $( ... ) token, given the text from '(' on. The token ends at the first ')' anywhere in the rest of the text; with none, the token consumes the whole rest of the text. It first tries the kind=id forms (ReadKindToken) on the text after '('; when one gives a value, that value is printed. Otherwise it takes the text between '(' and that ')': empty prints nothing; with a '.', the part before the first '.' names an argument of the text and the part after it is asked of that argument; without one, the whole names an argument. A name no argument has prints nothing. So a malformed token prints a value, or nothing; it never prints its own text."
+proof = "Saved C 0x1400b7780.c (hash 8eb22adb6de47956): copy of the whole rest, FUN_14002c8a0 for 0x29 over it (lVar13, -1 when absent); FUN_1400b8010(param_1, param_2 + 1, out) first; success returns lVar13 + 1 or, with no ')', the rest's length; failure with no ')' returns the rest's length with out null; the inner text puVar14 (chars 1 .. lVar13-1), empty -> return 2; FUN_14002c8a0 for 0x2e inside it; args object slot 8 (0x1400b7590, a walk of its named-argument list, 0 when none matches) by name; with no '.' the current object (param_1[2]) slot 0x38 by name; return inner length + 2."
+grade = "fairly sure"
+gap = "Read from the decompile, not run; the current object's slot 0x38 (param_1[2], the tooltip argument object's field at 0x48) is not read, so that it finds no property named like 'creature = 73075' or 'eff=60984data03raw' is inferred. An emulate run of 0x1400b7780 on the five forms with a tooltip argument object settles it."
+name = "ReadParenToken"
+
+["0x1400b8010"]
+statement = "Tries a token's kind=id forms in a fixed order: item=, schematic=, vitem=, creature=, achievement=, bindpoint, keybinding=, eff=, spell=, cc=, smod=, emod=, thrsh=, gf=, each kind's evaluator getting the whole token text and the id; the first that gives a value wins, and none gives no value. The kind is compared ignoring case and must be followed directly by '=' ('creature =' matches nothing). The id is the number after '=', leading spaces skipped; no digits give id 0, which every evaluator refuses. A kind that does not match leaves the id of the last that did, so after eff=N fails, spell=, cc= and the rest are each tried with id N on the same text."
+proof = "Saved C 0x1400b8010.c (hash 8eb22adb6de47956): the parser's slot 8 (0x1400b7f50) with L\"item=\" .. L\"keybinding=\", L\"eff=\", L\"spell=\", 0x140a13dd8 'cc=', L\"smod=\", L\"emod=\", L\"thrsh=\", 0x140a13e00 'gf=' (UTF-16 read from the client's bytes), then the argument object's slot 0x10 .. 0x78 (vtable 0x140b69230: 0x48 EvaluateEffectToken 0x1404de8d0, 0x50 FormatSpellTooltipToken 0x1404df2c0); local_res8 is set once and only by a match. 'bindpoint' through FUN_14018e3e0 with 9. Each of 0x1404de8d0, 0x1404df2c0, 0x1404e01e0, 0x1404e07d0, 0x1404e0d20, 0x1404e1270, 0x1404e16b0 returns 0 for id 0."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+name = "ReadKindToken"
+
+["0x1400b7f50"]
+statement = "Matches a word at the start of a text, ignoring case, and reads the decimal number straight after it (leading spaces skipped, 0 when there are no digits); returns how many characters the word and its digits take, 0 when the word does not match or nothing follows it."
+proof = "Saved C 0x1400b7f50.c (hash 8eb22adb6de47956): FUN_14018e3e0(text, word, len(word)); a NUL after the word returns 0; *param_4 = FUN_1407df510(rest) (FUN_1407e1968(rest, 0, 10) -> wcstoxl 0x1407e1780, whose loop skips iswctype(c, 8), spaces); then skips 0x30..0x39. Slot 8 of vtable 0x140b564f0; also reached through 0x1400b7710 (0x1400b7710 mov rcx, [0x140c63648]; 0x1400b771f mov rax, [rcx]; 0x1400b7722 jmp [rax+8]), which is how EvaluateEffectToken reads the index after 'data' and 'input'."
+grade = "sure"
+name = "MatchWordAndNumber"
+
+["0x14018e3e0"]
+statement = "Compares two wide texts over at most n characters ignoring case (A-Z and a table of non-ASCII letters folded to lower case); 0 when equal."
+proof = "Saved C 0x14018e3e0.c (hash 8eb22adb6de47956): each character below 0x80 in 0x41..0x5a gets + 0x20, others looked up in the 0x3d1-entry tables at 0x140a41a80 / 0x140a40af0; returns the difference or 0 at a NUL or after n."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+name = "CompareTextNoCase"
+
+["0x14018e5e0"]
+statement = "Finds the first place a word occurs anywhere in a wide text, ignoring case; null when it does not occur. Tooltip field names are matched with it, so a field matches when it contains the name anywhere."
+proof = "Saved C 0x14018e5e0.c (hash 8eb22adb6de47956): lengths of both, then FUN_14018e3e0(p, word, len) for each p from the start to end - len."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+name = "FindTextNoCase"
+
+["0x14002c8a0"]
+statement = "Finds the first occurrence of one wide character between two pointers; returns the end pointer when absent."
+proof = "Saved C 0x14002c8a0.c (hash 8eb22adb6de47956): the character from the third argument's high half, compared four at a time then one at a time."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+name = "FindWideChar"
+
+["0x1400c1980"]
+statement = "Reads a $[ ... ] format block: from after '[' it scans to the first '(' and reads that token with ReadParenToken, consuming what that token consumes; so a $[ with a broken $( inside, as text 241415 '$[$(eff=65912.input0pct]', consumes the whole rest of the text."
+proof = "Saved C 0x1400c1980.c (hash 8eb22adb6de47956): lVar15 = 1, the loop to 0x28 adding 1 per character, then lVar15 += FUN_1400b7780(...); the count is returned to 0x1400c12b0's default case, which adds it to its position."
+grade = "fairly sure"
+gap = "Read from the decompile, not run; the format path (lines 153-470) with no value is not read, so that it prints nothing for the swallowed token is inferred."
+name = "ReadFormatBlockToken"
