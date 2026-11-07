@@ -19,16 +19,20 @@
 import ask_support
 import asking_rule
 import gate_rule
+import genesis_prime/group_registry
 import genesis_prime/hand_off.{Holder, Kept, Put, SessionKey, Take, Taken}
 import genesis_prime/login/guid
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
   type Address, type Event, type NoAsk, type ServiceEffect, type ServiceEvent,
-  type Step, Asked, CallerId, Connection, ConnectionId, Effects, OwnEffect,
-  OwnEvent, Reply, Rule, Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
+  type Step, Asked, CallerId, Connection, ConnectionId, Creature,
+  CreatureNotStarted, Effects, OwnEffect, OwnEvent, Reply, Rule, Send,
+  ServiceTimerFired, Sessions, Started, Stop, Stopping, Told, WatchEnded,
+  WatchId,
 }
 import genesis_prime/store.{AccountId}
+import genesis_prime/world_map/map_id.{MapId}
 import gleam/erlang/atom
 import gleam/erlang/process.{type Subject}
 import gleam/list
@@ -481,7 +485,7 @@ fn hand_off_child(
       },
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
       shutdown_ms:,
-      told_through: None,
+      found_at: None,
     ),
   )
 }
@@ -506,7 +510,7 @@ fn unnamed_hand_off() -> service_shell.Settings(
     rule: hand_off.rule(),
     reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 1000,
-    told_through: None,
+    found_at: None,
   )
 }
 
@@ -555,4 +559,72 @@ pub fn a_message_to_an_unnamed_service_that_ended_is_dropped_and_its_pid_is_stil
     )
     == Ok(service.ToService(started.pid))
     as "no process holds the subject, and the asker's monitor of the pid it is told gives EndedBeforeAnswer"
+}
+
+// ---- a service found at an address ----
+
+pub fn a_service_found_at_an_address_is_found_there_when_its_first_step_sends_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let scope = group_registry.new(label: "found_at")
+  let tree = ask_support.start_tree(group_registry.supervised(scope:))
+  let address =
+    Creature(
+      map: MapId(world_id: 1387, instance: 0),
+      incarnation: 1,
+      unit_id: 5,
+      life: 2,
+    )
+  // The send of the first step's message hands the test the sender and waits
+  // for the test's lookup, so the lookup is made while that step is carried out.
+  let sent = process.new_subject()
+  let settings =
+    service_shell.Settings(
+      rule: Rule(
+        name: "found at",
+        settings: Nil,
+        new: fn(_settings) { Nil },
+        step: fn(state, input) {
+          case input.event {
+            OwnEvent(Started) -> #(
+              state,
+              Effects([OwnEffect(Send(to: Sessions, message: Nil))]),
+            )
+            OwnEvent(ServiceTimerFired(..))
+            | OwnEvent(CreatureNotStarted(..))
+            | OwnEvent(Asked(..))
+            | OwnEvent(Told(..))
+            | WatchEnded(..)
+            | Stopping(..) -> #(state, Effects([]))
+          }
+        },
+      ),
+      reach: service.Reach(
+        locate: fn(_address) { Error(Nil) },
+        send: fn(_to, _message) {
+          let looked = process.new_subject()
+          process.send(sent, #(process.self(), looked))
+          let assert Ok(Nil) =
+            process.receive(looked, within: ask_support.event_wait_ms)
+            as "the test looked the service up"
+          Ok(Nil)
+        },
+        start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
+      ),
+      shutdown_ms: 1000,
+      found_at: Some(service_shell.FoundAt(scope:, address:)),
+    )
+  let _starter =
+    process.spawn(fn() {
+      let assert Ok(_started) = service_shell.start_unnamed(settings)
+        as "the service starts"
+      process.sleep_forever()
+    })
+  let assert Ok(#(service, looked)) =
+    process.receive(sent, within: ask_support.event_wait_ms)
+    as "the first step sent its message"
+  assert group_registry.find(scope:, group: address) == Ok(service)
+    as "the service is found at its address when its first step sends"
+  process.send(looked, Nil)
+  let _reason = ask_support.stop_tree(tree)
+  Nil
 }
