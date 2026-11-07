@@ -4,6 +4,8 @@
     python3.13 -I client_files.py check
     python3.13 -I client_files.py text <id>...
     python3.13 -I client_files.py text --search <word>...
+    python3.13 -I client_files.py tokens --write [--list <path>]
+    python3.13 -I client_files.py tokens --check [--list <path>]
 
 Run with ~/.genesis-prime/env.sh read: WILDSTAR_CLIENT_EXE names the client, whose Patch folder (beside
 Client64) holds ClientData.index/.archive and ClientDataEN.index/.archive. Both indexes must be build
@@ -31,6 +33,28 @@ text      Prints `<id>\\t<text>` for each id given (decimal, leading zeros allow
           lacks prints `<id>\\t(none)` and the exit is 1. With --search, prints every text that holds all
           the words, ignoring case, in id order, then `N texts`. A newline, carriage return or tab inside
           a text prints as \\n, \\r or \\t. Without en-US.bin in the folder it says to run extract.
+tokens    Lists the `$(kind=id.field)` tokens of every text a Spell4 tooltip column names (the seven columns
+          localizedTextId ActionBarTooltip, CasterIconSpellText, PrimaryTargetIconSpellText,
+          SecondaryTargetIconSpellText, TooltipCastInfo, TooltipCostInfo and LASTier), read from en-US.bin in
+          the client-files folder and Spell4.tbl in the extracted tables folder (run extract, and
+          setup_check/extract_tables.py, first). One tab-separated line per distinct token of a text, in text id
+          order then first appearance, after the header `text_id<TAB>kind<TAB>id<TAB>field`: the kind and the
+          field in lower case with their suffixes kept (data02rawint), an empty field for a token that names
+          a spell, creature, item and so on without a value. The list holds ids and field names only, no
+          English text, and defaults to test/fixture/tooltip_tokens/tokens.tsv (--list names another).
+          --write writes it, and names each `$(` the client reads as no token (with its text id and why) as
+          left out, exit 0. --check compares it with a fresh read: exit 0 and "current", or exit 1 and each
+          text whose tokens differ (the first 50); with no list, or one with another header, exit 1.
+          A `$(` is read as the client reads it, so a form the client never prints is no row and not an
+          error: FormatTextTokens 0x1400c12b0 gives the text from `$(` to the first `)` to ReadParenToken
+          0x1400b7780, which tries the kinds item, schematic, vitem, creature, achievement, bindpoint,
+          keybinding, eff, spell, cc, smod, emod, thrsh and gf (ReadKindToken 0x1400b8010), each compared
+          without case with `=` straight after (MatchWordAndNumber 0x1400b7f50); the id is read by wcstol
+          (leading spaces skipped, 0 for no digits) and every evaluator refuses 0; the field is what follows
+          the first `.`; a body that no kind matches is looked up as a named argument and prints nothing
+          when unknown; a token with no `)` swallows the rest of the text. The forms left out are: no `)`; no
+          kind; id 0; a field that holds whitespace (it runs over text to the next `)`, which the scan
+          then skips too); an eff, cc, smod, emod, thrsh or gf token with no field.
 
 The layout of en-US.bin is the fact file's language_file.layout: magic 'XETL'; at 0x40 the entry count
 (u32), at 0x48 the entries' place (u64), at 0x50 the text's length in UTF-16 characters (u64), at 0x58 the
@@ -47,6 +71,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import struct
 import sys
@@ -70,6 +95,27 @@ UI_DIRECTORY = "UI/"
 HEADER_END = 0x60
 MAGIC = b"XETL"
 SHOWN_CHANGES = 50
+TABLE_MAGIC = b"LBTD"
+# The column types of the fact file's game_table.column_type, by their size in a record.
+COLUMN_SIZE = {3: 4, 4: 4, 11: 4, 20: 8, 130: 8}
+TEXT_COLUMNS = [
+    "localizedTextIdActionBarTooltip",
+    "localizedTextIdCasterIconSpellText",
+    "localizedTextIdPrimaryTargetIconSpellText",
+    "localizedTextIdSecondaryTargetIconSpellText",
+    "localizedTextIdTooltipCastInfo",
+    "localizedTextIdTooltipCostInfo",
+    "localizedTextIdLASTier",
+]
+TOKEN_OPEN = "$("
+# The kinds ReadKindToken 0x1400b8010 tries: the ones that print a name need no field, a value kind needs one.
+NAME_KINDS = ["item", "schematic", "vitem", "creature", "achievement", "bindpoint", "keybinding", "spell"]
+VALUE_KINDS = ["eff", "cc", "smod", "emod", "thrsh", "gf"]
+TOKEN_BODY = re.compile(
+    r"(?P<kind>%s)=\s*(?P<id>[0-9]*)[^.]*(?:\.(?P<field>.*))?$" % "|".join(NAME_KINDS + VALUE_KINDS), re.IGNORECASE | re.DOTALL
+)
+TOKEN_HEADER = "text_id\tkind\tid\tfield"
+TOKEN_LIST = check_facts.REPOSITORY / "test" / "fixture" / "tooltip_tokens" / "tokens.tsv"
 
 
 @dataclass(frozen=True)
@@ -306,6 +352,153 @@ def _run_text(arguments, folder: Path, out) -> int:
     return status
 
 
+@dataclass(frozen=True)
+class Token:
+    """One `$(kind=id.field)` of a text: the kind and field in lower case, the id as written, and an empty field
+    for a link."""
+
+    kind: str
+    id: int
+    field: str
+
+    def row(self, text_id: int) -> str:
+        return "%d\t%s\t%d\t%s" % (text_id, self.kind, self.id, self.field)
+
+
+def read_tokens(text: str) -> tuple[list[Token], list[tuple[str, str]]]:
+    """The tokens of one text, each once, in the order they first appear, and the `$(` the client reads as no
+    token, each as (why, the first 40 characters of its body), in order. A `$(` is read as the client's
+    FormatTextTokens (0x1400c12b0, ReadParenToken 0x1400b7780) reads it: its body runs to the first `)`; the kind
+    is one of the client's, compared without case, with `=` straight after; the id is read as wcstol reads it
+    (leading spaces skipped, 0 when there are no digits); the field is what follows the first `.`. The client
+    prints nothing for the forms it does not know, and the scan goes on after the `)`."""
+    found: dict[Token, None] = {}
+    irregular: list[tuple[str, str]] = []
+    at = text.find(TOKEN_OPEN)
+    while at != -1:
+        close = text.find(")", at)
+        if close == -1:
+            irregular.append(("no closing parenthesis: the client reads the rest of the text as the token", text[at + 2 : at + 42]))
+            break
+        body = text[at + 2 : close]
+        matched = TOKEN_BODY.match(body)
+        if matched is None:
+            irregular.append(("no kind of the client's and no id: the client looks the body up as a named argument", body[:40]))
+        elif int(matched["id"] or 0) == 0:
+            irregular.append(("the id is 0 or has no digits: every evaluator refuses it", body[:40]))
+        else:
+            kind, field = matched["kind"].lower(), matched["field"]
+            if field is not None and any(character.isspace() for character in field):
+                irregular.append(("the field runs over other text to the next `)`", body[:40]))
+            elif kind == "eff" and field is None:
+                # No '.', so EvaluateEffectToken (0x1404de8d0) gives no value; ReadKindToken (0x1400b8010) then tries
+                # spell= with the same id, and FormatSpellTooltipToken (0x1404df2c0) with no '.' prints the spell's name.
+                found[Token("spell", int(matched["id"]), "")] = None
+            elif not field and kind in VALUE_KINDS:
+                irregular.append(("an %s token with no field: the evaluator prints nothing" % kind, body[:40]))
+            else:
+                found[Token(kind, int(matched["id"]), (field or "").lower())] = None
+        at = text.find(TOKEN_OPEN, close)
+    return list(found), irregular
+
+
+def spell4_text_ids(data: bytes) -> list[int]:
+    """The ids the seven tooltip text columns of Spell4.tbl name, each once, ascending, without the 0 that means
+    no text. The layout is the fact file's game_table.file and game_table.schema; raises Refused for a file that
+    is not a game table, has a column or type this reader does not know, or lacks one of the seven columns.
+    It mirrors src/genesis_prime/table/loader/tbl_file.gleam (layout) and the generated spell4.gleam (these seven
+    columns are read signed, as every type 3 column not listed Unsigned in column_sign is); Python cannot call
+    them, because `gleam run` recompiles, and the check lets only its gleam-build part compile (check, line 105)."""
+    if len(data) < HEADER_END or data[:4] != TABLE_MAGIC:
+        raise Refused("Spell4.tbl does not start %r" % TABLE_MAGIC)
+    record_size, column_count, column_table, record_count, block_size, block_at = struct.unpack_from("<QQQQQQ", data, 0x18)
+    body = data[HEADER_END:]
+    names_at = column_table + (24 * column_count + 15) // 16 * 16
+    if names_at > len(body) or block_at + block_size > len(body) or record_count * record_size > block_size:
+        raise Refused("Spell4.tbl's columns or records run past the end of the file")
+    where: dict[str, int] = {}
+    place = 0
+    for number in range(column_count):
+        name_length, _, name_at, type_number = struct.unpack_from("<IIQH", body, column_table + 24 * number)
+        if type_number not in COLUMN_SIZE:
+            raise Refused("Spell4.tbl column %d has type %d, which this reader does not know" % (number, type_number))
+        size = COLUMN_SIZE[type_number]
+        place = (place + size - 1) // size * size
+        start = names_at + name_at
+        where[body[start : start + 2 * name_length - 2].decode("utf-16-le", errors="replace")] = place
+        place += size
+    for column in TEXT_COLUMNS:
+        if column not in where:
+            raise Refused("Spell4.tbl has no column %s" % column)
+    ids: set[int] = set()
+    for record in range(record_count):
+        for column in TEXT_COLUMNS:
+            (value,) = struct.unpack_from("<i", body, block_at + record * record_size + where[column])
+            if value:
+                ids.add(value)
+    return sorted(ids)
+
+
+def token_rows(env) -> tuple[list[str], list[str]]:
+    """The list's lines after its header, for the texts the Spell4 tooltip columns name that en-US.bin has, in text
+    id order, and a line for each `$(` the client reads as no token (text id, why, the start of its body)."""
+    language_path = client_files_folder(env) / LANGUAGE_FILE
+    table_path = extract_tables.table_folder(env) / "Spell4.tbl"
+    if not language_path.is_file():
+        raise Refused("no %s in %s; run extract" % (LANGUAGE_FILE, language_path.parent))
+    if not table_path.is_file():
+        raise Refused("no Spell4.tbl in %s; run python3.13 -I setup_check/extract_tables.py" % table_path.parent)
+    language = read_language_file(language_path.read_bytes())
+    rows, irregular = [], []
+    for text_id in spell4_text_ids(table_path.read_bytes()):
+        text = language.text(text_id)
+        if text is not None:
+            tokens, unread = read_tokens(text)
+            rows.extend(token.row(text_id) for token in tokens)
+            irregular.extend("text %d: %s: %s" % (text_id, why, _printable(start)) for why, start in unread)
+    return rows, irregular
+
+
+def _rows_by_text(lines: list[str]) -> dict[str, list[str]]:
+    by_text: dict[str, list[str]] = {}
+    for line in lines:
+        by_text.setdefault(line.split("\t", 1)[0], []).append(line)
+    return by_text
+
+
+def _run_tokens(arguments, env, out) -> int:
+    rows, irregular = token_rows(env)
+    target = Path(arguments.list)
+    if arguments.write:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join([TOKEN_HEADER, *rows]) + "\n")
+        print("wrote %s: %s" % (target, _counted(len(rows), "row")), file=out)
+        if irregular:
+            print("%s the client reads as no token, left out:" % _counted(len(irregular), "form"), file=out)
+            for line in irregular:
+                print(line, file=out)
+        return 0
+    if not target.is_file():
+        print("no list at %s; run tokens --write" % target, file=out)
+        return 1
+    committed = target.read_text().splitlines()
+    if committed[:1] != [TOKEN_HEADER]:
+        print("%s does not start with the header %r; run tokens --write" % (target, TOKEN_HEADER), file=out)
+        return 1
+    before, after = _rows_by_text(committed[1:]), _rows_by_text(rows)
+    differing = sorted((before.keys() | after.keys()), key=int)
+    differing = [text_id for text_id in differing if before.get(text_id) != after.get(text_id)]
+    if not differing:
+        print("current", file=out)
+        return 0
+    print("stale: %s with other tokens than the client's; run tokens --write" % _counted(len(differing), "text"), file=out)
+    for text_id in differing[:SHOWN_CHANGES]:
+        print("text %s: the list has %d, the client's file has %d" % (text_id, len(before.get(text_id, [])), len(after.get(text_id, []))), file=out)
+    if len(differing) > SHOWN_CHANGES:
+        print("and %d more" % (len(differing) - SHOWN_CHANGES), file=out)
+    return 1
+
+
 def _run_patch(command: str, folder: Path, env, out) -> int:
     if "WILDSTAR_CLIENT_EXE" not in env:
         print("client_files: WILDSTAR_CLIENT_EXE is not set: add it to env.sh (GENESIS_HOME/env.sh), as ./setup-check says", file=sys.stderr)
@@ -343,10 +536,17 @@ def main(argv: list[str], env, out=None) -> int:
     text = commands.add_parser("text")
     text.add_argument("ids", nargs="*", type=_text_id, help="decimal or 0x hex")
     text.add_argument("--search", nargs="+", metavar="word")
+    tokens = commands.add_parser("tokens")
+    action = tokens.add_mutually_exclusive_group(required=True)
+    action.add_argument("--write", action="store_true")
+    action.add_argument("--check", action="store_true")
+    tokens.add_argument("--list", default=str(TOKEN_LIST), metavar="path")
     arguments = parser.parse_args(argv)
     if arguments.command == "text" and bool(arguments.ids) == bool(arguments.search):
         parser.error("text takes ids, or --search and words, not both and not neither")
     try:
+        if arguments.command == "tokens":
+            return _run_tokens(arguments, env, out)
         folder = client_files_folder(env)
         if arguments.command == "text":
             return _run_text(arguments, folder, out)
