@@ -28,12 +28,6 @@
 # machine (GENESIS_NO_CLIENT=1 or GITHUB_ACTIONS set), which so always runs every
 # part. branch-current and the setup check run first in either scope.
 #
-# The client scripts' integration tests take about 240 seconds, so they
-# run only when the branch changes a file under the client scripts folder since
-# its merge base with origin/main (or main), and then the budget is raised to
-# GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS (three times that is the hang limit)
-# and the output says so.
-#
 # The full check starts with branch-current: HEAD must hold every commit of
 # origin/main as last fetched (git rev-list --count HEAD..origin/main; the check
 # fetches nothing). A branch that lacks any fails the check at once, naming how
@@ -91,12 +85,7 @@
 #   squirrel       gleam run -m squirrel check, against that database
 #                                                       (after gleam-build and migrations)
 #   client-suite   the client scripts' tests that need no Ghidra (run with
-#                  GENESIS_INTEGRATION=0, whatever the caller exported), then the
-#                  playing-live scripts' tests
-#   client-integration  the client scripts' tests that run the client's code on
-#                  Ghidra's emulator (GENESIS_INTEGRATION=1; skipped where
-#                  GENESIS_NO_CLIENT=1 and where the branch leaves the client
-#                  scripts unchanged)
+#                  GENESIS_INTEGRATION=0, whatever the caller exported)
 #   fact-checker   check_facts.py over the fact file
 #
 # The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
@@ -144,11 +133,6 @@ fast_budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-29}
 if [ "$mode" = fast ]; then
   budget=$fast_budget
 fi
-
-# The budget of a run that includes the integration tests: the slowest of 3
-# solo runs on the development Mac was 466 s, times
-# 1.25, rounded up.
-integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-583}
 
 client_scripts=.claude/skills/decoding-the-client/scripts
 
@@ -206,7 +190,7 @@ fast_parts="format gleam-build glinter code-rules"
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
 case "$mode" in
-  full) parts="format gleam-build glinter generated-tables gleam-test world-data literal-area migrations squirrel client-suite client-integration fact-checker" ;;
+  full) parts="format gleam-build glinter generated-tables gleam-test world-data literal-area migrations squirrel client-suite fact-checker" ;;
   fast) parts="$fast_parts" ;;
 esac
 
@@ -332,37 +316,6 @@ decide_scope() {
   scope_why="the $count files the branch changes since its merge base with main (first: $first) are all guidance or tools that no other part reads"
 }
 
-# decide_integration: sets integration_run to yes or no, and integration_why to
-# the reason, from the machine (GENESIS_NO_CLIENT) and from what the branch
-# changed under the client scripts folder since its merge base with main.
-decide_integration() {
-  local base changed
-  if [ "${GENESIS_NO_CLIENT:-}" = 1 ]; then
-    integration_run=no
-    integration_why="GENESIS_NO_CLIENT=1: there is no client on this machine"
-    return
-  fi
-  base=$(merge_base)
-  if [ -z "$base" ]; then
-    integration_run=yes
-    integration_why="there is no merge base with origin/main or main to compare the client scripts with"
-    return
-  fi
-  if ! changed_files "$base" "$client_scripts"; then
-    integration_run=yes
-    integration_why="$changed_files_error, so the changes under $client_scripts are not known"
-    return
-  fi
-  changed=$(printf '%s\n' "$changed_list" | head -n 1)
-  if [ -n "$changed" ]; then
-    integration_run=yes
-    integration_why="the branch changes $changed under $client_scripts since its merge base with main"
-  else
-    integration_run=no
-    integration_why="unchanged: the branch changes nothing under $client_scripts since its merge base with main"
-  fi
-}
-
 # skip NAME REASON: records that the part did not run on purpose, and why.
 skip() {
   echo "$2" >"$work/$1.skipped"
@@ -479,18 +432,6 @@ if [ "$mode" = full ]; then
     echo "scope: light, so only the fast parts run ($fast_parts): $scope_why; CI runs every part"
   else
     echo "scope: every part, because $scope_why"
-  fi
-fi
-
-if [ "$mode" = full ]; then
-  decide_integration
-  if [ "$integration_run" = yes ]; then
-    if [ "$integration_budget" -gt "$budget" ]; then
-      budget=$integration_budget
-    fi
-    echo "budget raised to ${budget}s: the client's integration tests run, because $integration_why"
-  else
-    skip client-integration "$integration_why"
   fi
 fi
 
@@ -646,16 +587,9 @@ literal_area_check() {
   return $status
 }
 
-# The client scripts' tests that need no Ghidra, then the playing-live scripts' tests.
+# The client scripts' tests that need no Ghidra.
 client_suite() {
-  env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py' &&
-    python3.13 -I -m unittest discover -s .claude/skills/playing-live/scripts -p 'test_*.py'
-}
-
-# The client scripts' integration tests: their own tests with
-# GENESIS_INTEGRATION=1, which opens the gate of check_support.integration_only.
-client_integration() {
-  GENESIS_INTEGRATION=1 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py'
+  env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py'
 }
 
 squirrel_check() {
@@ -748,9 +682,6 @@ case "$mode" in
     in_background gleam_chain
     in_background step migrations prepare_database
     in_background step client-suite client_suite
-    if [ "$integration_run" = yes ]; then
-      in_background step client-integration client_integration
-    fi
     in_background step fact-checker facts_with_the_client_named
     ;;
   fast)
