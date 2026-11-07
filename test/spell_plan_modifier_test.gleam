@@ -87,16 +87,17 @@ fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
 
 pub fn a_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The kit's 135954 as the client holds it: property 102, mode 3, 1.0, 0.08, 8 s.
+  // The shape of the kit's 135954 as the client holds it (property 102, mode 3, 1.0, 0.08,
+  // 8 s), planted under an id no client row holds.
   assert modifiers_of(
-      row: modifier_row(id: 135_954, target_flags: 1, columns: [
+      row: modifier_row(id: 99_051, target_flags: 1, columns: [
         #("dataBits03", Integer(point_zero_eight)),
         #("durationTime", Integer(8000)),
       ]),
     )
     == [
       spell_plan.PropertyModifier(
-        effect_id: Spell4EffectsId(135_954),
+        effect_id: Spell4EffectsId(99_051),
         phase_flags: -1,
         change: spell_plan.PropertyChange(Change(
           property: UnitProperty2Id(102),
@@ -116,10 +117,11 @@ pub fn a_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
 
 pub fn gates_falling_damage_row_is_read_with_its_delay_and_duration_test() -> Nil {
   use <- owned_test.run(60_000)
-  // 67777: FallingDamageMultiplier (134), multiplier 0.0, flat 0.0, delay 180, 400 ms.
+  // The shape of 67777 (FallingDamageMultiplier 134, multiplier 0.0, flat 0.0, delay 180,
+  // 400 ms), planted under an id no client row holds.
   let assert [row] =
     modifiers_of(
-      row: modifier_row(id: 67_777, target_flags: 1, columns: [
+      row: modifier_row(id: 99_052, target_flags: 1, columns: [
         #("dataBits00", Integer(134)),
         #("dataBits02", Integer(0)),
         #("delayTime", Integer(180)),
@@ -200,13 +202,13 @@ pub fn a_row_that_names_a_property_with_no_unitproperty2_row_fails_the_load_test
   use <- owned_test.run(60_000)
   assert plan_error(
       row: modifier_row(id: 99_044, target_flags: 1, columns: [
-        #("dataBits00", Integer(197)),
+        #("dataBits00", Integer(200)),
       ]),
     )
     == spell_plan.ModifierPropertyHasNoRow(
       spell4_id: strike,
       effect_id: 99_044,
-      property: 197,
+      property: 200,
     )
 }
 
@@ -313,7 +315,7 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
   // Gate, 20325, whose own spell 34355 holds 67777.
   let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
   let assert [falling] = gate.modifiers
-  assert falling.effect_id == Spell4EffectsId(67_777)
+  assert falling.effect_id == Spell4EffectsId(99_052)
   assert falling.change
     == spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(134),
@@ -333,7 +335,7 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
       proxy.spell.spell4_id == Spell4Id(57_030)
     })
   let assert [crit] = proxy.spell.modifiers
-  assert crit.effect_id == Spell4EffectsId(135_954)
+  assert crit.effect_id == Spell4EffectsId(99_051)
   assert crit.change
     == spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(102),

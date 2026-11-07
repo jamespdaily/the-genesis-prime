@@ -71,8 +71,11 @@ pub fn a_file_whose_header_differs_from_the_schema_names_the_table_and_the_first
 }
 
 // 3
+// The generator reads the client's whole tables: 42 s on an idle machine (alone, 2026-11-07),
+// and past 300 s beside the rest of the suite in the first full `./check` of this fix round.
+// The deadline is a hang guard set at about 14 times the idle run.
 pub fn the_committed_files_are_what_the_generator_makes_from_the_client_test() -> Nil {
-  use <- owned_test.run(300_000)
+  use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let assert Ok(fixture) =
     fixture_rows.generate(

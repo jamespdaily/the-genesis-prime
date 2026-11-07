@@ -66,16 +66,17 @@ fn forced_moves_of(row row: List(Cell)) -> List(spell_plan.ForcedMove) {
 
 pub fn gates_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
   use <- owned_test.run(60_000)
-  // 67776 as the client holds it: delay 200, phase flags 1.
+  // The shape of 67776 as the client holds it (delay 200, phase flags 1), planted under
+  // an id no client row holds.
   assert forced_moves_of(
-      row: forced_move_row(id: 67_776, target_flags: 1, columns: [
+      row: forced_move_row(id: 99_068, target_flags: 1, columns: [
         #("delayTime", Integer(200)),
         #("phaseFlags", Integer(1)),
       ]),
     )
     == [
       spell_plan.ForcedMove(
-        effect_id: Spell4EffectsId(67_776),
+        effect_id: Spell4EffectsId(99_068),
         phase_flags: 1,
         delay_ms: 200,
         condition: Always,
@@ -179,7 +180,7 @@ pub fn gates_two_caster_rows_are_read_from_the_clients_tables_test() -> Nil {
   assert gate.forced_moves
     == [
       spell_plan.ForcedMove(
-        effect_id: Spell4EffectsId(67_776),
+        effect_id: Spell4EffectsId(99_068),
         phase_flags: 1,
         delay_ms: 200,
         condition: Always,
