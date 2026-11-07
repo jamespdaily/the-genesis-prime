@@ -444,12 +444,16 @@ class StepWork:
     main_replies: dict[str, list[Reply]]
     sub_runs: list[Run]
     shared: list[str]
-    costs: dict[str, SessionCost]
     rows: dict[str, Tally]
     unsaved: float
     codex: int
     start: datetime
     end: datetime
+
+    @property
+    def sessions(self) -> set[str]:
+        """The main sessions the step ran in, directly or through a subagent."""
+        return set(self.main_replies) | {r.session for r in self.sub_runs}
 
     @property
     def total(self) -> Tally:
@@ -502,7 +506,6 @@ def measure_step(step: int, runs: list[Run], costs: dict[str, SessionCost]) -> S
         main_replies,
         sub_runs,
         shared,
-        costs,
         rows,
         unsaved,
         codex,
@@ -620,14 +623,20 @@ def report_milestone(title: str, types: int | None, runs: list[Run]) -> int:
     """Prints each completed step's dollars and the milestone's total and cost per type."""
     steps = milestone_steps(title)
     if not steps:
-        print(f"No issue closed as completed in milestone {title!r}.")
+        print(
+            f"No issue closed as completed in milestone {title!r}; check the title."
+        )
         return 1
     costs = session_costs(runs)
     priced = []
+    sessions: set[str] = set()
+    unpriced: set[str] = set()
     for number, name in steps.items():
         work = measure_step(number, runs, costs)
         if work is not None:
             priced.append((work.total.dollars, number, name, bool(work.shared)))
+            sessions |= work.sessions
+            unpriced |= work.total.unpriced
     priced.sort(reverse=True)
 
     print(f"**{title}: agent work of {len(steps)} completed steps**")
@@ -644,6 +653,23 @@ def report_milestone(title: str, types: int | None, runs: list[Run]) -> int:
         f"**Total: ${total:.2f}** over {plural(len(priced), 'step')} with transcript work."
     )
     print(f"Steps with no transcript work found: {len(steps) - len(priced)}.")
+    recorded = [costs[s] for s in sessions if s in costs and costs[s].recorded]
+    unassigned = Tally()
+    unassigned.add(
+        [x for r in runs if r.session in sessions for x in r.replies if x.step is None]
+    )
+    print(
+        f"The steps ran in {plural(len(sessions), 'session')}; Claude Code recorded "
+        f"${sum(c.recorded_dollars for c in recorded):.2f} for {len(recorded)} of them "
+        f"(their saved replies price at ${sum(c.priced for c in recorded):.2f}), and "
+        f"{len(sessions) - len(recorded)} with no recorded cost yet."
+    )
+    print(
+        f"Left out of every step: ${unassigned.dollars:.2f} of those sessions' replies "
+        "and subagent runs that name no step."
+    )
+    if unpriced:
+        print(f"No price for {', '.join(sorted(unpriced))}: counted but not priced.")
     if types:
         print(
             f"Cost per type: ${total:.2f} over {plural(types, 'type')} = ${total / types:.2f}"
@@ -701,8 +727,11 @@ def main() -> int:
         help="with --milestone, the types the milestone handled, for the cost per type",
     )
     args = parser.parse_args()
-    if args.step is None and not args.check_prices and not args.milestone:
-        parser.error("give a step's issue number, --milestone, or --check-prices")
+    modes = [args.step is not None, args.check_prices, bool(args.milestone)]
+    if sum(modes) != 1:
+        parser.error(
+            "give exactly one of a step's issue number, --milestone, or --check-prices"
+        )
     if args.types is not None and (not args.milestone or args.types < 1):
         parser.error("--types is a positive number and goes with --milestone")
 
