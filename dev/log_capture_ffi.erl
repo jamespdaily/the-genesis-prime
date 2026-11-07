@@ -88,14 +88,14 @@ ensure_table() ->
 %% event then reaches each capture twice.
 ensure_handler() ->
     ok =
-        global:trans({{?MODULE, handler}, self()},
-                     fun() ->
-                             case lists:member(?HANDLER, logger:get_handler_ids()) of
-                                 true -> ok;
-                                 false -> ok = logger:add_handler(?HANDLER, ?MODULE, #{})
-                             end
-                     end,
-                     [node()]),
+        local_lock_ffi:with_lock(
+          log_capture_ensure_handler,
+          fun() ->
+                  case lists:member(?HANDLER, logger:get_handler_ids()) of
+                      true -> ok;
+                      false -> ok = logger:add_handler(?HANDLER, ?MODULE, #{})
+                  end
+          end),
     ok.
 
 primary_level() ->
