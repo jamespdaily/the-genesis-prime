@@ -19,7 +19,7 @@ fn owner_with_a_term() -> #(Pid, store.Key) {
   let starter = process.self()
   let owner =
     process.spawn_unlinked(fn() {
-      let key = owned_key.new_key()
+      let key = owned_key.unlimited(owned_key.new_key)
       store.put_content(key:, table: "Planted", id: 1, value: "a value")
       process.send(reply, key)
       let _down =

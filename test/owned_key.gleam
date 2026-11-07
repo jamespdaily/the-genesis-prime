@@ -91,6 +91,11 @@ pub fn loads_held() -> Int
 @external(erlang, "owned_key_ffi", "loads_held_limit")
 pub fn loads_held_limit() -> Int
 
+/// Runs the body with the keys it makes taking no place among the loads, for
+/// a process that makes a key to be counted, not to load.
+@external(erlang, "owned_key_ffi", "unlimited")
+pub fn unlimited(body: fn() -> a) -> a
+
 /// How many processes wait now for a place among the loads.
 @external(erlang, "owned_key_ffi", "waiting_for_room")
 pub fn waiting_for_room() -> Int
