@@ -17,6 +17,12 @@ the real toolchain, the real database or the real client:
   glinter, table_generator, squirrel and the world-data run have each started, and
   the code-rule run (`gleam test -- --tag code_rule`) until glinter has, so a part
   that is not run beside the test run makes it fail;
+- `erl` is a stub that stands in for the VM the check starts on the built code
+  (run_built): it writes its whole command line to PLANT_LOG.erl, turns it into the
+  `gleam test -- ARGS` or `gleam run -m MODULE ARGS` the program is, and runs the `gleam`
+  stub on that with PLANT_AS=built, so every behaviour above applies to it and the
+  commands log shows `built test -- ARGS` for a start of the built code and
+  `gleam ...` only for what compiles;
 - `python3.13` is the real one, except for the run the stub stands in for:
   check_facts.py, which succeeds at once;
 - the client query process's scripts are the real check_support.py (with the
@@ -64,8 +70,9 @@ RUNNABLE = PYTHON is not None and shutil.which("bash") is not None and CHECK.is_
 NOT_TEST_RUNS = ("glinter", "squirrel", "genesis_prime/table_generator")
 
 GLEAM_STUB = """#!/bin/sh
-echo "gleam $*" >>"$PLANT_LOG"
-echo "gleam $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL GENESIS_TEST_SKIP_WORLD_DATA=$GENESIS_TEST_SKIP_WORLD_DATA" >>"$PLANT_LOG.environment"
+as=${PLANT_AS:-gleam}
+echo "$as $*" >>"$PLANT_LOG"
+echo "$as $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL GENESIS_TEST_SKIP_WORLD_DATA=$GENESIS_TEST_SKIP_WORLD_DATA" >>"$PLANT_LOG.environment"
 if [ -n "$PLANT_RENDEZVOUS" ]; then
   rendezvous="$PLANT_LOG.rendezvous"
   mkdir -p "$rendezvous"
@@ -113,7 +120,7 @@ if [ "$1" = test ]; then
     *"--tag serial"*) echo "Seed: 222" ;;
     *) echo "Seed: 111" ;;
   esac
-  echo "gleam $* peak_file=${GENESIS_LITERAL_PEAK_FILE:+given}" >>"$PLANT_LOG.peak"
+  echo "$as $* peak_file=${GENESIS_LITERAL_PEAK_FILE:+given}" >>"$PLANT_LOG.peak"
   # The run keeps the literal allocator's highest carriers size in the file it is
   # given, as test/genesis_prime_test.gleam does; PLANT_LITERAL_PEAK is that many
   # bytes, and "none" writes no file.
@@ -150,6 +157,26 @@ case "$*" in
   *"count(*)"*) echo 0 ;;
 esac
 exit 0
+"""
+
+ERL_STUB = """#!/bin/sh
+echo "erl $*" >>"$PLANT_LOG.erl"
+module=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -eval) module=$2; shift 2 ;;
+    -extra) shift; break ;;
+    *) shift ;;
+  esac
+done
+module=${module#*:run(}
+module=$(echo "${module%%)*}" | tr @ /)
+if [ "$module" = genesis_prime_test ]; then
+  if [ $# -gt 0 ]; then set -- test -- "$@"; else set -- test; fi
+else
+  set -- run -m "$module" "$@"
+fi
+PLANT_AS=built exec "$(dirname "$0")/gleam" "$@"
 """
 
 PYTHON_STUB = """#!/bin/sh
@@ -224,6 +251,9 @@ class PlantedCheckCase(unittest.TestCase):
         self.plant_integration_test(fails=False)
         tools = self.root / "tools"
         executable(tools / "gleam", GLEAM_STUB)
+        executable(tools / "erl", ERL_STUB)
+        for package in ("alpha", "beta"):
+            (repository / "build" / "dev" / "erlang" / package / "ebin").mkdir(parents=True)
         executable(tools / "psql", PSQL_STUB)
         executable(tools / "python3.13", PYTHON_STUB)
 
@@ -309,6 +339,11 @@ class PlantedCheckCase(unittest.TestCase):
         path = Path(str(self.log) + ".peak")
         return path.read_text() if path.exists() else ""
 
+    def erl_log(self) -> str:
+        """The command line of each start of the built code, as the erl stub saw it."""
+        path = Path(str(self.log) + ".erl")
+        return path.read_text() if path.exists() else ""
+
     def commands(self) -> list[str]:
         return [line for line in self.log.read_text().splitlines() if line.strip()]
 
@@ -333,6 +368,7 @@ class Run:
     commands: list[str]
     environment: str
     peak: str
+    erl: str
     took: float
     marker_ran: bool
     hang: str
@@ -370,7 +406,7 @@ def shared_run(key: str, *arguments: str, client: bool = False, prepare=None, ha
         done = case.run_check(*arguments, client=client, timeout=timeout, **settings)
         took = time.monotonic() - started
         left = subprocess.run(["pgrep", "-f", hang_pattern(seconds)], capture_output=True, text=True).stdout.split() if seconds else []
-        run = Run(done, case.commands(), case.environment_log(), case.peak_log(), took, case.marker.exists(), seconds, left)
+        run = Run(done, case.commands(), case.environment_log(), case.peak_log(), case.erl_log(), took, case.marker.exists(), seconds, left)
     finally:
         if seconds:
             subprocess.run(["pkill", "-f", hang_pattern(seconds)])
@@ -502,14 +538,14 @@ class BudgetTest(unittest.TestCase):
             GENESIS_CHECK_BUDGET_SECONDS="5", PLANT_PSQL_CREATE_SECONDS="8",
         )
         self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertIn("gleam run -m squirrel check", run.commands)
+        self.assertIn("built run -m squirrel check", run.commands)
         self.assertRegex(run.output, r"(?m)^  squirrel +ok\b")
 
     def test_squirrel_is_skipped_when_the_migrations_part_fails(self):
         run = shared_run("failing-migrations", prepare=self.quick_polls, PLANT_PSQL_CREATE_FAILS="1")
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"\bmigrations\b")
-        self.assertNotIn("gleam run -m squirrel check", run.commands)
+        self.assertNotIn("built run -m squirrel check", run.commands)
         self.assertRegex(run.output, r"(?m)^  squirrel +skipped \(a part it needs failed: migrations\)")
 
     def test_a_check_inside_its_budget_passes_without_a_warning(self):
@@ -761,14 +797,14 @@ class FastModeTest(unittest.TestCase):
         commands = run.commands
         self.assertTrue(any(c.startswith("gleam format --check") for c in commands), commands)
         self.assertIn("gleam build --warnings-as-errors", commands)
-        self.assertIn("gleam run -m glinter", commands)
+        self.assertIn("built run -m glinter", commands)
         self.assertFalse([c for c in commands if c.startswith(("psql", "python3.13"))], commands)
         for module in NOT_TEST_RUNS:
             if module != "glinter":
                 self.assertFalse([c for c in commands if module in c], commands)
 
     def test_the_fast_check_never_runs_the_whole_test_suite(self):
-        suites = [c for c in shared_run("fast", "fast").commands if re.fullmatch(r"gleam test( -- --workers \d+)?", c)]
+        suites = [c for c in shared_run("fast", "fast").commands if re.fullmatch(r"built test( -- --workers \d+)?", c)]
         self.assertEqual(suites, [], "the fast check runs the code-rule tests only")
 
     def test_a_failing_build_fails_the_fast_check_naming_it(self):
@@ -882,7 +918,7 @@ class LightScopeTest(unittest.TestCase):
         run = self.light()
         self.assert_light(run)
         self.assertFalse([c for c in run.commands if c.startswith(("psql", "python3.13"))], run.commands)
-        self.assertEqual([c for c in run.commands if re.fullmatch(r"gleam test( -- --workers \d+)?", c)], [])
+        self.assertEqual([c for c in run.commands if re.fullmatch(r"built test( -- --workers \d+)?", c)], [])
 
     def test_a_branch_changing_only_light_files_says_the_scope_and_why(self):
         line = scope_line(self.light().output)
@@ -1049,13 +1085,13 @@ class SerialTestsTest(unittest.TestCase):
     runs only them one at a time (`gleam test -- --tag serial`)."""
 
     def test_the_full_check_runs_the_serial_tests_in_a_second_run_one_at_a_time(self):
-        suites = [c for c in shared_run("full").commands if c.startswith("gleam test")]
-        self.assertEqual(suites, ["gleam test -- --workers %s" % TEST_WORKERS, "gleam test -- --tag serial"])
+        suites = [c for c in shared_run("full").commands if c.startswith("built test")]
+        self.assertEqual(suites, ["built test -- --workers %s" % TEST_WORKERS, "built test -- --tag serial"])
 
     def test_the_run_of_the_other_tests_skips_the_serial_ones(self):
-        runs = [line for line in shared_run("full").environment.splitlines() if line.startswith("gleam test")]
-        self.assertEqual(runs[0], "gleam test -- --workers %s GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1" % TEST_WORKERS)
-        self.assertEqual(runs[1], "gleam test -- --tag serial GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA=")
+        runs = [line for line in shared_run("full").environment.splitlines() if line.startswith("built test")]
+        self.assertEqual(runs[0], "built test -- --workers %s GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1" % TEST_WORKERS)
+        self.assertEqual(runs[1], "built test -- --tag serial GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA=")
 
     def test_a_failure_in_the_serial_run_fails_the_gleam_test_part(self):
         def plant(case):
@@ -1137,10 +1173,10 @@ class LiteralAreaTest(unittest.TestCase):
 
     def test_only_the_first_test_run_is_given_the_file(self):
         run = self.at(1)
-        peak_log = [line for line in run.peak.splitlines() if line.startswith("gleam test")]
+        peak_log = [line for line in run.peak.splitlines() if line.startswith("built test")]
         self.assertEqual(
             peak_log,
-            ["gleam test -- --workers %s peak_file=given" % TEST_WORKERS, "gleam test -- --tag serial peak_file="],
+            ["built test -- --workers %s peak_file=given" % TEST_WORKERS, "built test -- --tag serial peak_file="],
         )
 
     def world_data_at(self, test_run_peak: int, world_data_peak) -> Run:
@@ -1171,11 +1207,11 @@ class LiteralAreaTest(unittest.TestCase):
 
     def test_the_first_run_and_the_world_data_run_are_given_the_file_and_the_serial_run_is_not(self):
         run = shared_run("world-data-on", client=True, **WORLD_DATA)
-        peak_log = sorted(line for line in run.peak.splitlines() if line.startswith("gleam test"))
+        peak_log = sorted(line for line in run.peak.splitlines() if line.startswith("built test"))
         self.assertEqual(peak_log, sorted([
-            "gleam test -- --workers %s peak_file=given" % TEST_WORKERS,
-            "gleam test -- --tag serial peak_file=",
-            "gleam test -- --tag world_data peak_file=given"]))
+            "built test -- --workers %s peak_file=given" % TEST_WORKERS,
+            "built test -- --tag serial peak_file=",
+            "built test -- --tag world_data peak_file=given"]))
 
     def test_the_part_is_skipped_when_the_build_it_needs_failed(self):
         def plant(case):
@@ -1244,10 +1280,118 @@ class ParallelPartsTest(unittest.TestCase):
             executable(case.root / "tools" / "gleam", GLEAM_STUB.replace("build) exit 0", "build) exit 1"))
 
         run = shared_run("build-fails-all", prepare=plant)
-        self.assertNotIn("gleam run -m squirrel check", run.commands)
+        self.assertNotIn("built run -m squirrel check", run.commands)
         for part in ("glinter", "generated-tables", "gleam-test", "world-data", "literal-area", "squirrel"):
             with self.subTest(part=part):
                 self.assertRegex(run.output, r"(?m)^  %s +skipped \(a part it needs failed: gleam-build\)" % part)
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class BuiltCodeTest(unittest.TestCase):
+    """After gleam-build no part compiles again. gleam rewrites every package's .app file
+    on each `gleam build`, `gleam run` and `gleam test`, even with nothing changed (gleam
+    1.19.2), and a test VM that is loading its applications while another gleam rewrites
+    them reads an empty file and dies at start (the first gleam-test run of CI run
+    42349388041). So each part that follows gleam-build starts the built code itself
+    (run_built), the way gleam does: erl with `-pa` for each package's ebin, `-eval
+    genesis_prime@@main:run(MODULE)`, `-noshell` and the program's arguments after
+    `-extra`, which is where the argv package reads them (seen with a spy erl on PATH
+    under `gleam run` and `gleam test`)."""
+
+    COMPILING = re.compile(r"gleam (build|run|test)\b")
+
+    def compiles_after_the_build(self, commands: list[str]) -> list[str]:
+        build = commands.index("gleam build --warnings-as-errors")
+        return [c for c in commands[build + 1:] if self.COMPILING.match(c)]
+
+    def test_after_gleam_build_the_full_check_starts_every_part_on_the_built_code_and_compiles_nothing(self):
+        run = shared_run("world-data-on", client=True, **WORLD_DATA)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(self.compiles_after_the_build(run.commands), [])
+        self.assertEqual(
+            sorted(c for c in run.commands if c.startswith("built ")),
+            sorted([
+                "built run -m glinter",
+                "built run -m genesis_prime/table_generator check",
+                "built run -m squirrel check",
+                "built test -- --workers %s" % TEST_WORKERS,
+                "built test -- --tag serial",
+                "built test -- --tag world_data",
+            ]))
+
+    def test_after_gleam_build_the_fast_check_starts_every_part_on_the_built_code_and_compiles_nothing(self):
+        run = shared_run("fast", "fast")
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(self.compiles_after_the_build(run.commands), [])
+        self.assertEqual(
+            sorted(c for c in run.commands if c.startswith("built ")),
+            ["built run -m glinter", "built test -- --tag code_rule"])
+
+    def test_a_part_is_started_with_the_packages_built_and_its_arguments_after_extra(self):
+        lines = [line for line in shared_run("full").erl.splitlines() if line.endswith("--tag serial")]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertRegex(
+            lines[0],
+            r"^erl -pa /\S+/build/dev/erlang/alpha/ebin -pa /\S+/build/dev/erlang/beta/ebin"
+            r" -eval genesis_prime@@main:run\(genesis_prime_test\) -noshell -extra --tag serial$")
+
+    def test_a_part_that_takes_no_arguments_is_started_with_none_after_extra(self):
+        lines = [line for line in shared_run("full").erl.splitlines() if "run(glinter)" in line]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].endswith("-noshell -extra"), lines[0])
+
+    def test_a_started_part_that_fails_fails_that_part_and_no_other(self):
+        def plant(case):
+            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
+                'case "$1" in\n  format)', 'if [ "$*" = "run -m glinter" ]; then exit 3; fi\ncase "$1" in\n  format)'))
+
+        run = shared_run("glinter-fails", prepare=plant)
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: glinter$")
+
+
+ERLANG_ENTRY = """-module('genesis_prime@@main').
+-export([run/1]).
+run(Module) ->
+    Arguments = init:get_plain_arguments(),
+    io:format("~w ~p~n", [Module, Arguments]),
+    halt(case Arguments of ["fail" | _] -> 7; _ -> 0 end).
+"""
+
+
+@unittest.skipUnless(RUNNABLE and shutil.which("erlc") and shutil.which("erl"), "needs bash, erl and erlc here")
+class RunBuiltOnRealErlangTest(unittest.TestCase):
+    """run_built on the real erl, against a planted entry module `genesis_prime@@main`:
+    the module atom and the arguments reach the program as gleam's reach it, and the
+    program's exit status is the function's."""
+
+    def run_built(self, *arguments: str) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory(prefix="genesis-run-built-") as folder:
+            root = Path(folder)
+            ebin = root / "build" / "dev" / "erlang" / "genesis_prime" / "ebin"
+            ebin.mkdir(parents=True)
+            source = root / "genesis_prime@@main.erl"
+            source.write_text(ERLANG_ENTRY)
+            subprocess.run(["erlc", "-o", str(ebin), str(source)], check=True, capture_output=True)
+            function = re.search(r"(?ms)^run_built\(\) \{.*?^\}$", CHECK.read_text())
+            assert function, "run_built is defined in ./check"
+            return subprocess.run(
+                ["bash", "-c", function.group(0) + '\nrun_built "$@"', "run_built", *arguments],
+                cwd=root, capture_output=True, text=True,
+            )
+
+    def test_the_module_path_and_the_arguments_reach_the_program(self):
+        done = self.run_built("genesis_prime/table_generator", "check", "--tag", "serial")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout, 'genesis_prime@table_generator ["check","--tag","serial"]\n')
+
+    def test_a_module_without_a_folder_and_no_arguments_reach_the_program_as_they_are(self):
+        done = self.run_built("glinter")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout, "glinter []\n")
+
+    def test_the_exit_status_of_the_program_is_the_functions(self):
+        self.assertEqual(self.run_built("glinter", "fail").returncode, 7)
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
@@ -1261,11 +1405,11 @@ class WorldDataPartTest(unittest.TestCase):
         run = shared_run("world-data-on", client=True, **WORLD_DATA)
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertRegex(run.output, r"(?m)^  world-data +ok\b")
-        runs = {line.split(" GENESIS_TEST_SKIP_SERIAL")[0]: line for line in run.environment.splitlines() if line.startswith("gleam test")}
+        runs = {line.split(" GENESIS_TEST_SKIP_SERIAL")[0]: line for line in run.environment.splitlines() if line.startswith("built test")}
         self.assertEqual(sorted(runs), sorted([
-            "gleam test -- --workers %s" % TEST_WORKERS, "gleam test -- --tag serial", "gleam test -- --tag world_data"]))
-        self.assertIn("GENESIS_TEST_SKIP_WORLD_DATA=1", runs["gleam test -- --workers %s" % TEST_WORKERS])
-        for tagged in ("gleam test -- --tag serial", "gleam test -- --tag world_data"):
+            "built test -- --workers %s" % TEST_WORKERS, "built test -- --tag serial", "built test -- --tag world_data"]))
+        self.assertIn("GENESIS_TEST_SKIP_WORLD_DATA=1", runs["built test -- --workers %s" % TEST_WORKERS])
+        for tagged in ("built test -- --tag serial", "built test -- --tag world_data"):
             self.assertTrue(runs[tagged].endswith("GENESIS_TEST_SKIP_WORLD_DATA="), runs[tagged])
 
     def test_without_the_client_the_part_is_skipped_and_its_run_never_starts(self):
@@ -1308,13 +1452,13 @@ class WorkerCountTest(unittest.TestCase):
     def test_the_setting_is_given_to_the_test_run_as_the_worker_count(self):
         run = shared_run("workers-3", GENESIS_TEST_WORKERS="3")
         self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertIn("gleam test -- --workers 3", run.commands)
+        self.assertIn("built test -- --workers 3", run.commands)
 
     def test_without_the_setting_the_test_run_has_two_workers(self):
         run = shared_run("full")
         self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertIn("gleam test -- --workers 2", run.commands)
-        self.assertFalse([c for c in run.commands if re.fullmatch(r"gleam test -- --workers (?!2$)\d+", c)], run.commands)
+        self.assertIn("built test -- --workers 2", run.commands)
+        self.assertFalse([c for c in run.commands if re.fullmatch(r"built test -- --workers (?!2$)\d+", c)], run.commands)
 
 
 class FactFileMergeTest(unittest.TestCase):
