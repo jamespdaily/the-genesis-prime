@@ -953,10 +953,9 @@ pub fn the_checklist_marks_handled_missing_and_undecoded_types_with_the_starting
 
 // ---- rows a starting ability's tree names that the tables lack ----
 
-/// The fixture's rows with Energize's Spell4 row (69450, a level-1 ability of the
-/// Medic) naming these Prerequisite ids in these columns, which the plan's load does
-/// not read (the plan reads the cast and persistence columns, not the area ones). The
-/// edit is the fault: no client row names a prerequisite the table lacks.
+/// The client's rows with Energize's Spell4 row naming these Prerequisite ids in
+/// these columns. No client row names a prerequisite the table lacks, so the edit
+/// is the fault.
 fn rows_with_energize_naming(
   columns columns: List(#(String, Int)),
 ) -> spell_tables.Rows {
@@ -1501,11 +1500,12 @@ pub fn a_missing_amp_unlock_row_is_a_missing_row_test() -> Nil {
     as "the measure cannot tell when an AMP spell is held without the AMP unlock's row, and says so"
 }
 
-/// A Prerequisite row of the shape the interrupts' 41834 has (`table_rows --
-/// Prerequisite 41834`: flags 1, two type 43 conditions on Quest2 10518 and 10524,
-/// objective 4), at an id no client row names. The client's own spells name 41834 in
-/// runner columns (Spell4 32812, 34355, 38791, 41438, 42352 and 58591, column
-/// prerequisiteIdRunner01), so a test of what a column adds plants its own copy.
+// The shape of Prerequisite 41834 (`table_rows -- Prerequisite 41834`: flags 1, two
+// type 43 conditions on Quest2 10518 and 10524, objective 4). The client's own
+// spells name 41834 in runner columns (Spell4 32812, 34355, 38791, 41438, 42352 and
+// 58591, column prerequisiteIdRunner01).
+
+/// The id of a planted copy of that shape, an id no client row holds.
 const quest_copy = 990_410
 
 fn with_quest_copy(rows rows: spell_tables.Rows) -> spell_tables.Rows {
@@ -1533,7 +1533,7 @@ fn type_count(rows rows: spell_tables.Rows, number number: Int) -> Int {
   list.count(types, fn(type_number) { type_number == number })
 }
 
-/// What the walk counts over the client's rows alone: the base the planted rows add to.
+/// What the walk counts over the client's rows alone.
 fn client_type_count(number number: Int) -> Int {
   type_count(rows: spell_tables.fixture_rows(), number:)
 }

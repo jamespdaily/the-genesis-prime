@@ -315,7 +315,7 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
   // Gate, 20325, whose own spell 34355 holds 67777.
   let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
   let assert [falling] = gate.modifiers
-  assert falling.effect_id == Spell4EffectsId(99_052)
+  assert falling.effect_id == Spell4EffectsId(67_777)
   assert falling.change
     == spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(134),
@@ -335,7 +335,7 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
       proxy.spell.spell4_id == Spell4Id(57_030)
     })
   let assert [crit] = proxy.spell.modifiers
-  assert crit.effect_id == Spell4EffectsId(99_051)
+  assert crit.effect_id == Spell4EffectsId(135_954)
   assert crit.change
     == spell_plan.PropertyChange(Change(
       property: UnitProperty2Id(102),

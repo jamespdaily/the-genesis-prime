@@ -1,7 +1,7 @@
 //// The server's Proxies (`genesis_prime/game/server_proxy`): the row of the server_proxy
 //// table turned into a Proxy of the ability's tree, and every way a row is refused.
 //// Expected values come from these places, each named at its assertion:
-//// - The client's rows (the fixture, `test/fixture/client_tables`): `Spell4.42148` (95337: +15 of vital 6 behind prerequisite 903),
+//// - The client's rows: `Spell4.42148` (95337: +15 of vital 6 behind prerequisite 903),
 ////   Pulse Blast 42276 (gos at 0 and 1250 ms, SpellPhase 5390 and 5391; Proxy 95881 to
 ////   37302 at its second go), the damage spell 37302 (gos at 0, 1, 2 and 3 ms,
 ////   SpellPhase 2820 to 2823) and Telekinetic Strike 32893 (one go, a Proxy to 30900 aimed
@@ -54,7 +54,7 @@ fn planted_on(
   |> result.map(fn(proxies) { server_proxy.planted_into(plans:, proxies:) })
 }
 
-/// The same on the fixture's tables.
+/// The same on the client's rows.
 fn planted_by(
   rows rows: List(server_proxy.Row),
 ) -> Result(Plans, List(Refusal)) {

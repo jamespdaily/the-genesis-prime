@@ -18,7 +18,7 @@
 //// at a time, so a helper in another test module that loads from the folder
 //// it is given is not followed. `test/client_tables.gleam` itself is the one
 //// place allowed to load the client's folder, and `test/fixture_tables.gleam`
-//// the one place allowed to load the committed fixture's folder
+//// the one place allowed to load the client's rows kept as files
 //// (`fixture_tables.folder`): a test reads either from the module's `shared()`.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
@@ -32,7 +32,7 @@ import gleam/set.{type Set}
 /// The path of the one module that loads the client's real tables.
 pub const loader_path = "test/client_tables.gleam"
 
-/// The path of the one module that loads the committed fixture's tables.
+/// The path of the one module that loads the client's rows kept as files.
 pub const fixture_loader_path = "test/fixture_tables.gleam"
 
 const folder_modules = ["client_tables", "fixture_tables"]

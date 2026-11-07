@@ -66,9 +66,8 @@ fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
   error
 }
 
-/// The lasting row of the planted effect id, which the plan holds or not. A planted row
-/// takes an id no client row holds, since it would replace the client's
-/// (`spell_tables.rows_with_effect`); a comment names the client row whose shape it has.
+/// The lasting row of the planted effect id, which the plan holds or not. A planted
+/// row takes an id no client row holds, since it would replace the client's row.
 fn lasting_row(
   spell spell: spell_plan.Spell,
   id id: Int,

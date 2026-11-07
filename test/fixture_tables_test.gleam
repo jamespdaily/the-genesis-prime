@@ -1,5 +1,5 @@
-//// The client's rows the tests read, committed under
-//// `test/fixture/client_tables/`, and what loads, edits and regenerates them.
+//// The client's rows as the server's tables: loading, editing and making them
+//// again.
 
 import client_tables
 import fixture_tables
@@ -156,7 +156,7 @@ pub fn every_reference_of_a_committed_row_reaches_a_committed_row_or_one_the_cli
     == []
 }
 
-/// The committed rows as the generator reads the client's.
+/// The rows read from the kept files.
 fn fixture_rows_of_folder() -> Result(
   dict.Dict(String, List(List(table_rows.Cell))),
   fixture_rows.TextRefusal,
@@ -345,7 +345,7 @@ pub fn a_body_that_crashes_leaves_its_tables_unloaded_test() -> Nil {
   assert held == 0 as "a body that crashes leaves its load's terms stored"
 }
 
-/// A load of its own beside the shared one: the check of test 11 still holds.
+/// A load of its own beside the shared one leaves the shared load's check passing.
 pub fn an_edit_load_beside_the_shared_load_does_not_fail_the_shared_loads_check_test() -> Nil {
   use <- owned_test.run(30_000)
   let id = fixture_tables.root("Spell4", 41_276)

@@ -191,8 +191,8 @@ pub fn a_connection_with_no_player_in_the_world_checks_nothing_test() -> Nil {
 
 const pulse_blast_base = 26_468
 
-/// The Engineer on the fixture's tables with Pulse Blast's Spell4 row naming
-/// Prerequisite 390 as its CasterPersistence, and the bag index of Pulse Blast.
+/// The Engineer on the client's rows with Pulse Blast's Spell4 row naming
+/// Prerequisite 390 as its CasterPersistence, and Pulse Blast's bag index.
 fn engineer(body body: fn(game_connection.State, Int) -> a) -> a {
   fixture_tables.changed(
     table: "Spell4",

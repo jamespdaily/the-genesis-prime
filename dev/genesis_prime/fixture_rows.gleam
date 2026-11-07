@@ -1,14 +1,9 @@
-//// Copies the client's rows the tests read into text files under
-//// `test/fixture/client_tables/`, so a test of the server's logic runs on the
-//// client's own rows in CI, where no client is installed.
+//// The client's rows as text files, one for each of the server's tables, which
+//// let a test of the server's logic run on the client's own rows where no client
+//// is installed. A file holds the rows the roots name and every row they reach.
 ////
-//// `gleam run -m genesis_prime/fixture_rows` reads the client's tables
-//// (`table_folder`) with the server's own reader (`table_rows`) and writes one
-//// `<Table>.tsv` for each of the server's tables (`server_table.entries`), the
-//// `roots.tsv` ids and every row they reach, and the `NOTICE`.
-////
-//// - **A root** is a line of `roots.tsv`: `table`, `id`, `name` and the test
-////   that needs it (`used_by`). A test names an id through `fixture_tables.root`.
+//// - **A root** is a row a test names: its table, id, name and what needs it
+////   (`used_by`).
 //// - **The closure** adds every row a selected row reaches, in a table the
 ////   server loads:
 ////   - an id column, by `table_generator/reference` (`spell4IdAttackPrimary00`
@@ -48,7 +43,7 @@ import gleam/set.{type Set}
 import gleam/string
 import simplifile
 
-/// Where the fixture is committed.
+/// The folder the files are kept in.
 pub const fixture_folder = "test/fixture/client_tables"
 
 /// The tables smaller than this many bytes of text go in whole.
@@ -62,25 +57,24 @@ const whole_limit = 65_536
 ///   (`loadout.health_rows`).
 const whole_tables: List(String) = ["GameFormula", "CreatureLevel"]
 
-/// A line of `roots.tsv`: a row a test names.
+/// A row a test names.
 pub type Root {
   Root(table: String, id: Int, name: String, used_by: String)
 }
 
-/// The text of the fixture's files.
+/// The text of every file.
 pub type Fixture {
   Fixture(
     /// Each table's file, by the table's name, for every table the server
     /// loads.
     tables: Dict(String, String),
-    /// `stale.tsv`: the references of the rows chosen to an id the client's
-    /// table has no row for.
+    /// The references of the rows chosen to an id the client's table has no
+    /// row for.
     stale: String,
   )
 }
 
-/// The file of the references to ids the client has no row for, in the fixture's
-/// folder.
+/// The name of the file of the references to ids the client has no row for.
 pub const stale_file = "stale"
 
 /// A reference of a row chosen to an id the client's table has no row for, so no
@@ -91,7 +85,7 @@ pub type Stale {
 
 /// Why the rows could not be made.
 pub type Refusal {
-  /// `roots.tsv` has a line that is not four tab-separated fields with an id.
+  /// A root's line is not four tab-separated fields with an id.
   BadRootLine(line: String)
   /// A root names a table the server does not load.
   RootTableNotLoaded(table: String)
@@ -132,7 +126,7 @@ pub fn describe(refusal: Refusal) -> String {
   }
 }
 
-/// The roots of `roots.tsv`: the header line, then a line for each root.
+/// The roots of a text: the header line, then a line for each root.
 pub fn parse_roots(text: String) -> Result(List(Root), Refusal) {
   case string.split(text, "\n") {
     [] -> Ok([])
@@ -1054,7 +1048,7 @@ fn stale_of(digests: Dict(String, Digest), selected: Selection) -> List(Stale) {
   })
 }
 
-/// The text of `stale.tsv` for these references.
+/// The text of the file of these references.
 pub fn stale_text(stale: List(Stale)) -> String {
   let lines =
     list.map(stale, fn(entry) {
@@ -1071,10 +1065,9 @@ pub fn stale_text(stale: List(Stale)) -> String {
   string.join(["table\tid\ttarget_table\ttarget_id", ..lines], "\n") <> "\n"
 }
 
-/// The references of the rows held to an id no row of the table holds, for rows
-/// read from the committed files. A reference the closure follows from a row the
-/// fixture holds reaches a row it holds, so these are the references the
-/// client's own rows make to rows the client lacks.
+/// The references of the rows held to an id no row of the table holds. The closure
+/// keeps every row a reference reaches, so these are the references the client's
+/// own rows make to rows the client lacks.
 pub fn stale_in(
   rows: Dict(String, List(List(Cell))),
 ) -> Result(List(Stale), Refusal) {
@@ -1160,17 +1153,17 @@ pub fn generate(
 
 // ------------------------------------------------------------ differences
 
-/// How the regenerated text differs from the committed one in a row.
+/// How a made text differs from the kept one in a row.
 pub type Change {
-  /// The regenerated file holds a row the committed one lacks.
+  /// The made text holds a row the kept one lacks.
   Added
-  /// The committed file holds a row the regenerated one lacks.
+  /// The kept text holds a row the made one lacks.
   Removed
   /// Both hold the row, with different cells.
   Changed
 }
 
-/// A row that differs between the committed and the regenerated text of a file.
+/// A row that differs between the kept and the made text of a file.
 /// The header is named `header`.
 pub type Difference {
   Difference(file: String, row: String, change: Change)
@@ -1191,8 +1184,8 @@ pub fn describe_difference(difference: Difference) -> String {
   <> " by the generator; run `gleam run -m genesis_prime/fixture_rows` and commit"
 }
 
-/// The rows that differ between the committed text of a file and the text the
-/// generator makes now, by the first `key_columns` cells of a row.
+/// The rows that differ between the kept text of a file and the text made from the
+/// client's tables, by the first `key_columns` cells of a row.
 pub fn differences(
   file file: String,
   committed committed: String,
@@ -1237,7 +1230,7 @@ pub fn differences(
 }
 
 /// The names of the tables the server loads, in the order of its entries, with
-/// the file name each is committed under, without its extension.
+/// the file name each is kept under, without its extension.
 pub fn files() -> List(#(String, String)) {
   list.map(server_table.entries(), fn(entry) {
     let schema = store.schema(entry)
@@ -1245,15 +1238,10 @@ pub fn files() -> List(#(String, String)) {
   })
 }
 
-/// What `NOTICE` says.
+/// The text that says what the files are.
 fn notice() -> String {
-  "The .tsv files in this folder hold rows of the tables of the WildStar client, extracted
-by setup_check/extract_tables.py from the client's own game table files and read with
-the server's table reader (genesis_prime/table/loader/tbl_file). Each row is copied as the
-client holds it. roots.tsv names the rows the tests ask for; the generator
-(dev/genesis_prime/fixture_rows.gleam) adds the rows they reach and the small tables
-whole. Run `gleam run -m genesis_prime/fixture_rows` to make them again. The tests read
-them as the client's rows (test/fixture_tables.gleam).
+  "These files are rows copied unchanged from the WildStar client's game tables.
+Run `gleam run -m genesis_prime/fixture_rows` to make them again.
 "
 }
 
@@ -1287,7 +1275,7 @@ fn write(fixture: Fixture, folder: String) -> Result(Nil, Refusal) {
   write_file(folder <> "/NOTICE", notice())
 }
 
-/// Makes the files again from `roots.tsv` and the client's tables.
+/// Makes the files again from the roots and the client's tables.
 pub fn main() -> Nil {
   let outcome = {
     use text <- result.try(

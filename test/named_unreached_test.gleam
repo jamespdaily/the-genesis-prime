@@ -52,7 +52,7 @@ fn list_of(rows: List(String)) -> tooltip_token.Tokens {
 const volatility =
   server_proxy.Row(spell4_base_id: 26_468, phase: 1, spell4_id: 42_148)
 
-/// The fixture's rows with Pulse Blast's text columns set.
+/// The client's rows with Pulse Blast's text columns set.
 fn rows_with_blast_texts(columns: List(#(String, Int))) -> spell_tables.Rows {
   let rows = spell_tables.fixture_rows()
   spell_tables.Rows(

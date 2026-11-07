@@ -130,14 +130,12 @@ fn client_row(id id: Int) -> Bool {
   })
 }
 
-/// Whether this id is one a test planted between these two: the client holds rows in
-/// the same ranges (90366, 91018, 92xxx), which are its own and no part of what a test
-/// plants.
+/// Whether this id lies between these two and is not an id of a client row.
 fn planted_between(id id: Int, low low: Int, high high: Int) -> Bool {
   id >= low && id < high && !client_row(id:)
 }
 
-/// The fixture's rows with these effect rows added, each of an id the client's table
+/// The client's rows with these effect rows added, each of an id the client's table
 /// does not hold.
 fn rows_with(effects effects: List(List(Cell))) -> spell_tables.Rows {
   let rows = spell_tables.fixture_rows()

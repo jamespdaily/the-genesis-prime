@@ -3,7 +3,7 @@
 //// hidden spell 42148 with the last go of the spell that strikes, and 42148's gain gives
 //// +15 of slot 1 behind prerequisite 903 (the caster is in combat). Expected values
 //// come from these places, each named at its assertion:
-//// - The client's rows the fixture holds (`fixture_tables`):
+//// - The client's rows:
 ////   `Spell4.42148` (95337: +15 of vital 6 behind 903), `Prerequisite.prerequisiteTypeId.28`
 ////   (903: in combat), Pulse Blast 42276 (gos at 0 and 1250 ms, SpellPhase 5390 and
 ////   5391; Proxy 95881 to the damage spell 37302 at its second go), 37302 (gos at 0, 1, 2

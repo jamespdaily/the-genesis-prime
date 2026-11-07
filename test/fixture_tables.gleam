@@ -1,20 +1,11 @@
-//// The client's own rows the tests of the server's logic read, from the
-//// committed files under `test/fixture/client_tables/` (the generator is
-//// `dev/genesis_prime/fixture_rows.gleam`), so they run in CI, where there is
-//// no client, on the rows the client holds and not on rows a test made up.
+//// The client's own rows, as the server's tables.
 ////
-//// - **`shared()`** is the server's own tables (`server_table.entries`), loaded
-////   once per test run from the fixture with the server's own requirements and
-////   derivations, as `client_tables.shared()` loads the real ones. Never unload
-////   it.
-//// - **`changed` and `added`** run a body on a copy of the fixture with a row's
-////   cells changed, or one row added that starts as a copy of a real row, for an
-////   edge case no client row holds. The test says why; the copy is unloaded
-////   afterwards.
-//// - **`root(table, id)`** is how a test names a row of the fixture: it fails
-////   with the fix when the id is not a root of `roots.tsv`.
-//// - **A planted table** (`planted_table`) is for the table format itself, not
-////   for rows of the client.
+//// - **`shared()`** is the server's tables loaded from the rows with the
+////   server's own requirements and derivations. Never unload it.
+//// - **`changed` and `added`** run a body on a copy of the rows with a row's
+////   cells changed, or one row added that starts as a copy of a real row. The
+////   copy is unloaded afterwards.
+//// - **`root(table, id)`** names a row the rows are guaranteed to hold.
 
 import database_support
 import genesis_prime/fixture_rows
@@ -32,30 +23,30 @@ import owned_key
 import planted_table.{type Cell}
 import simplifile
 
-/// Where the committed files are.
+/// The folder the rows are kept in.
 pub const folder = fixture_rows.fixture_folder
 
-/// Every table's rows in the fixture, by the table's name: one list of cells
-/// per row, in the table's column order.
+/// Every table's rows by the table's name: one list of cells per row, in the
+/// table's column order.
 pub type Rows =
   Dict(String, List(List(Cell)))
 
-/// Why the fixture's files, or an edit of them, were refused.
+/// Why the rows, or an edit of them, were refused.
 pub type Refusal {
-  /// A table's file cannot be read.
+  /// A table's rows cannot be read.
   Unreadable(table: String, path: String)
-  /// A table's file is not rows of the table.
+  /// A table's text is not rows of the table.
   Malformed(fixture_rows.TextRefusal)
-  /// An edit names a table the fixture does not hold.
+  /// An edit names a table the rows do not include.
   NoTable(table: String)
   /// An edit names a column the table does not have.
   NoColumn(table: String, column: String)
   /// An edit names a row the table does not hold.
   NoRow(table: String, id: Int)
-  /// `added` names an id the table already holds, or `changed` an edit of the
-  /// ID column to one.
+  /// An added row, or an edit of the ID column, names an id the table already
+  /// holds.
   RowHeld(table: String, id: Int)
-  /// An id that is not a root of `roots.tsv`.
+  /// An id that is not a root.
   NotARoot(table: String, id: Int)
 }
 
@@ -99,7 +90,7 @@ fn planted(cell: table_rows.Cell) -> Cell {
   }
 }
 
-/// The rows of a table's file text, read against the schema's columns.
+/// The rows of a table's text, read against the schema's columns.
 pub fn parse_table(
   schema schema: tbl_file.Schema,
   text text: String,
@@ -109,7 +100,7 @@ pub fn parse_table(
   |> result.map_error(Malformed)
 }
 
-/// The fixture's tables, read from the committed files in `folder`.
+/// The rows read from a folder.
 pub fn read_folder(folder: String) -> Result(Rows, Refusal) {
   schemas()
   |> list.try_map(fn(schema) {
@@ -136,7 +127,7 @@ fn schema_of(table: String) -> Result(tbl_file.Schema, Refusal) {
 
 // ---------------------------------------------------------------- roots
 
-/// The roots of `roots.tsv`.
+/// The roots: the rows the rows are guaranteed to hold.
 pub fn roots() -> List(fixture_rows.Root) {
   let assert Ok(text) = simplifile.read(folder <> "/roots.tsv")
     as "the fixture's roots.tsv cannot be read"
@@ -159,9 +150,8 @@ pub fn check_root(
   Ok(id)
 }
 
-/// A row of the fixture a test names: `id` of `table`, which must be a root of
-/// `roots.tsv`, so the row is in the fixture whatever else it reaches. A row
-/// that is not one stops the test with the fix.
+/// The id of a row that is a root, so the rows hold it. A row that is not a
+/// root stops the test with the fix.
 pub fn root(table table: String, id id: Int) -> Int {
   case check_root(roots: roots(), table:, id:) {
     Ok(id) -> id
@@ -172,7 +162,7 @@ pub fn root(table table: String, id id: Int) -> Int {
 // ---------------------------------------------------------------- loading
 
 /// Loads the rows as the server's tables under this key, with the server's own
-/// requirements and derivations, from a folder of files written for the load.
+/// requirements and derivations.
 pub fn load(
   rows rows: Rows,
   under key: reference.Reference,
@@ -196,26 +186,35 @@ fn loaded(rows: Rows, key: reference.Reference) -> store.Tables {
   }
 }
 
-/// The key the shared load is stored under, made once per test run.
+/// The key the shared load is stored under.
 pub fn shared_key() -> reference.Reference {
   database_support.once("fixture_tables_key", reference.new)
 }
 
-/// The server's tables from the committed rows, loaded once per test run, with
-/// the server's own requirements and derivations. Never unload them.
+/// The server's tables from the rows, loaded once, with the server's own
+/// requirements and derivations. Never unload them.
 pub fn shared() -> store.Tables {
   database_support.once("fixture_tables", fn() { loaded(rows(), shared_key()) })
 }
 
-/// The committed rows, read once per test run.
+/// The rows, read once. They are held packed and unpacked at each call, which
+/// keeps the test VM's literal area small.
 pub fn rows() -> Rows {
-  database_support.once("fixture_tables_rows", fn() {
-    case read_folder(folder) {
-      Ok(rows) -> rows
-      Error(refusal) -> panic as describe(refusal)
-    }
-  })
+  unpack(
+    database_support.once("fixture_tables_rows", fn() {
+      case read_folder(folder) {
+        Ok(rows) -> pack(rows)
+        Error(refusal) -> panic as describe(refusal)
+      }
+    }),
+  )
 }
+
+@external(erlang, "fixture_tables_ffi", "pack")
+fn pack(rows: Rows) -> BitArray
+
+@external(erlang, "fixture_tables_ffi", "unpack")
+fn unpack(packed: BitArray) -> Rows
 
 // ---------------------------------------------------------------- edits
 
@@ -342,17 +341,14 @@ pub fn on_rows_under(
   after_body(fn() { body(tables) }, fn() { store.unload(tables) })
 }
 
-/// Runs the body, then the cleanup, also when the body crashes. The
-/// `exception` package does the same, but it is a dependency of other packages
-/// only, and one function does not justify naming it in `gleam.toml`.
+/// Runs the body, then the cleanup, also when the body crashes.
 @external(erlang, "fixture_tables_ffi", "after_body")
 fn after_body(body: fn() -> a, cleanup: fn() -> Nil) -> a
 
-/// Runs the body on the fixture's tables with the cells of one row changed, for
-/// an edge case no client row holds: the test says why. Loaded under a key of
-/// its own and unloaded afterwards; the shared load is not touched. Stops the
-/// test when the table, id or column is not one, or when an edit of the ID
-/// column gives the row an id the table holds.
+/// Runs the body on the tables with the cells of one row changed. Loaded under
+/// a key of its own and unloaded afterwards; the shared load is not touched.
+/// Stops the test when the table, id or column is not one, or when an edit of
+/// the ID column gives the row an id the table holds.
 pub fn changed(
   table table: String,
   id id: Int,
@@ -365,11 +361,9 @@ pub fn changed(
   }
 }
 
-/// Runs the body on the fixture's tables with one row added, a copy of a row of
-/// the client with the cells named replaced, for an edge case no client row
-/// holds: the test says why. Loaded under a key of its own and unloaded
-/// afterwards. Stops the test when the table, row or column is not one, or the
-/// id is held.
+/// Runs the body on the tables with one row added, a copy of a row with the
+/// cells named replaced. Loaded under a key of its own and unloaded afterwards.
+/// Stops the test when the table, row or column is not one, or the id is held.
 pub fn added(
   table table: String,
   copy_of copy_of: Int,

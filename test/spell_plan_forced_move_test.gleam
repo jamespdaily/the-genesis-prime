@@ -180,7 +180,7 @@ pub fn gates_two_caster_rows_are_read_from_the_clients_tables_test() -> Nil {
   assert gate.forced_moves
     == [
       spell_plan.ForcedMove(
-        effect_id: Spell4EffectsId(99_068),
+        effect_id: Spell4EffectsId(67_776),
         phase_flags: 1,
         delay_ms: 200,
         condition: Always,

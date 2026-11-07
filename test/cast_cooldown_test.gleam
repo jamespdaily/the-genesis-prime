@@ -197,7 +197,7 @@ fn started_numbers(effects effects: List(Effect)) -> List(Int) {
 
 // ---- Charged Shot ----
 
-/// The fixture's plans, which hold Charged Shot's two type 73 rows 80977 and 80979
+/// The plans of the client's rows, which hold Charged Shot's two type 73 rows
 /// (`Spell4Effects`, spellId 34720 and 34722).
 fn charged_plans() -> Plans {
   spell_tables.fixture_plans()

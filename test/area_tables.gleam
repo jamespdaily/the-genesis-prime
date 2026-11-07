@@ -62,8 +62,8 @@ pub fn kick() -> Kick {
   )
 }
 
-/// The fixture's rows with Kick's damage effect (Spell4Effects 140383), hit shape and
-/// valid targets as `kick` holds them.
+/// The client's rows with Kick's damage effect, hit shape and valid targets as `kick`
+/// holds them.
 fn kick_rows(kick kick: Kick) -> spell_tables.Rows {
   let rows = spell_tables.fixture_rows()
   spell_tables.Rows(
@@ -131,9 +131,9 @@ pub fn built(kick kick: Kick) -> Result(Areas, AreaError) {
   )
 }
 
-/// Whether the coverage measure counts Kick's damage effect, row 140383, read: the plan's
-/// decision about the row in a spell nothing starts on each struck unit, over the planted
-/// tables (`genesis_prime/coverage/effect_row`).
+/// Whether the coverage measure counts Kick's damage effect as read: the plan's
+/// decision about the row in a spell nothing starts on each struck unit
+/// (`genesis_prime/coverage/effect_row`).
 pub fn read_by_the_measure(kick kick: Kick) -> Bool {
   spell_tables.with_loaded(rows: kick_rows(kick:), body: fn(tables) {
     let assert Ok(row) =

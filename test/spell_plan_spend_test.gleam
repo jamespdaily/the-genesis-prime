@@ -28,9 +28,8 @@ fn mind_burst_of(plans plans: Plans) -> Spell {
   spell
 }
 
-/// The plans built from the client's rows with Mind Burst's Spell4 row, 32809, changed
-/// in these columns: an edge case no client row holds for Mind Burst, so the test says
-/// why.
+/// The plans built from the client's rows with Mind Burst's Spell4 row changed in
+/// these columns.
 fn built_changing_spell(
   with changes: List(#(String, planted_table.Cell)),
 ) -> Result(Plans, spell_plan.PlanError) {
