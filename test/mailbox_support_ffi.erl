@@ -1,5 +1,5 @@
 -module(mailbox_support_ffi).
--export([queued/1, call_waiting_from/2, monitored/1, waiting/1, tagged/2, tagged_by_reference/1]).
+-export([queued/1, call_waiting_from/2, a_call_waiting/1, monitored/1, waiting/1, tagged/2, tagged_by_reference/1]).
 
 %% How many waiting messages are tuples whose first element is the atom Tag.
 %% The length of a mailbox is no measure of what a shell has taken: a process
@@ -51,3 +51,14 @@ call_waiting_from(Pid, Caller) ->
 monitored(Pid) ->
     {monitors, Monitors} = process_info(Pid, monitors),
     [Monitored || {process, Monitored} <- Monitors, is_pid(Monitored)].
+
+%% Whether any gen_server call waits in Pid's mailbox, whoever made it.
+a_call_waiting(Pid) ->
+    case process_info(Pid, messages) of
+        {messages, Messages} ->
+            lists:any(fun({'$gen_call', {_From, _Tag}, _Request}) -> true;
+                         (_Other) -> false
+                      end, Messages);
+        undefined ->
+            false
+    end.

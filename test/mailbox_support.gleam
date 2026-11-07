@@ -29,6 +29,12 @@ pub fn drain(messages: Subject(message)) -> List(message) {
 @external(erlang, "mailbox_support_ffi", "call_waiting_from")
 pub fn call_waiting_from(pid pid: Pid, caller caller: Pid) -> Bool
 
+/// Whether a `gen_server` call made by any process is in the process's mailbox,
+/// for a call whose caller has no pid the test can know yet. Tests wait on it
+/// with `event_wait.until`.
+@external(erlang, "mailbox_support_ffi", "a_call_waiting")
+pub fn a_call_waiting(pid pid: Pid) -> Bool
+
 /// How many messages waiting in the process's mailbox are tuples whose first
 /// element is the atom `tag`. A mailbox's length is no measure of what a
 /// process has taken: one that writes to a socket holds the port's reply to its

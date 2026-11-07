@@ -16,6 +16,6 @@ pub fn settings() {
     ),
     reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 100,
-    told_through: None,
+    found_at: None,
   )
 }
