@@ -44,8 +44,8 @@ import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/server
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, type TimerId,
-  ConnectionId, Map, OwnEffect, OwnEvent, TimerId, Unwatch, Watch, Woken,
+  type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, Map,
+  OwnEffect, OwnEvent, TimerId, Unwatch, Watch, Woken,
 }
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
@@ -1431,125 +1431,40 @@ pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_
 
 // ---- Electrocute: a channel's every pulse strikes the creature ----
 
-/// The creature's messages to the player taken at `ms`, and what the player's
-/// steps tell the creature in turn, until nothing is told: the player's steps and
-/// the frames they write, the creature and the player after.
-fn exchange(
-  player player: game_connection.State,
+/// The answer where the creature of the world takes the tells of the player's steps
+/// at `ms` and its messages go back to the player, until nothing is told
+/// (`game_connection_support.Answering`).
+fn answered_by_the_beast(
   beast beast: creature.State,
-  taken taken: List(ConnectionStep(Request)),
+  player player: game_connection.State,
   ms ms: Int,
-) -> #(
-  game_connection.State,
-  creature.State,
-  List(ConnectionStep(Request)),
-  List(Frame),
-) {
-  let frames =
-    list.flat_map(taken, fn(written) {
-      game_connection_support.heard(written, game_connection_support.keyed())
-    })
-  case list.flat_map(taken, to_the_beast) {
-    [] -> #(player, beast, taken, frames)
+  taken taken: ConnectionStep(Request),
+) -> #(creature.State, game_connection.State, List(ConnectionStep(Request))) {
+  case to_the_beast(taken) {
+    [] -> #(beast, player, [taken])
     tells -> {
       let #(beast, beast_steps) =
         beast_takes(state: beast, at_ms: ms, messages: tells)
-      let #(player, answers) =
+      let #(beast, player, later) =
         list.fold(
           list.flat_map(beast_steps, to_the_medic),
-          #(player, []),
+          #(beast, player, []),
           fn(held, message) {
-            let #(player, answers) = held
+            let #(beast, player, later) = held
             let #(player, answer) =
               game_connection_support.at(
                 state: player,
                 ms:,
                 event: OwnEvent(Woken(message)),
               )
-            #(player, list.append(answers, [answer]))
+            let #(beast, player, more) =
+              answered_by_the_beast(beast:, player:, ms:, taken: answer)
+            #(beast, player, list.append(later, more))
           },
         )
-      let #(player, beast, later, more) =
-        exchange(player:, beast:, taken: answers, ms:)
-      #(player, beast, list.append(taken, later), list.append(frames, more))
+      #(beast, player, [taken, ..later])
     }
   }
-}
-
-/// The cast rule's timers fired in time order up to `until_ms`, each firing's steps
-/// exchanged with the creature: the player and the creature after, and the frames
-/// written by each firing, in order.
-fn timers_fired(
-  player player: game_connection.State,
-  beast beast: creature.State,
-  pending pending: List(#(Int, TimerId)),
-  until_ms until_ms: Int,
-  fired fired: List(List(Frame)),
-) -> #(game_connection.State, creature.State, List(List(Frame))) {
-  case
-    list.sort(pending, fn(first: #(Int, TimerId), second: #(Int, TimerId)) {
-      int.compare(first.0, second.0)
-    })
-  {
-    [#(due, timer), ..rest] if due <= until_ms -> {
-      let #(player, fired_step) =
-        game_connection_support.at(
-          state: player,
-          ms: due,
-          event: OwnEvent(step.TimerFired(timer:)),
-        )
-      let #(player, beast, steps, frames) =
-        exchange(player:, beast:, taken: [fired_step], ms: due)
-      timers_fired(
-        player:,
-        beast:,
-        pending: list.append(
-          rest,
-          game_connection_support.cast_timers(steps:, ms: due),
-        ),
-        until_ms:,
-        fired: list.append(fired, [frames]),
-      )
-    }
-    [_, ..] | [] -> #(player, beast, fired)
-  }
-}
-
-/// A press of the bag index at `ms`, then its timers to `until_ms`: the player and
-/// the creature after, and the frames written by the press and by each firing.
-fn pressed_on_the_beast(
-  player player: game_connection.State,
-  beast beast: creature.State,
-  bag_index bag_index: Int,
-  client_cast_id client_cast_id: Int,
-  ms ms: Int,
-  until_ms until_ms: Int,
-) -> #(game_connection.State, creature.State, List(List(Frame))) {
-  let #(player, pressed) =
-    game_connection_support.at(
-      state: player,
-      ms:,
-      event: OwnEvent(
-        step.Read(game_connection_support.world_message(
-          message_id: 0x009A,
-          body: cast_support.press_body(
-            client_cast_id:,
-            bag_index:,
-            target: 0,
-            press: 1,
-          ),
-        )),
-      ),
-    )
-  let #(player, beast, steps, frames) =
-    exchange(player:, beast:, taken: [pressed], ms:)
-  timers_fired(
-    player:,
-    beast:,
-    pending: game_connection_support.cast_timers(steps:, ms:),
-    until_ms:,
-    fired: [frames],
-  )
 }
 
 pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_test() -> Nil {
@@ -1593,38 +1508,35 @@ pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_t
   // Electrocute costs 8 of the Volatility a Pulse Blast that opens a fight gives
   // (Spell4 41276 innateCostType0 6; Spell4.42148).
   let #(engineer, beast, _) =
-    pressed_on_the_beast(
-      player: engineer,
-      beast:,
+    game_connection_support.pressed_until_answered(
+      state: engineer,
+      world: beast,
       bag_index: pulse_blast,
       client_cast_id: 1,
       ms: 1000,
       until_ms: 2500,
+      answer: answered_by_the_beast,
     )
-  let #(_, _, fired) =
-    pressed_on_the_beast(
-      player: engineer,
-      beast:,
+  let #(_, _, steps) =
+    game_connection_support.pressed_until_answered(
+      state: engineer,
+      world: beast,
       bag_index: electrocute,
       client_cast_id: 2,
       ms: 4000,
       until_ms: 8000,
+      answer: answered_by_the_beast,
     )
-  let goes =
-    list.filter_map(fired, fn(frames) {
-      case game_connection_support.decoded(frames, 0x07F4, spell_go.decode) {
-        [go] ->
-          Ok(#(
-            go,
-            game_connection_support.decoded(frames, 0x0937, unit_health.decode),
-          ))
-        _ -> Error(Nil)
-      }
-    })
-  assert list.map(goes, fn(go) { { go.0 }.phase }) == [0, 1, 2, 3, 4, 5]
+  let frames =
+    list.flat_map(steps, game_connection_support.heard(
+      _,
+      game_connection_support.keyed(),
+    ))
+  let goes = game_connection_support.decoded(frames, 0x07F4, spell_go.decode)
+  assert list.map(goes, fn(go) { go.phase }) == [0, 1, 2, 3, 4, 5]
     as "Spell4.41276: channelInitialDelay 500, channelMaxTime 3000 and channelPulseTime 500 give six goes, the recording's phases 0 to 5"
   list.each(goes, fn(go) {
-    assert list.map({ go.0 }.targets, fn(target) {
+    assert list.map(go.targets, fn(target) {
         #(
           target.unit_id,
           list.map(target.effects, fn(effect) { effect.spell4_effects_id }),
@@ -1634,14 +1546,15 @@ pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_t
       as "Spell4Effects 92587 (targetFlags 4, phaseFlags -1) strikes the Beast at every pulse"
   })
   let healths =
-    list.flat_map(goes, fn(go) {
-      list.filter_map(go.1, fn(health) {
+    list.filter_map(
+      game_connection_support.decoded(frames, 0x0937, unit_health.decode),
+      fn(health) {
         case health.unit_id == 7 {
           True -> Ok(health.health)
           False -> Error(Nil)
         }
-      })
-    })
+      },
+    )
   assert list.length(healths) == 6
     && list.sort(healths, fn(first, second) { int.compare(second, first) })
     == healths

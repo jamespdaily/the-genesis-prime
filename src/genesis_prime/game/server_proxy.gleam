@@ -37,7 +37,7 @@
 ////   phases.
 //// - **A row is refused** when its base has no plan (it is not a class's level-1
 ////   ability or innate), when its phase is not a go of that plan
-////   (`spell_plan.go_times_ms`), or when its spell has no row or its tree cannot be
+////   (`spell_plan.go_count`, the length of `spell_plan.go_times_ms`), or when its spell has no row or its tree cannot be
 ////   planned, for the plan's own reason; a tree that leads back to the ability or to the
 ////   spell that strikes fails as a cycle.
 //// - **The areas are the client's.** The planted spell has no area row of its own, so

@@ -1589,41 +1589,66 @@ pub fn cast_timers(
   })
 }
 
-/// The cast rule's timers fired in time order up to `until_ms`, with every strike
-/// landing: the connection and every step taken.
-pub fn casts_run(
+/// How a step is answered: the world beside the connection (nothing, a creature, a
+/// flag), the connection and the monotonic time `ms` in, the world and the connection
+/// after, and the steps the answers took, the step itself first (`landing`).
+pub type Answering(world) =
+  fn(world, game_connection.State, Int, ConnectionStep(Request)) ->
+    #(world, game_connection.State, List(ConnectionStep(Request)))
+
+/// The answer where every strike told lands at once (`landing`).
+fn landed_at_once(
+  world world: Nil,
   state state: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+) -> #(Nil, game_connection.State, List(ConnectionStep(Request))) {
+  let #(state, steps) = landing(state:, ms:, taken:)
+  #(world, state, steps)
+}
+
+/// The cast rule's timers fired in time order up to `until_ms`, each step answered
+/// by `answer`: the connection, the world and every step taken.
+pub fn casts_run_answered(
+  state state: game_connection.State,
+  world world: world,
   pending pending: List(#(Int, TimerId)),
   until_ms until_ms: Int,
   steps steps: List(ConnectionStep(Request)),
-) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  answer answer: Answering(world),
+) -> #(game_connection.State, world, List(ConnectionStep(Request))) {
   case
     list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
   {
     [#(due, timer), ..rest] if due <= until_ms -> {
       let #(state, fired) =
         at(state:, ms: due, event: OwnEvent(TimerFired(timer:)))
-      let #(state, more) = landing(state:, ms: due, taken: fired)
-      casts_run(
+      let #(world, state, more) = answer(world, state, due, fired)
+      casts_run_answered(
         state:,
+        world:,
         pending: list.append(rest, cast_timers(steps: more, ms: due)),
         until_ms:,
         steps: list.append(steps, more),
+        answer:,
       )
     }
-    _ -> #(state, steps)
+    _ -> #(state, world, steps)
   }
 }
 
 /// A press of the bag index at `ms`, and the cast timers it leads to up to
-/// `until_ms`, each strike landing.
-pub fn pressed_until(
+/// `until_ms`, each step answered by `answer`: the connection, the world and every
+/// step taken.
+pub fn pressed_until_answered(
   state state: game_connection.State,
+  world world: world,
   bag_index bag_index: Int,
   client_cast_id client_cast_id: Int,
   ms ms: Int,
   until_ms until_ms: Int,
-) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  answer answer: Answering(world),
+) -> #(game_connection.State, world, List(ConnectionStep(Request))) {
   let #(state, pressed) =
     at(
       state:,
@@ -1640,6 +1665,55 @@ pub fn pressed_until(
         )),
       ),
     )
-  let #(state, steps) = landing(state:, ms:, taken: pressed)
-  casts_run(state:, pending: cast_timers(steps:, ms:), until_ms:, steps:)
+  let #(world, state, steps) = answer(world, state, ms, pressed)
+  casts_run_answered(
+    state:,
+    world:,
+    pending: cast_timers(steps:, ms:),
+    until_ms:,
+    steps:,
+    answer:,
+  )
+}
+
+/// The cast rule's timers fired in time order up to `until_ms`, with every strike
+/// landing: the connection and every step taken.
+pub fn casts_run(
+  state state: game_connection.State,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+  steps steps: List(ConnectionStep(Request)),
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  let #(state, _, steps) =
+    casts_run_answered(
+      state:,
+      world: Nil,
+      pending:,
+      until_ms:,
+      steps:,
+      answer: landed_at_once,
+    )
+  #(state, steps)
+}
+
+/// A press of the bag index at `ms`, and the cast timers it leads to up to
+/// `until_ms`, each strike landing.
+pub fn pressed_until(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  client_cast_id client_cast_id: Int,
+  ms ms: Int,
+  until_ms until_ms: Int,
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  let #(state, _, steps) =
+    pressed_until_answered(
+      state:,
+      world: Nil,
+      bag_index:,
+      client_cast_id:,
+      ms:,
+      until_ms:,
+      answer: landed_at_once,
+    )
+  #(state, steps)
 }
