@@ -498,7 +498,8 @@ pub fn the_command_and_the_generated_decoder_read_32_bit_integers_text_and_boole
 
 pub fn the_command_and_the_generated_decoder_read_64_bit_integers_alike_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tag("dev_tool")
+  // Not tagged dev_tool: no other test reads a negative 64-bit value through the
+  // generated decoders, so the merge check keeps this one.
   assert_read_the_same(read_both_ways(
     schema: account_item.schema,
     entry: account_item.entry(),
