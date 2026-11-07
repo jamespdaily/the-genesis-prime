@@ -23,11 +23,11 @@
 
 import cast_support as support
 import genesis_prime/client_connection.{CastWent}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast.{type Caster, type Effect}
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, AimsAtCaster, Always, GatedOnCaster,
+  type Spell, AimsAtCaster, Always, GatedOnCaster,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Source, Change}
@@ -89,10 +89,6 @@ fn healer(heals heals: List(spell_plan.ShieldHeal)) -> Spell {
   )
 }
 
-fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: support.plans(), spells:)
-}
-
 /// The caster with 250 of its 450 shield and 500 of its 736 health, which no go of the
 /// tests changes.
 fn struck_caster() -> Caster {
@@ -104,34 +100,6 @@ fn struck_caster() -> Caster {
       shield: 250,
       max_shield: 450,
     ),
-  )
-}
-
-/// A press of the bag index by the caster, its go answered with no unit struck, read for
-/// the same caster.
-fn press(
-  plans plans: Plans,
-  state state: State,
-  caster caster: Caster,
-  bag bag: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  let #(state, raw) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster:,
-      bag_index: bag,
-      target: 0,
-      at: ms,
-    )
-  support.answered_as(
-    caster:,
-    state:,
-    effects: raw,
-    at: ms,
-    struck: [],
-    rolls: [],
   )
 }
 
@@ -200,9 +168,9 @@ fn heal_description(
 
 pub fn a_go_with_a_shield_heal_lists_it_on_the_caster_with_a_heal_description_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_of([healer(heals: [energize(delay_ms: 10)])])
+  let plans = support.plans_of([healer(heals: [energize(delay_ms: 10)])])
   let #(_, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -228,9 +196,9 @@ pub fn a_go_with_a_shield_heal_lists_it_on_the_caster_with_a_heal_description_te
 
 pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_of([healer(heals: [energize(delay_ms: 0)])])
+  let plans = support.plans_of([healer(heals: [energize(delay_ms: 0)])])
   let #(_, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -270,9 +238,9 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
 
 pub fn a_shield_heal_with_a_delay_lands_on_a_timer_of_its_delay_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_of([healer(heals: [energize(delay_ms: 10)])])
+  let plans = support.plans_of([healer(heals: [energize(delay_ms: 10)])])
   let #(state, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -318,13 +286,13 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
       armor: None,
     )
   let plans =
-    plans_of([
+    support.plans_of([
       spell_plan.Spell(..healer(heals: [energize(delay_ms: 0)]), modifiers: [
         raising,
       ]),
     ])
   let #(_, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -360,9 +328,9 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
 
 pub fn a_delayed_shield_heal_holds_the_casters_node_until_it_lands_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_of([healer(heals: [energize(delay_ms: 500)])])
+  let plans = support.plans_of([healer(heals: [energize(delay_ms: 500)])])
   let #(state, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -388,9 +356,9 @@ pub fn a_heal_whose_nodes_end_fires_first_still_lands_test() -> Nil {
   use <- owned_test.run(5000)
   // The node's end and the heal's start are due in the same millisecond; whichever the
   // shell delivers first, the heal lands once.
-  let plans = plans_of([healer(heals: [energize(delay_ms: 10)])])
+  let plans = support.plans_of([healer(heals: [energize(delay_ms: 10)])])
   let #(state, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -432,9 +400,9 @@ pub fn a_shield_heal_behind_a_caster_gate_that_fails_is_neither_listed_nor_appli
   let gate = prerequisites.single(id: 24_571, condition: #(50, 1, 0, 59_178))
   let gated =
     heal_of(id: 228_914, delay_ms: 0, condition: GatedOnCaster(gates: [gate]))
-  let plans = plans_of([healer(heals: [gated])])
+  let plans = support.plans_of([healer(heals: [gated])])
   let #(_, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -447,7 +415,7 @@ pub fn a_shield_heal_behind_a_caster_gate_that_fails_is_neither_listed_nor_appli
   // and lands, so the rows above were held back by their gate.
   let open_gate = prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
   let plans =
-    plans_of([
+    support.plans_of([
       healer(heals: [
         heal_of(
           id: 228_914,
@@ -457,7 +425,7 @@ pub fn a_shield_heal_behind_a_caster_gate_that_fails_is_neither_listed_nor_appli
       ]),
     ])
   let #(_, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: cast.Caster(..struck_caster(), in_combat: True),
@@ -478,9 +446,9 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
     )
   }
   // A death before the delay.
-  let plans = plans_of([delayed])
+  let plans = support.plans_of([delayed])
   let #(state, first) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -516,9 +484,9 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
         tag: spend.always,
       ),
     ])
-  let plans = plans_of([delayed, remover])
+  let plans = support.plans_of([delayed, remover])
   let #(state, first) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -529,7 +497,13 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
   assert list.length(timeline(fired: alive)) == 1
     as "left alone, the heal lands at go + 500"
   let #(state, removal) =
-    press(plans:, state:, caster: struck_caster(), bag: bag_of_base_1, at: 1100)
+    support.press_as(
+      plans:,
+      state:,
+      caster: struck_caster(),
+      bag: bag_of_base_1,
+      at: 1100,
+    )
   assert heals(effects: removal) == []
   assert list.all(started_by(first), fn(started) {
     list.contains(
@@ -550,8 +524,8 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
     )
   let fighting = cast.Caster(..struck_caster(), in_combat: True)
   let #(state, first) =
-    press(
-      plans: plans_of([persisting]),
+    support.press_as(
+      plans: support.plans_of([persisting]),
       state: cast.new(),
       caster: fighting,
       bag: bag_of_base_3,
@@ -594,9 +568,9 @@ pub fn a_ticking_shield_heal_whose_gate_passes_is_not_applied_and_writes_one_deb
       tick_ms: 1000,
       duration_ms: 8000,
     )
-  let plans = plans_of([healer(heals: [ticking])])
+  let plans = support.plans_of([healer(heals: [ticking])])
   let #(_, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -615,14 +589,14 @@ pub fn two_shield_heal_rows_of_one_go_each_land_and_a_later_go_heals_again_test(
   use <- owned_test.run(5000)
   let second = heal_of(id: 228_999, delay_ms: 0, condition: Always)
   let plans =
-    plans_of([
+    support.plans_of([
       spell_plan.Spell(
         ..healer(heals: [energize(delay_ms: 0), second]),
         phase_delays_ms: [0, 1000],
       ),
     ])
   let #(state, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -646,14 +620,14 @@ pub fn two_goes_with_overlapping_delayed_heals_both_land_each_at_its_own_delay_t
   // Goes at 1000 and 1100 of a Multiphase-like cast, each with a heal of delay 500: the
   // second go cancels nothing of the first.
   let plans =
-    plans_of([
+    support.plans_of([
       spell_plan.Spell(
         ..healer(heals: [energize(delay_ms: 500)]),
         phase_delays_ms: [0, 100],
       ),
     ])
   let #(state, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),
@@ -701,9 +675,9 @@ pub fn two_goes_with_overlapping_delayed_heals_both_land_each_at_its_own_delay_t
 
 pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_of([healer(heals: [energize(delay_ms: 10)])])
+  let plans = support.plans_of([healer(heals: [energize(delay_ms: 10)])])
   let #(_, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: struck_caster(),

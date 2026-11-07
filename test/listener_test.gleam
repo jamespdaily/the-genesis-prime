@@ -10,23 +10,12 @@
 ////   connect.
 
 import ask_support
-import asking_rule
 import genesis_prime/connection/listener.{
   ListenerNotListening, ListenerNotRunning,
 }
 import gleam/erlang/process
 import mug
 import owned_test
-
-/// A server whose one listener runs the asking rule.
-fn started() -> ask_support.Server {
-  ask_support.start(
-    rule: asking_rule.rule(),
-    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 1000,
-    with: fn(builder) { builder },
-  )
-}
 
 pub fn a_name_no_listener_holds_has_no_port_and_cannot_be_closed_test() -> Nil {
   use <- owned_test.run(10_000)
@@ -39,7 +28,7 @@ pub fn a_name_no_listener_holds_has_no_port_and_cannot_be_closed_test() -> Nil {
 
 pub fn a_listener_that_stopped_accepting_has_no_port_and_closing_it_again_is_ok_test() -> Nil {
   use <- owned_test.run(10_000)
-  let server = started()
+  let server = ask_support.started_listener()
   assert listener.port(server.name) == Ok(server.port)
     as "a running listener gives the port it listens on"
   assert listener.stop_accepting(server.name) == Ok(Nil)
@@ -53,7 +42,7 @@ pub fn a_listener_that_stopped_accepting_has_no_port_and_closing_it_again_is_ok_
 
 pub fn a_listener_that_stopped_accepting_refuses_a_new_connect_test() -> Nil {
   use <- owned_test.run(10_000)
-  let server = started()
+  let server = ask_support.started_listener()
   assert listener.stop_accepting(server.name) == Ok(Nil)
   let refused =
     mug.new("127.0.0.1", port: server.port)

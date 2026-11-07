@@ -102,15 +102,9 @@ fn fixed(now: Now) -> Scripts {
   }
 }
 
-/// The seed whose bytes are `0..31`.
-fn counting_seed_bytes() -> BitArray {
-  list.repeat(Nil, 32)
-  |> list.index_map(fn(_, byte) { <<byte>> })
-  |> bit_array.concat
-}
-
 fn counting_seed() -> seed.Seed {
-  let assert Ok(counting) = seed.from_bytes(counting_seed_bytes())
+  let assert Ok(counting) =
+    seed.from_bytes(recording_support.counting_seed_bytes())
     as "32 bytes are a seed"
   counting
 }
@@ -150,7 +144,7 @@ pub fn a_given_script_gives_the_same_bytes_twice_test() -> Nil {
   assert first
     == <<
       script_rule.accepted,
-      counting_seed_bytes():bits,
+      recording_support.counting_seed_bytes():bits,
       now.monotonic_ms:64,
       now.filetime:64,
       script_rule.read,
@@ -167,14 +161,15 @@ pub fn two_connections_of_one_listener_each_take_a_script_of_their_own_test() ->
   // so which script a connection took shows in the time its records hold.
   let server =
     start_script_rule(fn() {
-      let drawn = unique()
+      let drawn = recording_support.unique_number()
       fixed(Now(monotonic_ms: drawn, filetime: drawn * 10))()
     })
   let client_one = ask_support.connect(server)
   let one = accepted_script(ask_support.read_bytes(client_one, 49))
   let client_two = ask_support.connect(server)
   let two = accepted_script(ask_support.read_bytes(client_two, 49))
-  assert one.0 == counting_seed_bytes() && two.0 == counting_seed_bytes()
+  assert one.0 == recording_support.counting_seed_bytes()
+    && two.0 == recording_support.counting_seed_bytes()
     as "each script's seed is the one it was made with"
   assert one.1.filetime == one.1.monotonic_ms * 10
     && two.1.filetime == two.1.monotonic_ms * 10
@@ -195,18 +190,6 @@ fn accepted_script(record: BitArray) -> #(BitArray, Now) {
     as "an accept's record is a letter, 32 bytes and two 64-bit numbers"
   assert letter == script_rule.accepted
   #(seed, Now(monotonic_ms:, filetime:))
-}
-
-@external(erlang, "erlang", "unique_integer")
-fn unique_integer(options: List(UniqueOption)) -> Int
-
-type UniqueOption {
-  Positive
-  Monotonic
-}
-
-fn unique() -> Int {
-  unique_integer([Positive, Monotonic])
 }
 
 pub fn a_connection_with_no_script_to_take_is_closed_and_takes_no_input_test() -> Nil {

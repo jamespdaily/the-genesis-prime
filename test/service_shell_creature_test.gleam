@@ -21,7 +21,6 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
 import gleam/erlang/process.{type Subject}
 import gleam/list
-import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import owned_test
 
@@ -93,18 +92,6 @@ fn awaiting(
   replies
 }
 
-fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
-  let assert Ok(started) =
-    supervisor.new(supervisor.OneForOne)
-    |> supervisor.restart_tolerance(intensity: 10, period: 5)
-    |> supervisor.add(child)
-    |> supervisor.start
-    as "the tree started"
-  process.unlink(started.pid)
-  ask_support.guard(started.pid)
-  started.pid
-}
-
 pub fn a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_opened_test() -> Nil {
   use <- owned_test.run(30_000)
   let target = process.spawn_unlinked(process.sleep_forever)
@@ -112,7 +99,7 @@ pub fn a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_
   let started = process.new_subject()
   let located = process.new_subject()
   let tree =
-    start_tree(starting_creatures(
+    ask_support.start_tree(starting_creatures(
       gate:,
       starting: Error(service.SupervisorNotRunning),
       started:,
@@ -150,7 +137,7 @@ pub fn a_timer_of_the_step_that_started_a_creature_fires_after_the_creatures_fai
   let started = process.new_subject()
   let located = process.new_subject()
   let tree =
-    start_tree(starting_creatures(
+    ask_support.start_tree(starting_creatures(
       gate:,
       starting: Error(service.SupervisorNotRunning),
       started:,
@@ -193,7 +180,7 @@ pub fn a_creature_that_starts_is_watched_at_its_address_and_its_end_comes_back_a
   let started = process.new_subject()
   let located = process.new_subject()
   let tree =
-    start_tree(starting_creatures(
+    ask_support.start_tree(starting_creatures(
       gate:,
       starting: Ok(Nil),
       started:,
@@ -227,7 +214,7 @@ pub fn a_timer_fires_once_and_a_cancelled_timer_never_fires_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
   let tree =
-    start_tree(ask_support.reaching(
+    ask_support.start_tree(ask_support.reaching(
       name: gate,
       shutdown_ms: 1000,
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),

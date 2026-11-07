@@ -63,25 +63,6 @@ fn spell_of(
   )
 }
 
-fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: support.plans(), spells:)
-}
-
-fn press(
-  plans plans: Plans,
-  state state: State,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  support.pressed_in(
-    plans:,
-    state:,
-    caster: support.caster(),
-    bag_index: bag_of_base_3,
-    target: 0,
-    at: ms,
-  )
-}
-
 /// The units each go names, with the effects it lists on each.
 fn targets_of(effects effects: List(Effect)) -> List(SpellTargetInfo) {
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
@@ -125,7 +106,12 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
       base: 3,
     )
   let #(_, effects) =
-    press(plans: plans_of([spell]), state: cast.new(), at: 1000)
+    support.press(
+      plans: support.plans_of([spell]),
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let assert [info] = targets_of(effects:)
   assert info.unit_id == 7 as "the caster is the unit the row aims at"
   assert info.instance_count == 1
@@ -164,7 +150,12 @@ pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_
       base: 3,
     )
   let #(state, effects) =
-    press(plans: plans_of([spell]), state: cast.new(), at: 1000)
+    support.press(
+      plans: support.plans_of([spell]),
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let id = support.pressed_id(effects:)
   assert support.finished_ids(support.writes(effects:)) == []
     as "the client ends no buff on time, so an early 0x7fe would undo the scale (cast.target_node_end)"
@@ -197,7 +188,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
     )
   let #(state, effects) =
     support.pressed_raw_in(
-      plans: plans_of([spell]),
+      plans: support.plans_of([spell]),
       state: cast.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
@@ -242,7 +233,12 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so
       base: 3,
     )
   let #(_, effects) =
-    press(plans: plans_of([spell]), state: cast.new(), at: 1000)
+    support.press(
+      plans: support.plans_of([spell]),
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   assert listed(effects:) == []
     as "a row behind a target prerequisite is not applied, as a forced move behind one is not listed"
   let lines =
@@ -307,36 +303,12 @@ fn conversion() -> unit_properties.Modifier {
   )
 }
 
-/// The modifiers the effects start, with their sources.
-fn starts(
-  effects effects: List(Effect),
-) -> List(#(unit_properties.Source, unit_properties.Modifier)) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
-        Ok(#(source, modifier))
-      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-      | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
-      | cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeEnds(..)
-      | cast.StealthChanged(..) -> Error(Nil)
-    }
-  })
-}
-
 pub fn the_innate_passives_go_lists_its_conversion_on_the_caster_and_starts_it_with_no_end_timer_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(_, effects) = passive_started(plans: plans_of([passive()]), at: 1000)
+  let #(_, effects) =
+    passive_started(plans: support.plans_of([passive()]), at: 1000)
   assert listed(effects:) == [229_304] as "row 229304 is listed on the caster"
-  let assert [#(source, modifier)] = starts(effects:)
+  let assert [#(source, modifier)] = support.property_starts(effects:)
   assert source.effect_id == Spell4EffectsId(229_304)
   assert modifier == conversion()
   assert support.started_timers(effects:) == []
@@ -345,7 +317,7 @@ pub fn the_innate_passives_go_lists_its_conversion_on_the_caster_and_starts_it_w
 
 pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Nil {
   use <- owned_test.run(60_000)
-  let plans = plans_of([passive()])
+  let plans = support.plans_of([passive()])
   // The control: the same spell pressed as an ordinary ability, whose conversion a death
   // ends with the cast.
   let #(pressed, _) =

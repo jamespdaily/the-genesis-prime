@@ -24,6 +24,7 @@
 //// The rows are in memory: the whole plan is read from the client's tables in the last
 //// test.
 
+import cast_support
 import client_tables
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
@@ -34,7 +35,7 @@ import genesis_prime/game/spell_plan.{
   ShieldHeal, TickingShieldHeal,
 }
 import genesis_prime/game/spend
-import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/dict
 import gleam/int
@@ -383,25 +384,11 @@ pub fn effect_kind_reads_heal_shields_for_the_caster_and_shield_overload_for_the
 
 // ---- the client's tables ----
 
-/// The Spell4 `spell4_id` of the tree of the innate whose Spell4Base is `base`.
-fn planned(base base: Int, spell4_id spell4_id: Int) -> spell_plan.Spell {
-  let plans = spell_plan.plans(client_tables.shared())
-  let assert Ok(innate) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
-    as "the plans hold the innate"
-  let assert Ok(spell) =
-    list.find(
-      spell_plan.tree(spell: innate, started: fn(_) { True }),
-      fn(spell) { spell.spell4_id.value == spell4_id },
-    )
-    as "the innate's tree holds the spell"
-  spell
-}
-
 pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdowns_overload_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let assert [ShieldHeal(effect_id: Spell4EffectsId(228_914), delay_ms: 10, ..)] =
-    planned(base: 46_615, spell4_id: 69_450).shield_heals
+    cast_support.planned_spell(base: 46_615, spell4_id: 69_450).shield_heals
     as "Spell4Effects spellId=69450: 228914 is the Medic's only shield heal on the caster"
   let assert [
     TickingShieldHeal(
@@ -410,14 +397,16 @@ pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdow
       duration_ms: 8000,
       ..,
     ),
-  ] = planned(base: 30_828, spell4_id: 46_867).shield_heals
+  ] = cast_support.planned_spell(base: 30_828, spell4_id: 46_867).shield_heals
     as "Spell4Effects spellId=46867: 210834, held and not applied"
-  assert planned(base: 46_615, spell4_id: 60_718).shield_heals == []
+  assert cast_support.planned_spell(base: 46_615, spell4_id: 60_718).shield_heals
+    == []
     as "Spell4Effects spellId=60718: 146893 has targetFlags 4, aimed at other units, so it is left out"
   let assert [Lasting(effect_id: Spell4EffectsId(147_229), aim: AimsAtArea, ..)] =
-    list.filter(planned(base: 46_615, spell4_id: 60_796).lasting, fn(row) {
-      row.effect_id.value == 147_229
-    })
+    list.filter(
+      cast_support.planned_spell(base: 46_615, spell4_id: 60_796).lasting,
+      fn(row) { row.effect_id.value == 147_229 },
+    )
     as "Spell4Effects spellId=60796: 147229, a ShieldOverload aimed at the area, is a lasting row"
   Nil
 }

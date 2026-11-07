@@ -24,7 +24,7 @@ import genesis_prime/connection/frame
 import genesis_prime/connection/script
 import genesis_prime/seed.{type Seed}
 import genesis_prime/service
-import genesis_prime/step.{type Now, Now}
+import genesis_prime/step.{type Now}
 import genesis_prime/wire_recording.{
   Accepted, Answered, Client, NoAnswerInTime, PeerClosed, Read, Server,
   TimerFired, WatchEnded, Woken,
@@ -54,11 +54,6 @@ import simplifile
 import supervisor_children
 import wire_replay_support as support
 
-/// A time with a monotonic reading of its own and a filetime that goes with it.
-fn at(n: Int) -> Now {
-  Now(monotonic_ms: n, filetime: n * 10)
-}
-
 fn command(
   letter letter: Int,
   n n: Int,
@@ -75,22 +70,18 @@ fn one() -> List(support.Planted) {
   [support.Planted(rule: "replay_rule", seed: support.seed(1), ordinal: 1)]
 }
 
-fn file() -> String {
-  "replay_rule-0.jsonl"
-}
-
 /// A client that sends one echo and closes: the server writes the record of
 /// the echo.
 fn echo_session() -> List(support.Step) {
   [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
     ),
     support.Out(0, record(replay_rule.echoed, 7)),
-    support.In(0, at(3), PeerClosed),
+    support.In(0, support.now_at(3), PeerClosed),
     support.Closed(0, Client),
   ]
 }
@@ -117,19 +108,19 @@ pub fn a_changed_byte_the_server_writes_fails_naming_the_connection_the_line_and
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let changed = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
     ),
     support.Out(0, record(replay_rule.echoed, 8)),
-    support.In(0, at(3), PeerClosed),
+    support.In(0, support.now_at(3), PeerClosed),
     support.Closed(0, Client),
   ]
   assert replayed(folder:, connections: one(), steps: changed)
     == Error(Differs(
-      connection: file(),
+      connection: support.rule_recording_file(),
       line: 3,
       difference: Difference(
         offset: 8,
@@ -146,20 +137,20 @@ pub fn a_client_byte_the_servers_reader_refuses_fails_the_replay_with_the_server
   // The rule refuses command 3 with a warning and stops; the recording goes on
   // as if it had answered.
   let refused = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.refuse_command, n: 3, milliseconds: 0)),
     ),
     support.Out(0, record(replay_rule.echoed, 1)),
-    support.In(0, at(3), PeerClosed),
+    support.In(0, support.now_at(3), PeerClosed),
     support.Closed(0, Client),
   ]
   let assert Error(EndedEarly(connection:, line:, logged:, ..)) =
     replayed(folder:, connections: one(), steps: refused)
     as "the server ended the connection where the recording goes on"
-  assert connection == file() && line == 3
+  assert connection == support.rule_recording_file() && line == 3
   assert list.contains(logged, replay_rule.refusal(3))
     as "the failure carries the line the connection wrote when it refused"
 }
@@ -172,28 +163,28 @@ pub fn a_recorded_read_in_two_lines_gives_the_same_bytes_as_in_one_test() -> Nil
     command(letter: replay_rule.echo_command, n: 2, milliseconds: 0):bits,
   >>
   let whole = [
-    support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(both)),
+    support.In(0, support.now_at(1), Accepted),
+    support.In(0, support.now_at(2), Read(both)),
     support.Out(0, record(replay_rule.echoed, 1)),
     support.Out(0, record(replay_rule.echoed, 2)),
-    support.In(0, at(3), PeerClosed),
+    support.In(0, support.now_at(3), PeerClosed),
     support.Closed(0, Client),
   ]
   let split = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.echo_command, n: 1, milliseconds: 0)),
     ),
     support.Out(0, record(replay_rule.echoed, 1)),
     support.In(
       0,
-      at(3),
+      support.now_at(3),
       Read(command(letter: replay_rule.echo_command, n: 2, milliseconds: 0)),
     ),
     support.Out(0, record(replay_rule.echoed, 2)),
-    support.In(0, at(4), PeerClosed),
+    support.In(0, support.now_at(4), PeerClosed),
     support.Closed(0, Client),
   ]
   assert replayed(folder: folder <> "/whole", connections: one(), steps: whole)
@@ -215,12 +206,12 @@ pub fn a_read_the_client_sends_in_two_parts_is_reassembled_by_the_shell_test() -
   let echoed_seven =
     command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)
   support.write(folder:, connections: one(), steps: [
-    support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(<<watch:bits, echoed_seven:bits>>)),
+    support.In(0, support.now_at(1), Accepted),
+    support.In(0, support.now_at(2), Read(<<watch:bits, echoed_seven:bits>>)),
     support.Out(0, record(replay_rule.echoed, 7)),
-    support.In(0, at(3), WatchEnded),
+    support.In(0, support.now_at(3), WatchEnded),
     support.Out(0, record(replay_rule.watch_ended, 1)),
-    support.In(0, at(4), PeerClosed),
+    support.In(0, support.now_at(4), PeerClosed),
     support.Closed(0, Client),
   ])
   // The client sends the read in two sends. Timer 99 is no timer of the rule:
@@ -228,18 +219,23 @@ pub fn a_read_the_client_sends_in_two_parts_is_reassembled_by_the_shell_test() -
   // holds, which it does when the first part has reached it, and the client's
   // wait for it is what holds the second send back until then.
   let actions = [
-    Connect(file()),
-    AwaitTaken(file(), 1, 1, Accepted),
-    AwaitTaken(file(), 2, 1, Read(<<watch:bits, echoed_seven:bits>>)),
-    Send(file(), 2, watch),
-    Fire(file(), 2, 99),
-    Send(file(), 2, echoed_seven),
-    Expect(file(), 3, record(replay_rule.echoed, 7)),
-    AwaitTaken(file(), 4, 3, WatchEnded),
-    Expect(file(), 5, record(replay_rule.watch_ended, 1)),
-    AwaitTaken(file(), 6, 3, PeerClosed),
-    CloseClientSocket(file(), 6),
-    AwaitEnd(file(), 7, Client),
+    Connect(support.rule_recording_file()),
+    AwaitTaken(support.rule_recording_file(), 1, 1, Accepted),
+    AwaitTaken(
+      support.rule_recording_file(),
+      2,
+      1,
+      Read(<<watch:bits, echoed_seven:bits>>),
+    ),
+    Send(support.rule_recording_file(), 2, watch),
+    Fire(support.rule_recording_file(), 2, 99),
+    Send(support.rule_recording_file(), 2, echoed_seven),
+    Expect(support.rule_recording_file(), 3, record(replay_rule.echoed, 7)),
+    AwaitTaken(support.rule_recording_file(), 4, 3, WatchEnded),
+    Expect(support.rule_recording_file(), 5, record(replay_rule.watch_ended, 1)),
+    AwaitTaken(support.rule_recording_file(), 6, 3, PeerClosed),
+    CloseClientSocket(support.rule_recording_file(), 6),
+    AwaitEnd(support.rule_recording_file(), 7, Client),
   ]
   let #(result, _logged) =
     support.run_scripted(
@@ -257,7 +253,7 @@ pub fn a_read_the_client_sends_in_two_parts_is_reassembled_by_the_shell_test() -
             script: script.Script(..issued.script, next_read: fn() {
               replay_table.timer_started(
                 table:,
-                connection: file(),
+                connection: support.rule_recording_file(),
                 timer: 99,
                 started: replay_table.Started(
                   subject: process.new_subject(),
@@ -279,15 +275,15 @@ pub fn the_servers_writes_cut_differently_give_the_same_bytes_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let cut = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
     ),
     support.Out(0, <<replay_rule.echoed, 0, 0, 0>>),
     support.Out(0, <<0, 0, 0, 0, 7>>),
-    support.In(0, at(3), PeerClosed),
+    support.In(0, support.now_at(3), PeerClosed),
     support.Closed(0, Client),
   ]
   assert replayed(folder:, connections: one(), steps: cut) == Ok(Nil)
@@ -301,26 +297,26 @@ pub fn an_input_taken_out_of_the_recorded_order_fails_the_replay_as_an_ordering_
   // the watch's end as the next input after the read's step. The recording
   // holds it after another read.
   let reordered = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.watch_command, n: 1, milliseconds: 0)),
     ),
     support.In(
       0,
-      at(3),
+      support.now_at(3),
       Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
     ),
-    support.In(0, at(4), WatchEnded),
+    support.In(0, support.now_at(4), WatchEnded),
     support.Out(0, record(replay_rule.watch_ended, 1)),
     support.Out(0, record(replay_rule.echoed, 7)),
-    support.In(0, at(5), PeerClosed),
+    support.In(0, support.now_at(5), PeerClosed),
     support.Closed(0, Client),
   ]
   assert replayed(folder:, connections: one(), steps: reordered)
     == Error(TookOutOfOrder(
-      connection: file(),
+      connection: support.rule_recording_file(),
       line: 3,
       expected: Read(command(
         letter: replay_rule.echo_command,
@@ -336,10 +332,10 @@ pub fn a_shell_that_takes_an_input_the_recording_does_not_hold_fails_naming_the_
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let unrecorded = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.watch_command, n: 1, milliseconds: 0)),
     ),
     support.Closed(0, Server),
@@ -347,7 +343,7 @@ pub fn a_shell_that_takes_an_input_the_recording_does_not_hold_fails_naming_the_
   let assert Error(TookUnrecordedInput(connection:, ..)) =
     replayed(folder:, connections: one(), steps: unrecorded)
     as "the watch's end is an input the recording holds no line for"
-  assert connection == file()
+  assert connection == support.rule_recording_file()
 }
 
 // ---- timers and the client's close ----
@@ -358,21 +354,21 @@ pub fn a_recorded_timer_fires_at_its_line_and_not_before_and_a_recorded_close_is
   // Timer 1 has 1 ms to run: a timer that fired on real time would fire before
   // the echo is read, and the shell would take it out of the recorded order.
   let timed = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.timer_command, n: 1, milliseconds: 1)),
     ),
     support.In(
       0,
-      at(3),
+      support.now_at(3),
       Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
     ),
     support.Out(0, record(replay_rule.echoed, 7)),
-    support.In(0, at(4), TimerFired(timer: 1)),
+    support.In(0, support.now_at(4), TimerFired(timer: 1)),
     support.Out(0, record(replay_rule.timer_fired, 1)),
-    support.In(0, at(5), PeerClosed),
+    support.In(0, support.now_at(5), PeerClosed),
     support.Closed(0, Client),
   ]
   assert replayed(folder:, connections: one(), steps: timed) == Ok(Nil)
@@ -383,15 +379,19 @@ pub fn a_timer_the_shell_never_started_fails_naming_it_after_5_s_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let never = [
-    support.In(0, at(1), Accepted),
-    support.In(0, at(2), TimerFired(timer: 9)),
+    support.In(0, support.now_at(1), Accepted),
+    support.In(0, support.now_at(2), TimerFired(timer: 9)),
   ]
   assert replayed(
       folder:,
       connections: one(),
       steps: list.append(never, [support.Closed(0, Client)]),
     )
-    == Error(TimerNeverStarted(connection: file(), line: 2, timer: 9))
+    == Error(TimerNeverStarted(
+      connection: support.rule_recording_file(),
+      line: 2,
+      timer: 9,
+    ))
     as "no step of the rule started timer 9"
 }
 
@@ -401,18 +401,23 @@ pub fn a_shell_that_never_takes_its_next_input_fails_within_5_s_naming_the_input
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let never = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.echo_command, n: 1, milliseconds: 0)),
     ),
     support.Out(0, record(replay_rule.echoed, 1)),
-    support.In(0, at(3), Woken),
+    support.In(0, support.now_at(3), Woken),
     support.Closed(0, Client),
   ]
   assert replayed(folder:, connections: one(), steps: never)
-    == Error(NeverTaken(connection: file(), line: 4, input: Woken, taken: 2))
+    == Error(NeverTaken(
+      connection: support.rule_recording_file(),
+      line: 4,
+      input: Woken,
+      taken: 2,
+    ))
     as "nothing delivers the message the recording holds, so the shell took 2 inputs and never the third"
 }
 
@@ -420,10 +425,10 @@ pub fn a_server_that_writes_nothing_fails_within_5_s_naming_the_message_it_waite
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let silent = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.In(
       0,
-      at(2),
+      support.now_at(2),
       Read(command(letter: replay_rule.echo_command, n: 1, milliseconds: 0)),
     ),
     support.Out(0, record(replay_rule.echoed, 1)),
@@ -432,7 +437,7 @@ pub fn a_server_that_writes_nothing_fails_within_5_s_naming_the_message_it_waite
   ]
   assert replayed(folder:, connections: one(), steps: silent)
     == Error(Silent(
-      connection: file(),
+      connection: support.rule_recording_file(),
       line: 4,
       expected: Undecoded(record(replay_rule.echoed, 9)),
     ))
@@ -443,11 +448,11 @@ pub fn a_server_that_does_not_close_where_the_recording_says_it_did_fails_after_
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let open = [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
     support.Closed(0, Server),
   ]
   assert replayed(folder:, connections: one(), steps: open)
-    == Error(StillOpen(connection: file(), line: 2))
+    == Error(StillOpen(connection: support.rule_recording_file(), line: 2))
     as "the rule never stops, and the recording says the server closed"
 }
 
@@ -464,17 +469,17 @@ fn script_rule_session() -> #(List(support.Planted), List(support.Step)) {
       support.Planted(rule: "script_rule", seed: second, ordinal: 1),
     ],
     [
-      support.In(1, at(10), Accepted),
-      support.Out(1, accepted_record(second, at(10))),
-      support.In(0, at(20), Accepted),
-      support.Out(0, accepted_record(first, at(20))),
-      support.In(1, at(30), Read(<<1>>)),
-      support.Out(1, read_record(at(30))),
-      support.In(0, at(40), Read(<<2>>)),
-      support.Out(0, read_record(at(40))),
-      support.In(0, at(50), PeerClosed),
+      support.In(1, support.now_at(10), Accepted),
+      support.Out(1, accepted_record(second, support.now_at(10))),
+      support.In(0, support.now_at(20), Accepted),
+      support.Out(0, accepted_record(first, support.now_at(20))),
+      support.In(1, support.now_at(30), Read(<<1>>)),
+      support.Out(1, script_rule.read_record_bytes(support.now_at(30))),
+      support.In(0, support.now_at(40), Read(<<2>>)),
+      support.Out(0, script_rule.read_record_bytes(support.now_at(40))),
+      support.In(0, support.now_at(50), PeerClosed),
       support.Closed(0, Client),
-      support.In(1, at(60), PeerClosed),
+      support.In(1, support.now_at(60), PeerClosed),
       support.Closed(1, Client),
     ],
   )
@@ -487,10 +492,6 @@ fn accepted_record(seed: Seed, now: Now) -> BitArray {
     now.monotonic_ms:64,
     now.filetime:64,
   >>
-}
-
-fn read_record(now: Now) -> BitArray {
-  <<script_rule.read, now.monotonic_ms:64, now.filetime:64>>
 }
 
 pub fn a_listener_that_accepts_two_connections_gives_each_its_own_recorded_seed_and_times_by_accept_ordinal_test() -> Nil {
@@ -525,7 +526,8 @@ pub fn a_seed_or_a_time_taken_from_another_recording_shows_in_the_bytes_test() -
   let retimed =
     list.map(steps, fn(step) {
       case step {
-        support.In(1, _, Accepted) -> support.In(1, at(11), Accepted)
+        support.In(1, _, Accepted) ->
+          support.In(1, support.now_at(11), Accepted)
         support.In(..) | support.Out(..) | support.Closed(..) -> step
       }
     })
@@ -562,35 +564,41 @@ pub fn a_replays_clock_gives_the_recorded_time_of_each_kind_of_input_and_counts_
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   support.write(folder:, connections: one(), steps: [
-    support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(<<1, 2, 3, 4, 5, 6, 7, 8>>)),
-    support.In(0, at(3), Read(<<9, 9>>)),
-    support.In(0, at(4), wire_recording.Answered(outcome: NoAnswerInTime)),
-    support.In(0, at(5), PeerClosed),
+    support.In(0, support.now_at(1), Accepted),
+    support.In(0, support.now_at(2), Read(<<1, 2, 3, 4, 5, 6, 7, 8>>)),
+    support.In(0, support.now_at(3), Read(<<9, 9>>)),
+    support.In(
+      0,
+      support.now_at(4),
+      wire_recording.Answered(outcome: NoAnswerInTime),
+    ),
+    support.In(0, support.now_at(5), PeerClosed),
     support.Closed(0, Client),
   ])
   let replay = support.start_replay(support.load(folder))
   let assert Ok(issued) = replay.scripts() as "the script"
-  let assert Ok(progress) = dict.get(replay.progress, file()) as "its progress"
+  let assert Ok(progress) =
+    dict.get(replay.progress, support.rule_recording_file())
+    as "its progress"
   let clock = issued.script.clock
   assert wire_replay.taken(progress) == 0
-  assert clock(Accepted) == at(1)
+  assert clock(Accepted) == support.now_at(1)
   assert wire_replay.taken(progress) == 1
   assert issued.script.next_read() == Some(8)
     as "the next recorded read holds 8 bytes"
   // The first read of the socket holds part of line 2: it takes line 2's time,
   // and the line counts as taken once its last byte has been.
-  assert clock(Read(<<1, 2, 3>>)) == at(2)
+  assert clock(Read(<<1, 2, 3>>)) == support.now_at(2)
   assert wire_replay.taken(progress) == 1
   assert issued.script.next_read() == Some(8)
-  assert clock(Read(<<4, 5, 6, 7, 8>>)) == at(2)
+  assert clock(Read(<<4, 5, 6, 7, 8>>)) == support.now_at(2)
   assert wire_replay.taken(progress) == 2
   assert issued.script.next_read() == Some(2)
-  assert clock(Read(<<9, 9>>)) == at(3)
+  assert clock(Read(<<9, 9>>)) == support.now_at(3)
   assert issued.script.next_read() == None as "no recorded read is left"
-  assert clock(Answered(outcome: wire_recording.Answer)) == at(4)
+  assert clock(Answered(outcome: wire_recording.Answer)) == support.now_at(4)
     as "an answer takes the time of the next recorded input of its kind, whatever its outcome"
-  assert clock(PeerClosed) == at(5)
+  assert clock(PeerClosed) == support.now_at(5)
   assert wire_replay.taken(progress) == 5
   let _lines = wire_replay.finish(replay)
   Nil
@@ -605,14 +613,14 @@ pub fn the_plan_of_a_session_connects_waits_sends_expects_and_closes_in_sequence
   let read = command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)
   assert wire_replay.plan(support.load(folder))
     == [
-      Connect(file()),
-      AwaitTaken(file(), 1, 1, Accepted),
-      AwaitTaken(file(), 2, 1, Read(read)),
-      Send(file(), 2, read),
-      Expect(file(), 3, record(replay_rule.echoed, 7)),
-      AwaitTaken(file(), 4, 2, PeerClosed),
-      CloseClientSocket(file(), 4),
-      AwaitEnd(file(), 5, Client),
+      Connect(support.rule_recording_file()),
+      AwaitTaken(support.rule_recording_file(), 1, 1, Accepted),
+      AwaitTaken(support.rule_recording_file(), 2, 1, Read(read)),
+      Send(support.rule_recording_file(), 2, read),
+      Expect(support.rule_recording_file(), 3, record(replay_rule.echoed, 7)),
+      AwaitTaken(support.rule_recording_file(), 4, 2, PeerClosed),
+      CloseClientSocket(support.rule_recording_file(), 4),
+      AwaitEnd(support.rule_recording_file(), 5, Client),
     ]
     as "a connect before the accepted line; a read waits for the inputs before it, then sends; a write is expected; the client's close waits, then closes; the end is awaited"
 }
@@ -630,11 +638,11 @@ pub fn a_connect_comes_before_its_accepted_line_and_connects_stay_in_accept_orde
       support.Planted(rule: "replay_rule", seed: support.seed(2), ordinal: 1),
     ],
     steps: [
-      support.In(0, at(1), Accepted),
-      support.In(1, at(2), Accepted),
-      support.In(0, at(3), PeerClosed),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(1, support.now_at(2), Accepted),
+      support.In(0, support.now_at(3), PeerClosed),
       support.Closed(0, Client),
-      support.In(1, at(4), PeerClosed),
+      support.In(1, support.now_at(4), PeerClosed),
       support.Closed(1, Client),
     ],
   )
@@ -694,17 +702,17 @@ fn two_connections_with_a_gap(
       support.Planted(rule: "replay_rule", seed: support.seed(2), ordinal: 2),
     ],
     [
-      support.In(0, at(1000), Accepted),
+      support.In(0, support.now_at(1000), Accepted),
       support.In(
         0,
-        at(2000),
+        support.now_at(2000),
         Read(command(letter: replay_rule.echo_command, n: 1, milliseconds: 0)),
       ),
       support.Out(0, record(replay_rule.echoed, 1)),
-      support.In(1, at(2000 + gap_ms), Accepted),
-      support.In(0, at(2001 + gap_ms), PeerClosed),
+      support.In(1, support.now_at(2000 + gap_ms), Accepted),
+      support.In(0, support.now_at(2001 + gap_ms), PeerClosed),
       support.Closed(0, Client),
-      support.In(1, at(2002 + gap_ms), PeerClosed),
+      support.In(1, support.now_at(2002 + gap_ms), PeerClosed),
       support.Closed(1, Client),
     ],
   )
@@ -719,7 +727,7 @@ pub fn a_recording_whose_client_build_or_tables_differ_is_refused_with_its_reaso
     as "the build the recording was made on"
   assert wire_replay.refuse_stale(session, 16_043, None)
     == Error(wire_replay.ClientBuildDiffers(
-      connection: file(),
+      connection: support.rule_recording_file(),
       recorded: 16_042,
       current: 16_043,
     ))
@@ -747,7 +755,7 @@ pub fn a_recording_whose_client_build_or_tables_differ_is_refused_with_its_reaso
     as "the tables the recording was made on"
   assert wire_replay.refuse_stale(reading_tables, 16_042, Some("C3D4"))
     == Error(wire_replay.TablesDiffer(
-      connection: file(),
+      connection: support.rule_recording_file(),
       recorded: Some("A1B2"),
       current: Some("C3D4"),
     ))
@@ -757,11 +765,11 @@ pub fn a_recording_without_its_closing_line_is_reported_as_cut_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   support.write(folder:, connections: one(), steps: [
-    support.In(0, at(1), Accepted),
+    support.In(0, support.now_at(1), Accepted),
   ])
   assert wire_replay.load(folder)
     == Error(wire_replay.Unreadable(
-      connection: file(),
+      connection: support.rule_recording_file(),
       failure: wire_recording.Cut(lines: 2),
     ))
     as "the header and the accepted line are whole, and no closing line follows"
@@ -781,12 +789,15 @@ pub fn a_recording_holding_an_ask_that_timed_out_is_refused_saying_which_test() 
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   support.write(folder:, connections: one(), steps: [
-    support.In(0, at(1), Accepted),
-    support.In(0, at(2), Answered(outcome: NoAnswerInTime)),
+    support.In(0, support.now_at(1), Accepted),
+    support.In(0, support.now_at(2), Answered(outcome: NoAnswerInTime)),
     support.Closed(0, Client),
   ])
   assert wire_replay.refuse_unreproducible(support.load(folder), 60_000)
-    == Error(wire_replay.AskTimedOut(connection: file(), line: 2))
+    == Error(wire_replay.AskTimedOut(
+      connection: support.rule_recording_file(),
+      line: 2,
+    ))
     as "whether the asked process would have answered in time is a matter of time, which a replay cannot bring about"
 }
 
@@ -832,10 +843,10 @@ pub fn an_ask_nobody_answers_ends_at_its_own_deadline_and_the_replay_fails_where
       support.Planted(rule: "asking_rule", seed: support.seed(1), ordinal: 1),
     ],
     steps: [
-      support.In(0, at(1), Accepted),
-      support.In(0, at(2), Read(ignoring)),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(0, support.now_at(2), Read(ignoring)),
       support.Out(0, <<asking_rule.asked, 1, 0, 0, 202:64>>),
-      support.In(0, at(3), Answered(outcome: wire_recording.Answer)),
+      support.In(0, support.now_at(3), Answered(outcome: wire_recording.Answer)),
       support.Out(0, <<
         asking_rule.outcome,
         1,
@@ -843,7 +854,7 @@ pub fn an_ask_nobody_answers_ends_at_its_own_deadline_and_the_replay_fails_where
         0,
         3:64,
       >>),
-      support.In(0, at(4), PeerClosed),
+      support.In(0, support.now_at(4), PeerClosed),
       support.Closed(0, Client),
     ],
   )
@@ -879,10 +890,14 @@ pub fn a_service_that_crashes_is_restarted_as_live_and_the_replay_fails_only_if_
       support.Planted(rule: "asking_rule", seed: support.seed(1), ordinal: 1),
     ],
     steps: [
-      support.In(0, at(1), Accepted),
-      support.In(0, at(2), Read(<<0x43, 1, 500:16>>)),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(0, support.now_at(2), Read(<<0x43, 1, 500:16>>)),
       support.Out(0, <<asking_rule.asked, 1, 0, 0, 502:64>>),
-      support.In(0, at(3), Answered(outcome: wire_recording.EndedBeforeAnswer)),
+      support.In(
+        0,
+        support.now_at(3),
+        Answered(outcome: wire_recording.EndedBeforeAnswer),
+      ),
       support.Out(0, <<
         asking_rule.outcome,
         1,
@@ -890,9 +905,9 @@ pub fn a_service_that_crashes_is_restarted_as_live_and_the_replay_fails_only_if_
         0,
         3:64,
       >>),
-      support.In(0, at(4), Read(<<0x45, 5, 500:16>>)),
+      support.In(0, support.now_at(4), Read(<<0x45, 5, 500:16>>)),
       support.Out(0, <<asking_rule.asked, 2, 0, 0, 504:64>>),
-      support.In(0, at(5), Answered(outcome: wire_recording.Answer)),
+      support.In(0, support.now_at(5), Answered(outcome: wire_recording.Answer)),
       support.Out(0, <<
         asking_rule.outcome,
         2,
@@ -900,7 +915,7 @@ pub fn a_service_that_crashes_is_restarted_as_live_and_the_replay_fails_only_if_
         5,
         5:64,
       >>),
-      support.In(0, at(6), PeerClosed),
+      support.In(0, support.now_at(6), PeerClosed),
       support.Closed(0, Client),
     ],
   )
@@ -1025,13 +1040,13 @@ pub fn a_write_that_arrives_before_the_read_it_follows_is_kept_for_its_own_expec
   let second =
     command(letter: replay_rule.cancel_command, n: 2, milliseconds: 0)
   support.write(folder:, connections: one(), steps: [
-    support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(echoes)),
+    support.In(0, support.now_at(1), Accepted),
+    support.In(0, support.now_at(2), Read(echoes)),
     support.Out(0, record(replay_rule.echoed, 1)),
     support.Out(0, record(replay_rule.echoed, 2)),
-    support.In(0, at(3), Read(first)),
-    support.In(0, at(4), Read(second)),
-    support.In(0, at(5), PeerClosed),
+    support.In(0, support.now_at(3), Read(first)),
+    support.In(0, support.now_at(4), Read(second)),
+    support.In(0, support.now_at(5), PeerClosed),
     support.Closed(0, Client),
   ])
   // The client sends the first cancel after the shell has taken the echoes, and
@@ -1039,19 +1054,19 @@ pub fn a_write_that_arrives_before_the_read_it_follows_is_kept_for_its_own_expec
   // both are in the client's socket when `Expect` reads, and the second record
   // is kept for the `Expect` after the next send.
   let actions = [
-    Connect(file()),
-    AwaitTaken(file(), 1, 1, Accepted),
-    AwaitTaken(file(), 2, 1, Read(echoes)),
-    Send(file(), 2, echoes),
-    AwaitTaken(file(), 5, 2, Read(first)),
-    Send(file(), 5, first),
-    AwaitTaken(file(), 6, 3, Read(second)),
-    Expect(file(), 3, record(replay_rule.echoed, 1)),
-    Send(file(), 6, second),
-    Expect(file(), 4, record(replay_rule.echoed, 2)),
-    AwaitTaken(file(), 7, 4, PeerClosed),
-    CloseClientSocket(file(), 7),
-    AwaitEnd(file(), 8, Client),
+    Connect(support.rule_recording_file()),
+    AwaitTaken(support.rule_recording_file(), 1, 1, Accepted),
+    AwaitTaken(support.rule_recording_file(), 2, 1, Read(echoes)),
+    Send(support.rule_recording_file(), 2, echoes),
+    AwaitTaken(support.rule_recording_file(), 5, 2, Read(first)),
+    Send(support.rule_recording_file(), 5, first),
+    AwaitTaken(support.rule_recording_file(), 6, 3, Read(second)),
+    Expect(support.rule_recording_file(), 3, record(replay_rule.echoed, 1)),
+    Send(support.rule_recording_file(), 6, second),
+    Expect(support.rule_recording_file(), 4, record(replay_rule.echoed, 2)),
+    AwaitTaken(support.rule_recording_file(), 7, 4, PeerClosed),
+    CloseClientSocket(support.rule_recording_file(), 7),
+    AwaitEnd(support.rule_recording_file(), 8, Client),
   ]
   assert support.run_actions(
       folder:,
@@ -1066,8 +1081,8 @@ pub fn a_recording_of_a_shutdown_is_refused_before_it_is_played_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   support.write(folder: folder <> "/stopping", connections: one(), steps: [
-    support.In(0, at(1), Accepted),
-    support.In(0, at(2), wire_recording.Stopping),
+    support.In(0, support.now_at(1), Accepted),
+    support.In(0, support.now_at(2), wire_recording.Stopping),
     support.Closed(0, Server),
   ])
   assert result.is_error(wire_replay.refuse_unreproducible(
@@ -1076,8 +1091,12 @@ pub fn a_recording_of_a_shutdown_is_refused_before_it_is_played_test() -> Nil {
   ))
     as "a replay cannot make the tree send the exit that is a connection's Stopping"
   support.write(folder: folder <> "/ask", connections: one(), steps: [
-    support.In(0, at(1), Accepted),
-    support.In(0, at(2), Answered(outcome: wire_recording.StoppedWaiting)),
+    support.In(0, support.now_at(1), Accepted),
+    support.In(
+      0,
+      support.now_at(2),
+      Answered(outcome: wire_recording.StoppedWaiting),
+    ),
     support.Closed(0, Server),
   ])
   assert result.is_error(wire_replay.refuse_unreproducible(
@@ -1096,8 +1115,8 @@ pub fn a_shell_that_takes_the_clients_close_and_stays_open_fails_the_replay_afte
       support.Planted(rule: "lingering_rule", seed: support.seed(1), ordinal: 1),
     ],
     steps: [
-      support.In(0, at(1), Accepted),
-      support.In(0, at(2), PeerClosed),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(0, support.now_at(2), PeerClosed),
       support.Closed(0, Client),
     ],
   )
@@ -1150,7 +1169,8 @@ pub fn a_listener_killed_under_replay_ends_its_connections_and_the_replay_fails_
         let assert [listener] =
           supervisor_children.in_start_order(server.supervisor)
           as "the tree holds the listener"
-        let assert Ok(progress) = dict.get(replay.progress, file())
+        let assert Ok(progress) =
+          dict.get(replay.progress, support.rule_recording_file())
           as "the session's one connection has a progress"
         let table = process.named_subject(replay.table.name)
         let _killer =
@@ -1166,7 +1186,7 @@ pub fn a_listener_killed_under_replay_ends_its_connections_and_the_replay_fails_
             })
             replay_table.timer_started(
               table:,
-              connection: file(),
+              connection: support.rule_recording_file(),
               timer: 99,
               started: replay_table.Started(
                 subject: process.new_subject(),
@@ -1180,7 +1200,7 @@ pub fn a_listener_killed_under_replay_ends_its_connections_and_the_replay_fails_
   case result {
     Error(EndedEarly(connection:, ..))
     | Error(TookOutOfOrder(connection:, ..)) -> {
-      assert connection == file()
+      assert connection == support.rule_recording_file()
         as "the failure names the connection the listener's end cut off"
     }
     Ok(Nil) -> panic as "the connection ended where the recording goes on"

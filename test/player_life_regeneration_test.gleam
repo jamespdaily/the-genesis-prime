@@ -25,40 +25,22 @@
 //// - The timer ids 8 (health) and 9 (shield) are the connection's free ids above
 ////   the class resource's 4 to 7.
 
-import character_tables
 import genesis_prime/client_connection
-import genesis_prime/game/hit
-import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
   type Effect, type Life, CancelTimer, OwnCombatState, OwnHealth, OwnShield,
   Regeneration, StartTimer, ToClient, ToViewers,
 }
-import genesis_prime/game/rating
 import genesis_prime/game/strike_tell
 import genesis_prime/step.{TimerId}
-import genesis_prime/table/id.{ClassId}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
 import player_life_support
-import properties_support
 import spawn_support
 
 const health_timer = TimerId(8)
-
-fn defence() -> hit.Defence {
-  let tables = character_tables.shared()
-  let assert Ok(loadout) =
-    loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
-    as "a Warrior has a Dominion Novice set"
-  player_life.defence(
-    properties: properties_support.wearing(loadout:),
-    level: 1,
-    formulas: rating.formulas(tables:),
-  )
-}
 
 /// The Beast's strike, its every blow dealing `damage`.
 fn blow(cast_id cast_id: Int, damage damage: Int) -> strike_tell.Tell {
@@ -85,7 +67,7 @@ fn struck(
 ) -> #(Life, List(Effect)) {
   player_life.struck(
     life:,
-    defence: defence(),
+    defence: player_life_support.defence(),
     strike: blow(cast_id:, damage:),
     rolls: player_life_support.rolls,
     place: player_life_support.place(),
@@ -106,24 +88,6 @@ fn entering(saved saved: option.Option(Int)) -> #(Life, List(Effect)) {
 
 fn fought_by_the_beast(life life: Life) -> Life {
   player_life.threatened(life:, unit_id: 7, creature_life: 3, gone: set.new()).0
-}
-
-/// The timers an effect list starts and cancels, in order.
-fn timers(effects: List(Effect)) -> List(Effect) {
-  list.filter(effects, fn(effect) {
-    case effect {
-      StartTimer(..) | CancelTimer(..) -> True
-      ToClient(..)
-      | ToViewers(..)
-      | player_life.Answer(..)
-      | player_life.StreamTo(..)
-      | player_life.DamageTaken
-      | player_life.CombatLeft
-      | player_life.EndCasts
-      | player_life.GoToHolocrypt
-      | player_life.TellMap(..) -> False
-    }
-  })
 }
 
 /// The health tick: the timer fires.
@@ -197,16 +161,19 @@ pub fn in_combat_no_health_tick_runs_leaving_combat_arms_it_and_entering_combat_
   let #(life, _) = entering(saved: Some(700))
   let #(life, threat) =
     player_life.threatened(life:, unit_id: 7, creature_life: 3, gone: set.new())
-  assert timers(threat) == [CancelTimer(timer: health_timer)]
+  assert player_life_support.timers(threat)
+    == [CancelTimer(timer: health_timer)]
     as "the first fighter stops the health tick"
   let #(still, none) = ticked(life:)
   assert still == life && none == []
     as "a tick already on its way when combat began changes nothing"
   let #(life, second) =
     player_life.threatened(life:, unit_id: 9, creature_life: 4, gone: set.new())
-  assert timers(second) == [] as "a second fighter has nothing left to cancel"
+  assert player_life_support.timers(second) == []
+    as "a second fighter has nothing left to cancel"
   let #(life, one_left) = player_life.released(life:, unit_id: 7)
-  assert timers(one_left) == [] as "a fighter is left: still in combat"
+  assert player_life_support.timers(one_left) == []
+    as "a fighter is left: still in combat"
   let #(life, last) = player_life.released(life:, unit_id: 9)
   assert last
     == [
@@ -224,7 +191,7 @@ pub fn leaving_combat_at_full_health_arms_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   let life = fought_by_the_beast(life: entering(saved: None).0)
   let #(_, released) = player_life.released(life:, unit_id: 7)
-  assert timers(released) == [] as "nothing to regenerate"
+  assert player_life_support.timers(released) == [] as "nothing to regenerate"
 }
 
 // ---- 4: death ----
@@ -234,12 +201,12 @@ pub fn the_dead_regenerate_neither_and_coming_back_arms_nothing_test() -> Nil {
   let #(life, _) = entering(saved: Some(5))
   let #(life, first) = struck(life:, cast_id: 1, damage: 12)
   assert player_life.health(life:) == 4 as "Armor 250: the health takes 1 of 12"
-  assert timers(first)
+  assert player_life_support.timers(first)
     == [StartTimer(timer: player_life_support.shield_timer, after_ms: 2500)]
     as "the blow arms the shield's reboot; the health tick armed at entry runs on"
   let #(dead, killing) = struck(life:, cast_id: 2, damage: 100_000)
   assert player_life.state(life: dead) == player_life.Dead
-  assert timers(killing)
+  assert player_life_support.timers(killing)
     == [
       CancelTimer(timer: health_timer),
       CancelTimer(timer: player_life_support.shield_timer),
@@ -264,7 +231,8 @@ pub fn the_dead_regenerate_neither_and_coming_back_arms_nothing_test() -> Nil {
     )
   assert player_life.health(life: alive) == 736
     && player_life.shield(life: alive) == 450
-  assert timers(back) == [] as "coming back is full: nothing to arm"
+  assert player_life_support.timers(back) == []
+    as "coming back is full: nothing to arm"
 }
 
 // ---- 5: the shield's reboot ----
@@ -273,11 +241,11 @@ pub fn a_blow_arms_the_shield_for_the_reboot_time_and_a_second_blow_pushes_it_ba
   use <- owned_test.run(60_000)
   let life = fought_by_the_beast(life: entering(saved: None).0)
   let #(life, first) = struck(life:, cast_id: 1, damage: 12)
-  assert timers(first)
+  assert player_life_support.timers(first)
     == [StartTimer(timer: player_life_support.shield_timer, after_ms: 2500)]
     as "ShieldRebootTime from the blow"
   let #(life, second) = struck(life:, cast_id: 2, damage: 12)
-  assert timers(second)
+  assert player_life_support.timers(second)
     == [
       CancelTimer(timer: player_life_support.shield_timer),
       StartTimer(timer: player_life_support.shield_timer, after_ms: 2500),
@@ -291,7 +259,7 @@ pub fn a_blow_that_changes_neither_shield_nor_health_leaves_the_shields_clock_te
   let life = fought_by_the_beast(life: entering(saved: None).0)
   let #(life, _) = struck(life:, cast_id: 1, damage: 12)
   let #(_, effects) = struck(life:, cast_id: 2, damage: 0)
-  assert timers(effects) == []
+  assert player_life_support.timers(effects) == []
     as "a blow of 0 lowers nothing: the reboot is not pushed back"
 }
 
@@ -303,10 +271,10 @@ pub fn after_the_reboot_each_tick_adds_its_share_in_combat_too_until_full_test()
   let #(life, hit) = struck(life:, cast_id: 1, damage: 1000)
   assert player_life.shield(life:) == 294 && player_life.health(life:) == 642
     as "1000 mitigated to 250: the shield takes 156, the health 94"
-  assert timers(hit)
+  assert player_life_support.timers(hit)
     == [StartTimer(timer: player_life_support.shield_timer, after_ms: 2500)]
     && !list.contains(
-      timers(hit),
+      player_life_support.timers(hit),
       StartTimer(timer: health_timer, after_ms: 500),
     )
     as "in combat no health tick runs, and the shield waits out its reboot"
@@ -404,7 +372,8 @@ pub fn a_player_with_no_shield_item_has_no_shield_clock_test() -> Nil {
     )
   let #(life, hit) =
     struck(life: fought_by_the_beast(life:), cast_id: 1, damage: 1000)
-  assert timers(hit) == [] as "no shield item: no reboot to wait for"
+  assert player_life_support.timers(hit) == []
+    as "no shield item: no reboot to wait for"
   assert player_life.left(life:) == []
   let #(after, none) =
     player_life.timer_fired(life:, timer: player_life_support.shield_timer)

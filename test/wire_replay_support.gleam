@@ -49,6 +49,17 @@ pub type Step {
   Closed(connection: Int, by: Side)
 }
 
+/// The clock reading `n` milliseconds in, as a recording writes it: the file
+/// time is ten times the monotonic time.
+pub fn now_at(n: Int) -> Now {
+  step.Now(monotonic_ms: n, filetime: n * 10)
+}
+
+/// The file the test rule's recording of its first connection is written to.
+pub fn rule_recording_file() -> String {
+  "replay_rule-0.jsonl"
+}
+
 /// The seed of 32 bytes all `byte`.
 pub fn seed(byte: Int) -> Seed {
   let assert Ok(seed) =

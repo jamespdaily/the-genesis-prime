@@ -23,12 +23,10 @@
 
 import attacker_support
 import cast_support as support
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast.{type Effect}
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/lasting.{type LastingRow, LastingRow}
-import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, Absorption, AimsAtCaster, Always,
-}
+import genesis_prime/game/spell_plan.{Absorption, AimsAtCaster, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Source, Change}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
@@ -89,45 +87,6 @@ fn absorb_row(
   )
 }
 
-fn holder(
-  spell4_id spell4_id: Int,
-  base base: Int,
-  modifiers modifiers: List(spell_plan.PropertyModifier),
-) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id:, base:), modifiers:)
-}
-
-fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: support.plans(), spells:)
-}
-
-/// A press of the bag index by the novice, its go answered with no unit struck, read for
-/// the same novice.
-fn press(
-  plans plans: Plans,
-  state state: State,
-  bag bag: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  let #(state, raw) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster: novice(),
-      bag_index: bag,
-      target: 0,
-      at: ms,
-    )
-  support.answered_as(
-    caster: novice(),
-    state:,
-    effects: raw,
-    at: ms,
-    struck: [],
-    rolls: [],
-  )
-}
-
 /// The absorbs the effects start, with their sources: the amount and the mask.
 fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
@@ -141,11 +100,19 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
 pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_seconds_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
-      holder(spell4_id: 58_586, base: 3, modifiers: [spectral_form_row()]),
+    support.plans_of([
+      support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
+        spectral_form_row(),
+      ]),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press_as(
+      caster: novice(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
   let assert [info] = decoded.targets
@@ -186,9 +153,17 @@ pub fn a_delayed_absorb_starts_on_a_timer_test() -> Nil {
       row: LastingRow(delay_ms: 251, duration_ms: 10_000, until_removed: False),
     )
   let plans =
-    plans_of([holder(spell4_id: 30_724, base: 3, modifiers: [delayed])])
+    support.plans_of([
+      support.spell_holding(spell4_id: 30_724, base: 3, modifiers: [delayed]),
+    ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press_as(
+      caster: novice(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 99_356)
   assert starts(effects:) == []
@@ -206,8 +181,10 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
   use <- owned_test.run(5000)
   // A type 80 removal of the cast.
   let plans =
-    plans_of([
-      holder(spell4_id: 58_586, base: 3, modifiers: [spectral_form_row()]),
+    support.plans_of([
+      support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
+        spectral_form_row(),
+      ]),
       spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
         spell_plan.ForceRemove(
           effect_id: Spell4EffectsId(196_521),
@@ -221,11 +198,24 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
       ]),
     ])
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press_as(
+      caster: novice(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let id = support.pressed_id(effects: first)
   assert list.length(starts(effects: first)) == 1
     as "the absorb started in the press's go"
-  let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
+  let #(_, removal) =
+    support.press_as(
+      caster: novice(),
+      plans:,
+      state:,
+      bag: bag_of_base_1,
+      at: 2000,
+    )
   assert support.caster_change_ends(effects: removal)
     == [support.source_of(cast_id: id, effect_id: 178_144)]
     as "taking the cast's node off the caster ends the absorb at once"
@@ -242,9 +232,11 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
   // in combat.
   let in_combat = prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
   let guarded =
-    plans_of([
+    support.plans_of([
       spell_plan.Spell(
-        ..holder(spell4_id: 58_586, base: 3, modifiers: [spectral_form_row()]),
+        ..support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
+          spectral_form_row(),
+        ]),
         caster_persistence: Some(in_combat),
       ),
     ])
@@ -292,13 +284,28 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
       row: LastingRow(delay_ms: 251, duration_ms: 10_000, until_removed: False),
     )
   let both =
-    plans_of([
-      holder(spell4_id: 58_586, base: 3, modifiers: [spectral_form_row()]),
-      holder(spell4_id: 30_724, base: 1, modifiers: [delayed]),
+    support.plans_of([
+      support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
+        spectral_form_row(),
+      ]),
+      support.spell_holding(spell4_id: 30_724, base: 1, modifiers: [delayed]),
     ])
   let #(state, one) =
-    press(plans: both, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let #(state, two) = press(plans: both, state:, bag: bag_of_base_1, at: 1100)
+    support.press_as(
+      caster: novice(),
+      plans: both,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let #(state, two) =
+    support.press_as(
+      caster: novice(),
+      plans: both,
+      state:,
+      bag: bag_of_base_1,
+      at: 1100,
+    )
   let #(_, died) =
     cast.died(
       cast: state,
@@ -349,11 +356,20 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
       row: LastingRow(delay_ms: 251, duration_ms: 5000, until_removed: False),
     )
   let plans =
-    plans_of([
-      holder(spell4_id: 58_586, base: 3, modifiers: [raising, delayed]),
+    support.plans_of([
+      support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
+        raising,
+        delayed,
+      ]),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press_as(
+      caster: novice(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let id = support.pressed_id(effects:)
   assert starts(effects:) == []
     as "the absorb waits for its delay; the raised rating starts in the go's step"

@@ -199,10 +199,6 @@ fn timers_of(effects effects: List(cast.Effect)) -> List(TimerId) {
   list.map(support.started_timers(effects:), fn(started) { started.0 })
 }
 
-fn delays_of(effects effects: List(cast.Effect)) -> List(Int) {
-  list.map(support.started_timers(effects:), fn(started) { started.1 })
-}
-
 fn is_accepted(effects effects: List(cast.Effect)) -> Bool {
   list.first(support.ids(frames: support.writes(effects:))) == Ok(0x07FD)
 }
@@ -299,8 +295,9 @@ pub fn a_press_during_pulse_blast_is_refused_13_while_more_than_500_ms_of_its_ca
   let #(_, steps) = support.run_timers(state:, effects: step, from_ms: 2250)
   let assert Ok(#(_, last)) = list.find(steps, fn(step) { step.0 == 2253 })
     as "the child's last phase is at 2253"
-  assert list.take(ids_of(effects: last), 2) == [0x07F4, 0x07FE]
-  assert list.drop(ids_of(effects: last), 2) |> list.first == Ok(0x07FD)
+  assert list.take(support.written_ids(effects: last), 2) == [0x07F4, 0x07FE]
+  assert list.drop(support.written_ids(effects: last), 2) |> list.first
+    == Ok(0x07FD)
     as "cast.current_cast: the finish of the child clears the current cast, and the held press is taken then"
 }
 
@@ -339,7 +336,7 @@ pub fn discharge_pulses_3_times_each_starting_80382_and_finishes_at_1250_ms_test
   use <- owned_test.run(10_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.discharge, at: 1000)
-  assert delays_of(effects: pressed) == [410, 820, 1230, 1250]
+  assert support.delays_of(effects: pressed) == [410, 820, 1230, 1250]
     as "Spell4.58832: channelInitialDelay 410, channelPulseTime 410, channelMaxTime 1250: three pulses and the finish (0x14053d1f0; the times are the design's choice)"
   let #(_, steps) = run(state:, pressed:, at: 1000)
   assert trace(steps:)
@@ -381,7 +378,8 @@ pub fn electrocute_pulses_6_times_and_finishes_with_its_last_pulse_test() -> Nil
       target: 0,
       at: 1000,
     )
-  assert delays_of(effects: pressed) == [500, 1000, 1500, 2000, 2500, 3000]
+  assert support.delays_of(effects: pressed)
+    == [500, 1000, 1500, 2000, 2500, 3000]
     as "Spell4.41276: channelInitialDelay 500, channelPulseTime 500, channelMaxTime 3000: six pulses, the last at the max time, which ends the cast (0x14053d1f0)"
   let #(_, steps) = run(state:, pressed:, at: 1000)
   let gos =
@@ -532,7 +530,7 @@ pub fn shred_opens_a_threshold_on_its_first_tap_and_its_second_casts_the_stage_a
   assert started_by_viewer(effects: first)
     == [#(38_765, 38_765, 0), #(38_767, 38_765, 38_765)]
     as "opcode.0x7ff.root_parent: the base cast has parent 0"
-  assert delays_of(effects: first) == [4000, 133, 433, 766]
+  assert support.delays_of(effects: first) == [4000, 133, 433, 766]
     as "the threshold's time 4000 (Spell4.38765), then the child 38767's phases at 133, 433 and 766 ms (SpellPhase 3712 to 3714)"
   let #(state, second) = press(state:, bag_index: support.shred, at: 2000)
   assert trace(steps: [#(1000, first), #(2000, second)])
@@ -562,7 +560,7 @@ pub fn a_tap_within_500_ms_of_the_global_cooldowns_end_is_held_and_one_before_is
   assert refusal_line(effects: early) == "7fc 38766 14"
     as "Spell4.38766 is kind 0 with SpellCoolDown 115 (1000 ms): at 1400 600 ms are left, more than the queue window of 500 (0x1403b14c0)"
   let #(_, held) = press(state:, bag_index: support.shred, at: 1600)
-  assert is_held(effects: held) && delays_of(effects: held) == [400]
+  assert is_held(effects: held) && support.delays_of(effects: held) == [400]
     as "at 1600 400 ms are left: the press is held until 2000"
   let #(_, none_left) = press(state:, bag_index: support.shred, at: 2000)
   assert is_accepted(effects: none_left)
@@ -603,7 +601,7 @@ pub fn rampage_taps_four_times_with_its_gcds_of_500_333_and_333_ms_and_its_coold
     == ["7fd k1", "817 58524 1", "7f4 k1 p0", "7fe k1"]
   assert started_by_viewer(effects: second) == [#(66_987, 58_524, 58_524)]
     as "Spell4Thresholds 1073: the second tap casts 66987"
-  assert delays_of(effects: second) == [100]
+  assert support.delays_of(effects: second) == [100]
     as "Spell4Effects 177498: 66987's Proxy to 71392 starts 100 ms after its go, from a timer"
   let #(state, held) = press(state:, bag_index: support.rampage, at: 1500)
   let assert [#(timer, 333)] = support.started_timers(effects: held)
@@ -662,7 +660,7 @@ pub fn charged_shots_first_press_opens_a_threshold_and_holds_its_cast_with_no_go
     == ["7fd k1", "816 34718 34718 0 k1"]
     as "opcode.0x816 and cast.charge_release_base: the base cast 34718 needs no go before its 0x7fe, and the value is its own id"
   assert started_by_viewer(effects: pressed) == [#(34_718, 34_718, 0)]
-  assert delays_of(effects: pressed) == [1000]
+  assert support.delays_of(effects: pressed) == [1000]
     as "Spell4Thresholds 123: the charge reaches level 1 after thresholdDuration 1000"
   let #(_, steps) = run(state:, pressed:, at: 1000)
   assert trace(steps:)
@@ -924,11 +922,6 @@ pub fn leaving_the_world_with_a_threshold_open_cancels_every_timer_and_writes_no
 
 // ------------------------------------------------- a press queued behind a cast
 
-/// The write ids of a step, in order.
-fn ids_of(effects effects: List(cast.Effect)) -> List(Int) {
-  support.ids(frames: support.writes(effects:))
-}
-
 pub fn a_press_with_500_ms_or_less_of_the_current_cast_left_is_held_and_starts_at_the_go_that_clears_it_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) = press(state: cast.new(), bag_index: 0, at: 1000)
@@ -945,9 +938,10 @@ pub fn a_press_with_500_ms_or_less_of_the_current_cast_left_is_held_and_starts_a
   assert refusal_line(effects: second) == "7fc 43468 13"
     as "a second press while one is held is refused 13"
   let #(state, go) = support.fired(state:, timer: go_timer, at: 2250)
-  assert list.take(ids_of(effects: go), 2) == [0x07F4, 0x07FE]
+  assert list.take(support.written_ids(effects: go), 2) == [0x07F4, 0x07FE]
     as "cast.current_cast: the go of a Normal cast clears the current cast; Telekinetic Strike's go and its finish come first, and its Proxy 62204 is aimed at the area (targetFlags 4), so it starts a child for each struck unit and none for a go that struck nobody (Spell4Effects.effectType.26)"
-  assert list.drop(ids_of(effects: go), 2) |> list.take(2) == [0x07FD, 0x07F4]
+  assert list.drop(support.written_ids(effects: go), 2) |> list.take(2)
+    == [0x07FD, 0x07F4]
     as "then the held press is taken at the same go: Pulse Blast's 0x7fd and its first go"
   assert support.started_timers(effects: go) |> list.map(fn(timer) { timer.1 })
     == [1250]
@@ -967,14 +961,15 @@ pub fn a_held_press_behind_a_multiphase_cast_starts_when_the_last_cast_that_is_c
     && support.started_timers(effects: queued) == []
     as "Pulse Blast's bar is 1250 ms: 450 ms are left at 1800, so Kick is held"
   let #(state, at_phase_1) = support.fired(state:, timer: phase_1, at: 2250)
-  assert !list.contains(ids_of(effects: at_phase_1), 0x07FD)
+  assert !list.contains(support.written_ids(effects: at_phase_1), 0x07FD)
     as "cast.current_cast: Pulse Blast's finish leaves its child 37302, which shows a bar, as the current cast, so the held press waits"
   let assert [#(second, 1), #(third, 2), #(fourth, 3)] =
     support.started_timers(effects: at_phase_1)
   let #(state, _) = support.fired(state:, timer: second, at: 2251)
   let #(state, _) = support.fired(state:, timer: third, at: 2252)
   let #(_, last) = support.fired(state:, timer: fourth, at: 2253)
-  assert ids_of(effects: last) == [0x07F4, 0x07FE, 0x07FD, 0x07F4, 0x07FE]
+  assert support.written_ids(effects: last)
+    == [0x07F4, 0x07FE, 0x07FD, 0x07F4, 0x07FE]
     as "the finish of 37302 clears the current cast, and Kick (Spell4.58591: instant) is taken right after"
 }
 
@@ -991,7 +986,8 @@ pub fn a_held_press_behind_a_cast_the_client_cancels_starts_after_its_finish_tes
       bit: 1,
       at: 1900,
     )
-  assert ids_of(effects: cancelled) |> list.take(2) == [0x07FE, 0x07FD]
+  assert support.written_ids(effects: cancelled) |> list.take(2)
+    == [0x07FE, 0x07FD]
     as "opcode.0x801: the cancel clears the current cast; the 0x7fe comes first and the held press is taken after it"
 }
 
@@ -1002,7 +998,7 @@ pub fn a_held_press_does_not_refuse_the_charged_shot_release_test() -> Nil {
   let #(state, _) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
   let #(state, held) = press(state:, bag_index: support.shred, at: 1600)
-  assert is_held(effects: held) && delays_of(effects: held) == [400]
+  assert is_held(effects: held) && support.delays_of(effects: held) == [400]
     as "Charged Shot's gcd (SpellCoolDown 82, 1000 ms) has 400 ms left: Shred is held"
   let #(state, release) =
     press(state:, bag_index: support.charged_shot, at: 1700)

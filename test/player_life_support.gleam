@@ -2,15 +2,22 @@
 //// the player regenerates by, the Beast that strikes it, the place it stands and a strike
 //// on it.
 
+import character_tables
 import genesis_prime/game/hit.{type Defence, type Offence, Rolls}
+import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
-  type Effect, type Life, Regeneration, ShieldRegeneration,
+  type Effect, type Life, CancelTimer, Regeneration, ShieldRegeneration,
+  StartTimer, ToClient, ToViewers,
 }
+import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/step.{TimerId}
+import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map_id.{MapId}
+import gleam/list
 import gleam/option.{Some}
+import properties_support
 
 /// The shield's regeneration timer: the connection's free id 9.
 pub const shield_timer = TimerId(9)
@@ -79,5 +86,59 @@ pub fn struck(
     ),
     rolls:,
     place: place(),
+  )
+}
+
+/// A level 1 Dominion Warrior's defence, from the client's novice set.
+pub fn defence() -> hit.Defence {
+  let tables = character_tables.shared()
+  let assert Ok(loadout) =
+    loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
+    as "a Warrior has a Dominion Novice set"
+  player_life.defence(
+    properties: properties_support.wearing(loadout:),
+    level: 1,
+    formulas: rating.formulas(tables:),
+  )
+}
+
+/// The effects that start or cancel a timer, in order.
+pub fn timers(effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      StartTimer(..) | CancelTimer(..) -> True
+      ToClient(..)
+      | ToViewers(..)
+      | player_life.Answer(..)
+      | player_life.StreamTo(..)
+      | player_life.DamageTaken
+      | player_life.CombatLeft
+      | player_life.EndCasts
+      | player_life.GoToHolocrypt
+      | player_life.TellMap(..) -> False
+    }
+  })
+}
+
+/// A strike of one blow of `damage` of the damage type `damage_type`, with the
+/// crit chance `crit_chance`.
+pub fn offence_of(
+  damage damage: Int,
+  damage_type damage_type: Int,
+  crit_chance crit_chance: Float,
+) -> Offence {
+  hit.Offence(
+    blows: [
+      hit.Blow(
+        spell4_effects_id: 62_159,
+        damage_type:,
+        damage:,
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ],
+    crit_chance:,
+    crit_severity: 1.5,
+    strikethrough: 0.0,
   )
 }

@@ -7,6 +7,7 @@
 //// (`genesis_prime/coverage/starting_ability`).
 
 import client_tables
+import coverage_support
 import database_support
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{type EngineDeclaration}
@@ -139,10 +140,6 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
 
 // ---- the gaps the engine states ----
 
-fn has_record(facts facts: String, key key: String) -> Bool {
-  string.contains(facts, "[\"" <> key <> "\"]")
-}
-
 pub fn types_1_4_8_and_26_state_their_gap_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
@@ -167,7 +164,7 @@ pub fn types_1_4_8_and_26_state_their_gap_test() -> Nil {
       }
     assert gap.fact_key == fact_key
       as "the gap cites the client's reading: the type's own record, and for the damage rows the formula's parameters (0x140566ad0)"
-    assert has_record(facts:, key: fact_key)
+    assert coverage_support.has_record(facts:, key: fact_key)
       as { "the fact file holds " <> fact_key }
     assert engine.handles(engine: declared, type_number:)
   })

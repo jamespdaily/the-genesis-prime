@@ -30,7 +30,6 @@ import cast_support as support
 import client_tables
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/damage
-import genesis_prime/game/spell_plan.{type Plans}
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
@@ -41,10 +40,6 @@ import gleam/list
 import gleam/string
 import owned_test
 import unitest
-
-fn real_plans() -> Plans {
-  spell_plan.plans(client_tables.shared())
-}
 
 /// A caster of a class: its three level-1 abilities and its innate at bag index 3.
 fn caster_with(bag bag: List(Int), in_combat in_combat: Bool) -> Caster {
@@ -68,7 +63,7 @@ fn pressed(
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state:,
       caster:,
       bag_index:,
@@ -179,7 +174,7 @@ pub fn a_held_key_of_bag_index_3_holds_the_innate_as_any_key_test() -> Nil {
       message: cast.KeyHeld,
       body: support.hold_body(bag_index: 3, target: 0, held: 1),
       caster:,
-      plans: real_plans(),
+      plans: support.real_plans(),
       now: support.at(ms: 1000),
     )
     as "a 0x4db of bag index 3 is taken"
@@ -203,7 +198,7 @@ pub fn bag_index_4_holds_no_ability_and_is_refused_as_today_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let #(_, effects) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state: cast.new(),
       caster: stalker(in_combat: False),
       bag_index: 4,

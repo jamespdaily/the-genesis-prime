@@ -24,7 +24,7 @@ import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, Always, KeepsStealth, Spell, StealthRow,
+  type Spell, Always, KeepsStealth, Spell, StealthRow,
 }
 import genesis_prime/game/spend
 import genesis_prime/message/cast_result
@@ -51,24 +51,6 @@ fn in_combat() -> Prerequisite {
 
 fn unread() -> Prerequisite {
   prerequisites.single(id: 41_834, condition: #(43, 1, 10_518, 4))
-}
-
-fn caster_in_combat(in_combat in_combat: Bool) -> Caster {
-  cast.Caster(..support.caster(), in_combat:)
-}
-
-fn plans_of(spells spells: List(Spell)) -> Plans {
-  support.with_spells(plans: support.plans(), spells:)
-}
-
-fn press(
-  plans plans: Plans,
-  state state: State,
-  caster caster: Caster,
-  bag bag: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  support.pressed_in(plans:, state:, caster:, bag_index: bag, target: 0, at: ms)
 }
 
 fn persisted(
@@ -141,7 +123,7 @@ pub fn a_step_that_leaves_spell_power_at_24_ends_the_spell_surge_buff_and_at_25_
   use <- unitest.guard(client_tables.present())
   let plans = spell_plan.plans(client_tables.shared())
   let #(state, pressed) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: spellslinger(power: 25.0),
@@ -170,7 +152,7 @@ pub fn a_step_that_leaves_spell_power_at_24_ends_the_spell_surge_buff_and_at_25_
     persisted(state: ended, caster: spellslinger(power: 24.0), at: 1300)
   assert again == [] as "the cast is gone: a later step ends nothing"
   let #(_, second_press) =
-    press(
+    support.press_by(
       plans:,
       state: ended,
       caster: spellslinger(power: 24.0),
@@ -222,21 +204,25 @@ fn lingering_for_a_minute(
 pub fn a_lingering_casts_nodes_end_timer_is_cancelled_when_its_persistence_ends_it_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of(spells: [
+    support.plans_of([
       lingering_for_a_minute(caster_persistence: Some(in_combat())),
     ])
   let #(state, pressed) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
-      caster: caster_in_combat(in_combat: True),
+      caster: support.caster_in_combat(in_combat: True),
       bag: bag_of_base_3,
       at: 1000,
     )
   let assert [#(nodes_end, 60_000)] = support.started_timers(effects: pressed)
     as "the lingering cast waits for its node's end on one timer"
   let #(_, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 2000)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 2000,
+    )
   assert support.cancelled_timers(effects:) == [nodes_end]
     as "the NodesEnd timer is cancelled with the cast (cast.target_node_end)"
   assert support.ids(frames: support.writes(effects:)) == [0x07F9, 0x07FE]
@@ -245,16 +231,16 @@ pub fn a_lingering_casts_nodes_end_timer_is_cancelled_when_its_persistence_ends_
 pub fn a_live_cast_whose_persistence_ends_clears_the_current_cast_cancels_its_go_and_starts_the_press_held_for_it_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of(spells: [
+    support.plans_of([
       casting_for_a_second(
         caster_persistence: Some(in_combat()),
         target_persistence: None,
       ),
       support.child(spell4_id: 5001, base: 1),
     ])
-  let fighting = caster_in_combat(in_combat: True)
+  let fighting = support.caster_in_combat(in_combat: True)
   let #(state, pressed) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: fighting,
@@ -265,17 +251,33 @@ pub fn a_live_cast_whose_persistence_ends_clears_the_current_cast_cancels_its_go
     as "the cast waits for its go on a timer"
   // 400 ms of the current cast are left, inside the queue window: the press is held.
   let #(state, held) =
-    press(plans:, state:, caster: fighting, bag: bag_of_base_1, at: 1600)
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting,
+      bag: bag_of_base_1,
+      at: 1600,
+    )
   assert support.writes(effects: held) == []
   let #(ended, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1700)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1700,
+    )
   assert list.contains(support.cancelled_timers(effects:), go)
     as "the go timer is cancelled"
   assert list.take(support.ids(frames: support.writes(effects:)), 3)
     == [0x07F9, 0x07FE, 0x07FD]
     as "the cast ends, and the current cast it cleared lets the held press start: it is confirmed with a 0x7fd"
   let #(_, free) =
-    press(plans:, state: ended, caster: fighting, bag: bag_of_base_1, at: 5000)
+    support.press_by(
+      plans:,
+      state: ended,
+      caster: fighting,
+      bag: bag_of_base_1,
+      at: 5000,
+    )
   assert support.refusal_results(effects: free) == []
     as "nothing blocks a later press"
 }
@@ -283,15 +285,15 @@ pub fn a_live_cast_whose_persistence_ends_clears_the_current_cast_cancels_its_go
 pub fn a_persistence_of_a_type_not_read_keeps_the_cast_with_one_debug_line_for_the_spell_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of(spells: [
+    support.plans_of([
       casting_for_a_second(
         caster_persistence: Some(unread()),
         target_persistence: None,
       ),
     ])
-  let fighting = caster_in_combat(in_combat: True)
+  let fighting = support.caster_in_combat(in_combat: True)
   let #(state, pressed) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: fighting,
@@ -338,8 +340,8 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
         gains: [],
       ),
     ])
-  let plans = plans_of(spells: [parent])
-  let fighting = caster_in_combat(in_combat: True)
+  let plans = support.plans_of([parent])
+  let fighting = support.caster_in_combat(in_combat: True)
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
@@ -359,29 +361,37 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
       rolls: [],
     )
   let #(state, first) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1100)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1100,
+    )
   assert failed(effects: first) == []
     as "the connection holds no creature's state: the condition is not checked"
   assert list.map(support.logs(effects: first), fn(line) { line.0 })
     == [LogDebug]
     as "with one debug line for the spell"
   let #(_, second) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1200)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1200,
+    )
   assert second == []
 }
 
 pub fn a_target_persistence_on_a_cast_the_caster_is_the_target_of_ends_it_with_283_and_the_caster_one_is_checked_first_test() -> Nil {
   use <- owned_test.run(5000)
-  let fighting = caster_in_combat(in_combat: True)
+  let fighting = support.caster_in_combat(in_combat: True)
   let target_only =
-    plans_of(spells: [
+    support.plans_of([
       casting_for_a_second(
         caster_persistence: None,
         target_persistence: Some(in_combat()),
       ),
     ])
   let #(state, pressed) =
-    press(
+    support.press_by(
       plans: target_only,
       state: cast.new(),
       caster: fighting,
@@ -390,18 +400,22 @@ pub fn a_target_persistence_on_a_cast_the_caster_is_the_target_of_ends_it_with_2
     )
   let cast_id = support.pressed_id(effects: pressed)
   let #(_, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1100)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1100,
+    )
   assert failed(effects:) == [#(cast_id, 283, 7, 0)]
     as "the primary target is the caster: TargetPersistence is checked, and fails with 283"
   let both =
-    plans_of(spells: [
+    support.plans_of([
       casting_for_a_second(
         caster_persistence: Some(in_combat()),
         target_persistence: Some(in_combat()),
       ),
     ])
   let #(state, pressed) =
-    press(
+    support.press_by(
       plans: both,
       state: cast.new(),
       caster: fighting,
@@ -410,7 +424,11 @@ pub fn a_target_persistence_on_a_cast_the_caster_is_the_target_of_ends_it_with_2
     )
   let cast_id = support.pressed_id(effects: pressed)
   let #(_, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1100)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1100,
+    )
   assert failed(effects:) == [#(cast_id, 282, 7, 0)]
     as "282 before 283, as CasterCast is checked before TargetCast"
 }
@@ -431,10 +449,10 @@ pub fn two_casts_whose_persistence_fails_in_one_input_end_in_cast_id_order_test(
       cast_time_ms: 1000,
       caster_persistence: Some(in_combat()),
     )
-  let plans = plans_of(spells: [first_spell, second_spell])
-  let fighting = caster_in_combat(in_combat: True)
+  let plans = support.plans_of([first_spell, second_spell])
+  let fighting = support.caster_in_combat(in_combat: True)
   let #(state, one) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: fighting,
@@ -442,11 +460,21 @@ pub fn two_casts_whose_persistence_fails_in_one_input_end_in_cast_id_order_test(
       at: 1000,
     )
   let #(state, two) =
-    press(plans:, state:, caster: fighting, bag: bag_of_base_1, at: 1100)
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting,
+      bag: bag_of_base_1,
+      at: 1100,
+    )
   let second_id = support.pressed_id(effects: one)
   let first_id = support.pressed_id(effects: two)
   let #(_, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1200)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1200,
+    )
   assert list.map(failed(effects:), fn(failure) { failure.0 })
     == list.sort([first_id, second_id], int.compare)
     as "both end in the one input, the lower cast id first"
@@ -471,10 +499,10 @@ pub fn a_cast_whose_type_15_persistence_names_another_casts_spell_ends_in_the_sa
         prerequisites.single(id: 1, condition: #(15, 1, 0, 7021)),
       ),
     )
-  let plans = plans_of(spells: [spell_a, spell_b])
-  let fighting = caster_in_combat(in_combat: True)
+  let plans = support.plans_of([spell_a, spell_b])
+  let fighting = support.caster_in_combat(in_combat: True)
   let #(state, pressed_b) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: fighting,
@@ -482,13 +510,23 @@ pub fn a_cast_whose_type_15_persistence_names_another_casts_spell_ends_in_the_sa
       at: 1000,
     )
   let #(state, pressed_a) =
-    press(plans:, state:, caster: fighting, bag: bag_of_base_1, at: 1100)
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting,
+      bag: bag_of_base_1,
+      at: 1100,
+    )
   let id_b = support.pressed_id(effects: pressed_b)
   let id_a = support.pressed_id(effects: pressed_a)
   let #(_, held) = persisted(state:, caster: fighting, at: 1150)
   assert held == [] as "while B holds, A's condition holds"
   let #(ended, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1200)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1200,
+    )
   assert list.map(failed(effects:), fn(failure) { failure.0 }) == [id_b, id_a]
     as "B fails first; with B gone A's condition fails too, and both end in the same input"
   let #(_, after) = persisted(state: ended, caster: fighting, at: 1300)
@@ -515,12 +553,12 @@ pub fn an_ended_casts_stealth_source_drops_and_stealth_changed_comes_last_test()
         ),
       ],
     )
-  let plans = plans_of(spells: [hiding])
+  let plans = support.plans_of([hiding])
   let #(state, pressed) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
-      caster: caster_in_combat(in_combat: True),
+      caster: support.caster_in_combat(in_combat: True),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -528,7 +566,11 @@ pub fn an_ended_casts_stealth_source_drops_and_stealth_changed_comes_last_test()
     && list.contains(pressed, cast.StealthChanged(stealthed: True))
     as "the planted spell's Stealth row hides the caster"
   let #(ended, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1100)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1100,
+    )
   assert !cast.stealthed(cast: ended)
     as "the cast's stealth source leaves with the cast"
   assert list.last(effects) == Ok(cast.StealthChanged(stealthed: False))
@@ -545,10 +587,10 @@ pub fn the_base_cast_of_an_open_charge_ends_with_its_threshold_test() -> Nil {
       ..support.ability(base: 20_684),
       caster_persistence: Some(in_combat()),
     )
-  let plans = plans_of(spells: [charged_shot])
-  let fighting = caster_in_combat(in_combat: True)
+  let plans = support.plans_of([charged_shot])
+  let fighting = support.caster_in_combat(in_combat: True)
   let #(state, pressed) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: fighting,
@@ -561,12 +603,16 @@ pub fn the_base_cast_of_an_open_charge_ends_with_its_threshold_test() -> Nil {
   )
     as "the press opens the charge's threshold"
   let #(ended, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1100)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1100,
+    )
   assert list.take(support.ids(frames: support.writes(effects:)), 3)
     == [0x07F9, 0x0814, 0x07FE]
     as "the base cast fails, its threshold closes with a 0x814 and the cast ends as a 0x801 ends it"
   let #(_, again) =
-    press(
+    support.press_by(
       plans:,
       state: ended,
       caster: fighting,
@@ -585,21 +631,21 @@ pub fn the_base_cast_of_an_open_charge_ends_with_its_threshold_test() -> Nil {
 pub fn a_caster_that_left_or_died_has_no_cast_left_for_the_check_to_end_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of(spells: [
+    support.plans_of([
       casting_for_a_second(
         caster_persistence: Some(in_combat()),
         target_persistence: None,
       ),
     ])
   let #(state, _) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
-      caster: caster_in_combat(in_combat: True),
+      caster: support.caster_in_combat(in_combat: True),
       bag: bag_of_base_3,
       at: 1000,
     )
-  let out = caster_in_combat(in_combat: False)
+  let out = support.caster_in_combat(in_combat: False)
   let #(left, _) = cast.left(cast: state)
   assert persisted(state: left, caster: out, at: 1100).1 == []
     as "`left` dropped every cast"
@@ -618,7 +664,7 @@ pub fn a_caster_that_left_or_died_has_no_cast_left_for_the_check_to_end_test() -
 pub fn a_state_with_no_persistence_column_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    press(
+    support.press_by(
       plans: support.plans(),
       state: cast.new(),
       caster: support.caster(),
@@ -635,13 +681,13 @@ pub fn a_state_with_no_persistence_column_changes_nothing_test() -> Nil {
 pub fn a_held_key_whose_cast_the_persistence_ended_casts_again_at_once_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of(spells: [
+    support.plans_of([
       casting_for_a_second(
         caster_persistence: Some(in_combat()),
         target_persistence: None,
       ),
     ])
-  let fighting = caster_in_combat(in_combat: True)
+  let fighting = support.caster_in_combat(in_combat: True)
   let assert Ok(#(state, down)) =
     cast.take(
       cast: cast.new(),
@@ -655,7 +701,11 @@ pub fn a_held_key_whose_cast_the_persistence_ended_casts_again_at_once_test() ->
   assert support.ids(frames: support.writes(effects: down)) == [0x07FF]
     as "the key goes down in combat: its first cast starts, with no 0x7fd"
   let #(_, effects) =
-    persisted(state:, caster: caster_in_combat(in_combat: False), at: 1100)
+    persisted(
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      at: 1100,
+    )
   assert support.ids(frames: support.writes(effects:))
     == [0x07F9, 0x07FE, 0x07FF, 0x07F9, 0x07FE]
     as "the cast the persistence ended is the held key's last, so the key repeats in the same input (a cast of its own, 0x7ff), and the check runs on that cast too, which fails the same condition"

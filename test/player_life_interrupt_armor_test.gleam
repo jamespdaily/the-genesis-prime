@@ -18,16 +18,17 @@
 ////   change is x * 1.0 + n applied in start order, and the same source applied twice is
 ////   held once.
 
+import cast_support
 import genesis_prime/client_connection
 import genesis_prime/game/player_life.{
   type Life, OwnInterruptArmor, Regeneration, ToClient, ToViewers,
 }
 import genesis_prime/game/unit_properties.{
-  type Changed, type Properties, type Source, Change, Changed, Source,
+  type Changed, type Properties, type Source, Change, Changed,
 }
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/id.{UnitProperty2Id}
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -45,10 +46,6 @@ const regeneration =
 /// the properties lowers nothing but the armor.
 fn player() -> Life {
   player_life.new(health: 1, shield: 0, regeneration:)
-}
-
-fn source(effect_id effect_id: Int) -> Source {
-  Source(cast_id: 1, effect_id: Spell4EffectsId(effect_id))
 }
 
 /// A player whose 0x262 lists property 44 with this base and value.
@@ -133,7 +130,7 @@ pub fn an_interrupt_armor_start_raises_the_maximum_then_the_armor_test() -> Nil 
     started(
       life: player(),
       properties: properties_support.fresh(level: 1),
-      source: source(effect_id: 199_192),
+      source: cast_support.source_of(cast_id: 1, effect_id: 199_192),
       points: 1,
     )
   assert changed == [property_44(base: 0.0, value: 1.0)]
@@ -158,7 +155,7 @@ pub fn an_interrupt_armor_start_raises_the_maximum_then_the_armor_test() -> Nil 
 
 pub fn an_interrupt_armor_end_that_takes_back_lowers_the_armor_then_the_maximum_test() -> Nil {
   use <- owned_test.run(5000)
-  let grant = source(effect_id: 97_340)
+  let grant = cast_support.source_of(cast_id: 1, effect_id: 97_340)
   let #(life, properties, _, _) =
     started(
       life: player(),
@@ -186,7 +183,7 @@ pub fn an_interrupt_armor_end_that_keeps_clamps_the_armor_to_the_new_maximum_tes
   // Base 2 and a grant of 3: the maximum 5 and the armor 5, and at the end the maximum is
   // 2 again and the armor follows it. Row 97343's dataBits01 0 keeps the armor, which
   // makes no difference while nothing wears armor down.
-  let grant = source(effect_id: 97_343)
+  let grant = cast_support.source_of(cast_id: 1, effect_id: 97_343)
   let #(life, properties) = with_base_2()
   assert player_life.interrupt_armor(life:) == 2
     as "the armor is the maximum, 2"
@@ -216,8 +213,8 @@ pub fn an_interrupt_armor_end_that_keeps_clamps_the_armor_to_the_new_maximum_tes
 
 pub fn two_interrupt_armor_grants_add_and_end_one_at_a_time_test() -> Nil {
   use <- owned_test.run(5000)
-  let first = source(effect_id: 97_340)
-  let second = source(effect_id: 97_341)
+  let first = cast_support.source_of(cast_id: 1, effect_id: 97_340)
+  let second = cast_support.source_of(cast_id: 1, effect_id: 97_341)
   let properties = properties_support.fresh(level: 1)
   let #(life, properties, _, _) =
     started(life: player(), properties:, source: first, points: 1)
@@ -240,7 +237,7 @@ pub fn two_interrupt_armor_grants_add_and_end_one_at_a_time_test() -> Nil {
 
 pub fn a_source_started_twice_is_held_once_and_ended_once_test() -> Nil {
   use <- owned_test.run(5000)
-  let grant = source(effect_id: 199_192)
+  let grant = cast_support.source_of(cast_id: 1, effect_id: 199_192)
   let #(life, properties, _, _) =
     started(
       life: player(),
@@ -265,7 +262,7 @@ pub fn a_type_11_raising_property_44_raises_the_armor_too_test() -> Nil {
   use <- owned_test.run(5000)
   // The Soldier's Clear the Lines (Spell4 36861, row 78035): x * 1.0 + 2 on property 44
   // with no type 52 row, and its tooltip says the Interrupt Armor rises by 2 (text 298981).
-  let row = source(effect_id: 78_035)
+  let row = cast_support.source_of(cast_id: 1, effect_id: 78_035)
   let #(life, properties, changed, effects) =
     change(
       life: player(),
@@ -292,8 +289,8 @@ pub fn a_lowered_interrupt_armor_maximum_from_a_property_change_lowers_the_armor
   use <- owned_test.run(5000)
   // A type 11 row on property 44 (x 1.0 + 5), an armor row of 3 on top of it, the armor
   // row's end, then the type 11's end.
-  let type_11 = source(effect_id: 99_011)
-  let grant = source(effect_id: 99_052)
+  let type_11 = cast_support.source_of(cast_id: 1, effect_id: 99_011)
+  let grant = cast_support.source_of(cast_id: 1, effect_id: 99_052)
   let #(life, properties, _, effects) =
     change(
       life: player(),

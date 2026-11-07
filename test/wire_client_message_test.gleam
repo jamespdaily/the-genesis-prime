@@ -39,7 +39,6 @@ import genesis_prime/recorded_message.{
   NoDecoder, NotDecoded, NotRead, PlatformLogin, RuleNotKnown, StsMessageRefused,
   Unread, Wrapped,
 }
-import genesis_prime/step.{type Now, Now}
 import genesis_prime/wire_recording.{type Recording, Accepted, Client, Read}
 import gleam/bit_array
 import gleam/int
@@ -49,10 +48,6 @@ import gleam/string
 import owned_test
 import recording_support
 import wire_replay_support as support
-
-fn at(n: Int) -> Now {
-  Now(monotonic_ms: n, filetime: n * 10)
-}
 
 /// The recording of the connection of the rule `rule` in the committed session,
 /// with its file's name.
@@ -90,9 +85,9 @@ fn planted(
     folder:,
     connections: [support.Planted(rule:, seed: support.seed(1), ordinal: 1)],
     steps: list.flatten([
-      [support.In(0, at(1), Accepted)],
+      [support.In(0, support.now_at(1), Accepted)],
       list.index_map(reads, fn(bytes, index) {
-        support.In(0, at(2 + index), Read(bytes))
+        support.In(0, support.now_at(2 + index), Read(bytes))
       }),
       [support.Closed(0, Client)],
     ]),

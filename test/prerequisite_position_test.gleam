@@ -21,7 +21,7 @@
 ////   every condition that reads what it holds besides its place is `NotRead`.
 
 import client_tables
-import genesis_prime/game/area.{type Pose, Point, Pose}
+import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/prerequisite.{
   type Subject, type Verdict, Fails, NoSecondUnit, NotPlaced, NotRead, Passes,
   PlaceOnly, Placed, Subject,
@@ -36,11 +36,6 @@ import owned_test
 import prerequisite_support
 import unitest
 
-/// A unit's ground point and yaw.
-fn pose(x x: Float, z z: Float, yaw yaw: Float) -> Pose {
-  Pose(at: Point(x:, z:), yaw:)
-}
-
 /// The 32-bit float nearest pi / 2, pi, 3 pi / 4 and -pi / 4: the yaws a client holds.
 const quarter_turn = 1.5707963705062866
 
@@ -52,7 +47,7 @@ const minus_eighth_turn = -0.7853981852531433
 
 /// The first unit at the origin, facing `yaw`.
 fn first_at_origin(yaw yaw: Float) -> Pose {
-  pose(x: 0.0, z: 0.0, yaw:)
+  prerequisite_support.pose(x: 0.0, z: 0.0, yaw:)
 }
 
 fn gate_of(
@@ -108,13 +103,29 @@ pub fn row_53_at_yaw_0_crosses_the_wrap_and_holds_the_unit_behind_but_not_in_fro
   let arc = prerequisite_support.behind_arc()
   let first = first_at_origin(yaw: 0.0)
   // Start 1.9198625, end -1.9198620: the arc crosses the wrap.
-  assert is_in(arc:, first:, second: pose(x: 0.0, z: 5.0, yaw: 0.0))
+  assert is_in(
+    arc:,
+    first:,
+    second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
+  )
     as "behind: the direction is atan2(-0, -5) = -pi, below the end -1.9198620"
-  assert !is_in(arc:, first:, second: pose(x: 0.0, z: -5.0, yaw: 0.0))
+  assert !is_in(
+    arc:,
+    first:,
+    second: prerequisite_support.pose(x: 0.0, z: -5.0, yaw: 0.0),
+  )
     as "in front: the direction is -0.0, between the end and the start"
-  assert !is_in(arc:, first:, second: pose(x: 5.0, z: 0.0, yaw: 0.0))
+  assert !is_in(
+    arc:,
+    first:,
+    second: prerequisite_support.pose(x: 5.0, z: 0.0, yaw: 0.0),
+  )
     as "beside at +x: the direction is -pi/2"
-  assert !is_in(arc:, first:, second: pose(x: -5.0, z: 0.0, yaw: 0.0))
+  assert !is_in(
+    arc:,
+    first:,
+    second: prerequisite_support.pose(x: -5.0, z: 0.0, yaw: 0.0),
+  )
     as "beside at -x: the direction is pi/2"
 }
 
@@ -123,9 +134,17 @@ pub fn row_53_at_a_quarter_turn_does_not_wrap_test() -> Nil {
   let arc = prerequisite_support.behind_arc()
   // Start -2.7925265, end -0.3490651.
   let first = first_at_origin(yaw: quarter_turn)
-  assert is_in(arc:, first:, second: pose(x: 5.0, z: 0.0, yaw: 0.0))
+  assert is_in(
+    arc:,
+    first:,
+    second: prerequisite_support.pose(x: 5.0, z: 0.0, yaw: 0.0),
+  )
     as "the direction -pi/2 lies between the ends"
-  assert !is_in(arc:, first:, second: pose(x: 0.0, z: 5.0, yaw: 0.0))
+  assert !is_in(
+    arc:,
+    first:,
+    second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
+  )
     as "the direction -pi lies below the start"
 }
 
@@ -134,9 +153,17 @@ pub fn row_53_at_yaw_3_wraps_both_ends_so_the_unit_in_front_is_inside_test() -> 
   let arc = prerequisite_support.behind_arc()
   // Unwrapped the ends are 4.9199 and 7.3633; wrapped they are -1.3633235 and 1.0801380.
   let first = first_at_origin(yaw: 3.0)
-  assert is_in(arc:, first:, second: pose(x: 0.0, z: -5.0, yaw: 0.0))
+  assert is_in(
+    arc:,
+    first:,
+    second: prerequisite_support.pose(x: 0.0, z: -5.0, yaw: 0.0),
+  )
     as "the direction -0.0 lies between the wrapped ends"
-  assert !is_in(arc:, first:, second: pose(x: 0.0, z: 5.0, yaw: 0.0))
+  assert !is_in(
+    arc:,
+    first:,
+    second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
+  )
     as "the direction -pi lies below the start"
 }
 
@@ -147,7 +174,7 @@ pub fn a_direction_equal_to_an_end_of_the_arc_is_inside_it_test() -> Nil {
   assert is_in(
     arc: prerequisite_support.arc_row(id: 1, center: 90, range: 180, flags: 0),
     first: first_at_origin(yaw: 0.0),
-    second: pose(x: 0.0, z: -5.0, yaw: 0.0),
+    second: prerequisite_support.pose(x: 0.0, z: -5.0, yaw: 0.0),
   )
     as "equal to the start of a wrapping arc"
   // Row (30, 30) at yaw -pi/4 runs from -0.5235989 to 0.0, with no wrap: the same unit
@@ -155,7 +182,7 @@ pub fn a_direction_equal_to_an_end_of_the_arc_is_inside_it_test() -> Nil {
   assert is_in(
     arc: prerequisite_support.arc_row(id: 1, center: 30, range: 30, flags: 0),
     first: first_at_origin(yaw: minus_eighth_turn),
-    second: pose(x: 0.0, z: -5.0, yaw: 0.0),
+    second: prerequisite_support.pose(x: 0.0, z: -5.0, yaw: 0.0),
   )
     as "equal to the end of an arc with no wrap"
   // Row (30, 30) at yaw 3 pi / 4 runs from 2.6179936 to -3.1415927, which wraps: the unit
@@ -163,13 +190,13 @@ pub fn a_direction_equal_to_an_end_of_the_arc_is_inside_it_test() -> Nil {
   assert is_in(
     arc: prerequisite_support.arc_row(id: 1, center: 30, range: 30, flags: 0),
     first: first_at_origin(yaw: three_quarters_of_half_turn),
-    second: pose(x: 0.0, z: 5.0, yaw: 0.0),
+    second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
   )
     as "equal to the end of a wrapping arc"
   assert !is_in(
     arc: prerequisite_support.arc_row(id: 1, center: 30, range: 30, flags: 0),
     first: first_at_origin(yaw: minus_eighth_turn),
-    second: pose(x: 5.0, z: 0.0, yaw: 0.0),
+    second: prerequisite_support.pose(x: 5.0, z: 0.0, yaw: 0.0),
   )
     as "a unit beside, past the end, is outside the same arc"
 }
@@ -179,14 +206,14 @@ pub fn the_direction_runs_from_the_first_unit_to_the_second_wherever_they_stand_
   let arc = prerequisite_support.behind_arc()
   assert is_in(
     arc:,
-    first: pose(x: 100.5, z: -20.25, yaw: 0.0),
-    second: pose(x: 100.5, z: -15.25, yaw: 0.0),
+    first: prerequisite_support.pose(x: 100.5, z: -20.25, yaw: 0.0),
+    second: prerequisite_support.pose(x: 100.5, z: -15.25, yaw: 0.0),
   )
     as "5 units behind, away from the origin: the difference is taken first, in 32 bits"
   assert !is_in(
     arc:,
-    first: pose(x: 100.5, z: -20.25, yaw: 0.0),
-    second: pose(x: 100.5, z: -25.25, yaw: 0.0),
+    first: prerequisite_support.pose(x: 100.5, z: -20.25, yaw: 0.0),
+    second: prerequisite_support.pose(x: 100.5, z: -25.25, yaw: 0.0),
   )
     as "5 units in front"
 }
@@ -201,8 +228,9 @@ pub fn flags_bit_0_turns_the_arc_with_the_second_unit_and_measures_from_it_to_th
   let plain =
     prerequisite_support.arc_row(id: 18, center: 180, range: 90, flags: 0)
   let first = first_at_origin(yaw: 0.0)
-  let second_facing_0 = pose(x: 0.0, z: 5.0, yaw: 0.0)
-  let second_facing_pi = pose(x: 0.0, z: 5.0, yaw: half_turn)
+  let second_facing_0 = prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0)
+  let second_facing_pi =
+    prerequisite_support.pose(x: 0.0, z: 5.0, yaw: half_turn)
   assert is_in(arc: plain, first:, second: second_facing_0)
     as "flags 0: from the first unit the second is behind, direction -pi, in 135 to 225 degrees"
   assert !is_in(arc: swapped, first:, second: second_facing_0)
@@ -219,8 +247,8 @@ pub fn comparison_1_passes_inside_the_arc_and_2_outside_it_and_any_other_fails_t
   use <- owned_test.run(5000)
   let arc = prerequisite_support.behind_arc()
   let first = first_at_origin(yaw: 0.0)
-  let behind = pose(x: 0.0, z: 5.0, yaw: 0.0)
-  let in_front = pose(x: 0.0, z: -5.0, yaw: 0.0)
+  let behind = prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0)
+  let in_front = prerequisite_support.pose(x: 0.0, z: -5.0, yaw: 0.0)
   let comparisons = [0, 1, 2, 3, 4, 5, 6, 7]
   assert list.map(comparisons, fn(comparison) {
       verdict_of(comparison:, arc:, first:, second: behind)
@@ -242,7 +270,7 @@ pub fn the_value_of_the_condition_is_not_read_test() -> Nil {
     let subject =
       subject_of(positions: Placed(
         first: first_at_origin(yaw: 0.0),
-        second: pose(x: 0.0, z: 5.0, yaw: 0.0),
+        second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
       ))
     assert prerequisite.check(
         prerequisite: gate_of(comparison: 1, arc:, value:),
@@ -265,7 +293,7 @@ pub fn with_no_arc_comparison_2_passes_and_every_other_comparison_fails_test() -
   let placed =
     Placed(
       first: first_at_origin(yaw: 0.0),
-      second: pose(x: 0.0, z: 5.0, yaw: 0.0),
+      second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
     )
   let verdicts = fn(comparison, positions) {
     prerequisite.check(
@@ -303,7 +331,7 @@ pub fn two_units_on_one_point_are_in_row_53s_arc_at_yaw_0_test() -> Nil {
   use <- owned_test.run(5000)
   // The differences are +0.0, each negated to -0.0, and atan2(-0.0, -0.0) is -pi
   // (0x140b7b530's sign flip), which is below the end -1.9198620 of row 53 at yaw 0.
-  let here = pose(x: 3.0, z: 4.0, yaw: 0.0)
+  let here = prerequisite_support.pose(x: 3.0, z: 4.0, yaw: 0.0)
   assert is_in(
     arc: prerequisite_support.behind_arc(),
     first: here,
@@ -322,7 +350,7 @@ pub fn a_unit_the_picture_no_longer_shows_leaves_type_108_not_read_test() -> Nil
         prerequisite: gate_of(comparison:, arc:, value: 0),
         subject: prerequisite.of_struck(
           first: None,
-          second: pose(x: 0.0, z: 5.0, yaw: 0.0),
+          second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
         ),
       )
       == NotRead(prerequisite_type: 108)
@@ -339,13 +367,13 @@ pub fn a_struck_creature_is_placed_and_checked_with_the_caster_as_the_second_uni
   }
   assert prerequisite.check(
       prerequisite: gate_of(comparison: 1, arc:, value: 0),
-      subject: subject_with(pose(x: 0.0, z: 5.0, yaw: 0.0)),
+      subject: subject_with(prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0)),
     )
     == Passes
     as "the caster behind the creature"
   assert prerequisite.check(
       prerequisite: gate_of(comparison: 1, arc:, value: 0),
-      subject: subject_with(pose(x: 0.0, z: -5.0, yaw: 0.0)),
+      subject: subject_with(prerequisite_support.pose(x: 0.0, z: -5.0, yaw: 0.0)),
     )
     == Fails
     as "the caster in front"
@@ -357,7 +385,7 @@ pub fn a_struck_creature_gives_not_read_for_every_type_that_reads_what_it_holds_
     Subject(
       ..prerequisite.of_struck(
         first: Some(first_at_origin(yaw: 0.0)),
-        second: pose(x: 0.0, z: 5.0, yaw: 0.0),
+        second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
       ),
       rolls: [50],
     )

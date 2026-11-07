@@ -15,35 +15,15 @@
 ////   health 30, so 450 shield and 736 health leave 400 and 706. The shield's regeneration
 ////   is 0.25 of 450 each 500 ms after 2500 ms (`UnitProperty2.176`): a tick adds 112.
 
-import character_tables
 import genesis_prime/client_connection
-import genesis_prime/game/hit
-import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
-  type Effect, type Life, CancelTimer, OwnShield, StartTimer, ToClient,
-  ToViewers,
+  type Effect, type Life, OwnShield, ToClient, ToViewers,
 }
-import genesis_prime/game/rating
-import genesis_prime/table/id.{ClassId}
-import gleam/list
 import gleam/option.{None}
 import gleam/set
 import owned_test
 import player_life_support
-import properties_support
 import spawn_support
-
-fn defence() -> hit.Defence {
-  let tables = character_tables.shared()
-  let assert Ok(loadout) =
-    loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
-    as "a Warrior has a Dominion Novice set"
-  player_life.defence(
-    properties: properties_support.wearing(loadout:),
-    level: 1,
-    formulas: rating.formulas(tables:),
-  )
-}
 
 fn struck(
   life life: Life,
@@ -52,7 +32,7 @@ fn struck(
 ) -> #(Life, List(Effect)) {
   player_life_support.struck(
     life:,
-    defence: defence(),
+    defence: player_life_support.defence(),
     offence: spawn_support.dealing(
       offence: spawn_support.beast_attack().offence,
       damage:,
@@ -78,24 +58,6 @@ fn struck_to_400() -> Life {
   assert player_life.shield(life:) == 400
     as "the shield takes round(0.625 x 80) = 50 of the mitigated blow"
   life
-}
-
-/// The timers an effect list starts and cancels, in order.
-fn timers(effects: List(Effect)) -> List(Effect) {
-  list.filter(effects, fn(effect) {
-    case effect {
-      StartTimer(..) | CancelTimer(..) -> True
-      ToClient(..)
-      | ToViewers(..)
-      | player_life.Answer(..)
-      | player_life.StreamTo(..)
-      | player_life.DamageTaken
-      | player_life.CombatLeft
-      | player_life.EndCasts
-      | player_life.GoToHolocrypt
-      | player_life.TellMap(..) -> False
-    }
-  })
 }
 
 pub fn a_shield_heal_raises_the_shield_capped_at_its_maximum_and_tells_the_client_and_viewers_test() -> Nil {
@@ -155,7 +117,7 @@ pub fn a_shield_heal_leaves_the_shield_clock_as_it_was_test() -> Nil {
   let #(life, effects) =
     player_life.shield_healed(life: struck_to_400(), amount: 30)
   assert player_life.shield(life:) == 430 as "400 and 30"
-  assert timers(effects) == []
+  assert player_life_support.timers(effects) == []
     as "the reboot running since the blow is neither cancelled nor restarted (text 531855)"
   let #(life, tick) =
     player_life.timer_fired(life:, timer: player_life_support.shield_timer)

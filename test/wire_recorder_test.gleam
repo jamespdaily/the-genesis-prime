@@ -39,15 +39,10 @@ import recording_support
 import script_rule
 import simplifile
 
-/// The 32 bytes of the seed the tests give a connection: 0 to 31.
-fn seed() -> BitArray {
-  list.repeat(Nil, 32)
-  |> list.index_map(fn(_, byte) { <<byte>> })
-  |> bit_array.concat
-}
-
 fn seed_value() -> seed.Seed {
-  let assert Ok(value) = seed.from_bytes(seed()) as "32 bytes are a seed"
+  let assert Ok(value) =
+    seed.from_bytes(recording_support.counting_seed_bytes())
+    as "32 bytes are a seed"
   value
 }
 
@@ -188,7 +183,7 @@ fn scripted(
       script: Script(
         seed: seed_value(),
         clock: fn(input) {
-          let number = unique()
+          let number = recording_support.unique_number()
           let now = Now(monotonic_ms: number, filetime: number * 7)
           process.send(given, #(input, now))
           now
@@ -199,18 +194,6 @@ fn scripted(
       ),
     ))
   }
-}
-
-@external(erlang, "erlang", "unique_integer")
-fn unique_integer(options: List(UniqueOption)) -> Int
-
-type UniqueOption {
-  Positive
-  Monotonic
-}
-
-fn unique() -> Int {
-  unique_integer([Positive, Monotonic])
 }
 
 fn start(
@@ -259,7 +242,7 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
     as "the header holds the script's seed and ordinal"
   assert header.rule == "script_rule"
   let accepted_bytes = accepted_bytes(first)
-  let read_bytes = read_bytes(second)
+  let read_bytes = script_rule.read_record_bytes(second)
   assert without_sequences(lines)
     == [
       Took(0, first, Accepted),
@@ -279,15 +262,10 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
 fn accepted_bytes(now: Now) -> BitArray {
   <<
     script_rule.accepted,
-    seed():bits,
+    recording_support.counting_seed_bytes():bits,
     now.monotonic_ms:64,
     now.filetime:64,
   >>
-}
-
-/// What the script rule writes when bytes are read at `now`.
-fn read_bytes(now: Now) -> BitArray {
-  <<script_rule.read, now.monotonic_ms:64, now.filetime:64>>
 }
 
 /// The lines with every sequence number set to 0, so a test compares what the

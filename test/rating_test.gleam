@@ -22,65 +22,66 @@ fn crit_formula() -> rating.Formula {
   Formula(f0: 50.0, f01: 0.0025, f02: 30.0, f03: 7000.0, int0: 0, int01: 100)
 }
 
-fn near(value value: Float, expected expected: Float) -> Bool {
-  float.absolute_value(value -. expected) <. 0.000001
-}
-
 pub fn a_rating_below_the_knee_is_linear_test() -> Nil {
   use <- owned_test.run(5000)
-  assert near(
-    value: rating.to_fraction(
+  assert float.loosely_equals(
+    rating.to_fraction(
       formula: crit_formula(),
       level: 1,
       base: 0.0,
       rating: 0.0,
     ),
-    expected: 0.0,
+    with: 0.0,
+    tolerating: 0.000001,
   )
-  assert near(
-    value: rating.to_fraction(
+  assert float.loosely_equals(
+    rating.to_fraction(
       formula: crit_formula(),
       level: 1,
       base: 0.0,
       rating: 100.0,
     ),
-    expected: 0.125,
+    with: 0.125,
+    tolerating: 0.000001,
   )
     as "the decode's emulation: per 0.125 below the knee of 240"
 }
 
 pub fn a_rating_past_the_knee_follows_the_cosine_curve_test() -> Nil {
   use <- owned_test.run(5000)
-  assert near(
-    value: rating.to_fraction(
+  assert float.loosely_equals(
+    rating.to_fraction(
       formula: crit_formula(),
       level: 1,
       base: 0.0,
       rating: 300.0,
     ),
-    expected: 0.374993,
+    with: 0.374993,
+    tolerating: 0.000001,
   )
 }
 
 pub fn the_level_and_the_base_enter_the_curve_test() -> Nil {
   use <- owned_test.run(5000)
-  assert near(
-    value: rating.to_fraction(
+  assert float.loosely_equals(
+    rating.to_fraction(
       formula: crit_formula(),
       level: 8,
       base: 0.05,
       rating: 50.0,
     ),
-    expected: 0.0578125,
+    with: 0.0578125,
+    tolerating: 0.000001,
   )
-  assert near(
-    value: rating.to_fraction(
+  assert float.loosely_equals(
+    rating.to_fraction(
       formula: crit_formula(),
       level: 50,
       base: 0.0,
       rating: 2000.0,
     ),
-    expected: 0.05,
+    with: 0.05,
+    tolerating: 0.000001,
   )
 }
 
@@ -131,16 +132,16 @@ pub fn the_clients_rows_build_the_formulas_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let formulas = rating.formulas(tables: client_tables.shared())
   let crit = formulas.crit_chance
-  assert near(value: crit.f0, expected: 50.0)
-    && near(value: crit.f01, expected: 0.0025)
-    && near(value: crit.f02, expected: 30.0)
-    && near(value: crit.f03, expected: 7000.0)
+  assert float.loosely_equals(crit.f0, with: 50.0, tolerating: 0.000001)
+    && float.loosely_equals(crit.f01, with: 0.0025, tolerating: 0.000001)
+    && float.loosely_equals(crit.f02, with: 30.0, tolerating: 0.000001)
+    && float.loosely_equals(crit.f03, with: 7000.0, tolerating: 0.000001)
     && crit.int0 == 0
     && crit.int01 == 100
     as "GameFormula 1231 (0x140463700)"
   let mitigation = formulas.mitigation
-  assert near(value: mitigation.f01, expected: 0.008)
-    && near(value: mitigation.f03, expected: 7250.0)
+  assert float.loosely_equals(mitigation.f01, with: 0.008, tolerating: 0.000001)
+    && float.loosely_equals(mitigation.f03, with: 7250.0, tolerating: 0.000001)
     && mitigation.int01 == 75
     as "GameFormula 1234 (0x140464240)"
 }
@@ -151,10 +152,10 @@ pub fn the_test_support_formulas_are_the_clients_rows_test() -> Nil {
   let real = rating.formulas(tables: client_tables.shared())
   let planted = rating_support.formulas()
   let same = fn(first: rating.Formula, second: rating.Formula) {
-    near(value: first.f0, expected: second.f0)
-    && near(value: first.f01, expected: second.f01)
-    && near(value: first.f02, expected: second.f02)
-    && near(value: first.f03, expected: second.f03)
+    float.loosely_equals(first.f0, with: second.f0, tolerating: 0.000001)
+    && float.loosely_equals(first.f01, with: second.f01, tolerating: 0.000001)
+    && float.loosely_equals(first.f02, with: second.f02, tolerating: 0.000001)
+    && float.loosely_equals(first.f03, with: second.f03, tolerating: 0.000001)
     && first.int0 == second.int0
     && first.int01 == second.int01
   }

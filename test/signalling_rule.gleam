@@ -45,7 +45,7 @@ import genesis_prime/step.{
   type ConnectionStep, type Effect, Accepted, Ask, AskId, CancelTimer, Effects,
   EffectsThenAsk, Input, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule,
   Sessions, StartTimer, Stop, TimerFired, TimerId, Unwatch, Watch, WatchEnded,
-  WatchId, Woken, Write, WriteFailed,
+  WatchId, Woken, WriteFailed,
 }
 import genesis_prime/world_map/map_id
 import gleam/bool
@@ -120,7 +120,7 @@ pub fn step(
   case event {
     OwnEvent(Accepted(connection: step.ConnectionId(id), ..)) -> #(
       state,
-      Effects([record(accepted, id)]),
+      Effects([connection_rule_support.record(letter: accepted, number: id)]),
     )
     OwnEvent(Read(bytes:)) ->
       run(
@@ -129,10 +129,13 @@ pub fn step(
         now_ms: now.monotonic_ms,
       )
     OwnEvent(Woken(message:)) -> #(state, Effects(woken_effects(message)))
-    WatchEnded(watch: WatchId(n)) -> #(state, Effects([record(watch_ended, n)]))
+    WatchEnded(watch: WatchId(n)) -> #(
+      state,
+      Effects([connection_rule_support.record(letter: watch_ended, number: n)]),
+    )
     OwnEvent(TimerFired(timer: TimerId(n))) -> #(
       state,
-      Effects([record(timer_fired, n)]),
+      Effects([connection_rule_support.record(letter: timer_fired, number: n)]),
     )
     OwnEvent(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(ReadFailed(failure: step.Closed))
@@ -144,7 +147,7 @@ pub fn step(
     OwnEvent(step.Answered(ask: AskId(n), ..)) -> #(
       state,
       Effects([
-        record(answered, n),
+        connection_rule_support.record(letter: answered, number: n),
         OwnEffect(CancelTimer(TimerId(n))),
         ..restart(n)
       ]),
@@ -175,7 +178,7 @@ fn woken_effects(message: Int) -> List(Effect(ConnectionEffect(Nil))) {
       })
     False -> []
   }
-  [record(woken, message), ..watches]
+  [connection_rule_support.record(letter: woken, number: message), ..watches]
 }
 
 /// Runs the commands the client has sent, in order; `effects` are the effects
@@ -254,11 +257,8 @@ fn command(
     _ if letter == timer_command ->
       OwnEffect(StartTimer(TimerId(n), milliseconds))
     _ if letter == cancel_command -> OwnEffect(CancelTimer(TimerId(n)))
-    _ if letter == pong_command -> record(pong, n)
+    _ if letter == pong_command ->
+      connection_rule_support.record(letter: pong, number: n)
     _ -> panic as "the test sent a letter the signalling rule has no command for"
   }
-}
-
-fn record(letter: Int, number: Int) -> Effect(ConnectionEffect(Nil)) {
-  OwnEffect(Write(<<letter, number:64>>))
 }

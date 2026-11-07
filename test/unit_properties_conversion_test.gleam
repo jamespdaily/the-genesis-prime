@@ -17,12 +17,13 @@
 //// - `UnitProperty2` 7, 42, 47 and 60: default values 1.0, 0.0, 0.0 and 0.0
 ////   (`table_rows -- UnitProperty2 7 42 47 60`).
 
+import cast_support
 import genesis_prime/game/unit_properties.{
-  type Properties, type Source, Change, Changed, Conversion, Source,
+  type Properties, Change, Changed, Conversion,
 }
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/id.{UnitProperty2Id}
 import gleam/float
 import gleam/list
 import owned_test
@@ -41,16 +42,16 @@ const a_fifth = 0.20000000298023224
 
 const a_tenth = 0.10000000149011612
 
-fn source(effect_id effect_id: Int) -> Source {
-  Source(cast_id: 1, effect_id: Spell4EffectsId(effect_id))
-}
-
 fn started(
   properties properties: Properties,
   effect_id effect_id: Int,
   modifier modifier: unit_properties.Modifier,
 ) -> #(Properties, List(unit_properties.Changed)) {
-  unit_properties.apply(properties:, source: source(effect_id:), modifier:)
+  unit_properties.apply(
+    properties:,
+    source: cast_support.source_of(cast_id: 1, effect_id:),
+    modifier:,
+  )
 }
 
 /// A properties holding the 0x262's base for these properties, a level-1 player.
@@ -116,7 +117,10 @@ pub fn a_change_of_the_source_that_starts_after_the_conversion_moves_the_target_
     ]
     as "the target rises by the share of the source's rise, 0.25 x 40 = 10, in the same reported change, in property order"
   let #(properties, ended) =
-    unit_properties.remove(properties:, source: source(effect_id: 1))
+    unit_properties.remove(
+      properties:,
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
+    )
   assert ended
     == [
       Changed(property: crit_severity, base: 100.0, value: 100.0),
@@ -169,7 +173,10 @@ pub fn a_conversion_whose_source_is_zero_reports_no_change_when_it_starts_or_end
   assert started_changes == []
     as "a change that leaves a value as it was reports nothing"
   let #(properties, ended_changes) =
-    unit_properties.remove(properties:, source: source(effect_id: 229_304))
+    unit_properties.remove(
+      properties:,
+      source: cast_support.source_of(cast_id: 1, effect_id: 229_304),
+    )
   assert ended_changes == []
   assert unit_properties.value(properties:, property: multi_hit) == 0.0
 }
@@ -191,7 +198,10 @@ pub fn ending_a_conversion_works_the_values_out_again_from_the_bases_and_the_liv
   assert unit_properties.value(properties:, property: multi_hit) == 35.0
     as "the conversion takes the source's value after the change that started first"
   let #(properties, ended) =
-    unit_properties.remove(properties:, source: source(effect_id: 229_304))
+    unit_properties.remove(
+      properties:,
+      source: cast_support.source_of(cast_id: 1, effect_id: 229_304),
+    )
   assert ended == [Changed(property: multi_hit, base: 0.0, value: 0.0)]
     as "ending the conversion takes the amount off the target and leaves the source's change"
   assert unit_properties.value(properties:, property: crit_severity) == 140.0

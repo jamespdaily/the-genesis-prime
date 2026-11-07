@@ -71,10 +71,6 @@ fn lines(steps steps: List(#(Int, List(cast.Effect)))) -> List(String) {
   )
 }
 
-fn delays_of(effects effects: List(cast.Effect)) -> List(Int) {
-  list.map(support.started_timers(effects:), fn(started) { started.1 })
-}
-
 /// The cast ids of the 0x7ff among the writes, in order.
 fn started_ids(effects effects: List(cast.Effect)) -> List(Int) {
   list.filter_map(support.writes(effects:), fn(frame) {
@@ -152,14 +148,14 @@ pub fn a_held_ability_starts_again_each_time_its_cast_ends_and_its_global_cooldo
   use <- owned_test.run(5000)
   let #(state, first) =
     key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
-  assert delays_of(effects: first) == [1250]
+  assert support.delays_of(effects: first) == [1250]
     as "SpellCoolDown 104: the global cooldown of Spell4.32809 is 1250 ms, so the next cast waits for it on one timer"
   let assert [#(timer, _)] = support.started_timers(effects: first)
   let #(state, second) = support.fired(state:, timer:, at: 2250)
-  assert delays_of(effects: second) == [1250]
+  assert support.delays_of(effects: second) == [1250]
   let assert [#(timer, _)] = support.started_timers(effects: second)
   let #(state, third) = support.fired(state:, timer:, at: 3500)
-  assert delays_of(effects: third) == [1250]
+  assert support.delays_of(effects: third) == [1250]
   let assert [#(timer, _)] = support.started_timers(effects: third)
   let #(_, fourth) = support.fired(state:, timer:, at: 4750)
   assert lines(steps: [#(2250, second), #(3500, third), #(4750, fourth)])

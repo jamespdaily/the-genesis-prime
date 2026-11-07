@@ -47,7 +47,7 @@ pub fn a_service_starts_under_its_supervisor_by_its_name_and_its_first_input_is_
   let name = process.new_name("hand_off")
   let observed = process.new_subject()
   let tree =
-    start_tree(hand_off_child(
+    ask_support.start_tree(hand_off_child(
       name:,
       shutdown_ms: 1000,
       observed: Some(observed),
@@ -68,7 +68,7 @@ pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -
   let name = process.new_name("hand_off")
   let observed = process.new_subject()
   let tree =
-    start_tree(hand_off_child(
+    ask_support.start_tree(hand_off_child(
       name:,
       shutdown_ms: 1000,
       observed: Some(observed),
@@ -155,7 +155,11 @@ pub fn the_trees_stop_arrives_as_stopping_with_the_childs_shutdown_time_from_its
   let shutdown_ms = 1500
   let observed = process.new_subject()
   let tree =
-    start_tree(hand_off_child(name:, shutdown_ms:, observed: Some(observed)))
+    ask_support.start_tree(hand_off_child(
+      name:,
+      shutdown_ms:,
+      observed: Some(observed),
+    ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   let service = process.monitor(pid)
   let before_stop = ask_support.monotonic_ms()
@@ -243,7 +247,11 @@ pub fn a_send_is_handed_to_the_receivers_address_and_one_to_a_receiver_not_runni
     )
   let gate = process.new_name("gate")
   let tree =
-    start_tree(ask_support.reaching(name: gate, shutdown_ms: 1000, reach:))
+    ask_support.start_tree(ask_support.reaching(
+      name: gate,
+      shutdown_ms: 1000,
+      reach:,
+    ))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   assert ask_support.call_gate(gate, gate_rule.SendTo(running, 3))
     == gate_rule.Echoed(3)
@@ -267,7 +275,8 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
   use <- owned_test.run(30_000)
   let target = process.spawn_unlinked(process.sleep_forever)
   let gate = process.new_name("gate")
-  let tree = start_tree(watching(gate:, locating: Sessions, at: target))
+  let tree =
+    ask_support.start_tree(watching(gate:, locating: Sessions, at: target))
   let replies = process.new_subject()
   let assert Ok(service.ToService(_)) =
     service.call(gate, gate_rule.Await(key: 1), fn(answer) {
@@ -330,7 +339,8 @@ pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_th
 pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_process_ends_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let tree = start_tree(ask_support.gate(name: gate, shutdown_ms: 1000))
+  let tree =
+    ask_support.start_tree(ask_support.gate(name: gate, shutdown_ms: 1000))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let service = process.monitor(pid)
   let replies = process.new_subject()
@@ -351,7 +361,8 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
 pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_service_goes_on_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let tree = start_tree(ask_support.gate(name: gate, shutdown_ms: 1000))
+  let tree =
+    ask_support.start_tree(ask_support.gate(name: gate, shutdown_ms: 1000))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let lines = process.new_subject()
   let capture = log_capture.start(from: pid, into: lines)
@@ -392,7 +403,7 @@ fn inputs_when_queued(
   let gate = process.new_name("gate")
   let observed = process.new_subject()
   let tree =
-    start_tree(ask_support.observed_gate(
+    ask_support.start_tree(ask_support.observed_gate(
       name: gate,
       shutdown_ms: 1000,
       into: observed,
@@ -441,18 +452,6 @@ fn watching(
       start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
     ),
   )
-}
-
-fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
-  let assert Ok(started) =
-    supervisor.new(supervisor.OneForOne)
-    |> supervisor.restart_tolerance(intensity: 10, period: 5)
-    |> supervisor.add(child)
-    |> supervisor.start
-    as "the tree started"
-  process.unlink(started.pid)
-  ask_support.guard(started.pid)
-  started.pid
 }
 
 fn hand_off_child(

@@ -147,29 +147,24 @@ pub fn the_servers_own_settings_record_nothing_and_a_sitting_turns_it_on_test() 
     as "and changes nothing but those three listeners"
 }
 
-/// A lookup of the environment that knows only these variables.
-fn planted_environment(
-  variables: List(#(String, String)),
-) -> fn(String) -> Result(String, Nil) {
-  fn(name) { list.key_find(variables, name) }
-}
-
 pub fn a_set_record_directory_is_the_folder_a_sitting_records_into_test() -> Nil {
   use <- owned_test.run(5000)
-  assert sitting.record_folder(
-      read: planted_environment([#("GENESIS_RECORD_DIR", "/sittings/one")]),
-    )
+  assert sitting.record_folder(read: list.key_find(
+      [#("GENESIS_RECORD_DIR", "/sittings/one")],
+      _,
+    ))
     == Some("/sittings/one")
     as "GENESIS_RECORD_DIR names the folder"
 }
 
 pub fn an_unset_or_empty_record_directory_records_nothing_test() -> Nil {
   use <- owned_test.run(5000)
-  assert sitting.record_folder(read: planted_environment([])) == None
+  assert sitting.record_folder(read: list.key_find([], _)) == None
     as "no GENESIS_RECORD_DIR, no recording"
-  assert sitting.record_folder(
-      read: planted_environment([#("GENESIS_RECORD_DIR", "")]),
-    )
+  assert sitting.record_folder(read: list.key_find(
+      [#("GENESIS_RECORD_DIR", "")],
+      _,
+    ))
     == None
     as "an empty GENESIS_RECORD_DIR is no folder"
 }
@@ -202,7 +197,7 @@ pub fn a_sitting_keeps_the_play_accounts_rows_in_a_folder_it_makes_test() -> Nil
     sitting.begin(
       folder: sitting_folder,
       database: pool_config(shared, database),
-      read: planted_environment([#("GENESIS_PLAY_ACCOUNT", "Genesis")]),
+      read: list.key_find([#("GENESIS_PLAY_ACCOUNT", "Genesis")], _),
     )
     as "a sitting begins when the account is in the database"
   let assert Ok(text) =
@@ -221,7 +216,7 @@ pub fn a_sitting_with_no_play_account_is_refused_test() -> Nil {
     sitting.begin(
       folder:,
       database: pool_config(shared, database),
-      read: planted_environment([]),
+      read: list.key_find([], _),
     )
   assert started == Error(sitting.NoPlayAccount)
     as "the fixture would keep no account, so the sitting does not begin"
@@ -236,7 +231,7 @@ pub fn a_sitting_whose_account_the_database_lacks_is_refused_test() -> Nil {
     sitting.begin(
       folder:,
       database: pool_config(shared, database),
-      read: planted_environment([#("GENESIS_PLAY_ACCOUNT", "nobody")]),
+      read: list.key_find([#("GENESIS_PLAY_ACCOUNT", "nobody")], _),
     )
   assert started
     == Error(
@@ -262,10 +257,13 @@ pub fn the_servers_start_records_a_connection_when_the_record_directory_is_set_t
         settings:,
         tables: character_tables.shared(),
         database: pool_config(shared, database),
-        read: planted_environment([
-          #("GENESIS_RECORD_DIR", sitting_folder),
-          #("GENESIS_PLAY_ACCOUNT", "genesis"),
-        ]),
+        read: list.key_find(
+          [
+            #("GENESIS_RECORD_DIR", sitting_folder),
+            #("GENESIS_PLAY_ACCOUNT", "genesis"),
+          ],
+          _,
+        ),
       )
     })
   let client = login_client.connect(login_support.ports(started).sts_port)
@@ -302,7 +300,7 @@ pub fn the_servers_start_records_nothing_when_the_record_directory_is_not_set_te
       settings:,
       tables: character_tables.shared(),
       database: pool_config(shared, database),
-      read: planted_environment([]),
+      read: list.key_find([], _),
     )
     == settings
     as "the settings are the server's own, with no recorder on any listener"

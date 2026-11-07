@@ -9,6 +9,7 @@
 //// `blocked_only` (kind 2), `exempt`, `slow` and `unbuilt` (PressHold).
 
 import class_resource_support
+import client_tables
 import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
@@ -37,6 +38,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{
   type Spell4BaseId, Item2Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
+  UnitProperty2Id,
 }
 import gleam/dict
 import gleam/int
@@ -210,6 +212,31 @@ pub fn with_spells(plans plans: Plans, spells spells: List(Spell)) -> Plans {
   list.fold(spells, plans, fn(plans, spell) {
     dict.insert(plans, spell.spell4_base_id.value, spell)
   })
+}
+
+/// The plans with these spells in place of the ability of the same Spell4Base id.
+pub fn plans_of(spells: List(Spell)) -> Plans {
+  with_spells(plans: plans(), spells:)
+}
+
+/// The plans with this spell in place of the ability of the same Spell4Base id.
+pub fn plans_with(spell spell: Spell) -> Plans {
+  plans_of([spell])
+}
+
+/// The plans the client's own tables build.
+pub fn real_plans() -> Plans {
+  spell_plan.plans(client_tables.shared())
+}
+
+/// A planted spell of Spell4 `spell4_id` and base `base` that goes at once and holds
+/// these property rows.
+pub fn spell_holding(
+  spell4_id spell4_id: Int,
+  base base: Int,
+  modifiers modifiers: List(spell_plan.PropertyModifier),
+) -> Spell {
+  spell_plan.Spell(..child(spell4_id:, base:), modifiers:)
 }
 
 /// The ability of the Spell4Base id as the plans hold it.
@@ -387,6 +414,23 @@ pub fn source_of(
   unit_properties.Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
 }
 
+/// The property modifiers of the caster that the effects start, with their sources, in order.
+pub fn property_starts(
+  effects effects: List(Effect),
+) -> List(#(unit_properties.Source, unit_properties.Modifier)) {
+  list.filter_map(caster_change_starts(effects:), fn(start) {
+    case start.1 {
+      cast.Property(modifier:) -> Ok(#(start.0, modifier))
+      cast.ShieldHeal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The delay of each timer the effects start, in order.
+pub fn delays_of(effects effects: List(Effect)) -> List(Int) {
+  list.map(started_timers(effects:), fn(started) { started.1 })
+}
+
 /// The time each step's effects were taken at, with a change of the caster starting
 /// ("start") or ending ("end"), in order.
 pub fn timeline(
@@ -530,6 +574,62 @@ pub fn pressed_in(
   let #(state, effects) =
     pressed_raw_in(plans:, state:, caster:, bag_index:, target:, at: ms)
   answered_with_no_targets(state:, effects:, at: ms)
+}
+
+/// A press of the bag index by the default caster at the time, its go answered with
+/// no unit struck.
+pub fn press(
+  plans plans: Plans,
+  state state: State,
+  bag bag: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  pressed_in(
+    plans:,
+    state:,
+    caster: caster(),
+    bag_index: bag,
+    target: 0,
+    at: ms,
+  )
+}
+
+/// A press of the bag index by the caster, its go answered with no unit struck, read
+/// for the default caster.
+pub fn press_by(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  bag bag: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  pressed_in(plans:, state:, caster:, bag_index: bag, target: 0, at: ms)
+}
+
+/// A press of the bag index by the caster, its go answered with no unit struck, read
+/// for the same caster.
+pub fn press_as(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  bag bag: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let #(state, effects) =
+    pressed_raw_in(plans:, state:, caster:, bag_index: bag, target: 0, at: ms)
+  answered_as(caster:, state:, effects:, at: ms, struck: [], rolls: [])
+}
+
+/// The caster, in or out of combat.
+pub fn caster_in_combat(in_combat in_combat: Bool) -> Caster {
+  cast.Caster(..caster(), in_combat:)
+}
+
+/// Each struck unit as a hit with no descriptions and no controls.
+pub fn hits(units: List(Int)) -> List(cast.Struck) {
+  list.map(units, fn(unit_id) {
+    cast.Hit(unit_id:, descriptions: [], controls: [])
+  })
 }
 
 /// A press whose go, and each go it leads to at once, strikes these units.
@@ -954,6 +1054,11 @@ pub fn answered_each(
   })
 }
 
+/// The message id of each frame the effects write to the client, in order.
+pub fn written_ids(effects effects: List(Effect)) -> List(Int) {
+  ids(frames: writes(effects:))
+}
+
 /// A frame's message id.
 pub fn ids(frames frames: List(Frame)) -> List(Int) {
   list.map(frames, fn(frame) { frame.message_id })
@@ -1137,4 +1242,55 @@ pub fn cast_lines(frames frames: List(Frame)) -> List(String) {
         "ended " <> int.to_string(spell4_id)
     }
   })
+}
+
+/// 67777 as the client holds it: FallingDamageMultiplier set to 0.0 from 180 ms for
+/// 400 ms, in phase 0 only.
+pub fn falling_row() -> spell_plan.PropertyModifier {
+  spell_plan.PropertyModifier(
+    effect_id: Spell4EffectsId(67_777),
+    phase_flags: 1,
+    change: spell_plan.PropertyChange(unit_properties.Change(
+      property: UnitProperty2Id(134),
+      mode: 3,
+      multiplier: 0.0,
+      flat: 0.0,
+      per_level: 0.0,
+    )),
+    row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
+    condition: Always,
+    tag: spend.always,
+    armor: None,
+  )
+}
+
+/// The spell `spell4_id` in the tree of the innate of ability `base`, in the
+/// client's plans.
+pub fn planned_spell(
+  base base: Int,
+  spell4_id spell4_id: Int,
+) -> spell_plan.Spell {
+  let assert Ok(innate) =
+    spell_plan.in_plans(plans: real_plans(), base: Spell4BaseId(base))
+    as "the plans hold the innate"
+  let assert Ok(spell) =
+    list.find(
+      spell_plan.tree(spell: innate, started: fn(_) { True }),
+      fn(spell) { spell.spell4_id.value == spell4_id },
+    )
+    as "the innate's tree holds the spell"
+  spell
+}
+
+/// A modifier that adds `points` flat to the interrupt armor threshold.
+pub fn raising_interrupt_armor_threshold(
+  points points: Float,
+) -> unit_properties.Modifier {
+  unit_properties.Change(
+    property: unit_properties.interrupt_armor_threshold,
+    mode: 0,
+    multiplier: 1.0,
+    flat: points,
+    per_level: 0.0,
+  )
 }

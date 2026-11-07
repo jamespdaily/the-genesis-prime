@@ -30,7 +30,6 @@ import client_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{
   type News, type Request, Appeared, FromMap, LookChanged, PeerNews, Removed,
-  SentByPeer,
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
@@ -336,27 +335,13 @@ pub fn a_viewer_that_stops_seeing_the_engineer_and_sees_it_again_mid_suit_gets_a
 
 // ---- a viewer ----
 
-/// A viewer connection that shows the unit 9.
-fn viewer_showing_unit_9() -> game_connection.State {
-  support.feed(support.in_world(), support.event_of(support.Appears)).0
-}
-
-fn news_of(
-  unit_id unit_id: Int,
-  news news: News,
-) -> step.Event(
-  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
-) {
-  support.for_stay(support.own_stay(), SentByPeer(PeerNews(unit_id:, news:)))
-}
-
 pub fn a_viewer_that_shows_the_unit_writes_its_0x933_and_one_that_does_not_writes_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
-  let shown = viewer_showing_unit_9()
+  let shown = support.viewer_showing_unit_9()
   let #(_, taken) =
     support.feed(
       shown,
-      news_of(
+      support.news_sent_by_a_peer(
         unit_id: 9,
         news: LookChanged(item_visuals: [suit(display: 7221)]),
       ),
@@ -371,18 +356,22 @@ pub fn a_viewer_that_shows_the_unit_writes_its_0x933_and_one_that_does_not_write
   let #(_, early) =
     support.feed(
       support.in_world(),
-      news_of(
+      support.news_sent_by_a_peer(
         unit_id: 9,
         news: LookChanged(item_visuals: [suit(display: 7221)]),
       ),
     )
   assert support.heard(early, support.keyed()) == []
     as "a news before the unit's 0x262 finds no unit shown, and the client would ignore an unknown unit (opcode.0x933)"
-  let #(gone, _) = support.feed(shown, news_of(unit_id: 9, news: Removed))
+  let #(gone, _) =
+    support.feed(shown, support.news_sent_by_a_peer(unit_id: 9, news: Removed))
   let #(_, late) =
     support.feed(
       gone,
-      news_of(unit_id: 9, news: LookChanged(item_visuals: [suit(display: 0)])),
+      support.news_sent_by_a_peer(
+        unit_id: 9,
+        news: LookChanged(item_visuals: [suit(display: 0)]),
+      ),
     )
   assert support.heard(late, support.keyed()) == []
     as "a news after the unit was removed writes nothing"
@@ -390,11 +379,11 @@ pub fn a_viewer_that_shows_the_unit_writes_its_0x933_and_one_that_does_not_write
 
 pub fn a_look_news_of_an_earlier_stay_is_dropped_test() -> Nil {
   use <- owned_test.run(10_000)
-  let shown = viewer_showing_unit_9()
+  let shown = support.viewer_showing_unit_9()
   let #(_, taken) =
     support.feed(
       shown,
-      support.in_second_stay(news_of(
+      support.in_second_stay(support.news_sent_by_a_peer(
         unit_id: 9,
         news: LookChanged(item_visuals: [suit(display: 7221)]),
       )),

@@ -94,26 +94,6 @@ const bag_of_base_2 = 10
 
 const bag_of_base_3 = 11
 
-fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: support.plans(), spells:)
-}
-
-fn press(
-  plans plans: Plans,
-  state state: State,
-  bag bag: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  support.pressed_in(
-    plans:,
-    state:,
-    caster: support.caster(),
-    bag_index: bag,
-    target: 0,
-    at: ms,
-  )
-}
-
 /// A press whose go strikes these units.
 fn press_striking(
   plans plans: Plans,
@@ -134,17 +114,13 @@ fn press_striking(
   support.answered_by(state:, effects:, at: ms, struck:)
 }
 
-fn written_ids(effects effects: List(Effect)) -> List(Int) {
-  support.ids(frames: support.writes(effects:))
-}
-
 // ---- what a go lists ----
 
 pub fn a_go_lists_a_fluff_effect_on_the_caster_with_count_1_and_no_lifetime_test() -> Nil {
   use <- owned_test.run(5000)
   // Power Charge's Fluff 96819 aims at the caster and lasts until removed.
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 42_569, base: 3, lasting: [
         fluff(
           id: 96_819,
@@ -155,7 +131,7 @@ pub fn a_go_lists_a_fluff_effect_on_the_caster_with_count_1_and_no_lifetime_test
       ]),
     ])
   let #(_, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
   let assert [info] = decoded.targets
@@ -178,7 +154,7 @@ pub fn a_go_lists_a_fluff_effect_on_the_caster_with_count_1_and_no_lifetime_test
 pub fn a_struck_unit_keeps_its_damage_info_and_an_aimed_unit_that_was_not_struck_gets_its_own_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
         fluff(
           id: 1,
@@ -217,8 +193,8 @@ pub fn a_struck_unit_keeps_its_damage_info_and_an_aimed_unit_that_was_not_struck
 pub fn a_spell_with_no_lasting_effect_finishes_after_its_last_go_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
-    press(
-      plans: plans_of([buff(spell4_id: 101, base: 3, lasting: [])]),
+    support.press(
+      plans: support.plans_of([buff(spell4_id: 101, base: 3, lasting: [])]),
       state: cast.new(),
       bag: bag_of_base_3,
       at: 1000,
@@ -229,7 +205,7 @@ pub fn a_spell_with_no_lasting_effect_finishes_after_its_last_go_test() -> Nil {
 // ---- a cast that lingers ----
 
 fn eight_seconds_on_the_caster() -> Plans {
-  plans_of([
+  support.plans_of([
     buff(spell4_id: 77_116, base: 3, lasting: [
       fluff(
         id: 200_468,
@@ -244,7 +220,7 @@ fn eight_seconds_on_the_caster() -> Plans {
 pub fn a_cast_with_a_node_that_has_life_left_sends_no_finish_after_its_last_go_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
-    press(
+    support.press(
       plans: eight_seconds_on_the_caster(),
       state: cast.new(),
       bag: bag_of_base_3,
@@ -265,7 +241,7 @@ pub fn a_cast_with_a_node_that_has_life_left_sends_no_finish_after_its_last_go_t
 pub fn the_finish_and_the_audiences_news_come_when_the_life_is_over_and_not_before_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, effects) =
-    press(
+    support.press(
       plans: eight_seconds_on_the_caster(),
       state: cast.new(),
       bag: bag_of_base_3,
@@ -289,7 +265,7 @@ pub fn the_finish_and_the_audiences_news_come_when_the_life_is_over_and_not_befo
 pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
         fluff(
           id: 1,
@@ -330,7 +306,7 @@ pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> 
 pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
         fluff(
           id: 1,
@@ -375,7 +351,7 @@ pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil
 pub fn a_node_until_removed_arms_no_timer_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 42_569, base: 3, lasting: [
         fluff(
           id: 96_819,
@@ -386,7 +362,7 @@ pub fn a_node_until_removed_arms_no_timer_test() -> Nil {
       ]),
     ])
   let #(_, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   assert support.finished_ids(support.writes(effects:)) == []
   assert support.started_timers(effects:) == []
 }
@@ -396,7 +372,7 @@ pub fn a_node_until_removed_arms_no_timer_test() -> Nil {
 pub fn a_removal_takes_the_casts_of_a_spell_off_and_a_later_timer_finds_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
         fluff(
           id: 1,
@@ -414,10 +390,11 @@ pub fn a_removal_takes_the_casts_of_a_spell_off_and_a_later_timer_finds_nothing_
       ),
     ])
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects: first)
   let assert [#(timer, 5000)] = support.started_timers(effects: first)
-  let #(state, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
+  let #(state, removal) =
+    support.press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert support.removed_targets(support.writes(effects: removal))
     == [#(id, [7])]
     as "the cast holds one node, on the caster: the whole count goes with a 0x811"
@@ -438,7 +415,7 @@ pub fn a_removal_takes_the_older_of_two_casts_whole_and_leaves_the_newer_test() 
   // A node's count is 1 per application, so two casts hold 1 each, and a count of 1
   // over them takes the older one's whole node and none of the newer one's.
   let plans =
-    plans_of([
+    support.plans_of([
       stacked(spell4_id: 101, base: 3, group: 7, cap: 5),
       remover(
         spell4_id: 301,
@@ -449,9 +426,11 @@ pub fn a_removal_takes_the_older_of_two_casts_whole_and_leaves_the_newer_test() 
       ),
     ])
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let #(state, second) = press(plans:, state:, bag: bag_of_base_3, at: 1100)
-  let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 1200)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+  let #(state, second) =
+    support.press(plans:, state:, bag: bag_of_base_3, at: 1100)
+  let #(_, removal) =
+    support.press(plans:, state:, bag: bag_of_base_1, at: 1200)
   assert support.removed_targets(support.writes(effects: removal))
     == [#(support.pressed_id(effects: first), [7])]
     as "count 1 takes the older cast's whole node"
@@ -471,7 +450,7 @@ pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test(
       ]),
     ])
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 43_500, base: 3, lasting: [
         fluff(
           id: 99_472,
@@ -489,11 +468,12 @@ pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test(
       ),
     ])
   let #(state, without) =
-    press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
   assert support.removed_targets(support.writes(effects: without)) == []
     as "the caster is under no 43500: the gate fails"
-  let #(state, marker) = press(plans:, state:, bag: bag_of_base_3, at: 1100)
-  let #(_, with) = press(plans:, state:, bag: bag_of_base_1, at: 1200)
+  let #(state, marker) =
+    support.press(plans:, state:, bag: bag_of_base_3, at: 1100)
+  let #(_, with) = support.press(plans:, state:, bag: bag_of_base_1, at: 1200)
   assert support.removed_targets(support.writes(effects: with))
     == [#(support.pressed_id(effects: marker), [7])]
     as "with the marker held, the removal takes it off"
@@ -502,7 +482,7 @@ pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test(
 pub fn a_removal_behind_a_target_prerequisite_is_not_applied_with_a_debug_line_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
         fluff(
           id: 1,
@@ -520,8 +500,9 @@ pub fn a_removal_behind_a_target_prerequisite_is_not_applied_with_a_debug_line_t
       ),
     ])
   let #(state, _) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 1100)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+  let #(_, removal) =
+    support.press(plans:, state:, bag: bag_of_base_1, at: 1100)
   assert support.removed_targets(support.writes(effects: removal)) == []
   assert list.any(support.logs(effects: removal), fn(line) {
     line.0 == LogDebug
@@ -555,17 +536,19 @@ pub fn a_third_copy_of_a_cap_2_group_takes_the_casters_oldest_off_test() -> Nil 
   use <- owned_test.run(5000)
   // Power Charge 42569 is in stack group 1450, cap 2 (Spell4StackGroup).
   let plans =
-    plans_of([stacked(spell4_id: 42_569, base: 3, group: 1450, cap: 2)])
+    support.plans_of([stacked(spell4_id: 42_569, base: 3, group: 1450, cap: 2)])
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let #(state, second) = press(plans:, state:, bag: bag_of_base_3, at: 1100)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+  let #(state, second) =
+    support.press(plans:, state:, bag: bag_of_base_3, at: 1100)
   assert support.removed_targets(support.writes(effects: second)) == []
     as "two casts are within the cap"
-  let #(state, third) = press(plans:, state:, bag: bag_of_base_3, at: 1200)
+  let #(state, third) =
+    support.press(plans:, state:, bag: bag_of_base_3, at: 1200)
   assert support.removed_targets(support.writes(effects: third))
     == [#(support.pressed_id(effects: first), [7])]
     as "the third takes the oldest off the caster"
-  let #(_, fourth) = press(plans:, state:, bag: bag_of_base_3, at: 1300)
+  let #(_, fourth) = support.press(plans:, state:, bag: bag_of_base_3, at: 1300)
   assert support.removed_targets(support.writes(effects: fourth))
     == [#(support.pressed_id(effects: second), [7])]
     as "and the fourth takes the next oldest: two stay"
@@ -575,16 +558,17 @@ pub fn a_second_cast_of_a_cap_0_spell_takes_the_first_one_off_and_another_spell_
   use <- owned_test.run(5000)
   // Charged Shot 34718 is in group 2, cap 0: one cast per spell.
   let plans =
-    plans_of([
+    support.plans_of([
       stacked(spell4_id: 34_718, base: 3, group: 2, cap: 0),
       stacked(spell4_id: 99, base: 2, group: 2, cap: 0),
     ])
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let #(state, other) = press(plans:, state:, bag: bag_of_base_2, at: 1100)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+  let #(state, other) =
+    support.press(plans:, state:, bag: bag_of_base_2, at: 1100)
   assert support.removed_targets(support.writes(effects: other)) == []
     as "a cast of another spell of the group stays"
-  let #(_, again) = press(plans:, state:, bag: bag_of_base_3, at: 1200)
+  let #(_, again) = support.press(plans:, state:, bag: bag_of_base_3, at: 1200)
   assert support.removed_targets(support.writes(effects: again))
     == [#(support.pressed_id(effects: first), [7])]
     as "the second Charged Shot takes the first one's marker off"
@@ -595,7 +579,7 @@ pub fn a_second_cast_of_a_cap_0_spell_takes_the_first_one_off_and_another_spell_
 pub fn the_caster_dying_finishes_a_lingering_cast_with_its_0x7fe_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, effects) =
-    press(
+    support.press(
       plans: eight_seconds_on_the_caster(),
       state: cast.new(),
       bag: bag_of_base_3,
@@ -620,7 +604,7 @@ pub fn the_caster_dying_finishes_a_lingering_cast_with_its_0x7fe_test() -> Nil {
 pub fn a_caster_that_leaves_writes_nothing_for_its_lingering_casts_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, effects) =
-    press(
+    support.press(
       plans: eight_seconds_on_the_caster(),
       state: cast.new(),
       bag: bag_of_base_3,
@@ -637,7 +621,7 @@ pub fn a_caster_that_leaves_writes_nothing_for_its_lingering_casts_test() -> Nil
 pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
         fluff(
           id: 1,
@@ -675,7 +659,7 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
 pub fn a_node_removed_with_its_unit_leaves_the_casts_other_nodes_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
         fluff(
           id: 1,
@@ -732,7 +716,7 @@ pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_t
   // Pulses at 0 and 1000 after the press at 1000 and a channelMaxTime of 1500: the
   // channel ends at 2500, its last go at 2000 gives an 8 s node that ends at 10000.
   let plans =
-    plans_of([
+    support.plans_of([
       channel(
         lasting: [
           fluff(
@@ -750,7 +734,7 @@ pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_t
       ),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let #(_, timers) = support.run_timers(state:, effects:, from_ms: 1000)
   let assert Ok(#(last_due, last)) = list.last(timers)
   assert last_due == 2000 + 8000
@@ -766,15 +750,16 @@ pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_t
   // (no 13) and the channel's own cooldown, started then, runs.
   let #(state, _) =
     support.run_timers_until(state:, effects:, from_ms: 1000, until_ms: 2500)
-  let #(_, free) = press(plans:, state:, bag: bag_of_base_2, at: 2500)
-  assert list.contains(written_ids(effects: free), 0x07FD)
+  let #(_, free) = support.press(plans:, state:, bag: bag_of_base_2, at: 2500)
+  assert list.contains(support.written_ids(effects: free), 0x07FD)
     as "the current cast is clear while the buff lingers"
-  let #(_, refused) = press(plans:, state:, bag: bag_of_base_3, at: 2500)
+  let #(_, refused) =
+    support.press(plans:, state:, bag: bag_of_base_3, at: 2500)
   assert support.refusals(effects: refused) == [cast_result.SpellCooldown]
     as "the cooldown started when the cast lingered, at 2500 (0x14053e1b0)"
   // At 8000 the cooldown (5000 from 2500) has ended while the buff still lingers: a
   // cooldown that started at the 0x7fe, at 10000, would still refuse.
-  let #(_, again) = press(plans:, state:, bag: bag_of_base_3, at: 8000)
+  let #(_, again) = support.press(plans:, state:, bag: bag_of_base_3, at: 8000)
   assert support.refusals(effects: again) == []
     as "the press is taken: the cooldown ran from the linger, not from the 0x7fe"
 }
@@ -784,7 +769,7 @@ pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_t
 /// A channel that pulses at 0, 3000 and 6000 after the press (no finish timer of its
 /// own) whose each go gives the caster a Fluff of 1000 ms.
 fn short_buff_on_a_long_channel() -> Plans {
-  plans_of([
+  support.plans_of([
     spell_plan.Spell(
       ..channel(
         lasting: [
@@ -810,7 +795,7 @@ pub fn a_node_whose_life_ends_while_its_cast_is_live_is_ended_and_the_cast_goes_
   use <- owned_test.run(5000)
   let plans = short_buff_on_a_long_channel()
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let #(_, timers) = support.run_timers(state:, effects:, from_ms: 1000)
   assert list.map(timers, fn(fired) {
@@ -843,10 +828,11 @@ pub fn a_node_ended_by_time_is_no_longer_held_test() -> Nil {
       ),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let #(state, _) =
     support.run_timers_until(state:, effects:, from_ms: 1000, until_ms: 2000)
-  let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2100)
+  let #(_, removal) =
+    support.press(plans:, state:, bag: bag_of_base_1, at: 2100)
   assert support.removed_targets(support.writes(effects: removal)) == []
     as "the node ended at 2000: a removal finds nothing on the caster"
 }
@@ -854,7 +840,7 @@ pub fn a_node_ended_by_time_is_no_longer_held_test() -> Nil {
 pub fn a_cancel_of_a_cast_holding_nodes_lets_them_linger_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       channel(
         lasting: [
           fluff(
@@ -872,7 +858,7 @@ pub fn a_cancel_of_a_cast_holding_nodes_lets_them_linger_test() -> Nil {
       ),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let assert Ok(#(state, cancelled)) =
     support.cancelled_in(
@@ -900,7 +886,7 @@ pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> 
   // the phase 1 go, whose Fluff has no life, leaves the until-removed node, and the cast
   // lingers after its last go.
   let plans =
-    plans_of([
+    support.plans_of([
       channel(
         lasting: [
           spell_plan.Lasting(
@@ -930,7 +916,7 @@ pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> 
       ),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let #(state, steps) = support.run_timers(state:, effects:, from_ms: 1000)
   let assert [#(2000, last)] = steps
   assert support.finished_ids(support.writes(effects: last)) == []
@@ -938,7 +924,7 @@ pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> 
   assert support.started_timers(effects: last) == []
     as "the node lasts until removed: no timer"
   let #(_, removal) =
-    press(
+    support.press(
       plans: support.with_spells(plans:, spells: [
         remover(
           spell4_id: 301,
@@ -962,7 +948,7 @@ pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
   // A Fluff of 5 s in both phases, gos at 1000 and 2000: the node of the first go would
   // end at 6000; the later go arms its effect again from 2000, so it ends at 7000.
   let plans =
-    plans_of([
+    support.plans_of([
       channel(
         lasting: [
           fluff(
@@ -980,7 +966,7 @@ pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
       ),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   assert list.map(support.started_timers(effects:), fn(timer) { timer.1 })
     == [1000, 5000]

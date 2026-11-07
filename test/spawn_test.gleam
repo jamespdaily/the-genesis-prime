@@ -982,10 +982,6 @@ pub fn an_attack_effect_whose_multiplier_is_not_a_finite_float_refuses_the_spawn
     as "the load names the effect, where a multiplier read as 0 would strike for the stat part alone"
 }
 
-fn nearly(first: Float, second: Float) -> Bool {
-  float.absolute_value(first -. second) <. 0.000001
-}
-
 pub fn a_creature_of_difficulty_1_strikes_with_effect_184741_for_12_test() -> Nil {
   use <- owned_test.run(60_000)
   let attack =
@@ -1005,8 +1001,16 @@ pub fn a_creature_of_difficulty_1_strikes_with_effect_184741_for_12_test() -> Ni
     as "difficulty 1 passes prerequisite 30526 (at most 6) and fails 30527 (at least 7): effect 184741 alone, Physical, 12 by the creature formula"
   assert attack.run_speed == 10.0 && attack.reach == 8.0
     as "runLand 10.0 x 1.0; targetMaxRange 5.0 plus hit radius 3.0"
-  assert nearly(attack.offence.crit_chance, 0.016)
-    && nearly(attack.offence.crit_severity, 1.275)
+  assert float.loosely_equals(
+      attack.offence.crit_chance,
+      with: 0.016,
+      tolerating: 0.000001,
+    )
+    && float.loosely_equals(
+      attack.offence.crit_severity,
+      with: 1.275,
+      tolerating: 0.000001,
+    )
     && attack.offence.strikethrough == 0.0
     as "BaseCritChance 0.05 x 0.32, severity 1.5 x 0.85, no strikethrough"
 }

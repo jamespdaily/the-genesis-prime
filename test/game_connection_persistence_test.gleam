@@ -23,7 +23,6 @@ import client_tables
 import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/class_resource.{Row}
 import genesis_prime/game/connection as game_connection
@@ -92,12 +91,8 @@ fn press(
   )
 }
 
-fn written(taken taken: ConnectionStep(Request)) -> List(Frame) {
-  connection_support.heard(taken, connection_support.keyed())
-}
-
 fn ids(taken taken: ConnectionStep(Request)) -> List(Int) {
-  list.map(written(taken:), fn(frame) { frame.message_id })
+  list.map(connection_support.written(taken:), fn(frame) { frame.message_id })
 }
 
 /// The connection with the Spell Surge buff on and the player's combat flag set and
@@ -132,7 +127,7 @@ pub fn a_class_resource_timer_that_leaves_spell_power_at_0_writes_0x935_then_end
   assert ids(taken:) == [0x0935, 0x07F9, 0x07FE]
     as "the timer empties the slot (0x935, the input's own write); the check that follows finds Spell Surge's 36425 (slot 4 at least 25) failing and ends the buff with 0x7f9 then 0x7fe, after it"
   let assert [failure] =
-    list.filter(written(taken:), fn(frame) {
+    list.filter(connection_support.written(taken:), fn(frame) {
       frame.message_id == spell_failed.message_id
     })
   let assert Ok(failed) = spell_failed.decode(failure.body)

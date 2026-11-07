@@ -91,11 +91,6 @@ fn start_asking(
   )
 }
 
-/// A process the rule's watches name as Sessions, which a test ends.
-fn a_sessions() -> Pid {
-  process.spawn_unlinked(process.sleep_forever)
-}
-
 fn read_record(client: mug.Socket) -> Record {
   let assert Ok(<<letter, number:64-signed>>) =
     mug.receive_exact(
@@ -118,7 +113,8 @@ fn accepted_id(client: mug.Socket) -> Int {
 pub fn a_connection_joins_the_registry_as_it_is_accepted_and_a_delivered_message_reaches_the_rule_as_woken_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = registry.new()
-  let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
+  let server =
+    start(registry: Some(scope), sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -139,7 +135,8 @@ pub fn a_connection_joins_the_registry_as_it_is_accepted_and_a_delivered_message
 pub fn a_connection_that_ended_leaves_its_group_and_a_message_to_it_is_dropped_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = registry.new()
-  let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
+  let server =
+    start(registry: Some(scope), sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -157,7 +154,7 @@ pub fn a_connection_that_ended_leaves_its_group_and_a_message_to_it_is_dropped_t
 
 pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watchs_id_test() -> Nil {
   use <- owned_test.run(30_000)
-  let sessions = a_sessions()
+  let sessions = ask_support.idle_process()
   let server = start(registry: None, sessions: Ok(sessions))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
@@ -242,7 +239,7 @@ pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_th
 
 pub fn a_timer_fires_once_as_timer_fired_with_its_id_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(a_sessions()))
+  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   ask_support.command(
@@ -266,7 +263,7 @@ pub fn a_timer_fires_once_as_timer_fired_with_its_id_test() -> Nil {
 
 pub fn a_timer_started_again_with_the_same_id_after_it_fired_fires_again_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(a_sessions()))
+  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   ask_support.command(
@@ -290,7 +287,7 @@ pub fn a_timer_started_again_with_the_same_id_after_it_fired_fires_again_test() 
 
 pub fn a_cancelled_timer_never_fires_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(a_sessions()))
+  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   // Timer 2 runs first: it is the witness that time passed, and a cancel that
@@ -321,8 +318,8 @@ pub fn a_timer_that_fired_during_an_ask_and_is_started_again_by_its_outcome_is_n
   let server =
     start_asking(
       registry: None,
-      sessions: Ok(a_sessions()),
-      directory: asked_through(replies, a_target()),
+      sessions: Ok(ask_support.idle_process()),
+      directory: asked_through(replies, ask_support.idle_process()),
     )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
@@ -364,8 +361,8 @@ pub fn a_timer_that_fired_during_an_ask_and_is_cancelled_by_its_outcome_never_re
   let server =
     start_asking(
       registry: None,
-      sessions: Ok(a_sessions()),
-      directory: asked_through(replies, a_target()),
+      sessions: Ok(ask_support.idle_process()),
+      directory: asked_through(replies, ask_support.idle_process()),
     )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
@@ -401,13 +398,13 @@ pub fn a_timer_that_fired_during_an_ask_and_is_cancelled_by_its_outcome_never_re
 pub fn a_message_a_timeout_and_a_watch_end_that_arrive_during_an_ask_are_taken_after_its_outcome_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = registry.new()
-  let sessions = a_sessions()
+  let sessions = ask_support.idle_process()
   let replies = process.new_subject()
   let server =
     start_asking(
       registry: Some(scope),
       sessions: Ok(sessions),
-      directory: asked_through(replies, a_target()),
+      directory: asked_through(replies, ask_support.idle_process()),
     )
   let client = ask_support.connect(server)
   let id = accepted_id(client)
@@ -465,11 +462,6 @@ pub fn a_message_a_timeout_and_a_watch_end_that_arrive_during_an_ask_are_taken_a
   ask_support.stop(server)
 }
 
-/// A process the asks go to, which runs and never answers by itself.
-fn a_target() -> Pid {
-  process.spawn_unlinked(process.sleep_forever)
-}
-
 /// A directory that hands each ask's reply to `replies` and says it went to
 /// `target`.
 fn asked_through(
@@ -484,7 +476,7 @@ fn asked_through(
 
 pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_with_the_connection_named_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(a_sessions()))
+  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -533,11 +525,11 @@ fn kept_asks(connection: Pid) -> Int
 pub fn a_late_answer_between_steps_gives_the_rule_no_input_and_drops_the_kept_ask_test() -> Nil {
   use <- owned_test.run(30_000)
   let replies = process.new_subject()
-  let target = a_target()
+  let target = ask_support.idle_process()
   let server =
     start_asking(
       registry: None,
-      sessions: Ok(a_sessions()),
+      sessions: Ok(ask_support.idle_process()),
       directory: asked_through(replies, target),
     )
   let client = ask_support.connect(server)
@@ -580,11 +572,11 @@ pub fn a_late_answer_between_steps_gives_the_rule_no_input_and_drops_the_kept_as
 pub fn the_end_of_a_kept_asks_target_gives_the_rule_no_input_and_drops_the_kept_ask_test() -> Nil {
   use <- owned_test.run(30_000)
   let replies = process.new_subject()
-  let target = a_target()
+  let target = ask_support.idle_process()
   let server =
     start_asking(
       registry: None,
-      sessions: Ok(a_sessions()),
+      sessions: Ok(ask_support.idle_process()),
       directory: asked_through(replies, target),
     )
   let client = ask_support.connect(server)
@@ -681,7 +673,11 @@ pub fn a_tell_goes_through_the_target_resolved_when_the_watch_opened_and_looks_n
   let told = process.new_subject()
   let server =
     start_telling(
-      locate: counting_lookup(sessions: a_sessions(), lookups:, told:),
+      locate: counting_lookup(
+        sessions: ask_support.idle_process(),
+        lookups:,
+        told:,
+      ),
       deliver: fn(_address, _request) { Error(Nil) },
     )
   let client = ask_support.connect(server)
@@ -714,7 +710,11 @@ pub fn a_tell_after_the_watch_is_dropped_goes_nowhere_and_one_after_a_watch_open
   let told = process.new_subject()
   let server =
     start_telling(
-      locate: counting_lookup(sessions: a_sessions(), lookups:, told:),
+      locate: counting_lookup(
+        sessions: ask_support.idle_process(),
+        lookups:,
+        told:,
+      ),
       deliver: fn(_address, _request) { Error(Nil) },
     )
   let client = ask_support.connect(server)
@@ -763,7 +763,7 @@ pub fn a_tell_after_the_watched_process_ended_goes_nowhere_test() -> Nil {
   use <- owned_test.run(30_000)
   let lookups = process.new_subject()
   let told = process.new_subject()
-  let sessions = a_sessions()
+  let sessions = ask_support.idle_process()
   let server =
     start_telling(
       locate: counting_lookup(sessions:, lookups:, told:),
@@ -799,7 +799,8 @@ pub fn a_read_that_cannot_be_armed_because_the_peer_closed_reaches_the_rule_as_a
   use <- unitest.tag("serial")
   let lines = process.new_subject()
   let scope = registry.new()
-  let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
+  let server =
+    start(registry: Some(scope), sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -885,7 +886,8 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
 pub fn a_join_makes_the_connection_a_member_of_the_group_and_a_leave_or_its_end_removes_it_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = registry.new()
-  let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
+  let server =
+    start(registry: Some(scope), sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -984,7 +986,8 @@ pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_throu
   let lines = process.new_subject()
   let lookups = process.new_subject()
   let told = process.new_subject()
-  let found = counting_lookup(sessions: a_sessions(), lookups:, told:)
+  let found =
+    counting_lookup(sessions: ask_support.idle_process(), lookups:, told:)
   let server =
     start_telling(
       locate: fn(address) {
@@ -1043,7 +1046,11 @@ pub fn a_tell_through_a_watch_reaches_the_process_its_own_watch_found_and_not_an
   let told = process.new_subject()
   let server =
     start_telling(
-      locate: counting_lookup(sessions: a_sessions(), lookups:, told:),
+      locate: counting_lookup(
+        sessions: ask_support.idle_process(),
+        lookups:,
+        told:,
+      ),
       deliver: fn(_address, _request) { Error(Nil) },
     )
   let client = ask_support.connect(server)

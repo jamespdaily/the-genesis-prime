@@ -31,6 +31,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import owned_test
+import player_life_support
 import qcheck
 
 const beast =
@@ -44,23 +45,6 @@ const beast =
     magic_mitigation: 0.0,
     shield_mitigation_max: 0.0,
   )
-
-fn offence(damage damage: Int, damage_type damage_type: Int) -> hit.Offence {
-  Offence(
-    blows: [
-      Blow(
-        spell4_effects_id: 62_159,
-        damage_type:,
-        damage:,
-        delay_ms: 0,
-        threat_multiplier: 1.0,
-      ),
-    ],
-    crit_chance: 0.1,
-    crit_severity: 1.5,
-    strikethrough: 0.0,
-  )
-}
 
 const no_luck = Rolls(crit: 0.9, deflect: 0.9, glance: 0.9)
 
@@ -90,7 +74,11 @@ pub fn health_stays_in_range_and_killed_is_set_exactly_at_zero_test() -> Nil {
           shield: 0,
           absorbs: [],
           health:,
-          offence: offence(damage:, damage_type: 3),
+          offence: player_life_support.offence_of(
+            damage:,
+            damage_type: 3,
+            crit_chance: 0.1,
+          ),
           defence: hit.unprotected,
           rolls: no_luck,
         )
@@ -111,7 +99,11 @@ pub fn a_crit_lands_only_when_its_roll_is_below_the_crit_chance_test() -> Nil {
         shield: 0,
         absorbs: [],
         health: 100,
-        offence: offence(damage: 18, damage_type: 3),
+        offence: player_life_support.offence_of(
+          damage: 18,
+          damage_type: 3,
+          crit_chance: 0.1,
+        ),
         defence: hit.unprotected,
         rolls: Rolls(..no_luck, crit: roll),
       )
@@ -131,7 +123,11 @@ pub fn a_deflect_lands_when_its_roll_is_below_the_targets_chance_test() -> Nil {
       shield: 0,
       absorbs: [],
       health: 52,
-      offence: offence(damage: 18, damage_type: 3),
+      offence: player_life_support.offence_of(
+        damage: 18,
+        damage_type: 3,
+        crit_chance: 0.1,
+      ),
       defence: beast,
       rolls: Rolls(..no_luck, deflect: roll),
     )
@@ -143,7 +139,14 @@ pub fn a_deflect_lands_when_its_roll_is_below_the_targets_chance_test() -> Nil {
 pub fn strikethrough_takes_off_the_deflect_chance_and_crit_deflect_the_crit_chance_test() -> Nil {
   use <- owned_test.run(5000)
   let piercing =
-    Offence(..offence(damage: 18, damage_type: 3), strikethrough: 0.016)
+    Offence(
+      ..player_life_support.offence_of(
+        damage: 18,
+        damage_type: 3,
+        crit_chance: 0.1,
+      ),
+      strikethrough: 0.016,
+    )
   assert hit.apply(
       shield: 0,
       absorbs: [],
@@ -159,7 +162,11 @@ pub fn strikethrough_takes_off_the_deflect_chance_and_crit_deflect_the_crit_chan
       shield: 0,
       absorbs: [],
       health: 52,
-      offence: offence(damage: 18, damage_type: 3),
+      offence: player_life_support.offence_of(
+        damage: 18,
+        damage_type: 3,
+        crit_chance: 0.1,
+      ),
       defence: Defence(..hit.unprotected, crit_deflect_chance: 0.1),
       rolls: Rolls(..no_luck, crit: 0.0),
     )
@@ -174,7 +181,11 @@ pub fn a_glance_takes_the_glance_amount_off_the_damage_test() -> Nil {
       shield: 0,
       absorbs: [],
       health: 52,
-      offence: offence(damage: 20, damage_type: 3),
+      offence: player_life_support.offence_of(
+        damage: 20,
+        damage_type: 3,
+        crit_chance: 0.1,
+      ),
       defence: Defence(
         ..hit.unprotected,
         glance_chance: 1.0,
@@ -195,7 +206,11 @@ pub fn mitigation_takes_its_damage_types_share_off_the_damage_test() -> Nil {
         shield: 0,
         absorbs: [],
         health: 52,
-        offence: offence(damage: 20, damage_type:),
+        offence: player_life_support.offence_of(
+          damage: 20,
+          damage_type:,
+          crit_chance: 0.1,
+        ),
         defence: armoured,
         rolls: no_luck,
       )
@@ -215,7 +230,11 @@ pub fn the_beasts_numbers_pass_a_blow_through_unchanged_test() -> Nil {
       shield: 0,
       absorbs: [],
       health: 52,
-      offence: offence(damage: 18, damage_type: 3),
+      offence: player_life_support.offence_of(
+        damage: 18,
+        damage_type: 3,
+        crit_chance: 0.1,
+      ),
       defence: beast,
       rolls: no_luck,
     )
@@ -251,8 +270,11 @@ const shielded =
 /// A strike of Magic blows of these damages, with no crit chance.
 fn strike_of(damages damages: List(Int)) -> hit.Offence {
   Offence(
-    ..offence(damage: 0, damage_type: 3),
-    crit_chance: 0.0,
+    ..player_life_support.offence_of(
+      damage: 0,
+      damage_type: 3,
+      crit_chance: 0.0,
+    ),
     blows: list.map(damages, fn(damage) {
       Blow(
         spell4_effects_id: 62_159,
@@ -310,7 +332,11 @@ pub fn a_blow_of_a_type_outside_the_mask_passes_the_absorb_test() -> Nil {
         health: 100,
         shield: 0,
         absorbs: [pool(cast_id: 1, left: 50, mask:)],
-        offence: Offence(..offence(damage: 20, damage_type:), crit_chance: 0.0),
+        offence: player_life_support.offence_of(
+          damage: 20,
+          damage_type:,
+          crit_chance: 0.0,
+        ),
         defence: hit.unprotected,
         rolls: no_luck,
       )

@@ -33,17 +33,13 @@
 import character_tables
 import client_tables
 import game_connection_support as support
-import genesis_prime/client_connection.{
-  type News, type Request, Absorption, Appeared, PeerNews, SentByPeer,
-}
+import genesis_prime/client_connection.{type Request, Absorption}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
-import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
-import genesis_prime/step.{type ConnectionStep, ConnectionId}
-import genesis_prime/world_map/map.{SeenBy}
+import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None}
@@ -238,36 +234,17 @@ pub fn an_esper_whose_absorb_ends_tells_zero_to_the_client_and_viewers_test() ->
 
 // ---- a viewer that arrives, and the viewer's side ----
 
-/// The 0x262 the player's connection sends the viewer `viewer` that arrives now.
-fn created_for(
-  state state: game_connection.State,
-  viewer viewer: Int,
-) -> UnitCreatePlayer {
-  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] =
-    support.peer_tells(
-      support.feed(
-        state:,
-        event: support.sent_by_the_map(SeenBy(
-          by: ConnectionId(viewer),
-          stay: support.viewer_stay(viewer),
-        )),
-      ).1,
-    )
-    as "the player's connection sends the arriving viewer its 0x262"
-  unit
-}
-
 fn a_late_viewer_is_created_with_the_pool(world world: World) -> Nil {
   let #(holding, _) = pooled_until(world:, until_ms: 1500)
   assert unit_fields.stat(
-      tail: created_for(state: holding, viewer: 4).tail,
+      tail: support.created_for(state: holding, viewer: 4).tail,
       stat_id: 22,
     )
     == Ok(164)
     as "stat 22 is listed while the sum is above 0 (opcode.0x938: the client's create reads stat 22 of the 0x262)"
   let #(ended, _) = pooled_until(world:, until_ms: 20_000)
   assert unit_fields.stat(
-      tail: created_for(state: ended, viewer: 5).tail,
+      tail: support.created_for(state: ended, viewer: 5).tail,
       stat_id: 22,
     )
     == Error(Nil)
@@ -285,21 +262,15 @@ pub fn an_esper_viewer_arriving_while_an_absorb_holds_is_created_with_stat_22_te
   a_late_viewer_is_created_with_the_pool(world: esper_world())
 }
 
-fn news_of(
-  unit_id unit_id: Int,
-  news news: News,
-) -> step.Event(
-  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
-) {
-  support.for_stay(support.own_stay(), SentByPeer(PeerNews(unit_id:, news:)))
-}
-
 pub fn absorption_news_for_a_unit_the_viewer_does_not_show_writes_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let shown =
     support.feed(support.in_world(), support.event_of(support.Appears)).0
   let #(_, taken) =
-    support.feed(shown, news_of(unit_id: 9, news: Absorption(absorption: 50)))
+    support.feed(
+      shown,
+      support.news_sent_by_a_peer(unit_id: 9, news: Absorption(absorption: 50)),
+    )
   let assert [frame] = support.heard(taken, support.keyed())
   assert frame.message_id == 0x0938
   assert unit_stat_changed.decode(frame.body)
@@ -311,14 +282,20 @@ pub fn absorption_news_for_a_unit_the_viewer_does_not_show_writes_nothing_test()
   let #(_, early) =
     support.feed(
       support.in_world(),
-      news_of(unit_id: 9, news: Absorption(absorption: 50)),
+      support.news_sent_by_a_peer(unit_id: 9, news: Absorption(absorption: 50)),
     )
   assert support.heard(early, support.keyed()) == []
     as "a news before the unit's 0x262 finds no unit shown, and the client would ignore an unknown unit (the shown guard, as for Shield)"
   let #(gone, _) =
-    support.feed(shown, news_of(unit_id: 9, news: client_connection.Removed))
+    support.feed(
+      shown,
+      support.news_sent_by_a_peer(unit_id: 9, news: client_connection.Removed),
+    )
   let #(_, late) =
-    support.feed(gone, news_of(unit_id: 9, news: Absorption(absorption: 0)))
+    support.feed(
+      gone,
+      support.news_sent_by_a_peer(unit_id: 9, news: Absorption(absorption: 0)),
+    )
   assert support.heard(late, support.keyed()) == []
     as "a news after the unit was removed writes nothing"
 }

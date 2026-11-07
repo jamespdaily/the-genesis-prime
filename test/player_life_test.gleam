@@ -72,10 +72,6 @@ fn defence_of(class_id: Int) -> hit.Defence {
   )
 }
 
-fn close(first: Float, second: Float) -> Bool {
-  float.absolute_value(first -. second) <. 0.0000005
-}
-
 pub fn a_level_1_players_defence_has_no_deflect_crit_deflect_or_glance_and_its_armors_mitigation_test() -> Nil {
   use <- owned_test.run(60_000)
   let esper = defence_of(3)
@@ -84,7 +80,11 @@ pub fn a_level_1_players_defence_has_no_deflect_crit_deflect_or_glance_and_its_a
     && esper.crit_deflect_chance == 0.0
     && esper.glance_chance == 0.0
     as "player.level1_defence: no roll changes a hit"
-  assert close(esper.physical_mitigation, 0.5996959)
+  assert float.loosely_equals(
+    esper.physical_mitigation,
+    with: 0.5996959,
+    tolerating: 0.0000005,
+  )
     as "Armor 150 at level 1: 0.5996959 (0x140464240)"
   assert warrior.physical_mitigation == 0.75
     as "Armor 250 reaches the 0.75 cap (GameFormula 1234's 75)"

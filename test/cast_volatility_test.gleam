@@ -34,12 +34,6 @@ import spell_tables
 /// 95881), which strikes the area in its goes 1 to 3 and nothing in its go 0.
 const striking_spell = 37_302
 
-fn hits(units: List(Int)) -> List(cast.Struck) {
-  list.map(units, fn(unit_id) {
-    cast.Hit(unit_id:, descriptions: [], controls: [])
-  })
-}
-
 /// An Engineer with nothing in its Volatility, in or out of combat.
 fn engineer(in_combat in_combat: Bool) -> Caster {
   cast.Caster(
@@ -54,7 +48,7 @@ fn engineer(in_combat in_combat: Bool) -> Caster {
 fn striking(foes foes: List(Int)) -> fn(cast.GoAsked) -> List(cast.Struck) {
   fn(asked: cast.GoAsked) {
     case asked.spell4_id == Spell4Id(striking_spell) && asked.phase > 0 {
-      True -> hits(foes)
+      True -> support.hits(foes)
       False -> []
     }
   }

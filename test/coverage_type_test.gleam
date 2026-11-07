@@ -26,6 +26,7 @@
 ////   (`Spell4Effects.effectType.N`, `Prerequisite.prerequisiteTypeId.N`).
 
 import client_tables
+import coverage_support
 import genesis_prime/coverage
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
@@ -63,13 +64,6 @@ import planted_table
 import simplifile
 import spell_tables
 import unitest
-
-fn engine_named(name: String) -> EngineDeclaration {
-  let assert Ok(found) =
-    list.find(engine.all(), fn(declaration) { declaration.name == name })
-    as { "no engine is named " <> name }
-  found
-}
 
 /// The tables the plan's decision about an effect row reads, planted with no row beside
 /// the Spell4Effects rows given, so a row that names a prerequisite, a spell, a spell group,
@@ -147,7 +141,7 @@ fn measure_planted_over(files files: List(#(String, BitArray))) -> Measurement {
   let measured =
     measurement.measure(
       EngineDeclaration(
-        ..engine_named("Spell effects"),
+        ..coverage_support.engine_named("Spell effects"),
         starting_abilities: None,
       ),
       tables,
@@ -181,7 +175,7 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_18_26_29_52_64_
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   assert handled_over(
-      engine: engine_named("Spell effects"),
+      engine: coverage_support.engine_named("Spell effects"),
       types: numbers(from: 1, to: 200),
     )
     == [
@@ -213,7 +207,7 @@ pub fn the_prerequisite_types_the_measure_handles_are_the_sixteen_read_and_those
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   assert handled_over(
-      engine: engine_named("Prerequisites"),
+      engine: coverage_support.engine_named("Prerequisites"),
       types: numbers(from: 1, to: 295),
     )
     == [
@@ -245,7 +239,7 @@ pub fn the_starting_abilities_column_holds_the_issues_effect_counts_test() -> Ni
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
-  assert starting_counts(engine: engine_named("Spell effects"))
+  assert starting_counts(engine: coverage_support.engine_named("Spell effects"))
     == [
       #(1, 11),
       #(3, 1),
@@ -275,7 +269,7 @@ pub fn the_starting_abilities_column_holds_the_issues_prerequisite_counts_test()
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
-  assert starting_counts(engine: engine_named("Prerequisites"))
+  assert starting_counts(engine: coverage_support.engine_named("Prerequisites"))
     == [
       #(11, 5),
       #(15, 32),
@@ -308,11 +302,6 @@ pub fn the_starting_abilities_and_innates_reach_79_spells_with_the_gates_a_level
 
 // ---- the decoded and missing types ----
 
-/// The key of a record in the fact file, as it opens the record's table.
-fn has_record(facts facts: String, key key: String) -> Bool {
-  string.contains(facts, "[\"" <> key <> "\"]")
-}
-
 pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
@@ -322,13 +311,13 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
     )
     as "the fact file is in the repository"
   let missing_of = fn(name) {
-    let declared = engine_named(name)
+    let declared = coverage_support.engine_named(name)
     list.each(declared.missing, fn(missing) {
       assert missing.reason != ""
         as {
           name <> " type " <> int.to_string(missing.type_number) <> ": a reason"
         }
-      assert has_record(facts:, key: missing.fact_key)
+      assert coverage_support.has_record(facts:, key: missing.fact_key)
         as {
           name
           <> " type "
@@ -360,7 +349,7 @@ pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared =
     EngineDeclaration(
-      ..engine_named("Quest objectives"),
+      ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
       partial: [
         Missing(type_number: 7, reason: "a gap", fact_key: "a.key"),
@@ -392,7 +381,7 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared =
     EngineDeclaration(
-      ..engine_named("Quest objectives"),
+      ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
       partial: [
         Missing(type_number: 2, reason: "a gap", fact_key: "a.key"),
@@ -429,7 +418,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ".claude/skills/decoding-the-client/references/client-facts.toml",
     )
     as "the fact file is in the repository"
-  let declared = engine_named("Spell effects")
+  let declared = coverage_support.engine_named("Spell effects")
   assert declared.partial
     == [
       Missing(
@@ -533,22 +522,31 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
         fact_key: "Spell4Effects.effectType.145",
       ),
     ]
-  assert has_record(facts:, key: "Spell4Effects.effectType.29")
-  assert has_record(facts:, key: "Spell4Effects.effectType.52")
-  assert has_record(facts:, key: "Spell4Effects.effectType.64")
-  assert has_record(facts:, key: "Spell4Effects.effectType.118")
-  assert has_record(facts:, key: "Spell4Effects.effectType.3")
-  assert has_record(facts:, key: "Spell4Effects.effectType.11")
-  assert has_record(facts:, key: "Spell4Effects.effectType.14")
-  assert has_record(facts:, key: "Spell4Effects.effectType.17")
-  assert has_record(facts:, key: "Spell4Effects.effectType.18")
-  assert has_record(facts:, key: "Spell4Effects.effectType.73")
-  assert has_record(facts:, key: "Spell4Effects.effectType.80")
-  assert has_record(facts:, key: "Spell4Effects.effectType.81")
-  assert has_record(facts:, key: "Spell4Effects.effectType.83")
-  assert has_record(facts:, key: "Spell4Effects.effectType.84")
-  assert has_record(facts:, key: "Spell4Effects.effectType.112")
-  assert has_record(facts:, key: "Spell4Effects.effectType.145")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.29")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.52")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.64")
+  assert coverage_support.has_record(
+    facts:,
+    key: "Spell4Effects.effectType.118",
+  )
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.3")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.11")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.14")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.17")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.18")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.73")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.80")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.81")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.83")
+  assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.84")
+  assert coverage_support.has_record(
+    facts:,
+    key: "Spell4Effects.effectType.112",
+  )
+  assert coverage_support.has_record(
+    facts:,
+    key: "Spell4Effects.effectType.145",
+  )
   assert engine.handles(engine: declared, type_number: 3)
     && engine.handles(engine: declared, type_number: 11)
     && engine.handles(engine: declared, type_number: 14)
@@ -708,7 +706,7 @@ pub fn the_clients_522_type_73_rows_count_487_handled_and_35_not_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let assert Measured(types:, ..) =
     measurement.measure(
-      engine_named("Spell effects"),
+      coverage_support.engine_named("Spell effects"),
       client_tables.every_table(),
     )
     as "the engine's source is a table"
@@ -863,7 +861,7 @@ pub fn the_clients_74_type_83_rows_count_51_not_read_and_its_9_type_84_rows_4_te
   use <- unitest.guard(client_tables.present())
   let assert Measured(types:, ..) =
     measurement.measure(
-      engine_named("Spell effects"),
+      coverage_support.engine_named("Spell effects"),
       client_tables.every_table(),
     )
     as "the engine's source is a table"
@@ -893,7 +891,7 @@ pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missin
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared =
     EngineDeclaration(
-      ..engine_named("Quest objectives"),
+      ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
       missing: [
         Missing(type_number: 7, reason: "a reason", fact_key: "a.key"),
@@ -914,7 +912,7 @@ pub fn the_checklist_marks_handled_missing_and_undecoded_types_with_the_starting
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared =
     EngineDeclaration(
-      ..engine_named("Quest objectives"),
+      ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
       missing: [
         Missing(type_number: 2, reason: "needs a thing", fact_key: "Some.key"),
@@ -1054,7 +1052,10 @@ pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
         prerequisite_id: 77_777,
       ),
       body: fn(tables) {
-        measurement.measure(engine_named("Prerequisites"), tables)
+        measurement.measure(
+          coverage_support.engine_named("Prerequisites"),
+          tables,
+        )
       },
     )
   let assert Measured(missing_rows:, ..) = measured
@@ -1920,7 +1921,10 @@ pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_77_of_79_co
   let totals =
     checklist.totals(
       list.map(
-        [engine_named("Spell effects"), engine_named("Prerequisites")],
+        [
+          coverage_support.engine_named("Spell effects"),
+          coverage_support.engine_named("Prerequisites"),
+        ],
         fn(declared) { measurement.measure(declared, tables) },
       ),
     )
@@ -1944,13 +1948,22 @@ pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> N
       ".claude/skills/decoding-the-client/references/client-facts.toml",
     )
     as "the fact file is in the repository"
-  assert has_record(facts:, key: "Spell4.prerequisiteIdRunner00")
+  assert coverage_support.has_record(
+    facts:,
+    key: "Spell4.prerequisiteIdRunner00",
+  )
     as "the runner columns' prompt, which the measure leaves out"
-  assert has_record(facts:, key: "LevelUpUnlock.26")
+  assert coverage_support.has_record(facts:, key: "LevelUpUnlock.26")
     as "the AMP System unlock whose level the gates read"
-  assert has_record(facts:, key: "Prerequisite.prerequisiteTypeId.1")
+  assert coverage_support.has_record(
+    facts:,
+    key: "Prerequisite.prerequisiteTypeId.1",
+  )
     as "the level condition a level-1 character can fail"
-  assert has_record(facts:, key: "EldanAugmentation.spell4IdAugment")
+  assert coverage_support.has_record(
+    facts:,
+    key: "EldanAugmentation.spell4IdAugment",
+  )
     as "the spell an AMP adds"
 }
 
@@ -1960,7 +1973,7 @@ pub fn the_innate_cost_emm_ids_the_measure_handles_are_4_and_7_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   assert handled_over(
-      engine: engine_named("Spend-scaled costs"),
+      engine: coverage_support.engine_named("Spend-scaled costs"),
       types: numbers(from: 1, to: 30),
     )
     == [4, 7]
@@ -1970,7 +1983,7 @@ pub fn the_innate_cost_emm_ids_the_measure_handles_are_4_and_7_test() -> Nil {
 pub fn the_other_emm_ids_are_decoded_and_missing_with_the_reason_and_the_fact_key_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  let declared = engine_named("Spend-scaled costs")
+  let declared = coverage_support.engine_named("Spend-scaled costs")
   assert list.map(declared.missing, fn(missing) { missing.type_number })
     |> list.sort(int.compare)
     == [2, 5, 9, 10, 11]
@@ -1987,7 +2000,10 @@ pub fn the_other_emm_ids_are_decoded_and_missing_with_the_reason_and_the_fact_ke
 fn emm_rows() -> List(#(Int, Int)) {
   let tables = client_tables.every_table()
   let assert Measured(types:, ..) =
-    measurement.measure(engine_named("Spend-scaled costs"), tables)
+    measurement.measure(
+      coverage_support.engine_named("Spend-scaled costs"),
+      tables,
+    )
     as "the engine's source is a table"
   list.map(types, fn(line) { #(line.type_number, line.rows) })
 }
@@ -1999,7 +2015,9 @@ pub fn the_spend_engine_counts_the_ids_of_both_columns_and_the_starting_abilitie
   assert emm_rows()
     == [#(4, 49), #(7, 46), #(10, 3), #(5, 2), #(9, 2), #(2, 1), #(11, 1)]
     as "Spell4.innateCostEMMId0: 4 on 45 rows, 7 on 46, 5 and 9 on 2 each, 2 and 11 on 1 each; innateCostEMMId1: 4 on 6, 10 on 3, 7 on 1: 4 holds 51 and 7 47, less the three rows whose id sits beside no cost (45155 and 48782 with 4, 42075 with 7, counted as empty slots), so 49, 46 and 3 for 10"
-  assert starting_counts(engine: engine_named("Spend-scaled costs"))
+  assert starting_counts(engine: coverage_support.engine_named(
+      "Spend-scaled costs",
+    ))
     == [#(4, 1)]
     as "Spell4.innateCostEMMId0: of the 65 spells the 18 level-1 abilities reach only Mind Burst (32809, id 4) holds one"
 }
@@ -2067,7 +2085,7 @@ pub fn the_clients_3498_proc_rows_count_43_read_and_the_stalkers_5_of_its_7_reac
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
   let assert Measured(types:, ..) =
-    measurement.measure(engine_named("Spell effects"), tables)
+    measurement.measure(coverage_support.engine_named("Spell effects"), tables)
     as "the engine's source is a table"
   let assert Ok(line) = list.find(types, fn(line) { line.type_number == 14 })
   assert line.rows == 3498
@@ -2264,7 +2282,7 @@ pub fn the_clients_rows_of_types_18_81_and_145_count_14_658_and_0_not_read_and_1
   use <- unitest.guard(client_tables.present())
   let assert Measured(types:, ..) =
     measurement.measure(
-      engine_named("Spell effects"),
+      coverage_support.engine_named("Spell effects"),
       client_tables.every_table(),
     )
     as "the engine's source is a table"
@@ -2393,7 +2411,7 @@ pub fn the_clients_358_disguise_rows_count_159_read_and_the_two_exosuit_rows_amo
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
   let assert Measured(types:, ..) =
-    measurement.measure(engine_named("Spell effects"), tables)
+    measurement.measure(coverage_support.engine_named("Spell effects"), tables)
     as "the engine's source is a table"
   let assert Ok(line) = list.find(types, fn(line) { line.type_number == 112 })
   assert line.rows == 358
