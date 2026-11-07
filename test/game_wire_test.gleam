@@ -122,6 +122,7 @@ import owned_test
 import place_support
 import pog
 import spawn_support
+import supervisor_children
 import unitest
 
 /// The 16 bytes the client shows as its session key: the wire bytes of the
@@ -3788,9 +3789,67 @@ fn stealth_changes_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
   })
 }
 
+pub fn the_daguns_0x262_can_reach_the_client_before_its_address_is_joined_and_its_lookup_waits_for_the_join_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = world_with_a_dagun()
+  let #(creature_registry_pid, creature_supervisor) =
+    the_creature_registry_and_supervisor(started:)
+  // The registry is held, so the creature supervisor's join of the Dagun's
+  // address waits in it while the creature, already started, sends its 0x262.
+  let assert True = ask_support.suspend_process(creature_registry_pid)
+    as "the creature registry is held"
+  let #(_game, _own, dagun, _have) =
+    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+  event_wait.until("the creature supervisor's join waits in the registry", fn() {
+    mailbox_support.call_waiting_from(
+      pid: creature_registry_pid,
+      caller: creature_supervisor,
+    )
+  })
+  let assert Ok(run) =
+    world_map_registry.find_or_start(
+      started.settings.world.maps,
+      MapId(world_id: 1387, instance: 0),
+      deadline_ms: ask_support.monotonic_ms() + ask_support.event_wait_ms,
+    )
+    as "the map is running, started by the play"
+  assert creature_registry.find(
+      started.settings.world.creatures,
+      map: MapId(world_id: 1387, instance: 0),
+      incarnation: run.incarnation,
+      unit_id: dagun,
+      life: 2,
+    )
+    == Error(Nil)
+    as "the Dagun's 0x262 came while its address was not yet joined"
+  let assert True = ask_support.resume_process(creature_registry_pid)
+    as "the creature registry runs again"
+  let #(_run, creature) = the_dagun_and_its_map(started:, dagun:)
+  assert process.is_alive(creature) as "the Dagun is found once it is joined"
+}
+
+/// The pids of the tree's creature registry and creature supervisor: the world
+/// subtree's first and third children.
+fn the_creature_registry_and_supervisor(
+  started started: login_support.Started,
+) -> #(process.Pid, process.Pid) {
+  let assert [_, _, _, _, world, ..] =
+    supervisor_children.in_start_order(started.tree)
+    as "the tree's fifth child is the world subtree"
+  let assert [registry, _maps, creature_supervisor, ..] =
+    supervisor_children.in_start_order(world)
+    as "the world subtree holds the creature registry, Maps, then the creature supervisor"
+  assert process.named(started.settings.world.creature_supervisor)
+    == Ok(creature_supervisor)
+    as "the world subtree's third child is the creature supervisor"
+  #(registry, creature_supervisor)
+}
+
 /// The run of the world 1387 map and the process of the Dagun's creature, unit
 /// `dagun`. The first player's connection takes the map's watch 1, so the first
-/// creature has life 2 (genesis_prime/world_map/map `joined_new`).
+/// creature has life 2 (genesis_prime/world_map/map `joined_new`). The creature
+/// sends its 0x262 as it starts, before the creature supervisor joins its
+/// address, so the lookup waits for the join.
 fn the_dagun_and_its_map(
   started started: login_support.Started,
   dagun dagun: Int,
@@ -3802,7 +3861,7 @@ fn the_dagun_and_its_map(
       deadline_ms: ask_support.monotonic_ms() + ask_support.event_wait_ms,
     )
     as "the map is running, started by the play"
-  let assert Ok(creature) =
+  let find = fn() {
     creature_registry.find(
       started.settings.world.creatures,
       map: MapId(world_id: 1387, instance: 0),
@@ -3810,7 +3869,11 @@ fn the_dagun_and_its_map(
       unit_id: dagun,
       life: 2,
     )
-    as "the Dagun runs under its address"
+  }
+  event_wait.until("the Dagun's address was joined", fn() {
+    find() != Error(Nil)
+  })
+  let assert Ok(creature) = find() as "the Dagun runs under its address"
   #(run, creature)
 }
 

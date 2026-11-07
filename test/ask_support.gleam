@@ -237,8 +237,9 @@ pub fn while_suspended(process process: Pid, body body: fn() -> a) -> a {
 @external(erlang, "erlang", "suspend_process")
 pub fn suspend_process(process: Pid) -> Bool
 
+/// Lets a suspended process run again.
 @external(erlang, "erlang", "resume_process")
-fn resume_process(process: Pid) -> Bool
+pub fn resume_process(process: Pid) -> Bool
 
 /// Sends the tree the exit the server's own stop sends, and watches it.
 pub fn begin_stop_tree(tree: Pid) -> process.Monitor {
