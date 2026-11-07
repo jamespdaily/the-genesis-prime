@@ -124,7 +124,7 @@ fn debug_lines(effects effects: List(cast.Effect)) -> List(String) {
 // ---- 5: the accept takes every point and the go carries n ----
 
 pub fn mind_burst_at_p_points_takes_all_p_and_asks_its_go_with_p_minus_1_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   list.each([1, 2, 3, 4, 5], fn(points) {
     let #(_, effects) = press(spell: mind_burst_spell(), points:)
     assert support.payments(effects:) == [Payment(slot: 1, amount: points)]
@@ -138,7 +138,7 @@ pub fn mind_burst_at_p_points_takes_all_p_and_asks_its_go_with_p_minus_1_test() 
 }
 
 pub fn the_payment_of_every_point_leaves_0_and_is_one_change_of_the_psi_points_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   list.each([1, 2, 3, 4, 5], fn(points) {
     let #(_, effects) = press(spell: mind_burst_spell(), points:)
     let #(left, changes) =
@@ -214,7 +214,7 @@ fn pressed_and_gone(
 }
 
 pub fn proxy_135961_starts_its_spell_only_at_5_points_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let spell = mind_burst_with_gate(gate: in_combat_gate())
   let crit_buff_started = fn(points) {
     list.count(
@@ -227,7 +227,7 @@ pub fn proxy_135961_starts_its_spell_only_at_5_points_test() -> Nil {
 }
 
 pub fn proxy_230116_starts_its_spell_at_3_points_and_more_behind_its_gate_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let spell = mind_burst_with_gate(gate: in_combat_gate())
   let rune_started = fn(points) {
     list.count(
@@ -250,7 +250,7 @@ fn out_of_combat_gate() -> prerequisite.Prerequisite {
 }
 
 pub fn the_gate_of_a_proxy_that_n_does_not_choose_is_not_checked_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // Prerequisite 4585 is type 37, comparison 6, value 50: a roll is drawn for it
   // only when it is checked.
   let spell =
@@ -271,7 +271,7 @@ pub fn the_gate_of_a_proxy_that_n_does_not_choose_is_not_checked_test() -> Nil {
 /// 57030 does not start at any point, and the gate leaves no debug line, since the
 /// server reads type 50.
 pub fn a_5_point_mind_burst_without_the_reckful_amp_starts_no_crit_buff_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let crit_buff_started = fn(points) {
     list.count(
       started(
@@ -295,7 +295,7 @@ pub fn a_5_point_mind_burst_without_the_reckful_amp_starts_no_crit_buff_test() -
 }
 
 pub fn a_5_point_mind_burst_with_the_reckful_amp_held_starts_the_crit_buff_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // A planted spell 57027 on bag index 11 whose go gives the caster a node that
   // lasts until removed, as the AMP's lasting effect does.
   let amp =
@@ -365,7 +365,7 @@ pub fn a_5_point_mind_burst_with_the_reckful_amp_held_starts_the_crit_buff_test(
 // ---- 7 to 9: what the costs check ----
 
 pub fn mind_burst_with_no_psi_point_is_refused_51_and_pays_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(_, effects) = press(spell: mind_burst_spell(), points: 0)
   assert support.refusal_results(effects:) == [51]
     as "0x1403b3320: 0 of slot 1 is below the base cost of 1, refused 51 (CasterVitalCostResource1)"
@@ -386,7 +386,7 @@ fn quick_mind_burst() -> Spell {
 }
 
 pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let plans = support.plans_with(spell: quick_mind_burst())
   let caster = caster_holding(points: 3)
   let take = fn(state, message, body, at) {
@@ -456,7 +456,7 @@ pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test()
 }
 
 pub fn a_held_press_chooses_by_the_points_held_when_it_starts_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let plans = support.plans_with(spell: mind_burst_spell())
   let pressing = caster_holding(points: 2)
   let at_the_go = caster_holding(points: 5)
@@ -521,7 +521,7 @@ pub fn a_held_press_chooses_by_the_points_held_when_it_starts_test() -> Nil {
 // ---- 10: a spend the server does not read ----
 
 pub fn an_unread_emm_id_is_refused_with_its_costs_result_logged_once_and_pays_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // No client row holds an EMM id of 5 on a cost (the test's own subject): Mind
   // Burst's Spell4 32809 holds 4.
   let assert Ok(plans) =
@@ -561,7 +561,7 @@ pub fn an_unread_emm_id_is_refused_with_its_costs_result_logged_once_and_pays_no
 // ---- 11: a spell with no EMM id keeps every effect ----
 
 pub fn crush_keeps_every_effect_at_any_points_held_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let crush_spell = support.ability(base: 19_022)
   assert list.map(crush_spell.proxies, fn(proxy) { proxy.tag })
     == [spend.EqualTo(value: 4)]

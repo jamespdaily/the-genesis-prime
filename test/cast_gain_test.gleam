@@ -67,7 +67,7 @@ fn children_started(effects: List(cast.Effect), spell4_id: Int) -> Int {
 // ---- 19 ----
 
 pub fn relentless_strikes_striking_3_foes_gives_180_once_and_starts_3_children_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let effects =
     pressed_through(
       plans: support.plans(),
@@ -84,7 +84,7 @@ pub fn relentless_strikes_striking_3_foes_gives_180_once_and_starts_3_children_t
 // ---- 20 ----
 
 pub fn relentless_strikes_with_only_deflects_or_no_foe_gives_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let deflected =
     pressed_through(
       plans: support.plans(),
@@ -107,7 +107,7 @@ pub fn relentless_strikes_with_only_deflects_or_no_foe_gives_nothing_test() -> N
 // ---- 21 ----
 
 pub fn telekinetic_strike_striking_2_foes_gives_1_psi_point_once_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let effects =
     pressed_through(
       plans: support.plans(),
@@ -123,7 +123,7 @@ pub fn telekinetic_strike_striking_2_foes_gives_1_psi_point_once_test() -> Nil {
 // ---- 22 ----
 
 pub fn energize_gives_4_actuators_and_logs_its_ticking_gain_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans = spell_tables.fixture_plans()
   let effects =
     pressed_through(
@@ -146,7 +146,7 @@ pub fn energize_gives_4_actuators_and_logs_its_ticking_gain_test() -> Nil {
 // ---- 23 ----
 
 pub fn a_gain_whose_prerequisite_fails_is_not_given_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let overdrive = Spell(..support.exempt(), spell4_id: Spell4Id(42_908))
   let plans = support.with_spells(plans: support.plans(), spells: [overdrive])
   let #(state, _) =
@@ -256,7 +256,7 @@ fn mind_burst_held_behind_the_go(
 }
 
 pub fn a_press_held_behind_a_go_is_checked_against_the_bar_with_that_gos_gain_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   assert mind_burst_held_behind_the_go(struck: support.hits([10]))
     == #([Payment(slot: 1, amount: 1)], [[Gain(slot: 1, amount: 1)]], [])
     as "Spell4.32809 costs 1 Psi Point (Spell4CastResult.vital_cost) and 0 Psi Points are refused 51 (CasterVitalCostResource1); Telekinetic Strike's go struck a foe and gave +1 (56858), so the held Mind Burst is accepted and pays it"

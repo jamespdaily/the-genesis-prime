@@ -298,7 +298,7 @@ pub fn a_damage_multiplier_that_is_not_a_finite_float_fails_the_load_naming_the_
         )
         == Error(MultiplierNotFinite(
           spell4_id: 58_591,
-          effect_id: 1,
+          effect_id: 140_383,
           bits: planted.1,
         ))
         as "a quiet NaN, an infinity and the negative of each (the column reads as a signed 32-bit number) cannot be a float of the VM: the load names the effect instead of crashing"
@@ -319,7 +319,7 @@ pub fn a_damage_effect_aimed_by_a_flag_value_not_read_fails_the_load_test() -> N
   assert area_tables.built(
       kick: area_tables.Kick(..area_tables.kick(), effect_target_flags: 3),
     )
-    == Error(AimNotRead(spell4_id: 58_591, effect_id: 1, target_flags: 3))
+    == Error(AimNotRead(spell4_id: 58_591, effect_id: 140_383, target_flags: 3))
     as "Spell4Effects.targetFlags: 1, 2, 4 and 6 are the values the rows hold"
 }
 
@@ -331,17 +331,21 @@ pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
     [
       #(
         area_tables.Kick(..area_tables.kick(), multiplier_bits: 0x7F800000),
-        MultiplierNotFinite(spell4_id: 58_591, effect_id: 1, bits: 0x7F800000),
+        MultiplierNotFinite(
+          spell4_id: 58_591,
+          effect_id: 140_383,
+          bits: 0x7F800000,
+        ),
         "dataBits00 0x7F800000 is an infinity, not a multiplier",
       ),
       #(
         area_tables.Kick(..area_tables.kick(), effect_target_flags: 3),
-        AimNotRead(spell4_id: 58_591, effect_id: 1, target_flags: 3),
+        AimNotRead(spell4_id: 58_591, effect_id: 140_383, target_flags: 3),
         "Spell4Effects.targetFlags: 1, 2, 4 and 6 are the values the rows hold",
       ),
       #(
         area_tables.Kick(..area_tables.kick(), parameters: [#(7, 0.5)]),
-        FormulaNotRead(spell4_id: 58_591, effect_id: 1, parameter_kind: 7),
+        FormulaNotRead(spell4_id: 58_591, effect_id: 140_383, parameter_kind: 7),
         "0x140565600: a player's value reads the parameter types 0, 10, 12 and 13, so a non-zero type 7 is refused",
       ),
     ],
@@ -457,29 +461,25 @@ fn all_held(
   list.map(spells, fn(spell4_id) { #(spell4_id, Ok(row)) })
 }
 
-pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_planted_trees_test() -> Nil {
+pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_fixtures_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(areas) =
     spell_tables.with_loaded_deriving(
-      rows: spell_tables.rows(),
+      rows: spell_tables.fixture_rows(),
       derivations: [spell_plan.derivation()],
       body: fn(tables) { spell_area.build(tables:) },
     )
-    as "the planted trees build their areas"
+    as "the fixture's rows build their areas"
   let with_row = [39_467, 70_045, 70_054]
   assert area_rows_held(areas:, spells: with_row)
     == all_held(spells: with_row, row: True)
     as "Spell4Effects 86439: the stage's Proxy 39467 strikes, aimed at the area (targetFlags 4), so it holds Spell4 39467's area row 694; Relentless Strikes' stage spells 70045 and 70054 proxy 53865 at the area (177099, 177122, targetFlags 4), so they hold their row 640"
-  let without_row =
-    list.append(
-      stage_spells_that_only_start_others,
-      list.filter(stage_spells_that_strike, fn(spell4_id) {
-        !list.contains(with_row, spell4_id)
-      }),
-    )
-  assert area_rows_held(areas:, spells: without_row)
-    == all_held(spells: without_row, row: False)
-    as "Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124 name the stage spells and Spell4Effects 83782, 177158, 177171, 177498, 182203 and 182204 start their Proxies: each is cast, so each is in the areas; the planted rows hold no damage effect or Proxy at the area for the others"
+  assert area_rows_held(areas:, spells: stage_spells_that_strike)
+    == all_held(spells: stage_spells_that_strike, row: True)
+    as "each stage spell or Proxy that holds a damage effect aimed at the area (Spell4Effects 80977 to 86439, targetFlags 4) is in the areas with its area row"
+  assert area_rows_held(areas:, spells: stage_spells_that_only_start_others)
+    == all_held(spells: stage_spells_that_only_start_others, row: False)
+    as "Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124 name the stage spells and Spell4Effects 83782, 177158, 177171, 177498, 182203 and 182204 start their Proxies: each is cast, so each is in the areas, with no area row of its own"
   let assert Ok(proxy) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(39_467))
   let assert Ok(phase) = spell_area.phase(spell: proxy, phase: 0, spent: None)
@@ -534,7 +534,7 @@ fn damage_of(
 }
 
 pub fn mind_burst_tags_its_five_damage_effects_with_their_emm_columns_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let area = spell_tables.mind_burst_in(areas: spell_tables.fixture_areas())
   assert list.map(damage_of(area:, spent: None), fn(effect) {
       #(effect.effect_id, effect.tag)
@@ -550,7 +550,7 @@ pub fn mind_burst_tags_its_five_damage_effects_with_their_emm_columns_test() -> 
 }
 
 pub fn a_phase_with_n_holds_only_the_damage_effects_n_chooses_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let area = spell_tables.mind_burst_in(areas: spell_tables.fixture_areas())
   list.each([0, 1, 2, 3, 4], fn(spent) {
     assert list.map(damage_of(area:, spent: Some(spent)), fn(effect) {
@@ -562,7 +562,7 @@ pub fn a_phase_with_n_holds_only_the_damage_effects_n_chooses_test() -> Nil {
 }
 
 pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // The client's Mind Burst has every damage effect aimed at the area (targetFlags 4).
   // Its effect 61993, the one n 0 chooses, is aimed at the cast's target here
   // (targetFlags 2): no client row has an effect of n 0 aimed anywhere else.

@@ -113,7 +113,7 @@ fn bits(value value: Float) -> Int {
 }
 
 pub fn a_modifier_starting_at_a_go_writes_0x93a_to_the_player_and_tells_each_viewer_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _) = medic_entering(saved: None)
   let maximum = maximum_health()
   let state = support.watched_by(state:, viewers: [2, 3])
@@ -145,7 +145,7 @@ pub fn a_modifier_starting_at_a_go_writes_0x93a_to_the_player_and_tells_each_vie
 }
 
 pub fn the_modifiers_end_writes_0x93a_with_the_value_back_at_its_base_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _) = medic_entering(saved: None)
   let maximum = maximum_health()
   let state = support.watched_by(state:, viewers: [2])
@@ -195,7 +195,7 @@ fn arriving(
 }
 
 pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0x262_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _) = medic_entering(saved: None)
   let maximum = maximum_health()
   let #(state, started) = pressed(state:)
@@ -237,7 +237,7 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
 }
 
 pub fn the_players_health_ticks_by_the_maximum_a_modifier_raised_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // Saved at 300 of a maximum above it, the player regenerates floor(maximum x 0.025)
   // a tick; while BaseHealth is 100 higher the tick is floor((maximum + 100) x 0.025).
   let #(state, _) = medic_entering(saved: Some(300))

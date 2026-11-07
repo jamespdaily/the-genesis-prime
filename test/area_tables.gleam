@@ -62,24 +62,27 @@ pub fn kick() -> Kick {
   )
 }
 
-/// The planted spell rows with Kick's damage, hit shape and valid targets as `kick`
-/// holds them.
+/// The fixture's rows with Kick's damage effect (Spell4Effects 140383), hit shape and
+/// valid targets as `kick` holds them.
 fn kick_rows(kick kick: Kick) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   spell_tables.Rows(
     ..rows,
-    spell4_effects: spell_tables.sorted_by_id([
-      spell_tables.damage_effect_row(
-        id: 1,
-        spell: 58_591,
-        damage_type: 1,
-        target_flags: kick.effect_target_flags,
-        delay: 166,
-        multiplier_bits: kick.multiplier_bits,
-        parameters: kick.parameters,
-      ),
-      ..rows.spell4_effects
-    ]),
+    spell4_effects: list.map(rows.spell4_effects, fn(row) {
+      case row {
+        [Integer(140_383), ..] ->
+          spell_tables.damage_effect_row(
+            id: 140_383,
+            spell: 58_591,
+            damage_type: 1,
+            target_flags: kick.effect_target_flags,
+            delay: 166,
+            multiplier_bits: kick.multiplier_bits,
+            parameters: kick.parameters,
+          )
+        other -> other
+      }
+    }),
     spell4_aoe_target_constraints: spell_tables.sorted_by_id([
       spell_tables.aoe_row_selecting(
         id: 640,
@@ -128,13 +131,14 @@ pub fn built(kick kick: Kick) -> Result(Areas, AreaError) {
   )
 }
 
-/// Whether the coverage measure counts Kick's damage effect, row 1, read: the plan's
+/// Whether the coverage measure counts Kick's damage effect, row 140383, read: the plan's
 /// decision about the row in a spell nothing starts on each struck unit, over the planted
 /// tables (`genesis_prime/coverage/effect_row`).
 pub fn read_by_the_measure(kick kick: Kick) -> Bool {
   spell_tables.with_loaded(rows: kick_rows(kick:), body: fn(tables) {
-    let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(1))
-      as "the planted Kick holds its damage effect, row 1"
+    let assert Ok(row) =
+      spell4_effects.get(tables:, id: Spell4EffectsId(140_383))
+      as "Kick holds its damage effect, row 140383"
     effect_row.is_read(
       tables:,
       spell_groups: spell_plan.spell_groups(tables:),

@@ -58,7 +58,7 @@ fn listed_in_go(taken taken: ConnectionStep(Request)) -> List(List(Int)) {
 }
 
 pub fn a_blink_the_client_reports_after_the_go_is_taken_and_relayed_as_any_move_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let state = support.watched_by(state: medic_entering(), viewers: [3, 2])
   let #(state, pressed) =
     support.press_paralytic_surge(state:, client_cast_id: 1)

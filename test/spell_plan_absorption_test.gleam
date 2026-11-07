@@ -103,7 +103,7 @@ fn modifier_of(
   spell4_id spell4_id: Int,
   effect effect: Spell4Effects,
 ) -> Result(spell_plan.PropertyModifier, spell_plan.PlanError) {
-  spell_tables.with_loaded(rows: spell_tables.rows(), body: fn(tables) {
+  spell_tables.with_loaded(rows: spell_tables.fixture_rows(), body: fn(tables) {
     spell_plan.modifier_of(tables:, spell4_id:, effect:, condition: Always)
   })
 }
@@ -134,13 +134,13 @@ fn spectral_form_row() -> Spell4Effects {
 pub fn an_absorption_row_aimed_at_the_caster_is_read_with_its_formula_mask_and_time_test() -> Nil {
   use <- owned_test.run(60_000)
   assert modifiers_of(row: absorption_row(
-      id: 178_144,
+      id: 99_061,
       target_flags: 1,
       columns: spectral_form_columns(),
     ))
     == [
       spell_plan.PropertyModifier(
-        effect_id: Spell4EffectsId(178_144),
+        effect_id: Spell4EffectsId(99_061),
         phase_flags: 1,
         change: spell_plan.AbsorbChange(Absorption(
           formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
@@ -162,7 +162,7 @@ pub fn an_absorption_row_aimed_at_the_caster_is_read_with_its_formula_mask_and_t
 }
 
 pub fn an_absorption_rows_data_bits01_is_read_as_a_float_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(30_000)
   // Row 183643 (Spell4 71564): dataBits00 1.0, dataBits01 1110704128, text 581159
   // 'Granted 45 Absorb'.
   let row =
@@ -384,7 +384,7 @@ pub fn an_absorption_row_whose_amount_is_0_for_every_caster_fails_the_load_test(
 // ---- the kinds and the measure ----
 
 pub fn effect_kind_reads_absorption_aimed_at_the_caster_and_the_measure_counts_the_plans_refusals_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(20_000)
   assert effect_kind.kind_of(effect_type: 29) == effect_kind.Absorption
   assert effect_kind.is_read(effect_type: 29)
     as "the measure counts type 29 handled"

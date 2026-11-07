@@ -117,7 +117,7 @@ fn row(id id: Int) -> Spell4Effects {
 // ---- the rows of the plan, whole ----
 
 pub fn the_stalkers_passive_holds_its_five_procs_on_the_caster_in_row_order_with_their_limits_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let procs =
     list.map(passive().procs, fn(proc) {
@@ -147,7 +147,7 @@ pub fn the_stalkers_passive_holds_its_five_procs_on_the_caster_in_row_order_with
 }
 
 pub fn a_proc_of_a_kind_not_read_is_in_no_list_and_the_load_succeeds_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   assert spell_named(spell4_id: 52_371).procs == []
     as "52371 'Eradication ExoSuit - Proc Base' holds 123744, kind 12: it is skipped"
@@ -156,7 +156,7 @@ pub fn a_proc_of_a_kind_not_read_is_in_no_list_and_the_load_succeeds_test() -> N
 }
 
 pub fn a_procs_spell_is_planned_as_its_tree_and_the_tree_walks_it_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let ids =
     spell_plan.tree(spell: passive(), started: fn(_) { True })
@@ -378,7 +378,7 @@ pub fn a_proc_with_no_life_fails_the_load_and_a_timed_one_is_read_test() -> Nil 
 }
 
 pub fn a_spell_refuses_the_life_its_caster_condition_names_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(5000)
   let spell = fn(death) {
     spell_plan.Spell(
       ..cast_support.child(spell4_id: 1, base: 1),

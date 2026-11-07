@@ -470,10 +470,10 @@ pub fn the_agreement_test_reports_a_spell_the_plan_refuses_for_a_row_read_row_re
     )
   let rows =
     spell_tables.Rows(
-      ..spell_tables.rows(),
+      ..spell_tables.fixture_rows(),
       spell4_effects: spell_tables.sorted_by_id([
         fluff,
-        ..spell_tables.rows().spell4_effects
+        ..spell_tables.fixture_rows().spell4_effects
       ]),
     )
   spell_tables.with_loaded(rows:, body: fn(tables) {
@@ -558,7 +558,7 @@ fn refused_with(
 ) -> Comparison {
   let rows =
     spell_tables.Rows(
-      ..spell_tables.rows(),
+      ..spell_tables.fixture_rows(),
       spell4_effects: spell_tables.sorted_by_id([
         spell_tables.effect_row_with(
           id: 90_001,
@@ -566,7 +566,7 @@ fn refused_with(
           target_flags: 1,
           columns: fluff_columns,
         ),
-        ..spell_tables.rows().spell4_effects
+        ..spell_tables.fixture_rows().spell4_effects
       ]),
     )
   spell_tables.with_loaded(rows:, body: fn(tables) {

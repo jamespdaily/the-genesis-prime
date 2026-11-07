@@ -35,7 +35,6 @@ import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
 import genesis_prime/table/spell4_effects
-import genesis_prime/table/spell_cool_down
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -322,9 +321,10 @@ pub fn the_rows_of_a_phase_are_those_whose_phase_flags_name_it_test() -> Nil {
 // ---- the cooldown groups ----
 
 pub fn a_spell_holds_the_cooldown_groups_its_row_names_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // The kit's Charged Shot 34718 holds the group 133 (`table_rows -- Spell4 34718`); the
-  // planted Telekinetic Strike names 133 and 134, with rows for both.
+  // changed Telekinetic Strike names 133 and 134, and the client's SpellCoolDown holds a
+  // row for both.
   let rows =
     spell_tables.rows_with_strike(name: "spellCoolDownId00", cell: Integer(133))
   let rows =
@@ -341,27 +341,17 @@ pub fn a_spell_holds_the_cooldown_groups_its_row_names_test() -> Nil {
           other -> other
         }
       }),
-      spell_cool_downs: list.append(rows.spell_cool_downs, [
-        planted_table.row(spell_cool_down.schema, [
-          #("ID", Integer(133)),
-          #("cooldownTime", Integer(0)),
-        ]),
-        planted_table.row(spell_cool_down.schema, [
-          #("ID", Integer(134)),
-          #("cooldownTime", Integer(0)),
-        ]),
-      ]),
     )
   let assert Ok(spell) = spell_tables.planned_strike(rows:)
   assert spell.cooldown_groups == [133, 134]
     as "the non-zero of spellCoolDownId00 to 02, in column order (0x14055e180 lines 898-913)"
   let assert Ok(without) =
-    spell_tables.planned_strike(rows: spell_tables.rows())
+    spell_tables.planned_strike(rows: spell_tables.fixture_rows())
   assert without.cooldown_groups == [] as "a column holding 0 names no group"
 }
 
 pub fn a_cooldown_group_with_no_spellcooldown_row_fails_the_load_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let assert Error(error) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_strike(
       name: "spellCoolDownId01",

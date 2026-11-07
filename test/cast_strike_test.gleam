@@ -50,7 +50,7 @@ fn gone() -> #(cast.State, List(cast.Effect)) {
 }
 
 pub fn a_go_with_damage_asks_for_its_targets_and_writes_nothing_until_the_round_closes_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(_, effects) = gone()
   assert list.contains(
     effects,
@@ -69,7 +69,7 @@ pub fn a_go_with_damage_asks_for_its_targets_and_writes_nothing_until_the_round_
 }
 
 pub fn a_closed_round_writes_the_go_with_a_target_info_for_each_hit_unit_and_a_0x7fb_for_each_deflect_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let #(_, effects) =
     support.went(
@@ -123,7 +123,7 @@ fn tech_hit(
 }
 
 pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a_result_of_1_and_no_0x247_is_sent_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let #(_, effects) =
     support.went(
@@ -173,7 +173,7 @@ pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a
 }
 
 pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_casters_round_still_writes_its_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(first_state, _) = gone()
   let #(second_state, _) = gone()
   let assert Ok(#(second_state, ended)) =
@@ -217,7 +217,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
 }
 
 pub fn a_struck_unit_the_client_no_longer_shows_is_still_named_in_the_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let #(_, effects) =
     support.went(
@@ -235,7 +235,7 @@ pub fn a_struck_unit_the_client_no_longer_shows_is_still_named_in_the_go_test() 
 }
 
 pub fn a_0x801_while_a_round_is_open_leaves_the_close_with_nothing_to_write_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let assert Ok(#(state, _)) =
     cast.take(
@@ -265,7 +265,7 @@ pub fn a_0x801_while_a_round_is_open_leaves_the_close_with_nothing_to_write_test
 }
 
 pub fn a_proxy_aimed_at_the_area_starts_one_child_for_each_hit_unit_and_none_for_a_deflect_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _) = gone()
   let #(_, effects) =
     support.went(

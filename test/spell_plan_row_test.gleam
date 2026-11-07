@@ -123,8 +123,29 @@ fn proc_columns(kind kind: Int) -> List(#(String, Cell)) {
   ]
 }
 
+/// Whether the client's Spell4Effects table holds a row of this id.
+fn client_row(id id: Int) -> Bool {
+  list.any(spell_tables.fixture_rows().spell4_effects, fn(row) {
+    row == [Integer(id), ..list.drop(row, 1)]
+  })
+}
+
+/// Whether this id is one a test planted between these two: the client holds rows in
+/// the same ranges (90366, 91018, 92xxx), which are its own and no part of what a test
+/// plants.
+fn planted_between(id id: Int, low low: Int, high high: Int) -> Bool {
+  id >= low && id < high && !client_row(id:)
+}
+
+/// The fixture's rows with these effect rows added, each of an id the client's table
+/// does not hold.
 fn rows_with(effects effects: List(List(Cell))) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
+  list.each(effects, fn(effect) {
+    let assert [Integer(id), ..] = effect as "a planted row holds its ID first"
+    assert !client_row(id:)
+      as "a planted id the client's table holds would replace the client's row"
+  })
   spell_tables.Rows(
     ..rows,
     spell4_effects: spell_tables.sorted_by_id(list.append(
@@ -140,7 +161,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
   let assert Ok(spell) = spell_tables.planned_strike(rows:)
     as "the planted spell loads: every row of it is read or left out"
   assert spell_tables.listed_effect_ids(spell:)
-    |> list.filter(fn(id) { id >= 90_000 && id < 91_000 })
+    |> list.filter(planted_between(id: _, low: 90_000, high: 91_000))
     |> list.sort(int.compare)
     == [
       90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_008, 90_009,
@@ -151,7 +172,9 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
     let spell_groups = spell_plan.spell_groups(tables:)
     let effects =
       spell4_effects.all(tables)
-      |> list.filter(fn(effect) { effect.id >= 90_000 && effect.id < 91_000 })
+      |> list.filter(fn(effect) {
+        planted_between(id: effect.id, low: 90_000, high: 91_000)
+      })
     let read = fn(effect: Spell4Effects) {
       spell_plan.read_row(
         tables:,
@@ -211,7 +234,7 @@ fn first_of(effects effects: List(Spell4Effects), id id: Int) -> Spell4Effects {
 }
 
 pub fn a_spend_all_spell_refuses_an_effect_tag_the_rule_does_not_read_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // Mind Burst's Spell4 32809 spends every point of slot 1 (innateCostEMMId0 4 on a
   // cost of type 6, `Spell4.32809`). Its damage effects 61993 and 61994 hold
   // emmComparison 0 in the client's rows; no client row holds a 2, and the server's
@@ -297,14 +320,18 @@ pub fn a_row_whose_prerequisites_nest_each_other_is_not_read_test() -> Nil {
       #("prerequisiteIdCasterApply", Integer(910)),
     ])
   let rows =
-    spell_tables.Rows(..rows_with(effects: [planted_row]), prerequisites: [
-      spell_tables.prerequisite_row(id: 910, flags: 0, conditions: [
-        #(11, 1, 911, 0),
+    spell_tables.Rows(
+      ..rows_with(effects: [planted_row]),
+      prerequisites: spell_tables.sorted_by_id([
+        spell_tables.prerequisite_row(id: 910, flags: 0, conditions: [
+          #(11, 1, 911, 0),
+        ]),
+        spell_tables.prerequisite_row(id: 911, flags: 0, conditions: [
+          #(11, 1, 910, 0),
+        ]),
+        ..spell_tables.fixture_rows().prerequisites
       ]),
-      spell_tables.prerequisite_row(id: 911, flags: 0, conditions: [
-        #(11, 1, 910, 0),
-      ]),
-    ])
+    )
   assert spell_tables.planned_strike(rows:)
     == Error(spell_plan.PrerequisiteCycle(path: [910, 911, 910]))
     as "the rows nest each other round a cycle"
@@ -345,7 +372,9 @@ pub fn a_property_row_with_no_life_is_held_whatever_its_type_test() -> Nil {
   spell_tables.with_loaded(rows: rows_with(effects:), body: fn(tables) {
     let planted_effects =
       spell4_effects.all(tables)
-      |> list.filter(fn(effect) { effect.id >= 90_100 && effect.id < 92_000 })
+      |> list.filter(fn(effect) {
+        planted_between(id: effect.id, low: 90_100, high: 92_000)
+      })
     let spell_groups = spell_plan.spell_groups(tables:)
     let verdicts =
       list.map(planted_effects, fn(effect) {
@@ -403,14 +432,16 @@ pub fn a_row_no_phase_selects_is_held_and_a_damage_row_left_out_test() -> Nil {
   let assert Ok(spell) = spell_tables.planned_strike(rows:)
     as "the planted spell loads"
   assert spell_tables.listed_effect_ids(spell:)
-    |> list.filter(fn(id) { id >= 92_000 && id < 93_000 })
+    |> list.filter(planted_between(id: _, low: 92_000, high: 93_000))
     |> list.sort(int.compare)
     == [92_001, 92_002, 92_004]
     as "the plan lists the Fluff and the Proxy of phaseFlags 0, which no phase applies, beside the Fluff of -1; the damage row is in no list"
   spell_tables.with_loaded(rows:, body: fn(tables) {
     let planted_effects =
       spell4_effects.all(tables)
-      |> list.filter(fn(effect) { effect.id >= 92_000 && effect.id < 93_000 })
+      |> list.filter(fn(effect) {
+        planted_between(id: effect.id, low: 92_000, high: 93_000)
+      })
     let spell_groups = spell_plan.spell_groups(tables:)
     let read = fn(id) {
       spell_plan.read_row(

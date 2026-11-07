@@ -28,7 +28,7 @@ pub fn a_proxy_with_data_bits00_0_and_its_spell_in_data_bits01_builds_no_child_a
       ],
     )
   let assert Ok(without) =
-    spell_tables.planned_strike(rows: spell_tables.rows())
+    spell_tables.planned_strike(rows: spell_tables.fixture_rows())
     as "the planted rows plan"
   let assert Ok(with) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(

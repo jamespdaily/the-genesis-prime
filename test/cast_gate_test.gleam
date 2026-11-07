@@ -122,7 +122,7 @@ fn gated_on(gates: List(prerequisite.Prerequisite)) -> Proxy {
 }
 
 pub fn a_caster_gate_that_passes_starts_the_child_at_the_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let spell =
     spell_with(
       proxies: [
@@ -139,7 +139,7 @@ pub fn a_caster_gate_that_passes_starts_the_child_at_the_go_test() -> Nil {
 }
 
 pub fn a_caster_gate_that_fails_does_not_start_the_child_and_says_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let spell =
     spell_with(
       proxies: [
@@ -157,7 +157,7 @@ pub fn a_caster_gate_that_fails_does_not_start_the_child_and_says_nothing_test()
 }
 
 pub fn both_gates_of_a_proxy_must_pass_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let in_combat_gate =
     prerequisite_support.single(id: 903, condition: #(28, 1, 0, 0))
   let out_of_combat_gate =
@@ -180,7 +180,7 @@ pub fn both_gates_of_a_proxy_must_pass_test() -> Nil {
 }
 
 pub fn a_gate_of_a_type_the_server_does_not_read_starts_nothing_and_leaves_one_debug_line_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let spell =
     spell_with(
       proxies: [
@@ -204,7 +204,7 @@ pub fn a_gate_of_a_type_the_server_does_not_read_starts_nothing_and_leaves_one_d
 }
 
 pub fn a_proxy_with_no_gate_starts_as_before_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let effects =
     pressed(
       spell: spell_with(proxies: [proxy(spell_plan.Always)], gains: []),
@@ -221,7 +221,7 @@ fn chance_gate() -> prerequisite.Prerequisite {
 }
 
 pub fn a_type_37_gate_starts_the_child_when_its_roll_is_at_most_the_value_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let spell = spell_with(proxies: [gated_on([chance_gate()])], gains: [])
   assert children_started(
       pressed(spell:, caster: support.caster(), rolls: [50]),
@@ -267,7 +267,7 @@ fn live_go_of(spell spell: Spell) -> #(cast.State, cast.GoAsked) {
 }
 
 pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherwise_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let needing = spell_with(proxies: [gated_on([chance_gate()])], gains: [])
   let #(state, asked) = live_go_of(spell: needing)
   assert cast.rolls_needed(
@@ -334,7 +334,7 @@ fn gain_behind(
 }
 
 pub fn a_gain_behind_a_type_73_prerequisite_reads_the_class_resource_slot_of_the_vital_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let at_least_100 =
     spell_with(proxies: [], gains: [
       gain_behind(
@@ -374,7 +374,7 @@ pub fn a_gain_behind_a_type_73_prerequisite_reads_the_class_resource_slot_of_the
 }
 
 pub fn a_gain_behind_a_type_71_prerequisite_reads_the_casters_health_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let on_full_health =
     spell_with(proxies: [], gains: [
       gain_behind(
@@ -413,7 +413,7 @@ pub fn a_gain_behind_a_type_71_prerequisite_reads_the_casters_health_test() -> N
 }
 
 pub fn a_gain_behind_a_vital_the_server_does_not_hold_is_not_given_and_leaves_a_line_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let focus =
     spell_with(proxies: [], gains: [
       gain_behind(
@@ -434,7 +434,7 @@ pub fn a_gain_behind_a_vital_the_server_does_not_hold_is_not_given_and_leaves_a_
 // ---- the order within a go ----
 
 pub fn a_gain_behind_a_type_15_prerequisite_reads_the_casts_as_they_stood_before_the_go_starts_its_children_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let not_under_the_child =
     spell_with(proxies: [proxy(spell_plan.Always)], gains: [
       gain_behind(
@@ -455,7 +455,7 @@ pub fn a_gain_behind_a_type_15_prerequisite_reads_the_casts_as_they_stood_before
 }
 
 pub fn a_gain_behind_a_type_15_prerequisite_reads_the_casts_as_they_stood_before_the_go_finishes_the_cast_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let under_its_own_cast =
     spell_with(proxies: [], gains: [
       gain_behind(
@@ -479,7 +479,7 @@ pub fn a_gain_behind_a_type_15_prerequisite_reads_the_casts_as_they_stood_before
 }
 
 pub fn a_gain_behind_a_resource_slot_the_class_does_not_hold_is_not_given_and_leaves_a_line_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   assert class_resource.slot(resources: support.caster().resources) == 1
     as "the planted caster's class holds slot 1 (Vital 6, Resource1) only"
   list.each([#(73, 5), #(73, 7), #(71, 11)], fn(condition) {
@@ -503,7 +503,7 @@ pub fn a_gain_behind_a_resource_slot_the_class_does_not_hold_is_not_given_and_le
 }
 
 pub fn a_gain_behind_the_units_difficulty_is_not_given_to_a_player_and_leaves_a_line_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let spell =
     spell_with(proxies: [], gains: [
       gain_behind(

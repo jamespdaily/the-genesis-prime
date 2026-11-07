@@ -52,9 +52,9 @@ fn list_of(rows: List(String)) -> tooltip_token.Tokens {
 const volatility =
   server_proxy.Row(spell4_base_id: 26_468, phase: 1, spell4_id: 42_148)
 
-/// The planted Volatility rows with Pulse Blast's text columns set.
+/// The fixture's rows with Pulse Blast's text columns set.
 fn rows_with_blast_texts(columns: List(#(String, Int))) -> spell_tables.Rows {
-  let rows = spell_tables.rows_with_volatility()
+  let rows = spell_tables.fixture_rows()
   spell_tables.Rows(
     ..rows,
     spell4: list.map(rows.spell4, fn(row) {
@@ -126,7 +126,7 @@ fn volatility_naming() -> named_unreached.Naming {
 }
 
 pub fn a_value_token_naming_a_spell_no_tree_reaches_is_listed_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(30_000)
   let #(named, reached) =
     named_in(
       rows: rows_with_blast_texts([
@@ -148,7 +148,7 @@ pub fn a_value_token_naming_a_spell_no_tree_reaches_is_listed_test() -> Nil {
 }
 
 pub fn a_server_proxy_row_that_casts_the_spell_removes_it_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(30_000)
   let #(named, reached) =
     named_in(
       rows: rows_with_blast_texts([
@@ -166,7 +166,7 @@ pub fn a_server_proxy_row_that_casts_the_spell_removes_it_test() -> Nil {
 }
 
 pub fn an_entry_a_left_out_part_explains_carries_its_reason_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(30_000)
   let reason =
     ProcKindNotRead(
       spell4_id: 37_302,
@@ -190,7 +190,7 @@ pub fn an_entry_a_left_out_part_explains_carries_its_reason_test() -> Nil {
 }
 
 pub fn a_link_token_is_listed_apart_and_not_counted_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(30_000)
   let link =
     Naming(
       token: Token(tooltip_token.Spell, 42_148, ""),
@@ -212,7 +212,7 @@ pub fn a_link_token_is_listed_apart_and_not_counted_test() -> Nil {
 }
 
 pub fn a_link_to_a_spell_a_tree_reaches_is_not_listed_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(30_000)
   let #(named, _) =
     named_in(
       rows: rows_with_blast_texts([
@@ -226,7 +226,7 @@ pub fn a_link_to_a_spell_a_tree_reaches_is_not_listed_test() -> Nil {
 }
 
 pub fn a_token_naming_a_row_the_tables_lack_is_listed_as_naming_no_row_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(30_000)
   let #(named, _) =
     named_in(
       rows: rows_with_blast_texts([
@@ -271,7 +271,7 @@ pub fn a_token_naming_a_row_the_tables_lack_is_listed_as_naming_no_row_test() ->
 /// Spell4Effects row gives a value, and the spell evaluator prints the spell's name.
 /// A `cc` token is tried after `spell`, so it has no such fall-through.
 pub fn an_eff_token_whose_effect_row_is_missing_but_whose_id_is_a_spell_names_that_spell_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(30_000)
   let named_spell =
     Naming(
       token: Token(tooltip_token.Eff, 42_148, "input0pct"),
@@ -294,7 +294,7 @@ pub fn an_eff_token_whose_effect_row_is_missing_but_whose_id_is_a_spell_names_th
 }
 
 pub fn a_token_a_nested_tooltip_names_counts_for_the_spell_that_nests_it_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(30_000)
   // Pulse Blast's ActionBarTooltip names the Caster text of the unreached 42148, whose
   // text holds a token of effect 95337 (in 42148 itself).
   let rows =

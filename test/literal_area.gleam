@@ -53,6 +53,21 @@ pub fn tables_held_twice() -> List(String)
 @external(erlang, "literal_area_ffi", "names_held_twice")
 pub fn names_held_twice(in terms: List(#(key, term))) -> List(String)
 
+/// The names of the client's tables that two loads hold: a table of this load,
+/// under the server's key (`store.server_key()`) for the real files, that another
+/// load holds with the same size. Other loads of rows of the same table (planted
+/// or the fixture's) have another size, so a test loading beside does not change
+/// the answer.
+@external(erlang, "literal_area_ffi", "tables_held_twice_with")
+pub fn tables_held_twice_with(load load: load) -> List(String)
+
+/// `tables_held_twice_with` over the given keys and terms instead of the VM's.
+@external(erlang, "literal_area_ffi", "names_held_twice_with")
+pub fn names_held_twice_with(
+  load load: load,
+  in terms: List(#(key, term)),
+) -> List(String)
+
 /// The names of every table term the VM holds, of any size, in order.
 @external(erlang, "literal_area_ffi", "table_names")
 pub fn table_names() -> List(String)

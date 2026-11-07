@@ -1,18 +1,21 @@
-//// The planted tables of the spell plan's tests: the rows `genesis_prime/game/spell_plan`
-//// reads for a few abilities, each with the values the client's own row holds
-//// (the fact file's `Spell4.*` records, read with `table_rows`), and a load of
-//// just those tables, so a test can take a row away or add one and meet the
-//// plan's build with it.
+//// The spell tables of the plan's tests: `fixture_rows` holds the client's own rows
+//// (the committed files of `fixture_tables`) as the rows a test adds to or changes, and
+//// `with_loaded` loads just the tables the plan reads from them, so a test can take a
+//// row away or add one and meet the plan's build with it.
 ////
-//// The abilities and what the real rows hold, which the plan's tests assert:
+//// `planted_rows` is the older base, a few abilities each with the values the client's
+//// own row holds (the fact file's `Spell4.*` records, read with `table_rows`). Only
+//// the character and novice flows' planted worlds still load it (the gap issue 326's
+//// steps T3b and T3c close). The abilities and what the real rows hold, which it
+//// plants:
 //// - Telekinetic Strike, Spell4 32893 (class 3, base 19102): castTime 1250,
 ////   castBarType 1, no cooldown of its own, global cooldown kind 0 with SpellCoolDown
 ////   row 213 (1000 ms), a Magic damage effect and a Proxy to 30900 on the caster
 ////   (`Spell4.32893`).
 //// - Mind Burst, 32809 (class 3, base 19019): an innate cost of type 6 (Resource1,
 ////   the Esper's Psi Points) of 1, kind 0, row 104 (1250 ms) (`Spell4CastResult.vital_cost`).
-////   `rows` holds it without its EMM id and effects; `rows_with_mind_burst_spend`
-////   holds them as the client's rows do (`Spell4.32809`).
+////   `planted_rows` holds it without its EMM id and effects (the client's row holds
+////   them, `Spell4.32809`).
 //// - Crush, 32812 (class 3, base 19022): cooldown 35000, kind 3, and one Proxy,
 ////   100 ms after the go, to 42297, with the stray emmComparison 0 and emmValue 4
 ////   (`Spell4.32812`).
@@ -67,7 +70,9 @@ import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/level_up_unlock
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
@@ -85,10 +90,12 @@ import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
 import genesis_prime/table/telegraph_damage
 import genesis_prime/table/unit_property2
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
+import gleam/result
 import owned_key
 import planted_table.{type Cell, Float, Integer}
 
@@ -114,6 +121,7 @@ pub type Rows {
     unit_properties: List(List(Cell)),
     eldan_augmentations: List(List(Cell)),
     level_up_unlocks: List(List(Cell)),
+    positional_requirements: List(List(Cell)),
   )
 }
 
@@ -737,8 +745,14 @@ fn proficiency(class_id class_id: Int) -> #(String, Int) {
   #("startingItemProficiencies", mask)
 }
 
-/// The planted rows of the abilities above and their children.
-pub fn rows() -> Rows {
+/// The planted rows of the abilities above and their children, which only
+/// `novice_tables.spell_tree_files` and `planted_rows_with_volatility` still load, for
+/// the character and novice flows' planted worlds
+/// (`character_tables.shared_with_spell_trees` and `shared_with_volatility`). The gap:
+/// those worlds read these rows and not the client's, and issue 326's steps T3b and
+/// T3c move them to the fixture's (`fixture_rows`), as the cast flow's and the plan's
+/// tests have been moved. No test of the cast flow or the plan reads them.
+pub fn planted_rows() -> Rows {
   Rows(
     spell4_conditions: spell4_conditions_rows(),
     spell_levels: list.map(
@@ -960,7 +974,7 @@ pub fn rows() -> Rows {
         kind: 0,
         global: 125,
         cost: #(0, 0),
-        more: [#("prerequisiteIdCasterPersistence", 390)],
+        more: [],
       ),
       method_spell_row(
         id: 43_468,
@@ -1937,6 +1951,7 @@ pub fn rows() -> Rows {
     unit_properties: unit_property_rows(),
     eldan_augmentations: [],
     level_up_unlocks: [level_up_unlock_row(id: 26, level: 10)],
+    positional_requirements: [],
   )
 }
 
@@ -1990,15 +2005,11 @@ pub fn unit_property_rows() -> List(List(Cell)) {
   unit_property_rows_with(replacing: [])
 }
 
-/// The Prerequisite rows the planted spells' cast and persistence columns name, each the
-/// client's (`table_rows -- Prerequisite 19750 390`): Rampage's cast prerequisite 19750
-/// (type 15, comparison 1, value 42908) and 390 (type 28, comparison 2: not in combat),
-/// which the planted Pulse Blast 42276 holds as its CasterPersistence. The client's Pulse
-/// Blast holds none: that column is test data, so a connection test has a cast that
-/// ends when the player enters combat.
+/// The Prerequisite rows the planted spells' cast columns name, each the client's
+/// (`table_rows -- Prerequisite 19750`): Rampage's cast prerequisite 19750 (type 15,
+/// comparison 1, value 42908).
 pub fn waiver_prerequisite_rows() -> List(List(Cell)) {
   [
-    prerequisite_row(id: 390, flags: 0, conditions: [#(28, 2, 0, 0)]),
     prerequisite_row(id: 19_750, flags: 0, conditions: [#(15, 1, 0, 42_908)]),
   ]
 }
@@ -2017,13 +2028,13 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
 pub fn derivation_result(
   rows rows: Rows,
 ) -> Result(Nil, table_store.LoadError) {
-  let files = files_of(rows:)
+  let files = files_with_the_fixtures_others(rows:)
   use folder <- planted_table.in_folder(files)
   case
     table_store.load(
       under: owned_key.new(),
       from: folder,
-      entries: entries(),
+      entries: entries_with_the_servers_others(),
       requirements: [],
       derivations: [spell_plan.derivation()],
     )
@@ -2034,6 +2045,43 @@ pub fn derivation_result(
     }
     Error(error) -> Error(error)
   }
+}
+
+/// The server's other tables, which the plan's derivation reads beside the spell
+/// tables (the disguise's ItemDisplay, for one): a real spell's rows name them, so a
+/// load without them fails on the first row that does.
+fn entries_with_the_servers_others() -> List(table_store.Entry) {
+  let spell_tables =
+    list.map(entries(), fn(entry) { table_store.schema(entry).table })
+  list.append(
+    entries(),
+    list.filter(server_table.entries(), fn(entry) {
+      !list.contains(spell_tables, table_store.schema(entry).table)
+    }),
+  )
+}
+
+/// The files of these rows and the fixture's own files of the server's other tables.
+fn files_with_the_fixtures_others(
+  rows rows: Rows,
+) -> List(#(String, BitArray)) {
+  let spell_tables =
+    list.map(entries(), fn(entry) { table_store.schema(entry).table })
+  let held = fixture_tables.rows()
+  list.append(
+    files_of(rows:),
+    list.filter_map(server_table.entries(), fn(entry) {
+      let schema = table_store.schema(entry)
+      case list.contains(spell_tables, schema.table) {
+        True -> Error(Nil)
+        False ->
+          Ok(planted_table.file(
+            schema,
+            result.unwrap(dict.get(held, schema.table), []),
+          ))
+      }
+    }),
+  )
 }
 
 fn entries() -> List(table_store.Entry) {
@@ -2082,7 +2130,10 @@ fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
     planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
     planted_table.file(class.schema, rows.classes),
     planted_table.file(prerequisite.schema, rows.prerequisites),
-    planted_table.file(positional_requirement.schema, []),
+    planted_table.file(
+      positional_requirement.schema,
+      rows.positional_requirements,
+    ),
     planted_table.file(unit_property2.schema, rows.unit_properties),
     planted_table.file(eldan_augmentation.schema, rows.eldan_augmentations),
     planted_table.file(level_up_unlock.schema, rows.level_up_unlocks),
@@ -2104,13 +2155,13 @@ pub fn with_loaded_deriving(
   derivations derivations: List(table_store.Derivation),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  let files = files_of(rows:)
+  let files = files_with_the_fixtures_others(rows:)
   use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
     table_store.load(
       under: owned_key.new(),
       from: folder,
-      entries: entries(),
+      entries: entries_with_the_servers_others(),
       requirements: [],
       derivations:,
     )
@@ -2156,21 +2207,20 @@ pub fn started_on_each_struck(
 }
 
 /// What the plan makes of each of these effect rows in a place (`spell_plan.read_row`), over
-/// the planted tables, in the order given.
+/// the fixture's tables, in the order given.
 pub fn read_rows(
   effects effects: List(spell4_effects.Spell4Effects),
   place place: spell_plan.RowPlace,
 ) -> List(Result(spell_plan.RowReading, spell_plan.PlanError)) {
-  with_loaded(rows: rows(), body: fn(tables) {
-    let spell_groups = spell_plan.spell_groups(tables:)
-    list.map(effects, fn(effect) {
-      spell_plan.read_row(tables:, spell_groups:, place:, effect:)
-    })
+  let tables = fixture_tables.shared()
+  let spell_groups = spell_plan.spell_groups(tables:)
+  list.map(effects, fn(effect) {
+    spell_plan.read_row(tables:, spell_groups:, place:, effect:)
   })
 }
 
 /// What the plan makes of one effect row in a place (`spell_plan.read_row`), over the
-/// planted tables.
+/// fixture's tables.
 pub fn read_row(
   effect effect: spell4_effects.Spell4Effects,
   place place: spell_plan.RowPlace,
@@ -2179,7 +2229,7 @@ pub fn read_row(
   reading
 }
 
-/// Whether the coverage measure counts the row read in a place, over the planted tables.
+/// Whether the coverage measure counts the row read in a place, over the fixture's tables.
 pub fn measure_reads(
   effect effect: spell4_effects.Spell4Effects,
   place place: spell_plan.RowPlace,
@@ -2188,87 +2238,17 @@ pub fn measure_reads(
   reads(effect, place)
 }
 
-/// The body gets the measure's per-row answer over the planted tables, loaded once:
-/// each load takes about 0.15 s, and a test that loaded once per row ran past its 5 s
-/// deadline on CI.
+/// The body gets the measure's per-row answer over the fixture's tables, which are
+/// loaded once for the whole run.
 pub fn with_measure(
   body body: fn(fn(spell4_effects.Spell4Effects, spell_plan.RowPlace) -> Bool) ->
     a,
 ) -> a {
-  use tables <- with_loaded(rows: rows())
+  let tables = fixture_tables.shared()
   let spell_groups = spell_plan.spell_groups(tables:)
   body(fn(effect, place) {
     effect_row.is_read(tables:, spell_groups:, place:, effect:)
   })
-}
-
-/// The planted rows with Energize, 69450, as the Medic's innate: Class row 4 names it in
-/// spell4IdInnateAbilityActive00, as the client's row does (`table_rows -- Class 4`), and
-/// the client holds no SpellLevel row for 69450 (`table_rows -- SpellLevel
-/// spell4Id=69450`), which only 78462 reaches, by an effect of type 137. Its Spell4,
-/// Spell4Base and VitalModifier rows are the client's (`table_rows -- Spell4 69450`, `--
-/// Spell4Base 46615`, `-- Spell4Effects spellId=69450`); its effects of types 11 and 118
-/// and its Proxies 228915 and 228917, behind prerequisites, are not planted.
-pub fn rows_with_energize() -> Rows {
-  let rows = rows()
-  Rows(
-    ..rows,
-    classes: list.map(rows.classes, fn(row) {
-      case row {
-        [Integer(4), ..] ->
-          class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: [
-            proficiency(class_id: 4),
-            #("spell4IdInnateAbilityActive00", 69_450),
-          ])
-        other -> other
-      }
-    }),
-    spell4: sorted_by_id([
-      method_spell_row(
-        id: 69_450,
-        base: 46_615,
-        cast_time: 0,
-        cooldown: 30_000,
-        kind: 3,
-        global: 0,
-        cost: #(0, 0),
-        more: [],
-      ),
-      ..rows.spell4
-    ]),
-    spell4_base: sorted_by_id([
-      planted_table.row(spell4_base.schema, [
-        #("ID", Integer(46_615)),
-        #("classIdPlayer", Integer(4)),
-        #("spell4ValidTargetId", Integer(1)),
-      ]),
-      ..rows.spell4_base
-    ]),
-    spell4_effects: sorted_by_id([
-      vital_modifier_row(
-        id: 228_910,
-        spell: 69_450,
-        vital: 6,
-        amount: 4,
-        delay: 0,
-        phases: -1,
-        prerequisite: 43_811,
-        order: 0,
-      ),
-      vital_modifier_row_with(
-        id: 228_918,
-        spell: 69_450,
-        vital: 6,
-        amount: 1,
-        delay: 0,
-        phases: -1,
-        prerequisite: 43_812,
-        order: 7,
-        more: [#("tickTime", 2000), #("durationTime", 8000)],
-      ),
-      ..rows.spell4_effects
-    ]),
-  )
 }
 
 /// Mind Burst's area, 32809, among these areas.
@@ -2300,10 +2280,49 @@ pub fn planned_strike(
   })
 }
 
-/// The planted rows with this Spell4Effects row added; its spell is Telekinetic Strike
+/// The fixture's rows of the tables the plan reads, as the rows a test adds to or
+/// changes before it loads them (`with_loaded`). The rows are the client's, read from
+/// the committed files (`fixture_tables.rows`); a test says why it edits one. The
+/// coverage walk's two tables are no server tables, so the fixture holds no file of them:
+/// EldanAugmentation is empty here and LevelUpUnlock holds the AMP unlock the walk's gates
+/// read, the client's row 26 (level 10, `table_rows -- LevelUpUnlock 26`).
+pub fn fixture_rows() -> Rows {
+  let held = fixture_tables.rows()
+  let of = fn(schema: tbl_file.Schema) {
+    result.unwrap(dict.get(held, schema.table), [])
+  }
+  Rows(
+    spell_levels: of(spell_level.schema),
+    spell4: of(spell4.schema),
+    spell4_conditions: of(spell4_conditions.schema),
+    spell4_base: of(spell4_base.schema),
+    spell4_effects: of(spell4_effects.schema),
+    spell4_thresholds: of(spell4_thresholds.schema),
+    spell4_aoe_target_constraints: of(spell4_aoe_target_constraints.schema),
+    spell4_valid_targets: of(spell4_valid_targets.schema),
+    spell4_telegraph: of(spell4_telegraph.schema),
+    telegraph_damage: of(telegraph_damage.schema),
+    spell_phases: of(spell_phase.schema),
+    spell_cool_downs: of(spell_cool_down.schema),
+    classes: of(class.schema),
+    prerequisites: of(prerequisite.schema),
+    spell4_group_lists: of(spell4_group_list.schema),
+    spell4_stack_groups: of(spell4_stack_group.schema),
+    unit_properties: of(unit_property2.schema),
+    eldan_augmentations: of(eldan_augmentation.schema),
+    level_up_unlocks: [level_up_unlock_row(id: 26, level: 10)],
+    positional_requirements: of(positional_requirement.schema),
+  )
+}
+
+/// The fixture's rows with this Spell4Effects row added; its spell is Telekinetic Strike
 /// when the row says so.
 pub fn rows_with_effect(effect effect: List(Cell)) -> Rows {
-  let rows = rows()
+  let rows = fixture_rows()
+  assert !list.any(rows.spell4_effects, fn(row) {
+    by_id(row, effect) == order.Eq
+  })
+    as "a planted effect row of an id the client's table holds would replace the client's row"
   Rows(..rows, spell4_effects: sorted_by_id([effect, ..rows.spell4_effects]))
 }
 
@@ -2350,14 +2369,24 @@ pub fn with_column(
   })
 }
 
-/// The planted rows with Telekinetic Strike's Spell4 row changed in one column.
+/// The fixture's rows with Telekinetic Strike's Spell4 row changed in one column.
 pub fn rows_with_strike(name name: String, cell cell: Cell) -> Rows {
-  let rows = rows()
+  rows_with_strike_columns(columns: [#(name, cell)])
+}
+
+/// The fixture's rows with Telekinetic Strike's Spell4 row changed in these columns.
+pub fn rows_with_strike_columns(
+  columns columns: List(#(String, Cell)),
+) -> Rows {
+  let rows = fixture_rows()
   Rows(
     ..rows,
     spell4: list.map(rows.spell4, fn(row) {
       case row {
-        [Integer(32_893), ..] -> with_column(row:, name:, cell:)
+        [Integer(32_893), ..] ->
+          list.fold(columns, row, fn(row, column) {
+            with_column(row:, name: column.0, cell: column.1)
+          })
         other -> other
       }
     }),
@@ -2395,9 +2424,10 @@ pub fn fixture_areas() -> spell_area.Areas {
 /// `-- Spell4Telegraph spell4Id=37302`, `-- TelegraphDamage 213 217 218`): three Physical
 /// effects aimed at the area in its goes 1, 2 and 3 (phaseFlags 2, 4 and 8), each with a
 /// cone of its own. Pulse Blast 42276 holds no CasterPersistence, as the client's row has
-/// none (`rows` plants 390 as test data).
-pub fn rows_with_volatility() -> Rows {
-  let rows = rows()
+/// none. Loaded only by `character_tables.shared_with_volatility`, which issue 326's
+/// step T3b moves to the fixture's rows (`planted_rows`).
+pub fn planted_rows_with_volatility() -> Rows {
+  let rows = planted_rows()
   Rows(
     ..rows,
     spell4: sorted_by_id([
@@ -2418,12 +2448,6 @@ pub fn rows_with_volatility() -> Rows {
               row:,
               name: "spell4AoeTargetConstraintsId",
               cell: Integer(area_id(37_302)),
-            )
-          [Integer(42_276), ..] ->
-            with_column(
-              row:,
-              name: "prerequisiteIdCasterPersistence",
-              cell: Integer(0),
             )
           other -> other
         }

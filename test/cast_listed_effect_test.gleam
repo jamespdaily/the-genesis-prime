@@ -40,6 +40,10 @@ const a_quarter = 1_048_576_000
 // The planted base 3 is bag index 11 (`cast_support.abilities`).
 const bag_of_base_3 = 11
 
+// Each planted row has an id no client row holds, since a planted row of a client id
+// would replace the client's row (`spell_tables.rows_with_effect`); the comments name the
+// client row whose shape it takes.
+
 /// A spell of no cast time and no cooldown that holds the lasting and modifier rows the
 /// plan reads from this planted row, and no other.
 fn spell_of(
@@ -85,12 +89,12 @@ fn listed(effects effects: List(Effect)) -> List(Int) {
 // ---- a Scale row ----
 
 pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // 109482's shape: the caster, 1.3 over 500 ms, 8000 ms, here with a delay of 120 ms.
   let spell =
     spell_of(
       row: spell_tables.effect_row_with(
-        id: 109_482,
+        id: 99_071,
         effect_type: 18,
         target_flags: 1,
         columns: [
@@ -101,7 +105,7 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
           #("dataBits02", Integer(1000)),
         ],
       ),
-      id: 109_482,
+      id: 99_071,
       spell4_id: 42_908,
       base: 3,
     )
@@ -119,7 +123,7 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
   assert info.effects
     == [
       SpellEffectInfo(
-        spell4_effects_id: 109_482,
+        spell4_effects_id: 99_071,
         instance_id: 1,
         delay_ms: 120,
         field_4: 0,
@@ -133,11 +137,11 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
 }
 
 pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_end_and_then_finishes_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let spell =
     spell_of(
       row: spell_tables.effect_row_with(
-        id: 109_482,
+        id: 99_071,
         effect_type: 18,
         target_flags: 1,
         columns: [
@@ -145,7 +149,7 @@ pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_
           #("dataBits00", Integer(one_point_three)),
         ],
       ),
-      id: 109_482,
+      id: 99_071,
       spell4_id: 42_908,
       base: 3,
     )
@@ -170,11 +174,11 @@ pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_
 }
 
 pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let spell =
     spell_of(
       row: spell_tables.effect_row_with(
-        id: 192_250,
+        id: 99_072,
         effect_type: 18,
         target_flags: 4,
         columns: [
@@ -182,7 +186,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
           #("dataBits00", Integer(one_point_three)),
         ],
       ),
-      id: 192_250,
+      id: 99_072,
       spell4_id: 101,
       base: 3,
     )
@@ -206,19 +210,19 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
         list.map(info.effects, fn(effect) { effect.spell4_effects_id }),
       )
     })
-    == [#(20, [192_250]), #(21, [192_250])]
+    == [#(20, [99_072]), #(21, [99_072])]
     as "Spell4Effects.effectType.18: the client resizes any unit the go names the effect on, so each struck unit's info lists the row"
 }
 
 // ---- a RavelSignal row ----
 
 pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // 91018 as the client holds it: the caster, behind target apply prerequisite 11311.
   let spell =
     spell_of(
       row: spell_tables.effect_row_with(
-        id: 91_018,
+        id: 99_073,
         effect_type: 81,
         target_flags: 1,
         columns: [
@@ -228,7 +232,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so
           #("prerequisiteIdTargetApply", Integer(11_311)),
         ],
       ),
-      id: 91_018,
+      id: 99_073,
       spell4_id: 38_784,
       base: 3,
     )
@@ -243,7 +247,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so
     as "a row behind a target prerequisite is not applied, as a forced move behind one is not listed"
   let lines =
     list.filter(support.logs(effects:), fn(line) {
-      string.contains(line.1, "91018")
+      string.contains(line.1, "99073")
     })
   assert list.map(lines, fn(line) { line.0 }) == [LogDebug]
     as "one debug line names the row that is not applied"
@@ -255,7 +259,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so
 fn passive() -> Spell {
   spell_of(
     row: spell_tables.effect_row_with(
-      id: 229_304,
+      id: 99_074,
       effect_type: 145,
       target_flags: 1,
       columns: [
@@ -265,7 +269,7 @@ fn passive() -> Spell {
         #("dataBits02", Integer(a_quarter)),
       ],
     ),
-    id: 229_304,
+    id: 99_074,
     spell4_id: 250_001,
     base: 250_001,
   )
@@ -304,19 +308,20 @@ fn conversion() -> unit_properties.Modifier {
 }
 
 pub fn the_innate_passives_go_lists_its_conversion_on_the_caster_and_starts_it_with_no_end_timer_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(_, effects) =
     passive_started(plans: support.plans_of([passive()]), at: 1000)
-  assert listed(effects:) == [229_304] as "row 229304 is listed on the caster"
+  assert listed(effects:) == [99_074]
+    as "the planted row 99074 is listed on the caster"
   let assert [#(source, modifier)] = support.property_starts(effects:)
-  assert source.effect_id == Spell4EffectsId(229_304)
+  assert source.effect_id == Spell4EffectsId(99_074)
   assert modifier == conversion()
   assert support.started_timers(effects:) == []
     as "flags 2: the conversion lasts until it is removed, so no end timer and no node end"
 }
 
 pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let plans = support.plans_of([passive()])
   // The control: the same spell pressed as an ordinary ability, whose conversion a death
   // ends with the cast.

@@ -239,7 +239,7 @@ fn is_accepted(effects effects: List(Effect)) -> Bool {
 }
 
 pub fn charged_shot_released_at_once_ends_the_cooldown_its_go_started_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, _) = charged(plans: charged_plans(), state: cast.new(), at: 1000)
   let #(state, release) = charged(plans: charged_plans(), state:, at: 1100)
   assert listed(effects: release) == [#(7, [#(80_977, 0)])]
@@ -252,7 +252,7 @@ pub fn charged_shot_released_at_once_ends_the_cooldown_its_go_started_test() -> 
 }
 
 pub fn without_the_type_73_row_the_same_release_leaves_the_cooldown_running_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   // The plans without the modifiers of 80977 and 80979: the harness can fail.
   let assert Ok(charged_shot) =
     spell_plan.in_plans(plans: support.plans(), base: Spell4BaseId(20_684))
@@ -269,7 +269,7 @@ pub fn without_the_type_73_row_the_same_release_leaves_the_cooldown_running_test
 }
 
 pub fn charged_shot_released_at_index_1_leaves_four_seconds_of_its_cooldown_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans = charged_plans()
   let #(state, pressed) = charged(plans:, state: cast.new(), at: 1000)
   let assert [#(level_1, 1000)] = support.started_timers(effects: pressed)
@@ -292,7 +292,7 @@ pub fn charged_shot_released_at_index_1_leaves_four_seconds_of_its_cooldown_test
 }
 
 pub fn a_row_that_selects_the_spell_leaves_the_global_cooldown_as_it_was_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans = charged_plans()
   let #(state, _) = charged(plans:, state: cast.new(), at: 1000)
   let #(state, _) = charged(plans:, state:, at: 1100)
@@ -306,7 +306,7 @@ pub fn a_row_that_selects_the_spell_leaves_the_global_cooldown_as_it_was_test() 
 }
 
 pub fn no_0x804_is_written_at_a_go_with_a_type_73_row_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans = charged_plans()
   let #(state, pressed) = charged(plans:, state: cast.new(), at: 1000)
   let #(state, release) = charged(plans:, state:, at: 1100)
@@ -348,7 +348,7 @@ fn impale_child(gate gate: spell_plan.Condition) -> Spell {
 }
 
 pub fn impale_childs_go_lists_180712_and_changes_no_running_cooldown_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans = support.plans_of([impale_child(gate: Always)])
   // The slow spell's cooldown runs until 7000; base 32336 is no spell of the server's.
   let state = slow_cast(plans:, state: cast.new(), at: 1000)
@@ -361,7 +361,7 @@ pub fn impale_childs_go_lists_180712_and_changes_no_running_cooldown_test() -> N
 }
 
 pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let chance = prerequisite_support.single(id: 4585, condition: #(37, 6, 0, 50))
   let plans =
     support.plans_of([
@@ -419,7 +419,7 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
 }
 
 pub fn several_rows_of_one_go_apply_in_their_listed_order_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   // x0.5 then -1000 on the slow spell's 5000 ms is 1500; the other order is 2000.
   let plans =
     plans_holding(rows: [
@@ -437,7 +437,7 @@ pub fn several_rows_of_one_go_apply_in_their_listed_order_test() -> Nil {
 // ---- a row that acts once ----
 
 pub fn a_row_that_acts_once_is_not_kept_for_the_cooldowns_that_start_later_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 0),
@@ -451,7 +451,7 @@ pub fn a_row_that_acts_once_is_not_kept_for_the_cooldowns_that_start_later_test(
 }
 
 pub fn a_row_that_acts_once_gives_the_node_its_delay_as_life_and_a_kept_row_gives_it_the_rows_life_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let acts_once =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 2000, duration: 0),
@@ -491,7 +491,7 @@ pub fn a_row_that_acts_once_gives_the_node_its_delay_as_life_and_a_kept_row_give
 // ---- a lasting row ----
 
 pub fn a_lasting_row_changes_the_running_cooldowns_at_its_start_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
@@ -504,7 +504,7 @@ pub fn a_lasting_row_changes_the_running_cooldowns_at_its_start_test() -> Nil {
 }
 
 pub fn a_lasting_row_changes_each_cooldown_started_while_it_lasts_in_the_order_kept_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
@@ -520,7 +520,7 @@ pub fn a_lasting_row_changes_each_cooldown_started_while_it_lasts_in_the_order_k
 }
 
 pub fn a_cooldown_started_after_a_lasting_rows_end_is_full_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
@@ -552,7 +552,7 @@ pub fn a_cooldown_started_after_a_lasting_rows_end_is_full_test() -> Nil {
 }
 
 pub fn a_spell_with_the_larger_of_delay_and_duration_ends_its_row_sooner_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   // The row starts at go + 2000 and lasts 8000: delay plus duration ends it at 11000,
   // and the larger of the two, 8000, at 9000 (Spell4.propertyFlags 0x2000).
   let rows = [
@@ -588,7 +588,7 @@ pub fn a_spell_with_the_larger_of_delay_and_duration_ends_its_row_sooner_test() 
 }
 
 pub fn a_row_with_flags_bit_2_lasts_until_its_node_is_taken_off_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       holder_of(spell4_id: 1, base: 1, rows: [
@@ -618,7 +618,7 @@ pub fn a_row_with_flags_bit_2_lasts_until_its_node_is_taken_off_test() -> Nil {
 // ---- an end ----
 
 pub fn taking_the_casts_node_off_the_caster_drops_the_row_and_cancels_its_timers_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       holder_of(spell4_id: 1, base: 1, rows: [
@@ -640,7 +640,7 @@ pub fn taking_the_casts_node_off_the_caster_drops_the_row_and_cancels_its_timers
 }
 
 pub fn the_caster_dying_drops_every_lasting_row_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
@@ -659,7 +659,7 @@ pub fn the_caster_dying_drops_every_lasting_row_test() -> Nil {
 }
 
 pub fn a_caster_that_leaves_drops_every_lasting_row_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
@@ -672,7 +672,7 @@ pub fn a_caster_that_leaves_drops_every_lasting_row_test() -> Nil {
 }
 
 pub fn a_later_go_of_the_cast_keeps_its_row_again_from_that_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let holder =
     spell_plan.Spell(
       ..holder_of(spell4_id: 1, base: 1, rows: [
@@ -703,7 +703,7 @@ pub fn a_later_go_of_the_cast_keeps_its_row_again_from_that_go_test() -> Nil {
 // ---- a delayed row ----
 
 pub fn a_delayed_row_changes_the_cooldowns_at_its_timer_not_at_the_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 2000, duration: 0),
@@ -771,7 +771,7 @@ fn timers_after(
 }
 
 pub fn a_row_applies_when_its_nodes_end_fires_first_in_the_same_millisecond_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 2000, duration: 0),
@@ -794,7 +794,7 @@ pub fn a_row_applies_when_its_nodes_end_fires_first_in_the_same_millisecond_test
 }
 
 pub fn a_row_that_sets_a_cooldown_at_go_plus_ten_lands_before_the_cast_finishes_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   // Row 130784 of Spell4 34751 sets base 59823's cooldown to 5000 ms at go + 10
   // (`table_rows -- Spell4Effects 130784`); base 3 is the planted slow spell's.
   let plans =
@@ -836,7 +836,7 @@ fn step_at(
 }
 
 pub fn a_held_press_starts_at_the_new_end_when_a_row_shortens_the_cooldown_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 4200, duration: 0),
@@ -871,7 +871,7 @@ pub fn a_held_press_starts_at_the_new_end_when_a_row_shortens_the_cooldown_test(
 }
 
 pub fn a_row_that_ends_the_cooldown_arms_the_held_press_for_no_wait_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.0), delay: 4200, duration: 0),
@@ -892,7 +892,7 @@ pub fn a_row_that_ends_the_cooldown_arms_the_held_press_for_no_wait_test() -> Ni
 }
 
 pub fn a_held_abilitys_repeat_timer_waits_for_the_new_end_when_a_row_shortens_the_cooldown_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 2000, duration: 0),

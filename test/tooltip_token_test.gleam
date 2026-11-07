@@ -36,7 +36,7 @@ fn rows_with_texts(
   strike strike: List(#(String, Int)),
   blast blast: List(#(String, Int)),
 ) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let set_all = fn(row, columns: List(#(String, Int))) {
     list.fold(columns, row, fn(row, column) {
       spell_tables.with_column(row:, name: column.0, cell: Integer(column.1))
@@ -65,7 +65,7 @@ fn found_in(
 }
 
 pub fn a_spells_tokens_are_read_through_its_seven_text_columns_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(30_000)
   let rows =
     rows_with_texts(
       strike: [
@@ -106,7 +106,7 @@ pub fn a_spells_tokens_are_read_through_its_seven_text_columns_test() -> Nil {
 }
 
 pub fn a_nested_tooltip_field_is_followed_to_the_named_spells_column_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(30_000)
   let rows =
     rows_with_texts(
       strike: [#("localizedTextIdActionBarTooltip", 9101)],
@@ -140,7 +140,7 @@ pub fn a_nested_tooltip_field_is_followed_to_the_named_spells_column_test() -> N
 }
 
 pub fn a_nested_tooltip_that_names_a_spell_already_read_stops_there_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(30_000)
   let rows =
     rows_with_texts(
       strike: [#("localizedTextIdActionBarTooltip", 9301)],
@@ -160,7 +160,7 @@ pub fn a_nested_tooltip_that_names_a_spell_already_read_stops_there_test() -> Ni
 }
 
 pub fn a_nested_tooltip_that_names_a_spell_the_table_lacks_adds_only_its_own_token_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(30_000)
   let rows =
     rows_with_texts(
       strike: [#("localizedTextIdActionBarTooltip", 9401)],
@@ -177,7 +177,7 @@ pub fn a_nested_tooltip_that_names_a_spell_the_table_lacks_adds_only_its_own_tok
 }
 
 pub fn a_spell_with_no_text_has_no_tokens_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(30_000)
   let rows = rows_with_texts(strike: [], blast: [])
   let assert Ok(row) =
     list.find(rows.spell4, fn(row) {

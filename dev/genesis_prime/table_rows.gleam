@@ -441,18 +441,19 @@ fn shown(value: Value) -> String {
       float.to_string(value) <> " (f32 " <> hex(bits) <> ")"
     Boolean(True) -> "true"
     Boolean(False) -> "false"
-    Text(text) ->
-      "\""
-      <> {
-        text
-        |> string.replace("\\", "\\\\")
-        |> string.replace("\"", "\\\"")
-        |> string.replace("\n", "\\n")
-        |> string.replace("\r", "\\r")
-        |> string.replace("\t", "\\t")
-      }
-      <> "\""
+    Text(text) -> "\"" <> string.replace(escaped(text), "\"", "\\\"") <> "\""
   }
+}
+
+/// A text with the characters a line cannot hold written as escapes: a
+/// backslash as `\\`, a new line as `\n`, a carriage return as `\r` and a tab
+/// as `\t`.
+pub fn escaped(text: String) -> String {
+  text
+  |> string.replace("\\", "\\\\")
+  |> string.replace("\n", "\\n")
+  |> string.replace("\r", "\\r")
+  |> string.replace("\t", "\\t")
 }
 
 const two_to_32 = 4_294_967_296
@@ -464,7 +465,7 @@ fn unsigned(number: Int) -> Int {
 }
 
 /// A 32-bit number as `0x` and eight lower-case hex digits.
-fn hex(number: Int) -> String {
+pub fn hex(number: Int) -> String {
   "0x" <> string.pad_start(string.lowercase(int.to_base16(number)), 8, "0")
 }
 

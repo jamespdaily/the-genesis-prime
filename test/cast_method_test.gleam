@@ -224,7 +224,7 @@ fn press(
 // ---------------------------------------------------------------- Multiphase
 
 pub fn pulse_blast_goes_at_0_and_1250_ms_starts_its_child_in_phase_1_and_finishes_before_the_child_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.pulse_blast, at: 1000)
   let #(_, steps) = run(state:, pressed:, at: 1000)
@@ -245,7 +245,7 @@ pub fn pulse_blast_goes_at_0_and_1250_ms_starts_its_child_in_phase_1_and_finishe
 }
 
 pub fn quick_draw_goes_in_5_phases_and_starts_the_proxies_whose_caster_gate_passes_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.quick_draw, at: 1000)
   let #(_, steps) = run(state:, pressed:, at: 1000)
@@ -286,7 +286,7 @@ pub fn quick_draw_goes_in_5_phases_and_starts_the_proxies_whose_caster_gate_pass
 // ------------------------------------------------------------ the current cast
 
 pub fn a_press_during_pulse_blast_is_refused_13_while_more_than_500_ms_of_its_casts_are_left_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.pulse_blast, at: 1000)
   let assert [#(go_timer, 1250)] = support.started_timers(effects: pressed)
@@ -307,7 +307,7 @@ pub fn a_press_during_pulse_blast_is_refused_13_while_more_than_500_ms_of_its_ca
 }
 
 pub fn quick_draw_is_refused_13_during_a_charge_while_gate_and_shred_pass_a_live_cast_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, _) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
   let #(_, quick_draw) = press(state:, bag_index: support.quick_draw, at: 2500)
@@ -322,7 +322,7 @@ pub fn quick_draw_is_refused_13_during_a_charge_while_gate_and_shred_pass_a_live
 }
 
 pub fn a_press_during_discharge_passes_because_discharge_has_the_flag_0x40_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, _) =
     press(state: cast.new(), bag_index: support.discharge, at: 1000)
   let #(_, kick) = press(state:, bag_index: 3, at: 1100)
@@ -338,7 +338,7 @@ pub fn a_press_during_discharge_passes_because_discharge_has_the_flag_0x40_test(
 // ------------------------------------------------------------------ Channeled
 
 pub fn discharge_pulses_3_times_each_starting_80382_and_finishes_at_1250_ms_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.discharge, at: 1000)
   assert support.delays_of(effects: pressed) == [410, 820, 1230, 1250]
@@ -382,7 +382,7 @@ pub fn discharge_pulses_3_times_each_starting_80382_and_finishes_at_1250_ms_test
 }
 
 pub fn electrocute_pulses_6_times_and_finishes_with_its_last_pulse_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   assert support.ability(base: 25_473).spell4_id.value == 41_276
   let costless = Spell(..support.ability(base: 25_473), costs: [])
   let plans = support.with_spells(plans: support.plans(), spells: [costless])
@@ -416,7 +416,7 @@ pub fn electrocute_pulses_6_times_and_finishes_with_its_last_pulse_test() -> Nil
 }
 
 pub fn a_0x801_for_a_live_channel_cancels_its_pulses_and_finish_and_ends_it_for_all_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   list.each([#(SpellCancelled, 1), #(Other(11), 1)], fn(cancel) {
     let #(state, pressed) =
       press(state: cast.new(), bag_index: support.discharge, at: 1000)
@@ -453,7 +453,7 @@ fn timer_number(timer: TimerId) -> Int {
 // ------------------------------------------------------------------ cooldowns
 
 pub fn a_channels_cooldown_starts_at_its_count_go_or_at_a_cancels_finish_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let discharge = Spell(..support.ability(base: 38_201), cooldown_ms: 20_000)
   let plans = support.with_spells(plans: support.plans(), spells: [discharge])
   let press_in = fn(state, bag_index, at) {
@@ -494,7 +494,7 @@ pub fn a_channels_cooldown_starts_at_its_count_go_or_at_a_cancels_finish_test() 
 }
 
 pub fn a_multiphase_spells_cooldown_starts_at_its_last_phase_with_the_flag_0x200_else_at_phase_0_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let pulse_blast =
     Spell(
       ..support.ability(base: 26_468),
@@ -532,7 +532,7 @@ pub fn a_multiphase_spells_cooldown_starts_at_its_last_phase_with_the_flag_0x200
 // ------------------------------------------------------------------- RapidTap
 
 pub fn shred_opens_a_threshold_on_its_first_tap_and_its_second_casts_the_stage_and_closes_it_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, first) =
     press(state: cast.new(), bag_index: support.shred, at: 1000)
   assert trace(steps: [#(1000, first)])
@@ -571,7 +571,7 @@ pub fn shred_opens_a_threshold_on_its_first_tap_and_its_second_casts_the_stage_a
 }
 
 pub fn a_tap_within_500_ms_of_the_global_cooldowns_end_is_held_and_one_before_is_refused_14_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, _) = press(state: cast.new(), bag_index: support.shred, at: 1000)
   let #(_, early) = press(state:, bag_index: support.shred, at: 1400)
   assert refusal_line(effects: early) == "7fc 38766 14"
@@ -584,7 +584,7 @@ pub fn a_tap_within_500_ms_of_the_global_cooldowns_end_is_held_and_one_before_is
 }
 
 pub fn relentless_strikes_moves_to_its_second_stage_with_0x817_and_closes_after_its_third_tap_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, first) =
     press(state: cast.new(), bag_index: support.relentless_strikes, at: 1000)
   assert list.take(lines(trace: trace(steps: [#(1000, first)])), 2)
@@ -604,7 +604,7 @@ pub fn relentless_strikes_moves_to_its_second_stage_with_0x817_and_closes_after_
 }
 
 pub fn rampage_taps_four_times_with_its_gcds_of_500_333_and_333_ms_and_its_cooldown_starts_at_the_close_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, first) =
     press(state: cast.new(), bag_index: support.rampage, at: 1000)
   assert lines(trace: trace(steps: [#(1000, first)]))
@@ -642,7 +642,7 @@ pub fn rampage_taps_four_times_with_its_gcds_of_500_333_and_333_ms_and_its_coold
 }
 
 pub fn the_taps_window_ending_closes_the_threshold_writes_nothing_and_starts_the_cooldown_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, first) =
     press(state: cast.new(), bag_index: support.rampage, at: 1000)
   let assert [#(window, 4000), ..] = support.started_timers(effects: first)
@@ -670,7 +670,7 @@ pub fn the_taps_window_ending_closes_the_threshold_writes_nothing_and_starts_the
 // -------------------------------------------------------------- ChargeRelease
 
 pub fn charged_shots_first_press_opens_a_threshold_and_holds_its_cast_with_no_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
   assert lines(trace: trace(steps: [#(1000, pressed)]))
@@ -691,7 +691,7 @@ pub fn charged_shots_first_press_opens_a_threshold_and_holds_its_cast_with_no_go
 }
 
 pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_charge_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
   let #(_, early) = press(state:, bag_index: support.charged_shot, at: 1500)
@@ -749,7 +749,7 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
 }
 
 pub fn charged_shot_casts_34722_after_level_1_and_36691_after_level_2_and_after_8200_ms_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
   let assert [#(level_1, 1000)] = support.started_timers(effects: pressed)
@@ -776,7 +776,7 @@ pub fn charged_shot_casts_34722_after_level_1_and_36691_after_level_2_and_after_
 }
 
 pub fn charged_shots_cooldown_runs_10_s_from_the_stages_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
   let assert [#(level_1, 1000)] = support.started_timers(effects: pressed)
@@ -801,7 +801,7 @@ pub fn charged_shots_cooldown_runs_10_s_from_the_stages_go_test() -> Nil {
 }
 
 pub fn a_cancel_of_the_charge_closes_the_threshold_and_ends_only_the_base_cast_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   list.each([#(Other(0), 0), #(SpellCancelled, 1), #(Other(11), 1)], fn(cancel) {
     let #(state, pressed) =
       press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
@@ -834,7 +834,7 @@ pub fn a_cancel_of_the_charge_closes_the_threshold_and_ends_only_the_base_cast_t
 }
 
 pub fn a_0x801_naming_no_open_threshold_is_a_debug_line_and_no_change_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, _) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
   let assert Ok(#(_, effects)) =
@@ -862,7 +862,7 @@ pub fn a_0x801_naming_no_open_threshold_is_a_debug_line_and_no_change_test() -> 
 // ------------------------------------------------------------------- refusals
 
 pub fn the_four_costed_abilities_are_refused_with_their_slots_by_a_caster_that_holds_none_and_nothing_is_logged_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let costed = [
     #(support.impale, "7fc 38779 ", CasterVitalCostResource3),
     #(7, "7fc 41276 ", CasterVitalCostResource1),
@@ -921,7 +921,7 @@ fn refusal_line_with_logs(effects effects: List(cast.Effect)) -> String {
 // ------------------------------------------------------------ leaving the world
 
 pub fn leaving_the_world_with_a_threshold_open_cancels_every_timer_and_writes_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, shred) =
     press(state: cast.new(), bag_index: support.shred, at: 1000)
   let #(state, left) = cast.left(cast: state)
@@ -949,7 +949,7 @@ pub fn leaving_the_world_with_a_threshold_open_cancels_every_timer_and_writes_no
 // ------------------------------------------------- a press queued behind a cast
 
 pub fn a_press_with_500_ms_or_less_of_the_current_cast_left_is_held_and_starts_at_the_go_that_clears_it_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) = press(state: cast.new(), bag_index: 0, at: 1000)
   let assert [#(go_timer, 1250)] = support.started_timers(effects: pressed)
     as "Spell4.32893: Telekinetic Strike's bar is 1250 ms and its go is the one timer"
@@ -978,7 +978,7 @@ pub fn a_press_with_500_ms_or_less_of_the_current_cast_left_is_held_and_starts_a
 }
 
 pub fn a_held_press_behind_a_multiphase_cast_starts_when_the_last_cast_that_is_current_finishes_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) =
     press(state: cast.new(), bag_index: support.pulse_blast, at: 1000)
   let assert [#(phase_1, 1250)] = support.started_timers(effects: pressed)
@@ -1000,7 +1000,7 @@ pub fn a_held_press_behind_a_multiphase_cast_starts_when_the_last_cast_that_is_c
 }
 
 pub fn a_held_press_behind_a_cast_the_client_cancels_starts_after_its_finish_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, pressed) = press(state: cast.new(), bag_index: 0, at: 1000)
   let id = support.pressed_id(effects: pressed)
   let #(state, _) = press(state:, bag_index: 3, at: 1800)
@@ -1020,7 +1020,7 @@ pub fn a_held_press_behind_a_cast_the_client_cancels_starts_after_its_finish_tes
 // ------------------------------------------------ the fix round of the review
 
 pub fn a_held_press_does_not_refuse_the_charged_shot_release_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, _) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
   let #(state, held) = press(state:, bag_index: support.shred, at: 1600)
@@ -1042,7 +1042,7 @@ pub fn a_held_press_does_not_refuse_the_charged_shot_release_test() -> Nil {
 }
 
 pub fn a_0x801_for_no_open_threshold_still_clears_the_current_cast_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, _) = press(state: cast.new(), bag_index: 0, at: 1000)
   let assert Ok(#(state, effects)) =
     support.cancelled(
@@ -1059,7 +1059,7 @@ pub fn a_0x801_for_no_open_threshold_still_clears_the_current_cast_test() -> Nil
 }
 
 pub fn a_multiphase_cast_cancelled_after_its_0x200_phase_starts_its_cooldown_at_the_finish_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let quick_draw =
     Spell(
       ..support.ability(base: 27_638),

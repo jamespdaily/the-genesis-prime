@@ -254,7 +254,7 @@ fn creature_20() -> #(Int, Pose) {
 // ---- item 8: Impale from behind ----
 
 pub fn impale_from_behind_starts_exactly_one_child_39427_on_the_creature_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   assert impale_strikes(stealthed: False, caster_at: #(0.0, 5.0), creatures: [
       creature_20(),
     ])
@@ -263,7 +263,7 @@ pub fn impale_from_behind_starts_exactly_one_child_39427_on_the_creature_test() 
 }
 
 pub fn impale_from_stealth_starts_one_child_39427_from_behind_or_in_front_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // Stealthed, 38585 passes and 38587 fails: 85682 (behind) or 83819 (not behind) starts
   // 39427, never both, and 83818 and 85673 stay shut.
   assert impale_strikes(stealthed: True, caster_at: #(0.0, 5.0), creatures: [
@@ -281,7 +281,7 @@ pub fn impale_from_stealth_starts_one_child_39427_from_behind_or_in_front_test()
 // ---- item 9: Impale in front and at the side ----
 
 pub fn impale_in_front_or_at_the_side_starts_39426_alone_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   assert impale_strikes(stealthed: False, caster_at: #(0.0, -5.0), creatures: [
       creature_20(),
     ])
@@ -300,7 +300,7 @@ pub fn impale_in_front_or_at_the_side_starts_39426_alone_test() -> Nil {
 }
 
 pub fn two_creatures_struck_at_once_each_get_the_child_their_own_position_decides_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // The caster at (0, 5): creature 20 at (0, 0) has it behind (z grows away from where a
   // creature at yaw 0 faces), creature 21 at (0, 10) has it in front.
   assert impale_strikes(stealthed: False, caster_at: #(0.0, 5.0), creatures: [
@@ -312,7 +312,7 @@ pub fn two_creatures_struck_at_once_each_get_the_child_their_own_position_decide
 }
 
 pub fn a_creatures_own_yaw_turns_the_arc_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // The same creature place with the yaw of a half turn: the caster at (0, 5) is now in
   // front of it, and the one at (0, -5) behind.
   let turned = #(
@@ -332,7 +332,7 @@ pub fn a_creatures_own_yaw_turns_the_arc_test() -> Nil {
 // ---- item 5: a missing unit ----
 
 pub fn a_hit_unit_the_picture_no_longer_shows_starts_no_child_and_the_others_still_decide_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let caster = caster_at(x: 0.0, z: 5.0)
   let effects =
     press_closing(
@@ -364,7 +364,7 @@ pub fn a_hit_unit_the_picture_no_longer_shows_starts_no_child_and_the_others_sti
 // ---- item 10: the pose the round closes with ----
 
 pub fn the_pose_given_at_the_close_decides_not_anything_held_at_the_press_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let caster = caster_at(x: 0.0, z: 5.0)
   let strike = fn(creature) {
     children_started(
@@ -387,7 +387,7 @@ pub fn the_pose_given_at_the_close_decides_not_anything_held_at_the_press_test()
 }
 
 pub fn a_caster_moved_behind_between_the_press_and_the_close_is_judged_where_it_stands_at_the_close_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let in_front = caster_at(x: 0.0, z: -5.0)
   let behind = caster_at(x: 0.0, z: 5.0)
   assert children_started(
@@ -419,7 +419,7 @@ pub fn a_caster_moved_behind_between_the_press_and_the_close_is_judged_where_it_
 // ---- item 11: caster gates decide first, and a Proxy on the caster ----
 
 pub fn a_failing_caster_gate_starts_no_child_wherever_the_units_stand_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // 83818 alone (38587 and 5735): a stealthed caster fails 38587, in front or behind.
   let only_83818 = [
     proxy(
@@ -459,7 +459,7 @@ pub fn a_failing_caster_gate_starts_no_child_wherever_the_units_stand_test() -> 
 }
 
 pub fn a_proxy_on_the_caster_checks_its_target_gate_against_the_caster_on_itself_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // A Proxy aimed at the caster behind 5734 and one behind 5735: the caster stands on
   // its own point, direction -pi, which is inside row 53 at the caster's yaw 0.
   let on_caster = fn(effect, child, comparison) {
@@ -490,7 +490,7 @@ pub fn a_proxy_on_the_caster_checks_its_target_gate_against_the_caster_on_itself
 }
 
 pub fn a_proxy_on_the_caster_reads_the_casters_own_yaw_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // At yaw 3.0 row 53 runs from -1.3633235 to 1.0801380: the direction -pi of a unit on
   // its own point is outside it.
   let caster = caster_at(x: 0.0, z: 5.0)
@@ -530,7 +530,7 @@ pub fn a_proxy_on_the_caster_reads_the_casters_own_yaw_test() -> Nil {
 }
 
 pub fn the_caster_gates_of_a_target_gated_proxy_take_their_rolls_in_order_and_the_target_gate_none_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // Two Proxies, each behind a caster gate of one type 37 condition (a roll of 50 or less
   // passes: comparison 6, value 50) and the target gate 5734.
   let chance = prerequisite_support.single(id: 1, condition: #(37, 6, 0, 50))

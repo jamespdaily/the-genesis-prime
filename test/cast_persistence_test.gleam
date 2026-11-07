@@ -119,7 +119,7 @@ fn spellslinger(power power: Float) -> Caster {
 }
 
 pub fn a_step_that_leaves_spell_power_at_24_ends_the_spell_surge_buff_and_at_25_nothing_happens_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let plans = spell_plan.plans(client_tables.shared())
   let #(state, pressed) =
@@ -202,7 +202,7 @@ fn lingering_for_a_minute(
 }
 
 pub fn a_lingering_casts_nodes_end_timer_is_cancelled_when_its_persistence_ends_it_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       lingering_for_a_minute(caster_persistence: Some(in_combat())),
@@ -229,7 +229,7 @@ pub fn a_lingering_casts_nodes_end_timer_is_cancelled_when_its_persistence_ends_
 }
 
 pub fn a_live_cast_whose_persistence_ends_clears_the_current_cast_cancels_its_go_and_starts_the_press_held_for_it_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       casting_for_a_second(
@@ -283,7 +283,7 @@ pub fn a_live_cast_whose_persistence_ends_clears_the_current_cast_cancels_its_go
 }
 
 pub fn a_persistence_of_a_type_not_read_keeps_the_cast_with_one_debug_line_for_the_spell_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       casting_for_a_second(
@@ -317,7 +317,7 @@ pub fn a_persistence_of_a_type_not_read_keeps_the_cast_with_one_debug_line_for_t
 }
 
 pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_checked_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   // A child aimed at each struck unit has that unit as its primary target (`cast.child`).
   let child =
     Spell(
@@ -381,7 +381,7 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
 }
 
 pub fn a_target_persistence_on_a_cast_the_caster_is_the_target_of_ends_it_with_283_and_the_caster_one_is_checked_first_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let fighting = support.caster_in_combat(in_combat: True)
   let target_only =
     support.plans_of([
@@ -436,7 +436,7 @@ pub fn a_target_persistence_on_a_cast_the_caster_is_the_target_of_ends_it_with_2
 // ---- several casts ----
 
 pub fn two_casts_whose_persistence_fails_in_one_input_end_in_cast_id_order_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let first_spell =
     Spell(
       ..support.child(spell4_id: 7010, base: 1),
@@ -482,7 +482,7 @@ pub fn two_casts_whose_persistence_fails_in_one_input_end_in_cast_id_order_test(
 }
 
 pub fn a_cast_whose_type_15_persistence_names_another_casts_spell_ends_in_the_same_input_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   // B, the lower cast id, needs the caster in combat; A needs the caster to be the
   // target of a live cast of B's spell (type 15, comparison 1).
   let spell_b =
@@ -536,7 +536,7 @@ pub fn a_cast_whose_type_15_persistence_names_another_casts_spell_ends_in_the_sa
 // ---- stealth ----
 
 pub fn an_ended_casts_stealth_source_drops_and_stealth_changed_comes_last_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let hiding =
     Spell(
       ..support.child(spell4_id: 7030, base: 3),
@@ -581,7 +581,7 @@ pub fn an_ended_casts_stealth_source_drops_and_stealth_changed_comes_last_test()
 // ---- a charge's base cast ----
 
 pub fn the_base_cast_of_an_open_charge_ends_with_its_threshold_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let charged_shot =
     Spell(
       ..support.ability(base: 20_684),
@@ -629,7 +629,7 @@ pub fn the_base_cast_of_an_open_charge_ends_with_its_threshold_test() -> Nil {
 // ---- nothing to end ----
 
 pub fn a_caster_that_left_or_died_has_no_cast_left_for_the_check_to_end_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       casting_for_a_second(
@@ -662,7 +662,7 @@ pub fn a_caster_that_left_or_died_has_no_cast_left_for_the_check_to_end_test() -
 // ---- a spell with no persistence column ----
 
 pub fn a_state_with_no_persistence_column_changes_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let #(state, _) =
     support.press_by(
       plans: support.plans(),
@@ -679,7 +679,7 @@ pub fn a_state_with_no_persistence_column_changes_nothing_test() -> Nil {
 // ---- a held key ----
 
 pub fn a_held_key_whose_cast_the_persistence_ended_casts_again_at_once_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       casting_for_a_second(

@@ -43,7 +43,7 @@ fn built_changing_spell(
 }
 
 pub fn mind_burst_spends_every_psi_point_over_a_base_of_1_and_tags_its_two_proxies_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let mind_burst = mind_burst_of(plans: spell_tables.fixture_plans())
   assert mind_burst.costs
     == [spell_plan.SpendAllCost(slot: 1, amount: 1, result: 51)]
@@ -59,7 +59,7 @@ pub fn mind_burst_spends_every_psi_point_over_a_base_of_1_and_tags_its_two_proxi
 }
 
 pub fn an_emm_id_of_7_is_a_spend_of_every_point_held_too_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // The client's rows with 7 are other spells (46 rows); Mind Burst's own is 4.
   let assert Ok(plans) =
     built_changing_spell(with: [#("innateCostEMMId0", Integer(7))])
@@ -69,7 +69,7 @@ pub fn an_emm_id_of_7_is_a_spend_of_every_point_held_too_test() -> Nil {
 }
 
 pub fn an_unread_emm_id_gives_an_unread_spend_with_the_costs_result_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // No client row holds an id of 5 on a cost (the test's own subject).
   let assert Ok(plans) =
     built_changing_spell(with: [#("innateCostEMMId0", Integer(5))])
@@ -79,7 +79,7 @@ pub fn an_unread_emm_id_gives_an_unread_spend_with_the_costs_result_test() -> Ni
 }
 
 pub fn an_emm_id_on_a_cost_that_is_not_a_slot_is_an_unread_spend_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // No client row holds the id 4 on a cost of type 1 (health).
   let assert Ok(plans) =
     built_changing_spell(with: [
@@ -92,7 +92,7 @@ pub fn an_emm_id_on_a_cost_that_is_not_a_slot_is_an_unread_spend_test() -> Nil {
 }
 
 pub fn an_emm_id_with_no_cost_is_an_unread_spend_refused_285_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // The client's rows with an id and no cost are 45155, 48782 and 42075; Mind Burst's
   // own cost is 6 of 1.
   let assert Ok(plans) =
@@ -106,7 +106,7 @@ pub fn an_emm_id_with_no_cost_is_an_unread_spend_refused_285_test() -> Nil {
 }
 
 pub fn a_comparison_other_than_0_or_1_on_a_spend_spell_fails_the_load_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // No client row holds an emmComparison of 2 (the test's own subject): Mind Burst's
   // damage effect 61993 is changed from 0.
   let assert Ok(rows) =
@@ -130,7 +130,7 @@ pub fn a_comparison_other_than_0_or_1_on_a_spend_spell_fails_the_load_test() -> 
 }
 
 pub fn a_comparison_other_than_0_or_1_on_a_spell_with_no_emm_id_is_not_read_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // Mind Burst with no EMM id and the same effect 61993 of comparison 2: two edits no
   // client row holds.
   let assert Ok(rows) =

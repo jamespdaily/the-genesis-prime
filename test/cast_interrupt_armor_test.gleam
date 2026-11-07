@@ -69,7 +69,7 @@ fn armor_row(
 // ---- what a go lists and how long the cast lasts ----
 
 pub fn a_go_with_interrupt_armor_lists_it_on_the_caster_and_gives_the_node_its_time_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
@@ -106,7 +106,7 @@ pub fn a_go_with_interrupt_armor_lists_it_on_the_caster_and_gives_the_node_its_t
 // ---- when the armor starts and ends ----
 
 pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_duration_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
@@ -127,7 +127,7 @@ pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_d
 }
 
 pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   // Row 210961: delay 150000 and flags 2, which never ends.
   let delayed =
     armor_row(
@@ -161,7 +161,7 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
 // ---- a removal, a persistence, a death and a later go ----
 
 pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fails_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   // A type 80 removal of the cast.
   let plans =
     support.plans_of([
@@ -243,7 +243,7 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
 }
 
 pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let delayed =
     armor_row(
       id: 210_961,
@@ -285,7 +285,7 @@ pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
 }
 
 pub fn a_later_go_of_the_same_cast_arms_the_armor_again_and_holds_it_once_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let plans =
     support.plans_of([
       spell_plan.Spell(

@@ -149,7 +149,7 @@ pub fn a_viewer_writes_a_cast_start_only_for_a_caster_its_client_shows_and_a_go_
 }
 
 pub fn a_viewer_writes_the_finish_of_each_cast_of_a_unit_before_the_unit_is_removed_and_none_after_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let first =
     game_connection_support.spell_started_of(cast_id: 2_147_497_985, caster: 9)
   let second =
@@ -207,7 +207,7 @@ pub fn a_viewer_writes_the_finish_of_each_cast_of_a_unit_before_the_unit_is_remo
 }
 
 pub fn a_0x9a_in_the_world_is_taken_by_the_cast_rule_and_a_bag_index_not_held_is_answered_0x7fc_4_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let press =
     cast_support.press_body(
       client_cast_id: 9,
@@ -234,7 +234,7 @@ pub fn a_0x9a_in_the_world_is_taken_by_the_cast_rule_and_a_bag_index_not_held_is
 }
 
 pub fn a_0x801_for_a_cast_that_is_not_live_changes_nothing_and_writes_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let cancel =
     cast_support.cancel_body(
       cast_id: 2_147_497_985,
@@ -252,7 +252,7 @@ pub fn a_0x801_for_a_cast_that_is_not_live_changes_nothing_and_writes_nothing_te
 }
 
 pub fn a_0x9a_outside_the_world_is_logged_as_unhandled_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let press =
     cast_support.press_body(
       client_cast_id: 9,
@@ -301,7 +301,7 @@ fn press_and_close(
 }
 
 pub fn the_clients_picture_of_a_creature_follows_its_news_and_only_a_creature_it_shows_alive_is_struck_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(state, _) =
     game_connection_support.feed(
       game_connection_support.medic_in_world(),
@@ -357,7 +357,7 @@ pub fn a_creatures_health_or_death_is_not_written_for_a_unit_the_client_does_not
 }
 
 pub fn the_news_held_for_a_creature_that_is_removed_and_stands_again_before_the_round_closes_is_not_written_onto_it_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(state, _) =
     game_connection_support.feed(
       game_connection_support.medic_in_world(),
@@ -752,7 +752,7 @@ pub fn a_viewer_writes_a_creature_placed_while_it_ran_as_kind_0_then_kind_2_with
 }
 
 pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   // The Beast appears 3 m ahead of the Medic; its next news is a path that starts
   // 23 m ahead, now, and runs on away along -z: at the press it stands at the
   // path's start, past Paralytic Surge's 15 m (Spell4AoeTargetConstraints 173).
@@ -796,7 +796,7 @@ pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -
 }
 
 pub fn a_press_finds_a_creature_whose_path_brought_it_within_the_area_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   // The positive control: the Beast's path starts 23 m ahead and, at 100 a second
   // from 180 ms before, is run by now, ending 5 m ahead, inside Paralytic Surge's
   // 15 m.
@@ -1153,7 +1153,7 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
 }
 
 pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(medic, beast, aggro, _) = an_aggroed_medic()
   // The Beast's tick sends its strike; the test holds it.
   let #(beast, ticked) =
@@ -1333,7 +1333,7 @@ fn a_player_of(class_id: Int) -> game_connection.State {
 }
 
 pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_come_back_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // The Medic kills the Beast, which stands again at its respawn: its corpse
   // timer of the kind's 60 s fires, and the client is written its 0x355 and its
   // 0x262 at full health (`death.creature_respawn`).
@@ -1468,7 +1468,7 @@ fn answered_by_the_beast(
 }
 
 pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(engineer, _) =
     game_connection_support.entered_with(
       settings: Settings(

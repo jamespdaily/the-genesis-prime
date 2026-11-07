@@ -105,7 +105,7 @@ fn differences(
 pub fn every_planted_spell_row_holds_the_clients_values_in_each_column_it_sets_or_the_plan_reads_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
-  let rows = spell_tables.rows()
+  let rows = spell_tables.planted_rows()
   let found =
     list.flatten([
       differences(schema: spell4.schema, rows: rows.spell4, read: [

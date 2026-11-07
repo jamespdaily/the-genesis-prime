@@ -52,7 +52,8 @@ pub type Refusal {
   NoColumn(table: String, column: String)
   /// An edit names a row the table does not hold.
   NoRow(table: String, id: Int)
-  /// `added` names an id the table already holds.
+  /// `added` names an id the table already holds, or `changed` an edit of the
+  /// ID column to one.
   RowHeld(table: String, id: Int)
   /// An id that is not a root of `roots.tsv`.
   NotARoot(table: String, id: Int)
@@ -74,7 +75,7 @@ pub fn describe(refusal: Refusal) -> String {
       <> table
       <> " already holds a row "
       <> int.to_string(id)
-      <> ": a row added needs an id of its own"
+      <> ": a row needs an id of its own"
     NotARoot(table:, id:) ->
       table
       <> " "
@@ -203,12 +204,7 @@ pub fn shared_key() -> reference.Reference {
 /// The server's tables from the committed rows, loaded once per test run, with
 /// the server's own requirements and derivations. Never unload them.
 pub fn shared() -> store.Tables {
-  database_support.once("fixture_tables", fn() {
-    case read_folder(folder) {
-      Ok(rows) -> loaded(rows, shared_key())
-      Error(refusal) -> panic as describe(refusal)
-    }
-  })
+  database_support.once("fixture_tables", fn() { loaded(rows(), shared_key()) })
 }
 
 /// The committed rows, read once per test run.
@@ -286,8 +282,13 @@ pub fn change(
 ) -> Result(Rows, Refusal) {
   use schema <- result.try(schema_of(table))
   use row <- result.try(row_of(rows:, schema:, id:))
-  use changed_row <- result.map(with_cells(schema:, row:, with: changes))
-  dict.insert(
+  use changed_row <- result.try(with_cells(schema:, row:, with: changes))
+  let new_id = id_of(row: changed_row)
+  use <- bool.guard(
+    when: new_id != id && result.is_ok(row_of(rows:, schema:, id: new_id)),
+    return: Error(RowHeld(table:, id: new_id)),
+  )
+  Ok(dict.insert(
     rows,
     table,
     list.map(rows_of(rows:, schema:), fn(held) {
@@ -296,7 +297,7 @@ pub fn change(
         False -> held
       }
     }),
-  )
+  ))
 }
 
 /// The rows with one more row, `id`, which starts as a copy of `copy_of`
@@ -327,16 +328,31 @@ pub fn add(
 /// afterwards, for a case that needs more than one edit (`change` and `add`
 /// make them); the shared load is not touched.
 pub fn on_rows(rows rows: Rows, body body: fn(store.Tables) -> a) -> a {
-  let tables = loaded(rows, owned_key.new())
-  let result = body(tables)
-  store.unload(tables)
-  result
+  on_rows_under(rows:, key: owned_key.new(), body:)
 }
+
+/// `on_rows` under a key the caller made. The tables are unloaded also when the
+/// body crashes, so the failure that shows is the body's.
+pub fn on_rows_under(
+  rows rows: Rows,
+  key key: reference.Reference,
+  body body: fn(store.Tables) -> a,
+) -> a {
+  let tables = loaded(rows, key)
+  after_body(fn() { body(tables) }, fn() { store.unload(tables) })
+}
+
+/// Runs the body, then the cleanup, also when the body crashes. The
+/// `exception` package does the same, but it is a dependency of other packages
+/// only, and one function does not justify naming it in `gleam.toml`.
+@external(erlang, "fixture_tables_ffi", "after_body")
+fn after_body(body: fn() -> a, cleanup: fn() -> Nil) -> a
 
 /// Runs the body on the fixture's tables with the cells of one row changed, for
 /// an edge case no client row holds: the test says why. Loaded under a key of
 /// its own and unloaded afterwards; the shared load is not touched. Stops the
-/// test when the table, id or column is not one.
+/// test when the table, id or column is not one, or when an edit of the ID
+/// column gives the row an id the table holds.
 pub fn changed(
   table table: String,
   id id: Int,

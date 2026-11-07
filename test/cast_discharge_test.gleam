@@ -86,7 +86,7 @@ fn listed(effects effects: List(Effect), effect_id effect_id: Int) -> Int {
 }
 
 pub fn discharge_shows_power_charge_1_then_2_then_the_third_pulse_turns_the_stacks_into_an_actuator_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let plans = real_plans()
   let #(state, pressed) =
@@ -125,7 +125,7 @@ pub fn discharge_shows_power_charge_1_then_2_then_the_third_pulse_turns_the_stac
 }
 
 pub fn the_pulse_after_the_stacks_went_starts_power_charge_again_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let plans = real_plans()
   let #(state, pressed) =

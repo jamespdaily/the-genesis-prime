@@ -3,7 +3,7 @@
 //// hidden spell 42148 with the last go of the spell that strikes, and 42148's gain gives
 //// +15 of slot 1 behind prerequisite 903 (the caster is in combat). Expected values
 //// come from these places, each named at its assertion:
-//// - The client's rows the planted tables hold (`spell_tables.rows_with_volatility`):
+//// - The client's rows the fixture holds (`fixture_tables`):
 ////   `Spell4.42148` (95337: +15 of vital 6 behind 903), `Prerequisite.prerequisiteTypeId.28`
 ////   (903: in combat), Pulse Blast 42276 (gos at 0 and 1250 ms, SpellPhase 5390 and
 ////   5391; Proxy 95881 to the damage spell 37302 at its second go), 37302 (gos at 0, 1, 2
@@ -141,7 +141,7 @@ fn lines_of_42148(effects: List(Effect)) -> List(String) {
 // ---- 2 ----
 
 pub fn a_pulse_blast_that_hits_a_foe_in_combat_gives_15_volatility_at_its_striking_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let steps = pulse_blast(caster: engineer(in_combat: True), foes: [10])
   assert gains_at(steps) == [#(2253, [[Gain(slot: 1, amount: 15)]])]
     as "one +15 of slot 1 (Spell4Effects 95337, behind 903, which an in-combat caster passes) with the damage spell's last go, 1253 ms after the press, and not at the press or the first go"
@@ -159,7 +159,7 @@ pub fn a_pulse_blast_that_hits_a_foe_in_combat_gives_15_volatility_at_its_striki
 // ---- 3 ----
 
 pub fn a_pulse_blast_that_strikes_no_foe_out_of_combat_casts_42148_and_gives_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let steps = pulse_blast(caster: engineer(in_combat: False), foes: [])
   assert gains_at(steps) == []
     as "903 fails for a caster that is not in combat and hit nobody"
@@ -175,7 +175,7 @@ pub fn a_pulse_blast_that_strikes_no_foe_out_of_combat_casts_42148_and_gives_not
 // ---- 5 ----
 
 pub fn one_gain_for_each_cast_whether_it_strikes_three_foes_or_none_in_combat_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let three = pulse_blast(caster: engineer(in_combat: True), foes: [10, 11, 12])
   assert gains_at(three) == [#(2253, [[Gain(slot: 1, amount: 15)]])]
     as "tooltips 376222, 491167 and 491176 say 'generate' once with no 'per foe' (server choice): one gain for three foes"
@@ -187,7 +187,7 @@ pub fn one_gain_for_each_cast_whether_it_strikes_three_foes_or_none_in_combat_te
 // ---- 7 ----
 
 pub fn a_pulse_blast_cancelled_before_1250_ms_casts_no_42148_and_gives_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let caster = engineer(in_combat: True)
   let #(state, raw) =
     support.pressed_raw_in(
@@ -236,7 +236,7 @@ pub fn a_pulse_blast_cancelled_before_1250_ms_casts_no_42148_and_gives_nothing_t
 // ---- 8 ----
 
 pub fn electrocute_is_refused_51_at_0_volatility_and_accepted_after_a_pulse_blast_pays_8_at_its_go_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let empty = engineer(in_combat: True)
   let #(_, refused) =
     support.pressed_raw_in(
@@ -302,7 +302,7 @@ fn started_told(
 }
 
 pub fn a_viewer_of_the_engineer_is_told_42148s_cast_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(20_000)
   let effects =
     every(pulse_blast(caster: engineer(in_combat: True), foes: [10]))
   let told_of_42148 =

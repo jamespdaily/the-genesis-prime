@@ -938,7 +938,7 @@ fn takes_only_its_own_stay(
 }
 
 pub fn a_strike_answer_of_the_stay_before_a_camp_is_dropped_though_the_next_stays_strike_has_its_key_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   // The cast rule counts its casts from 1 in each stay and the Beast is unit 40 in
   // both, so the next stay's strike has the key of the earlier one: an answer of
   // the earlier strike, delayed past the camp and the entry, would close the new

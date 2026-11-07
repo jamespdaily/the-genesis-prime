@@ -90,7 +90,7 @@ fn news_told(taken: ConnectionStep(Request), viewer: Int) -> List(News) {
 }
 
 pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_sees_its_ghost_the_window_and_control_of_the_ghost_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(_, taken) = game_connection_support.dead_in_world()
   let frames =
     game_connection_support.heard(taken, game_connection_support.keyed())
@@ -261,7 +261,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_for_a_unit_it_shows_and_n
 }
 
 pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   // The news a dying player's connection tells its viewer, and then its coming
   // back's, reach a viewer that shows the player as unit 9.
   let #(state, died) = game_connection_support.dead_in_world()
@@ -334,7 +334,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
 }
 
 pub fn a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let state =
     game_connection_support.watched_by(
       game_connection_support.medic_in_world(),
@@ -372,7 +372,7 @@ pub fn a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_
 }
 
 pub fn a_dead_players_press_of_an_ability_with_the_dead_bit_is_refused_57_and_strikes_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(state, _) =
     game_connection_support.feed(
       game_connection_support.medic_in_world(),
@@ -392,7 +392,7 @@ pub fn a_dead_players_press_of_an_ability_with_the_dead_bit_is_refused_57_and_st
 }
 
 pub fn a_dead_players_press_of_an_ability_without_the_dead_bit_is_taken_as_the_livings_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   // A test whose first use loads a set of planted tables of its own: the
   // deadline is a hang guard, the load alone can take most of 10 s.
   // The client checks only bit 0 of the caster row: without it, it sends the
@@ -1097,7 +1097,7 @@ const dead_entry_ids = [
 ]
 
 pub fn an_entry_at_a_saved_health_of_0_creates_the_player_dead_and_its_ghost_and_opens_the_window_in_the_clients_order_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(_, taken) = entered_dead()
   let frames =
     game_connection_support.heard(taken, game_connection_support.keyed())
@@ -1279,7 +1279,7 @@ pub fn a_player_that_entered_dead_fights_no_one_a_strike_is_refused_dead_and_a_t
 }
 
 pub fn a_player_that_entered_dead_wakes_here_as_after_a_death_in_the_world_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(state, _) = entered_dead()
   let #(state, taken) =
     game_connection_support.read(state, game_connection_support.wake_here())
@@ -1425,7 +1425,7 @@ pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never
 // with (`cast.died` tells the stealth last), and a waking's goes after its frames and news.
 
 pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths_end_and_once_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(state, _) =
     game_connection_support.stealthed_medic_in(
       tables: character_tables.shared_with_kept_stealth(),

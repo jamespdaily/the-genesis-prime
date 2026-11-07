@@ -121,7 +121,7 @@ fn relentless_strikes_gains_are_on_the_proxy(ability: Spell) -> Nil {
 // ---- 15 ----
 
 pub fn relentless_strikes_proxies_to_53865_carry_its_gains_and_the_child_none_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   relentless_strikes_gains_are_on_the_proxy(planted(relentless_strikes))
 }
 
@@ -137,7 +137,7 @@ fn telekinetic_strikes_gain_is_on_the_proxy(ability: Spell) -> Nil {
 }
 
 pub fn telekinetic_strikes_proxy_to_30900_carries_its_psi_point_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   telekinetic_strikes_gain_is_on_the_proxy(planted(telekinetic_strike))
 }
 
@@ -173,7 +173,7 @@ pub fn energize_holds_its_plus_4_and_its_ticking_gain_on_the_caster_test() -> Ni
 // ---- 18 ----
 
 fn load_reason(effect: List(planted_table.Cell)) -> String {
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let assert Error(error) =
     spell_tables.derivation_result(
       rows: spell_tables.Rows(
@@ -257,7 +257,7 @@ pub fn a_gain_aimed_other_than_at_the_caster_or_of_an_unread_vital_fails_the_loa
 // ---- the Proxies behind dataBits06 ----
 
 pub fn a_proxy_whose_data_bits_06_names_a_prerequisite_is_kept_behind_it_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let assert [proxy, ..] = proxies_of(planted(relentless_strikes), 177_873)
     as "53865's Proxy 177873 to 60947"
   assert caster_gates(proxy) == Ok([24_582])

@@ -112,7 +112,7 @@ fn resource_timers_cancelled(taken: ConnectionStep(Request)) -> List(TimerId) {
 }
 
 pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_writes_72_a_second_later_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
     game_connection_support.entered_with_spell_trees(
       class_id: 5,
@@ -148,7 +148,7 @@ const relentless_strikes_base = 18_309
 const rampage_base = 37_968
 
 pub fn a_warriors_relentless_strikes_on_a_beast_fills_kinetic_energy_and_rampage_then_casts_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(30_000)
   let #(state, unit_id, strikes_index) =
     game_connection_support.entered_with_spell_trees(
       class_id: 1,
@@ -239,7 +239,7 @@ pub fn a_warriors_relentless_strikes_on_a_beast_fills_kinetic_energy_and_rampage
 const gamma_rays_base = 16_322
 
 pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_after_the_combat_flag_clears_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
     game_connection_support.entered_with_spell_trees(
       class_id: 4,
@@ -304,7 +304,7 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
 }
 
 pub fn a_player_killed_and_brought_back_gets_each_slot_at_its_start_in_one_0x935_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
     game_connection_support.entered_with_spell_trees(
       class_id: 4,
@@ -371,7 +371,7 @@ fn warrior_killed_and_back() -> #(
 }
 
 pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(30_000)
   let #(state, _, bag_index) =
     game_connection_support.entered_with_spell_trees(
       class_id: 4,
@@ -479,7 +479,7 @@ fn surge_at(
 }
 
 pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_follow_the_last_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(30_000)
   let #(state, _) =
     game_connection_support.at(
       state: game_connection_support.medic_in_world(),
@@ -523,7 +523,7 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
 }
 
 pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_leaves_the_actuators_and_writes_no_0x935_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
     game_connection_support.entered_with_spell_trees(
       class_id: 4,

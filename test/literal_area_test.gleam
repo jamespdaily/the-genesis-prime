@@ -74,6 +74,25 @@ pub fn the_same_table_under_two_loads_is_held_twice_test() -> Nil {
     as "two loads of one file hold terms of the same name and size"
 }
 
+pub fn a_table_of_the_load_that_another_load_holds_at_its_size_is_held_twice_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let client = #(#(1, TableTerm("Creature2")), megabyte_term(70_000))
+  let second = #(#(2, TableTerm("Creature2")), megabyte_term(70_000))
+  assert literal_area.names_held_twice_with(load: 1, in: [client, second])
+    == ["Creature2"]
+    as "a second load of the load's table holds the same name and size"
+}
+
+pub fn loads_of_other_rows_of_a_table_are_not_a_second_copy_of_the_loads_table_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let client = #(#(1, TableTerm("Spell4Effects")), megabyte_term(80_000))
+  let shared = #(#(2, TableTerm("Spell4Effects")), megabyte_term(70_000))
+  let edit = #(#(3, TableTerm("Spell4Effects")), megabyte_term(70_000))
+  assert literal_area.names_held_twice_with(load: 1, in: [client, shared, edit])
+    == []
+    as "the fixture's shared load and an edit's load of it hold the same size as each other, not the client's table: a test loading beside must not fail the check"
+}
+
 pub fn the_held_twice_pattern_matches_the_keys_the_store_writes_test() -> Nil {
   use <- owned_test.run(60_000)
   // The shared planted load is held for the whole run (database_support.once).

@@ -27,6 +27,7 @@
 ////   carriage return escaped (`\\`, `\t`, `\n`, `\r`).
 
 import genesis_prime/dev_exit
+import genesis_prime/message/float32
 import genesis_prime/table
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
@@ -170,16 +171,10 @@ fn cell_text(value: table_rows.Value) -> String {
   case value {
     table_rows.Integer32(number) | table_rows.Integer64(number) ->
       int.to_string(number)
-    table_rows.Float32(bits:, ..) ->
-      "0x" <> string.pad_start(string.lowercase(int.to_base16(bits)), 8, "0")
+    table_rows.Float32(bits:, ..) -> table_rows.hex(bits)
     table_rows.Boolean(True) -> "true"
     table_rows.Boolean(False) -> "false"
-    table_rows.Text(text) ->
-      text
-      |> string.replace("\\", "\\\\")
-      |> string.replace("\t", "\\t")
-      |> string.replace("\n", "\\n")
-      |> string.replace("\r", "\\r")
+    table_rows.Text(text) -> table_rows.escaped(text)
   }
 }
 
@@ -234,24 +229,37 @@ fn parse_field(
         "false" -> Ok(Flag(False))
         _ -> Error(NotTrueOrFalse)
       }
-    tbl_file.Utf16Text ->
-      unescape(string.to_graphemes(text), "")
-      |> result.map(Words)
+    tbl_file.Utf16Text -> unescape(text) |> result.map(Words)
   }
 }
 
-fn unescape(
-  letters: List(String),
-  done: String,
+/// A text with its escapes (`\\`, `\t`, `\n`, `\r`) read, the inverse of
+/// `table_rows.escaped`: split at each backslash, the text before the first
+/// is plain and each later piece starts with the escaped letter. A backslash
+/// that ends the text or is followed by another letter is refused.
+fn unescape(text: String) -> Result(String, CellRefusal) {
+  case string.split(text, "\\") {
+    [] -> Ok("")
+    [plain, ..pieces] -> unescape_pieces(pieces, [plain])
+  }
+}
+
+/// The pieces after a backslash. An empty piece is a doubled backslash: the
+/// backslash is its letter, and the piece after it is plain text.
+fn unescape_pieces(
+  pieces: List(String),
+  done: List(String),
 ) -> Result(String, CellRefusal) {
-  case letters {
-    [] -> Ok(done)
-    ["\\", "\\", ..rest] -> unescape(rest, done <> "\\")
-    ["\\", "t", ..rest] -> unescape(rest, done <> "\t")
-    ["\\", "n", ..rest] -> unescape(rest, done <> "\n")
-    ["\\", "r", ..rest] -> unescape(rest, done <> "\r")
-    ["\\", ..] -> Error(BadEscape)
-    [letter, ..rest] -> unescape(rest, done <> letter)
+  case pieces {
+    [] -> Ok(done |> list.reverse |> string.concat)
+    ["", plain, ..rest] -> unescape_pieces(rest, [plain, "\\", ..done])
+    [piece, ..rest] ->
+      case piece {
+        "t" <> plain -> unescape_pieces(rest, [plain, "\t", ..done])
+        "n" <> plain -> unescape_pieces(rest, [plain, "\n", ..done])
+        "r" <> plain -> unescape_pieces(rest, [plain, "\r", ..done])
+        _ -> Error(BadEscape)
+      }
   }
 }
 
@@ -313,9 +321,9 @@ fn value_of(
     _, Flag(value) -> Ok(table_rows.Boolean(value))
     _, Words(words) -> Ok(table_rows.Text(words))
     _, Bits(bits) ->
-      case <<bits:size(32)>> {
-        <<value:float-size(32)>> -> Ok(table_rows.Float32(value:, bits:))
-        _ -> Error(NotAFiniteFloat)
+      case float32.bits(number: bits) |> result.try(float32.value) {
+        Ok(value) -> Ok(table_rows.Float32(value:, bits:))
+        Error(Nil) -> Error(NotAFiniteFloat)
       }
   }
 }
@@ -423,49 +431,49 @@ const child_rules = [
     "spellId",
     "Spell4",
     "ID",
-    "spell_plan.effects_of (Spell4Effects.spellId)",
+    "spell_plan.effects_by_spell (Spell4Effects.spellId)",
   ),
   ChildRule(
     "SpellPhase",
     "spell4IdOwner",
     "Spell4",
     "ID",
-    "spell_plan.phases_of (SpellPhase.spell4IdOwner)",
+    "spell_plan.phases_by_owner (SpellPhase.spell4IdOwner)",
   ),
   ChildRule(
     "Spell4Telegraph",
     "spell4Id",
     "Spell4",
     "ID",
-    "spell_area (Spell4Telegraph.spell4Id)",
+    "spell_area.telegraph_links_by_spell (Spell4Telegraph.spell4Id)",
   ),
   ChildRule(
     "Spell4Thresholds",
     "spell4IdParent",
     "Spell4",
     "ID",
-    "spell_plan.thresholds_of (Spell4Thresholds.spell4IdParent)",
+    "spell_plan.thresholds_by_parent (Spell4Thresholds.spell4IdParent)",
   ),
   ChildRule(
     "Creature2DisplayGroupEntry",
     "creature2DisplayGroupId",
     "Creature2",
     "creature2DisplayGroupId",
-    "appearance (Creature2.creature2DisplayGroupId)",
+    "spawn.catalog (Creature2DisplayGroupEntry.creature2DisplayGroupId)",
   ),
   ChildRule(
     "Creature2OutfitGroupEntry",
     "creature2OutfitGroupId",
     "Creature2",
     "creature2OutfitGroupId",
-    "appearance (Creature2.creature2OutfitGroupId)",
+    "spawn.catalog (Creature2OutfitGroupEntry.creature2OutfitGroupId)",
   ),
   ChildRule(
     "Creature2OverrideProperties",
     "creature2Id",
     "Creature2",
     "ID",
-    "unit_properties (Creature2OverrideProperties.creature2Id)",
+    "spawn.catalog (Creature2OverrideProperties.creature2Id)",
   ),
   // The server picks one row of the item's source by type and power level
   // (`worn_visual.of_item`); every row of the source comes in, so the pick is
@@ -475,17 +483,19 @@ const child_rules = [
     "itemSourceId",
     "Item2",
     "itemSourceId",
-    "worn_visual.of_item (ItemDisplaySourceEntry.itemSourceId)",
+    "worn_visual.display_of (ItemDisplaySourceEntry.itemSourceId)",
   ),
 ]
 
 /// The rows the server reads by the kind of a row, where no column's name says
 /// which table the number is an id of: for a row of `table` whose `kinds`
-/// columns all hold their value, the `column` holds an id of `target`.
+/// columns all hold their value and whose `kept` columns are all not 0, the
+/// `column` holds an id of `target`.
 type UntypedReference {
   UntypedReference(
     table: String,
     kinds: List(#(String, Int)),
+    kept: List(String),
     column: String,
     target: String,
     reader: String,
@@ -496,27 +506,31 @@ const untyped_references = [
   UntypedReference(
     "Prerequisite",
     [#("prerequisiteTypeId0", 11)],
+    [],
     "objectId0",
     "Prerequisite",
-    "prerequisite.nested_loaded (a type 11 condition names a row; a missing row fails it)",
+    "prerequisite.nested_loaded of the conditions prerequisite.kept_conditions keeps (those before the first of type 0): a type 11 condition names a row, and a missing row fails it",
   ),
   UntypedReference(
     "Prerequisite",
     [#("prerequisiteTypeId1", 11)],
+    ["prerequisiteTypeId0"],
     "objectId1",
     "Prerequisite",
-    "prerequisite.nested_loaded (a type 11 condition names a row; a missing row fails it)",
+    "prerequisite.nested_loaded of the conditions prerequisite.kept_conditions keeps (those before the first of type 0): a type 11 condition names a row, and a missing row fails it",
   ),
   UntypedReference(
     "Prerequisite",
     [#("prerequisiteTypeId2", 11)],
+    ["prerequisiteTypeId0", "prerequisiteTypeId1"],
     "objectId2",
     "Prerequisite",
-    "prerequisite.nested_loaded (a type 11 condition names a row; a missing row fails it)",
+    "prerequisite.nested_loaded of the conditions prerequisite.kept_conditions keeps (those before the first of type 0): a type 11 condition names a row, and a missing row fails it",
   ),
   UntypedReference(
     "Spell4Effects",
     [#("effectType", 26)],
+    [],
     "dataBits00",
     "Spell4",
     "spell_plan.proxy_of (Proxy effect type 26)",
@@ -524,13 +538,15 @@ const untyped_references = [
   UntypedReference(
     "Spell4Effects",
     [#("effectType", 26)],
+    [],
     "dataBits06",
     "Prerequisite",
-    "spell_plan (Proxy effect type 26 dataBits06 names a gate)",
+    "spell_plan.caster_gates_of and proxy_condition_of (Proxy effect type 26: dataBits06 names a gate)",
   ),
   UntypedReference(
     "Spell4Effects",
     [#("effectType", 14)],
+    [],
     "dataBits01",
     "Spell4",
     "spell_plan.procs_of (Proc effect type 14)",
@@ -538,6 +554,7 @@ const untyped_references = [
   UntypedReference(
     "Spell4Effects",
     [#("effectType", 80), #("dataBits00", 2)],
+    [],
     "dataBits01",
     "Spell4",
     "spell_plan.selector_of (SpellForceRemove effect type 80, selector 2: a spell)",
@@ -545,6 +562,7 @@ const untyped_references = [
   UntypedReference(
     "Spell4Effects",
     [#("effectType", 80), #("dataBits00", 3)],
+    [],
     "dataBits01",
     "Spell4Base",
     "spell_plan.selector_of (SpellForceRemove effect type 80, selector 3: a base)",
@@ -552,6 +570,7 @@ const untyped_references = [
   UntypedReference(
     "Spell4Effects",
     [#("effectType", 112)],
+    [],
     "dataBits01",
     "ItemDisplay",
     "spell_plan.disguise_of (DisguiseOutfit effect type 112)",
@@ -559,6 +578,7 @@ const untyped_references = [
   UntypedReference(
     "Spell4Effects",
     [#("effectType", 112)],
+    [],
     "dataBits02",
     "ItemDisplay",
     "spell_plan.disguise_of (DisguiseOutfit effect type 112)",
@@ -628,7 +648,7 @@ type Plan {
   Plan(
     links: List(Link),
     load: List(List(#(Int, Int))),
-    untyped: List(#(UntypedReference, List(#(Int, Int)), Int)),
+    untyped: List(#(UntypedReference, List(#(Int, Int)), List(Int), Int)),
     parent_rules: List(#(Int, Int)),
     child_rules: List(#(Int, Int)),
   )
@@ -700,8 +720,9 @@ fn plan_of(
           position(kind.0) |> result.map(fn(cell) { #(cell, kind.1) })
         }),
       )
+      use kept <- result.try(list.try_map(rule.kept, position))
       use cell <- result.map(position(rule.column))
-      #(rule, kinds, cell)
+      #(rule, kinds, kept, cell)
     }),
   )
   use parents <- result.try(
@@ -797,8 +818,11 @@ fn digest_of(
         })
       let untyped =
         list.filter_map(plan.untyped, fn(entry) {
-          let #(rule, kinds, cell) = entry
-          case list.all(kinds, fn(kind) { number_at(row, kind.0) == kind.1 }) {
+          let #(rule, kinds, kept, cell) = entry
+          case
+            list.all(kinds, fn(kind) { number_at(row, kind.0) == kind.1 })
+            && list.all(kept, fn(slot) { number_at(row, slot) != 0 })
+          {
             True -> Ok(#(rule.target, number_at(row, cell)))
             False -> Error(Nil)
           }

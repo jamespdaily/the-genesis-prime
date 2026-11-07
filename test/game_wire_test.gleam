@@ -340,7 +340,7 @@ fn names_of(pool: pog.Connection) -> List(String) {
 }
 
 pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_listed_and_played_into_the_world_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let game = in_select(started:, port:, account:)
@@ -409,7 +409,7 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
 }
 
 pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_on_the_bar_and_the_sheets_gear_figures_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(started, port, account) = start()
   let game = in_select(started:, port:, account:)
   game_client.send_create(game:, body: create_request("Ab Cd"))
@@ -1470,7 +1470,7 @@ pub fn a_players_press_is_answered_0x7fd_go_and_finish_and_a_player_in_sight_rea
 }
 
 pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_same_casts_on_the_whole_server_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
     two_players_of_class_enter_one_map_with(
@@ -1519,7 +1519,7 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
 }
 
 pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in_sight_reads_both_casts_on_the_whole_server_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
     two_players_of_class_enter_one_map_with(
@@ -1686,7 +1686,7 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
 }
 
 pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_the_same_casts_on_the_whole_server_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
     two_players_of_class_enter_one_map_with(
@@ -1901,7 +1901,7 @@ pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_
 }
 
 pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_held_until_the_release_on_the_whole_server_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
     two_players_of_class_enter_one_map_with(

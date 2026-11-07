@@ -1000,17 +1000,20 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
   int.compare(first_id, second_id)
 }
 
-/// The planted files of the spell tables with the trees of `spell_tables` (each
-/// the client's own rows) in place of the plain Normal casts; Paralytic Surge,
+/// The planted files of the spell tables with the trees of `spell_tables.planted_rows`
+/// (each the client's own row, trimmed to what the plan reads) in place of the plain
+/// Normal casts. The gap, closed by issue 326's step T3c: these are not the
+/// fixture's rows (`fixture_tables`), so a tree here lacks rows the client's holds.
+/// Paralytic Surge,
 /// 42352, stays one instant Normal cast. A table keeps a slot for each id up to
 /// its highest, so the Spell4Effects file, whose rows have ids up to 196522, is
 /// about 1.5 MB: only the tests that cast an ability of another method load these
 /// (`character_tables.shared_with_spell_trees`), and the plain `files` stay small.
 pub fn spell_tree_files() -> List(#(String, BitArray)) {
-  spell_tree_files_of(rows: spell_tables.rows(), creature_attack: False)
+  spell_tree_files_of(rows: spell_tables.planted_rows(), creature_attack: False)
 }
 
-/// The same from these planted rows (`spell_tables.rows_with_volatility`), with the
+/// The same from these planted rows (`spell_tables.planted_rows_with_volatility`), with the
 /// creature auto-attack's rows too when `creature_attack` (`with_creature_attack`), for the
 /// tables the content load reads the creature kinds from.
 pub fn spell_tree_files_of(

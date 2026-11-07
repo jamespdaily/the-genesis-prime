@@ -220,7 +220,7 @@ fn landed_and_threatened(
 }
 
 pub fn the_pulse_blast_that_opens_a_fight_gives_15_volatility_and_it_empties_5_seconds_after_combat_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, unit_id, pulse_blast, _) = engineer()
   let #(state, pressed) =
     pressed_and_threatened(
@@ -280,7 +280,7 @@ pub fn the_pulse_blast_that_opens_a_fight_gives_15_volatility_and_it_empties_5_s
 }
 
 pub fn electrocute_is_refused_51_at_0_volatility_and_costs_8_of_the_15_a_pulse_blast_gave_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, unit_id, pulse_blast, electrocute) = engineer()
   let #(refused_state, refusal) =
     game_connection_support.pressed_until(
@@ -327,7 +327,7 @@ pub fn electrocute_is_refused_51_at_0_volatility_and_costs_8_of_the_15_a_pulse_b
 // ---- 6 ----
 
 pub fn seven_in_combat_pulse_blasts_give_15_30_to_90_then_100_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let assert Ok(row) =
     spell4.get(tables: fixture_tables.shared(), id: Spell4Id(42_276))
     as "the client's Spell4 holds Pulse Blast's row 42276"
@@ -414,7 +414,7 @@ fn fired_unanswered(
 }
 
 pub fn three_open_rounds_closed_by_answer_1_the_threat_then_answers_2_and_3_give_one_gain_of_15_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, unit_id, pulse_blast, _) = engineer()
   let #(state, pressed) =
     game_connection_support.at(
@@ -510,7 +510,7 @@ fn is_cast_or_combat_news(news: client_connection.News) -> Bool {
 }
 
 pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_never_the_volatility_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(60_000)
   let #(state, _, pulse_blast, _) = engineer()
   let state = game_connection_support.watched_by(state:, viewers: [2])
   let #(_, steps) =
