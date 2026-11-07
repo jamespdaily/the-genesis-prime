@@ -18,9 +18,13 @@
 //// - **A nested tooltip**: the fields `abTooltip`, `cTooltip`, `ptTooltip` and
 ////   `stTooltip` of a `spell` token print the named spell's ActionBarTooltip,
 ////   CasterIconSpellText, PrimaryTargetIconSpellText and SecondaryTargetIconSpellText
-////   text (`FormatSpellTooltipToken`, `0x1404df2c0`); a text is read once.
+////   text (`FormatSpellTooltipToken`, `0x1404df2c0`, reads the spell object's block
+////   words 0x20 to 0x2c, which `BuildSpellTables`, `0x14055e180`, fills lines 1347-1350
+////   from the Spell4 row's offsets 124, 248, 252 and 256: fact record
+////   `Spell4.localizedTextIdActionBarTooltip`); a text is read once.
 //// - **A row the load refuses** names its line: the list is written by a tool, so a
-////   row the reader cannot take is a stale or damaged file, never skipped.
+////   row the reader cannot take, or a row written twice (the tool writes each token of
+////   a text once), is a stale or damaged file, never skipped.
 
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store
@@ -102,16 +106,9 @@ pub fn parse(text text: String) -> Result(Tokens, ListError) {
       }
       rows
       |> list.index_map(fn(row, index) { #(index + 2, row) })
-      |> list.try_fold(dict.new(), fn(by_text, numbered) {
-        use #(text_id, token) <- result.map(parse_row(
-          line: numbered.0,
-          row: numbered.1,
-        ))
-        dict.upsert(by_text, text_id, fn(found) {
-          [token, ..option.unwrap(found, [])]
-        })
-      })
-      |> result.map(fn(by_text) {
+      |> list.try_fold(#(dict.new(), dict.new()), add_row)
+      |> result.map(fn(state) {
+        let by_text = state.0
         Tokens(
           by_text: dict.map_values(by_text, fn(_, found) { list.reverse(found) }),
         )
@@ -119,6 +116,32 @@ pub fn parse(text text: String) -> Result(Tokens, ListError) {
     }
     [first, ..] -> Error(HeaderWrong(found: first))
     [] -> Error(HeaderWrong(found: ""))
+  }
+}
+
+/// The state with one more row: the tokens by text, and the line each row first stood on.
+fn add_row(
+  state: #(Dict(Int, List(Token)), Dict(String, Int)),
+  numbered: #(Int, String),
+) -> Result(#(Dict(Int, List(Token)), Dict(String, Int)), ListError) {
+  let #(by_text, first_lines) = state
+  let #(line, row) = numbered
+  case dict.get(first_lines, row) {
+    Ok(first) ->
+      Error(RowInvalid(
+        line:,
+        row:,
+        why: "repeats line " <> int.to_string(first),
+      ))
+    Error(Nil) -> {
+      use #(text_id, token) <- result.map(parse_row(line:, row:))
+      #(
+        dict.upsert(by_text, text_id, fn(found) {
+          [token, ..option.unwrap(found, [])]
+        }),
+        dict.insert(first_lines, row, line),
+      )
+    }
   }
 }
 
@@ -333,6 +356,9 @@ fn nested_column(
   }
 }
 
+/// The Spell4 column the client's spell object keeps for each nested tooltip field (the
+/// block words 0x20 abTooltip, 0x24 cTooltip, 0x28 ptTooltip, 0x2c stTooltip are copied
+/// from the row's offsets 124, 248, 252 and 256, 0x14055e180 lines 1347-1350).
 fn nested_text_id(row row: Spell4, field field: String) -> Option(Int) {
   case field {
     "abtooltip" -> Some(row.localized_text_id_action_bar_tooltip)

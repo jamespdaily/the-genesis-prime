@@ -218,6 +218,40 @@ pub fn a_list_row_with_an_id_that_is_not_a_number_fails_the_load_naming_the_row_
   )
 }
 
+pub fn a_list_row_written_twice_fails_the_load_naming_the_row_and_its_first_line_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let row = "376222\teff\t95337\tinput0pct"
+  let assert Error(error) =
+    tooltip_token.parse(
+      header
+      <> "\n"
+      <> row
+      <> "\n376222\teff\t95337\tinput1pct\n"
+      <> row
+      <> "\n",
+    )
+  assert error == tooltip_token.RowInvalid(line: 4, row:, why: "repeats line 2")
+  assert string.contains(
+    tooltip_token.describe_error(error),
+    string.replace(row, "\t", "\\t"),
+  )
+}
+
+pub fn a_list_row_a_text_shares_with_another_text_is_not_a_repeat_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(tokens) =
+    tooltip_token.parse(
+      header <> "\n1\teff\t5\tx\n2\teff\t5\tx\n1\teff\t5\ty\n",
+    )
+  assert tooltip_token.of_text(tokens:, text_id: 1)
+    == [
+      tooltip_token.Token(tooltip_token.Eff, 5, "x"),
+      tooltip_token.Token(tooltip_token.Eff, 5, "y"),
+    ]
+  assert tooltip_token.of_text(tokens:, text_id: 2)
+    == [tooltip_token.Token(tooltip_token.Eff, 5, "x")]
+}
+
 pub fn a_list_row_with_a_text_id_or_a_kind_the_client_does_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(10_000)
   let text_row = "abc\teff\t95337\tinput0pct"

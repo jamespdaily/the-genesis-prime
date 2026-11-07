@@ -227,7 +227,6 @@ class IrregularTokenTest(Planted):
             "Deal $(eff=id.input0) damage.",  # the id is not a number
             "Deal $(eff=0.input0) damage.",  # id 0
             "Deal $(eff=61017.tickTimeMS seconds.",  # no closing parenthesis: the rest of the text is the token
-            "Deal $(eff=216424input0) percent.",  # no dot: an eff token needs a field
             "Deal $(eff=216424.) percent.",  # a dot and no field
             "Deal $(eff = 73075.input0) percent.",  # a space between the kind and the equals sign: no kind matches
             "Deal $(#####.data02int) percent.",
@@ -237,6 +236,26 @@ class IrregularTokenTest(Planted):
                 rows, out = self.write_text(text)
                 self.assertEqual(rows, [])
                 self.assertIn("424242", out)
+
+    def test_an_eff_token_with_no_dot_is_the_spell_row_the_client_falls_through_to(self):
+        # ReadKindToken 0x1400b8010 tries spell= with the id eff= matched when eff= gives nothing, and
+        # FormatSpellTooltipToken 0x1404df2c0 finds no '.' and prints the spell's name: texts 735915, 749242, 235966,
+        # 700085 and 712161 of the client's file hold these forms.
+        for body, spell_id in (
+            ("eff=83598", "83598"),
+            ("eff=60984data03raw", "60984"),
+            ("eff=216424input0", "216424"),
+            ("eff=217650input0actual", "217650"),
+        ):
+            with self.subTest(body=body):
+                rows, out = self.write_text("Deal $(%s) damage." % body)
+                self.assertEqual(rows, [["424242", "spell", spell_id, ""]])
+                self.assertNotIn("left out", out)
+
+    def test_an_eff_token_with_a_dot_and_no_field_stays_unread(self):
+        rows, out = self.write_text("Deal $(eff=216424.) percent.")
+        self.assertEqual(rows, [])
+        self.assertIn("424242", out)
 
     def test_a_field_that_runs_over_other_text_is_no_row_and_the_scan_goes_on_after_its_parenthesis(self):
         rows, out = self.write_text("Every $(eff=61017.tickTimeMS seconds. Deal $(eff=5.input0) and $(eff=6.input1) more")

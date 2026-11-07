@@ -390,6 +390,10 @@ def read_tokens(text: str) -> tuple[list[Token], list[tuple[str, str]]]:
             kind, field = matched["kind"].lower(), matched["field"]
             if field is not None and any(character.isspace() for character in field):
                 irregular.append(("the field runs over other text to the next `)`", body[:40]))
+            elif kind == "eff" and field is None:
+                # No '.', so EvaluateEffectToken (0x1404de8d0) gives no value; ReadKindToken (0x1400b8010) then tries
+                # spell= with the same id, and FormatSpellTooltipToken (0x1404df2c0) with no '.' prints the spell's name.
+                found[Token("spell", int(matched["id"]), "")] = None
             elif not field and kind in VALUE_KINDS:
                 irregular.append(("an %s token with no field: the evaluator prints nothing" % kind, body[:40]))
             else:
@@ -401,7 +405,10 @@ def read_tokens(text: str) -> tuple[list[Token], list[tuple[str, str]]]:
 def spell4_text_ids(data: bytes) -> list[int]:
     """The ids the seven tooltip text columns of Spell4.tbl name, each once, ascending, without the 0 that means
     no text. The layout is the fact file's game_table.file and game_table.schema; raises Refused for a file that
-    is not a game table, has a column or type this reader does not know, or lacks one of the seven columns."""
+    is not a game table, has a column or type this reader does not know, or lacks one of the seven columns.
+    It mirrors src/genesis_prime/table/loader/tbl_file.gleam (layout) and the generated spell4.gleam (these seven
+    columns are read signed, as every type 3 column not listed Unsigned in column_sign is); Python cannot call
+    them, because `gleam run` recompiles, and the check lets only its gleam-build part compile (check, line 105)."""
     if len(data) < HEADER_END or data[:4] != TABLE_MAGIC:
         raise Refused("Spell4.tbl does not start %r" % TABLE_MAGIC)
     record_size, column_count, column_table, record_count, block_size, block_at = struct.unpack_from("<QQQQQQ", data, 0x18)

@@ -244,7 +244,7 @@ pub fn a_token_naming_a_row_the_tables_lack_is_listed_as_naming_no_row_test() ->
   assert named.no_row
     == [
       NoRow(
-        table: "Spell4Effects",
+        table: "Spell4Effects or Spell4",
         id: 77_777_777,
         token: Token(tooltip_token.Eff, 77_777_777, "input0pct"),
         text_id: 378_001,
@@ -265,6 +265,32 @@ pub fn a_token_naming_a_row_the_tables_lack_is_listed_as_naming_no_row_test() ->
         named_by: [42_276],
       ),
     ]
+}
+
+/// ReadKindToken (0x1400b8010) tries `spell=` with the id `eff=` matched when no
+/// Spell4Effects row gives a value, and the spell evaluator prints the spell's name.
+/// A `cc` token is tried after `spell`, so it has no such fall-through.
+pub fn an_eff_token_whose_effect_row_is_missing_but_whose_id_is_a_spell_names_that_spell_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let named_spell =
+    Naming(
+      token: Token(tooltip_token.Eff, 42_148, "input0pct"),
+      text_id: 377_002,
+      named_by: [42_276],
+    )
+  let #(named, _) =
+    named_in(
+      rows: rows_with_blast_texts([
+        #("localizedTextIdCasterIconSpellText", 377_002),
+      ]),
+      tokens: list_of(["377002\teff\t42148\tinput0pct"]),
+      proxies: [],
+      left_out: [],
+    )
+  assert named.counted == []
+  assert named.links
+    == [Entry(spell: 42_148, namings: [named_spell], reason: None)]
+  assert named.no_row == []
 }
 
 pub fn a_token_a_nested_tooltip_names_counts_for_the_spell_that_nests_it_test() -> Nil {

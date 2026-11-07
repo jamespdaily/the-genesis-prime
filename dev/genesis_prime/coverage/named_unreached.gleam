@@ -18,8 +18,12 @@
 //// - **A link** is a `spell` token with no field: it prints the spell's name and reads no
 ////   value. The links are listed apart and add nothing to the count; a spell that value
 ////   tokens also name is in both lists.
-//// - **A token that names no row** (an effect or a spell the tables lack) is listed apart:
-////   the client prints nothing for it.
+//// - **An `eff` token with no Spell4Effects row** falls through to `spell` with the same
+////   id (`ReadKindToken`, `0x1400b8010`), whose evaluator prints the spell's name, so it
+////   is a link to the Spell4 row of that id. (`cc` is tried after `spell`: no fall-through.)
+//// - **A token that names no row** (an effect, or a spell, the tables lack; for `eff`
+////   neither a Spell4Effects row nor a Spell4 row) is listed apart: the client prints
+////   nothing for it.
 //// - **A reason** is the first part the starting abilities' measure leaves out that holds
 ////   the spell (`starting_ability.left_out_spells`), as it explains why no row reaches it.
 
@@ -92,14 +96,26 @@ pub fn find(
 
 /// What a token names, or an error for a token that names no spell: a kind other than
 /// `eff`, `cc` and `spell`, or an `eff` or `cc` with no field, which the generator never
-/// writes.
+/// writes (an `eff` with no `.` is written as the `spell` token the client falls through
+/// to). An `eff` with no Spell4Effects row falls through to `spell` too, whose evaluator
+/// prints the spell's name, so it is a link to the Spell4 row of that id when there is one.
 fn target(
   tables tables: store.Tables,
   token token: Token,
 ) -> Result(Target, Nil) {
   case token.kind, token.field {
     tooltip_token.Eff, "" | tooltip_token.Cc, "" -> Error(Nil)
-    tooltip_token.Eff, _ | tooltip_token.Cc, _ ->
+    tooltip_token.Eff, _ ->
+      case spell4_effects.get(tables:, id: Spell4EffectsId(token.id)) {
+        Ok(row) -> Ok(spell_target(tables:, spell: row.spell_id, link: False))
+        Error(Nil) ->
+          case spell4.get(tables:, id: Spell4Id(token.id)) {
+            Ok(_) -> Ok(Link(spell: token.id))
+            Error(Nil) ->
+              Ok(Missing(table: "Spell4Effects or Spell4", id: token.id))
+          }
+      }
+    tooltip_token.Cc, _ ->
       case spell4_effects.get(tables:, id: Spell4EffectsId(token.id)) {
         Error(Nil) -> Ok(Missing(table: "Spell4Effects", id: token.id))
         Ok(row) -> Ok(spell_target(tables:, spell: row.spell_id, link: False))

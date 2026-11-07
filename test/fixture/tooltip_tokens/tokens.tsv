@@ -467,7 +467,9 @@ text_id	kind	id	field
 235951	eff	60972	input0pct
 235963	eff	60972	input0pct
 235966	eff	60973	data02pctadd
+235966	spell	60984	
 235966	eff	60984	data04raw
+235968	spell	60984	
 235968	eff	60984	data04raw
 235989	eff	61016	data02pctadd
 235989	eff	61017	data05pct
@@ -27749,6 +27751,7 @@ text_id	kind	id	field
 699753	creature	71226	
 699854	spell	82235	
 700064	eff	216419	durationh
+700085	spell	216424	
 700085	eff	216424	ticktimems
 700336	spell	82268	
 700336	eff	216437	ticktimems
@@ -28165,6 +28168,7 @@ text_id	kind	id	field
 712137	eff	217647	data03pct
 712150	eff	217654	data02pctadd
 712159	eff	217654	data02pctadd
+712161	spell	217650	
 712226	spell	82705	lasdata00pct
 712226	spell	32345	
 712226	eff	217678	input0pct
@@ -28608,6 +28612,7 @@ text_id	kind	id	field
 735910	eff	220981	input0
 735912	eff	220982	input0
 735915	eff	220971	data0rawint
+735915	spell	83598	
 735916	spell	83605	lasdata00pct
 735916	eff	220991	input0
 735916	eff	220991	durationms
@@ -28912,6 +28917,7 @@ text_id	kind	id	field
 749242	eff	224925	data01raw
 749242	spell	75608	
 749242	eff	224926	durationtimems
+749242	spell	75610	
 749244	eff	224933	data02pctsub
 749245	eff	224933	data02pctsub
 749376	eff	224995	data03pct
