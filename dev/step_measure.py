@@ -43,8 +43,16 @@ subagents record more than their saved replies, nearly all of it input with almo
 output, so some calls are not in the transcripts. A session's recorded cost covers every
 step it ran and all its subagents, so one step's table holds only its share of it.
 
+--milestone prices every step of a GitHub milestone the same way, for the milestone's
+close. Its steps are the issues in the milestone closed as completed. It prints one row
+per step with transcript work, highest dollars first, each marked rough when a session it
+ran in is shared with other steps, then the total and the count of steps with no
+transcript work. With --types, the number of types the milestone handled at its close,
+it ends with the cost per type.
+
 Usage:
   python3 -I dev/step_measure.py 143
+  python3 -I dev/step_measure.py --milestone "Milestone 4: Fight" --types 37
   python3 -I dev/step_measure.py --check-prices
 """
 
@@ -428,8 +436,40 @@ def plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
-def report(step: int, runs: list[Run]) -> int:
-    """Prints the step's table; returns the exit status."""
+@dataclass
+class StepWork:
+    """One step's measured work: its table rows and what the table totals."""
+
+    mains: dict[str, Run]
+    main_replies: dict[str, list[Reply]]
+    sub_runs: list[Run]
+    shared: list[str]
+    rows: dict[str, Tally]
+    unsaved: float
+    codex: int
+    start: datetime
+    end: datetime
+
+    @property
+    def sessions(self) -> set[str]:
+        """The main sessions the step ran in, directly or through a subagent."""
+        return set(self.main_replies) | {r.session for r in self.sub_runs}
+
+    @property
+    def total(self) -> Tally:
+        """The table's total row: every row, and the coordinator's unsaved dollars."""
+        total = Tally()
+        for tally in self.rows.values():
+            total.input += tally.input
+            total.output += tally.output
+            total.dollars += tally.dollars
+            total.unpriced |= tally.unpriced
+        total.dollars += self.unsaved
+        return total
+
+
+def measure_step(step: int, runs: list[Run], costs: dict[str, SessionCost]) -> StepWork | None:
+    """The step's rows and total, or None when no transcript work matched it."""
     mains = {r.session: r for r in runs if r.agent == "main session"}
     sub_runs = [r for r in runs if r.agent != "main session" and r.step == step]
     main_replies = {
@@ -437,15 +477,12 @@ def report(step: int, runs: list[Run]) -> int:
     }
     main_replies = {s: x for s, x in main_replies.items() if x}
     if not main_replies and not sub_runs:
-        print(f"No transcript work matched step #{step}.")
-        return 1
+        return None
 
     times = [x.time for xs in main_replies.values() for x in xs]
     times += [t for r in sub_runs for t in (min(r.times), max(r.times)) if r.times]
-    start, end = min(times), max(times)
     shared = [s for s in main_replies if mains[s].shared]
 
-    costs = session_costs(runs)
     rows: dict[str, Tally] = {}
     main = rows.setdefault("main session", Tally(runs=len(main_replies)))
     for replies in main_replies.values():
@@ -464,6 +501,29 @@ def report(step: int, runs: list[Run]) -> int:
         )
         tally.add(run.replies)
     codex = sum(x.codex for xs in main_replies.values() for x in xs)
+    return StepWork(
+        mains,
+        main_replies,
+        sub_runs,
+        shared,
+        rows,
+        unsaved,
+        codex,
+        min(times),
+        max(times),
+    )
+
+
+def report(step: int, runs: list[Run]) -> int:
+    """Prints the step's table; returns the exit status."""
+    costs = session_costs(runs)
+    work = measure_step(step, runs, costs)
+    if work is None:
+        print(f"No transcript work matched step #{step}.")
+        return 1
+    mains, main_replies, sub_runs = work.mains, work.main_replies, work.sub_runs
+    shared, rows, unsaved, codex = work.shared, work.rows, work.unsaved, work.codex
+    start, end = work.start, work.end
 
     print(
         f"**Step #{step}: agent work from {start:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC**"
@@ -471,7 +531,6 @@ def report(step: int, runs: list[Run]) -> int:
     print()
     print("| Who | Runs | Minutes | Input tokens | Output tokens | Cost |")
     print("|---|---:|---:|---:|---:|---:|")
-    total = Tally()
     for name, tally in rows.items():
         runs_text = str(tally.runs)
         if name == "main session":
@@ -482,19 +541,15 @@ def report(step: int, runs: list[Run]) -> int:
             f"| {name} | {runs_text} | {tally.minutes:.0f} | {millions(tally.input)} "
             f"| {thousands(tally.output)} | ${tally.dollars:.2f} |"
         )
-        total.input += tally.input
-        total.output += tally.output
-        total.dollars += tally.dollars
-        total.unpriced |= tally.unpriced
     if unsaved:
         print(
             f"| coordinator, not in transcript | | | not saved | not saved | ${unsaved:.2f} |"
         )
-        total.dollars += unsaved
     if codex:
         print(
             f"| Codex review | {codex} | not recorded | not recorded | not recorded | not recorded |"
         )
+    total = work.total
     print(
         f"| **total** | | | {millions(total.input)} | {thousands(total.output)} | **${total.dollars:.2f}** |"
     )
@@ -539,6 +594,94 @@ def report(step: int, runs: list[Run]) -> int:
     return 0
 
 
+def milestone_steps(title: str) -> dict[int, str]:
+    """The issues of a milestone closed as completed, by number, with their titles."""
+    issues = json.loads(
+        subprocess.run(
+            [
+                "gh",
+                "issue",
+                "list",
+                "--milestone",
+                title,
+                "--state",
+                "closed",
+                "--limit",
+                "1000",
+                "--json",
+                "number,title,stateReason",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    return {i["number"]: i["title"] for i in issues if i["stateReason"] == "COMPLETED"}
+
+
+def report_milestone(title: str, types: int | None, runs: list[Run]) -> int:
+    """Prints each completed step's dollars and the milestone's total and cost per type."""
+    steps = milestone_steps(title)
+    if not steps:
+        print(
+            f"No issue closed as completed in milestone {title!r}; check the title."
+        )
+        return 1
+    costs = session_costs(runs)
+    priced = []
+    sessions: set[str] = set()
+    unpriced: set[str] = set()
+    for number, name in steps.items():
+        work = measure_step(number, runs, costs)
+        if work is not None:
+            priced.append((work.total.dollars, number, name, bool(work.shared)))
+            sessions |= work.sessions
+            unpriced |= work.total.unpriced
+    priced.sort(reverse=True)
+
+    print(f"**{title}: agent work of {len(steps)} completed steps**")
+    print()
+    print("| Step | Title | Cost | Rough |")
+    print("|---:|---|---:|---|")
+    for dollars, number, name, rough in priced:
+        print(
+            f"| #{number} | {name.replace('|', '/')} | ${dollars:.2f} | {'rough' if rough else ''} |"
+        )
+    total = sum(x[0] for x in priced)
+    print()
+    print(
+        f"**Total: ${total:.2f}** over {plural(len(priced), 'step')} with transcript work."
+    )
+    print(f"Steps with no transcript work found: {len(steps) - len(priced)}.")
+    recorded = [costs[s] for s in sessions if s in costs and costs[s].recorded]
+    unassigned = Tally()
+    unassigned.add(
+        [x for r in runs if r.session in sessions for x in r.replies if x.step is None]
+    )
+    print(
+        f"The steps ran in {plural(len(sessions), 'session')}; Claude Code recorded "
+        f"${sum(c.recorded_dollars for c in recorded):.2f} for {len(recorded)} of them "
+        f"(their saved replies price at ${sum(c.priced for c in recorded):.2f}), and "
+        f"{len(sessions) - len(recorded)} with no recorded cost yet."
+    )
+    print(
+        f"Left out of every step: ${unassigned.dollars:.2f} of those sessions' replies "
+        "and subagent runs that name no step."
+    )
+    if unpriced:
+        print(f"No price for {', '.join(sorted(unpriced))}: counted but not priced.")
+    if types:
+        print(
+            f"Cost per type: ${total:.2f} over {plural(types, 'type')} = ${total / types:.2f}"
+        )
+    else:
+        print(
+            "Cost per type: pass --types N, the types the milestone handled per the "
+            "coverage measure at its close."
+        )
+    return 0
+
+
 def check_prices(runs: list[Run]) -> int:
     """Prints recorded against priced cost for each session Claude Code recorded one for."""
     recorded_total = priced_total = 0.0
@@ -575,9 +718,22 @@ def main() -> int:
         action="store_true",
         help="compare priced and recorded session costs",
     )
+    parser.add_argument(
+        "--milestone", help="price every completed step of this GitHub milestone"
+    )
+    parser.add_argument(
+        "--types",
+        type=int,
+        help="with --milestone, the types the milestone handled, for the cost per type",
+    )
     args = parser.parse_args()
-    if args.step is None and not args.check_prices:
-        parser.error("give a step's issue number, or --check-prices")
+    modes = [args.step is not None, args.check_prices, bool(args.milestone)]
+    if sum(modes) != 1:
+        parser.error(
+            "give exactly one of a step's issue number, --milestone, or --check-prices"
+        )
+    if args.types is not None and (not args.milestone or args.types < 1):
+        parser.error("--types is a positive number and goes with --milestone")
 
     folders = project_folders()
     paths = [p for f in folders for p in f.glob("*.jsonl")]
@@ -588,6 +744,8 @@ def main() -> int:
 
     if args.check_prices:
         return check_prices(runs)
+    if args.milestone:
+        return report_milestone(args.milestone, args.types, runs)
     return report(args.step, runs)
 
 
