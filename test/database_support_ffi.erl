@@ -3,15 +3,17 @@
 
 %% Runs Create once in this VM, whichever test asks first, and gives every
 %% later caller the same value. The value lives in a persistent term, written
-%% once per key; a global lock makes a second caller wait for the first.
+%% once per key; a lock on the key makes a second caller wait for the first and
+%% wakes it when the first ends (local_lock_ffi). The keys are a small fixed set
+%% of literals in the tests, so the atom made from each is bounded.
 once(Key, Create) ->
     Slot = {?MODULE, Key},
     case persistent_term:get(Slot, none) of
         {value, Value} ->
             Value;
         none ->
-            global:trans(
-                {Slot, self()},
+            local_lock_ffi:with_lock(
+                binary_to_atom(<<"database_support_once ", Key/binary>>),
                 fun() ->
                     case persistent_term:get(Slot, none) of
                         {value, Value} ->
@@ -21,9 +23,7 @@ once(Key, Create) ->
                             persistent_term:put(Slot, {value, Value}),
                             Value
                     end
-                end,
-                [node()],
-                infinity
+                end
             )
     end.
 
