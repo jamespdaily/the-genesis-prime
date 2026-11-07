@@ -76,7 +76,7 @@ if [ -n "$PLANT_RENDEZVOUS" ]; then
       until [ -f "$rendezvous/$name" ]; do
         sleep 0.1
         waited=$((waited + 1))
-        if [ "$waited" -gt 300 ]; then
+        if [ "$waited" -gt "${PLANT_RENDEZVOUS_POLLS:-300}" ]; then
           echo "$name had not started while the test run was running"
           exit 1
         fi
@@ -461,10 +461,10 @@ class BudgetTest(unittest.TestCase):
     are the measured ones, below."""
 
     # The slowest of 3 full checks on the idle development Mac, with the parts beside
-    # each other and 2 test workers, was 125 s; the fast check's slowest of 4 runs 25 s
-    # (measurements on the step's issue); each times 1.25, rounded up.
+    # each other and 2 test workers, was 125 s; the fast check's median of 3 runs is
+    # 23 s; each times 1.25, rounded up.
     FULL_BUDGET = 157
-    FAST_BUDGET = 32
+    FAST_BUDGET = 29
 
     def test_the_budgets_the_check_has_when_none_is_set_are_the_measured_ones(self):
         for name, args, budget in (("full", (), self.FULL_BUDGET), ("fast", ("fast",), self.FAST_BUDGET)):
@@ -1214,6 +1214,7 @@ class SerialTestsTest(unittest.TestCase):
     def test_the_full_check_runs_the_serial_tests_in_a_second_run_one_at_a_time(self):
         suites = [c for c in shared_run("full").commands if c.startswith("gleam test")]
         self.assertEqual(suites, ["gleam test -- --workers %s" % TEST_WORKERS, "gleam test -- --tag serial"])
+
     def test_the_run_of_the_other_tests_skips_the_serial_ones(self):
         runs = [line for line in shared_run("full").environment.splitlines() if line.startswith("gleam test")]
         self.assertEqual(runs[0], "gleam test -- --workers %s GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1" % TEST_WORKERS)
@@ -1350,9 +1351,9 @@ class LiteralAreaTest(unittest.TestCase):
         self.assertNotIn("literal-area", shared_run("fast", "fast").output)
 
 
-# The worker count the check gives `gleam test` when GENESIS_TEST_WORKERS is not set: 2, from the
-# runs posted on the step's issue (full check wall time and literal area peak with 1 and with 2).
-# A change of it is a change here with the measurement that justifies it.
+# The worker count the check gives `gleam test` when GENESIS_TEST_WORKERS is not set: 2, from runs
+# of the full check with 1 and with 2 (its wall time and literal area peak). A change of it is a
+# change here with the measurement that justifies it.
 TEST_WORKERS = "2"
 
 
@@ -1366,8 +1367,10 @@ class ParallelPartsTest(unittest.TestCase):
     running, and in the fast check glinter runs beside the code-rule tests. The planted
     `gleam test` (PLANT_RENDEZVOUS) waits for each of them to have started and fails
     when one has not, so what is tested is the order of the parts, not their times. The
-    planted gleam ends the wait on an event, never on a clock, but gives up after 30
-    seconds so a part run after the tests fails the run instead of hanging it."""
+    planted gleam ends the wait on an event, never on a clock, but gives up after 300
+    polls of 0.1 s (PLANT_RENDEZVOUS_POLLS) so a part run after the tests fails the run
+    instead of hanging it; the control test, which must reach that, sets 100 polls, a
+    sixth of its 60 s run timeout."""
 
     def test_the_full_check_starts_glinter_generated_tables_squirrel_and_the_world_data_run_while_the_test_run_is_running(self):
         run = shared_run("rendezvous-full", client=True, PLANT_RENDEZVOUS="1", **WORLD_DATA)
@@ -1384,7 +1387,7 @@ class ParallelPartsTest(unittest.TestCase):
         # The planted tool's own control: with the world-data run never started (no
         # GENESIS_WORLD_DATA here), the rendezvous cannot be met, and the test run fails
         # naming it, so a pass above means every part had started.
-        run = shared_run("rendezvous-unmet", client=True, timeout=60, PLANT_RENDEZVOUS="1")
+        run = shared_run("rendezvous-unmet", client=True, timeout=60, PLANT_RENDEZVOUS="1", PLANT_RENDEZVOUS_POLLS="100")
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"\bgleam-test\b")
         self.assertIn("world_data had not started", run.output)

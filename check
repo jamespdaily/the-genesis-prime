@@ -138,9 +138,9 @@ esac
 budget=${GENESIS_CHECK_BUDGET_SECONDS:-157}
 
 # The same for ./check fast, with a warm build: glinter beside the code-rule tests
-# took 23 s in each of 3 runs and 25 s in a fourth on the development Mac (28 s before
-# they ran beside each other); 25 s times 1.25, rounded up.
-fast_budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-32}
+# took 23 s as the median of 3 runs on the development Mac; that times 1.25,
+# rounded up.
+fast_budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-29}
 if [ "$mode" = fast ]; then
   budget=$fast_budget
 fi
@@ -439,7 +439,9 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
-trap 'exit 130' INT TERM
+# Ctrl-C or a TERM ends what the parts started too; a normal end has nothing left to stop,
+# so it does not pay the second stop_everything sleeps.
+trap 'stop_everything $$; exit 130' INT TERM
 
 # branch_current: the first part of the full check. Prints one line, and ends the
 # check when HEAD lacks commits of origin/main as last fetched.
@@ -605,14 +607,6 @@ world_data_test() {
   GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-world-data" gleam test -- --tag world_data
 }
 
-# wait_until_finished NAME: waits until the part NAME has written its status or been
-# skipped, whatever the status; like wait_for_status it has no limit of its own.
-wait_until_finished() {
-  while [ ! -f "$work/$1.status" ] && [ ! -f "$work/$1.skipped" ]; do
-    sleep 0.2
-  done
-}
-
 # literal_peak_within_limit FILE RUN LABEL: prints the peak the run RUN recorded in
 # FILE as LABEL, and fails when it is over literal_limit_percent of the region, or
 # when the run recorded none.
@@ -668,14 +662,6 @@ squirrel_check() {
   DATABASE_URL=$(database_url) gleam run -m squirrel check
 }
 
-# wait_for_all PID...: waits for each of the background jobs of one chain.
-wait_for_all() {
-  local pid
-  for pid in "$@"; do
-    wait "$pid"
-  done
-}
-
 # squirrel_after_migrations: squirrel reads the database the migrations part made.
 squirrel_after_migrations() {
   if wait_for_status migrations; then
@@ -696,7 +682,7 @@ world_data_wanted() {
 # run beside each other (glinter, generated-tables, the tests, the world-data test,
 # squirrel), and literal-area follows the two test runs.
 gleam_chain() {
-  local pids=()
+  local pids=() world_data_pid=""
   if step gleam-build gleam build --warnings-as-errors; then
     ( step glinter gleam run -m glinter ) &
     pids+=("$!")
@@ -706,14 +692,15 @@ gleam_chain() {
     pids+=("$!")
     if world_data_wanted; then
       ( step world-data world_data_test ) &
-      pids+=("$!")
+      world_data_pid=$!
+      pids+=("$world_data_pid")
     else
       skip world-data "the world-data test needs the client's tables and GENESIS_WORLD_DATA (GENESIS_NO_CLIENT=1 or GENESIS_WORLD_DATA unset here)"
     fi
     step gleam-test gleam_test
-    wait_until_finished world-data
+    [ -n "$world_data_pid" ] && wait "$world_data_pid"
     step literal-area literal_area_check
-    wait_for_all "${pids[@]}"
+    wait "${pids[@]}"
   else
     skip glinter "a part it needs failed: gleam-build"
     skip generated-tables "a part it needs failed: gleam-build"

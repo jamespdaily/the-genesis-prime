@@ -1,0 +1,74 @@
+name: toolchain
+description: >-
+  The Erlang, Gleam and rebar of .tool-versions, the patched OTP (restored from
+  the cache, or built and saved) and the Gleam build cache (restored, or
+  looked up only), for the check job and for the job that warms the caches
+  when the check is skipped.
+
+inputs:
+  gleam-lookup-only:
+    description: "true: only look whether the Gleam build cache has the key, without downloading it"
+    default: "false"
+
+outputs:
+  gleam-cache-hit:
+    description: "true when the Gleam build cache had the key"
+    value: ${{ steps.gleam.outputs.cache-hit }}
+  gleam-cache-key:
+    description: "The key to save the Gleam build under when it was missing"
+    value: ${{ steps.gleam.outputs.cache-primary-key }}
+
+runs:
+  using: composite
+  steps:
+    - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+      with:
+        version-file: .tool-versions
+        version-type: strict
+    - name: Name the patched OTP
+      shell: bash
+      run: |
+        echo "GENESIS_OTP_DIR=$HOME/patched-otp" >> "$GITHUB_ENV"
+        echo "OTP_VERSION=$(awk '$1 == "erlang" { print $2 }' .tool-versions)" >> "$GITHUB_ENV"
+        # The runner image, so a new image builds afresh; the env context
+        # holds only what the workflow sets, so it is copied in here.
+        echo "IMAGE_OS=$ImageOS" >> "$GITHUB_ENV"
+    # Rebuilt only when the OTP version, a patch or the build script changes.
+    # Saved right after the build, so a failing check does not lose it.
+    - name: Restore the patched OTP
+      id: otp
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.GENESIS_OTP_DIR }}
+        key: patched-otp-${{ runner.os }}-${{ env.IMAGE_OS }}-${{ env.OTP_VERSION }}-${{ hashFiles('setup_check/*.patch', 'setup_check/build_patched_otp.sh') }}
+    - name: Install what the OTP build needs
+      if: steps.otp.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libncurses-dev libssl-dev
+    - name: Build the patched OTP
+      if: steps.otp.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: setup_check/build_patched_otp.sh
+    - name: Save the patched OTP
+      if: steps.otp.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.GENESIS_OTP_DIR }}
+        key: ${{ steps.otp.outputs.cache-primary-key }}
+    # The dependencies and the compiled packages, which a cold build spends 29-39
+    # seconds on; the project's own modules are compiled afresh by the checkout's
+    # file times.
+    - name: Restore the Gleam build
+      id: gleam
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          build
+          !build/test_folder
+          !build/apply_migrations_*
+        key: gleam-build-${{ runner.os }}-${{ env.IMAGE_OS }}-${{ env.OTP_VERSION }}-${{ hashFiles('manifest.toml', 'gleam.toml', 'setup_check/*.patch') }}
+        lookup-only: ${{ inputs.gleam-lookup-only }}
