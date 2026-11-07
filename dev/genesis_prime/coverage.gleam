@@ -23,6 +23,10 @@
 //// the same function the server's load logs). The spawns are those of the play
 //// database (PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE); when it cannot be
 //// read the tool says so and goes on.
+////
+//// The measure's own tests (`test/coverage_*_test.gleam`) read the client's
+//// tables and are not part of `./check`: whoever changes the measure runs them
+//// with `gleam test -- --tag coverage`.
 
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal

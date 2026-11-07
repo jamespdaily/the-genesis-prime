@@ -36,6 +36,7 @@ fn reached_ids() -> set.Set(Int) {
 
 pub fn the_starting_set_reaches_the_nine_innate_roots_and_what_a_level_1_gate_lets_through_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let reached = reached_ids()
   list.each(
@@ -63,6 +64,7 @@ pub fn the_starting_set_reaches_the_nine_innate_roots_and_what_a_level_1_gate_le
 
 pub fn the_spells_behind_a_gate_a_level_1_character_cannot_open_are_not_reached_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let reached = reached_ids()
   list.each(
@@ -83,6 +85,7 @@ pub fn the_spells_behind_a_gate_a_level_1_character_cannot_open_are_not_reached_
 
 pub fn the_starting_set_holds_the_20_spells_of_the_innates_beside_the_59_of_the_abilities_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   assert set.size(reached_ids()) == 82
     as "the three spells the Stalker passive's procs cast (60769, 79932, 63366) make 82; 59 spells of the 18 level-1 abilities, and the innates' 20: 46867 and 42908; 44926; 47866, 47860, 52371 and 70599; 45000 and 46297; 58586, 70369 and 76766; 69450; 46073, 38784 and 38783; 45057 and 60724; 47273 and 47439"
@@ -90,6 +93,7 @@ pub fn the_starting_set_holds_the_20_spells_of_the_innates_beside_the_59_of_the_
 
 pub fn the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_open_at_level_1_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let assert Ok(left) =
     starting_ability.left_out(tables: client_tables.every_table())

@@ -57,7 +57,9 @@
 #   gleam-test     gleam test, with GENESIS_TEST_WORKERS module groups at
 #                  once (default 2; each group also runs its tests at once),
 #                  then the tests tagged serial, one at a time; the test tagged
-#                  world_data is left to the world-data part
+#                  world_data is left to the world-data part, and the tests tagged
+#                  dev_tool (the developer tools' own, run by hand with
+#                  `gleam test -- --tag dev_tool`) are skipped
 #                                                       (after gleam-build)
 #   world-data     gleam test -- --tag world_data, the whole world database's
 #                  spawn counts, in a VM of its own beside gleam-test (about a
@@ -531,10 +533,10 @@ wait_for_status() {
 gleam_test() {
   local status=0
   if [ -n "$test_workers" ]; then
-    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 \
+    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
       gleam test -- --workers "$test_workers" || status=1
   else
-    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 \
+    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
       gleam test || status=1
   fi
   gleam test -- --tag serial || status=1

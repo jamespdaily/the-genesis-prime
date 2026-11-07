@@ -28,6 +28,7 @@ import gleam/string
 import login_support
 import owned_test
 import pog
+import unitest
 
 const stage_order = [
   StsLogin,
@@ -62,6 +63,7 @@ fn step_of_three(seeded seeded: Int) -> load_run.Outcome {
 
 pub fn three_clients_each_reach_the_world_and_report_their_seven_stage_times_in_order_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let outcome = step_of_three(seeded: 3)
   assert outcome.failures == [] as "every client reached the end of its path"
   assert list.length(outcome.stage_times) == 3
@@ -73,6 +75,7 @@ pub fn three_clients_each_reach_the_world_and_report_their_seven_stage_times_in_
 
 pub fn a_player_that_moves_drops_and_logs_in_again_reads_back_the_position_it_sent_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let started = login_support.start()
   let accounts = load_player.accounts(first: 0, count: 1)
   load_player.seed(
@@ -95,6 +98,7 @@ pub fn a_player_that_moves_drops_and_logs_in_again_reads_back_the_position_it_se
 
 pub fn an_unknown_account_is_counted_as_a_failure_at_login_and_the_others_go_on_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
   let outcome = step_of_three(seeded: 2)
   let assert [Failure(player: 2, at: Some(StsLogin), ..)] = outcome.failures
     as "the third account, which no row holds, fails at its STS login and nothing else fails"
@@ -105,6 +109,7 @@ pub fn an_unknown_account_is_counted_as_a_failure_at_login_and_the_others_go_on_
 
 pub fn the_first_ping_is_number_0_and_each_next_is_the_one_after_the_answer_modulo_20_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   // A connection starts with its last answered number 19, so its next is 0.
   assert load_player.next_ping(answered: 19, sent_at_ms: 0, now_ms: 0).number
     == 0
@@ -116,6 +121,7 @@ pub fn the_first_ping_is_number_0_and_each_next_is_the_one_after_the_answer_modu
 
 pub fn the_next_ping_waits_until_500_ms_after_the_last_one_was_sent_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert load_player.next_ping(answered: 3, sent_at_ms: 1000, now_ms: 1120)
     == Ping(number: 4, wait_ms: 380)
   assert load_player.next_ping(answered: 3, sent_at_ms: 1000, now_ms: 1500)
@@ -148,6 +154,7 @@ fn exit_of_failed(value: String) -> process.ExitReason {
 
 pub fn an_exit_with_eaddrnotavail_deep_in_a_long_term_is_no_local_port_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("dev_tool")
   assert load_run.no_local_port(exit_of_failed("eaddrnotavail"))
     as "past the first 240 bytes of the exit's text, as proc_lib wraps it"
   assert !load_run.no_local_port(exit_of_failed("econnrefused"))
@@ -156,6 +163,7 @@ pub fn an_exit_with_eaddrnotavail_deep_in_a_long_term_is_no_local_port_test() ->
 
 pub fn the_ramp_doubles_from_50_to_12800_and_then_stops_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   assert load_run.next_players([]) == Some(50)
   assert load_run.next_players([#(50, Kept)]) == Some(100)
   assert load_run.next_players([#(50, Kept), #(100, Kept), #(200, Kept)])
@@ -167,6 +175,7 @@ pub fn the_ramp_doubles_from_50_to_12800_and_then_stops_test() -> Nil {
 
 pub fn the_first_step_not_kept_is_followed_by_one_halfway_back_rounded_to_50_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let failed = Failed([PlayerFailed])
   assert load_run.next_players([#(50, Kept), #(100, Kept), #(200, failed)])
     == Some(150)
@@ -183,6 +192,7 @@ pub fn the_first_step_not_kept_is_followed_by_one_halfway_back_rounded_to_50_tes
 
 pub fn the_ramp_ends_after_the_halfway_step_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let failed = Failed([PlayerFailed])
   assert load_run.next_players([
       #(3200, Kept),
@@ -196,6 +206,7 @@ pub fn the_ramp_ends_after_the_halfway_step_test() -> Nil {
 
 pub fn the_maximum_is_the_most_players_of_any_kept_step_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
   let failed = Failed([PlayerFailed])
   assert load_run.maximum([
       #(3200, Kept),

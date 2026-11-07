@@ -60,6 +60,7 @@ fn counted(type_number type_number: Int) -> #(Int, Int, Int, Int) {
 
 pub fn the_measure_counts_the_crowd_control_rows_the_plan_refuses_as_not_read_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, _, _) = counted(type_number: 4)
   assert rows == 7185 as "scratch count: effectType=4 holds 7,185 rows"
@@ -69,6 +70,7 @@ pub fn the_measure_counts_the_crowd_control_rows_the_plan_refuses_as_not_read_te
 
 pub fn the_measure_counts_the_gains_the_plan_refuses_as_not_read_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, starting, starting_unread) = counted(type_number: 1)
   assert rows == 2049 as "scratch count: effectType=1 holds 2,049 rows"
@@ -80,6 +82,7 @@ pub fn the_measure_counts_the_gains_the_plan_refuses_as_not_read_test() -> Nil {
 
 pub fn the_measure_counts_the_damage_rows_the_area_load_refuses_as_not_read_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, _, starting_unread) = counted(type_number: 8)
   assert rows == 29_445 as "scratch count: effectType=8 holds 29,445 rows"
@@ -91,6 +94,7 @@ pub fn the_measure_counts_the_damage_rows_the_area_load_refuses_as_not_read_test
 
 pub fn the_measure_counts_a_proxy_that_names_no_spell_or_aims_elsewhere_as_not_read_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, starting, starting_unread) = counted(type_number: 26)
   assert rows == 16_929 as "scratch count: effectType=26 holds 16,929 rows"
@@ -102,6 +106,7 @@ pub fn the_measure_counts_a_proxy_that_names_no_spell_or_aims_elsewhere_as_not_r
 
 pub fn the_measure_counts_rows_behind_a_target_prerequisite_as_not_read_for_every_kind_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   assert counted(type_number: 3).1 == 2562
     as "scratch count: 2,543 rows aim only at other units, 14 more, the first 48817, aim at the caster behind a target apply prerequisite (the cast applies no `GatedOnTarget` row, `cast.condition_gate`) and 5 more hold a phaseFlags of 0, which no phase selects (`in_phase`): 2,562 of 4,645"
@@ -115,6 +120,7 @@ pub fn the_measure_counts_rows_behind_a_target_prerequisite_as_not_read_for_ever
 
 pub fn the_measure_counts_a_force_remove_whose_selector_names_no_row_as_not_read_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   assert counted(type_number: 80).1 == 535
     as "scratch count: 503 rows aimed by refused flags, behind a target apply prerequisite or with dataBits03 and dataBits04 differing, and 32 more whose dataBits01 names no spell group (686 of the Spell4GroupList rows' ids), Spell4 or Spell4Base, the first 59302: 535 of 2,294"
@@ -122,6 +128,7 @@ pub fn the_measure_counts_a_force_remove_whose_selector_names_no_row_as_not_read
 
 pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
   assert string.contains(text, "33396 rows of the handled types not read")
@@ -138,6 +145,7 @@ fn has_record(facts facts: String, key key: String) -> Bool {
 
 pub fn types_1_4_8_and_26_state_their_gap_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
   let assert Ok(facts) =
     simplifile.read(
       ".claude/skills/decoding-the-client/references/client-facts.toml",
