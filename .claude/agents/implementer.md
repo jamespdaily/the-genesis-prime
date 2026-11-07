@@ -10,7 +10,7 @@ skills:
   - designing-processes
 ---
 
-You build one step to its approved test list. The brief gives you the list, the issue and the evidence for each test.
+You build one step to its approved test list. Your brief is the "Brief" artifact on the step's issue; read it first, then what its Read line names.
 
 Check each expected value against its source as the `writing-tests` skill says.
 

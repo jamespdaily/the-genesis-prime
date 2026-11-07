@@ -45,15 +45,22 @@ The shape commit holds the types, signatures and supervision, and a sequence of 
 
 ## The brief
 
-One fresh implementer per step, in its own worktree (the Agent tool's worktree isolation). After a shape commit, the build may go to two implementers at once when the shape splits it into parts that share no files: each builds its part on its own branch from the shape, with this brief for its part, and the second to finish merges the other's branch into the step's branch before the reviews. Step G's single builder took 51 minutes over 32 files (2026-11-04). Its brief holds:
-- **Outcome:** what a player or the client sees when it is done.
-- **Evidence:** each value with its source, read before it is written: a client fact, or "server choice" with its reason.
-- **Acceptance:** the test list, and the scenario a live sitting runs.
-- **Scope:** the modules it may change, and what is left out.
-- **Reuse starting points:** the existing functions, test support and packages a gatherer found for each planned function, by name and file. Reuse what a module shares by importing it or moving it to a shared module; copying a module's glue and tests is what to avoid.
+One fresh implementer per step, in its own worktree (the Agent tool's worktree isolation). After a shape commit, the build may go to two implementers at once when the shape splits it into parts that share no files: each builds its part on its own branch from the shape, with its own brief, and the second to finish merges the other's branch into the step's branch before the reviews. Step G's single builder took 51 minutes over 32 files (2026-11-04).
+
+The brief is a "Brief" artifact on the step's issue, and the builder's prompt is one line naming the issue and the artifact's number. It points to the Design and the test list instead of repeating them, and holds these headings, each left out when it has nothing:
+- **Goal:** what a player or the client sees when it is done, and the branch with its base.
+- **Read:** the view command of each artifact to read (`gh issue artifact view N <number>`), and the test list comment.
+- **Changed since the Design:** each later decision, with who made it and why.
+- **Ask back if:** what comes back to the coordinator, or to Jim, instead of being chosen.
+- **Change / Leave alone:** the modules it may change, and what is left out with who owns it.
+- **Reuse:** the existing functions, test support and packages a gatherer found for each planned function, by name and file. Reuse what a module shares by importing it or moving it to a shared module; copying a module's glue and tests is what to avoid.
 - **Failure table,** for a step with a shape commit, or with locks, timers or remote steps: each step of the flow, and what happens if it is killed there, run twice at once, or times out. Each row becomes a test, and the shape review reads the table with the shape.
-- **Escalation:** what comes back to Jim instead of being chosen.
+- **Tests:** the test list, each decision tested at the lowest layer that makes it, and whole-server tests only for what the client sees.
+- **Done when:** `dev/test_list_check.py N origin/main HEAD` exits 0 and `./check` passes.
+- **Live check:** the scenario a live sitting runs.
 - **Scratch:** its own scratch subfolder, `<step>-<role>`.
+
+The brief is frozen once the builder starts: a change goes to the builder as a message, and a fix round's findings go on the issue as a comment the builder's prompt names.
 
 The implementer's own file (`.claude/agents/implementer.md`) holds its checks, pushes and hand-back.
 
