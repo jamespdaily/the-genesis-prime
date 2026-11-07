@@ -15,7 +15,7 @@
 //// a creature's shell       scope                         a finder
 ////   as it starts, before
 ////   its rule's first step ─▶ joins Creature(map, run, unit, life)
-////                          find(map, run, unit, life)  ─▶ the group's one member
+////                          find(map, run, unit, life)  ◀───── the group's one member
 ////                          tell(map, run, unit, life, message) ─▶ {woken, TellCall(message)} to it
 //// ```
 ////

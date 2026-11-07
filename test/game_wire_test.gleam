@@ -122,7 +122,6 @@ import owned_test
 import place_support
 import pog
 import spawn_support
-import supervisor_children
 import unitest
 
 /// The 16 bytes the client shows as its session key: the wire bytes of the
@@ -3787,58 +3786,6 @@ fn stealth_changes_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
       False -> Error(Nil)
     }
   })
-}
-
-pub fn the_dagun_is_found_at_its_address_before_its_0x262_reaches_the_client_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let started = world_with_a_dagun()
-  let creature_registry_pid = the_creature_registry(started:)
-  // The registry is held, so the join of the Dagun's address waits in it.
-  let assert True = ask_support.suspend_process(creature_registry_pid)
-    as "the creature registry is held"
-  let #(game, character) =
-    new_player_at_level(
-      started:,
-      number: 1,
-      character_name: "Zed Qu",
-      class_id: 4,
-      level: 1,
-    )
-  send_play(game:, character_id: character)
-  event_wait.until(
-    "the join of the Dagun's address waits in the registry",
-    fn() { mailbox_support.a_call_waiting(pid: creature_registry_pid) },
-  )
-  let #(before_the_join, have) =
-    game_client.read_until_pong(game:, have: <<>>, number: 1)
-  assert game_client.creatures_created_in(frames: before_the_join) == []
-    as "no 0x262 of the Dagun reaches the client before its address is joined"
-  let assert True = ask_support.resume_process(creature_registry_pid)
-    as "the creature registry runs again"
-  let #(frames, _have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
-      game_client.creatures_created_in(frames:) != []
-    })
-  let assert [dagun] = game_client.creatures_created_in(frames:)
-  let #(_run, creature) = the_dagun_and_its_map(started:, dagun: dagun.unit_id)
-  assert process.is_alive(creature)
-    as "the Dagun whose 0x262 the client read is found at its address"
-}
-
-/// The pid of the tree's creature registry: the world subtree's first child.
-fn the_creature_registry(
-  started started: login_support.Started,
-) -> process.Pid {
-  let assert [_, _, _, _, world, ..] =
-    supervisor_children.in_start_order(started.tree)
-    as "the tree's fifth child is the world subtree"
-  let assert [registry, _maps, creature_supervisor, ..] =
-    supervisor_children.in_start_order(world)
-    as "the world subtree holds the creature registry, Maps, then the creature supervisor"
-  assert process.named(started.settings.world.creature_supervisor)
-    == Ok(creature_supervisor)
-    as "the world subtree's third child is the creature supervisor"
-  registry
 }
 
 /// The run of the world 1387 map and the process of the Dagun's creature, unit

@@ -159,9 +159,8 @@ pub type Settings(settings, state, message, outgoing) {
 }
 
 /// Where a service is found by an address (genesis_prime/group_registry). The
-/// shell joins the address as it starts, before its rule's first step, as a
-/// named process is registered before its `init` runs: any process that has
-/// what the service sends can find it.
+/// shell joins the address before its rule's first step, so any process that
+/// has what the service sends can find it.
 pub type FoundAt(message, outgoing) {
   FoundAt(scope: Scope(Call(message, outgoing)), address: Address)
 }
