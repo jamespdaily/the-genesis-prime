@@ -329,19 +329,12 @@ class PlantedCheckCase(unittest.TestCase):
             self.fail("the check had not ended after %s seconds" % timeout)
         return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
-    def environment_log(self) -> str:
-        """The gleam commands with the value of GENESIS_TEST_SKIP_SERIAL each saw."""
-        path = Path(str(self.log) + ".environment")
-        return path.read_text() if path.exists() else ""
-
-    def peak_log(self) -> str:
-        """The gleam test commands with whether each was given the literal peak file."""
-        path = Path(str(self.log) + ".peak")
-        return path.read_text() if path.exists() else ""
-
-    def erl_log(self) -> str:
-        """The command line of each start of the built code, as the erl stub saw it."""
-        path = Path(str(self.log) + ".erl")
+    def side_log(self, suffix: str) -> str:
+        """A stub's side log, empty when it wrote none: `environment` holds the gleam
+        commands with the value of GENESIS_TEST_SKIP_SERIAL each saw, `peak` the test
+        commands with whether each was given the literal peak file, and `erl` the
+        command line of each start of the built code, as the erl stub saw it."""
+        path = Path(str(self.log) + "." + suffix)
         return path.read_text() if path.exists() else ""
 
     def commands(self) -> list[str]:
@@ -406,7 +399,7 @@ def shared_run(key: str, *arguments: str, client: bool = False, prepare=None, ha
         done = case.run_check(*arguments, client=client, timeout=timeout, **settings)
         took = time.monotonic() - started
         left = subprocess.run(["pgrep", "-f", hang_pattern(seconds)], capture_output=True, text=True).stdout.split() if seconds else []
-        run = Run(done, case.commands(), case.environment_log(), case.peak_log(), case.erl_log(), took, case.marker.exists(), seconds, left)
+        run = Run(done, case.commands(), case.side_log("environment"), case.side_log("peak"), case.side_log("erl"), took, case.marker.exists(), seconds, left)
     finally:
         if seconds:
             subprocess.run(["pkill", "-f", hang_pattern(seconds)])
@@ -1082,7 +1075,7 @@ class SerialTestsTest(unittest.TestCase):
     """Tests that share a machine-wide resource (a child node's epmd and ports)
     are tagged `serial`: the test run skips them while it runs the others
     together (GENESIS_TEST_SKIP_SERIAL=1), and a second run, with no workers,
-    runs only them one at a time (`gleam test -- --tag serial`)."""
+    runs only them one at a time (the tests started with `--tag serial`)."""
 
     def test_the_full_check_runs_the_serial_tests_in_a_second_run_one_at_a_time(self):
         suites = [c for c in shared_run("full").commands if c.startswith("built test")]
@@ -1397,7 +1390,7 @@ class RunBuiltOnRealErlangTest(unittest.TestCase):
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class WorldDataPartTest(unittest.TestCase):
     """The world-data test (tagged world_data, about a minute alone) is a part of its own:
-    one run of `gleam test -- --tag world_data` where the test can run, the test run
+    one run of the tests started with `--tag world_data` where the test can run, the test run
     that has the other tests skips it, and a failure fails the world-data part and
     no other."""
 
