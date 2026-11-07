@@ -58,6 +58,7 @@
 //// naming a row the table lacks.
 
 import database_support
+import fixture_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
@@ -3026,31 +3027,27 @@ pub fn volatility_row() -> server_proxy.Row {
   server_proxy.Row(spell4_base_id: 26_468, phase: 1, spell4_id: 42_148)
 }
 
-/// The server's Proxies of the seed row, selected over `rows_with_volatility`
+/// The server's Proxies of the seed row, selected over the fixture's tables
 /// (genesis_prime/game/server_proxy), built once per run. The value holds the planned
-/// spell and no table, so a connection made with other planted tables can plant it.
-pub fn server_proxies_with_volatility() -> server_proxy.ServerProxies {
-  database_support.once("spell_tables_server_proxies_with_volatility", fn() {
-    with_loaded(rows: rows_with_volatility(), body: fn(tables) {
-      let assert Ok(plans) = spell_plan.build(tables:)
-        as "the planted rows with Volatility build"
-      let assert Ok(proxies) =
-        server_proxy.select(rows: [volatility_row()], tables:, plans:)
-        as "the seed row selects"
-      proxies
-    })
+/// spell and no table, so a connection made with other tables can plant it.
+pub fn server_proxies() -> server_proxy.ServerProxies {
+  database_support.once("spell_tables_server_proxies", fn() {
+    let tables = fixture_tables.shared()
+    let assert Ok(plans) = spell_plan.build(tables:)
+      as "the fixture's rows build the spell plans"
+    let assert Ok(proxies) =
+      server_proxy.select(rows: [volatility_row()], tables:, plans:)
+      as "the seed row selects"
+    proxies
   })
 }
 
-/// The plans of `rows_with_volatility` with the server's Proxy planted, built once per
-/// run.
-pub fn plans_with_volatility() -> spell_plan.Plans {
-  let proxies = server_proxies_with_volatility()
-  database_support.once("spell_tables_plans_with_volatility", fn() {
-    with_loaded(rows: rows_with_volatility(), body: fn(tables) {
-      let assert Ok(plans) = spell_plan.build(tables:)
-        as "the planted rows with Volatility build"
-      server_proxy.planted_into(plans:, proxies:)
-    })
+/// The fixture's plans with the server's Proxy planted, built once per run.
+pub fn plans_with_server_proxies() -> spell_plan.Plans {
+  let proxies = server_proxies()
+  database_support.once("spell_tables_plans_with_server_proxies", fn() {
+    let assert Ok(plans) = spell_plan.build(tables: fixture_tables.shared())
+      as "the fixture's rows build the spell plans"
+    server_proxy.planted_into(plans:, proxies:)
   })
 }

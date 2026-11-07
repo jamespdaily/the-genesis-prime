@@ -5,8 +5,8 @@
 //// both rules.
 
 import cast_support
-import client_tables
 import connection_rule_support as support
+import fixture_tables
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
@@ -48,7 +48,8 @@ import genesis_prime/step.{
   OwnEffect, OwnEvent, TimerId, Unwatch, Watch, Woken,
 }
 import genesis_prime/store.{Character}
-import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
+import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_path
@@ -64,7 +65,6 @@ import owned_test
 import place_support
 import spawn_support
 import spell_tables
-import unitest
 
 fn spell_go_of(cast_id cast_id: Int) -> spell_go.SpellGo {
   spell_go.SpellGo(
@@ -1469,24 +1469,23 @@ fn answered_by_the_beast(
 
 pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_test() -> Nil {
   use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
   let #(engineer, _) =
     game_connection_support.entered_with(
       settings: Settings(
         ..game_connection_support.settings(),
-        tables: client_tables.shared(),
-        server_proxies: spell_tables.server_proxies_with_volatility(),
+        tables: fixture_tables.shared(),
+        server_proxies: spell_tables.server_proxies(),
       ),
       class_id: 2,
       saved_health: None,
     )
   let assert Ok(set) =
     loadout.of(
-      tables: client_tables.shared(),
+      tables: fixture_tables.shared(),
       class_id: ClassId(2),
       faction_id: 166,
     )
-    as "the client's tables hold the Engineer's Novice set"
+    as "the fixture holds the Engineer's Novice set"
   let bag_index = fn(base) {
     let assert Ok(index) =
       list.index_map(set.abilities, fn(held, index) { #(held, index) })
@@ -1496,6 +1495,14 @@ pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_t
   }
   let pulse_blast = bag_index(26_468)
   let electrocute = bag_index(25_473)
+  let assert Ok(strike) =
+    spell4_effects.get(
+      tables: fixture_tables.shared(),
+      id: Spell4EffectsId(92_587),
+    )
+    as "the client's Spell4Effects holds the row 92587"
+  assert strike.spell_id == 41_276
+    as "Spell4Effects 92587 is Electrocute's damage row (spellId 41276)"
   let #(beast, started) =
     a_beast_of(
       spawn.Spawn(

@@ -1610,11 +1610,7 @@ pub fn entered_with_server_proxies(
     )
   let unit_id = player_in(entered).unit_id
   let assert Ok(set) =
-    loadout.of(
-      tables: character_tables.shared(),
-      class_id: ClassId(class_id),
-      faction_id: 166,
-    )
+    loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the tables hold the class's Novice set"
   let assert Ok(bag_index) =
     list.index_map(set.abilities, fn(base, index) { #(base, index) })
