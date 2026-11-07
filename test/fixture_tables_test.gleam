@@ -216,6 +216,12 @@ pub fn changed_and_added_load_under_their_own_key_and_leave_the_shared_load_alon
     body: fn(tables) {
       let assert Ok(row) = spell4.get(tables:, id: Spell4Id(id))
       assert row.cast_time == edited as "the changed row holds the new cell"
+      assert spell4_effects.get(tables:, id: Spell4EffectsId(178_144))
+        == spell4_effects.get(
+          tables: fixture_tables.shared(),
+          id: Spell4EffectsId(178_144),
+        )
+        as "a table the edit left alone loads the client's rows"
     },
   )
   // An id below the table's highest: a loaded table is a tuple as long as its

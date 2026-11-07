@@ -164,18 +164,34 @@ pub fn root(table table: String, id id: Int) -> Int {
 /// Loads the rows as the server's tables under this key, with the server's own
 /// requirements and derivations.
 pub fn load(
-  rows rows: Rows,
+  rows wanted: Rows,
   under key: reference.Reference,
 ) -> Result(store.Tables, store.LoadError) {
+  let committed = rows()
   let files =
-    list.map(schemas(), fn(schema) {
-      planted_table.file(
-        schema:,
-        rows: result.unwrap(dict.get(rows, schema.table), []),
-      )
+    list.zip(schemas(), committed_files())
+    |> list.map(fn(held) {
+      let #(schema, committed_file) = held
+      let table_rows = rows_of(rows: wanted, schema:)
+      case table_rows == rows_of(rows: committed, schema:) {
+        True -> committed_file
+        False -> planted_table.file(schema:, rows: table_rows)
+      }
     })
   use folder <- planted_table.in_folder(files)
   server_table.load_under(under: key, from: folder)
+}
+
+/// The file of each server table made from the committed rows, in the order of
+/// `schemas`, made once: a load that edits one table writes the other tables'
+/// files from here instead of making them again.
+fn committed_files() -> List(#(String, BitArray)) {
+  database_support.once("fixture_tables_files", fn() {
+    let committed = rows()
+    list.map(schemas(), fn(schema) {
+      planted_table.file(schema:, rows: rows_of(rows: committed, schema:))
+    })
+  })
 }
 
 fn loaded(rows: Rows, key: reference.Reference) -> store.Tables {
