@@ -15,7 +15,17 @@ so a milestone's parent issue never takes a step's work.
                 belongs to it whole. A session that names several is shared: each of
                 its replies goes to the branch it was written on, else to the step last
                 mentioned in a tool call (a branch, a worktree, `gh issue <verb> <n>` or
-                `dev/card.sh <verb> <n>`), and the step's table marks it rough.
+                `dev/card.sh <verb> <n>`), and the step's table marks it rough. A reply
+                before the session's first mention of any step has no step and is left
+                out; the table states what those cost.
+  coordinator, not in transcript
+                Claude Code's recorded cost of a session includes its subagents and
+                some calls the transcripts never saved (a compaction is one). The part
+                of that gap priced on the main session's own model is taken as the
+                coordinator's, though a subagent on that model could own some: it is
+                shared over the session's steps in proportion to each step's saved
+                main-session dollars. The gap on any other model is subagent calls and
+                is placed in no step; a negative gap is placed in no step.
   subagent      the first step its brief names, else the branch it runs on, else the
                 step of the reply that started it.
 
@@ -30,8 +40,8 @@ platform.claude.com/docs/en/about-claude/pricing. --check-prices prices each ses
 Claude Code recorded a cost for and prints both, so a stale rate shows as a gap. A
 session whose work stays in one transcript matches to the cent. Most sessions with
 subagents record more than their saved replies, nearly all of it input with almost no
-output, so some calls are not in the transcripts; a compaction is one. The step's
-table states the difference, of either sign, for the sessions the step ran in.
+output, so some calls are not in the transcripts. A session's recorded cost covers every
+step it ran and all its subagents, so one step's table holds only its share of it.
 
 Usage:
   python3 -I dev/step_measure.py 143
@@ -371,6 +381,27 @@ class SessionCost:
     def recorded_dollars(self) -> float:
         return (self.recorded or {}).get("totalCostUSD", 0.0)
 
+    def unsaved(self, model: str) -> float:
+        """Dollars Claude Code recorded on a model beyond its saved replies."""
+        usage = ((self.recorded or {}).get("modelUsage") or {}).get(model) or {}
+        saved = sum(cost(x) or 0 for x in self.replies if x.model == model)
+        return usage.get("costUSD", 0.0) - saved
+
+
+def coordinator_unsaved(run: Run, spent: SessionCost) -> dict[int, float]:
+    """The main session's unsaved dollars, by step, shared by each step's saved replies.
+
+    Only the gap on the main session's own model counts, and only when it is positive.
+    """
+    weight: dict[int, float] = collections.defaultdict(float)
+    for reply in run.replies:
+        if reply.step is not None:
+            weight[reply.step] += cost(reply) or 0
+    models = {x.model for x in run.replies}
+    gap = sum(max(spent.unsaved(model), 0.0) for model in models)
+    total = sum(weight.values())
+    return {step: gap * w / total for step, w in weight.items()} if total else {}
+
 
 def session_costs(runs: list[Run]) -> dict[str, SessionCost]:
     """Each main session with its subagents' replies."""
@@ -414,11 +445,17 @@ def report(step: int, runs: list[Run]) -> int:
     start, end = min(times), max(times)
     shared = [s for s in main_replies if mains[s].shared]
 
+    costs = session_costs(runs)
     rows: dict[str, Tally] = {}
     main = rows.setdefault("main session", Tally(runs=len(main_replies)))
     for replies in main_replies.values():
         main.add(replies)
         main.minutes += sum(x.active for x in replies) / 60
+    unsaved = sum(
+        coordinator_unsaved(mains[s], costs[s]).get(step, 0.0)
+        for s in main_replies
+        if s in costs and costs[s].recorded
+    )
     for run in sorted(sub_runs, key=lambda r: r.agent):
         tally = rows.setdefault(run.agent, Tally())
         tally.runs += 1
@@ -449,6 +486,11 @@ def report(step: int, runs: list[Run]) -> int:
         total.output += tally.output
         total.dollars += tally.dollars
         total.unpriced |= tally.unpriced
+    if unsaved:
+        print(
+            f"| coordinator, not in transcript | | | not saved | not saved | ${unsaved:.2f} |"
+        )
+        total.dollars += unsaved
     if codex:
         print(
             f"| Codex review | {codex} | not recorded | not recorded | not recorded | not recorded |"
@@ -459,35 +501,36 @@ def report(step: int, runs: list[Run]) -> int:
     print()
 
     if shared:
-        unmatched = Tally()
+        left_out = Tally()
         for session in shared:
-            unmatched.add(
-                [
-                    x
-                    for x in mains[session].replies
-                    if x.step is None and start <= x.time <= end
-                ]
-            )
+            left_out.add([x for x in mains[session].replies if x.step is None])
         print(
             f"Rough: the step shares {plural(len(shared), 'session')} with other steps. Replies there "
-            "went to the step last mentioned, which is often wrong. Replies there in the step's span "
-            f"that mentioned no step cost ${unmatched.dollars:.2f} and are left out."
+            "went to the branch they were written on, else the step last mentioned, which is often "
+            f"wrong. Replies before a session's first mention of any step cost ${left_out.dollars:.2f} "
+            "in those sessions and are left out."
+        )
+    if unsaved:
+        print(
+            "Coordinator, not in transcript: the part of each session's recorded cost on the main "
+            "session's model that no saved reply carries, shared over the session's steps by their "
+            "saved main-session dollars. It is an upper bound: a subagent on the same model may own some of it."
         )
     if total.unpriced:
         print(
             f"No price for {', '.join(sorted(total.unpriced))}: those tokens are counted but not priced."
         )
 
-    costs = session_costs(runs)
     ran_in = set(main_replies) | {r.session for r in sub_runs}
     known = [costs[s] for s in ran_in if s in costs and costs[s].recorded]
     recorded = sum(c.recorded_dollars for c in known)
     priced = sum(c.priced for c in known)
     if recorded:
         print(
-            f"Claude Code recorded ${recorded:.2f} for the {plural(len(known), 'session')} this step ran in; "
-            f"their saved replies price at ${priced:.2f}, {(priced - recorded) / recorded:+.0%}. "
-            "The table cannot place that difference in any step."
+            f"Claude Code recorded ${recorded:.2f} for the {plural(len(known), 'session')} this step ran in, "
+            "covering every step they ran and all their subagents; this step's rows hold "
+            f"${total.dollars:.2f} of it. Their saved replies price at ${priced:.2f}, "
+            f"{(priced - recorded) / recorded:+.0%}."
         )
     if len(known) < len(ran_in):
         print(
