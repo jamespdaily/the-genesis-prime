@@ -514,7 +514,7 @@ def report(step: int, runs: list[Run]) -> int:
         print(
             "Coordinator, not in transcript: the part of each session's recorded cost on the main "
             "session's model that no saved reply carries, shared over the session's steps by their "
-            "saved main-session dollars. Subagents are not in it."
+            "saved main-session dollars. It is an upper bound: a subagent on the same model may own some of it."
         )
     if total.unpriced:
         print(
