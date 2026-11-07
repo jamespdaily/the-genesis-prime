@@ -57,15 +57,19 @@ def board_items(milestone_title, parent):
     ]
 
 
+def open_issue_numbers(milestone_title):
+    """The numbers of the milestone's open issues."""
+    rows = gh_json("issue", "list", "--milestone", milestone_title, "--state", "open", "--limit", "500", "--json", "number")
+    return {row["number"] for row in rows}
+
+
 def open_blockers(number):
-    """None when the issue is closed, otherwise the numbers of its open blockers."""
-    data = gh_json("issue", "view", str(number), "--json", "state,blockedBy")
-    if data["state"] != "OPEN":
-        return None
+    """The numbers of an issue's open blockers."""
+    data = gh_json("issue", "view", str(number), "--json", "blockedBy")
     return [node["number"] for node in data["blockedBy"]["nodes"] if node["state"] == "OPEN"]
 
 
-def pushed_branches(cutoff):
+def pushed_branches(cutoff, with_pull_request):
     """The remote `jimd/*` branches with commits beyond main, no open pull request and a commit after `cutoff`."""
     root = session_state.ROOT
     session_state.run(["git", "fetch", "--prune", "origin"], cwd=root)
@@ -74,7 +78,6 @@ def pushed_branches(cutoff):
          "refs/remotes/origin/jimd"],
         cwd=root,
     )
-    with_pull_request = {row["headRefName"] for row in gh_json("pr", "list", "--json", "headRefName")}
     found = []
     for row in listing.splitlines():
         ref, short, date, subject = row.split("|", 3)
@@ -103,6 +106,8 @@ def next_in_order(items, blockers, order):
 
 def draft(parent):
     parent_data = gh_json("issue", "view", str(parent), "--json", "milestone,subIssues")
+    if parent_data["milestone"] is None:
+        sys.exit(f"issue {parent} has no milestone")
     milestone_title = parent_data["milestone"]["title"]
     order = {node["number"]: index for index, node in enumerate(parent_data["subIssues"]["nodes"])}
     now = datetime.now(timezone.utc)
@@ -116,16 +121,20 @@ def draft(parent):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         merged_job = pool.submit(merged_since, since)
-        pulls_job = pool.submit(session_state.pull_requests)
-        pushed_job = pool.submit(pushed_branches, min(since, now - WITHOUT_COMMENT))
+        open_numbers_job = pool.submit(open_issue_numbers, milestone_title)
+        pulls = session_state.open_pull_requests()
+        pushed_job = pool.submit(
+            pushed_branches, min(since, now - WITHOUT_COMMENT), {branch for _, _, branch, _ in pulls}
+        )
         items = board_items(milestone_title, parent)
-        found = dict(zip((item[0] for item in items), pool.map(open_blockers, (item[0] for item in items))))
+        open_numbers = open_numbers_job.result()
+        open_items = [item for item in items if item[0] in open_numbers]
+        todo = [item[0] for item in open_items if item[2] == "To do"]
+        found = dict(zip(todo, pool.map(open_blockers, todo)))
         merged = merged_job.result()
-        pulls = pulls_job.result()
         pushed = pushed_job.result()
-    open_items = [item for item in items if found[item[0]] is not None]
 
-    pull_lines = [line.strip().replace("#", "- #", 1) for line in pulls[1:]] or ["- none"]
+    pull_lines = [f"- #{number} {title} [{state}]" for number, title, _, state in pulls] or ["- none"]
     lines = [f"**Where it stands ({now.strftime('%Y-%m-%d')}, {milestone_title})**"]
     lines.append(f"- Merged {window}:")
     lines += [f"  - #{number} {title}" for number, title in merged] or ["  - none"]
