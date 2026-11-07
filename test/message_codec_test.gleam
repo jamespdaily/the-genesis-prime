@@ -1,9 +1,9 @@
 //// The generated codec matches the schema. CLAUDE.md: the codec is generated,
 //// states the size and byte order of every field, and is never edited by hand.
-//// The full check runs the same comparison (`gleam run -m
-//// genesis_prime/generate_messages -- check`); these tests prove it sees a
-//// hand edit, a missing file and a stale one, and that the committed files
-//// are the generated ones. Every case is planted from the generated files, so
+//// The full check runs this module with the other tests; `gleam run -m
+//// genesis_prime/generate_messages -- check` makes the same comparison by
+//// hand. These tests prove it sees a hand edit, a missing file and a stale one,
+//// and that the committed files are the generated ones. Every case is planted from the generated files, so
 //// no expected text is written here.
 
 import genesis_prime/message_generator.{

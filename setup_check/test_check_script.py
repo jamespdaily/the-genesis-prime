@@ -11,8 +11,12 @@ the real toolchain, the real database or the real client:
   first, when set, and fails when PLANT_PSQL_CREATE_FAILS is set; `gleam format` takes PLANT_FORMAT_SECONDS, or ends its own
   shell without a word when PLANT_FORMAT_KILLS_PARENT is set), except that `gleam format --check` fails when a file under src,
   test or dev holds PLANTED_FORMAT_ERROR, and any `gleam` run of tests (a `test`
-  or a `run -m` of a module other than glinter, squirrel, table_generator and
-  generate_messages) fails when a file under test/code_rule holds PLANTED_BREACH;
+  or a `run -m` of a module other than glinter, squirrel and table_generator)
+  fails when a file under test/code_rule holds PLANTED_BREACH; with
+  PLANT_RENDEZVOUS set, the plain test run (`gleam test -- --workers N`) waits until
+  glinter, table_generator, squirrel and the world-data run have each started, and
+  the code-rule run (`gleam test -- --tag code_rule`) until glinter has, so a part
+  that is not run beside the test run makes it fail;
 - `python3.13` is the real one, except for the run the stub stands in for:
   check_facts.py, which succeeds at once;
 - the client query process's scripts are the real check_support.py (with the
@@ -58,11 +62,36 @@ PYTHON = shutil.which("python3.13")
 RUNNABLE = PYTHON is not None and shutil.which("bash") is not None and CHECK.is_file()
 
 # The commands `gleam run -m MODULE` the check makes that are not a run of tests.
-NOT_TEST_RUNS = ("glinter", "squirrel", "genesis_prime/table_generator", "genesis_prime/generate_messages")
+NOT_TEST_RUNS = ("glinter", "squirrel", "genesis_prime/table_generator")
 
 GLEAM_STUB = """#!/bin/sh
 echo "gleam $*" >>"$PLANT_LOG"
-echo "gleam $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL" >>"$PLANT_LOG.environment"
+echo "gleam $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL GENESIS_TEST_SKIP_WORLD_DATA=$GENESIS_TEST_SKIP_WORLD_DATA" >>"$PLANT_LOG.environment"
+if [ -n "$PLANT_RENDEZVOUS" ]; then
+  rendezvous="$PLANT_LOG.rendezvous"
+  mkdir -p "$rendezvous"
+  await() {
+    for name in "$@"; do
+      waited=0
+      until [ -f "$rendezvous/$name" ]; do
+        sleep 0.1
+        waited=$((waited + 1))
+        if [ "$waited" -gt "${PLANT_RENDEZVOUS_POLLS:-300}" ]; then
+          echo "$name had not started while the test run was running"
+          exit 1
+        fi
+      done
+    done
+  }
+  case "$*" in
+    "run -m glinter") touch "$rendezvous/glinter" ;;
+    "run -m genesis_prime/table_generator check") touch "$rendezvous/table_generator" ;;
+    "run -m squirrel check") touch "$rendezvous/squirrel" ;;
+    "test -- --tag world_data") touch "$rendezvous/world_data" ;;
+    "test -- --workers "*) await glinter table_generator squirrel world_data ;;
+    "test -- --tag code_rule") await glinter ;;
+  esac
+fi
 case "$1" in
   format)
     [ -n "$PLANT_FORMAT_SECONDS" ] && sleep "$PLANT_FORMAT_SECONDS"
@@ -89,8 +118,13 @@ if [ "$1" = test ]; then
   # The run keeps the literal allocator's highest carriers size in the file it is
   # given, as test/genesis_prime_test.gleam does; PLANT_LITERAL_PEAK is that many
   # bytes, and "none" writes no file.
-  if [ -n "$GENESIS_LITERAL_PEAK_FILE" ] && [ "$PLANT_LITERAL_PEAK" != none ]; then
-    echo "${PLANT_LITERAL_PEAK:-100000000}" >"$GENESIS_LITERAL_PEAK_FILE"
+  # PLANT_WORLD_DATA_LITERAL_PEAK is the same for the world-data run alone.
+  peak="${PLANT_LITERAL_PEAK:-100000000}"
+  case "$*" in
+    *"--tag world_data"*) peak="${PLANT_WORLD_DATA_LITERAL_PEAK:-$peak}" ;;
+  esac
+  if [ -n "$GENESIS_LITERAL_PEAK_FILE" ] && [ "$peak" != none ]; then
+    echo "$peak" >"$GENESIS_LITERAL_PEAK_FILE"
   fi
 fi
 if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
@@ -423,8 +457,20 @@ class BudgetTest(unittest.TestCase):
     the code) and plant 4 seconds of delay. A planted sleep never ends early, so the
     run is over its budget by construction; the rest of the run (a few instant stubs)
     adds well under the 5 seconds between the delay and the hang limit at 9, which
-    is the margin a loaded machine needs. The real budget is 2 minutes (CLAUDE.md:
-    "the full check passes in under 2 minutes")."""
+    is the margin a loaded machine needs. The budgets the check has when none is set
+    are the measured ones, below."""
+
+    # The slowest of 3 full checks on the idle development Mac, with the parts beside
+    # each other and 2 test workers, was 125 s; the fast check's median of 3 runs is
+    # 23 s; each times 1.25, rounded up.
+    FULL_BUDGET = 157
+    FAST_BUDGET = 29
+
+    def test_the_budgets_the_check_has_when_none_is_set_are_the_measured_ones(self):
+        for name, args, budget in (("full", (), self.FULL_BUDGET), ("fast", ("fast",), self.FAST_BUDGET)):
+            with self.subTest(check=name):
+                run = shared_run(name, *args)
+                self.assertRegex(run.output, r"(?m)^check passed.*, budget %ds$" % budget)
 
     def assert_passed_with_the_warning(self, run: Run, budget: int) -> None:
         output = run.output
@@ -923,8 +969,8 @@ def scope_line(output: str) -> str:
 
 # The full check's parts, in the order ./check prints them after branch-current.
 EVERY_PART = [
-    "format", "gleam-build", "glinter", "generated-tables", "gleam-test", "literal-area",
-    "message-codec", "migrations", "squirrel", "client-suite", "client-integration", "fact-checker",
+    "format", "gleam-build", "glinter", "generated-tables", "gleam-test", "world-data", "literal-area",
+    "migrations", "squirrel", "client-suite", "client-integration", "fact-checker",
 ]
 QUICK_PARTS = ["format", "gleam-build", "glinter", "code-rules"]
 
@@ -1171,8 +1217,8 @@ class SerialTestsTest(unittest.TestCase):
 
     def test_the_run_of_the_other_tests_skips_the_serial_ones(self):
         runs = [line for line in shared_run("full").environment.splitlines() if line.startswith("gleam test")]
-        self.assertEqual(runs[0], "gleam test -- --workers %s GENESIS_TEST_SKIP_SERIAL=1" % TEST_WORKERS)
-        self.assertEqual(runs[1], "gleam test -- --tag serial GENESIS_TEST_SKIP_SERIAL=")
+        self.assertEqual(runs[0], "gleam test -- --workers %s GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1" % TEST_WORKERS)
+        self.assertEqual(runs[1], "gleam test -- --tag serial GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA=")
 
     def test_a_failure_in_the_serial_run_fails_the_gleam_test_part(self):
         def plant(case):
@@ -1260,6 +1306,40 @@ class LiteralAreaTest(unittest.TestCase):
             ["gleam test -- --workers %s peak_file=given" % TEST_WORKERS, "gleam test -- --tag serial peak_file="],
         )
 
+    def world_data_at(self, test_run_peak: int, world_data_peak) -> Run:
+        return shared_run(
+            "literal-world-%s-%s" % (test_run_peak, world_data_peak), client=True,
+            PLANT_LITERAL_PEAK=str(test_run_peak), PLANT_WORLD_DATA_LITERAL_PEAK=str(world_data_peak), **WORLD_DATA)
+
+    def test_the_world_data_runs_peak_is_measured_in_its_own_region_and_printed_beside_the_first_runs(self):
+        first, world = self.limit() // 2, self.limit() // 3
+        run = self.world_data_at(first, world)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertIn("literal area: peak %d MiB of 1024 MiB" % (first // 2**20), run.done.stdout)
+        self.assertIn("literal area of the world-data run: peak %d MiB of 1024 MiB" % (world // 2**20), run.done.stdout)
+
+    def test_a_world_data_run_over_the_limit_fails_the_part_though_the_first_run_is_under_it(self):
+        run = self.world_data_at(self.limit() // 2, self.limit() + 1)
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: literal-area$")
+        self.assertIn("over the limit of %d%%" % literal_limit_percent(), run.output)
+
+    def test_a_first_run_over_the_limit_fails_the_part_though_the_world_data_run_is_under_it(self):
+        run = self.world_data_at(self.limit() + 1, self.limit() // 2)
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: literal-area$")
+
+    def test_a_world_data_run_that_wrote_no_peak_fails_the_part_naming_the_run(self):
+        run = self.world_data_at(self.limit() // 2, "none")
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: literal-area$")
+        self.assertIn("the world-data run wrote no literal area peak", run.output)
+
+    def test_the_first_run_and_the_world_data_run_are_given_the_file_and_the_serial_run_is_not(self):
+        run = shared_run("world-data-on", client=True, **WORLD_DATA)
+        peak_log = sorted(line for line in run.peak.splitlines() if line.startswith("gleam test"))
+        self.assertEqual(peak_log, sorted([
+            "gleam test -- --workers %s peak_file=given" % TEST_WORKERS,
+            "gleam test -- --tag serial peak_file=",
+            "gleam test -- --tag world_data peak_file=given"]))
+
     def test_the_part_is_skipped_when_the_build_it_needs_failed(self):
         def plant(case):
             executable(case.root / "tools" / "gleam", GLEAM_STUB.replace("build) exit 0", "build) exit 1"))
@@ -1271,14 +1351,117 @@ class LiteralAreaTest(unittest.TestCase):
         self.assertNotIn("literal-area", shared_run("fast", "fast").output)
 
 
-def default_workers() -> str:
-    """The worker count the check gives `gleam test` when the setting is not set."""
-    found = re.findall(r"test_workers=\$\{GENESIS_TEST_WORKERS:-(\d+)\}", CHECK.read_text())
-    assert len(found) == 1, found
-    return found[0]
+# The worker count the check gives `gleam test` when GENESIS_TEST_WORKERS is not set: 2, from runs
+# of the full check with 1 and with 2 (its wall time and literal area peak). A change of it is a
+# change here with the measurement that justifies it.
+TEST_WORKERS = "2"
 
 
-TEST_WORKERS = default_workers() if RUNNABLE else "1"
+WORLD_DATA = {"GENESIS_WORLD_DATA": "/planted/world-data"}
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class ParallelPartsTest(unittest.TestCase):
+    """After gleam-build, the parts that read the build run beside the test run: glinter,
+    generated-tables, squirrel and the world-data run start while `gleam test` is still
+    running, and in the fast check glinter runs beside the code-rule tests. The planted
+    `gleam test` (PLANT_RENDEZVOUS) waits for each of them to have started and fails
+    when one has not, so what is tested is the order of the parts, not their times. The
+    planted gleam ends the wait on an event, never on a clock, but gives up after 300
+    polls of 0.1 s (PLANT_RENDEZVOUS_POLLS) so a part run after the tests fails the run
+    instead of hanging it; the control test, which must reach that, sets 100 polls, a
+    sixth of its 60 s run timeout."""
+
+    def test_the_full_check_starts_glinter_generated_tables_squirrel_and_the_world_data_run_while_the_test_run_is_running(self):
+        run = shared_run("rendezvous-full", client=True, PLANT_RENDEZVOUS="1", **WORLD_DATA)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.output, r"(?m)^  gleam-test +ok\b")
+        self.assertNotIn("had not started", run.output)
+
+    def test_the_fast_check_starts_glinter_while_the_code_rule_tests_are_running(self):
+        run = shared_run("rendezvous-fast", "fast", PLANT_RENDEZVOUS="1")
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.output, r"(?m)^  code-rules +ok\b")
+
+    def test_a_test_run_that_has_a_part_it_should_run_beside_unstarted_fails_the_planted_check(self):
+        # The planted tool's own control: with the world-data run never started (no
+        # GENESIS_WORLD_DATA here), the rendezvous cannot be met, and the test run fails
+        # naming it, so a pass above means every part had started.
+        run = shared_run("rendezvous-unmet", client=True, timeout=60, PLANT_RENDEZVOUS="1", PLANT_RENDEZVOUS_POLLS="100")
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bgleam-test\b")
+        self.assertIn("world_data had not started", run.output)
+
+    def test_the_part_list_has_no_message_codec_part_and_runs_no_generate_messages(self):
+        run = shared_run("full")
+        self.assertNotIn("message-codec", run.output)
+        self.assertFalse([c for c in run.commands if "generate_messages" in c], run.commands)
+
+    def test_the_full_check_lists_every_part_once_in_order(self):
+        run = shared_run("full")
+        self.assertEqual(
+            [part for part in parts_reported(run.output) if part != "branch-current"], EVERY_PART)
+
+    def test_the_parts_that_read_the_build_are_skipped_when_the_build_fails(self):
+        def plant(case):
+            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace("build) exit 0", "build) exit 1"))
+
+        run = shared_run("build-fails-all", prepare=plant)
+        self.assertNotIn("gleam run -m squirrel check", run.commands)
+        for part in ("glinter", "generated-tables", "gleam-test", "world-data", "literal-area", "squirrel"):
+            with self.subTest(part=part):
+                self.assertRegex(run.output, r"(?m)^  %s +skipped \(a part it needs failed: gleam-build\)" % part)
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class WorldDataPartTest(unittest.TestCase):
+    """The world-data test (tagged world_data, about a minute alone) is a part of its own:
+    one run of `gleam test -- --tag world_data` where the test can run, the test run
+    that has the other tests skips it, and a failure fails the world-data part and
+    no other."""
+
+    def test_where_it_can_run_the_part_runs_the_tagged_test_alone_and_the_other_run_skips_it(self):
+        run = shared_run("world-data-on", client=True, **WORLD_DATA)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.output, r"(?m)^  world-data +ok\b")
+        runs = {line.split(" GENESIS_TEST_SKIP_SERIAL")[0]: line for line in run.environment.splitlines() if line.startswith("gleam test")}
+        self.assertEqual(sorted(runs), sorted([
+            "gleam test -- --workers %s" % TEST_WORKERS, "gleam test -- --tag serial", "gleam test -- --tag world_data"]))
+        self.assertIn("GENESIS_TEST_SKIP_WORLD_DATA=1", runs["gleam test -- --workers %s" % TEST_WORKERS])
+        for tagged in ("gleam test -- --tag serial", "gleam test -- --tag world_data"):
+            self.assertTrue(runs[tagged].endswith("GENESIS_TEST_SKIP_WORLD_DATA="), runs[tagged])
+
+    def test_without_the_client_the_part_is_skipped_and_its_run_never_starts(self):
+        run = shared_run("full")
+        self.assertRegex(run.output, r"(?m)^  world-data +skipped \(")
+        self.assertFalse([c for c in run.commands if "--tag world_data" in c], run.commands)
+
+    def test_without_the_world_database_variable_the_part_is_skipped(self):
+        run = shared_run("world-data-no-variable", client=True)
+        self.assertRegex(run.output, r"(?m)^  world-data +skipped \(")
+        self.assertFalse([c for c in run.commands if "--tag world_data" in c], run.commands)
+
+    def test_a_failing_world_data_run_fails_that_part_and_no_other(self):
+        def plant(case):
+            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
+                'if [ "$1" = test ] &&', 'if [ "$*" = "test -- --tag world_data" ]; then exit 1; fi\nif [ "$1" = test ] &&'))
+
+        run = shared_run("world-data-fails", client=True, prepare=plant, **WORLD_DATA)
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: world-data$")
+
+    def test_a_failure_of_the_other_tests_does_not_fail_the_world_data_part(self):
+        def plant(case):
+            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
+                'if [ "$1" = test ] &&', 'if [ "$*" = "test -- --tag serial" ]; then exit 1; fi\nif [ "$1" = test ] &&'))
+
+        run = shared_run("serial-fails-with-world-data", client=True, prepare=plant, **WORLD_DATA)
+        self.assertRegex(run.output, r"(?m)^  world-data +ok\b")
+        self.assertRegex(failed_line(self, run.output), r"^check FAILED: gleam-test$")
+
+    def test_the_fast_check_does_not_run_it(self):
+        self.assertFalse([c for c in shared_run("fast", "fast").commands if "world_data" in c])
+
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
@@ -1289,6 +1472,12 @@ class WorkerCountTest(unittest.TestCase):
         run = shared_run("workers-3", GENESIS_TEST_WORKERS="3")
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertIn("gleam test -- --workers 3", run.commands)
+
+    def test_without_the_setting_the_test_run_has_two_workers(self):
+        run = shared_run("full")
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertIn("gleam test -- --workers 2", run.commands)
+        self.assertFalse([c for c in run.commands if re.fullmatch(r"gleam test -- --workers (?!2$)\d+", c)], run.commands)
 
 
 class FactFileMergeTest(unittest.TestCase):

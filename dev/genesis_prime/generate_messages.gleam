@@ -1,7 +1,8 @@
 //// Writes the message codec from the schema, run as
 //// `gleam run -m genesis_prime/generate_messages`. With `check` after `--` it
 //// writes nothing and exits non-zero naming each committed file that differs
-//// from what the schema generates; the full check runs it that way.
+//// from what the schema generates; the same comparison is made by
+//// `the_committed_codec_is_what_the_schema_generates_test`, which the full check runs.
 
 import argv
 import genesis_prime/dev_exit
