@@ -46,6 +46,7 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_stealth
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
   type TimerId, CallerId, CancelTimer, ConnectionId, EndedBeforeAnswer, Map,
@@ -833,6 +834,92 @@ pub fn leave_asked() -> Request {
 pub fn camped_out() -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = leaving_the_map()
   answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+}
+
+/// The frames the step writes, as the client reads them, opened under the keyed
+/// cipher.
+pub fn written(taken taken: ConnectionStep(Request)) -> List(Frame) {
+  heard(taken:, cipher: keyed())
+}
+
+/// The Spell4 id of each 0x7ff among the frames, in order.
+pub fn started_spells(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == spell_started.message_id {
+      True -> {
+        let assert Ok(start) = spell_started.decode(frame.body)
+          as "a 0x7ff decodes"
+        Ok(start.spell4_id)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The stealth bits of each 0x8F5 among the frames, in order.
+pub fn stealth_bits(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == 0x08F5 {
+      True -> {
+        let assert Ok(change) = unit_stealth.decode(frame.body)
+          as "a 0x8F5 decodes"
+        Ok(change.stealthed)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The message ids from the first frame with this id on, that frame included.
+pub fn from_id(frames frames: List(Frame), id id: Int) -> List(Int) {
+  list.drop_while(cast_support.ids(frames:), fn(found) { found != id })
+}
+
+/// News of the unit `unit_id` as its owner's connection sends it, for the tests'
+/// player's first stay.
+pub fn news_sent_by_a_peer(
+  unit_id unit_id: Int,
+  news news: News,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  sent_by_a_peer(news_of(unit_id:, news:))
+}
+
+/// The news a step tells the viewer connection `viewer`, in order.
+pub fn news_told(
+  taken taken: ConnectionStep(Request),
+  viewer viewer: Int,
+) -> List(News) {
+  list.filter_map(peer_tells(taken), fn(tell) {
+    case tell.0 == viewer {
+      True -> Ok({ tell.1 }.news)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The 0x262 the tests' player's connection sends the arriving viewer connection
+/// `viewer`, taken from the state.
+pub fn created_for(
+  state state: game_connection.State,
+  viewer viewer: Int,
+) -> UnitCreatePlayer {
+  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] =
+    peer_tells(
+      feed(
+        state:,
+        event: sent_by_the_map(SeenBy(
+          by: ConnectionId(viewer),
+          stay: viewer_stay(viewer),
+        )),
+      ).1,
+    )
+    as "the player's connection sends the arriving viewer its 0x262"
+  unit
+}
+
+/// A viewer connection that shows the unit 9.
+pub fn viewer_showing_unit_9() -> game_connection.State {
+  feed(state: in_world(), event: event_of(Appears)).0
 }
 
 /// The messages the step writes, as the client reads them.

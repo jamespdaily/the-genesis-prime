@@ -26,12 +26,6 @@ import gleam/string
 import owned_test
 import spell_tables
 
-fn hits(units: List(Int)) -> List(cast.Struck) {
-  list.map(units, fn(unit_id) {
-    cast.Hit(unit_id:, descriptions: [], controls: [])
-  })
-}
-
 /// Every effect of a press of the bag index at 1000 and of every timer it leads to,
 /// each go striking `struck`.
 fn pressed_through(
@@ -79,7 +73,7 @@ pub fn relentless_strikes_striking_3_foes_gives_180_once_and_starts_3_children_t
       plans: support.plans(),
       caster: support.caster(),
       bag_index: support.relentless_strikes,
-      struck: hits([10, 11, 12]),
+      struck: support.hits([10, 11, 12]),
     )
   assert support.gains(effects:) == [[Gain(slot: 1, amount: 180)]]
     as "one Gain of 180 to slot 1 for the go (127603, behind 24581, which passes with no Overdrive), not one per foe; 147972's 24582 needs 59208, which is not live"
@@ -119,7 +113,7 @@ pub fn telekinetic_strike_striking_2_foes_gives_1_psi_point_once_test() -> Nil {
       plans: support.plans(),
       caster: support.caster(),
       bag_index: 0,
-      struck: hits([10, 11]),
+      struck: support.hits([10, 11]),
     )
   assert support.gains(effects:) == [[Gain(slot: 1, amount: 1)]]
     as "56858: +1 of slot 1 with no prerequisite, once for the go"
@@ -173,7 +167,7 @@ pub fn a_gain_whose_prerequisite_fails_is_not_given_test() -> Nil {
       target: 0,
       at: 1000,
     )
-  let struck = hits([10])
+  let struck = support.hits([10])
   let #(state, effects) =
     support.answered_by(state:, effects: raw, at: 1000, struck:)
   let #(_, fired) =
@@ -263,7 +257,7 @@ fn mind_burst_held_behind_the_go(
 
 pub fn a_press_held_behind_a_go_is_checked_against_the_bar_with_that_gos_gain_test() -> Nil {
   use <- owned_test.run(5000)
-  assert mind_burst_held_behind_the_go(struck: hits([10]))
+  assert mind_burst_held_behind_the_go(struck: support.hits([10]))
     == #([Payment(slot: 1, amount: 1)], [[Gain(slot: 1, amount: 1)]], [])
     as "Spell4.32809 costs 1 Psi Point (Spell4CastResult.vital_cost) and 0 Psi Points are refused 51 (CasterVitalCostResource1); Telekinetic Strike's go struck a foe and gave +1 (56858), so the held Mind Burst is accepted and pays it"
   assert mind_burst_held_behind_the_go(struck: []) == #([], [], [51])

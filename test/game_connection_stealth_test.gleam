@@ -17,12 +17,12 @@
 ////   health's news, the damage taken, then the death; the stealth change is the last of
 ////   the input that moved it; creatures' sight of a stealthed player is left as it was.
 
+import cast_support
 import character_tables
 import connection_rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type News, type Request, Appeared, FromMap, FromStore, PeerNews, SentByPeer,
-  Stealth,
+  type Request, Appeared, FromMap, FromStore, PeerNews, Stealth,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
@@ -48,36 +48,15 @@ fn stealthed() -> #(game_connection.State, ConnectionStep(Request)) {
   support.stealthed_medic_in(tables: character_tables.shared_with_stealth())
 }
 
-fn written(taken taken: ConnectionStep(Request)) -> List(Frame) {
-  support.heard(taken, support.keyed())
-}
-
-fn ids(frames frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
-}
-
-/// The news a step tells the viewer connection `viewer` about the player's unit.
-fn news_told(
-  taken taken: ConnectionStep(Request),
-  viewer viewer: Int,
-) -> List(News) {
-  list.filter_map(support.peer_tells(taken), fn(tell) {
-    case tell.0 == viewer {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
-}
-
 /// The ids of the frames written, kept to the ones named, in order.
 fn only(frames frames: List(Frame), ids wanted: List(Int)) -> List(Int) {
-  list.filter(ids(frames:), fn(id) { list.contains(wanted, id) })
+  list.filter(cast_support.ids(frames:), fn(id) { list.contains(wanted, id) })
 }
 
 pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_viewer_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(_, taken) = stealthed()
-  let frames = written(taken:)
+  let frames = support.written(taken:)
   assert only(frames:, ids: [0x08F5]) == [0x08F5]
     as "one 0x8f5 goes to the player's own client (opcode.0x8f5)"
   let assert [stealth] =
@@ -86,7 +65,9 @@ pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_
     == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 1))
   let at = fn(id) {
     let assert Ok(found) =
-      list.index_map(ids(frames:), fn(found, index) { #(found, index) })
+      list.index_map(cast_support.ids(frames:), fn(found, index) {
+        #(found, index)
+      })
       |> list.find(fn(entry) { entry.0 == id })
       as "the message is written"
     found.1
@@ -96,7 +77,10 @@ pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_
   assert only(frames:, ids: [0x0247, 0x093A]) == []
     as "no combat log entry (the client logs its own change) and no property (the client slows a stealthed player itself, unit.stealth_look)"
   list.each([2, 3], fn(viewer) {
-    assert list.contains(news_told(taken:, viewer:), Stealth(stealthed: True))
+    assert list.contains(
+      support.news_told(taken:, viewer:),
+      Stealth(stealthed: True),
+    )
       as "each viewer is told"
   })
 }
@@ -120,7 +104,10 @@ pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_view
     == []
     as "after the 0x8f5 to the player and the viewers' news: the tell is the stealth change's last effect"
   list.each([2, 3], fn(viewer) {
-    assert list.contains(news_told(taken: entering, viewer:), Stealth(True))
+    assert list.contains(
+      support.news_told(taken: entering, viewer:),
+      Stealth(True),
+    )
       as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"
   })
   let #(_, leaving) = support.press_paralytic_surge(state:, client_cast_id: 2)
@@ -163,7 +150,7 @@ fn struck_while_stealthed() -> ConnectionStep(Request) {
 pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5_and_tells_each_viewer_test() -> Nil {
   use <- owned_test.run(60_000)
   let taken = struck_while_stealthed()
-  let frames = written(taken:)
+  let frames = support.written(taken:)
   assert only(frames:, ids: [0x092F, 0x0811, 0x08F5])
     == [0x092F, 0x0811, 0x08F5]
     as "the blow's health to the player, then the stealth cast taken off, then the change"
@@ -177,7 +164,7 @@ pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5
       client_connection.Health(dead: False, ..),
       client_connection.CastTargetsRemoved(..),
       Stealth(stealthed: False),
-    ] = news_told(taken:, viewer:)
+    ] = support.news_told(taken:, viewer:)
       as "each viewer is told the blow's shield and health (0x938 and 0x937), the stealth cast taken off (0x811) and then the stealth"
   })
 }
@@ -189,11 +176,14 @@ pub fn a_blow_does_not_end_a_stealth_kept_on_damage_test() -> Nil {
       tables: character_tables.shared_with_kept_stealth(),
     )
   let taken = support.feed(state, support.a_beast_strike(support.own_unit_id)).1
-  assert only(frames: written(taken:), ids: [0x092F, 0x0811, 0x08F5])
+  assert only(frames: support.written(taken:), ids: [0x092F, 0x0811, 0x08F5])
     == [0x092F]
     as "the blow's health is written and the kept stealth holds (Spell4Effects.effectType.83: dataBits02 1)"
   list.each([2, 3], fn(viewer) {
-    assert !list.contains(news_told(taken:, viewer:), Stealth(stealthed: False))
+    assert !list.contains(
+      support.news_told(taken:, viewer:),
+      Stealth(stealthed: False),
+    )
   })
 }
 
@@ -205,7 +195,7 @@ pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_
   // stealthed, so it adds no source, and the spell's stealth change 0 ends the one held.
   let #(state, _) = stealthed()
   let #(_, taken) = support.press_paralytic_surge(state:, client_cast_id: 2)
-  let frames = written(taken:)
+  let frames = support.written(taken:)
   assert only(frames:, ids: [0x0811, 0x08F5]) == [0x0811, 0x08F5]
     as "the stealth cast taken off, then the change"
   let assert [stealth] =
@@ -213,7 +203,7 @@ pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_
   assert unit_stealth.decode(stealth.body)
     == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 0))
   list.each([2, 3], fn(viewer) {
-    assert list.last(news_told(taken:, viewer:))
+    assert list.last(support.news_told(taken:, viewer:))
       == Ok(Stealth(stealthed: False))
       as "each viewer is told the change last"
   })
@@ -248,10 +238,13 @@ pub fn a_blow_that_lowers_nothing_keeps_the_stealth_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, _) = stealthed()
   let taken = support.feed(state, harmless_strike()).1
-  assert only(frames: written(taken:), ids: [0x0811, 0x08F5]) == []
+  assert only(frames: support.written(taken:), ids: [0x0811, 0x08F5]) == []
     as "a blow that lowers neither health nor shield takes no damage"
   list.each([2, 3], fn(viewer) {
-    assert !list.contains(news_told(taken:, viewer:), Stealth(stealthed: False))
+    assert !list.contains(
+      support.news_told(taken:, viewer:),
+      Stealth(stealthed: False),
+    )
   })
 }
 
@@ -259,7 +252,12 @@ pub fn a_lethal_blow_ends_the_stealth_before_the_death_is_written_test() -> Nil 
   use <- owned_test.run(60_000)
   let #(state, _) = stealthed()
   let taken = support.killed(state).1
-  assert only(frames: written(taken:), ids: [0x0811, 0x08F5, 0x088C, 0x0247])
+  assert only(frames: support.written(taken:), ids: [
+      0x0811,
+      0x08F5,
+      0x088C,
+      0x0247,
+    ])
     == [0x0811, 0x08F5, 0x088C, 0x0247]
     as "the stealth cast off, the change, then the death 0x88c and its log 0x247 of type 22"
 }
@@ -271,32 +269,21 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_th
       tables: character_tables.shared_with_kept_stealth(),
     )
   let taken = support.killed(state).1
-  assert only(frames: written(taken:), ids: [0x07FE, 0x08F5, 0x0247])
+  assert only(frames: support.written(taken:), ids: [0x07FE, 0x08F5, 0x0247])
     == [0x07FE, 0x08F5, 0x0247]
     as "the stealth cast's 0x7fe, then 0x8f5, then the death's log entry of type 22"
 }
 
 // ---- a viewer ----
 
-/// The state of a viewer that shows the unit 9, and the news of that unit.
-fn viewer_showing_unit_9() -> game_connection.State {
-  support.feed(support.in_world(), support.event_of(support.Appears)).0
-}
-
-fn news_of(
-  unit_id unit_id: Int,
-  news news: News,
-) -> step.Event(
-  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
-) {
-  support.for_stay(support.own_stay(), SentByPeer(PeerNews(unit_id:, news:)))
-}
-
 pub fn a_shown_units_stealth_news_is_written_as_0x8f5_then_0x247_of_type_24_test() -> Nil {
   use <- owned_test.run(10_000)
-  let shown = viewer_showing_unit_9()
+  let shown = support.viewer_showing_unit_9()
   let #(_, entering) =
-    support.feed(shown, news_of(unit_id: 9, news: Stealth(stealthed: True)))
+    support.feed(
+      shown,
+      support.news_sent_by_a_peer(unit_id: 9, news: Stealth(stealthed: True)),
+    )
   let assert [first, second] = support.heard(entering, support.keyed())
   assert first.message_id == 0x08F5 && second.message_id == 0x0247
     as "0x8f5 first, then the log entry (opcode.0x8f5, opcode.0x247.type24)"
@@ -310,7 +297,10 @@ pub fn a_shown_units_stealth_news_is_written_as_0x8f5_then_0x247_of_type_24_test
     )
     as "entering is exiting 0"
   let #(_, leaving) =
-    support.feed(shown, news_of(unit_id: 9, news: Stealth(stealthed: False)))
+    support.feed(
+      shown,
+      support.news_sent_by_a_peer(unit_id: 9, news: Stealth(stealthed: False)),
+    )
   let assert [first, second] = support.heard(leaving, support.keyed())
   assert unit_stealth.decode(first.body)
     == Ok(UnitStealth(unit_id: 9, stealthed: 0))
@@ -327,15 +317,15 @@ pub fn a_stealth_news_for_a_unit_not_shown_writes_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) =
     support.feed(
-      viewer_showing_unit_9(),
-      news_of(unit_id: 77, news: Stealth(stealthed: True)),
+      support.viewer_showing_unit_9(),
+      support.news_sent_by_a_peer(unit_id: 77, news: Stealth(stealthed: True)),
     )
   assert connection_rule_support.writes(taken) == []
     as "the client holds no unit 77"
   let #(_, early) =
     support.feed(
       support.in_world(),
-      news_of(unit_id: 9, news: Stealth(stealthed: True)),
+      support.news_sent_by_a_peer(unit_id: 9, news: Stealth(stealthed: True)),
     )
   assert connection_rule_support.writes(early) == []
     as "a news before the unit's 0x262 finds no unit shown"
@@ -347,7 +337,10 @@ pub fn the_0x262_and_the_stealth_news_of_one_owner_are_written_in_the_order_they
     support.feed(support.in_world(), support.event_of(support.Appears))
   assert support.written_ids(first) == [0x0262]
   let #(_, second) =
-    support.feed(state, news_of(unit_id: 9, news: Stealth(stealthed: True)))
+    support.feed(
+      state,
+      support.news_sent_by_a_peer(unit_id: 9, news: Stealth(stealthed: True)),
+    )
   assert support.written_ids(second) == [0x08F5, 0x0247]
 }
 
@@ -410,7 +403,7 @@ pub fn a_camp_while_stealthed_writes_no_stealth_and_the_next_stay_starts_unsteal
     support.answer(state:, taken: saved, outcome: step.Answer(FromMap(Left)))
   let steps = [requested, finished, saved, left]
   list.each(steps, fn(taken) {
-    assert only(frames: written(taken:), ids: [0x0811, 0x08F5]) == []
+    assert only(frames: support.written(taken:), ids: [0x0811, 0x08F5]) == []
       as "a camp writes no stealth: the viewers' 0x355 removes the unit"
     assert !list.any(support.peer_tells(taken), fn(tell) {
       { tell.1 }.news == Stealth(stealthed: False)

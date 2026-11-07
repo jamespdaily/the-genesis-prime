@@ -20,9 +20,7 @@ import cast_support
 import client_tables
 import connection_rule_support
 import game_connection_support as support
-import genesis_prime/client_connection.{
-  type News, type Request, CastStarted, CastWent,
-}
+import genesis_prime/client_connection.{type Request, CastStarted, CastWent}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/spell_go.{type SpellGo}
@@ -33,10 +31,6 @@ import gleam/list
 import gleam/option.{None}
 import owned_test
 import unitest
-
-fn written(taken taken: ConnectionStep(Request)) -> List(Frame) {
-  support.heard(taken, support.keyed())
-}
 
 /// A press of the bag index, as the client sends it.
 fn pressed(
@@ -80,19 +74,6 @@ fn listed_on(go go: SpellGo, unit_id unit_id: Int) -> List(Int) {
   })
 }
 
-/// The news a step tells the viewer connection `viewer`.
-fn news_told(
-  taken taken: ConnectionStep(Request),
-  viewer viewer: Int,
-) -> List(News) {
-  list.filter_map(support.peer_tells(taken), fn(tell) {
-    case tell.0 == viewer {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
-}
-
 pub fn a_warriors_onslaught_press_writes_42908s_go_with_the_scale_row_and_a_viewer_gets_the_same_go_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
@@ -105,7 +86,7 @@ pub fn a_warriors_onslaught_press_writes_42908s_go_with_the_scale_row_and_a_view
   let assert [timer] = cast_timers_started(taken: press)
     as "the one cast timer the press starts: the Proxy's delay"
   let #(_, taken) = support.feed(state:, event: OwnEvent(TimerFired(timer)))
-  let frames = written(taken:)
+  let frames = support.written(taken:)
   let assert [go] =
     list.filter(gos_in(frames:), fn(go) {
       list.contains(listed_on(go:, unit_id: support.own_unit_id), 109_482)
@@ -118,7 +99,7 @@ pub fn a_warriors_onslaught_press_writes_42908s_go_with_the_scale_row_and_a_view
       fn(start) { start.cast_id == go.cast_id },
     )
     as "the caster's client reads the start of the cast that went"
-  let told = news_told(taken:, viewer: 2)
+  let told = support.news_told(taken:, viewer: 2)
   assert list.contains(told, CastStarted(start:))
     as "each viewer is told the start of the cast"
   assert list.contains(told, CastWent(go:)) as "and the same go"
@@ -160,7 +141,7 @@ pub fn an_engineers_entry_starts_the_passive_with_its_conversion_and_writes_no_0
   use <- unitest.guard(client_tables.present())
   let #(_, taken) =
     support.entered_on_the_clients_tables(class_id: 2, saved_health: None)
-  let frames = written(taken:)
+  let frames = support.written(taken:)
   assert list.any(gos_in(frames:), fn(go) {
     list.contains(listed_on(go:, unit_id: support.own_unit_id), 229_304)
   })

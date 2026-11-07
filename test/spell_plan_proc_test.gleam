@@ -27,7 +27,7 @@ import client_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, Always, Died, EnteredStealth, LeftCombat, LeftStealth,
+  type Spell, Always, Died, EnteredStealth, LeftCombat, LeftStealth,
   ProcKindNotRead, ProcNotRead, ProcReading,
 }
 import genesis_prime/table/id.{Spell4BaseId}
@@ -43,14 +43,13 @@ import unitest
 /// The spell the in-memory rows are said to belong to: the Stalker's passive.
 const holder = 45_057
 
-fn real_plans() -> Plans {
-  spell_plan.plans(client_tables.shared())
-}
-
 /// The Stalker's passive as the real plans hold it, by its Spell4Base.
 fn passive() -> Spell {
   let assert Ok(spell) =
-    spell_plan.in_plans(plans: real_plans(), base: Spell4BaseId(29_131))
+    spell_plan.in_plans(
+      plans: cast_support.real_plans(),
+      base: Spell4BaseId(29_131),
+    )
     as "the plans hold the Stalker's innate passive"
   spell
 }
@@ -58,7 +57,7 @@ fn passive() -> Spell {
 /// Every spell of every tree the real plans hold, by Spell4 id.
 fn spell_named(spell4_id spell4_id: Int) -> Spell {
   let assert Ok(spell) =
-    list.flat_map(dict.values(real_plans()), fn(ability) {
+    list.flat_map(dict.values(cast_support.real_plans()), fn(ability) {
       spell_plan.tree(spell: ability, started: fn(_) { True })
     })
     |> list.find(fn(spell) { spell.spell4_id.value == spell4_id })

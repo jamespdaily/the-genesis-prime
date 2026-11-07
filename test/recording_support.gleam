@@ -5,6 +5,7 @@ import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/bit_array
 import gleam/crypto
 import gleam/erlang/process
+import gleam/list
 import gleam/option.{None}
 import gleam/string
 import simplifile
@@ -66,4 +67,11 @@ pub fn wire_text_in(folder: String) -> String {
 /// made for and with no table digest and no realm.
 pub fn wire_recorder(folder folder: String) -> WireRecorder {
   recorder.new(folder:, client_build: 16_042, tables_digest: None, realm: None)
+}
+
+/// 32 bytes counting up from 0: a seed whose every byte is different.
+pub fn counting_seed_bytes() -> BitArray {
+  list.repeat(Nil, 32)
+  |> list.index_map(fn(_, byte) { <<byte>> })
+  |> bit_array.concat
 }

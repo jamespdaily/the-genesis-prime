@@ -10,12 +10,12 @@ import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
-  type Address, type Ask, type CallerId, type ConnectionStep, type Effect,
-  type Event, type Input, type LogLevel, type LogLine, type ServiceStep,
-  type Step, type WatchId, CancelServiceTimer, CancelTimer, Connection,
-  ConnectionId, Effects, EffectsThenAsk, Input, Log, Now, OwnEffect, Peer, Reply,
-  Send, StartCreature, StartServiceTimer, StartTimer, Stop, Unwatch, Watch,
-  Write,
+  type Address, type Ask, type CallerId, type ConnectionEffect,
+  type ConnectionStep, type Effect, type Event, type Input, type LogLevel,
+  type LogLine, type ServiceStep, type Step, type WatchId, CancelServiceTimer,
+  CancelTimer, Connection, ConnectionId, Effects, EffectsThenAsk, Input, Log,
+  Now, OwnEffect, Peer, Reply, Send, StartCreature, StartServiceTimer,
+  StartTimer, Stop, Unwatch, Watch, Write,
 }
 import genesis_prime/store.{type Account, Account, AccountId}
 import gleam/bit_array
@@ -294,4 +294,12 @@ pub fn says(line line: LogLine, words words: String) -> Bool {
 /// it refuses an input.
 pub fn warn(text: String) -> Effect(step.ConnectionEffect(request)) {
   Log(step.LogLine(level: step.LogWarning, text:, about: step.no_one))
+}
+
+/// The effect that writes the record of `letter` and `number`, nine bytes.
+pub fn record(
+  letter letter: Int,
+  number number: Int,
+) -> Effect(ConnectionEffect(Nil)) {
+  OwnEffect(Write(<<letter, number:64>>))
 }

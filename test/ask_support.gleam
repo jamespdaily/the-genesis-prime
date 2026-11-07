@@ -505,3 +505,50 @@ pub fn monotonic_ms() -> Int {
 
 @external(erlang, "erlang", "monotonic_time")
 fn monotonic_time(unit: atom.Atom) -> Int
+
+@external(erlang, "erlang", "unique_integer")
+fn unique_integer(options: List(UniqueOption)) -> Int
+
+type UniqueOption {
+  Positive
+  Monotonic
+}
+
+/// A number no other call gives, rising with each call.
+pub fn unique_number() -> Int {
+  unique_integer([Positive, Monotonic])
+}
+
+/// The moment a wait for an event ends, in monotonic milliseconds.
+pub fn deadline() -> Int {
+  monotonic_ms() + event_wait_ms
+}
+
+/// Starts a supervisor tree of one child, unlinked from the test and ended with
+/// it, and gives the supervisor's pid.
+pub fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
+  let assert Ok(started) =
+    supervisor.new(supervisor.OneForOne)
+    |> supervisor.restart_tolerance(intensity: 10, period: 5)
+    |> supervisor.add(child)
+    |> supervisor.start
+    as "the tree started"
+  process.unlink(started.pid)
+  guard(started.pid)
+  started.pid
+}
+
+/// A listener whose rule asks nothing of a directory and shuts down in a second.
+pub fn started_listener() -> Server {
+  start(
+    rule: asking_rule.rule(),
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    shutdown_ms: 1000,
+    with: fn(builder) { builder },
+  )
+}
+
+/// A process that runs and never ends by itself, which a test ends.
+pub fn idle_process() -> Pid {
+  process.spawn_unlinked(process.sleep_forever)
+}

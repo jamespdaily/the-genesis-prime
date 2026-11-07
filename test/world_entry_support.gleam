@@ -7,6 +7,7 @@ import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
+import genesis_prime/message/item_added
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{
@@ -129,4 +130,21 @@ pub fn character(
     bones: [],
     naming: NameStands,
   )
+}
+
+/// The 0x111 messages among the frames, decoded, in order.
+pub fn items_added(frames frames: List(Frame)) -> List(item_added.ItemAdded) {
+  list.filter(frames, fn(frame) { frame.message_id == item_added.message_id })
+  |> list.map(fn(frame) {
+    let assert Ok(added) = item_added.decode(frame.body) as "0x111 decodes"
+    added
+  })
+}
+
+/// The one frame with this message id among the frames.
+pub fn only(frames frames: List(Frame), message_id message_id: Int) -> Frame {
+  let assert [frame] =
+    list.filter(frames, fn(frame) { frame.message_id == message_id })
+    as "the entry sends the message once"
+  frame
 }

@@ -18,14 +18,12 @@
 import cast_support
 import character_tables
 import client_tables
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
-import genesis_prime/message/item_added
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/int
 import gleam/list
@@ -45,21 +43,6 @@ fn classes() -> List(#(Int, List(Int), Int, option.Option(Int))) {
     #(5, [23_148, 23_161, 23_173], 30_075, Some(29_131)),
     #(7, [27_638, 20_684, 20_325], 31_213, None),
   ]
-}
-
-fn items_added(frames frames: List(Frame)) -> List(item_added.ItemAdded) {
-  list.filter(frames, fn(frame) { frame.message_id == item_added.message_id })
-  |> list.map(fn(frame) {
-    let assert Ok(added) = item_added.decode(frame.body) as "0x111 decodes"
-    added
-  })
-}
-
-fn only(frames frames: List(Frame), message_id message_id: Int) -> Frame {
-  let assert [frame] =
-    list.filter(frames, fn(frame) { frame.message_id == message_id })
-    as "the entry sends the message once"
-  frame
 }
 
 pub fn the_entry_sends_the_innate_after_the_abilities_and_0x19f_after_0x19d_for_each_class_test() -> Nil {
@@ -125,7 +108,9 @@ pub fn the_innates_item_is_its_spell4_base_at_location_4_bag_index_3_with_reason
         ),
       )
     let held =
-      items_added(frames: world_entry_support.frames_of(effects:))
+      world_entry_support.items_added(frames: world_entry_support.frames_of(
+        effects:,
+      ))
       |> list.filter(fn(added) { added.held_item.item.location == 4 })
     assert list.map(held, fn(added) { added.held_item.item.item_id })
       == list.append(abilities, [innate_base])
@@ -159,7 +144,9 @@ pub fn one_0x1a0_sets_tier_1_of_the_abilities_and_the_innate_in_action_sets_0_to
       )
     let frames = world_entry_support.frames_of(effects:)
     let assert Ok(tiers) =
-      ability_tiers.decode({ only(frames:, message_id: 0x01A0) }.body)
+      ability_tiers.decode(
+        { world_entry_support.only(frames:, message_id: 0x01A0) }.body,
+      )
       as "0x1a0 decodes"
     assert tiers.tiers
       == list.flat_map(list.append(abilities, [innate_base]), fn(base) {
@@ -187,7 +174,9 @@ pub fn the_action_set_keeps_the_three_bar_abilities_and_0x19f_names_slot_0_test(
       )
     let frames = world_entry_support.frames_of(effects:)
     let assert Ok(set) =
-      action_set.decode({ only(frames:, message_id: 0x019D) }.body)
+      action_set.decode(
+        { world_entry_support.only(frames:, message_id: 0x019D) }.body,
+      )
       as "0x19d decodes"
     assert set.shortcuts
       == list.index_map(abilities, fn(base, slot) {
@@ -199,7 +188,9 @@ pub fn the_action_set_keeps_the_three_bar_abilities_and_0x19f_names_slot_0_test(
         )
       })
       as "opcode.0x19d: the innate is in no action set, so slots 0 to 2 hold the three abilities as before"
-    assert innate_index_set.decode({ only(frames:, message_id: 0x019F) }.body)
+    assert innate_index_set.decode(
+        { world_entry_support.only(frames:, message_id: 0x019F) }.body,
+      )
       == Ok(InnateIndexSet(innate_index: 0))
       as "opcode.0x19f: index 0, so the button points at slot 0's active spell and not the slot-1 passive"
   })
@@ -258,7 +249,7 @@ pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_sta
     )
   let frames = world_entry_support.frames_of(effects:)
   assert list.length(
-      list.filter(items_added(frames:), fn(added) {
+      list.filter(world_entry_support.items_added(frames:), fn(added) {
         added.held_item.item.location == 4
       }),
     )

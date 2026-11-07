@@ -54,8 +54,8 @@ pub fn a_listener_the_closer_cannot_close_is_logged_as_a_warning_with_the_reason
 pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_closer_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.tag("serial")
-  let first = started_listener()
-  let second = started_listener()
+  let first = ask_support.started_listener()
+  let second = ask_support.started_listener()
   let assert [embedded] = supervisor_children.in_start_order(first.supervisor)
     as "the first listener's tree holds Ranch's embedded supervisor"
   let assert [_proxy, first_supervisor] =
@@ -106,14 +106,4 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
   ))
     as "the listener that ended is one that is not running"
   ask_support.stop(second)
-}
-
-/// A server whose one listener runs the asking rule, with no closer.
-fn started_listener() -> ask_support.Server {
-  ask_support.start(
-    rule: asking_rule.rule(),
-    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 1000,
-    with: fn(builder) { builder },
-  )
 }

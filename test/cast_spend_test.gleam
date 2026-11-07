@@ -24,7 +24,7 @@ import genesis_prime/game/cast.{type GoAsked}
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Plans, type Spell, Proxy, Spell}
+import genesis_prime/game/spell_plan.{type Spell, Proxy, Spell}
 import genesis_prime/game/spend
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug, LogWarning}
@@ -54,11 +54,6 @@ fn mind_burst_spell() -> Spell {
   spell
 }
 
-/// The cast tests' plans with this Mind Burst.
-fn plans_with(spell spell: Spell) -> Plans {
-  support.with_spells(plans: support.plans(), spells: [spell])
-}
-
 /// The Esper's resource (Class 3: slot 1, a maximum of 5) holding `points`.
 fn esper_holding(points points: Int) -> Resources {
   support.holding(class_id: 3, value: int.to_float(points))
@@ -74,7 +69,7 @@ fn press(
   points points: Int,
 ) -> #(cast.State, List(cast.Effect)) {
   support.pressed_raw_in(
-    plans: plans_with(spell:),
+    plans: support.plans_with(spell:),
     state: cast.new(),
     caster: caster_holding(points:),
     bag_index: mind_burst,
@@ -197,7 +192,7 @@ fn pressed_and_gone(
   let caster = cast.Caster(..caster_holding(points:), in_combat: True)
   let #(state, raw) =
     support.pressed_raw_in(
-      plans: plans_with(spell:),
+      plans: support.plans_with(spell:),
       state: cast.new(),
       caster:,
       bag_index: mind_burst,
@@ -317,9 +312,12 @@ pub fn a_5_point_mind_burst_with_the_reckful_amp_held_starts_the_crit_buff_test(
       ),
     ])
   let plans =
-    support.with_spells(plans: plans_with(spell: mind_burst_spell()), spells: [
-      amp,
-    ])
+    support.with_spells(
+      plans: support.plans_with(spell: mind_burst_spell()),
+      spells: [
+        amp,
+      ],
+    )
   let caster = cast.Caster(..caster_holding(points: 5), in_combat: True)
   let #(state, raw) =
     support.pressed_raw_in(
@@ -387,7 +385,7 @@ fn quick_mind_burst() -> Spell {
 
 pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test() -> Nil {
   use <- owned_test.run(60_000)
-  let plans = plans_with(spell: quick_mind_burst())
+  let plans = support.plans_with(spell: quick_mind_burst())
   let caster = caster_holding(points: 3)
   let take = fn(state, message, body, at) {
     let assert Ok(taken) =
@@ -457,7 +455,7 @@ pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test()
 
 pub fn a_held_press_chooses_by_the_points_held_when_it_starts_test() -> Nil {
   use <- owned_test.run(60_000)
-  let plans = plans_with(spell: mind_burst_spell())
+  let plans = support.plans_with(spell: mind_burst_spell())
   let pressing = caster_holding(points: 2)
   let at_the_go = caster_holding(points: 5)
   let take = fn(state, body, at) {
@@ -536,7 +534,7 @@ pub fn an_unread_emm_id_is_refused_with_its_costs_result_logged_once_and_pays_no
     spell_plan.in_plans(plans:, base: id.Spell4BaseId(19_019))
   let take = fn(state, at) {
     support.pressed_raw_in(
-      plans: plans_with(spell: unread),
+      plans: support.plans_with(spell: unread),
       state:,
       caster: caster_holding(points: 3),
       bag_index: mind_burst,

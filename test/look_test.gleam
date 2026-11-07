@@ -11,11 +11,11 @@
 //// - The server's choices, which the module's doc names: the newest disguise on a slot
 ////   shows, and a source is held once (the properties' rule, `unit_properties`).
 
+import cast_support
 import genesis_prime/game/look.{Disguise}
-import genesis_prime/game/unit_properties.{type Source, Source}
 import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
-import genesis_prime/table/id.{ItemDisplayId, ItemSlotId, Spell4EffectsId}
+import genesis_prime/table/id.{ItemDisplayId, ItemSlotId}
 import owned_test
 
 /// The EngineerMechSuit slot (`-- ItemSlot 64`) and WeaponPrimary (`-- ItemSlot 20`).
@@ -34,10 +34,6 @@ const chest = ItemVisual(slot: 1, display_id: 3842, item_color_set_id: 0, dye: 0
 
 const novice_weapon =
   ItemVisual(slot: 20, display_id: 3409, item_color_set_id: 0, dye: 0)
-
-fn source(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
-  Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
-}
 
 fn disguise(slot slot: Int, display display: Int) -> look.Disguise {
   Disguise(shown: [
@@ -59,7 +55,7 @@ pub fn a_disguise_on_a_slot_the_base_lacks_reports_that_slot_with_its_display_an
   let #(_, changed) =
     look.start(
       look: engineer(),
-      source: source(cast_id: 1, effect_id: 112_543),
+      source: cast_support.source_of(cast_id: 1, effect_id: 112_543),
       disguise: disguise(slot: suit_slot, display: exile_suit),
     )
   assert changed == [visual(slot: suit_slot, display: exile_suit)]
@@ -68,7 +64,7 @@ pub fn a_disguise_on_a_slot_the_base_lacks_reports_that_slot_with_its_display_an
 
 pub fn ending_a_disguise_over_a_slot_the_base_lacks_reports_display_0_test() -> Nil {
   use <- owned_test.run(5000)
-  let started = source(cast_id: 1, effect_id: 112_543)
+  let started = cast_support.source_of(cast_id: 1, effect_id: 112_543)
   let #(look, _) =
     look.start(
       look: engineer(),
@@ -88,7 +84,7 @@ pub fn a_disguise_on_a_base_slot_replaces_its_display_and_its_end_puts_the_whole
   // a colour to put back (opcode.0x933.empty_display: "that item's display and colour").
   let dyed =
     ItemVisual(slot: 20, display_id: 3409, item_color_set_id: 5, dye: 0x12345)
-  let held = source(cast_id: 2, effect_id: 90_001)
+  let held = cast_support.source_of(cast_id: 2, effect_id: 90_001)
   let #(look, started) =
     look.start(
       look: look.new(base: [chest, dyed]),
@@ -104,8 +100,8 @@ pub fn a_disguise_on_a_base_slot_replaces_its_display_and_its_end_puts_the_whole
 
 pub fn two_disguises_on_one_slot_show_the_newest_and_ending_the_newest_shows_the_older_test() -> Nil {
   use <- owned_test.run(5000)
-  let older = source(cast_id: 1, effect_id: 112_543)
-  let newer = source(cast_id: 2, effect_id: 178_142)
+  let older = cast_support.source_of(cast_id: 1, effect_id: 112_543)
+  let newer = cast_support.source_of(cast_id: 2, effect_id: 178_142)
   let #(look, _) =
     look.start(
       look: engineer(),
@@ -129,8 +125,8 @@ pub fn two_disguises_on_one_slot_show_the_newest_and_ending_the_newest_shows_the
 
 pub fn ending_the_older_of_two_disguises_first_reports_nothing_test() -> Nil {
   use <- owned_test.run(5000)
-  let older = source(cast_id: 1, effect_id: 112_543)
-  let newer = source(cast_id: 2, effect_id: 178_142)
+  let older = cast_support.source_of(cast_id: 1, effect_id: 112_543)
+  let newer = cast_support.source_of(cast_id: 2, effect_id: 178_142)
   let #(look, _) =
     look.start(
       look: engineer(),
@@ -152,7 +148,7 @@ pub fn ending_the_older_of_two_disguises_first_reports_nothing_test() -> Nil {
 
 pub fn the_same_source_started_twice_is_held_once_and_a_source_not_held_ends_with_nothing_test() -> Nil {
   use <- owned_test.run(5000)
-  let held = source(cast_id: 1, effect_id: 112_543)
+  let held = cast_support.source_of(cast_id: 1, effect_id: 112_543)
   let #(look, first) =
     look.start(
       look: engineer(),
@@ -172,7 +168,10 @@ pub fn the_same_source_started_twice_is_held_once_and_a_source_not_held_ends_wit
   let #(_, ended_twice) = look.end(look:, source: held)
   assert ended_twice == [] as "held once, so the second end reports nothing"
   let #(_, never_held) =
-    look.end(look: engineer(), source: source(cast_id: 9, effect_id: 9))
+    look.end(
+      look: engineer(),
+      source: cast_support.source_of(cast_id: 9, effect_id: 9),
+    )
   assert never_held == [] as "a source not held reports nothing"
 }
 
@@ -183,7 +182,7 @@ pub fn a_disguise_whose_display_the_slot_already_shows_reports_nothing_test() ->
   let #(look, changed) =
     look.start(
       look: engineer(),
-      source: source(cast_id: 1, effect_id: 90_002),
+      source: cast_support.source_of(cast_id: 1, effect_id: 90_002),
       disguise: disguise(slot: weapon_slot, display: 3409),
     )
   assert changed == [] as "the slot shows 3409 in colour 0 already"
@@ -195,13 +194,13 @@ pub fn the_0x262_list_is_the_base_with_each_disguised_slots_entry_replaced_or_ad
   let #(look, _) =
     look.start(
       look: engineer(),
-      source: source(cast_id: 1, effect_id: 112_543),
+      source: cast_support.source_of(cast_id: 1, effect_id: 112_543),
       disguise: disguise(slot: suit_slot, display: exile_suit),
     )
   let #(look, _) =
     look.start(
       look:,
-      source: source(cast_id: 1, effect_id: 90_003),
+      source: cast_support.source_of(cast_id: 1, effect_id: 90_003),
       disguise: disguise(slot: weapon_slot, display: 119),
     )
   assert look.visuals(look:)
@@ -221,7 +220,7 @@ pub fn a_row_with_two_displays_reports_both_in_slot_order_test() -> Nil {
   let #(_, changed) =
     look.start(
       look: engineer(),
-      source: source(cast_id: 1, effect_id: 90_004),
+      source: cast_support.source_of(cast_id: 1, effect_id: 90_004),
       disguise: Disguise(shown: [
         WornVisual(
           slot: ItemSlotId(suit_slot),

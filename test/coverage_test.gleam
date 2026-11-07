@@ -20,6 +20,7 @@
 ////   ids have a handler").
 
 import client_tables
+import coverage_support
 import genesis_prime/coverage
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
@@ -78,14 +79,6 @@ fn measured_over_planted_objectives(
   measured
 }
 
-/// The declaration of the engine with this name.
-fn engine_named(name: String) -> EngineDeclaration {
-  let assert Ok(found) =
-    list.find(engine.all(), fn(declaration) { declaration.name == name })
-    as { "no engine is named " <> name }
-  found
-}
-
 fn lines(measured: Measurement) -> List(#(Int, Int, Float)) {
   let assert Measured(types:, ..) = measured
     as "the engine's source is a table, so it is measured"
@@ -101,7 +94,7 @@ pub fn types_are_counted_by_rows_heaviest_first_with_ties_by_type_number_test() 
   use <- unitest.tags(["dev_tool", "coverage"])
   let measured =
     measured_over_planted_objectives(
-      engine_named("Quest objectives"),
+      coverage_support.engine_named("Quest objectives"),
       planted_types,
     )
   assert lines(measured)
@@ -143,7 +136,7 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
   let measured =
     measurement.measure(
       EngineDeclaration(
-        ..engine_named("Prerequisites"),
+        ..coverage_support.engine_named("Prerequisites"),
         starting_abilities: None,
       ),
       tables,
@@ -164,7 +157,7 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared =
     EngineDeclaration(
-      ..engine_named("Quest objectives"),
+      ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7, 2]),
     )
   let assert Measured(types:, breaches:, ..) =
@@ -214,7 +207,7 @@ pub fn a_declared_type_no_row_uses_is_a_breach_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared =
     EngineDeclaration(
-      ..engine_named("Quest objectives"),
+      ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7, 99, 0]),
     )
   let assert Measured(types:, breaches:, ..) =
@@ -412,7 +405,7 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
 fn quest_objectives_over(types: List(Int)) -> Measurement {
   measurement.from_values(
     engine: EngineDeclaration(
-      ..engine_named("Quest objectives"),
+      ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7, 2]),
     ),
     values: types,
@@ -450,7 +443,7 @@ pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test()
     checklist.totals([
       quest_objectives_over(planted_types),
       Unmeasured(
-        engine: engine_named("Client message routing"),
+        engine: coverage_support.engine_named("Client message routing"),
         needed: "the ids",
       ),
     ])
@@ -473,7 +466,7 @@ pub fn an_engine_whose_cases_are_not_recorded_says_what_is_needed_test() -> Nil 
   let text =
     checklist.render([
       Unmeasured(
-        engine: engine_named("Client message routing"),
+        engine: coverage_support.engine_named("Client message routing"),
         needed: "the 645 ids",
       ),
     ])
@@ -492,7 +485,7 @@ pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> 
     checklist.render([
       measurement.from_values(
         engine: EngineDeclaration(
-          ..engine_named("Client message routing"),
+          ..coverage_support.engine_named("Client message routing"),
           handled: Listed(ids: [1]),
         ),
         values: [0, 1, 2, 0x244],
@@ -516,7 +509,7 @@ pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> 
 pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_code_take_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  let routing = engine_named("Client message routing")
+  let routing = coverage_support.engine_named("Client message routing")
   let assert Listed(ids: handled_ids) = routing.handled
     as "the routing engine lists the ids its rules name"
   assert list.sort(handled_ids, int.compare)
@@ -548,7 +541,7 @@ pub fn a_handled_type_with_unread_rows_and_no_stated_gap_stops_the_measure_test(
   // what it leaves out.
   let declared =
     EngineDeclaration(
-      ..engine_named("Quest objectives"),
+      ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
       partial: [],
       unread_rows: fn(_) { dict.from_list([#(7, 1)]) },

@@ -17,12 +17,12 @@
 //// - The server's choice: a source kept again is held once, as a unit's property
 ////   modifiers are (`genesis_prime/game/unit_properties`).
 
+import cast_support
 import genesis_prime/game/cooldown.{
   type Book, type Operation, AddMs, Base, CooldownGroup, EverySpell, Modifier,
   Multiply, NoLonger, SetMs, Spell, SpellGroup, Unchanged,
 }
-import genesis_prime/game/unit_properties.{type Source, Source}
-import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/list
 import owned_test
 
@@ -56,10 +56,6 @@ fn left_after(operation operation: Operation, from_ms from_ms: Int) -> Int {
       now_ms: 0,
     )
   cooldown.left_ms(book:, spell4_id: Spell4Id(34_718), now_ms: 0)
-}
-
-fn source(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
-  Source(cast_id:, effect_id: Spell4EffectsId(effect_id))
 }
 
 // ---- the operations ----
@@ -295,9 +291,12 @@ pub fn a_new_cooldown_goes_through_the_kept_modifiers_in_the_order_they_were_add
   use <- owned_test.run(5000)
   let kept =
     cooldown.new()
-    |> cooldown.keep(source: source(cast_id: 1, effect_id: 1), modifier: half())
     |> cooldown.keep(
-      source: source(cast_id: 1, effect_id: 2),
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
+      modifier: half(),
+    )
+    |> cooldown.keep(
+      source: cast_support.source_of(cast_id: 1, effect_id: 2),
       modifier: minus_a_second(),
     )
   let book =
@@ -315,12 +314,15 @@ pub fn dropping_a_source_takes_its_modifier_out_of_the_next_cooldown_test() -> N
   use <- owned_test.run(5000)
   let kept =
     cooldown.new()
-    |> cooldown.keep(source: source(cast_id: 1, effect_id: 1), modifier: half())
     |> cooldown.keep(
-      source: source(cast_id: 1, effect_id: 2),
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
+      modifier: half(),
+    )
+    |> cooldown.keep(
+      source: cast_support.source_of(cast_id: 1, effect_id: 2),
       modifier: minus_a_second(),
     )
-    |> cooldown.drop(source: source(cast_id: 1, effect_id: 1))
+    |> cooldown.drop(source: cast_support.source_of(cast_id: 1, effect_id: 1))
   let book =
     cooldown.start(
       book: kept,
@@ -331,7 +333,10 @@ pub fn dropping_a_source_takes_its_modifier_out_of_the_next_cooldown_test() -> N
   assert cooldown.left_ms(book:, spell4_id: Spell4Id(34_718), now_ms: 0) == 9000
     as "only the -1000 is left"
   let unchanged =
-    cooldown.drop(book: kept, source: source(cast_id: 2, effect_id: 9))
+    cooldown.drop(
+      book: kept,
+      source: cast_support.source_of(cast_id: 2, effect_id: 9),
+    )
   assert unchanged == kept
     as "a source that was never kept leaves the list as it was"
 }
@@ -340,8 +345,14 @@ pub fn dropping_every_source_leaves_a_new_cooldown_full_test() -> Nil {
   use <- owned_test.run(5000)
   let kept =
     cooldown.new()
-    |> cooldown.keep(source: source(cast_id: 1, effect_id: 1), modifier: half())
-    |> cooldown.keep(source: source(cast_id: 2, effect_id: 2), modifier: half())
+    |> cooldown.keep(
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
+      modifier: half(),
+    )
+    |> cooldown.keep(
+      source: cast_support.source_of(cast_id: 2, effect_id: 2),
+      modifier: half(),
+    )
     |> cooldown.drop_all
   let book =
     cooldown.start(
@@ -358,8 +369,14 @@ pub fn a_source_kept_again_is_held_once_test() -> Nil {
   use <- owned_test.run(5000)
   let kept =
     cooldown.new()
-    |> cooldown.keep(source: source(cast_id: 1, effect_id: 1), modifier: half())
-    |> cooldown.keep(source: source(cast_id: 1, effect_id: 1), modifier: half())
+    |> cooldown.keep(
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
+      modifier: half(),
+    )
+    |> cooldown.keep(
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
+      modifier: half(),
+    )
   let book =
     cooldown.start(
       book: kept,
@@ -376,7 +393,7 @@ pub fn a_kept_modifier_that_makes_the_time_zero_starts_no_cooldown_test() -> Nil
   let kept =
     cooldown.keep(
       book: cooldown.new(),
-      source: source(cast_id: 1, effect_id: 1),
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
       modifier: Modifier(
         selector: Base(Spell4BaseId(20_684)),
         operation: NoLonger(0.0),
@@ -398,7 +415,7 @@ pub fn keeping_a_modifier_changes_no_running_cooldown_test() -> Nil {
   let book =
     cooldown.keep(
       book: charged_shot_running(for_ms: 10_000, at: 0),
-      source: source(cast_id: 1, effect_id: 1),
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
       modifier: half(),
     )
   assert cooldown.left_ms(book:, spell4_id: Spell4Id(34_718), now_ms: 0)

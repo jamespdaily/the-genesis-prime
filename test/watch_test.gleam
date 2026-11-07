@@ -11,16 +11,12 @@ import ask_support
 import genesis_prime/step.{Map, Sessions, WatchId}
 import genesis_prime/step/watch
 import genesis_prime/world_map/map_id.{MapId}
-import gleam/erlang/process.{type Monitor, type Pid}
+import gleam/erlang/process.{type Monitor}
 import gleam/list
 import gleam/string
 import log_capture
 import owned_test
 import socket_watch
-
-fn a_process() -> Pid {
-  process.spawn_unlinked(process.sleep_forever)
-}
 
 /// Waits for the next DOWN in the mailbox and gives its monitor.
 fn next_down() -> Monitor {
@@ -34,7 +30,7 @@ fn next_down() -> Monitor {
 
 pub fn a_watched_process_that_ends_gives_its_watchs_id_once_test() -> Nil {
   use <- owned_test.run(30_000)
-  let target = a_process()
+  let target = ask_support.idle_process()
   let watches =
     watch.open(
       watches: watch.new(),
@@ -104,7 +100,7 @@ pub fn watches_on_no_process_end_in_the_order_opened_test() -> Nil {
 
 pub fn a_closed_watch_gives_no_end_and_a_monitor_held_under_no_watch_gives_none_test() -> Nil {
   use <- owned_test.run(30_000)
-  let target = a_process()
+  let target = ask_support.idle_process()
   let watches =
     watch.open(
       watches: watch.new(),
@@ -128,7 +124,7 @@ pub fn a_closed_watch_gives_no_end_and_a_monitor_held_under_no_watch_gives_none_
 
 pub fn a_watch_id_already_open_ends_the_process_with_an_error_log_test() -> Nil {
   use <- owned_test.run(30_000)
-  let target = a_process()
+  let target = ask_support.idle_process()
   opening_twice_ends_the_process(
     first: Ok(watch.Watched(target)),
     again: Ok(watch.Watched(target)),
@@ -191,7 +187,7 @@ fn opening_twice_ends_the_process(
 
 pub fn a_watch_that_found_a_way_to_tell_gives_it_at_its_address_until_the_watch_is_closed_test() -> Nil {
   use <- owned_test.run(30_000)
-  let target = a_process()
+  let target = ask_support.idle_process()
   let run = Map(map: MapId(world_id: 3460, instance: 0), incarnation: 5)
   let watches =
     watch.open(
@@ -212,7 +208,7 @@ pub fn a_watch_that_found_a_way_to_tell_gives_it_at_its_address_until_the_watch_
 
 pub fn a_watch_that_found_a_way_to_tell_loses_it_when_the_process_ends_test() -> Nil {
   use <- owned_test.run(30_000)
-  let target = a_process()
+  let target = ask_support.idle_process()
   let watches =
     watch.open(
       watches: watch.new(),

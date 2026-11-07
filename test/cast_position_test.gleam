@@ -19,7 +19,7 @@
 ////   debug line.
 
 import cast_support as support
-import genesis_prime/game/area.{type Pose, Point, Pose}
+import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
@@ -148,11 +148,6 @@ fn plans_with(spell spell: Spell) -> Plans {
 
 // ---- the units ----
 
-/// A unit's pose.
-fn pose(x x: Float, z z: Float, yaw yaw: Float) -> Pose {
-  Pose(at: Point(x:, z:), yaw:)
-}
-
 /// The caster, unit 7, standing at x and z, facing yaw 0.
 fn caster_at(x x: Float, z z: Float) -> Caster {
   let caster = support.caster()
@@ -253,7 +248,7 @@ fn impale_strikes(
 
 /// A creature, unit 20, at the origin with the yaw its 0x262 gave it.
 fn creature_20() -> #(Int, Pose) {
-  #(20, pose(x: 0.0, z: 0.0, yaw: 0.0))
+  #(20, prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0))
 }
 
 // ---- item 8: Impale from behind ----
@@ -310,7 +305,7 @@ pub fn two_creatures_struck_at_once_each_get_the_child_their_own_position_decide
   // creature at yaw 0 faces), creature 21 at (0, 10) has it in front.
   assert impale_strikes(stealthed: False, caster_at: #(0.0, 5.0), creatures: [
       creature_20(),
-      #(21, pose(x: 0.0, z: 10.0, yaw: 0.0)),
+      #(21, prerequisite_support.pose(x: 0.0, z: 10.0, yaw: 0.0)),
     ])
     == [#(39_427, 20), #(39_426, 21)]
     as "one check for each unit: 85673 on 20 and 83818 on 21"
@@ -320,7 +315,10 @@ pub fn a_creatures_own_yaw_turns_the_arc_test() -> Nil {
   use <- owned_test.run(60_000)
   // The same creature place with the yaw of a half turn: the caster at (0, 5) is now in
   // front of it, and the one at (0, -5) behind.
-  let turned = #(20, pose(x: 0.0, z: 0.0, yaw: 3.1415927410125732))
+  let turned = #(
+    20,
+    prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 3.1415927410125732),
+  )
   assert impale_strikes(stealthed: False, caster_at: #(0.0, 5.0), creatures: [
       turned,
     ])
@@ -380,9 +378,11 @@ pub fn the_pose_given_at_the_close_decides_not_anything_held_at_the_press_test()
       ),
     )
   }
-  assert strike(pose(x: 0.0, z: 0.0, yaw: 0.0)) == [#(39_427, 20)]
+  assert strike(prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0))
+    == [#(39_427, 20)]
     as "the creature at (0, 0) facing yaw 0 has the caster at (0, 5) behind it"
-  assert strike(pose(x: 0.0, z: 10.0, yaw: 0.0)) == [#(39_426, 20)]
+  assert strike(prerequisite_support.pose(x: 0.0, z: 10.0, yaw: 0.0))
+    == [#(39_426, 20)]
     as "the creature the picture shows at (0, 10) at the close has it in front"
 }
 

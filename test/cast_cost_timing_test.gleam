@@ -23,7 +23,7 @@ import cast_support as support
 import genesis_prime/game/cast.{type Effect}
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{type Plans, type Spell, Spell}
+import genesis_prime/game/spell_plan.{type Spell, Spell}
 import genesis_prime/game/spend
 import genesis_prime/message/cast_result
 import genesis_prime/step.{type TimerId}
@@ -64,10 +64,6 @@ fn free_gamma_rays() -> Spell {
       starts_for_ms: None,
     ),
   )
-}
-
-fn plans_with(spell spell: Spell) -> Plans {
-  support.with_spells(plans: support.plans(), spells: [spell])
 }
 
 /// The go timer a press started, with its wait.
@@ -149,7 +145,7 @@ pub fn a_cast_pays_once_at_its_first_go_and_not_at_a_later_one_test() -> Nil {
   let discharge = charging_discharge()
   let #(state, pressed) =
     support.pressed_raw_in(
-      plans: plans_with(spell: discharge),
+      plans: support.plans_with(spell: discharge),
       state: cast.new(),
       caster:,
       bag_index: support.discharge,
@@ -172,7 +168,7 @@ pub fn a_cast_pays_once_at_its_first_go_and_not_at_a_later_one_test() -> Nil {
 pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_pays_nothing_and_frees_its_actuators_test() -> Nil {
   use <- owned_test.run(5000)
   let caster = medic_holding(points: 2)
-  let plans = plans_with(spell: free_gamma_rays())
+  let plans = support.plans_with(spell: free_gamma_rays())
   let #(state, pressed) =
     support.pressed_raw_in(
       plans:,
@@ -215,7 +211,7 @@ pub fn a_caster_that_dies_before_the_go_pays_nothing_for_a_channel_test() -> Nil
   let discharge = charging_discharge()
   let #(state, pressed) =
     support.pressed_raw_in(
-      plans: plans_with(spell: discharge),
+      plans: support.plans_with(spell: discharge),
       state: cast.new(),
       caster:,
       bag_index: support.discharge,
@@ -302,7 +298,7 @@ pub fn a_cast_cancelled_while_the_round_of_its_go_is_open_still_pays_for_the_hit
 
 pub fn a_second_press_is_refused_at_its_accept_for_points_a_live_cast_has_reserved_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_with(spell: free_gamma_rays())
+  let plans = support.plans_with(spell: free_gamma_rays())
   let caster = medic_holding(points: 3)
   let #(state, first) =
     support.pressed_raw_in(
@@ -330,7 +326,7 @@ pub fn a_second_press_is_refused_at_its_accept_for_points_a_live_cast_has_reserv
 
 pub fn two_presses_that_the_slot_meets_together_are_both_accepted_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_with(spell: free_gamma_rays())
+  let plans = support.plans_with(spell: free_gamma_rays())
   let caster = medic_holding(points: 4)
   let #(state, _) =
     support.pressed_raw_in(
@@ -412,7 +408,7 @@ fn spender(amount amount: Int) -> Spell {
 
 pub fn a_mind_burst_fixes_n_at_its_accept_and_its_go_pays_the_points_n_was_fixed_on_test() -> Nil {
   use <- owned_test.run(60_000)
-  let plans = plans_with(spell: slow_mind_burst())
+  let plans = support.plans_with(spell: slow_mind_burst())
   let pressing = esper_holding(points: 3)
   let at_the_go = esper_holding(points: 5)
   let #(state, pressed) =
@@ -493,7 +489,7 @@ pub fn a_spend_of_every_point_takes_what_is_held_less_what_a_live_cast_has_reser
 
 pub fn a_spend_of_every_point_leaves_nothing_for_a_second_press_test() -> Nil {
   use <- owned_test.run(60_000)
-  let plans = plans_with(spell: free_burst())
+  let plans = support.plans_with(spell: free_burst())
   let caster = esper_holding(points: 4)
   let take = fn(state, at) {
     support.pressed_raw_in(
@@ -526,7 +522,7 @@ pub fn the_esper_empty_runs_for_points_a_live_cast_has_reserved_and_the_go_pays_
   let caster = support.caster_holding(resources: in_combat)
   let #(state, pressed) =
     support.pressed_raw_in(
-      plans: plans_with(spell: spender(amount: 3)),
+      plans: support.plans_with(spell: spender(amount: 3)),
       state: cast.new(),
       caster:,
       bag_index: mind_burst,
@@ -571,7 +567,7 @@ pub fn the_warriors_drain_runs_down_points_a_live_cast_has_reserved_and_the_go_p
   let caster = support.caster_holding(resources:)
   let #(state, pressed) =
     support.pressed_raw_in(
-      plans: plans_with(spell: spender(amount: 200)),
+      plans: support.plans_with(spell: spender(amount: 200)),
       state: cast.new(),
       caster:,
       bag_index: mind_burst,
@@ -649,7 +645,7 @@ pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
   let caster = medic_holding(points: 4)
   let #(state, pressed) =
     support.pressed_raw_in(
-      plans: plans_with(spell: giving),
+      plans: support.plans_with(spell: giving),
       state: cast.new(),
       caster:,
       bag_index: gamma_rays,

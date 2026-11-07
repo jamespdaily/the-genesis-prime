@@ -76,3 +76,8 @@ pub fn step(
     )
   }
 }
+
+/// The bytes of a `read` record: the clock at the read, as the rule writes it.
+pub fn read_record(now: step.Now) -> BitArray {
+  <<read, now.monotonic_ms:64, now.filetime:64>>
+}

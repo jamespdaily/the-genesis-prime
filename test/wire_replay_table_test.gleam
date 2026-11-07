@@ -9,7 +9,6 @@
 //// - Erlang orders signals per sender, so a test that sends the table two
 ////   commands from one process knows the table takes them in that order.
 
-import genesis_prime/step.{type Now, Now}
 import genesis_prime/wire_recording.{Accepted, Client, PeerClosed}
 import genesis_prime/wire_replay
 import genesis_prime/wire_replay/table as replay_table
@@ -24,14 +23,6 @@ import wire_replay_support as support
 /// answers at once, so a start that was kept would have come long before.
 const quiet_ms = 500
 
-fn file() -> String {
-  "replay_rule-0.jsonl"
-}
-
-fn at(n: Int) -> Now {
-  Now(monotonic_ms: n, filetime: n * 10)
-}
-
 /// A session of one connection that is accepted and closes.
 fn write_session(folder: String) -> Nil {
   support.write(
@@ -40,8 +31,8 @@ fn write_session(folder: String) -> Nil {
       support.Planted(rule: "replay_rule", seed: support.seed(1), ordinal: 1),
     ],
     steps: [
-      support.In(0, at(1), Accepted),
-      support.In(0, at(2), PeerClosed),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(0, support.now_at(2), PeerClosed),
       support.Closed(0, Client),
     ],
   )
@@ -58,7 +49,7 @@ pub fn a_timer_start_a_waiting_client_took_is_not_kept_for_the_next_wait_test() 
   // when it comes.
   assert replay_table.await_timer(
       table:,
-      connection: file(),
+      connection: support.rule_recording_file(),
       timer: 1,
       within_ms: 0,
     )
@@ -66,7 +57,7 @@ pub fn a_timer_start_a_waiting_client_took_is_not_kept_for_the_next_wait_test() 
     as "nothing has started timer 1"
   replay_table.timer_started(
     table:,
-    connection: file(),
+    connection: support.rule_recording_file(),
     timer: 1,
     started: replay_table.Started(
       subject: process.new_subject(),
@@ -75,7 +66,7 @@ pub fn a_timer_start_a_waiting_client_took_is_not_kept_for_the_next_wait_test() 
   )
   assert replay_table.await_timer(
       table:,
-      connection: file(),
+      connection: support.rule_recording_file(),
       timer: 1,
       within_ms: quiet_ms,
     )

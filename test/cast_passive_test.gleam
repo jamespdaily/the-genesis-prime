@@ -48,10 +48,6 @@ import gleam/string
 import owned_test
 import unitest
 
-fn real_plans() -> Plans {
-  spell_plan.plans(client_tables.shared())
-}
-
 /// The passive of the Spell4Base started at the time, its go answered with no unit
 /// struck.
 fn started_in(
@@ -72,7 +68,12 @@ fn started_in(
 }
 
 fn started(base base: Int) -> #(State, List(Effect)) {
-  started_in(plans: real_plans(), caster: support.caster(), base:, at: 1000)
+  started_in(
+    plans: support.real_plans(),
+    caster: support.caster(),
+    base:,
+    at: 1000,
+  )
 }
 
 /// The Spell4Effects ids every go of the effects lists, in id order.
@@ -248,7 +249,7 @@ fn warrior_pressed_as_an_ability() -> #(State, List(Effect)) {
     cast.Caster(..support.caster(), abilities: [Spell4BaseId(29_035)])
   let #(state, effects) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state: cast.new(),
       caster:,
       bag_index: 0,
@@ -314,7 +315,7 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
     cast.passive_started(
       cast: dropped,
       caster: support.caster(),
-      plans: real_plans(),
+      plans: support.real_plans(),
       base: Spell4BaseId(29_035),
       now: support.at(ms: 9000),
     )
@@ -327,7 +328,7 @@ pub fn a_player_saved_dead_starts_the_passive_at_entry_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let caster = cast.Caster(..support.caster(), dead: True)
   let #(_, effects) =
-    started_in(plans: real_plans(), caster:, base: 29_035, at: 1000)
+    started_in(plans: support.real_plans(), caster:, base: 29_035, at: 1000)
   assert lines(effects:)
     == ["started k1 44926 root 44926 parent 0", "went k1 p0"]
     as "Spell4.44926: caster condition row 4 (mask 0) holds alive or dead, so a dead player holds it too"
@@ -396,7 +397,7 @@ pub fn a_passive_taken_off_the_caster_is_forgotten_so_a_cast_that_gets_its_id_la
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let filler = support.child(spell4_id: 250_010, base: 250_010)
-  let plans = support.with_spells(plans: real_plans(), spells: [filler])
+  let plans = support.with_spells(plans: support.real_plans(), spells: [filler])
   let caster =
     cast.Caster(..support.caster(), abilities: [
       Spell4BaseId(250_010),

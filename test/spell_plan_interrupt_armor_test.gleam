@@ -23,6 +23,7 @@
 ////   starts on each struck unit has that unit as its primary target.
 //// The rows are in memory except in the last test, which reads the client's tables.
 
+import cast_support
 import client_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
@@ -31,8 +32,7 @@ import genesis_prime/game/spell_plan.{
   AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster, InterruptArmor,
 }
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Modifier, Change}
-import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/dict
 import gleam/list
@@ -85,18 +85,6 @@ fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
   error
 }
 
-/// The change an Interrupt Armor row of `points` makes to property 44: x * 1.0 + points,
-/// the type 11 formula, with no row mode.
-fn raising_property_44(points points: Float) -> Modifier {
-  Change(
-    property: UnitProperty2Id(44),
-    mode: 0,
-    multiplier: 1.0,
-    flat: points,
-    per_level: 0.0,
-  )
-}
-
 // ---- the rows of the plan ----
 
 pub fn an_interrupt_armor_row_aimed_at_the_caster_is_read_with_its_points_time_and_take_back_test() -> Nil {
@@ -112,7 +100,9 @@ pub fn an_interrupt_armor_row_aimed_at_the_caster_is_read_with_its_points_time_a
       spell_plan.PropertyModifier(
         effect_id: Spell4EffectsId(97_340),
         phase_flags: -1,
-        change: spell_plan.PropertyChange(raising_property_44(points: 2.0)),
+        change: spell_plan.PropertyChange(cast_support.raising_property_44(
+          points: 2.0,
+        )),
         row: LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
         condition: Always,
         tag: spend.EqualTo(value: 0),
@@ -314,27 +304,14 @@ pub fn effect_kind_reads_interrupt_armor_aimed_at_the_caster_test() -> Nil {
 
 // ---- the client's tables ----
 
-/// The Spell4 `spell4_id` of the tree of the innate whose Spell4Base is `base`.
-fn planned(base base: Int, spell4_id spell4_id: Int) -> spell_plan.Spell {
-  let plans = spell_plan.plans(client_tables.shared())
-  let assert Ok(innate) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
-    as "the plans hold the innate"
-  let assert Ok(spell) =
-    list.find(
-      spell_plan.tree(spell: innate, started: fn(_) { True }),
-      fn(spell) { spell.spell4_id.value == spell4_id },
-    )
-    as "the innate's tree holds the spell"
-  spell
-}
-
 pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let assert [esper] =
-    list.filter(planned(base: 38_012, spell4_id: 76_766).modifiers, fn(row) {
-      row.effect_id == Spell4EffectsId(199_192)
-    })
+    list.filter(
+      cast_support.planned_spell(base: 38_012, spell4_id: 76_766).modifiers,
+      fn(row) { row.effect_id == Spell4EffectsId(199_192) },
+    )
     as "Spell4Effects spellId=76766: the child holds row 199192"
   assert esper.armor
     == Some(InterruptArmor(
@@ -347,11 +324,12 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
     == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
     as "5000 ms"
   assert esper.change
-    == spell_plan.PropertyChange(raising_property_44(points: 1.0))
+    == spell_plan.PropertyChange(cast_support.raising_property_44(points: 1.0))
   let assert [warrior] =
-    list.filter(planned(base: 30_828, spell4_id: 79_875).modifiers, fn(row) {
-      row.effect_id == Spell4EffectsId(210_820)
-    })
+    list.filter(
+      cast_support.planned_spell(base: 30_828, spell4_id: 79_875).modifiers,
+      fn(row) { row.effect_id == Spell4EffectsId(210_820) },
+    )
     as "Spell4Effects spellId=79875: the child holds row 210820"
   assert warrior.armor
     == Some(InterruptArmor(
@@ -364,9 +342,10 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
     == LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False)
     as "8000 ms"
   let assert [gated] =
-    list.filter(planned(base: 30_828, spell4_id: 46_867).proxies, fn(proxy) {
-      proxy.effect_id == Spell4EffectsId(210_822)
-    })
+    list.filter(
+      cast_support.planned_spell(base: 30_828, spell4_id: 46_867).proxies,
+      fn(proxy) { proxy.effect_id == Spell4EffectsId(210_822) },
+    )
     as "Spell4Effects spellId=46867: Proxy 210822 starts 79875"
   let assert GatedOnCaster(gates: [_]) = gated.condition
     as "Proxy 210822 has prerequisiteIdCasterApply 37438"

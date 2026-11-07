@@ -467,7 +467,8 @@ pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_ch
     support.run_timers_striking(state:, effects:, from_ms: 1000, struck: foe)
   let assert [#(2250, step)] = fired
     as "the go, its child and the finish come from the one timer, 1250 ms after the accept"
-  assert ids_of(effects: step) == [0x07F4, 0x07FF, 0x07F4, 0x07FE, 0x07FE]
+  assert support.written_ids(effects: step)
+    == [0x07F4, 0x07FF, 0x07F4, 0x07FE, 0x07FE]
     as "the go of 32893, the start, go and finish of the child 30900 (Spell4Effects.effectType.26: a Proxy starts its spell as its own cast), then the finish of 32893"
   let assert [go_frame, child_frame, ..] = support.writes(effects: step)
   let assert Ok(go) = spell_go.decode(go_frame.body)
@@ -497,7 +498,7 @@ pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_t
       struck: foe,
       at: 1000,
     )
-  assert ids_of(effects:) == [0x07FD, 0x07F4, 0x07FE]
+  assert support.written_ids(effects:) == [0x07FD, 0x07F4, 0x07FE]
     as "Spell4.32812: instant, so the go and finish come at the accept"
   let assert [#(100, _)] =
     list.map(support.started_timers(effects:), fn(t) { #(t.1, t.0) })
@@ -510,7 +511,7 @@ pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_t
   assert child.spell4_id == 42_297
     && child.root_spell4_id == 32_812
     && child.parent_spell4_id == 32_812
-  assert ids_of(effects: step) == [0x07FF, 0x07F4, 0x07FE]
+  assert support.written_ids(effects: step) == [0x07FF, 0x07F4, 0x07FE]
     as "the child's start (to the caster too), go and finish"
 }
 
@@ -562,7 +563,7 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
       as "opcode.0x7ff.root_parent: root 38791, parent 38780"
   })
   let assert Ok(last) = list.last(fired)
-  assert list.last(ids_of(effects: last.1)) == Ok(0x07FE)
+  assert list.last(support.written_ids(effects: last.1)) == Ok(0x07FE)
     as "38780's finish comes after its last phase"
   let every_start =
     list.append(
@@ -705,7 +706,7 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
   let assert Ok(#(after, effects)) = cancel(state, SpellCancelled, 1)
     as "opcode.0x801: the client sends 6 and the bit 1 when the player's cast ends"
   assert support.cancelled_timers(effects:) == [go_timer]
-  assert ids_of(effects:) == [0x07FE]
+  assert support.written_ids(effects:) == [0x07FE]
   assert list.map(support.tells(effects:), fn(pair) { pair.0 })
     == [ConnectionId(2), ConnectionId(3)]
   assert list.all(support.tells(effects:), fn(pair) {
@@ -739,7 +740,7 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
 
 /// Whether the press was taken: its first write is the 0x7fd.
 fn accepted(effects effects: List(cast.Effect)) -> Bool {
-  list.first(ids_of(effects:)) == Ok(0x07FD)
+  list.first(support.written_ids(effects:)) == Ok(0x07FD)
 }
 
 fn is_one_debug_line(effects: List(cast.Effect)) -> Bool {
@@ -761,10 +762,6 @@ fn phase_of(
     True -> Ok(#(at_ms, go.phase))
     False -> Error(Nil)
   }
-}
-
-fn ids_of(effects effects: List(cast.Effect)) -> List(Int) {
-  support.ids(frames: support.writes(effects:))
 }
 
 pub fn the_player_leaving_the_world_cancels_every_timer_and_writes_nothing_test() -> Nil {
@@ -812,7 +809,8 @@ pub fn a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_cas
     )
   assert support.cancelled_timers(effects:) == [go_timer]
     as "the waiting go is cancelled: no go and no strike"
-  assert ids_of(effects:) == [0x07FE] as "0x7fe to the caster's own client"
+  assert support.written_ids(effects:) == [0x07FE]
+    as "0x7fe to the caster's own client"
   assert support.tells(effects:)
     == [
       #(ConnectionId(2), CastFinished(cast_id: id)),

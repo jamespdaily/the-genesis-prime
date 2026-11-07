@@ -39,7 +39,6 @@ import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/float32
-import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/store.{type Character}
@@ -88,32 +87,18 @@ fn entering(
 /// The 0x111 of the entry at location 0, as the bag index and the item id, in
 /// the order sent.
 fn equipped(frames frames: List(Frame)) -> List(#(Int, Int)) {
-  items_added(frames:)
+  world_entry_support.items_added(frames:)
   |> list.filter(fn(added) { added.held_item.item.location == 0 })
   |> list.map(fn(added) {
     #(added.held_item.item.bag_index, added.held_item.item.item_id)
   })
 }
 
-/// The 0x111 frames of an entry, decoded, in order.
-fn items_added(frames frames: List(Frame)) -> List(item_added.ItemAdded) {
-  list.filter(frames, fn(frame) { frame.message_id == item_added.message_id })
-  |> list.map(fn(frame) {
-    let assert Ok(added) = item_added.decode(frame.body) as "0x111 decodes"
-    added
-  })
-}
-
-fn only(frames frames: List(Frame), message_id message_id: Int) -> Frame {
-  let assert [frame] =
-    list.filter(frames, fn(frame) { frame.message_id == message_id })
-    as "the entry sends the message once"
-  frame
-}
-
 fn player_of(frames frames: List(Frame)) -> UnitCreatePlayer {
   let assert Ok(player) =
-    unit_create_player.decode({ only(frames:, message_id: 0x0262) }.body)
+    unit_create_player.decode(
+      { world_entry_support.only(frames:, message_id: 0x0262) }.body,
+    )
     as "0x262 decodes"
   player
 }
@@ -126,7 +111,7 @@ pub fn the_novice_weapon_is_sent_as_an_item_at_location_0_index_16_before_the_ab
       faction: 166,
       level: 1,
     ))
-  let items = items_added(frames:)
+  let items = world_entry_support.items_added(frames:)
   assert list.map(items, fn(added) { added.held_item.item.location })
     == [0, 0, 0, 0, 0, 0, 0, 4, 4, 4]
     as "the equipped items come before the abilities: seven at location 0, then three at location 4"
@@ -157,7 +142,7 @@ pub fn an_item_for_each_ability_at_location_4_holds_the_spell4_base_id_of_each_l
         level: 1,
       ))
     let abilities =
-      items_added(frames:)
+      world_entry_support.items_added(frames:)
       |> list.filter(fn(added) { added.held_item.item.location == 4 })
     assert list.map(abilities, fn(added) { added.held_item.item.item_id })
       == class.abilities
@@ -185,7 +170,7 @@ pub fn the_weapon_is_the_classes_and_factions_item_04_for_every_class_and_factio
           level: 1,
         ))
       let assert [weapon] =
-        items_added(frames:)
+        world_entry_support.items_added(frames:)
         |> list.filter(fn(added) {
           added.held_item.item.location == 0
           && added.held_item.item.bag_index == 16
@@ -211,7 +196,9 @@ pub fn one_0x1a0_sets_tier_1_of_each_ability_in_action_sets_0_to_3_test() -> Nil
         level: 1,
       ))
     let assert Ok(tiers) =
-      ability_tiers.decode({ only(frames:, message_id: 0x01A0) }.body)
+      ability_tiers.decode(
+        { world_entry_support.only(frames:, message_id: 0x01A0) }.body,
+      )
       as "0x1a0 decodes"
     let expected =
       list.flat_map(class.abilities, fn(base) {
@@ -234,7 +221,9 @@ pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_
         level: 1,
       ))
     let assert Ok(set) =
-      action_set.decode({ only(frames:, message_id: 0x019D) }.body)
+      action_set.decode(
+        { world_entry_support.only(frames:, message_id: 0x019D) }.body,
+      )
       as "0x19d decodes"
     assert set.action_set_index == 0 && set.result == 1
       as "opcode.0x19d: set 0, which is active until a message changes it, and result 1, ok"
@@ -487,7 +476,7 @@ pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
         level: 1,
       ))
     let guids =
-      list.map(items_added(frames:), fn(added) {
+      list.map(world_entry_support.items_added(frames:), fn(added) {
         added.held_item.item.item_guid
       })
     assert list.length(guids) == 10

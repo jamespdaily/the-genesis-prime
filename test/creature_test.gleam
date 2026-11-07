@@ -59,12 +59,6 @@ fn creature_for(viewers viewers: List(ConnectionId)) -> State {
   creature_at(spawn: spawn_support.battle_beast(number: 1, x: 0.0), viewers:)
 }
 
-/// The stay of the player of connection `number`, as the map names it: its
-/// `number`th, so each player's is its own.
-fn stay_of(number: Int) -> Stay {
-  map_support.stay(count: number)
-}
-
 /// A creature standing at this spawn as unit 7 of the first run, started for these
 /// players.
 fn creature_at(
@@ -90,7 +84,7 @@ fn creature_from(
       clock_origin_ms:,
       viewers: list.map(viewers, fn(viewer) {
         let ConnectionId(number) = viewer
-        #(viewer, stay_of(number))
+        #(viewer, map_support.stay(count: number))
       }),
     ),
     spawn:,
@@ -150,13 +144,15 @@ pub fn a_creature_watches_its_run_and_sends_its_0x262_to_each_player_who_sees_it
     feed(
       state:,
       at_ms: 6500,
-      event: OwnEvent(Told(Watched(by: ConnectionId(5), stay: stay_of(5)))),
+      event: OwnEvent(
+        Told(Watched(by: ConnectionId(5), stay: map_support.stay(count: 5))),
+      ),
     )
   let assert [#(5, stay, PeerNews(unit_id:, news: CreatureAppeared(unit:, ..)))] =
     sent_for(taken)
     as "one 0x262, to the connection of the player who sees the creature"
   assert unit_id == 7 as "the news names the creature's unit"
-  assert stay == stay_of(5)
+  assert stay == map_support.stay(count: 5)
     as "for the viewer's stay the map's Watched named, so a news of an earlier stay is dropped"
   assert unit.unit_id == 7 && unit.creature_id == 73_464
   assert unit.tail.server_time_estimate_start == 1500
@@ -171,7 +167,9 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
     feed(
       state:,
       at_ms: 6000,
-      event: OwnEvent(Told(Watched(by: ConnectionId(5), stay: stay_of(5)))),
+      event: OwnEvent(
+        Told(Watched(by: ConnectionId(5), stay: map_support.stay(count: 5))),
+      ),
     )
   let #(state, taken) =
     feed(
@@ -301,7 +299,7 @@ fn strike_of(damage damage: Int, cast_id cast_id: Int) -> creature.Message {
           z: 0.0,
         ),
         seq: 1,
-        stay: stay_of(2),
+        stay: map_support.stay(count: 2),
         rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       ),
       controls: [],
@@ -385,7 +383,7 @@ pub fn a_creature_struck_while_it_lies_dead_refuses_without_news_test() -> Nil {
       #(
         2,
         creature.Struck(
-          stay: stay_of(2),
+          stay: map_support.stay(count: 2),
           answered: Answered(
             key: Key(cast_id: 2, phase: 0, unit_id: 7),
             outcome: Refused(why: strike_tell.Dead),
@@ -408,7 +406,9 @@ pub fn a_viewer_that_arrives_mid_fight_is_sent_the_creature_at_its_current_healt
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(Watched(by: ConnectionId(9), stay: stay_of(9)))),
+      event: OwnEvent(
+        Told(Watched(by: ConnectionId(9), stay: map_support.stay(count: 9))),
+      ),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)
@@ -428,7 +428,9 @@ pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dea
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(Watched(by: ConnectionId(9), stay: stay_of(9)))),
+      event: OwnEvent(
+        Told(Watched(by: ConnectionId(9), stay: map_support.stay(count: 9))),
+      ),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, life: 3, ..), ..))] =
     sent(taken)
@@ -584,7 +586,9 @@ pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_curre
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(Watched(by: ConnectionId(9), stay: stay_of(9)))),
+      event: OwnEvent(
+        Told(Watched(by: ConnectionId(9), stay: map_support.stay(count: 9))),
+      ),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)

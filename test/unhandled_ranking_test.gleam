@@ -17,7 +17,6 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/recording_dump
-import genesis_prime/step.{type Now, Now}
 import genesis_prime/unhandled_ranking
 import genesis_prime/wire_recording.{Accepted, Client, Read}
 import gleam/bit_array
@@ -27,10 +26,6 @@ import owned_test
 import recording_support
 import unitest
 import wire_replay_support as support
-
-fn at(n: Int) -> Now {
-  Now(monotonic_ms: n, filetime: n * 10)
-}
 
 /// A message the client sends in its wrapper, under the base key.
 fn sent(id id: Int, body body: BitArray) -> BitArray {
@@ -79,21 +74,21 @@ fn planted_ranking(folder: String) -> #(List(String), List(String)) {
     folder:,
     connections: [planted(1), planted(2), planted(3)],
     steps: [
-      support.In(0, at(1), Accepted),
-      support.In(1, at(2), Accepted),
-      support.In(2, at(3), Accepted),
-      support.In(0, at(4), Read(sent(id: 0x023C, body: <<>>))),
-      support.In(0, at(5), Read(carried(id: 0x023C))),
-      support.In(0, at(6), Read(sent(id: 0x082D, body: <<>>))),
-      support.In(0, at(7), Read(sent(id: 0x0FFF, body: <<>>))),
-      support.In(0, at(8), Read(ping)),
-      support.In(0, at(9), Read(<<ping:bits, ping:bits>>)),
-      support.In(1, at(10), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(1, support.now_at(2), Accepted),
+      support.In(2, support.now_at(3), Accepted),
+      support.In(0, support.now_at(4), Read(sent(id: 0x023C, body: <<>>))),
+      support.In(0, support.now_at(5), Read(carried(id: 0x023C))),
+      support.In(0, support.now_at(6), Read(sent(id: 0x082D, body: <<>>))),
+      support.In(0, support.now_at(7), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(0, support.now_at(8), Read(ping)),
+      support.In(0, support.now_at(9), Read(<<ping:bits, ping:bits>>)),
+      support.In(1, support.now_at(10), Read(sent(id: 0x0FFF, body: <<>>))),
       support.Out(1, server_message),
-      support.In(1, at(11), Read(sent(id: 0x0FFF, body: <<>>))),
-      support.In(1, at(12), Read(sent(id: 0x0FFE, body: <<>>))),
-      support.In(2, at(13), Read(whole)),
-      support.In(2, at(14), Read(cut)),
+      support.In(1, support.now_at(11), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(1, support.now_at(12), Read(sent(id: 0x0FFE, body: <<>>))),
+      support.In(2, support.now_at(13), Read(whole)),
+      support.In(2, support.now_at(14), Read(cut)),
       support.Closed(0, Client),
       support.Closed(1, Client),
       support.Closed(2, Client),
@@ -156,8 +151,8 @@ pub fn a_folder_with_no_unhandled_message_ranks_nothing_test() -> Nil {
       ),
     ],
     steps: [
-      support.In(0, at(1), Accepted),
-      support.In(0, at(2), Read(ping)),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(0, support.now_at(2), Read(ping)),
       support.Closed(0, Client),
     ],
   )
@@ -183,9 +178,9 @@ pub fn a_recording_with_no_closing_line_is_counted_and_named_as_unfinished_test(
       ),
     ],
     steps: [
-      support.In(0, at(1), Accepted),
-      support.In(0, at(2), Read(sent(id: 0x0FFF, body: <<>>))),
-      support.In(0, at(3), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(0, support.now_at(2), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(0, support.now_at(3), Read(sent(id: 0x0FFF, body: <<>>))),
     ],
   )
   let #(connections, unread) = recording_dump.load(folder)

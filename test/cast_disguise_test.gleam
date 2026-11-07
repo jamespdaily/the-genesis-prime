@@ -17,11 +17,11 @@
 ////   holding and the caster's death end it and cancel its timers; leaving ends none.
 
 import cast_support as support
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast.{type Effect}
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/look.{type Disguise, Disguise}
 import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
+import genesis_prime/game/spell_plan.{type Spell, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/game/worn_visual.{WornVisual}
@@ -102,29 +102,6 @@ fn holder(modifiers modifiers: List(spell_plan.PropertyModifier)) -> Spell {
   spell_plan.Spell(..support.child(spell4_id: 47_860, base: 3), modifiers:)
 }
 
-fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: support.plans(), spells:)
-}
-
-fn press(
-  plans plans: Plans,
-  state state: State,
-  caster caster: cast.Caster,
-  bag bag: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster:,
-      bag_index: bag,
-      target: 0,
-      at: ms,
-    )
-  support.answered_as(caster:, state:, effects:, at: ms, struck: [], rolls: [])
-}
-
 fn dominion() -> cast.Caster {
   cast.Caster(
     ..support.caster(),
@@ -154,9 +131,10 @@ fn listed(effects effects: List(Effect)) -> List(Int) {
 
 pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_of([holder(modifiers: [exile_row(), dominion_row()])])
+  let plans =
+    support.plans_of([holder(modifiers: [exile_row(), dominion_row()])])
   let #(_, exile) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: support.caster(),
@@ -175,7 +153,7 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
     ]
     as "its look change starts in the go's own step, with ItemDisplay 4807"
   let #(_, other) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: dominion(),
@@ -197,9 +175,9 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
 
 pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_after_its_delay_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = plans_of([holder(modifiers: [exile_row()])])
+  let plans = support.plans_of([holder(modifiers: [exile_row()])])
   let #(state, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: support.caster(),
@@ -213,7 +191,7 @@ pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_
     as "the suit ends 10,250 ms after the go (Spell4Effects 112543 durationTime)"
   // The same row with a delay: it starts after it and ends a duration later.
   let delayed =
-    plans_of([
+    support.plans_of([
       holder(modifiers: [
         suit_row(
           id: 112_543,
@@ -226,7 +204,7 @@ pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_
       ]),
     ])
   let #(state, effects) =
-    press(
+    support.press_as(
       plans: delayed,
       state: cast.new(),
       caster: support.caster(),
@@ -247,7 +225,7 @@ pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_
 pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_and_cancel_its_timers_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       holder(modifiers: [exile_row()]),
       spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
         spell_plan.ForceRemove(
@@ -262,7 +240,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
       ]),
     ])
   let #(state, first) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: support.caster(),
@@ -275,7 +253,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
     list.map(support.started_timers(effects: first), fn(started) { started.0 })
   // A type 80 removal of the cast.
   let #(_, removal) =
-    press(
+    support.press_as(
       plans:,
       state:,
       caster: support.caster(),
@@ -304,7 +282,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
   // A persistence that stops holding: prerequisite 903, the caster in combat.
   let in_combat = prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
   let guarded =
-    plans_of([
+    support.plans_of([
       spell_plan.Spell(
         ..holder(modifiers: [exile_row()]),
         caster_persistence: Some(in_combat),
@@ -312,7 +290,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
     ])
   let fighting = cast.Caster(..support.caster(), in_combat: True)
   let #(lingering, pressed) =
-    press(
+    support.press_as(
       plans: guarded,
       state: cast.new(),
       caster: fighting,
@@ -344,7 +322,7 @@ pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_no
   // for the node's life: with a delay of 500 the node ends at go + 10,250 and the row's
   // own end is go + 10,750, so the node's end ends the disguise first.
   let plans =
-    plans_of([
+    support.plans_of([
       spell_plan.Spell(
         ..holder(modifiers: [
           suit_row(
@@ -360,7 +338,7 @@ pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_no
       ),
     ])
   let #(state, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: support.caster(),
@@ -389,9 +367,9 @@ pub fn a_disguise_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
       delay: 0,
       condition: spell_plan.GatedOnTarget(prerequisite_id: id.PrerequisiteId(5)),
     )
-  let plans = plans_of([holder(modifiers: [gated])])
+  let plans = support.plans_of([holder(modifiers: [gated])])
   let #(_, effects) =
-    press(
+    support.press_as(
       plans:,
       state: cast.new(),
       caster: support.caster(),

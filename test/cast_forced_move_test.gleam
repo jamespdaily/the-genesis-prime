@@ -17,15 +17,12 @@
 
 import cast_support as support
 import genesis_prime/game/cast.{type State}
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
+import genesis_prime/game/spell_plan.{type Spell, Always}
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/message/spell_go
-import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import gleam/int
 import gleam/list
-import gleam/option.{None}
 import owned_test
 import prerequisite_support
 
@@ -37,26 +34,6 @@ fn blink_row() -> spell_plan.ForcedMove {
     delay_ms: 200,
     condition: Always,
     tag: spend.always,
-  )
-}
-
-/// 67777 as the client holds it: FallingDamageMultiplier set to 0.0 from 180 ms for
-/// 400 ms, in phase 0 only.
-fn falling_row() -> spell_plan.PropertyModifier {
-  spell_plan.PropertyModifier(
-    effect_id: Spell4EffectsId(67_777),
-    phase_flags: 1,
-    change: spell_plan.PropertyChange(Change(
-      property: UnitProperty2Id(134),
-      mode: 3,
-      multiplier: 0.0,
-      flat: 0.0,
-      per_level: 0.0,
-    )),
-    row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
-    condition: Always,
-    tag: spend.always,
-    armor: None,
   )
 }
 
@@ -74,13 +51,9 @@ fn holder(
 // The planted base 3 is bag index 11 (`cast_support.abilities`).
 const bag_of_base_3 = 11
 
-fn plans_of(spell: Spell) -> Plans {
-  support.with_spells(plans: support.plans(), spells: [spell])
-}
-
 fn press(spell spell: Spell) -> #(State, List(cast.Effect)) {
   support.pressed_in(
-    plans: plans_of(spell),
+    plans: support.plans_with(spell:),
     state: cast.new(),
     caster: support.caster(),
     bag_index: bag_of_base_3,
@@ -129,7 +102,9 @@ pub fn gates_go_lists_the_blink_in_the_casters_target_info_beside_the_modifier_t
   use <- owned_test.run(5000)
   let #(_, effects) =
     press(
-      spell: holder(forced_moves: [blink_row()], modifiers: [falling_row()]),
+      spell: holder(forced_moves: [blink_row()], modifiers: [
+        support.falling_row(),
+      ]),
     )
   assert listed(effects:) == [#(7, [#(67_776, 200), #(67_777, 180)])]
     as "unit 7 is the caster the rows aim at; 67776 is listed with its delay of 200 beside 67777's 180"
@@ -189,7 +164,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
   let spell = holder(forced_moves: [gated], modifiers: [])
   let #(state, raw) =
     support.pressed_raw_in(
-      plans: plans_of(spell),
+      plans: support.plans_with(spell:),
       state: cast.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,

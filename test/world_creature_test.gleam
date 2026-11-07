@@ -51,14 +51,13 @@ import world_support.{type World}
 
 const ship = MapId(world_id: 3460, instance: 0)
 
-/// A deadline a passing test never reaches.
-fn deadline() -> Int {
-  ask_support.monotonic_ms() + ask_support.event_wait_ms
-}
-
 fn started(world: World) -> MapProcess {
   let assert Ok(found) =
-    world_map_registry.find_or_start(world.maps, ship, deadline_ms: deadline())
+    world_map_registry.find_or_start(
+      world.maps,
+      ship,
+      deadline_ms: ask_support.deadline(),
+    )
     as "Maps started the map or found it running"
   found
 }

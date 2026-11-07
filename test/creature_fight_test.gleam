@@ -110,7 +110,7 @@ fn beast_from(
         spawn: source,
         clock_origin_ms: 5000,
         viewers: list.map(viewers, fn(viewer) {
-          #(ConnectionId(viewer), stay_of(viewer))
+          #(ConnectionId(viewer), map_support.stay(count: viewer))
         }),
       ),
       spawn: Spawn(
@@ -144,12 +144,6 @@ fn at(x: Float) -> start_place.Place {
 /// The unit of the player of connection `number`: ten times it.
 fn unit_of(number: Int) -> Int {
   number * 10
-}
-
-/// The stay of the player of connection `number`, as the map names it: its
-/// `number`th, so each player's is its own.
-fn stay_of(number: Int) -> Stay {
-  map_support.stay(count: number)
 }
 
 fn tell(
@@ -187,7 +181,7 @@ fn approached(
     unit_id: unit_of(number),
     place: at(x),
     seq:,
-    stay: stay_of(number),
+    stay: map_support.stay(count: number),
   )
 }
 
@@ -196,7 +190,7 @@ fn moved(number number: Int, x x: Float, seq seq: Int) -> creature.Message {
     by: ConnectionId(number),
     place: at(x),
     seq:,
-    stay: stay_of(number),
+    stay: map_support.stay(count: number),
   )
 }
 
@@ -215,7 +209,7 @@ fn strike_of(
         unit_id: unit_of(number),
         place: at(2.0),
         seq: 1,
-        stay: stay_of(number),
+        stay: map_support.stay(count: number),
         rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       ),
       offence: Offence(
@@ -460,7 +454,7 @@ pub fn a_viewer_entering_the_ring_is_targeted_the_creature_enters_combat_and_the
     ]
     as "0x908 (C, P, aggro threat 1) and 0x89a (C, 1) to every viewer, then Threatened to P, and no 0x7ff before the first tick"
   assert fights_told_for(aggro)
-    == [#(2, stay_of(2), Threatened(unit_id: unit, life:))]
+    == [#(2, map_support.stay(count: 2), Threatened(unit_id: unit, life:))]
     as "the threat goes for the player's stay as the creature holds it, so the connection drops one of an earlier stay"
   assert list.map(timers(aggro), fn(timer) { timer.1 }) == [1500]
     as "the attack tick starts at the kind's interval"
@@ -583,7 +577,10 @@ pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planne
     tell(
       state:,
       at_ms: 1000,
-      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   let assert [CreatureAppeared(place:, ..), ..] = news_to(watched, 9)
   assert x_of(place) == 10.0
@@ -749,7 +746,8 @@ pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and
       "Released(7) to 2",
     ]
     as "0x90a 0 for each entry, 0x89a (C, 0), a full 0x937, the path home, and Released"
-  assert fights_told_for(leashed) == [#(2, stay_of(2), Released(unit_id: unit))]
+  assert fights_told_for(leashed)
+    == [#(2, map_support.stay(count: 2), Released(unit_id: unit))]
     as "the release goes for the player's stay"
   let assert Running(to:, ..) = path_sent(leashed)
   assert x_of(to) == 0.0 as "the path runs home"
@@ -1263,7 +1261,10 @@ pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_
     tell(
       state:,
       at_ms: 2000,
-      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   let assert [CreatureAppeared(place:, ..)] = news_to(watched, 9)
   assert x_of(place) == 10.0
@@ -1320,7 +1321,10 @@ fn breaches(
             tell(
               state:,
               at_ms:,
-              message: creature.Watched(by: ConnectionId(n), stay: stay_of(n)),
+              message: creature.Watched(
+                by: ConnectionId(n),
+                stay: map_support.stay(count: n),
+              ),
             )
           #(state, timers(taken))
         }
@@ -1435,7 +1439,10 @@ pub fn a_viewer_arriving_mid_chase_gets_the_fight_and_the_rest_of_the_path_test(
     tell(
       state:,
       at_ms: 1000,
-      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   assert list.map(news_to(watched, 9), name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x638"]
@@ -1473,7 +1480,10 @@ pub fn a_viewer_arriving_mid_return_gets_the_path_home_and_no_fight_test() -> Ni
     tell(
       state:,
       at_ms: 1500,
-      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   assert list.map(news_to(watched, 9), name_of) == ["0x262", "0x638"]
     as "out of combat: no 0x89a or 0x908, only the rest of the walk home"
@@ -1653,7 +1663,7 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
       at_ms: 5000,
       message: creature.Watched(
         by: ConnectionId(2),
-        stay: stay.next(stay_of(2)),
+        stay: stay.next(map_support.stay(count: 2)),
       ),
     )
   let #(_, again) =
@@ -1665,13 +1675,19 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
         unit_id: 21,
         place: at(5.0),
         seq: 7,
-        stay: stay.next(stay_of(2)),
+        stay: stay.next(map_support.stay(count: 2)),
       ),
     )
   assert list.contains(said(again), "0x908(21, 1) to 2")
     as "the equal sequence number is taken, with the new unit 21"
   assert fights_told_for(again)
-    == [#(2, stay.next(stay_of(2)), Threatened(unit_id: unit, life:))]
+    == [
+      #(
+        2,
+        stay.next(map_support.stay(count: 2)),
+        Threatened(unit_id: unit, life:),
+      ),
+    ]
     as "the threat goes for the stay the newest Watched named"
 }
 
@@ -1692,7 +1708,7 @@ pub fn a_strike_of_a_players_earlier_stay_that_reaches_the_creature_after_its_re
       at_ms: 100,
       message: creature.Watched(
         by: ConnectionId(2),
-        stay: stay.next(stay_of(2)),
+        stay: stay.next(map_support.stay(count: 2)),
       ),
     )
   let #(_, struck) =
@@ -1718,7 +1734,7 @@ pub fn a_player_that_stops_seeing_the_creature_is_told_its_release_for_the_stay_
   let #(_, unwatched) =
     tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
   assert fights_told_for(unwatched)
-    == [#(2, stay_of(2), Released(unit_id: unit))]
+    == [#(2, map_support.stay(count: 2), Released(unit_id: unit))]
 }
 
 // A crowd-control state: the creature does not act until it ends
@@ -2139,7 +2155,10 @@ pub fn a_viewer_arriving_while_a_state_is_held_is_not_told_it_and_a_new_creature
     tell(
       state:,
       at_ms: 1500,
-      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   let names = list.map(news_to(arrived, 9), name_of)
   assert list.first(names) == Ok("0x262") && !list.contains(names, "0x87f")
@@ -2362,7 +2381,10 @@ pub fn a_creature_killed_with_worn_armor_cancels_its_refill_and_stands_again_at_
     tell(
       state:,
       at_ms: 12_000,
-      message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   let assert [CreatureAppeared(unit:, ..), ..] = news_to(arrived, 9)
     as "the viewer's 0x262"
@@ -2377,7 +2399,10 @@ pub fn a_creatures_0x262_carries_its_current_armor_above_0_and_none_otherwise_te
       tell(
         state:,
         at_ms: 2000,
-        message: creature.Watched(by: ConnectionId(9), stay: stay_of(9)),
+        message: creature.Watched(
+          by: ConnectionId(9),
+          stay: map_support.stay(count: 9),
+        ),
       )
     let assert [CreatureAppeared(unit:, ..), ..] = news_to(arrived, 9)
       as "the viewer's 0x262"

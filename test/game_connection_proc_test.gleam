@@ -17,13 +17,11 @@ import client_tables
 import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, CastStarted, PeerNews}
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_started
 import genesis_prime/message/unit_properties_changed
-import genesis_prime/message/unit_stealth
 import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
 import genesis_prime/world_map/map
 import gleam/int
@@ -31,40 +29,6 @@ import gleam/list
 import gleam/option.{None}
 import owned_test
 import unitest
-
-fn written(taken taken: ConnectionStep(Request)) -> List(Frame) {
-  connection_support.heard(taken, connection_support.keyed())
-}
-
-fn ids(frames frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
-}
-
-fn started_spells(frames frames: List(Frame)) -> List(Int) {
-  list.filter_map(frames, fn(frame) {
-    case frame.message_id == spell_started.message_id {
-      True -> {
-        let assert Ok(start) = spell_started.decode(frame.body)
-          as "a 0x7ff decodes"
-        Ok(start.spell4_id)
-      }
-      False -> Error(Nil)
-    }
-  })
-}
-
-fn stealth_bits(frames frames: List(Frame)) -> List(Int) {
-  list.filter_map(frames, fn(frame) {
-    case frame.message_id == 0x08F5 {
-      True -> {
-        let assert Ok(change) = unit_stealth.decode(frame.body)
-          as "a 0x8F5 decodes"
-        Ok(change.stealthed)
-      }
-      False -> Error(Nil)
-    }
-  })
-}
 
 /// A press of the bag index at this monotonic time, as the client sends it.
 fn pressed(
@@ -115,7 +79,7 @@ fn fired_at(
 /// The properties 0x93a entries a step writes, as (property, value bits).
 fn property_values(taken taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
   connection_support.decoded(
-    written(taken:),
+    connection_support.written(taken:),
     0x093A,
     unit_properties_changed.decode,
   )
@@ -144,7 +108,7 @@ fn start_of(
   spell4_id spell4_id: Int,
 ) -> spell_started.SpellStarted {
   let assert Ok(start) =
-    list.filter_map(written(taken:), fn(frame) {
+    list.filter_map(connection_support.written(taken:), fn(frame) {
       case frame.message_id == spell_started.message_id {
         True -> {
           let assert Ok(start) = spell_started.decode(frame.body)
@@ -171,11 +135,6 @@ fn stalker_in_world() -> game_connection.State {
   connection_support.watched_by(state:, viewers: [2])
 }
 
-/// The frames of the step from the first of this id on.
-fn from_id(frames frames: List(Frame), id id: Int) -> List(Int) {
-  list.drop_while(ids(frames:), fn(found) { found != id })
-}
-
 pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_seconds_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
@@ -186,21 +145,23 @@ pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_s
       client_cast_id: 1,
       ms: 1000,
     )
-  let frames = written(taken: entering)
-  assert stealth_bits(frames:) == [1]
-  assert list.take(from_id(frames:, id: 0x08F5), 4)
+  let frames = connection_support.written(taken: entering)
+  assert connection_support.stealth_bits(frames:) == [1]
+  assert list.take(connection_support.from_id(frames:, id: 0x08F5), 4)
     == [0x08F5, 0x07FF, 0x07F4, 0x07FE]
     as "0x8f5 {P, 1}, then Proc 147119's cast of 60724: its 0x7ff, 0x7f4 and 0x7fe"
-  assert list.last(started_spells(frames:)) == Ok(60_724)
+  assert list.last(connection_support.started_spells(frames:)) == Ok(60_724)
     as "the cast after the 0x8f5 is 60724"
   let #(state, leaving) =
     pressed(state:, bag_index: 3, client_cast_id: 2, ms: 3000)
-  let frames = written(taken: leaving)
-  assert stealth_bits(frames:) == [0]
-  assert list.take(from_id(frames:, id: 0x08F5), 1) == [0x08F5]
+  let frames = connection_support.written(taken: leaving)
+  assert connection_support.stealth_bits(frames:) == [0]
+  assert list.take(connection_support.from_id(frames:, id: 0x08F5), 1)
+    == [0x08F5]
   let after_stealth =
     list.drop_while(frames, fn(frame) { frame.message_id != 0x08F5 })
-  assert started_spells(frames: after_stealth) == [60_769, 79_932]
+  assert connection_support.started_spells(frames: after_stealth)
+    == [60_769, 79_932]
     as "Procs 147132 and 211002 cast 60769 and 79932 after the 0x8f5 {P, 0}"
   assert property_values(taken: leaving)
     == [
@@ -233,7 +194,8 @@ pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_s
       let #(state, taken) = fired_at(state:, timer:, ms: 6001)
       #(state, [taken, ..steps])
     })
-  let later = list.flat_map(ended, fn(taken) { written(taken:) })
+  let later =
+    list.flat_map(ended, fn(taken) { connection_support.written(taken:) })
   assert list.sort(
       list.flat_map(ended, fn(taken) { property_values(taken:) }),
       fn(first, second) { int.compare(first.0, second.0) },
@@ -245,7 +207,7 @@ pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_s
       #(143, 1_065_353_216),
     ]
     as "after 3000 ms the properties are back at their defaults, 0.0 and 1.0"
-  assert list.contains(ids(frames: later), 0x07FE)
+  assert list.contains(cast_support.ids(frames: later), 0x07FE)
     as "and 79932's cast ends with its 0x7fe"
 }
 
@@ -260,19 +222,22 @@ pub fn a_stalker_killed_in_combat_gets_63366_twice_and_its_stealth_press_after_t
     )
   let #(state, entering) =
     pressed(state:, bag_index: 3, client_cast_id: 1, ms: 1000)
-  assert stealth_bits(frames: written(taken: entering)) == [1]
+  assert connection_support.stealth_bits(frames: connection_support.written(
+      taken: entering,
+    ))
+    == [1]
   let #(state, death) =
     connection_support.feed(
       state:,
       event: connection_support.a_killing_strike(),
     )
-  let frames = written(taken: death)
-  assert list.filter(started_spells(frames:), fn(spell4_id) {
+  let frames = connection_support.written(taken: death)
+  assert list.filter(connection_support.started_spells(frames:), fn(spell4_id) {
       spell4_id == 63_366
     })
     == [63_366, 63_366]
     as "Procs 159136 (kind 44, the combat flag going off) and 202043 (kind 0, the death) each cast 63366"
-  assert list.filter(started_spells(frames:), fn(spell4_id) {
+  assert list.filter(connection_support.started_spells(frames:), fn(spell4_id) {
       spell4_id == 60_769 || spell4_id == 79_932
     })
     == []
@@ -303,7 +268,7 @@ pub fn a_stalker_killed_in_combat_gets_63366_twice_and_its_stealth_press_after_t
       }
     })
   let assert [first_63366, second_63366] = of_63366
-  assert list.filter(ids(frames:), fn(id) {
+  assert list.filter(cast_support.ids(frames:), fn(id) {
       list.contains(
         [0x0811, 0x08F5, 0x089A, 0x07FF, 0x07F4, 0x07FE, 0x0247],
         id,
@@ -328,12 +293,18 @@ pub fn a_stalker_killed_in_combat_gets_63366_twice_and_its_stealth_press_after_t
     connection_support.read(state:, bytes: connection_support.wake_here())
   let #(state, press) =
     pressed(state:, bag_index: 3, client_cast_id: 2, ms: 1000)
-  assert !list.contains(ids(frames: written(taken: press)), 0x07FC)
+  assert !list.contains(
+    cast_support.ids(frames: connection_support.written(taken: press)),
+    0x07FC,
+  )
     as "Spell4Effects.effectType.73: 63366 cut the Stealth cooldown to 250 ms, inside the queue window, so the press is held, not refused 15"
   let assert [held] = cast_timers(taken: press)
     as "the held press waits for the cooldown's end"
   let #(_, started) = fired_at(state:, timer: held, ms: 1300)
-  assert list.contains(ids(frames: written(taken: started)), 0x07FD)
+  assert list.contains(
+    cast_support.ids(frames: connection_support.written(taken: started)),
+    0x07FD,
+  )
     as "and starts then, confirmed to the client"
 }
 
@@ -351,23 +322,31 @@ pub fn a_stalkers_last_fighter_going_gone_leaves_combat_and_casts_63366_test() -
       state:,
       event: connection_support.foe(strike_tell.Threatened(unit_id: 9, life: 4)),
     )
-  assert started_spells(frames: written(taken: one)) == []
+  assert connection_support.started_spells(frames: connection_support.written(
+      taken: one,
+    ))
+    == []
   let #(state, first_gone) =
     connection_support.feed(
       state:,
       event: connection_support.sent_by_the_map(map.Gone(unit_id: 7)),
     )
-  assert started_spells(frames: written(taken: first_gone)) == []
+  assert connection_support.started_spells(frames: connection_support.written(
+      taken: first_gone,
+    ))
+    == []
     as "a fighter is left: the player is still in combat"
   let #(_, last_gone) =
     connection_support.feed(
       state:,
       event: connection_support.sent_by_the_map(map.Gone(unit_id: 9)),
     )
-  let frames = written(taken: last_gone)
-  assert list.filter(ids(frames:), fn(id) { id == 0x089A || id == 0x07FF })
+  let frames = connection_support.written(taken: last_gone)
+  assert list.filter(cast_support.ids(frames:), fn(id) {
+      id == 0x089A || id == 0x07FF
+    })
     == [0x089A, 0x07FF]
     as "the map's Gone of the last fighter is its release: 0x89a (P, 0), then Proc 159136's cast"
-  assert started_spells(frames:) == [63_366]
+  assert connection_support.started_spells(frames:) == [63_366]
     as "Spell4Effects.effectType.14.dataBits00.0_44: leaving combat casts 63366, whether the last fighter released the player or its process went"
 }

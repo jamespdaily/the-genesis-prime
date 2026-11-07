@@ -63,32 +63,12 @@ fn unread() -> Prerequisite {
   prerequisites.single(id: 41_834, condition: #(43, 1, 10_518, 4))
 }
 
-fn caster_in_combat(in_combat in_combat: Bool) -> Caster {
-  cast.Caster(..support.caster(), in_combat:)
-}
-
-/// The plans with this spell at base 1, the bag index 8.
-fn plans_with(spell spell: Spell) -> Plans {
-  support.with_spells(plans: support.plans(), spells: [spell])
-}
-
 /// A spell of base 1 with these cast conditions.
 fn gated(
   caster_cast caster_cast: spell_plan.CasterCast,
   target_cast target_cast: option.Option(Prerequisite),
 ) -> Spell {
   Spell(..support.child(spell4_id: 5001, base: 1), caster_cast:, target_cast:)
-}
-
-/// A press of the bag index by the caster, its go answered with no unit struck.
-fn press(
-  plans plans: Plans,
-  state state: State,
-  caster caster: Caster,
-  bag bag: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  support.pressed_in(plans:, state:, caster:, bag_index: bag, target: 0, at: ms)
 }
 
 fn refusals(effects effects: List(Effect)) -> List(Int) {
@@ -125,7 +105,7 @@ pub fn an_esper_out_of_combat_pressing_spectral_form_is_refused_151_and_nothing_
   use <- unitest.guard(client_tables.present())
   let plans = spell_plan.plans(client_tables.shared())
   let #(state, effects) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: esper(in_combat: False),
@@ -141,7 +121,13 @@ pub fn an_esper_out_of_combat_pressing_spectral_form_is_refused_151_and_nothing_
     && support.payments(effects:) == []
     as "no timer, no tell to a viewer, no payment"
   let #(_, in_combat_effects) =
-    press(plans:, state:, caster: esper(in_combat: True), bag: 0, at: 1001)
+    support.press_by(
+      plans:,
+      state:,
+      caster: esper(in_combat: True),
+      bag: 0,
+      at: 1001,
+    )
   assert list.take(
       support.ids(frames: support.writes(effects: in_combat_effects)),
       1,
@@ -154,7 +140,7 @@ pub fn an_esper_in_combat_pressing_spectral_form_casts_it_as_before_test() -> Ni
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(_, effects) =
-    press(
+    support.press_by(
       plans: spell_plan.plans(client_tables.shared()),
       state: cast.new(),
       caster: esper(in_combat: True),
@@ -176,13 +162,19 @@ fn second_press_result(
   first first: Caster,
   second second: Caster,
 ) -> List(Int) {
-  let plans = plans_with(spell:)
+  let plans = support.plans_with(spell:)
   let #(state, first_effects) =
-    press(plans:, state: cast.new(), caster: first, bag: gated_bag, at: 1000)
+    support.press_by(
+      plans:,
+      state: cast.new(),
+      caster: first,
+      bag: gated_bag,
+      at: 1000,
+    )
   assert refusals(effects: first_effects) == []
     as "the first press passes every check"
   let #(_, effects) =
-    press(plans:, state:, caster: second, bag: gated_bag, at: 1100)
+    support.press_by(plans:, state:, caster: second, bag: gated_bag, at: 1100)
   refusals(effects:)
 }
 
@@ -198,8 +190,8 @@ pub fn a_press_that_fails_its_cooldown_and_the_cast_condition_gets_15_test() -> 
     )
   assert second_press_result(
       spell:,
-      first: caster_in_combat(in_combat: True),
-      second: caster_in_combat(in_combat: False),
+      first: support.caster_in_combat(in_combat: True),
+      second: support.caster_in_combat(in_combat: False),
     )
     == [15]
     as "0x1403afb10.order: the cooldown (4900 ms left, 15) comes before CasterCast"
@@ -216,10 +208,10 @@ pub fn a_press_that_fails_its_cost_and_the_cast_condition_gets_50_plus_the_slot_
       costs: [spell_plan.SlotCost(slot: 1, amount: 5000, result: 51)],
     )
   let #(_, effects) =
-    press(
-      plans: plans_with(spell:),
+    support.press_by(
+      plans: support.plans_with(spell:),
       state: cast.new(),
-      caster: caster_in_combat(in_combat: False),
+      caster: support.caster_in_combat(in_combat: False),
       bag: gated_bag,
       at: 1000,
     )
@@ -238,10 +230,13 @@ pub fn a_press_that_fails_the_weapon_and_the_cast_condition_gets_169_test() -> N
       weapon: spell_plan.PrimaryWeapon,
     )
   let #(_, effects) =
-    press(
-      plans: plans_with(spell:),
+    support.press_by(
+      plans: support.plans_with(spell:),
       state: cast.new(),
-      caster: cast.Caster(..caster_in_combat(in_combat: False), weapon: None),
+      caster: cast.Caster(
+        ..support.caster_in_combat(in_combat: False),
+        weapon: None,
+      ),
       bag: gated_bag,
       at: 1000,
     )
@@ -254,10 +249,13 @@ pub fn a_dead_caster_whose_press_also_fails_the_cast_condition_gets_57_test() ->
   let spell =
     gated(caster_cast: CastGate(prerequisite: in_combat()), target_cast: None)
   let #(_, effects) =
-    press(
-      plans: plans_with(spell:),
+    support.press_by(
+      plans: support.plans_with(spell:),
       state: cast.new(),
-      caster: cast.Caster(..caster_in_combat(in_combat: False), dead: True),
+      caster: cast.Caster(
+        ..support.caster_in_combat(in_combat: False),
+        dead: True,
+      ),
       bag: gated_bag,
       at: 1000,
     )
@@ -273,10 +271,10 @@ pub fn a_press_that_fails_both_cast_conditions_gets_151_test() -> Nil {
       target_cast: Some(in_combat()),
     )
   let #(_, effects) =
-    press(
-      plans: plans_with(spell:),
+    support.press_by(
+      plans: support.plans_with(spell:),
       state: cast.new(),
-      caster: caster_in_combat(in_combat: False),
+      caster: support.caster_in_combat(in_combat: False),
       bag: gated_bag,
       at: 1000,
     )
@@ -288,10 +286,10 @@ pub fn a_press_that_fails_the_target_cast_alone_gets_281_test() -> Nil {
   use <- owned_test.run(5000)
   let spell = gated(caster_cast: NoCasterCast, target_cast: Some(in_combat()))
   let #(_, effects) =
-    press(
-      plans: plans_with(spell:),
+    support.press_by(
+      plans: support.plans_with(spell:),
       state: cast.new(),
-      caster: caster_in_combat(in_combat: False),
+      caster: support.caster_in_combat(in_combat: False),
       bag: gated_bag,
       at: 1000,
     )
@@ -303,12 +301,12 @@ pub fn a_refused_press_changes_nothing_else_test() -> Nil {
   use <- owned_test.run(5000)
   let spell =
     gated(caster_cast: CastGate(prerequisite: in_combat()), target_cast: None)
-  let plans = plans_with(spell:)
+  let plans = support.plans_with(spell:)
   let #(state, effects) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
-      caster: caster_in_combat(in_combat: False),
+      caster: support.caster_in_combat(in_combat: False),
       bag: gated_bag,
       at: 1000,
     )
@@ -316,10 +314,10 @@ pub fn a_refused_press_changes_nothing_else_test() -> Nil {
     && support.started_timers(effects:) == []
     as "a refusal is one 0x7fc: no 0x7fd, no timer"
   let #(_, again) =
-    press(
+    support.press_by(
       plans:,
       state:,
-      caster: caster_in_combat(in_combat: True),
+      caster: support.caster_in_combat(in_combat: True),
       bag: gated_bag,
       at: 1001,
     )
@@ -357,11 +355,11 @@ pub fn a_press_within_500_ms_of_its_cooldowns_end_is_held_with_nothing_written_a
       ),
       cooldown_ms: 5000,
     )
-  let plans = plans_with(spell:)
-  let in_combat_caster = caster_in_combat(in_combat: True)
-  let out_of_combat = caster_in_combat(in_combat: False)
+  let plans = support.plans_with(spell:)
+  let in_combat_caster = support.caster_in_combat(in_combat: True)
+  let out_of_combat = support.caster_in_combat(in_combat: False)
   let #(state, _) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: in_combat_caster,
@@ -370,7 +368,13 @@ pub fn a_press_within_500_ms_of_its_cooldowns_end_is_held_with_nothing_written_a
     )
   // The cooldown ends at 6000; at 5700 300 ms are left, inside the queue window.
   let #(held, effects) =
-    press(plans:, state:, caster: out_of_combat, bag: gated_bag, at: 5700)
+    support.press_by(
+      plans:,
+      state:,
+      caster: out_of_combat,
+      bag: gated_bag,
+      at: 5700,
+    )
   assert support.writes(effects:) == []
     as "0x1403ace00: a press CheckCast marks 317 returns before the prerequisites, so the client sends it unchecked and the server writes nothing when it holds it"
   let #(timer, after_ms) = due_timer(effects:)
@@ -396,10 +400,10 @@ pub fn a_held_press_whose_condition_passes_at_its_start_casts_test() -> Nil {
       ),
       cooldown_ms: 5000,
     )
-  let plans = plans_with(spell:)
-  let in_combat_caster = caster_in_combat(in_combat: True)
+  let plans = support.plans_with(spell:)
+  let in_combat_caster = support.caster_in_combat(in_combat: True)
   let #(state, _) =
-    press(
+    support.press_by(
       plans:,
       state: cast.new(),
       caster: in_combat_caster,
@@ -407,7 +411,13 @@ pub fn a_held_press_whose_condition_passes_at_its_start_casts_test() -> Nil {
       at: 1000,
     )
   let #(held, effects) =
-    press(plans:, state:, caster: in_combat_caster, bag: gated_bag, at: 5700)
+    support.press_by(
+      plans:,
+      state:,
+      caster: in_combat_caster,
+      bag: gated_bag,
+      at: 5700,
+    )
   let #(timer, _) = due_timer(effects:)
   let #(_, at_the_end) =
     fired_by(state: held, caster: in_combat_caster, timer:, at: 6000)
@@ -433,8 +443,8 @@ pub fn a_press_held_behind_the_current_cast_is_checked_again_when_that_cast_clea
     gated(caster_cast: CastGate(prerequisite: in_combat()), target_cast: None)
   let plans =
     support.with_spells(plans: support.plans(), spells: [gate, blocker()])
-  let in_combat_caster = caster_in_combat(in_combat: True)
-  let out_of_combat = caster_in_combat(in_combat: False)
+  let in_combat_caster = support.caster_in_combat(in_combat: True)
+  let out_of_combat = support.caster_in_combat(in_combat: False)
   // The blocker starts at 1000 and its go, which clears the current cast, is at 2000.
   let #(state, started) =
     support.pressed_raw_in(
@@ -448,7 +458,13 @@ pub fn a_press_held_behind_the_current_cast_is_checked_again_when_that_cast_clea
   let #(go_timer, _) = due_timer(effects: started)
   // 400 ms before the go: inside the window, so the press waits for the clear.
   let #(held, held_effects) =
-    press(plans:, state:, caster: in_combat_caster, bag: gated_bag, at: 1600)
+    support.press_by(
+      plans:,
+      state:,
+      caster: in_combat_caster,
+      bag: gated_bag,
+      at: 1600,
+    )
   assert support.writes(effects: held_effects) == []
     as "a press with 500 ms or less of the current cast left is held and nothing is written (cast.press_queue)"
   let #(_, cleared) =
@@ -467,9 +483,9 @@ pub fn a_held_key_whose_repeat_fails_the_condition_gets_0x7fc_with_client_id_0_a
       ),
       cooldown_ms: 2000,
     )
-  let plans = plans_with(spell:)
-  let in_combat_caster = caster_in_combat(in_combat: True)
-  let out_of_combat = caster_in_combat(in_combat: False)
+  let plans = support.plans_with(spell:)
+  let in_combat_caster = support.caster_in_combat(in_combat: True)
+  let out_of_combat = support.caster_in_combat(in_combat: False)
   let key = fn(state, caster, held, ms) {
     let assert Ok(#(state, effects)) =
       cast.take(
@@ -555,10 +571,12 @@ fn innate_press(
   under under: Bool,
 ) -> List(Int) {
   let #(state, _) = case under {
-    True -> press(plans:, state: cast.new(), caster:, bag: 1, at: 1000)
+    True ->
+      support.press_by(plans:, state: cast.new(), caster:, bag: 1, at: 1000)
     False -> #(cast.new(), [])
   }
-  let #(_, effects) = press(plans:, state:, caster:, bag: 0, at: 1100)
+  let #(_, effects) =
+    support.press_by(plans:, state:, caster:, bag: 0, at: 1100)
   refusals(effects:)
 }
 
@@ -635,18 +653,25 @@ fn kinetic_energy(value value: Float) -> Caster {
 
 /// The planted plans with the live-cast spell of Overdrive 42908 at base 3.
 fn plans_with_overdrive() -> Plans {
-  plans_with(spell: live_cast_of(spell4_id: 42_908, groups: []))
+  support.plans_with(spell: live_cast_of(spell4_id: 42_908, groups: []))
 }
 
 /// The planted spell of base 3 sits at the bag index 11.
 fn rampage_press(caster caster: Caster, under under: Bool) -> List(Int) {
   let plans = plans_with_overdrive()
   let #(state, _) = case under {
-    True -> press(plans:, state: cast.new(), caster:, bag: under_bag, at: 1000)
+    True ->
+      support.press_by(
+        plans:,
+        state: cast.new(),
+        caster:,
+        bag: under_bag,
+        at: 1000,
+      )
     False -> #(cast.new(), [])
   }
   let #(_, effects) =
-    press(plans:, state:, caster:, bag: support.rampage, at: 1100)
+    support.press_by(plans:, state:, caster:, bag: support.rampage, at: 1100)
   refusals(effects:)
 }
 
@@ -668,10 +693,16 @@ pub fn a_waiver_of_a_type_the_server_does_not_read_refuses_with_the_requirements
       ..support.ability(base: 37_968),
       caster_cast: RequirementWaiver(prerequisite: unread()),
     )
-  let plans = plans_with(spell: rampage)
+  let plans = support.plans_with(spell: rampage)
   let caster = kinetic_energy(value: 249.0)
   let #(state, first) =
-    press(plans:, state: cast.new(), caster:, bag: support.rampage, at: 1000)
+    support.press_by(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag: support.rampage,
+      at: 1000,
+    )
   assert refusals(effects: first) == [51]
     as "the requirement fails, its waiver cannot be read: the requirement's result 51"
   let warnings =
@@ -679,7 +710,7 @@ pub fn a_waiver_of_a_type_the_server_does_not_read_refuses_with_the_requirements
   assert list.length(warnings) == 1
     as "one warning for the spell on the connection"
   let #(_, second) =
-    press(plans:, state:, caster:, bag: support.rampage, at: 1100)
+    support.press_by(plans:, state:, caster:, bag: support.rampage, at: 1100)
   assert refusals(effects: second) == [51]
     && support.logs(effects: second) == []
     as "a second press writes the 0x7fc alone"
@@ -688,16 +719,23 @@ pub fn a_waiver_of_a_type_the_server_does_not_read_refuses_with_the_requirements
 // ---- 10: a cast condition the server cannot read ----
 
 fn unread_refusal(spell spell: Spell, expecting expecting: Int) -> Nil {
-  let plans = plans_with(spell:)
-  let caster = caster_in_combat(in_combat: True)
+  let plans = support.plans_with(spell:)
+  let caster = support.caster_in_combat(in_combat: True)
   let #(state, first) =
-    press(plans:, state: cast.new(), caster:, bag: gated_bag, at: 1000)
+    support.press_by(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag: gated_bag,
+      at: 1000,
+    )
   assert refusals(effects: first) == [expecting]
     as "a condition of a type the server does not read refuses with the check's result"
   let warnings =
     list.filter(support.logs(effects: first), fn(line) { line.0 == LogWarning })
   assert list.length(warnings) == 1 as "and writes one warning for the spell"
-  let #(_, second) = press(plans:, state:, caster:, bag: gated_bag, at: 1100)
+  let #(_, second) =
+    support.press_by(plans:, state:, caster:, bag: gated_bag, at: 1100)
   assert refusals(effects: second) == [expecting]
     && support.logs(effects: second) == []
     as "a second press writes the 0x7fc alone"
@@ -817,7 +855,8 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
       struck: [cast.Hit(unit_id: 99, descriptions: [], controls: [])],
       rolls: [],
     )
-  let #(_, effects) = press(plans:, state:, caster: stalker, bag: 0, at: 1100)
+  let #(_, effects) =
+    support.press_by(plans:, state:, caster: stalker, bag: 0, at: 1100)
   assert refusals(effects:) == []
     as "the child's primary target is the unit 99, not the caster: the caster is not under it, and the press is accepted"
 }

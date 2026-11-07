@@ -18,20 +18,18 @@
 import client_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type News, type Request, Appeared, InterruptArmor, PeerNews, PropertiesChanged,
+  type News, type Request, InterruptArmor, PropertiesChanged,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
 import genesis_prime/message/float32
-import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
-import genesis_prime/step.{type ConnectionStep, ConnectionId}
-import genesis_prime/world_map/map.{SeenBy}
+import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None}
@@ -175,31 +173,12 @@ pub fn an_esper_pressing_spectral_form_shows_one_interrupt_armor_for_five_second
     as "and the viewer gets the same four in the same order"
 }
 
-/// The 0x262 the player's connection sends the viewer `viewer` that arrives now.
-fn created_for(
-  state state: game_connection.State,
-  viewer viewer: Int,
-) -> UnitCreatePlayer {
-  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] =
-    support.peer_tells(
-      support.feed(
-        state:,
-        event: support.sent_by_the_map(SeenBy(
-          by: ConnectionId(viewer),
-          stay: support.viewer_stay(viewer),
-        )),
-      ).1,
-    )
-    as "the player's connection sends the arriving viewer its 0x262"
-  unit
-}
-
 pub fn a_viewer_arriving_while_the_armor_holds_is_created_with_it_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let #(holding, _) =
     spectral_form_until(state: esper_in_a_fight(), until_ms: 5900)
-  let created = created_for(state: holding, viewer: 4)
+  let created = support.created_for(state: holding, viewer: 4)
   assert unit_fields.stat(tail: created.tail, stat_id: 21) == Ok(1)
     as "stat 21 is listed while the armor is above 0 (opcode.0x938.interrupt_armor: the create's stat list sets it)"
   assert list.find(created.tail.properties, fn(property) {
@@ -210,7 +189,7 @@ pub fn a_viewer_arriving_while_the_armor_holds_is_created_with_it_test() -> Nil 
   // Once it has ended the next viewer is created with neither.
   let #(ended, _) =
     spectral_form_until(state: esper_in_a_fight(), until_ms: 20_000)
-  let later = created_for(state: ended, viewer: 5)
+  let later = support.created_for(state: ended, viewer: 5)
   assert unit_fields.stat(tail: later.tail, stat_id: 21) == Error(Nil)
     as "no armor, no stat 21"
 }

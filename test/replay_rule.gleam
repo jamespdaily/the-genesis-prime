@@ -25,7 +25,7 @@ import genesis_prime/step.{
   type ConnectionEffect, type ConnectionInput, type ConnectionRule,
   type ConnectionStep, type Effect, Accepted, CancelTimer, Effects, Input,
   OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule, Sessions, StartTimer,
-  Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId, Write, WriteFailed,
+  Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId, WriteFailed,
 }
 import gleam/int
 import gleam/list
@@ -80,9 +80,12 @@ pub fn step(
       run(State(pending: <<state.pending:bits, bytes:bits>>), [])
     OwnEvent(TimerFired(timer: TimerId(n))) -> #(
       state,
-      Effects([record(timer_fired, n)]),
+      Effects([connection_rule_support.record(letter: timer_fired, number: n)]),
     )
-    WatchEnded(watch: WatchId(n)) -> #(state, Effects([record(watch_ended, n)]))
+    WatchEnded(watch: WatchId(n)) -> #(
+      state,
+      Effects([connection_rule_support.record(letter: watch_ended, number: n)]),
+    )
     OwnEvent(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
       state,
@@ -124,15 +127,12 @@ fn command(
   milliseconds milliseconds: Int,
 ) -> Effect(ConnectionEffect(Nil)) {
   case letter {
-    _ if letter == echo_command -> record(echoed, n)
+    _ if letter == echo_command ->
+      connection_rule_support.record(letter: echoed, number: n)
     _ if letter == timer_command ->
       OwnEffect(StartTimer(TimerId(n), milliseconds))
     _ if letter == cancel_command -> OwnEffect(CancelTimer(TimerId(n)))
     _ if letter == watch_command -> Watch(WatchId(n), Sessions)
     _ -> panic as "the test sent a letter the replay rule has no command for"
   }
-}
-
-fn record(letter: Int, number: Int) -> Effect(ConnectionEffect(Nil)) {
-  OwnEffect(Write(<<letter, number:64>>))
 }

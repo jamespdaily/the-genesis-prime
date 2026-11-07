@@ -18,17 +18,14 @@
 ////   its timers; a later go of the cast arms it again from that go.
 
 import cast_support as support
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast
 import genesis_prime/game/lasting.{type LastingRow, LastingRow}
-import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, AimsAtCaster, Always, InterruptArmor,
-}
+import genesis_prime/game/spell_plan.{AimsAtCaster, Always, InterruptArmor}
 import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -39,17 +36,6 @@ import prerequisite_support as prerequisites
 const bag_of_base_3 = 11
 
 const bag_of_base_1 = 8
-
-/// The change an armor row of `points` makes to property 44: x * 1.0 + points.
-fn raising(points points: Float) -> Modifier {
-  Change(
-    property: UnitProperty2Id(44),
-    mode: 0,
-    multiplier: 1.0,
-    flat: points,
-    per_level: 0.0,
-  )
-}
 
 /// Row 199192 as the client holds it: +1 for 5000 ms, kept at the end.
 fn spectral_form_row() -> spell_plan.PropertyModifier {
@@ -70,7 +56,9 @@ fn armor_row(
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
-    change: spell_plan.PropertyChange(raising(points: int.to_float(points))),
+    change: spell_plan.PropertyChange(
+      support.raising_property_44(points: int.to_float(points)),
+    ),
     row:,
     condition: Always,
     tag: spend.always,
@@ -78,55 +66,18 @@ fn armor_row(
   )
 }
 
-fn holder(
-  spell4_id spell4_id: Int,
-  base base: Int,
-  modifiers modifiers: List(spell_plan.PropertyModifier),
-) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id:, base:), modifiers:)
-}
-
-fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: support.plans(), spells:)
-}
-
-fn press(
-  plans plans: Plans,
-  state state: State,
-  bag bag: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  support.pressed_in(
-    plans:,
-    state:,
-    caster: support.caster(),
-    bag_index: bag,
-    target: 0,
-    at: ms,
-  )
-}
-
-/// The property changes the effects start, with their sources: the armor rows are changes
-/// of property 44, which the player's armor follows.
-fn starts(effects effects: List(Effect)) -> List(#(Source, Modifier)) {
-  list.filter_map(support.caster_change_starts(effects:), fn(start) {
-    case start.1 {
-      cast.Property(modifier:) -> Ok(#(start.0, modifier))
-      cast.ShieldHeal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
-    }
-  })
-}
-
 // ---- what a go lists and how long the cast lasts ----
 
 pub fn a_go_with_interrupt_armor_lists_it_on_the_caster_and_gives_the_node_its_time_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
-      holder(spell4_id: 76_766, base: 3, modifiers: [spectral_form_row()]),
+    support.plans_of([
+      support.holder(spell4_id: 76_766, base: 3, modifiers: [
+        spectral_form_row(),
+      ]),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
   let assert [info] = decoded.targets
@@ -140,7 +91,7 @@ pub fn a_go_with_interrupt_armor_lists_it_on_the_caster_and_gives_the_node_its_t
     as "row 199192 is listed with a bit result, as a Fluff effect is"
   assert support.finished_ids(support.writes(effects:)) == []
     as "the node has life, so the 0x7fe waits (cast.target_node_end)"
-  assert list.length(starts(effects:)) == 1
+  assert list.length(support.property_starts(effects:)) == 1
     as "and the armor starts in the go's own step"
   let id = support.pressed_id(effects:)
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
@@ -157,14 +108,17 @@ pub fn a_go_with_interrupt_armor_lists_it_on_the_caster_and_gives_the_node_its_t
 pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_duration_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
-      holder(spell4_id: 76_766, base: 3, modifiers: [spectral_form_row()]),
+    support.plans_of([
+      support.holder(spell4_id: 76_766, base: 3, modifiers: [
+        spectral_form_row(),
+      ]),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 199_192)
-  assert starts(effects:) == [#(source, raising(points: 1.0))]
+  assert support.property_starts(effects:)
+    == [#(source, support.raising_property_44(points: 1.0))]
     as "row 199192: x 1.0 + 1 on property 44, in the go's own step"
   assert support.caster_change_ends(effects:) == []
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
@@ -183,12 +137,14 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
       row: LastingRow(delay_ms: 150_000, duration_ms: 0, until_removed: True),
     )
   let plans =
-    plans_of([holder(spell4_id: 79_917, base: 3, modifiers: [delayed])])
+    support.plans_of([
+      support.holder(spell4_id: 79_917, base: 3, modifiers: [delayed]),
+    ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 210_961)
-  assert starts(effects:) == []
+  assert support.property_starts(effects:) == []
     as "nothing starts at the go: the row waits its delay"
   assert list.map(support.started_timers(effects:), fn(timer) { timer.1 })
     == [150_000]
@@ -196,8 +152,10 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   assert support.timeline(fired:) == [#(151_000, "start", source)]
     as "it starts at go + 150000 and never ends"
-  assert list.flat_map(fired, fn(step) { starts(effects: step.1) })
-    == [#(source, raising(points: 1.0))]
+  assert list.flat_map(fired, fn(step) {
+      support.property_starts(effects: step.1)
+    })
+    == [#(source, support.raising_property_44(points: 1.0))]
 }
 
 // ---- a removal, a persistence, a death and a later go ----
@@ -206,8 +164,10 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
   use <- owned_test.run(5000)
   // A type 80 removal of the cast.
   let plans =
-    plans_of([
-      holder(spell4_id: 76_766, base: 3, modifiers: [spectral_form_row()]),
+    support.plans_of([
+      support.holder(spell4_id: 76_766, base: 3, modifiers: [
+        spectral_form_row(),
+      ]),
       spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
         spell_plan.ForceRemove(
           effect_id: Spell4EffectsId(196_521),
@@ -221,11 +181,12 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
       ]),
     ])
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects: first)
-  assert list.length(starts(effects: first)) == 1
+  assert list.length(support.property_starts(effects: first)) == 1
     as "the armor started in the press's go"
-  let #(_, removal) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
+  let #(_, removal) =
+    support.press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert support.caster_change_ends(effects: removal)
     == [support.source_of(cast_id: id, effect_id: 199_192)]
     as "taking the cast's node off the caster ends the armor at once"
@@ -242,9 +203,11 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
   // in combat.
   let in_combat = prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
   let guarded =
-    plans_of([
+    support.plans_of([
       spell_plan.Spell(
-        ..holder(spell4_id: 76_766, base: 3, modifiers: [spectral_form_row()]),
+        ..support.holder(spell4_id: 76_766, base: 3, modifiers: [
+          spectral_form_row(),
+        ]),
         caster_persistence: Some(in_combat),
       ),
     ])
@@ -259,7 +222,7 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
       at: 1000,
     )
   let held_id = support.pressed_id(effects: pressed)
-  assert list.length(starts(effects: pressed)) == 1
+  assert list.length(support.property_starts(effects: pressed)) == 1
     as "the armor started in the press's go"
   let #(_, ended) =
     cast.persisted(
@@ -289,15 +252,18 @@ pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
       row: LastingRow(delay_ms: 150_000, duration_ms: 0, until_removed: True),
     )
   let plans =
-    plans_of([
-      holder(spell4_id: 76_766, base: 3, modifiers: [spectral_form_row()]),
-      holder(spell4_id: 79_917, base: 1, modifiers: [delayed]),
+    support.plans_of([
+      support.holder(spell4_id: 76_766, base: 3, modifiers: [
+        spectral_form_row(),
+      ]),
+      support.holder(spell4_id: 79_917, base: 1, modifiers: [delayed]),
     ])
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  assert list.length(starts(effects: first)) == 1
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+  assert list.length(support.property_starts(effects: first)) == 1
     as "the first cast's armor started in its go"
-  let #(state, second) = press(plans:, state:, bag: bag_of_base_1, at: 1100)
+  let #(state, second) =
+    support.press(plans:, state:, bag: bag_of_base_1, at: 1100)
   let #(_, ended) =
     cast.died(
       cast: state,
@@ -321,17 +287,20 @@ pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
 pub fn a_later_go_of_the_same_cast_arms_the_armor_again_and_holds_it_once_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
-    plans_of([
+    support.plans_of([
       spell_plan.Spell(
-        ..holder(spell4_id: 76_766, base: 3, modifiers: [spectral_form_row()]),
+        ..support.holder(spell4_id: 76_766, base: 3, modifiers: [
+          spectral_form_row(),
+        ]),
         phase_delays_ms: [0, 1000],
       ),
     ])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 199_192)
-  assert list.map(starts(effects:), fn(start) { start.0 }) == [source]
+  assert list.map(support.property_starts(effects:), fn(start) { start.0 })
+    == [source]
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   assert list.filter(support.timeline(fired:), fn(entry) { entry.1 == "start" })
     == [#(2000, "start", source)]

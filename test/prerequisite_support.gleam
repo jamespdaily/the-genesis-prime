@@ -1,6 +1,7 @@
 //// Prerequisite rows for tests that check a prerequisite
 //// (`genesis_prime/game/prerequisite`), built as the client's table holds them.
 
+import genesis_prime/game/area.{type Pose, Point, Pose}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject, Subject}
 import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
@@ -174,4 +175,17 @@ pub fn check(
   subject subject: Subject,
 ) -> prerequisite.Verdict {
   prerequisite.check(prerequisite: loaded(id: row.id, rows: [row]), subject:)
+}
+
+/// What the prerequisite with one condition, id 1, gives for the subject.
+pub fn verdict(
+  condition condition: #(Int, Int, Int, Int),
+  subject subject: Subject,
+) -> prerequisite.Verdict {
+  prerequisite.check(prerequisite: single(id: 1, condition:), subject:)
+}
+
+/// A standing place: the point (`x`, `z`) facing `yaw`.
+pub fn pose(x x: Float, z z: Float, yaw yaw: Float) -> Pose {
+  Pose(at: Point(x:, z:), yaw:)
 }

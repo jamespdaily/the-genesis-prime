@@ -26,7 +26,6 @@ import genesis_prime/message/game_hello_reply
 import genesis_prime/named_fields
 import genesis_prime/recorded_message.{ClientToServer, ServerToClient}
 import genesis_prime/recording_dump
-import genesis_prime/step.{type Now, Now}
 import genesis_prime/wire_recording.{Accepted, Client, Read}
 import genesis_prime/wire_recording/recorder
 import gleam/bit_array
@@ -73,10 +72,6 @@ pub fn the_dump_names_the_players_unit_and_lists_a_message_with_no_decoder_by_it
 }
 
 // ---- the server's direction and the failure paths, from planted recordings ----
-
-fn at(n: Int) -> Now {
-  Now(monotonic_ms: n, filetime: n * 10)
-}
 
 /// The body of 0x0036, the highest character level 3.
 const level_3_body = <<3, 0, 0, 0>>
@@ -162,7 +157,7 @@ pub fn a_server_frame_cut_mid_frame_ends_the_dump_with_a_stopped_line_that_says_
     as "the frame is longer than one byte"
   let lines =
     auth_lines(folder:, steps: [
-      support.In(0, at(1), Accepted),
+      support.In(0, support.now_at(1), Accepted),
       support.Out(0, whole),
       support.Out(0, cut),
       support.Closed(0, Client),
@@ -189,8 +184,8 @@ pub fn a_client_frame_the_reader_refuses_ends_the_dump_with_a_stopped_line_that_
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
-      support.In(0, at(1), Accepted),
-      support.In(0, at(2), Read(<<2, 0, 0, 0, 0, 0>>)),
+      support.In(0, support.now_at(1), Accepted),
+      support.In(0, support.now_at(2), Read(<<2, 0, 0, 0, 0, 0>>)),
       support.Closed(0, Client),
     ])
   let assert [stopped] = lines as "no message came before the refused frame"
@@ -207,7 +202,7 @@ pub fn a_server_frame_the_reader_refuses_ends_the_dump_with_a_stopped_line_that_
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
-      support.In(0, at(1), Accepted),
+      support.In(0, support.now_at(1), Accepted),
       support.Out(0, <<2, 0, 0, 0, 0, 0>>),
       support.Closed(0, Client),
     ])
@@ -223,7 +218,7 @@ pub fn a_server_body_that_is_not_its_message_is_printed_as_malformed_and_the_dum
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
-      support.In(0, at(1), Accepted),
+      support.In(0, support.now_at(1), Accepted),
       support.Out(0, base_written(id: 0x0036, body: <<3, 0, 0>>)),
       support.Out(0, base_written(id: 0x0036, body: level_3_body)),
       support.Closed(0, Client),
@@ -245,7 +240,7 @@ pub fn a_server_message_with_no_decoder_is_printed_as_unhandled_with_its_size_te
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
-      support.In(0, at(1), Accepted),
+      support.In(0, support.now_at(1), Accepted),
       support.Out(0, base_written(id: 0x0FFF, body: <<1, 2, 3>>)),
       support.Closed(0, Client),
     ])
@@ -291,9 +286,9 @@ pub fn the_servers_writes_after_0x058f_are_read_under_the_session_key_test() -> 
   }
   let lines =
     dumped(folder:, rule: game_connection.rule_name, steps: [
-      support.In(0, at(1), Accepted),
+      support.In(0, support.now_at(1), Accepted),
       support.Out(0, level(base)),
-      support.In(0, at(2), Read(hello)),
+      support.In(0, support.now_at(2), Read(hello)),
       support.Out(0, level(session)),
       support.Out(0, level(base)),
       support.Closed(0, Client),
@@ -323,11 +318,11 @@ fn timed_entries(folder: String) -> List(recording_dump.Entry) {
   let assert Ok(cut) = bit_array.slice(whole, 0, bit_array.byte_size(whole) - 1)
     as "the frame is longer than one byte"
   dumped(folder:, rule: auth_connection.rule_name, steps: [
-    support.In(0, at(1000), Accepted),
+    support.In(0, support.now_at(1000), Accepted),
     support.Out(0, whole),
-    support.In(0, at(1100), wire_recording.Woken),
+    support.In(0, support.now_at(1100), wire_recording.Woken),
     support.Out(0, base_written(id: 0x019B, body: unit_0x1002_body)),
-    support.In(0, at(1500), wire_recording.Woken),
+    support.In(0, support.now_at(1500), wire_recording.Woken),
     support.Out(0, whole),
     support.Out(0, cut),
     support.Closed(0, Client),
@@ -407,7 +402,7 @@ pub fn a_float_field_prints_as_its_bits_and_as_the_float_they_hold_test() -> Nil
   use folder <- recording_support.in_folder
   let lines =
     auth_lines(folder:, steps: [
-      support.In(0, at(1), Accepted),
+      support.In(0, support.now_at(1), Accepted),
       support.Out(
         0,
         base_written(id: 0x0935, body: <<
@@ -476,7 +471,7 @@ pub fn a_recording_with_no_closing_line_is_read_to_its_last_line_and_says_so_tes
     unfinished_lines(
       folder:,
       steps: [
-        support.In(0, at(1), Accepted),
+        support.In(0, support.now_at(1), Accepted),
         support.Out(0, base_written(id: 0x0036, body: level_3_body)),
       ],
       cut: 0,
@@ -498,7 +493,7 @@ pub fn a_recording_whose_last_line_is_cut_is_unfinished_not_malformed_test() -> 
     unfinished_lines(
       folder:,
       steps: [
-        support.In(0, at(1), Accepted),
+        support.In(0, support.now_at(1), Accepted),
         support.Out(0, base_written(id: 0x0036, body: level_3_body)),
         support.Out(0, base_written(id: 0x0036, body: level_3_body)),
       ],
@@ -529,7 +524,7 @@ pub fn the_unfinished_line_is_kept_under_every_filter_test() -> Nil {
     unfinished_lines(
       folder:,
       steps: [
-        support.In(0, at(1), Accepted),
+        support.In(0, support.now_at(1), Accepted),
         support.Out(0, base_written(id: 0x0036, body: level_3_body)),
       ],
       cut: 0,

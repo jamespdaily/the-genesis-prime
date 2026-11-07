@@ -58,10 +58,6 @@ import unitest
 
 // ---- the Stalker, from the client's tables ----
 
-fn real_plans() -> Plans {
-  spell_plan.plans(client_tables.shared())
-}
-
 /// A Stalker: its three level-1 abilities (Shred, Impale, Stagger) and its innate, Nano
 /// Skin: Lethal, at bag index 3.
 fn stalker(in_combat in_combat: Bool) -> Caster {
@@ -91,7 +87,7 @@ fn joined(caster caster: Caster, at ms: Int) -> #(State, List(Effect)) {
     cast.passive_started(
       cast: cast.new(),
       caster:,
-      plans: real_plans(),
+      plans: support.real_plans(),
       base: Spell4BaseId(29_131),
       now: support.at(ms:),
     )
@@ -106,7 +102,7 @@ fn toggled(
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state:,
       caster:,
       bag_index: 3,
@@ -124,7 +120,7 @@ fn shredded(
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state:,
       caster:,
       bag_index: 0,
@@ -322,10 +318,6 @@ fn holding(spell4_id spell4_id: Int, procs procs: List(ProcRow)) -> Spell {
   )
 }
 
-fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: support.plans(), spells:)
-}
-
 /// A caster of the planted plans: its bag holds the planted bases 1, 2 and 3 at 8, 10 and 11.
 fn planted_caster() -> Caster {
   support.caster()
@@ -473,30 +465,6 @@ fn listed_by(
   )
 }
 
-fn property_starts(
-  effects effects: List(Effect),
-) -> List(#(unit_properties.Source, unit_properties.Modifier)) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)) ->
-        Ok(#(source, modifier))
-      cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
-      | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
-      | cast.CasterChangeStarts(change: cast.Look(..), ..) -> Error(Nil)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeEnds(..)
-      | cast.StealthChanged(..) -> Error(Nil)
-    }
-  })
-}
-
 fn modifier(
   property property: Int,
   mode mode: Int,
@@ -539,7 +507,7 @@ pub fn leaving_stealth_by_the_second_press_casts_60769_then_79932_and_empower_la
     == [210_998, 212_528, 212_529, 212_530]
     as "Spell4.79932: its four UnitPropertyModifier rows are listed on the caster"
   let starts =
-    property_starts(effects:)
+    support.property_starts(effects:)
     |> list.map(fn(start) { start.1 })
     |> list.sort(fn(first, second) {
       int.compare(
@@ -663,7 +631,7 @@ pub fn a_cancel_that_ends_the_stealth_of_the_other_casts_fires_the_procs_for_lea
     holding(spell4_id: 250_101, procs: [
       proc(id: 1, trigger: LeftStealth, casts: left, window_ms: 500, count: 1),
     ])
-  let plans = plans_of([stealthing(), two_goes, holder])
+  let plans = support.plans_of([stealthing(), two_goes, holder])
   let #(state, joined_effects) = planted_joined(plans:, spell: holder, at: 1000)
   let #(state, entered) =
     planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
@@ -716,7 +684,7 @@ pub fn a_proc_fires_again_only_when_its_window_has_passed_a_fire_at_exactly_its_
       ),
       proc(id: 2, trigger: LeftStealth, casts: left, window_ms: 500, count: 1),
     ])
-  let plans = plans_of([broken_by_damage_spell(), holder])
+  let plans = support.plans_of([broken_by_damage_spell(), holder])
   let caster = planted_caster()
   let damaged = fn(state, at) {
     let #(state, effects) =
@@ -763,7 +731,7 @@ pub fn two_procs_of_one_trigger_each_keep_their_own_window_test() -> Nil {
       proc(id: 1, trigger: LeftStealth, casts: short, window_ms: 500, count: 1),
       proc(id: 2, trigger: LeftStealth, casts: long, window_ms: 1000, count: 1),
     ])
-  let plans = plans_of([broken_by_damage_spell(), holder])
+  let plans = support.plans_of([broken_by_damage_spell(), holder])
   let caster = planted_caster()
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
   let cycle = fn(state, at) {
@@ -791,7 +759,7 @@ pub fn a_proc_with_a_count_above_1_fires_that_often_in_its_window_test() -> Nil 
     holding(spell4_id: 250_101, procs: [
       proc(id: 1, trigger: LeftCombat, casts:, window_ms: 1000, count: 2),
     ])
-  let plans = plans_of([holder])
+  let plans = support.plans_of([holder])
   let caster = planted_caster()
   let #(state, _) = planted_joined(plans:, spell: holder, at: 0)
   let leaves = fn(state, at) {
@@ -820,7 +788,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
     cast.passive_started(
       cast: cast.new(),
       caster:,
-      plans: real_plans(),
+      plans: support.real_plans(),
       base: Spell4BaseId(29_131),
       now: support.at(ms: 1000),
     )
@@ -836,7 +804,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
   let #(held, _) = answered(caster:, state: held, effects: started, at: 1000)
   let #(state, pressed) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state: held,
       caster:,
       bag_index: 3,
@@ -933,7 +901,7 @@ pub fn a_fire_a_dead_holder_was_refused_holds_back_no_later_fire_test() -> Nil {
       ..holder,
       procs: list.map(holder.procs, fn(row) { ProcRow(..row, spell: living) }),
     )
-  let plans = plans_of([broken_by_damage_spell(), holder])
+  let plans = support.plans_of([broken_by_damage_spell(), holder])
   let caster = planted_caster()
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
   let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
@@ -991,7 +959,7 @@ pub fn death_casts_63366_after_the_casts_it_ends_and_cuts_the_stealth_cooldown_t
   let woken = stalker(in_combat: False)
   let #(_, press) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state: dead_state,
       caster: woken,
       bag_index: 3,
@@ -1009,7 +977,7 @@ pub fn death_casts_63366_after_the_casts_it_ends_and_cuts_the_stealth_cooldown_t
     )
   let #(_, control) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state: without,
       caster: woken,
       bag_index: 3,
@@ -1029,7 +997,7 @@ pub fn leaving_combat_casts_63366_once_a_second_and_cuts_the_stealth_cooldown_to
   let #(state, _) = toggled(state:, caster: in_combat, at: 1000)
   let #(_, before) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state:,
       caster: out,
       bag_index: 3,
@@ -1049,7 +1017,7 @@ pub fn leaving_combat_casts_63366_once_a_second_and_cuts_the_stealth_cooldown_to
     as "Spell4Effects.effectType.14.dataBits00.0_44: 159136, kind 44, casts 63366"
   let #(_, after) =
     support.pressed_raw_in(
-      plans: real_plans(),
+      plans: support.real_plans(),
       state:,
       caster: out,
       bag_index: 3,
@@ -1083,7 +1051,7 @@ pub fn a_death_casts_the_died_proc_before_the_proc_for_the_stealth_it_ends_test(
       ),
       proc(id: 2, trigger: Died, casts: died_cast, window_ms: 500, count: 1),
     ])
-  let plans = plans_of([stealthing(), holder])
+  let plans = support.plans_of([stealthing(), holder])
   let #(state, joined_effects) = planted_joined(plans:, spell: holder, at: 1000)
   let #(state, entered) =
     planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
@@ -1149,7 +1117,7 @@ pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an
       ],
       stealth_change: KeepsStealth,
     )
-  let plans = plans_of([stealthing(), removing, holder])
+  let plans = support.plans_of([stealthing(), removing, holder])
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
   let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
   let #(state, effects) =
@@ -1178,7 +1146,7 @@ pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an
       ],
       stealth_change: KeepsStealth,
     )
-  let plans = plans_of([applier])
+  let plans = support.plans_of([applier])
   let #(_, entering) =
     planted_press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
   assert from(
@@ -1218,7 +1186,7 @@ pub fn a_procs_own_cast_fires_procs_so_a_217_proc_whose_spell_ends_stealth_fires
         count: 1,
       ),
     ])
-  let plans = plans_of([stealthing(), holder])
+  let plans = support.plans_of([stealthing(), holder])
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
   let #(_, effects) =
     planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
@@ -1267,7 +1235,7 @@ pub fn a_camp_drops_the_procs_fires_nothing_and_the_next_passive_holds_them_with
     cast.passive_started(
       cast: state,
       caster:,
-      plans: real_plans(),
+      plans: support.real_plans(),
       base: Spell4BaseId(29_131),
       now: support.at(ms: 2100),
     )
@@ -1318,7 +1286,7 @@ pub fn a_proc_lasts_as_long_as_its_node_a_timed_one_ends_with_it_and_a_removal_d
       ],
       stealth_change: KeepsStealth,
     )
-  let plans = plans_of([holder, removing])
+  let plans = support.plans_of([holder, removing])
   let caster = planted_caster()
   let #(state, pressed) =
     planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 0)
@@ -1360,7 +1328,7 @@ pub fn a_camp_ends_a_procs_fire_history_with_the_proc_test() -> Nil {
         count: 1,
       ),
     ])
-  let plans = plans_of([stealthing(), holder])
+  let plans = support.plans_of([stealthing(), holder])
   let caster = planted_caster()
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
   let #(state, first) =
@@ -1398,7 +1366,7 @@ pub fn a_stealth_ended_by_a_failing_persistence_fires_the_procs_for_leaving_it_t
         prerequisite_support.single(id: 903, condition: #(28, 1, 0, 0)),
       ),
     )
-  let plans = plans_of([bound, holder])
+  let plans = support.plans_of([bound, holder])
   let in_combat = cast.Caster(..planted_caster(), in_combat: True)
   let out = cast.Caster(..planted_caster(), in_combat: False)
   let #(state, joined_effects) = planted_joined(plans:, spell: holder, at: 1000)
@@ -1431,7 +1399,7 @@ pub fn a_died_proc_of_a_cast_that_is_not_the_innate_passive_is_not_held_and_says
     pressable(spell4_id: 250_101, base: 1, procs: [
       proc(id: 1, trigger: Died, casts: died_cast, window_ms: 500, count: 1),
     ])
-  let plans = plans_of([holder])
+  let plans = support.plans_of([holder])
   let caster = planted_caster()
   let #(state, pressed) =
     planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
