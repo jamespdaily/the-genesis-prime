@@ -62,14 +62,19 @@ def check_state(rollup):
     return "passing"
 
 
+def open_pull_requests():
+    """The open pull requests as (number, title, head branch, check state)."""
+    rows = json.loads(
+        run(["gh", "pr", "list", "--limit", "200", "--json", "number,title,headRefName,statusCheckRollup"])
+    )
+    return [(row["number"], row["title"], row["headRefName"], check_state(row["statusCheckRollup"])) for row in rows]
+
+
 def pull_requests():
-    rows = json.loads(run(["gh", "pr", "list", "--json", "number,title,statusCheckRollup"]))
+    rows = open_pull_requests()
     if not rows:
         return ["pull requests: none open"]
-    return ["pull requests:"] + [
-        f"  #{row['number']} {row['title'][:100]} [{check_state(row['statusCheckRollup'])}]"
-        for row in rows
-    ]
+    return ["pull requests:"] + [f"  #{number} {title[:100]} [{state}]" for number, title, _, state in rows]
 
 
 def play_server():
