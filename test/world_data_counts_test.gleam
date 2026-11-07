@@ -40,6 +40,7 @@ fn asking() -> readiness.Settings {
 
 pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_world_test() -> Nil {
   use <- owned_test.run(300_000)
+  use <- unitest.tag("world_data")
   use <- unitest.guard(client_tables.present())
   use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
   let assert Ok(folder) = envoy.get("GENESIS_WORLD_DATA")
