@@ -842,13 +842,13 @@ pub fn written(taken taken: ConnectionStep(Request)) -> List(Frame) {
   heard(taken:, cipher: keyed())
 }
 
-/// The Spell4 id of each 0x7ff among the frames, in order.
+/// The Spell4 id of each `spell_started` (0x07FF) among the frames, in order.
 pub fn started_spells(frames frames: List(Frame)) -> List(Int) {
   list.filter_map(frames, fn(frame) {
     case frame.message_id == spell_started.message_id {
       True -> {
         let assert Ok(start) = spell_started.decode(frame.body)
-          as "a 0x7ff decodes"
+          as "a spell_started decodes"
         Ok(start.spell4_id)
       }
       False -> Error(Nil)
@@ -856,13 +856,13 @@ pub fn started_spells(frames frames: List(Frame)) -> List(Int) {
   })
 }
 
-/// The stealth bits of each 0x8F5 among the frames, in order.
+/// The stealth bits of each `unit_stealth` (0x08F5) among the frames, in order.
 pub fn stealth_bits(frames frames: List(Frame)) -> List(Int) {
   list.filter_map(frames, fn(frame) {
-    case frame.message_id == 0x08F5 {
+    case frame.message_id == unit_stealth.message_id {
       True -> {
         let assert Ok(change) = unit_stealth.decode(frame.body)
-          as "a 0x8F5 decodes"
+          as "a unit_stealth decodes"
         Ok(change.stealthed)
       }
       False -> Error(Nil)
@@ -897,7 +897,7 @@ pub fn news_told(
   })
 }
 
-/// The 0x262 the tests' player's connection sends the arriving viewer connection
+/// The `unit_create_player` (0x0262) the tests' player's connection sends the arriving viewer connection
 /// `viewer`, taken from the state.
 pub fn created_for(
   state state: game_connection.State,
@@ -913,7 +913,7 @@ pub fn created_for(
         )),
       ).1,
     )
-    as "the player's connection sends the arriving viewer its 0x262"
+    as "the player's connection sends the arriving viewer its unit_create_player"
   unit
 }
 

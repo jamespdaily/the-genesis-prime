@@ -17,17 +17,9 @@ import genesis_prime/game_settings.{GameSettings, NotAWholeNumber, OutOfRange}
 import gleam/list
 import owned_test
 
-/// The environment `variables` make: a variable that is not in the list is not
-/// set.
-fn environment(
-  variables: List(#(String, String)),
-) -> fn(String) -> Result(String, Nil) {
-  fn(name) { list.key_find(variables, name) }
-}
-
 pub fn no_variables_give_the_defaults_test() -> Nil {
   use <- owned_test.run(5000)
-  assert game_settings.from_environment(environment([]))
+  assert game_settings.from_environment(list.key_find([], _))
     == Ok(GameSettings(
       camp_countdown_ms: 10_000,
       character_slots: 2,
@@ -44,27 +36,30 @@ pub fn no_variables_give_the_defaults_test() -> Nil {
 
 pub fn a_countdown_of_0_and_of_59999_is_taken_test() -> Nil {
   use <- owned_test.run(5000)
-  assert game_settings.from_environment(
-      environment([#("GENESIS_CAMP_COUNTDOWN_MS", "0")]),
-    )
+  assert game_settings.from_environment(list.key_find(
+      [#("GENESIS_CAMP_COUNTDOWN_MS", "0")],
+      _,
+    ))
     == Ok(GameSettings(
       camp_countdown_ms: 0,
       character_slots: 2,
       dev_commands: False,
     ))
     as "opcode.0x92.countdown_range: a countdown of 0 after 0xBF 1 is a camp due at once"
-  assert game_settings.from_environment(
-      environment([#("GENESIS_CAMP_COUNTDOWN_MS", "59999")]),
-    )
+  assert game_settings.from_environment(list.key_find(
+      [#("GENESIS_CAMP_COUNTDOWN_MS", "59999")],
+      _,
+    ))
     == Ok(GameSettings(
       camp_countdown_ms: 59_999,
       character_slots: 2,
       dev_commands: False,
     ))
     as "the longest the exit window lays out: 00:59"
-  assert game_settings.from_environment(
-      environment([#("GENESIS_CAMP_COUNTDOWN_MS", "12345")]),
-    )
+  assert game_settings.from_environment(list.key_find(
+      [#("GENESIS_CAMP_COUNTDOWN_MS", "12345")],
+      _,
+    ))
     == Ok(GameSettings(
       camp_countdown_ms: 12_345,
       character_slots: 2,
@@ -77,9 +72,10 @@ pub fn a_countdown_outside_the_range_or_not_a_whole_number_is_refused_with_its_v
   use <- owned_test.run(5000)
   list.each([#("-1", -1), #("60000", 60_000), #("100000", 100_000)], fn(case_) {
     let #(text, number) = case_
-    assert game_settings.from_environment(
-        environment([#("GENESIS_CAMP_COUNTDOWN_MS", text)]),
-      )
+    assert game_settings.from_environment(list.key_find(
+        [#("GENESIS_CAMP_COUNTDOWN_MS", text)],
+        _,
+      ))
       == Error(OutOfRange(
         variable: "GENESIS_CAMP_COUNTDOWN_MS",
         value: number,
@@ -89,9 +85,10 @@ pub fn a_countdown_outside_the_range_or_not_a_whole_number_is_refused_with_its_v
       as "a whole number outside 0 to 59999 is refused with the range: a negative time is one the client could not handle, and the exit window has no minutes field"
   })
   list.each(["ten", "1.5", "", " 5", "5 ms"], fn(value) {
-    assert game_settings.from_environment(
-        environment([#("GENESIS_CAMP_COUNTDOWN_MS", value)]),
-      )
+    assert game_settings.from_environment(list.key_find(
+        [#("GENESIS_CAMP_COUNTDOWN_MS", value)],
+        _,
+      ))
       == Error(NotAWholeNumber(
         variable: "GENESIS_CAMP_COUNTDOWN_MS",
         value:,
@@ -122,12 +119,13 @@ pub fn a_refusal_says_the_variable_the_value_and_the_range_test() -> Nil {
 
 pub fn a_variable_no_setting_reads_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
-  assert game_settings.from_environment(
-      environment([
+  assert game_settings.from_environment(list.key_find(
+      [
         #("GENESIS_CHARACTER_SLOTS_EXTRA", "9"),
         #("GENESIS_CAMP_COUNTDOWN_MS_EXTRA", "1"),
-      ]),
-    )
+      ],
+      _,
+    ))
     == Ok(game_settings.defaults())
     as "a variable that only starts with a setting's name is not it"
 }
@@ -136,9 +134,10 @@ pub fn slots_of_2_and_14_are_taken_and_6_gives_6_test() -> Nil {
   use <- owned_test.run(5000)
   list.each([#("2", 2), #("6", 6), #("14", 14)], fn(case_) {
     let #(text, slots) = case_
-    assert game_settings.from_environment(
-        environment([#("GENESIS_CHARACTER_SLOTS", text)]),
-      )
+    assert game_settings.from_environment(list.key_find(
+        [#("GENESIS_CHARACTER_SLOTS", text)],
+        _,
+      ))
       == Ok(GameSettings(
         camp_countdown_ms: 10_000,
         character_slots: slots,
@@ -152,9 +151,10 @@ pub fn slots_below_2_or_above_14_or_not_a_whole_number_are_refused_with_their_va
   use <- owned_test.run(5000)
   list.each([#("1", 1), #("0", 0), #("-3", -3), #("15", 15)], fn(case_) {
     let #(text, number) = case_
-    assert game_settings.from_environment(
-        environment([#("GENESIS_CHARACTER_SLOTS", text)]),
-      )
+    assert game_settings.from_environment(list.key_find(
+        [#("GENESIS_CHARACTER_SLOTS", text)],
+        _,
+      ))
       == Error(OutOfRange(
         variable: "GENESIS_CHARACTER_SLOTS",
         value: number,
@@ -163,9 +163,10 @@ pub fn slots_below_2_or_above_14_or_not_a_whole_number_are_refused_with_their_va
       ))
       as "below 2 the client still offers 2 (its reward property), so a refusal at fewer would disagree with what it shows; above 14 the slots pass the client's own most, which its tooltip and buy-a-slot entry count against"
   })
-  assert game_settings.from_environment(
-      environment([#("GENESIS_CHARACTER_SLOTS", "six")]),
-    )
+  assert game_settings.from_environment(list.key_find(
+      [#("GENESIS_CHARACTER_SLOTS", "six")],
+      _,
+    ))
     == Error(NotAWholeNumber(
       variable: "GENESIS_CHARACTER_SLOTS",
       value: "six",
@@ -176,27 +177,30 @@ pub fn slots_below_2_or_above_14_or_not_a_whole_number_are_refused_with_their_va
 
 pub fn the_development_commands_are_off_unset_and_on_only_for_1_test() -> Nil {
   use <- owned_test.run(5000)
-  assert game_settings.from_environment(environment([]))
+  assert game_settings.from_environment(list.key_find([], _))
     == Ok(GameSettings(..game_settings.defaults(), dev_commands: False))
     as "the module's doc comment: unset is 0, off, so production, which does not set it, runs no development command"
   assert !game_settings.defaults().dev_commands
-  assert game_settings.from_environment(
-      environment([#("GENESIS_DEV_COMMANDS", "0")]),
-    )
+  assert game_settings.from_environment(list.key_find(
+      [#("GENESIS_DEV_COMMANDS", "0")],
+      _,
+    ))
     == Ok(GameSettings(..game_settings.defaults(), dev_commands: False))
     as "0 is off"
-  assert game_settings.from_environment(
-      environment([#("GENESIS_DEV_COMMANDS", "1")]),
-    )
+  assert game_settings.from_environment(list.key_find(
+      [#("GENESIS_DEV_COMMANDS", "1")],
+      _,
+    ))
     == Ok(GameSettings(..game_settings.defaults(), dev_commands: True))
     as "1 is on, and changes no other setting"
 }
 
 pub fn a_development_commands_value_of_2_or_x_refuses_the_start_with_its_variable_and_range_test() -> Nil {
   use <- owned_test.run(5000)
-  assert game_settings.from_environment(
-      environment([#("GENESIS_DEV_COMMANDS", "2")]),
-    )
+  assert game_settings.from_environment(list.key_find(
+      [#("GENESIS_DEV_COMMANDS", "2")],
+      _,
+    ))
     == Error(OutOfRange(
       variable: "GENESIS_DEV_COMMANDS",
       value: 2,
@@ -204,9 +208,10 @@ pub fn a_development_commands_value_of_2_or_x_refuses_the_start_with_its_variabl
       most: 1,
     ))
     as "the module's doc comment: a whole number outside 0 to 1 is refused with the range, so a typo never turns the commands on"
-  assert game_settings.from_environment(
-      environment([#("GENESIS_DEV_COMMANDS", "x")]),
-    )
+  assert game_settings.from_environment(list.key_find(
+      [#("GENESIS_DEV_COMMANDS", "x")],
+      _,
+    ))
     == Error(NotAWholeNumber(
       variable: "GENESIS_DEV_COMMANDS",
       value: "x",

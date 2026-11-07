@@ -17,10 +17,6 @@ import gleam/float
 import gleam/option.{None, Some}
 import owned_test
 
-fn near(value value: Float, expected expected: Float) -> Bool {
-  float.absolute_value(value -. expected) <. 0.0001
-}
-
 /// An effect row of the client: dataBits00 1.0 as a float, dataBits01 0, and the
 /// parameters (type 12 Assault Power, type 13 Support Power, type 10 level).
 fn row(
@@ -42,52 +38,58 @@ fn level_one(rating rating: Float, support support: Float) -> damage.Attacker {
 pub fn each_level_one_ability_hits_for_its_level_parameter_at_rating_zero_test() -> Nil {
   use <- owned_test.run(5000)
   let none = level_one(rating: 0.0, support: 0.0)
-  assert near(
-    value: damage.value(
+  assert float.loosely_equals(
+    damage.value(
       formula: row(assault: 0.0656, support: 0.0656, per_level: 4.16),
       attacker: none,
     ),
-    expected: 4.16,
+    with: 4.16,
+    tolerating: 0.0001,
   )
     as "Kick, Spell4Effects 140383"
-  assert near(
-    value: damage.value(
+  assert float.loosely_equals(
+    damage.value(
       formula: row(assault: 0.1434, support: 0.1434, per_level: 9.08),
       attacker: none,
     ),
-    expected: 9.08,
+    with: 9.08,
+    tolerating: 0.0001,
   )
     as "Zap, 125182"
-  assert near(
-    value: damage.value(
+  assert float.loosely_equals(
+    damage.value(
       formula: row(assault: 0.336, support: 0.0, per_level: 18.0),
       attacker: none,
     ),
-    expected: 18.0,
+    with: 18.0,
+    tolerating: 0.0001,
   )
     as "Telekinetic Strike, 62159"
-  assert near(
-    value: damage.value(
+  assert float.loosely_equals(
+    damage.value(
       formula: row(assault: 0.0837, support: 0.0837, per_level: 8.94),
       attacker: none,
     ),
-    expected: 8.94,
+    with: 8.94,
+    tolerating: 0.0001,
   )
     as "Crush's second spell, 95950"
-  assert near(
-    value: damage.value(
+  assert float.loosely_equals(
+    damage.value(
       formula: row(assault: 0.0935, support: 0.0935, per_level: 8.14),
       attacker: none,
     ),
-    expected: 8.14,
+    with: 8.14,
+    tolerating: 0.0001,
   )
     as "Paralytic Surge, 96125"
-  assert near(
-    value: damage.value(
+  assert float.loosely_equals(
+    damage.value(
       formula: row(assault: 0.035, support: 0.035, per_level: 3.0),
       attacker: none,
     ),
-    expected: 3.0,
+    with: 3.0,
+    tolerating: 0.0001,
   )
     as "Stagger's per-hit spell, 83829"
 }
@@ -95,20 +97,22 @@ pub fn each_level_one_ability_hits_for_its_level_parameter_at_rating_zero_test()
 pub fn the_gear_ratings_add_a_rounded_stat_part_test() -> Nil {
   use <- owned_test.run(5000)
   let gear = level_one(rating: 203.0625, support: 55.6875)
-  assert near(
-    value: damage.value(
+  assert float.loosely_equals(
+    damage.value(
       formula: row(assault: 0.336, support: 0.0, per_level: 18.0),
       attacker: gear,
     ),
-    expected: 35.0,
+    with: 35.0,
+    tolerating: 0.0001,
   )
     as "Telekinetic Strike: Assault Power 50.77 x 0.336 = 17.06 rounds to 17, plus 18"
-  assert near(
-    value: damage.value(
+  assert float.loosely_equals(
+    damage.value(
       formula: row(assault: 0.0656, support: 0.0656, per_level: 4.16),
       attacker: gear,
     ),
-    expected: 8.16,
+    with: 8.16,
+    tolerating: 0.0001,
   )
     as "Kick: 0.0656 x 50.77 + 0.0656 x 13.92 = 4.24 rounds to 4, plus 4.16"
 }

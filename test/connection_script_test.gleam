@@ -161,7 +161,7 @@ pub fn two_connections_of_one_listener_each_take_a_script_of_their_own_test() ->
   // so which script a connection took shows in the time its records hold.
   let server =
     start_script_rule(fn() {
-      let drawn = ask_support.unique_number()
+      let drawn = recording_support.unique_number()
       fixed(Now(monotonic_ms: drawn, filetime: drawn * 10))()
     })
   let client_one = ask_support.connect(server)

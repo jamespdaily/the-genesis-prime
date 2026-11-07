@@ -101,7 +101,7 @@ pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_s
   use <- owned_test.run(5000)
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 58_586, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
         spectral_form_row(),
       ]),
     ])
@@ -154,7 +154,7 @@ pub fn a_delayed_absorb_starts_on_a_timer_test() -> Nil {
     )
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 30_724, base: 3, modifiers: [delayed]),
+      support.spell_holding(spell4_id: 30_724, base: 3, modifiers: [delayed]),
     ])
   let #(state, effects) =
     support.press_as(
@@ -182,7 +182,7 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
   // A type 80 removal of the cast.
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 58_586, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
         spectral_form_row(),
       ]),
       spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
@@ -234,7 +234,7 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
   let guarded =
     support.plans_of([
       spell_plan.Spell(
-        ..support.holder(spell4_id: 58_586, base: 3, modifiers: [
+        ..support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
           spectral_form_row(),
         ]),
         caster_persistence: Some(in_combat),
@@ -285,10 +285,10 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
     )
   let both =
     support.plans_of([
-      support.holder(spell4_id: 58_586, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
         spectral_form_row(),
       ]),
-      support.holder(spell4_id: 30_724, base: 1, modifiers: [delayed]),
+      support.spell_holding(spell4_id: 30_724, base: 1, modifiers: [delayed]),
     ])
   let #(state, one) =
     support.press_as(
@@ -357,7 +357,10 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
     )
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 58_586, base: 3, modifiers: [raising, delayed]),
+      support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
+        raising,
+        delayed,
+      ]),
     ])
   let #(state, effects) =
     support.press_as(

@@ -63,21 +63,6 @@ fn spell_of(
   )
 }
 
-fn press(
-  plans plans: Plans,
-  state state: State,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  support.pressed_in(
-    plans:,
-    state:,
-    caster: support.caster(),
-    bag_index: bag_of_base_3,
-    target: 0,
-    at: ms,
-  )
-}
-
 /// The units each go names, with the effects it lists on each.
 fn targets_of(effects effects: List(Effect)) -> List(SpellTargetInfo) {
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
@@ -121,7 +106,12 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
       base: 3,
     )
   let #(_, effects) =
-    press(plans: support.plans_of([spell]), state: cast.new(), at: 1000)
+    support.press(
+      plans: support.plans_of([spell]),
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let assert [info] = targets_of(effects:)
   assert info.unit_id == 7 as "the caster is the unit the row aims at"
   assert info.instance_count == 1
@@ -160,7 +150,12 @@ pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_
       base: 3,
     )
   let #(state, effects) =
-    press(plans: support.plans_of([spell]), state: cast.new(), at: 1000)
+    support.press(
+      plans: support.plans_of([spell]),
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let id = support.pressed_id(effects:)
   assert support.finished_ids(support.writes(effects:)) == []
     as "the client ends no buff on time, so an early 0x7fe would undo the scale (cast.target_node_end)"
@@ -238,7 +233,12 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so
       base: 3,
     )
   let #(_, effects) =
-    press(plans: support.plans_of([spell]), state: cast.new(), at: 1000)
+    support.press(
+      plans: support.plans_of([spell]),
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   assert listed(effects:) == []
     as "a row behind a target prerequisite is not applied, as a forced move behind one is not listed"
   let lines =

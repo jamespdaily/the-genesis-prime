@@ -57,7 +57,7 @@ fn armor_row(
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
     change: spell_plan.PropertyChange(
-      support.raising_property_44(points: int.to_float(points)),
+      support.raising_interrupt_armor_threshold(points: int.to_float(points)),
     ),
     row:,
     condition: Always,
@@ -72,7 +72,7 @@ pub fn a_go_with_interrupt_armor_lists_it_on_the_caster_and_gives_the_node_its_t
   use <- owned_test.run(5000)
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 76_766, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
         spectral_form_row(),
       ]),
     ])
@@ -109,7 +109,7 @@ pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_d
   use <- owned_test.run(5000)
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 76_766, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
         spectral_form_row(),
       ]),
     ])
@@ -118,7 +118,7 @@ pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_d
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 199_192)
   assert support.property_starts(effects:)
-    == [#(source, support.raising_property_44(points: 1.0))]
+    == [#(source, support.raising_interrupt_armor_threshold(points: 1.0))]
     as "row 199192: x 1.0 + 1 on property 44, in the go's own step"
   assert support.caster_change_ends(effects:) == []
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
@@ -138,7 +138,7 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
     )
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 79_917, base: 3, modifiers: [delayed]),
+      support.spell_holding(spell4_id: 79_917, base: 3, modifiers: [delayed]),
     ])
   let #(state, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -155,7 +155,7 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
   assert list.flat_map(fired, fn(step) {
       support.property_starts(effects: step.1)
     })
-    == [#(source, support.raising_property_44(points: 1.0))]
+    == [#(source, support.raising_interrupt_armor_threshold(points: 1.0))]
 }
 
 // ---- a removal, a persistence, a death and a later go ----
@@ -165,7 +165,7 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
   // A type 80 removal of the cast.
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 76_766, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
         spectral_form_row(),
       ]),
       spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
@@ -205,7 +205,7 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
   let guarded =
     support.plans_of([
       spell_plan.Spell(
-        ..support.holder(spell4_id: 76_766, base: 3, modifiers: [
+        ..support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
           spectral_form_row(),
         ]),
         caster_persistence: Some(in_combat),
@@ -253,10 +253,10 @@ pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
     )
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 76_766, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
         spectral_form_row(),
       ]),
-      support.holder(spell4_id: 79_917, base: 1, modifiers: [delayed]),
+      support.spell_holding(spell4_id: 79_917, base: 1, modifiers: [delayed]),
     ])
   let #(state, first) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -289,7 +289,7 @@ pub fn a_later_go_of_the_same_cast_arms_the_armor_again_and_holds_it_once_test()
   let plans =
     support.plans_of([
       spell_plan.Spell(
-        ..support.holder(spell4_id: 76_766, base: 3, modifiers: [
+        ..support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
           spectral_form_row(),
         ]),
         phase_delays_ms: [0, 1000],

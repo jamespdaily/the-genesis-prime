@@ -56,7 +56,7 @@ fn started(world: World) -> MapProcess {
     world_map_registry.find_or_start(
       world.maps,
       ship,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     as "Maps started the map or found it running"
   found

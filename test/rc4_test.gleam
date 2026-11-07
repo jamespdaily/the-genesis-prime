@@ -16,15 +16,10 @@ import login_vectors as vector
 import message_support
 import owned_test
 import qcheck
+import recording_support
 
 @external(erlang, "rc4_oracle_ffi", "encrypt")
 fn otp_rc4(key: BitArray, data: BitArray) -> BitArray
-
-fn counting_bytes_to_1f() -> BitArray {
-  message_support.hex(
-    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-  )
-}
 
 fn started_under(key: BitArray) -> rc4.Stream {
   let assert Ok(stream) = rc4.start(key) as "a key of 1 to 256 bytes starts"
@@ -37,7 +32,7 @@ fn started() -> rc4.Stream {
 
 pub fn the_bytes_00_to_1f_encrypt_to_the_vectors_bytes_test() -> Nil {
   use <- owned_test.run(5000)
-  assert rc4.crypt(started(), counting_bytes_to_1f()).1
+  assert rc4.crypt(started(), recording_support.counting_seed_bytes()).1
     == message_support.hex(
       "33b03353f0dd9c3bfc19692ca27a45434bb1faaff30a722ddd99edb384eae33c",
     )
@@ -46,15 +41,16 @@ pub fn the_bytes_00_to_1f_encrypt_to_the_vectors_bytes_test() -> Nil {
 
 pub fn the_stream_runs_on_across_calls_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(stream, _written) = rc4.crypt(started(), counting_bytes_to_1f())
+  let #(stream, _written) =
+    rc4.crypt(started(), recording_support.counting_seed_bytes())
   assert rc4.crypt(stream, <<0, 0, 0, 0>>).1 == message_support.hex("64470a37")
     as "vector.StsConnLib64.MT.dll!0x1800f7420.rc4: the next four zero bytes encrypt to 64470a37 on the same state"
 }
 
 pub fn a_second_stream_under_the_same_key_deciphers_the_first_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(_, sent) = rc4.crypt(started(), counting_bytes_to_1f())
-  assert rc4.crypt(started(), sent).1 == counting_bytes_to_1f()
+  let #(_, sent) = rc4.crypt(started(), recording_support.counting_seed_bytes())
+  assert rc4.crypt(started(), sent).1 == recording_support.counting_seed_bytes()
     as "StsConnLib64.MT.dll!0x18003a7d0: the receiving state is keyed with the same key as the sending one, and RC4 deciphers with the same bytes"
 }
 

@@ -132,17 +132,21 @@ pub fn character(
   )
 }
 
-/// The 0x111 messages among the frames, decoded, in order.
+/// The `item_added` (0x0111) messages among the frames, decoded, in order.
 pub fn items_added(frames frames: List(Frame)) -> List(item_added.ItemAdded) {
   list.filter(frames, fn(frame) { frame.message_id == item_added.message_id })
   |> list.map(fn(frame) {
-    let assert Ok(added) = item_added.decode(frame.body) as "0x111 decodes"
+    let assert Ok(added) = item_added.decode(frame.body)
+      as "an item_added decodes"
     added
   })
 }
 
 /// The one frame with this message id among the frames.
-pub fn only(frames frames: List(Frame), message_id message_id: Int) -> Frame {
+pub fn only_frame(
+  frames frames: List(Frame),
+  message_id message_id: Int,
+) -> Frame {
   let assert [frame] =
     list.filter(frames, fn(frame) { frame.message_id == message_id })
     as "the entry sends the message once"

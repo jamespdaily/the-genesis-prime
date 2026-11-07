@@ -68,7 +68,7 @@ pub fn a_go_lists_a_modifier_aimed_at_the_caster_and_its_node_lives_for_the_row_
   // cast waits for the node's 8 s before its 0x7fe.
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
+      support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
     ])
   let #(state, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -96,7 +96,7 @@ pub fn a_modifier_with_no_delay_starts_at_the_go_and_ends_after_its_duration_tes
   use <- owned_test.run(5000)
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
+      support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
     ])
   let #(state, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -115,7 +115,7 @@ pub fn a_modifier_with_a_delay_starts_after_it_and_ends_after_its_duration_test(
   // Gate's 67777: from go + 180 for 400 ms.
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 34_355, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 34_355, base: 3, modifiers: [
         support.falling_row(),
       ]),
     ])
@@ -140,7 +140,9 @@ pub fn a_modifier_of_a_phase_the_go_is_not_in_is_not_applied_test() -> Nil {
     spell_plan.PropertyModifier(..support.falling_row(), phase_flags: 2)
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 34_355, base: 3, modifiers: [go_only_in_phase_1]),
+      support.spell_holding(spell4_id: 34_355, base: 3, modifiers: [
+        go_only_in_phase_1,
+      ]),
     ])
   let #(_, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -158,7 +160,9 @@ pub fn a_modifier_that_lasts_until_removed_starts_at_the_go_and_has_no_end_timer
     )
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 57_030, base: 3, modifiers: [until_removed]),
+      support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [
+        until_removed,
+      ]),
     ])
   let #(_, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -177,7 +181,7 @@ pub fn a_row_with_no_life_applies_nothing_test() -> Nil {
     )
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 57_030, base: 3, modifiers: [lifeless]),
+      support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [lifeless]),
     ])
   let #(_, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -196,7 +200,7 @@ pub fn a_modifier_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
     )
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 57_030, base: 3, modifiers: [gated]),
+      support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [gated]),
     ])
   let #(_, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -209,7 +213,9 @@ pub fn a_modifier_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
 fn two_gos() -> Plans {
   support.plans_of([
     spell_plan.Spell(
-      ..support.holder(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
+      ..support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [
+        crit_row(),
+      ]),
       phase_delays_ms: [0, 1000],
     ),
   ])
@@ -243,7 +249,7 @@ pub fn a_type_80_removal_of_the_cast_ends_its_modifiers_and_cancels_their_timers
   use <- owned_test.run(5000)
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
+      support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
       spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
         spell_plan.ForceRemove(
           effect_id: Spell4EffectsId(196_521),
@@ -287,7 +293,7 @@ pub fn a_node_that_ends_by_time_ends_its_modifiers_and_cancels_their_timers_test
   let plans =
     support.plans_of([
       spell_plan.Spell(
-        ..support.holder(spell4_id: 34_355, base: 3, modifiers: [
+        ..support.spell_holding(spell4_id: 34_355, base: 3, modifiers: [
           support.falling_row(),
         ]),
         longer_of_delay_and_duration: True,
@@ -307,7 +313,7 @@ pub fn the_caster_dying_ends_every_modifier_still_pending_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 34_355, base: 3, modifiers: [
+      support.spell_holding(spell4_id: 34_355, base: 3, modifiers: [
         support.falling_row(),
       ]),
     ])
@@ -329,7 +335,7 @@ pub fn a_caster_that_leaves_ends_no_modifier_test() -> Nil {
   use <- owned_test.run(5000)
   let plans =
     support.plans_of([
-      support.holder(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
+      support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
     ])
   let #(state, _) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)

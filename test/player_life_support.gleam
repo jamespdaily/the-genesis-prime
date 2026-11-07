@@ -119,3 +119,26 @@ pub fn timers(effects: List(Effect)) -> List(Effect) {
     }
   })
 }
+
+/// A strike of one blow of `damage` of the damage type `damage_type`, with the
+/// crit chance `crit_chance`.
+pub fn offence_of(
+  damage damage: Int,
+  damage_type damage_type: Int,
+  crit_chance crit_chance: Float,
+) -> Offence {
+  hit.Offence(
+    blows: [
+      hit.Blow(
+        spell4_effects_id: 62_159,
+        damage_type:,
+        damage:,
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ],
+    crit_chance:,
+    crit_severity: 1.5,
+    strikethrough: 0.0,
+  )
+}

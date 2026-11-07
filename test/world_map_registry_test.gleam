@@ -130,7 +130,7 @@ fn started(world: World, map: MapId) -> MapProcess {
     world_map_registry.find_or_start(
       world.maps,
       map,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     as "Maps started the map or found it running"
   found
@@ -180,7 +180,7 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
       world.maps,
       ship,
       incarnation: 1,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Error(world_map_registry.NotFound)
     as "find never starts a map: no map is running"
@@ -192,7 +192,7 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
       world.maps,
       ship,
       incarnation: first.incarnation,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Ok(first)
     as "find with the incarnation of the run that is running answers it"
@@ -200,7 +200,7 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
       world.maps,
       ship,
       incarnation: first.incarnation + 1,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Error(world_map_registry.NotFound)
     as "another incarnation is another run: a watch on a run that ended ends at once"
@@ -222,7 +222,7 @@ pub fn concurrent_finds_for_one_map_start_it_once_test() -> Nil {
         world_map_registry.find_or_start(
           world.maps,
           ship,
-          deadline_ms: ask_support.deadline(),
+          deadline_ms: ask_support.event_wait(),
         ),
       )
     })
@@ -255,7 +255,7 @@ pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_
       world.maps,
       ship,
       incarnation: first.incarnation,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Error(world_map_registry.NotFound)
     as "a find with the old incarnation is an error: a player's connection that watches the old run learns it ended"
@@ -263,7 +263,7 @@ pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_
       world.maps,
       ship,
       incarnation: again.incarnation,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Ok(again)
 }
@@ -309,7 +309,7 @@ fn await_not_found(
       world.maps,
       map,
       incarnation:,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Error(world_map_registry.NotFound)
   })
@@ -329,7 +329,7 @@ pub fn an_ask_is_given_up_at_the_askers_deadline_and_maps_not_running_is_an_erro
   assert world_map_registry.find_or_start(
       nobody,
       ship,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Error(Nil)
     as "Maps is not running: no process holds its name"
@@ -337,7 +337,7 @@ pub fn an_ask_is_given_up_at_the_askers_deadline_and_maps_not_running_is_an_erro
       nobody,
       ship,
       incarnation: 1,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Error(world_map_registry.NotFound)
 }
@@ -453,7 +453,7 @@ pub fn an_ask_of_a_run_that_is_not_the_running_one_or_of_a_map_not_running_is_no
       ship,
       incarnation: 1,
       message: join_message(7),
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
       reply: fn(_) { Nil },
     )
     == Error(Nil)
@@ -462,7 +462,7 @@ pub fn an_ask_of_a_run_that_is_not_the_running_one_or_of_a_map_not_running_is_no
       world.maps,
       ship,
       incarnation: 1,
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
     )
     == Error(world_map_registry.NotFound)
     as "the ask started no map, as an ask of find_or_start would"
@@ -472,7 +472,7 @@ pub fn an_ask_of_a_run_that_is_not_the_running_one_or_of_a_map_not_running_is_no
       ship,
       incarnation: first.incarnation + 1,
       message: join_message(7),
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
       reply: fn(_) { Nil },
     )
     == Error(Nil)
@@ -485,7 +485,7 @@ pub fn an_ask_of_a_run_that_is_not_the_running_one_or_of_a_map_not_running_is_no
       ship,
       incarnation: 1,
       message: join_message(7),
-      deadline_ms: ask_support.deadline(),
+      deadline_ms: ask_support.event_wait(),
       reply: fn(_) { Nil },
     )
     == Error(Nil)
@@ -503,7 +503,7 @@ pub fn an_ask_of_the_running_run_reaches_it_and_its_answer_goes_to_the_reply_tes
         ship,
         incarnation: first.incarnation,
         message: join_message(3),
-        deadline_ms: ask_support.deadline(),
+        deadline_ms: ask_support.event_wait(),
         reply:,
       )
     })

@@ -21,7 +21,7 @@
 //// 0.625.
 
 import genesis_prime/client_connection
-import genesis_prime/game/hit.{type Defence, Blow, Defence, Offence}
+import genesis_prime/game/hit.{type Defence, Defence}
 import genesis_prime/game/player_life.{
   type Effect, type Life, OwnAbsorption, OwnDeathState, OwnHealth, OwnShield,
   StartTimer, ToClient, ToViewers,
@@ -50,24 +50,6 @@ fn player() -> Life {
   ).0
 }
 
-/// A strike of one blow of `damage` of the damage type `damage_type`, with no crit chance.
-fn offence_of(damage damage: Int, damage_type damage_type: Int) -> hit.Offence {
-  Offence(
-    blows: [
-      Blow(
-        spell4_effects_id: 62_159,
-        damage_type:,
-        damage:,
-        delay_ms: 0,
-        threat_multiplier: 1.0,
-      ),
-    ],
-    crit_chance: 0.0,
-    crit_severity: 1.5,
-    strikethrough: 0.0,
-  )
-}
-
 /// A blow of `damage` of the damage type `damage_type` on the player, on the rolls of a
 /// strike that crits, glances and deflects nothing.
 fn struck(
@@ -78,7 +60,11 @@ fn struck(
   player_life_support.struck(
     life:,
     defence: defence(),
-    offence: offence_of(damage:, damage_type:),
+    offence: player_life_support.offence_of(
+      damage:,
+      damage_type:,
+      crit_chance: 0.0,
+    ),
     cast_id: 1,
   )
 }
@@ -383,7 +369,11 @@ pub fn a_deflected_strike_leaves_the_absorbs_and_writes_no_stat_22_test() -> Nil
         ),
         from: player_life_support.beast(),
         striker: strike_tell.CreatureStriker,
-        offence: offence_of(damage: 300, damage_type: 3),
+        offence: player_life_support.offence_of(
+          damage: 300,
+          damage_type: 3,
+          crit_chance: 0.0,
+        ),
         controls: [],
       ),
       rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),

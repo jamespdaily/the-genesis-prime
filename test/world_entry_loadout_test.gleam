@@ -97,7 +97,7 @@ fn equipped(frames frames: List(Frame)) -> List(#(Int, Int)) {
 fn player_of(frames frames: List(Frame)) -> UnitCreatePlayer {
   let assert Ok(player) =
     unit_create_player.decode(
-      { world_entry_support.only(frames:, message_id: 0x0262) }.body,
+      { world_entry_support.only_frame(frames:, message_id: 0x0262) }.body,
     )
     as "0x262 decodes"
   player
@@ -197,7 +197,7 @@ pub fn one_0x1a0_sets_tier_1_of_each_ability_in_action_sets_0_to_3_test() -> Nil
       ))
     let assert Ok(tiers) =
       ability_tiers.decode(
-        { world_entry_support.only(frames:, message_id: 0x01A0) }.body,
+        { world_entry_support.only_frame(frames:, message_id: 0x01A0) }.body,
       )
       as "0x1a0 decodes"
     let expected =
@@ -222,7 +222,7 @@ pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_
       ))
     let assert Ok(set) =
       action_set.decode(
-        { world_entry_support.only(frames:, message_id: 0x019D) }.body,
+        { world_entry_support.only_frame(frames:, message_id: 0x019D) }.body,
       )
       as "0x19d decodes"
     assert set.action_set_index == 0 && set.result == 1

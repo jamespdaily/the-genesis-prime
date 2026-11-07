@@ -183,7 +183,7 @@ fn scripted(
       script: Script(
         seed: seed_value(),
         clock: fn(input) {
-          let number = ask_support.unique_number()
+          let number = recording_support.unique_number()
           let now = Now(monotonic_ms: number, filetime: number * 7)
           process.send(given, #(input, now))
           now
@@ -242,7 +242,7 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
     as "the header holds the script's seed and ordinal"
   assert header.rule == "script_rule"
   let accepted_bytes = accepted_bytes(first)
-  let read_bytes = script_rule.read_record(second)
+  let read_bytes = script_rule.read_record_bytes(second)
   assert without_sequences(lines)
     == [
       Took(0, first, Accepted),

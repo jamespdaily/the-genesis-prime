@@ -145,7 +145,7 @@ pub fn one_0x1a0_sets_tier_1_of_the_abilities_and_the_innate_in_action_sets_0_to
     let frames = world_entry_support.frames_of(effects:)
     let assert Ok(tiers) =
       ability_tiers.decode(
-        { world_entry_support.only(frames:, message_id: 0x01A0) }.body,
+        { world_entry_support.only_frame(frames:, message_id: 0x01A0) }.body,
       )
       as "0x1a0 decodes"
     assert tiers.tiers
@@ -175,7 +175,7 @@ pub fn the_action_set_keeps_the_three_bar_abilities_and_0x19f_names_slot_0_test(
     let frames = world_entry_support.frames_of(effects:)
     let assert Ok(set) =
       action_set.decode(
-        { world_entry_support.only(frames:, message_id: 0x019D) }.body,
+        { world_entry_support.only_frame(frames:, message_id: 0x019D) }.body,
       )
       as "0x19d decodes"
     assert set.shortcuts
@@ -189,7 +189,7 @@ pub fn the_action_set_keeps_the_three_bar_abilities_and_0x19f_names_slot_0_test(
       })
       as "opcode.0x19d: the innate is in no action set, so slots 0 to 2 hold the three abilities as before"
     assert innate_index_set.decode(
-        { world_entry_support.only(frames:, message_id: 0x019F) }.body,
+        { world_entry_support.only_frame(frames:, message_id: 0x019F) }.body,
       )
       == Ok(InnateIndexSet(innate_index: 0))
       as "opcode.0x19f: index 0, so the button points at slot 0's active spell and not the slot-1 passive"

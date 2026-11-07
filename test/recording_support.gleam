@@ -75,3 +75,16 @@ pub fn counting_seed_bytes() -> BitArray {
   |> list.index_map(fn(_, byte) { <<byte>> })
   |> bit_array.concat
 }
+
+@external(erlang, "erlang", "unique_integer")
+fn unique_integer(options: List(UniqueOption)) -> Int
+
+type UniqueOption {
+  Positive
+  Monotonic
+}
+
+/// A number no other call gives, rising with each call.
+pub fn unique_number() -> Int {
+  unique_integer([Positive, Monotonic])
+}

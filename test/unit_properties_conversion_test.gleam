@@ -17,7 +17,7 @@
 //// - `UnitProperty2` 7, 42, 47 and 60: default values 1.0, 0.0, 0.0 and 0.0
 ////   (`table_rows -- UnitProperty2 7 42 47 60`).
 
-import cast_support as support
+import cast_support
 import genesis_prime/game/unit_properties.{
   type Properties, Change, Changed, Conversion,
 }
@@ -49,7 +49,7 @@ fn started(
 ) -> #(Properties, List(unit_properties.Changed)) {
   unit_properties.apply(
     properties:,
-    source: support.source_of(cast_id: 1, effect_id:),
+    source: cast_support.source_of(cast_id: 1, effect_id:),
     modifier:,
   )
 }
@@ -119,7 +119,7 @@ pub fn a_change_of_the_source_that_starts_after_the_conversion_moves_the_target_
   let #(properties, ended) =
     unit_properties.remove(
       properties:,
-      source: support.source_of(cast_id: 1, effect_id: 1),
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
     )
   assert ended
     == [
@@ -175,7 +175,7 @@ pub fn a_conversion_whose_source_is_zero_reports_no_change_when_it_starts_or_end
   let #(properties, ended_changes) =
     unit_properties.remove(
       properties:,
-      source: support.source_of(cast_id: 1, effect_id: 229_304),
+      source: cast_support.source_of(cast_id: 1, effect_id: 229_304),
     )
   assert ended_changes == []
   assert unit_properties.value(properties:, property: multi_hit) == 0.0
@@ -200,7 +200,7 @@ pub fn ending_a_conversion_works_the_values_out_again_from_the_bases_and_the_liv
   let #(properties, ended) =
     unit_properties.remove(
       properties:,
-      source: support.source_of(cast_id: 1, effect_id: 229_304),
+      source: cast_support.source_of(cast_id: 1, effect_id: 229_304),
     )
   assert ended == [Changed(property: multi_hit, base: 0.0, value: 0.0)]
     as "ending the conversion takes the amount off the target and leaves the source's change"

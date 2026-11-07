@@ -71,22 +71,6 @@ fn plans_of(spells: List(Spell)) -> Plans {
   support.with_spells(plans: spell_tables.plans_with_stealth(), spells:)
 }
 
-fn press(
-  plans plans: Plans,
-  state state: State,
-  bag bag: Int,
-  at ms: Int,
-) -> #(State, List(Effect)) {
-  support.pressed_in(
-    plans:,
-    state:,
-    caster: caster(),
-    bag_index: bag,
-    target: 0,
-    at: ms,
-  )
-}
-
 /// A spell with no stealth row whose go does what its value says to the stealth.
 fn attack(
   spell4_id spell4_id: Int,
@@ -317,7 +301,13 @@ fn goes_apart(
 
 /// A press of the toggle at 1000 ms by a caster that is not stealthed.
 fn toggled() -> #(State, List(Effect)) {
-  press(plans: plans_of([]), state: cast.new(), bag: toggle_bag, at: 1000)
+  support.press_by(
+    caster: caster(),
+    plans: plans_of([]),
+    state: cast.new(),
+    bag: toggle_bag,
+    at: 1000,
+  )
 }
 
 pub fn a_press_of_the_toggle_when_not_stealthed_starts_38784_whose_go_lists_83834_and_holds_the_stealth_test() -> Nil {
@@ -386,7 +376,13 @@ pub fn a_press_of_the_toggle_when_stealthed_takes_38784_off_and_ends_the_stealth
   assert !cast.stealthed(cast: state)
   // A third press enters stealth again; 159130 cleared the cooldown again.
   let #(state, again) =
-    press(plans: plans_of([]), state:, bag: toggle_bag, at: 7000)
+    support.press_by(
+      caster: caster(),
+      plans: plans_of([]),
+      state:,
+      bag: toggle_bag,
+      at: 7000,
+    )
   assert children_started(effects: again) == [38_784]
   assert changes(effects: again) == [True]
   assert cast.stealthed(cast: state)
@@ -401,7 +397,13 @@ fn stealthed_by_base_1(
 ) -> #(Plans, State, List(Effect)) {
   let plans = plans_of([broken(), ..others])
   let #(state, effects) =
-    press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
   #(plans, state, effects)
 }
 
@@ -456,7 +458,14 @@ pub fn an_attack_from_stealth_reads_the_stealth_in_its_gates_then_ends_it_after_
     )
   let #(plans, state, entered) = stealthed_by_base_1(others: [impale])
   let held = support.pressed_id(effects: entered)
-  let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
+  let #(state, effects) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      at: 2000,
+    )
   assert children_started(effects:) == [39_427]
     as "38585 passes against the caster stealthed before the go and 38587 fails: only 39427 starts, though the cast ends the stealth"
   assert support.removed_targets(support.writes(effects:)) == [#(held, [7])]
@@ -668,7 +677,13 @@ pub fn an_attack_of_value_1_or_0_ends_the_stealth_the_same_way_test() -> Nil {
           attack(spell4_id: spell.0, base: 2, change: spell.2),
         ])
       let #(state, effects) =
-        press(plans:, state:, bag: bag_of_base_2, at: 2000)
+        support.press_by(
+          caster: caster(),
+          plans:,
+          state:,
+          bag: bag_of_base_2,
+          at: 2000,
+        )
       assert support.removed_targets(support.writes(effects:))
         == [#(support.pressed_id(effects: entered), [7])]
         as {
@@ -688,7 +703,14 @@ pub fn a_spell_of_value_2_cast_on_its_own_ends_nothing_test() -> Nil {
     stealthed_by_base_1(others: [
       attack(spell4_id: 70_775, base: 2, change: KeepsStealth),
     ])
-  let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
+  let #(state, effects) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      at: 2000,
+    )
   assert support.removed_targets(support.writes(effects:)) == []
   assert changes(effects:) == []
   assert cast.stealthed(cast: state) as "the stealth holds"
@@ -707,14 +729,33 @@ pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_
     )
   let plans = plans_of([broken(), makes])
   let #(state, alone) =
-    press(plans:, state: cast.new(), bag: bag_of_base_2, at: 1000)
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_2,
+      at: 1000,
+    )
   assert changes(effects: alone) == [True]
     as "from no stealth the go makes it, and its break ends none"
   assert support.removed_targets(support.writes(effects: alone)) == []
   assert cast.stealthed(cast: state)
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
-  let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  let #(state, effects) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      at: 2000,
+    )
   assert support.removed_targets(support.writes(effects:))
     == [#(support.pressed_id(effects: first), [7])]
     as "the older source's cast comes off and the go's own stays"
@@ -729,8 +770,22 @@ pub fn a_go_after_the_stealth_ended_finds_nothing_to_end_test() -> Nil {
     stealthed_by_base_1(others: [
       attack(spell4_id: 38_779, base: 2, change: EndsStealthAfterLastGo),
     ])
-  let #(state, _) = press(plans:, state:, bag: bag_of_base_2, at: 2000)
-  let #(_, effects) = press(plans:, state:, bag: bag_of_base_2, at: 3000)
+  let #(state, _) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      at: 2000,
+    )
+  let #(_, effects) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      at: 3000,
+    )
   assert support.removed_targets(support.writes(effects:)) == []
   assert changes(effects:) == []
 }
@@ -759,7 +814,13 @@ pub fn damage_does_not_end_a_stealth_kept_on_damage_or_one_not_held_test() -> Ni
   use <- owned_test.run(60_000)
   let plans = plans_of([kept()])
   let #(state, _) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let #(state, effects) = damaged(state:, at: 3000)
   assert effects == [] as "dataBits02 1: damage does not end it"
   assert cast.stealthed(cast: state)
@@ -770,7 +831,14 @@ pub fn damage_does_not_end_a_stealth_kept_on_damage_or_one_not_held_test() -> Ni
 pub fn damage_ends_the_cast_it_breaks_and_keeps_the_stealth_another_cast_holds_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(plans, state, entered) = stealthed_by_base_1(others: [kept()])
-  let #(state, _) = press(plans:, state:, bag: bag_of_base_3, at: 2000)
+  let #(state, _) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_3,
+      at: 2000,
+    )
   let #(state, effects) = damaged(state:, at: 3000)
   assert support.removed_targets(support.writes(effects:))
     == [#(support.pressed_id(effects: entered), [7])]
@@ -790,7 +858,13 @@ pub fn a_cast_that_holds_both_a_broken_and_a_kept_source_loses_both_with_its_nod
     ])
   let plans = plans_of([both])
   let #(state, _) =
-    press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
   let #(state, effects) = damaged(state:, at: 3000)
   assert changes(effects:) == [False]
   assert !cast.stealthed(cast: state)
@@ -814,8 +888,22 @@ pub fn a_remove_stealth_row_on_the_caster_ends_a_broken_source_and_a_kept_one_wi
       ],
     )
   let #(plans, state, first) = stealthed_by_base_1(others: [kept(), removes])
-  let #(state, second) = press(plans:, state:, bag: bag_of_base_3, at: 2000)
-  let #(state, effects) = press(plans:, state:, bag: bag_of_base_2, at: 3000)
+  let #(state, second) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_3,
+      at: 2000,
+    )
+  let #(state, effects) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      at: 3000,
+    )
   assert support.removed_targets(support.writes(effects:))
     == [
       #(support.pressed_id(effects: first), [7]),
@@ -836,15 +924,35 @@ pub fn a_second_stealth_cast_at_the_stack_cap_takes_the_first_off_with_no_change
   let plans =
     plans_of([stacking, cancelling(spell4_id: 38_783, base: 2, of: 38_784)])
   let #(state, first) =
-    press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
-  let #(state, second) = press(plans:, state:, bag: bag_of_base_1, at: 2000)
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  let #(state, second) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_1,
+      at: 2000,
+    )
   assert support.removed_targets(support.writes(effects: second))
     == [#(support.pressed_id(effects: first), [7])]
     as "the cap takes the first cast's node off: one 0x811"
   assert changes(effects: second) == []
     as "stealthed before and after the input: no 0x8f5"
   assert cast.stealthed(cast: state)
-  let #(state, cancel) = press(plans:, state:, bag: bag_of_base_2, at: 3000)
+  let #(state, cancel) =
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      at: 3000,
+    )
   assert support.removed_targets(support.writes(effects: cancel))
     == [#(support.pressed_id(effects: second), [7])]
   assert changes(effects: cancel) == [False] as "one cancel, one change"
@@ -857,7 +965,13 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_ch
   use <- owned_test.run(60_000)
   let plans = plans_of([kept()])
   let #(state, entered) =
-    press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press_by(
+      caster: caster(),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
   let #(state, effects) =
     cast.died(
       cast: state,

@@ -231,7 +231,7 @@ pub fn real_plans() -> Plans {
 
 /// A planted spell of Spell4 `spell4_id` and base `base` that goes at once and holds
 /// these property rows.
-pub fn holder(
+pub fn spell_holding(
   spell4_id spell4_id: Int,
   base base: Int,
   modifiers modifiers: List(spell_plan.PropertyModifier),
@@ -1282,10 +1282,12 @@ pub fn planned_spell(
   spell
 }
 
-/// A modifier that adds `points` flat to property 44.
-pub fn raising_property_44(points points: Float) -> unit_properties.Modifier {
+/// A modifier that adds `points` flat to the interrupt armor threshold.
+pub fn raising_interrupt_armor_threshold(
+  points points: Float,
+) -> unit_properties.Modifier {
   unit_properties.Change(
-    property: UnitProperty2Id(44),
+    property: unit_properties.interrupt_armor_threshold,
     mode: 0,
     multiplier: 1.0,
     flat: points,

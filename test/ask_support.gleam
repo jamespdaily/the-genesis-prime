@@ -506,21 +506,8 @@ pub fn monotonic_ms() -> Int {
 @external(erlang, "erlang", "monotonic_time")
 fn monotonic_time(unit: atom.Atom) -> Int
 
-@external(erlang, "erlang", "unique_integer")
-fn unique_integer(options: List(UniqueOption)) -> Int
-
-type UniqueOption {
-  Positive
-  Monotonic
-}
-
-/// A number no other call gives, rising with each call.
-pub fn unique_number() -> Int {
-  unique_integer([Positive, Monotonic])
-}
-
 /// The moment a wait for an event ends, in monotonic milliseconds.
-pub fn deadline() -> Int {
+pub fn event_wait() -> Int {
   monotonic_ms() + event_wait_ms
 }
 
