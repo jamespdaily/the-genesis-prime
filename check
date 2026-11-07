@@ -6,7 +6,7 @@
 #                         the loop while editing
 #
 # The wall time counts from the start of this script, setup check included. The
-# budget is a target: GENESIS_CHECK_BUDGET_SECONDS (default 120; ./check fast has
+# budget is a target: GENESIS_CHECK_BUDGET_SECONDS (default 157; ./check fast has
 # its own, GENESIS_CHECK_FAST_BUDGET_SECONDS). A run that ends over its budget passes
 # and prints a warning line with its wall time and its budget, because a loaded
 # machine (two agents testing at once, a cold build) turns correct code into a
@@ -132,14 +132,17 @@ case "$mode" in
     ;;
 esac
 
-# The wall time the check may take, in seconds.
-budget=${GENESIS_CHECK_BUDGET_SECONDS:-120}
+# The wall time the check may take, in seconds: the slowest of 3 full checks on the
+# idle development Mac, with the parts beside each other and 2 test workers, was
+# 125 s (119, 123 and 125 s), times 1.25, rounded up.
+budget=${GENESIS_CHECK_BUDGET_SECONDS:-157}
 
-# The same for ./check fast, from a cold build: measured right after removing
-# build/dev/erlang/genesis_prime, 10, 9 and 9 s in 3 runs on
-# the development Mac (warm: 6, 7 and 7 s); 10 s times 1.25, rounded up.
+# The same for ./check fast, with a warm build: glinter beside the code-rule tests
+# took 23 s in each of 3 runs and 25 s in a fourth on the development Mac (28 s before
+# they ran beside each other); 25 s times 1.25, rounded up.
+fast_budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-32}
 if [ "$mode" = fast ]; then
-  budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-13}
+  budget=$fast_budget
 fi
 
 # The budget of a run that includes the integration tests: the slowest of 3
@@ -150,12 +153,12 @@ integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-583}
 client_scripts=.claude/skills/decoding-the-client/scripts
 
 # How many module groups `gleam test` runs at once; each also runs up to one test
-# per scheduler at once. 1 is the smallest count that leaves 25% of the 120 s
-# budget spare: measured, the whole check took 75 s with 1
-# (gleam-test 68 s with the serial tests, beside the setup suite) and 62 to 67 s
-# with 2; `gleam test -- --workers 1` alone took 58 to 75 s in 16 runs on the
-# development Mac (12 schedulers) and 67 s with 4 schedulers (ERL_FLAGS="+S 4:4",
-# CI's 4 cores), against 119 s with one test at a time.
+# per scheduler at once. 2 is the default: with the parts beside each other the
+# full check took 146, 145 and 146 s with 1 and 119, 123 and 125 s with 2 on the
+# idle development Mac (12 schedulers), and the first test run's literal area peaked
+# at 80.4% with 1 and 76.2% with 2, under the 85% limit below (the world-data run,
+# a VM of its own, 61.7% in every run). More than 2 would not shorten the check: the
+# client suite, 118 to 123 s, is then its longest part.
 test_workers=${GENESIS_TEST_WORKERS:-2}
 
 # The literal region of the test VM, in bytes: literal_alloc's super carrier, 1024
@@ -470,7 +473,7 @@ if [ "$mode" = full ]; then
     mode=fast
     parts=$fast_parts
     scope_label=" (scope: light)"
-    budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-13}
+    budget=$fast_budget
     echo "scope: light, so only the fast parts run ($fast_parts): $scope_why; CI runs every part"
   else
     echo "scope: every part, because $scope_why"

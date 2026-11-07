@@ -457,8 +457,20 @@ class BudgetTest(unittest.TestCase):
     the code) and plant 4 seconds of delay. A planted sleep never ends early, so the
     run is over its budget by construction; the rest of the run (a few instant stubs)
     adds well under the 5 seconds between the delay and the hang limit at 9, which
-    is the margin a loaded machine needs. The real budget is 2 minutes (CLAUDE.md:
-    "the full check passes in under 2 minutes")."""
+    is the margin a loaded machine needs. The budgets the check has when none is set
+    are the measured ones, below."""
+
+    # The slowest of 3 full checks on the idle development Mac, with the parts beside
+    # each other and 2 test workers, was 125 s; the fast check's slowest of 4 runs 25 s
+    # (measurements on the step's issue); each times 1.25, rounded up.
+    FULL_BUDGET = 157
+    FAST_BUDGET = 32
+
+    def test_the_budgets_the_check_has_when_none_is_set_are_the_measured_ones(self):
+        for name, args, budget in (("full", (), self.FULL_BUDGET), ("fast", ("fast",), self.FAST_BUDGET)):
+            with self.subTest(check=name):
+                run = shared_run(name, *args)
+                self.assertRegex(run.output, r"(?m)^check passed.*, budget %ds$" % budget)
 
     def assert_passed_with_the_warning(self, run: Run, budget: int) -> None:
         output = run.output
