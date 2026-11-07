@@ -852,8 +852,7 @@ fn picture() -> shown.Picture {
 
 pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(areas) = area_tables.built(kick: area_tables.kick())
-    as "the planted Kick builds"
+  let areas = spell_tables.fixture_areas()
   let chosen =
     strike.select(
       asked: asked(cast_id: 5, phase: 0),
@@ -895,8 +894,7 @@ pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test()
 
 pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(areas) = area_tables.built(kick: area_tables.kick())
-    as "the planted Kick builds"
+  let areas = spell_tables.fixture_areas()
   let chosen =
     strike.select(
       asked: GoAsked(

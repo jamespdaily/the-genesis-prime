@@ -14,6 +14,7 @@
 //// where the client is present. A missing row and a cycle are planted.
 
 import client_tables
+import fixture_tables
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_plan.{
   type Spell, Always, AtFirstGo, AtLastGo, Channel, Channeled, ChargeRelease,
@@ -247,9 +248,8 @@ pub fn the_load_fails_with_the_builds_reason_naming_the_table_and_row_test() -> 
     "30900",
   )
     as "the plan's own sentence names the id"
-  assert spell_tables.derivation_result(reaching: [#("SpellLevel", 647)], rows:)
-    == Ok(Nil)
-    as "the planted rows load"
+  assert result.is_ok(spell_plan.build(tables: fixture_tables.shared()))
+    as "the client's rows build"
 }
 
 fn spell_spell4_without(
@@ -587,43 +587,25 @@ pub fn rampage_requires_at_least_250_of_slot_1_its_stages_require_nothing_and_it
     as "Telekinetic Strike's propertyFlags 0x4000002 lack bit 2 and it names no prerequisiteIdCasterCast"
 }
 
-/// The planted rows with Rampage's requirement of this type and eval, value 250.
+/// The client's rows with Rampage 58524's requirement of this type and eval; the
+/// client's row holds type 6, value 250 and eval 2.
 fn rampage_rows(requirement_type: Int, eval: Int) -> spell_tables.Rows {
   rampage_rows_costing(requirement_type:, eval:, cost: #(0, 0))
 }
 
-/// The planted rows with Rampage's requirement as `rampage_rows` has it and its
-/// innate cost of this type and amount.
+/// The client's rows with Rampage's requirement as `rampage_rows` has it and its
+/// innate cost of this type and amount; the client's row holds no innate cost.
 fn rampage_rows_costing(
   requirement_type requirement_type: Int,
   eval eval: Int,
   cost cost: #(Int, Int),
 ) -> spell_tables.Rows {
-  let rows = spell_tables.fixture_rows()
-  spell_tables.Rows(
-    ..rows,
-    spell4: list.map(rows.spell4, fn(row) {
-      case row {
-        [planted_table.Integer(58_524), ..] ->
-          spell_tables.method_spell_row(
-            id: 58_524,
-            base: 37_968,
-            cast_time: 0,
-            cooldown: 8000,
-            kind: 0,
-            global: 103,
-            cost:,
-            more: [
-              #("thresholdTime", 4000),
-              #("casterInnateRequirement0", requirement_type),
-              #("casterInnateRequirementValue0", 250),
-              #("casterInnateRequirementEval0", eval),
-            ],
-          )
-        _ -> row
-      }
-    }),
-  )
+  spell_tables.rows_with_spell_columns(spell4_id: 58_524, columns: [
+    #("casterInnateRequirement0", planted_table.Integer(requirement_type)),
+    #("casterInnateRequirementEval0", planted_table.Integer(eval)),
+    #("innateCostType0", planted_table.Integer(cost.0)),
+    #("innateCost0", planted_table.Integer(cost.1)),
+  ])
 }
 
 pub fn each_eval_code_reads_as_compare_by_eval_does_and_above_4_on_the_percentage_test() -> Nil {

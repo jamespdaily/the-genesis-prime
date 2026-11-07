@@ -8,9 +8,11 @@
 ////   58586, `table_rows -- Spell4Effects spellId=58586`): targetFlags 1, damageType 3,
 ////   durationTime 5000, dataBits00 1065353216 (1.0), dataBits01 0, dataBits04 7,
 ////   parameterType00 12 and 01 13 with value 2.5309998989105225 (0x4021fbe7), phaseFlags 1.
-////   Row 56356 (Spell4 30724): targetFlags 2, delayTime 251; row 46247 (Spell4 27567):
-////   tickTime 1000, durationTime 6001, targetFlags 1 (`table_rows -- Spell4Effects 56356
-////   46247`).
+////   Row 93774 (Esper Moxie's proc, Spell4 41714): targetFlags 2, damageType 3,
+////   durationTime 5000, dataBits00 1.0, dataBits04 7, parameters of kinds 12, 13 and 10,
+////   phaseFlags -1. Row 56356 (Spell4 30724): targetFlags 2, dataBits00 0, dataBits01
+////   100.0, no parameter. Row 46247 (Spell4 27567): tickTime 1000, durationTime 6001,
+////   targetFlags 1 (`table_rows -- Spell4Effects 93774 56356 46247`).
 //// - `Spell4Effects.effectType.29`'s gaps: a periodic absorb's reading, an absorb with no
 ////   lifetime and an absorb on a struck unit are not known, so the load fails for them.
 //// - `opcode.0x7f4.effect_time`: a row whose Spell4Effects flags have bit 2 never ends; 33
@@ -51,6 +53,12 @@ const one_as_float_bits = 1_065_353_216
 
 /// 45.0 as 32 float bits (row 183643's dataBits01).
 const forty_five_as_float_bits = 1_110_704_128
+
+/// Row 93774's parameterValue00 and 01, 0x3e19999a.
+const moxie_power = 0.15000000596046448
+
+/// Row 93774's parameterValue02, 0x419f5c29.
+const moxie_per_level = 19.920000076293945
 
 /// The columns of row 178144 other than its id, spell and aim.
 fn spectral_form_columns() -> List(#(String, Cell)) {
@@ -114,23 +122,13 @@ fn modifier_of(
 
 /// Row 178144 as the client holds it.
 fn spectral_form_row() -> Spell4Effects {
-  Spell4Effects(
-    ..spell_tables.blank_effect(
-      id: 178_144,
-      spell: 58_586,
-      effect_type: 29,
-      target_flags: 1,
-    ),
-    damage_type: 3,
-    duration_time: 5000,
-    data_bits00: one_as_float_bits,
-    data_bits04: 7,
-    parameter_type00: 12,
-    parameter_type01: 13,
-    parameter_value00: 2.5309998989105225,
-    parameter_value01: 2.5309998989105225,
-    phase_flags: 1,
-  )
+  let assert Ok(row) =
+    spell4_effects.get(
+      tables: fixture_tables.shared(),
+      id: Spell4EffectsId(178_144),
+    )
+    as "the client's rows hold Spectral Form's absorption, row 178144"
+  row
 }
 
 // ---- the rows of the plan ----
@@ -189,15 +187,29 @@ pub fn an_absorption_rows_data_bits01_is_read_as_a_float_test() -> Nil {
 
 pub fn an_absorption_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_the_caster_and_fails_the_load_in_a_child_on_each_struck_unit_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Row 56356 of Spell4 30724: targetFlags 2, delay 251.
+  // Row 93774 of Esper Moxie's proc 41714 as the client holds it.
   let row =
     Spell4Effects(
-      ..spectral_form_row(),
-      id: 56_356,
-      spell_id: 30_724,
-      target_flags: 2,
+      ..spell_tables.blank_effect(
+        id: 93_774,
+        spell: 41_714,
+        effect_type: 29,
+        target_flags: 2,
+      ),
+      damage_type: 3,
+      duration_time: 5000,
+      data_bits00: one_as_float_bits,
+      data_bits04: 7,
+      threat_multiplier: 1.0,
+      parameter_type00: 12,
+      parameter_type01: 13,
+      parameter_type02: 10,
+      parameter_value00: moxie_power,
+      parameter_value01: moxie_power,
+      parameter_value02: moxie_per_level,
+      phase_flags: -1,
     )
-  let assert Ok(read) = modifier_of(spell4_id: 30_724, effect: row)
+  let assert Ok(read) = modifier_of(spell4_id: 41_714, effect: row)
   let assert spell_plan.AbsorbChange(absorption) = read.change
   assert absorption.aim == AimsAtPrimaryTarget
     as "targetFlags 2 is the primary target, which the target of a cast on the caster is"
@@ -213,7 +225,7 @@ pub fn an_absorption_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_
     == Error(spell_plan.AbsorptionOnStruckUnit(
       spell4_id: 58_586,
       proxy_effect_id: 178_143,
-      effect_id: 56_356,
+      effect_id: 93_774,
     ))
     as "the spell's primary target is a struck unit, and an absorb on one is not built"
   assert spell_tables.read_row(

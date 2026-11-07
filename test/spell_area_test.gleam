@@ -45,9 +45,20 @@ fn kick_area(plant plant: area_tables.Kick) -> spell_area.SpellArea {
   found
 }
 
+/// Kick's area as the client's rows build it.
+fn client_kick() -> spell_area.SpellArea {
+  let assert Ok(found) =
+    spell_area.of_spell(
+      areas: spell_tables.fixture_areas(),
+      spell4_id: Spell4Id(58_591),
+    )
+    as "Kick is in the areas"
+  found
+}
+
 pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() -> Nil {
   use <- owned_test.run(60_000)
-  let kicked = kick_area(plant: area_tables.kick())
+  let kicked = client_kick()
   assert kicked.row
     == Some(Row(min_range: 0.0, max_range: 8.0, degrees: 180.0, target_count: 5))
     as "Spell4.58591.area: row 640"
@@ -217,7 +228,7 @@ pub fn a_spell_with_a_never_drawn_row_strikes_through_it_whatever_its_drawn_rows
 
 pub fn a_spell_with_a_telegraph_is_struck_by_its_hit_shapes_test() -> Nil {
   use <- owned_test.run(60_000)
-  let kicked = kick_area(plant: area_tables.kick())
+  let kicked = client_kick()
   assert spell_area.inside(spell: kicked) == InsideShapes(kicked.shapes)
     as "Jim's choice: inside the telegraph, Kick is 7 m and 100 degrees (Spell4.58591.area), capped by the row's range"
 }

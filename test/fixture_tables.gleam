@@ -352,7 +352,7 @@ fn id_of(row row: List(Cell)) -> Int {
 }
 
 /// The row with the cells of the named columns replaced.
-fn with_cells(
+pub fn with_cells(
   schema schema: tbl_file.Schema,
   row row: List(Cell),
   with changes: List(#(String, Cell)),

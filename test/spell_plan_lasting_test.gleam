@@ -111,8 +111,7 @@ pub fn a_fluff_row_reads_its_delay_and_duration_test() -> Nil {
 pub fn a_spell_with_propertyflags_bit_0x2000_takes_the_larger_of_delay_and_duration_test() -> Nil {
   use <- owned_test.run(60_000)
   let rows = spell_tables.fixture_rows()
-  let assert Ok(without) = spell_tables.planned_strike(rows:)
-  assert without.longer_of_delay_and_duration == False
+  assert spell_tables.fixture_strike().longer_of_delay_and_duration == False
   let with_flag =
     spell_tables.Rows(
       ..rows,
@@ -310,42 +309,12 @@ pub fn a_removal_whose_two_counts_differ_fails_the_load_test() -> Nil {
 
 pub fn a_spell_reads_its_spell_groups_and_its_stack_group_and_cap_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.fixture_rows()
-  let with_groups =
-    spell_tables.Rows(
-      ..rows,
-      spell4: list.map(rows.spell4, fn(row) {
-        case row {
-          [planted_table.Integer(32_893), ..] ->
-            spell_tables.method_spell_row(
-              id: 32_893,
-              base: strike_base,
-              cast_time: 1250,
-              cooldown: 0,
-              kind: 0,
-              global: 213,
-              cost: #(0, 0),
-              more: [
-                #("spell4GroupListId", 8),
-                #("spell4StackGroupId", 1450),
-              ],
-            )
-          other -> other
-        }
-      }),
-      spell4_group_lists: spell_tables.sorted_by_id([
-        planted_table.row(spell4_group_list.schema, [
-          #("ID", Integer(8)),
-          #("spellGroupId00", Integer(51)),
-          #("spellGroupId01", Integer(52)),
-        ]),
-        ..rows.spell4_group_lists
-      ]),
-    )
-  let assert Ok(spell) = spell_tables.planned_strike(rows: with_groups)
-  assert spell.groups == [51, 52]
-  assert spell.stack == Stack(group_id: 1450, cap: 2)
-    as "the client's Spell4StackGroup 1450 holds stackCap 2"
+  let spell = spell_tables.fixture_strike()
+  assert spell.groups
+    == [6, 8, 19, 21, 23, 26, 94, 47, 235, 179, 237, 246, 333, 337, 609]
+    as "Spell4 32893 names Spell4GroupList 321, whose non-zero groups these are in column order"
+  assert spell.stack == Stack(group_id: 2, cap: 0)
+    as "Spell4 32893 names Spell4StackGroup 2, whose stackCap is 0"
 }
 
 pub fn a_spell_with_no_group_or_stack_row_ids_holds_none_test() -> Nil {

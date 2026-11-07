@@ -2378,12 +2378,28 @@ pub fn rows_with_strike(name name: String, cell cell: Cell) -> Rows {
 pub fn rows_with_strike_columns(
   columns columns: List(#(String, Cell)),
 ) -> Rows {
+  rows_with_spell_columns(spell4_id: 32_893, columns:)
+}
+
+/// The client's rows with the Spell4 row `spell4_id` changed in these columns; the
+/// row must be held.
+pub fn rows_with_spell_columns(
+  spell4_id spell4_id: Int,
+  columns columns: List(#(String, Cell)),
+) -> Rows {
   let rows = fixture_rows()
+  assert list.any(rows.spell4, fn(row) {
+    case row {
+      [Integer(id), ..] -> id == spell4_id
+      _ -> False
+    }
+  })
+    as "the client's rows hold the Spell4 row a test changes"
   Rows(
     ..rows,
     spell4: list.map(rows.spell4, fn(row) {
       case row {
-        [Integer(32_893), ..] ->
+        [Integer(id), ..] if id == spell4_id ->
           list.fold(columns, row, fn(row, column) {
             with_column(row:, name: column.0, cell: column.1)
           })
