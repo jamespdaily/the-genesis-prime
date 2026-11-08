@@ -588,6 +588,54 @@ pub fn removal_ends_creature_modifier_test() -> Nil {
   assert support.target_changes(effects: cast.left(cast: state).1) == []
 }
 
+pub fn removal_before_the_delay_ran_out_starts_nothing_on_the_creature_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    support.plans_of([
+      support.spell_holding(spell4_id: 671, base: 3, modifiers: [slowing_row()]),
+      spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
+        spell_plan.ForceRemove(
+          effect_id: Spell4EffectsId(196_521),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtArea,
+          selector: lasting.Spell(Spell4Id(671)),
+          count: 1,
+          condition: Always,
+          tag: spend.always,
+        ),
+      ]),
+    ])
+  let #(state, first) =
+    pressed_striking(
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  assert support.target_changes(effects: first) == []
+    as "the row waits its delayTime of 1000 ms: nothing has started at the go"
+  let #(state, removal) =
+    pressed_striking(
+      plans:,
+      state:,
+      bag: bag_of_base_1,
+      struck: creature_struck(),
+      at: 1500,
+    )
+  assert support.target_changes(effects: removal) == []
+    as "the removal takes the cast's node off the creature before its modifier started: nothing was started to end"
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects: first,
+      from_ms: 1000,
+      struck: creature_struck(),
+    )
+  assert support.target_timeline(fired:) == []
+    as "a start due after the node left starts nothing on the creature, and keeps nothing to end"
+}
+
 pub fn caster_death_ends_creature_modifier_test() -> Nil {
   use <- owned_test.run(5000)
   let plans = striking_plans(immediate_row(effect_id: 7711))

@@ -2614,6 +2614,66 @@ pub fn move_speed_change_mid_chase_replans_test() -> Nil {
     as "a creature that stands has no path to replan"
 }
 
+pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  // The fighter leaves sight 1 s into the chase: the creature, at 10, walks home at
+  // 10 a second and is there at 2 s.
+  let #(state, unwatched) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let home = timer_for(unwatched, 1000)
+  // Half a second into the walk it has 5 left; at half the speed that takes 1 s.
+  let #(state, slowed) =
+    tell(
+      state:,
+      at_ms: 1500,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 0.5),
+        struck_at_ms: 1500,
+      ),
+    )
+  assert list.map(news_to(slowed, 5), name_of) == ["other", "0x638"]
+    as "the property, then the new walk"
+  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:))] =
+    list.filter(news_to(slowed, 5), fn(news) { name_of(news) == "0x638" })
+    as "one path to the viewer that stayed"
+  assert x_of(from) == 5.0
+    && x_of(to) == 0.0
+    && started_ms == start_ms + 1500
+    && speed == 5.0
+    as "from where the creature stands, to home, at the new speed"
+  assert timers_cancelled(slowed) == [home]
+    as "the arrival the old speed gave is cancelled"
+  let assert [#(arrival, 1000)] = timers(slowed)
+    as "and a new one starts for the 1 s the 5 units take at 5.0"
+  assert arrival != home
+  let #(state, stale) = fire(state:, at_ms: 2000, timer: home)
+  let #(state, still_walking) =
+    tell(
+      state:,
+      at_ms: 2100,
+      message: strike_of(number: 5, cast_id: 2, blows: [#(1, 5, 1.0)]),
+    )
+  assert said(stale) == [] && said(still_walking) == ["Refused(Returning) to 5"]
+    as "the old arrival, fired late, does nothing: the creature is still walking"
+  let #(state, arrived) = fire(state:, at_ms: 2500, timer: arrival)
+  assert said(arrived) == []
+  let #(_, struck) =
+    tell(
+      state:,
+      at_ms: 2600,
+      message: strike_of(number: 5, cast_id: 3, blows: [#(1, 5, 1.0)]),
+    )
+  assert !list.contains(said(struck), "Refused(Returning) to 5")
+    as "the new arrival ends the return at 2.5 s"
+}
+
 pub fn creature_blow_uses_damage_dealt_multiplier_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
