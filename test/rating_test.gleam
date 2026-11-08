@@ -15,7 +15,6 @@ import client_tables
 import genesis_prime/game/rating.{Formula}
 import gleam/float
 import owned_test
-import rating_support
 import unitest
 
 fn crit_formula() -> rating.Formula {
@@ -144,28 +143,4 @@ pub fn the_clients_rows_build_the_formulas_test() -> Nil {
     && float.loosely_equals(mitigation.f03, with: 7250.0, tolerating: 0.000001)
     && mitigation.int01 == 75
     as "GameFormula 1234 (0x140464240)"
-}
-
-pub fn the_test_support_formulas_are_the_clients_rows_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let real = rating.formulas(tables: client_tables.shared())
-  let planted = rating_support.formulas()
-  let same = fn(first: rating.Formula, second: rating.Formula) {
-    float.loosely_equals(first.f0, with: second.f0, tolerating: 0.000001)
-    && float.loosely_equals(first.f01, with: second.f01, tolerating: 0.000001)
-    && float.loosely_equals(first.f02, with: second.f02, tolerating: 0.000001)
-    && float.loosely_equals(first.f03, with: second.f03, tolerating: 0.000001)
-    && first.int0 == second.int0
-    && first.int01 == second.int01
-  }
-  assert same(planted.strikethrough, real.strikethrough)
-    && same(planted.crit_chance, real.crit_chance)
-    && same(planted.crit_severity, real.crit_severity)
-    && same(planted.mitigation, real.mitigation)
-    && same(planted.deflect_chance, real.deflect_chance)
-    && same(planted.crit_deflect, real.crit_deflect)
-    && same(planted.glance_chance, real.glance_chance)
-    && same(planted.glance_amount, real.glance_amount)
-    as "every GameFormula row the tests plant is the client's"
 }

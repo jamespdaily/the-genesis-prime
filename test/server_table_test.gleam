@@ -26,6 +26,7 @@ import genesis_prime/game/appearance
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/store.{LookEntry}
 import genesis_prime/table/customization_parameter
+import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/id.{CharacterCustomizationLabelId, RaceId}
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
@@ -144,4 +145,32 @@ pub fn load_without_the_parameter_file() -> Nil {
 pub fn a_folder_without_the_customization_parameter_file_is_refused_naming_it_test() -> Nil {
   use <- owned_test.run(60_000)
   in_a_fresh_node("load_without_the_parameter_file")
+}
+
+pub fn the_servers_load_refuses_a_map_naming_a_missing_parameter_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok([_, _, _, _, planted_table.Integer(parameter_id), ..]) =
+    list.first(fixture_tables.committed_rows(customization_parameter_map.schema))
+    as "a committed CustomizationParameterMap row holds customizationParameterId fifth"
+  let files =
+    list.key_set(
+      fixture_tables.server_files(),
+      customization_parameter.schema.file,
+      planted_table.file(
+        customization_parameter.schema,
+        planted_table.without(
+          rows: fixture_tables.committed_rows(customization_parameter.schema),
+          ids: [parameter_id],
+        ),
+      ).1,
+    )
+  use folder <- planted_table.in_folder(files)
+  assert server_table.read(from: folder)
+    == Error(table_store.RowMissing(
+      from_table: "CustomizationParameterMap",
+      column: "customizationParameterId",
+      to_table: "CustomizationParameter",
+      id: parameter_id,
+    ))
+    as "the server's load fails on a CustomizationParameterMap row that names a CustomizationParameter row the table lacks, naming it"
 }

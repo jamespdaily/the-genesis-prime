@@ -281,18 +281,15 @@ pub fn level_up_unlock_row(id id: Int, level level: Int) -> List(Cell) {
   ])
 }
 
-/// The client's Spell4.spellCastStealthChange of the spells `method_spell_row`
-/// rebuilds, and 0 for any other.
+/// The client's Spell4.spellCastStealthChange of these spells, and 0 for any other.
 fn stealth_change(id: Int) -> Int {
   case id {
-    38_765 | 38_766 | 38_767 | 39_467 | 38_779 | 38_780 | 38_791 -> 1
-    46_073 | 38_784 | 38_913 | 38_781 | 53_865 | 87_353 -> 2
+    38_765 -> 1
     _ -> 0
   }
 }
 
-/// The client's Spell4.propertyFlags of the spells `method_spell_row` rebuilds,
-/// and 0 for any other.
+/// The client's Spell4.propertyFlags of these spells, and 0 for any other.
 fn property_flags(id: Int) -> Int {
   case id {
     32_893 -> 0x4000002
