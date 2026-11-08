@@ -77,7 +77,8 @@ def pull_requests():
     return ["pull requests:"] + [f"  #{number} {title[:100]} [{state}]" for number, title, _, state in rows]
 
 
-def play_server():
+def listeners():
+    """The processes listening on the game ports, as {command: {pid: [ports]}}."""
     listing = subprocess.run(
         ["lsof", "-nP", "-sTCP:LISTEN"] + [f"-iTCP:{port}" for port in PORTS],
         capture_output=True, text=True, timeout=CAP_SECONDS,
@@ -85,16 +86,43 @@ def play_server():
     found = {}
     for line in listing.splitlines()[1:]:
         fields = line.split()
-        if fields and fields[0] == "beam.smp":
+        if len(fields) > 1:
             port = re.search(r":(\d+) \(LISTEN\)", line)
-            found.setdefault(fields[1], []).append(port.group(1) if port else "?")
-    if found:
-        lines = []
-        for pid, ports in found.items():
-            elapsed = run(["ps", "-o", "etime=", "-p", pid]).strip()
-            lines.append(f"play server: running, pid {pid}, up {elapsed}, ports {','.join(sorted(ports))}")
-    else:
-        lines = [f"play server: not running (nothing listens on {', '.join(map(str, PORTS))})"]
+            found.setdefault(fields[0], {}).setdefault(fields[1], []).append(port.group(1) if port else "?")
+    return found
+
+
+def container_line():
+    """The line for the genesis-play container when podman shows it running, else None."""
+    try:
+        rows = run(
+            ["podman", "ps", "--filter", "name=^genesis-play$",
+             "--format", "{{.Image}}|{{.Status}}|{{.Ports}}"]
+        ).strip().splitlines()
+        image, status, ports = rows[0].split("|", 2)
+    except Exception:
+        return None
+    return f"play server: running in container genesis-play, image {image}, {status.lower()}, ports {ports}"
+
+
+def play_server():
+    found = listeners()
+    lines = []
+    for pid, ports in found.get("beam.smp", {}).items():
+        elapsed = run(["ps", "-o", "etime=", "-p", pid]).strip()
+        lines.append(f"play server: running, pid {pid}, up {elapsed}, ports {','.join(sorted(ports))}")
+    container = container_line()
+    if container:
+        lines.append(container)
+    if not lines:
+        others = [
+            f"{command} pid {pid} on {','.join(sorted(ports))}"
+            for command, pids in found.items() for pid, ports in pids.items()
+        ]
+        if others:
+            lines = [f"play server: not running (something else listens: {'; '.join(others)})"]
+        else:
+            lines = [f"play server: not running (nothing listens on {', '.join(map(str, PORTS))})"]
     folders = sorted((p for p in SITTINGS.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime)
     lines.append(f"newest sitting: {folders[-1].name if folders else 'none'}")
     return lines
