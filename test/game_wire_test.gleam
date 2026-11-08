@@ -1740,10 +1740,10 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
     as "opcode.0x4db and cast.hold_answer: held 1 starts Shred with a cast id of the server's, no 0x7fd, and opens the threshold (opcode.0x816); Spell4.38765 thresholdTime 4000, its Proxy 38767 goes in three phases (SpellPhase 3712 to 3714) and the Stalker's passive 45057 starts 60724 beside it"
   assert list.drop(own, 12)
     == [
-      "started k3 38766 root 38765 parent 38765",
-      "went k3 p0",
-      "started k4 39467 root 38765 parent 38766",
-      "finished k3",
+      "started k4 38766 root 38765 parent 38765",
+      "went k4 p0",
+      "started k5 39467 root 38765 parent 38766",
+      "finished k4",
       "closed 38765 1",
     ]
     as "cast.hold_repeat: with the key still down, one global cooldown later (Spell4.38765: SpellCoolDown 115, 1000 ms) the next tap casts the stage 38766 (Spell4Thresholds 238), the last, and 0x814 closes the threshold (opcode.0x814)"
@@ -1760,25 +1760,28 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
     == ["went k1 p0", "went k1 p1", "went k1 p2", "finished k1"]
     as "cast.hold_stop: held 0 cuts no cast short, so the stage's Proxy 39467 goes in its three phases (SpellPhase 4032 to 4034), and it ends the repeats, so no cast starts one global cooldown later"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 16)
+    game_client.read_kept(game: second, have: second_have, count: 19)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 38765 root 38765 parent 0",
       "went k1 p0",
       "started k2 38767 root 38765 parent 38765",
       "finished k1",
+      "started k3 60724 root 45057 parent 45057",
+      "went k3 p0",
+      "finished k3",
       "went k2 p0",
       "went k2 p1",
       "went k2 p2",
       "finished k2",
-      "started k3 38766 root 38765 parent 38765",
-      "went k3 p0",
-      "started k4 39467 root 38765 parent 38766",
-      "finished k3",
+      "started k4 38766 root 38765 parent 38765",
       "went k4 p0",
-      "went k4 p1",
-      "went k4 p2",
+      "started k5 39467 root 38765 parent 38766",
       "finished k4",
+      "went k5 p0",
+      "went k5 p1",
+      "went k5 p2",
+      "finished k5",
     ]
     as "opcode.0x7ff.root_parent: a player in sight reads the same casts, the base cast with parent 0 and the repeat's stage with root and parent 38765"
   game_client.close(game: first)
@@ -1944,7 +1947,12 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
       child(3, 43_499),
       ["went k1 p3"],
       child(4, 43_498),
-      child(5, 43_500),
+      // 43500 holds one lasting row, a type 17 of 990 ms (Spell4Effects 99472), so
+      // it is still going when the cast ends 1000 ms in: it has no finish yet.
+      [
+        "started k5 43500 root 43468 parent 43468",
+        "went k5 p0",
+      ],
       ["went k1 p4", "finished k1"],
     ])
   let #(pressed, first_have) =
@@ -1958,7 +1966,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     == ["confirmed k1", ..quick_draw]
     as "Spell4.43468, Quick Draw (SpellLevel 1011): five gos, the phase indexes 0 to 4 (SpellPhase 5882 to 5886), and the children whose caster apply gate passes: no cast of 43500 is live, so 17301 (type 15, comparison 2 on 43500) passes and 17302 (comparison 1) fails: 43498 by Spell4Effects 196513 in phase 1, 43499 by 196514 in phase 2, 43498 by 196515 and 43500 by 196516 in phase 3, each with its own go and finish, then Quick Draw's finish"
   let #(seen, second_have) =
-    game_client.read_kept(game: second, have: second_have, count: 19)
+    game_client.read_kept(game: second, have: second_have, count: 18)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 43468 root 43468 parent 0", ..quick_draw]
   game_client.press_ability(
@@ -1975,8 +1983,8 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
   let #(later, first_have) =
     game_client.read_until_pong(game: first, have: first_have, number: 4)
   assert cast_support.cast_lines(frames: list.append(pressed, later))
-    == ["confirmed k1", "opened 34718 k1", "index 34718 1"]
-    as "Spell4.34718, Charged Shot (SpellLevel 1036): the press opens the threshold with the cast's id and holds the cast; Spell4Thresholds 123 raises the level to 1 after thresholdDuration 1000 (opcode.0x817)"
+    == ["confirmed k1", "opened 34718 k1", "finished k2", "index 34718 1"]
+    as "Spell4.34718, Charged Shot (SpellLevel 1036): the press opens the threshold with the cast's id and holds the cast; Spell4Thresholds 123 raises the level to 1 after thresholdDuration 1000 (opcode.0x817); the Quick Draw's 43500, a lasting row of 990 ms (Spell4Effects 99472), finishes in the same window"
   game_client.press_ability(
     game: first,
     client_cast_id: 3,
@@ -1995,13 +2003,14 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     ]
     as "the release casts the row at level 1, 34722 (Spell4Thresholds 123), then 0x814 closes the threshold and the base cast ends with its 0x7fe (cast.charge_release_base)"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 5)
+    game_client.read_kept(game: second, have: second_have, count: 6)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 34718 root 34718 parent 0",
-      "started k2 34722 root 34718 parent 34718",
-      "went k2 p0",
       "finished k2",
+      "started k3 34722 root 34718 parent 34718",
+      "went k3 p0",
+      "finished k3",
       "finished k1",
     ]
     as "cast.stage_root_parent: a player in sight reads the charge, then the stage with root and parent 34718, and no go for the base cast"
