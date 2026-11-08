@@ -1124,13 +1124,37 @@ pub fn run_timers_asking(
   from_ms from_ms: Int,
   struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
 ) -> #(State, List(Fired)) {
+  run_timers_posed(
+    caster:,
+    state:,
+    effects:,
+    from_ms:,
+    struck_at:,
+    poses: dict.new(),
+    until_ms: None,
+  )
+}
+
+/// The same, with the poses the struck units have in the caster's picture at each go, and,
+/// when `until_ms` is given, only the timers due at it or before: the ones due later are
+/// left, as the clock the test drives has not reached them.
+pub fn run_timers_posed(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
+  poses poses: dict.Dict(Int, Pose),
+  until_ms until_ms: Option(Int),
+) -> #(State, List(Fired)) {
   run_pending(
     caster:,
     state:,
     pending: due_of(effects:, now_ms: from_ms),
     fired_so_far: [],
     struck_at:,
-    until_ms: None,
+    poses:,
+    until_ms:,
   )
 }
 
@@ -1143,19 +1167,32 @@ pub fn run_timers_until(
   from_ms from_ms: Int,
   until_ms until_ms: Int,
 ) -> #(State, List(#(Int, List(Effect)))) {
+  run_timers_until_as(caster: caster(), state:, effects:, from_ms:, until_ms:)
+}
+
+/// The same for this caster.
+pub fn run_timers_until_as(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  until_ms until_ms: Int,
+) -> #(State, List(#(Int, List(Effect)))) {
   let #(state, fired) =
     run_pending(
-      caster: caster(),
+      caster:,
       state:,
       pending: due_of(effects:, now_ms: from_ms),
       fired_so_far: [],
       struck_at: fn(_, _) { [] },
+      poses: dict.new(),
       until_ms: Some(until_ms),
     )
   #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }))
 }
 
-fn due_of(
+/// The timers the effects start, each due its delay after the time.
+pub fn due_of(
   effects effects: List(Effect),
   now_ms now_ms: Int,
 ) -> List(#(Int, TimerId)) {
@@ -1170,6 +1207,7 @@ fn run_pending(
   pending pending: List(#(Int, TimerId)),
   fired_so_far fired_so_far: List(Fired),
   struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
+  poses poses: dict.Dict(Int, Pose),
   until_ms until_ms: Option(Int),
 ) -> #(State, List(Fired)) {
   let limit = option.unwrap(until_ms, 9_007_199_254_740_991)
@@ -1188,7 +1226,7 @@ fn run_pending(
           at: due,
           struck_of: fn(asked) { struck_at(due, asked) },
           rolls: [],
-          poses: dict.new(),
+          poses:,
         )
       let cancelled = cancelled_timers(effects:)
       run_pending(
@@ -1203,6 +1241,7 @@ fn run_pending(
           ..fired_so_far
         ],
         struck_at:,
+        poses:,
         until_ms:,
       )
     }
