@@ -10,3 +10,12 @@ WorldLocation2	42074	start place	start_place.requirement
 WorldLocation2	41641	start place	start_place.requirement
 WorldLocation2	42148	start place	start_place.requirement
 WorldLocation2	8223	start place	start_place.requirement
+CharacterCustomization	2	Human male look row	character_creation_test
+CharacterCustomization	9	Human male look row	character_creation_test
+CharacterCustomization	10	Human male look row	character_select_test
+CharacterCustomization	603	Human female look row	appearance_test
+CharacterCustomization	604	Human female look row	appearance_test
+WorldLocation2	51739	Exile objective circle	game_wire_test
+WorldLocation2	52898	Dominion objective circle	game_wire_test
+WorldZone	1755	deepest zone chain	top_zone_test
+WorldZone	147	zone whose parent row is missing	top_zone_test

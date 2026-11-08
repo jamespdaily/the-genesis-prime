@@ -37,7 +37,7 @@ pub fn the_planted_novice_character_creation_rows_hold_the_real_rows_items_test(
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let real = client_tables.shared()
-  let planted = character_tables.shared()
+  let planted = character_tables.plain()
   list.each(novice_tables.sets(), fn(set) {
     let get = fn(tables) {
       let assert Ok(row) =
@@ -85,7 +85,7 @@ pub fn the_planted_items_types_families_categories_and_slots_are_the_clients_tes
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let real = client_tables.shared()
-  let planted = character_tables.shared()
+  let planted = character_tables.plain()
   let item_ids = list.flat_map(novice_tables.sets(), fn(set) { set.items })
   assert list.length(item2.all(planted)) == 44
     as "the planted Item2 table holds the 44 items of the twelve Novice sets"
@@ -159,7 +159,7 @@ pub fn the_planted_formulas_levels_and_spells_are_the_clients_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let real = client_tables.shared()
-  let planted = character_tables.shared()
+  let planted = character_tables.plain()
   list.each(novice_tables.formulas(), fn(formula) {
     let get = fn(tables) {
       let assert Ok(row) =
@@ -281,7 +281,7 @@ pub fn the_planted_item_display_source_entries_and_displays_are_the_clients_test
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let real = client_tables.shared()
-  let planted = character_tables.shared()
+  let planted = character_tables.plain()
   assert list.length(item_display_source_entry.all(planted)) == 42
     as "the planted ItemDisplaySourceEntry table holds the 21 item types of the sets for each of the sources 75 and 76"
   list.each(item_display_source_entry.all(planted), fn(entry) {

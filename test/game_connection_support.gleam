@@ -1252,6 +1252,31 @@ pub fn press_paralytic_surge(
   )
 }
 
+/// A press of Paralytic Surge at the monotonic time `ms`: the spell recharges
+/// for a round (Spell4 42352 spellCoolDown), so a press a cast's round later
+/// has to be made later.
+pub fn press_paralytic_surge_at(
+  state state: game_connection.State,
+  client_cast_id client_cast_id: Int,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  at(
+    state:,
+    ms:,
+    event: step.OwnEvent(
+      step.Read(world_message(
+        message_id: 0x009A,
+        body: cast_support.press_body(
+          client_cast_id:,
+          bag_index: 2,
+          target: 0,
+          press: 1,
+        ),
+      )),
+    ),
+  )
+}
+
 /// The strikes a step tells the creatures, as the creature's unit and the strike's key.
 pub fn strikes_told(
   taken: ConnectionStep(Request),

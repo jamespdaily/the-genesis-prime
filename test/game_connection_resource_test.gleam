@@ -455,29 +455,6 @@ fn rolls_of_the_seed(count count: Int) -> List(hit.Rolls) {
   list.reverse(rolls)
 }
 
-/// The press of Paralytic Surge (bag index 2 of the Medic) at `ms`.
-fn surge_at(
-  state state: game_connection.State,
-  ms ms: Int,
-  client_cast_id client_cast_id: Int,
-) -> #(game_connection.State, ConnectionStep(Request)) {
-  game_connection_support.at(
-    state:,
-    ms:,
-    event: OwnEvent(
-      step.Read(game_connection_support.world_message(
-        message_id: 0x009A,
-        body: cast_support.press_body(
-          client_cast_id:,
-          bag_index: 2,
-          target: 0,
-          press: 1,
-        ),
-      )),
-    ),
-  )
-}
-
 pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_follow_the_last_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, _) =
@@ -486,7 +463,12 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
       ms: 1000,
       event: game_connection_support.beast_appears(unit_id: 40),
     )
-  let #(state, first) = surge_at(state:, ms: 1000, client_cast_id: 1)
+  let #(state, first) =
+    game_connection_support.press_paralytic_surge_at(
+      state:,
+      ms: 1000,
+      client_cast_id: 1,
+    )
   let assert [#(40, key)] = game_connection_support.strikes_told(first)
     as "the press strikes the Beast"
   let #(state, landed) =
@@ -515,7 +497,14 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
     },
   )
     as "the answer closes the round and the cast's go is written (0x7f4); no gate of Paralytic Surge is of type 37"
-  let #(_, second) = surge_at(state:, ms: 9000, client_cast_id: 2)
+  // Paralytic Surge recharges for 25000 ms from the first go, at 1100 (Spell4
+  // 42352 spellCoolDown), so the second press is made after that.
+  let #(_, second) =
+    game_connection_support.press_paralytic_surge_at(
+      state:,
+      ms: 30_000,
+      client_cast_id: 2,
+    )
   assert game_connection_support.strikes_told(second) != []
     as "the second press strikes the Beast too"
   assert strike_rolls([first, second]) == rolls_of_the_seed(count: 2)

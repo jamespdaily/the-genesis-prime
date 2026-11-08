@@ -37,6 +37,7 @@ import connection_rule_support as support
 import content_support
 import driven_time
 import event_wait
+import fixture_tables
 import game_client
 import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -120,6 +121,7 @@ import novice_tables
 import owned_key
 import owned_test
 import place_support
+import planted_table
 import pog
 import spawn_support
 import unitest
@@ -369,7 +371,7 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
     && entry.position_z == 0xC40C0C08
     as "row 466 is a PreTutorial start, WorldLocation2 row 51596: World 3460, zone 6009, and its position as 32-bit floats; the database kept them"
   send_play(game:, character_id: created.character_id)
-  let burst = game_client.read(game:, count: burst_length())
+  let burst = game_client.read_entry(game:)
   assert cast_support.ids(frames: burst) == game_client.world_entry_ids
     as "the player enters the world: the messages in the client's order (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61)"
   let assert [Frame(body: world, ..), Frame(body: unit, ..), ..] = burst
@@ -416,7 +418,7 @@ pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_
   let created = created_result(game)
   let _list = listed_entries(game)
   send_play(game:, character_id: created.character_id)
-  let burst = game_client.read(game:, count: burst_length())
+  let burst = game_client.read_entry(game:)
   assert cast_support.ids(frames: burst) == game_client.world_entry_ids
     as "the loadout comes after 0x19b and before 0x61 (opcode.0x19b, opcode.0x61)"
   let loadout = game_client.loadout_in(frames: burst)
@@ -462,7 +464,7 @@ pub fn a_created_warriors_entry_holds_its_six_armor_pieces_draws_its_set_and_lea
   let created = created_result(game)
   let _list = listed_entries(game)
   send_play(game:, character_id: created.character_id)
-  let burst = game_client.read(game:, count: burst_length())
+  let burst = game_client.read_entry(game:)
   let loadout = game_client.loadout_in(frames: burst)
   assert loadout.armor
     == [
@@ -512,7 +514,7 @@ pub fn a_created_dominion_cassian_veteran_is_played_into_the_world_at_row_42148_
   assert created.result == create_result.CreateOk
     as "opcode.0xdc: a valid request is created"
   send_play(game:, character_id: created.character_id)
-  let burst = game_client.read(game:, count: burst_length())
+  let burst = game_client.read_entry(game:)
   let assert [Frame(body: world, ..), ..] = burst
   let assert Ok(entered) = enter_world.decode(world)
   assert entered.world_id == 1387
@@ -589,8 +591,7 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  assert list.length(game_client.read(game:, count: burst_length()))
-    == burst_length()
+  assert list.length(game_client.read_entry(game:)) == burst_length()
     as "the player entered the world"
   // The player's map is the run the real Maps holds for the character's world.
   let assert Ok(found) =
@@ -904,7 +905,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let first = game_client.read(game:, count: burst_length())
+  let first = game_client.read_entry(game:)
   let entered_health = Some(health_in(frames: first))
   assert game_client.unit_create_player_in(frames: first).tail.movement_commands
     == [
@@ -942,7 +943,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
     as "the drop saved the place the client last sent, at the epoch its login raised and as its first save, with the health the client was created with (stat 0 of its 0x262)"
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let second = game_client.read(game:, count: burst_length())
+  let second = game_client.read_entry(game:)
   let assert [Frame(body: world, ..), ..] = second
   let assert Ok(entered) = enter_world.decode(world)
   assert entered.position_x == float32.to_bits(100.5)
@@ -990,7 +991,7 @@ pub fn a_character_saved_with_less_health_enters_with_it_in_its_own_0x262_and_a_
     as "the row holds the health a login saved"
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let burst = game_client.read(game:, count: burst_length())
+  let burst = game_client.read_entry(game:)
   assert health_in(frames: burst) == 100
     as "opcode.0x262: stat 0 of the player's own 0x262 is the saved health, below the level's maximum"
   game_client.close(game:)
@@ -1015,7 +1016,7 @@ pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let burst = game_client.read(game:, count: burst_length())
+  let burst = game_client.read_entry(game:)
   let entered_health = Some(health_in(frames: burst))
   send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
     1.5,
@@ -1068,7 +1069,7 @@ pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_sa
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let _burst = game_client.read(game:, count: burst_length())
+  let _burst = game_client.read_entry(game:)
   send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
     1.5,
     -0.25,
@@ -1139,7 +1140,7 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let first_burst = game_client.read(game:, count: burst_length())
+  let first_burst = game_client.read_entry(game:)
   let first = game_client.unit_create_player_in(frames: first_burst)
   assert first.unit_id == 1 as "the first unit of its map"
   // The player walks to a place of its own, then camps there.
@@ -1174,7 +1175,7 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
     == [character]
     as "the account's character is listed, and no longer held in the world"
   send_play(game:, character_id: character)
-  let second_burst = game_client.read(game:, count: burst_length())
+  let second_burst = game_client.read_entry(game:)
   assert list.map(second_burst, fn(frame) { frame.message_id })
     == game_client.world_entry_ids
     as "the play enters the world again as at the first entry"
@@ -1385,10 +1386,13 @@ fn two_players_enter(
     new_player(started:, number: 2, character_name: "Ann Qu")
   send_play(game: first, character_id: first_character)
   let #(first_burst, first_have) =
-    game_client.read_kept(game: first, have: <<>>, count: burst_length())
+    game_client.read_entry_kept(game: first, have: <<>>)
   send_play(game: second, character_id: second_character)
-  let #(second_burst, second_have) =
-    game_client.read_kept(game: second, have: <<>>, count: burst_length() + 1)
+  let #(second_entry, second_have) =
+    game_client.read_entry_kept(game: second, have: <<>>)
+  let #(seen_first, second_have) =
+    game_client.next(game: second, have: second_have)
+  let second_burst = list.append(second_entry, [seen_first])
   let #(seen_second, first_have) =
     game_client.next(game: first, have: first_have)
   TwoEntered(
@@ -2153,8 +2157,7 @@ fn four_players() -> #(login_support.Started, List(Seat)) {
         let #(number, character_name) = player
         let #(game, character) = new_player(started:, number:, character_name:)
         send_play(game:, character_id: character)
-        let #(burst, have) =
-          game_client.read_kept(game:, have: <<>>, count: burst_length())
+        let #(burst, have) = game_client.read_entry_kept(game:, have: <<>>)
         let zone_channel = game_client.zone_channel_in(frames: burst)
         assert zone_channel == 1
           as "chat.zone_channel_id: the burst gives Zone the fixed id 1 in every seat"
@@ -2451,8 +2454,7 @@ pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_agai
   let assert Ok(listing) = character_list.decode(list_body)
   let assert [entry] = listing.characters
   send_play(game: target.game, character_id: entry.character_id)
-  let #(_, have) =
-    game_client.read_kept(game: target.game, have:, count: burst_length())
+  let #(_, have) = game_client.read_entry_kept(game: target.game, have:)
   let target = Seat(..target, have:)
   let target = written_to(seat: target, number: 3).1
   game_client.whisper(
@@ -2647,8 +2649,7 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
-  let #(_burst, zed_have) =
-    game_client.read_kept(game: zed, have: <<>>, count: burst_length())
+  let #(_burst, zed_have) = game_client.read_entry_kept(game: zed, have: <<>>)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let assert Ok(seat) = sitting_bot.seat(pool:, near: "Zed Qu")
     as "the bot is seated near the player"
@@ -2736,8 +2737,7 @@ pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_test() -> Nil 
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
-  let #(_burst, zed_have) =
-    game_client.read_kept(game: zed, have: <<>>, count: burst_length())
+  let #(_burst, zed_have) = game_client.read_entry_kept(game: zed, have: <<>>)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let assert Ok(seat) = sitting_bot.seat(pool:, near: "Zed Qu")
   let finished = process.new_subject()
@@ -2835,8 +2835,7 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
-  let #(_burst, zed_have) =
-    game_client.read_kept(game: zed, have: <<>>, count: burst_length())
+  let #(_burst, zed_have) = game_client.read_entry_kept(game: zed, have: <<>>)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let assert Ok(seat) = sitting_bot.seat(pool:, near: "Zed Qu")
   let finished = process.new_subject()
@@ -2921,8 +2920,7 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
     position: character_tables.exile_circle_centre(),
   )
   send_play(game: first, character_id: first_character)
-  let #(_burst, have) =
-    game_client.read_kept(game: first, have: <<>>, count: burst_length())
+  let #(_burst, have) = game_client.read_entry_kept(game: first, have: <<>>)
   let #(frames, _) = game_client.read_kept(game: first, have:, count: 54)
   let seen = game_client.creatures_created_in(frames:)
   assert list.length(seen) == 54
@@ -2957,8 +2955,7 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
     position: character_tables.exile_circle_centre(),
   )
   send_play(game: second, character_id: second_character)
-  let #(_burst, have) =
-    game_client.read_kept(game: second, have: <<>>, count: burst_length())
+  let #(_burst, have) = game_client.read_entry_kept(game: second, have: <<>>)
   let #(frames, _) = game_client.read_kept(game: second, have:, count: 54 + 1)
   assert list.sort(
       list.map(game_client.creatures_created_in(frames:), fn(creature) {
@@ -3007,12 +3004,25 @@ fn world_with_beasts(
   })
 }
 
-/// A world with one Beast 3 m ahead of the place a new test character stands at.
-fn world_with_a_beast_ahead() -> login_support.Started {
-  world_with_beasts(
-    places: [beast_place(x: 1.5, z: 0.5)],
-    tables: character_tables.shared(),
+/// Runs the body on the client's rows with Paralytic Surge's recharge taken
+/// off: a live fight presses it four times in a row, and Spell4 42352's
+/// spellCoolDown of 25000 ms would make the test wait 75 s of the wall clock.
+fn on_rows_without_paralytic_surges_recharge(
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  fixture_tables.changed(
+    table: "Spell4",
+    id: 42_352,
+    with: [#("spellCoolDown", planted_table.Integer(0))],
+    body:,
   )
+}
+
+/// A world with one Beast 3 m ahead of the place a new test character stands at.
+fn world_with_a_beast_ahead(
+  tables tables: table_store.Tables,
+) -> login_support.Started {
+  world_with_beasts(places: [beast_place(x: 1.5, z: 0.5)], tables:)
 }
 
 /// Plays a new player's character into the world and reads until the Beast's 0x262
@@ -3067,7 +3077,8 @@ fn face(game game: game_client.Game, yaw yaw: Float, clock clock: Int) -> Nil {
 
 pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_the_same_fight_test() -> Nil {
   use <- owned_test.run(120_000)
-  let started = world_with_a_beast_ahead()
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let started = world_with_a_beast_ahead(tables:)
   let #(first, first_frames, first_have) =
     enters_and_sees_the_beast(started:, number: 1, character_name: "Zed Qu")
   let #(second, second_frames, second_have) =

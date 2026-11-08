@@ -282,19 +282,26 @@ fn beast_news(
   ))
 }
 
-/// The Beast units a press strikes, and the round closed with each one's answer.
+/// The Beast units a press strikes, a round after the one before, and the
+/// round closed with each one's answer.
 fn press_and_close(
   state state: game_connection.State,
   client_cast_id client_cast_id: Int,
 ) -> #(game_connection.State, List(Int)) {
+  let ms = client_cast_id * paralytic_surge_round_ms
   let #(state, taken) =
-    game_connection_support.press_paralytic_surge(state:, client_cast_id:)
+    game_connection_support.press_paralytic_surge_at(
+      state:,
+      client_cast_id:,
+      ms:,
+    )
   let told = game_connection_support.strikes_told(taken)
   let state =
     list.fold(told, state, fn(state, strike) {
-      game_connection_support.feed(
-        state,
-        game_connection_support.landed(key: strike.1),
+      game_connection_support.at(
+        state:,
+        ms:,
+        event: game_connection_support.landed(key: strike.1),
       ).0
     })
   #(state, list.map(told, fn(strike) { strike.0 }))
@@ -1287,25 +1294,66 @@ fn ticks_until_the_player_dies(
   }
 }
 
-/// Paralytic Surge pressed, cast after cast, each strike delivered to the creature
-/// and its answer and news back, until the client is written the creature's 0x88c:
-/// the connection and the creature after.
+/// A round of Paralytic Surge: its recharge, `Spell4.42352` spellCoolDown 25000 ms
+/// (its cast time is 0), after which the next press is taken.
+const paralytic_surge_round_ms = 25_000
+
+/// How the Beast answers a step of the Medic's connection at `ms`: each tell it
+/// made reaches the creature, and what the creature sends back the connection, the
+/// steps in order, the connection's own first.
+fn answering_the_beast(
+  beast beast: creature.State,
+  player player: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+) -> #(creature.State, game_connection.State, List(ConnectionStep(Request))) {
+  let #(beast, steps) =
+    beast_takes(state: beast, at_ms: ms, messages: to_the_beast(taken))
+  let #(player, answered) =
+    list.fold(
+      list.flat_map(steps, to_the_medic),
+      #(player, []),
+      fn(held, message) {
+        let #(player, answered) = held
+        let #(player, step) =
+          game_connection_support.at(
+            state: player,
+            ms:,
+            event: OwnEvent(Woken(message)),
+          )
+        #(player, list.append(answered, [step]))
+      },
+    )
+  #(beast, player, [taken, ..answered])
+}
+
+/// Paralytic Surge pressed, cast after cast, each cast run to its end (its
+/// timers fired, each strike delivered to the creature and its answer and news
+/// back) before the next press, a round later, until the client is written the
+/// creature's 0x88c: the connection and the creature after.
 fn presses_until_the_beast_dies(
   player player: game_connection.State,
   beast beast: creature.State,
   client_cast_id client_cast_id: Int,
+  ms ms: Int,
 ) -> #(game_connection.State, creature.State) {
   assert client_cast_id < 40
     as "Paralytic Surge kills the Beast's 52 health in a few casts"
-  let #(player, pressed) =
-    game_connection_support.press_paralytic_surge(
+  let #(player, beast, steps) =
+    game_connection_support.pressed_until_answered(
       state: player,
+      world: beast,
+      bag_index: 2,
       client_cast_id:,
+      ms:,
+      until_ms: ms + paralytic_surge_round_ms,
+      answer: answering_the_beast,
     )
-  let #(beast, steps) =
-    beast_takes(state: beast, at_ms: 1100, messages: to_the_beast(pressed))
-  let #(player, frames, _) =
-    medic_takes(player, list.flat_map(steps, to_the_medic))
+  let frames =
+    list.flat_map(steps, game_connection_support.heard(
+      _,
+      game_connection_support.keyed(),
+    ))
   case
     list.contains(
       game_connection_support.decoded(frames, 0x088C, unit_death_state.decode),
@@ -1318,6 +1366,7 @@ fn presses_until_the_beast_dies(
         player:,
         beast:,
         client_cast_id: client_cast_id + 1,
+        ms: ms + paralytic_surge_round_ms,
       )
   }
 }
@@ -1343,7 +1392,12 @@ pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_
       spawn: spawn_support.beast_at(number: 1, place: beast_spawn_place()),
     )
   let #(medic, beast) =
-    presses_until_the_beast_dies(player: medic, beast:, client_cast_id: 1)
+    presses_until_the_beast_dies(
+      player: medic,
+      beast:,
+      client_cast_id: 1,
+      ms: 1100,
+    )
   let #(_, respawned) =
     fire_beast(state: beast, at_ms: 61_100, timer: TimerId(1))
   let #(_, frames, _) = medic_takes(medic, to_the_medic(respawned))

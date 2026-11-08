@@ -318,7 +318,9 @@ fn zone_changed_message(old old: Int, new new: Int) -> BitArray {
 pub fn the_entry_burst_ends_with_0x1da_and_0x1bc_and_joins_the_name_and_the_zone_channel_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = game_connection_support.entered()
-  assert game_connection_support.written_ids(taken)
+  assert game_client.without_passive_cast(
+      ids: game_connection_support.written_ids(taken),
+    )
     == game_client.world_entry_ids
     as "opcode.0x1da, opcode.0x1bc: after 0x61, 0x1da names the channel and 0x1bc gives it, in that order"
   assert group_effects(taken)

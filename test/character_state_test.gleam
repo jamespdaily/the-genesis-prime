@@ -86,7 +86,7 @@ pub fn the_client_has_a_class_row_for_each_playable_class_test() -> Nil {
 
 pub fn a_level_with_no_xp_per_level_row_is_refused_before_the_map_is_asked_test() -> Nil {
   use <- owned_test.run(60_000)
-  list.each([0, 52, 200], fn(level) {
+  list.each([0, 202, 1000], fn(level) {
     let #(_, loaded) =
       world_entry_support.loaded(
         tables: character_tables.shared(),
@@ -100,7 +100,7 @@ pub fn a_level_with_no_xp_per_level_row_is_refused_before_the_map_is_asked_test(
           <> " has no XpPerLevel row",
       )
       as {
-        "XpPerLevel holds the records 1 to 51 (planted from the client's table): level "
+        "XpPerLevel holds the client's records 1 to 201: level "
         <> int.to_string(level)
         <> " has none, so the play is refused and no Join is asked of the map"
       }

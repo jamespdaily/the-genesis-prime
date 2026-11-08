@@ -13,11 +13,12 @@
 ////   Stalker 45057 have a slot-0 passive, whose Spell4Base is 29035, 29076 and
 ////   29131; the client never casts it, so the server starts it at each join.
 //// Skipped where the client's tables are not on the machine, but for the entry of
-//// a class with no innate, which the planted tables give.
+//// a class with no innate, which the client's Class row with its innate cleared
+//// gives.
 
 import cast_support
-import character_tables
 import client_tables
+import fixture_tables
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
@@ -29,6 +30,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import planted_table
 import unitest
 import world_entry_support
 
@@ -242,30 +244,43 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
 
 pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_starts_no_passive_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(effects, entered) =
-    world_entry_support.entry(
-      tables: character_tables.shared(),
-      character: world_entry_support.character(class: 2, faction: 166, level: 1),
-    )
-  let frames = world_entry_support.frames_of(effects:)
-  assert list.length(
-      list.filter(world_entry_support.items_added(frames:), fn(added) {
-        added.held_item.item.location == 4
-      }),
-    )
-    == 3
-    as "the planted tables' Class rows name no innate: the three abilities only"
-  assert !list.contains(cast_support.ids(frames:), 0x019F)
-    as "0x19f is sent only with an innate to point the button at"
-  assert entered.loadout.innate == None
-  assert list.all(effects, fn(effect) {
-    case effect {
-      world_entry.StartPassive(..) -> False
-      world_entry.Send(..)
-      | world_entry.AskStore(..)
-      | world_entry.AskMap(..)
-      | world_entry.WatchMap(..)
-      | world_entry.Life(..) -> True
-    }
-  })
+  // No client Class row lacks an innate (spell4IdInnateAbilityActive00 is not 0
+  // in all six), so the Engineer's row is edited to have none: the test's subject.
+  fixture_tables.changed(
+    table: "Class",
+    id: 2,
+    with: [#("spell4IdInnateAbilityActive00", planted_table.Integer(0))],
+    body: fn(tables) {
+      let #(effects, entered) =
+        world_entry_support.entry(
+          tables:,
+          character: world_entry_support.character(
+            class: 2,
+            faction: 166,
+            level: 1,
+          ),
+        )
+      let frames = world_entry_support.frames_of(effects:)
+      assert list.length(
+          list.filter(world_entry_support.items_added(frames:), fn(added) {
+            added.held_item.item.location == 4
+          }),
+        )
+        == 3
+        as "the Class row names no innate: the three abilities only"
+      assert !list.contains(cast_support.ids(frames:), 0x019F)
+        as "0x19f is sent only with an innate to point the button at"
+      assert entered.loadout.innate == None
+      assert list.all(effects, fn(effect) {
+        case effect {
+          world_entry.StartPassive(..) -> False
+          world_entry.Send(..)
+          | world_entry.AskStore(..)
+          | world_entry.AskMap(..)
+          | world_entry.WatchMap(..)
+          | world_entry.Life(..) -> True
+        }
+      })
+    },
+  )
 }

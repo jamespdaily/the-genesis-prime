@@ -10,9 +10,8 @@
 ////   "Levian Bay". Level 50 (5) has no row: every Level 50 CharacterCreation
 ////   row costs account currency, which a create refuses first (decision D7).
 //// - The client's own WorldLocation2 rows: the world, zone, position and
-////   facing quaternion of each, as `character_tables` plants them
-////   (`character_tables_test` compares them with the real file) and as the
-////   real table holds them.
+////   facing quaternion of each, read from the committed rows
+////   (`character_tables.start_rows`).
 //// - The client's QuaternionToEulerAngles 0x1401b2fe0 and
 ////   RotationMatrixToEulerAngles 0x1401b2ed0 (their records), emulated at the
 ////   points the tests name and at each start row's facing, whose results are
@@ -26,12 +25,13 @@
 import character_support
 import character_tables
 import client_tables
+import fixture_tables
 import genesis_prime/game/start_place.{
   type Start, Level50, Novice, OtherStart, Veteran,
 }
 import genesis_prime/message/float32
 import genesis_prime/table/character_creation as creation_table
-import genesis_prime/table/id.{RaceId, WorldLocation2Id}
+import genesis_prime/table/id.{RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/world_location2
 import gleam/float
@@ -80,7 +80,7 @@ fn start_name(start: Start) -> String {
   }
 }
 
-pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_row_on_planted_tables_test() -> Nil {
+pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_row_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   list.each(starts(), fn(start) {
@@ -150,7 +150,13 @@ pub fn a_place_in_world_0_cannot_be_made_test() -> Nil {
 
 pub fn a_start_whose_world_location2_row_is_in_world_0_has_no_place_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = character_tables.shared_with_novice_start_in_world_0()
+  // The client's Novice row 51596 is edited into World 0: no client start row
+  // is in a world with no World row, so the edit is the test's subject.
+  use tables <- fixture_tables.changed(
+    table: "WorldLocation2",
+    id: 51_596,
+    with: [#("worldId", Integer(0))],
+  )
   assert start_place.of(
       tables:,
       faction_id: exile,
@@ -229,45 +235,6 @@ pub fn the_holocrypt_place_is_the_start_of_the_race_and_faction_in_the_players_w
     as "a Draken lands at 8223, in World 870: no start of its race is in World 1387"
   assert holocrypt(exile, 1, 1387) == Error(Nil)
     as "no Exile start is in World 1387"
-}
-
-pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_row_in_the_clients_tables_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  list.each(starts(), fn(start) {
-    let #(start, faction_id, race_id, row_id, record) = start
-    let assert Ok(row) =
-      world_location2.get(tables:, id: WorldLocation2Id(row_id))
-      as "the row exists in the client's table"
-    let assert Ok(place) =
-      start_place.of(tables:, faction_id:, race_id: RaceId(race_id), start:)
-      as "the start has a place"
-    assert start_place.turned(place, start_place.unturned)
-      == place_support.at(
-        world_id: row.world_id,
-        world_zone_id: row.world_zone_id,
-        x: row.position0,
-        y: row.position1,
-        z: row.position2,
-      )
-      as {
-        "the place is the client's row "
-        <> int.to_string(row_id)
-        <> " ("
-        <> record
-        <> "): its World, WorldZone and position"
-      }
-    assert character_tables.is_the_place_of(
-      place:,
-      row: character_tables.start_row(row_id),
-    )
-      as {
-        "row "
-        <> int.to_string(row_id)
-        <> " faces the client's yaw (QuaternionToEulerAngles 0x1401b2fe0)"
-      }
-  })
 }
 
 pub fn every_enabled_character_creation_row_of_a_start_has_a_start_place_in_the_clients_tables_test() -> Nil {
@@ -610,32 +577,6 @@ pub fn each_start_rows_facing_gives_the_yaw_pitch_and_roll_the_client_gives_to_t
         <> " ("
         <> row.record
         <> "): the yaw, pitch and roll bits QuaternionToEulerAngles 0x1401b2fe0 returns in the emulator"
-      }
-  })
-}
-
-pub fn each_start_rows_facing_in_the_clients_tables_gives_the_yaw_pitch_and_roll_the_client_gives_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  list.each(character_tables.start_rows(), fn(expected) {
-    let assert Ok(row) =
-      world_location2.get(tables:, id: WorldLocation2Id(expected.id))
-      as "the row exists in the client's table"
-    let facing =
-      start_place.facing_of_quaternion(
-        x: row.facing0,
-        y: row.facing1,
-        z: row.facing2,
-        w: row.facing3,
-      )
-    assert character_tables.facing_bits(facing) == expected.facing_bits
-      as {
-        "row "
-        <> int.to_string(expected.id)
-        <> " ("
-        <> expected.record
-        <> "): the client's own facing gives the bits QuaternionToEulerAngles 0x1401b2fe0 gives in the emulator"
       }
   })
 }
