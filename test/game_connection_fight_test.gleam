@@ -1302,10 +1302,10 @@ const paralytic_surge_round_ms = 25_000
 /// made reaches the creature, and what the creature sends back the connection, the
 /// steps in order, the connection's own first.
 fn answering_the_beast(
-  beast: creature.State,
-  player: game_connection.State,
-  ms: Int,
-  taken: ConnectionStep(Request),
+  beast beast: creature.State,
+  player player: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
 ) -> #(creature.State, game_connection.State, List(ConnectionStep(Request))) {
   let #(beast, steps) =
     beast_takes(state: beast, at_ms: ms, messages: to_the_beast(taken))

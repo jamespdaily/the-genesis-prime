@@ -248,11 +248,10 @@ pub fn the_sheets_power_factors_are_game_formula_1266s_two_values_test() -> Nil 
   use <- owned_test.run(60_000)
   // The client's row 1266 holds 0.25 and 0.25; the edit gives the two values
   // different numbers, so each factor is seen to come from its own column.
-  use tables <- fixture_tables.changed(
-    table: "GameFormula",
-    id: 1266,
-    with: [#("datafloat0", Float(0.5)), #("datafloat01", Float(0.1))],
-  )
+  use tables <- fixture_tables.changed(table: "GameFormula", id: 1266, with: [
+    #("datafloat0", Float(0.5)),
+    #("datafloat01", Float(0.1)),
+  ])
   assert game_client.sheet(
       unit: unit_with(properties: [#(35, 100.0), #(36, 41.0)]),
       tables:,

@@ -96,11 +96,9 @@ pub fn the_highest_level_is_game_formula_row_145s_first_number_test() -> Nil {
   use <- owned_test.run(60_000)
   // The client's row 145 holds 50; it is edited to 3, so the 4 records from
   // the first to the one at level 3 are the ones taken.
-  use tables <- fixture_tables.changed(
-    table: "GameFormula",
-    id: 145,
-    with: [#("dataint0", Integer(3))],
-  )
+  use tables <- fixture_tables.changed(table: "GameFormula", id: 145, with: [
+    #("dataint0", Integer(3)),
+  ])
   assert level.highest_level(tables) == Ok(3)
     as "0x14002983e: the highest level is GameFormula row 145's dataint0"
   assert level.for_experience(tables:, experience: 2860) == Ok(3)

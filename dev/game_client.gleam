@@ -622,7 +622,7 @@ fn entry_read(
   let #(frame, rest) = next(game:, have:)
   case frame.message_id {
     0x01BC -> #(
-      frames_without_passive_cast(list.reverse([frame, ..read])),
+      frames_without_passive_cast(frames: list.reverse([frame, ..read])),
       rest,
     )
     _ -> entry_read(game:, have: rest, read: [frame, ..read])
