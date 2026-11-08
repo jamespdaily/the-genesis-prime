@@ -277,7 +277,7 @@ fn spells_of_tree(spell: Spell) -> List(Spell) {
 }
 
 /// The Spell4Telegraph rows of each spell, in table order, grouped once.
-fn telegraph_links_by_spell(
+pub fn telegraph_links_by_spell(
   tables tables: table_store.Tables,
 ) -> Dict(Int, List(spell4_telegraph.Spell4Telegraph)) {
   list.reverse(spell4_telegraph.all(tables))
@@ -403,8 +403,9 @@ fn area_row_of(
 /// are pictures of another spell's hit shape (a spell's own copy of its child's beam),
 /// unless every drawn row has it: then they are all kept
 /// (`TelegraphDamage.telegraphDamageFlags.0x20.rows`). The phases a row fires in are
-/// not read, so a spell's shapes hold for each of its gos.
-fn hit_shapes_of(
+/// not read, so a spell's shapes hold for each of its gos. The shapes of the spell `id`
+/// that its Spell4Telegraph rows in `links` choose, or the refusal of one.
+pub fn hit_shapes_of(
   tables tables: table_store.Tables,
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
