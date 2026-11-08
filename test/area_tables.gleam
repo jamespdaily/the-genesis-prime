@@ -14,7 +14,10 @@ import fixture_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/spell_area.{type AreaError, type Areas}
 import genesis_prime/game/spell_plan
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{
+  Spell4AoeTargetConstraintsId, Spell4EffectsId, Spell4ValidTargetsId,
+  TelegraphDamageId,
+}
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_effects
@@ -55,53 +58,44 @@ const telegraph_row = 168
 
 const effect_row_id = 140_383
 
-/// Kick as the client's rows hold it.
+/// Kick as the client's rows hold it, read from the typed records of the shared
+/// tables.
 pub fn kick() -> Kick {
-  let integer = fn(schema, id, column) {
-    let assert Integer(value) =
-      fixture_tables.committed_cell(schema:, id:, column:)
-      as "the column holds an integer"
-    value
-  }
-  let parameter = fn(index) {
-    let number = int.to_string(index)
-    let assert Float(value) =
-      fixture_tables.committed_cell(
-        schema: spell4_effects.schema,
-        id: effect_row_id,
-        column: "parameterValue0" <> number,
-      )
-      as "a formula parameter's value is a float"
-    #(
-      integer(spell4_effects.schema, effect_row_id, "parameterType0" <> number),
-      value,
+  let tables = fixture_tables.shared()
+  let assert Ok(effect) =
+    spell4_effects.get(tables:, id: Spell4EffectsId(effect_row_id))
+    as "the rows hold Kick's damage effect"
+  let assert Ok(area) =
+    spell4_aoe_target_constraints.get(
+      tables:,
+      id: Spell4AoeTargetConstraintsId(area_row),
     )
-  }
+    as "the rows hold Kick's area"
+  let assert Ok(valid_targets) =
+    spell4_valid_targets.get(
+      tables:,
+      id: Spell4ValidTargetsId(valid_targets_row),
+    )
+    as "the rows hold Kick's valid targets"
+  let assert Ok(telegraph) =
+    telegraph_damage.get(tables:, id: TelegraphDamageId(telegraph_row))
+    as "the rows hold Kick's telegraph"
   Kick(
-    target_selection: integer(
-      spell4_aoe_target_constraints.schema,
-      area_row,
-      "targetSelection",
+    target_selection: area.target_selection,
+    target_bitmask: valid_targets.target_bitmask,
+    telegraph_target_type_flags: telegraph.target_type_flags,
+    shape: telegraph.damage_shape_enum,
+    effect_target_flags: effect.target_flags,
+    multiplier_bits: effect.data_bits00,
+    parameters: list.filter(
+      [
+        #(effect.parameter_type00, effect.parameter_value00),
+        #(effect.parameter_type01, effect.parameter_value01),
+        #(effect.parameter_type02, effect.parameter_value02),
+        #(effect.parameter_type03, effect.parameter_value03),
+      ],
+      fn(parameter) { parameter.0 != 0 },
     ),
-    target_bitmask: integer(
-      spell4_valid_targets.schema,
-      valid_targets_row,
-      "targetBitmask",
-    ),
-    telegraph_target_type_flags: integer(
-      telegraph_damage.schema,
-      telegraph_row,
-      "targetTypeFlags",
-    ),
-    shape: integer(telegraph_damage.schema, telegraph_row, "damageShapeEnum"),
-    effect_target_flags: integer(
-      spell4_effects.schema,
-      effect_row_id,
-      "targetFlags",
-    ),
-    multiplier_bits: integer(spell4_effects.schema, effect_row_id, "dataBits00"),
-    parameters: list.map([0, 1, 2, 3], parameter)
-      |> list.filter(fn(parameter) { parameter.0 != 0 }),
   )
 }
 

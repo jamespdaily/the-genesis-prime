@@ -470,23 +470,6 @@ pub fn committed_ids(schema: tbl_file.Schema) -> List(Int) {
   list.map(committed_rows(schema), fn(row) { id_of(row:) })
 }
 
-/// The cell of the named column in the committed row `id` of the table `schema`
-/// describes; the row and the column must be held.
-pub fn committed_cell(
-  schema schema: tbl_file.Schema,
-  id id: Int,
-  column column: String,
-) -> Cell {
-  let assert Ok(index) = column_index(schema:, column:)
-    as "the table holds the column"
-  let assert Ok(row) =
-    list.find(committed_rows(schema), fn(row) { id_of(row:) == id })
-    as "the committed rows hold the row"
-  let assert [cell, ..] = list.drop(row, index)
-    as "a row holds a cell for each column"
-  cell
-}
-
 /// The row with the cells of the named columns replaced.
 pub fn with_cells(
   schema schema: tbl_file.Schema,
