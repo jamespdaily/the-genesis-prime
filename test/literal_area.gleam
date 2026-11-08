@@ -47,6 +47,11 @@ pub fn persistent_term_count() -> Int
 @external(erlang, "literal_area_ffi", "tables_not_shared")
 pub fn tables_not_shared(first: Tables, second: Tables) -> Int
 
+/// Whether the two values are the very same term, the same words and not an
+/// equal copy.
+@external(erlang, "erts_debug", "same")
+pub fn same_term(first: a, second: a) -> Bool
+
 /// How many words the value takes copied whole, as a copy to another heap or an
 /// insert into ETS makes it: a persistent term inside it counts in full.
 @external(erlang, "erts_debug", "flat_size")

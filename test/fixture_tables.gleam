@@ -168,16 +168,17 @@ pub fn table(table: String) -> Result(List(List(Cell)), Refusal) {
   })
 }
 
-/// Every table's rows, read once.
+/// Every table's rows, each read once by `table`. The dict is built on the
+/// caller's heap at each call and holds the stored rows themselves; storing it
+/// as a persistent term would copy every table's rows into the literal area a
+/// second time.
 pub fn rows() -> Rows {
-  database_support.once("fixture_tables_rows", fn() {
-    list.map(schemas(), fn(schema) {
-      let assert Ok(rows) = table(schema.table)
-        as "a table the server loads is one the fixture holds"
-      #(schema.table, rows)
-    })
-    |> dict.from_list
+  list.map(schemas(), fn(schema) {
+    let assert Ok(rows) = table(schema.table)
+      as "a table the server loads is one the fixture holds"
+    #(schema.table, rows)
   })
+  |> dict.from_list
 }
 
 /// What the rows reach, worked out once and only by the tests that select rows

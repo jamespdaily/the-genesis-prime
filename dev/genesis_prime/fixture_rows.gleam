@@ -339,8 +339,8 @@ type SplitOption {
 /// `text` split at every `on`, by bytes. `string.split` splits by grapheme
 /// through `string:split`, which takes 77 ms of the 130 ms it takes to read the
 /// committed Spell4 rows against 3 ms for this, and the fixture is read by a
-/// test's first call in every fresh node. The files hold tabs, newlines and
-/// backslashes, none of which joins a grapheme.
+/// test's first call in every fresh node. The writer, `table_rows.escaped`,
+/// replaces by bytes too, so a backslash is one unit to both.
 @external(erlang, "binary", "split")
 fn split_bytes(
   text text: String,

@@ -14,6 +14,7 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
+import literal_area
 import owned_test
 import planted_table
 import simplifile
@@ -444,6 +445,24 @@ pub fn one_table_is_read_alone_and_a_table_the_fixture_lacks_is_refused_by_name_
     as "a table the server does not load is refused by its name, not read as empty"
 }
 
+pub fn every_table_of_the_rows_is_the_term_the_table_was_stored_as_not_a_second_copy_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // A persistent term is copied whole when it is put again, rows included, so
+  // the rows of a table stand in the literal area once only when `rows()` holds
+  // the very terms `table()` stored.
+  let rows = fixture_tables.rows()
+  assert dict.size(rows) == list.length(fixture_tables.schemas())
+    as "rows() holds every table the server loads"
+  list.each(fixture_tables.schemas(), fn(schema) {
+    let assert Ok(stored) = fixture_tables.table(schema.table)
+      as "the fixture holds the table"
+    let assert Ok(held) = dict.get(rows, schema.table)
+      as "rows() holds the table"
+    assert literal_area.same_term(held, stored)
+      as { schema.table <> " in rows() is a copy of the stored table" }
+  })
+}
+
 pub fn the_escapes_of_a_text_cell_are_read_back_as_they_are_written_test() -> Nil {
   use <- owned_test.run(5000)
   let schema =
@@ -452,8 +471,12 @@ pub fn the_escapes_of_a_text_cell_are_read_back_as_they_are_written_test() -> Ni
       tbl_file.Column("text", tbl_file.Utf16Text),
     ])
   // A backslash before a letter, a backslash before an escape, a tab, a line
-  // break and a carriage return.
-  let texts = ["a\\tb", "\\\\n", "x\ty\nz\r", "\\", "plain", "", "e\u{301}t ✓"]
+  // break and a carriage return, and a backslash before a combining mark, which
+  // is one grapheme with it.
+  let texts = [
+    "a\\tb", "\\\\n", "x\ty\nz\r", "\\", "plain", "", "e\u{301}t ✓",
+    "a\\\u{301}b",
+  ]
   list.each(texts, fn(text) {
     let line = "1\t" <> table_rows.escaped(text)
     assert fixture_rows.parse_table(schema:, text: "ID\ttext\n" <> line <> "\n")

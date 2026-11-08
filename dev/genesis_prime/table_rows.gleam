@@ -447,13 +447,35 @@ fn shown(value: Value) -> String {
 
 /// A text with the characters a line cannot hold written as escapes: a
 /// backslash as `\\`, a new line as `\n`, a carriage return as `\r` and a tab
-/// as `\t`.
+/// as `\t`. It replaces by bytes, as the fixture reader splits, so a backslash
+/// before a combining mark is escaped too; `string.replace` goes by grapheme and
+/// would leave that backslash alone.
 pub fn escaped(text: String) -> String {
   text
-  |> string.replace("\\", "\\\\")
-  |> string.replace("\n", "\\n")
-  |> string.replace("\r", "\\r")
-  |> string.replace("\t", "\\t")
+  |> replace_bytes(pattern: "\\", with: "\\\\")
+  |> replace_bytes(pattern: "\n", with: "\\n")
+  |> replace_bytes(pattern: "\r", with: "\\r")
+  |> replace_bytes(pattern: "\t", with: "\\t")
+}
+
+type ReplaceOption {
+  Global
+}
+
+@external(erlang, "binary", "replace")
+fn binary_replace(
+  text: String,
+  pattern: String,
+  with: String,
+  options: List(ReplaceOption),
+) -> String
+
+fn replace_bytes(
+  text text: String,
+  pattern pattern: String,
+  with with: String,
+) -> String {
+  binary_replace(text, pattern, with, [Global])
 }
 
 const two_to_32 = 4_294_967_296
