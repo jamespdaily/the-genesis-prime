@@ -14,7 +14,12 @@ the status line, the seed, and for a failing run the "Failures:" section.
   PLANT_RENDEZVOUS_POLLS tenths of a second (a guard against a script that never
   starts them together, not a time bound);
 - PLANT_FAILS_ON_START=N: the Nth stub to start fails the way a run with one
-  failing test does.
+  failing test does;
+- PLANT_KILLED_ON_START=N: the Nth stub is killed (signal 9) after printing its seed,
+  so its output has no "Failures:" section;
+- PLANT_HANGS_ON_START=N: the Nth stub never ends (the script's per-run limit kills it);
+- a file named *all_skipped* prints "0 passed, no failures, 3 skipped", as unitest does
+  for a file whose tests are all skipped.
 
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 """
@@ -83,6 +88,20 @@ if [ "$ticket" = "$PLANT_FAILS_ON_START" ]; then
   echo "   $file:12"
   exit 1
 fi
+if [ "$ticket" = "$PLANT_KILLED_ON_START" ]; then
+  echo "Seed: $seed"
+  kill -9 $$
+fi
+if [ "$ticket" = "$PLANT_HANGS_ON_START" ]; then
+  exec sleep 60
+fi
+case "$file" in
+  *all_skipped*)
+    echo "0 passed, no failures, 3 skipped"
+    echo "Finished in 0 nanoseconds"
+    echo "Seed: $seed"
+    exit 0 ;;
+esac
 echo "2 passed, no failures"
 echo "Finished in 3 milliseconds"
 echo "Seed: $seed"
@@ -134,7 +153,7 @@ class PlantedRepeatCase(unittest.TestCase):
         )
         return done.stdout.strip()
 
-    def commit(self, message: str, *, change=(), add=(), remove=()) -> None:
+    def commit(self, message: str, *, change=(), add=(), remove=(), rename=()) -> None:
         for path in change:
             with open(self.repository / path, "a") as changed:
                 changed.write("// changed on the branch\n")
@@ -143,10 +162,18 @@ class PlantedRepeatCase(unittest.TestCase):
             (self.repository / path).write_text("// added on the branch\n")
         for path in remove:
             (self.repository / path).unlink()
+        for old, new in rename:
+            (self.repository / old).rename(self.repository / new)
         self.git("add", "-A")
         self.git("commit", "-q", "-m", message)
 
-    def run_script(self, **settings: str) -> subprocess.CompletedProcess:
+    def commit_on_main(self, message: str, *, change) -> None:
+        """A commit on main after the branch point, as another merged pull request makes."""
+        self.git("checkout", "-q", "main")
+        self.commit(message, change=change)
+        self.git("checkout", "-q", "feature")
+
+    def run_script(self, *arguments: str, **settings: str) -> subprocess.CompletedProcess:
         env = {
             "PATH": "%s:/usr/bin:/bin" % (self.root / "tools"),
             "HOME": str(self.root),
@@ -154,7 +181,7 @@ class PlantedRepeatCase(unittest.TestCase):
         }
         env.update(settings)
         return subprocess.run(
-            [sys.executable, "-I", "dev/repeat_tests.py", "main"],
+            [sys.executable, "-I", "dev/repeat_tests.py", *(arguments or ("main",))],
             cwd=self.repository, env=env, capture_output=True, text=True, timeout=120,
         )
 
@@ -172,22 +199,41 @@ class PlantedRepeatCase(unittest.TestCase):
 class RepeatTestsTest(PlantedRepeatCase):
     def test_it_runs_each_added_or_changed_test_file_and_no_other(self):
         self.commit(
-            "change and add test files",
+            "change, add and rename test files",
             change=["test/changed_test.gleam", "test/support.gleam", "src/server.gleam"],
-            add=["test/added_test.gleam", "test/nested/another_test.gleam", "test/helper.gleam"],
+            add=[
+                "test/added_test.gleam",
+                "test/nested/another_test.gleam",
+                "test/helper.gleam",
+                "test/all_skipped_test.gleam",
+            ],
             remove=["test/removed_test.gleam"],
+            rename=[("test/nested/deep_test.gleam", "test/nested/moved_test.gleam")],
         )
-        done = self.run_script(GENESIS_REPEAT_RUNS="2", GENESIS_REPEAT_AT_ONCE="2")
+        # Another pull request changes a test file on main after this branch began.
+        self.commit_on_main("change a test file on main", change=["test/unchanged_test.gleam"])
+        listed = [
+            "test/added_test.gleam",
+            "test/all_skipped_test.gleam",
+            "test/changed_test.gleam",
+            "test/nested/another_test.gleam",
+            "test/nested/moved_test.gleam",
+        ]
+        self.assertEqual(self.run_script("--list", "main").stdout.splitlines(), listed)
+        self.assertEqual(self.starts(), [], "--list starts no VM")
+        # Eight starts in all over five files is under two each, so each gets two.
+        done = self.run_script(GENESIS_REPEAT_RUNS="8", GENESIS_REPEAT_AT_ONCE="1")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-        files = {row["file"] for row in self.starts()}
+        files = [row["file"] for row in self.starts()]
+        self.assertEqual(set(files), set(listed), "a renamed file runs at its new path; no other file runs")
+        for file in listed:
+            if file != "test/all_skipped_test.gleam":
+                self.assertEqual(files.count(file), 2, file)
         self.assertEqual(
-            files,
-            {"test/changed_test.gleam", "test/added_test.gleam", "test/nested/another_test.gleam"},
+            files.count("test/all_skipped_test.gleam"), 1, "a file that ran 0 tests is not started again"
         )
-        for file in files:
-            self.assertEqual(
-                [row["file"] for row in self.starts()].count(file), 2, "each file runs GENESIS_REPEAT_RUNS times"
-            )
+        self.assertIn("not repeated: test/all_skipped_test.gleam", done.stdout)
+        self.assertIn("all 8 runs passed", done.stdout, "a run of 0 tests is not counted as passed")
 
     def test_no_changed_test_file_passes_without_a_run(self):
         self.commit(
@@ -216,20 +262,30 @@ class RepeatTestsTest(PlantedRepeatCase):
         self.assertEqual({row["skip"] for row in rows}, {"1111"})
 
     def test_one_failing_run_fails_it_naming_the_seed_and_test(self):
-        self.commit("change a test file", change=["test/changed_test.gleam"])
-        done = self.run_script(GENESIS_REPEAT_AT_ONCE="4", PLANT_FAILS_ON_START="7")
+        self.commit("change two test files", change=["test/changed_test.gleam"], add=["test/added_test.gleam"])
+        done = self.run_script(
+            GENESIS_REPEAT_AT_ONCE="4",
+            GENESIS_REPEAT_RUN_SECONDS="1",
+            PLANT_FAILS_ON_START="7",
+            PLANT_KILLED_ON_START="11",
+            PLANT_HANGS_ON_START="15",
+        )
         self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
         rows = self.starts()
-        self.assertEqual(len(rows), 20, "twenty runs by default")
-        failing = next(row for row in rows if row["start"] == "7")
+        self.assertEqual(len(rows), 40, "forty starts in all by default, split over the two files")
+        self.assertEqual({row["file"] for row in rows}, {"test/changed_test.gleam", "test/added_test.gleam"})
+        failing = {number: next(row for row in rows if row["start"] == number) for number in ("7", "11", "15")}
         output = done.stdout + done.stderr
-        self.assertIn("seed %s" % failing["seed"], output)
+        for row in failing.values():
+            self.assertIn("seed %s" % row["seed"], output)
+            self.assertIn(row["file"], output)
         self.assertIn("planted_test.the_planted_rule_test", output)
-        self.assertIn("test/changed_test.gleam", output)
+        self.assertIn("killed by signal 9", output, "a run with no Failures section is still reported")
+        self.assertIn("timed out after 1 seconds", output)
         for row in rows:
-            if row is not failing:
+            if row not in failing.values():
                 self.assertNotIn(row["seed"], output, "a passing run's seed is not named")
-        self.assertIn("1 of 20 runs failed", output)
+        self.assertIn("3 of 40 runs failed", output)
 
 
 if __name__ == "__main__":

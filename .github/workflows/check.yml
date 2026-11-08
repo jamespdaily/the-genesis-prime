@@ -121,11 +121,12 @@ jobs:
   # that brings it. It runs beside check on the same toolchain and build cache,
   # builds the code itself and saves no cache (check does). A pull request's checkout
   # is the merge of its head into its base, so the full history is fetched for the
-  # merge base with the base branch.
+  # merge base with the base branch. The files are chosen first, and the toolchain,
+  # the build and the repeat run only when there are any. It does not wait for
+  # `tested`, which runs only on a push.
   repeat:
     name: repeat
-    needs: tested
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.tested.outputs.tested != 'true' }}
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -153,11 +154,26 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
-      - id: toolchain
+      - name: Choose the added or changed test files
+        id: files
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          files=$(python3.13 -I dev/repeat_tests.py --list "origin/$BASE_BRANCH")
+          echo "$files"
+          if [ -n "$files" ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "no added or changed test file, so nothing to repeat"
+          fi
+      - if: steps.files.outputs.any == 'true'
         uses: ./.github/actions/toolchain
       - name: Build the Gleam build
+        if: steps.files.outputs.any == 'true'
         run: PATH="$GENESIS_OTP_DIR/bin:$PATH" gleam build
       - name: Repeat the added or changed test files
+        if: steps.files.outputs.any == 'true'
         env:
           BASE_BRANCH: ${{ github.base_ref }}
         run: PATH="$GENESIS_OTP_DIR/bin:$PATH" python3.13 -I dev/repeat_tests.py "origin/$BASE_BRANCH"
