@@ -33,6 +33,7 @@ import genesis_prime/world_map/creature.{
   type State, Retire, Settings, Unwatched, Watched,
 }
 import genesis_prime/world_map/creature_kind.{Kind}
+import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
@@ -1200,14 +1201,8 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
       #(2, [changed(property: 44, base: 0.0, value: 3.0)]),
       #(5, [changed(property: 44, base: 0.0, value: 3.0)]),
     ]
-  let assert creature.Strike(tell: blow) = strike_of(damage: 1, cast_id: 2)
-  let stunning =
-    creature.Strike(
-      tell: Strike(..blow, controls: [
-        crowd_control_support.stagger_stun(instance_id: 28_673),
-      ]),
-    )
-  let #(_, taken) = told(state:, at_ms: 7000, message: stunning)
+  let #(_, taken) =
+    told(state:, at_ms: 7000, message: stunning_strike(cast_id: 2))
   let landed =
     list.flat_map(support.sends(taken), fn(one) {
       case one.1 {
@@ -1221,6 +1216,145 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
   assert landed == [] as "the creature has armor now: the stun lands no state"
   assert armor_left(taken) == [#(2, 2), #(5, 2)]
     as "the stun destroyed its 1 point of the 3: 0x938 tells the 2 left"
+}
+
+/// A strike of connection 2 whose Stagger stun (`crowd_control_support.stagger_stun`)
+/// destroys 1 point of Interrupt Armor.
+fn stunning_strike(cast_id cast_id: Int) -> creature.Message {
+  let assert creature.Strike(tell: blow) = strike_of(damage: 1, cast_id:)
+  creature.Strike(
+    tell: Strike(..blow, controls: [
+      crowd_control_support.stagger_stun(instance_id: 28_673),
+    ]),
+  )
+}
+
+/// A creature of the Beast's with an Interrupt Armor maximum of `points`, started for
+/// the viewers 2 and 5.
+fn armored_by_two(points points: Int) -> State {
+  let beast = spawn_support.battle_beast(number: 1, x: 0.0)
+  let #(state, _) =
+    feed(
+      state: creature_at(
+        spawn: Spawn(
+          ..beast,
+          combat: creature_life.Combat(
+            ..beast.combat,
+            interrupt_armor: creature_life.Armor(points:),
+          ),
+          bases: list.key_set(
+            beast.bases,
+            unit_properties.interrupt_armor_threshold,
+            int.to_float(points),
+          ),
+        ),
+        viewers: [ConnectionId(2), ConnectionId(5)],
+      ),
+      at_ms: 5000,
+      event: OwnEvent(Started),
+    )
+  state
+}
+
+/// Stat 21 is clamped to 0 and property 44 (`opcode.0x938.interrupt_armor`), so a
+/// creature at full armor shows its maximum, and the maximum is what a modifier
+/// makes it: a raise from 0 to 3 shows 3, and the end shows 0.
+pub fn raising_the_maximum_of_a_creature_at_full_armor_shows_the_new_maximum_test() -> Nil {
+  use <- owned_test.run(5000)
+  let source = cast_support.source_of(cast_id: 1, effect_id: 1925)
+  let #(state, started) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: starting(
+        source:,
+        modifier: unit_properties.interrupt_armor_modifier(points: 3),
+        struck_at_ms: 6000,
+      ),
+    )
+  assert armor_left(started) == [#(2, 3), #(5, 3)]
+    as "the maximum went from 0 to 3 with the armor full: the viewers are shown 3"
+  let #(_, ended) =
+    told(state:, at_ms: 7000, message: creature.ModifierEnds(source:))
+  assert armor_left(ended) == [#(2, 0), #(5, 0)]
+    as "the maximum went back to 0: the viewers are shown 0"
+}
+
+pub fn lowering_the_maximum_of_a_creature_at_full_armor_shows_the_new_maximum_and_the_control_follows_test() -> Nil {
+  use <- owned_test.run(5000)
+  let source = cast_support.source_of(cast_id: 1, effect_id: 1925)
+  let #(state, started) =
+    told(
+      state: armored_by_two(points: 3),
+      at_ms: 6000,
+      message: starting(
+        source:,
+        modifier: unit_properties.interrupt_armor_modifier(points: -1),
+        struck_at_ms: 6000,
+      ),
+    )
+  assert armor_left(started) == [#(2, 2), #(5, 2)]
+    as "the maximum went from 3 to 2 with the armor full: the viewers are shown 2"
+  let #(_, stunned) =
+    told(state:, at_ms: 7000, message: stunning_strike(cast_id: 2))
+  assert armor_left(stunned) == [#(2, 1), #(5, 1)]
+    as "the stun destroyed its 1 point of the 2 it wears, as the viewers were shown"
+}
+
+pub fn lowering_the_maximum_below_the_armor_a_creature_wears_clamps_it_and_shows_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, worn) =
+    told(
+      state: armored_by_two(points: 3),
+      at_ms: 6000,
+      message: stunning_strike(cast_id: 2),
+    )
+  assert armor_left(worn) == [#(2, 2), #(5, 2)]
+    as "the stun destroyed 1 point of the 3"
+  let #(state, lowered) =
+    told(
+      state:,
+      at_ms: 7000,
+      message: starting(
+        source: cast_support.source_of(cast_id: 1, effect_id: 1925),
+        modifier: unit_properties.interrupt_armor_modifier(points: -2),
+        struck_at_ms: 7000,
+      ),
+    )
+  assert armor_left(lowered) == [#(2, 1), #(5, 1)]
+    as "the maximum fell to 1, below the 2 worn: stat 21 is clamped to it"
+  let #(_, stunned) =
+    told(state:, at_ms: 8000, message: stunning_strike(cast_id: 3))
+  assert armor_left(stunned) == [#(2, 0), #(5, 0)]
+    as "the stun destroyed the 1 point it wears, as the viewers were shown"
+}
+
+pub fn raising_the_maximum_of_a_creature_that_wears_armor_down_leaves_the_armor_it_wears_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, worn) =
+    told(
+      state: armored_by_two(points: 3),
+      at_ms: 6000,
+      message: stunning_strike(cast_id: 2),
+    )
+  assert armor_left(worn) == [#(2, 2), #(5, 2)]
+    as "the stun destroyed 1 point of the 3"
+  let #(state, raised) =
+    told(
+      state:,
+      at_ms: 7000,
+      message: starting(
+        source: cast_support.source_of(cast_id: 1, effect_id: 1925),
+        modifier: unit_properties.interrupt_armor_modifier(points: 2),
+        struck_at_ms: 7000,
+      ),
+    )
+  assert armor_left(raised) == []
+    as "the maximum rose to 5 and the armor worn stays 2: the viewers are shown no change"
+  let #(_, stunned) =
+    told(state:, at_ms: 8000, message: stunning_strike(cast_id: 3))
+  assert armor_left(stunned) == [#(2, 1), #(5, 1)]
+    as "the stun destroyed 1 of the 2 worn, as the viewers were shown"
 }
 
 pub fn armor_modifier_changes_creature_mitigation_test() -> Nil {

@@ -38,6 +38,10 @@
 ////   rows destroy nothing, leaves it as it is. The time is a server choice
 ////   (genesis_prime/world_map/game_number): no client value says when armor returns. A
 ////   death resets it with the creature.
+//// - **A change of the maximum** (a modifier on property 44) keeps the armor the controls
+////   use and the stat 21 the viewers see one value: armor at full follows the new
+////   maximum, armor worn down stays and is clamped to a lowered maximum, and a changed
+////   value is sent as 0x938 (`maximum_changed`, `opcode.0x938.interrupt_armor`).
 //// - **How long** a creature holds a state is the row's delay plus durationTime from the
 ////   tell's arrival: a creature's CC resilience is 0 and its duration modifier 1
 ////   (`cc_state.duration_on_creature`). Counting from the arrival is the server's choice:
@@ -66,6 +70,7 @@
 //// | A control's timer fires | as above | two ending in one millisecond: two 0x880 | fires after the death: no frame |
 //// | The creature dies holding a state | no 0x880: death clears the client's states, and the timers are cancelled | | |
 //// | A viewer arrives while a state is held | not told: the 0x262 does not carry it (a gap) | | |
+//// | The maximum is raised or lowered by a modifier | the creature restarts at full armor of its own maximum | n/a | the refill timer fires after the change: the armor is back at the maximum then in force |
 //// | Armor is worn down or refills | the creature restarts at full armor; the refill timer is cancelled at the death | two strikes in a row: each wears down what is left, the second restarts the refill | the refill timer fires after the death or at full armor: nothing |
 //// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/game/lasting) | | |
 
@@ -263,6 +268,38 @@ pub fn armor_now(
       Some(option.unwrap(state.armor, maximum))
     creature_life.NoArmor | creature_life.InfiniteArmor -> None
   }
+}
+
+/// The creature's Interrupt Armor maximum (property 44) changed from `before` to
+/// `after`: armor at full stays full at the new maximum, armor worn down stays as it is
+/// and is clamped to a lowered maximum, so the armor the controls use is always the
+/// stat 21 the viewers are shown (`opcode.0x938.interrupt_armor`). The viewers are
+/// sent 0x938 of the new value whenever it differs from the one they were shown (none
+/// for a creature without armor counts as 0).
+pub fn maximum_changed(
+  state state: State,
+  before before: InterruptArmor,
+  after after: InterruptArmor,
+) -> #(State, List(Effect)) {
+  let shown_before = shown(state:, armor: before)
+  let state = case state.armor, after {
+    Some(worn), creature_life.Armor(points: maximum) ->
+      State(..state, armor: Some(int.min(worn, maximum)))
+    _, _ -> state
+  }
+  let shown_after = shown(state:, armor: after)
+  case shown_after == shown_before {
+    True -> #(state, [])
+    False -> #(state, [
+      ToViewers(client_connection.InterruptArmor(armor: shown_after)),
+    ])
+  }
+}
+
+/// The stat 21 the viewers hold for a creature with this maximum: its current armor, 0
+/// for a creature with none or infinite armor.
+fn shown(state state: State, armor armor: InterruptArmor) -> Int {
+  option.unwrap(armor_now(state:, armor:), 0)
 }
 
 /// The control numbered `number` ended: it is dropped and its viewers are sent the 0x880

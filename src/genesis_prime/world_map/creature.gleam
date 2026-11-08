@@ -141,8 +141,9 @@
 //// | the creature dies while it holds a modifier | the modifier stays held and no rule reads it; its end still removes it |
 //// | the creature respawns | its properties start again from the bases and every source is cleared; a later `ModifierEnds` for a cleared source changes nothing |
 //// | a viewer arrives while a modifier lasts | its 0x262 carries the current value (`unit_properties.overlay`) |
-//// | a modifier lowers the interrupt armor maximum below the armor the creature wears | not handled: the worn armor is not clamped to the new maximum (no issue holds this yet) |
-//// | a modifier raises the interrupt armor maximum | not handled: the worn armor stays and no 0x938 is sent (no issue holds this yet) |
+//// | a modifier lowers the interrupt armor maximum below the armor the creature wears | the worn armor is clamped to the new maximum and the viewers are sent 0x938 of it |
+//// | a modifier raises or lowers the interrupt armor maximum of a creature at full armor | the armor stays full at the new maximum and the viewers are sent 0x938 of it |
+//// | a modifier raises the interrupt armor maximum of a creature that wears armor down | the armor it wears stays, and no 0x938 is sent |
 
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
@@ -593,8 +594,10 @@ fn stood_again(
 /// The creature's properties are now `properties`: its body's combat values and
 /// maximum health follow them (`spawn.values_of`). A health above the new maximum
 /// falls to it, with a 0x937 for the viewers; a lower maximum that is raised again
-/// adds none. A run speed that changed goes to the fight, which runs on the path it
-/// holds at the new speed. The property news is the caller's.
+/// adds none. An Interrupt Armor maximum that changed goes to the controls, which keep
+/// the armor in use and the viewers' stat 21 one value. A run speed that changed goes
+/// to the fight, which runs on the path it holds at the new speed. The property news is
+/// the caller's.
 fn revalued(
   state state: State,
   properties properties: Properties,
@@ -607,7 +610,14 @@ fn revalued(
     Body(..state.body, max_health: values.max_health, combat: values.combat)
   let life =
     creature_life.clamped(life: state.life, max_health: body.max_health)
-  let state = State(..state, properties:, body:, life:)
+  let #(control, armor) =
+    creature_control.maximum_changed(
+      state: state.control,
+      before: state.body.combat.interrupt_armor,
+      after: body.combat.interrupt_armor,
+    )
+  let state = State(..state, properties:, body:, life:, control:)
+  let armor = carried(state:, effects: armor)
   let health = case
     creature_life.health(life:) != health_before,
     creature_life.is_dead(life:)
@@ -626,7 +636,7 @@ fn revalued(
     True -> fought(state:, input: creature_fight.SpeedChanged, now_ms:)
     False -> #(state, [])
   }
-  #(state, list.append(health, fought))
+  #(state, list.flatten([health, armor, fought]))
 }
 
 /// The property modifier of `source` ends on the creature: it is removed, the entries
