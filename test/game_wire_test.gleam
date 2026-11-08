@@ -32,7 +32,6 @@ import ask_support
 import cast_support
 import character_support
 import character_tables
-import client_tables
 import connection_rule_support as support
 import content_support
 import driven_time
@@ -1336,16 +1335,15 @@ fn two_players_enter_one_map() -> TwoEntered {
 }
 
 /// As `two_players_enter_one_map`, the first player being of the class given, the
-/// server holding the trees of the starting abilities of every cast method
-/// (`character_tables.shared_with_spell_trees`) and its game connections taking
-/// their time and their timers from `scripts`, which a test whose casts run on
+/// server holding the fixture's rows (the starting abilities' own trees) and its game
+/// connections taking their time and their timers from `scripts`, which a test whose casts run on
 /// timers gives so it moves them by hand (`driven_time.scripts`).
 fn two_players_of_class_enter_one_map_with(
   first_class first_class: Int,
   scripts scripts: Scripts,
 ) -> TwoEntered {
   two_players_enter_on(
-    tables: character_tables.shared_with_spell_trees(),
+    tables: character_tables.shared(),
     first_class:,
     scripts:,
   )
@@ -1487,21 +1485,31 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
     bag_index: 0,
     target: 0,
   )
-  let pulse = fn(pulse, child) {
-    [
-      "went k1 p" <> int.to_string(pulse),
-      "started " <> child <> " 80382 root 58832 parent 58832",
-      "went " <> child <> " p0",
-      "finished " <> child,
-    ]
-  }
-  let pulses =
-    list.flatten([
-      pulse(0, "k2"),
-      pulse(1, "k3"),
-      pulse(2, "k4"),
-      ["finished k1"],
-    ])
+  let pulses = [
+    "went k1 p0",
+    "started k2 80382 root 58832 parent 58832",
+    "went k2 p0",
+    "started k3 42569 root 58832 parent 80382",
+    "went k3 p0",
+    "finished k2",
+    "went k1 p1",
+    "started k4 80382 root 58832 parent 58832",
+    "went k4 p0",
+    "started k5 42569 root 58832 parent 80382",
+    "went k5 p0",
+    "finished k4",
+    "went k1 p2",
+    "started k6 80382 root 58832 parent 58832",
+    "went k6 p0",
+    "started k7 80383 root 58832 parent 80382",
+    "went k7 p0",
+    "started k8 42568 root 58832 parent 80383",
+    "went k8 p0",
+    "finished k8",
+    "finished k7",
+    "finished k6",
+    "finished k1",
+  ]
   let #(pressed, first_have) =
     game_client.read_until_pong(game: first, have: first_have, number: 1)
   // The channel ends at its channelMaxTime, 1250 ms after the press, the pulses
@@ -1511,9 +1519,9 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
     game_client.read_until_pong(game: first, have: first_have, number: 2)
   assert cast_support.cast_lines(frames: list.append(pressed, later))
     == ["confirmed k1", ..pulses]
-    as "Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631): the accept, then a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250: 0x14053d1f0), each starting its Proxy 80382 (Spell4Effects 173926, phaseFlags -1) with the pulse index as its phase (opcode.0x7f4.phase), then the finish"
+    as "Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631): the accept, then a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250: 0x14053d1f0), each starting its Proxy 80382 (Spell4Effects 173926, phaseFlags -1) with the pulse index as its phase (opcode.0x7f4.phase); 80382's Proxies 212835 (42569, gate Prerequisite 33154: fewer than 2 stacks) start Power Charge on pulses 0 and 1 and 212838 (80383, gate 32921: exactly 2 stacks) starts 80383 on pulse 2, whose Proxy 212837 starts 42568; then the finish"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 14)
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 58832 root 58832 parent 0", ..pulses]
     as "opcode.0x7ff, 0x7f4 and 0x7fe: a player in sight reads the same casts, started by unit 1 with no parent"
@@ -1551,12 +1559,15 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
       "went k1 p0",
       "started k2 38767 root 38765 parent 38765",
       "finished k1",
+      "started k3 60724 root 45057 parent 45057",
+      "went k3 p0",
+      "finished k3",
       "went k2 p0",
       "went k2 p1",
       "went k2 p2",
       "finished k2",
     ]
-    as "Spell4.38765, Shred (SpellLevel 780, thresholdTime 4000): the first tap casts it and opens the threshold with 0x816 (opcode.0x816), its Proxy 38767 starts in phase 0 (Spell4Effects 83776) and goes in three phases (SpellPhase 3712 to 3714)"
+    as "Spell4.38765, Shred (SpellLevel 780, thresholdTime 4000): the first tap casts it and opens the threshold with 0x816 (opcode.0x816), its Proxy 38767 starts in phase 0 (Spell4Effects 83776) and goes in three phases (SpellPhase 3712 to 3714); the Stalker's passive 45057 starts 60724 beside it 50 ms in (its ungated Proxy 147125)"
   game_client.press_ability(
     game: first,
     client_cast_id: 2,
@@ -1580,21 +1591,24 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
     ]
     as "Spell4Thresholds 238: the second tap, held until the global cooldown ends (Spell4.38765: kind 0, SpellCoolDown 115, 1000 ms), casts the stage 38766 and 0x814 closes the threshold with the cooldown bit (opcode.0x814)"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 12)
+    game_client.read_kept(game: second, have: second_have, count: 15)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 38765 root 38765 parent 0",
       "went k1 p0",
       "started k2 38767 root 38765 parent 38765",
       "finished k1",
+      "started k3 60724 root 45057 parent 45057",
+      "went k3 p0",
+      "finished k3",
       "went k2 p0",
       "went k2 p1",
       "went k2 p2",
       "finished k2",
-      "started k3 38766 root 38765 parent 38765",
-      "went k3 p0",
-      "started k4 39467 root 38765 parent 38766",
-      "finished k3",
+      "started k4 38766 root 38765 parent 38765",
+      "went k4 p0",
+      "started k5 39467 root 38765 parent 38766",
+      "finished k4",
     ]
     as "opcode.0x7ff.root_parent and cast.stage_root_parent: a player in sight reads the base cast with parent 0 and the stage with root and parent 38765, and no threshold message"
   game_client.close(game: first)
@@ -1639,7 +1653,7 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
   let started =
     world_with_beasts(
       places: [beast_place(x: 1.5, z: 0.5)],
-      tables: character_tables.shared_with_spell_trees(),
+      tables: character_tables.shared(),
     )
   let #(game, frames, have) =
     enters_and_sees_the_beasts(
@@ -1651,18 +1665,19 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
     )
   let assert [beast, ..] = game_client.creatures_created_in(frames:)
   let beast_unit = beast.unit_id
+  let own = game_client.unit_create_player_in(frames:).unit_id
   let #(first_tap, have) =
     press_and_read_gos(
       game:,
       have:,
       client_cast_id: 1,
-      gos: 4,
+      gos: 5,
       pong: 1,
       beast: beast_unit,
     )
   assert own_go_targets(frames: first_tap, beast: beast_unit)
-    == [[], [beast_unit], [beast_unit], [beast_unit]]
-    as "Spell4.38765, Shred: its own go names nobody (it has no damage) and its Proxy 38767, aimed at the area (Spell4Effects 83788, targetFlags 4), goes in three phases (SpellPhase 3712 to 3714), each naming the Beast 3 m away inside Spell4AoeTargetConstraints 694 (360 degrees, 6.5 m)"
+    == [[], [], [beast_unit], [beast_unit], [beast_unit]]
+    as "Spell4.38765, Shred: its own go names nobody (it has no damage), so does the Stalker's passive 45057 (its ungated Proxy 147125 starts 60724 after 50 ms, with no damage), and Shred's Proxy 38767, aimed at the area (Spell4Effects 83788, targetFlags 4), goes in three phases (SpellPhase 3712 to 3714), each naming the Beast 3 m away inside Spell4AoeTargetConstraints 694 (360 degrees, 6.5 m)"
   assert list.map(game_client.health_in(frames: first_tap), fn(health) {
       health.1
     })
@@ -1673,13 +1688,13 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
       game:,
       have:,
       client_cast_id: 2,
-      gos: 4,
+      gos: 5,
       pong: 2,
       beast: beast_unit,
     )
   assert own_go_targets(frames: second_tap, beast: beast_unit)
-    == [[], [beast_unit], [beast_unit], [beast_unit]]
-    as "Spell4Thresholds 238: the second tap casts the stage 38766, which strikes nobody itself, and the stage's Proxy 39467 (Spell4Effects 83782), aimed at the area by Spell4Effects 86439 on Spell4 39467's area row 694, goes in three phases (SpellPhase 4032 to 4034), each naming the Beast"
+    == [[], [beast_unit], [beast_unit], [beast_unit], [own]]
+    as "Spell4Thresholds 238: the second tap casts the stage 38766, which strikes nobody itself, and the stage's Proxy 39467 (Spell4Effects 83782), aimed at the area by Spell4Effects 86439 on Spell4 39467's area row 694, goes in three phases (SpellPhase 4032 to 4034), each naming the Beast; then the Stalker's passive 45057 starts 63366 (its row 159136, type 14, dataBits00 44), whose Spell4Effects 159134 (type 73) is aimed at the caster"
   assert list.map(game_client.health_in(frames: second_tap), fn(health) {
       health.1
     })
@@ -1707,25 +1722,28 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
   let #(later, first_have) =
     game_client.read_until_pong(game: first, have: first_have, number: 2)
   let own = cast_support.cast_lines(frames: list.append(pressed, later))
-  assert list.take(own, 9)
+  assert list.take(own, 12)
     == [
       "started k1 38765 root 38765 parent 0",
       "opened 38765 k1",
       "went k1 p0",
       "started k2 38767 root 38765 parent 38765",
       "finished k1",
+      "started k3 60724 root 45057 parent 45057",
+      "went k3 p0",
+      "finished k3",
       "went k2 p0",
       "went k2 p1",
       "went k2 p2",
       "finished k2",
     ]
-    as "opcode.0x4db and cast.hold_answer: held 1 starts Shred with a cast id of the server's, no 0x7fd, and opens the threshold (opcode.0x816); Spell4.38765 thresholdTime 4000, its Proxy 38767 goes in three phases (SpellPhase 3712 to 3714)"
-  assert list.drop(own, 9)
+    as "opcode.0x4db and cast.hold_answer: held 1 starts Shred with a cast id of the server's, no 0x7fd, and opens the threshold (opcode.0x816); Spell4.38765 thresholdTime 4000, its Proxy 38767 goes in three phases (SpellPhase 3712 to 3714) and the Stalker's passive 45057 starts 60724 beside it"
+  assert list.drop(own, 12)
     == [
-      "started k3 38766 root 38765 parent 38765",
-      "went k3 p0",
-      "started k4 39467 root 38765 parent 38766",
-      "finished k3",
+      "started k4 38766 root 38765 parent 38765",
+      "went k4 p0",
+      "started k5 39467 root 38765 parent 38766",
+      "finished k4",
       "closed 38765 1",
     ]
     as "cast.hold_repeat: with the key still down, one global cooldown later (Spell4.38765: SpellCoolDown 115, 1000 ms) the next tap casts the stage 38766 (Spell4Thresholds 238), the last, and 0x814 closes the threshold (opcode.0x814)"
@@ -1742,25 +1760,28 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
     == ["went k1 p0", "went k1 p1", "went k1 p2", "finished k1"]
     as "cast.hold_stop: held 0 cuts no cast short, so the stage's Proxy 39467 goes in its three phases (SpellPhase 4032 to 4034), and it ends the repeats, so no cast starts one global cooldown later"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 16)
+    game_client.read_kept(game: second, have: second_have, count: 19)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 38765 root 38765 parent 0",
       "went k1 p0",
       "started k2 38767 root 38765 parent 38765",
       "finished k1",
+      "started k3 60724 root 45057 parent 45057",
+      "went k3 p0",
+      "finished k3",
       "went k2 p0",
       "went k2 p1",
       "went k2 p2",
       "finished k2",
-      "started k3 38766 root 38765 parent 38765",
-      "went k3 p0",
-      "started k4 39467 root 38765 parent 38766",
-      "finished k3",
+      "started k4 38766 root 38765 parent 38765",
       "went k4 p0",
-      "went k4 p1",
-      "went k4 p2",
+      "started k5 39467 root 38765 parent 38766",
       "finished k4",
+      "went k5 p0",
+      "went k5 p1",
+      "went k5 p2",
+      "finished k5",
     ]
     as "opcode.0x7ff.root_parent: a player in sight reads the same casts, the base cast with parent 0 and the repeat's stage with root and parent 38765"
   game_client.close(game: first)
@@ -1881,23 +1902,12 @@ fn a_suited_players_connection_ends(
   login_support.stop(started)
 }
 
-pub fn a_suited_players_connection_ending_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
-  use <- owned_test.run(60_000)
-  a_suited_players_connection_ends(
-    tables: character_tables.shared_with_disguise(),
-    first_class: 4,
-    bag_index: 2,
-    display: 7221,
-  )
-}
-
 pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   // Mode: Eradicate is the Engineer's innate, after its three abilities in the bag
   // (`Class` 2 spell4IdInnateAbilityActive00 47866).
   a_suited_players_connection_ends(
-    tables: client_tables.shared(),
+    tables: character_tables.shared(),
     first_class: 2,
     bag_index: 3,
     display: 7221,
@@ -1937,7 +1947,12 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
       child(3, 43_499),
       ["went k1 p3"],
       child(4, 43_498),
-      child(5, 43_500),
+      // 43500 holds one lasting row, a type 17 of 990 ms (Spell4Effects 99472), so
+      // it is still going when the cast ends 1000 ms in: it has no finish yet.
+      [
+        "started k5 43500 root 43468 parent 43468",
+        "went k5 p0",
+      ],
       ["went k1 p4", "finished k1"],
     ])
   let #(pressed, first_have) =
@@ -1951,7 +1966,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     == ["confirmed k1", ..quick_draw]
     as "Spell4.43468, Quick Draw (SpellLevel 1011): five gos, the phase indexes 0 to 4 (SpellPhase 5882 to 5886), and the children whose caster apply gate passes: no cast of 43500 is live, so 17301 (type 15, comparison 2 on 43500) passes and 17302 (comparison 1) fails: 43498 by Spell4Effects 196513 in phase 1, 43499 by 196514 in phase 2, 43498 by 196515 and 43500 by 196516 in phase 3, each with its own go and finish, then Quick Draw's finish"
   let #(seen, second_have) =
-    game_client.read_kept(game: second, have: second_have, count: 19)
+    game_client.read_kept(game: second, have: second_have, count: 18)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 43468 root 43468 parent 0", ..quick_draw]
   game_client.press_ability(
@@ -1968,8 +1983,8 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
   let #(later, first_have) =
     game_client.read_until_pong(game: first, have: first_have, number: 4)
   assert cast_support.cast_lines(frames: list.append(pressed, later))
-    == ["confirmed k1", "opened 34718 k1", "index 34718 1"]
-    as "Spell4.34718, Charged Shot (SpellLevel 1036): the press opens the threshold with the cast's id and holds the cast; Spell4Thresholds 123 raises the level to 1 after thresholdDuration 1000 (opcode.0x817)"
+    == ["confirmed k1", "opened 34718 k1", "finished k2", "index 34718 1"]
+    as "Spell4.34718, Charged Shot (SpellLevel 1036): the press opens the threshold with the cast's id and holds the cast; Spell4Thresholds 123 raises the level to 1 after thresholdDuration 1000 (opcode.0x817); the Quick Draw's 43500, a lasting row of 990 ms (Spell4Effects 99472), finishes in the same window"
   game_client.press_ability(
     game: first,
     client_cast_id: 3,
@@ -1988,13 +2003,14 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     ]
     as "the release casts the row at level 1, 34722 (Spell4Thresholds 123), then 0x814 closes the threshold and the base cast ends with its 0x7fe (cast.charge_release_base)"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 5)
+    game_client.read_kept(game: second, have: second_have, count: 6)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 34718 root 34718 parent 0",
-      "started k2 34722 root 34718 parent 34718",
-      "went k2 p0",
       "finished k2",
+      "started k3 34722 root 34718 parent 34718",
+      "went k3 p0",
+      "finished k3",
       "finished k1",
     ]
     as "cast.stage_root_parent: a player in sight reads the charge, then the stage with root and parent 34718, and no go for the base cast"
@@ -3265,7 +3281,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
   let started =
     world_with_beasts(
       places: [beast_place(x: 1.5, z: 0.5), beast_place(x: 11.5, z: 3.5)],
-      tables: character_tables.shared_with_spell_trees(),
+      tables: character_tables.shared(),
     )
   let #(first, first_frames, first_have) =
     enters_and_sees_the_beasts(
@@ -3609,19 +3625,21 @@ const dagun_z = -20.0
 
 /// A world with one Dagun at x 1.5, z -20.
 fn world_with_a_dagun() -> login_support.Started {
-  world_with_a_dagun_on(tables: character_tables.shared())
+  world_with_a_dagun_driven_by(scripts: fn(scripts) { scripts })
 }
 
-/// The same with the game tables given.
-fn world_with_a_dagun_on(
-  tables tables: table_store.Tables,
+/// The same with the game connections' time and timers from `scripts`, which a test
+/// whose presses are a recharge apart gives so it moves the clock by hand
+/// (`driven_time.scripts`).
+fn world_with_a_dagun_driven_by(
+  scripts scripts: fn(Scripts) -> Scripts,
 ) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
     server.Settings(
       ..settings,
       game: server.Served(
         ..settings.game,
-        settings: connection_state.Settings(..settings.game.settings, tables:),
+        scripts: scripts(settings.game.scripts),
       ),
       world: server.World(
         ..settings.world,
@@ -3649,6 +3667,19 @@ fn a_ready_medic(
 ) -> #(game_client.Game, Int, Int, BitArray) {
   let #(game, frames, have) =
     a_ready_player(started:, number:, character_name:, class_id: 4)
+  let own = game_client.unit_create_player_in(frames:).unit_id
+  let assert [dagun] = game_client.creatures_created_in(frames:)
+  #(game, own, dagun.unit_id, have)
+}
+
+/// As `a_ready_medic`, a Stalker.
+fn a_ready_stalker(
+  started started: login_support.Started,
+  number number: Int,
+  character_name character_name: String,
+) -> #(game_client.Game, Int, Int, BitArray) {
+  let #(game, frames, have) =
+    a_ready_player(started:, number:, character_name:, class_id: 5)
   let own = game_client.unit_create_player_in(frames:).unit_id
   let assert [dagun] = game_client.creatures_created_in(frames:)
   #(game, own, dagun.unit_id, have)
@@ -3752,9 +3783,14 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
   login_support.stop(started)
 }
 
-/// The Medic's ability bag index of Paralytic Surge, the one the planted Stealth
-/// effect is added to (`character_tables.shared_with_stealth`).
-const paralytic_surge_index = 2
+/// The Stalker's ability bag index of Stealth, Spell4 46073: its press starts Stealth
+/// 38784 and, when the caster is stealthed, its Cancel 38783 (Spell4Effects 107792 and
+/// 107793, behind Prerequisites 7050 and 8127).
+const stealth_index = 3
+
+/// The recharge of the Stealth toggle out of combat, which a second press waits for
+/// (Spell4Effects 159128: dataBits03 is the float 1000.0).
+const stealth_recharge_ms = 1000
 
 /// Whether a go of a cast of the unit `caster` names the unit `target` (opcode.0x7f4).
 fn struck_by(
@@ -3853,22 +3889,18 @@ fn read_after_the_map_and_the_creature_took_it(
 
 pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_stealth_again_inside_it_is_targeted_and_chased_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
-  // A Medic of the planted tables whose Paralytic Surge, at bag index 2, holds a
-  // Stealth effect: a first press enters stealth and a second ends it
-  // (`character_tables.shared_with_stealth`). No pressable planted ability holds a
-  // Stealth row, and CI has no client's tables to press the Stalker's toggle with
-  // (see `character_tables.shared_with_stealth`). Besides, that toggle, Spell4.46073, has
-  // a cooldown of 1000 ms out of combat (Spell4Effects 159128: dataBits03 is the float
-  // 1000.0), so a second press a moment later is refused 15, which a test of the whole
-  // server may not wait for.
+  // A Stalker pressing its Stealth toggle, Spell4.46073: a first press enters stealth
+  // and a second ends it. The toggle recharges in 1000 ms out of combat, so the
+  // connections' clock is driven and moved by hand between the presses.
+  let time = driven_time.new()
   let started =
-    world_with_a_dagun_on(tables: character_tables.shared_with_stealth())
+    world_with_a_dagun_driven_by(scripts: fn(_) { driven_time.scripts(time) })
   let #(game, own, dagun, have) =
-    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+    a_ready_stalker(started:, number: 1, character_name: "Zed Qu")
   game_client.press_ability(
     game:,
     client_cast_id: 1,
-    bag_index: paralytic_surge_index,
+    bag_index: stealth_index,
     target: 0,
   )
   let #(entered, have) =
@@ -3899,21 +3931,11 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
     )
     && game_client.moves_of(events: walked, unit: dagun) == []
     as "Jim's decision, a server choice: the stealthed bot stands in no ring, so the Dagun sends no 0x908 at all or 0x89a and does not run"
-  // The Medic turns its back on the Dagun first: its Paralytic Surge would strike the
-  // Dagun, whose threat would aggro it whatever the stealth does.
-  face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(1.5, dagun_z +. 9.0), target: #(
-      1.5,
-      dagun_z,
-    ))
-      +. 3.1415927,
-    clock: 200,
-  )
+  driven_time.advance(time:, ms: stealth_recharge_ms)
   game_client.press_ability(
     game:,
     client_cast_id: 2,
-    bag_index: paralytic_surge_index,
+    bag_index: stealth_index,
     target: 0,
   )
   let #(fight, _) =
@@ -3941,32 +3963,20 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
 
 pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_landed_blow_ends_the_stealth_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
-  // The same Medic as above, with the planted Stealth effect copied from the
-  // Stalker's 83834 (dataBits02 0: damage taken ends it), for the reason given there.
-  let started =
-    world_with_a_dagun_on(tables: character_tables.shared_with_stealth())
+  // The same Stalker as above: Stealth 38784's row 83834 (dataBits02 0: damage taken
+  // ends it) is the one a press out of combat reaches.
+  let started = world_with_a_dagun()
   let #(game, own, dagun, have) =
-    a_ready_medic(started:, number: 1, character_name: "Zed Qu")
+    a_ready_stalker(started:, number: 1, character_name: "Zed Qu")
   walk_to(game:, z: dagun_z +. 9.0, clock: 100)
   let #(_, have) =
     read_fight(game:, have:, found: fn(events) {
       list.contains(events, game_client.InCombat(unit_id: own, in_combat: True))
     })
-  // The Medic turns its back on the Dagun first: its Paralytic Surge would strike the
-  // Dagun and put the bot on the Dagun's threat list again, whatever `Withdrew` did.
-  face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(1.5, dagun_z +. 9.0), target: #(
-      1.5,
-      dagun_z,
-    ))
-      +. 3.1415927,
-    clock: 200,
-  )
   game_client.press_ability(
     game:,
     client_cast_id: 1,
-    bag_index: paralytic_surge_index,
+    bag_index: stealth_index,
     target: 0,
   )
   let #(frames, _) =

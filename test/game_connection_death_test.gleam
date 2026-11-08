@@ -395,14 +395,14 @@ pub fn a_dead_players_press_of_an_ability_with_the_dead_bit_is_refused_57_and_st
 
 pub fn a_dead_players_press_of_an_ability_without_the_dead_bit_is_taken_as_the_livings_test() -> Nil {
   use <- owned_test.run(60_000)
-  // A test whose first use loads a set of planted tables of its own: the
-  // deadline is a hang guard, the load alone can take most of 10 s.
   // The client checks only bit 0 of the caster row: without it, it sends the
-  // press of a dead caster (cast.dead_player); the planted row 43 lacks it.
-  let living =
-    game_connection_support.medic_with_beast_in_world(
-      character_tables.shared_with_row_43_for_the_dead(),
-    )
+  // press of a dead caster (cast.dead_player). Kept edit: row 43 (mask 1249, the caster
+  // row of Paralytic Surge) with bit 0 cleared, since the only caster row of the fixture's
+  // spells without bit 0 (Spell4Conditions 4, mask 0) is on none of the Medic's abilities.
+  use tables <- fixture_tables.changed(table: "Spell4Conditions", id: 43, with: [
+    #("conditionMask", planted_table.Integer(1248)),
+  ])
+  let living = game_connection_support.medic_with_beast_in_world(tables)
   let #(dead, _) = game_connection_support.killed(living)
   let #(_, alive_press) =
     game_connection_support.press_paralytic_surge(
@@ -1443,10 +1443,7 @@ pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never
 
 pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths_end_and_once_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(state, _) =
-    game_connection_support.stealthed_medic_in(
-      tables: character_tables.shared_with_kept_stealth(),
-    )
+  let #(state, _) = game_connection_support.stealthed_stalker_kept_on_damage()
   let #(state, killed) = game_connection_support.killed(state)
   assert game_connection_support.told_the_map(killed)
     == [

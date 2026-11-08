@@ -18,21 +18,17 @@
 //// - `opcode.0x355`: the camp removes the unit from each viewer's client.
 //// - The server's choices, in the look and viewer modules: the player and each viewer are
 ////   told the same visuals, a news for a unit not shown or of an earlier stay is dropped.
-//// - **Two worlds run each owner-side test.** The planted one (`character_tables.
-////   shared_with_disguise`) gives the Medic's Paralytic Surge, at bag index 2, the two
-////   ExoSuit rows as the client holds them, so the tests run in CI; the Medic is test data,
-////   no Engineer, and is of faction 166, so its suit is 7221. The client's tables give
-////   the Engineer's own Mode: Eradicate, at bag index 3, and are skipped where they are not
-////   on the machine.
+//// - The tests run on the fixture's rows (`character_tables.shared`), which hold the
+////   Engineer's own Mode: Eradicate, found in the Novice bag by its Spell4Base 31779, the two
+////   ExoSuit rows, their prerequisites and the ItemDisplay, Item2Type and ItemSlot rows the
+////   type-112 rule reads.
 
 import character_tables
-import client_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{
   type News, type Request, Appeared, FromMap, LookChanged, PeerNews, Removed,
 }
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/loadout
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
@@ -44,7 +40,6 @@ import genesis_prime/world_map/map.{SeenBy, UnseenBy}
 import gleam/list
 import gleam/option.{None}
 import owned_test
-import unitest
 
 /// Slot 64 as 0x933 carries it: the display with colour set 0 and dye 0, and display 0
 /// for the empty slot (`opcode.0x933.empty_display`).
@@ -58,31 +53,10 @@ type World {
   World(state: game_connection.State, bag_index: Int, suit: Int)
 }
 
-/// The planted Medic of faction 166, whose Paralytic Surge, at bag index 2, holds the
-/// two ExoSuit rows (`character_tables.shared_with_disguise`).
-fn planted_world() -> World {
-  let settings =
-    Settings(
-      ..support.settings(),
-      tables: character_tables.shared_with_disguise(),
-    )
-  let #(state, _) =
-    support.entered_saved(
-      in_character_select: support.in_select_from(support.accepted(settings).0),
-      character: Character(..support.world_character(), class_id: ClassId(4)),
-      saved_health: None,
-    )
-  World(
-    state: support.watched_by(state:, viewers: [2, 3]),
-    bag_index: 2,
-    suit: 7221,
-  )
-}
-
-/// An Engineer of this faction in the world on the client's tables, with Mode:
+/// An Engineer of this faction in the world on the fixture's rows, with Mode:
 /// Eradicate's bag index.
 fn engineer_of(faction_id faction_id: Int) -> World {
-  let settings = Settings(..support.settings(), tables: client_tables.shared())
+  let settings = support.settings()
   let #(state, taken) =
     support.joining_saved(
       in_character_select: support.in_select_from(support.accepted(settings).0),
@@ -99,7 +73,7 @@ fn engineer_of(faction_id faction_id: Int) -> World {
       taken:,
       outcome: step.Answer(
         FromMap(support.with_the_tables_loadout(
-          tables: client_tables.shared(),
+          tables: character_tables.shared(),
           joined: support.map_answer(taken),
           class_id: 2,
         )),
@@ -107,7 +81,7 @@ fn engineer_of(faction_id faction_id: Int) -> World {
     )
   let assert Ok(set) =
     loadout.of(
-      tables: client_tables.shared(),
+      tables: character_tables.shared(),
       class_id: ClassId(2),
       faction_id: 166,
     )
@@ -232,20 +206,13 @@ fn writes_the_suit_then_the_empty_slot(world world: World) -> Nil {
     == [[suit(display: world.suit)], [suit(display: 0)]]
 }
 
-pub fn a_players_suit_is_written_then_the_empty_slot_to_itself_and_each_viewer_test() -> Nil {
-  use <- owned_test.run(60_000)
-  writes_the_suit_then_the_empty_slot(world: planted_world())
-}
-
 pub fn a_dominion_engineers_eradicate_writes_the_suit_then_the_empty_slot_to_itself_and_each_viewer_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   writes_the_suit_then_the_empty_slot(world: engineer_of(faction_id: 166))
 }
 
 pub fn an_exile_engineer_gets_the_other_suit_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   let world = engineer_of(faction_id: 167)
   let #(_, steps) = suited_until(world:, until_ms: 20_000)
   assert written(steps:) == [[suit(display: 4807)], [suit(display: 0)]]
@@ -294,14 +261,8 @@ fn a_late_viewer_gets_the_suit_or_the_base_list(world world: World) -> Nil {
     as "after the end the list is the base's again"
 }
 
-pub fn a_viewer_that_arrives_mid_suit_is_created_with_it_and_one_after_the_end_with_the_base_list_test() -> Nil {
-  use <- owned_test.run(60_000)
-  a_late_viewer_gets_the_suit_or_the_base_list(world: planted_world())
-}
-
 pub fn an_engineers_viewer_that_arrives_mid_suit_is_created_with_it_and_one_after_the_end_with_the_base_list_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   a_late_viewer_gets_the_suit_or_the_base_list(world: engineer_of(
     faction_id: 166,
   ))
@@ -321,14 +282,8 @@ fn a_viewer_that_sees_the_player_again_gets_the_suit(
     as "the viewer that sees the player again is created with the suit"
 }
 
-pub fn a_viewer_that_stops_seeing_the_player_and_sees_it_again_mid_suit_gets_a_new_0x262_with_the_suit_test() -> Nil {
-  use <- owned_test.run(60_000)
-  a_viewer_that_sees_the_player_again_gets_the_suit(world: planted_world())
-}
-
 pub fn a_viewer_that_stops_seeing_the_engineer_and_sees_it_again_mid_suit_gets_a_new_0x262_with_the_suit_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   a_viewer_that_sees_the_player_again_gets_the_suit(world: engineer_of(
     faction_id: 166,
   ))
@@ -408,16 +363,8 @@ fn the_death_writes_the_restore_to_the_player_and_each_viewer(
     as "a viewer that comes after the death gets the base list"
 }
 
-pub fn the_death_mid_suit_writes_the_restore_to_the_player_and_each_viewer_and_a_later_viewer_gets_the_base_list_test() -> Nil {
-  use <- owned_test.run(60_000)
-  the_death_writes_the_restore_to_the_player_and_each_viewer(
-    world: planted_world(),
-  )
-}
-
 pub fn the_engineers_death_mid_suit_writes_the_restore_to_the_player_and_each_viewer_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   the_death_writes_the_restore_to_the_player_and_each_viewer(world: engineer_of(
     faction_id: 166,
   ))
@@ -463,14 +410,8 @@ fn a_camp_tells_the_viewers_removed_and_no_look(world world: World) -> Nil {
     as "the next stay's 0x262 holds the base visuals, with no suit"
 }
 
-pub fn a_camp_mid_suit_tells_each_viewer_removed_with_no_look_and_the_next_entry_has_the_base_look_test() -> Nil {
-  use <- owned_test.run(60_000)
-  a_camp_tells_the_viewers_removed_and_no_look(world: planted_world())
-}
-
 pub fn an_engineers_camp_mid_suit_tells_each_viewer_removed_with_no_look_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   a_camp_tells_the_viewers_removed_and_no_look(world: engineer_of(
     faction_id: 166,
   ))

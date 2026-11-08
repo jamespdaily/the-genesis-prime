@@ -4,7 +4,7 @@
 //// (`opcode.0x811`: the client drops a message that names a cast it does not hold;
 //// `opcode.0x813`: the same). Expected values come from those records.
 
-import character_tables
+import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{Appeared, CastStarted}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
@@ -12,6 +12,7 @@ import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/step
 import gleam/list
 import owned_test
+import planted_table
 
 pub fn a_viewer_writes_0x811_and_0x813_only_for_a_cast_whose_start_it_wrote_test() -> Nil {
   use <- owned_test.run(10_000)
@@ -151,13 +152,23 @@ fn told_to_the_viewer(
 
 pub fn a_creatures_0x355_drops_its_nodes_and_the_lingering_cast_left_with_none_finishes_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Paralytic Surge with a Fluff on the units its area strikes, until removed: the
-  // Beast 40 holds a node of the cast, which lingers with no 0x7fe.
+  // Paralytic Surge with the client's Fluff row 66766 (type 17, flags 2: until removed,
+  // aimed at the units the area strikes) added to it: the Beast 40 holds a node of the
+  // cast, which lingers with no 0x7fe. Kept edit: the three type 17 rows of this kind
+  // (66766, 67116, 68647) belong to deprecated spells (34011, 34031, 34620) that no
+  // starting ability reaches, so no level 1 press leaves a lasting effect on a creature.
+  use tables <- fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 66_766,
+    id: 99_911,
+    with: [
+      #("spellId", planted_table.Integer(42_352)),
+      #("orderIndex", planted_table.Integer(2)),
+    ],
+  )
   let state =
     game_connection_support.watched_by(
-      game_connection_support.medic_with_beast_in_world(
-        character_tables.shared_with_a_lasting_effect(),
-      ),
+      game_connection_support.medic_with_beast_in_world(tables),
       [2],
     )
   let #(state, pressed) =

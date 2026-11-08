@@ -9,6 +9,7 @@ import character_tables
 import class_resource_support
 import client_tables
 import connection_rule_support as support
+import fixture_tables
 import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
@@ -21,7 +22,7 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/connection/state.{type Settings, Settings}
 import genesis_prime/game/hit.{Blow, Offence}
 import genesis_prime/game/loadout
 import genesis_prime/game/server_proxy
@@ -76,6 +77,7 @@ import gleam/result
 import map_support
 import message_support
 import place_support
+import planted_table
 import server_proxy_support
 import spawn_support
 
@@ -1148,15 +1150,89 @@ pub fn medic_in(tables tables: store_tables.Tables) -> game_connection.State {
   ).0
 }
 
-/// A press of Paralytic Surge by a Medic of these tables, seen by the connections 2
-/// and 3: with a planted Stealth effect in the tables the press enters stealth, which
-/// may be kept on damage.
-pub fn stealthed_medic_in(
-  tables tables: store_tables.Tables,
+/// The place of the Stalker's Stealth in its ability bag: Spell4 46073, whose press
+/// starts Stealth 38784 and, when the caster is stealthed, its Cancel 38783
+/// (`Spell4Effects` 107792 and 107793, behind Prerequisites 7050 and 8127).
+pub const stealth_bag_index = 3
+
+/// A press of the Stalker's Stealth at 1000 ms by a Stalker of the fixture's rows
+/// (`settings()`), seen by the connections 2 and 3, and the first press's step. The
+/// state is taken to 3000 ms with the cast's timers fired, so a second press at 3000 ms
+/// or later is no longer refused as a cast in progress or a recharge (Spell4Effects
+/// 159128: 1000 ms out of combat).
+pub fn stealthed_stalker() -> #(game_connection.State, ConnectionStep(Request)) {
+  stealthed_stalker_in(settings: settings())
+}
+
+/// The same on the settings given.
+pub fn stealthed_stalker_in(
+  settings settings: Settings,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  press_paralytic_surge(
-    state: watched_by(state: medic_in(tables:), viewers: [2, 3]),
-    client_cast_id: 1,
+  let #(state, _) = entered_with(settings:, class_id: 5, saved_health: None)
+  let #(state, steps) =
+    pressed_until(
+      state: watched_by(state:, viewers: [2, 3]),
+      bag_index: stealth_bag_index,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 3000,
+    )
+  let assert [pressed, ..] = steps as "the press is the first step"
+  #(state, pressed)
+}
+
+/// A press of the Stalker's Stealth on tables that keep it on damage
+/// (`with_stealth_kept_on_damage`).
+pub fn stealthed_stalker_kept_on_damage() -> #(
+  game_connection.State,
+  ConnectionStep(Request),
+) {
+  use tables <- with_stealth_kept_on_damage
+  stealthed_stalker_in(settings: Settings(..settings(), tables:))
+}
+
+/// A second press of the Stalker's Stealth at `ms`, which cancels the stealth held.
+pub fn press_stealth_again(
+  state state: game_connection.State,
+  client_cast_id client_cast_id: Int,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  at(
+    state:,
+    ms:,
+    event: step.OwnEvent(
+      step.Read(world_message(
+        message_id: 0x009A,
+        body: cast_support.press_body(
+          client_cast_id:,
+          bag_index: stealth_bag_index,
+          target: 0,
+          press: 1,
+        ),
+      )),
+    ),
+  )
+}
+
+/// Runs the body on tables where the Stalker's Stealth is kept on damage. The client's
+/// Stealth 38784 holds two Stealth rows: 83834, broken by damage, for a caster that holds
+/// no Spell4 59389 (Prerequisite 16152), and 95774, kept on damage, for one that does
+/// (16153). 59389 is the Stalker's level 70 series cap, which no level 1 character holds,
+/// so the two comparisons are swapped to give the caster 95774.
+pub fn with_stealth_kept_on_damage(
+  body body: fn(store_tables.Tables) -> a,
+) -> a {
+  let swapped = fn(rows, id, comparison) {
+    let assert Ok(rows) =
+      fixture_tables.change(rows:, table: "Prerequisite", id:, with: [
+        #("prerequisiteComparisonId0", planted_table.Integer(comparison)),
+      ])
+    rows
+  }
+  fixture_tables.on_rows(
+    rows: swapped(swapped(fixture_tables.rows(), 16_152, 1), 16_153, 2),
+    reaching: [],
+    body:,
   )
 }
 
@@ -1180,6 +1256,129 @@ pub fn writes_or_viewer_tells_after_the_map_tell(
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
     }
   })
+}
+
+/// The frames the step writes before and after its tell to the map, each in order. The
+/// tell stands between the writes that come before it in the step's effects and those
+/// that follow.
+pub fn written_around_the_map_tell(
+  taken taken: ConnectionStep(Request),
+) -> #(List(Frame), List(Frame)) {
+  let before =
+    support.effects_of(taken)
+    |> list.take_while(fn(effect) {
+      case effect {
+        OwnEffect(step.Tell(to: Map(..), ..)) -> False
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          True
+      }
+    })
+    |> list.count(fn(effect) {
+      case effect {
+        OwnEffect(step.Write(..)) -> True
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          False
+      }
+    })
+  list.split(written(taken:), before)
+}
+
+/// The news the step tells the viewer connection `viewer` after its tell to the map.
+pub fn news_told_after_the_map_tell(
+  taken taken: ConnectionStep(Request),
+  viewer viewer: Int,
+) -> List(News) {
+  let after =
+    support.effects_of(taken)
+    |> list.drop_while(fn(effect) {
+      case effect {
+        OwnEffect(step.Tell(to: Map(..), ..)) -> False
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          True
+      }
+    })
+  list.filter_map(after, fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Connection(ConnectionId(told)),
+        request: TellPeer(news: PeerNews(news:, ..), ..),
+      ))
+        if told == viewer
+      -> Ok(news)
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The cast starts (0x07FF) among these news, in order.
+pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
+  list.filter_map(news, fn(each) {
+    case each {
+      client_connection.CastStarted(start:) -> Ok(start)
+      client_connection.Appeared(..)
+      | client_connection.CreatureAppeared(..)
+      | client_connection.Moving(..)
+      | client_connection.Removed
+      | client_connection.CastWent(..)
+      | client_connection.CastMissed(..)
+      | client_connection.CastTargetsRemoved(..)
+      | client_connection.CastStackRemoved(..)
+      | client_connection.CastFinished(..)
+      | client_connection.Health(..)
+      | client_connection.Died
+      | client_connection.CameBack
+      | client_connection.DeathLogged
+      | client_connection.CameBackLogged
+      | client_connection.CreatureMoved(..)
+      | client_connection.CreaturePlaced(..)
+      | client_connection.Targeting(..)
+      | client_connection.Threat(..)
+      | client_connection.CombatState(..)
+      | client_connection.Shield(..)
+      | client_connection.InterruptArmor(..)
+      | client_connection.Absorption(..)
+      | client_connection.CrowdControlApplied(..)
+      | client_connection.CrowdControlEnded(..)
+      | client_connection.PropertiesChanged(..)
+      | client_connection.Stealth(..)
+      | client_connection.LookChanged(..) -> Error(Nil)
+    }
+  })
+}
+
+/// Whether the news takes a cast off some units (0x0811).
+pub fn is_cast_removal(news: News) -> Bool {
+  case news {
+    client_connection.CastTargetsRemoved(..) -> True
+    client_connection.Appeared(..)
+    | client_connection.CreatureAppeared(..)
+    | client_connection.Moving(..)
+    | client_connection.Removed
+    | client_connection.CastStarted(..)
+    | client_connection.CastWent(..)
+    | client_connection.CastMissed(..)
+    | client_connection.CastStackRemoved(..)
+    | client_connection.CastFinished(..)
+    | client_connection.Health(..)
+    | client_connection.Died
+    | client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
+    | client_connection.CreatureMoved(..)
+    | client_connection.CreaturePlaced(..)
+    | client_connection.Targeting(..)
+    | client_connection.Threat(..)
+    | client_connection.CombatState(..)
+    | client_connection.Shield(..)
+    | client_connection.InterruptArmor(..)
+    | client_connection.Absorption(..)
+    | client_connection.CrowdControlApplied(..)
+    | client_connection.CrowdControlEnded(..)
+    | client_connection.PropertiesChanged(..)
+    | client_connection.Stealth(..)
+    | client_connection.LookChanged(..) -> False
+  }
 }
 
 /// The Medic of these tables in the world, the Beast unit 40 shown before it.
@@ -1605,7 +1804,7 @@ pub fn entered_with(
 }
 
 /// The tests' player of this class in the world, its connection reading the
-/// starting abilities' trees (`character_tables.shared_with_spell_trees`), with
+/// starting abilities' own trees (`character_tables.shared`), with
 /// its unit id and the bag index of the ability of this Spell4Base.
 pub fn entered_with_spell_trees(
   class_id class_id: Int,
@@ -1615,7 +1814,7 @@ pub fn entered_with_spell_trees(
     class_id:,
     ability:,
     proxies: server_proxy_support.none(),
-    tables: character_tables.shared_with_spell_trees(),
+    tables: character_tables.shared(),
   )
 }
 
