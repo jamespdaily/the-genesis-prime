@@ -203,29 +203,6 @@ fn charged_plans() -> Plans {
   spell_tables.fixture_plans()
 }
 
-/// A spell and the stages and Proxies under it with no cooldown modifier: the plan
-/// as if the type 73 rows were not there.
-fn without_cooldown_modifiers(
-  spell spell: spell_plan.Spell,
-) -> spell_plan.Spell {
-  spell_plan.Spell(
-    ..spell,
-    cooldown_modifiers: [],
-    stages: list.map(spell.stages, fn(stage) {
-      spell_plan.Stage(
-        ..stage,
-        spell: without_cooldown_modifiers(spell: stage.spell),
-      )
-    }),
-    proxies: list.map(spell.proxies, fn(proxy) {
-      spell_plan.Proxy(
-        ..proxy,
-        spell: without_cooldown_modifiers(spell: proxy.spell),
-      )
-    }),
-  )
-}
-
 fn charged(
   plans plans: Plans,
   state state: State,
@@ -259,7 +236,7 @@ pub fn without_the_type_73_row_the_same_release_leaves_the_cooldown_running_test
     as "the plans hold Charged Shot"
   let plans =
     support.with_spells(plans: support.plans(), spells: [
-      without_cooldown_modifiers(spell: charged_shot),
+      support.without_cooldown_modifiers(spell: charged_shot),
     ])
   let #(state, _) = charged(plans:, state: cast.new(), at: 1000)
   let #(state, _) = charged(plans:, state:, at: 1100)

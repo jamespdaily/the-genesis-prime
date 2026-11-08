@@ -1063,6 +1063,12 @@ pub fn ids(frames frames: List(Frame)) -> List(Int) {
   list.map(frames, fn(frame) { frame.message_id })
 }
 
+/// One timer that fired: the time it fired at, the goes the rule asked for (before they
+/// were answered) and the effects of its answered step.
+pub type Fired {
+  Fired(at_ms: Int, asked: List(cast.GoAsked), effects: List(Effect))
+}
+
 /// Fires every timer a step started, earliest first, and each timer those steps
 /// start, until none is left: the time each fired at (`from_ms` plus the delays
 /// that led to it) with the effects of its step. The clock is the test's.
@@ -1098,12 +1104,32 @@ pub fn run_timers_each(
   from_ms from_ms: Int,
   struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
 ) -> #(State, List(#(Int, List(Effect)))) {
+  let #(state, fired) =
+    run_timers_asking(
+      caster:,
+      state:,
+      effects:,
+      from_ms:,
+      struck_at: fn(_, asked) { struck_of(asked) },
+    )
+  #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }))
+}
+
+/// The same, with the goes each timer's step asked for kept beside its effects, and the
+/// units each go struck chosen by the time it is answered at and the go asked.
+pub fn run_timers_asking(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
+) -> #(State, List(Fired)) {
   run_pending(
     caster:,
     state:,
     pending: due_of(effects:, now_ms: from_ms),
     fired_so_far: [],
-    struck_of:,
+    struck_at:,
     until_ms: None,
   )
 }
@@ -1117,14 +1143,16 @@ pub fn run_timers_until(
   from_ms from_ms: Int,
   until_ms until_ms: Int,
 ) -> #(State, List(#(Int, List(Effect)))) {
-  run_pending(
-    caster: caster(),
-    state:,
-    pending: due_of(effects:, now_ms: from_ms),
-    fired_so_far: [],
-    struck_of: fn(_) { [] },
-    until_ms: Some(until_ms),
-  )
+  let #(state, fired) =
+    run_pending(
+      caster: caster(),
+      state:,
+      pending: due_of(effects:, now_ms: from_ms),
+      fired_so_far: [],
+      struck_at: fn(_, _) { [] },
+      until_ms: Some(until_ms),
+    )
+  #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }))
 }
 
 fn due_of(
@@ -1140,10 +1168,10 @@ fn run_pending(
   caster caster: Caster,
   state state: State,
   pending pending: List(#(Int, TimerId)),
-  fired_so_far fired_so_far: List(#(Int, List(Effect))),
-  struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
+  fired_so_far fired_so_far: List(Fired),
+  struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
   until_ms until_ms: Option(Int),
-) -> #(State, List(#(Int, List(Effect)))) {
+) -> #(State, List(Fired)) {
   let limit = option.unwrap(until_ms, 9_007_199_254_740_991)
   case
     list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
@@ -1158,7 +1186,7 @@ fn run_pending(
           state:,
           effects: raw,
           at: due,
-          struck_of:,
+          struck_of: fn(asked) { struck_at(due, asked) },
           rolls: [],
           poses: dict.new(),
         )
@@ -1170,12 +1198,36 @@ fn run_pending(
           list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
           due_of(effects:, now_ms: due),
         ),
-        fired_so_far: [#(due, effects), ..fired_so_far],
-        struck_of:,
+        fired_so_far: [
+          Fired(at_ms: due, asked: goes_asked(effects: raw), effects:),
+          ..fired_so_far
+        ],
+        struck_at:,
         until_ms:,
       )
     }
   }
+}
+
+/// A spell and the stages and Proxies under it with no cooldown modifier: the plan as
+/// if the rows that change a cooldown were not there.
+pub fn without_cooldown_modifiers(spell spell: Spell) -> Spell {
+  spell_plan.Spell(
+    ..spell,
+    cooldown_modifiers: [],
+    stages: list.map(spell.stages, fn(stage) {
+      spell_plan.Stage(
+        ..stage,
+        spell: without_cooldown_modifiers(spell: stage.spell),
+      )
+    }),
+    proxies: list.map(spell.proxies, fn(proxy) {
+      spell_plan.Proxy(
+        ..proxy,
+        spell: without_cooldown_modifiers(spell: proxy.spell),
+      )
+    }),
+  )
 }
 
 /// What a client reads of the casts among its frames, as one line each, the

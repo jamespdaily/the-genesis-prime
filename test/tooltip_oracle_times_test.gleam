@@ -1,11 +1,12 @@
 //// What each planned ability's tooltip says about times and counts, against what the
 //// cast rule does with the client's rows. A tooltip token (`$(kind=id.field)`) prints a
 //// column of the row it names (`0x1404de8d0` for `eff`, `0x1404df2c0` for `spell`);
-//// the cast rule, driven on a clock the test owns, gives the outcome of the same row:
-//// the goes of a channel, the life of a buff, a state or a modifier, the ticks, the go
-//// time and the cooldown. One test for each outcome class compares the two for every
-//// token the planned abilities' texts hold, and reports a difference as the ability,
-//// the text, the token, the value it prints and the value the rule gives.
+//// the cast rule, driven on a clock the test owns with the ability pressed as a player
+//// that holds it, gives the outcome of the same row: the goes of a channel, the life of
+//// a buff, a state or a modifier on the unit it lands on, the ticks, the go time and the
+//// cooldown. One test for each outcome class compares the two for every token the
+//// planned abilities' texts hold, and reports a difference as the ability, the text, the
+//// token, the value it prints and the value the rule gives.
 ////
 //// Expected values come from the client:
 //// - Spell4Effects `durationTime`, `tickTime` and `delayTime` are what `durationMS`,
@@ -15,29 +16,41 @@
 ////   columns for a Channeled or ChanneledField spell only.
 //// - A channel goes at its initial delay and then each pulse time, up to the max time:
 ////   (max - delay + pulse) / pulse goes (`0x14053d1f0`, `Spell4.channelPulseTime`).
-//// - A row's life from its go is its delay plus its duration (`opcode.0x7f4.effect_time`);
-////   the printed duration is the life after the delay.
+//// - A row's life from its go is its delay plus its duration, or the larger of the two
+////   when the spell's Spell4 `propertyFlags` has 0x2000 (`opcode.0x7f4.effect_time`);
+////   the unit's node of the cast ends with its longest row.
+//// - A Proxy row with dataBits00 0 names its spell in dataBits01 and casts it every
+////   tickTime for its life (`Spell4Effects.effectType.26.periodic`), so a text that
+////   prints duration over tickTime counts casts of that spell started under the row's
+////   spell (0x7ff with that parent). No client fact counts the go's application of the
+////   row among the ticks a tooltip prints, so it is not counted; a tick of any other
+////   effect type that is a result (HealShields 118) would be a 0x7f8 of its own, and
+////   no tick token of the planned abilities names one.
 //// - A press whose own cooldown has more than 500 ms left is refused 15, and one with
 ////   less is held (`0x1403b14c0`).
 ////
-//// A token the rule differs from is a gap of the test that names the open issue whose
-//// planned work closes it; a listed gap that the rule now matches fails the test.
+//// A token the rule differs from, or whose outcome the test cannot read, is a gap of
+//// the test that names the open issue whose planned work closes it; a listed gap that
+//// the rule now matches fails the test. A field of an `eff` or `spell` token that no
+//// comparison reads and no list below names fails the test by name.
 
 import cast_support as support
 import fixture_tables
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast.{type State}
 import genesis_prime/game/hit
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_started
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/step
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4
-import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import genesis_prime/tooltip_token.{type Token}
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_life
@@ -53,6 +66,17 @@ import spell_tables
 
 // ---------------------------------------------------------------- what is asked
 
+/// The rows a test reads: the tables a token prints from and the plans the cast rule is
+/// driven with.
+pub type Rows {
+  Rows(tables: store.Tables, plans: Plans)
+}
+
+/// The client's committed rows and the plans built from them.
+fn shared() -> Rows {
+  Rows(tables: fixture_tables.shared(), plans: spell_tables.fixture_plans())
+}
+
 /// A token one planned ability's tooltip holds: the ability's Spell4Base id, the text
 /// and the token.
 pub type Asked {
@@ -62,12 +86,14 @@ pub type Asked {
 /// What a token prints against what the rule gives, or why the rule was not read.
 pub type Outcome {
   Compared(asked: Asked, expected: Int, got: Int)
-  Unobserved(asked: Asked, why: String)
+  Unobserved(asked: Asked, why: Unread)
 }
 
-/// A difference, as the test reports it.
-pub type Mismatch {
-  Mismatch(ability: Int, text_id: Int, token: String, expected: Int, got: Int)
+/// A difference, as the test reports it: what the token prints and what the rule gives,
+/// or why the rule was not read.
+pub type Difference {
+  Differs(ability: Int, text_id: Int, token: String, expected: Int, got: Int)
+  LeftOut(ability: Int, text_id: Int, token: String, why: String)
 }
 
 /// A difference the test lists until the issue's work closes it.
@@ -76,19 +102,23 @@ pub type Gap {
 }
 
 /// The planned abilities, by Spell4Base id.
-fn planned() -> List(Spell) {
-  dict.to_list(spell_tables.fixture_plans())
+fn planned(rows rows: Rows) -> List(Spell) {
+  dict.to_list(rows.plans)
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
   |> list.map(fn(entry) { entry.1 })
 }
 
 /// Every token of every planned ability's tooltips, once for each ability, text and
 /// token.
-fn asked_of(tables tables: store.Tables) -> List(Asked) {
+fn asked_of(rows rows: Rows) -> List(Asked) {
   let assert Ok(tokens) = tooltip_token.load()
     as "the committed token list loads"
-  list.flat_map(planned(), fn(root) {
-    tooltip_token.of_spell(tables:, tokens:, spell: root.spell4_id.value)
+  list.flat_map(planned(rows:), fn(root) {
+    tooltip_token.of_spell(
+      tables: rows.tables,
+      tokens:,
+      spell: root.spell4_id.value,
+    )
     |> list.map(fn(found) {
       Asked(
         base: root.spell4_base_id.value,
@@ -100,12 +130,9 @@ fn asked_of(tables tables: store.Tables) -> List(Asked) {
   |> list.unique
 }
 
-fn plan_of(base base: Int) -> Spell {
+fn plan_of(rows rows: Rows, base base: Int) -> Spell {
   let assert Ok(spell) =
-    spell_plan.in_plans(
-      plans: spell_tables.fixture_plans(),
-      base: Spell4BaseId(base),
-    )
+    spell_plan.in_plans(plans: rows.plans, base: Spell4BaseId(base))
     as "the plans hold the planned ability"
   spell
 }
@@ -121,91 +148,145 @@ fn asked_with(
   })
 }
 
-/// The report of a difference.
-fn mismatch_of(
-  asked asked: Asked,
-  expected expected: Int,
-  got got: Int,
-) -> Mismatch {
-  Mismatch(
-    ability: asked.base,
-    text_id: asked.text_id,
-    token: tooltip_token.describe(asked.token),
-    expected:,
-    got:,
-  )
-}
-
-/// The differences among the outcomes.
-fn mismatches(outcomes outcomes: List(Outcome)) -> List(Mismatch) {
+/// The differences among the outcomes: a token whose two values differ, and a token the
+/// rule was not read for.
+fn differences(outcomes outcomes: List(Outcome)) -> List(Difference) {
   list.filter_map(outcomes, fn(outcome) {
     case outcome {
       Compared(asked:, expected:, got:) if expected != got ->
-        Ok(mismatch_of(asked:, expected:, got:))
-      Compared(..) | Unobserved(..) -> Error(Nil)
+        Ok(Differs(
+          ability: asked.base,
+          text_id: asked.text_id,
+          token: tooltip_token.describe(asked.token),
+          expected:,
+          got:,
+        ))
+      Compared(..) -> Error(Nil)
+      Unobserved(asked:, why:) ->
+        Ok(LeftOut(
+          ability: asked.base,
+          text_id: asked.text_id,
+          token: tooltip_token.describe(asked.token),
+          why: reason(unread: why),
+        ))
     }
   })
 }
 
-/// The tokens the rule was not read for, with the reason.
-fn unobserved(
-  outcomes outcomes: List(Outcome),
-) -> List(#(Int, String, String)) {
-  list.filter_map(outcomes, fn(outcome) {
+/// The tokens whose two values were compared.
+fn compared_count(outcomes outcomes: List(Outcome)) -> Int {
+  list.count(outcomes, fn(outcome) {
     case outcome {
-      Unobserved(asked:, why:) ->
-        Ok(#(asked.base, tooltip_token.describe(asked.token), why))
-      Compared(..) -> Error(Nil)
+      Compared(..) -> True
+      Unobserved(..) -> False
     }
   })
+}
+
+/// The tokens the rule was not read for.
+fn left_out_count(outcomes outcomes: List(Outcome)) -> Int {
+  list.length(outcomes) - compared_count(outcomes:)
 }
 
 /// What a test has to say of the differences: those no gap lists, and the gaps that
-/// match nothing.
+/// match no difference.
 pub type Verdict {
-  Verdict(unlisted: List(Mismatch), stale: List(Gap))
+  Verdict(unlisted: List(Difference), stale: List(Gap))
 }
 
 fn verdict(
-  mismatches mismatches: List(Mismatch),
+  differences differences: List(Difference),
   gaps gaps: List(Gap),
 ) -> Verdict {
-  let listed = fn(mismatch: Mismatch, gap: Gap) {
-    mismatch.ability == gap.ability && mismatch.token == gap.token
+  let listed = fn(difference: Difference, gap: Gap) {
+    difference.ability == gap.ability && difference.token == gap.token
   }
   Verdict(
-    unlisted: list.filter(mismatches, fn(mismatch) {
-      !list.any(gaps, listed(mismatch, _))
+    unlisted: list.filter(differences, fn(difference) {
+      !list.any(gaps, listed(difference, _))
     }),
-    stale: list.filter(gaps, fn(gap) { !list.any(mismatches, listed(_, gap)) }),
+    stale: list.filter(gaps, fn(gap) { !list.any(differences, listed(_, gap)) }),
   )
 }
 
 // ------------------------------------------------------------ what a token prints
 
+/// Why a value could not be read: what a token prints or what the rule gives.
+pub type Unread {
+  NoRow
+  UnknownField(field: String)
+  Refused(results: List(Int))
+  NeverFinished
+  NeverApplied
+  CastsStarted(count: Int)
+  NodeHeldBy(effect_id: Int)
+  ModifierChanges(count: Int)
+  PressNotHeld
+  CooldownNotBracketed
+  NoCooldownForMethod
+  NotPeriodicProxy
+  HeldAs(list: String)
+  NotInPlan
+}
+
+fn reason(unread unread: Unread) -> String {
+  case unread {
+    NoRow -> "the table has no row of that id"
+    UnknownField(field:) -> "unknown field " <> field
+    Refused(results:) ->
+      "the press is refused "
+      <> string.join(list.map(results, int.to_string), ", ")
+    NeverFinished -> "the cast never finished"
+    NeverApplied -> "no go applies the row to the unit"
+    CastsStarted(count:) ->
+      "the drive started the spell that holds the row "
+      <> int.to_string(count)
+      <> " times, not once"
+    NodeHeldBy(effect_id:) ->
+      "the unit's node lasts as long as the longer row "
+      <> int.to_string(effect_id)
+    ModifierChanges(count:) ->
+      "the cast gave "
+      <> int.to_string(count)
+      <> " changes of the caster for the row, not a start and an end"
+    PressNotHeld ->
+      "the press after the cooldown is not held for the rest of it"
+    CooldownNotBracketed ->
+      "the own cooldown does not end between 1.2 s and 100 s after the release"
+    NoCooldownForMethod -> "no cooldown is read for a spell of this method"
+    NotPeriodicProxy ->
+      "no client fact counts the ticks of a row that is not a periodic Proxy"
+    HeldAs(list:) -> "the plan holds the row as a " <> list
+    NotInPlan -> "no list of the ability's plan holds the row"
+  }
+}
+
 /// The number a token prints, in the unit of its column (milliseconds for a time), as
 /// the client's evaluators read it; `Error` for a row the table lacks or a field this
 /// reader does not know.
 fn printed(
-  tables tables: store.Tables,
+  rows rows: Rows,
   root root: Spell,
   token token: Token,
-) -> Result(Int, Nil) {
+) -> Result(Int, Unread) {
   case token.kind {
     tooltip_token.Eff -> {
-      use row <- result.try(spell4_effects.get(
-        tables:,
-        id: Spell4EffectsId(token.id),
-      ))
+      use row <- result.try(
+        spell4_effects.get(tables: rows.tables, id: Spell4EffectsId(token.id))
+        |> result.replace_error(NoRow),
+      )
       case token.field {
         "durationms" -> Ok(row.duration_time)
         "ticktimems" -> Ok(row.tick_time)
         "delayms" -> Ok(row.delay_time)
-        _ -> Error(Nil)
+        field -> Error(UnknownField(field:))
       }
     }
     tooltip_token.Spell -> {
-      use row <- result.try(spell4.get(tables:, id: Spell4Id(token.id)))
+      use row <- result.try(
+        spell4.get(tables: rows.tables, id: Spell4Id(token.id))
+        |> result.replace_error(NoRow),
+      )
       let channelled = case root.spell4_id.value == token.id, root.method {
         True, spell_plan.Channeled | True, spell_plan.ChanneledField -> True
         True, _ -> False
@@ -227,7 +308,7 @@ fn printed(
         "channelpulse" | "channelpulsems" -> channel(row.channel_pulse_time)
         "channelmax" | "channelmaxms" -> channel(row.channel_max_time)
         "channeldelay" | "channeldelayms" -> channel(row.channel_initial_delay)
-        _ -> Error(Nil)
+        field -> Error(UnknownField(field:))
       }
     }
     tooltip_token.Cc
@@ -241,8 +322,69 @@ fn printed(
     | tooltip_token.Vitem
     | tooltip_token.Achievement
     | tooltip_token.Keybinding
-    | tooltip_token.Bindpoint -> Error(Nil)
+    | tooltip_token.Bindpoint -> Error(UnknownField(field: token.field))
   }
+}
+
+// -------------------------------------------------------------- the vocabulary
+
+/// The fields of an `eff` or `spell` token that a comparison below reads.
+const read_fields = [
+  "durationms", "ticktimems", "delayms", "casttime", "cd", "channelpulse",
+  "channelpulsems", "channelmax", "channelmaxms", "channeldelay",
+  "channeldelayms",
+]
+
+/// The fields that print a time no comparison reads, each until the issue that plans
+/// the effects they belong to closes it (#336): the `ms` and `msf` modifiers print an
+/// effect's data column as a time (`0x1404de8d0`), and a spell's `lasData` fields are
+/// not read by any client fact (`0x1404df2c0`), so what they print is not known to be
+/// no time.
+const left_out_fields = [
+  "data03msf", "data03msfabs", "data04ms", "lasdata00", "lasdata00ms",
+  "lasdata00pct", "lasdata00raw", "lasdata00rawint", "lasdata01", "lasdata02",
+  "lasdata02pct", "lasdata02raw", "lasdata03msabs", "lasdata07ms", "lasdata09ms",
+  "lasdata09pct",
+]
+
+/// The fields that print no time: an effect's data column as a number or a percent, an
+/// input parameter as a percent (`0x1404de8d0`), a spell's area target count and its
+/// name, and the text of another tooltip (`0x1404df2c0`).
+const other_fields = [
+  "input0pct", "data01rawint", "data02int", "data02pct", "data02pctadd",
+  "data02rawint", "data03pct", "data03rawint", "aoetc", "", "ctooltip",
+]
+
+/// The tokens of the asked list that are of kind `eff` or `spell` and whose field no
+/// comparison reads and no list names: a time such a field printed would go unchecked.
+fn unread_fields(asked asked: List(Asked)) -> List(String) {
+  list.filter_map(asked, fn(entry) {
+    let field = entry.token.field
+    case entry.token.kind {
+      tooltip_token.Eff | tooltip_token.Spell ->
+        case
+          list.contains(read_fields, field)
+          || list.contains(left_out_fields, field)
+          || list.contains(other_fields, field)
+        {
+          True -> Error(Nil)
+          False -> Ok(tooltip_token.describe(entry.token))
+        }
+      tooltip_token.Cc
+      | tooltip_token.Smod
+      | tooltip_token.Emod
+      | tooltip_token.Thrsh
+      | tooltip_token.Gf
+      | tooltip_token.Creature
+      | tooltip_token.Item
+      | tooltip_token.Schematic
+      | tooltip_token.Vitem
+      | tooltip_token.Achievement
+      | tooltip_token.Keybinding
+      | tooltip_token.Bindpoint -> Error(Nil)
+    }
+  })
+  |> list.unique
 }
 
 // ------------------------------------------------------------------ the cast rule
@@ -250,15 +392,22 @@ fn printed(
 /// The time a driven press is made at.
 const start_ms = 1000
 
-/// One moment of a driven cast: the time, the goes the rule asked for (before they were
-/// answered) and the effects its answered form gives.
-type Step {
-  Step(at_ms: Int, asked: List(cast.GoAsked), effects: List(Effect))
+/// The unit the cast strikes.
+const struck_unit = 20
+
+/// A cast driven to its end: the id the rule gave it and the timers it fired, the press
+/// first, each at the time it was taken at.
+pub type Drive {
+  Drive(cast_id: Int, steps: List(support.Fired))
 }
 
-/// A cast driven to its end: the id the rule gave it and its steps, the press first.
-type Drive {
-  Drive(cast_id: Int, steps: List(Step))
+/// The units a go asked for at a time strikes.
+type Strikes =
+  fn(Int, cast.GoAsked) -> List(cast.Struck)
+
+/// No go strikes a unit.
+fn striking_none(_at_ms: Int, _asked: cast.GoAsked) -> List(cast.Struck) {
+  []
 }
 
 /// A player in combat that holds only this ability, in the bag's first place: a cast
@@ -272,11 +421,12 @@ fn caster_of(base base: Int) -> cast.Caster {
 }
 
 /// A press of the ability, then every timer the rule starts, fired at its time, until
-/// none is left; each go strikes `struck`. `Error` holds the results of a refusal.
+/// none is left; each go strikes the units `strikes` gives. `Error` holds the results of
+/// a refusal.
 fn drive(
   plans plans: Plans,
   base base: Int,
-  struck struck: List(cast.Struck),
+  strikes strikes: Strikes,
 ) -> Result(Drive, List(Int)) {
   let caster = caster_of(base:)
   let #(state, raw) =
@@ -290,79 +440,92 @@ fn drive(
     )
   case support.refusal_results(effects: raw) {
     [] -> {
-      let #(state, first) =
-        settle(caster:, state:, raw:, at_ms: start_ms, struck:)
-      let steps =
-        run_pending(
+      let #(state, effects) =
+        support.answered_each(
           caster:,
           state:,
-          pending: due(effects: first.effects, now_ms: start_ms),
-          done: [first],
-          struck:,
+          effects: raw,
+          at: start_ms,
+          struck_of: strikes(start_ms, _),
+          rolls: [],
+          poses: dict.new(),
         )
-      Ok(Drive(cast_id: support.pressed_id(effects: first.effects), steps:))
+      let #(_, fired) =
+        support.run_timers_asking(
+          caster:,
+          state:,
+          effects:,
+          from_ms: start_ms,
+          struck_at: strikes,
+        )
+      Ok(
+        Drive(cast_id: support.pressed_id(effects:), steps: [
+          support.Fired(
+            at_ms: start_ms,
+            asked: support.goes_asked(effects: raw),
+            effects:,
+          ),
+          ..fired
+        ]),
+      )
     }
     results -> Error(results)
   }
 }
 
-fn settle(
-  caster caster: cast.Caster,
-  state state: State,
-  raw raw: List(Effect),
-  at_ms at_ms: Int,
-  struck struck: List(cast.Struck),
-) -> #(State, Step) {
-  let #(state, effects) =
-    support.answered_each(
-      caster:,
-      state:,
-      effects: raw,
-      at: at_ms,
-      struck_of: fn(_) { struck },
-      rolls: [],
-      poses: dict.new(),
-    )
-  #(state, Step(at_ms:, asked: support.goes_asked(effects: raw), effects:))
-}
-
-fn due(
-  effects effects: List(Effect),
-  now_ms now_ms: Int,
-) -> List(#(Int, step.TimerId)) {
-  list.map(support.started_timers(effects:), fn(started) {
-    #(now_ms + started.1, started.0)
-  })
-}
-
-fn run_pending(
-  caster caster: cast.Caster,
-  state state: State,
-  pending pending: List(#(Int, step.TimerId)),
-  done done: List(Step),
-  struck struck: List(cast.Struck),
-) -> List(Step) {
-  case
-    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
-  {
-    [] -> list.reverse(done)
-    [#(at_ms, timer), ..rest] -> {
-      let #(state, raw) =
-        support.fired_raw_as(caster:, state:, timer:, at: at_ms)
-      let #(state, fired) = settle(caster:, state:, raw:, at_ms:, struck:)
-      let cancelled = support.cancelled_timers(effects: fired.effects)
-      run_pending(
-        caster:,
-        state:,
-        pending: list.append(
-          list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
-          due(effects: fired.effects, now_ms: at_ms),
-        ),
-        done: [fired, ..done],
-        struck:,
+/// Each go strikes the unit and lands on it the crowd-control rows of the spell the go
+/// is of, as `creature_control` lands them on a creature of no armor at the go's time.
+fn striking_with_states(root root: Spell) -> Strikes {
+  fn(at_ms: Int, asked: cast.GoAsked) {
+    let controls = case
+      list.find(
+        spell_plan.tree(spell: root, started: fn(_) { True }),
+        fn(spell) { spell.spell4_id == asked.spell4_id },
       )
+    {
+      Ok(spell) -> landed_of(rows: spell.controls, at_ms:)
+      Error(Nil) -> []
     }
+    [cast.Hit(unit_id: struck_unit, descriptions: [], controls:)]
   }
+}
+
+/// The states a creature of no armor takes from the control rows at the time: what
+/// `creature_control` holds it for, as the connection hands it back to the cast.
+fn landed_of(
+  rows rows: List(spell_plan.CrowdControl),
+  at_ms at_ms: Int,
+) -> List(strike_tell.ControlLanded) {
+  let tell =
+    strike_tell.Strike(
+      key: strike_tell.Key(cast_id: 1, phase: 0, unit_id: struck_unit),
+      from: step.Sessions,
+      striker: strike_tell.CreatureStriker,
+      offence: hit_offence(),
+      controls: list.index_map(rows, fn(row, index) {
+        strike_tell.ControlTell(
+          effect_id: row.effect_id.value,
+          instance_id: index + 1,
+          row: row.row,
+        )
+      }),
+    )
+  creature_control.land(
+    state: creature_control.new(),
+    tell:,
+    armor: creature_life.NoArmor,
+    refill_ms: 0,
+    now_ms: at_ms,
+  ).landed
+}
+
+fn hit_offence() -> hit.Offence {
+  hit.Offence(
+    blows: [],
+    crit_chance: 0.0,
+    crit_severity: 0.0,
+    strikethrough: 0.0,
+  )
 }
 
 /// The frames the cast wrote with this message id, each with the time since the press.
@@ -376,24 +539,43 @@ fn frames_of(
   })
 }
 
-/// The goes of the pressed cast itself: the time since the press and the go.
-fn goes_of(drive drive: Drive) -> List(#(Int, spell_go.SpellGo)) {
-  list.filter_map(frames_of(drive:, message_id: spell_go.message_id), fn(entry) {
+/// Every go of the drive, each with the time since the press.
+fn all_goes(drive drive: Drive) -> List(#(Int, spell_go.SpellGo)) {
+  list.map(frames_of(drive:, message_id: spell_go.message_id), fn(entry) {
     let assert Ok(go) = spell_go.decode({ entry.1 }.body)
       as "a 0x7f4 the rule wrote decodes"
-    case go.cast_id == drive.cast_id {
-      True -> Ok(#(entry.0, go))
-      False -> Error(Nil)
-    }
+    #(entry.0, go)
   })
 }
 
-/// The time since the press that the pressed cast finished at.
-fn finish_of(drive drive: Drive) -> Result(Int, Nil) {
+/// The goes of one cast: the time since the press and the go.
+fn goes_in(
+  drive drive: Drive,
+  cast_id cast_id: Int,
+) -> List(#(Int, spell_go.SpellGo)) {
+  list.filter(all_goes(drive:), fn(go) { go.1.cast_id == cast_id })
+}
+
+/// The goes of the pressed cast itself.
+fn goes_of(drive drive: Drive) -> List(#(Int, spell_go.SpellGo)) {
+  goes_in(drive:, cast_id: drive.cast_id)
+}
+
+/// The casts the drive started, each with the time since the press.
+fn started_of(drive drive: Drive) -> List(#(Int, spell_started.SpellStarted)) {
+  list.map(frames_of(drive:, message_id: spell_started.message_id), fn(entry) {
+    let assert Ok(started) = spell_started.decode({ entry.1 }.body)
+      as "a 0x7ff the rule wrote decodes"
+    #(entry.0, started)
+  })
+}
+
+/// The time since the press that the cast finished at.
+fn finish_in(drive drive: Drive, cast_id cast_id: Int) -> Result(Int, Nil) {
   list.find_map(
     frames_of(drive:, message_id: spell_finished.message_id),
     fn(entry) {
-      case support.finished_cast_id(entry.1) == drive.cast_id {
+      case support.finished_cast_id(entry.1) == cast_id {
         True -> Ok(entry.0)
         False -> Error(Nil)
       }
@@ -401,51 +583,71 @@ fn finish_of(drive drive: Drive) -> Result(Int, Nil) {
   )
 }
 
-/// The delay each application of the Spell4Effects row to a unit carries in the goes of
-/// the whole drive.
-fn applied_delays(drive drive: Drive, effect_id effect_id: Int) -> List(Int) {
-  frames_of(drive:, message_id: spell_go.message_id)
-  |> list.flat_map(fn(entry) {
-    let assert Ok(go) = spell_go.decode({ entry.1 }.body)
-      as "a 0x7f4 the rule wrote decodes"
-    list.flat_map(go.targets, fn(target) {
+/// The first time since the press, from a time on, that a 0x811 of the cast names the
+/// unit.
+fn removal_in(
+  drive drive: Drive,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+  from_ms from_ms: Int,
+) -> Result(Int, Nil) {
+  list.find_map(
+    frames_of(drive:, message_id: spell_targets_removed.message_id),
+    fn(entry) {
+      case support.removed_targets([entry.1]) {
+        [#(removed, units)] ->
+          case
+            removed == cast_id
+            && entry.0 >= from_ms
+            && list.contains(units, unit_id)
+          {
+            True -> Ok(entry.0)
+            False -> Error(Nil)
+          }
+        _ -> Error(Nil)
+      }
+    },
+  )
+}
+
+/// One go's listing of a Spell4Effects row on a unit: the time since the press the go
+/// was written at, the delay it lists and the unit.
+pub type Application {
+  Application(at_ms: Int, delay_ms: Int, unit_id: Int)
+}
+
+/// Each application of the Spell4Effects row, in the order of the goes of one cast.
+fn applications(
+  drive drive: Drive,
+  cast_id cast_id: Int,
+  effect_id effect_id: Int,
+) -> List(Application) {
+  goes_in(drive:, cast_id:)
+  |> list.flat_map(fn(go) {
+    list.flat_map(go.1.targets, fn(target) {
       list.filter(target.effects, fn(info) {
         info.spell4_effects_id == effect_id
       })
-      |> list.map(fn(info) { info.delay_ms })
+      |> list.map(fn(info) {
+        Application(
+          at_ms: go.0,
+          delay_ms: info.delay_ms,
+          unit_id: target.unit_id,
+        )
+      })
     })
   })
 }
 
-/// Why the rule's outcome of a row could not be read.
-type Unread {
-  Refused(results: List(Int))
-  NeverFinished
-  ModifierChanges(count: Int)
-  RowListed(times: Int)
-  PressNotHeld
-  CooldownNotBracketed
-  NoCooldownForMethod
-}
-
-fn reason(unread unread: Unread) -> String {
-  case unread {
-    Refused(results:) ->
-      "the press is refused "
-      <> string.join(list.map(results, int.to_string), ", ")
-    NeverFinished -> "the cast never finished"
-    ModifierChanges(count:) ->
-      "the cast gave "
-      <> int.to_string(count)
-      <> " changes of the caster, not a start and an end"
-    RowListed(times:) ->
-      "the goes list the row " <> int.to_string(times) <> " times, not once"
-    PressNotHeld ->
-      "the press after the cooldown is not held for the rest of it"
-    CooldownNotBracketed ->
-      "the own cooldown does not end between 1.2 s and 100 s after the release"
-    NoCooldownForMethod -> "no cooldown is read for a spell of this method"
-  }
+/// The casts of the child spell the drive started under the parent spell.
+fn child_casts(
+  drive drive: Drive,
+  parent parent: Int,
+  child child: Int,
+) -> Int {
+  list.count(started_of(drive:), fn(entry) {
+    entry.1.spell4_id == child && entry.1.parent_spell4_id == parent
+  })
 }
 
 // ------------------------------------------------------------------- the channels
@@ -460,20 +662,17 @@ const pulse_fields = ["channelpulse", "channelpulsems"]
 /// What a channel's token prints against the cast: a pulse is the time between two
 /// goes, a delay the time of the first go and the max the time the cast finishes at.
 fn channel_outcomes(
-  tables tables: store.Tables,
+  rows rows: Rows,
   asked asked: List(Asked),
 ) -> List(Outcome) {
   list.map(
     asked_with(asked:, kind: tooltip_token.Spell, fields: channel_fields),
     fn(entry) {
-      let root = plan_of(base: entry.base)
-      let assert Ok(expected) = printed(tables:, root:, token: entry.token)
+      let root = plan_of(rows:, base: entry.base)
+      let assert Ok(expected) = printed(rows:, root:, token: entry.token)
         as "a channel token prints a column"
-      case
-        drive(plans: spell_tables.fixture_plans(), base: entry.base, struck: [])
-      {
-        Error(results) ->
-          Unobserved(asked: entry, why: reason(unread: Refused(results:)))
+      case drive(plans: rows.plans, base: entry.base, strikes: striking_none) {
+        Error(results) -> Unobserved(asked: entry, why: Refused(results:))
         Ok(driven) -> {
           let times = list.map(goes_of(drive: driven), fn(go) { go.0 })
           let field = entry.token.field
@@ -485,13 +684,12 @@ fn channel_outcomes(
               if field == "channeldelay" || field == "channeldelayms"
             -> Ok(first)
             _ if field == "channelmax" || field == "channelmaxms" ->
-              finish_of(drive: driven)
+              finish_in(drive: driven, cast_id: driven.cast_id)
             _ -> Error(Nil)
           }
           case got {
             Ok(got) -> Compared(asked: entry, expected:, got:)
-            Error(Nil) ->
-              Unobserved(asked: entry, why: "the cast gave too few goes")
+            Error(Nil) -> Unobserved(asked: entry, why: NeverFinished)
           }
         }
       }
@@ -501,12 +699,12 @@ fn channel_outcomes(
 
 /// The goes a channel's columns make: one at the delay and one each pulse after it, up
 /// to the max time.
-fn goes_expected(tables tables: store.Tables, asked asked: Asked) -> Int {
-  let root = plan_of(base: asked.base)
+fn goes_expected(rows rows: Rows, asked asked: Asked) -> Int {
+  let root = plan_of(rows:, base: asked.base)
   let column = fn(field) {
     let assert Ok(value) =
       printed(
-        tables:,
+        rows:,
         root:,
         token: tooltip_token.Token(
           kind: tooltip_token.Spell,
@@ -523,22 +721,16 @@ fn goes_expected(tables tables: store.Tables, asked asked: Asked) -> Int {
 
 /// The pulses of each planned ability a token counts: the goes the cast gave, against
 /// the goes the channel's columns make.
-fn pulse_outcomes(
-  tables tables: store.Tables,
-  asked asked: List(Asked),
-) -> List(Outcome) {
+fn pulse_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
   list.map(
     asked_with(asked:, kind: tooltip_token.Spell, fields: pulse_fields),
     fn(entry) {
-      case
-        drive(plans: spell_tables.fixture_plans(), base: entry.base, struck: [])
-      {
-        Error(results) ->
-          Unobserved(asked: entry, why: reason(unread: Refused(results:)))
+      case drive(plans: rows.plans, base: entry.base, strikes: striking_none) {
+        Error(results) -> Unobserved(asked: entry, why: Refused(results:))
         Ok(driven) ->
           Compared(
             asked: entry,
-            expected: goes_expected(tables:, asked: entry),
+            expected: goes_expected(rows:, asked: entry),
             got: list.length(goes_of(drive: driven)),
           )
       }
@@ -547,9 +739,6 @@ fn pulse_outcomes(
 }
 
 // ------------------------------------------------------------------- buff lives
-
-/// The Spell4Base id the spell that holds one row alone is planned under.
-const reduced_base = 1
 
 /// A row a planned ability holds, and the list of the plan it is in.
 type Held {
@@ -608,223 +797,268 @@ fn held_in(spell spell: Spell, effect_id effect_id: Int) -> Result(Held, Nil) {
   }
 }
 
-/// A spell of no cast time, no cost and no cooldown that holds one row of the holder
-/// and nothing else, so a cast of it shows the row's own outcome.
-fn holding(holder holder: Spell, held held: Held) -> Spell {
-  let clean =
-    spell_plan.Spell(
-      ..support.child(spell4_id: holder.spell4_id.value, base: reduced_base),
-      longer_of_delay_and_duration: holder.longer_of_delay_and_duration,
-    )
-  case held {
-    HeldControl(row:) -> spell_plan.Spell(..clean, controls: [row])
-    HeldLasting(row:) -> spell_plan.Spell(..clean, lasting: [row])
-    HeldModifier(row:) -> spell_plan.Spell(..clean, modifiers: [row])
-    HeldElsewhere(..) -> clean
+/// The time from a row's go to the end of its effect on a unit that the client's code
+/// gives: its delay plus its duration, or the larger of the two where the spell's Spell4
+/// `propertyFlags` has 0x2000 (`opcode.0x7f4.effect_time`).
+fn life_after_go(
+  rows rows: Rows,
+  holder holder: Spell,
+  row row: Spell4Effects,
+) -> Int {
+  let assert Ok(record) = spell4.get(tables: rows.tables, id: holder.spell4_id)
+    as "the spell that holds the row has a Spell4 row"
+  case int.bitwise_and(record.property_flags, 0x2000) {
+    0 -> row.delay_time + row.duration_time
+    _ -> int.max(row.delay_time, row.duration_time)
   }
 }
 
-/// The state a creature of no armor takes from the control row at the press: what
-/// `creature_control` holds it for, as the connection hands it back to the cast.
-fn landed_of(
-  row row: spell_plan.CrowdControl,
-) -> List(strike_tell.ControlLanded) {
-  let tell =
-    strike_tell.Strike(
-      key: strike_tell.Key(cast_id: 1, phase: 0, unit_id: struck_unit),
-      from: step.Sessions,
-      striker: strike_tell.CreatureStriker,
-      offence: hit.Offence(
-        blows: [],
-        crit_chance: 0.0,
-        crit_severity: 0.0,
-        strikethrough: 0.0,
-      ),
-      controls: [
-        strike_tell.ControlTell(
-          effect_id: row.effect_id.value,
-          instance_id: 1,
-          row: row.row,
-        ),
-      ],
-    )
-  creature_control.land(
-    state: creature_control.new(),
-    tell:,
-    armor: creature_life.NoArmor,
-    refill_ms: 0,
-    now_ms: start_ms,
-  ).landed
-}
-
-/// The unit the cast strikes.
-const struck_unit = 20
-
-/// A cast of the spell that holds the one row, on a unit it strikes: a control row has
-/// landed on the unit, as `creature_control` lands it.
-fn drive_holding(
-  holder holder: Spell,
-  held held: Held,
-) -> Result(Drive, List(Int)) {
-  let plans =
-    support.with_spells(plans: spell_tables.fixture_plans(), spells: [
-      holding(holder:, held:),
-    ])
-  let struck = case held {
-    HeldControl(row:) -> [
-      cast.Hit(
-        unit_id: struck_unit,
-        descriptions: [],
-        controls: landed_of(row:),
-      ),
-    ]
-    HeldLasting(..) | HeldModifier(..) | HeldElsewhere(..) ->
-      support.hits([struck_unit])
-  }
-  drive(plans:, base: reduced_base, struck:)
-}
-
-/// The time since its go that the row's effect lives, after its delay: the cast of a
-/// spell that holds the row finishes with its last node, and a property modifier ends
-/// on its own timer.
-fn life_of(
-  holder holder: Spell,
-  held held: Held,
-  delay_ms delay_ms: Int,
+/// The cast of the spell in the drive: the pressed cast for the root spell, else the one
+/// child cast the drive started of it.
+fn cast_of(
+  drive drive: Drive,
+  root root: Spell,
+  spell4_id spell4_id: Int,
 ) -> Result(Int, Unread) {
-  case drive_holding(holder:, held:) {
-    Error(results) -> Error(Refused(results:))
-    Ok(driven) ->
-      case held {
-        HeldModifier(..) -> modifier_life_of(drive: driven)
-        HeldControl(..) | HeldLasting(..) | HeldElsewhere(..) ->
-          finish_of(drive: driven)
-          |> result.map(fn(finished) { finished - delay_ms })
-          |> result.replace_error(NeverFinished)
-      }
+  use <- bool.guard(
+    when: spell4_id == root.spell4_id.value,
+    return: Ok(drive.cast_id),
+  )
+  case
+    list.filter(started_of(drive:), fn(entry) { entry.1.spell4_id == spell4_id })
+  {
+    [#(_, started)] -> Ok(started.cast_id)
+    other -> Error(CastsStarted(count: list.length(other)))
   }
 }
 
-/// The time between the start and the end of the caster's change a modifier makes.
-fn modifier_life_of(drive drive: Drive) -> Result(Int, Unread) {
-  case
-    support.timeline(
-      fired: list.map(drive.steps, fn(step) {
-        #(step.at_ms - start_ms, step.effects)
-      }),
+/// The time from the last go that applies the row to the end of the node its unit holds
+/// of the cast, which ends with the node's longest row, as a 0x811 naming the unit or the
+/// cast's 0x7fe. The row is applied by each go of a repeated phase, so its life is taken
+/// from the last one before the node ended.
+fn node_life_of(
+  drive drive: Drive,
+  cast_id cast_id: Int,
+  effect_id effect_id: Int,
+) -> Result(Int, Unread) {
+  use last <- result.try(
+    list.last(applications(drive:, cast_id:, effect_id:))
+    |> result.replace_error(NeverApplied),
+  )
+  let ends =
+    list.filter_map(
+      [
+        removal_in(drive:, cast_id:, unit_id: last.unit_id, from_ms: last.at_ms),
+        finish_in(drive:, cast_id:),
+      ],
+      fn(end) { end },
     )
-  {
-    [#(started, "start", _), #(ended, "end", _)] -> Ok(ended - started)
-    other -> Error(ModifierChanges(count: list.length(other)))
+  case list.sort(ends, int.compare) {
+    [end, ..] -> Ok(end - last.at_ms)
+    [] -> Error(NeverFinished)
+  }
+}
+
+/// The time from the cast's first go to the end of the caster's change a modifier row
+/// makes.
+fn modifier_life_of(
+  drive drive: Drive,
+  cast_id cast_id: Int,
+  effect_id effect_id: Int,
+) -> Result(Int, Unread) {
+  let source = support.source_of(cast_id:, effect_id:)
+  let changes =
+    support.timeline(
+      fired: list.map(drive.steps, fn(step) { #(step.at_ms, step.effects) }),
+    )
+    |> list.filter(fn(change) { change.2 == source })
+  case changes, goes_in(drive:, cast_id:) {
+    [#(_, "start", _), #(ended, "end", _)], [go, ..] ->
+      Ok(ended - start_ms - go.0)
+    other, _ -> Error(ModifierChanges(count: list.length(other)))
+  }
+}
+
+/// Whether the Spell4Effects row of the holder lives longer from its go than a time.
+fn outlives(
+  rows rows: Rows,
+  holder holder: Spell,
+  effect_id effect_id: Int,
+  expected expected: Int,
+) -> Bool {
+  case spell4_effects.get(tables: rows.tables, id: Spell4EffectsId(effect_id)) {
+    Ok(row) -> life_after_go(rows:, holder:, row:) > expected
+    Error(Nil) -> False
+  }
+}
+
+/// The life of the row on its unit in a drive of the ability.
+fn observed_life(
+  rows rows: Rows,
+  drive drive: Drive,
+  root root: Spell,
+  holder holder: Spell,
+  held held: Held,
+  effect_id effect_id: Int,
+  expected expected: Int,
+) -> Result(Int, Unread) {
+  use cast_id <- result.try(cast_of(
+    drive:,
+    root:,
+    spell4_id: holder.spell4_id.value,
+  ))
+  case held {
+    HeldModifier(..) -> modifier_life_of(drive:, cast_id:, effect_id:)
+    HeldControl(..) | HeldLasting(..) -> {
+      use last <- result.try(
+        list.last(applications(drive:, cast_id:, effect_id:))
+        |> result.replace_error(NeverApplied),
+      )
+      let longer =
+        list.filter(
+          list.append(
+            list.map(holder.controls, fn(row) { row.effect_id.value }),
+            list.map(holder.lasting, fn(row) { row.effect_id.value }),
+          ),
+          fn(other) {
+            other != effect_id
+            && list.any(
+              applications(drive:, cast_id:, effect_id: other),
+              fn(application) { application.unit_id == last.unit_id },
+            )
+            && outlives(rows:, holder:, effect_id: other, expected:)
+          },
+        )
+      case longer {
+        [other, ..] -> Error(NodeHeldBy(effect_id: other))
+        [] -> node_life_of(drive:, cast_id:, effect_id:)
+      }
+    }
+    HeldElsewhere(list:) -> Error(HeldAs(list:))
   }
 }
 
 const duration_fields = ["durationms"]
 
-/// The duration tokens of a planned ability's text that name a row no list of that
-/// ability's plan holds, so no cast of it has a life to read: the rows of spells no plan
-/// of the ability reaches (Spell4Effects 187681 belongs to spell 72652, which is in no
-/// plan, and the fixture holds no row of it), and proxy rows.
-const buff_rows_no_plan_holds = [
-  #(
-    30_075,
-    "eff=210998.durationms",
-    "no list of the ability's plan holds the row",
-  ),
-  #(31_213, "eff=187681.durationms", "the table has no row of that id"),
-  #(
-    38_012,
-    "eff=178429.durationms",
-    "no list of the ability's plan holds the row",
-  ),
-]
-
-/// What a duration token prints against the life the rule gives the row on its unit.
+/// What a duration token prints against the life the rule gives the row on its unit, in
+/// a drive of the whole ability whose goes strike the unit and land its states.
 fn buff_time_outcomes(
-  tables tables: store.Tables,
+  rows rows: Rows,
   asked asked: List(Asked),
 ) -> List(Outcome) {
   list.map(
     asked_with(asked:, kind: tooltip_token.Eff, fields: duration_fields),
-    fn(entry) {
-      let root = plan_of(base: entry.base)
-      let delay =
-        printed(
-          tables:,
-          root:,
-          token: tooltip_token.Token(..entry.token, field: "delayms"),
-        )
-      case printed(tables:, root:, token: entry.token), delay {
-        Ok(expected), Ok(delay_ms) ->
-          case holder_of(root:, effect_id: entry.token.id) {
-            Error(Nil) ->
-              Unobserved(
-                asked: entry,
-                why: "no list of the ability's plan holds the row",
-              )
-            Ok(#(_, HeldElsewhere(list:))) ->
-              Unobserved(
-                asked: entry,
-                why: "the plan holds the row as a " <> list,
-              )
-            Ok(#(holder, held)) ->
-              case life_of(holder:, held:, delay_ms:) {
-                Ok(got) -> Compared(asked: entry, expected:, got:)
-                Error(unread) -> Unobserved(asked: entry, why: reason(unread:))
-              }
-          }
-        _, _ -> Unobserved(asked: entry, why: "the table has no row of that id")
-      }
-    },
+    fn(entry) { buff_time_outcome(rows:, entry:) },
   )
+}
+
+/// What one duration token prints against the life the rule gives its row.
+fn buff_time_outcome(rows rows: Rows, entry entry: Asked) -> Outcome {
+  let root = plan_of(rows:, base: entry.base)
+  case
+    spell4_effects.get(tables: rows.tables, id: Spell4EffectsId(entry.token.id)),
+    holder_of(root:, effect_id: entry.token.id)
+  {
+    Error(Nil), _ -> Unobserved(asked: entry, why: NoRow)
+    Ok(_), Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
+    Ok(row), Ok(#(holder, held)) -> {
+      let expected = life_after_go(rows:, holder:, row:)
+      let driven =
+        drive(
+          plans: rows.plans,
+          base: entry.base,
+          strikes: striking_with_states(root:),
+        )
+      let got = case driven {
+        Error(results) -> Error(Refused(results:))
+        Ok(driven) ->
+          observed_life(
+            rows:,
+            drive: driven,
+            root:,
+            holder:,
+            held:,
+            effect_id: entry.token.id,
+            expected:,
+          )
+      }
+      case got {
+        Ok(got) -> Compared(asked: entry, expected:, got:)
+        Error(unread) -> Unobserved(asked: entry, why: unread)
+      }
+    }
+  }
 }
 
 // ------------------------------------------------- delays, cast times and cooldowns
 
-/// The delay the go lists for the row on the unit it strikes.
+/// The delay the go lists for the row on the unit it strikes, in a drive of the whole
+/// ability.
 fn go_delay_of(
+  rows rows: Rows,
+  root root: Spell,
   holder holder: Spell,
-  held held: Held,
   effect_id effect_id: Int,
 ) -> Result(Int, Unread) {
-  case drive_holding(holder:, held:) {
-    Error(results) -> Error(Refused(results:))
-    Ok(driven) ->
-      case applied_delays(drive: driven, effect_id:) {
-        [delay] -> Ok(delay)
-        other -> Error(RowListed(times: list.length(other)))
-      }
+  use driven <- result.try(
+    drive(
+      plans: rows.plans,
+      base: root.spell4_base_id.value,
+      strikes: striking_with_states(root:),
+    )
+    |> result.map_error(fn(results) { Refused(results:) }),
+  )
+  use cast_id <- result.try(cast_of(
+    drive: driven,
+    root:,
+    spell4_id: holder.spell4_id.value,
+  ))
+  case applications(drive: driven, cast_id:, effect_id:) {
+    [first, ..] -> Ok(first.delay_ms)
+    [] -> Error(NeverApplied)
   }
 }
 
-/// The time since the press that a cast of the ability finishes at.
-fn cast_time_of(base base: Int) -> Result(Int, Unread) {
-  case
-    drive(
-      plans: spell_tables.fixture_plans(),
-      base:,
-      struck: support.hits([struck_unit]),
-    )
-  {
-    Error(results) -> Error(Refused(results:))
-    Ok(driven) ->
-      finish_of(drive: driven) |> result.replace_error(NeverFinished)
+/// The time since the press of the pressed cast's first go, which a spell's cast time
+/// ends in. A Multiphase spell goes once for each phase over its cast time, so its cast
+/// time ends at its last go (`0x14053d1f0`).
+fn cast_time_of(rows rows: Rows, base base: Int) -> Result(Int, Unread) {
+  let root = plan_of(rows:, base:)
+  use driven <- result.try(
+    drive(plans: rows.plans, base:, strikes: striking_with_states(root:))
+    |> result.map_error(fn(results) { Refused(results:) }),
+  )
+  let go = case root.method {
+    spell_plan.Multiphase -> list.last(goes_of(drive: driven))
+    spell_plan.Normal
+    | spell_plan.Channeled
+    | spell_plan.PressHold
+    | spell_plan.ChanneledField
+    | spell_plan.ClientSideInteraction
+    | spell_plan.RapidTap
+    | spell_plan.ChargeRelease
+    | spell_plan.Transactional
+    | spell_plan.OtherMethod(..) -> list.first(goes_of(drive: driven))
+  }
+  case go {
+    Ok(go) -> Ok(go.0)
+    Error(Nil) -> Error(NeverApplied)
   }
 }
 
 /// A press at a time on a state: the state after it and the effects the rule raised.
 type Press =
-  fn(State, Int) -> #(State, List(Effect))
+  fn(State, Int) -> #(State, List(cast.Effect))
 
 /// The time from the go that starts the spell's cooldown to the end of that cooldown.
 /// A charged ability's cooldown starts at its release, pressed 100 ms after the first
 /// press.
-fn cooldown_of(root root: Spell) -> Result(Int, Unread) {
+fn cooldown_of(rows rows: Rows, root root: Spell) -> Result(Int, Unread) {
   case root.method {
     spell_plan.ChargeRelease -> {
       let plans =
-        support.with_spells(plans: spell_tables.fixture_plans(), spells: [
-          without_cooldown_modifiers(spell: root),
+        support.with_spells(plans: rows.plans, spells: [
+          support.without_cooldown_modifiers(spell: root),
         ])
       let caster = caster_of(base: root.spell4_base_id.value)
       let press = fn(state: State, at_ms: Int) {
@@ -842,7 +1076,15 @@ fn cooldown_of(root root: Spell) -> Result(Int, Unread) {
         [start_ms, release_ms]
         |> list.fold(cast.new(), fn(state, at_ms) {
           let #(state, raw) = press(state, at_ms)
-          settle(caster:, state:, raw:, at_ms:, struck: []).0
+          support.answered_each(
+            caster:,
+            state:,
+            effects: raw,
+            at: at_ms,
+            struck_of: fn(_) { [] },
+            rolls: [],
+            poses: dict.new(),
+          ).0
         })
       cooldown_end_after(press:, state:, release_ms:)
     }
@@ -899,55 +1141,27 @@ fn first_open(
   }
 }
 
-/// A spell and the stages and Proxies under it with no cooldown modifier: the plan as
-/// if the rows that change a cooldown were not there.
-fn without_cooldown_modifiers(spell spell: Spell) -> Spell {
-  spell_plan.Spell(
-    ..spell,
-    cooldown_modifiers: [],
-    stages: list.map(spell.stages, fn(stage) {
-      spell_plan.Stage(
-        ..stage,
-        spell: without_cooldown_modifiers(spell: stage.spell),
-      )
-    }),
-    proxies: list.map(spell.proxies, fn(proxy) {
-      spell_plan.Proxy(
-        ..proxy,
-        spell: without_cooldown_modifiers(spell: proxy.spell),
-      )
-    }),
-  )
-}
-
 const time_fields = ["casttime", "cd"]
 
 /// What a delay, cast time or cooldown token prints against what the rule gives.
-fn timing_outcomes(
-  tables tables: store.Tables,
-  asked asked: List(Asked),
-) -> List(Outcome) {
+fn timing_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
   let delays =
     list.map(
       asked_with(asked:, kind: tooltip_token.Eff, fields: ["delayms"]),
       fn(entry) {
-        let root = plan_of(base: entry.base)
-        case printed(tables:, root:, token: entry.token) {
-          Error(Nil) ->
-            Unobserved(asked: entry, why: "the table has no row of that id")
+        let root = plan_of(rows:, base: entry.base)
+        case printed(rows:, root:, token: entry.token) {
+          Error(unread) -> Unobserved(asked: entry, why: unread)
           Ok(expected) ->
             case holder_of(root:, effect_id: entry.token.id) {
-              Ok(#(holder, held)) ->
-                case go_delay_of(holder:, held:, effect_id: entry.token.id) {
+              Ok(#(holder, _)) ->
+                case
+                  go_delay_of(rows:, root:, holder:, effect_id: entry.token.id)
+                {
                   Ok(got) -> Compared(asked: entry, expected:, got:)
-                  Error(unread) ->
-                    Unobserved(asked: entry, why: reason(unread:))
+                  Error(unread) -> Unobserved(asked: entry, why: unread)
                 }
-              Error(Nil) ->
-                Unobserved(
-                  asked: entry,
-                  why: "no list of the ability's plan holds the row",
-                )
+              Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
             }
         }
       },
@@ -956,18 +1170,17 @@ fn timing_outcomes(
     list.map(
       asked_with(asked:, kind: tooltip_token.Spell, fields: time_fields),
       fn(entry) {
-        let root = plan_of(base: entry.base)
-        case printed(tables:, root:, token: entry.token) {
-          Error(Nil) ->
-            Unobserved(asked: entry, why: "the table has no row of that id")
+        let root = plan_of(rows:, base: entry.base)
+        case printed(rows:, root:, token: entry.token) {
+          Error(unread) -> Unobserved(asked: entry, why: unread)
           Ok(expected) -> {
             let got = case entry.token.field {
-              "cd" -> cooldown_of(root:)
-              _ -> cast_time_of(base: entry.base)
+              "cd" -> cooldown_of(rows:, root:)
+              _ -> cast_time_of(rows:, base: entry.base)
             }
             case got {
               Ok(got) -> Compared(asked: entry, expected:, got:)
-              Error(unread) -> Unobserved(asked: entry, why: reason(unread:))
+              Error(unread) -> Unobserved(asked: entry, why: unread)
             }
           }
         }
@@ -979,47 +1192,44 @@ fn timing_outcomes(
 // ------------------------------------------------------------------------- ticks
 
 /// What a tick token prints (the row's duration over its tick time) against how many
-/// times a cast of the ability applies the row to a unit it strikes.
-fn tick_outcomes(
-  tables tables: store.Tables,
-  asked asked: List(Asked),
-) -> List(Outcome) {
+/// casts of the spell the row names a drive of the ability started under the row's
+/// spell. Only a Proxy row (effectType 26) with dataBits00 0 and a tickTime has a
+/// client fact that counts its ticks (`Spell4Effects.effectType.26.periodic`).
+fn tick_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
   list.map(
     asked_with(asked:, kind: tooltip_token.Eff, fields: ["ticktimems"]),
     fn(entry) {
-      let root = plan_of(base: entry.base)
-      let duration =
-        printed(
-          tables:,
-          root:,
-          token: tooltip_token.Token(..entry.token, field: "durationms"),
+      let root = plan_of(rows:, base: entry.base)
+      case
+        spell4_effects.get(
+          tables: rows.tables,
+          id: Spell4EffectsId(entry.token.id),
         )
-      case printed(tables:, root:, token: entry.token), duration {
-        Ok(tick_ms), Ok(duration_ms) if tick_ms > 0 ->
+      {
+        Error(Nil) -> Unobserved(asked: entry, why: NoRow)
+        Ok(row)
+          if row.tick_time > 0 && row.effect_type == 26 && row.data_bits00 == 0
+        ->
           case
             drive(
-              plans: spell_tables.fixture_plans(),
+              plans: rows.plans,
               base: entry.base,
-              struck: support.hits([struck_unit]),
+              strikes: striking_with_states(root:),
             )
           {
             Ok(driven) ->
               Compared(
                 asked: entry,
-                expected: duration_ms / tick_ms,
-                got: list.length(applied_delays(
+                expected: row.duration_time / row.tick_time,
+                got: child_casts(
                   drive: driven,
-                  effect_id: entry.token.id,
-                )),
+                  parent: row.spell_id,
+                  child: row.data_bits01,
+                ),
               )
-            Error(results) ->
-              Unobserved(asked: entry, why: reason(unread: Refused(results:)))
+            Error(results) -> Unobserved(asked: entry, why: Refused(results:))
           }
-        _, _ ->
-          Unobserved(
-            asked: entry,
-            why: "the table has no ticking row of that id",
-          )
+        Ok(_) -> Unobserved(asked: entry, why: NotPeriodicProxy)
       }
     },
   )
@@ -1029,27 +1239,27 @@ fn tick_outcomes(
 
 pub fn electrocute_goes_6_times_each_striking_with_the_damage_row_its_text_names_test() -> Nil {
   use <- owned_test.run(30_000)
-  let tables = fixture_tables.shared()
+  let rows = shared()
   let assert Ok(tokens) = tooltip_token.load()
-  let electrocute = plan_of(base: 25_473)
+  let electrocute = plan_of(rows:, base: 25_473)
   assert electrocute.spell4_id.value == 41_276
-  let pulse_token =
-    tooltip_token.Token(
-      kind: tooltip_token.Spell,
-      id: 41_276,
-      field: "channelpulsems",
-    )
+  let token = fn(field) {
+    tooltip_token.Token(kind: tooltip_token.Spell, id: 41_276, field:)
+  }
   let named = tooltip_token.of_text(tokens:, text_id: 360_105)
-  assert list.contains(named, pulse_token)
+  assert list.contains(named, token("channelpulsems"))
     as "text 360105 names Electrocute's channelPulseMS"
   assert list.contains(
     named,
     tooltip_token.Token(kind: tooltip_token.Eff, id: 92_587, field: "input0pct"),
   )
     as "text 360105 names the damage row 92587"
-  let assert Ok(pulse) = printed(tables:, root: electrocute, token: pulse_token)
+  let assert Ok(pulse) =
+    printed(rows:, root: electrocute, token: token("channelpulsems"))
+  let assert Ok(delay) =
+    printed(rows:, root: electrocute, token: token("channeldelayms"))
   let assert Ok(driven) =
-    drive(plans: spell_tables.fixture_plans(), base: 25_473, struck: [])
+    drive(plans: rows.plans, base: 25_473, strikes: striking_none)
     as "Electrocute is cast by a player that holds it"
   let goes = goes_of(drive: driven)
   assert list.length(goes) == 6
@@ -1057,8 +1267,8 @@ pub fn electrocute_goes_6_times_each_striking_with_the_damage_row_its_text_names
   assert list.map(goes, fn(go) { go.1.phase }) == [0, 1, 2, 3, 4, 5]
     as "opcode.0x7f4.phase: a go for each pulse"
   assert list.map(goes, fn(go) { go.0 })
-    == list.map([1, 2, 3, 4, 5, 6], fn(number) { number * pulse })
-    as "the goes come each channelPulseMS the text names"
+    == list.map([0, 1, 2, 3, 4, 5], fn(number) { delay + number * pulse })
+    as "the first go comes at the channel's initial delay and the rest each channelPulseMS the text names after it"
   let assert Ok(area) =
     spell_area.of_spell(
       areas: spell_tables.fixture_areas(),
@@ -1077,47 +1287,98 @@ pub fn electrocute_goes_6_times_each_striking_with_the_damage_row_its_text_names
     as "each of the six goes strikes with the damage row text 360105 names"
 }
 
+/// The duration tokens whose row the rule's cast cannot be read for, each until the
+/// issue whose planned work closes it. 210998 is a type 11 property modifier aimed at
+/// another unit, which no plan holds (#464); 187681 has no row in the committed tables
+/// because no plan reaches its spell 72652, and 178429 is a periodic Proxy the plan does
+/// not start (`Spell4Effects.effectType.26.periodic`), both ticking effects (#336).
+const buff_gaps = [
+  Gap(ability: 30_075, token: "eff=210998.durationms", issue: "#464"),
+  Gap(ability: 31_213, token: "eff=187681.durationms", issue: "#336"),
+  Gap(ability: 38_012, token: "eff=178429.durationms", issue: "#336"),
+]
+
 pub fn every_buff_time_token_on_a_row_a_planned_ability_holds_equals_that_rows_life_on_its_unit_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = fixture_tables.shared()
-  let outcomes = buff_time_outcomes(tables:, asked: asked_of(tables:))
-  assert unobserved(outcomes:) == buff_rows_no_plan_holds
-  assert mismatches(outcomes:) == []
-  assert list.length(outcomes) - list.length(buff_rows_no_plan_holds) == 10
-    as "ten duration tokens name a row a plan holds"
+  let rows = shared()
+  let outcomes = buff_time_outcomes(rows:, asked: asked_of(rows:))
+  assert verdict(differences: differences(outcomes:), gaps: buff_gaps)
+    == Verdict(unlisted: [], stale: [])
+  assert compared_count(outcomes:) == 10
+    as "ten duration tokens name a row a plan holds, each read on the unit of a drive of the whole ability"
+  assert left_out_count(outcomes:) == 3
+    as "three name a row no plan of the ability holds, each a gap above"
 }
 
-/// The tick tokens whose row the cast rule never applies, each until the issue that
-/// plans ticking effects closes it.
+/// The tick tokens whose row the cast rule never ticks, each until the issue that plans
+/// ticking effects closes it: the periodic Proxy rows start no casts, and 187681 has no
+/// row in the committed tables.
 const tick_gaps = [
   Gap(ability: 31_779, token: "eff=121345.ticktimems", issue: "#336"),
+  Gap(ability: 31_213, token: "eff=187681.ticktimems", issue: "#336"),
   Gap(ability: 38_012, token: "eff=178429.ticktimems", issue: "#336"),
 ]
 
 pub fn every_tick_time_token_gives_its_duration_over_its_tick_time_ticks_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = fixture_tables.shared()
-  let outcomes = tick_outcomes(tables:, asked: asked_of(tables:))
-  assert unobserved(outcomes:)
-    == [
-      #(
-        31_213,
-        "eff=187681.ticktimems",
-        "the table has no ticking row of that id",
-      ),
-    ]
-  assert verdict(mismatches: mismatches(outcomes:), gaps: tick_gaps)
+  let rows = shared()
+  let outcomes = tick_outcomes(rows:, asked: asked_of(rows:))
+  assert verdict(differences: differences(outcomes:), gaps: tick_gaps)
     == Verdict(unlisted: [], stale: [])
+  assert compared_count(outcomes:) == 3
+    as "the periodic Proxy rows 121345 (one text) and 178429 (two texts) print a tick time, each a gap above"
+  assert left_out_count(outcomes:) == 1
+    as "Spell4Effects 187681 has no row in the table, a gap above"
+}
+
+pub fn a_proxy_rows_cast_is_counted_as_a_cast_of_its_spell_and_not_as_the_gos_application_of_the_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = shared()
+  // Telekinetic Strike (base 19102) holds Proxy 62204, which starts Spell4 30900 under
+  // its own Spell4 32893.
+  let root = plan_of(rows:, base: 19_102)
+  let assert Ok(driven) =
+    drive(plans: rows.plans, base: 19_102, strikes: striking_with_states(root:))
+  assert child_casts(drive: driven, parent: 32_893, child: 30_900) == 1
+    as "the cast of Spell4 30900 under Spell4 32893 is one 0x7ff"
+  assert applications(drive: driven, cast_id: driven.cast_id, effect_id: 62_204)
+    == []
+    as "the go never lists the Proxy row as applied to a unit"
 }
 
 pub fn every_delay_cast_time_and_cooldown_token_matches_the_rules_go_time_and_cooldown_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = fixture_tables.shared()
-  let outcomes = timing_outcomes(tables:, asked: asked_of(tables:))
-  assert unobserved(outcomes:) == []
-  assert mismatches(outcomes:) == []
-  assert list.length(outcomes) == 3
+  let rows = shared()
+  let outcomes = timing_outcomes(rows:, asked: asked_of(rows:))
+  assert verdict(differences: differences(outcomes:), gaps: [])
+    == Verdict(unlisted: [], stale: [])
+  assert compared_count(outcomes:) == 3
     as "one delay (177530), one cast time (Quick Draw) and one cooldown (Charged Shot)"
+  assert left_out_count(outcomes:) == 0
+}
+
+pub fn a_cast_time_token_is_the_time_of_the_pressed_casts_first_go_and_not_of_its_finish_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = shared()
+  // Base 31779 has a castTime of 0 and holds a 10 s lasting row, so its cast finishes
+  // 10 s after the press while its only go is at the press.
+  let root = plan_of(rows:, base: 31_779)
+  let token =
+    tooltip_token.Token(
+      kind: tooltip_token.Spell,
+      id: root.spell4_id.value,
+      field: "casttime",
+    )
+  let asked = Asked(base: 31_779, text_id: 0, token:)
+  let assert Ok(expected) = printed(rows:, root:, token:)
+  let assert Ok(driven) =
+    drive(plans: rows.plans, base: 31_779, strikes: striking_with_states(root:))
+  assert finish_in(drive: driven, cast_id: driven.cast_id) == Ok(10_000)
+    as "the cast finishes with its 10 s row"
+  assert timing_outcomes(rows:, asked: [asked])
+    == [Compared(asked:, expected:, got: 0)]
+    as "the token prints the castTime, 0, and the first go is at the press"
+  assert expected == 0
 }
 
 pub fn a_buff_time_token_that_differs_from_the_rule_is_reported_with_ability_text_token_expected_and_got_test() -> Nil {
@@ -1125,16 +1386,25 @@ pub fn a_buff_time_token_that_differs_from_the_rule_is_reported_with_ability_tex
   // The edit is the point of the test: Spell4Effects 83827 (a control row of Spell4
   // 38780, base 23173) holds a durationTime of 2500; the printed side reads 2600, and
   // the rule reads the plans built from the unchanged rows.
-  let outcomes =
+  let differing =
     fixture_tables.changed(
       table: "Spell4Effects",
       id: 83_827,
       with: [#("durationTime", planted_table.Integer(2600))],
-      body: fn(tables) { buff_time_outcomes(tables:, asked: asked_of(tables:)) },
+      body: fn(tables) {
+        let rows = Rows(tables:, plans: spell_tables.fixture_plans())
+        differences(outcomes: buff_time_outcomes(rows:, asked: asked_of(rows:)))
+        |> list.filter(fn(difference) {
+          case difference {
+            Differs(..) -> True
+            LeftOut(..) -> False
+          }
+        })
+      },
     )
-  assert mismatches(outcomes:)
+  assert differing
     == [
-      Mismatch(
+      Differs(
         ability: 23_173,
         text_id: 311_256,
         token: "eff=83827.durationms",
@@ -1146,33 +1416,197 @@ pub fn a_buff_time_token_that_differs_from_the_rule_is_reported_with_ability_tex
 
 pub fn a_listed_gap_that_now_passes_fails_the_test_naming_the_gap_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = fixture_tables.shared()
-  let asked = asked_of(tables:)
+  let rows = shared()
+  let asked = asked_of(rows:)
   // Control row 83827 of base 23173 agrees with the rule, so a gap listing it is stale.
   let passing =
     Gap(ability: 23_173, token: "eff=83827.durationms", issue: "#336")
   assert verdict(
-      mismatches: mismatches(outcomes: buff_time_outcomes(tables:, asked:)),
-      gaps: [passing],
+      differences: differences(outcomes: buff_time_outcomes(rows:, asked:)),
+      gaps: [passing, ..buff_gaps],
     )
     == Verdict(unlisted: [], stale: [passing])
   // The tick gaps still differ, so with none listed the test names each difference.
-  let ticks = mismatches(outcomes: tick_outcomes(tables:, asked:))
-  assert verdict(mismatches: ticks, gaps: []).unlisted == ticks
-  assert list.length(ticks) == 3
+  let ticks = differences(outcomes: tick_outcomes(rows:, asked:))
+  assert verdict(differences: ticks, gaps: []).unlisted == ticks
+  assert list.length(ticks) == 4
 }
 
 pub fn every_planned_ability_with_a_pulses_token_goes_the_pulses_its_channel_makes_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = fixture_tables.shared()
-  let asked = asked_of(tables:)
-  let outcomes = pulse_outcomes(tables:, asked:)
-  assert list.length(outcomes) >= 2
+  let rows = shared()
+  let asked = asked_of(rows:)
+  let outcomes = pulse_outcomes(rows:, asked:)
+  assert compared_count(outcomes:) == 2
     as "Electrocute 41276 and Discharge 58832 each name a pulse"
-  assert unobserved(outcomes:) == []
-  assert verdict(mismatches: mismatches(outcomes:), gaps: [])
+  assert left_out_count(outcomes:) == 0
+  assert verdict(differences: differences(outcomes:), gaps: [])
     == Verdict(unlisted: [], stale: [])
-  let times = channel_outcomes(tables:, asked:)
-  assert unobserved(outcomes: times) == []
-  assert mismatches(outcomes: times) == []
+  let times = channel_outcomes(rows:, asked:)
+  assert compared_count(outcomes: times) == 2
+    as "the same two abilities name a channel time"
+  assert left_out_count(outcomes: times) == 0
+  assert differences(outcomes: times) == []
+}
+
+/// A channel's first go comes at its initial delay and the rest each pulse after it, so a
+/// delay that is not the pulse shows which of the two the rule used for the first.
+pub fn a_channels_first_go_is_due_at_its_initial_delay_and_not_at_its_first_pulse_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The edit is the point of the test: Spell4 41276 (Electrocute) holds a
+  // channelInitialDelay of 500 equal to its pulse time, which cannot tell the two apart.
+  let #(delay, pulse, goes, expected) =
+    fixture_tables.changed(
+      table: "Spell4",
+      id: 41_276,
+      with: [#("channelInitialDelay", planted_table.Integer(700))],
+      body: fn(tables) {
+        let assert Ok(plans) = spell_plan.build(tables:)
+          as "the client's rows with a channel delay of 700 build"
+        let rows = Rows(tables:, plans:)
+        let root = plan_of(rows:, base: 25_473)
+        let token = fn(field) {
+          tooltip_token.Token(kind: tooltip_token.Spell, id: 41_276, field:)
+        }
+        let assert Ok(delay) =
+          printed(rows:, root:, token: token("channeldelayms"))
+        let assert Ok(pulse) =
+          printed(rows:, root:, token: token("channelpulsems"))
+        let assert Ok(driven) =
+          drive(plans: rows.plans, base: 25_473, strikes: striking_none)
+        let asked =
+          Asked(base: 25_473, text_id: 0, token: token("channelpulsems"))
+        #(
+          delay,
+          pulse,
+          list.map(goes_of(drive: driven), fn(go) { go.0 }),
+          goes_expected(rows:, asked:),
+        )
+      },
+    )
+  assert delay == 700
+  assert pulse == 500
+  assert expected == 5
+    as "(3000 - 700 + 500) / 500 goes (0x14053d1f0), channelMaxTime being 3000"
+  assert goes == [700, 1200, 1700, 2200, 2700]
+    as "the first go at the delay, each next one a pulse after it"
+}
+
+/// The committed rows with each edit made in order, and the plans built from them.
+fn with_edits(
+  edits edits: List(#(String, Int, List(#(String, planted_table.Cell)))),
+  body body: fn(Rows) -> a,
+) -> a {
+  let edited =
+    list.fold(edits, fixture_tables.rows(), fn(rows, edit) {
+      let assert Ok(rows) =
+        fixture_tables.change(rows:, table: edit.0, id: edit.1, with: edit.2)
+        as "the row and its columns are in the committed tables"
+      rows
+    })
+  fixture_tables.on_rows(rows: edited, reaching: [], body: fn(tables) {
+    let assert Ok(plans) = spell_plan.build(tables:)
+      as "the client's rows with the edits build"
+    body(Rows(tables:, plans:))
+  })
+}
+
+/// A row whose spell has Spell4 `propertyFlags` 0x2000 lives its longer time of delay and
+/// duration rather than the two added (`opcode.0x7f4.effect_time`), and the rule does the
+/// same to the node the unit holds. No committed row of a planned ability has the flag, so
+/// the test plants it on Spell4 42908 of base 30828, whose Spell4Effects 109482 (a lasting
+/// row of delay 0 and duration 8000) is the one lasting row the abilities' texts name, and
+/// gives that row a delay, since a delay of 0 cannot tell the sum from the larger.
+pub fn a_buff_row_of_a_spell_flagged_0x2000_lives_the_longer_of_its_delay_and_duration_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let asked =
+    Asked(
+      base: 30_828,
+      text_id: 0,
+      token: tooltip_token.Token(
+        kind: tooltip_token.Eff,
+        id: 109_482,
+        field: "durationms",
+      ),
+    )
+  let delay = #("Spell4Effects", 109_482, [
+    #("delayTime", planted_table.Integer(500)),
+  ])
+  let assert Ok(before) =
+    spell4.get(tables: shared().tables, id: Spell4Id(42_908))
+  assert int.bitwise_and(before.property_flags, 0x2000) == 0
+  let unflagged =
+    with_edits(edits: [delay], body: fn(rows) {
+      buff_time_outcomes(rows:, asked: [asked])
+    })
+  assert unflagged == [Compared(asked:, expected: 8500, got: 8500)]
+    as "without the flag the row lives its delay 500 and its duration 8000 added"
+  let flagged =
+    with_edits(
+      edits: [
+        delay,
+        #("Spell4", 42_908, [
+          #(
+            "propertyFlags",
+            planted_table.Integer(before.property_flags + 0x2000),
+          ),
+        ]),
+      ],
+      body: fn(rows) { buff_time_outcomes(rows:, asked: [asked]) },
+    )
+  assert flagged == [Compared(asked:, expected: 8000, got: 8000)]
+    as "with the flag the row lives the larger of 500 and 8000"
+}
+
+/// A field the comparisons do not read, and no list names, is not skipped: the test
+/// reports the token by name.
+pub fn a_token_field_no_comparison_reads_is_reported_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = shared()
+  let token = fn(kind, id, field) { tooltip_token.Token(kind:, id:, field:) }
+  let asked =
+    list.map(
+      [
+        token(tooltip_token.Eff, 92_587, "durationh"),
+        token(tooltip_token.Eff, 92_587, "auraduration"),
+        token(tooltip_token.Spell, 41_276, "cdms"),
+        token(tooltip_token.Spell, 41_276, "casttimems"),
+        token(tooltip_token.Eff, 92_587, "durationms"),
+        token(tooltip_token.Cc, 1, "anything"),
+      ],
+      fn(token) { Asked(base: 25_473, text_id: 0, token:) },
+    )
+  assert unread_fields(asked:)
+    == [
+      "eff=92587.durationh",
+      "eff=92587.auraduration",
+      "spell=41276.cdms",
+      "spell=41276.casttimems",
+    ]
+  let root = plan_of(rows:, base: 25_473)
+  assert printed(
+      rows:,
+      root:,
+      token: token(tooltip_token.Eff, 92_587, "auraduration"),
+    )
+    == Error(UnknownField(field: "auraduration"))
+  assert printed(
+      rows:,
+      root:,
+      token: token(tooltip_token.Spell, 41_276, "casttimems"),
+    )
+    == Error(UnknownField(field: "casttimems"))
+  assert reason(unread: UnknownField(field: "cdms")) == "unknown field cdms"
+}
+
+pub fn every_field_of_every_eff_and_spell_token_the_planned_abilities_hold_is_read_or_named_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = shared()
+  let asked = asked_of(rows:)
+  assert unread_fields(asked:) == []
+  let in_left_out = fn(entry: Asked) {
+    list.contains(left_out_fields, entry.token.field)
+  }
+  assert list.count(asked, in_left_out) == 21
+    as "the tokens whose eff ms or msf column or spell lasData column no comparison reads, each field named in the list under #336"
 }
