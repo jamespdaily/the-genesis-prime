@@ -522,8 +522,10 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
       }
     },
   )
-  assert process.is_alive(pid)
-    as "a dead creature told to retire keeps its corpse and its respawn: the creature process lives until the respawn time (genesis_prime/world_map/creature), well after the player's 0x355 and the idle stop of 100 ms"
+  // That a dead creature told to retire keeps its corpse until its respawn is
+  // the creature rule's (creature_test); the shell's timers run on the real
+  // clock, so this test follows the creature until it stops and asserts nothing
+  // about how long it stood.
   event_wait.until("the dead creature stopped at its respawn", fn() {
     !process.is_alive(pid)
   })

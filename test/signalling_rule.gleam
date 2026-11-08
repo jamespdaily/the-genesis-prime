@@ -76,7 +76,10 @@ pub const tell_command = 0x59
 
 pub const tell_connection_command = 0x43
 
-pub const start_then_cancel_command = 0x5A
+/// Starts the witness timer, number `n` + 1 for the milliseconds given, then
+/// timer `n` for no time and cancels it, all in one step: no input comes
+/// between them, so the witness cannot be due before the cancel is carried out.
+pub const start_witness_then_cancel_command = 0x5A
 
 pub const ask_command = 0x41
 
@@ -220,8 +223,9 @@ fn commands(
   milliseconds milliseconds: Int,
 ) -> List(Effect(ConnectionEffect(Nil))) {
   case letter {
-    _ if letter == start_then_cancel_command -> [
-      command(letter: timer_command, n:, milliseconds:),
+    _ if letter == start_witness_then_cancel_command -> [
+      command(letter: timer_command, n: n + 1, milliseconds:),
+      command(letter: timer_command, n:, milliseconds: 0),
       command(letter: cancel_command, n:, milliseconds: 0),
     ]
     _ -> [command(letter:, n:, milliseconds:)]
