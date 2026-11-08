@@ -15,7 +15,8 @@
 //// - **CrowdControl** (4) holds a crowd-control state on the unit it aims at for its
 ////   time (`Spell4Effects.effectType.4`).
 //// - **PropertyModifier** (11) changes a property of the unit it aims at for its time;
-////   the server reads the rows whose aim includes the caster
+////   the server reads the rows whose aim includes the caster, and the rows aimed at
+////   the primary target, the area or both for the creatures a strike hits
 ////   (`Spell4Effects.effectType.11.change`).
 //// - **ForcedMove** (3) moves the unit it aims at; the server lists the rows aimed at
 ////   the caster in the go, and the client moves its own unit and reports the move
@@ -81,8 +82,9 @@ pub type Kind {
   CrowdControl
   /// A UnitPropertyModifier effect (11): changes a property of the unit it aims at
   /// for its time (`Spell4Effects.effectType.11.change`). A row is read when its
-  /// targetFlags include the caster; a row aimed only at other units is not read
-  /// (`is_row_read`).
+  /// targetFlags include the caster (it changes the caster) or are 2, 4 or 6, the
+  /// primary target, the area or both (it changes the creatures a strike hits); any
+  /// other aim is not read (`is_row_read`).
   PropertyModifier
   /// A ForcedMove effect (3): moves the unit it aims at. A row is read when its
   /// targetFlags include the caster, whose client moves itself
@@ -175,8 +177,9 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
 }
 
 /// Whether some rule reads the effect type: the coverage measure's "handled". A
-/// PropertyModifier, PropertyConversion, DisguiseOutfit, ForcedMove or CooldownModifier counts as read for
-/// its rows aimed at the caster, which `is_row_read` tells apart from the others.
+/// PropertyModifier, PropertyConversion, DisguiseOutfit, ForcedMove or CooldownModifier
+/// counts as read for its rows aimed at the caster (a PropertyModifier also for those
+/// aimed at struck units), which `is_row_read` tells apart from the others.
 pub fn is_read(effect_type effect_type: Int) -> Bool {
   case kind_of(effect_type:) {
     Proxy
@@ -204,12 +207,13 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 }
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
-/// type `is_read` for, except that a PropertyModifier, PropertyConversion, ForcedMove,
-/// CooldownModifier, Stealth, RemoveStealth, Proc or DisguiseOutfit row is read only when its flags
-/// include the caster (bit 1, `Spell4Effects.targetFlags`), a ShieldHeal, InterruptArmor or
-/// Absorption row when they include the caster or are the primary target alone (2), and a
-/// ShieldOverload row only when they are the area alone (4); a row aimed at other units
-/// is left out. A plan of
+/// type `is_read` for, except that a PropertyConversion, ForcedMove, CooldownModifier,
+/// Stealth, RemoveStealth, Proc or DisguiseOutfit row is read only when its flags
+/// include the caster (bit 1, `Spell4Effects.targetFlags`), a PropertyModifier row when
+/// they include the caster or are 2, 4 or 6 (the units a strike hits), a ShieldHeal,
+/// InterruptArmor or Absorption row when they include the caster or are the primary
+/// target alone (2), and a ShieldOverload row only when they are the area alone (4); a
+/// row aimed at other units is left out. A plan of
 /// a spell with a Stealth or RemoveStealth row aimed other than at the caster alone
 /// fails to load (genesis_prime/game/spell_plan `StealthAimNotRead`).
 pub fn is_row_read(
@@ -217,8 +221,12 @@ pub fn is_row_read(
   target_flags target_flags: Int,
 ) -> Bool {
   case kind_of(effect_type:) {
-    PropertyModifier
-    | PropertyConversion
+    PropertyModifier ->
+      int.bitwise_and(target_flags, 1) == 1
+      || target_flags == 2
+      || target_flags == 4
+      || target_flags == 6
+    PropertyConversion
     | ForcedMove
     | CooldownModifier
     | Stealth
