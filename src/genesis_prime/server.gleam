@@ -527,6 +527,73 @@ pub fn tell_the_run(
   }
 }
 
+/// A connection's tell to the creature `to`, through the creature registry with no
+/// watch: a strike (`TellStrike`) as the creature's `Strike`, a fighter's move
+/// (`TellTargetMoved`) as `TargetMoved`, the answer to its strike
+/// (`TellStrikeAnswered`) as `StrikeAnswered`, and a modifier's start or end
+/// (`TellTargetChange`) as `ModifierStarts` or `ModifierEnds`. Any other request,
+/// or an address that is no creature, is an error and nothing is sent.
+pub fn tell_creature(
+  creatures creatures: CreatureRegistry,
+  to to: step.Address,
+  request request: Request,
+) -> Result(Nil, Nil) {
+  case to, creature_told(request) {
+    step.Creature(map:, incarnation:, unit_id:, life:), Ok(message) ->
+      creature_registry.tell(
+        creatures,
+        map:,
+        incarnation:,
+        unit_id:,
+        life:,
+        message:,
+      )
+    step.Creature(..), Error(Nil)
+    | step.Connection(..), _
+    | step.Sessions, _
+    | step.HandOff, _
+    | step.Store, _
+    | step.Maps, _
+    | step.Map(..), _
+    | step.CharacterNamed(..), _
+    | step.ZoneChannel(..), _
+    -> Error(Nil)
+  }
+}
+
+/// The message a creature takes a connection's request as, for the four requests a
+/// creature is told.
+fn creature_told(request: Request) -> Result(creature.Message, Nil) {
+  case request {
+    TellStrike(tell:) -> Ok(creature.Strike(tell:))
+    TellTargetMoved(connection:, place:, seq:, stay:) ->
+      Ok(creature.TargetMoved(by: connection, place:, seq:, stay:))
+    TellStrikeAnswered(answered:) -> Ok(creature.StrikeAnswered(answered:))
+    TellTargetChange(connection:, change:) ->
+      Ok(case change {
+        ChangeStarts(source:, modifier:, struck_at_ms:) ->
+          creature.ModifierStarts(
+            by: connection,
+            source:,
+            modifier:,
+            struck_at_ms:,
+          )
+        ChangeEnds(source:) -> creature.ModifierEnds(source:)
+      })
+    TellPeer(..)
+    | TellChat(..)
+    | TellMoved(..)
+    | TellReady(..)
+    | TellStealthChanged(..)
+    | TellLifeChanged(..)
+    | AskStore(..)
+    | AskHandOff(..)
+    | AskSessions(..)
+    | AskMap(..)
+    | AskMapRun(..) -> Error(Nil)
+  }
+}
+
 /// How a connection's shell sends a request to another connection by address
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
@@ -552,57 +619,11 @@ fn connection_deliver(
     case request, to {
       TellPeer(stay:, news:), _ -> reach.send(to, #(stay, news))
       TellChat(tell:), _ -> chat_reach.send(to, tell)
-      TellStrike(tell:), step.Creature(map:, incarnation:, unit_id:, life:) ->
-        creature_registry.tell(
-          settings.world.creatures,
-          map:,
-          incarnation:,
-          unit_id:,
-          life:,
-          message: creature.Strike(tell:),
-        )
-      TellTargetMoved(connection:, place:, seq:, stay:),
-        step.Creature(map:, incarnation:, unit_id:, life:)
-      ->
-        creature_registry.tell(
-          settings.world.creatures,
-          map:,
-          incarnation:,
-          unit_id:,
-          life:,
-          message: creature.TargetMoved(by: connection, place:, seq:, stay:),
-        )
-      TellStrikeAnswered(answered:),
-        step.Creature(map:, incarnation:, unit_id:, life:)
-      ->
-        creature_registry.tell(
-          settings.world.creatures,
-          map:,
-          incarnation:,
-          unit_id:,
-          life:,
-          message: creature.StrikeAnswered(answered:),
-        )
-      TellTargetChange(connection:, change:),
-        step.Creature(map:, incarnation:, unit_id:, life:)
-      ->
-        creature_registry.tell(
-          settings.world.creatures,
-          map:,
-          incarnation:,
-          unit_id:,
-          life:,
-          message: case change {
-            ChangeStarts(source:, modifier:, struck_at_ms:) ->
-              creature.ModifierStarts(
-                by: connection,
-                source:,
-                modifier:,
-                struck_at_ms:,
-              )
-            ChangeEnds(source:) -> creature.ModifierEnds(source:)
-          },
-        )
+      TellStrike(..) as request, step.Creature(..)
+      | TellTargetMoved(..) as request, step.Creature(..)
+      | TellStrikeAnswered(..) as request, step.Creature(..)
+      | TellTargetChange(..) as request, step.Creature(..)
+      -> tell_creature(creatures: settings.world.creatures, to:, request:)
       TellStrike(..), _
       | TellTargetMoved(..), _
       | TellStrikeAnswered(..), _

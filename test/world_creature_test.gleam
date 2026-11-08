@@ -21,18 +21,25 @@
 //// 60 s. Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import cast_support
 import event_wait
+import fixture_tables
 import genesis_prime/client_connection.{
   type Message, CreatureAppeared, ForStay, PeerNews, SentByMap, SentByPeer,
 }
+import genesis_prime/game/cast
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
+import genesis_prime/message/float32
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_position_command
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, Spell4BaseId}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
@@ -40,9 +47,11 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import genesis_prime/world_map/unit_fields
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import gleam/result
 import map_support
 import owned_test
 import place_support
@@ -390,13 +399,15 @@ pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_sta
   })
 }
 
-/// The strike of connection 1 on the Beast `unit_id` with one blow of `damage` and no
-/// luck, told through the registry as a caster's connection tells it.
+/// The strike of connection 1 on the Beast `unit_id` with one blow of `damage` of
+/// `damage_type` (1 Physical, 2 Tech, 3 Magic) and no luck, told through the registry
+/// as a caster's connection tells it.
 fn strike_with(
   world world: World,
   run run: MapProcess,
   unit_id unit_id: Int,
   life life: Int,
+  damage_type damage_type: Int,
   damage damage: Int,
   cast_id cast_id: Int,
 ) -> Nil {
@@ -415,7 +426,7 @@ fn strike_with(
             blows: [
               Blow(
                 spell4_effects_id: 1,
-                damage_type: 3,
+                damage_type:,
                 damage:,
                 delay_ms: 0,
                 threat_multiplier: 1.0,
@@ -459,6 +470,7 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
     run:,
     unit_id: first.unit_id,
     life: 2,
+    damage_type: 3,
     damage: 60,
     cast_id: 1,
   )
@@ -503,6 +515,7 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
     run:,
     unit_id: first.unit_id,
     life: 2,
+    damage_type: 3,
     damage: 60,
     cast_id: 1,
   )
@@ -633,4 +646,252 @@ pub fn a_summoned_creature_that_crashes_under_its_supervisor_is_gone_to_the_play
     })
   assert gone == unit_id
     as "the map speaks of the unit once its owner has ended, as for a stored spawn's"
+}
+
+// ---- a property modifier a player's cast puts on a creature ----
+
+/// Medic Fissure's proxy spell, Spell4 41844: one Proxy row aimed at the area
+/// (targetFlags 4, effectType 26) that starts Spell4 41886 on each unit the go hit
+/// (`table_rows -- Spell4Effects dataBits00=41886`). The child's one row is
+/// Spell4Effects 94370: a UnitPropertyModifier of property 160 (Damage Taken
+/// Multiplier Tech) aimed at the cast's target (targetFlags 2), delay 0, duration
+/// 8000, mode 2, dataBits02 1_066_192_077 (`table_rows -- Spell4Effects 94370`). No
+/// plan holds the spell yet (plans cover level-1 trees), so it is planned on its own
+/// from the client's rows and put in the bag slot of Spell4Base 3, which index 11 of
+/// the caster's bag names.
+const fissure_proxy = 41_844
+
+/// dataBits02 of Spell4Effects 94370, the bits of the multiplier 1.1.
+const fissure_bits = 1_066_192_077
+
+const tech_taken_property = 160
+
+const tech = 2
+
+fn fissure_plans() -> spell_plan.Plans {
+  let tables = fixture_tables.shared()
+  let assert Ok(planned) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id: fissure_proxy,
+      chain: [],
+    )
+    as "Fissure's proxy spell plans on its own from the client's rows"
+  cast_support.plans_of([
+    spell_plan.Spell(..planned, spell4_base_id: Spell4BaseId(3)),
+  ])
+}
+
+/// What the connection's shell does with the cast rule's effects on a creature
+/// (`genesis_prime/game/connection/casting`): the same tell, through the server's own
+/// `tell_creature`, which names the creature by its address and takes the request as
+/// the creature's message.
+fn tell_change(
+  world world: World,
+  run run: MapProcess,
+  connection connection: Int,
+  effect effect: cast.Effect,
+) -> client_connection.TargetChange {
+  let #(unit_id, life, change) = case effect {
+    cast.TargetChangeStarts(unit_id:, life:, struck_at_ms:, source:, modifier:) -> #(
+      unit_id,
+      life,
+      client_connection.ChangeStarts(source:, modifier:, struck_at_ms:),
+    )
+    cast.TargetChangeEnds(unit_id:, life:, source:) -> #(
+      unit_id,
+      life,
+      client_connection.ChangeEnds(source:),
+    )
+    cast.Send(..)
+    | cast.Tell(..)
+    | cast.StartTimer(..)
+    | cast.CancelTimer(..)
+    | cast.Strike(..)
+    | cast.Pay(..)
+    | cast.Gain(..)
+    | cast.Log(..)
+    | cast.CasterChangeStarts(..)
+    | cast.CasterChangeEnds(..)
+    | cast.StealthChanged(..) -> panic as "not a change of a creature's property"
+  }
+  let assert Ok(Nil) =
+    server.tell_creature(
+      creatures: world.creatures,
+      to: step.Creature(
+        map: ship,
+        incarnation: run.incarnation,
+        unit_id:,
+        life:,
+      ),
+      request: client_connection.TellTargetChange(
+        connection: ConnectionId(connection),
+        change:,
+      ),
+    )
+    as "the creature is found by its address and told"
+  change
+}
+
+/// The entry of a creature's 0x93a for the Tech damage taken multiplier after the
+/// change: its default 1.0 as the base, and the row's value while the change starts
+/// the modifier.
+fn tech_taken(told told: client_connection.TargetChange) -> UnitProperty {
+  UnitProperty(
+    property_id: tech_taken_property,
+    base: float32.to_bits(1.0),
+    value: case told {
+      client_connection.ChangeStarts(..) -> fissure_bits
+      client_connection.ChangeEnds(..) -> float32.to_bits(1.0)
+    },
+  )
+}
+
+/// The properties of a creature's 0x93a as the connection was sent it.
+fn properties_changed(message: Message) -> Result(List(UnitProperty), Nil) {
+  case message {
+    ForStay(
+      sent: SentByPeer(PeerNews(
+        news: client_connection.PropertiesChanged(properties:),
+        ..,
+      )),
+      ..,
+    ) -> Ok(properties)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
+/// The health the strike of `cast_id` took, from its answer to the striker.
+fn health_taken(
+  received received: Subject(Message),
+  cast_id cast_id: Int,
+) -> Int {
+  let answered =
+    next(received:, what: "the answer to the strike", wanted: fn(message) {
+      case message {
+        ForStay(
+          sent: client_connection.SentByTarget(
+            answered: Answered(key: Key(cast_id: id, ..), ..) as answered,
+          ),
+          ..,
+        )
+          if id == cast_id
+        -> Ok(answered)
+        ForStay(..)
+        | client_connection.SentBySessions(..)
+        | client_connection.SentByChat(..) -> Error(Nil)
+      }
+    })
+  let assert Landed(descriptions: [description], controls: []) =
+    answered.outcome
+  description.damage.health_damage_with_overkill
+}
+
+pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = one_beast(respawn_ms: 60_000)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let unit_id = first.unit_id
+  let _found = creature_pid(world:, run:, unit_id:, life: 2)
+  // What the cast rule does with Fissure's debuff on this creature: a go that
+  // strikes it starts the row's modifier at once and ends it with the node.
+  let struck = [
+    cast.Hit(
+      unit_id:,
+      unit: cast.HitCreature(life: 2, struck_at_ms: 1000),
+      descriptions: [],
+      controls: [],
+    ),
+  ]
+  let #(state, pressed) =
+    cast_support.pressed_raw_in(
+      plans: fissure_plans(),
+      state: cast.new(),
+      caster: cast_support.caster(),
+      bag_index: 11,
+      target: unit_id,
+      at: 1000,
+    )
+  let #(state, effects) =
+    cast_support.answered_by(state:, effects: pressed, at: 1000, struck:)
+  let #(_, fired) =
+    cast_support.run_timers_striking(state:, effects:, from_ms: 1000, struck:)
+  // The cast's changes of the creature in order: the go's own, then each timer's. The
+  // proxy's phases (SpellPhase of Spell4 41844) cast the child again, and each cast
+  // ends the one before it, so the debuff is held again at each phase's go.
+  let changes =
+    list.append(
+      cast_support.target_changes(effects:),
+      list.map(cast_support.target_timeline(fired:), fn(step) { step.1 }),
+    )
+  let assert [last, ..earlier] = list.reverse(changes)
+  let earlier = list.reverse(earlier)
+  let assert cast.TargetChangeEnds(..) = last
+    as "the cast's last change ends the debuff with its node"
+  let assert [cast.TargetChangeStarts(..), ..] = earlier
+    as "the first change is the go's own start of the row's modifier"
+  // The same Tech blow before, during and after the debuff.
+  strike_with(
+    world:,
+    run:,
+    unit_id:,
+    life: 2,
+    damage_type: tech,
+    damage: 10,
+    cast_id: 1,
+  )
+  let plain = health_taken(received:, cast_id: 1)
+  list.each(earlier, fn(effect) {
+    let told = tell_change(world:, run:, connection: 1, effect:)
+    let shown =
+      next(
+        received:,
+        what: "the creature's 0x93a for a change",
+        wanted: properties_changed,
+      )
+    assert shown == [tech_taken(told:)]
+      as "a start puts Damage Taken Multiplier Tech at the row's value and an end back at its default 1.0, and no other property changes"
+  })
+  strike_with(
+    world:,
+    run:,
+    unit_id:,
+    life: 2,
+    damage_type: tech,
+    damage: 10,
+    cast_id: 2,
+  )
+  let raised = health_taken(received:, cast_id: 2)
+  let ended = tell_change(world:, run:, connection: 1, effect: last)
+  let restored_properties =
+    next(
+      received:,
+      what: "the creature's 0x93a for the end",
+      wanted: properties_changed,
+    )
+  assert restored_properties == [tech_taken(told: ended)]
+    as "the last end puts the property back to 1.0"
+  strike_with(
+    world:,
+    run:,
+    unit_id:,
+    life: 2,
+    damage_type: tech,
+    damage: 10,
+    cast_id: 3,
+  )
+  let restored = health_taken(received:, cast_id: 3)
+  let assert Ok(multiplier) =
+    float32.bits(number: fissure_bits) |> result.try(float32.value)
+  assert raised == float.round(int.to_float(plain) *. multiplier)
+    as "a Tech blow lands at the mitigated amount times the row's multiplier, rounded (hit.taken_by)"
+  assert raised > plain
+    as "and the raised amount differs from the plain one, so the test can tell"
+  assert restored == plain as "after the end the same blow lands as before"
 }
