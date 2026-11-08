@@ -105,7 +105,9 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       taken:,
       outcome: step.Answer(FromMap(game_connection_support.map_answer(taken))),
     )
-  assert game_connection_support.written_ids(taken)
+  assert game_client.without_passive_cast(
+      ids: game_connection_support.written_ids(taken),
+    )
     == game_client.world_entry_ids
     as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x6BC, 0x636 and 0x61 (the client drops 0x6BC until 0x19B has set the player, opcode.0x6bc); 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0x61, opcode.0xf1)"
   let after_the_burst =
@@ -258,8 +260,10 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
     Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),
+    Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x01A0, ..),
     Frame(message_id: 0x019D, ..),
+    Frame(message_id: 0x019F, ..),
     Frame(message_id: 0x06BC, body: path_body),
     Frame(message_id: 0x0636, body: control),
     Frame(message_id: 0x00F1, body: interval),
@@ -271,6 +275,7 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
       game_connection_support.entered().1,
       game_connection_support.keyed(),
     )
+    |> game_client.frames_without_passive_cast
   assert unit_is_player.decode(is_player)
     == Ok(UnitIsPlayer(unit_id: 5, field_2: 0))
     as "opcode.0x19b: the first value is the unit id the map gave, which must be the unit 0x262 created; the second is never read (opcode.0x19b.second_value)"

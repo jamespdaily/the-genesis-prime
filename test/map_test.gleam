@@ -353,12 +353,12 @@ pub fn a_character_whose_class_and_faction_have_no_novice_set_is_refused_and_tak
 
 pub fn a_character_whose_level_has_no_base_health_row_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
-  let tall = Character(..map_support.character(107), level: 99)
+  let tall = Character(..map_support.character(107), level: 102)
   let #(_, taken) =
     join_as(state: started(), connection: 7, caller: 1, character: tall)
   assert support.replies(taken)
-    == [#(CallerId(1), map.NotJoined(reason: map.NoBaseHealth(level: 99)))]
-    as "CreatureLevel holds no row for level 99, so the character's health is unknown (loadout.max_health)"
+    == [#(CallerId(1), map.NotJoined(reason: map.NoBaseHealth(level: 102)))]
+    as "CreatureLevel holds the client's rows 1 to 101, none for level 102, so the character's health is unknown (loadout.max_health)"
   assert support.watches(taken) == []
 }
 

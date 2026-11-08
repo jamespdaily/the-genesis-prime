@@ -7,7 +7,7 @@
 //// from the design's decisions, each marked as such.
 
 import character_tables
-import client_tables
+import fixture_tables
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/chat.{type Chat}
 import genesis_prime/game/chat_channel
@@ -49,7 +49,6 @@ import gleam/set
 import gleam/string
 import owned_test
 import qcheck
-import unitest
 
 const world_id = 3460
 
@@ -1198,21 +1197,39 @@ pub fn a_bang_line_with_chat_message_id_0_is_refused_not_run_as_a_command_test()
     as "the refusal is the only message: no 0x1c2, no system line"
 }
 
-// ---- the planted rows ----
+// ---- the channels ----
 
-// ---- the planted rows ----
+/// The channels the chat rule tells apart, each with the id, enumName and flags
+/// of the client's own ChatChannel row: Command, System, Say, Yell, Whisper,
+/// Party, Emote, Zone, Trade, Guild, Support, NPCSay, Instance and
+/// AccountWhisper.
+const channel_rows = [
+  #(1, "Command", 8),
+  #(2, "System", 8),
+  #(4, "Say", 29),
+  #(5, "Yell", 30),
+  #(6, "Whisper", 12),
+  #(7, "Party", 28),
+  #(8, "Emote", 13),
+  #(9, "Zone", 1676),
+  #(11, "Trade", 1676),
+  #(15, "Guild", 4),
+  #(19, "Support", 268),
+  #(20, "NPCSay", 24),
+  #(32, "Instance", 28),
+  #(34, "AccountWhisper", 44),
+]
 
-pub fn the_planted_chat_channel_rows_and_the_channel_types_are_the_clients_test() -> Nil {
+pub fn the_chat_rule_tells_the_14_channels_apart_by_the_clients_enum_name_and_flags_test() -> Nil {
   use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let real = client_tables.shared()
-  list.each(character_tables.chat_channels(), fn(planted) {
-    let #(row_id, name, flags) = planted
+  let real = fixture_tables.shared()
+  list.each(channel_rows, fn(channel) {
+    let #(row_id, name, flags) = channel
     let assert Ok(row) =
       chat_channel_table.get(tables: real, id: ChatChannelId(row_id))
-      as "the planted channel has a row in the client's table"
+      as "the channel has a row in the client's table"
     assert #(row.enum_name, row.flags) == #(name, flags)
-      as "ChatChannel: the planted enumName and flags are the real ones"
+      as "ChatChannel: the row's enumName and flags"
   })
   list.each(
     [

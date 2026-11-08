@@ -14,6 +14,7 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
+import literal_area
 import owned_test
 import planted_table
 import simplifile
@@ -293,6 +294,26 @@ pub fn an_edit_of_an_unknown_table_row_or_column_is_refused_test() -> Nil {
     == Error(fixture_tables.NoColumn(table: "Spell4", column: "noSuchColumn"))
 }
 
+pub fn a_removed_row_is_gone_and_an_unknown_table_or_row_is_refused_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let rows = fixture_tables.rows()
+  let id = fixture_tables.root("Spell4", 41_276)
+  let assert Ok(without) = fixture_tables.remove(rows:, table: "Spell4", id:)
+    as "the fixture holds the row"
+  let assert Ok(before) = dict.get(rows, "Spell4")
+  let assert Ok(after) = dict.get(without, "Spell4")
+  assert list.length(after) == list.length(before) - 1
+    as "one row is gone and no other"
+  assert fixture_tables.remove(rows: without, table: "Spell4", id:)
+    == Error(fixture_tables.NoRow(table: "Spell4", id:))
+    as "a row already removed is not held"
+  assert fixture_tables.remove(rows:, table: "NoSuchTable", id:)
+    == Error(fixture_tables.NoTable(table: "NoSuchTable"))
+  assert spell4.get(tables: fixture_tables.shared(), id: Spell4Id(id))
+    != Error(Nil)
+    as "the shared load still holds the row"
+}
+
 pub fn a_row_added_under_an_id_the_table_holds_is_refused_test() -> Nil {
   use <- owned_test.run(20_000)
   let id = fixture_tables.root("Spell4", 41_276)
@@ -412,6 +433,36 @@ pub fn a_type_11_condition_after_a_condition_of_type_0_is_not_followed_test() ->
     as "slot 0 holds type 11"
 }
 
+pub fn one_table_is_read_alone_and_a_table_the_fixture_lacks_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(rows) = fixture_tables.table("XpPerLevel")
+    as "XpPerLevel is a table the fixture holds"
+  assert rows != [] as "the fixture holds XpPerLevel rows"
+  assert dict.get(fixture_tables.rows(), "XpPerLevel") == Ok(rows)
+    as "the rows of all tables are the rows of each table read alone"
+  assert fixture_tables.table("NoSuchTable")
+    == Error(fixture_tables.NoTable(table: "NoSuchTable"))
+    as "a table the server does not load is refused by its name, not read as empty"
+}
+
+pub fn every_table_of_the_rows_is_the_term_the_table_was_stored_as_not_a_second_copy_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // A persistent term is copied whole when it is put again, rows included, so
+  // the rows of a table stand in the literal area once only when `rows()` holds
+  // the very terms `table()` stored.
+  let rows = fixture_tables.rows()
+  assert dict.size(rows) == list.length(fixture_tables.schemas())
+    as "rows() holds every table the server loads"
+  list.each(fixture_tables.schemas(), fn(schema) {
+    let assert Ok(stored) = fixture_tables.table(schema.table)
+      as "the fixture holds the table"
+    let assert Ok(held) = dict.get(rows, schema.table)
+      as "rows() holds the table"
+    assert literal_area.same_term(held, stored)
+      as { schema.table <> " in rows() is a copy of the stored table" }
+  })
+}
+
 pub fn the_escapes_of_a_text_cell_are_read_back_as_they_are_written_test() -> Nil {
   use <- owned_test.run(5000)
   let schema =
@@ -420,8 +471,12 @@ pub fn the_escapes_of_a_text_cell_are_read_back_as_they_are_written_test() -> Ni
       tbl_file.Column("text", tbl_file.Utf16Text),
     ])
   // A backslash before a letter, a backslash before an escape, a tab, a line
-  // break and a carriage return.
-  let texts = ["a\\tb", "\\\\n", "x\ty\nz\r", "\\", "plain", ""]
+  // break and a carriage return, and a backslash before a combining mark, which
+  // is one grapheme with it.
+  let texts = [
+    "a\\tb", "\\\\n", "x\ty\nz\r", "\\", "plain", "", "e\u{301}t ✓",
+    "a\\\u{301}b",
+  ]
   list.each(texts, fn(text) {
     let line = "1\t" <> table_rows.escaped(text)
     assert fixture_rows.parse_table(schema:, text: "ID\ttext\n" <> line <> "\n")

@@ -7,9 +7,7 @@
 ////   most 25 labels, each once and in label-id order, only labels allowed for
 ////   the faction and values the race and sex's index holds; 41, 46 or 48
 ////   bones by race and sex).
-//// - The rows of the client's own CharacterCreation table, planted by
-////   `character_tables` (which `character_tables_test` compares with the real
-////   file): 466 is a PreTutorial row (class 1, race 1, sex 1, faction 167, no
+//// - The rows of the client's own CharacterCreation table (the shared load): 466 is a PreTutorial row (class 1, race 1, sex 1, faction 167, no
 ////   entitlement, no cost, xp 0), 338 and 339 Nexus rows (xp 1710), 539 a
 ////   Level50 row costing 1 of account currency 13, 536 a Nexus row needing
 ////   entitlement 61, 21 a disabled Arkship row (start 0) and 530 a
@@ -23,6 +21,8 @@
 import character_support
 import character_tables
 import client_tables
+import fixture_tables
+import genesis_prime/game/appearance
 import genesis_prime/game/character_creation.{
   BoneNotFinite, CostsCurrency, CostumeOnlyRow, LabelNotAllowed,
   LabelsNotIncreasing, LookValueNotHeld, NeedsEntitlement, NoLevelForExperience,
@@ -45,6 +45,7 @@ import gleam/pair
 import gleam/result
 import gleam/string
 import owned_test
+import planted_table.{Integer}
 import unitest
 
 /// A request for the creation row with the name.
@@ -179,9 +180,48 @@ pub fn a_path_above_3_or_the_wrong_bone_count_is_refused_test() -> Nil {
     as "race 1, sex 0 with 48 bone values"
 }
 
+/// The client's rows edited into a look that holds all 27 labels. Kept edit:
+/// no client look holds 25 labels, since a faction's labels number 22 at most
+/// (the 17 labels of faction 0 and the 5 of faction 167), so every label is made
+/// faction 0 and each is held, at the value 1, by an added row of race 1, sex 1.
+fn rows_with_a_look_of_every_label() -> fixture_tables.Rows {
+  let labels = character_support.numbers(27)
+  let assert Ok(rows) =
+    list.try_fold(labels, fixture_tables.rows(), fn(rows, label) {
+      fixture_tables.change(
+        rows:,
+        table: "CharacterCustomizationLabel",
+        id: label,
+        with: [#("faction2Id", Integer(0))],
+      )
+    })
+    as "the client's CharacterCustomizationLabel holds labels 1 to 27"
+  let assert Ok(rows) =
+    list.try_fold(labels, rows, fn(rows, label) {
+      fixture_tables.add(
+        rows:,
+        table: "CharacterCustomization",
+        copy_of: 603,
+        id: 900_000 + label,
+        with: [
+          #("itemDisplayId", Integer(2000 + label)),
+          #("characterCustomizationLabelId00", Integer(label)),
+          #("value00", Integer(1)),
+          #("characterCustomizationLabelId01", Integer(0)),
+          #("value01", Integer(0)),
+        ],
+      )
+    })
+    as "the client's CharacterCustomization holds row 603, of race 1 and sex 1"
+  rows
+}
+
 pub fn a_request_with_more_than_25_look_labels_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = character_tables.shared_with_labels(count: 27)
+  use tables <- fixture_tables.on_rows(
+    rows: rows_with_a_look_of_every_label(),
+    reaching: [],
+  )
   let with_labels = fn(count) {
     CreateCharacter(
       ..request(466, "Ab Cd"),
@@ -401,6 +441,65 @@ pub fn a_veteran_row_makes_a_level_3_character_and_a_novice_row_a_level_1_charac
     as "CharacterCreation row 338 is a Nexus (Veteran) row, xp 1710, which GetLevelForExperience 0x140029820 makes level 3"
   assert level_of(466) == 1
     as "CharacterCreation row 466 is a PreTutorial (Novice) row, xp 0: level 1"
+}
+
+pub fn a_novice_character_of_every_class_is_made_on_the_shared_load_with_the_clients_look_place_and_level_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let novices =
+    list.filter(character_support.novice_and_veteran_rows(tables), fn(row) {
+      start_place.start(enum_value: row.character_creation_start_enum) == Novice
+    })
+  assert list.map(novices, fn(row) { creation_table.class_id(row).value })
+    |> list.unique
+    |> list.sort(int.compare)
+    == [1, 2, 3, 4, 5, 7]
+    as "the client's enabled PreTutorial rows hold every class the client makes: Warrior 1, Engineer 2, Esper 3, Medic 4, Stalker 5 and Spellslinger 7"
+  list.each(novices, fn(row) {
+    let character = character_support.new_character_of_row(tables:, row:)
+    assert character.level == 1
+      as {
+        "CharacterCreation row "
+        <> int.to_string(row.id)
+        <> " is a PreTutorial row, xp 0: XpPerLevel record 1, level 1"
+      }
+    assert character_tables.is_the_place_of(
+      place: character.place,
+      row: character_tables.start_row(51_596),
+    )
+      as {
+        "CharacterCreation row "
+        <> int.to_string(row.id)
+        <> " starts at WorldLocation2 row 51596"
+      }
+  })
+  // CharacterCreation row 479: a Dominion human male Engineer, which row 10's
+  // look (labels 2 = 1 and 21 = 2) is the look of.
+  let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(479))
+    as "the client's CharacterCreation holds row 479"
+  let look = character_tables.row_10_look()
+  let assert Ok(_) =
+    character_creation.check_row(
+      tables,
+      row,
+      CreateCharacter(
+        ..request(479, "Ab Cd"),
+        customisation_labels: list.map(look, fn(entry) { entry.label.value }),
+        customisation_values: list.map(look, fn(entry) { entry.value }),
+        bone_values: list.repeat(
+          0,
+          appearance.bone_count(
+            tables:,
+            race_id: creation_table.race_id(row),
+            sex: row.sex,
+          ),
+        ),
+      ),
+    )
+    as "a Dominion human male's create with CharacterCustomization row 10's look passes the checks"
+  // What the look shows (display 137 on slot 25) is checked by
+  // `character_select_test`, from the client's rows.
+  Nil
 }
 
 pub fn a_row_whose_xp_is_no_level_is_refused_and_says_which_test() -> Nil {

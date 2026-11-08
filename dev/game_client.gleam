@@ -603,6 +603,40 @@ pub fn read(game game: Game, count count: Int) -> List(Frame) {
   frames
 }
 
+/// Reads the world entry's messages, up to its last, 0x1BC, as `read_kept`
+/// keeps the bytes beyond them, without the messages of the innate passive's
+/// cast (`without_passive_cast`), which the entry's last effect writes between
+/// 0x61 and 0x1DA, and how many depends on the class.
+pub fn read_entry_kept(
+  game game: Game,
+  have have: BitArray,
+) -> #(List(Frame), BitArray) {
+  entry_read(game:, have:, read: [])
+}
+
+fn entry_read(
+  game game: Game,
+  have have: BitArray,
+  read read: List(Frame),
+) -> #(List(Frame), BitArray) {
+  let #(frame, rest) = next(game:, have:)
+  case frame.message_id {
+    0x01BC -> #(
+      frames_without_passive_cast(frames: list.reverse([frame, ..read])),
+      rest,
+    )
+    _ -> entry_read(game:, have: rest, read: [frame, ..read])
+  }
+}
+
+/// `read_entry_kept`, the bytes beyond the entry left on the connection for the
+/// next `read`.
+pub fn read_entry(game game: Game) -> List(Frame) {
+  let #(frames, rest) = read_entry_kept(game:, have: <<>>)
+  keep(game:, rest:)
+  frames
+}
+
 /// Leaves `rest` on the connection for the next read.
 fn keep(game game: Game, rest rest: BitArray) -> Nil {
   case rest {
@@ -920,10 +954,14 @@ fn standing(
 /// in the order the client needs (opcode.0xad, opcode.0x262, opcode.0x19b,
 /// opcode.0x25e, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD
 /// first; 0x262 before 0x19B; 0x19B before the character's own state (0x25E,
-/// opcode.0x25e.entry_order), the six armor items, the weapon and the three
-/// abilities (0x111, opcode.0x111.ability_bag, opcode.0x111.equipped_set),
-/// their tiers (0x1A0, opcode.0x1a0), the action set (0x19D, opcode.0x19d), 0x6BC,
-/// 0x636 and 0x61; then the zone channel (opcode.0x1da, opcode.0x1bc).
+/// opcode.0x25e.entry_order), the six armor items, the weapon, the three
+/// abilities and the innate (0x111, opcode.0x111.ability_bag,
+/// opcode.0x111.equipped_set), their tiers (0x1A0, opcode.0x1a0), the action
+/// set (0x19D, opcode.0x19d), 0x19F, which points the innate button
+/// (opcode.0x19f), 0x6BC, 0x636 and 0x61; then the zone channel (opcode.0x1da,
+/// opcode.0x1bc). Each of the client's classes holds an innate (Class
+/// `spell4IdInnateAbilityActive00` is not 0 in all six rows) and three level-1
+/// spells, so the seven worn items, three abilities and the innate are 11 items.
 pub const world_entry_ids = [
   0x00AD,
   0x0262,
@@ -939,8 +977,10 @@ pub const world_entry_ids = [
   0x0111,
   0x0111,
   0x0111,
+  0x0111,
   0x01A0,
   0x019D,
+  0x019F,
   0x06BC,
   0x0636,
   0x00F1,
@@ -949,12 +989,39 @@ pub const world_entry_ids = [
   0x01BC,
 ]
 
+/// The ids without the messages of the innate passive's cast (0x7FF, 0x7F4 and
+/// 0x7FE): the entry's last effect starts it (`world_entry.StartPassive`), and
+/// which messages its cast writes is the cast flow's, which its own tests
+/// check. The three classes with a passive write them after 0x61, so the same
+/// ids before it stay.
+pub fn without_passive_cast(ids ids: List(Int)) -> List(Int) {
+  after_entered(ids, fn(id) { id })
+}
+
+/// The items without the passive's cast ids from the first 0x61 on.
+fn after_entered(items: List(a), id_of: fn(a) -> Int) -> List(a) {
+  let #(before, from) =
+    list.split_while(items, fn(item) { id_of(item) != 0x0061 })
+  list.append(
+    before,
+    list.filter(from, fn(item) {
+      let id = id_of(item)
+      id != 0x07FF && id != 0x07F4 && id != 0x07FE
+    }),
+  )
+}
+
 /// The ids of the messages of the Holocrypt's join: the entry's, but with no
 /// 0x25E, since the join is a 0xAD in the world on the client's same game object
 /// (0x1403b6de0), where a second copy would add its items and pets again
 /// (opcode.0x25e.entry_order).
 pub fn holocrypt_entry_ids() -> List(Int) {
   list.filter(world_entry_ids, fn(id) { id != 0x025E })
+}
+
+/// The frames without those of the innate passive's cast (`without_passive_cast`).
+pub fn frames_without_passive_cast(frames frames: List(Frame)) -> List(Frame) {
+  after_entered(frames, fn(frame) { frame.message_id })
 }
 
 /// The 0x262 among the messages of an entry, decoded: the player the burst
