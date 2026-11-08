@@ -6,6 +6,7 @@
 import cast_support
 import character_tables
 import connection_rule_support as support
+import fixture_tables
 import game_client
 import game_connection_support.{Appears}
 import genesis_prime/client_connection.{
@@ -51,6 +52,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import map_support
 import owned_test
+import planted_table
 
 // ------------------------------------------- a player's death and coming back
 //
@@ -872,17 +874,18 @@ pub fn what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_
 
 pub fn the_holocrypt_of_a_world_with_no_start_of_the_race_and_faction_is_the_place_the_stay_entered_at_test() -> Nil {
   use <- owned_test.run(60_000)
-  // A test whose first use loads a set of planted tables of its own: the
-  // deadline is a hang guard, the load alone can take most of 10 s.
-  // The planted Novice start of the tests' race and faction stands in World 0
-  // here, so World 3460 holds none: the server's choice is the place the stay
-  // entered at (death.server_choices).
+  // The client's Novice start row (WorldLocation2 51596) is edited into World 0,
+  // so World 3460 holds no start of the tests' race and faction: the server's
+  // choice is the place the stay entered at (death.server_choices). A World 0
+  // place is refused (opcode.0xad: it is no World row).
+  use tables <- fixture_tables.changed(
+    table: "WorldLocation2",
+    id: 51_596,
+    with: [#("worldId", planted_table.Integer(0))],
+  )
   let fresh =
     game_connection_support.accepted(
-      Settings(
-        ..game_connection_support.settings(),
-        tables: character_tables.shared_with_novice_start_in_world_0(),
-      ),
+      Settings(..game_connection_support.settings(), tables:),
     ).0
   assert game_connection_support.entry_place()
     != character_tables.novice_start_place()

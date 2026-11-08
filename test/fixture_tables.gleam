@@ -497,6 +497,35 @@ pub fn add(
   dict.insert(rows, table, list.append(rows_of(rows:, schema:), [new_row]))
 }
 
+/// The rows without the row `id` of the table, for a load that lacks a row the
+/// server reads (the load's refusal, not a `changed` body, is the subject).
+pub fn remove(
+  rows rows: Rows,
+  table table: String,
+  id id: Int,
+) -> Result(Rows, Refusal) {
+  use schema <- result.try(schema_of(table))
+  use _ <- result.map(row_of(rows:, schema:, id:))
+  dict.insert(
+    rows,
+    table,
+    list.filter(rows_of(rows:, schema:), fn(held) { id_of(row: held) != id }),
+  )
+}
+
+/// The shared tables edited into the tables of these rows, with every table
+/// the server loads and its own requirements and derivations: the load's result,
+/// for a case whose subject is a refusal of the rows (`on_rows` stops the test
+/// on one).
+pub fn load(rows rows: Rows) -> Result(store.Tables, store.LoadError) {
+  edited(
+    rows:,
+    entries: server_table.entries(),
+    requirements: requirement.all(),
+    derivations: derivation.all(),
+  )
+}
+
 /// Runs the body on the `closure` of these rows and roots, as an edit of the
 /// shared tables on the body's heap, for a case that needs more than one edit
 /// (`change` and `add` make them); the shared tables are not touched.
@@ -505,14 +534,7 @@ pub fn on_rows(
   reaching roots: List(#(String, Int)),
   body body: fn(store.Tables) -> a,
 ) -> a {
-  case
-    edited(
-      rows: closure(rows:, roots:),
-      entries: server_table.entries(),
-      requirements: requirement.all(),
-      derivations: derivation.all(),
-    )
-  {
+  case load(rows: closure(rows:, roots:)) {
     Ok(tables) -> body(tables)
     Error(error) ->
       panic as { "the fixture's tables did not load: " <> store.describe(error) }

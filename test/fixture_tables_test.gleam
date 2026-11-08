@@ -293,6 +293,26 @@ pub fn an_edit_of_an_unknown_table_row_or_column_is_refused_test() -> Nil {
     == Error(fixture_tables.NoColumn(table: "Spell4", column: "noSuchColumn"))
 }
 
+pub fn a_removed_row_is_gone_and_an_unknown_table_or_row_is_refused_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let rows = fixture_tables.rows()
+  let id = fixture_tables.root("Spell4", 41_276)
+  let assert Ok(without) = fixture_tables.remove(rows:, table: "Spell4", id:)
+    as "the fixture holds the row"
+  let assert Ok(before) = dict.get(rows, "Spell4")
+  let assert Ok(after) = dict.get(without, "Spell4")
+  assert list.length(after) == list.length(before) - 1
+    as "one row is gone and no other"
+  assert fixture_tables.remove(rows: without, table: "Spell4", id:)
+    == Error(fixture_tables.NoRow(table: "Spell4", id:))
+    as "a row already removed is not held"
+  assert fixture_tables.remove(rows:, table: "NoSuchTable", id:)
+    == Error(fixture_tables.NoTable(table: "NoSuchTable"))
+  assert spell4.get(tables: fixture_tables.shared(), id: Spell4Id(id))
+    != Error(Nil)
+    as "the shared load still holds the row"
+}
+
 pub fn a_row_added_under_an_id_the_table_holds_is_refused_test() -> Nil {
   use <- owned_test.run(20_000)
   let id = fixture_tables.root("Spell4", 41_276)

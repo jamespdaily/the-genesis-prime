@@ -18,6 +18,7 @@
 
 import character_support
 import character_tables
+import fixture_tables
 import game_client.{Loadout, Sheet}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -32,15 +33,12 @@ import genesis_prime/message/shared_item.{type SharedItem, SharedItem}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/table/game_formula
-import genesis_prime/table/loader/server_table
 import genesis_prime/world_map/player_unit
 import gleam/list
 import gleam/option.{None, Some}
-import novice_tables
 import owned_test
 import place_support
-import planted_table
+import planted_table.{Float}
 import unit_support
 
 fn item(location location: Int, index index: Int, id id: Int) -> SharedItem {
@@ -248,33 +246,13 @@ pub fn the_sheet_shows_the_ratings_times_a_quarter_rounded_the_health_cut_and_th
 
 pub fn the_sheets_power_factors_are_game_formula_1266s_two_values_test() -> Nil {
   use <- owned_test.run(60_000)
-  let formulas =
-    list.map(novice_tables.formulas(), fn(row) {
-      case row.id {
-        1266 -> novice_tables.Formula(..row, float0: 0.5, float01: 0.1)
-        _ -> row
-      }
-    })
-  let files =
-    list.map(character_tables.files(), fn(file) {
-      case file.0 == game_formula.schema.file {
-        True ->
-          planted_table.file(
-            game_formula.schema,
-            list.flatten([
-              character_tables.game_formula_rows(
-                ids: [character_tables.highest_level_formula],
-                highest: 50,
-              ),
-              list.map(formulas, novice_tables.game_formula_row),
-            ]),
-          )
-        False -> file
-      }
-    })
-  use folder <- planted_table.in_folder(files)
-  let assert Ok(tables) = server_table.read(from: folder)
-    as "the planted tables with a changed GameFormula 1266 load"
+  // The client's row 1266 holds 0.25 and 0.25; the edit gives the two values
+  // different numbers, so each factor is seen to come from its own column.
+  use tables <- fixture_tables.changed(
+    table: "GameFormula",
+    id: 1266,
+    with: [#("datafloat0", Float(0.5)), #("datafloat01", Float(0.1))],
+  )
   assert game_client.sheet(
       unit: unit_with(properties: [#(35, 100.0), #(36, 41.0)]),
       tables:,

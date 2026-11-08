@@ -15,6 +15,7 @@
 
 import character_tables
 import client_tables
+import fixture_tables
 import genesis_prime/game/appearance
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/store.{LookEntry}
@@ -393,15 +394,9 @@ fn assert_the_faces_follow_the_looks_labels(tables: table_store.Tables) -> Nil {
     as "the real row the expected 137 comes from"
 }
 
-pub fn a_human_males_face_from_the_real_rows_follows_the_looks_labels_test() -> Nil {
+pub fn the_index_a_load_builds_gives_a_human_males_face_from_the_clients_rows_test() -> Nil {
   use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  assert_the_faces_follow_the_looks_labels(client_tables.shared())
-}
-
-pub fn the_index_a_load_builds_gives_a_human_males_face_from_planted_rows_test() -> Nil {
-  use <- owned_test.run(60_000)
-  assert_the_faces_follow_the_looks_labels(character_tables.shared())
+  assert_the_faces_follow_the_looks_labels(fixture_tables.shared())
 }
 
 pub fn every_slot_of_a_real_look_is_listed_once_in_slot_order_test() -> Nil {

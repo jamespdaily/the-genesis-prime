@@ -1,25 +1,25 @@
 //// The top zone of each WorldZone (genesis_prime/game/top_zone): the walk up
-//// `parentZoneId` to the row whose parent is 0, from the planted rows, which are
-//// the client's own rows (`character_tables.world_zones`), and from the real
-//// table where the client is present.
+//// `parentZoneId` to the row whose parent is 0, from the client's own rows
+//// (the shared load), and from the whole table where the client is present.
 
-import character_tables
 import client_tables
+import fixture_tables
 import genesis_prime/game/top_zone
 import genesis_prime/table/id.{WorldZoneId}
+import genesis_prime/table/loader/derivation
+import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_zone
 import gleam/list
 import gleam/result
 import owned_test
-import planted_table
+import planted_table.{Integer}
 import unitest
 
+/// The top zones the shared load built from the client's WorldZone rows.
 fn planted() -> top_zone.TopZones {
-  let assert Ok(zones) = top_zone.from_parents(character_tables.world_zones())
-    as "the planted rows have no cycle"
-  zones
+  top_zone.top_zones(fixture_tables.shared())
 }
 
 pub fn a_zone_with_parent_0_is_its_own_top_test() -> Nil {
@@ -40,6 +40,18 @@ pub fn a_zone_7_parents_below_its_top_maps_to_the_top_test() -> Nil {
     as "WorldZone 1305 -> 1304: the zones of one top zone share it"
 }
 
+pub fn each_start_zone_maps_to_the_top_of_its_chain_in_the_clients_rows_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert top_zone.of(planted(), 648) == Ok(35)
+    as "WorldZone 648 -> 35, whose parent is 0 (the Exile Veteran start's zone)"
+  assert top_zone.of(planted(), 1417) == Ok(1414)
+    as "WorldZone 1417 -> 1414, whose parent is 0"
+  assert top_zone.of(planted(), 1236) == Ok(622)
+    as "WorldZone 1236 -> 623 -> 622, whose parent is 0"
+  assert top_zone.of(planted(), 6009) == Ok(4961)
+    as "WorldZone 6009 -> 4962 -> 4961, whose parent is 0 (the Novice start's zone)"
+}
+
 pub fn a_broken_chain_stops_at_the_last_row_that_exists_test() -> Nil {
   use <- owned_test.run(5000)
   assert top_zone.of(planted(), 147) == Ok(147)
@@ -54,7 +66,7 @@ pub fn a_broken_chain_stops_at_the_last_row_that_exists_test() -> Nil {
 pub fn a_zone_with_no_row_has_no_top_zone_test() -> Nil {
   use <- owned_test.run(5000)
   assert top_zone.of(planted(), 1132) == Error(Nil)
-    as "WorldZone 1132 has no row"
+    as "WorldZone 1132 has no row (147's parent)"
   assert top_zone.of(planted(), 0) == Error(Nil)
     as "zone 0 is no zone and has no row"
 }
@@ -73,35 +85,31 @@ pub fn a_cycle_in_the_parent_chain_is_refused_test() -> Nil {
 
 pub fn a_load_with_a_cycle_in_the_parent_chain_fails_test() -> Nil {
   use <- owned_test.run(10_000)
-  use folder <- planted_table.in_folder(
-    character_tables.files_with_zones(zones: [#(1, 2), #(2, 1)]),
-  )
+  // WorldZone 35 (parent 0) is edited to name its child 648 as its parent.
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "WorldZone",
+      id: 35,
+      with: [#("parentZoneId", Integer(648))],
+    )
+    as "the client's WorldZone holds row 35 and the column"
   let assert Error(store.DerivationFailed(name: "TopZones", ..)) =
-    server_table.read(from: folder)
+    fixture_tables.edited(
+      rows:,
+      entries: server_table.entries(),
+      requirements: requirement.all(),
+      derivations: derivation.all(),
+    )
     as "CLAUDE.md: a table the server cannot read fails the load; a cycle has no top zone"
   Nil
 }
 
-pub fn the_planted_load_builds_the_top_zones_once_test() -> Nil {
+pub fn the_shared_load_builds_the_top_zones_once_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert top_zone.of(top_zone.top_zones(character_tables.shared()), 1755)
+  assert top_zone.of(top_zone.top_zones(fixture_tables.shared()), 1755)
     == Ok(248)
-    as "the tables' load built the top zones from the planted rows"
-}
-
-pub fn the_planted_zone_rows_are_the_clients_rows_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let real = client_tables.shared()
-  list.each(character_tables.world_zones(), fn(zone) {
-    let #(id, parent) = zone
-    let assert Ok(row) = world_zone.get(tables: real, id: WorldZoneId(id))
-      as "the planted zone has a row in the client's table"
-    assert row.parent_zone_id == parent
-      as "WorldZone: the planted parentZoneId is the real one"
-  })
-  assert world_zone.get(tables: real, id: WorldZoneId(1132)) == Error(Nil)
-    as "WorldZone has no row 1132, the parent of 147"
+    as "the tables' load built the top zones from the client's rows"
 }
 
 pub fn against_the_real_table_111_rows_are_their_own_top_and_every_row_has_a_top_that_exists_test() -> Nil {

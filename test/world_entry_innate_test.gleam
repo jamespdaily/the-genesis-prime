@@ -17,7 +17,6 @@
 //// gives.
 
 import cast_support
-import character_tables
 import client_tables
 import fixture_tables
 import genesis_prime/game/world_entry

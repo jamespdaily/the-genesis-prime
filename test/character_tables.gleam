@@ -1,48 +1,20 @@
-//// A small set of the client's tables for the tests of the game rule, character
-//// select and creating a character, which run where the client's files are
-//// absent. Each row is a row of the client's own tables with the id and the
-//// columns the server reads (`character_tables_test` compares each with the
-//// real row where the client is present); every other column is 0.
+//// The planted tables of the tests that edit the spell and creature rows, which
+//// run where the client's files are absent, and the shared character tables.
 ////
-//// - CharacterCreation rows 21, 338, 339, 359, 530, 536 and 539, with their xp, and
-////   the twelve Novice rows of `novice_tables` (466 and eleven more), with their
-////   items.
-//// - The Novice gear's tables (`novice_tables`): Item2, Item2Type, Item2Family,
-////   Item2Category, ItemSlot, ItemDisplaySourceEntry, ItemDisplay,
-////   CreatureLevel, Spell4 and SpellLevel, and the GameFormula rows the item
-////   formulas read.
-//// - GameFormula row 145 (its dataint0, the highest level) and XpPerLevel
-////   records 1 to 51 with their minXpForLevel, which GetLevelForExperience
-////   0x140029820 reads.
-//// - CharacterCustomization rows 2, 9 and 10 (race 1, sex 0) and 603 and 604
-////   (race 1, sex 1) and the labels they use, 2, 21 and 22, with labels 26 and
-////   27 (CharacterCustomizationLabel), which no row holds.
-//// - WorldLocation2 rows 51596, 42074, 41641, 42148 and 8223,
-////   the start places (genesis_prime/game/start_place), with the world, zone,
-////   position and facing quaternion of the client's row, and rows 51739 and
-////   52898, the objective circles the creatures stand in (radius, position,
-////   world and zone).
-//// - The training creatures' rows: Creature2 73464 and 73465 with the rows their
-////   values come from (ArcheType 1 and 10, Difficulty 1, Tier 1, CreatureLevel 1,
-////   Resist 1, the display groups 28793 and 28431 with their entries and
-////   displays 26565 and 26578, and the Stamina and Armor overrides), in the
-////   columns the spawns read (genesis_prime/world_map/spawn).
-//// - The tables only the content load reads (`content_files`): Faction2 rows 164
-////   to 168, 174, 177, 189, 219, 1441 and 1442 with their parents, the
-////   Faction2Relationship rows among them (684, 691, 726, 944 and 2943 to 2948),
-////   no Creature2OutfitInfo row, and the World rows the tests' maps run in.
-//// - PositionalRequirement: no row, since no planted spell has a Proxy behind a type 108
-////   condition; the real tables hold the arcs.
-//// - Prerequisite: the creature attack's rows (`prerequisite_rows`) and the rows
-////   the planted spells' gains name (`spell_tables.gain_prerequisite_rows`), their
-////   Proxies' caster apply columns (`spell_tables.proxy_prerequisite_rows`) and
-////   Rampage's cast prerequisite (`spell_tables.waiver_prerequisite_rows`), which the
-////   plan loads with the spell.
-//// - Gap: the spell rows are planted, not the client's (issue 326).
+//// - `shared()` is the client's committed rows (`fixture_tables`): a character's
+////   look, start place, zones, chat channels, levels and Novice loadout all come
+////   from them, and the tests read their expected values from the same rows
+////   (`start_rows`, `row_10_look`, `exile_circle_centre`).
+//// - `files()` is the planted folder the content load and the spell variants
+////   read: the client's rows of WorldLocation2, WorldZone, ChatChannel,
+////   GameFormula and XpPerLevel (`clients_file`), the creature, CharacterCreation,
+////   customization, label, parameter and map rows planted here, the Novice gear
+////   of `novice_tables`, and the planted spell rows of `spell_tables`.
+//// - Gap: the spell rows and the creature rows are planted, not the client's
+////   (issue 326, the spell variants step).
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
 ////   and 48 for race 1, sex 0. The planted maps are that many rows of one
-////   parameter that sets one part, which carry those counts; the real
-////   parameters are read by the real-table tests.
+////   parameter that sets one part; the client's rows hold the real parameters.
 
 import character_support
 import database_support
@@ -69,7 +41,9 @@ import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/faction2
 import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
-import genesis_prime/table/id.{CharacterCustomizationLabelId}
+import genesis_prime/table/id.{
+  CharacterCustomizationId, CharacterCustomizationLabelId, WorldLocation2Id,
+}
 import genesis_prime/table/instance_portal
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
@@ -89,24 +63,45 @@ import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
+import gleam/dict
+import gleam/int
 import gleam/list
+import gleam/result
 import novice_tables
 import place_support
 import planted_table.{type Cell, Boolean, Float, Integer}
 import spell_tables
 
-/// The look of the planted CharacterCustomization row 10 (race 1, sex 0,
-/// faction 166): label 2 = 1 and label 21 = 2, which show display 137 on
-/// slot 25.
+/// The look of the client's CharacterCustomization row 10 (race 1, sex 0): the
+/// row's two labels with their values, label 2 = 1 and label 21 = 2, by label.
 pub fn row_10_look() -> List(LookEntry) {
+  let assert Ok(row) =
+    character_customization.get(
+      tables: shared(),
+      id: CharacterCustomizationId(10),
+    )
+    as "the client's CharacterCustomization holds row 10"
   [
-    LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-    LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+    #(row.character_customization_label_id00, row.value00),
+    #(row.character_customization_label_id01, row.value01),
   ]
+  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+  |> list.map(fn(entry) {
+    LookEntry(label: CharacterCustomizationLabelId(entry.0), value: entry.1)
+  })
 }
 
-/// The planted tables, stored once per test run under a key of their own and
-/// never erased, as `client_tables.shared` does for the real ones.
+/// The centre of the Exile objective circle, WorldLocation2 51739, read from the
+/// client's row.
+pub fn exile_circle_centre() -> #(Float, Float, Float) {
+  let assert Ok(row) =
+    world_location2.get(tables: shared(), id: WorldLocation2Id(51_739))
+    as "the client's WorldLocation2 holds the Exile objective circle's row"
+  #(row.position0, row.position1, row.position2)
+}
+
+/// The client's committed rows loaded as the server's tables, stored once per
+/// test run (`fixture_tables.shared`).
 pub fn shared() -> store.Tables {
   fixture_tables.shared()
 }
@@ -442,67 +437,10 @@ pub fn shared_with_other_regeneration_defaults() -> store.Tables {
   ))
 }
 
-/// The planted tables with the Novice start's WorldLocation2 row (51596) in
-/// World 0, which is no World row, in place of World 3460. An edit of the plain tables on the caller's heap.
-pub fn shared_with_novice_start_in_world_0() -> store.Tables {
-  let rows =
-    list.map(start_rows(), fn(row) {
-      case row.id {
-        51_596 ->
-          location(
-            id: 51_596,
-            world: 0,
-            zone: 0,
-            position: #(0.0, 0.0, 0.0),
-            quaternion: row.quaternion,
-          )
-        _ -> planted_start_row(row)
-      }
-    })
-    |> list.append(circle_rows())
-  load_files(
-    list.map(files(), fn(file) {
-      case file.0 == world_location2.schema.file {
-        True -> planted_table.file(world_location2.schema, rows)
-        False -> file
-      }
-    }),
-  )
-}
-
 /// The WorldLocation2 rows of the two objective circles the training creatures
 /// stand in: 51739 (Exile) and 52898 (Dominion), radius 55, in World 3460,
 /// WorldZone 5967, at the client's own centres (`Quest2.10518`, `Quest2.10524`).
 pub const circle_ids = [51_739, 52_898]
-
-/// The centre of the Exile objective circle, WorldLocation2 51739, from the
-/// client's row (`Quest2.10518`).
-pub fn exile_circle_centre() -> #(Float, Float, Float) {
-  #(-131.13499450683594, -875.2354125976562, 333.3179931640625)
-}
-
-fn circle_rows() -> List(List(Cell)) {
-  [
-    circle(id: 51_739, position: exile_circle_centre()),
-    circle(id: 52_898, position: #(
-      37.852699279785156,
-      -875.4901733398438,
-      289.1130065917969,
-    )),
-  ]
-}
-
-fn circle(id id: Int, position position: #(Float, Float, Float)) -> List(Cell) {
-  planted_table.row(world_location2.schema, [
-    #("ID", Integer(id)),
-    #("radius", Float(55.0)),
-    #("position0", Float(position.0)),
-    #("position1", Float(position.1)),
-    #("position2", Float(position.2)),
-    #("worldId", Integer(3460)),
-    #("worldZoneId", Integer(5967)),
-  ])
-}
 
 /// The planted files of the creatures the spawns stand: each row is the client's
 /// own in the columns the spawns read (`the_planted_creature_rows_...` compares
@@ -680,7 +618,41 @@ pub fn override_row(
 /// for every entry of `server_table.entries`, so a load of the server's list
 /// from a folder of them reads every file and meets every requirement.
 pub fn files() -> List(#(String, BitArray)) {
-  files_with_looks(customization: customization_rows(), labels: label_rows())
+  list.append(creature_files(), [
+    planted_table.file(character_creation.schema, creation_rows()),
+    planted_table.file(character_customization.schema, customization_rows()),
+    planted_table.file(character_customization_label.schema, label_rows()),
+    planted_table.file(customization_parameter.schema, parameter_rows()),
+    planted_table.file(customization_parameter_map.schema, map_rows()),
+    clients_file(world_location2.schema),
+    clients_file(world_zone.schema),
+    clients_file(chat_channel.schema),
+    clients_file(game_formula.schema),
+    clients_file(xp_per_level.schema),
+    planted_table.file(unit_property2.schema, spell_tables.unit_property_rows()),
+    planted_table.file(
+      prerequisite.schema,
+      spell_tables.sorted_by_id(
+        list.flatten([
+          spell_tables.proxy_prerequisite_rows(),
+          spell_tables.gain_prerequisite_rows(),
+          spell_tables.waiver_prerequisite_rows(),
+          prerequisite_rows(),
+        ]),
+      ),
+    ),
+    planted_table.file(positional_requirement.schema, []),
+    ..novice_tables.files()
+  ])
+}
+
+/// The file of this table with the client's committed rows (the fixture's), for
+/// the tables the planted folder takes from the client whole.
+fn clients_file(schema: tbl_file.Schema) -> #(String, BitArray) {
+  planted_table.file(
+    schema,
+    result.unwrap(dict.get(fixture_tables.rows(), schema.table), []),
+  )
 }
 
 /// The planted files with the file of `schema` holding these rows in place of the
@@ -725,164 +697,6 @@ pub fn files_with_beast_changed(
       False -> file
     }
   })
-}
-
-/// The planted files with the WorldZone file holding these zones, each a pair of
-/// its id and its parentZoneId, in place of `world_zones`.
-pub fn files_with_zones(
-  zones zones: List(#(Int, Int)),
-) -> List(#(String, BitArray)) {
-  list.map(files(), fn(file) {
-    case file.0 == world_zone.schema.file {
-      True -> world_zone_file(zones)
-      False -> file
-    }
-  })
-}
-
-/// The planted WorldZone rows, each a pair of the row's ID and parentZoneId from
-/// the client's own table (`top_zone_test` compares each with the real row): the
-/// chains of the start places' zones 648, 1417, 1411, 1236 and 6009 up to their
-/// top zones, 1411 and 1305 sharing the top zone 1304; the chain of zone 1755,
-/// the deepest, 7 parents above it, to its top zone 248; and zone 147, whose
-/// parent 1132 has no row.
-pub fn world_zones() -> List(#(Int, Int)) {
-  [
-    #(648, 35),
-    #(35, 0),
-    #(1417, 1414),
-    #(1414, 0),
-    #(1411, 1305),
-    #(1305, 1304),
-    #(1304, 0),
-    #(1236, 623),
-    #(623, 622),
-    #(622, 0),
-    #(6009, 4962),
-    #(4962, 4961),
-    #(4961, 0),
-    #(1755, 378),
-    #(378, 1777),
-    #(1777, 382),
-    #(382, 1778),
-    #(1778, 1738),
-    #(1738, 1580),
-    #(1580, 248),
-    #(248, 0),
-    #(147, 1132),
-  ]
-}
-
-/// The planted ChatChannel rows: the ID, enumName and flags of the client's own
-/// rows (`chat_test` compares each with the real row) for the channels the chat
-/// rule tells apart: Command, System, Say, Yell, Whisper, Party, Emote, Zone,
-/// Trade, Guild, Support, NPCSay, Instance and AccountWhisper.
-pub fn chat_channels() -> List(#(Int, String, Int)) {
-  [
-    #(1, "Command", 8),
-    #(2, "System", 8),
-    #(4, "Say", 29),
-    #(5, "Yell", 30),
-    #(6, "Whisper", 12),
-    #(7, "Party", 28),
-    #(8, "Emote", 13),
-    #(9, "Zone", 1676),
-    #(11, "Trade", 1676),
-    #(15, "Guild", 4),
-    #(19, "Support", 268),
-    #(20, "NPCSay", 24),
-    #(32, "Instance", 28),
-    #(34, "AccountWhisper", 44),
-  ]
-}
-
-fn chat_channel_file() -> #(String, BitArray) {
-  planted_table.file(
-    chat_channel.schema,
-    list.map(chat_channels(), fn(channel) {
-      planted_table.row(chat_channel.schema, [
-        #("ID", Integer(channel.0)),
-        #("enumName", planted_table.Text(channel.1)),
-        #("flags", Integer(channel.2)),
-      ])
-    }),
-  )
-}
-
-fn world_zone_file(zones: List(#(Int, Int))) -> #(String, BitArray) {
-  planted_table.file(
-    world_zone.schema,
-    list.map(zones, fn(zone) {
-      planted_table.row(world_zone.schema, [
-        #("ID", Integer(zone.0)),
-        #("parentZoneId", Integer(zone.1)),
-      ])
-    }),
-  )
-}
-
-/// The planted tables with a look that has `count` labels: labels 1 to
-/// `count`, each for every faction and each held at the value 1 by one row of
-/// race 1, sex 1, in place of the planted look rows. An edit of the
-/// plain tables on the caller's heap.
-pub fn shared_with_labels(count count: Int) -> store.Tables {
-  let ids = character_support.numbers(count)
-  load_files(files_with_looks(
-    customization: list.map(ids, fn(id) {
-      customization(
-        id: 1000 + id,
-        sex: 1,
-        display: 2000 + id,
-        first: #(id, 1),
-        second: #(0, 0),
-      )
-    }),
-    labels: list.map(ids, fn(id) { label(id:, faction: 0) }),
-  ))
-}
-
-fn files_with_looks(
-  customization customization: List(List(Cell)),
-  labels labels: List(List(Cell)),
-) -> List(#(String, BitArray)) {
-  list.append(creature_files(), [
-    planted_table.file(character_creation.schema, creation_rows()),
-    planted_table.file(character_customization.schema, customization),
-    planted_table.file(character_customization_label.schema, labels),
-    planted_table.file(customization_parameter.schema, parameter_rows()),
-    planted_table.file(customization_parameter_map.schema, map_rows()),
-    planted_table.file(
-      world_location2.schema,
-      list.append(planted_start_rows(), circle_rows()),
-    ),
-    world_zone_file(world_zones()),
-    chat_channel_file(),
-    planted_table.file(
-      game_formula.schema,
-      list.flatten([
-        game_formula_rows(ids: [highest_level_formula], highest: 50),
-        list.map(novice_tables.formulas(), novice_tables.game_formula_row),
-      ]),
-    ),
-    planted_table.file(unit_property2.schema, spell_tables.unit_property_rows()),
-    planted_table.file(
-      xp_per_level.schema,
-      xp_per_level_rows(min_xp_for_level()),
-    ),
-    planted_table.file(
-      prerequisite.schema,
-      spell_tables.sorted_by_id(
-        list.flatten([
-          spell_tables.proxy_prerequisite_rows(),
-          spell_tables.gain_prerequisite_rows(),
-          spell_tables.waiver_prerequisite_rows(),
-          prerequisite_rows(),
-        ]),
-      ),
-    ),
-    planted_table.file(positional_requirement.schema, []),
-    ..novice_tables.files()
-  ])
 }
 
 /// The planted file of CustomizationParameterMap with one map, of race 1 and
@@ -1010,16 +824,6 @@ fn read_files(files: List(#(String, BitArray))) -> store.Tables {
 fn plain() -> store.Tables {
   database_support.once("character_tables_plain", fn() {
     store.store_under(tables: read_files(files()))
-  })
-}
-
-/// The planted tables with the creature attack rows (`shared`), read once and
-/// stored for the run.
-fn shared_stored() -> store.Tables {
-  database_support.once("character_tables", fn() {
-    store.store_under(
-      tables: read_files(novice_tables.with_creature_attack(files: files())),
-    )
   })
 }
 
@@ -1287,36 +1091,14 @@ fn map(id id: Int, sex sex: Int, parameter_id parameter_id: Int) -> List(Cell) {
   ])
 }
 
-/// A WorldLocation2 row with the columns the server reads.
-fn location(
-  id id: Int,
-  world world: Int,
-  zone zone: Int,
-  position position: #(Float, Float, Float),
-  quaternion quaternion: #(Float, Float, Float, Float),
-) -> List(Cell) {
-  planted_table.row(world_location2.schema, [
-    #("ID", Integer(id)),
-    #("position0", Float(position.0)),
-    #("position1", Float(position.1)),
-    #("position2", Float(position.2)),
-    #("facing0", Float(quaternion.0)),
-    #("facing1", Float(quaternion.1)),
-    #("facing2", Float(quaternion.2)),
-    #("facing3", Float(quaternion.3)),
-    #("worldId", Integer(world)),
-    #("worldZoneId", Integer(zone)),
-  ])
-}
-
-/// A start place's WorldLocation2 row as the client holds it: its id, the
+/// A start place's WorldLocation2 row, read from the client's rows: its id, the
 /// place it stands at (world, zone and position, facing as a character that has
-/// never turned does), its facing quaternion x, y, z, w (facing0 to facing3)
-/// and the 32 bits of the yaw, pitch and roll the client's
-/// QuaternionToEulerAngles (0x1401b2fe0) makes of it, from the emulator, and
-/// the fact record that names the row. For a turn about y alone, m21 =
-/// 2(y*z - w*x) is a zero and the pitch asin(-m21) is -0.0 (0x80000000), except
-/// where y < 0 and w > 0 (8223): m21 is -0 and the pitch +0.0.
+/// never turned does), its facing quaternion x, y, z, w (facing0 to facing3),
+/// the 32 bits of the yaw, pitch and roll the client's QuaternionToEulerAngles
+/// (0x1401b2fe0) makes of it, from the emulator, and the fact record that names
+/// the row. For a turn about y alone, m21 = 2(y*z - w*x) is a zero and the pitch
+/// asin(-m21) is -0.0 (0x80000000), except where y < 0 and w > 0 (8223): m21 is
+/// -0 and the pitch +0.0.
 pub type StartRow {
   StartRow(
     id: Int,
@@ -1327,82 +1109,44 @@ pub type StartRow {
   )
 }
 
-/// The start places' rows: 51596 for the Novice start, 42074 and 41641 for the
-/// Exile Veteran start, 42148 and 8223 for the Dominion Veteran start.
+/// The start places' ids with what the emulator returned for each facing and
+/// the record that names it: 51596 for the Novice start, 42074 and 41641 for
+/// the Exile Veteran start, 42148 and 8223 for the Dominion Veteran start.
+const start_facings = [
+  #(42_074, #(0xC021E1A7, 0x80000000, 0), "Quest2.10528.links"),
+  #(41_641, #(0x4021F773, 0x80000000, 0), "Quest2.10528.links"),
+  #(42_148, #(0xC0490FDA, 0x80000000, 0), "Quest2.10530.links"),
+  #(8223, #(0xBFD09BA3, 0, 0), "Quest2.10530.links"),
+  #(51_596, #(0xC03017E2, 0x80000000, 0), "Quest2.10513 (a guess)"),
+]
+
+/// The start places' rows, each read from the client's WorldLocation2 row.
 pub fn start_rows() -> List(StartRow) {
-  [
+  list.map(start_facings, fn(facing) {
+    let #(id, facing_bits, record) = facing
+    let assert Ok(row) =
+      world_location2.get(tables: shared(), id: WorldLocation2Id(id))
+      as "the client's WorldLocation2 holds the start place's row"
     StartRow(
-      id: 42_074,
+      id:,
       place: place_support.at(
-        world_id: 426,
-        world_zone_id: 648,
-        x: 4098.16015625,
-        y: -665.9780883789062,
-        z: -5165.10009765625,
+        world_id: row.world_id,
+        world_zone_id: row.world_zone_id,
+        x: row.position0,
+        y: row.position1,
+        z: row.position2,
       ),
-      quaternion: #(0.0, 0.9535170197486877, 0.0, -0.3013400137424469),
-      facing_bits: #(0xC021E1A7, 0x80000000, 0),
-      record: "Quest2.10528.links",
-    ),
-    StartRow(
-      id: 41_641,
-      place: place_support.at(
-        world_id: 990,
-        world_zone_id: 1417,
-        x: -768.36572265625,
-        y: -904.805419921875,
-        z: -2275.0791015625,
-      ),
-      quaternion: #(0.0, 0.953717052936554, 0.0, 0.3007054626941681),
-      facing_bits: #(0x4021F773, 0x80000000, 0),
-      record: "Quest2.10528.links",
-    ),
-    StartRow(
-      id: 42_148,
-      place: place_support.at(
-        world_id: 1387,
-        world_zone_id: 1411,
-        x: -3835.7451171875,
-        y: -980.21728515625,
-        z: -6053.263671875,
-      ),
-      quaternion: #(0.0, 1.0, 0.0, -4.3711395392165286e-8),
-      facing_bits: #(0xC0490FDA, 0x80000000, 0),
-      record: "Quest2.10530.links",
-    ),
-    StartRow(
-      id: 8223,
-      place: place_support.at(
-        world_id: 870,
-        world_zone_id: 1236,
-        x: -8260.708984375,
-        y: -995.0770263671875,
-        z: -239.0409393310547,
-      ),
-      quaternion: #(0.0, -0.7276397347450256, 0.0, 0.6859594583511353),
-      facing_bits: #(0xBFD09BA3, 0, 0),
-      record: "Quest2.10530.links",
-    ),
-    StartRow(
-      id: 51_596,
-      place: place_support.at(
-        world_id: 3460,
-        world_zone_id: 6009,
-        x: 29.128599166870117,
-        y: -853.87158203125,
-        z: -560.18798828125,
-      ),
-      quaternion: #(0.0, 0.9810349941253662, 0.0, -0.19383299350738525),
-      facing_bits: #(0xC03017E2, 0x80000000, 0),
-      record: "Quest2.10513 (a guess)",
-    ),
-  ]
+      quaternion: #(row.facing0, row.facing1, row.facing2, row.facing3),
+      facing_bits:,
+      record:,
+    )
+  })
 }
 
 /// The start row with this id.
 pub fn start_row(id: Int) -> StartRow {
   let assert Ok(row) = list.find(start_rows(), fn(row) { row.id == id })
-    as "the test names a row the planted tables hold"
+    as "the test names a start place's row"
   row
 }
 
@@ -1442,64 +1186,4 @@ pub fn facing_bits(facing: Facing) -> #(Int, Int, Int) {
 pub fn is_the_place_of(place place: Place, row row: StartRow) -> Bool {
   start_place.turned(place, start_place.unturned) == row.place
   && facing_bits(start_place.facing(place)) == row.facing_bits
-}
-
-/// The planted WorldLocation2 rows of the start places.
-fn planted_start_rows() -> List(List(Cell)) {
-  list.map(start_rows(), planted_start_row)
-}
-
-/// The planted WorldLocation2 row of a start place.
-fn planted_start_row(row: StartRow) -> List(Cell) {
-  location(
-    id: row.id,
-    world: start_place.world_id(row.place),
-    zone: start_place.world_zone_id(row.place),
-    position: #(
-      start_place.x(row.place),
-      start_place.y(row.place),
-      start_place.z(row.place),
-    ),
-    quaternion: row.quaternion,
-  )
-}
-
-/// The GameFormula row of the highest level: row 145, whose dataint0 is 50.
-pub const highest_level_formula = 145
-
-/// The XpPerLevel minXpForLevel of records 1 to 51 (the client's records 0 to
-/// 50: the levels 1 to 50 and the record at the highest level).
-pub fn min_xp_for_level() -> List(Int) {
-  [
-    0, 655, 1710, 2860, 4320, 6280, 8920, 12_510, 17_330, 23_860, 32_470, 43_830,
-    58_570, 77_520, 101_530, 131_820, 169_380, 215_750, 272_350, 340_950,
-    423_300, 521_770, 638_250, 775_580, 936_310, 1_123_510, 1_340_160, 1_590_200,
-    1_876_730, 2_204_290, 2_576_890, 2_999_270, 3_475_990, 4_012_950, 4_614_770,
-    5_288_090, 6_038_720, 6_873_450, 7_798_740, 8_822_880, 9_952_300, 11_196_140,
-    12_562_350, 14_060_140, 15_698_220, 17_487_670, 19_437_010, 21_558_320,
-    23_862_010, 26_360_090, 2_147_483_647,
-  ]
-}
-
-/// GameFormula rows of these ids, each with `highest` as its dataint0.
-pub fn game_formula_rows(
-  ids ids: List(Int),
-  highest highest: Int,
-) -> List(List(Cell)) {
-  list.map(ids, fn(id) {
-    planted_table.row(game_formula.schema, [
-      #("ID", Integer(id)),
-      #("dataint0", Integer(highest)),
-    ])
-  })
-}
-
-/// XpPerLevel rows holding these minXpForLevel values as records 1 up.
-pub fn xp_per_level_rows(minimums: List(Int)) -> List(List(Cell)) {
-  list.index_map(minimums, fn(minimum, position) {
-    planted_table.row(xp_per_level.schema, [
-      #("ID", Integer(position + 1)),
-      #("minXpForLevel", Integer(minimum)),
-    ])
-  })
 }
