@@ -11,14 +11,17 @@
 //// - `opcode.0x262.unit_fields`: create flag 16 makes the unit stealthed from its creation.
 //// - `unit.stealth_look`: the client slows a stealthed player itself, so no speed or
 ////   property message is sent for the stealth.
-//// - The tests' tables: Paralytic Surge 42352, the Medic's bag index 2, holds a planted
-////   Stealth effect (`character_tables.shared_with_stealth`), so a press enters stealth.
+//// - The tests' tables: the Stalker's Stealth, Spell4 46073 at bag index 3, starts Stealth
+////   38784 (Spell4Effects 107792, behind Prerequisite 7050: not stealthed), whose row 83834
+////   is a Stealth effect broken by damage (dataBits02 0), so a press enters stealth. 95774
+////   keeps it on damage (dataBits02 1) for a caster that holds Spell4 59389, which the
+////   test of the kept stealth gives it by an edit (`with_stealth_kept_on_damage`). A second
+////   press starts Stealth Cancel 38783 (107793, behind Prerequisite 8127: stealthed).
 //// - The server's choices, in the viewers and cast modules: the order of a blow is the
 ////   health's news, the damage taken, then the death; the stealth change is the last of
 ////   the input that moved it; creatures' sight of a stealthed player is left as it was.
 
 import cast_support
-import character_tables
 import connection_rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
@@ -30,6 +33,7 @@ import genesis_prime/game/strike_tell
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
+import genesis_prime/message/spell_finished
 import genesis_prime/message/unit_stealth.{UnitStealth}
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{Character, ForSelect, Listed}
@@ -42,10 +46,9 @@ import spawn_support
 
 // ---- the owner ----
 
-/// A press of Paralytic Surge by a Medic whose spell holds the planted Stealth effect,
-/// seen by the connections 2 and 3.
+/// A press of the Stalker's Stealth, seen by the connections 2 and 3.
 fn stealthed() -> #(game_connection.State, ConnectionStep(Request)) {
-  support.stealthed_medic_in(tables: character_tables.shared_with_stealth())
+  support.stealthed_stalker()
 }
 
 /// The ids of the frames written, kept to the ones named, in order.
@@ -85,6 +88,32 @@ pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_
   })
 }
 
+/// The step's stealth change is written and told to the viewers before its tell to the
+/// map: no 0x8f5 and no stealth news follows the tell. Other casts the real rows start
+/// in the same step, such as a trigger of the Stalker's passives, may.
+fn assert_the_change_comes_before_the_map_tell(
+  taken taken: ConnectionStep(Request),
+) -> Nil {
+  let #(before, after) = support.written_around_the_map_tell(taken:)
+  assert list.contains(cast_support.ids(frames: before), 0x08F5)
+    as "the 0x8f5 is written before the tell"
+  assert !list.contains(cast_support.ids(frames: after), 0x08F5)
+    as "no 0x8f5 follows the tell"
+  list.each([2, 3], fn(viewer) {
+    assert list.filter(
+        support.news_told_after_the_map_tell(taken:, viewer:),
+        fn(news) {
+          case news {
+            Stealth(..) -> True
+            _ -> False
+          }
+        },
+      )
+      == []
+      as "no stealth news follows the tell"
+  })
+}
+
 /// What the connection tells the map when its player's stealth changes to `stealthed`.
 fn stealth_told(
   stealthed stealthed: Bool,
@@ -100,9 +129,7 @@ pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_view
   let #(state, entering) = stealthed()
   assert support.told_the_map(entering) == [stealth_told(stealthed: True)]
     as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
-  assert support.writes_or_viewer_tells_after_the_map_tell(taken: entering)
-    == []
-    as "after the 0x8f5 to the player and the viewers' news: the tell is the stealth change's last effect"
+  assert_the_change_comes_before_the_map_tell(taken: entering)
   list.each([2, 3], fn(viewer) {
     assert list.contains(
       support.news_told(taken: entering, viewer:),
@@ -110,14 +137,15 @@ pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_view
     )
       as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"
   })
-  let #(_, leaving) = support.press_paralytic_surge(state:, client_cast_id: 2)
+  let #(_, leaving) =
+    support.press_stealth_again(state:, client_cast_id: 2, ms: 3000)
   assert support.told_the_map(leaving) == [stealth_told(stealthed: False)]
-    as "the second press ends the stealth (Spell4.46073): one tell, False"
-  assert support.writes_or_viewer_tells_after_the_map_tell(taken: leaving) == []
+    as "the second press ends the stealth (Spell4.46073, Stealth Cancel 38783): one tell, False"
+  assert_the_change_comes_before_the_map_tell(taken: leaving)
   let blow = struck_while_stealthed()
   assert support.told_the_map(blow) == [stealth_told(stealthed: False)]
     as "a landed blow on a stealth that ends on damage taken (Spell4Effects.effectType.83, 83834: dataBits02 0) tells the map False once"
-  assert support.writes_or_viewer_tells_after_the_map_tell(taken: blow) == []
+  assert_the_change_comes_before_the_map_tell(taken: blow)
 }
 
 pub fn a_camp_while_stealthed_tells_the_map_no_stealth_changed_and_only_the_leave_test() -> Nil {
@@ -164,17 +192,15 @@ pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5
       client_connection.Health(dead: False, ..),
       client_connection.CastTargetsRemoved(..),
       Stealth(stealthed: False),
+      ..
     ] = support.news_told(taken:, viewer:)
-      as "each viewer is told the blow's shield and health (0x938 and 0x937), the stealth cast taken off (0x811) and then the stealth"
+      as "each viewer is told the blow's shield and health (0x938 and 0x937), the stealth cast taken off (0x811) and then the stealth, before the real Stalker's own casts that follow"
   })
 }
 
 pub fn a_blow_does_not_end_a_stealth_kept_on_damage_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, _) =
-    support.stealthed_medic_in(
-      tables: character_tables.shared_with_kept_stealth(),
-    )
+  let #(state, _) = support.stealthed_stalker_kept_on_damage()
   let taken = support.feed(state, support.a_beast_strike(support.own_unit_id)).1
   assert only(frames: support.written(taken:), ids: [0x092F, 0x0811, 0x08F5])
     == [0x092F]
@@ -191,10 +217,10 @@ pub fn a_blow_does_not_end_a_stealth_kept_on_damage_test() -> Nil {
 
 pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The second press of Paralytic Surge: its Stealth effect is behind 7050, not
-  // stealthed, so it adds no source, and the spell's stealth change 0 ends the one held.
+  // The second press of Stealth starts Cancel 38783, which removes the stealth held.
   let #(state, _) = stealthed()
-  let #(_, taken) = support.press_paralytic_surge(state:, client_cast_id: 2)
+  let #(_, taken) =
+    support.press_stealth_again(state:, client_cast_id: 2, ms: 3000)
   let frames = support.written(taken:)
   assert only(frames:, ids: [0x0811, 0x08F5]) == [0x0811, 0x08F5]
     as "the stealth cast taken off, then the change"
@@ -203,9 +229,14 @@ pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_
   assert unit_stealth.decode(stealth.body)
     == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 0))
   list.each([2, 3], fn(viewer) {
-    assert list.last(support.news_told(taken:, viewer:))
-      == Ok(Stealth(stealthed: False))
-      as "each viewer is told the change last"
+    let assert [client_connection.CastTargetsRemoved(..), Stealth(False)] =
+      list.filter(support.news_told(taken:, viewer:), fn(news) {
+        case news {
+          client_connection.CastTargetsRemoved(..) | Stealth(..) -> True
+          _ -> False
+        }
+      })
+      as "each viewer is told the stealth cast taken off (0x811), then the change (the casts the real rows start in between are other news)"
   })
 }
 
@@ -264,14 +295,45 @@ pub fn a_lethal_blow_ends_the_stealth_before_the_death_is_written_test() -> Nil 
 
 pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_the_stealth_before_the_log_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, _) =
-    support.stealthed_medic_in(
-      tables: character_tables.shared_with_kept_stealth(),
-    )
-  let taken = support.killed(state).1
-  assert only(frames: support.written(taken:), ids: [0x07FE, 0x08F5, 0x0247])
-    == [0x07FE, 0x08F5, 0x0247]
-    as "the stealth cast's 0x7fe, then 0x8f5, then the death's log entry of type 22"
+  let #(state, pressed) = support.stealthed_stalker_kept_on_damage()
+  let stealth_cast =
+    list.filter_map(support.news_told(taken: pressed, viewer: 2), fn(news) {
+      case news {
+        client_connection.CastStarted(started) if started.spell4_id == 38_784 ->
+          Ok(started.cast_id)
+        _ -> Error(Nil)
+      }
+    })
+  assert list.length(stealth_cast) == 1 as "the press starts Stealth 38784 once"
+  let frames = support.written(taken: support.killed(state).1)
+  let positions = fn(wanted: Int) {
+    list.index_map(cast_support.ids(frames:), fn(id, index) { #(id, index) })
+    |> list.filter_map(fn(entry) {
+      case entry.0 == wanted {
+        True -> Ok(entry.1)
+        False -> Error(Nil)
+      }
+    })
+  }
+  let finished_at =
+    list.index_map(frames, fn(frame, index) { #(frame, index) })
+    |> list.filter_map(fn(entry) {
+      case
+        { entry.0 }.message_id == 0x07FE,
+        spell_finished.decode({ entry.0 }.body)
+      {
+        True, Ok(finished) -> Ok(#(finished.cast_id, entry.1))
+        _, _ -> Error(Nil)
+      }
+    })
+  let assert [stealth_cast] = stealth_cast
+  let assert Ok(ended) = list.key_find(finished_at, stealth_cast)
+    as "the stealth cast is ended at the death"
+  let assert [change] = positions(0x08F5)
+    as "the kept stealth is ended once, as the death takes it"
+  let assert [log] = positions(0x0247)
+  assert ended < change && change < log
+    as "the stealth cast's 0x7fe, then 0x8f5, then the death's log entry of type 22 (the Stalker's own other casts end around them)"
 }
 
 // ---- a viewer ----

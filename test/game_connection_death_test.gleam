@@ -1443,10 +1443,7 @@ pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never
 
 pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths_end_and_once_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(state, _) =
-    game_connection_support.stealthed_medic_in(
-      tables: character_tables.shared_with_kept_stealth(),
-    )
+  let #(state, _) = game_connection_support.stealthed_stalker_kept_on_damage()
   let #(state, killed) = game_connection_support.killed(state)
   assert game_connection_support.told_the_map(killed)
     == [
