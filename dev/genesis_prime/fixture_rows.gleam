@@ -240,7 +240,7 @@ fn parse_field(
 /// is plain and each later piece starts with the escaped letter. A backslash
 /// that ends the text or is followed by another letter is refused.
 fn unescape(text: String) -> Result(String, CellRefusal) {
-  case string.split(text, "\\") {
+  case split_at(text:, on: "\\") {
     [] -> Ok("")
     [plain, ..pieces] -> unescape_pieces(pieces, [plain])
   }
@@ -330,19 +330,41 @@ fn value_of(
   }
 }
 
+/// The option of `binary:split` that splits at every match, not only the first
+/// (the atom `global`).
+type SplitOption {
+  Global
+}
+
+/// `text` split at every `on`, by bytes. `string.split` splits by grapheme
+/// through `string:split`, which takes 77 ms of the 130 ms it takes to read the
+/// committed Spell4 rows against 3 ms for this, and the fixture is read by a
+/// test's first call in every fresh node. The files hold tabs, newlines and
+/// backslashes, none of which joins a grapheme.
+@external(erlang, "binary", "split")
+fn split_bytes(
+  text text: String,
+  on on: String,
+  options options: List(SplitOption),
+) -> List(String)
+
+fn split_at(text text: String, on on: String) -> List(String) {
+  split_bytes(text:, on:, options: [Global])
+}
+
 /// The rows of a table's file text, read against the schema's columns.
 pub fn parse_table(
   schema schema: tbl_file.Schema,
   text text: String,
 ) -> Result(List(List(Cell)), TextRefusal) {
-  case string.split(text, "\n") {
+  case split_at(text:, on: "\n") {
     [] -> Ok([])
     [header, ..lines] -> {
       use _ <- result.try(check_columns(
         table: schema.table,
         position: 1,
         expected: list.map(schema.columns, fn(column) { column.name }),
-        found: string.split(header, "\t"),
+        found: split_at(text: header, on: "\t"),
       ))
       lines
       |> list.filter(fn(line) { line != "" })
@@ -360,7 +382,7 @@ fn parse_line(
   line line: String,
   number number: Int,
 ) -> Result(List(Cell), TextRefusal) {
-  let texts = string.split(line, "\t")
+  let texts = split_at(text: line, on: "\t")
   let expected = list.length(schema.columns)
   use <- bool.guard(
     when: list.length(texts) != expected,

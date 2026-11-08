@@ -63,10 +63,8 @@ import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
-import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/result
 import novice_tables
 import place_support
 import planted_table.{type Cell, Boolean, Float, Integer}
@@ -649,10 +647,9 @@ pub fn files() -> List(#(String, BitArray)) {
 /// The file of this table with the client's committed rows (the fixture's), for
 /// the tables the planted folder takes from the client whole.
 fn clients_file(schema: tbl_file.Schema) -> #(String, BitArray) {
-  planted_table.file(
-    schema,
-    result.unwrap(dict.get(fixture_tables.rows(), schema.table), []),
-  )
+  let assert Ok(rows) = fixture_tables.table(schema.table)
+    as "the fixture holds the table"
+  planted_table.file(schema, rows)
 }
 
 /// The planted files with the file of `schema` holding these rows in place of the

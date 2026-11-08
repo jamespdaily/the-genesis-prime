@@ -432,6 +432,18 @@ pub fn a_type_11_condition_after_a_condition_of_type_0_is_not_followed_test() ->
     as "slot 0 holds type 11"
 }
 
+pub fn one_table_is_read_alone_and_a_table_the_fixture_lacks_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(rows) = fixture_tables.table("XpPerLevel")
+    as "XpPerLevel is a table the fixture holds"
+  assert rows != [] as "the fixture holds XpPerLevel rows"
+  assert dict.get(fixture_tables.rows(), "XpPerLevel") == Ok(rows)
+    as "the rows of all tables are the rows of each table read alone"
+  assert fixture_tables.table("NoSuchTable")
+    == Error(fixture_tables.NoTable(table: "NoSuchTable"))
+    as "a table the server does not load is refused by its name, not read as empty"
+}
+
 pub fn the_escapes_of_a_text_cell_are_read_back_as_they_are_written_test() -> Nil {
   use <- owned_test.run(5000)
   let schema =
@@ -441,7 +453,7 @@ pub fn the_escapes_of_a_text_cell_are_read_back_as_they_are_written_test() -> Ni
     ])
   // A backslash before a letter, a backslash before an escape, a tab, a line
   // break and a carriage return.
-  let texts = ["a\\tb", "\\\\n", "x\ty\nz\r", "\\", "plain", ""]
+  let texts = ["a\\tb", "\\\\n", "x\ty\nz\r", "\\", "plain", "", "e\u{301}t ✓"]
   list.each(texts, fn(text) {
     let line = "1\t" <> table_rows.escaped(text)
     assert fixture_rows.parse_table(schema:, text: "ID\ttext\n" <> line <> "\n")

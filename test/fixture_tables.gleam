@@ -148,28 +148,42 @@ pub fn root(table table: String, id id: Int) -> Int {
 
 // ---------------------------------------------------------------- loading
 
-/// The rows as the files hold them, with what they reach, read once.
-type Committed {
-  Committed(rows: Rows, reach: fixture_rows.Reach)
+/// The rows of one table the server loads, read once and alone: a test that
+/// needs a few tables does not read the others.
+pub fn table(table: String) -> Result(List(List(Cell)), Refusal) {
+  use schema <- result.map(schema_of(table))
+  database_support.once("fixture_table_" <> table, fn() {
+    let path = folder <> "/" <> schema.file <> ".tsv"
+    let read = {
+      use text <- result.try(
+        simplifile.read(path)
+        |> result.replace_error(Unreadable(table: schema.table, path:)),
+      )
+      parse_table(schema:, text:)
+    }
+    case read {
+      Ok(rows) -> rows
+      Error(refusal) -> panic as describe(refusal)
+    }
+  })
 }
 
-fn committed() -> Committed {
-  database_support.once("fixture_tables_committed", fn() {
-    let read =
-      schemas()
-      |> list.try_map(fn(schema) {
-        let path = folder <> "/" <> schema.file <> ".tsv"
-        use text <- result.try(
-          simplifile.read(path)
-          |> result.replace_error(Unreadable(table: schema.table, path:)),
-        )
-        use rows <- result.map(
-          fixture_rows.parse_table(schema:, text:)
-          |> result.map_error(Malformed),
-        )
-        #(schema.table, rows)
-      })
-      |> result.map(dict.from_list)
+/// Every table's rows, read once.
+pub fn rows() -> Rows {
+  database_support.once("fixture_tables_rows", fn() {
+    list.map(schemas(), fn(schema) {
+      let assert Ok(rows) = table(schema.table)
+        as "a table the server loads is one the fixture holds"
+      #(schema.table, rows)
+    })
+    |> dict.from_list
+  })
+}
+
+/// What the rows reach, worked out once and only by the tests that select rows
+/// (`closure`, `reached`): the rows of a load alone do not need it.
+fn reach() -> fixture_rows.Reach {
+  database_support.once("fixture_tables_reach", fn() {
     let whole_path = folder <> "/" <> fixture_rows.whole_file <> ".tsv"
     let whole =
       simplifile.read(whole_path)
@@ -184,27 +198,17 @@ fn committed() -> Committed {
       Ok(whole) -> whole
       Error(refusal) -> panic as fixture_rows.describe(refusal)
     }
-    case read {
-      Ok(read) -> {
-        let reach = case fixture_rows.reach_of(rows: read, whole:) {
-          Ok(reach) -> reach
-          Error(refusal) -> panic as fixture_rows.describe(refusal)
-        }
-        Committed(
-          rows: dict.map_values(read, fn(_, rows) {
-            list.map(rows, list.map(_, planted))
-          }),
-          reach:,
-        )
-      }
-      Error(refusal) -> panic as describe(refusal)
+    let held =
+      dict.map_values(rows(), fn(table, rows) {
+        let assert Ok(schema) = list.find(schemas(), fn(s) { s.table == table })
+          as "a fixture table is one the server loads"
+        list.map(rows, client_cells(schema:, row: _))
+      })
+    case fixture_rows.reach_of(rows: held, whole:) {
+      Ok(reach) -> reach
+      Error(refusal) -> panic as fixture_rows.describe(refusal)
     }
   })
-}
-
-/// The rows, read once.
-pub fn rows() -> Rows {
-  committed().rows
 }
 
 /// The rows of `rows` a load of them holds: the rows the roots reach, each row
@@ -226,17 +230,17 @@ pub fn closure(rows rows: Rows, roots given: List(#(String, Int))) -> Rows {
 }
 
 fn select(
-  rows rows: Rows,
+  rows chosen: Rows,
   roots roots: List(#(String, Int)),
   with walk: fn(fixture_rows.Reach, List(#(String, Int))) ->
     Result(Dict(String, Set(Int)), fixture_rows.Refusal),
 ) -> Rows {
-  let held = committed()
+  let held = rows()
   let #(reach, edited) =
-    list.fold(schemas(), #(held.reach, []), fn(state, schema) {
+    list.fold(schemas(), #(reach(), []), fn(state, schema) {
       let #(reach, edited) = state
-      let given = rows_of(rows:, schema:)
-      let kept = rows_of(rows: held.rows, schema:)
+      let given = rows_of(rows: chosen, schema:)
+      let kept = rows_of(rows: held, schema:)
       case given == kept {
         True -> state
         False -> #(
@@ -254,7 +258,7 @@ fn select(
     Error(refusal) -> panic as fixture_rows.describe(refusal)
   }
   let loaded = list.map(schemas(), fn(schema) { schema.table })
-  dict.map_values(rows, fn(table, table_rows) {
+  dict.map_values(chosen, fn(table, table_rows) {
     case list.contains(loaded, table), dict.get(selected, table) {
       False, _ -> table_rows
       True, Ok(ids) ->
