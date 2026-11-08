@@ -7,6 +7,8 @@
 ////   (`login_support.servers_auth_rate`), the burst a client may send at once.
 //// - The ping and its pong, opcode.0x0 and opcode.0x1
 ////   (`connection_rule_support.pings`, `connection_rule_support.pong`).
+//// - The bucket's refill: it counts the script's time (`genesis_prime/connection/script`),
+////   which these tests hold still, so a flood is charged at one instant.
 //// - The size limit: no frame is over 131,070 bytes (MessageSizeLimit
 ////   0x140335ec0, `frame.size_limit`), so a length one over it is a frame the
 ////   client's own reader refuses.
@@ -16,6 +18,7 @@
 
 import ask_support
 import connection_rule_support as support
+import driven_time
 import genesis_prime/client_connection
 import genesis_prime/connection/frame
 import genesis_prime/login/auth_connection
@@ -49,9 +52,8 @@ pub fn a_client_past_the_rate_gets_pongs_for_at_most_its_burst_and_is_closed_wit
   let burst = client_connection.burst(login_support.servers_auth_rate())
   let flooded = flood(sending: support.pings(count: burst + 1))
   let pongs = bit_array.byte_size(flooded.heard) / 7
-  assert pongs >= burst
-    as "the whole burst is answered: tokens only grow between reads, so the bucket never holds less than a full burst's worth of frames"
-  assert pongs <= burst as "the bucket holds the burst, and one more is refused"
+  assert pongs == burst
+    as "the bucket holds the burst, which is all answered, and one more is refused: the clock stands still, so no token is added however the pings arrive"
   assert flooded.heard == pongs_of(count: pongs)
     as "each pong answers its ping in order, and nothing else was written"
   let assert [#(_, text)] = of_level(flooded.lines, "warning")
@@ -107,8 +109,9 @@ fn pongs_of(count count: Int) -> BitArray {
   })
 }
 
-/// Starts the tree with the auth listener on the server's own rate and its
-/// wire recorder on, connects a client, reads its hello, sends it `sending` in
+/// Starts the tree with the auth listener on the server's own rate, its wire
+/// recorder on and its clock held still (`driven_time`), so the bucket gains
+/// no token whatever the speed of the machine, connects a client, reads its hello, sends it `sending` in
 /// one write and reads until the server closes. It gives what the client heard,
 /// what the connection's process logged and the replay of the connection's
 /// recording through the auth rule on the same rate, made once the process has
@@ -119,6 +122,7 @@ fn flood(sending bytes: BitArray) -> Flooded {
     login_support.start_recording_auth(
       rate: login_support.servers_auth_rate(),
       recorder: recording_support.wire_recorder(folder),
+      scripts: driven_time.scripts(driven_time.new()),
     )
   let client = login_client.connect(login_support.ports(started).auth_port)
   let assert [_hello] = login_client.read_frames(client:, have: <<>>, count: 1)

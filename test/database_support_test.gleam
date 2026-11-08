@@ -4,61 +4,59 @@
 //// up to seconds after the load ended when they slept between tries.
 
 import database_support
-import genesis_prime/step/runtime
 import gleam/bool
 import gleam/erlang/process.{type Pid}
-import gleam/int
 import gleam/list
 import owned_test
 
-/// How long the first caller's load runs, long enough that a waiter that
-/// sleeps between tries has backed off to seconds.
-const load_ms = 2000
-
-/// The most a waiter may take to return after the first caller has returned.
-const wake_within_ms = 500
-
-/// Eight waiters that arrive while the first caller loads return as soon as it
-/// has returned. The game rule: a shared load is paid by one test and costs
-/// every other test no more than that load.
+/// Eight waiters that arrive while the first caller loads wait on the key's
+/// lock, which wakes each when the load ends, and every caller returns the
+/// first caller's value. The game rule: a shared load is paid by one test and
+/// costs every other test no more than that load. A waiter that slept between
+/// tries would not be among the processes waiting on the lock, so it would
+/// never be seen waiting.
 pub fn waiters_return_as_soon_as_the_first_load_ends_test() -> Nil {
   use <- owned_test.run(10_000)
   let key = "database_support_test waiters return at once"
+  let waiters = 8
   let inside = process.new_subject()
-  let loaded_at = process.new_subject()
-  let returned_at = process.new_subject()
+  let returned = process.new_subject()
   let _first =
     process.spawn(fn() {
-      let value =
+      process.send(
+        returned,
         database_support.once(key, fn() {
-          process.send(inside, Nil)
-          process.sleep(load_ms)
+          let finish = process.new_subject()
+          process.send(inside, finish)
+          let assert Ok(Nil) = process.receive(finish, within: 5000)
+            as "the first caller was never told to end its load"
           7
-        })
-      process.send(loaded_at, #(value, runtime.monotonic_ms()))
+        }),
+      )
     })
-  let assert Ok(Nil) = process.receive(inside, within: 5000)
+  let assert Ok(finish) = process.receive(inside, within: 5000)
     as "the first caller did not start its load"
-  list.repeat(Nil, 8)
-  |> list.each(fn(_) {
+  list.repeat(Nil, waiters)
+  |> list.map(fn(_) {
     process.spawn(fn() {
-      let value = database_support.once(key, fn() { panic as "a waiter loaded" })
-      process.send(returned_at, #(value, runtime.monotonic_ms()))
+      process.send(
+        returned,
+        database_support.once(key, fn() { panic as "a waiter loaded" }),
+      )
     })
   })
-  let assert Ok(#(7, first_returned_ms)) =
-    process.receive(loaded_at, within: 5000)
-    as "the first caller did not return its load"
-  let late_ms =
-    list.repeat(Nil, 8)
+  |> list.each(wait_until_waiting(key, _))
+  assert list.length(lock_waiters(key)) == waiters
+    as "each waiter waits on the key's lock, which wakes it when the load ends"
+  process.send(finish, Nil)
+  let values =
+    list.repeat(Nil, waiters + 1)
     |> list.map(fn(_) {
-      let assert Ok(#(7, waiter_returned_ms)) =
-        process.receive(returned_at, within: 5000)
-        as "a waiter did not return the first caller's value"
-      waiter_returned_ms - first_returned_ms
+      let assert Ok(value) = process.receive(returned, within: 5000)
+        as "a caller did not return the first caller's value"
+      value
     })
-  let slowest_ms = list.fold(late_ms, 0, int.max)
-  assert slowest_ms <= wake_within_ms
+  assert values == list.repeat(7, waiters + 1)
 }
 
 /// A holder that crashes inside its load frees the key: a waiter then runs its

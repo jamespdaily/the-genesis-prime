@@ -1,6 +1,6 @@
-//// The clock and the timers of a whole-server test whose game connections' casts run
-//// on timers that must not depend on real time: the game connections of the server it
-//// starts take their time from this clock and start their timers on this scheduler,
+//// The clock and the timers of a whole-server test whose connections' timers (the game
+//// connections' casts) or token bucket must not depend on real time: the connections of
+//// the listener it gives them to take their time from this clock and start their timers on this scheduler,
 //// and a timer fires only when the test advances the clock past its time.
 ////
 //// ```
@@ -27,9 +27,10 @@
 ////   connection takes after `Woken`), can be started after the next choice, so a
 ////   test whose casts depend on such a timer reads to a pong or a frame it waits
 ////   for before it advances.
-//// - **Only the game connections** are driven. The map's and the creatures' timers
-////   use the real scheduler, so a test whose frames depend on them waits for those
-////   frames as it did.
+//// - **Only the connections of the listeners given these scripts** are driven: the
+////   game connections in the casts' tests, an auth connection in the flood test. The
+////   map's and the creatures' timers use the real scheduler, so a test whose frames
+////   depend on them waits for those frames as it did.
 //// - **The barrier** is `sys:get_state` of the connection, which waits at most 5 s and
 ////   can race a connection that is ending: a connection that ends between the check
 ////   that it is alive and the call fails the test.

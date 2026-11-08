@@ -58,8 +58,9 @@ pub type Message {
   /// Start timer `timer` for `after_ms`, then answer with `Echoed(timer)`. Its
   /// firing opens the key `timer_key_base + timer`.
   StartTimerAs(timer: Int, after_ms: Int)
-  /// Cancel timer `timer`, then answer with `Echoed(timer)`.
-  CancelTimerAs(timer: Int)
+  /// Start timer `timer` for `after_ms` and cancel it in the same step, then
+  /// answer with `Echoed(timer)`: no time has to pass between the two.
+  StartThenCancelTimerAs(timer: Int, after_ms: Int)
 }
 
 /// The key a timer's firing opens is its number plus this.
@@ -175,9 +176,10 @@ fn asked(
         OwnEffect(Reply(caller, Echoed(timer))),
       ]),
     )
-    CancelTimerAs(timer:) -> #(
+    StartThenCancelTimerAs(timer:, after_ms:) -> #(
       state,
       Effects([
+        OwnEffect(StartServiceTimer(TimerId(timer), after_ms)),
         OwnEffect(CancelServiceTimer(TimerId(timer))),
         OwnEffect(Reply(caller, Echoed(timer))),
       ]),
