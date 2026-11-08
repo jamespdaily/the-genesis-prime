@@ -309,12 +309,12 @@ pub fn a_cancelled_timer_never_fires_test() -> Nil {
   let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
-  // One step starts timer 2, the witness that time passed, and then starts and
-  // cancels timer 1 for no time. The witness's firing is an input of a later
-  // step, so it cannot come before the cancel is carried out, however late the
-  // step is taken; a cancel that fails to stop timer 1 or its timeout lets it
-  // fire before the witness, and a cancel that ignores its timer's id takes the
-  // witness down with timer 1.
+  // One step starts timer 1 for no time, then timer 2, the witness, then cancels
+  // timer 1. The witness is started after timer 1, so it is due after it however
+  // late the step runs, and its firing is an input of a later step, so it comes
+  // after the cancel. A cancel that fails to stop timer 1 or its timeout lets
+  // timer 1 fire before the witness, and a cancel that ignores its timer's id
+  // takes the witness down with timer 1.
   ask_support.command(
     client:,
     letter: signalling_rule.start_witness_then_cancel_command,

@@ -432,16 +432,29 @@ fn finds_sent_to_stand_in() -> Int {
   mailbox_support.queued(process.self())
 }
 
+/// How many times a find is tried for Maps to be asked before the test fails.
+const asking_tries = 50
+
 /// What `find` makes of a deadline `unanswered_ms` ahead, taken again until Maps
 /// was asked: a find whose deadline passed before it asked sends nothing and
 /// gives the same answer as one Maps left unanswered, so only a run that asked
-/// shows the unanswered path.
+/// shows the unanswered path. Each of `asking_tries` tries takes a fresh
+/// deadline; a machine that stalls longer than the deadline on every try fails.
 fn find_left_unanswered(find find: fn(Int) -> answer) -> answer {
+  find_left_unanswered_in(find:, tries_left: asking_tries)
+}
+
+fn find_left_unanswered_in(
+  find find: fn(Int) -> answer,
+  tries_left tries_left: Int,
+) -> answer {
   let asked_before = finds_sent_to_stand_in()
   let answer = find(ask_support.monotonic_ms() + unanswered_ms)
-  case finds_sent_to_stand_in() > asked_before {
-    True -> answer
-    False -> find_left_unanswered(find:)
+  case finds_sent_to_stand_in() > asked_before, tries_left > 1 {
+    True, _ -> answer
+    False, True -> find_left_unanswered_in(find:, tries_left: tries_left - 1)
+    False, False ->
+      panic as "Maps was never asked: every try's deadline passed before the find asked, so none showed the unanswered path"
   }
 }
 

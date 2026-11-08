@@ -492,12 +492,14 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
 
 pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn_seen_again_stands_full_with_its_unit_id_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = one_beast(respawn_ms: 1000)
+  let respawn_ms = 1000
+  let world = one_beast(respawn_ms:)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   let _player = join(run:, connection: 1)
   let first = next(received:, what: "the creature's 0x262", wanted: appearance)
   let pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  let before_strike_ms = ask_support.monotonic_ms()
   strike_with(
     world:,
     run:,
@@ -522,10 +524,13 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
       }
     },
   )
-  // That a dead creature told to retire keeps its corpse until its respawn is
-  // the creature rule's (creature_test); the shell's timers run on the real
-  // clock, so this test follows the creature until it stops and asserts nothing
-  // about how long it stood.
+  let alive = process.is_alive(pid)
+  let read_at_ms = ask_support.monotonic_ms()
+  // The corpse timer runs `respawn_ms` from the kill, which is after
+  // `before_strike_ms`, so before that time the creature cannot have stopped.
+  // Later, a slow machine may have let the respawn pass, and nothing is asserted.
+  assert alive || read_at_ms >= before_strike_ms + respawn_ms
+    as "a dead creature told to retire keeps its corpse and its respawn: the creature process lives until the respawn time (genesis_prime/world_map/creature), well after the player's 0x355 and the idle stop of 100 ms"
   event_wait.until("the dead creature stopped at its respawn", fn() {
     !process.is_alive(pid)
   })
