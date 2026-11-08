@@ -264,30 +264,55 @@ pub fn a_client_spell_whose_drawn_rows_all_have_bit_0x20_keeps_them_all_test() -
     as "TelegraphDamage.telegraphDamageFlags.0x20.rows: spell 58586's TelegraphDamage 9457, 10882 and 10883 (radii 1.25, 0.9 and 0.75, flags 0x3008220) each hold 0x20 and no row is drawn without it, so all three are kept, in the order of Spell4Telegraph 25023, 27783 and 27784"
 }
 
+/// Spell4 33360's area, built over the client's rows with the edits it needs to load:
+/// a SpellLevel row (a copy of Kick's, level 1 and no prerequisite) that names it,
+/// since no level-1 ability's tree holds it, and the parameter types of its two
+/// children's damage rows 64841 and 64874 (kinds 2 and 9, which the area load
+/// refuses) read as none. Its telegraph rows 136 and 193 are the client's own.
+fn area_of_33360() -> spell_area.SpellArea {
+  let no_kind = fn(column) { #(column, Integer(0)) }
+  let assert Ok(rows) =
+    fixture_tables.add(
+      rows: fixture_tables.rows(),
+      table: "SpellLevel",
+      copy_of: 925,
+      id: 990_001,
+      with: [#("spell4Id", Integer(33_360))],
+    )
+    as "SpellLevel 925 is a row to copy"
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "Spell4Effects", id: 64_841, with: [
+      no_kind("parameterType01"),
+    ])
+    as "Spell4Effects 64841 is a row to edit"
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "Spell4Effects", id: 64_874, with: [
+      no_kind("parameterType00"),
+      no_kind("parameterType01"),
+    ])
+    as "Spell4Effects 64874 is a row to edit"
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  let assert Ok(found) =
+    spell_area.of_spell(
+      areas: spell_area.areas(tables:),
+      spell4_id: Spell4Id(33_360),
+    )
+    as "the added ability is in the areas"
+  found
+}
+
 pub fn a_client_spell_with_a_never_drawn_row_strikes_through_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert fixture_area(spell4_id: 42_276).shapes
+  assert area_of_33360().shapes
     == [
       Placement(
-        shape: Cone(inner: 5.0, outer: 29.0, degrees: 10.0),
-        ahead: -4.0,
-        aside: 0.0,
-        turn_degrees: 0.0,
-      ),
-      Placement(
-        shape: Cone(inner: 4.0, outer: 18.0, degrees: 30.0),
-        ahead: -3.0,
-        aside: 0.0,
-        turn_degrees: 0.0,
-      ),
-      Placement(
-        shape: Cone(inner: 3.0, outer: 13.0, degrees: 60.0),
-        ahead: -2.0,
+        shape: Cone(inner: 1.0, outer: 6.5, degrees: 90.0),
+        ahead: 0.0,
         aside: 0.0,
         turn_degrees: 0.0,
       ),
     ]
-    as "the never-drawn twin rows (flag 0x40) are the hit shapes: spell 42276's TelegraphDamage 3299, 3300 and 3301 (flags 0x240, shape 8, cones 5 to 29 m over 10 degrees, 4 to 18 over 30 and 3 to 13 over 60) in the order of Spell4Telegraph 6136 to 6138; its rows 212, 215 and 216 (flags 0x100620) are not drawn and are no shape"
+    as "the never-drawn twin row (flag 0x40) is the hit shape: spell 33360's TelegraphDamage 193 (flags 0x240) alone, not 136 (flags 0x80600), which is drawn and would be a shape beside it if the twin rule did not hold"
 }
 
 pub fn a_client_damage_row_with_target_flags_2_and_readable_parameters_is_read_test() -> Nil {

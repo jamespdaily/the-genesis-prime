@@ -31,3 +31,4 @@ Creature2OutfitGroupEntry	10359	second entry by id of that group, the lower outf
 Creature2DisplayGroupEntry	27751	first entry by id of a group of two, the higher display	spawn_summon_test
 Creature2DisplayGroupEntry	27762	second entry by id of that group, the lower display	spawn_summon_test
 Creature2	11467	a Granok Mercenary whose property 7 has an override row (Creature2OverrideProperties 2866)	spawn_test
+Spell4	33360	a spell with a drawn telegraph row and a never-drawn one (TelegraphDamage 136 and 193)	spell_area_test
