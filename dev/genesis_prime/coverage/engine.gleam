@@ -429,7 +429,43 @@ fn messages() -> EngineDeclaration {
       ids: sent_message.all(),
     ),
     handled: Listed(ids: handled_client_message_ids()),
-    partial: [],
+    partial: [
+      Missing(
+        type_number: 0x012B,
+        reason: "type 1, the shared-challenge preference, is not kept, so the server does not know it (#52)",
+        fact_key: "opcode.0x12b",
+      ),
+      Missing(
+        type_number: 0x0180,
+        reason: "the scanbot unit is not made, so no scanbot appears (#55)",
+        fact_key: "opcode.0x180",
+      ),
+      Missing(
+        type_number: 0x018F,
+        reason: "the trade it cancels, begun by 0x192, is not built (#58)",
+        fact_key: "opcode.0x18f",
+      ),
+      Missing(
+        type_number: 0x0269,
+        reason: "the reply 0x26A is not sent, so the CREDD tab shows no price (#58)",
+        fact_key: "opcode.0x269",
+      ),
+      Missing(
+        type_number: 0x03EC,
+        reason: "the reply 0x64C is not sent, so the player's commodity order list stays empty (#58)",
+        fact_key: "opcode.0x3ec",
+      ),
+      Missing(
+        type_number: 0x03ED,
+        reason: "the reply 0x64D is not sent, so the player's auction list stays empty (#58)",
+        fact_key: "opcode.0x3ed",
+      ),
+      Missing(
+        type_number: 0x0570,
+        reason: "the reply 0x56F is not sent, so the player's saved key bindings do not load (#60)",
+        fact_key: "opcode.0x570",
+      ),
+    ],
     unread_rows: no_unread_rows,
     unread_starting_rows: no_unread_starting_rows,
     missing: [],

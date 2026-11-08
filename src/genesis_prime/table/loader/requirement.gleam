@@ -3,6 +3,7 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/character_state
+import genesis_prime/game/dropped
 import genesis_prime/game/level
 import genesis_prime/game/start_place
 import genesis_prime/table/loader/store
@@ -18,11 +19,14 @@ import gleam/list
 /// - The CustomizationParameter row of each CustomizationParameterMap row and
 ///   the CharacterCustomizationLabel row of each label of an indexed
 ///   CharacterCustomization row (genesis_prime/game/appearance).
+/// - GameFormula row 2375, the longest window name the client sends
+///   (genesis_prime/game/dropped).
 pub fn all() -> List(store.Requirement) {
   list.flatten([
     [start_place.requirement()],
     level.requirements(),
     character_state.requirements(),
     appearance.requirements(),
+    dropped.requirements(),
   ])
 }

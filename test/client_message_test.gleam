@@ -18,15 +18,20 @@ import genesis_prime/message/choose_realm.{ChooseRealm}
 import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/client_message
+import genesis_prime/message/client_option.{ClientOption}
 import genesis_prime/message/client_wrapper.{ClientWrapper}
 import genesis_prime/message/close_notice.{CloseNotice}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
+import genesis_prime/message/credd_exchange_request.{CreddExchangeRequest}
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
+import genesis_prime/message/frame_time_report.{FrameTimeReport}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/graphics_report.{GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
+import genesis_prime/message/input_key_set_request.{InputKeySetRequest}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
@@ -35,15 +40,25 @@ import genesis_prime/message/movement_send_interval_answer.{
   MovementSendIntervalAnswer,
 }
 import genesis_prime/message/movement_time.{MovementTime}
+import genesis_prime/message/network_report.{NetworkReport}
+import genesis_prime/message/own_auctions_request.{OwnAuctionsRequest}
+import genesis_prime/message/own_commodity_orders_request.{
+  OwnCommodityOrdersRequest,
+}
 import genesis_prime/message/ping.{Ping}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/pong.{Pong}
+import genesis_prime/message/pre_game_activity.{PreGameActivity}
 import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/rename_character.{RenameCharacter}
+import genesis_prime/message/scanbot_request.{ScanbotRequest}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/trade_cancel.{TradeCancel}
+import genesis_prime/message/watchdog_report.{WatchdogReport}
+import genesis_prime/message/window_opened.{WindowOpened}
 import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/message_schema
@@ -319,6 +334,101 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         unit_id: 0x1001,
         choice: 1,
         field_3: 0,
+      )),
+    ),
+    #(
+      0x023C,
+      client_message.WatchdogReport(message: WatchdogReport(
+        field_1: 0x0123_4567_89AB_CDEF,
+        field_2: 2,
+        field_3: 3,
+        field_4: 0x3F80_0000,
+        field_5: 0x4000_0000,
+        field_6: 0x4040_0000,
+        field_7: 7,
+      )),
+    ),
+    #(
+      0x0240,
+      client_message.FrameTimeReport(message: FrameTimeReport(
+        field_1: 1,
+        field_2: 2,
+        field_3: 0x3F80_0000,
+        field_4: 0x4000_0000,
+        field_5: 0x4040_0000,
+        field_6: 0x4080_0000,
+        field_7: 7,
+      )),
+    ),
+    #(
+      0x023F,
+      client_message.NetworkReport(message: NetworkReport(
+        field_1: 1,
+        field_2: 2,
+        field_3: 3,
+        field_4: 4,
+      )),
+    ),
+    #(
+      0x023E,
+      client_message.GraphicsReport(message: GraphicsReport(
+        average_1: 0x3F80_0000,
+        average_2: 0x4000_0000,
+        average_3: 0x4040_0000,
+        average_4: 0x4080_0000,
+        raw_1: 0x40A0_0000,
+        raw_2: 0x40C0_0000,
+        raw_3: 0x40E0_0000,
+        raw_4: 0x4100_0000,
+      )),
+    ),
+    #(
+      0x023D,
+      client_message.WindowOpened(
+        message: WindowOpened(
+          field_1: 35,
+          window_id: 1000,
+          character_id: 0x0123,
+          field_4: 1,
+          open_time: 5,
+          field_6: 2,
+          field_7: 3,
+          field_8: 4,
+          window_name: [0x41, 0x42],
+        ),
+      ),
+    ),
+    #(0x0241, client_message.PreGameActivity(message: PreGameActivity)),
+    #(
+      0x012B,
+      client_message.ClientOption(message: ClientOption(
+        option_type: 1,
+        value: 1,
+      )),
+    ),
+    #(
+      0x0180,
+      client_message.ScanbotRequest(message: ScanbotRequest(
+        profile: 0x1234,
+        from_command: 1,
+      )),
+    ),
+    #(0x03ED, client_message.OwnAuctionsRequest(message: OwnAuctionsRequest)),
+    #(
+      0x03EC,
+      client_message.OwnCommodityOrdersRequest(
+        message: OwnCommodityOrdersRequest,
+      ),
+    ),
+    #(
+      0x0269,
+      client_message.CreddExchangeRequest(message: CreddExchangeRequest),
+    ),
+    #(0x018F, client_message.TradeCancel(message: TradeCancel)),
+    #(
+      0x0570,
+      client_message.InputKeySetRequest(message: InputKeySetRequest(
+        key_set_id: 0x0123_4567_89AB,
       )),
     ),
   ]

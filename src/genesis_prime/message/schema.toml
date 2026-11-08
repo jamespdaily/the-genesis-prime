@@ -2437,3 +2437,155 @@ fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.type24", named_by = "opcode.0x247.type24" },
   { name = "exiting", kind = "unsigned", bits = 1, evidence = "opcode.0x247.type24", named_by = "opcode.0x247.type24" },
 ]
+
+[[message]]
+id = 0x023C
+name = "watchdog_report"
+direction = "client_to_server"
+evidence = "opcode.0x23c.body"
+summary = "the client's report to the world server of its own integrity watchdog (telemetry): two 64-bit values, a 32-bit signed integer, three floats and a 32-bit value; nothing the player sees depends on it"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 64, evidence = "opcode.0x23c.body" },
+  { name = "field_2", kind = "unsigned", bits = 64, evidence = "opcode.0x23c.body" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x23c.body" },
+  { name = "field_4", kind = "float32", evidence = "opcode.0x23c.body" },
+  { name = "field_5", kind = "float32", evidence = "opcode.0x23c.body" },
+  { name = "field_6", kind = "float32", evidence = "opcode.0x23c.body" },
+  { name = "field_7", kind = "unsigned", bits = 32, evidence = "opcode.0x23c.body" },
+]
+
+[[message]]
+id = 0x0240
+name = "frame_time_report"
+direction = "client_to_server"
+evidence = "opcode.0x240.body"
+summary = "the client's report to the world server of its frame timing (telemetry): two 32-bit values, four floats and a 32-bit value; nothing the player sees depends on it"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body" },
+  { name = "field_3", kind = "float32", evidence = "opcode.0x240.body" },
+  { name = "field_4", kind = "float32", evidence = "opcode.0x240.body" },
+  { name = "field_5", kind = "float32", evidence = "opcode.0x240.body" },
+  { name = "field_6", kind = "float32", evidence = "opcode.0x240.body" },
+  { name = "field_7", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body" },
+]
+
+[[message]]
+id = 0x023F
+name = "network_report"
+direction = "client_to_server"
+evidence = "opcode.0x23f.body"
+summary = "the client's report to the world server of its network statistics (telemetry): four 32-bit values; nothing the player sees depends on it"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body" },
+]
+
+[[message]]
+id = 0x023E
+name = "graphics_report"
+direction = "client_to_server"
+evidence = "opcode.0x23e"
+summary = "the client's graphics statistics (telemetry): four averaged frame values then four raw values, sent about once per eight frames while the world is shown"
+fields = [
+  { name = "average_1", kind = "float32", evidence = "opcode.0x23e", named_by = "opcode.0x23e" },
+  { name = "average_2", kind = "float32", evidence = "opcode.0x23e", named_by = "opcode.0x23e" },
+  { name = "average_3", kind = "float32", evidence = "opcode.0x23e", named_by = "opcode.0x23e" },
+  { name = "average_4", kind = "float32", evidence = "opcode.0x23e", named_by = "opcode.0x23e" },
+  { name = "raw_1", kind = "float32", evidence = "opcode.0x23e", named_by = "opcode.0x23e" },
+  { name = "raw_2", kind = "float32", evidence = "opcode.0x23e", named_by = "opcode.0x23e" },
+  { name = "raw_3", kind = "float32", evidence = "opcode.0x23e", named_by = "opcode.0x23e" },
+  { name = "raw_4", kind = "float32", evidence = "opcode.0x23e", named_by = "opcode.0x23e" },
+]
+
+[[message]]
+id = 0x023D
+name = "window_opened"
+direction = "client_to_server"
+evidence = "opcode.0x23d"
+summary = "the client says a UI window was opened (telemetry): the window id, the character id, the time it was open, three more 64-bit values and the window name; nothing the player sees depends on it"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 6, evidence = "opcode.0x23d" },
+  { name = "window_id", kind = "unsigned", bits = 10, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+  { name = "field_4", kind = "unsigned", bits = 64, evidence = "opcode.0x23d" },
+  { name = "open_time", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+  { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0x23d" },
+  { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0x23d" },
+  { name = "field_8", kind = "unsigned", bits = 64, evidence = "opcode.0x23d" },
+  { name = "window_name", kind = "wide_units", evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+]
+
+[[message]]
+id = 0x0241
+name = "pre_game_activity"
+direction = "client_to_server"
+evidence = "opcode.0x241"
+summary = "the client's activity signal on its realm-select or character-select connection, with an empty body, sent once 60 seconds have passed and the player has used the keyboard or mouse in the last 60 seconds"
+fields = []
+
+[[message]]
+id = 0x012B
+name = "client_option"
+direction = "client_to_server"
+evidence = "opcode.0x12b"
+summary = "a client option: the option's type (0 the player's input flags, 1 the shared-challenge preference) and its value"
+fields = [
+  { name = "option_type", kind = "unsigned", bits = 32, evidence = "opcode.0x12b", named_by = "opcode.0x12b" },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x12b", named_by = "opcode.0x12b" },
+]
+
+[[message]]
+id = 0x0180
+name = "scanbot_request"
+direction = "client_to_server"
+evidence = "opcode.0x180"
+summary = "the Scientist path asks for a scanbot: the scanbot profile (a spell id) and whether the request comes from the game command rather than the path's button"
+fields = [
+  { name = "profile", kind = "unsigned", bits = 32, evidence = "opcode.0x180", named_by = "opcode.0x180" },
+  { name = "from_command", kind = "unsigned", bits = 1, evidence = "opcode.0x180", named_by = "opcode.0x180" },
+]
+
+[[message]]
+id = 0x03ED
+name = "own_auctions_request"
+direction = "client_to_server"
+evidence = "opcode.0x3ed"
+summary = "the client asks for the player's own auction list, with an empty body"
+fields = []
+
+[[message]]
+id = 0x03EC
+name = "own_commodity_orders_request"
+direction = "client_to_server"
+evidence = "opcode.0x3ec"
+summary = "the client asks for the player's own commodity orders, with an empty body"
+fields = []
+
+[[message]]
+id = 0x0269
+name = "credd_exchange_request"
+direction = "client_to_server"
+evidence = "opcode.0x269"
+summary = "the client asks for the CREDD exchange price, with an empty body"
+fields = []
+
+[[message]]
+id = 0x018F
+name = "trade_cancel"
+direction = "client_to_server"
+evidence = "opcode.0x18f"
+summary = "the client cancels the trade it began, with an empty body"
+fields = []
+
+[[message]]
+id = 0x0570
+name = "input_key_set_request"
+direction = "client_to_server"
+evidence = "opcode.0x570"
+summary = "the client asks for an input key set, the player's key bindings: the key set id, 0 for the account default set"
+fields = [
+  { name = "key_set_id", kind = "unsigned", bits = 64, evidence = "opcode.0x570", named_by = "opcode.0x570" },
+]

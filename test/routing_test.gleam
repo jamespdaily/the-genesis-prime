@@ -6,6 +6,11 @@
 ////   the world (opcode.0x38c; the movement and camp modules' doc comments), and
 ////   0x058F, 0x07E0, 0x07DD, 0x025C, 0x0352, 0x0786 and 0x038C the ones it
 ////   sends in its wrapper (the game connection's module doc).
+//// - The reports and window requests (`genesis_prime/game/dropped`): the twelve
+////   the client sends through SendWorldMessage, so inside 0x038C with the player
+////   in the world (`world_sender` of the coverage measure, fact 0x1403f4900), and
+////   0x0241, which it sends on its own from character select
+////   (`opcode.0x241`), and which is read in the world too.
 //// - The rule that a message with no row is unhandled: the building-an-engine
 ////   skill ("Nothing is dropped silently") and the game connection's tests of
 ////   the log (`an_unhandled_message_id_is_a_warning_the_first_time_on_a_connection_and_a_debug_line_after_test`).
@@ -15,6 +20,7 @@ import code_rule/syntax
 import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/character_select
+import genesis_prime/game/dropped
 import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
 import genesis_prime/game/routing.{
@@ -98,9 +104,10 @@ pub fn the_messages_in_the_clients_wrapper_are_rows_with_the_stages_that_take_th
 
 pub fn a_message_with_no_row_is_taken_at_no_stage_either_way_test() -> Nil {
   use <- owned_test.run(5000)
-  // 0x0635 is the client's echo of 0x0636, and 0x0241 and 0x082D are messages
-  // the game connection's tests log as unhandled.
-  list.each([0x0635, 0x0241, 0x082D], fn(id) {
+  // 0x0635 is the client's echo of 0x0636, 0x082D and 0x07CC are messages the
+  // game connection's tests log as unhandled, and 0x0360 is the quest the
+  // client mentions, which a later step takes (a quest's state must be kept).
+  list.each([0x0635, 0x07CC, 0x082D, 0x0360], fn(id) {
     list.each(stages, fn(stage) {
       assert routing.route(stage, OnItsOwn, id) == Error(Nil)
       assert routing.route(stage, InsideWorldMessage, id) == Error(Nil)
@@ -125,6 +132,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
     "src/genesis_prime/game/connection.gleam",
     "src/genesis_prime/game/connection/casting.gleam",
     "src/genesis_prime/game/connection/chat.gleam",
+    "src/genesis_prime/game/connection/dropped.gleam",
     "src/genesis_prime/game/connection/effects.gleam",
     "src/genesis_prime/game/connection/frames.gleam",
     "src/genesis_prime/game/connection/life.gleam",
@@ -187,4 +195,51 @@ pub fn the_innate_choice_is_a_row_taken_inside_0x038c_with_the_player_in_the_wor
     as "it is not taken in character select"
   assert routing.route(AtWorld, OnItsOwn, 0x016F) == Error(Nil)
     as "it is not taken outside 0x038C"
+}
+
+const dropped_world_rows = [
+  #(0x023C, dropped.WatchdogReport),
+  #(0x0240, dropped.FrameTimeReport),
+  #(0x023F, dropped.NetworkReport),
+  #(0x023E, dropped.GraphicsReport),
+  #(0x023D, dropped.WindowOpened),
+  #(0x012B, dropped.ClientOption),
+  #(0x0180, dropped.ScanbotRequest),
+  #(0x03ED, dropped.OwnAuctionsRequest),
+  #(0x03EC, dropped.OwnCommodityOrdersRequest),
+  #(0x0269, dropped.CreddExchangeRequest),
+  #(0x018F, dropped.TradeCancel),
+  #(0x0570, dropped.InputKeySetRequest),
+]
+
+pub fn each_report_and_window_request_is_taken_at_its_stages_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(dropped_world_rows, fn(row) {
+    let #(id, message) = row
+    let label = "0x" <> int.to_base16(id)
+    assert routing.route(AtWorld, InsideWorldMessage, id)
+      == Ok(routing.Dropped(message:))
+      as { label <> " is a dropped row inside 0x038C in the world" }
+    assert routing.route(AtCharacterSelect, InsideWorldMessage, id)
+      == Error(Nil)
+      as { label <> " is not taken in character select" }
+    assert routing.route(BeforeHelloReply, InsideWorldMessage, id) == Error(Nil)
+      as { label <> " is not taken before the hello reply" }
+    list.each(stages, fn(stage) {
+      assert routing.route(stage, OnItsOwn, id) == Error(Nil)
+        as { label <> " is not taken outside 0x038C" }
+    })
+  })
+  assert routing.route(AtCharacterSelect, OnItsOwn, 0x0241)
+    == Ok(routing.Dropped(message: dropped.PreGameActivity))
+    as "0x0241 is taken on its own in character select (opcode.0x241)"
+  assert routing.route(AtWorld, OnItsOwn, 0x0241)
+    == Ok(routing.Dropped(message: dropped.PreGameActivity))
+    as "and in the world, where a 0x0241 read during the store's ask is taken once it is answered"
+  assert routing.route(BeforeHelloReply, OnItsOwn, 0x0241) == Error(Nil)
+    as "not before the hello reply"
+  list.each(stages, fn(stage) {
+    assert routing.route(stage, InsideWorldMessage, 0x0241) == Error(Nil)
+      as "0x0241 inside 0x038C is not what the client sends"
+  })
 }
