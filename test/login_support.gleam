@@ -149,6 +149,7 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     pool:,
     store: process.new_name("store"),
     hand_off: process.new_name("hand_off"),
+    tree_restarts: server.Restarts(intensity: 3, period_s: 10),
     hand_off_shutdown_ms: 1500,
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 1500,
