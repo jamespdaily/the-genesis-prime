@@ -32,8 +32,13 @@
 ////   `0x140b6e0a0`).
 //// - A go of an area spell strikes at most Spell4AoeTargetConstraints.targetCount units of
 ////   those in its range (`Spell4AoeTargetConstraints.targetCount`).
-//// - A cast of a spell of a stack group at the cap takes the group's oldest hold off the
-////   unit (`Spell4StackGroup.stackCap`).
+//// - A spell of a stack group of a cap of 1 or more is held at most that many times
+////   (`Spell4StackGroup.stackCap`); the client reads a stack group only at load and in
+////   tooltips, so which hold the rule takes off at the cap (the oldest, `lasting.pushed_off`)
+////   is the server's rule, which the test reports and takes for no client fact.
+//// - A cost of a type 5 to 11 is paid from the resource slot that type less 5, and any other
+////   type from a slot of the player class that names that vital (`0x1403b3320`,
+////   `0x1405e7980`).
 ////
 //// A token the rule differs from, or whose outcome the test cannot read, is a gap of the
 //// test that names the open issue whose planned work closes it; a listed gap that the rule
@@ -55,12 +60,14 @@ import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/message/spell_go
 import genesis_prime/step.{ConnectionId}
+import genesis_prime/table/class
 import genesis_prime/table/id.{
-  Spell4AoeTargetConstraintsId, Spell4BaseId, Spell4EffectsId, Spell4Id,
+  ClassId, Spell4AoeTargetConstraintsId, Spell4BaseId, Spell4EffectsId, Spell4Id,
   Spell4StackGroupId,
 }
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import genesis_prime/table/spell4_stack_group
 import genesis_prime/tooltip_token
@@ -73,6 +80,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/order
 import gleam/result
 import gleam/string
 import map_support
@@ -82,11 +90,11 @@ import planted_table
 import properties_support
 import spell_tables
 import tooltip_oracle_support.{
-  type Asked, type Drive, type Outcome, type Rows, type Unread, Asked, Compared,
-  Differs, Gap, HeldAs, HeldControl, HeldElsewhere, HeldModifier, LeftOut,
-  ModifierChanges, NeverApplied, NeverStruck, NoAreaRow, NoPayment, NoRow,
-  NoRuleValue, NotInPlan, OutsideTheTypes, Refused, Rows, SlotGainsDiffer,
-  Unobserved, Verdict,
+  type Asked, type Difference, type Drive, type Outcome, type Rows, type Unread,
+  Asked, ClassMechanicSlot, Compared, Differs, Gap, HeldAs, HeldControl,
+  HeldElsewhere, HeldModifier, LeftOut, ModifierChanges, NeverApplied,
+  NeverStruck, NoAreaRow, NoHold, NoPayment, NoRow, NoRuleValue, NotInPlan,
+  OutsideTheTypes, Refused, Rows, SlotGainsDiffer, Unobserved, Verdict,
 } as oracle
 
 // ------------------------------------------------------------------- the rows read
@@ -345,6 +353,14 @@ fn gains_in(drive driven: Drive) -> List(class_resource.Gain) {
   })
 }
 
+/// What the drive gained into the slot, all its gains added, or nothing when it gained none.
+fn gained_into(slot slot: Int, drive driven: Drive) -> Result(Int, Nil) {
+  case list.filter(gains_in(drive: driven), fn(gain) { gain.slot == slot }) {
+    [] -> Error(Nil)
+    made -> Ok(int.sum(list.map(made, fn(gain) { gain.amount })))
+  }
+}
+
 /// What a type 1 token prints against what the drive's gains of the row's slot make. A slot
 /// is gained the amounts of all the rows that gain into it, so when the texts of the ability
 /// name several of those rows by the same column, the printed amounts are summed.
@@ -365,16 +381,7 @@ fn gain_outcome(
         got: {
           use drives <- result.try(whole_drives(rows:, entry:))
           let totals =
-            list.filter_map(drives, fn(driven) {
-              case
-                list.filter(gains_in(drive: driven), fn(gain) {
-                  gain.slot == slot
-                })
-              {
-                [] -> Error(Nil)
-                made -> Ok(int.sum(list.map(made, fn(gain) { gain.amount })))
-              }
-            })
+            list.filter_map(drives, gained_into(slot:, drive: _))
             |> list.unique
           case totals {
             [] -> Error(NeverApplied)
@@ -592,15 +599,15 @@ fn unplanned_property(
   expected expected: Result(Int, Unread),
   index index: Result(Int, Unread),
 ) -> Outcome {
-  case entry.base == stealth_base {
-    True ->
-      outcome(entry:, expected:, got: {
-        use index <- result.try(index)
-        use effects <- result.try(leaving_stealth(rows:))
-        bits_started(effects:, entry:, index:)
-      })
-    False -> Unobserved(asked: entry, why: NotInPlan)
-  }
+  use <- bool.guard(
+    when: entry.base != stealth_base,
+    return: Unobserved(asked: entry, why: NotInPlan),
+  )
+  outcome(entry:, expected:, got: {
+    use index <- result.try(index)
+    use effects <- result.try(leaving_stealth(rows:))
+    bits_started(effects:, entry:, index:)
+  })
 }
 
 /// The effects of the passive's start and of the two presses of the stealth ability, as the
@@ -1016,107 +1023,176 @@ fn target_cap_outcomes(
 
 // ------------------------------------------------------------- stacks and payments
 
-/// The spells of the planned abilities' trees that sit in a stack group of a cap, each
-/// with the ability it is of, once.
-fn stacked_spells(rows rows: Rows) -> List(#(Int, Spell)) {
+/// A spell of a planned ability's tree that the rows put in a stack group of a cap of 1 or
+/// more: the ability it is of, the spell as the plan holds it, and the group and cap of its
+/// Spell4 and Spell4StackGroup rows (`Spell4.spell4StackGroupId`, `Spell4StackGroup.stackCap`).
+type Stacked {
+  Stacked(base: Int, spell: Spell, group_id: Int, cap: Int, cast_time_ms: Int)
+}
+
+/// The spells of the planned abilities' trees whose rows are in a stack group of a cap of 1 or
+/// more, once each. The plan's own stack is not read: a spell the plan gives no cap is chosen
+/// the same, and the rule is read for it.
+fn stacked_spells(rows rows: Rows) -> List(Stacked) {
   list.flat_map(oracle.planned(rows:), fn(root) {
     spell_plan.tree(spell: root, started: fn(_) { True })
-    |> list.map(fn(spell) { #(root.spell4_base_id.value, spell) })
+    |> list.filter_map(fn(spell) {
+      use record <- result.try(
+        spell4.get(tables: rows.tables, id: spell.spell4_id)
+        |> result.replace_error(Nil),
+      )
+      use group <- result.try(
+        spell4_stack_group.get(
+          tables: rows.tables,
+          id: Spell4StackGroupId(record.spell4_stack_group_id),
+        )
+        |> result.replace_error(Nil),
+      )
+      case group.stack_cap >= 1 {
+        True ->
+          Ok(Stacked(
+            base: root.spell4_base_id.value,
+            spell:,
+            group_id: group.id,
+            cap: group.stack_cap,
+            cast_time_ms: record.cast_time,
+          ))
+        False -> Error(Nil)
+      }
+    })
   })
-  |> list.filter(fn(entry) { { entry.1 }.stack.cap >= 1 })
   |> list.unique
 }
 
-/// The `sc` tokens the stack groups of the planned abilities' spells would print: no text of
-/// the planned abilities holds one, so each is the token the client's evaluator forms for the
-/// spell (`0x1404df2c0`).
-fn stack_tokens(rows rows: Rows) -> List(#(Asked, Spell)) {
-  list.map(stacked_spells(rows:), fn(entry) {
+/// The `sc` token the stack group of the spell would print: no text of the planned
+/// abilities holds one, so it is the token the client's evaluator forms for the spell
+/// (`0x1404df2c0`).
+fn stack_token(stacked stacked: Stacked) -> Asked {
+  Asked(
+    base: stacked.base,
+    text_id: 0,
+    token: tooltip_token.Token(
+      kind: tooltip_token.Spell,
+      id: stacked.spell.spell4_id.value,
+      field: "sc",
+    ),
+  )
+}
+
+/// The time between two presses of a spell: longer than the longest cooldown of the planned
+/// spells (Spell4.spellCoolDown, 60 s), so no press is refused for one. The rule ends a node
+/// only when its timer fires, and the test fires none past a press's go.
+const between_presses_ms = 120_000
+
+/// What a unit holds of a stack group after a spell's presses: the holds and whether the
+/// oldest of those it held before the last press remains.
+type Kept {
+  Kept(holds: Int, oldest_kept: Bool)
+}
+
+/// The holds of the group (or of the spell) the caster has on itself.
+fn group_holds(
+  state state: cast.State,
+  caster caster: cast.Caster,
+  stacked stacked: Stacked,
+) -> List(lasting.Hold) {
+  cast.holds_on(cast: state, unit_id: caster.unit_id)
+  |> list.filter(fn(hold: lasting.Hold) {
+    hold.stack.group_id == stacked.group_id
+    || hold.spell4_id == stacked.spell.spell4_id
+  })
+}
+
+/// The caster pressing the spell cap plus one times, each press at its time, its go taken and
+/// the timers up to the end of its cast time fired: what the caster holds then, and whether
+/// the oldest hold it had before the last press is still among them.
+fn kept_after_the_cap_and_one(
+  rows rows: Rows,
+  stacked stacked: Stacked,
+) -> Result(Kept, Unread) {
+  let caster = oracle.caster_of(base: stacked.spell.spell4_base_id.value)
+  let plans = support.with_spells(plans: rows.plans, spells: [stacked.spell])
+  use #(_, before_last, held) <- result.try(
+    list.try_fold(
+      numbers(count: stacked.cap + 1),
+      #(cast.new(), [], []),
+      fn(so_far, number) {
+        let at_ms = number * between_presses_ms
+        use #(state, pressed) <- result.try(
+          oracle.pressed_at(
+            caster:,
+            plans:,
+            state: so_far.0,
+            at_ms:,
+            strikes: oracle.striking_none,
+            poses: dict.new(),
+          )
+          |> result.map_error(fn(results) { Refused(results:) }),
+        )
+        let #(state, _) =
+          support.run_timers_posed(
+            caster:,
+            state:,
+            effects: pressed.effects,
+            from_ms: at_ms,
+            struck_at: oracle.striking_none,
+            poses: dict.new(),
+            until_ms: Some(at_ms + stacked.cast_time_ms),
+          )
+        Ok(#(state, so_far.2, group_holds(state:, caster:, stacked:)))
+      },
+    ),
+  )
+  case
+    list.sort(before_last, fn(a: lasting.Hold, b: lasting.Hold) {
+      int.compare(a.started_ms, b.started_ms)
+      |> order.break_tie(int.compare(a.cast_id, b.cast_id))
+    })
+  {
+    [] -> Error(NoHold)
+    [oldest, ..] ->
+      Ok(Kept(
+        holds: list.length(held),
+        oldest_kept: list.any(held, fn(hold) { hold.cast_id == oldest.cast_id }),
+      ))
+  }
+}
+
+/// The `sc` tokens of the stacked spells, each with what the caster holds after the cap plus
+/// one presses of the spell.
+fn stack_kept(
+  rows rows: Rows,
+) -> List(#(Asked, Stacked, Result(Kept, Unread))) {
+  list.map(stacked_spells(rows:), fn(stacked) {
     #(
-      Asked(
-        base: entry.0,
-        text_id: 0,
-        token: tooltip_token.Token(
-          kind: tooltip_token.Spell,
-          id: { entry.1 }.spell4_id.value,
-          field: "sc",
-        ),
-      ),
-      entry.1,
+      stack_token(stacked:),
+      stacked,
+      kept_after_the_cap_and_one(rows:, stacked:),
     )
   })
 }
 
-/// The holds one unit keeps after the spell is cast `count` times in a row, each cast
-/// taking off the holds the rule pushes off (`lasting.pushed_off`).
-fn holds_after(spell spell: Spell, count count: Int) -> Int {
-  let unit_id = 20
-  let held =
-    list.fold(numbers(count:), [], fn(holds, number) {
-      let pushed =
-        lasting.pushed_off(
-          holds:,
-          spell4_id: spell.spell4_id,
-          stack: spell.stack,
-          unit_id:,
-        )
-      let kept =
-        list.filter(holds, fn(hold: lasting.Hold) {
-          !list.contains(
-            pushed,
-            lasting.NodeOff(cast_id: hold.cast_id, unit_id:),
-          )
-        })
-      list.append(kept, [
-        lasting.Hold(
-          cast_id: number,
-          spell4_id: spell.spell4_id,
-          base: spell.spell4_base_id,
-          groups: spell.groups,
-          stack: spell.stack,
-          started_ms: number,
-          node: lasting.Node(
-            unit_id:,
-            count: 1,
-            life: lasting.NoLife,
-            effects: [],
-            armed_ms: 0,
-            held_until_ms: None,
-          ),
-        ),
-      ])
-    })
-  list.length(held)
-}
-
-/// What an `sc` token prints against the holds a unit keeps after the cap plus one casts.
-fn stack_outcome(
-  rows rows: Rows,
-  entry entry: Asked,
-  spell spell: Spell,
-) -> Outcome {
-  let printed = {
-    use record <- result.try(
-      spell4.get(tables: rows.tables, id: spell.spell4_id)
-      |> result.replace_error(NoRow),
-    )
-    spell4_stack_group.get(
-      tables: rows.tables,
-      id: Spell4StackGroupId(record.spell4_stack_group_id),
-    )
-    |> result.replace_error(NoRow)
-    |> result.map(fn(group) { group.stack_cap })
-  }
-  let held = case printed {
-    Ok(cap) -> Ok(holds_after(spell:, count: cap + 1))
-    Error(why) -> Error(why)
-  }
-  outcome(entry:, expected: printed, got: held)
-}
-
+/// What an `sc` token prints (the cap of the spell's stack group row) against the holds the
+/// caster keeps after the cap plus one presses.
 fn stack_outcomes(rows rows: Rows) -> List(Outcome) {
-  list.map(stack_tokens(rows:), fn(entry) {
-    stack_outcome(rows:, entry: entry.0, spell: entry.1)
+  list.map(stack_kept(rows:), fn(entry) {
+    let #(asked, stacked, kept) = entry
+    outcome(
+      entry: asked,
+      expected: Ok(stacked.cap),
+      got: result.map(kept, fn(kept) { kept.holds }),
+    )
+  })
+}
+
+/// The `sc` tokens of the spells whose oldest hold before the last press the caster still has
+/// after it: the rule takes the oldest off (the server's rule, `lasting.pushed_off`).
+fn stacks_that_kept_the_oldest(rows rows: Rows) -> List(Asked) {
+  list.filter_map(stack_kept(rows:), fn(entry) {
+    case entry.2 {
+      Ok(Kept(oldest_kept: True, ..)) -> Ok(entry.0)
+      Ok(Kept(oldest_kept: False, ..)) | Error(_) -> Error(Nil)
+    }
   })
 }
 
@@ -1170,35 +1246,114 @@ fn payments_of(
   })
 }
 
+/// The resource slots the client's cost check reads for a cost type of an ability: the types
+/// 5 to 11 are the caster's resource slots 0 to 6 (`CheckInnateCost`, `0x1403b3320`); any other
+/// type goes to the class mechanic, which passes at the first of the player class's slots that
+/// name that vital (`Class.vitalEnumResource00` to `07`) whose value can pay it, so every such
+/// slot may be the one paid (`CheckClassResourceCost`, `0x1405e7980`).
+fn client_slots_of(
+  rows rows: Rows,
+  base base: Int,
+  cost_type cost_type: Int,
+) -> Result(List(Int), Unread) {
+  use <- bool.guard(
+    when: cost_type >= 5 && cost_type <= 11,
+    return: Ok([cost_type - 5]),
+  )
+  let assert Ok(base_row) =
+    spell4_base.get(tables: rows.tables, id: Spell4BaseId(base))
+    as "a planned ability has a Spell4Base row"
+  let assert Ok(class_row) =
+    class.get(tables: rows.tables, id: ClassId(base_row.class_id_player))
+    as "an ability's player class has a Class row"
+  let slots =
+    [
+      class_row.vital_enum_resource00,
+      class_row.vital_enum_resource01,
+      class_row.vital_enum_resource02,
+      class_row.vital_enum_resource03,
+      class_row.vital_enum_resource04,
+      class_row.vital_enum_resource05,
+      class_row.vital_enum_resource06,
+      class_row.vital_enum_resource07,
+    ]
+    |> list.index_map(fn(vital, slot) { #(slot, vital) })
+    |> list.filter(fn(pair) { pair.1 == cost_type })
+    |> list.map(fn(pair) { pair.0 })
+  case slots {
+    [] -> Error(ClassMechanicSlot(cost_type:))
+    slots -> Ok(slots)
+  }
+}
+
+/// The slot the press pays from against the slots the client's check may read: the paid slot
+/// is the expected one when the client may read it, else the first slot it reads is.
+fn slot_outcome(
+  entry entry: Asked,
+  slots slots: Result(List(Int), Unread),
+  got got: Result(Int, Unread),
+) -> Outcome {
+  let expected =
+    result.map(slots, fn(slots) {
+      // No slot is -1, so a press that pays nothing is read from none of the slots.
+      let paid = result.unwrap(got, -1)
+      use <- bool.guard(when: list.contains(slots, paid), return: paid)
+      result.unwrap(list.first(slots), -1)
+    })
+  outcome(entry:, expected:, got:)
+}
+
 /// The `cost0` and `cost1` tokens the planned abilities' spells would print: no text of
 /// the planned abilities holds one, so each is the token the client's evaluator forms for
-/// the spell's innate cost (`0x1404df2c0`).
+/// the spell's innate cost (`0x1404df2c0`). Each cost is compared twice: the amount the token
+/// prints with the amount the press pays, and (under the field `cost0slot` or `cost1slot`,
+/// which is no token of the client's but names this comparison) the resource slot the client's
+/// check reads for the cost's type with the slot the press pays from.
 fn cost_outcomes(rows rows: Rows) -> List(Outcome) {
   list.flat_map(oracle.planned(rows:), fn(root) {
     let assert Ok(record) = spell4.get(tables: rows.tables, id: root.spell4_id)
       as "a planned ability has a Spell4 row"
-    [#("cost0", 0, record.innate_cost0), #("cost1", 1, record.innate_cost1)]
+    [
+      #("cost0", 0, record.innate_cost0, record.innate_cost_type0),
+      #("cost1", 1, record.innate_cost1, record.innate_cost_type1),
+    ]
     |> list.filter(fn(place) { place.2 > 0 })
-    |> list.map(fn(place) {
-      let entry =
+    |> list.flat_map(fn(place) {
+      let entry = fn(field) {
         Asked(
           base: root.spell4_base_id.value,
           text_id: 0,
           token: tooltip_token.Token(
             kind: tooltip_token.Spell,
             id: root.spell4_id.value,
-            field: place.0,
+            field:,
           ),
         )
+      }
       let paid =
         payments_of(rows:, base: root.spell4_base_id.value, amount: place.2)
         |> result.try(fn(payments) {
           case list.drop(payments, place.1) {
-            [payment, ..] -> Ok(payment.amount)
+            [payment, ..] -> Ok(payment)
             [] -> Error(NoPayment)
           }
         })
-      outcome(entry:, expected: Ok(place.2), got: paid)
+      [
+        outcome(
+          entry: entry(place.0),
+          expected: Ok(place.2),
+          got: result.map(paid, fn(payment) { payment.amount }),
+        ),
+        slot_outcome(
+          entry: entry(place.0 <> "slot"),
+          slots: client_slots_of(
+            rows:,
+            base: root.spell4_base_id.value,
+            cost_type: place.3,
+          ),
+          got: result.map(paid, fn(payment) { payment.slot }),
+        ),
+      ]
     })
   })
 }
@@ -1318,19 +1473,168 @@ pub fn every_sc_and_cost_token_matches_the_stack_count_after_cap_plus_one_casts_
   use <- owned_test.run(60_000)
   let rows = effect_rows()
   let stacks = stack_outcomes(rows:)
-  assert oracle.verdict(
-      differences: oracle.differences(outcomes: stacks),
-      gaps: [],
-    )
-    == Verdict(unlisted: [], stale: [])
-  assert oracle.compared_count(outcomes: stacks) == 35
+  let differences = oracle.differences(outcomes: stacks)
+  assert list.filter(differences, is_differs) == []
+  assert stacks_that_kept_the_oldest(rows:) == []
+  assert oracle.compared_count(outcomes: stacks) == 22
+  // The spells the drive reads nothing for: twelve whose cast leaves no hold of their group on
+  // the caster (some hold another spell's, such as 41869's, which holds 77116's casts of group
+  // 1770), and Spell Surge 47273, whose press the plain caster is refused 151 for (Prerequisite
+  // 29484 wants 25 Spell Power).
+  assert list.filter_map(differences, left_out_of)
+    == [
+      #(
+        "spell=53865.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=87353.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=30900.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=41869.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=70775.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=38791.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=79229.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=41276.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=60724.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=60868.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #("spell=47273.sc", "the press is refused 151"),
+      #(
+        "spell=79697.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=60796.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+    ]
   let costs = cost_outcomes(rows:)
   assert oracle.verdict(
       differences: oracle.differences(outcomes: costs),
       gaps: [],
     )
     == Verdict(unlisted: [], stale: [])
-  assert oracle.compared_count(outcomes: costs) == 4
+  assert oracle.compared_count(outcomes: costs) == 8
+    as "the four costs of the planned abilities, each by its amount and its slot"
+}
+
+fn is_differs(difference: Difference) -> Bool {
+  case difference {
+    Differs(..) -> True
+    LeftOut(..) -> False
+  }
+}
+
+fn left_out_of(difference: Difference) -> Result(#(String, String), Nil) {
+  case difference {
+    Differs(..) -> Error(Nil)
+    LeftOut(token:, why:, ..) -> Ok(#(token, why))
+  }
+}
+
+pub fn a_stack_group_the_plan_gives_no_cap_is_reported_when_its_row_gives_one_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4StackGroup 2 holds a cap of 0 in the committed rows and the plans are built from
+  // them, so the rule keeps one cast of each spell of the group. The edit gives the group's row
+  // a cap of 4 that the plans do not have: spell 60947 of ability 18309 (Spell4StackGroupId 2)
+  // holds a node on its caster, so the tooltip would print 4 stacks of a spell the rule keeps
+  // 1 of.
+  let differing =
+    fixture_tables.changed(
+      table: "Spell4StackGroup",
+      id: 2,
+      with: [#("stackCap", planted_table.Integer(4))],
+      body: fn(tables) {
+        let rows =
+          Rows(tables:, plans: spell_tables.plans_with_server_proxies())
+        oracle.differences(outcomes: stack_outcomes(rows:))
+      },
+    )
+  assert list.contains(
+    differing,
+    Differs(
+      ability: 18_309,
+      text_id: 0,
+      token: "spell=60947.sc",
+      expected: 4,
+      got: 1,
+    ),
+  )
+}
+
+pub fn a_cost_type_edited_on_the_heap_is_reported_by_the_slot_the_press_pays_from_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = effect_rows()
+  // The first planned ability whose first cost is of a type the client reads as a fixed
+  // resource slot (5 to 11). The edit gives the row the next type, which the client reads as
+  // the next slot, while the plans built from the unchanged rows still pay from the old one.
+  let assert Ok(#(root, record)) =
+    list.find_map(oracle.planned(rows:), fn(root) {
+      let assert Ok(record) =
+        spell4.get(tables: rows.tables, id: root.spell4_id)
+        as "a planned ability has a Spell4 row"
+      case
+        record.innate_cost0 > 0
+        && record.innate_cost_type0 >= 5
+        && record.innate_cost_type0 <= 10
+      {
+        True -> Ok(#(root, record))
+        False -> Error(Nil)
+      }
+    })
+    as "a planned ability pays its first cost from a fixed resource slot"
+  let differing =
+    fixture_tables.changed(
+      table: "Spell4",
+      id: root.spell4_id.value,
+      with: [
+        #(
+          "innateCostType0",
+          planted_table.Integer(record.innate_cost_type0 + 1),
+        ),
+      ],
+      body: fn(tables) {
+        let rows =
+          Rows(tables:, plans: spell_tables.plans_with_server_proxies())
+        oracle.differences(outcomes: cost_outcomes(rows:))
+        |> list.filter(is_differs)
+      },
+    )
+  assert differing
+    == [
+      Differs(
+        ability: root.spell4_base_id.value,
+        text_id: 0,
+        token: "spell=" <> int.to_string(root.spell4_id.value) <> ".cost0slot",
+        expected: record.innate_cost_type0 - 4,
+        got: record.innate_cost_type0 - 5,
+      ),
+    ]
 }
 
 pub fn an_effect_row_edited_on_the_heap_is_reported_with_ability_text_token_expected_and_got_test() -> Nil {

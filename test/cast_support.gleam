@@ -1131,10 +1131,13 @@ pub fn run_timers_asking(
     from_ms:,
     struck_at:,
     poses: dict.new(),
+    until_ms: None,
   )
 }
 
-/// The same, with the poses the struck units have in the caster's picture at each go.
+/// The same, with the poses the struck units have in the caster's picture at each go, and,
+/// when `until_ms` is given, only the timers due at it or before: the ones due later are
+/// left, as the clock the test drives has not reached them.
 pub fn run_timers_posed(
   caster caster: Caster,
   state state: State,
@@ -1142,6 +1145,7 @@ pub fn run_timers_posed(
   from_ms from_ms: Int,
   struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
   poses poses: dict.Dict(Int, Pose),
+  until_ms until_ms: Option(Int),
 ) -> #(State, List(Fired)) {
   run_pending(
     caster:,
@@ -1150,7 +1154,7 @@ pub fn run_timers_posed(
     fired_so_far: [],
     struck_at:,
     poses:,
-    until_ms: None,
+    until_ms:,
   )
 }
 

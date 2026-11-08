@@ -5643,7 +5643,7 @@ fn pushed_by(
 
 /// What the live and lingering casts hold on the unit, as removals, stacking and
 /// prerequisites read it.
-fn holds_on(cast cast: State, unit_id unit_id: Int) -> List(lasting.Hold) {
+pub fn holds_on(cast cast: State, unit_id unit_id: Int) -> List(lasting.Hold) {
   list.filter_map(holders(cast:), fn(entry) {
     let #(cast_id, holder) = entry
     dict.get(holder.nodes, unit_id)

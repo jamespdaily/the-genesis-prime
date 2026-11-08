@@ -26,6 +26,7 @@ import genesis_prime/world_map/creature_life
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/result
 import gleam/string
 import spell_tables
@@ -197,6 +198,8 @@ pub type Unread {
   NoAreaRow
   NeverStruck
   NoPayment
+  NoHold
+  ClassMechanicSlot(cost_type: Int)
 }
 
 pub fn reason(unread unread: Unread) -> String {
@@ -241,6 +244,11 @@ pub fn reason(unread unread: Unread) -> String {
     NoAreaRow -> "the spell's area has no row"
     NeverStruck -> "no go of the drive strikes the row"
     NoPayment -> "the press pays no cost of that place"
+    NoHold -> "the spell's cast leaves no hold of its stack group on the caster"
+    ClassMechanicSlot(cost_type:) ->
+      "the client reads cost type "
+      <> int.to_string(cost_type)
+      <> " from the class mechanic, and the player class has no slot of that vital"
   }
 }
 
@@ -297,21 +305,25 @@ pub fn drive_as(
   drive_posed(caster:, plans:, strikes:, poses: dict.new())
 }
 
-/// The same, with the poses the struck units have in the caster's picture at the press's go.
-pub fn drive_posed(
+/// A press of the ability in the bag's first place at the time on the state, its go answered
+/// with the units `strikes` gives with the poses: the state and the press's step, or the
+/// results of a refusal.
+pub fn pressed_at(
   caster caster: cast.Caster,
   plans plans: Plans,
+  state state: cast.State,
+  at_ms at_ms: Int,
   strikes strikes: Strikes,
   poses poses: dict.Dict(Int, area.Pose),
-) -> Result(Drive, List(Int)) {
+) -> Result(#(cast.State, support.Fired), List(Int)) {
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state:,
       caster:,
       bag_index: 0,
       target: 0,
-      at: start_ms,
+      at: at_ms,
     )
   case support.refusal_results(effects: raw) {
     [] -> {
@@ -320,33 +332,49 @@ pub fn drive_posed(
           caster:,
           state:,
           effects: raw,
-          at: start_ms,
-          struck_of: strikes(start_ms, _),
+          at: at_ms,
+          struck_of: strikes(at_ms, _),
           rolls: [],
           poses:,
         )
-      let #(_, fired) =
-        support.run_timers_posed(
-          caster:,
-          state:,
-          effects:,
-          from_ms: start_ms,
-          struck_at: strikes,
-          poses:,
-        )
-      Ok(
-        Drive(cast_id: support.pressed_id(effects:), steps: [
-          support.Fired(
-            at_ms: start_ms,
-            asked: support.goes_asked(effects: raw),
-            effects:,
-          ),
-          ..fired
-        ]),
-      )
+      Ok(#(
+        state,
+        support.Fired(at_ms:, asked: support.goes_asked(effects: raw), effects:),
+      ))
     }
     results -> Error(results)
   }
+}
+
+/// The same, with the poses the struck units have in the caster's picture at the press's go.
+pub fn drive_posed(
+  caster caster: cast.Caster,
+  plans plans: Plans,
+  strikes strikes: Strikes,
+  poses poses: dict.Dict(Int, area.Pose),
+) -> Result(Drive, List(Int)) {
+  use #(state, pressed) <- result.map(pressed_at(
+    caster:,
+    plans:,
+    state: cast.new(),
+    at_ms: start_ms,
+    strikes:,
+    poses:,
+  ))
+  let #(_, fired) =
+    support.run_timers_posed(
+      caster:,
+      state:,
+      effects: pressed.effects,
+      from_ms: start_ms,
+      struck_at: strikes,
+      poses:,
+      until_ms: None,
+    )
+  Drive(cast_id: support.pressed_id(effects: pressed.effects), steps: [
+    pressed,
+    ..fired
+  ])
 }
 
 /// A ChargeRelease ability pressed, held until it has reached the charge level, and released:
@@ -369,80 +397,42 @@ pub fn drive_released(
     |> list.map(fn(stage) { stage.duration_ms })
     |> int.sum
   let release_ms = start_ms + wait_ms
-  let #(state, raw) =
-    support.pressed_raw_in(
-      plans:,
-      state: cast.new(),
+  use #(state, charging) <- result.try(pressed_at(
+    caster:,
+    plans:,
+    state: cast.new(),
+    at_ms: start_ms,
+    strikes: striking_none,
+    poses: dict.new(),
+  ))
+  let #(state, _) =
+    support.run_timers_until_as(
       caster:,
-      bag_index: 0,
-      target: 0,
-      at: start_ms,
+      state:,
+      effects: charging.effects,
+      from_ms: start_ms,
+      until_ms: release_ms,
     )
-  case support.refusal_results(effects: raw) {
-    [] -> {
-      let #(state, effects) =
-        support.answered_each(
-          caster:,
-          state:,
-          effects: raw,
-          at: start_ms,
-          struck_of: fn(_) { [] },
-          rolls: [],
-          poses: dict.new(),
-        )
-      let #(state, _) =
-        support.run_timers_until_as(
-          caster:,
-          state:,
-          effects:,
-          from_ms: start_ms,
-          until_ms: release_ms,
-        )
-      let #(state, released) =
-        support.pressed_raw_in(
-          plans:,
-          state:,
-          caster:,
-          bag_index: 0,
-          target: 0,
-          at: release_ms,
-        )
-      case support.refusal_results(effects: released) {
-        [] -> {
-          let #(state, effects) =
-            support.answered_each(
-              caster:,
-              state:,
-              effects: released,
-              at: release_ms,
-              struck_of: strikes(release_ms, _),
-              rolls: [],
-              poses: dict.new(),
-            )
-          let #(_, fired) =
-            support.run_timers_asking(
-              caster:,
-              state:,
-              effects:,
-              from_ms: release_ms,
-              struck_at: strikes,
-            )
-          Ok(
-            Drive(cast_id: support.pressed_id(effects: released), steps: [
-              support.Fired(
-                at_ms: release_ms,
-                asked: support.goes_asked(effects: released),
-                effects:,
-              ),
-              ..fired
-            ]),
-          )
-        }
-        results -> Error(results)
-      }
-    }
-    results -> Error(results)
-  }
+  use #(state, released) <- result.map(pressed_at(
+    caster:,
+    plans:,
+    state:,
+    at_ms: release_ms,
+    strikes:,
+    poses: dict.new(),
+  ))
+  let #(_, fired) =
+    support.run_timers_asking(
+      caster:,
+      state:,
+      effects: released.effects,
+      from_ms: release_ms,
+      struck_at: strikes,
+    )
+  Drive(cast_id: support.pressed_id(effects: released.effects), steps: [
+    released,
+    ..fired
+  ])
 }
 
 /// Each go strikes the unit and lands on it the crowd-control rows of the spell the go
