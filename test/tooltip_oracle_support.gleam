@@ -8,6 +8,7 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/hit
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
@@ -190,6 +191,12 @@ pub type Unread {
   NotPeriodicProxy
   HeldAs(list: String)
   NotInPlan
+  OutsideTheTypes(effect_type: Int)
+  SlotGainsDiffer(slot: Int)
+  NoRuleValue(column: Int)
+  NoAreaRow
+  NeverStruck
+  NoPayment
 }
 
 pub fn reason(unread unread: Unread) -> String {
@@ -221,6 +228,19 @@ pub fn reason(unread unread: Unread) -> String {
       "no client fact counts the ticks of a row that is not a periodic Proxy"
     HeldAs(list:) -> "the plan holds the row as a " <> list
     NotInPlan -> "no list of the ability's plan holds the row"
+    OutsideTheTypes(effect_type:) ->
+      "effect type "
+      <> int.to_string(effect_type)
+      <> " is none of the types 1, 4, 11, 73 and 145 this oracle reads"
+    SlotGainsDiffer(slot:) ->
+      "the drive's gains of slot "
+      <> int.to_string(slot)
+      <> " are of more than one amount, so none is the row's"
+    NoRuleValue(column:) ->
+      "no value of the rule is the row's data column " <> int.to_string(column)
+    NoAreaRow -> "the spell's area has no row"
+    NeverStruck -> "no go of the drive strikes the row"
+    NoPayment -> "the press pays no cost of that place"
   }
 }
 
@@ -265,7 +285,25 @@ pub fn drive(
   base base: Int,
   strikes strikes: Strikes,
 ) -> Result(Drive, List(Int)) {
-  let caster = caster_of(base:)
+  drive_as(caster: caster_of(base:), plans:, strikes:)
+}
+
+/// The same press made by this caster, which holds the ability in the bag's first place.
+pub fn drive_as(
+  caster caster: cast.Caster,
+  plans plans: Plans,
+  strikes strikes: Strikes,
+) -> Result(Drive, List(Int)) {
+  drive_posed(caster:, plans:, strikes:, poses: dict.new())
+}
+
+/// The same, with the poses the struck units have in the caster's picture at the press's go.
+pub fn drive_posed(
+  caster caster: cast.Caster,
+  plans plans: Plans,
+  strikes strikes: Strikes,
+  poses poses: dict.Dict(Int, area.Pose),
+) -> Result(Drive, List(Int)) {
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
@@ -285,15 +323,16 @@ pub fn drive(
           at: start_ms,
           struck_of: strikes(start_ms, _),
           rolls: [],
-          poses: dict.new(),
+          poses:,
         )
-      let #(_, fired) =
-        support.run_timers_asking(
+      let fired =
+        timers_posed(
           caster:,
           state:,
-          effects:,
-          from_ms: start_ms,
+          pending: due_after(effects:, now_ms: start_ms),
+          fired: [],
           struck_at: strikes,
+          poses:,
         )
       Ok(
         Drive(cast_id: support.pressed_id(effects:), steps: [
@@ -305,6 +344,161 @@ pub fn drive(
           ..fired
         ]),
       )
+    }
+    results -> Error(results)
+  }
+}
+
+/// The timers the effects start, each due its delay after the time.
+fn due_after(
+  effects effects: List(cast.Effect),
+  now_ms now_ms: Int,
+) -> List(#(Int, step.TimerId)) {
+  list.map(support.started_timers(effects:), fn(started) {
+    #(now_ms + started.1, started.0)
+  })
+}
+
+/// Every timer the rule starts, fired at its time and earliest first, until none is left:
+/// `cast_support.run_timers_asking`, which answers each go with no poses, with the poses
+/// the struck units have in the caster's picture.
+fn timers_posed(
+  caster caster: cast.Caster,
+  state state: cast.State,
+  pending pending: List(#(Int, step.TimerId)),
+  fired fired: List(support.Fired),
+  struck_at struck_at: Strikes,
+  poses poses: dict.Dict(Int, area.Pose),
+) -> List(support.Fired) {
+  case
+    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
+  {
+    [] -> list.reverse(fired)
+    [#(due, timer), ..rest] -> {
+      let #(state, raw) = support.fired_raw_as(caster:, state:, timer:, at: due)
+      let #(state, effects) =
+        support.answered_each(
+          caster:,
+          state:,
+          effects: raw,
+          at: due,
+          struck_of: fn(asked) { struck_at(due, asked) },
+          rolls: [],
+          poses:,
+        )
+      let cancelled = support.cancelled_timers(effects:)
+      timers_posed(
+        caster:,
+        state:,
+        pending: list.append(
+          list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
+          due_after(effects:, now_ms: due),
+        ),
+        fired: [
+          support.Fired(
+            at_ms: due,
+            asked: support.goes_asked(effects: raw),
+            effects:,
+          ),
+          ..fired
+        ],
+        struck_at:,
+        poses:,
+      )
+    }
+  }
+}
+
+/// A ChargeRelease ability pressed, held until it has reached the charge level, and released:
+/// the release casts the stage at that level (`cast.charge_release_base`), whose goes the
+/// drive holds. The level is reached after the thresholdDuration of each row from the second
+/// to the row of the level.
+pub fn drive_released(
+  caster caster: cast.Caster,
+  plans plans: Plans,
+  base base: Int,
+  level level: Int,
+  strikes strikes: Strikes,
+) -> Result(Drive, List(Int)) {
+  let assert Ok(root) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
+    as "a planned ability has a plan"
+  let wait_ms =
+    root.stages
+    |> list.drop(1)
+    |> list.take(level)
+    |> list.map(fn(stage) { stage.duration_ms })
+    |> int.sum
+  let release_ms = start_ms + wait_ms
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag_index: 0,
+      target: 0,
+      at: start_ms,
+    )
+  case support.refusal_results(effects: raw) {
+    [] -> {
+      let #(state, effects) =
+        support.answered_each(
+          caster:,
+          state:,
+          effects: raw,
+          at: start_ms,
+          struck_of: fn(_) { [] },
+          rolls: [],
+          poses: dict.new(),
+        )
+      let #(state, _) =
+        support.run_timers_until(
+          state:,
+          effects:,
+          from_ms: start_ms,
+          until_ms: release_ms,
+        )
+      let #(state, released) =
+        support.pressed_raw_in(
+          plans:,
+          state:,
+          caster:,
+          bag_index: 0,
+          target: 0,
+          at: release_ms,
+        )
+      case support.refusal_results(effects: released) {
+        [] -> {
+          let #(state, effects) =
+            support.answered_each(
+              caster:,
+              state:,
+              effects: released,
+              at: release_ms,
+              struck_of: strikes(release_ms, _),
+              rolls: [],
+              poses: dict.new(),
+            )
+          let #(_, fired) =
+            support.run_timers_asking(
+              caster:,
+              state:,
+              effects:,
+              from_ms: release_ms,
+              struck_at: strikes,
+            )
+          Ok(
+            Drive(cast_id: support.pressed_id(effects: released), steps: [
+              support.Fired(
+                at_ms: release_ms,
+                asked: support.goes_asked(effects: released),
+                effects:,
+              ),
+              ..fired
+            ]),
+          )
+        }
+        results -> Error(results)
+      }
     }
     results -> Error(results)
   }
@@ -333,6 +527,15 @@ pub fn landed_of(
   rows rows: List(spell_plan.CrowdControl),
   at_ms at_ms: Int,
 ) -> List(strike_tell.ControlLanded) {
+  landing_of(rows:, armor: creature_life.NoArmor, at_ms:).landed
+}
+
+/// What a creature with this armor makes of the control rows of one strike at the time.
+pub fn landing_of(
+  rows rows: List(spell_plan.CrowdControl),
+  armor armor: creature_life.InterruptArmor,
+  at_ms at_ms: Int,
+) -> creature_control.Landing {
   let tell =
     strike_tell.Strike(
       key: strike_tell.Key(cast_id: 1, phase: 0, unit_id: struck_unit),
@@ -350,10 +553,10 @@ pub fn landed_of(
   creature_control.land(
     state: creature_control.new(),
     tell:,
-    armor: creature_life.NoArmor,
+    armor:,
     refill_ms: 0,
     now_ms: at_ms,
-  ).landed
+  )
 }
 
 pub fn hit_offence() -> hit.Offence {

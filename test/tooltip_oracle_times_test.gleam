@@ -57,11 +57,8 @@ import tooltip_oracle_support.{
   HeldControl, HeldElsewhere, HeldLasting, HeldModifier, LeftOut,
   ModifierChanges, NeverApplied, NeverFinished, NoCooldownForMethod, NoRow,
   NodeHeldBy, NotInPlan, NotPeriodicProxy, PressNotHeld, Refused, Rows,
-  UnknownField, Unobserved, Verdict, applications, asked_of, asked_with,
-  caster_of, child_casts, compared_count, differences, drive, finish_in, goes_in,
-  goes_of, holder_of, left_out_count, plan_of, reason, removal_in, shared,
-  start_ms, started_of, striking_none, striking_with_states, verdict,
-}
+  UnknownField, Unobserved, Verdict,
+} as oracle
 
 // ------------------------------------------------------------ what a token prints
 
@@ -207,15 +204,21 @@ fn channel_outcomes(
   asked asked: List(Asked),
 ) -> List(Outcome) {
   list.map(
-    asked_with(asked:, kind: tooltip_token.Spell, fields: channel_fields),
+    oracle.asked_with(asked:, kind: tooltip_token.Spell, fields: channel_fields),
     fn(entry) {
-      let root = plan_of(rows:, base: entry.base)
+      let root = oracle.plan_of(rows:, base: entry.base)
       let assert Ok(expected) = printed(rows:, root:, token: entry.token)
         as "a channel token prints a column"
-      case drive(plans: rows.plans, base: entry.base, strikes: striking_none) {
+      case
+        oracle.drive(
+          plans: rows.plans,
+          base: entry.base,
+          strikes: oracle.striking_none,
+        )
+      {
         Error(results) -> Unobserved(asked: entry, why: Refused(results:))
         Ok(driven) -> {
-          let times = list.map(goes_of(drive: driven), fn(go) { go.0 })
+          let times = list.map(oracle.goes_of(drive: driven), fn(go) { go.0 })
           let field = entry.token.field
           let got = case times {
             [first, second, ..]
@@ -225,7 +228,7 @@ fn channel_outcomes(
               if field == "channeldelay" || field == "channeldelayms"
             -> Ok(first)
             _ if field == "channelmax" || field == "channelmaxms" ->
-              finish_in(drive: driven, cast_id: driven.cast_id)
+              oracle.finish_in(drive: driven, cast_id: driven.cast_id)
             _ -> Error(Nil)
           }
           case got {
@@ -241,7 +244,7 @@ fn channel_outcomes(
 /// The goes a channel's columns make: one at the delay and one each pulse after it, up
 /// to the max time.
 fn goes_expected(rows rows: Rows, asked asked: Asked) -> Int {
-  let root = plan_of(rows:, base: asked.base)
+  let root = oracle.plan_of(rows:, base: asked.base)
   let column = fn(field) {
     let assert Ok(value) =
       printed(
@@ -264,15 +267,21 @@ fn goes_expected(rows rows: Rows, asked asked: Asked) -> Int {
 /// the goes the channel's columns make.
 fn pulse_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
   list.map(
-    asked_with(asked:, kind: tooltip_token.Spell, fields: pulse_fields),
+    oracle.asked_with(asked:, kind: tooltip_token.Spell, fields: pulse_fields),
     fn(entry) {
-      case drive(plans: rows.plans, base: entry.base, strikes: striking_none) {
+      case
+        oracle.drive(
+          plans: rows.plans,
+          base: entry.base,
+          strikes: oracle.striking_none,
+        )
+      {
         Error(results) -> Unobserved(asked: entry, why: Refused(results:))
         Ok(driven) ->
           Compared(
             asked: entry,
             expected: goes_expected(rows:, asked: entry),
-            got: list.length(goes_of(drive: driven)),
+            got: list.length(oracle.goes_of(drive: driven)),
           )
       }
     },
@@ -309,7 +318,9 @@ fn cast_of(
     return: Ok(drive.cast_id),
   )
   case
-    list.filter(started_of(drive:), fn(entry) { entry.1.spell4_id == spell4_id })
+    list.filter(oracle.started_of(drive:), fn(entry) {
+      entry.1.spell4_id == spell4_id
+    })
   {
     [#(_, started)] -> Ok(started.cast_id)
     other -> Error(CastsStarted(count: list.length(other)))
@@ -326,14 +337,19 @@ fn node_life_of(
   effect_id effect_id: Int,
 ) -> Result(Int, Unread) {
   use last <- result.try(
-    list.last(applications(drive:, cast_id:, effect_id:))
+    list.last(oracle.applications(drive:, cast_id:, effect_id:))
     |> result.replace_error(NeverApplied),
   )
   let ends =
     list.filter_map(
       [
-        removal_in(drive:, cast_id:, unit_id: last.unit_id, from_ms: last.at_ms),
-        finish_in(drive:, cast_id:),
+        oracle.removal_in(
+          drive:,
+          cast_id:,
+          unit_id: last.unit_id,
+          from_ms: last.at_ms,
+        ),
+        oracle.finish_in(drive:, cast_id:),
       ],
       fn(end) { end },
     )
@@ -356,9 +372,9 @@ fn modifier_life_of(
       fired: list.map(drive.steps, fn(step) { #(step.at_ms, step.effects) }),
     )
     |> list.filter(fn(change) { change.2 == source })
-  case changes, goes_in(drive:, cast_id:) {
+  case changes, oracle.goes_in(drive:, cast_id:) {
     [#(_, "start", _), #(ended, "end", _)], [go, ..] ->
-      Ok(ended - start_ms - go.0)
+      Ok(ended - oracle.start_ms - go.0)
     other, _ -> Error(ModifierChanges(count: list.length(other)))
   }
 }
@@ -395,7 +411,7 @@ fn observed_life(
     HeldModifier(..) -> modifier_life_of(drive:, cast_id:, effect_id:)
     HeldControl(..) | HeldLasting(..) -> {
       use last <- result.try(
-        list.last(applications(drive:, cast_id:, effect_id:))
+        list.last(oracle.applications(drive:, cast_id:, effect_id:))
         |> result.replace_error(NeverApplied),
       )
       let longer =
@@ -407,7 +423,7 @@ fn observed_life(
           fn(other) {
             other != effect_id
             && list.any(
-              applications(drive:, cast_id:, effect_id: other),
+              oracle.applications(drive:, cast_id:, effect_id: other),
               fn(application) { application.unit_id == last.unit_id },
             )
             && outlives(rows:, holder:, effect_id: other, expected:)
@@ -431,27 +447,27 @@ fn buff_time_outcomes(
   asked asked: List(Asked),
 ) -> List(Outcome) {
   list.map(
-    asked_with(asked:, kind: tooltip_token.Eff, fields: duration_fields),
+    oracle.asked_with(asked:, kind: tooltip_token.Eff, fields: duration_fields),
     fn(entry) { buff_time_outcome(rows:, entry:) },
   )
 }
 
 /// What one duration token prints against the life the rule gives its row.
 fn buff_time_outcome(rows rows: Rows, entry entry: Asked) -> Outcome {
-  let root = plan_of(rows:, base: entry.base)
+  let root = oracle.plan_of(rows:, base: entry.base)
   case
     spell4_effects.get(tables: rows.tables, id: Spell4EffectsId(entry.token.id)),
-    holder_of(root:, effect_id: entry.token.id)
+    oracle.holder_of(root:, effect_id: entry.token.id)
   {
     Error(Nil), _ -> Unobserved(asked: entry, why: NoRow)
     Ok(_), Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
     Ok(row), Ok(#(holder, held)) -> {
       let expected = life_after_go(rows:, holder:, row:)
       let driven =
-        drive(
+        oracle.drive(
           plans: rows.plans,
           base: entry.base,
-          strikes: striking_with_states(root:),
+          strikes: oracle.striking_with_states(root:),
         )
       let got = case driven {
         Error(results) -> Error(Refused(results:))
@@ -485,10 +501,10 @@ fn go_delay_of(
   effect_id effect_id: Int,
 ) -> Result(Int, Unread) {
   use driven <- result.try(
-    drive(
+    oracle.drive(
       plans: rows.plans,
       base: root.spell4_base_id.value,
-      strikes: striking_with_states(root:),
+      strikes: oracle.striking_with_states(root:),
     )
     |> result.map_error(fn(results) { Refused(results:) }),
   )
@@ -497,7 +513,7 @@ fn go_delay_of(
     root:,
     spell4_id: holder.spell4_id.value,
   ))
-  case applications(drive: driven, cast_id:, effect_id:) {
+  case oracle.applications(drive: driven, cast_id:, effect_id:) {
     [first, ..] -> Ok(first.delay_ms)
     [] -> Error(NeverApplied)
   }
@@ -507,13 +523,17 @@ fn go_delay_of(
 /// ends in. A Multiphase spell goes once for each phase over its cast time, so its cast
 /// time ends at its last go (`0x14053d1f0`).
 fn cast_time_of(rows rows: Rows, base base: Int) -> Result(Int, Unread) {
-  let root = plan_of(rows:, base:)
+  let root = oracle.plan_of(rows:, base:)
   use driven <- result.try(
-    drive(plans: rows.plans, base:, strikes: striking_with_states(root:))
+    oracle.drive(
+      plans: rows.plans,
+      base:,
+      strikes: oracle.striking_with_states(root:),
+    )
     |> result.map_error(fn(results) { Refused(results:) }),
   )
   let go = case root.method {
-    spell_plan.Multiphase -> list.last(goes_of(drive: driven))
+    spell_plan.Multiphase -> list.last(oracle.goes_of(drive: driven))
     spell_plan.Normal
     | spell_plan.Channeled
     | spell_plan.PressHold
@@ -522,7 +542,7 @@ fn cast_time_of(rows rows: Rows, base base: Int) -> Result(Int, Unread) {
     | spell_plan.RapidTap
     | spell_plan.ChargeRelease
     | spell_plan.Transactional
-    | spell_plan.OtherMethod(..) -> list.first(goes_of(drive: driven))
+    | spell_plan.OtherMethod(..) -> list.first(oracle.goes_of(drive: driven))
   }
   case go {
     Ok(go) -> Ok(go.0)
@@ -544,7 +564,7 @@ fn cooldown_of(rows rows: Rows, root root: Spell) -> Result(Int, Unread) {
         support.with_spells(plans: rows.plans, spells: [
           support.without_cooldown_modifiers(spell: root),
         ])
-      let caster = caster_of(base: root.spell4_base_id.value)
+      let caster = oracle.caster_of(base: root.spell4_base_id.value)
       let press = fn(state: State, at_ms: Int) {
         support.pressed_raw_in(
           plans:,
@@ -555,9 +575,9 @@ fn cooldown_of(rows rows: Rows, root root: Spell) -> Result(Int, Unread) {
           at: at_ms,
         )
       }
-      let release_ms = start_ms + 100
+      let release_ms = oracle.start_ms + 100
       let state =
-        [start_ms, release_ms]
+        [oracle.start_ms, release_ms]
         |> list.fold(cast.new(), fn(state, at_ms) {
           let #(state, raw) = press(state, at_ms)
           support.answered_each(
@@ -631,13 +651,13 @@ const time_fields = ["casttime", "cd"]
 fn timing_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
   let delays =
     list.map(
-      asked_with(asked:, kind: tooltip_token.Eff, fields: ["delayms"]),
+      oracle.asked_with(asked:, kind: tooltip_token.Eff, fields: ["delayms"]),
       fn(entry) {
-        let root = plan_of(rows:, base: entry.base)
+        let root = oracle.plan_of(rows:, base: entry.base)
         case printed(rows:, root:, token: entry.token) {
           Error(unread) -> Unobserved(asked: entry, why: unread)
           Ok(expected) ->
-            case holder_of(root:, effect_id: entry.token.id) {
+            case oracle.holder_of(root:, effect_id: entry.token.id) {
               Ok(#(holder, _)) ->
                 case
                   go_delay_of(rows:, root:, holder:, effect_id: entry.token.id)
@@ -652,9 +672,9 @@ fn timing_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
     )
   let times =
     list.map(
-      asked_with(asked:, kind: tooltip_token.Spell, fields: time_fields),
+      oracle.asked_with(asked:, kind: tooltip_token.Spell, fields: time_fields),
       fn(entry) {
-        let root = plan_of(rows:, base: entry.base)
+        let root = oracle.plan_of(rows:, base: entry.base)
         case printed(rows:, root:, token: entry.token) {
           Error(unread) -> Unobserved(asked: entry, why: unread)
           Ok(expected) -> {
@@ -681,9 +701,9 @@ fn timing_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
 /// client fact that counts its ticks (`Spell4Effects.effectType.26.periodic`).
 fn tick_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
   list.map(
-    asked_with(asked:, kind: tooltip_token.Eff, fields: ["ticktimems"]),
+    oracle.asked_with(asked:, kind: tooltip_token.Eff, fields: ["ticktimems"]),
     fn(entry) {
-      let root = plan_of(rows:, base: entry.base)
+      let root = oracle.plan_of(rows:, base: entry.base)
       case
         spell4_effects.get(
           tables: rows.tables,
@@ -695,17 +715,17 @@ fn tick_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
           if row.tick_time > 0 && row.effect_type == 26 && row.data_bits00 == 0
         ->
           case
-            drive(
+            oracle.drive(
               plans: rows.plans,
               base: entry.base,
-              strikes: striking_with_states(root:),
+              strikes: oracle.striking_with_states(root:),
             )
           {
             Ok(driven) ->
               Compared(
                 asked: entry,
                 expected: row.duration_time / row.tick_time,
-                got: child_casts(
+                got: oracle.child_casts(
                   drive: driven,
                   parent: row.spell_id,
                   child: row.data_bits01,
@@ -723,9 +743,9 @@ fn tick_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
 
 pub fn electrocute_goes_6_times_each_striking_with_the_damage_row_its_text_names_test() -> Nil {
   use <- owned_test.run(30_000)
-  let rows = shared()
+  let rows = oracle.shared()
   let assert Ok(tokens) = tooltip_token.load()
-  let electrocute = plan_of(rows:, base: 25_473)
+  let electrocute = oracle.plan_of(rows:, base: 25_473)
   assert electrocute.spell4_id.value == 41_276
   let token = fn(field) {
     tooltip_token.Token(kind: tooltip_token.Spell, id: 41_276, field:)
@@ -743,9 +763,9 @@ pub fn electrocute_goes_6_times_each_striking_with_the_damage_row_its_text_names
   let assert Ok(delay) =
     printed(rows:, root: electrocute, token: token("channeldelayms"))
   let assert Ok(driven) =
-    drive(plans: rows.plans, base: 25_473, strikes: striking_none)
+    oracle.drive(plans: rows.plans, base: 25_473, strikes: oracle.striking_none)
     as "Electrocute is cast by a player that holds it"
-  let goes = goes_of(drive: driven)
+  let goes = oracle.goes_of(drive: driven)
   assert list.length(goes) == 6
     as "Spell4.41276: channelInitialDelay 500, channelPulseTime 500, channelMaxTime 3000: (3000 - 500 + 500) / 500 goes (0x14053d1f0)"
   assert list.map(goes, fn(go) { go.1.phase }) == [0, 1, 2, 3, 4, 5]
@@ -784,13 +804,16 @@ const buff_gaps = [
 
 pub fn every_buff_time_token_on_a_row_a_planned_ability_holds_equals_that_rows_life_on_its_unit_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
-  let outcomes = buff_time_outcomes(rows:, asked: asked_of(rows:))
-  assert verdict(differences: differences(outcomes:), gaps: buff_gaps)
+  let rows = oracle.shared()
+  let outcomes = buff_time_outcomes(rows:, asked: oracle.asked_of(rows:))
+  assert oracle.verdict(
+      differences: oracle.differences(outcomes:),
+      gaps: buff_gaps,
+    )
     == Verdict(unlisted: [], stale: [])
-  assert compared_count(outcomes:) == 10
+  assert oracle.compared_count(outcomes:) == 10
     as "ten duration tokens name a row a plan holds, each read on the unit of a drive of the whole ability"
-  assert left_out_count(outcomes:) == 3
+  assert oracle.left_out_count(outcomes:) == 3
     as "three name a row no plan of the ability holds, each a gap above"
 }
 
@@ -805,48 +828,59 @@ const tick_gaps = [
 
 pub fn every_tick_time_token_gives_its_duration_over_its_tick_time_ticks_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
-  let outcomes = tick_outcomes(rows:, asked: asked_of(rows:))
-  assert verdict(differences: differences(outcomes:), gaps: tick_gaps)
+  let rows = oracle.shared()
+  let outcomes = tick_outcomes(rows:, asked: oracle.asked_of(rows:))
+  assert oracle.verdict(
+      differences: oracle.differences(outcomes:),
+      gaps: tick_gaps,
+    )
     == Verdict(unlisted: [], stale: [])
-  assert compared_count(outcomes:) == 3
+  assert oracle.compared_count(outcomes:) == 3
     as "the periodic Proxy rows 121345 (one text) and 178429 (two texts) print a tick time, each a gap above"
-  assert left_out_count(outcomes:) == 1
+  assert oracle.left_out_count(outcomes:) == 1
     as "Spell4Effects 187681 has no row in the table, a gap above"
 }
 
 pub fn a_proxy_rows_cast_is_counted_as_a_cast_of_its_spell_and_not_as_the_gos_application_of_the_row_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
+  let rows = oracle.shared()
   // Telekinetic Strike (base 19102) holds Proxy 62204, which starts Spell4 30900 under
   // its own Spell4 32893.
-  let root = plan_of(rows:, base: 19_102)
+  let root = oracle.plan_of(rows:, base: 19_102)
   let assert Ok(driven) =
-    drive(plans: rows.plans, base: 19_102, strikes: striking_with_states(root:))
-  assert child_casts(drive: driven, parent: 32_893, child: 30_900) == 1
+    oracle.drive(
+      plans: rows.plans,
+      base: 19_102,
+      strikes: oracle.striking_with_states(root:),
+    )
+  assert oracle.child_casts(drive: driven, parent: 32_893, child: 30_900) == 1
     as "the cast of Spell4 30900 under Spell4 32893 is one 0x7ff"
-  assert applications(drive: driven, cast_id: driven.cast_id, effect_id: 62_204)
+  assert oracle.applications(
+      drive: driven,
+      cast_id: driven.cast_id,
+      effect_id: 62_204,
+    )
     == []
     as "the go never lists the Proxy row as applied to a unit"
 }
 
 pub fn every_delay_cast_time_and_cooldown_token_matches_the_rules_go_time_and_cooldown_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
-  let outcomes = timing_outcomes(rows:, asked: asked_of(rows:))
-  assert verdict(differences: differences(outcomes:), gaps: [])
+  let rows = oracle.shared()
+  let outcomes = timing_outcomes(rows:, asked: oracle.asked_of(rows:))
+  assert oracle.verdict(differences: oracle.differences(outcomes:), gaps: [])
     == Verdict(unlisted: [], stale: [])
-  assert compared_count(outcomes:) == 3
+  assert oracle.compared_count(outcomes:) == 3
     as "one delay (177530), one cast time (Quick Draw) and one cooldown (Charged Shot)"
-  assert left_out_count(outcomes:) == 0
+  assert oracle.left_out_count(outcomes:) == 0
 }
 
 pub fn a_cast_time_token_is_the_time_of_the_pressed_casts_first_go_and_not_of_its_finish_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
+  let rows = oracle.shared()
   // Base 31779 has a castTime of 0 and holds a 10 s lasting row, so its cast finishes
   // 10 s after the press while its only go is at the press.
-  let root = plan_of(rows:, base: 31_779)
+  let root = oracle.plan_of(rows:, base: 31_779)
   let token =
     tooltip_token.Token(
       kind: tooltip_token.Spell,
@@ -856,8 +890,12 @@ pub fn a_cast_time_token_is_the_time_of_the_pressed_casts_first_go_and_not_of_it
   let asked = Asked(base: 31_779, text_id: 0, token:)
   let assert Ok(expected) = printed(rows:, root:, token:)
   let assert Ok(driven) =
-    drive(plans: rows.plans, base: 31_779, strikes: striking_with_states(root:))
-  assert finish_in(drive: driven, cast_id: driven.cast_id) == Ok(10_000)
+    oracle.drive(
+      plans: rows.plans,
+      base: 31_779,
+      strikes: oracle.striking_with_states(root:),
+    )
+  assert oracle.finish_in(drive: driven, cast_id: driven.cast_id) == Ok(10_000)
     as "the cast finishes with its 10 s row"
   assert timing_outcomes(rows:, asked: [asked])
     == [Compared(asked:, expected:, got: 0)]
@@ -877,7 +915,10 @@ pub fn a_buff_time_token_that_differs_from_the_rule_is_reported_with_ability_tex
       with: [#("durationTime", planted_table.Integer(2600))],
       body: fn(tables) {
         let rows = Rows(tables:, plans: spell_tables.fixture_plans())
-        differences(outcomes: buff_time_outcomes(rows:, asked: asked_of(rows:)))
+        oracle.differences(outcomes: buff_time_outcomes(
+          rows:,
+          asked: oracle.asked_of(rows:),
+        ))
         |> list.filter(fn(difference) {
           case difference {
             Differs(..) -> True
@@ -900,37 +941,40 @@ pub fn a_buff_time_token_that_differs_from_the_rule_is_reported_with_ability_tex
 
 pub fn a_listed_gap_that_now_passes_fails_the_test_naming_the_gap_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
-  let asked = asked_of(rows:)
+  let rows = oracle.shared()
+  let asked = oracle.asked_of(rows:)
   // Control row 83827 of base 23173 agrees with the rule, so a gap listing it is stale.
   let passing =
     Gap(ability: 23_173, token: "eff=83827.durationms", issue: "#336")
-  assert verdict(
-      differences: differences(outcomes: buff_time_outcomes(rows:, asked:)),
+  assert oracle.verdict(
+      differences: oracle.differences(outcomes: buff_time_outcomes(
+        rows:,
+        asked:,
+      )),
       gaps: [passing, ..buff_gaps],
     )
     == Verdict(unlisted: [], stale: [passing])
   // The tick gaps still differ, so with none listed the test names each difference.
-  let ticks = differences(outcomes: tick_outcomes(rows:, asked:))
-  assert verdict(differences: ticks, gaps: []).unlisted == ticks
+  let ticks = oracle.differences(outcomes: tick_outcomes(rows:, asked:))
+  assert oracle.verdict(differences: ticks, gaps: []).unlisted == ticks
   assert list.length(ticks) == 4
 }
 
 pub fn every_planned_ability_with_a_pulses_token_goes_the_pulses_its_channel_makes_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
-  let asked = asked_of(rows:)
+  let rows = oracle.shared()
+  let asked = oracle.asked_of(rows:)
   let outcomes = pulse_outcomes(rows:, asked:)
-  assert compared_count(outcomes:) == 2
+  assert oracle.compared_count(outcomes:) == 2
     as "Electrocute 41276 and Discharge 58832 each name a pulse"
-  assert left_out_count(outcomes:) == 0
-  assert verdict(differences: differences(outcomes:), gaps: [])
+  assert oracle.left_out_count(outcomes:) == 0
+  assert oracle.verdict(differences: oracle.differences(outcomes:), gaps: [])
     == Verdict(unlisted: [], stale: [])
   let times = channel_outcomes(rows:, asked:)
-  assert compared_count(outcomes: times) == 2
+  assert oracle.compared_count(outcomes: times) == 2
     as "the same two abilities name a channel time"
-  assert left_out_count(outcomes: times) == 0
-  assert differences(outcomes: times) == []
+  assert oracle.left_out_count(outcomes: times) == 0
+  assert oracle.differences(outcomes: times) == []
 }
 
 /// A channel's first go comes at its initial delay and the rest each pulse after it, so a
@@ -948,7 +992,7 @@ pub fn a_channels_first_go_is_due_at_its_initial_delay_and_not_at_its_first_puls
         let assert Ok(plans) = spell_plan.build(tables:)
           as "the client's rows with a channel delay of 700 build"
         let rows = Rows(tables:, plans:)
-        let root = plan_of(rows:, base: 25_473)
+        let root = oracle.plan_of(rows:, base: 25_473)
         let token = fn(field) {
           tooltip_token.Token(kind: tooltip_token.Spell, id: 41_276, field:)
         }
@@ -957,13 +1001,17 @@ pub fn a_channels_first_go_is_due_at_its_initial_delay_and_not_at_its_first_puls
         let assert Ok(pulse) =
           printed(rows:, root:, token: token("channelpulsems"))
         let assert Ok(driven) =
-          drive(plans: rows.plans, base: 25_473, strikes: striking_none)
+          oracle.drive(
+            plans: rows.plans,
+            base: 25_473,
+            strikes: oracle.striking_none,
+          )
         let asked =
           Asked(base: 25_473, text_id: 0, token: token("channelpulsems"))
         #(
           delay,
           pulse,
-          list.map(goes_of(drive: driven), fn(go) { go.0 }),
+          list.map(oracle.goes_of(drive: driven), fn(go) { go.0 }),
           goes_expected(rows:, asked:),
         )
       },
@@ -1017,7 +1065,7 @@ pub fn a_buff_row_of_a_spell_flagged_0x2000_lives_the_longer_of_its_delay_and_du
     #("delayTime", planted_table.Integer(500)),
   ])
   let assert Ok(before) =
-    spell4.get(tables: shared().tables, id: Spell4Id(42_908))
+    spell4.get(tables: oracle.shared().tables, id: Spell4Id(42_908))
   assert int.bitwise_and(before.property_flags, 0x2000) == 0
   let unflagged =
     with_edits(edits: [delay], body: fn(rows) {
@@ -1046,7 +1094,7 @@ pub fn a_buff_row_of_a_spell_flagged_0x2000_lives_the_longer_of_its_delay_and_du
 /// reports the token by name.
 pub fn a_token_field_no_comparison_reads_is_reported_by_name_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
+  let rows = oracle.shared()
   let token = fn(kind, id, field) { tooltip_token.Token(kind:, id:, field:) }
   let asked =
     list.map(
@@ -1067,7 +1115,7 @@ pub fn a_token_field_no_comparison_reads_is_reported_by_name_test() -> Nil {
       "spell=41276.cdms",
       "spell=41276.casttimems",
     ]
-  let root = plan_of(rows:, base: 25_473)
+  let root = oracle.plan_of(rows:, base: 25_473)
   assert printed(
       rows:,
       root:,
@@ -1080,13 +1128,14 @@ pub fn a_token_field_no_comparison_reads_is_reported_by_name_test() -> Nil {
       token: token(tooltip_token.Spell, 41_276, "casttimems"),
     )
     == Error(UnknownField(field: "casttimems"))
-  assert reason(unread: UnknownField(field: "cdms")) == "unknown field cdms"
+  assert oracle.reason(unread: UnknownField(field: "cdms"))
+    == "unknown field cdms"
 }
 
 pub fn every_field_of_every_eff_and_spell_token_the_planned_abilities_hold_is_read_or_named_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = shared()
-  let asked = asked_of(rows:)
+  let rows = oracle.shared()
+  let asked = oracle.asked_of(rows:)
   assert unread_fields(asked:) == []
   let in_left_out = fn(entry: Asked) {
     list.contains(left_out_fields, entry.token.field)
