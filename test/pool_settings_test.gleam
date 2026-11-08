@@ -105,11 +105,10 @@ fn backends(
 }
 
 /// Waits until the backends open on `database` are exactly `expected`, polling
-/// Postgres's own list. pgo 0.20.0's type server opens a connection of its own
-/// to the pool's database for each load of the types, when it starts and when
-/// the pool's connections have started (`pgo_type_server:load/4`), and closes
-/// it, so another backend may be there for a moment; one the pool keeps stays,
-/// and the test fails with `because` when the polls end with it still there.
+/// Postgres's own list. The pool's driver opens a short-lived connection of its
+/// own to load the database's types, so another backend may be there for a
+/// moment; one the pool keeps stays, and the test fails with `because` when the
+/// polls end with it still there.
 fn await_backends(
   shared shared: database_support.Shared,
   database database: String,
@@ -137,6 +136,7 @@ fn await_backends(
   )
 }
 
+/// The backend ids, comma-separated.
 fn numbers(backends: List(Int)) -> String {
   string.join(list.map(backends, int.to_string), ", ")
 }
