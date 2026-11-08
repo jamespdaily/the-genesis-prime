@@ -21,8 +21,8 @@
 //// - The timer ids 8 and 9 are the connection's free ids above the class
 ////   resource's.
 
-import character_tables
 import connection_rule_support as support
+import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Answer, type Message, type Request}
 import genesis_prime/game/connection as game_connection
@@ -41,6 +41,7 @@ import genesis_prime/step.{
 import gleam/list
 import gleam/option.{Some}
 import owned_test
+import planted_table
 import spawn_support
 
 const health_timer = TimerId(8)
@@ -281,15 +282,25 @@ pub fn leaving_the_world_cancels_the_running_regeneration_timers_test() -> Nil {
 
 pub fn the_multiplier_and_the_shield_tick_are_the_client_tables_unit_property2_defaults_test() -> Nil {
   use <- owned_test.run(60_000)
-  // UnitProperty2 8 planted at 2.0 and 177 at 750.0 (not the client's 1.0 and 500):
-  // the health tick is floor(736 x 0.025 x 2.0) = 36 each health_regen_tick_ms
-  // (500), the shield's next tick is 750 ms after its first.
+  // Kept edit: UnitProperty2 8 at 2.0 and 177 at 750.0 (the client's rows hold 1.0 and
+  // 500.0), so the test can tell the regeneration reads them from the table.
+  // The health tick is floor(736 x 0.025 x 2.0) = 36 each health_regen_tick_ms (500),
+  // the shield's next tick is 750 ms after its first.
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "UnitProperty2",
+      id: 8,
+      with: [#("defaultValue", planted_table.Float(2.0))],
+    )
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "UnitProperty2", id: 177, with: [
+      #("defaultValue", planted_table.Float(750.0)),
+    ])
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
   let fresh =
     game_connection_support.accepted(
-      Settings(
-        ..game_connection_support.settings(),
-        tables: character_tables.shared_with_other_regeneration_defaults(),
-      ),
+      Settings(..game_connection_support.settings(), tables:),
     ).0
   let #(state, _) =
     game_connection_support.entered_saved(
