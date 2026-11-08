@@ -20,11 +20,13 @@
 ////   load runs in a fresh node, since it is under the server's own key, which
 ////   a load in the test node would take from the tests that hold it.
 
-import character_tables
+import fixture_tables
 import fresh_node
 import genesis_prime/game/appearance
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/store.{LookEntry}
+import genesis_prime/table/customization_parameter
+import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/id.{CharacterCustomizationLabelId, RaceId}
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
@@ -32,6 +34,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import planted_table
+import simplifile
 
 pub fn the_servers_tables_are_the_forty_seven_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
@@ -96,10 +99,10 @@ fn in_a_fresh_node(function: String) -> Nil {
   fresh_node.must_return(module: "server_table_test", function:)
 }
 
-/// Loads a folder holding only the planted files of the server's tables, with
+/// Loads a folder of the committed fixture files of the server's tables, with
 /// the server's own load, and reads the appearance index the load built.
-pub fn planted_load() -> Nil {
-  use folder <- planted_table.in_folder(character_tables.files())
+pub fn fixture_load() -> Nil {
+  use folder <- planted_table.in_folder(fixture_tables.server_files())
   let assert Ok(tables) = server_table.load(from: folder)
     as "a folder with a file for each of the server's tables and no other loads"
   let visuals =
@@ -115,36 +118,59 @@ pub fn planted_load() -> Nil {
     )
   assert visuals
     == [ItemVisual(slot: 25, display_id: 135, item_color_set_id: 0, dye: 0)]
-    as "CharacterCustomization row 2: an Exile human male with labels 22 = 1 and 2 = 1 shows display 135 in slot 25, from the index the load built"
+    as "CharacterCustomization row 2 (race 1, gender 0, slot 25, display 135, labels 22 = 1 and 2 = 1; label 22 is faction 167's): an Exile human male shows display 135 in slot 25, from the index the load built"
 }
 
-pub fn the_servers_load_reads_the_files_of_its_list_and_builds_the_appearance_index_test() -> Nil {
+pub fn the_server_load_reads_the_committed_fixture_files_test() -> Nil {
   use <- owned_test.run(60_000)
-  in_a_fresh_node("planted_load")
+  in_a_fresh_node("fixture_load")
 }
 
-/// Loads the planted files of the server's tables except that
-/// CustomizationParameterMap names a CustomizationParameter row the planted
-/// table lacks.
-pub fn missing_parameter_load() -> Nil {
+/// Loads the committed fixture files of the server's tables but for
+/// CustomizationParameter's.
+pub fn load_without_the_parameter_file() -> Nil {
   let files =
-    list.key_set(
-      character_tables.files(),
-      "CustomizationParameterMap",
-      character_tables.map_file_naming(parameter_id: 999_999).1,
-    )
+    list.filter(fixture_tables.server_files(), fn(file) {
+      file.0 != customization_parameter.schema.file
+    })
   use folder <- planted_table.in_folder(files)
   assert server_table.load(from: folder)
+    == Error(table_store.TableFileUnreadable(
+      file: "CustomizationParameter",
+      reason: simplifile.Enoent,
+    ))
+    as "the server's load fails on a folder without a file of its list, naming the file"
+}
+
+pub fn a_folder_without_the_customization_parameter_file_is_refused_naming_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  in_a_fresh_node("load_without_the_parameter_file")
+}
+
+pub fn the_servers_load_refuses_a_map_naming_a_missing_parameter_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok([_, _, _, _, planted_table.Integer(parameter_id), ..]) =
+    list.first(fixture_tables.committed_rows(customization_parameter_map.schema))
+    as "a committed CustomizationParameterMap row holds customizationParameterId fifth"
+  let files =
+    list.key_set(
+      fixture_tables.server_files(),
+      customization_parameter.schema.file,
+      planted_table.file(
+        customization_parameter.schema,
+        planted_table.without(
+          rows: fixture_tables.committed_rows(customization_parameter.schema),
+          ids: [parameter_id],
+        ),
+      ).1,
+    )
+  use folder <- planted_table.in_folder(files)
+  assert server_table.read(from: folder)
     == Error(table_store.RowMissing(
       from_table: "CustomizationParameterMap",
       column: "customizationParameterId",
       to_table: "CustomizationParameter",
-      id: 999_999,
+      id: parameter_id,
     ))
-    as "the server's load fails on a map that names a CustomizationParameter row the table lacks, naming it"
-}
-
-pub fn the_servers_load_fails_on_a_map_naming_a_missing_parameter_row_test() -> Nil {
-  use <- owned_test.run(60_000)
-  in_a_fresh_node("missing_parameter_load")
+    as "the server's load fails on a CustomizationParameterMap row that names a CustomizationParameter row the table lacks, naming it"
 }

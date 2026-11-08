@@ -16,13 +16,13 @@
 
 import character_tables
 import client_tables
+import fixture_tables
 import genesis_prime/game/character_state
 import genesis_prime/game/world_entry
 import genesis_prime/table/class
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
-import novice_tables
 import owned_test
 import planted_table
 import unitest
@@ -30,15 +30,15 @@ import world_entry_support
 
 const playable = [1, 2, 3, 4, 5, 7]
 
-/// Loads a Class table of the planted rows of these classes, with the character
-/// state's requirements.
+/// Loads a Class table of the committed rows of these classes, with the
+/// character state's requirements.
 fn load(
   classes classes: List(Int),
 ) -> Result(table_store.Tables, table_store.LoadError) {
   use folder <- planted_table.in_folder([
     planted_table.file(
       class.schema,
-      list.filter(novice_tables.class_proficiency_rows(), fn(row) {
+      list.filter(fixture_tables.committed_rows(class.schema), fn(row) {
         case row {
           [planted_table.Integer(id), ..] -> list.contains(classes, id)
           _ -> False
