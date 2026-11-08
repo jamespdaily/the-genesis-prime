@@ -820,8 +820,9 @@ fn read_files(files: List(#(String, BitArray))) -> store.Tables {
 }
 
 /// The plain planted tables (`files`), read once and stored for the run: the
-/// tables every variant is an edit of.
-fn plain() -> store.Tables {
+/// tables every variant is an edit of, and the tables `novice_tables_test` compares
+/// with the client's.
+pub fn plain() -> store.Tables {
   database_support.once("character_tables_plain", fn() {
     store.store_under(tables: read_files(files()))
   })
