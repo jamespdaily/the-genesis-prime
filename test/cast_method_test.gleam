@@ -906,6 +906,8 @@ fn count_logs(effects effects: List(cast.Effect)) -> Int {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> False
     }
   })

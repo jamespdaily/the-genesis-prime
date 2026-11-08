@@ -15,10 +15,18 @@
 ////
 //// - **Who an effect aims at** is its `targetFlags`: 1 the caster, 2 the cast's own
 ////   target, 4 the area, 6 both (`Spell4Effects.targetFlags`, a reading of the rows).
-////   A phase with a damage effect, a crowd-control state or a Proxy aimed at the area
+////   A phase with a damage effect, a crowd-control state, a property change of struck
+////   units (a type 11 row aimed only at other units) or a Proxy aimed at the area
 ////   selects units; one aimed at the cast's target strikes the primary target; with
 ////   neither it strikes nobody and its go is written at once. A stun with no damage
-////   still selects and strikes (Gate's 30436, Stagger's 38780).
+////   still selects and strikes (Gate's 30436, Stagger's 38780), and so does a spell
+////   holding only a property row aimed at the target (Fissure's child 41886, row 94370)
+////   or the area (Defense Grid Aura 54475, rows 129039, 183223, 183224). An absorb, an
+////   armor or a look row aimed at others names no creature to change and selects nobody
+////   (`spell_plan.StruckChange`).
+////   Gap: no plan holds a spell with a type 11 row aimed at other units, since
+////   `spell_plan.build` plans each class's level-1 tier-1 trees only, which hold none
+////   (issue 336).
 //// - **Who is inside** is the telegraph's shape capped by the area row: the never-drawn
 ////   twin rows (flag 0x40) are the hit shapes, or the drawn rows where a spell has no
 ////   twin, less the drawn rows with bit 0x20 (the picture of a child spell's beam,
@@ -104,12 +112,13 @@ pub type PhaseStrike {
     /// The crowd-control states that fire in the phase, which aim at the area, the
     /// cast's target or both.
     controls: List(spell_plan.CrowdControl),
-    /// Whether the phase selects units from the area: a damage effect or a
-    /// crowd-control state aimed at the area, or a Proxy that starts its spell on each
-    /// struck unit (genesis_prime/game/spell_plan `OnEachStruck`).
+    /// Whether the phase selects units from the area: a damage effect, a
+    /// crowd-control state or a property change of struck units aimed at the area, or a
+    /// Proxy that starts its spell on each struck unit (genesis_prime/game/spell_plan
+    /// `OnEachStruck`).
     selects_area: Bool,
-    /// Whether the phase strikes the cast's own target: a damage effect or a
-    /// crowd-control state aimed at it.
+    /// Whether the phase strikes the cast's own target: a damage effect, a
+    /// crowd-control state or a property change of struck units aimed at it.
     strikes_primary_target: Bool,
   )
 }
@@ -546,7 +555,8 @@ pub fn damage_row_of(
 
 /// What the spell's phase strikes with the effects a cast that spent `spent` points
 /// chooses (genesis_prime/game/spend `applies`); the flags are worked out from the
-/// effects, crowd-control states and Proxies that are left.
+/// effects, crowd-control states, property changes of struck units and Proxies that
+/// are left.
 fn phase_of(
   spell spell: SpellArea,
   phase phase: Int,
@@ -560,9 +570,22 @@ fn phase_of(
     })
   let controls =
     spell_plan.controls_in_phase(spell: spell.spell, phase:, spent:)
+  let changes =
+    list.filter_map(
+      spell_plan.modifiers_in_phase(spell: spell.spell, phase:, spent:),
+      fn(modifier) {
+        case modifier.change {
+          spell_plan.StruckChange(aim:, ..) -> Ok(aim)
+          spell_plan.PropertyChange(..)
+          | spell_plan.LookChange(..)
+          | spell_plan.AbsorbChange(..) -> Error(Nil)
+        }
+      },
+    )
   let strikes = fn(aims) {
     list.any(firing, fn(effect) { list.contains(aims, effect.aim) })
     || list.any(controls, fn(control) { list.contains(aims, control.aim) })
+    || list.any(changes, fn(aim) { list.contains(aims, aim) })
   }
   PhaseStrike(
     damage: list.filter(firing, fn(effect) {

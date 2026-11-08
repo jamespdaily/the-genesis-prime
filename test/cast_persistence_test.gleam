@@ -357,7 +357,14 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
       state:,
       effects: raw,
       at: 1000,
-      struck: [cast.Hit(unit_id: 99, descriptions: [], controls: [])],
+      struck: [
+        cast.Hit(
+          unit_id: 99,
+          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          descriptions: [],
+          controls: [],
+        ),
+      ],
       rolls: [],
     )
   let #(state, first) =

@@ -25,6 +25,7 @@ import gleam/list
 import owned_test
 import planted_table
 import properties_support
+import spawn_support
 
 const move_speed = UnitProperty2Id(100)
 
@@ -386,4 +387,105 @@ pub fn a_table_missing_a_row_the_rules_read_fails_the_load_by_name_test() -> Nil
       name: "UnitPropertyDefaults",
       reason: "the table UnitProperty2 has no row 8, which the player's rules read",
     ))
+}
+
+// A creature's properties (`unit_properties.of_creature` over the bases the load builds).
+// The expected bases are the client's formula (`0x1404585c0`) worked by hand in 32-bit
+// floats from the committed rows of Creature2 73464, the Virtual Battle Beast, at level 1:
+// its Creature2OverrideProperties value when one is listed (40 is 1.0, 42 is 0.0); else
+// the UnitProperty2 defaultValue when the row's flags have bit 0 set (181 and 191) or the
+// id is 197 or above; else the CreatureLevel value (the row of the level below 100, row 101
+// at the column id - 100 from 100) times the archetype's, the difficulty's and the tier's
+// unitPropertyMultiplier at the id, each product held as a 32-bit float
+// (`table_rows -- CreatureLevel 1 101`, `Creature2ArcheType`, `Creature2Difficulty`,
+// `Creature2Tier`, `UnitProperty2`).
+const beast_bases = [
+  #(0, 10.466758728027344),
+  #(7, 52.6204948425293),
+  #(26, 0.0),
+  #(27, 0.0),
+  #(28, 0.0),
+  #(35, 41.867034912109375),
+  #(36, 41.867034912109375),
+  #(40, 1.0),
+  #(42, 0.0),
+  #(44, 0.0),
+  #(100, 1.0),
+  #(101, 0.01600000075995922),
+  #(102, 0.01600000075995922),
+  #(105, 0.0),
+  #(127, 1.2750000953674316),
+  #(132, 1.0),
+  #(133, 1.0),
+  #(138, 1.0),
+  #(139, 1.0),
+  #(140, 1.0),
+  #(141, 1.0),
+  #(142, 1.0),
+  #(143, 1.0),
+  #(144, 0.0),
+  #(145, 0.0),
+  #(146, 0.0),
+  #(150, 0.0),
+  #(159, 1.0),
+  #(160, 1.0),
+  #(161, 1.0),
+  #(162, 1.0),
+  #(163, 1.0),
+  #(164, 0.0),
+  #(181, 1.0),
+  #(191, 1.0),
+  #(195, 0.0),
+  #(196, 0.0),
+  #(197, 0.0),
+  #(199, 0.0),
+]
+
+pub fn creature_bases_match_virtual_battle_beast_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let bases = spawn_support.loaded_beast().bases
+  assert list.map(bases, fn(base) { { base.0 }.value })
+    == int.range(from: 199, to: -1, with: [], run: fn(ids, id) { [id, ..ids] })
+    as "one base for each of the client's 200 UnitProperty2 ids, in id order"
+  list.each(beast_bases, fn(expected) {
+    assert list.key_find(bases, UnitProperty2Id(expected.0)) == Ok(expected.1)
+      as "the client's formula's number for the Beast"
+  })
+  let properties = unit_properties.of_creature(bases:, level: 1)
+  assert unit_properties.value(properties:, property: base_health)
+    == 52.6204948425293
+    as "a creature's value starts at its base"
+}
+
+pub fn two_casters_sources_both_count_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Today's rule, which the module's doc names as a gap (#569 builds the stacking of the
+  // client's Spell4StackGroup rule): two casters' modifiers on one property each count,
+  // in start order, and taking one off leaves the other applied.
+  let properties =
+    unit_properties.of_creature(
+      bases: spawn_support.loaded_beast().bases,
+      level: 1,
+    )
+  let slow = modifier(property: move_speed, multiplier: 0.5, flat: 0.0)
+  let #(first, _) =
+    unit_properties.apply(
+      properties:,
+      source: cast_support.source_of(cast_id: 1, effect_id: 7),
+      modifier: slow,
+    )
+  let #(both, _) =
+    unit_properties.apply(
+      properties: first,
+      source: cast_support.source_of(cast_id: 2, effect_id: 7),
+      modifier: slow,
+    )
+  assert unit_properties.value(properties: both, property: move_speed) == 0.25
+    as "1.0 halved by each of two casters' slows"
+  let #(left, _) =
+    unit_properties.remove(
+      properties: both,
+      source: cast_support.source_of(cast_id: 1, effect_id: 7),
+    )
+  assert unit_properties.value(properties: left, property: move_speed) == 0.5
 }

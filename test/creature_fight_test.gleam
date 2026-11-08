@@ -21,6 +21,7 @@
 ////   (`Spell4Effects.184741`).
 //// - The threatMultiplier of Spell4Effects 125182 is 2.0 (the client's row).
 
+import cast_support
 import connection_rule_support as support
 import crowd_control_support
 import genesis_prime/client_connection.{
@@ -34,6 +35,7 @@ import genesis_prime/game/strike_tell.{
   Answered, Attacks, CreatureStriker, Key, Landed, PlayerStriker, Refused,
   Released, Strike, Threatened,
 }
+import genesis_prime/game/unit_properties.{type Modifier, Change}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
@@ -42,7 +44,7 @@ import genesis_prime/step.{
   type ConnectionId, type ServiceStep, Connection, ConnectionId, CreatureStart,
   OwnEffect, OwnEvent, ServiceTimerFired, StartServiceTimer, Started, Told,
 }
-import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/id.{Spell4Id, UnitProperty2Id}
 import genesis_prime/world_map/creature.{type State, Settings}
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_kind.{Kind}
@@ -2484,4 +2486,213 @@ pub fn a_row_that_destroys_no_armor_changes_nothing_on_armor_above_0_test() -> N
     )
   assert armor_news(next, 2) == [client_connection.InterruptArmor(armor: 1)]
     as "the armor was left at 2"
+}
+
+// ---- a property modifier on the creature changes how it fights ----
+//
+// Expected values come from these places: the chase speed is Creature2DisplayInfo
+// runLand 10.0 times Move Speed Multiplier (property 100), which the client
+// computes the same way for any unit (`0x1405b45e0`); a change x * multiplier +
+// flat is the row's (`Spell4Effects.effectType.11.change`); the blow of effect
+// 184741 is 12 (`Spell4Effects.184741`) and a creature's damage is multiplied by
+// DamageDealtMultiplier 140 + the effect's damageType, which is 1 (Physical), so
+// 141 (`UnitProperty2.damage_heal_multipliers`, `0x140565600`).
+
+/// A row that multiplies a property by `factor`: x becomes x * factor.
+fn scaled_by(property property: Int, factor factor: Float) -> Modifier {
+  Change(
+    property: UnitProperty2Id(property),
+    mode: 1,
+    multiplier: factor,
+    flat: 0.0,
+    per_level: 0.0,
+  )
+}
+
+fn modifier_start(
+  cast_id cast_id: Int,
+  modifier modifier: Modifier,
+  struck_at_ms struck_at_ms: Int,
+) -> creature.Message {
+  creature.ModifierStarts(
+    by: ConnectionId(9),
+    source: cast_support.source_of(cast_id:, effect_id: 1900 + cast_id),
+    modifier:,
+    struck_at_ms:,
+  )
+}
+
+pub fn move_speed_modifier_slows_chase_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 0.5),
+        struck_at_ms: 0,
+      ),
+    )
+  let #(_, aggro) =
+    tell(state:, at_ms: 100, message: approached(number: 2, x: 30.0, seq: 1))
+  let assert Running(from:, to:, speed:, ..) = path_sent(aggro)
+  assert x_of(from) == 0.0 && x_of(to) == 26.0
+  assert speed == 5.0 as "runLand 10.0 x Move Speed Multiplier 0.5"
+}
+
+pub fn move_speed_change_mid_chase_replans_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let assert Running(speed: 10.0, ..) = path_sent(aggro)
+  // 1 s in, the creature has run 10 of the 26 units to its path's end.
+  let #(state, slowed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 0.5),
+        struck_at_ms: 1000,
+      ),
+    )
+  assert said(slowed)
+    == ["other to 2", "other to 5", "0x638 to 2", "0x638 to 5"]
+    as "the property first, then the new path"
+  let assert Running(from:, to:, started_ms:, speed:) = path_sent(slowed)
+  assert x_of(from) == 10.0
+    && x_of(to) == 26.0
+    && started_ms == start_ms + 1000
+    && speed == 5.0
+    as "from where the creature stands, to the same end, at the new speed"
+  // 2 s in it has run 5 more units at 5.0; the end of the modifier speeds it up.
+  let #(state, back) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: creature.ModifierEnds(cast_support.source_of(
+        cast_id: 1,
+        effect_id: 1901,
+      )),
+    )
+  let assert Running(from:, to:, started_ms:, speed:) = path_sent(back)
+  assert x_of(from) == 15.0
+    && x_of(to) == 26.0
+    && started_ms == start_ms + 2000
+    && speed == 10.0
+    as "the end replans at the base speed from where it stands"
+  // A change to a property the chase does not read sends no path.
+  let #(state, other) =
+    tell(
+      state:,
+      at_ms: 2100,
+      message: modifier_start(
+        cast_id: 2,
+        modifier: scaled_by(property: 127, factor: 2.0),
+        struck_at_ms: 2100,
+      ),
+    )
+  assert said(other) == ["other to 2", "other to 5"]
+    as "no speed change, no new path"
+  // The path ended at 2 s + 11 / 10 = 3.1 s: a speed change after it sends none.
+  let #(_, after) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: modifier_start(
+        cast_id: 3,
+        modifier: scaled_by(property: 100, factor: 2.0),
+        struck_at_ms: 5000,
+      ),
+    )
+  assert said(after) == ["other to 2", "other to 5"]
+    as "a creature that stands has no path to replan"
+}
+
+pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  // The fighter leaves sight 1 s into the chase: the creature, at 10, walks home at
+  // 10 a second and is there at 2 s.
+  let #(state, unwatched) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let home = timer_for(unwatched, 1000)
+  // Half a second into the walk it has 5 left; at half the speed that takes 1 s.
+  let #(state, slowed) =
+    tell(
+      state:,
+      at_ms: 1500,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 0.5),
+        struck_at_ms: 1500,
+      ),
+    )
+  assert list.map(news_to(slowed, 5), name_of) == ["other", "0x638"]
+    as "the property, then the new walk"
+  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:))] =
+    list.filter(news_to(slowed, 5), fn(news) { name_of(news) == "0x638" })
+    as "one path to the viewer that stayed"
+  assert x_of(from) == 5.0
+    && x_of(to) == 0.0
+    && started_ms == start_ms + 1500
+    && speed == 5.0
+    as "from where the creature stands, to home, at the new speed"
+  assert timers_cancelled(slowed) == [home]
+    as "the arrival the old speed gave is cancelled"
+  let assert [#(arrival, 1000)] = timers(slowed)
+    as "and a new one starts for the 1 s the 5 units take at 5.0"
+  assert arrival != home
+  let #(state, stale) = fire(state:, at_ms: 2000, timer: home)
+  let #(state, still_walking) =
+    tell(
+      state:,
+      at_ms: 2100,
+      message: strike_of(number: 5, cast_id: 2, blows: [#(1, 5, 1.0)]),
+    )
+  assert said(stale) == [] && said(still_walking) == ["Refused(Returning) to 5"]
+    as "the old arrival, fired late, does nothing: the creature is still walking"
+  let #(state, arrived) = fire(state:, at_ms: 2500, timer: arrival)
+  assert said(arrived) == []
+  let #(_, struck) =
+    tell(
+      state:,
+      at_ms: 2600,
+      message: strike_of(number: 5, cast_id: 3, blows: [#(1, 5, 1.0)]),
+    )
+  assert !list.contains(said(struck), "Refused(Returning) to 5")
+    as "the new arrival ends the return at 2.5 s"
+}
+
+pub fn creature_blow_uses_damage_dealt_multiplier_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 141, factor: 2.0),
+        struck_at_ms: 0,
+      ),
+    )
+  let #(state, aggro) =
+    tell(state:, at_ms: 0, message: approached(number: 2, x: 5.0, seq: 1))
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let assert [#(2, Attacks(tell: Strike(offence:, ..)))] = fights_told(ticked)
+  assert list.map(offence.blows, fn(blow) {
+      #(blow.spell4_effects_id, blow.damage)
+    })
+    == [#(184_741, 24)]
+    as "effect 184741 is 12 and the Physical multiplier (141) is 2.0"
 }

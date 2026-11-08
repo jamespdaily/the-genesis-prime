@@ -29,6 +29,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell,
 }
+import genesis_prime/game/unit_properties.{type Modifier, type Source}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
@@ -126,6 +127,20 @@ pub type Request {
   /// took: the answer (genesis_prime/world_map/creature `StrikeAnswered`). Told
   /// through the creature registry with no watch, and never asked.
   TellStrikeAnswered(answered: Answered)
+  /// What a `Tell` effect sends a creature a property modifier of this connection's
+  /// player's spell starts or ends on (genesis_prime/world_map/creature
+  /// `ModifierStarts`, `ModifierEnds`), for the life the go struck. Told through the
+  /// creature registry with no watch, and never asked.
+  TellTargetChange(connection: ConnectionId, change: TargetChange)
+}
+
+/// A property modifier of a cast on a creature, as `TellTargetChange` carries it.
+pub type TargetChange {
+  /// The modifier starts: the creature applies it to its properties, unless it has
+  /// stood again since `struck_at_ms`, the monotonic time of the go that struck it.
+  ChangeStarts(source: Source, modifier: Modifier, struck_at_ms: Int)
+  /// The modifier of `source` ends: the creature removes it.
+  ChangeEnds(source: Source)
 }
 
 /// News of one unit from its owner, a player's connection or a creature's
@@ -235,7 +250,8 @@ pub type News {
   /// Some of the unit's properties changed, each with its base and its value as the
   /// client holds them: 0x93a (opcode.0x93a), written when the viewer's client shows
   /// the unit. A player's connection sends it for a property a lasting modifier of
-  /// its own spell changed (genesis_prime/game/unit_properties).
+  /// its own spell changed, and a creature's process for a property a modifier of a
+  /// player's spell changed on it (genesis_prime/game/unit_properties).
   PropertiesChanged(properties: List(UnitProperty))
   /// The unit entered or left stealth: 0x8f5 (opcode.0x8f5), then 0x247 of type 24
   /// (opcode.0x247.type24), written when the viewer's client shows the unit. Only a

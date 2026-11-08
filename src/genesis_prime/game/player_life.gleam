@@ -224,6 +224,7 @@ import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
 import genesis_prime/step.{type Address, type TimerId, TimerId}
+import genesis_prime/table/id.{type UnitProperty2Id, UnitProperty2Id}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/bool
@@ -646,6 +647,29 @@ pub fn defence(
       properties:,
       property: unit_properties.shield_mitigation_max,
     ),
+    physical_taken: damage_taken(properties:, damage_type: 1),
+    tech_taken: damage_taken(properties:, damage_type: 2),
+    magic_taken: damage_taken(properties:, damage_type: 3),
+  )
+}
+
+/// What the player's damage of `damage_type` (1 Physical, 2 Tech, 3 Magic) becomes
+/// when it is taken: its DamageTakenMultiplier (159 + type - 1) and DamageTakenOffset
+/// (150 + type - 1), as they are now, with every live modifier
+/// (`UnitProperty2.damage_heal_multipliers`).
+fn damage_taken(
+  properties properties: Properties,
+  damage_type damage_type: Int,
+) -> hit.DamageTaken {
+  let read = fn(first: UnitProperty2Id) {
+    unit_properties.value(
+      properties:,
+      property: UnitProperty2Id(first.value + damage_type - 1),
+    )
+  }
+  hit.DamageTaken(
+    multiplier: read(unit_properties.damage_taken_multiplier_physical),
+    offset: read(unit_properties.damage_taken_offset_physical),
   )
 }
 
@@ -1187,7 +1211,11 @@ fn shield_gained(
   #(life, list.append(shield_told(shield:), timers))
 }
 
-/// A heal of the player's own shield by `amount` (genesis_prime/game/cast `ShieldHeal`):
+/// A heal of the player's own shield by `amount` (genesis_prime/game/cast `ShieldHeal`),
+/// times its HealingMultiplierOutgoing (162) and HealingMultiplierIncoming (163), the
+/// two the player's own `properties` hold because it heals only itself, rounded half
+/// away from zero (`UnitProperty2.damage_heal_multipliers`; a heal of another unit
+/// takes the healer's outgoing value and the target's incoming one, which #570 builds):
 /// the shield rises by it, capped at its maximum (`Spell4Effects.effectType.118`), and
 /// is written to the player's client and told to its viewers as a tick's is. A heal
 /// that moves nothing, on a full shield or a dead player, is not told, and the shield's
@@ -1195,7 +1223,20 @@ fn shield_gained(
 pub fn shield_healed(
   life life: Life,
   amount amount: Int,
+  properties properties: Properties,
 ) -> #(Life, List(Effect)) {
+  let amount =
+    float.round(
+      int.to_float(amount)
+      *. unit_properties.value(
+        properties:,
+        property: unit_properties.healing_multiplier_outgoing,
+      )
+      *. unit_properties.value(
+        properties:,
+        property: unit_properties.healing_multiplier_incoming,
+      ),
+    )
   let shield = int.min(life.shield + amount, life.max_shield)
   use <- bool.guard(
     when: life.state == Dead || amount <= 0 || shield <= life.shield,

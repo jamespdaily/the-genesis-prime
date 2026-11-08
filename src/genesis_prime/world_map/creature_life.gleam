@@ -37,6 +37,7 @@ import genesis_prime/game/strike_tell.{
 }
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/float
+import gleam/int
 import gleam/option.{type Option, None, Some}
 
 /// Whether a creature may be attacked by a player of each faction, from its
@@ -154,6 +155,15 @@ pub fn health(life life: Life) -> Int {
   case life {
     Alive(health:) -> health
     Dead -> 0
+  }
+}
+
+/// The life under a maximum health of `max_health`: a creature above it falls to it,
+/// one at or below it, or dead, keeps its health. A raised maximum adds none.
+pub fn clamped(life life: Life, max_health max_health: Int) -> Life {
+  case life {
+    Alive(health:) -> Alive(health: int.min(health, max_health))
+    Dead -> Dead
   }
 }
 

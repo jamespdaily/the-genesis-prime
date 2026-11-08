@@ -84,7 +84,9 @@
 ////   `PropertyModifier` row: the property, mode, multiplier, flat amount and amount for
 ////   each level (genesis_prime/game/unit_properties), and its delay, durationTime and
 ////   flags bit 2, which start and end the change and give the caster's node of the cast
-////   its life. A row aimed only at other units is not read. Its caster apply
+////   its life. A row aimed only at other units (targetFlags 2, 4 or 6) is a `StruckChange`
+////   that changes the creatures a strike hits, and a row that names the caster and others
+////   (3, 5 or 7) changes the caster only. Its caster apply
 ////   prerequisite, phases and spend tag are a Fluff effect's. A UnitPropertyConversion
 ////   effect (`Spell4Effects.effectType.145`) whose targetFlags include the caster is a
 ////   `PropertyModifier` row too, whose change is a `Conversion` of property dataBits00
@@ -745,10 +747,17 @@ pub type ForcedMove {
 }
 
 /// What a timed row of a spell changes on its caster: a property of the unit
-/// (`unit_properties`), the unit's look (`look`) or the pool of damage the unit absorbs.
+/// (`unit_properties`), the unit's look (`look`) or the pool of damage the unit absorbs;
+/// or, for a UnitPropertyModifier row aimed at other units, a property of the creatures
+/// a strike hits.
 pub type Change {
-  /// A UnitPropertyModifier or UnitPropertyConversion row's change.
+  /// A UnitPropertyModifier or UnitPropertyConversion row's change on the caster.
   PropertyChange(modifier: unit_properties.Modifier)
+  /// A UnitPropertyModifier row's change (`Spell4Effects.effectType.11.change`) on the
+  /// creatures a strike hits, for a row aimed only at other units (targetFlags 2, 4 or 6,
+  /// which `aim` names: the primary target, the area or both). A row that includes the
+  /// caster as well (3, 5, 7) is a `PropertyChange` and changes the caster only.
+  StruckChange(modifier: unit_properties.Modifier, aim: Aim)
   /// A DisguiseOutfit row's change (`Spell4Effects.effectType.112`).
   LookChange(disguise: look.Disguise)
   /// An Absorption row's change (`Spell4Effects.effectType.29`).
@@ -773,8 +782,10 @@ pub type Absorption {
 /// `phase_flags` it applies in, when its `condition` holds (its caster apply
 /// prerequisite against the caster; one behind a target apply prerequisite is not
 /// applied), and when its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend). A row aimed only at other units is not read, and the
-/// part of a row's aim that is not the caster is not applied (`effect_kind.is_row_read`).
+/// (genesis_prime/game/spend). A type 11 row aimed only at other units (2, 4, 6) is a
+/// `StruckChange` on the creatures a strike hits; any other row aimed only at other
+/// units is not read, and the part of a row's aim that is not the caster is not applied
+/// (`effect_kind.is_row_read`).
 pub type PropertyModifier {
   PropertyModifier(
     effect_id: Spell4EffectsId,
@@ -1002,8 +1013,9 @@ pub type RowReading {
 pub type LeftOutReason {
   /// No rule of the server reads the effect type (`effect_kind.Unread`).
   TypeNotRead
-  /// The type is read for the rows that reach the caster (or, for an overload, the area)
-  /// and this row's targetFlags do not (`effect_kind.is_row_read`).
+  /// The type is read for the rows that reach the caster (or, for an overload, the area;
+  /// for a property modifier, struck units too) and this row's targetFlags do not
+  /// (`effect_kind.is_row_read`).
   AimedAtOtherUnits
   /// A Proc of a kind the holder's own events do not make (`proc_read`).
   ProcOfAnotherKind(kind: Int)
@@ -2244,8 +2256,19 @@ pub fn modifier_of(
     effect_kind.PropertyConversion ->
       conversion_of(tables:, spell4_id:, effect:)
       |> result.map(PropertyChange)
-    effect_kind.PropertyModifier
-    | effect_kind.Proxy
+    effect_kind.PropertyModifier ->
+      change_of(tables:, spell4_id:, effect:)
+      |> result.map(fn(modifier) {
+        case has_flag(flags: effect.target_flags, bit: 1) {
+          True -> PropertyChange(modifier:)
+          False ->
+            StruckChange(
+              modifier:,
+              aim: aim_of(target_flags: effect.target_flags),
+            )
+        }
+      })
+    effect_kind.Proxy
     | effect_kind.Damage
     | effect_kind.VitalModifier
     | effect_kind.Fluff
@@ -2401,15 +2424,17 @@ fn interrupt_armor_read(
   )
 }
 
-/// The unit a timed row aims at: the caster for a type 11, type 145 or type 112 row, which
-/// the plan reads only when its targetFlags include the caster, and for a type 52 or type
-/// 29 row what its targetFlags name, the primary target of a cast on the caster being the
-/// caster. Only the caster is changed: the server gives no other unit a property, an
-/// armor or a pool.
+/// The unit a timed row aims at: the caster for a type 11 row that includes the caster, a
+/// type 145 or a type 112 row, which the plan reads only when its targetFlags include the
+/// caster; what its targetFlags name for a type 11 row aimed only at other units
+/// (`StruckChange`), a type 52 or a type 29 row, the primary target of a cast on the
+/// caster being the caster. Only the caster and the creatures a strike hits are changed:
+/// the server gives no other unit a property, an armor or a pool.
 pub fn modifier_aim(modifier modifier: PropertyModifier) -> Aim {
   case modifier.armor, modifier.change {
     Some(armor), _ -> armor.aim
     None, AbsorbChange(absorption:) -> absorption.aim
+    None, StruckChange(aim:, ..) -> aim
     None, PropertyChange(..) | None, LookChange(..) -> AimsAtCaster
   }
 }
@@ -2501,28 +2526,40 @@ fn not_on_a_struck_unit(
 }
 
 /// The refusal of a property row on a struck unit: an absorb gives `AbsorptionOnStruckUnit`
-/// and an Interrupt Armor row `InterruptArmorOnStruckUnit`.
+/// and an Interrupt Armor row `InterruptArmorOnStruckUnit`. A `StruckChange` is built on
+/// the struck unit, so it is never refused.
 fn modifier_not_on_a_struck_unit(
   place place: RowPlace,
   modifier modifier: PropertyModifier,
 ) -> Result(Nil, PlanError) {
-  not_on_a_struck_unit(place:, aim: modifier_aim(modifier:), refused: fn(by) {
-    let effect_id = modifier.effect_id.value
-    case modifier.change {
-      AbsorbChange(..) ->
-        AbsorptionOnStruckUnit(
-          spell4_id: by.spell4_id,
-          proxy_effect_id: by.proxy_effect_id,
-          effect_id:,
-        )
-      PropertyChange(..) | LookChange(..) ->
-        InterruptArmorOnStruckUnit(
-          spell4_id: by.spell4_id,
-          proxy_effect_id: by.proxy_effect_id,
-          effect_id:,
-        )
-    }
-  })
+  let effect_id = modifier.effect_id.value
+  case modifier.change {
+    StruckChange(..) -> Ok(Nil)
+    AbsorbChange(..) ->
+      not_on_a_struck_unit(
+        place:,
+        aim: modifier_aim(modifier:),
+        refused: fn(by) {
+          AbsorptionOnStruckUnit(
+            spell4_id: by.spell4_id,
+            proxy_effect_id: by.proxy_effect_id,
+            effect_id:,
+          )
+        },
+      )
+    PropertyChange(..) | LookChange(..) ->
+      not_on_a_struck_unit(
+        place:,
+        aim: modifier_aim(modifier:),
+        refused: fn(by) {
+          InterruptArmorOnStruckUnit(
+            spell4_id: by.spell4_id,
+            proxy_effect_id: by.proxy_effect_id,
+            effect_id:,
+          )
+        },
+      )
+  }
 }
 
 /// A UnitPropertyModifier row's change (`Spell4Effects.effectType.11.change`): dataBits00
@@ -3289,7 +3326,7 @@ fn lasting_reading(
 }
 
 /// A UnitPropertyModifier, UnitPropertyConversion, DisguiseOutfit or Absorption row that
-/// reaches the caster: held when it stands behind a target apply prerequisite or, for a
+/// reaches the caster, or a UnitPropertyModifier row that reaches the units a strike hits: held when it stands behind a target apply prerequisite or, for a
 /// disguise, has no life, which no go applies (`lasting.has_life`).
 fn modifier_reading(
   tables tables: table_store.Tables,

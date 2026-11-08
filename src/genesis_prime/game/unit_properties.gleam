@@ -1,10 +1,13 @@
-//// A player's own properties: each UnitProperty2 id's base and value, and the
-//// property modifiers of its own spells that change the value for their time. The
-//// connection keeps one `Properties` for its player (genesis_prime/game/world_entry
-//// `Entered`), applies and removes a modifier when the cast rule says so
+//// A unit's properties: each UnitProperty2 id's base and value, and the property
+//// modifiers of spells that change the value for their time. The connection keeps one
+//// `Properties` for its player (genesis_prime/game/world_entry `Entered`), applies and
+//// removes a modifier of the player's own spell when the cast rule says so
 //// (genesis_prime/game/cast `CasterChangeStarts`, `CasterChangeEnds`), tells the player's
 //// client and its viewers the entries that changed (0x93a), and hands each rule the
-//// value it reads. The module is pure.
+//// value it reads. A creature's process keeps one for its unit from its bases
+//// (`of_creature`), and applies and removes a modifier of a player's spell on it
+//// (genesis_prime/world_map/creature `ModifierStarts`, `ModifierEnds`). The module is
+//// pure.
 ////
 //// ```
 //// cast rule                connection                         clients
@@ -51,9 +54,14 @@
 ////   value as it was reports nothing.
 //// - **A modifier is read by a rule only for the properties the rules name.** The
 ////   constants below name them; a modifier on any other property is held and sent, and
-////   no rule reads it (for example MoveSpeedMultiplier, 100: the client moves at it and
-////   the server checks no speed; FallingDamageMultiplier, 134: falling damage is not
-////   handled).
+////   no rule reads it (for example FallingDamageMultiplier, 134: falling damage is not
+////   handled). A creature's chase speed reads MoveSpeedMultiplier, 100, and a player's
+////   movement does not: the client moves the player at it and the server checks no speed.
+//// - **Stacking across casters is a gap, #569.** `Spell4StackGroup.server_rule` has more
+////   rules than one slot for each source: type 0 is one slot for each unit shared by
+////   casters, type 1 one for each caster, and a stronger one keeps the slot by priority.
+////   Only the per-source rule is built, so two casters' modifiers both count. Properties
+////   133, 138 and 139 are held and sent, and no rule reads them.
 //// - **An Interrupt Armor row is a modifier of property 44** (InterruptArmor_Threshold),
 ////   x * 1.0 + its points, built by `interrupt_armor_modifier`: the client clamps the armor
 ////   to this property, whose default for a player is 0.0, so the armor shows only while the
@@ -109,6 +117,9 @@ pub const armor = UnitProperty2Id(42)
 /// clamps stat 21 to (`opcode.0x938.interrupt_armor`).
 pub const interrupt_armor_threshold = UnitProperty2Id(44)
 
+/// MoveSpeedMultiplier (100): what a creature's chase speed is multiplied by.
+pub const move_speed_multiplier = UnitProperty2Id(100)
+
 /// BaseCritChance (102): the base the critical hit chance formula takes.
 pub const base_crit_chance = UnitProperty2Id(102)
 
@@ -118,6 +129,27 @@ pub const base_avoid_reduce_chance = UnitProperty2Id(104)
 /// CriticalHitSeverityMultiplier (127): the base the critical hit severity formula
 /// takes.
 pub const critical_hit_severity_multiplier = UnitProperty2Id(127)
+
+/// DamageDealtMultiplierSpell (140): the first of the three damage-dealt multipliers, one
+/// for each damage type 1 to 3 (140 + damage type, `0x140565600`); a creature's blow
+/// is multiplied by the one of its type.
+pub const damage_dealt_multiplier_spell = UnitProperty2Id(140)
+
+/// DamageTakenOffsetPhysical (150): the first of the three damage-taken offsets, one for
+/// each damage type 1 to 3 (150 + damage type - 1), added to the blow after the
+/// multiplier (`UnitProperty2.damage_heal_multipliers`).
+pub const damage_taken_offset_physical = UnitProperty2Id(150)
+
+/// DamageTakenMultiplierPhysical (159): the first of the three damage-taken multipliers,
+/// one for each damage type 1 to 3 (159 + damage type - 1), which a blow is multiplied by
+/// after armor (`UnitProperty2.damage_heal_multipliers`).
+pub const damage_taken_multiplier_physical = UnitProperty2Id(159)
+
+/// HealingMultiplierOutgoing (162): what a healer's heal is multiplied by.
+pub const healing_multiplier_outgoing = UnitProperty2Id(162)
+
+/// HealingMultiplierIncoming (163): what the healed unit's heal is multiplied by.
+pub const healing_multiplier_incoming = UnitProperty2Id(163)
 
 /// ShieldMitigationMax (175): the most of a blow the shield takes.
 pub const shield_mitigation_max = UnitProperty2Id(175)
@@ -173,7 +205,7 @@ pub type Changed {
   Changed(property: UnitProperty2Id, base: Float, value: Float)
 }
 
-/// The player's properties: the base and the value of every UnitProperty2 id and the
+/// A unit's properties: the base and the value of every UnitProperty2 id and the
 /// modifiers that are live, in the order they started.
 pub opaque type Properties {
   Properties(
@@ -205,9 +237,15 @@ const named = [
   shield_capacity_max,
   armor,
   interrupt_armor_threshold,
+  move_speed_multiplier,
   base_crit_chance,
   base_avoid_reduce_chance,
   critical_hit_severity_multiplier,
+  damage_dealt_multiplier_spell,
+  damage_taken_offset_physical,
+  damage_taken_multiplier_physical,
+  healing_multiplier_outgoing,
+  healing_multiplier_incoming,
   shield_mitigation_max,
   shield_tick_time,
 ]
@@ -278,6 +316,16 @@ pub fn new(
       )
     })
   Properties(base:, value:, live: [], level:)
+}
+
+/// The properties of a creature at `level`: each of `bases` as base and value, every
+/// UnitProperty2 row's number for the creature (genesis_prime/world_map/spawn), no
+/// modifier live.
+pub fn of_creature(
+  bases bases: List(#(UnitProperty2Id, Float)),
+  level level: Int,
+) -> Properties {
+  new(defaults: bases, listed: [], level:)
 }
 
 fn float_of(bits bits: Int) -> Float {

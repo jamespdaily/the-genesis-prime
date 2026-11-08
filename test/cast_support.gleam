@@ -339,6 +339,8 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.Log(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> []
     }
   })
@@ -358,6 +360,8 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.Log(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -379,6 +383,8 @@ pub fn caster_change_ends(
       | cast.Gain(..)
       | cast.Log(..)
       | cast.CasterChangeStarts(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -400,6 +406,8 @@ pub fn caster_change_starts(
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.Log(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -422,6 +430,36 @@ pub fn property_starts(
       cast.Property(modifier:) -> Ok(#(start.0, modifier))
       cast.ShieldHeal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
     }
+  })
+}
+
+/// The property modifiers the effects start on creatures or end on them, in order.
+pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      cast.TargetChangeStarts(..) | cast.TargetChangeEnds(..) -> True
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.Log(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
+      | cast.StealthChanged(..) -> False
+    }
+  })
+}
+
+/// The time each step's effects were taken at, with each property modifier they start
+/// on a creature or end on it, in order.
+pub fn target_timeline(
+  fired fired: List(#(Int, List(Effect))),
+) -> List(#(Int, Effect)) {
+  list.flat_map(fired, fn(step) {
+    list.map(target_changes(effects: step.1), fn(change) { #(step.0, change) })
   })
 }
 
@@ -624,12 +662,16 @@ pub fn caster_in_combat(in_combat in_combat: Bool) -> Caster {
   cast.Caster(..caster(), in_combat:)
 }
 
-/// Each struck unit as a hit with no descriptions and no controls.
+/// Each struck unit as a hit on a creature's first life, struck at time 0, with no
+/// descriptions and no controls.
 pub fn hits(units: List(Int)) -> List(cast.Struck) {
   list.map(units, fn(unit_id) {
-    cast.Hit(unit_id:, descriptions: [], controls: [])
+    cast.Hit(unit_id:, unit: first_life, descriptions: [], controls: [])
   })
 }
+
+/// A creature in its first life, struck by a go at time 0.
+pub const first_life = cast.HitCreature(life: 1, struck_at_ms: 0)
 
 /// A press whose go, and each go it leads to at once, strikes these units.
 pub fn pressed_striking(
@@ -728,6 +770,8 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -804,6 +848,8 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -823,6 +869,8 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -842,6 +890,8 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -861,6 +911,8 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -880,6 +932,8 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1048,6 +1102,8 @@ pub fn answered_each(
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
   })

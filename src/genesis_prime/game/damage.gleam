@@ -308,13 +308,15 @@ fn is_read_for_a_creature(kind: Int) -> Bool {
 /// The effect's value for a creature caster, before any rounding to a whole number
 /// (`0x140565600`): the stat part rounded half away from zero, held under the
 /// creature's cap, plus the row part, both divided by GameFormula 712's fourth
-/// value. The multiplier M is 1.0: a creature's DamageDealtMultiplier (UnitProperty2
-/// 140 to 143) is the default's. Effect 184741 of a level-1 Virtual Battle Beast
-/// (Strength and Assault Power 10.47) is 12.
+/// value, times `multiplier`, the creature's DamageDealtMultiplier of the effect's
+/// damage type (UnitProperty2 140 + damage type, 1.0 for a type with none).
+/// Effect 184741 of a level-1 Virtual Battle Beast (Strength and Assault Power
+/// 10.47, multiplier 1.0) is 12.
 pub fn creature_value(
   formula formula: Formula,
   creature creature: Creature,
   scaling scaling: CreatureScaling,
+  multiplier multiplier: Float,
 ) -> Float {
   let stat_parameters =
     list.filter(formula.parameters, fn(parameter) {
@@ -352,5 +354,5 @@ pub fn creature_value(
       }
     })
   let row_part = { formula.base +. flat_part } *. formula.multiplier
-  { capped +. row_part } /. scaling.divisor
+  { capped +. row_part } /. scaling.divisor *. multiplier
 }

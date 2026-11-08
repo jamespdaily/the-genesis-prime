@@ -343,3 +343,417 @@ pub fn a_caster_that_leaves_ends_no_modifier_test() -> Nil {
   assert support.caster_change_ends(effects: left) == []
     as "the connection's properties go with the player's Entered"
 }
+
+// ---- a modifier aimed at the units the go struck ----
+//
+// A type 11 row whose targetFlags are 2, 4 or 6 aims at units other than the caster; the
+// cast starts it on each creature the go struck and ends it on every path a node ends
+// (`Spell4Effects.targetFlags`). The row is 7711 as the client holds it: Spell4 671,
+// targetFlags 4 (the units the go hit), property 100, mode 2, multiplier 0.5 (dataBits02
+// 1056964608 = 0x3F000000), flat 0, per level 0, from go + 1000 ms for 5000 ms, phase 0.
+
+const creature = 21
+
+const other_player = 22
+
+const bag_of_base_2 = 10
+
+/// 7711 as the client holds it.
+fn slowing_row() -> spell_plan.PropertyModifier {
+  spell_plan.PropertyModifier(
+    effect_id: Spell4EffectsId(7711),
+    phase_flags: 1,
+    change: spell_plan.StruckChange(
+      modifier: slowing_modifier(),
+      aim: spell_plan.AimsAtArea,
+    ),
+    row: LastingRow(delay_ms: 1000, duration_ms: 5000, until_removed: False),
+    condition: Always,
+    tag: spend.always,
+    armor: None,
+  )
+}
+
+fn slowing_modifier() -> Modifier {
+  Change(
+    property: UnitProperty2Id(100),
+    mode: 2,
+    multiplier: 0.5,
+    flat: 0.0,
+    per_level: 0.0,
+  )
+}
+
+/// The same row with no delay, so its start is in the go's own step.
+fn immediate_row(effect_id effect_id: Int) -> spell_plan.PropertyModifier {
+  spell_plan.PropertyModifier(
+    ..slowing_row(),
+    effect_id: Spell4EffectsId(effect_id),
+    row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+  )
+}
+
+/// The creature 21 in its life 3, struck at the monotonic time 1000.
+fn creature_struck() -> List(cast.Struck) {
+  [
+    cast.Hit(
+      unit_id: creature,
+      unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+      descriptions: [],
+      controls: [],
+    ),
+  ]
+}
+
+fn pressed_striking(
+  plans plans: Plans,
+  state state: cast.State,
+  bag bag: Int,
+  struck struck: List(cast.Struck),
+  at ms: Int,
+) -> #(cast.State, List(Effect)) {
+  let #(state, effects) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster: support.caster(),
+      bag_index: bag,
+      target: 0,
+      at: ms,
+    )
+  support.answered_by(state:, effects:, at: ms, struck:)
+}
+
+fn striking_plans(row: spell_plan.PropertyModifier) -> Plans {
+  support.plans_of([
+    support.spell_holding(spell4_id: 671, base: 3, modifiers: [row]),
+  ])
+}
+
+fn started_on_creature(source: unit_properties.Source) -> Effect {
+  cast.TargetChangeStarts(
+    unit_id: creature,
+    life: 3,
+    struck_at_ms: 1000,
+    source:,
+    modifier: slowing_modifier(),
+  )
+}
+
+fn ended_on_creature(source: unit_properties.Source) -> Effect {
+  cast.TargetChangeEnds(unit_id: creature, life: 3, source:)
+}
+
+pub fn go_lists_modifier_in_creature_target_info_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    pressed_striking(
+      plans: striking_plans(slowing_row()),
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
+  let assert Ok(decoded) = spell_go.decode(go.body)
+  let assert [info] =
+    list.filter(decoded.targets, fn(target) { target.unit_id == creature })
+    as "the struck creature is a unit of the go"
+  assert list.map(info.effects, fn(effect) { effect.spell4_effects_id })
+    == [7711]
+    as "the row aimed at the units the go hit is an effect of the creature's entry"
+  assert list.filter(decoded.targets, fn(target) { target.unit_id == 7 }) == []
+    as "and not of the caster's, which the row does not aim at"
+}
+
+pub fn modifier_on_creature_starts_after_delay_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = striking_plans(slowing_row())
+  let #(state, effects) =
+    pressed_striking(
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  let id = support.pressed_id(effects:)
+  let source = support.source_of(cast_id: id, effect_id: 7711)
+  assert support.target_changes(effects:) == []
+    as "the row waits its delayTime of 1000 ms: nothing starts at the go"
+  assert support.caster_change_starts(effects:) == []
+    as "and the caster's own properties are not the row's"
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects:,
+      from_ms: 1000,
+      struck: creature_struck(),
+    )
+  assert support.target_timeline(fired:)
+    == [
+      #(2000, started_on_creature(source)),
+      #(7000, ended_on_creature(source)),
+    ]
+    as "it starts at go + 1000 for the life and the strike time of the hit, and ends with the node at go + 1000 + 5000"
+}
+
+pub fn node_end_ends_creature_modifier_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = striking_plans(immediate_row(effect_id: 7711))
+  let #(state, effects) =
+    pressed_striking(
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  let id = support.pressed_id(effects:)
+  let source = support.source_of(cast_id: id, effect_id: 7711)
+  assert support.target_changes(effects:) == [started_on_creature(source)]
+    as "a row with no delay starts in the go's own step"
+  let #(state, fired) =
+    support.run_timers_striking(
+      state:,
+      effects:,
+      from_ms: 1000,
+      struck: creature_struck(),
+    )
+  assert support.target_timeline(fired:) == [#(6000, ended_on_creature(source))]
+    as "the node's life is the row's 5000 ms, and its end ends the modifier once"
+  let assert [#(_, ending)] =
+    list.filter(fired, fn(step) {
+      support.target_changes(effects: step.1) != []
+    })
+  assert support.finished_ids(support.writes(effects: ending)) == [id]
+    as "the lingering cast left with no node ends with its 0x7fe, as for any lasting node"
+  assert support.target_changes(effects: cast.left(cast: state).1) == []
+    as "and nothing is told again when the caster leaves"
+}
+
+pub fn removal_ends_creature_modifier_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    support.plans_of([
+      support.spell_holding(spell4_id: 671, base: 3, modifiers: [
+        immediate_row(effect_id: 7711),
+      ]),
+      spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
+        spell_plan.ForceRemove(
+          effect_id: Spell4EffectsId(196_521),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtArea,
+          selector: lasting.Spell(Spell4Id(671)),
+          count: 1,
+          condition: Always,
+          tag: spend.always,
+        ),
+      ]),
+    ])
+  let #(state, first) =
+    pressed_striking(
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  let id = support.pressed_id(effects: first)
+  let source = support.source_of(cast_id: id, effect_id: 7711)
+  let #(state, removal) =
+    pressed_striking(
+      plans:,
+      state:,
+      bag: bag_of_base_1,
+      struck: creature_struck(),
+      at: 2000,
+    )
+  assert support.target_changes(effects: removal) == [ended_on_creature(source)]
+    as "the type 80 row takes the cast's node off the creature, which ends its modifier"
+  assert list.contains(
+    support.removed_targets(support.writes(effects: removal)),
+    #(id, [creature]),
+  )
+    as "with the 0x811 for the creature"
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects: first,
+      from_ms: 1000,
+      struck: creature_struck(),
+    )
+  assert support.target_timeline(fired:) == []
+    as "its node's end timer was cancelled with the node, so nothing ends it twice"
+  assert support.target_changes(effects: cast.left(cast: state).1) == []
+}
+
+pub fn removal_before_the_delay_ran_out_starts_nothing_on_the_creature_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    support.plans_of([
+      support.spell_holding(spell4_id: 671, base: 3, modifiers: [slowing_row()]),
+      spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
+        spell_plan.ForceRemove(
+          effect_id: Spell4EffectsId(196_521),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtArea,
+          selector: lasting.Spell(Spell4Id(671)),
+          count: 1,
+          condition: Always,
+          tag: spend.always,
+        ),
+      ]),
+    ])
+  let #(state, first) =
+    pressed_striking(
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  assert support.target_changes(effects: first) == []
+    as "the row waits its delayTime of 1000 ms: nothing has started at the go"
+  let #(state, removal) =
+    pressed_striking(
+      plans:,
+      state:,
+      bag: bag_of_base_1,
+      struck: creature_struck(),
+      at: 1500,
+    )
+  assert support.target_changes(effects: removal) == []
+    as "the removal takes the cast's node off the creature before its modifier started: nothing was started to end"
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects: first,
+      from_ms: 1000,
+      struck: creature_struck(),
+    )
+  assert support.target_timeline(fired:) == []
+    as "a start due after the node left starts nothing on the creature, and keeps nothing to end"
+}
+
+pub fn caster_death_ends_creature_modifier_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = striking_plans(immediate_row(effect_id: 7711))
+  let #(state, effects) =
+    pressed_striking(
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  let id = support.pressed_id(effects:)
+  let source = support.source_of(cast_id: id, effect_id: 7711)
+  let #(state, died) =
+    cast.died(
+      cast: state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 1100),
+    )
+  assert support.target_changes(effects: died) == [ended_on_creature(source)]
+    as "the cast's modifier on the creature is told ended, once"
+  assert support.target_changes(effects: cast.left(cast: state).1) == []
+    as "and the caster's leaving tells nothing more"
+}
+
+pub fn creature_leaving_sight_ends_its_modifier_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = striking_plans(immediate_row(effect_id: 7711))
+  let #(state, effects) =
+    pressed_striking(
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  let id = support.pressed_id(effects:)
+  let source = support.source_of(cast_id: id, effect_id: 7711)
+  let #(state, removed) =
+    cast.unit_removed(cast: state, unit_id: creature, now_ms: 1100)
+  assert support.target_changes(effects: removed) == [ended_on_creature(source)]
+    as "the cast drops its node on a creature that left the caster's sight, so the modifier it holds there ends with it"
+  assert support.target_changes(effects: cast.left(cast: state).1) == []
+    as "and is not told again"
+}
+
+pub fn pushed_off_node_ends_creature_modifier_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Two spells of the stack group 5 with a cap of 1: the second cast's node on the
+  // creature pushes the first cast's off (`lasting.pushed_off`, Jim's decision).
+  let stacking = lasting.Stack(group_id: 5, cap: 1)
+  let plans =
+    support.plans_of([
+      spell_plan.Spell(
+        ..support.spell_holding(spell4_id: 671, base: 3, modifiers: [
+          immediate_row(effect_id: 7711),
+        ]),
+        stack: stacking,
+      ),
+      spell_plan.Spell(
+        ..support.spell_holding(spell4_id: 672, base: 2, modifiers: [
+          immediate_row(effect_id: 7712),
+        ]),
+        stack: stacking,
+      ),
+    ])
+  let #(state, first) =
+    pressed_striking(
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  let first_id = support.pressed_id(effects: first)
+  let #(_, second) =
+    pressed_striking(
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      struck: creature_struck(),
+      at: 2000,
+    )
+  let second_id = support.pressed_id(effects: second)
+  assert support.target_changes(effects: second)
+    == [
+      ended_on_creature(support.source_of(cast_id: first_id, effect_id: 7711)),
+      started_on_creature(support.source_of(cast_id: second_id, effect_id: 7712)),
+    ]
+    as "the first cast's modifier ends when its node is pushed off, before the second starts"
+  assert list.contains(
+    support.removed_targets(support.writes(effects: second)),
+    #(first_id, [creature]),
+  )
+    as "with the 0x811 for the creature"
+}
+
+pub fn modifier_on_another_player_is_left_out_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A row aimed at a player other than the caster changes nothing until a modifier on
+  // another player is built (#570).
+  let struck = [
+    cast.Hit(
+      unit_id: other_player,
+      unit: cast.HitPlayer,
+      descriptions: [],
+      controls: [],
+    ),
+  ]
+  let #(_, effects) =
+    pressed_striking(
+      plans: striking_plans(immediate_row(effect_id: 7711)),
+      state: cast.new(),
+      bag: bag_of_base_3,
+      struck:,
+      at: 1000,
+    )
+  assert support.target_changes(effects:) == []
+  assert support.caster_change_starts(effects:) == []
+  assert all_timer_delays(effects:) == [] as "and no node, so no timer"
+}

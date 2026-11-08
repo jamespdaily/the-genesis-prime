@@ -941,6 +941,24 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
             Ok(creature.TargetMoved(by: connection, place:, seq:, stay:))
           client_connection.TellStrikeAnswered(answered:) ->
             Ok(creature.StrikeAnswered(answered:))
+          client_connection.TellTargetChange(
+            connection:,
+            change: client_connection.ChangeStarts(
+              source:,
+              modifier:,
+              struck_at_ms:,
+            ),
+          ) ->
+            Ok(creature.ModifierStarts(
+              by: connection,
+              source:,
+              modifier:,
+              struck_at_ms:,
+            ))
+          client_connection.TellTargetChange(
+            change: client_connection.ChangeEnds(source:),
+            ..,
+          ) -> Ok(creature.ModifierEnds(source:))
           AskStore(..)
           | AskHandOff(..)
           | AskSessions(..)

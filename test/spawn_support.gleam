@@ -24,6 +24,7 @@ import genesis_prime/world_map/creature_life.{
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source.{Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import genesis_prime/world_map/unit_fields
 import gleam/dict
@@ -72,7 +73,35 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     display_info_id: 26_565,
     outfit_info_id: 0,
     combat: beast_combat(),
+    bases: loaded_beast().bases,
+    context: loaded_beast().context,
   )
+}
+
+/// The Virtual Battle Beast as the load builds it from the client's committed rows: the
+/// summon of Creature2 73464 at its own level, whose `bases` and `context` a test's spawn
+/// carries and whose `combat` is what `beast_combat` states by hand.
+pub fn loaded_beast() -> Spawn {
+  database_support.once("spawn_support_loaded_beast", fn() {
+    let assert Ok(beast) =
+      spawn.summoned(
+        checks: summon_checks(),
+        summoned: Summoned(
+          id: SpawnId(-1),
+          creature_id: Creature2Id(73_464),
+          level: option.None,
+          place: place_support.at(
+            world_id: 3460,
+            world_zone_id: warfare_woods,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+          ),
+        ),
+      )
+      as "the Virtual Battle Beast passes the summon checks over the client's committed rows"
+    beast
+  })
 }
 
 /// The spawn numbered `number` of a Virtual Defense Dagun, the Dominion Novice's
@@ -162,6 +191,9 @@ pub fn beast_combat() -> creature_life.Combat {
       tech_mitigation: 0.0,
       magic_mitigation: 0.0,
       shield_mitigation_max: 0.0,
+      physical_taken: hit.as_dealt,
+      tech_taken: hit.as_dealt,
+      magic_taken: hit.as_dealt,
     ),
     attack: beast_attack(),
     interrupt_armor: creature_life.NoArmor,

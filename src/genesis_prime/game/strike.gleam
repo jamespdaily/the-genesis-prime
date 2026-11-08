@@ -171,15 +171,20 @@ pub opaque type State {
 }
 
 /// One go's open round: the go, a place for each selected unit in the order of the
-/// selection, and the monotonic time its deadline passes.
+/// selection, the monotonic time of the go and the time its deadline passes.
 pub type Round {
-  Round(asked: GoAsked, places: List(Place), deadline_ms: Int)
+  Round(
+    asked: GoAsked,
+    places: List(Place),
+    struck_at_ms: Int,
+    deadline_ms: Int,
+  )
 }
 
 /// A selected unit's place in a round.
 pub type Place {
-  /// The creature has not answered.
-  Waiting(unit_id: Int)
+  /// The creature, in its life `life`, has not answered.
+  Waiting(unit_id: Int, life: Int)
   /// The creature answered, or the unit needed no strike.
   Answered(struck: Struck)
   /// The creature refused, or the deadline passed: the unit is left out of the go.
@@ -300,7 +305,15 @@ pub fn begin(
         [], [] -> #(
           [
             Answered(
-              cast.Hit(unit_id: aimed.unit_id, descriptions: [], controls: []),
+              cast.Hit(
+                unit_id: aimed.unit_id,
+                unit: cast.HitCreature(
+                  life: aimed.life,
+                  struck_at_ms: now.monotonic_ms,
+                ),
+                descriptions: [],
+                controls: [],
+              ),
             ),
             ..places
           ],
@@ -308,30 +321,33 @@ pub fn begin(
         )
         _, _ ->
           case rolls_at(entropy:, index:) {
-            Ok(rolls) -> #([Waiting(unit_id: aimed.unit_id), ..places], [
-              TellStrike(
-                unit_id: aimed.unit_id,
-                life: aimed.life,
-                tell: strike_tell.Strike(
-                  key: strike_tell.Key(
-                    cast_id: selection.asked.cast_id,
-                    phase: selection.asked.phase,
-                    unit_id: aimed.unit_id,
+            Ok(rolls) -> #(
+              [Waiting(unit_id: aimed.unit_id, life: aimed.life), ..places],
+              [
+                TellStrike(
+                  unit_id: aimed.unit_id,
+                  life: aimed.life,
+                  tell: strike_tell.Strike(
+                    key: strike_tell.Key(
+                      cast_id: selection.asked.cast_id,
+                      phase: selection.asked.phase,
+                      unit_id: aimed.unit_id,
+                    ),
+                    from: step.Connection(attacker.connection),
+                    striker: strike_tell.PlayerStriker(
+                      unit_id: attacker.unit_id,
+                      place: attacker.place,
+                      seq: attacker.move_seq,
+                      stay: attacker.stay,
+                      rolls:,
+                    ),
+                    offence:,
+                    controls:,
                   ),
-                  from: step.Connection(attacker.connection),
-                  striker: strike_tell.PlayerStriker(
-                    unit_id: attacker.unit_id,
-                    place: attacker.place,
-                    seq: attacker.move_seq,
-                    stay: attacker.stay,
-                    rolls:,
-                  ),
-                  offence:,
-                  controls:,
                 ),
-              ),
-              ..tells
-            ])
+                ..tells
+              ],
+            )
             Error(Nil) -> #([LeftOut(unit_id: aimed.unit_id), ..places], [
               Log(
                 level: step.LogError,
@@ -346,6 +362,7 @@ pub fn begin(
     Round(
       asked: selection.asked,
       places: list.reverse(places),
+      struck_at_ms: now.monotonic_ms,
       deadline_ms: now.monotonic_ms + strike_tell.deadline_ms,
     )
   let state = State(..strike, rounds: list.append(strike.rounds, [round]))
@@ -466,7 +483,7 @@ pub fn answered(
   let found =
     list.any(strike.rounds, fn(round) {
       is_round_of(round:, key:)
-      && list.contains(round.places, Waiting(unit_id: key.unit_id))
+      && list.any(round.places, is_waiting(place: _, unit_id: key.unit_id))
     })
   use <- bool.guard(when: !found, return: #(strike, []))
   let rounds =
@@ -475,7 +492,12 @@ pub fn answered(
       Round(
         ..round,
         places: list.map(round.places, fn(place) {
-          fill(place:, unit_id: key.unit_id, outcome: answer.outcome)
+          fill(
+            place:,
+            unit_id: key.unit_id,
+            struck_at_ms: round.struck_at_ms,
+            outcome: answer.outcome,
+          )
         }),
       )
     })
@@ -487,20 +509,44 @@ fn is_round_of(round round: Round, key key: strike_tell.Key) -> Bool {
   round.asked.cast_id == key.cast_id && round.asked.phase == key.phase
 }
 
+/// Whether the place waits for this unit's answer.
+fn is_waiting(place place: Place, unit_id unit_id: Int) -> Bool {
+  case place {
+    Waiting(unit_id: waiting, ..) -> waiting == unit_id
+    Answered(..) | LeftOut(..) -> False
+  }
+}
+
 /// The place, filled with the outcome when it is the one waiting for this unit.
 fn fill(
   place place: Place,
   unit_id unit_id: Int,
+  struck_at_ms struck_at_ms: Int,
   outcome outcome: strike_tell.Outcome,
 ) -> Place {
-  use <- bool.guard(when: place != Waiting(unit_id:), return: place)
-  filled(unit_id:, outcome:)
+  case place {
+    Waiting(unit_id: waiting, life:) if waiting == unit_id ->
+      filled(unit_id:, life:, struck_at_ms:, outcome:)
+    Waiting(..) | Answered(..) | LeftOut(..) -> place
+  }
 }
 
-fn filled(unit_id unit_id: Int, outcome outcome: strike_tell.Outcome) -> Place {
+/// A creature's answer as the unit's place: a landed strike is a hit on the life the
+/// strike was told to, struck at the go.
+fn filled(
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  outcome outcome: strike_tell.Outcome,
+) -> Place {
   case outcome {
     strike_tell.Landed(descriptions:, controls:) ->
-      Answered(struck: cast.Hit(unit_id:, descriptions:, controls:))
+      Answered(struck: cast.Hit(
+        unit_id:,
+        unit: cast.HitCreature(life:, struck_at_ms:),
+        descriptions:,
+        controls:,
+      ))
     strike_tell.Deflected -> Answered(struck: cast.Deflected(unit_id:))
     strike_tell.Refused(..) -> LeftOut(unit_id:)
   }
@@ -521,7 +567,7 @@ pub fn timer_fired(
             ..round,
             places: list.map(round.places, fn(place) {
               case place {
-                Waiting(unit_id:) -> LeftOut(unit_id:)
+                Waiting(unit_id:, ..) -> LeftOut(unit_id:)
                 Answered(..) | LeftOut(..) -> place
               }
             }),
@@ -549,7 +595,7 @@ pub fn holds(strike strike: State, unit_id unit_id: Int) -> Bool {
 fn in_round(round round: Round, unit_id unit_id: Int) -> Bool {
   list.any(round.places, fn(place) {
     case place {
-      Waiting(unit_id: held) | LeftOut(unit_id: held) -> held == unit_id
+      Waiting(unit_id: held, ..) | LeftOut(unit_id: held) -> held == unit_id
       Answered(struck:) -> unit_of(struck) == unit_id
     }
   })
@@ -605,7 +651,7 @@ fn settle(state state: State, now now: Now) -> #(State, List(Effect)) {
     list.flat_map(closed, fn(round) {
       list.map(round.places, fn(place) {
         case place {
-          Waiting(unit_id:) | LeftOut(unit_id:) -> unit_id
+          Waiting(unit_id:, ..) | LeftOut(unit_id:) -> unit_id
           Answered(struck:) -> unit_of(struck)
         }
       })

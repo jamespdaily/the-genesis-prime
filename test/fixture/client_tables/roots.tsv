@@ -31,3 +31,7 @@ Creature2OutfitGroupEntry	10359	second entry by id of that group, the lower outf
 Creature2DisplayGroupEntry	27751	first entry by id of a group of two, the higher display	spawn_summon_test
 Creature2DisplayGroupEntry	27762	second entry by id of that group, the lower display	spawn_summon_test
 Creature2	11467	a Granok Mercenary whose property 7 has an override row (Creature2OverrideProperties 2866)	spawn_test
+Spell4	41886	Medic Fissure debuff child	spell_area_test
+Spell4	41844	Medic Fissure proxy: starts the debuff child on each unit its area hits	world_creature_test
+Spell4	54475	Warrior Defense Grid aura	spell_area_test
+Spell4	76618	Esper Phantasmal Armor absorb and armor aimed at the target	spell_area_test
