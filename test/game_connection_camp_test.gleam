@@ -410,9 +410,11 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
       taken:,
       outcome: step.Answer(FromMap(joined_again)),
     )
-  assert game_connection_support.written_ids(taken)
+  assert game_client.without_passive_cast(
+      ids: game_connection_support.written_ids(taken),
+    )
     == game_client.world_entry_ids
-    as "the same nine messages as at the first entry"
+    as "the same messages as at the first entry"
   assert game_connection_support.player_in(taken).unit_id != first_unit
     && game_connection_support.player_in(taken).unit_id == 6
     as "opcode.0x262: the client refuses a unit id it has seen, so the play is a new unit: the map's next id after the five it gave"

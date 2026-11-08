@@ -46,6 +46,7 @@
 
 import character_support
 import database_support
+import fixture_tables
 import genesis_prime/game/start_place.{type Facing, type Place, Facing}
 import genesis_prime/message/float32
 import genesis_prime/store.{type LookEntry, LookEntry} as _
@@ -107,7 +108,7 @@ pub fn row_10_look() -> List(LookEntry) {
 /// The planted tables, stored once per test run under a key of their own and
 /// never erased, as `client_tables.shared` does for the real ones.
 pub fn shared() -> store.Tables {
-  shared_stored()
+  fixture_tables.shared()
 }
 
 /// The planted tables with the trees of the starting abilities of every cast

@@ -20,10 +20,12 @@
 import cast_support
 import client_tables
 import connection_rule_support as support
+import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
 import genesis_prime/world_map/map
@@ -31,6 +33,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import planted_table
 import unitest
 
 /// The ids of the frames written after the entry's 0x61, in order.
@@ -248,17 +251,28 @@ pub fn a_0x16f_of_an_index_above_0_ends_the_connection_with_an_error_line_and_no
 
 pub fn a_player_with_no_innate_is_refused_every_index_test() -> Nil {
   use <- owned_test.run(120_000)
-  list.each([0, 1, 255], fn(index) {
-    let #(_, taken) =
-      connection_support.read(
-        state: connection_support.in_world(),
-        bytes: chosen(index:),
-      )
-    let assert [line] = support.logs_of(step: taken, level: step.LogError)
-      as "the tests' planted Class rows name no innate, so no slot is unlocked (0x1405e7490)"
-    assert support.says(line, "0x016F")
-    assert support.writes(taken) == []
-  })
+  // No client Class row lacks an innate, so the Engineer's row is edited to have
+  // none: the test's subject.
+  fixture_tables.changed(
+    table: "Class",
+    id: 2,
+    with: [#("spell4IdInnateAbilityActive00", planted_table.Integer(0))],
+    body: fn(tables) {
+      let state =
+        connection_support.entered_with(
+          settings: Settings(..connection_support.settings(), tables:),
+          class_id: 2,
+          saved_health: None,
+        ).0
+      list.each([0, 1, 255], fn(index) {
+        let #(_, taken) = connection_support.read(state:, bytes: chosen(index:))
+        let assert [line] = support.logs_of(step: taken, level: step.LogError)
+          as "the Class row names no innate, so no slot is unlocked (0x1405e7490)"
+        assert support.says(line, "0x016F")
+        assert support.writes(taken) == []
+      })
+    },
+  )
 }
 
 pub fn a_0x16f_before_the_world_is_logged_as_unhandled_test() -> Nil {

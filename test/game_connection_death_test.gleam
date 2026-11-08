@@ -758,7 +758,9 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
     )
     as "a Dominion Cassian in World 3460: the Novice start's row 51596 is that world's start of its race and faction"
   let #(state, taken) = game_connection_support.at_the_holocrypt()
-  assert game_connection_support.written_ids(taken)
+  assert game_client.without_passive_cast(
+      ids: game_connection_support.written_ids(taken),
+    )
     == game_client.holocrypt_entry_ids()
     as "the entry burst, 0xAD first: the client removes every unit and loads again (0x1403b6de0); no 0x25E, which the client's same game object already holds (opcode.0x25e.entry_order)"
   let assert [entered] =
@@ -845,7 +847,9 @@ pub fn what_the_dead_client_sends_during_the_holocrypts_leave_and_join_is_taken_
     && support.asked(burst) == None
     && support.logs_of(step: burst, level: LogError) == []
     as "nothing the client may send while dead ends the connection"
-  assert game_connection_support.written_ids(burst)
+  assert game_client.without_passive_cast(
+      ids: game_connection_support.written_ids(burst),
+    )
     == game_client.holocrypt_entry_ids()
     && game_connection_support.moves_told(burst) == []
     as "the ghost's move is dropped, as every 0x637 while dead: the body stands at the Holocrypt"
@@ -1066,7 +1070,7 @@ fn camp_finished(state: game_connection.State) -> ConnectionStep(Request) {
 }
 
 /// The ids of the burst of an entry that enters the player dead: 0xAD, the
-/// player's 0x262, 0x19B, the loadout, 0x6BC, the ghost's 0x262, 0x1B3, 0x636
+/// player's 0x262, 0x19B, the loadout with the innate and its 0x19F, 0x6BC, the ghost's 0x262, 0x1B3, 0x636
 /// for the ghost, 0xF1 and 0x61, then the zone channel (`death.enter_dead`,
 /// `opcode.0x1b3.before_player`: 0x1B3 after 0x19B).
 const dead_entry_ids = [
@@ -1084,8 +1088,10 @@ const dead_entry_ids = [
   0x0111,
   0x0111,
   0x0111,
+  0x0111,
   0x01A0,
   0x019D,
+  0x019F,
   0x06BC,
   0x0262,
   0x01B3,
@@ -1101,7 +1107,8 @@ pub fn an_entry_at_a_saved_health_of_0_creates_the_player_dead_and_its_ghost_and
   let #(_, taken) = entered_dead()
   let frames =
     game_connection_support.heard(taken, game_connection_support.keyed())
-  assert cast_support.ids(frames:) == dead_entry_ids
+  assert game_client.without_passive_cast(ids: cast_support.ids(frames:))
+    == dead_entry_ids
     as "the entry burst with the ghost's 0x262 and 0x1b3 after 0x19b and before 0x636, and no 0x88c, 0x89a or 0x247 (death.enter_dead)"
   let player = game_client.unit_create_player_in(frames:)
   assert player.unit_id == game_connection_support.own_unit_id
@@ -1355,7 +1362,9 @@ pub fn a_player_that_entered_dead_chooses_the_holocrypt_and_joins_there_alive_an
     == game_connection_support.leave_asked()
     as "then the run of the map is asked to take the player out"
   let #(_, taken) = game_connection_support.at_the_holocrypt_from(dead:)
-  assert game_connection_support.written_ids(taken)
+  assert game_client.without_passive_cast(
+      ids: game_connection_support.written_ids(taken),
+    )
     == game_client.holocrypt_entry_ids()
     as "the join at the Holocrypt place is a living entry: no ghost, no 0x1b3, and no second 0x25E"
   assert unit_fields.stat(
@@ -1386,7 +1395,10 @@ pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never
       character: body,
       saved_health: Some(0),
     )
-  assert game_connection_support.written_ids(entry) == dead_entry_ids
+  assert game_client.without_passive_cast(
+      ids: game_connection_support.written_ids(entry),
+    )
+    == dead_entry_ids
     as "the store's 0 from the dead save of the camp enters dead again"
   let frames =
     game_connection_support.heard(entry, game_connection_support.keyed())
@@ -1404,7 +1416,9 @@ pub fn a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never
       character: game_connection_support.world_character(),
       saved_health: None,
     )
-  assert game_connection_support.written_ids(never_saved)
+  assert game_client.without_passive_cast(
+      ids: game_connection_support.written_ids(never_saved),
+    )
     == game_client.world_entry_ids
     as "NULL is nothing saved: alive, no ghost, no 0x1b3"
   assert unit_fields.stat(

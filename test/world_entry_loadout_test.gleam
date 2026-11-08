@@ -51,13 +51,15 @@ import novice_tables
 import owned_test
 import world_entry_support
 
-/// A class's id, its armor and its three Spell4Base ids (the SpellLevel rows of
-/// level 1, in id order), and the weapon of each faction.
+/// A class's id, its armor, its three Spell4Base ids (the SpellLevel rows of
+/// level 1, in id order), its innate's Spell4Base id (Class
+/// `spell4IdInnateAbilityActive00`) and the weapon of each faction.
 type Class {
   Class(
     id: Int,
     armor: Float,
     abilities: List(Int),
+    innate: Int,
     weapon_167: Int,
     weapon_166: Int,
   )
@@ -65,12 +67,12 @@ type Class {
 
 fn classes() -> List(Class) {
   [
-    Class(1, 250.0, [18_309, 37_968, 38_017], 81_346, 81_352),
-    Class(2, 250.0, [26_468, 25_473, 25_635], 81_347, 81_353),
-    Class(3, 150.0, [19_102, 19_019, 19_022], 81_351, 81_357),
-    Class(4, 200.0, [38_201, 16_322, 26_543], 81_348, 81_354),
-    Class(5, 200.0, [23_148, 23_161, 23_173], 81_349, 81_355),
-    Class(7, 150.0, [27_638, 20_684, 20_325], 81_350, 81_356),
+    Class(1, 250.0, [18_309, 37_968, 38_017], 30_828, 81_346, 81_352),
+    Class(2, 250.0, [26_468, 25_473, 25_635], 31_779, 81_347, 81_353),
+    Class(3, 150.0, [19_102, 19_019, 19_022], 38_012, 81_351, 81_357),
+    Class(4, 200.0, [38_201, 16_322, 26_543], 46_615, 81_348, 81_354),
+    Class(5, 200.0, [23_148, 23_161, 23_173], 30_075, 81_349, 81_355),
+    Class(7, 150.0, [27_638, 20_684, 20_325], 31_213, 81_350, 81_356),
   ]
 }
 
@@ -113,15 +115,17 @@ pub fn the_novice_weapon_is_sent_as_an_item_at_location_0_index_16_before_the_ab
     ))
   let items = world_entry_support.items_added(frames:)
   assert list.map(items, fn(added) { added.held_item.item.location })
-    == [0, 0, 0, 0, 0, 0, 0, 4, 4, 4]
-    as "the equipped items come before the abilities: seven at location 0, then three at location 4"
+    == [0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4]
+    as "the equipped items come before the abilities: seven at location 0, then the three abilities and the innate at location 4"
   let assert [weapon] =
     list.filter(items, fn(added) {
       added.held_item.item.location == 0 && added.held_item.item.bag_index == 16
     })
     as "one item is equipped in slot 16"
   let abilities =
-    list.filter(items, fn(added) { added.held_item.item.location == 4 })
+    list.filter(items, fn(added) {
+      added.held_item.item.location == 4 && added.held_item.item.bag_index < 3
+    })
   assert weapon.held_item.item.location == 0
     && weapon.held_item.item.bag_index == 16
     as "0x1403afb10: the cast check looks up location 0, index 16; lua.ActionBarFrame.InitializeBars: slot 16 holds the weapon"
@@ -143,7 +147,9 @@ pub fn an_item_for_each_ability_at_location_4_holds_the_spell4_base_id_of_each_l
       ))
     let abilities =
       world_entry_support.items_added(frames:)
-      |> list.filter(fn(added) { added.held_item.item.location == 4 })
+      |> list.filter(fn(added) {
+        added.held_item.item.location == 4 && added.held_item.item.bag_index < 3
+      })
     assert list.map(abilities, fn(added) { added.held_item.item.item_id })
       == class.abilities
       as {
@@ -201,13 +207,13 @@ pub fn one_0x1a0_sets_tier_1_of_each_ability_in_action_sets_0_to_3_test() -> Nil
       )
       as "0x1a0 decodes"
     let expected =
-      list.flat_map(class.abilities, fn(base) {
+      list.flat_map(list.append(class.abilities, [class.innate]), fn(base) {
         list.map([0, 1, 2, 3], fn(action_set_index) {
           AbilityTier(spell4_base_id: base, tier: 1, action_set_index:)
         })
       })
     assert tiers.tiers == expected
-      as "opcode.0x1a0: an entry holds four action sets, and tier 1 is each ability's first"
+      as "opcode.0x1a0: an entry holds four action sets, and tier 1 is each ability's and the innate's first"
   })
 }
 
@@ -266,14 +272,16 @@ pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_equipped_items_fir
       0x0111,
       0x0111,
       0x0111,
+      0x0111,
       0x01A0,
       0x019D,
+      0x019F,
       0x06BC,
       0x0636,
       0x00F1,
       0x0061,
     ]
-    as "opcode.0xad, opcode.0x262, opcode.0x19b first as before; then the five armor pieces, the shield and the weapon, the three abilities, their tiers and the action set, which all follow 0x19b (it sets the player) and come before 0x61 (it ends the entry); the rest as before"
+    as "opcode.0xad, opcode.0x262, opcode.0x19b first as before; then the five armor pieces, the shield and the weapon, the three abilities and the innate, their tiers, the action set and the innate button (0x19f), which all follow 0x19b (it sets the player) and come before 0x61 (it ends the entry); the rest as before"
 }
 
 /// The value a property holds, as the 32-bit float the client reads.
@@ -479,9 +487,9 @@ pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
       list.map(world_entry_support.items_added(frames:), fn(added) {
         added.held_item.item.item_guid
       })
-    assert list.length(guids) == 10
-      as "seven equipped items and three abilities"
-    assert list.length(list.unique(guids)) == 10
+    assert list.length(guids) == 11
+      as "seven equipped items, three abilities and the innate"
+    assert list.length(list.unique(guids)) == 11
       as "opcode.0x111.equipped_set: each piece has a unique guid (0x140569d30 keeps it, and a later message finds the item by it)"
     assert !list.contains(guids, 0)
       as "opcode.0x111.equipped_set: each piece has a non-zero guid"
