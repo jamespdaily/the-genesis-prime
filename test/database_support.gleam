@@ -3,10 +3,12 @@
 //// `dev/apply_migrations.sh` (the script `./check` and the play database use
 //// too, so a database a test makes is migrated and recorded the one way), one
 //// administration pool, and a watcher that drops what the run made when the
-//// VM ends however it ends.
+//// VM ends however it ends, except when it is killed with its process group
+//// and the watcher with it: the next run's `sweep` drops what that run left.
 
 import envoy
 import genesis_prime/step/runtime
+import gleam/bool
 import gleam/erlang/process.{type Name}
 import gleam/int
 import gleam/list
@@ -198,6 +200,94 @@ pub fn migrate(
   )
 }
 
+/// Drops the databases that runs which ended left behind: those named
+/// `genesis_test_<pid>_...` whose pid no program on this machine holds. A run
+/// killed with its process group takes its watcher with it, so nothing else
+/// would drop them. A pid held by any program is kept, because its run may be
+/// going in another worktree.
+pub fn sweep(on shared: Shared) -> Nil {
+  let assert Ok(listed) =
+    psql(with: shared.settings, database: "postgres", arguments: [
+      "-At",
+      "-c",
+      "select datname from pg_database where datname like 'genesis\\_test\\_%'",
+    ])
+    as "the list of databases was not read"
+  let assert Ok(programs) = run_command("ps", ["-A", "-o", "pid="], [])
+    as "the running programs were not listed"
+  let live_pids =
+    string.split(programs, "\n")
+    |> list.filter_map(fn(line) { int.parse(string.trim(line)) })
+  string.split(listed, "\n")
+  |> list.map(string.trim)
+  |> abandoned(live_pids:)
+  |> list.each(drop_abandoned(on: shared, name: _))
+}
+
+/// Of these database names, those of runs that ended: named
+/// `genesis_test_<pid>_<rest>`, with a plain positive pid that is not in
+/// `live_pids`. Any other name is not a run's, so it is never chosen.
+pub fn abandoned(
+  names names: List(String),
+  live_pids live_pids: List(Int),
+) -> List(String) {
+  list.filter(names, fn(name) {
+    case run_pid(name) {
+      Ok(pid) -> !list.contains(live_pids, pid)
+      Error(Nil) -> False
+    }
+  })
+}
+
+/// The pid in a run's database name, or an error for a name that is not a
+/// run's.
+fn run_pid(name: String) -> Result(Int, Nil) {
+  case name {
+    "genesis_test_" <> rest -> {
+      use #(text, after) <- result.try(string.split_once(rest, "_"))
+      use pid <- result.try(int.parse(text))
+      case pid > 0 && int.to_string(pid) == text && after != "" {
+        True -> Ok(pid)
+        False -> Error(Nil)
+      }
+    }
+    _ -> Error(Nil)
+  }
+}
+
+/// Drops one database of a run that ended. A run that started at the same
+/// moment may be dropping the same database, so a failed drop is only a
+/// failure when the database is still there.
+fn drop_abandoned(on shared: Shared, name name: String) -> Nil {
+  let dropped =
+    execute(
+      on: shared,
+      sql: "drop database if exists \""
+        <> string.replace(name, "\"", "\"\"")
+        <> "\" with (force)",
+    )
+  use <- bool.guard(when: result.is_ok(dropped), return: Nil)
+  case database_exists(on: shared, name:) {
+    False -> Nil
+    True ->
+      panic as { "a database of a run that ended was not dropped: " <> name }
+  }
+}
+
+/// Whether the server holds a database called `name`.
+pub fn database_exists(on shared: Shared, name name: String) -> Bool {
+  let assert Ok(output) =
+    psql(with: shared.settings, database: "postgres", arguments: [
+      "-At",
+      "-c",
+      "select count(*) from pg_database where datname = '"
+        <> string.replace(name, "'", "''")
+        <> "'",
+    ])
+    as "the list of databases was not read"
+  string.trim(output) == "1"
+}
+
 /// Runs `work` in a process that lives as long as the VM and is linked to
 /// nothing, so a pool the work starts outlives the test that asked. Returns
 /// what the work returned, and panics at once when the work crashes.
@@ -252,6 +342,7 @@ done",
     as "the administration pool did not start"
   let shared =
     Shared(settings:, run:, template: run <> "_template", admin: started.data)
+  sweep(on: shared)
   let assert Ok(Nil) =
     execute(on: shared, sql: "create database \"" <> shared.template <> "\"")
     as "the template database was not created"
