@@ -290,6 +290,10 @@ pub type Input {
   /// stands: a fight chases its target and goes on; a creature that was to walk home
   /// when a state held it starts the walk.
   ControlEnded
+  /// creature: a property modifier changed the creature's run speed
+  /// (`fighter.attack.run_speed`). A path it runs at another speed is run on from where
+  /// the creature stands at the new speed, to the same end.
+  SpeedChanged
 }
 
 /// The fight's timers, each of the generation it was started with: a timer of a
@@ -416,6 +420,7 @@ pub fn step(
     Killed -> killed(state:, fighter:, now_ms:)
     Controlled -> stand_still(state:, now_ms:)
     ControlEnded -> resumed(state:, fighter:, now_ms:)
+    SpeedChanged -> speed_changed(state:, fighter:, now_ms:)
     StoodAgain -> {
       let state =
         State(..state, status: Resting, path: Standing(at: fighter.home))
@@ -1239,6 +1244,53 @@ fn resumed(
     Fighting(..) -> chase(state:, fighter:, now_ms:)
     Returning(home:) -> walk_home(state:, fighter:, home:, now_ms:)
     Resting -> #(state, [])
+  }
+}
+
+/// The creature's run speed changed: a path still being run at another speed is
+/// run on from where the creature stands, to the same end, at the new speed, and sent
+/// as 0x638. A walk home gets a new home timer for the new arrival, and its old one is
+/// cancelled. A creature that stands, or whose path is run, has nothing to replan.
+fn speed_changed(
+  state state: State,
+  fighter fighter: Fighter,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let still_run = creature_path.arrives_ms(path: state.path, now_ms:) > now_ms
+  case state.path {
+    Running(speed:, ..) as was
+      if still_run && speed != fighter.attack.run_speed
+    -> {
+      let path =
+        creature_path.straight(
+          from: creature_path.place_at(path: was, now_ms:),
+          to: creature_path.end(path: was),
+          speed: fighter.attack.run_speed,
+          now_ms:,
+        )
+      let state = State(..state, path:)
+      let moved = path_news(was:, now: path, now_ms:)
+      case state.status {
+        Returning(home: old) -> {
+          let #(state, home) = generation(state)
+          #(
+            State(..state, status: Returning(home:)),
+            list.flatten([
+              [CancelTimer(timer: HomeArrival(old))],
+              moved,
+              [
+                StartTimer(
+                  timer: HomeArrival(home),
+                  after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
+                ),
+              ],
+            ]),
+          )
+        }
+        Fighting(..) | Resting -> #(state, moved)
+      }
+    }
+    Running(..) | Standing(..) -> #(state, [])
   }
 }
 

@@ -73,16 +73,16 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     display_info_id: 26_565,
     outfit_info_id: 0,
     combat: beast_combat(),
-    bases: [],
-    context: beast_context(),
+    bases: loaded_beast().bases,
+    context: loaded_beast().context,
   )
 }
 
-/// What the Virtual Battle Beast's combat values are worked out again with, as the
-/// load builds it from the client's committed rows: the summon of Creature2 73464 at
-/// its own level.
-pub fn beast_context() -> spawn.CombatContext {
-  database_support.once("spawn_support_beast_context", fn() {
+/// The Virtual Battle Beast as the load builds it from the client's committed rows: the
+/// summon of Creature2 73464 at its own level, whose `bases` and `context` a test's spawn
+/// carries and whose `combat` is what `beast_combat` states by hand.
+pub fn loaded_beast() -> Spawn {
+  database_support.once("spawn_support_loaded_beast", fn() {
     let assert Ok(beast) =
       spawn.summoned(
         checks: summon_checks(),
@@ -100,7 +100,7 @@ pub fn beast_context() -> spawn.CombatContext {
         ),
       )
       as "the Virtual Battle Beast passes the summon checks over the client's committed rows"
-    beast.context
+    beast
   })
 }
 
