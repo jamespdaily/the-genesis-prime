@@ -227,7 +227,7 @@ pub fn an_ask_waits_a_whole_pause_after_each_attempt_that_failed_before_it_asks_
     as "the third attempt reached the database"
   let times = mailbox_support.drain(asked)
   assert list.length(times) >= 3
-    as "the ask asked again after each failure, one attempt for each failed answer"
+    as "at least one attempt for each failed answer"
   assert list.all(list.window_by_2(times), fn(pair) {
     pair.1 - pair.0 >= settings.pause_ms
   })

@@ -207,10 +207,11 @@ pub fn a_process_holding_no_place_waits_while_the_limit_of_places_is_held_test()
   assert owned_key.loads_held() == owned_key.loads_held_limit()
     as "the holders hold the limit"
   let made = process.new_subject()
-  let _waiter =
+  let waiter =
     process.spawn(fn() {
       let key = owned_key.new_key()
       process.send(made, key)
+      process.sleep_forever()
     })
   event_wait.until("the waiter is waiting for room", fn() {
     owned_key.waiting_for_room() == 1
@@ -223,6 +224,8 @@ pub fn a_process_holding_no_place_waits_while_the_limit_of_places_is_held_test()
     as "the waiter gets its key once a holder ends"
   assert owned_key.waiting_for_room() == 0
     as "the waiter no longer waits once it has its key"
+  assert owned_key.waited_ms(of: waiter) > 0
+    as "the time it waited for room stays counted once it has its key"
 }
 
 pub fn a_process_that_holds_a_place_is_not_made_to_wait_for_another_test() -> Nil {
@@ -268,15 +271,17 @@ pub fn a_deadline_leaves_out_the_time_a_body_waited_for_room_test() -> Nil {
       let body_started = process.new_subject()
       owned_test.run_counting_waits(
         100,
-        fn(_body) {
-          let assert Ok(end_body) = process.receive(body_started, 5000)
+        fn(asked_about) {
+          let assert Ok(#(body, end_body)) = process.receive(body_started, 5000)
             as "the body started"
+          assert asked_about == body
+            as "the deadline asks about the process that runs the body"
           process.send(end_body, Nil)
           10_000
         },
         fn() {
           let end_body = process.new_subject()
-          process.send(body_started, end_body)
+          process.send(body_started, #(process.self(), end_body))
           let assert Ok(Nil) = process.receive(end_body, 5000)
             as "the deadline passed and the body was never told to end"
           Nil
@@ -287,26 +292,4 @@ pub fn a_deadline_leaves_out_the_time_a_body_waited_for_room_test() -> Nil {
   let assert Ok(Nil) = process.receive(ended, within: ask_support.event_wait_ms)
     as "the body returned, though its deadline passed while it waited"
   Nil
-}
-
-pub fn the_time_a_process_waited_for_room_is_counted_for_its_deadline_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use <- unitest.tag("serial")
-  let holders = holders_up_to_the_limit()
-  let made = process.new_subject()
-  let waiter =
-    process.spawn(fn() {
-      let key = owned_key.new_key()
-      process.send(made, key)
-      process.sleep_forever()
-    })
-  event_wait.until("the waiter has waited for room", fn() {
-    owned_key.waited_ms(of: waiter) > 0
-  })
-  let assert [first, ..] = holders
-  process.send(first.messages, Stop)
-  let assert Ok(_key) = process.receive(made, within: ask_support.event_wait_ms)
-    as "the waiter gets its key once a holder ends"
-  assert owned_key.waited_ms(of: waiter) > 0
-    as "the wait it made stays counted once it has its key"
 }
