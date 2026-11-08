@@ -8118,10 +8118,10 @@ gap = "The replacement branch (0x1403a8000, 0x140565020) is not read."
 name = "GetAbilityItemSpell"
 
 ["opcode.0x12b"]
-statement = "Message 0x12b, client to world server: the player's input flags after a setting changes. Body: a 32-bit value always 0, then the flags (32 bits): 1 always, 2 spell.useButtonDownForAbilities, 4 a third input setting, 8 spell.holdToContinueCasting. The client sends it when any of these settings changes."
-proof = "Registration in 0x14006c290 (saved C, hash 737aa5af0120fae9, line 359): id 299, record 8, writer 0x14007ec70 (8eb22adb6de47956): WriteBits of word 0 (32 bits) then word 1 (32 bits). Senders 0x1403f7480, 0x1403f7530, 0x1403f7580 (8eb22adb6de47956): record = flags (game state 0x7ba0) shifted into the high word. Initial flags 0x1403c2c10 (8eb22adb6de47956): 1, or 5 when the setting at 0x140c45ed0 is on, | 2 when useButtonDownForAbilities is on, | 8 when holdToContinueCasting is on."
+statement = "Message 0x12b (299), client to world server: a client option. Body: a type (32 bits) and a value (32 bits). Type 0: the value is the player's input flags (1 always, 2 spell.useButtonDownForAbilities, 4 a third input setting, 8 spell.holdToContinueCasting), sent when useButtonDownForAbilities or holdToContinueCasting changes. Type 1: the value is the shared-challenge preference (0 or 1), sent when the addon calls GameLib.SetSharedChallengePreference."
+proof = "Registration in 0x14006c290 (saved C line 359): id 299, record 8, writer 0x14007ec70 (two 32-bit words, word 0 then word 1). Senders 0x1403f7480 (OnUseButtonDownChanged), 0x1403f7530 and 0x1403f7580 (OnHoldToContinueCastingChanged) set word 0 to 0 and word 1 to the input flags (game object 0x7ba0). Lua SetSharedChallengePreference 0x1407055b0 sets word 0 to 1 and word 1 to the bool argument. Flag values: 0x1403c2c10, 0x1403f7480, 0x1403f7580. 8eb22adb6de47956."
 grade = "fairly sure"
-gap = "The setting behind flag 4 (0x140c45ed0, changed by 0x1403f7530) is not named."
+gap = "The setting behind flag 4 is not named; whether the client treats other type values is not read (no other sender exists). A retail 0x12b with type 1 would settle that the type 1 value is a plain bool."
 
 ["opcode.0xd5.input_flags"]
 statement = "Message 0xd5's first field (4 bits) is the player's input flags, sent when the client answers the server's world settings: 1 always, 2 spell.useButtonDownForAbilities, 4 a third input setting, 8 spell.holdToContinueCasting. So the server learns at world entry whether the player's presses will come as 0x4db (8 set) or 0x9a (8 clear)."
@@ -10406,3 +10406,1277 @@ statement = "Not in the client; read from the rows. dataBits01 (mode 1 to 4) goe
 proof = "Scratch scripts harm.py, mode.py and cap.py (scratchpad folder mult) over `gleam run -m genesis_prime/table_rows -- Spell4Effects effectType=11`, `-- Spell4` (spell4StackGroupId), `-- Spell4StackGroup` (stackCap) and `client_files.py text --search 'eff='`. Samples: mode 2 43849 (138, x0.9, 'Damage dealt reduced by'), 135031 (159, x0.5, a helpful exception); mode 4 110176 (160, x1.05, 'technology damage taken ... per stack'), 90487 (141, x1.2 'per stack')."
 grade = "guess"
 gap = "No client reader (Spell4Effects.effectType.11). A retail message 0x93a recording settles how modes combine: a helpful and a harmful modifier on one property, for example DamageTakenMultiplierPhysical under mode 1 57772 (x0.96) and mode 2 154987 (x1.1)."
+
+# Messages the player's own play sends and reads: client options, the target, the trade, the exchange and
+# marketplace lists, interactions, key sets, the scanbot and the telemetry reports
+
+["opcode.0x185"]
+statement = "Message 0x185 (389), client to world server: the player sets or clears the target. Body: the target unit id (32 bits), 0 when the target is cleared. Sent when the client changes its target (a click, a tab target, a clear). The server's answer is the target-change flow, which combat targeting reads; the client does not wait for a reply message."
+proof = "Registration in 0x14006c290: id 0x185, record 4, writer WriteUint32Body, no reader. Sender 0x14055b0e0 (SetTarget). Eldan names it ClientEntitySelect (a lead only). The 337 sends in the recorded sittings are the player's target changes."
+grade = "fairly sure"
+gap = "The callers of 0x14055b0e0 and the exact conditions (own click, tab target, clear on death) are not listed; the combat decoder owns that. A recording of a sitting read with its keys would settle which actions send it."
+
+["opcode.0x18f"]
+statement = "Message 0x18f (399), client to world server: cancel the player-to-player trade. Body: empty (the record holds one zero byte that is not written). Sent when a trade is open and the player presses Escape, when the player starts casting at the trade partner's unit while a trade is open, when the per-frame trade check finds the partner no longer valid or in range, and from the Lua call GameLib.CancelTrade. The trade itself is begun by message 0x192."
+proof = "Registration in 0x14006c290 by decimal 399 (grep for 0x18f misses it): empty body. Senders: 0x1404d8a90 (Escape key; sends only when the trade state at game object 0x6718 is not 0), 0x1403a6590 (per frame: partner unit found, FUN_1403ada10 nonzero), 0x1403988d0 (StartLocalCast: caster is the player, target is the player's trade partner, trade open), 0x14074bb60 (Lua CancelTrade). The trade begin is 0x1403a6a40 (sends 0x192). 8eb22adb6de47956 and 2580df99bb1ce2aa."
+grade = "fairly sure"
+gap = "The recorded sittings hold 39 sends with no trade in them; which sender they came from is not read (the per-frame check 0x1403a6590 is the likely one: it sends again each frame while its condition holds). Reading what FUN_1403ada10 tests and the sitting's frames would settle it."
+
+["opcode.0x269"]
+statement = "Message 0x269 (617), client to world server: request the CREDD exchange state (the CREDD price and the player's open CREDD orders). Body: empty. Sent when the marketplace CREDD window loads. The answer is message 0x26a, handled by 0x14042b9a0; without it the CREDD tab shows no price. Nothing else depends on it."
+proof = "Registration in 0x14006c290: id 0x269, empty body. Sender 0x1407123c0 (a Lua-callable function; UI/Marketplace/MarketplaceCREDD.lua calls it when it loads). Reply case 0x1403f109a in HandleWorldMessage goes to 0x14042b9a0. Eldan names it ClientCreddExchangeInfoRequest (a lead only). 8eb22adb6de47956."
+grade = "fairly sure"
+gap = "The Lua function's name is not read; the 0x26a layout is not decoded here."
+
+["opcode.0x3ec"]
+statement = "Message 0x3ec (1004), client to world server: request the player's own commodity orders. Body: empty. Sent when a marketplace window that lists the player's orders loads. The answer is message 0x64c, handled by 0x14042b610; without it the player's commodity order list stays empty."
+proof = "Registration in 0x14006c290 by decimal 1004: empty body. Sender 0x14075f110 (a Lua-callable function, called from the Marketplace addon files MarketplaceListings.lua and MarketplaceCommodity.lua). Reply 0x64c handler 0x14042b610. Eldan names it ClientRequestOwnedCommodityOrders (a lead only). 8eb22adb6de47956."
+grade = "fairly sure"
+gap = "Which window files send it and the Lua name are read from the file listing only; the 0x64c layout is not decoded here."
+
+["opcode.0x3ed"]
+statement = "Message 0x3ed (1005), client to world server: request the player's own item auctions. Body: empty. Sent when a marketplace window that lists the player's auctions loads. The answer is message 0x64d, handled by 0x14042b770; without it the player's auction list stays empty."
+proof = "Registration in 0x14006c290 by decimal 1005: empty body. Sender 0x1407607f0 (a Lua-callable function, called from the Marketplace addon files MarketplaceAuction.lua and MarketplaceListings.lua). Reply 0x64d handler 0x14042b770. Eldan names it ClientRequestOwnedItemAuctions (a lead only). 8eb22adb6de47956."
+grade = "fairly sure"
+gap = "Which window files send it and the Lua name are read from the file listing only; the 0x64d layout is not decoded here."
+
+["opcode.0x570"]
+statement = "Message 0x570 (1392), client to world server: request an input key set (the player's key bindings). Body: the key set id (64 bits): 0 for the account default set, the character's key set id for the character set. Sent when the client needs a key set it does not hold (when the options or world-entry code that calls 0x1404db630 selects a key set kind). The answer is message 0x56f; without it the client keeps its default key bindings."
+proof = "Registration in 0x14006c290 by decimal 1392: record 8, writer WriteUint64Body. Sender 0x1404d7330 (LookUpOrRequestInputKeySet: looks the id up in the hash at game object 0x7920; if absent and the send flag is nonzero it sends 0x570 with the id; if present it applies the bindings to UI_InputMap_Base.xml). Callers: 0x1404db630 (kind 3 gives id 0, kind 4 gives the id at DAT_140c635f0 0x16a0, called from 0x1404d6e30, 0x1403b5f80 and the Lua functions 0x1406f5fe0 and 0x1406f6060) and 0x1404d7090 (the 0x56f handler). Eldan names it ClientRequestInputKeySet (a lead only). 8eb22adb6de47956 and 2580df99bb1ce2aa."
+grade = "fairly sure"
+gap = "Which sitting actions caused the 19 sends is not read (the recordings are encrypted wire). The player_character_state message already carries the character's input key set id (32 bits); how the server's id maps onto the 64-bit id here is not read."
+
+["opcode.0x56f"]
+statement = "Message 0x56f (1391), world server to client: an input key set. Body: a count (32 bits), that many bindings, then the key set id (64 bits). Each binding is an input action id (14 bits) and twelve 32-bit values. The client stores the set in its key set hash under the id; when the id is the current key set (0 for the default kind, the character's id for the character kind) it reloads the key bindings from the set, calls the UI object to rebuild the input map and raises the UI event KeyBindingUpdated. It answers message 0x570."
+proof = "Registration in 0x14006c290 (saved C line 436): id 0x56f, record 0x18, writer 0x14008cb70 (count then bindings then u64), reader 0x14008cd00: ReadBits32 0x20 (count), space for count x 0x34 bytes, each by 0x14008c9d0 (ReadBits32 0xe, then twelve ReadBits32 0x20), then ReadUint64. Handler 0x1404d7090 (HandleMessage056F, HandleWorldMessage case 0x1403f0b86) calls 0x1404d7130 (StoreInputKeySet), then compares the id with the current key set kind at game object 0x7590 (3: id 0; 4: the id at DAT_140c635f0 0x16a0) and applies it. 8eb22adb6de47956 and 2580df99bb1ce2aa."
+grade = "fairly sure"
+gap = "The meaning of the twelve values in each binding (key, modifier, device and so on) is not read; sending an empty set (count 0) is the safe value in the client's code but the resulting bindings are not read. An emulator run of 0x14008cd00 and 0x1404d7130 would settle it."
+
+["opcode.0x180"]
+statement = "Message 0x180 (384), client to world server: the Scientist path asks for a scanbot. Body: the scanbot profile (32 bits, the spell id taken from the client's scanbot table) then a bool (1 bit): 0 when the request comes from the path's button, 1 when it comes from the game command. Sent when the player's path is the Scientist path and the scan cooldown has passed; when a path flag is set the client sends the empty message 0xf0 (or 0x15f from the game command variant) instead. The answer is the scanbot unit; without it no scanbot appears."
+proof = "Registration in 0x14006c290: id 0x180, record 8, writer 0x14007aea0 (32 bits then 1 bit; 0x14e shares the writer). Senders 0x1405712a0 (flag 0; also from the Lua-callable 0x14077ee30), 0x140571200 (flag 1). The gate 0x140571350 checks the path type is 2 (DAT_140c65970 8) and the scan cooldown has passed, using a spell id table row (0x486). The profile is DAT_140c4d470[min(DAT_140c4d460, DAT_140c63750)]. Eldan names it ClientPathScientistRequestScanbot (a lead only). 8eb22adb6de47956."
+grade = "fairly sure"
+gap = "The Lua function names that call the senders, the table row 0x486 and the reply (the scanbot spawn) are not read. Reading the spell row 0x486 and the server message that makes a scanbot would settle it."
+
+["opcode.0x23d"]
+statement = "Message 0x23d (573), client to world server: a UI window was opened (telemetry). Body: 6 bits (always 35), the window id (10 bits), six 64-bit values (the character id, then 1, the time the window was open, then 2, 3, 4), then the window name (wide text). The client does not wait for a reply and nothing the player sees depends on it. The client refuses to send a name longer than the limit in the table row 0x947."
+proof = "Registration in 0x14006c290: id 0x23d, record 0x40, writer 0x1400821d0 (6 bits, 10 bits, six u64, wide text). Sender 0x1403fa810 (SendWindowOpenStatistic), reached through a pointer at 0x140b66900 (a Lua-callable function, name not read). Eldan names it ClientStatisticsWindowOpen (a lead only). 8eb22adb6de47956."
+grade = "fairly sure"
+gap = "The meaning of the constants (1, 2, 3, 4) and of the 6-bit value 35 is not read; the Lua name of the caller is not read. The server can ignore it: nothing reads a reply."
+
+["opcode.0x23e"]
+statement = "Message 0x23e (574), client to world server: graphics statistics (telemetry). Body: eight 32-bit floats: four averaged frame values then four raw values. Sent every eighth sample, one sample per frame, so about once per eight frames while the world is shown. The client does not wait for a reply and nothing the player sees depends on it."
+proof = "Registration in 0x14006c290: id 0x23e, record 0x20, writer eight WriteFloatBits (32 bits each). Sender 0x140539b50 (SendGfxStatistics), called from UpdateGame 0x1403e8618 every frame: it sums five per-frame terms (constants at 0x140b79d04 and 0x140b79d00) over a 0x3b0-byte structure and sends when the counter at DAT_140c8aef0 masked with 7 is 0. Eldan names it ClientStatisticsGfx (a lead only). 8eb22adb6de47956."
+grade = "fairly sure"
+gap = "What each float measures (frame time, draw calls, memory) is not read; the recorded 108 sends over all sittings is far below one per eight frames, so the live send rate is probably limited elsewhere (a state test not read). Reading the five terms and the caller's guard would settle it."
+
+# Inventory and equipment
+
+# Inventory and equipment: enums
+
+["GameLib.CodeEnumGenericError"]
+statement = "The Lua enum of generic error codes: 162 entries, from Ok 0 to Housing_CommunityMaxDecor 174. They are the codes the server's item error message (0x56a) carries and the client's own item and vendor checks report. Codes read so far, by value: 0 Ok, 1 Params, 2 PlayerBusy, 3 UnknownTargetUnit, 4 TargetFaction, 5 DbFailure, 6 Item_BadId, 11 Vendor_StackSize, 13 Vendor_SoldOut, 14 Vendor_UnknownItem, 15 Vendor_FailedPreReq, 16 Vendor_NotAVendor, 17 Vendor_TooFar, 18 Vendor_BadItemRec, 19 Vendor_NotEnoughToFillQuantity, 20 Vendor_NotEnoughCash, 21 Vendor_UniqueConstraint, 22 Vendor_ItemLocked, 23 Vendor_IWontBuyThat, 24 Vendor_NoQuantity, 25 Vendor_BagIsNotEmpty, 26 Item_OverFlowChestCreated, 27 Item_InventoryFull, 28 Item_UnknownItem, 29 Item_QuestViolation, 30 Item_Unique, 31 Item_NotValidforSlot, 32 Item_Locked, 33 Item_AlreadyEquipped, 34 Item_NotEquipped, 35 Item_BagMustBeEmpty, 36 Item_CannotFindBag, 37 Item_BagToSmall, 38 Item_CantPutBagInItself, 39 Item_WrongRace, 40 Item_WrongClass, 41 Item_FailedProficiency, 42 Item_LevelToLow, 55 Vendor_CuratorOnlyBuysRelics, 56 Vendor_CannotBuyRelics, 57 Player_CantDoWhileDead, 58 Vendor_NoBuyer, 59 Vendor_NoVendor, 60 Vendor_Buyer_NoActionCC, 61 Vendor_Vendor_NoActionCC, 62 Vendor_Vendor_Disposition, 63 Player_CannotWhileInCombat, 72 Item_CannotBeSalvaged, 76 Faction_NotEnoughRep, 77 Item_NoItems, 84 Item_NeedsRepair, 86 Item_SlotDisabled, 132 Item_WrongFaction, 144 Item_EquipPrereqFailed, 148 Item_BadParams, 149 Item_BadStaticData, 156 Item_CannotBeDeleted, 174 Housing_CommunityMaxDecor. Texts the client shows for them (ShowGenericError): 11 Vendor - Stack Size, 13 Just sold out, 16 Not a vendor, 19 Not enough to fill quantity, 20 Not enough cash, 23 Item cannot be sold, 24 No Quantity, 27 Your inventory is full."
+proof = "Bytes at 0x140c2d820 read with client_pe: 0xa2 (162) rows of 16 bytes, an 8-byte pointer to a UTF-16LE name and a 32-bit value, from Ok 0 to Housing_CommunityMaxDecor 174. Registered in GameLib's registrar 0x140709460 by the lea pair at 0x14070b8b1 (the table) and 0x14070b8b8 (the name 'CodeEnumGenericError' at 0x140b44238). Texts from ShowGenericError 0x1403cc530's switch, read with client_files text."
+grade = "sure"
+
+["GameLib.CodeEnumEquippedItems"]
+statement = "The Lua enum of equipped slots, the bag index of an item at location 0: Chest 0, Legs 1, Head 2, Shoulder 3, Feet 4, Hands 5, WeaponTool 6, WeaponAttachment 7, System 8, Augment 9, Implant 10, Gadget 11, DEPRECATED3 12, DEPRECATED2 13, DEPRECATED1 14, Shields 15, WeaponPrimary 16, Bag0 to Bag3 17 to 20, BankBag0 to BankBag9 21 to 30."
+proof = "Bytes at 0x140c36d50 read with client_pe: 16-byte rows (pointer to a UTF-16LE name, 32-bit value), Chest 0 to BankBag9 30. Registered in 0x140709460 by the lea at 0x14070baa3."
+grade = "sure"
+
+["Item.CodeEnumItemUpdateReason"]
+statement = "The enum of why an item was added, removed or changed in count, the 6-bit reason of messages 0x148 and 0x17f: StackSplit 0, ConsumeCharge 1, SpellReagent 2, Transform 3, Cheat 4, Salvage 5, Extract 6, Vendor 7, Quest 8, SpellEffect 9, Script 10, PathReward 11, ResourceConversion 12, Auction 13, MaterialBagConversion 14, Loot 15, Buyback 16, Crafting 17, NewCharacter 18, PublicEvent 19, Mail 20, PlayerRequested 21, GuildBank 22, Trade 23, HousingCrate 24, GM 25, Expired 26, Gadget 27, AltSpell 28, Challenge 29, and 30 to 46 (SettlerImprovementConsumeResource to MTXChest 44 and two more). A removal with reason HousingCrate raises ItemSentToCrate instead of ItemRemoved; PlayerRequested also adds a client notice."
+proof = "Bytes at 0x140c33530 read with client_pe (16-byte rows, StackSplit 0 to MTXChest 44 read). Registered by 0x140415b2e lea of the table, 0x140415b35 lea of the name 'CodeEnumItemUpdateReason' (0x140af9df8), 0x140415b3f mov of the count 0x2f (47), in 0x140413a20, the registrar of the Item class's Lua methods (its name pairs from 0x140c58bd8). Use: 0x1403b8250 compares the reason with 0x18 (ItemSentToCrate) and 0x15."
+grade = "fairly sure"
+gap = "The global table the enum lands in is taken from the registrar's other enums (CodeEnumItemQuality, CodeEnumItemType), not read; values 45 and 46 not printed. Reading the registrar's table-name argument settles the key."
+
+["AccountItemLib.CodeEnumRewardProperty.BagSlots"]
+statement = "Two reward properties gate the equipped bag slots: BagSlots 26, the count of usable inventory bag slots (Bag0 to Bag3), and BankSlots 13, the count of usable bank bag slots (BankBag0 to BankBag9). The enum's other values: XP 1, CurrencyType 2, RewardTrackId 3, RewardTrackType 4, OmniBits 5, Reputation 7, OmnibitDropChance 8, RestXpAccrual 9, RestXpCap 10, CostumeSlots 11, TradeskillMatTrading 12, Trading 14, CommodityOrders 15, AuctionBids 16, AuctionListings 17, AuctionAccess 18, CommodityAccess 19, MoneyTradeLimit 20, GuildCreateOrInviteAccess 21, CircleMembershipUnlimited 23, TradeskillMatStackLimit 25, WakeHereCooldown 27, GuildHolomarkUnlimited 28, CharacterSlots 29, PurchaseDiscount 30, ExtraDecorSlots 31, OmnibitCap 33, WorldPvpPrestigeBonus 34, WorldPvpPrestigeCap 35, ActiveContractSlots 37, RotationEssences 38, AccountCurrency 39."
+proof = "Bytes at 0x140c376a0 (BankSlots 13) and 0x140c37750 (BagSlots 26) read with client_pe in the enum dump. The bag slot checks read exactly these ids: 0x1403b4de3 cmp dword ptr [rax + 0x20], 0x1a and 0x1403b4d73 cmp dword ptr [rax + 0x20], 0xd (see 0x1403b4dd0 and 0x1403b4d60)."
+grade = "fairly sure"
+gap = "The lea pair that registers this table under 'CodeEnumRewardProperty' was not read; the values match the record AccountItemLib.CodeEnumRewardProperty's CharacterSlots 29."
+
+# Inventory and equipment: the inventory
+
+["0x1403faa60"]
+statement = "Builds the player's held-item store: seven locations, each a slot array of fixed length with a base capacity and a current capacity. Equipped (location 0): 31 slots, all usable. Inventory (1): 96 slots, 16 usable at start. Bank (2): 232 slots, 32 usable. Location 10: 250 slots, 20 usable. Location 5: 96, location 8: 85 and location 9: 204, all usable. The usable count of the inventory and bank grows with the bags worn (see player.inventory_capacity)."
+proof = "Instructions of 0x1403faa60: 0x1403faacc mov dword ptr [rbx + 0x18], 0x1; 0x1403faad3 mov dword ptr [rbx + 0x20], 0x10; 0x1403faada mov dword ptr [rbx + 0x24], 0x10; 0x1403fab1b mov dword ptr [rbx + 0x30], 0x2; 0x1403fab25 mov dword ptr [rbx + 0x38], 0x20; 0x1403fab2c mov dword ptr [rbx + 0x3c], 0x20; 0x1403fab6b mov dword ptr [rbx + 0x48], 0xa; 0x1403fab75 mov dword ptr [rbx + 0x50], 0x14; 0x1403fab7c mov dword ptr [rbx + 0x54], 0x14; 0x1403fabb6 mov dword ptr [rbx + 0x60], 0x5; 0x1403fac0b mov dword ptr [rbx + 0x78], 0x8; 0x1403fac5e mov dword ptr [rbx + 0x90], 0x9. Array lengths from the saved C (31, 96, 232, 250, 96, 85, 204), stored at 0x1403faae1, 0x1403fab22, 0x1403fab72, 0x1403fabbd, 0x1403fac12, 0x1403fac68. Built into the game object's store (DAT_140c65898 plus 0xa0)."
+grade = "sure"
+name = "InventoryConstructor"
+
+["player.inventory_capacity"]
+statement = "The client computes the usable inventory and bank sizes itself: the inventory is 16 slots plus, for each bag worn in Bag0 to Bag3, that bag's Item2.maxStackCount; the bank is 32 plus each bag in BankBag0 to BankBag9. An item is a bag when its Item2Type, Item2Category or Item2Family flags hold 0x100. The server sends no size; it must hold the same rule to know which slots exist. Lua GetTotalBagSlots, GetBagCapacity and GetTotalEmptyBagSlots read these counts, and Item GetBagSlots returns a bag's maxStackCount (0 for an item that is no bag)."
+proof = "FileHeldItem 0x1403d2e10: filing into location 0 at bag index 17 to 20 resets the inventory's usable count to its base plus the bag size of each item in those slots; 21 to 30 does the same for the bank. FillItemInfo 0x1404445d0 stores Item2 word 20 (maxStackCount) and the OR of the type, category and family flags; Item GetBagSlots 0x14041af50 (name pair 0x140c58cc0) returns the stack count only when the 0x100 flag is set. Lua: GetTotalBagSlots 0x1406d69a0 (pair 0x140c5e6d0), GetBagCapacity 0x1406d67b0 (pair 0x140c5e6b0), GetTotalEmptyBagSlots 0x1406d6a40 (pair 0x140c5e6e0)."
+grade = "fairly sure"
+gap = "Read from the saved C; which Item2Family/Category/Type rows carry flag 0x100 was not listed with table_rows. Equipping a bag in a live run and reading GetTotalBagSlots settles it."
+
+["0x1403d2e10"]
+statement = "Files an item into (or clears) a held-item slot by location and bag index for locations 0, 1, 2, 5, 8, 9 and 10; any other location fails, and so does a bag index past the location's slot array. Filing a bag slot recomputes the inventory or bank size (player.inventory_capacity)."
+proof = "Saved C of 0x1403d2e10: a switch on the location sends 0, 1, 2, 10, 5, 8 and 9 to 0x1403d6640, which fails past the array length; other locations return 0x80004005."
+grade = "fairly sure"
+gap = "Read from the saved C only."
+name = "FileHeldItem"
+
+# Inventory and equipment: what the client refuses before it sends
+
+["0x1403ad100"]
+statement = "The client's move check, run before it sends a move (0x182) and by right-click equip. In order it refuses: Params (1) when source and destination are the same, the destination location is 300 or more, the bag index is unset, an equipped bag index is above 30, or the destination item is not at the destination; Player_CannotWhileInCombat (63) in combat when either side is equipped; PlayerBusy (2) when either side is the bank or a bank bag slot and the bank is not open, likewise for location 10 and its own window; Params when an inventory destination index is past the inventory's slot array; PlayerBusy while a move is still waiting for its answer; Item_Unique (30) when equipping a unique-equipped item already worn, or a rune-unique one. It then runs the slot-fit check for the item at the destination and, for a swap, for the other item at the source. Locations 0, 8 and 9 are the equip-like ones."
+proof = "Saved C of 0x1403ad100; the equip-like test is 0x1403ad2d0 test eax, 0xfffffff6 and 0x1403ad2f4 test ecx, 0xfffffff6 (location 0, 8 or 9 when also not 1). The waiting-move test walks the player's timers for type 3 id 0x309. Unique-equipped is Item flag 2 in the type/category/family flags (FUN_1403ac840); rune-unique is FUN_14056a260 and FUN_1403af9e0."
+grade = "fairly sure"
+gap = "The in-combat flag, the bank-open and location-10 window flags and the rune uniqueness loop are named from their use, not traced to their setters."
+name = "CheckItemMove"
+
+["0x1403aecd0"]
+statement = "Checks that an item fits a destination slot. PlayerBusy (2) when the item is offered in a trade; Item_BagMustBeEmpty (35) when taking a bag out of a bag slot, or swapping it for a smaller one, would leave fewer empty inventory (or bank) slots than the items held there need; Item_BagToSmall (37) when the destination index is past the usable size of the inventory, bank or location 10; for equipped, 8 and 9 it runs the equip slot check; Item_Locked (32) for a locked location 100 to 299."
+proof = "Saved C of 0x1403aecd0; 0x1403aeedc test eax, 0xfffffff6 selects the equip-like locations. The trade list is the game object's list that IsItemInTrade 0x1403a68e0 also reads."
+grade = "fairly sure"
+gap = "That the list is the trade window is a guess from its use in delete and move; reading its writer settles it."
+name = "CheckItemFitsLocation"
+
+["0x1403b11b0"]
+statement = "The equip slot check. Item_BadId (6) for no item; Item_NotValidforSlot (31) when the destination is not equip-like, when a bag goes anywhere but slots 17 to 30 or a non-bag into them, when bag slot 17+n has n at or past the BagSlots reward property (21+n against BankSlots), or when the slot's bit is not in the item's equipped slot flags (bag index modulo 17 for locations 8 and 9); Player_CannotWhileInCombat (63) in combat except for equipped slots 16 to 30; then for locations 0 and 9 the requirement check."
+proof = "Instructions 0x1403b1214 sub eax, 0x11; 0x1403b1275 imul edx, edx, 0x11; 0x1403b12e8 mov eax, 0x1f; 0x1403b1390 mov r8d, 0x1f; calls 0x1403b4dd0 and 0x1403b4d60 for the bag counts and 0x1403b4710 for the requirements (saved C)."
+grade = "fairly sure"
+gap = "Location 8's extra equippable test and the modulo-17 slot mapping for 8 and 9 are read, but the names of locations 8 and 9 are not known."
+name = "CheckItemEquipSlot"
+
+["0x1403b4710"]
+statement = "The equip requirement check: Item_WrongRace (39) when the item's race mask lacks the player's race, Item_WrongClass (40) for the class mask, Item_WrongFaction (132) for the faction, then the item's prerequisites (Item_EquipPrereqFailed 144) and required level (Item_LevelToLow 42); for location 9 a bag index whose remainder by 17 is 16 gives Item_FailedProficiency (41)."
+proof = "Saved C of 0x1403b4710: the return codes 0x27, 0x28, 0x84, 0x90 and 0x2a after tests of the item info's race, class, faction, prerequisite and level words filled by FillItemInfo 0x1404445d0."
+grade = "fairly sure"
+gap = "The order of the prerequisite and level tests and the proficiency test for location 0 were read from return-code lines only; reading the whole function settles them."
+name = "CheckEquipRequirements"
+
+["0x1403b4dd0"]
+statement = "How many inventory bag slots (Bag0 to Bag3) the player may use: the integer value of reward property BagSlots (26), data 0, from the reward properties message 0x92c; 0 when that message has not set it, so no bag can be equipped."
+proof = "0x1403b4dd0 mov rdx, qword ptr [rcx + 0x1c00]; 0x1403b4de3 cmp dword ptr [rax + 0x20], 0x1a; 0x1403b4e03 cmp eax, 0x1a; 0x1403b4e0a cmp dword ptr [rcx + 0x24], 0x0; 0x1403b4e30 mov eax, dword ptr [rax + 0x34]. The map at that offset is the one 0x1403ab820 fills from 0x92c."
+grade = "sure"
+name = "GetUnlockedBagSlots"
+
+["0x1403b4d60"]
+statement = "How many bank bag slots (BankBag0 to BankBag9) the player may use: the integer value of reward property BankSlots (13), data 0, from message 0x92c; 0 when unset."
+proof = "0x1403b4d60 mov rdx, qword ptr [rcx + 0x1c00]; 0x1403b4d73 cmp dword ptr [rax + 0x20], 0xd; 0x1403b4d93 cmp eax, 0xd; 0x1403b4d9a cmp dword ptr [rcx + 0x24], 0x0; 0x1403b4dc0 mov eax, dword ptr [rax + 0x34]."
+grade = "sure"
+name = "GetUnlockedBankBagSlots"
+
+["0x1403a68e0"]
+statement = "Whether a held item is offered in the open trade (a guess at the list's meaning); delete sends nothing and a move is refused with PlayerBusy while it is."
+proof = "Saved C of 0x1403a68e0: returns 1 when the item's guid is in a list held by the game object, which 0x1403aecd0 also tests."
+grade = "guess"
+gap = "The list's writer is not read; the trade messages' handlers would settle it."
+name = "IsItemInTrade"
+
+["0x1403a6770"]
+statement = "Reports a generic error code to the UI: raises the Lua event GenericError with the code and its text. The item error message 0x56a and the client's own item checks use it."
+proof = "Saved C of 0x1403a6770 (RaiseUiEvent 'GenericError'); called by 0x1403b7770 for a code other than 0 and by the move sender 0x1403c17d0 with the move check's code."
+grade = "fairly sure"
+gap = "How the text is looked up for a code was not read."
+name = "ReportGenericError"
+
+# Inventory and equipment: messages the client sends
+
+["opcode.0x182"]
+statement = "Message 0x182, client to world server: move a held item (ClientItemMove). Body: from location (9 bits) and bag index (32 bits), then to location (9 bits) and bag index (32 bits). Moves, swaps, equips and unequips are all this one message; a swap is a move onto an occupied slot. Before sending the client refuses: a bad destination (Item_InventoryFull 27), dead or a ghost (Player_CantDoWhileDead 57), a locked destination (Item_Locked 32), no item at the source (Params 1), and the move check's code (0x1403ad100). It asks for confirmation first when equipping a bind-on-equip item (ItemConfirmSoulboundOnEquip) or one with a restock to clear (ItemConfirmClearRestockOnEquip). After sending it sets a 10-second wait during which every other move is refused with PlayerBusy, cleared by the server's 0x569, 0x568, 0x56a or 0x17f."
+proof = "Writer 0x140087b80 registered in 0x14006c290 (record 0x10), two ItemLocation writes by 0x1400a8c80 (9 then 32 bits). Sender 0x1403c17d0: 0x1403c1b58 mov r9d, 0x309; 0x1403c1b62 mov dword ptr [rsp + 0x20], 0x2710 (10000 ms) for FUN_14046a3d0(player, 3, 0, 0x309, 10000); 0x1403c1b89 mov edx, 0x182. The handlers that clear the 0x309 timer: 0x1403b7300, 0x1403b74e0, 0x1403b7770, 0x1403c0b20."
+grade = "fairly sure"
+gap = "Sender order read from the saved C; not run against the live client."
+
+["opcode.0x17d"]
+statement = "Message 0x17d, client to world server: split a stack (ClientItemSplit). Body: the source item's guid (64 bits), the destination location (9 bits) and bag index (32 bits), and the count to move (32 bits). The UI sends it when a partial stack is dropped on an empty slot, or any count on an occupied slot holding an item of the same Item2Type; dropping a whole stack on an empty slot sends a move (0x182) instead."
+proof = "Writer 0x140087d50 (record 0x18). Sender in the drag-drop handler 0x1406d50f0, branch 'DDItemSplitStack': 0x1406d531f mov edx, 0x17d; the drag value holds bag index in bits 0 to 7, location in bits 8 to 15 and count in bits 16 to 31."
+grade = "fairly sure"
+gap = "What the server must answer is not read from the client; by the handlers it is 0x17f (source count, reason StackSplit 0) and a 0x111 for the new stack, or 0x56a on refusal (a guess)."
+
+["opcode.0x149"]
+statement = "Message 0x149, client to world server: destroy a held item (ClientItemDelete). Body: its location (9 bits) and bag index (32 bits). The client refuses before sending: no Item2 row (Item_BadId 6), an Item2 whose flags hold 0x10000 (Item_CannotBeDeleted 156), a bag that is not empty (nothing sent), and an item offered in a trade (nothing sent)."
+proof = "Writer 0x140088d70 (record 8). Sender 0x1403c1360: 0x1403c13db test dword ptr [rax + 0x14c], 0x10000; 0x1403c13e7 mov edx, 0x9c; 0x1403c142e mov edx, 0x149; gate 0x1403a68e0."
+grade = "fairly sure"
+gap = "The server's answer is by the handlers 0x148 with reason PlayerRequested (21); that the retail server used 21 is a guess from the enum."
+
+["0x140399de0"]
+statement = "Right-click equip and unequip pick the slot themselves and send a move (0x182), not a use: an equipped item goes to the first empty usable inventory slot; a bag goes to a bag slot chosen by 0x1403acc80; any other item goes to the first empty slot whose bit is in its equipped slot flags, else to the first matching slot (a swap). No free slot gives code 20."
+proof = "Saved C of 0x140399de0: the slot search over 31 equipped slots against the item's equipped slot flags, then FUN_1403c17d0 (the 0x182 sender). Called from the use path 0x1403998e0 when the item is equippable (flag 0x400 and non-zero equipped slot flags) and not equipped, with the destination 300 (none)."
+grade = "fairly sure"
+gap = "Code 20 is not named in CodeEnumGenericError's printed rows."
+name = "AutoEquipItem"
+
+["0x1406d50f0"]
+statement = "The inventory window's drop handler: DDUseItemWithInventory uses or equips, DDItemSplitStack splits (0x17d) or moves (0x182), DDSupplySatchelItem sends 0x184, and DDBagItem moves bags."
+proof = "Saved C of 0x1406d50f0: the four string compares and the calls to 0x1403998e0, 0x1403c17d0 and the 0x17d write."
+grade = "fairly sure"
+gap = "The DDBagItem branch and 0x184 were not followed."
+name = "HandleItemDragDrop"
+
+# Inventory and equipment: messages the client reads
+
+["opcode.0x569"]
+statement = "Message 0x569, world server to client: a held item moved. Body: the item's guid (64 bits) and its new place as one 64-bit value, bag index in bits 0 to 7 and location in bits 8 to 15. The client finds the item by guid (an unknown guid does nothing), files it at the new place, empties its old slot, clears the move wait, and raises PlayerEquippedItemChanged when either place is equipped. It does not move an item already at the destination, so a swap must be sent as 0x568."
+proof = "Reader 0x1400a47f0; handler 0x1403b7300 (saved C): FindHeldItemByGuid 0x1403acbb0, FileHeldItem 0x1403d2e10 twice (the item at the new place, then 0 at the old one), the 0x309 timer walk, RaiseUiEvent 'PlayerEquippedItemChanged'."
+grade = "fairly sure"
+gap = "Read from the saved C; the bag index is cut to 8 bits by the handler, which fits every location's slot array (at most 250)."
+
+["opcode.0x568"]
+statement = "Message 0x568, world server to client: two held items swapped. Body: two pairs of guid (64 bits) and new place (64 bits, bag index bits 0 to 7, location bits 8 to 15). The client empties both old slots, files each item at its new place, clears the move wait and raises PlayerEquippedItemChanged when an equipped slot is involved."
+proof = "Reader 0x1400a4840; handler 0x1403b74e0 (saved C): two lookups, FileHeldItem 0x1403d2e10 four times, the 0x309 timer walk and 'PlayerEquippedItemChanged'."
+grade = "fairly sure"
+gap = "Read from the saved C only."
+
+["opcode.0x56a"]
+statement = "Message 0x56a, world server to client: an item action failed. Body: a guid (64 bits, unread by the handler) and a GenericError code (32 bits). A code other than 0 raises GenericError; the move wait is always cleared."
+proof = "Reader 0x14008de20; handler 0x1403b7770 (saved C): ReportGenericError 0x1403a6770 when the code is not 0, then the 0x309 timer walk."
+grade = "fairly sure"
+gap = "Read from the saved C only."
+
+["opcode.0x148"]
+statement = "Message 0x148, world server to client: a held item is gone. Body: its guid (64 bits) and a reason (6 bits, CodeEnumItemUpdateReason). The client raises ItemRemoved (ItemSentToCrate for HousingCrate) and empties the slot."
+proof = "Reader 0x14008d9c0; handler 0x1403b7d40 (saved C): FindHeldItemByGuid, 0x1403b8250 with the stack count (1 when 0) and the reason, FileHeldItem with 0."
+grade = "fairly sure"
+gap = "Read from the saved C only."
+
+["opcode.0x17f"]
+statement = "Message 0x17f, world server to client: a held item's stack count changed. Body: its guid (64 bits), the new count (32 bits) and a reason (6 bits, CodeEnumItemUpdateReason). The client sets the count, clears the move wait, and raises ItemRemoved for a drop (with the amount lost) or its gain notice for a rise. An unknown guid is reported as a client error."
+proof = "Reader 0x14007fd50; handler 0x1403c0b20 (saved C): FindHeldItemByGuid, the count store, the 0x309 timer walk, 0x1403b8250 when the change is below 1, else 0x1403b8060."
+grade = "fairly sure"
+gap = "0x1403b8060 (the gain notice) not read."
+
+["0x1403b8250"]
+statement = "Raises the item removal UI event: ItemSentToCrate for reason HousingCrate (24), otherwise ItemRemoved with the item, the amount and the reason; PlayerRequested (21) also queues a further notice."
+proof = "Saved C of 0x1403b8250: 'ItemSentToCrate' when the reason is 0x18, else 'ItemRemoved', and extra work when it is 0x15."
+grade = "fairly sure"
+gap = "The PlayerRequested notice was not followed."
+name = "RaiseItemRemoved"
+
+["opcode.0x111.guid"]
+statement = "A held item's guid is its identity for every later server message: 0x569, 0x568, 0x148 and 0x17f all find the item by guid, never by place. So the guid must stay with the item when it moves, and no two held items of a player may share one; a guid made from the item's first place collides once an item moves and a new item is made at the freed place."
+proof = "FindHeldItemByGuid 0x1403acbb0 is the only lookup in the handlers 0x1403b7300, 0x1403b74e0, 0x1403b7d40 and 0x1403c0b20 (saved C)."
+grade = "fairly sure"
+gap = "Read from the saved C; what the client does with two held items of one guid was not read."
+
+["opcode.0x92c"]
+statement = "Message 0x92c, world server to client: the player's reward properties. Body: a count (8 bits) and that many entries; each is the property id (6 bits, AccountItemLib.CodeEnumRewardProperty), its data (32 bits), the value type (2 bits: 0, 1 or 2, any other fails the read) and the value in that type's form, then a count (8 bits) of modifiers, each a kind (4 bits), data (32 bits), type (2 bits) and value. The client keeps them in a map by property and data; equipping a bag reads BagSlots (26) and BankSlots (13) from it."
+proof = "Registered in 0x14006c290 line 705: reader 0x140097800, record 0x10, no writer. Reader (saved C): ReadBits8 count, then 0x1400acec0 per entry: 0x1400ace10 (ReadBits32 6, 32, 2, then a value reader from the table at 0x140c1f178), ReadBits8 count, 0x1400acd60 per modifier (4, 32, 2, value). Dispatch: bytes at 0x1403f1344, entry 0x92c less 97, give 0x1403ed64c; 0x1403ed64c lea rcx, [rsi + 0x1bf8]; 0x1403ed656 call 0x1403ab820, which copies each entry's four words into the map node read by 0x1403b4dd0."
+grade = "fairly sure"
+gap = "Value type 1 is the integer form (the bag check reads type 1); the readers for types 0 and 2 and whether 0x1403ab820 replaces or merges the map were not read."
+
+["opcode.0x92c.bag_slots"]
+statement = "Under the Hybrid premium system (gmode 0) at tier 0, RewardPropertyPremiumModifier gives BagSlots 4 (row 109, carried to higher tiers) and BankSlots 2 (row 30); under VIP (gmode 1) tier 0 gives BagSlots 2 (row 110) and BankSlots 3 (row 32). A 0x92c with BagSlots 26 = 4 and BankSlots 13 = 2, type 1, data 0, is what a Hybrid tier-0 player needs to equip four bags and two bank bags."
+proof = "gleam run -m genesis_prime/table_rows -- RewardPropertyPremiumModifier: ID 109 system 1 tier 0 property 26 modifierValueInt 4 flags 1; ID 110 system 2 tier 0 property 26 value 2; ID 111 system 2 tier 1 property 26 value 4 flags 1; ID 30 system 1 tier 0 property 13 value 2; ID 31 system 1 tier 1 property 13 value 2; ID 32 system 2 tier 0 property 13 value 3; ID 33 to 35 system 2 tiers 1 to 3 values 7, 8, 9; ID 67 system 1 tier 0 property 13 entitlement 27 flags 1. The sum rule is RewardPropertyPremiumModifier.rewardPropertyId."
+grade = "fairly sure"
+gap = "That the server's 0x92c should carry the table's values (rather than any count) is a server choice; the client checks only what 0x92c sends."
+
+# Vendors, buyback, currency and levels
+
+["opcode.0x7ea"]
+statement = "Message 0x7ea (2026), client to game server: set the interaction (talk to a unit). Body: a 32-bit unit id (0 ends the current interaction) and a 7-bit interaction kind (0 to 0x65); kind 0x31 (49) is a vendor, and the client's own end calls send unit 0 with kind 0x65. The client sends it only after its own target checks pass (CheckInteractionTarget): with no player it shows Vendor_NoBuyer (58), with no unit Vendor_NoVendor (59), a player under a no-action control state Vendor_Buyer_NoActionCC (60), a unit under one Vendor_Vendor_NoActionCC (61), a unit out of range Vendor_TooFar (17; the range is the interaction table's, 6 for a vendor, plus 3), a hostile unit Vendor_Vendor_Disposition (62); on any of these nothing is sent. A trade that is open also stops it. Talking again to the same unit with the same kind sends nothing. Before sending, the previous interaction's window is closed (CloseVendorWindow for a vendor; the close events also cover the marketplace, auction, CREDD exchange, barber, housing broker, settler hub, resource conversion, crafting station, shuttle, taxi, mannequin and mailbox windows). The client opens no vendor window on sending: the window waits for message 0x90b with its open bit."
+proof = "Registered in 0x14006c290 (saved C) line 405: (0x7ea, 8, LAB_14008b070, 0x14008b080, 0, 0); writer 0x14008b080 writes 32 bits then 7 bits. Sender SetInteraction 0x1403a71f0 (saved C): returns when the unit and kind equal game+0x6640 and game+0x6644; raises the previous kind's close event (0x140426ac0 raises CloseVendorWindow for 0x31); calls 0x1403add00(player, unit, range) and sends 0x7ea {unit, kind} only when it returns 0 and the send argument is set. 0x1403add00 (saved C): codes 0x3a, 0x3b, 0x3c (0x14045e5e0 on the player), 0x3d (on the unit), 0x11 (UnitsWithinRange 0x1403ad690 with minimum 0, maximum the table range and bonus DAT_140b79fa0; Bytes at 0x140b79fa0 are 00004040, 3.0), 0x3e (GetUnitDispositionTo 0x14045a950 below 1), each shown by ShowGenericError 0x1403cc530. SetInteraction also returns without sending when FindUnit fails or the trade state at game+0x6718 is set; the end calls (0, 0x65, 1) come from UpdateGame 0x1403e85d0, 0x1403a9f00, 0x1403cd760 and 0x1403db9a0; 54 callers; 0x14039d5a0 starts an interaction from a server message."
+grade = "fairly sure"
+gap = "Read from the saved C. Which other kinds share the same-unit early return is not read. The meaning of each kind value from 0 to 0x65 is not tabulated here; the server message that makes 0x14039d5a0 run is not read."
+
+["0x140c48160"]
+statement = "The client's interaction table: 0x66 entries, one per interaction kind. Each holds the range in metres, the overhead icon, the activation state names and a text id. The vendor entry (kind 0x31) has range 6.0, the activation state names Vendor and VendorInactive and text id 166841."
+proof = "Bytes at 0x140c48f28 (entry 0x31, stride 0x48 from 0x140c48160): a float 6.0, a pointer to an icon path under UI\\Interface\\Overhead, pointers to the wide strings Vendor and VendorInactive, text id 0x28bb9, the name Vendor again, and 50. SetInteraction 0x1403a71f0 reads the range at entry offset 0 as the third argument of 0x1403add00."
+grade = "fairly sure"
+gap = "The last word (50) and the other entries' fields are not read."
+
+["opcode.0x262.vendor_flag"]
+statement = "In message 0x262 (create unit) the 8-bit flags value's bit 4 marks the unit as a vendor; the client gives the unit the Vendor activation state (the bag icon over its head and the vendor interaction) only while that bit is set and the unit's vendor prerequisite (the 17-bit value of the first tagged value whose tag is 1) is 0 or met. Creature2 has no vendor column: the mark is the server's to send."
+proof = "ReadMessage0262Body 0x140096fa0 (saved C) line 27 reads 8 bits into record+0x80. InitUnitFromCreate 0x140456960 (saved C) line 689: unit+0x36d4 = rec+0x80 & 4; next lines: when rec+0xe8 == 1, unit+0x36d0 = rec+0xec (the 17-bit value). UpdateUnitActivationStates 0x140479560 (saved C) lines 205-209 set the state byte at unit+0x26dc (0x1914 + 0x31*0x48) when unit+0x36d4 != 0 and (unit+0x36d0 == 0 or the prerequisite evaluator DAT_140c659a0 slot +0x18 passes). Creature2 columns read by table extractor: activationFlags, flags, uiFlags; none named vendor."
+grade = "fairly sure"
+gap = "Read from the saved C; the tag-1 reading of the first tagged value is from InitUnitFromCreate only. The other flag bits (1, 2, 0x10, 0x20) are not named."
+
+["opcode.0x90b"]
+statement = "Message 0x90b (2315), game server to client: vendor items. Body in order: 32-bit vendor unit id; 32-bit tab count, then per tab two 32-bit values (tab id and its text id); 32-bit item count, then that many vendor items (ReadVendorItem); a 32-bit float buy multiplier; a 32-bit float sell multiplier; 1 bit open; 1 bit full list; 1 bit refuse. The client drops it unless the unit id is the unit it is interacting with. Open set and refuse set: the client ends the interaction itself (sends 0x7ea with unit 0 and kind 0x65) and shows nothing. Open set: InvokeVendorWindow(unit) opens the window. The multipliers are stored on the unit. With open clear, full list clear and exactly one item, the item replaces the one with the same unique id (or is added); otherwise the list is cleared and all items are added. A nonzero tab count replaces the tabs. Then VendorItemsUpdated is raised."
+proof = "Reader 0x140097ca0 (saved C): ReadBits32 32 at +0, 32 at +4 then count*8 bytes of two ReadBits32 32; ReadBits32 32 at +0x10 then count*0x50 bytes via 0x140097ae0; ReadFloat at +0x20 and +0x24; ReadBits32 1 at +0x28, +0x2c, +0x30. Handler 0x1403db9a0 (saved C): needs game+0x78 and game+0x6640 == word 0 and FindUnit; if word 10: if word 12 then SetInteraction(game,0,0x65,1) and return, else RaiseUiEvent InvokeVendorWindow; unit+0x36dc = word 8, unit+0x36e0 = word 9; if word 11 == 0 and word 10 == 0 and word 4 == 1 update one (UpdateVendorItem 0x14047b160 when an entry's first word matches, else AddVendorItem 0x14047aba0); else clear unit+14000 (0x1403d2fc0) and AddVendorItem each; if word 1 then clear unit+0x36c0 and SetVendorGroups 0x14047b500 per tab; RaiseUiEvent VendorItemsUpdated."
+grade = "fairly sure"
+gap = "Read from the saved C. The tab pair's meaning (id then text id) is from GetVendorGroups, not read; whether a tab count of 0 keeps the old tabs on purpose is as read."
+
+["0x140097ae0"]
+statement = "Reads one vendor item of message 0x90b (a 0x50-byte record). Fields in order: 32-bit unique id (what the client buys by); 4-bit kind (0 item, 4 spell, 5 currency); 32-bit id (Item2, Spell4 or CurrencyType id); 32-bit currency type (kind 5); 32-bit stock count (0 unlimited); 17-bit prerequisite id; 32-bit amount (kind 5); 32-bit tab id; 32-bit flags (1 hide when the prerequisite fails, 2 special, 4 future stock); 64-bit value; 32-bit value; then two price slots, each a 3-bit slot kind and two 32-bit values (amount, then a currency or account currency id)."
+proof = "Saved C: ReadBits32 at +0 (0x20), +4 (4), +8, +0xc, +0x10 (0x20), +0x14 (0x11), +0x18, +0x1c, +0x20 (0x20), ReadUint64 +0x28, ReadBits32 +0x30 (0x20), then a loop of two slots at +0x34 stride 0xc: ReadBits32 3, 0x20, 0x20. AddVendorItem 0x14047aba0 copies the words into its 0x100-byte entry built at local_138: p[0] -> entry 0 (idUnique), p[1] -> 4 (eType), p[2] -> 8, p[4] -> 0x1c (nStockCount), p[5] -> local_4c = entry 0xec (idPrereq), p[7] -> local_48 = 0xf0 (idGroup), p[8] -> local_44 = 0xf4 (flags read by GetVendorItems: bit 0 hide, bit 1 bIsSpecial, bit 2 bFutureStock), u64 p[10] -> local_108 = 0x30, p[0xc] -> local_100 = 0x38."
+grade = "fairly sure"
+gap = "The 64-bit value (entry 0x30) and the 32-bit value at 0x30 (entry 0x38) are passed to itemData for kind 0 but their meaning is not read; send 0 for both."
+name = "ReadVendorItem"
+
+["0x14047aba0"]
+statement = "Adds one vendor item to the vendor unit's list. Kind 0 needs the Item2 row (else it is dropped); its stack size is the row's vendor stack count and, for a price slot of kind 0, the row's own buy price is used. Kind 4 needs the Spell4 row. Kind 5 needs the CurrencyType row, takes its icon and name, and is priced by the item's amount in its currency type. A price slot of kind 2 costs the amount in the currency type it names; kinds 1 and 3 cost the amount in currency type 15 with the id as the alternative or account currency. A credit price (currency type 1) is the price times the vendor's buy multiplier, cut to a whole number; the sell price (from the Item2 row) is scaled by the sell multiplier."
+proof = "Saved C: kind 0: 0x1400b5df0(Item2, p[2]) else return 0x80004005; local_118 (entry 0x20, nStackSize) = row+0x1ac; local_120 = row+0x1e0; name pointer row+0x1e8; slot loop over p+0xd, 2 slots, stride 3: slot kind 0 copies the row's three u64 at row+0x30.. ; else amount = slot[1], currency = (kind == 2 ? slot[2] : 0xf), alt = CONCAT44(kind == 3 ? slot[2] : 0, kind == 1 ? slot[2] : 0). Kind 4: FindSpell(p[2]), stack 1. Kind 5: 0x1401fa4a0(p[2]); local_b0 = p[6], local_a8 = p[3]. Then if local_a8 == 1: local_b0 = (i64)(local_b0 * unit+0x36dc); same for the second slot; the sell amount (row+0x60..) times unit+0x36e0. FUN_1403d3040(unit+14000, &local_138)."
+grade = "fairly sure"
+gap = "Which of eAltType and eAccountCurrencyType the two halves of the alternative word are (slot kinds 1 and 3) is not read from GetVendorItems; the sell-side fields from row+0x60 are not mapped to Lua keys."
+name = "AddVendorItem"
+
+["opcode.0xbe"]
+statement = "Message 0xbe (190), client to game server: buy from the vendor. Body: 32-bit vendor item unique id, 32-bit quantity. The client sends it only while its interaction is a vendor (kind 0x31), the player is alive and under no no-action control state; otherwise it sends nothing and shows nothing. The Vendor addon caps the quantity at the stock count when that is nonzero and at what the player can afford, but the client code checks neither. The reply is the currency change (0x919), the item added and, on refusal, a generic error (0x106) such as Vendor_NotEnoughCash (20) or Vendor_SoldOut (13)."
+proof = "Writer 0x14007ec70 (saved C): two 32-bit writes. Sender 0x1403c2580 (saved C): returns when any of 28 control slots at player+0x2d8 has CCStates flags & 4 (DAT_140c65a08+0x28), when IsDead (player+0x250), or when game+0x6644 != 0x31; else sends 0xbe. Vendor.lua FinalizeBuy passes tItemData.idUnique and the spinner value to BuyItemFromVendor (Lua 0x14050cd10)."
+grade = "fairly sure"
+gap = "Read from the saved C. Which 0x106 codes retail sent for each buy refusal is not in the client; the codes and texts are in enum GameLib.CodeEnumGenericError."
+
+["opcode.0x166"]
+statement = "Message 0x166 (358), client to game server: sell to the vendor. Body: an 8-byte item location then a 32-bit quantity. The client checks before sending and shows its own generic error on a refusal: quantity 0 gives Vendor_NoQuantity (24); a quantity above the stack's count gives Vendor_NotEnoughToFillQuantity (19); quantity above 1 of an item that does not stack gives Vendor_StackSize (11); a bag that is not empty gives Vendor_BagIsNotEmpty (25); a dead vendor gives Vendor_IWontBuyThat (23); a dead player PlayerBusy (2); a control state on either Vendor_Buyer_NoActionCC (60) or Vendor_Vendor_NoActionCC (61); out of range (6) Vendor_TooFar (17). It sends nothing without a vendor interaction, an item at the location, or for a vendor whose Creature2 row marks it as a turn-in or special vendor. A quantity below the stack's count is allowed: the player can sell part of a stack."
+proof = "Writer 0x140088d90 (saved C): an 8-byte location (0x1400a8c80) then 32 bits. Sender 0x1403c2630 (saved C): returns when game+0x6644 != 0x31, no unit, FUN_1403ac780(game+0xa0, loc) finds no item, Creature2 row (unit+0x18) +0x74, +0x148 or +0x78 nonzero, or FUN_1403d3950 nonzero; row +0x70 goes to FUN_1404ab040. Then CheckVendorSell 0x1403d3a60: 0x3c, 2 (dead buyer), 0x17 (dead vendor), 0x3d, 0x18 (quantity 0), CheckItemSellable 0x1403d6a10 (0x13 when quantity > item+0x78 (at least 1); 0xb when item rec+0x154 & 4 is clear and quantity > 1; 0x19 when rec+0x154 & 0x100 and the bag is not empty), 0x11 when UnitsWithinRange(player, vendor, 0, DAT_140b7a00c, 0) fails (Bytes at 0x140b7a00c are 0000c040, 6.0). A nonzero code goes to ShowGenericError 0x1403cc530 at 0x1403c2811 and nothing is sent."
+grade = "fairly sure"
+gap = "Read from the saved C. The further checks in 0x1403d6a10 after the bag check, 0x1403d3950, and the Creature2 columns at +0x70, +0x74, +0x78, +0x148 are not named."
+
+["opcode.0xbb"]
+statement = "Message 0xbb (187), client to game server: buy back a sold item. Body: the 32-bit buyback id. The client sends it under the same conditions as a buy (vendor interaction, alive, no no-action control state)."
+proof = "Sender 0x1403c2850 (saved C): the same three checks as 0x1403c2580, then sends 0xbb with one 32-bit value. Vendor.lua FinalizeBuy calls BuybackItemFromVendor(tItemData.idUnique) (Lua 0x14050ce20)."
+grade = "fairly sure"
+gap = "Read from the saved C; the writer's single 32-bit write is as decoded, not disassembled."
+
+["opcode.0x167"]
+statement = "Message 0x167 (359), client to game server: sell all junk. Empty body. Sent only while the interaction is a vendor and the unit exists. The Vendor addon sends it when the vendor window opens if the player turned auto-sell on, so it can follow the window opening at once."
+proof = "Lua SellJunkToVendor 0x14050ce40 (saved C) checks game+0x6644 == 0x31 and FindUnit before sending 0x167. Vendor.lua OnInvokeVendorWindow line 168 calls SellJunkToVendor() under its auto-sell option."
+grade = "fairly sure"
+gap = "What the client counts as junk is the server's choice; the client sends no item list."
+
+["opcode.0xbc"]
+statement = "Message 0xbc (188), game server to client: the whole buyback list. Body: a 32-bit count, then that many buyback entries in the layout of message 0xba. The client clears its list (held on the player's game state, not on the vendor), adds each entry and raises BuybackItemsUpdated."
+proof = "Reader 0x14008e560 (saved C): count then entries via 0x14008e3e0, 0x88 bytes each. Handler 0x1403b8630 (saved C): clears game+0x6330 (count game+0x6338), calls AddBuybackItem 0x1403b8a60 per entry, RaiseUiEvent BuybackItemsUpdated."
+grade = "fairly sure"
+gap = "Read from the saved C."
+
+["opcode.0xba"]
+statement = "Message 0xba (186), game server to client: one buyback entry added or changed. Body in order: 32-bit buyback id; 18-bit Item2 id; 32-bit quantity; 64-bit; 32-bit; 64-bit; 64-bit; 18-bit; five 32-bit values; eight 32-bit values; 64-bit; 64-bit; 4 bits; 4 bits; 32-bit. An entry whose Item2 id the client does not know is dropped."
+proof = "Reader 0x14008e3e0 (saved C), field widths in that order. Handler 0x1403b8790 (saved C) calls AddBuybackItem 0x1403b8a60, which returns an error when the Item2 lookup fails."
+grade = "guess"
+gap = "Only the id, the Item2 id and the quantity are named, from GetBuybackItems 0x14065b2b0; the price fields and the rest need GetBuybackItems' keys mapped to the entry offsets."
+
+["opcode.0xbd"]
+statement = "Message 0xbd (189), game server to client: remove a buyback entry. Body: the 32-bit buyback id. An unknown id is an error and nothing changes."
+proof = "Handler 0x1403b88d0 (saved C): finds the entry by id in game+0x6330 and removes it; returns an error when not found."
+grade = "fairly sure"
+gap = "Whether it raises BuybackItemsUpdated after the removal is not read."
+
+["opcode.0x14d"]
+statement = "Message 0x14d (333), game server to client: repair done. Empty body; it raises an event. Repair (client message 0x14c, three 64-bit values) is outside this system's scope."
+proof = "Registration in 0x14006c290 (saved C): 0x14d with record size 0; 0x14c 24 bytes."
+grade = "guess"
+gap = "The raised event's name and 0x14c's three values are not read."
+
+["opcode.0x919"]
+statement = "Message 0x919 (2329), game server to client: a currency or player value change. Body: a 5-bit kind, a 64-bit value, two 32-bit values. Kinds 0 to 21 set currency type kind+1 to the value (credits are kind 0) and raise PlayerCurrencyChanged; the client keeps only types 1 to 14, so kinds 14 to 21 are logged and dropped. Kind 22 sets the player's item proficiencies (the same word the player state message sets). Kinds 23 to 28 are combat momentum (Impulse 23, KillingPerformance 24, KillChain 25, Evade 26, Interrupt 27, CCBreak 28): the first 32-bit value is looked up and CombatMomentum and a combat log line are raised. Kind 29 sets a timer: the value and an end time of now plus value milliseconds. Kind 30 sets the money trade limit and raises MoneyTradeLimitChanged. Kind 31 is an error. The value is a new total, not a change."
+proof = "Registered in 0x14006c290 (saved C) line 444: 0x919, 24 bytes, no writer, reader 0x14008d3b0: ReadBits32 5 at +0, ReadUint64 +8, ReadBits32 32 at +0x10 and +0x14. Handler 0x1403c70e0 (saved C): kind <= 0x15: SetCurrency(game, kind+1, value), game+0x6f98 = 1; 0x16: game+0x1b40 = low word, refresh units with +0x14c & 8 (0x14056a430); 0x17..0x1c: 0x1403c7ac0 (0x1401f4b60 on word +0x10, raises CombatMomentum, CombatLogString); 0x1d: game+0x1b58 = value, game+0x1b60 = filetime now + value*10000; 0x1e: game+0x1670 = value, RaiseThrottledUiEvent on GameMgr+0x1130 (MoneyTradeLimitChanged); else ReportError, 0x80004005. CombatFloater.CodeEnumCombatMomentum values from its registration in 0x140752690: Impulse 23.0 at 0x14075371a mov, KillingPerformance 24.0, KillChain 25.0, Evade 26.0 at 0x14075382b mov, Interrupt 27.0, CCBreak 28.0 at 0x1407538e1 mov."
+grade = "fairly sure"
+gap = "Read from the saved C. What kind 29's timer is, and the second 32-bit value of the combat momentum kinds, are not read."
+
+["0x1403b5730"]
+statement = "Sets one of the player's currencies. Types 1 to 14 only: another type is logged and nothing is stored or raised. At or above the type's cap (when the CurrencyType row exists) it prints the cap notice (text 431795) in chat. It always raises PlayerCurrencyChanged (throttled)."
+proof = "Saved C: if (0xd < type-1) ReportError and return; stores value at game+0x15f0 + 8*type; if value >= GetCurrencyCap 0x1403b59f0(type) and 0x1401fa4a0(type) != 0, 0x140003890 shows text 0x69eb3 on channel 0x1a; RaiseThrottledUiEvent on GameMgr+0x1020."
+grade = "fairly sure"
+gap = "Read from the saved C. Whether the stored value is clamped to the cap is as read: it is not."
+name = "SetCurrency"
+
+["0x1403b59f0"]
+statement = "A currency's cap: the CurrencyType row's capAmount, or no cap when it is 0 or there is no row. Without account flag 14 (an entitlement check), credits are capped at GameFormula 1115 dataint0 (500000) and Renown at GameFormula 1116 dataint0 (5000)."
+proof = "Saved C: row = 0x1401fa4a0(type); cap = row+0x20 or i64 max; when FUN_1403d2140(game, 0xe) == 0: type 1 -> GameFormula 1115 dataint0 (default 500000), type 2 -> GameFormula 1116 dataint0 (default 5000). GameFormula rows read by table_rows: 1115 dataint0 500000, 1116 dataint0 5000."
+grade = "fairly sure"
+gap = "What flag 14 of FUN_1403d2140 is (likely the signature entitlement) is not read; the server should treat the player as having it or send credits below 500000."
+name = "GetCurrencyCap"
+
+["0x1401fa4a0"]
+statement = "Looks up a CurrencyType row by id."
+proof = "Saved C: a table lookup on PTR_u_CurrencyType_140a69f38."
+grade = "fairly sure"
+gap = "Read from the saved C."
+name = "GetCurrencyTypeRow"
+
+["CurrencyType.capAmount"]
+statement = "CurrencyType rows: 1 Credits, 2 Renown, 3 Elder Gems, 4 Crafting Voucher, 5 Prestige (cap 12000), 6 Shade's Eve (5000), 7 Glory, 9 Winterfest (5000), 10 Triploons (200), 11 to 14 the four Primal Matrix essences; no row 8. capAmount 0 means no cap. The client reads the localized name, the icon and capAmount."
+proof = "table_rows CurrencyType: columns ID, description, localizedTextId, iconName, capAmount (64-bit); AddVendorItem 0x14047aba0 reads the row's icon and text, GetCurrencyCap 0x1403b59f0 the cap."
+grade = "fairly sure"
+gap = "Row 8 is absent from the table; whether the server may ever send type 8 is untested: SetCurrency stores it but the cap lookup finds no row."
+
+["opcode.0x106"]
+statement = "Message 0x106 (262), game server to client: generic error. Body: an 8-bit code (GameLib.CodeEnumGenericError). The client looks up the code's text and raises GenericError(code, text); the Vendor addon shows it in the vendor window's alert box while the window is open. The client raises the same event itself for refusals it finds before sending."
+proof = "Registered in 0x14006c290 (saved C) line 511: (0x106, 4, 0, 0, LAB_14008d560); the reader reads 8 bits. HandleWorldMessage case at 0x1403ef16f calls ShowGenericError 0x1403cc530(game, code), which maps code to text and calls RaiseUiEvent GenericError at 0x1403cd2ad. Vendor.lua OnGenericError line 749."
+grade = "fairly sure"
+gap = "Read from the saved C and the case's call."
+
+["CombatFloater.CodeEnumExpReason"]
+statement = "CombatFloater.CodeEnumExpReason, the source kind in message 0x1ac's fourth value: 0 Invalid, 1 Cheat, 2 KillCreature, 3 Quest, 4 ClusterBonus, 5 Spell, 6 Exploration, 7 QuestEpisodeCompletion, 8 PathMission, 9 PathEpisode, 10 KillPerformance, 11 MultiKill, 12 KillingSpree, 13 TelegraphInterrupt, 14 TelegraphEvade, 15 Momentum, 16 Rested, 17 PublicEvent, 18 PeriodicQuest. The chat notice for 0x1ac uses: 2 and 3 '$1n XP', 4 '$1n Bonus XP', 6 '$1n Explorer's experience', 7 'Episode completion bonus', 16 '$1n Rested XP', any other '$1n XP'. When the second value (rest experience used) is nonzero, a second ExperienceGained is raised with kind 16 and that amount."
+proof = "Registration in 0x140752690: 0x1407530fd lea of s_Quest then 0x140753116 mov rcx 0x4008000000000000 (3.0); Spell 5.0 at 0x1407531c2 mov; Exploration 6.0 at 0x14075321d mov; QuestEpisodeCompletion 7.0; PathMission 8.0 at 0x1407532d3 mov; KillPerformance 10.0 at 0x14075337f mov; MultiKill 11.0; KillingSpree 12.0 at 0x140753435 mov; TelegraphInterrupt 13.0; TelegraphEvade 14.0; Momentum 15.0; Rested 16.0 at 0x1407535a1 mov; PublicEvent 17.0; PeriodicQuest 18.0 at 0x140753657 mov. Invalid, Cheat, KillCreature, ClusterBonus and PathEpisode take their numbers from memory constants (order gives 0, 1, 2, 4, 9). Handler 0x1403c8760 (saved C): switch on word 3 with texts 0x9345, 0x9346, 0x9347, 0xa17a, 0xce94, 0x9348 (cases 8, 9, default), 0x3ffcb (case 0x10); second RaiseUiEvent ExperienceGained with 0x10 and word 1."
+grade = "fairly sure"
+gap = "The values 0, 1, 2, 4 and 9 are by order, not read from their constants; reading the movsd sources before those five names would make them sure."
+
+["opcode.0x1ac.fields"]
+statement = "Message 0x1ac's five 32-bit values: experience gained in all (added to the player's experience); rest experience used (taken from the rest pool); a third amount shown as a separate gain line in the chat (the part from a group or other bonus); the source kind (CombatFloater.CodeEnumExpReason); the unit the experience came from (the target of the floating number). The base number shown is the first minus the second and third."
+proof = "Handler 0x1403c8760 (saved C): game+0x1678 += word 0; game+0x1688 -= word 1; iVar15 = word0 - word2 - word1 shown with text DAT_140aebdd4 when nonzero; word 2 nonzero sends a notice kind 6 with word 2 to 0x1404283d0; ExperienceGained('iUSii', word 3, word 4, text, 0, amount). FloatText.lua OnExperienceGained(eReason, unitTarget, strText, fDelay, nAmount)."
+grade = "guess"
+gap = "What the third value's notice kind 6 labels (group bonus or other) is not read; reading 0x1404283d0's kind 6 text would settle it. Send 0 for it."
+
+["0x14050cbf0"]
+statement = "Lua GetRestXpKillCreaturePool: the kill experience the rest pool still covers, the rest experience held times (1 + 1/f), where f is GameFormula 341 datafloat0 (0.5), so three times the rest pool. This implies rest experience adds f times a kill's experience. The client does not work out kill experience itself: the server sends the amount in message 0x1ac."
+proof = "Saved C: FUN_140200220(0x155) is GameFormula row 341, datafloat0 at +0x18; fVar4 = DAT_140b79ed0 / f + DAT_140b79ed0 (Bytes at 0x140b79ed0 are 0000803f, 1.0); returns (int)(game+0x1688 * fVar4). GameFormula 341 by table_rows: datafloat0 0.5, datafloat01 0.5."
+grade = "fairly sure"
+gap = "That the server's rest bonus per kill is f times the kill experience is inferred from this pool; the kill formula itself is not in the client."
+name = "LuaGetRestXpKillCreaturePool"
+
+["0x14041bf80"]
+statement = "Lua Item GetBuyPrice: the item's Item2 buy price; a credit price is multiplied by the open vendor's buy multiplier, or, for an item tied to a faction, by a price factor from the player's standing with it."
+proof = "Saved C: vendor = FindUnit(game+0x6640) when game+0x6644 == 0x31; f = DAT_140b79ed0 (1.0) or vendor+0x36dc; when 0x140243a00(item rec+0x1c0) finds a row, f = 0x1405e6230(game+0x1698, 0xe, row+0xc, row+4); amount = item price +0x28 times f when the currency (+0x30) is 1, cut to an integer."
+grade = "fairly sure"
+gap = "The faction price row (0x140243a00) and 0x1405e6230 are not named."
+name = "LuaItemGetBuyPrice"
+
+["0x14041bcc0"]
+statement = "Lua Item GetSellPrice: nothing for an item that cannot be sold (CheckItemSellable refuses it); otherwise the item's sell price times the open vendor's sell multiplier."
+proof = "Saved C: CheckItemSellable 0x1403d6a10(item, 1) nonzero returns an empty value; f = vendor+0x36e0 when game+0x6644 == 0x31; price from row+0x58, or the item's own +0xf0 when item+0x80 bit 3 is clear and 0x1403d8cb0 accepts it."
+grade = "fairly sure"
+gap = "What the item's own price at +0xf0 is (a per-item sell value) is not read."
+name = "LuaItemGetSellPrice"
+
+["0x14065a560"]
+statement = "Lua Unit GetVendorItems: the vendor's items as tables with idUnique, eType, idItem, nStackSize, nStockCount, bMeetsPreq, idPrereq, idGroup, bIsSpecial, bFutureStock, tPriceInfo, itemData (items), splData (spells), strIcon and strName. An item whose prerequisite fails and whose hide flag is set is left out."
+proof = "Saved C and disassembly (dis-0x14065a560): keys from entry 0, 8, 4, 0x20, 0x1c, 0xec, 0xf0, 0xf4 bits 1 and 2, 0x88, 0x10, 0xe8; skips when the prerequisite fails and 0xf4 bit 0."
+grade = "fairly sure"
+gap = "The tPriceInfo sub-keys' offsets are not mapped."
+name = "LuaUnitGetVendorItems"
+
+["vendor.stock_gap"]
+statement = "The client holds no vendor stock: no table lists what a vendor sells, at what multipliers, or which creature is a vendor. The server supplies each vendor's items (message 0x90b), tabs, multipliers and the vendor bit of the create-unit flags; these come from retail records, each marked with its source."
+proof = "Table names in ~/.genesis-prime/tables: none holds vendor, stock or merchant; Creature2 columns hold no vendor field. 0x90b's handler 0x1403db9a0 is the only writer of the vendor list (unit+14000) and of the multipliers."
+grade = "fairly sure"
+gap = "A search that found nothing; the Store tables are the account store's UI, not vendor stock."
+
+# Quests
+
+# Quests: offering a quest
+
+["opcode.0x357"]
+statement = "Message 0x357, world server to client: open a unit's dialog. Body: the unit id, 32 bits. The client builds the unit's dialog responses; when there is more than one response it sends message 0x356 with an empty body, and it turns the creature toward the player."
+proof = "Dispatch case at 0x1403eecc3 calls 0x140554510 (HandleWorldMessage 0x1403ec6a0, case k = id 0x61 + k); body read by the shared Uint32AndBitBody reader; 0x140554510 calls 0x1405546b0 to build responses and SendWorldMessage 0x356 when the count is above one. Saved C 0x140554510.c, 0x1405546b0.c."
+grade = "fairly sure"
+gap = "Which responses a creature offers (Creature2 and Quest2 giver and receiver columns) is built in 0x1405546b0 and not decoded line by line; whether the server must send 0x357 after 0x97 or the client opens the dialog itself is not settled by a recording."
+
+["opcode.0x358"]
+statement = "Message 0x358, world server to client: close the dialog. Raises the UI event Dialog_Close."
+proof = "Dispatch case at 0x1403eecd1 calls 0x14050f770, which raises Dialog_Close. Saved C 0x14050f770.c."
+grade = "fairly sure"
+gap = "The body is not read; the handler takes none that it uses."
+
+["opcode.0xe3"]
+statement = "Message 0xe3, client to world server: start or stop auto-attack, a 1-bit body, 1 on a press of the attack button and 0 on its release. The client does not wait for a reply. Sent by the auto-attack starter with the class's primary attack spell (Class spell4IdAttackPrimary00, or spell4IdAttackUnarmed00 without a weapon). It is not the unit interaction message; right-clicking a quest giver casts the activate spell and sends 0x97."
+proof = "Saved C 0x140397850.c: SendWorldMessage 0xe3 with one bit; the spell comes from 0x140397740 reading the Class row at the primary attack and unarmed attack columns. Right-click activate: existing record 0x14039c430 (sends 0x97). Registered in 0x14006c290: id 0xe3, record 4, sizer 0x14007e600, writer 0x14007e610 (one bit)."
+grade = "fairly sure"
+gap = "A recording of a right-click on a quest giver would show which of 0x97 and 0xe3 the client sends; the live note that saw 0xe3 may have been an attack on a hostile unit. The press and release reading of the bit is the ranked trace's, from the sender's call sites; the conditions inside 0x140397850 (which weapon, auto-repeat) are not read."
+
+# Quests: the communicator call
+
+["opcode.0x757"]
+statement = "Message 0x757, world server to client: a communicator message. Body: CommunicatorMessages id, 15 bits, then a flag bit. The client accepts only rows whose flags have bit 1; a row with a delay is queued; when the flag bit is set and the client already shows it, nothing happens; otherwise it shows the call (Communicator_ShowSpamMsg or Communicator_ShowQuestMsg)."
+proof = "Reader 0x14007c0c0: 0x14007c0e5 mov r8d, 0xf; 0x14007c0ee call 0x14006c090 (read bits); 0x14007c0fb mov r8d, 0x1; 0x14007c104 call 0x14006c090. Handler 0x14043b7b0 (saved C): flags test against 1, delay test routes to 0x14043bd20, flag bit with 0x14043d3d0, then 0x14043cc10 and 0x14043bf30."
+grade = "sure"
+
+["0x14043c1a0"]
+statement = "When a shown communicator message delivers a quest the player has never met (state Unknown), the client marks the quest Mentioned and sends message 0x360 for it, then raises Communicator_UpdateCallback."
+proof = "Saved C 0x14043c1a0.c: reads the row's questIdDelivered, GetState 0x1405fbc40 == 0, then 0x1405fca00(manager, quest, 1)."
+grade = "fairly sure"
+gap = "Rows whose flags lack bit 1 are fired by the client itself from its own conditions (level, zone, quest states); the rules for those are not decoded."
+name = "CommunicatorQueueQuest"
+
+["opcode.0x360"]
+statement = "Message 0x360, client to world server: a quest was mentioned to the player, or the mention is withdrawn. Body: quest id, 15 bits, then a bit (1 mentioned, 0 withdrawn). The client sends it only when the wish differs from what it holds and the quest exists, and sets the quest's local state to Mentioned. The client withdraws mentions (bit 0) on refresh for mentioned quests it can no longer accept."
+proof = "Saved C 0x1405fca00.c: compares against the mentioned map entry (state other than Ignored), SendWorldMessage 0x360 with 15 and 1 bits, SetState 0x1405fbdc0 to 5. Refresh 0x1405fccb0 sends 0x360 with 0 when the quest record lacks flag 4 or CanAcceptQuest 0x140552550 with mask 0xfffffdff refuses. 0x1405fca00 sends only when the quest's record is found (0x1405a8a40 non-null); the current value is the mentioned map entry's state not equal to 7, or 0 with no entry. Registered in 0x14006c290 as id 864, record 8, writer 0x140084bb0 (15 bits then 1 bit; 0x364 shares the sizer and the writer). Called from CommunicatorQueueQuest 0x14043c1a0 and from the refresh 0x1405fccb0, which walks every quest in the map at 0x48 and calls 0x1405fca00 with 0 only for a quest whose record lacks flag 4 or which CanAcceptQuest refuses."
+grade = "fairly sure"
+gap = "Whether the server must answer 0x360 is not shown by the client; it waits for nothing."
+
+["0x14043c700"]
+statement = "Answers an incoming communicator quest call: opens the quest dialog for the delivered quest (dialog state 2, the accept view) and raises Communicator_EndIncoming. Called by a key-bound action next to the quest log toggle, and by two Lua functions, one taking a Game.Quest."
+proof = "Saved C 0x14043c700.c: calls 0x140554580 then raises Communicator_EndIncoming. Callers: case 6 of 0x1404d7a10 (case 5 is ToggleQuestLog), 0x140757950, 0x140757980."
+grade = "fairly sure"
+gap = "The key's letter (C) is from the live note, not from the key binding table; the two Lua functions' names are not read."
+name = "AnswerCommunicatorQuest"
+
+# Quests: accept and abandon
+
+["opcode.0x35b"]
+statement = "Message 0x35b, client to world server: accept a quest. Body: item location, 9 bits, and bag index, 32 bits (300 and -1 when no item starts the quest), then quest id, 15 bits. Sent by the dialog's accept response and by using an item or ability whose record names a quest (an Item2 quest2IdActivation). When the quest is Botched the accept path sends message 0x365 (quest id, 32 bits on the item path) instead. When the quest cannot be started the client raises a GenericFloater or a cast error text and sends nothing. The client waits for message 0x35c."
+proof = "Writer 0x14008b200: 0x14008b210 call 0x1400a8c80 (item location writer); 0x14008b2bf mov r8d, 0xf; 0x14008b2c8 call 0x140336470 (write bits). Senders: DialogAcceptQuest 0x140556b20 (response type 11 in dialog state 2), 0x14039c8a0 from UseItem 0x1403998e0. Dialog item defaults 300 and -1 at 0x140c7dc6c and 0x140c7dc70. Item path (0x14039c8a0, called from 0x1403998e0 when the used record's given quest is set): the quest state from 0x1405fbc40; state 4 sends 0x365 with a 32-bit quest id, otherwise 0x35b; the writer is registered in 0x14006c290 as id 859, record 12, with the item identity written by 0x1400a8c80 (9 bits, 32 bits) then 15 bits."
+grade = "fairly sure"
+gap = "The floater or cast error text the item path raises when the quest cannot be started is read from the sender's saved C only; a recorded item use that cannot start its quest would show which text it is."
+
+["opcode.0x365"]
+statement = "Message 0x365, client to world server: retry a botched quest. Body: quest id, 15 bits. The accept path sends it instead of 0x35b when the quest's state is Botched."
+proof = "Saved C 0x140556b20.c: GetState == 4 sends 0x365 with the quest id; otherwise 0x35b."
+grade = "fairly sure"
+gap = "The server's answer (a 0x35c back to Accepted) is assumed, not seen."
+
+["0x140552550"]
+statement = "Whether the player may accept a quest, by a mask of checks; returns 0 when allowed or the first failing check's code: 1 no player, 2 already known, 3 level too low, 4 and 5 class and race, 6 to 9 prerequisite quests and exclusions, 10 faction, 11 the mentioned check, 12 to 17 item, prerequisite, path, contract and repeat checks. A refusal shows a floating text: 0x1860c for level, 0x54007 for code 15, 0x1860d otherwise."
+proof = "Saved C 0x140552550.c: mask bit tests in order bit9 0xb, bit0 2, bit12 0xe, bit2 4, bit3 5, bit8 10, bit1 3 (record level against player level), bit6 8, bit7 9, bit4 6, bit5 7, bit10 0xc, bit11 0xd, bit13 0xf, bit14 0x10, bit15 0x11."
+grade = "fairly sure"
+gap = "Codes 4 to 17 are named from the record field each reads; codes 12 to 17 are not matched to their Quest2 column one by one."
+name = "CanAcceptQuest"
+
+["opcode.0x35a"]
+statement = "Message 0x35a, client to world server: abandon a quest. Body: quest id, 15 bits. Sent by the Lua Quest:Abandon and by abandoning every PvP quest."
+proof = "Saved C 0x140665210.c and 0x1405fd320.c: SendWorldMessage 0x35a through the 15-bit quest writer."
+grade = "fairly sure"
+gap = "The client's refusal flags (cannot abandon, cannot abandon when achieved) are read from eldan's constants, not from Quest:Abandon line by line."
+
+# Quests: turn in
+
+["opcode.0x35d"]
+statement = "Message 0x35d, client to world server: turn in a quest. Body: quest id, 15 bits, chosen reward id, 15 bits, then a bit from the dialog. Sent by the dialog's complete response (type 10 in dialog state 3) and by Contract:Complete. The client refuses a reward choice that would grant a second tradeskill. Experience then arrives by message 0x1ac."
+proof = "Writer 0x14008b2f0: 0x14008b39d mov r8d, 0xf; 0x14008b3a6 call 0x140336470; 0x14008b448 mov r8d, 0xf; 0x14008b451 call 0x140336470. Senders DialogCompleteQuest 0x140557000, Contract:Complete 0x1406a3ba0 (saved C). Experience: existing record opcode.0x1ac."
+grade = "sure"
+
+["opcode.0x35e"]
+statement = "Message 0x35e, client to world server: ignore or stop ignoring a quest. Body: quest id, 15 bits, then a bit."
+proof = "Saved C 0x1405fcad0.c: SendWorldMessage 0x35e with 15 and 1 bits."
+grade = "fairly sure"
+gap = "No server answer is seen in the client."
+
+["opcode.0x364"]
+statement = "Message 0x364, client to world server: track or untrack a quest in the tracker. Body: quest id, 15 bits, then a bit. The client flips its own tracked flag and raises QuestTrackedChanged without waiting."
+proof = "Saved C 0x1405fcb80.c."
+grade = "fairly sure"
+gap = "Whether the server stores the tracked flag across logins (the login log carries it in a word not yet named) is open."
+
+# Quests: share
+
+["opcode.0x45f"]
+statement = "Message 0x45f, client to world server: share a quest with the group. Body: quest id, 15 bits. Sent by Quest:Share."
+proof = "Saved C 0x140668520.c."
+grade = "fairly sure"
+gap = "The server's checks before offering (questShareEnum, group) are the server's choice."
+
+["opcode.0x363"]
+statement = "Message 0x363, world server to client: a quest share offer. Body: sharer unit id, 32 bits, then quest id, 15 bits. The client raises Dialog_QuestShare when it knows the quest; the answer is 0x45e within 10 seconds."
+proof = "Reader 0x14008f4c0: 0x14008f4e5 mov r8d, 0x20; 0x14008f4ee call 0x14006c090; 0x14008f4fb mov r8d, 0xf; 0x14008f504 call 0x14006c090. Dispatch case 0x1403eeddc looks the quest up with 0x1405a8a40. kQuestShareAcceptTimeoutMs 10000."
+grade = "sure"
+
+["opcode.0x45e"]
+statement = "Message 0x45e, client to world server: answer a quest share offer. Body: a 15-bit field the client sends as 0, then a bit, 1 accept and 0 reject. Sent by Quest:AcceptShare and Quest:RejectShare."
+proof = "Writer 0x140084bb0: 0x140084c5d mov r8d, 0xf; 0x140084c66 call 0x140336470; second write at 0x140084d20. Senders 0x1406683d0 and 0x140668420 (saved C)."
+grade = "fairly sure"
+gap = "The second field's width is read from the saved C, not the instruction; why the quest field is 0 (the server keeps the offer) is a guess."
+
+# Quests: the quest state the client holds
+
+["opcode.0x35c"]
+statement = "Message 0x35c, world server to client: set a quest's state. Body: quest id, 15 bits, state, 32 bits (QuestState: 1 Accepted, 2 Achieved, 3 Completed, 4 Botched, 5 Mentioned, 6 Abandoned, 7 Ignored), then a 32-bit word whose meaning is not read. A quest the client does not know is refused. On Accepted the client may locate the first objective; it raises QuestStateChanged, or ContractStateChanged for a contract quest."
+proof = "Reader 0x14008f100: 0x14008f125 mov r8d, 0xf; 0x14008f12e call 0x14006c090; 0x14008f13b mov r8d, 0x20; 0x14008f144 call 0x14006c090; 0x14008f151 mov r8d, 0x20; 0x14008f15a call 0x14006c090. Handler 0x1405fb670 (saved C): unknown quest returns 0xa00b0001; state 1 with a setting calls 0x140553890."
+grade = "sure"
+
+["opcode.0x361"]
+statement = "Message 0x361, world server to client: an objective's progress. Body: quest id, 15 bits, objective index, 32 bits, progress, 32 bits. The quest must be in the log. The client stores the progress, marks the objective done when its progress reaches the needed count, starts timers on later objectives, plays a sound when the quest is Achieved, and raises QuestObjectiveUpdated or ContractObjectiveUpdated."
+proof = "Same reader as 0x35c (0x14008f100: 15, 32, 32 bits at 0x14008f125, 0x14008f13b, 0x14008f151 mov r8d). Handler 0x1405fb830 (saved C) calls 0x1406115a0, which compares GetObjectiveProgress 0x1405515c0 to GetObjectiveNeeded 0x140551840 and sets or clears done bit 1 shl (index + 2)."
+grade = "sure"
+
+["0x140551840"]
+statement = "An objective's needed count: its QuestObjective count, except 100 for the kill types 2, 8, 15, 16 and 46 when the count is at least 2 and objective flag 0x200 is clear; those are shown and judged as a percent."
+proof = "Saved C 0x140551840.c: type below 0x2f and bit set in 0x400000018104, count above 1, flag 0x200 clear, returns 100."
+grade = "fairly sure"
+gap = "The instruction-level proof is not taken."
+name = "GetObjectiveNeeded"
+
+["0x1405515c0"]
+statement = "An objective's shown progress: the stored value, or for a checklist objective the count of its set bits. For the percent kill types (see GetObjectiveNeeded) with a stored value above 1 it is needed times stored times 0.001, truncated, so the server sends those objectives' progress in thousandths of completion (1000 is done) and the client shows a percent."
+proof = "Saved C 0x1405515c0.c: 0x1405517a0 chooses the plain or the bit-count getter; the scale uses DAT_140b79d04; bytes at 0x140b79d04 read as the float 0.001 (rdata file offset 0x958000 plus 0x220d04)."
+grade = "fairly sure"
+gap = "A recording of a kill objective with a count of 2 or more would confirm the server sent thousandths."
+name = "GetObjectiveProgress"
+
+["0x1405517a0"]
+statement = "Whether an objective counts its progress as bits (a checklist): true for objective types 10, 13, 14 and 18, and for types 27 and 28 when their PathSoldierActivate row's mode is 1 or 2."
+proof = "Saved C 0x1405517a0.c: switch on the objective type, cases 10, 0xd, 0xe, 0x12 return true; cases 0x1b and 0x1c look up 0x140223380 (the PathSoldierActivate table) by the objective data and test the row's fifth column minus 1 below 2."
+grade = "fairly sure"
+gap = "The PathSoldierActivate column name at that position is not read from the table header."
+name = "IsChecklistObjective"
+
+["opcode.0x35f"]
+statement = "Message 0x35f, world server to client: the quest log at login. Body: a 32-bit count of completed quests, each a 15-bit id and a bit (a repeatable quest goes to the repeatable list unless the bit is set); a 32-bit count of quests with a 15-bit id and a 4-bit state; a 32-bit count of active quests, each 15-bit id, 4-bit state, a 32-bit word, a 32-bit done mask, a 32-bit objective count with that many 32-bit progress values, a 32-bit word, then that many 32-bit timer values; and a 64-bit periodic reset time. The client then withdraws stale mentions, raises QuestInit and marks the log loaded."
+proof = "Reader 0x14008f2d0: 0x14008f380 mov r8d, 0x1 (completed bit); 0x14008f410 mov r8d, 0x4 (state); active entries by 0x14008f170: 0x14008f1c1 mov r8d, 0x4; 0x14008f1db, 0x14008f1f5, 0x14008f20f mov r8d, 0x20; array reads 0x14008f233 call 0x1403374e0. Handler 0x1405fb350 (saved C) stores the reset time in DAT_140c65938, calls 0x1405fccb0, raises QuestInit."
+grade = "fairly sure"
+gap = "The two 32-bit words in an active entry are not named; the first count's width and the quest-id widths are read from the saved C, not from an instruction."
+
+["opcode.0x362"]
+statement = "Message 0x362, world server to client: periodic quests reset. Body: a 64-bit reset time and 4 bits (daily, weekly and two more groups). When the time differs from the one held, the client stores it and raises QuestPeriodicReset with the four bits."
+proof = "Reader 0x140084570: 0x140084598 call 0x14006c120 (64-bit read); 0x1400845a5 mov r8d, 0x4; 0x1400845ae call 0x14006c090. Handler 0x140611e30 (saved C)."
+grade = "fairly sure"
+gap = "Which bit is daily and which weekly is not matched to questRepeatPeriodEnum."
+
+["opcode.0x176"]
+statement = "Message 0x176, world server to client: add or remove a spell shortcut tied to a path, quest or objective. Body: spell id, 18 bits, kind, 3 bits (0 path, 1 quest, 2 objective), id, 32 bits, then a bit (1 add)."
+proof = "Reader 0x14008dd40: 0x14008dd65 mov r8d, 0x12; 0x14008dd7b mov r8d, 0x3; 0x14008dd91 mov r8d, 0x20; 0x14008dda7 mov r8d, 0x1, each before call 0x14006c090. Handler 0x1403b9fb0 raises AddSpellShortcut or RemoveSpellShortcut."
+grade = "sure"
+
+["opcode.0x359"]
+statement = "Message 0x359, world server to client: raise a UI event by id with up to five arguments. Body: LuaEvent id, 14 bits, a 32-bit count, then each argument as a 32-bit kind and its value; kinds 4 and 5 are an item and a quest looked up by id."
+proof = "Dispatch case 0x1403eee1a calls 0x1406128b0 (saved C)."
+grade = "fairly sure"
+gap = "The value width of each argument kind is not read."
+
+# Quests: objective types
+
+["QuestObjective.type.2"]
+statement = "QuestObjective type 2: kill a creature. The objective's data is a Creature2 id; text 'Kill' (localized 1218). Counted in thousandths when its count is 2 or more and flag 0x200 is clear. 598 rows, 43 in the start zones."
+proof = "Saved C 0x140551d40.c (objective text by type) and 0x140551840.c; rows counted from QuestObjective.tbl."
+grade = "fairly sure"
+gap = "What counts as a kill for the objective (tagging, group credit) is the server's choice."
+
+["QuestObjective.type.3"]
+statement = "QuestObjective type 3: talk to a creature. Data is a Creature2 id; text 'Talk to' (localized 1219). 350 rows, 47 in the start zones."
+proof = "Saved C 0x140551d40.c; QuestObjective.tbl."
+grade = "fairly sure"
+gap = "Whether talking is the dialog open (0x357) or a dialog response is not settled."
+
+["QuestObjective.type.4"]
+statement = "QuestObjective type 4: collect an item. Data is an Item2 id; text 'Collect' (localized 1220). 327 rows, 9 in the start zones."
+proof = "Saved C 0x140551d40.c; QuestObjective.tbl."
+grade = "fairly sure"
+gap = "Whether turn-in takes the items is the server's choice; the client removes none."
+
+["QuestObjective.type.8"]
+statement = "QuestObjective type 8: kill any creature of a TargetGroup. Data is a TargetGroup id; text 'Kill'. A percent kill type. 498 rows, 50 in the start zones. Type 16 reads the same way (55 rows, 1 in the start zones)."
+proof = "Saved C 0x140551d40.c (types 8 and 16 share the TargetGroup lookup) and 0x140551840.c; QuestObjective.tbl."
+grade = "fairly sure"
+gap = "How 8 and 16 differ is not read."
+
+["QuestObjective.type.12"]
+statement = "QuestObjective type 12: use (activate) a creature, such as an object in the world. Data is a Creature2 id; text 'Use' (localized 16944). 1187 rows, 118 in the start zones, the most used type there."
+proof = "Saved C 0x140551d40.c; QuestObjective.tbl."
+grade = "fairly sure"
+gap = "Whether the activate spell's cast (0x97) completing is the trigger is the server's choice; a recording would show the order."
+
+["QuestObjective.type.32"]
+statement = "QuestObjective type 32: collect a virtual item. Data is a VirtualItem id; text 'Collect'. 709 rows, 30 in the start zones."
+proof = "Saved C 0x140551d40.c; QuestObjective.tbl."
+grade = "fairly sure"
+gap = "How the server grants virtual items (loot, activation) is not in the client."
+
+["QuestObjective.type.38"]
+statement = "QuestObjective type 38: deliver a work order (a tradeskill schematic to be delivered, flag 0x400). Locating it raises WorkOrderLocate. 2520 rows, 6 in the start zones."
+proof = "Saved C 0x140551d40.c (schematic delivery text) and 0x140553890.c (type 0x26 raises WorkOrderLocate); QuestObjective.tbl."
+grade = "fairly sure"
+gap = "Not needed in the start zones beyond 6 rows; the delivery rule is not decoded."
+
+["QuestObjective.type.5"]
+statement = "QuestObjective type 5: a scripted objective with its own free text and data 0; the client has no type-specific text or lookup for it. 1556 rows, 99 in the start zones."
+proof = "QuestObjective.tbl rows of type 5 have data 0; 0x140551d40.c has no case for 5."
+grade = "guess"
+gap = "What completes it is the server's script; each start-zone row needs its trigger from its text, a recording or the world database."
+
+["QuestObjective.type.22"]
+statement = "QuestObjective type 22: reach a place, count 1, data a location-like id. 511 rows, 82 in the start zones."
+proof = "QuestObjective.tbl rows of type 22 (count 1, data such as 8539); no text case in 0x140551d40.c."
+grade = "guess"
+gap = "Which table the data names (WorldLocation2 or a trigger volume) is not read in the client."
+
+["QuestObjective.type.14"]
+statement = "QuestObjective type 14: activate each of a set of things, counted as checklist bits. 426 rows, 37 in the start zones."
+proof = "0x1405517a0.c returns true for type 0xe, so progress is a bit count; QuestObjective.tbl."
+grade = "fairly sure"
+gap = "Which set the data names (a TargetGroup is likely) is not read."
+
+["QuestObjective.type.31"]
+statement = "QuestObjective type 31: a hidden objective with count 0 and no text; the client remembers its index on the quest. 260 rows, 12 in the start zones."
+proof = "Saved C 0x14054f290.c stores the index of a type 31 objective; QuestObjective.tbl."
+grade = "guess"
+gap = "Its meaning is not read."
+
+# Zones, unit types, activation and loot
+
+["opcode.0x262.type_data"]
+statement = "Message 0x262's type data, after the 32-bit unit id and the 6-bit unit type, is read by one reader per unit type (0 to 36) from a pointer table. Types 0, 8 (Collectible), 10, 11, 13 (Turret) and 32 read a creature id of 18 bits and a checklist index of 8 bits (ReadUnitCreateCreatureData 0x140095fb0). Types 1, 2, 4 (Door), 5, 6, 12 (Mailbox), 16, 19, 21, 30 (DestructibleDoor) and 33 read only an 18-bit Creature2 id (0x140080d30). Types 14 (InstancePortal) and 29 (Trap) read an 18-bit Creature2 id and then a 32-bit value (0x140095ed0). The other types have their own readers: 3 and 9 0x140096750, 7 0x140096850, 15 0x140096c50, 17 0x140096cc0, 18 0x140096540, 20 0x1400962d0, 22 0x1400965c0, 23 0x140096970, 24 0x140096b50, 25 0x140096be0, 26 and 28 0x1400807f0, 27 0x140096d30, 31 0x140096db0, 34 and 35 0x140096e20, 36 0x140096e80."
+proof = "Ghidra bytes at 0x140c1ea30, 37 pointers of 8 bytes indexed by unit type. Entries 0, 8, 10, 11, 13 and 32 are 0x140095fb0, which matches the known reader of those types. Saved C 0x140080d30.c (hash 8eb22adb6de47956): ReadBits32(width 0x12) only. Saved C 0x140095ed0.c (8eb22adb6de47956): ReadBits32 0x12, then ReadBits32 0x20 into the record's word 3."
+grade = "fairly sure"
+gap = "The table was read as bytes and matched for the known types; the readers of types 3, 7, 9, 15 to 18, 20, 22 to 28, 31 and 34 to 36 were not read."
+
+["0x140080d30"]
+statement = "Reads one 18-bit unsigned value (a Creature2 id) into the record's first word. It is message 0x262's type data reader for unit types 1, 2, 4, 5, 6, 12, 16, 19, 21, 30 and 33."
+proof = "Saved C 0x140080d30.c (hash 8eb22adb6de47956): a tail call of ReadBits32 0x14006c090 with width 0x12. The type table entries are at 0x140c1ea30 (see opcode.0x262.type_data)."
+grade = "sure"
+name = "ReadUnitCreateCreatureIdOnly"
+
+["0x140095ed0"]
+statement = "Message 0x262's type data reader for unit types 14 (InstancePortal) and 29 (Trap): an 18-bit Creature2 id, then a 32-bit unsigned value into the record's word 3."
+proof = "Saved C 0x140095ed0.c (hash 8eb22adb6de47956) lines 11 and 13: ReadBits32(record, 0x12), then ReadBits32(record + 0xc, 0x20). The table entries 14 and 29 at 0x140c1ea30 point here."
+grade = "sure"
+name = "ReadUnitCreatePortalData"
+
+["opcode.0x262.portal_time"]
+statement = "For unit type 14 (InstancePortal), InitUnitFromCreate stores the type data's 32-bit value as a deadline at unit 0x1b4: 0 when the value is 0, else the value plus the client's frame clock in milliseconds. So the value is a time left in milliseconds. Nothing but the unit copier 0x14057b840 is seen reading 0x1b4, so 0 is the safe value."
+proof = "Saved C 0x140456960.c (hash 2580df99bb1ce2aa) lines 251 to 257: case 0xe, unit 0x1b4 = 0 when the record's word 3 is 0, else word 3 + DAT_140c636a8 (the frame clock, written by UpdateFrameClock). A grep of the saved C for '+ 0x1b4)' on a unit pointer finds only 0x14057b840 besides this."
+grade = "guess"
+gap = "What the deadline drives was not found, because a field read by offset in Ghidra's other functions is easy to miss. A read of the Lua InstancePortal functions (time-left queries) would settle it."
+
+["opcode.0x93c"]
+statement = "Message 0x93c (2364), world server to client: a unit's stand state. Body: the unit id (32 bits), the stand state (4 bits) and a 14-bit id kept beside it (the second value of 0x262 stat 12). The client finds the unit (an unknown unit is ignored) and calls SetUnitStandState 0x14045bf30, which refuses a state above 13 with an error and changes nothing. The same state and id already set do nothing. Otherwise the old state goes to unit 0x1bc, the new state to 0x1b8 and the id to 0x1cc, and the unit's animation is replayed. Message 0x262's stat 12 sets the same two words at create."
+proof = "Registered in 0x14006c290 line 700 with a 12-byte record and reader 0x140097540. Saved C 0x140097540.c (8eb22adb6de47956): ReadBits32 widths 0x20, 4 and 0xe. HandleWorldMessage case at 0x1403ed4ee: FindUnit(word 0), jz to the end; 0x14045bf30(unit, word 1, word 2). Saved C 0x14045bf30.c (8eb22adb6de47956) line 54: 0xd < state, then ReportError and return 0x80004005; line 72: equal state and id return 0; lines 75 to 79: 0x1bc = 0x1b8, 0x1b8 = state, 0x1cc = id. SetUnitStatsFromCreate 0x140458140's record gives stat 12 to 0x1b8 and 0x1cc."
+grade = "fairly sure"
+gap = "The id's table (an emote or an animation sequence) was not read; 0 is the value a unit gets with no stat 12."
+
+["0x14045bf30"]
+statement = "Sets a unit's stand state and its id, as opcode.0x93c gives: refuses a state above 13; the old state goes to unit 0x1bc."
+proof = "As opcode.0x93c."
+grade = "fairly sure"
+gap = "The animation calls after the store were not read."
+name = "SetUnitStandState"
+
+["0x14046cdc0.door"]
+statement = "In the unit's visual refresh, a unit of type 4 (Door) or 30 (DestructibleDoor) that holds a world object (unit 0x16f8, which the second tagged value of 0x262 links: active prop id and world socket) calls that object's slot 0x128 with one flag: whether the unit's stand state (unit 0x1b8) is 3. So a door's prop opens or closes by the stand state the server sets with 0x262 stat 12 or message 0x93c. Unit:GetHealth gives a DestructibleDoor's health only in state 3."
+proof = "Saved C 0x14046cdc0.c (hash 2580df99bb1ce2aa) lines 1007 to 1009: type == 4 or == 0x1e, unit 0x16f8 not null, (*(obj) + 0x128)(obj, unit 0x1b8 == 3). OnUnitClaimsWorldObject 0x14043e900 stores the object at 0x16f8. The 0x14064a4e0 record: type 30 in a state other than 3 has no health."
+grade = "guess"
+gap = "Which of state 3 and the others is open is not read: slot 0x128 of the world object class was not found. A lead (not evidence): a recording of another server sent stand state 4 to open a door. A live test sending 0x93c with states 3 and 4 to door 18510 of world 426 would settle it."
+
+["0x1403a6440"]
+statement = "Whether the player can loot or interact with a unit: true when the unit is in range and either has a loot entry or is of type 1 (Chest) or 8 (Collectible)."
+proof = "Saved C 0x1403a6440.c (hash 2580df99bb1ce2aa): a range test and the loot list check, or the unit's type 0x80 == 1 or == 8."
+grade = "fairly sure"
+gap = "The range used was not read."
+name = "IsUnitLootableInRange"
+
+["0x14039d0f0"]
+statement = "The Lua 'Collect' command's work, given a unit id: with a pending loot for the unit it raises PendingLootInteract. Otherwise, when the unit is found, lootable and in range (0x1403a6440), it asks GetUnitActivateSpell 0x14046c580 for an activate spell. With none (0), it sends message 0x14f with the unit id twice and the flag 0. With one, it calls 0x14055b0e0 and CastActivateSpell 0x14039c430 (message 0x97), and reports a cast failure unless the result is 0 or 0x13d."
+proof = "Saved C 0x14039d0f0.c (hash 2580df99bb1ce2aa) lines 16 to 37: 0x140396750 pending loot; FindUnit; 0x1403a6440; CONCAT44(id, id), flag 0, SendWorldMessage 0x14f; 0x14055b0e0. 'Collect' (UTF-16 at 0x140b04fc8) is registered at 0x140c488d8 with 0x14039d640, which calls this."
+grade = "fairly sure"
+gap = "0x14055b0e0 was not read."
+name = "CollectUnit"
+
+["0x14039cff0"]
+statement = "The Lua 'Loot' command's work, given a unit id: with a pending loot it raises PendingLootInteract; otherwise, for a found unit, it sends message 0x14f. Its first value is the loot entry's id for a unit of type 18 (PinataLoot), and the unit id for a unit of type 1. Its second value is the unit id, and its flag is 0."
+proof = "Saved C 0x14039cff0.c (hash 2580df99bb1ce2aa) lines 15 to 39: 0x140396750; FindUnit; type 0x12 -> 0x1403967f0 loot entry; type != 1 branch; CONCAT44(param_2, uVar4), local_10 = 0, SendWorldMessage 0x14f. 'Loot' (UTF-16 at 0x140b06500) is registered at 0x140c49388 with 0x14039d620, which calls this."
+grade = "fairly sure"
+gap = "The branch for types other than 1 and 18 was read only in outline."
+name = "LootUnit"
+
+["opcode.0x14f"]
+statement = "Message 0x14f (335), client to world server: take loot from a unit. Body: a 32-bit value (the looted unit's id, or a PinataLoot unit's loot entry id), a 32-bit value (the unit id, or the one item's id when a single item is asked for) and 1 bit (1 when the loot window asks for one item, 0 to take all or to collect). The Collect and Loot commands send it, as does the loot window's item request, which also raises the window's LootItemRequested."
+proof = "Registered in 0x14006c290 line 332: 0x14f, a 12-byte record, writer 0x1400887e0. Saved C 0x1400887e0.c (8eb22adb6de47956): WriteBitsSlow word 0 at 0x20 bits, word 1 at 0x20 bits, then (word 2 != 0) at 1 bit. Senders: 0x14039d0f0 (id, id, 0), 0x14039cff0 (entry or id, id, 0), and 0x140516ae0 (8eb22adb6de47956) lines 28 to 31: CONCAT44(param_1 + 0x10, entry + 0x2c), flag 1, then 'LootItemRequested'."
+grade = "fairly sure"
+gap = "The meaning of 0x140516ae0's two values (entry 0x2c and param 0x10) rests on the event name; the loot window's Lua was not read. The server's answer the client waits for (a loot list message) was not traced."
+
+["0x14046c580"]
+statement = "Gives the spell a unit's activation casts. The default is GameFormula 414's dataint0 (8). For a unit of type 20 (Player), when a lookup by the other player's word 0xdc finds a row and the disposition test passes, it is that row's word 0x54. Otherwise, for a unit with creature data whose words 0x6c and 0x148 are both 0, it walks Creature2 spell4IdActivate00 to 03. It returns the first whose prerequisiteIdActivateSpell is 0 or passes (prerequisite class slot 0x18), even when that spell is 0. When none passes, the default stays. When either word is nonzero, the result is 0. A result of 0 means the unit is activated with no spell (message 0xb3); any other result is cast (message 0x97)."
+proof = "Saved C 0x14046c580.c (hash 49fd5a78aaad3411): FUN_140200220(0x19e) (GameFormula by id) word 4; type 0x14 branch; the creature data's pointer 0xc0 indexes words 0 to 3 (spell) with words 0x10 to 0x1c (prerequisite), matching Creature2 offsets 60 and 76. GameFormula row 414: dataint0 = 8 (table_rows)."
+grade = "fairly sure"
+gap = "Creature data words 0x6c and 0x148, and the type 20 lookup's table, were not read."
+name = "GetUnitActivateSpell"
+
+["0x14039d4a0"]
+statement = "Activates (interacts with) a unit: when the unit's byte 0x34ec is set it first shows tutorial 0x15f. With no activate spell (GetUnitActivateSpell gives 0) it sends message 0xb3 with the unit id. Otherwise it calls 0x14055b0e0 and CastActivateSpell 0x14039c430 (message 0x97), and reports a cast failure unless the result is 0 or 0x13d."
+proof = "Saved C 0x14039d4a0.c (hash 6ba38d868f75acff): 0x140437a10(…, 0x15f, …) under byte 0x34ec; 0x14046c580; SendWorldMessage 0xb3 with unit word 8; else 0x14055b0e0, CastActivateSpell, FindSpell, ReportCastFailure."
+grade = "fairly sure"
+gap = "Who calls it (the click or key path) was not traced."
+name = "ActivateUnit"
+
+["opcode.0xb3"]
+statement = "Message 0xb3 (179), client to world server: activate a unit that has no activate spell. Body: the unit id, 32 bits. Doors, mailboxes and turrets of the start worlds have no activate spell (Creature2 spell4IdActivate00 0), so activating them sends this."
+proof = "Registered in 0x14006c290 line 320: 0xb3, a 4-byte record, writer WriteUint32Body. Sender 0x14039d4a0 line 20. Creature2 rows 18671, 11276, 13867, 16799 (doors), 10956 (mailbox) and 17075 (turret): spell4IdActivate00 = 0 (table_rows)."
+grade = "fairly sure"
+gap = "The server's expected answer (an interaction message, which depends on the creature) was not traced."
+
+["opcode.0x97"]
+statement = "Message 0x97 (151), client to world server: the player started casting a creature's activate spell. Body: the cast's client id (cast 0x60), 32 bits, then the cast's primary target unit id (cast 0x158), 32 bits. The client does not wait for a reply. The cast was started locally as an activate cast (info 0x54 = 1), so the server's spell start for it should set 0x7ff's activate bit. The collectible of world 426 (Creature2 12919) has activate spell 1817, cast time 2000 ms and range 5; the portal 70172 has spell 44214."
+proof = "Registered in 0x14006c290 line 647: 0x97, an 8-byte record, writer 0x14007ec70. Saved C 0x14007ec70.c (8eb22adb6de47956): word 0 then word 1, 32 bits each. CastActivateSpell 0x14039c430 (6ba38d868f75acff) lines 81 to 85: StartLocalCast, then CONCAT44(cast 0x158, cast 0x60) sent as 0x97. Cast 0x60 is the client id the pending list is searched by (the record citing HandleSpellCastResult); cast 0x158 is the primary target (the record citing InitCast). Creature2 rows 12919 and 70172 (table_rows)."
+grade = "fairly sure"
+gap = "The server's expected answer (spell start 0x7ff and the result message) belongs to the spells trace."
+
+["opcode.0x1b4"]
+statement = "Message 0x1b4 (436), world server to client: a map zone's explored hexes. Body: the MapZone id (32 bits), a byte count (32 bits), then that many bytes. The client finds the map zone by id (none: ignored). The count must be ceil(W * H / 8), where W = hexLimX + 1 - hexMinX and H = hexLimY + 1 - hexMinY of the MapZone row. Otherwise it reports an error and keeps the old bits. On a match it copies the bytes, bumps the zone's version and recounts its explored hexes. Hex (x, y) is bit (i & 7) of byte i >> 3, with i = (y - hexMinY) * W + (x - hexMinX). A hex counts as explored whatever its bit when the MapZone has a parent (mapZoneIdParent not 0) or when the hex's own flags have bit 2."
+proof = "Registered in 0x14006c290 line 1028: a 16-byte record, reader 0x14007d790 (8eb22adb6de47956): ReadBits32 0x20, ReadBits32 0x20, AllocateMessageSpace and ReadBytesAsBits of that count. HandleWorldMessage case 0x1403ef63d: count == 0 or no manager (DAT_140c658f8) -> end; 0x140448420(id) (binary search of the manager's 0x50-byte entries by slot 0 = MapZone row word 0); entry slot 0x90 = 0x1407131b0 (8eb22adb6de47956): size check, memcpy to entry word 9, version + 1, 0x140713400, else ReportError. The entry's rectangle (slot 0x58 = entry + 0x20) is set in 0x140445ee0 from MapZone offsets 0x18, 0x1c, 0x20 + 1 and 0x24 + 1. 0x140712ef0 is the index; 0x1407130c0 is the bit test, which returns 1 when slot 0x20 (MapZone offset 0x2c, mapZoneIdParent) is nonzero or slot 0x68's word has bit 2."
+grade = "fairly sure"
+gap = "Slot 0x68's table (MapZoneHex, found through 0x140448970) and its column were not read. No client message reporting explored hexes was found: the server is expected to work them out from the player's position."
+
+["0x140448420"]
+statement = "Finds a map zone's map entry by MapZone id: a binary search of the map manager's entries (0x50 bytes each, sorted by MapZone id). Returns null when none matches."
+proof = "Saved C 0x140448420.c (hash 8eb22adb6de47956): DAT_140c658f8 entries at word 8 with stride 0x50, compared through each entry's slot 0 (0x140712e30, the MapZone row's word 0)."
+grade = "fairly sure"
+gap = "The slot 0 routine (0x140712e30) is taken to give the MapZone row id from its use in this search, not read itself; reading it would settle it."
+name = "FindMapZoneEntry"
+
+["0x1407131b0"]
+statement = "Sets a map zone entry's explored-hex bits from message 0x1b4, if the byte count matches the zone's hex rectangle; see opcode.0x1b4."
+proof = "As opcode.0x1b4."
+grade = "fairly sure"
+gap = "As opcode.0x1b4."
+name = "SetMapZoneExploredHexes"
+
+["0x1407130c0"]
+statement = "Whether a hex of a map zone is explored, as opcode.0x1b4 gives."
+proof = "As opcode.0x1b4."
+grade = "fairly sure"
+gap = "As opcode.0x1b4."
+name = "IsMapZoneHexExplored"
+
+["opcode.0x965"]
+statement = "Message 0x965 (2405), world server to client: a zone map hex group. Body: a 14-bit id, a 21-bit value, a 32-bit value and 1 bit. The client drops any group stored under the same id. When the bit is set, it stores the four values. Either way it raises ZoneMapUpdateHexGroup, and the ZoneMap addon draws the group's hexes when it is visible or removes them."
+proof = "Registered in 0x14006c290 line 1080: a 16-byte record, reader 0x1400a4f60 (8eb22adb6de47956): ReadBits32 0xe, 0x15, 0x20, 1. HandleWorldMessage case 0x1403f0b98 calls 0x1404b4400 (2580df99bb1ce2aa): erase by word 0 from DAT_140c659e8; when word 3 != 0, insert a copy; RaiseUiEvent 'ZoneMapUpdateHexGroup'. UI/ZoneMap/ZoneMap.lua OnUpdateHexGroup: hexGroup:IsVisible(), GetHexes."
+grade = "fairly sure"
+gap = "The table of the 14-bit id and the meaning of the 21-bit and 32-bit values were not read. Not needed for the tutorial."
+
+["0x1404b4400"]
+statement = "Handles message 0x965 (a zone map hex group), as opcode.0x965 gives."
+proof = "As opcode.0x965."
+grade = "fairly sure"
+gap = "As opcode.0x965."
+name = "HandleZoneMapHexGroup"
+
+["opcode.0x642"]
+statement = "Message 0x642 (1602), world server to client: a prerequisite failed. Body: the Prerequisite id (17 bits), the PrerequisiteType id (9 bits) and a localized text id (21 bits). The client refuses an id of 0 or one with no Prerequisite row, and shows nothing. The text is the Prerequisite row's failure text when it has one. Otherwise it is the PrerequisiteType row's text. The third value picks the wording around it (0 gives a fixed default). The client raises the UI event PrereqFailureMessage with the text."
+proof = "Registered in 0x14006c290 line 1045: a 12-byte record, reader 0x1400a3f00 (8eb22adb6de47956): ReadBits32 0x11, 9, 0x15. HandleWorldMessage case 0x1403ef2e4: 0x14049c1a0(word 0, word 1, word 2). Saved C 0x14049c1a0.c (2580df99bb1ce2aa): id 0 or FUN_1402259c0(id) null -> 0x80004005; row word 0x38 text; else FUN_140225e00(type) word 4 text; param_4 == 0 -> DAT_1409f06e4; RaiseUiEvent 'PrereqFailureMessage'."
+grade = "fairly sure"
+gap = "Which Prerequisite column offset 0x38 is (a failure text column) and the text the third value names were not read from the tables."
+
+["0x14049c1a0"]
+statement = "Shows a prerequisite failure from message 0x642, as opcode.0x642 gives."
+proof = "As opcode.0x642."
+grade = "fairly sure"
+gap = "As opcode.0x642."
+name = "ShowPrerequisiteFailure"
+
+["0x14053a990"]
+statement = "The per-frame zone update in UpdateGame. The player unit's zone (unit 0x17e8, which the terrain gives) is compared with the game's last one (0x74ec). When it differs, the game keeps the new zone (0x74ec and 0x74e8) and its time (0x74f0), and when the display name changes it flushes the movement commands, which sends message 0x63a. It also raises SubZoneChanged with the zone and its name. When the name stays the same it raises SubZoneChanged 500 ms later. No server message drives a subzone change: the client works it out from its own position."
+proof = "Saved C 0x14053a990.c (hash 2580df99bb1ce2aa) lines 31 to 75: unit 0x17e8 against 0x74ec; GetZoneDisplayName before and after; FlushPlayerMovementCommands; RaiseUiEvent 'SubZoneChanged'; the 500 ms test on DAT_140c636a8 - 0x74f0. Called by UpdateGame 0x1403e85d0. FlushPlayerMovementCommands sends 0x63a (the opcode.0x63a record)."
+grade = "fairly sure"
+gap = "0x14043b3f0, 0x1405fa730, 0x140575dd0, 0x1404b5610 and 0x14053adc0 (called on a zone change) were not read."
+name = "UpdatePlayerZone"
+
+# Prerequisites: the condition types the start worlds' quests, creatures and Tutorial rows use
+
+["Prerequisite.prerequisiteTypeId.2"]
+statement = "Prerequisite type 2 ('Race', text 78724): the player character's race (a Race id; 17 when there is no character), not the unit's. Comparison 1 passes when it equals the value, 2 when it differs; any other comparison fails. The objectId and the units are not read. Start content: 5 condition(s) in 5 row(s); (comparison, value): (1, 16) 1, (2, 16) 1, (1, 12) 1, (1, 13) 1, (1, 5) 1; objectIds: 0."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 2 dispatches to 0x14049c4e0, slot 0x30 of the prerequisite class 0x140b67740 (bytes at 0x140b67770). Saved C 0x14049c4e0.c (hash 8eb22adb6de47956): the player record (game 0x140c65898, word 0x78) word 0xd8, or 0x11 with no record; compared by == / != with the value (param_4). Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 2`."
+grade = "fairly sure"
+gap = "That word 0xd8 is the race rests on the error text and the values (Race ids 5, 12, 13, 16); its writer is not read."
+
+["0x14049c4e0"]
+statement = "Prerequisite type 2's test. See Prerequisite.prerequisiteTypeId.2."
+proof = "As Prerequisite.prerequisiteTypeId.2."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.2."
+name = "PrerequisitePlayerRaceIs"
+
+["Prerequisite.prerequisiteTypeId.3"]
+statement = "Prerequisite type 3 ('Class', text 78725): the first unit's class (a Class id), or with no unit the player character's (23 with no character). Comparison 1 passes when it equals the value, 2 when it differs; any other comparison fails. The objectId is not read. Start content: 12 condition(s) in 8 row(s); (comparison, value): (1, 3) 2, (1, 4) 2, (1, 7) 2, (1, 1) 2, (1, 2) 2, (1, 5) 2; objectIds: 0."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 3 dispatches to 0x14049c560, slot 0x40 of the prerequisite class 0x140b67740 (bytes at 0x140b67780). Saved C 0x14049c560.c (hash 8eb22adb6de47956): unit word 0xdc, else the player record's word 0xdc (default 0x17); == / != with the value. Values 1 to 7 are Class ids (`gleam run -m genesis_prime/table_rows -- Class`: 1 Warrior, 2 Engineer ...). Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 3`."
+grade = "fairly sure"
+gap = "That word 0xdc is the class rests on the error text and the values; its writer is not read."
+
+["0x14049c560"]
+statement = "Prerequisite type 3's test. See Prerequisite.prerequisiteTypeId.3."
+proof = "As Prerequisite.prerequisiteTypeId.3."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.3."
+name = "PrerequisiteUnitClassIs"
+
+["Prerequisite.prerequisiteTypeId.6"]
+statement = "Prerequisite type 6 ('Quest', text 78731): the state of quest objectId (a Quest2 id) in the player's quest log, by GetQuestState (0x1405fbc40), with states 4 to 7 (Botched, Mentioned, Abandoned, Ignored) counted as 0 (Unknown), compared with the value: comparison 1 passes when equal, 2 when different; any other comparison fails. The units are not read. With no quest log only comparison 2 passes. Start content: 177 condition(s) in 102 row(s); (comparison, value): (1, 3) 70, (1, 2) 47, (2, 3) 19, (1, 1) 13, (1, 0) 12, (2, 2) 10, (2, 0) 5, (2, 1) 1; objectIds: 0, 3486, 3487, 3490, 3781, 3925, 3927, 3963, 4516, 4734 ...."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 6 dispatches to 0x14049f690, slot 0x418 of the prerequisite class 0x140b67740 (bytes at 0x140b67b58). Saved C 0x14049f690.c (hash 8eb22adb6de47956): 0x14049f690 calls 0x1405fbc40 with the quest log (0x140c65b80) and the objectId (param_4); states above 3 become 0; == / != with the value (param_5). Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 6`."
+grade = "fairly sure"
+gap = "Read from the saved C, not the listing."
+
+["0x14049f690"]
+statement = "Prerequisite type 6's test. See Prerequisite.prerequisiteTypeId.6."
+proof = "As Prerequisite.prerequisiteTypeId.6."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.6."
+name = "PrerequisiteQuestStateIs"
+
+["Prerequisite.prerequisiteTypeId.7"]
+statement = "Prerequisite type 7 ('Achievement', text 78733): whether the player has completed achievement objectId (an Achievement id): 1 when its entry in the player's achievement list has a nonzero completion word, else 0, compared with the value: comparison 1 equal, 2 different; any other comparison fails. The units are not read. Start content: 36 condition(s) in 24 row(s); (comparison, value): (1, 1) 22, (1, 0) 10, (2, 1) 4; objectIds: 1151, 1172, 1249, 1270, 1273, 1296, 1470, 1523, 1531, 1724 ...."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 7 dispatches to 0x14049f770, slot 0x428 of the prerequisite class 0x140b67740 (bytes at 0x140b67b68). Saved C 0x14049f770.c (hash 8eb22adb6de47956): the achievement tree at word 0x70 of 0x140c65c28, searched by objectId; entry word 0x28's record word 0x20 nonzero gives 1. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 7`."
+grade = "fairly sure"
+gap = "Which message fills the achievement list and that word 0x20 is the completion date are not read."
+
+["0x14049f770"]
+statement = "Prerequisite type 7's test. See Prerequisite.prerequisiteTypeId.7."
+proof = "As Prerequisite.prerequisiteTypeId.7."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.7."
+name = "PrerequisiteAchievementDone"
+
+["Prerequisite.prerequisiteTypeId.19"]
+statement = "Prerequisite type 19 ('You must have the correct tradeskill tier', text 78866): the player's tier in a tradeskill, compared with a tier taken from row objectId of a tier table (the row names the tradeskill and the tier) by the comparison (1 to 6 as ComparePrerequisiteValue). The player's tier is the tradeskill entry's tier when the tradeskill is learned, else 0. The value and the units are not read. Start content: 23 condition(s) in 23 row(s); (comparison, value): (4, 0) 16, (1, 0) 7; objectIds: 1, 2, 8, 9, 10, 15, 16, 28, 34, 35 ...."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 19 dispatches to 0x14049f0f0, slot 0x3d8 of the prerequisite class 0x140b67740 (bytes at 0x140b67b18). Saved C 0x14049f0f0.c (hash 8eb22adb6de47956): 0x140246480(objectId) gives the row (none: false); the player's tradeskill list (game words 0x1698 / count 0x16a0) searched for the entry whose word 8 equals row word 1; measured: entry word 0x54 when entry word 0xc is nonzero, else 0; ComparePrerequisiteValue (0x1404a2090) with row word 2. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 19`."
+grade = "guess"
+gap = "Which table 0x140246480 reads (likely TradeSkillTier) and the entry's fields are not read; the decompile shows the function as void though it returns the compare's result."
+
+["0x14049f0f0"]
+statement = "Prerequisite type 19's test. See Prerequisite.prerequisiteTypeId.19."
+proof = "As Prerequisite.prerequisiteTypeId.19."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.19."
+name = "PrerequisiteTradeskillTier"
+
+["Prerequisite.prerequisiteTypeId.22"]
+statement = "Prerequisite type 22 ('Quest objective requirements not met', text 78869): the progress of one objective of quest objectId, compared with the value by the comparison (1 to 6). Types 22, 23, 33, 34, 35 and 36 test objective 0, 1, 2, 3, 4 and 5. For a completed quest (state 3) the progress is the objective's needed count; otherwise it is the quest log entry's progress of that objective. For objective types 2, 8, 15, 16 and 46 with a needed count of 2 or more and without flag 0x200, both are percentages (needed 100). A quest unknown to the client or not in the log leaves the progress unset. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 1) 1; objectIds: 5857."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 22 dispatches to 0x14049f4d0, slot 0x408 of the prerequisite class 0x140b67740 (bytes at 0x140b67b48). Saved C 0x14049f4d0.c (hash 6ba38d868f75acff): Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa) cases 0x16, 0x17, 0x21-0x24 call slot 0x408 with (unit, comparison, objectId, index 0 to 5, value). 0x14049f4d0: 0x1405a8a40 (the quest), 0x1405fbc40 == 3 -> 0x140551840 (needed: objective word 0x10; percent rule by the mask 0x400000018104 on the objective type); else the log entry -> 0x1406113b0 (progress by the tracker's slot 0x40 or 0x48, scaled by the needed count for those types); then ComparePrerequisiteValue. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 22`."
+grade = "guess"
+gap = "The decompile drops ComparePrerequisiteValue's arguments, so which operand is the progress and which the value is read from the case only; the listing settles it."
+
+["0x14049f4d0"]
+statement = "Prerequisite type 22's test. See Prerequisite.prerequisiteTypeId.22."
+proof = "As Prerequisite.prerequisiteTypeId.22."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.22."
+name = "PrerequisiteQuestObjectiveProgress"
+
+["Prerequisite.prerequisiteTypeId.24"]
+statement = "Prerequisite type 24 ('You cannot do that', text 78871): whether bit value of a bit set in the player's game state is set: comparison 1 passes when set, 2 when clear. The objectId and the units are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 4) 1; objectIds: 0."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 24 dispatches to 0x14049e640, slot 0x290 of the prerequisite class 0x140b67740 (bytes at 0x140b679d0). Saved C 0x14049e640.c (hash 8eb22adb6de47956): game 0x140c65898 word 0x6750, bit param_4. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 24`."
+grade = "guess"
+gap = "What the bit set holds and which message writes it are not read."
+
+["0x14049e640"]
+statement = "Prerequisite type 24's test. See Prerequisite.prerequisiteTypeId.24."
+proof = "As Prerequisite.prerequisiteTypeId.24."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.24."
+name = "PrerequisiteGameFlagSet"
+
+["Prerequisite.prerequisiteTypeId.26"]
+statement = "Prerequisite type 26 ('Incorrect zone', text 78873): whether the player is in zone value (a WorldZone id): the player's current zone equals it or has it as an ancestor through WorldZone.parentZoneId. Comparison 1 passes when in it, 2 when not. The objectId and the units are not read. Start content: 10 condition(s) in 10 row(s); (comparison, value): (1, 13) 2, (1, 5968) 1, (1, 602) 1, (1, 35) 1, (1, 1414) 1, (1, 1083) 1, (1, 1477) 1, (1, 622) 1; objectIds: 0, 51, 870."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 26 dispatches to 0x14049e680, slot 0x2a0 of the prerequisite class 0x140b67740 (bytes at 0x140b679e0). Saved C 0x14049e680.c (hash 8eb22adb6de47956): 0x14049e680 -> 0x1403c92e0(value): game 0x140c65898 word 0x74ec (the current zone id, as the record 0x14053b190 reads it) == value -> 1; else the WorldZone row by 0x14024db80 and its word 2 (parentZoneId; tables/WorldZone.txt column order) walked up until a match (1) or no row (0). Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 26`."
+grade = "fairly sure"
+gap = "Read from the saved C, not the listing; the current zone's writer is the unit's zone (record 0x14053b190)."
+
+["0x14049e680"]
+statement = "Prerequisite type 26's test. See Prerequisite.prerequisiteTypeId.26."
+proof = "As Prerequisite.prerequisiteTypeId.26."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.26."
+name = "PrerequisiteInZone"
+
+["Prerequisite.prerequisiteTypeId.39"]
+statement = "Prerequisite type 39 ('Incorrect player', text 78885): whether the first unit is a player (unit type 20): comparison 1 passes for a player, 2 for any other unit; any other comparison fails. The objectId and the value are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 0) 1; objectIds: 0."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 39 dispatches to 0x1404a2100, decoded inside EvaluatePrerequisiteCondition. Saved C 0x1404a2100.c (hash 8eb22adb6de47956): Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa) case 0x27: the unit's word 0x80 == 0x14, then the shared is / is-not tail. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 39`."
+grade = "fairly sure"
+gap = "Read from the saved C, not the listing."
+
+["Prerequisite.prerequisiteTypeId.52"]
+statement = "Prerequisite type 52 ('player path', text 107699): the player's path (PlayerPathType: 0 Soldier, 1 Settler, 2 Scientist, 3 Explorer, as message 0x6bc sends it) equals the value: comparison 1 passes when equal, 2 when different. With no path object both fail. The objectId and the units are not read. Start content: 15 condition(s) in 15 row(s); (comparison, value): (1, 2) 9, (1, 0) 3, (1, 1) 2, (1, 3) 1; objectIds: 0."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 52 dispatches to 0x14049fd50, slot 0x478 of the prerequisite class 0x140b67740 (bytes at 0x140b67bb8). Saved C 0x14049fd50.c (hash 8eb22adb6de47956): the path object 0x140c65970 (GetPlayerPathType reads the same word) word 8 == / != the value. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 52`."
+grade = "fairly sure"
+gap = "Read from the saved C, not the listing."
+
+["0x14049fd50"]
+statement = "Prerequisite type 52's test. See Prerequisite.prerequisiteTypeId.52."
+proof = "As Prerequisite.prerequisiteTypeId.52."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.52."
+name = "PrerequisitePathIs"
+
+["Prerequisite.prerequisiteTypeId.67"]
+statement = "Prerequisite type 67 ('path mission', text 135665): a test of the player's path mission value (a PathMission id): comparison 1 passes when the mission's boolean (most likely complete) is true, 2 when false. The objectId and the units are not read. Start content: 5 condition(s) in 5 row(s); (comparison, value): (2, 650) 1, (2, 158) 1, (2, 156) 1, (2, 160) 1, (1, 1365) 1; objectIds: 0, 550, 758."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 67 dispatches to 0x14049fe10, slot 0x490 of the prerequisite class 0x140b67740 (bytes at 0x140b67bd0). Saved C 0x14049fe10.c (hash 8eb22adb6de47956): 0x1403d7bc0(path 0x140c65970, value) finds the mission; its class's slot 0x38 gives the boolean. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 67`."
+grade = "guess"
+gap = "What slot 0x38 of the mission class returns, and the case with no mission, are not read."
+
+["0x14049fe10"]
+statement = "Prerequisite type 67's test. See Prerequisite.prerequisiteTypeId.67."
+proof = "As Prerequisite.prerequisiteTypeId.67."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.67."
+name = "PrerequisitePathMissionDone"
+
+["Prerequisite.prerequisiteTypeId.68"]
+statement = "Prerequisite type 68 ('Quest objective requirement not met', text 136359): whether objective value (index 0 to 5) of quest objectId (a Quest2 id) is done, by IsQuestObjectiveDone (0x1405510d0: a quest in state 3 has every objective done; else bit 1 << (index + 2) of the quest's done mask, which messages 0x35f and 0x361 set): comparison 1 passes when done, 2 when not; any other comparison fails. A quest unknown to the client counts as not done. The units are not read. Start content: 42 condition(s) in 33 row(s); (comparison, value): (1, 0) 12, (1, 1) 11, (1, 3) 6, (1, 2) 5, (2, 0) 4, (2, 2) 2, (2, 1) 2; objectIds: 4516, 4829, 4907, 5573, 5575, 5856, 5860, 5861, 5867, 5868 ...."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 68 dispatches to 0x14049f460, slot 0x400 of the prerequisite class 0x140b67740 (bytes at 0x140b67b40). Saved C 0x14049f460.c (hash 6ba38d868f75acff): 0x14049f460: 0x1405a8a40(objectId) gives the quest; IsQuestObjectiveDone(quest, value). Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 68`."
+grade = "fairly sure"
+gap = "Read from the saved C, not the listing."
+
+["0x14049f460"]
+statement = "Prerequisite type 68's test. See Prerequisite.prerequisiteTypeId.68."
+proof = "As Prerequisite.prerequisiteTypeId.68."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.68."
+name = "PrerequisiteQuestObjectiveDone"
+
+["Prerequisite.prerequisiteTypeId.69"]
+statement = "Prerequisite type 69 ('Challenge', text 147487): a flag of the player's challenge objectId (a Challenge id) from the challenge list: comparison 1 passes when it is set, 2 when clear; with no challenge list both fail. The value and the units are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 0) 1; objectIds: 328."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 69 dispatches to 0x14049f990, slot 0x440 of the prerequisite class 0x140b67740 (bytes at 0x140b67b80). Saved C 0x14049f990.c (hash 8eb22adb6de47956): 0x14048d530: the challenge tree at word 0x30 of 0x140c65948 searched by objectId; the challenge record's word 0x30. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 69`."
+grade = "guess"
+gap = "Which challenge state word 0x30 is (active, most likely) and the message that sets it are not read."
+
+["0x14049f990"]
+statement = "Prerequisite type 69's test. See Prerequisite.prerequisiteTypeId.69."
+proof = "As Prerequisite.prerequisiteTypeId.69."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.69."
+name = "PrerequisiteChallengeFlagA"
+
+["Prerequisite.prerequisiteTypeId.74"]
+statement = "Prerequisite type 74 ('The specified challenge is locked', text 155193): a flag of the player's challenge objectId, by the text whether it is unlocked: comparison 1 passes when set, 2 when clear; with no challenge list both fail. The value and the units are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 328."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 74 dispatches to 0x14049fa80, slot 0x450 of the prerequisite class 0x140b67740 (bytes at 0x140b67b90). Saved C 0x14049fa80.c (hash 8eb22adb6de47956): 0x14048d5a0: as 0x14048d530 but the challenge record's word 0x2c. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 74`."
+grade = "guess"
+gap = "That word 0x2c is unlocked rests on the error text only."
+
+["0x14049fa80"]
+statement = "Prerequisite type 74's test. See Prerequisite.prerequisiteTypeId.74."
+proof = "As Prerequisite.prerequisiteTypeId.74."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.74."
+name = "PrerequisiteChallengeUnlocked"
+
+["Prerequisite.prerequisiteTypeId.94"]
+statement = "Prerequisite type 94 ('Quest objective requirements not met', text 160561): for a creature target: whether that creature has already been counted for objective value of quest objectId (a Quest2 id) in the player's quest log. The creature is the first unit when it is not a player, else the second unit when that is not a player. With no such creature, or the quest unknown, comparison 2 passes; otherwise comparison 1 passes when the quest is in the log and the objective's counted-targets mask has the creature's target bit, 2 when not. Start content: 18 condition(s) in 18 row(s); (comparison, value): (2, 1) 7, (1, 0) 5, (1, 1) 4, (2, 0) 2; objectIds: 3487, 3886, 5573, 5575, 5580, 5604, 5855, 5865, 6308, 6311 ...."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 94 dispatches to 0x14049f5b0, slot 0x410 of the prerequisite class 0x140b67740 (bytes at 0x140b67b50). Saved C 0x14049f5b0.c (hash 8eb22adb6de47956): 0x14049f5b0: units of type 0x14 or 0x17 are skipped; 0x1405a8a40(objectId); 0x140552f50 (the quest is in the log); 0x140551730(quest, value, creature word 0x35f8): the log entry's objective tracker (slot 0x40) & 1 << that word. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 94`."
+grade = "fairly sure"
+gap = "What sets the creature's target index (unit word 0x35f8) and the tracker's mask is not read."
+
+["0x14049f5b0"]
+statement = "Prerequisite type 94's test. See Prerequisite.prerequisiteTypeId.94."
+proof = "As Prerequisite.prerequisiteTypeId.94."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.94."
+name = "PrerequisiteQuestTargetCounted"
+
+["Prerequisite.prerequisiteTypeId.102"]
+statement = "Prerequisite type 102 ('Spell effect requirements not met', text 163571): whether the first unit carries spell objectId (a Spell4 id) among its active spell effects: comparison 1 passes when it does, 2 when not; no unit fails. The value is not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 0) 1; objectIds: 135264."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 102 dispatches to 0x1404a4fe0, decoded inside EvaluatePrerequisiteCondition. Saved C 0x1404a4fe0.c (hash 8eb22adb6de47956): Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa) case 0x66 calls 0x1404a4fe0 directly; it walks the unit's list at word 0x15d0 (next at entry word 6) comparing each entry's slot 0x30 result with objectId. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 102`."
+grade = "fairly sure"
+gap = "That the list is the unit's spell effects and slot 0x30 the Spell4 id rest on the error text and the value 135264."
+
+["0x1404a4fe0"]
+statement = "Prerequisite type 102's test. See Prerequisite.prerequisiteTypeId.102."
+proof = "As Prerequisite.prerequisiteTypeId.102."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.102."
+name = "PrerequisiteUnitHasSpell"
+
+["Prerequisite.prerequisiteTypeId.107"]
+statement = "Prerequisite type 107 ('Quest object requirement not met', text 164527): for a creature target: whether that creature has already been counted for path mission objectId; the creature is chosen as for type 94. With no such creature comparison 2 passes; otherwise comparison 1 passes when the mission's counted-targets mask has the creature's target bit, 2 when not; a missing mission or a creature with no target index counts as not counted. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 0) 1; objectIds: 1365."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 107 dispatches to 0x14049fff0, slot 0x4b8 of the prerequisite class 0x140b67740 (bytes at 0x140b67bf8). Saved C 0x14049fff0.c (hash 8eb22adb6de47956): 0x14049fff0: 0x1403d7bc0(path 0x140c65970, objectId); creature word 0x35f8 (-1 none); mission slot 0x40 & 1 << it. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 107`."
+grade = "fairly sure"
+gap = "As type 94: the target index's writer is not read."
+
+["0x14049fff0"]
+statement = "Prerequisite type 107's test. See Prerequisite.prerequisiteTypeId.107."
+proof = "As Prerequisite.prerequisiteTypeId.107."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.107."
+name = "PrerequisitePathTargetCounted"
+
+["Prerequisite.prerequisiteTypeId.109"]
+statement = "Prerequisite type 109 ('World requirement not met', text 165574): whether the player's current world is objectId (a World id): comparison 1 passes when equal, 2 when different. The value and the units are not read. Start content: 8 condition(s) in 6 row(s); (comparison, value): (1, 0) 4, (2, 0) 4; objectIds: 51, 426, 870, 1387, 1537, 1634, 3460."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 109 dispatches to 0x14049e780, slot 0x2c8 of the prerequisite class 0x140b67740 (bytes at 0x140b67a08). Saved C 0x14049e780.c (hash 8eb22adb6de47956): 0x14049e780: game 0x140c65898 word 0x48's slot 8 (the world id) == / != objectId (param_3). Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 109`."
+grade = "fairly sure"
+gap = "That slot 8 returns the world id rests on the values (World ids 426, 870, 1387, 3460 ...)."
+
+["0x14049e780"]
+statement = "Prerequisite type 109's test. See Prerequisite.prerequisiteTypeId.109."
+proof = "As Prerequisite.prerequisiteTypeId.109."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.109."
+name = "PrerequisiteInWorld"
+
+["Prerequisite.prerequisiteTypeId.117"]
+statement = "Prerequisite type 117 ('Public event', text 175854): a test of public event objectId (a PublicEvent id): comparison 1 passes when the public event list says yes, 2 when no; with no public event list both fail. The value and the units are not read. Start content: 2 condition(s) in 2 row(s); (comparison, value): (2, 0) 2; objectIds: 49, 142."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 117 dispatches to 0x1404a0540, slot 0x538 of the prerequisite class 0x140b67740 (bytes at 0x140b67c78). Saved C 0x1404a0540.c (hash 8eb22adb6de47956): 0x1404a0540: 0x140c65980's slot 0x48 (objectId, 0). Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 117`."
+grade = "guess"
+gap = "What slot 0x48 tests (active, most likely) is not read."
+
+["0x1404a0540"]
+statement = "Prerequisite type 117's test. See Prerequisite.prerequisiteTypeId.117."
+proof = "As Prerequisite.prerequisiteTypeId.117."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.117."
+name = "PrerequisitePublicEventActive"
+
+["Prerequisite.prerequisiteTypeId.125"]
+statement = "Prerequisite type 125 ('Challenge', text 180401): a third flag of the player's challenge objectId: comparison 1 passes when set, 2 when clear; with no challenge list or no such challenge it counts as clear (and with no list both fail). The value and the units are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 328."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 125 dispatches to 0x14049fac0, slot 0x458 of the prerequisite class 0x140b67740 (bytes at 0x140b67b98). Saved C 0x14049fac0.c (hash 8eb22adb6de47956): 0x14049fac0: the challenge tree at word 0x30 of 0x140c65948; the record's word 0x34. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 125`."
+grade = "guess"
+gap = "Which challenge state word 0x34 is (completed, most likely) is not read."
+
+["0x14049fac0"]
+statement = "Prerequisite type 125's test. See Prerequisite.prerequisiteTypeId.125."
+proof = "As Prerequisite.prerequisiteTypeId.125."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.125."
+name = "PrerequisiteChallengeFlagC"
+
+["Prerequisite.prerequisiteTypeId.149"]
+statement = "Prerequisite type 149 ('State requirement not met', text 218077): 1 when either of two state words of the first unit is nonzero, else 0, compared with the value: comparison 1 equal, 2 different. The objectId is not read. Start content: 2 condition(s) in 2 row(s); (comparison, value): (1, 0) 1, (1, 1) 1; objectIds: 0."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 149 dispatches to 0x14049c840, slot 0x88 of the prerequisite class 0x140b67740 (bytes at 0x140b677c8). Saved C 0x14049c840.c (hash 8eb22adb6de47956): 0x14049c840: unit word 0x1e4 or word 0x2ac nonzero -> 1. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 149`."
+grade = "guess"
+gap = "What the two unit words hold is not read; the decompile has no check for a missing unit."
+
+["0x14049c840"]
+statement = "Prerequisite type 149's test. See Prerequisite.prerequisiteTypeId.149."
+proof = "As Prerequisite.prerequisiteTypeId.149."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.149."
+name = "PrerequisiteUnitStateFlag"
+
+["Prerequisite.prerequisiteTypeId.155"]
+statement = "Prerequisite type 155 ('Path mission', text 233060): a number of the player's path mission objectId (most likely its state or progress) compared with the value by the comparison; with no path object it fails. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 4) 1; objectIds: 1340."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 155 dispatches to 0x1404a0360, slot 0x508 of the prerequisite class 0x140b67740 (bytes at 0x140b67c48). Saved C 0x1404a0360.c (hash 6ba38d868f75acff): 0x1404a0360 (decompile lost its arguments): 0x1403d7bc0(path 0x140c65970, objectId); the mission's slot 0xd0; ComparePrerequisiteValue. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 155`."
+grade = "guess"
+gap = "The listing is needed for the operands; slot 0xd0's meaning is not read."
+
+["0x1404a0360"]
+statement = "Prerequisite type 155's test. See Prerequisite.prerequisiteTypeId.155."
+proof = "As Prerequisite.prerequisiteTypeId.155."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.155."
+name = "PrerequisitePathMissionValue"
+
+["Prerequisite.prerequisiteTypeId.170"]
+statement = "Prerequisite type 170 ('Requirement not met', text 307985): with a first unit: when value is 0, whether an object the game holds exists; otherwise whether that object's id equals value. Comparison 1 passes when true, 2 when false. The objectId is not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 266) 1; objectIds: 0."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 170 dispatches to 0x14049c880, slot 0x90 of the prerequisite class 0x140b67740 (bytes at 0x140b677d0). Saved C 0x14049c880.c (hash 8eb22adb6de47956): 0x14049c880: game 0x140c65898 word 0x7188; its slot 0x68 gives a word compared with the value. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 170`."
+grade = "guess"
+gap = "What the object at game word 0x7188 is (the value seen is 266) is not read."
+
+["0x14049c880"]
+statement = "Prerequisite type 170's test. See Prerequisite.prerequisiteTypeId.170."
+proof = "As Prerequisite.prerequisiteTypeId.170."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.170."
+name = "PrerequisiteGameObjectIs"
+
+["Prerequisite.prerequisiteTypeId.201"]
+statement = "Prerequisite type 201 ('Achievement object', text 428132): whether checklist item value (bit 0 to 63) of the player's achievement objectId is done: comparison 1 passes when set, 2 when clear; an achievement not in the list counts as clear. The units are not read. Start content: 3 condition(s) in 3 row(s); (comparison, value): (1, 0) 1, (1, 1) 1, (1, 2) 1; objectIds: 3362."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 201 dispatches to 0x14049f810, slot 0x430 of the prerequisite class 0x140b67740 (bytes at 0x140b67b70). Saved C 0x14049f810.c (hash 8eb22adb6de47956): 0x14049f810: the achievement tree at word 0x70 of 0x140c65c28 by objectId; 0x140642a00(entry word 0x28, value): bit value of words 0x14 (bits 0-31) and 0x18 (bits 32-63); 64 or more asserts and gives 0. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 201`."
+grade = "fairly sure"
+gap = "Which message sets the checklist words is not read."
+
+["0x14049f810"]
+statement = "Prerequisite type 201's test. See Prerequisite.prerequisiteTypeId.201."
+proof = "As Prerequisite.prerequisiteTypeId.201."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.201."
+name = "PrerequisiteAchievementChecklistDone"
+
+["Prerequisite.prerequisiteTypeId.268"]
+statement = "Prerequisite type 268 (no text): a setting of the player's session equals objectId: comparison 1 passes when equal, 2 when different. The value and the units are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 1."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 268 dispatches to 0x14049f090, slot 0x3c8 of the prerequisite class 0x140b67740 (bytes at 0x140b67b08). Saved C 0x14049f090.c (hash 8eb22adb6de47956): 0x14049f090: word 0x1708 of the game object 0x140c635f0 (the setting record 0x140c45f50's gap names) == objectId. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 268`."
+grade = "guess"
+gap = "What the setting is and what sets it are not read."
+
+["0x14049f090"]
+statement = "Prerequisite type 268's test. See Prerequisite.prerequisiteTypeId.268."
+proof = "As Prerequisite.prerequisiteTypeId.268."
+grade = "guess"
+gap = "As Prerequisite.prerequisiteTypeId.268."
+name = "PrerequisiteAccountSettingIs"
+
+["Prerequisite.prerequisiteTypeId.288"]
+statement = "Prerequisite type 288 ('Character title', text 754899): with a first unit of type 20 (a player) or 23: whether the player owns character title objectId (a CharacterTitle id): comparison 1 passes when owned, 2 when not; any other unit fails. The value is not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 400."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 288 dispatches to 0x1404a1830, slot 0x6b8 of the prerequisite class 0x140b67740 (bytes at 0x140b67df8). Saved C 0x1404a1830.c (hash 8eb22adb6de47956): 0x1404a1830: 0x1403d4080(game 0x140c65898 word 0x6300, objectId) searches the title tree and returns 0x1403d6d10 of the entry. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 288`."
+grade = "fairly sure"
+gap = "What 0x1403d6d10 returns for an entry (owned, most likely) is not read."
+
+["0x1404a1830"]
+statement = "Prerequisite type 288's test. See Prerequisite.prerequisiteTypeId.288."
+proof = "As Prerequisite.prerequisiteTypeId.288."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.288."
+name = "PrerequisiteHasTitle"
+
+["0x1405fbc40"]
+statement = "The state of a quest for the player (QuestState): a quest in the quest log has its log state; when that is Accepted (1) and every objective without flag 0x20 is done (done bit 1 << (index + 2); an objective index above 5 never is), it is Achieved (2). A quest not in the log is Completed (3) when it is in the completed set, else the state of its entry in the second list, else Unknown (0)."
+proof = "Saved C 0x1405fbc40.c (hash 8eb22adb6de47956): the active tree at quest log word 1 (0x140c65b80), entry word 0x30 the state; on 1, 0x1405a8a40 gives the quest (none: 1), objectives counted at quest word 0x10 and listed at 0x18, flag word 8 & 0x20 skipped, mask at entry word 0x6c; the completed hash set at words 0x70 / 0x78 -> 3; the tree at word 0x28, entry word 0x24; else 0."
+grade = "fairly sure"
+gap = "Read from the saved C; which messages fill the second list (likely mentioned or abandoned quests) is not read."
+name = "GetQuestState"
+
+["lua.QuestState"]
+statement = "The quest states the client's Lua sees and GetQuestState returns: 0 Unknown, 1 Accepted, 2 Achieved, 3 Completed, 4 Botched, 5 Mentioned, 6 Abandoned, 7 Ignored."
+proof = "Saved C 0x1406625d0.c (hash 8eb22adb6de47956): each name is registered after its number is pushed; the push before 'Unknown' is 0."
+grade = "fairly sure"
+gap = "Read from the saved C, not the listing."
+
+["0x1405a8a40"]
+statement = "The client's quest record for a quest id, from the quest log's hash map, or none."
+proof = "Saved C 0x1405a8a40.c (hash 8eb22adb6de47956): hash of the id by the map's function at word 0x20, bucket chain at words 0x18 / 0x10, match by word 0x28, value at node word 3."
+grade = "fairly sure"
+gap = "Which quests the map holds (all Quest2 rows, or those the server named) is not read."
+name = "FindQuestById"
+
+# The tutorial: message 0x179, the client's tutorial memory, the Tutorial table and the training simulation's units
+
+["opcode.0x179"]
+statement = "Message 0x179 (377), game server to client: show a tutorial. Body: the Tutorial id (32 bits, unsigned). The client hands it to TriggerTutorial with no extra arguments (not forced, no anchor data), which may refuse it silently (see 0x140437a10); the client sends no answer. Any Tutorial row may be named; the 59 'Welcome to <zone>' rows (Tutorial.tutorialCategoryEnum.29) are fired by nothing in the client, so they reach the player only through this message."
+proof = "Registered in 0x14006c290 (saved C line 1057, hash 8eb22adb6de47956): id 0x179, record 4 bytes, reader ReadMessage0591Body 0x14007ab50 (one 32-bit value), no writer. HandleWorldMessage 0x1403ec6a0 case at 0x1403ef28c (listing): mov edx, dword ptr [rdi] (the id); mov rcx, [0x140c658d8] (the tutorial manager); mov dword ptr [rsp+0x30], 1; xor r8d, r8d; xor r9d, r9d; [rsp+0x28] = [rsp+0x20] = 0; call 0x140437a10. client_trace.py: no Send call passes 0x179."
+grade = "sure"
+
+["0x140437a10"]
+statement = "Shows a tutorial if the client allows it: TriggerTutorial(manager, tutorialId, instant, anchorData, a, b, c). It returns 0 and shows nothing when: there is no game or no player unit (so a tutorial sent before the player unit exists is lost); the id is in the viewed set (client-wide, every character on this PC); the id is in the current character's pending set (keyed by the character id at the player's 0x1a8); the id is not a Tutorial row; the row's flags lack 2 and the row's tutorialCategoryEnum bit is clear in the client's category mask; the player's level is below the row's requiredLevel; or the row has a prerequisiteId and the prerequisite evaluator refuses it for the player. Otherwise, when instant is 0 and the row's flags lack 1, it adds the id to the character's pending set, raises ShowTutorial with instant false and saves Tutorials.xml; else it raises ShowTutorial with instant true and records nothing (the Lua then marks it viewed). Both raises pass the row's contextual popup text, its tutorialAnchorId and flags bit 2 (force). It returns 1."
+proof = "Saved C 0x140437a10 (hash 8eb22adb6de47956, scratch f437a10full.txt): returns 0 at the null game/player tests, at the two tree searches (manager 0x28 set, manager 0x40/0x48 map keyed by player 0x1a8), at the Tutorial map miss (manager 0x8); line 160 (row+4 & 2) == 0 then DAT_140c3b3a0[min(DAT_140c3b390, *DAT_140c63750)] >> (row+8 & 0x1f) & 1 == 0 -> 0; line 170 player 0x38 < row 0x14 -> 0; line 177 row 0x18 != 0 -> (*DAT_140c659a0 vtable 0x18)(evaluator, player, row 0x18, 0, 0, 0), 0 -> return; line 185 (instant == 0 && (row+4 & 1) == 0): FUN_1400293c0 into the character's set, FUN_140430d20(..., 0, popup text from 0x140439fc0, row 0x10, flags & 2, anchorData, ...), FUN_140438f60; else FUN_140430d20(..., 1, ...). The set at 0x28 is the one SaveTutorials writes under ViewedTutorials; the map at 0x40/0x48 the one written under PendingTutorials per Character (0x140438f60)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. The category mask DAT_140c3b3a0 and its index globals DAT_140c3b390 and DAT_140c63750 are not read: whether any category is off by default (which would hide category 29 unless flags has 2) is open; all 59 category 29 rows have flags 1 or 0, never 2. The player's 0x38 being the level is the usual unit level word (SetUnitCreature), not re-read here."
+name = "TriggerTutorial"
+
+["0x140430d20"]
+statement = "Raises the UI event ShowTutorial with (tutorialId, instant, popupText, anchor, force) as 'ibSib', or with four more values ('ibSibWiii') when anchor data is given. Message 0x179 never gives anchor data."
+proof = "Saved C 0x140430d20 (hash 2580df99bb1ce2aa): param_7 == 0 -> RaiseUiEvent 0x1400ea3e0(manager, 'ShowTutorial', 'ibSib', ...); else 'ibSibWiii'. TriggerTutorial passes its own param_4 as param_7, which the 0x179 case sets to 0 (r9d)."
+grade = "fairly sure"
+gap = "Read from the decompile; the varargs Ghidra drops from the 'ibSib' call are taken to be the same registers as the 'ibSibWiii' call's first five."
+name = "RaiseShowTutorial"
+
+["0x140438f60"]
+statement = "Saves the client's tutorial memory to Tutorials.xml in the NCSOFT folder: a ViewedTutorials list of Tutorial ids (one list for the PC, not per character) and PendingTutorials lists, one per Character id. The server holds none of this; the client keeps it across sessions and characters."
+proof = "Saved C 0x140438f60 (scratch f0x140438f60.txt): strings 'Tutorials.xml', 'NCSOFT', 'ViewedTutorials', 'Tutorial', 'PendingTutorials', '%I64d', 'Character'; the ViewedTutorials loop walks the tree at param_1+0x28 (line 226); the pending lists walk the map at +0x48 keyed by character. Called by 0x140437a10, 0x140437dd0 and 0x140437f00."
+grade = "fairly sure"
+gap = "The loader of Tutorials.xml at start is not read."
+name = "SaveTutorials"
+
+["0x140437dd0"]
+statement = "Marks a tutorial viewed or not viewed (the work behind GameLib.MarkTutorialViewed, by its arguments): with viewed true it adds the id to the client-wide viewed set and removes it from the current character's pending set; with viewed false it removes the id from the viewed set. It then saves Tutorials.xml. Nothing happens with no player unit."
+proof = "Saved C 0x140437dd0 (hash 8eb22adb6de47956): returns with no player (game 0x78); param_3 != 0: FUN_1400293c0(manager+0x20, id), then the map at manager+0x48 searched by player 0x1a8 and FUN_1400ee810(that entry's set, id); param_3 == 0: FUN_1400ee810(manager+0x20, id); FUN_140438f60(manager)."
+grade = "fairly sure"
+gap = "That the Lua GameLib.MarkTutorialViewed reaches this function is by its arguments (id, bool) and its effect, not by reading the Lua binding."
+name = "SetTutorialViewed"
+
+["0x140437f00"]
+statement = "Forgets every tutorial: clears the viewed set and every character's pending set, then saves Tutorials.xml."
+proof = "Saved C 0x140437f00 (hash 8eb22adb6de47956): FUN_140008410(manager+0x20); frees each map entry's set under manager+0x48; FUN_140008410(manager+0x40); FUN_140438f60(manager)."
+grade = "fairly sure"
+gap = "Its caller (likely the options' reset of tutorials) is not read."
+name = "ResetTutorials"
+
+["Tutorial.columns"]
+statement = "Tutorial (record 28 bytes, 298 rows): ID, flags, tutorialCategoryEnum, localizedTextIdContextualPopup, tutorialAnchorId, requiredLevel, prerequisiteId, at offsets 0, 4, 8, 0xc, 0x10, 0x14, 0x18. Flags 1: shown at once, not queued, and not kept pending; flags 2: shown even when the category is off (TriggerTutorial) and even when the player turned tutorials off (Lua bForce). TutorialPage (record 64, 276 rows: ID, tutorialId, page, tutorialLayoutId, localizedTextIdTitle, localizedTextIdBody00 to 02, sprite00 to 02, soundEventId) holds the pages the window draws."
+proof = "`gleam run -m genesis_prime/table_rows -- Tutorial --columns` and `-- TutorialPage --columns`. Offsets used by TriggerTutorial 0x140437a10 (row+4, +8, +0x10, +0x14, +0x18). UI/Tutorial/TutorialPrompts.lua lines 182-187 (bForce bypasses g_InterfaceOptions.Carbine.bShowTutorials) and 211-215 (bInstantPopUp or layout 8: MarkTutorialViewed and DrawTutorialPage at once; else queued in tPendingTutorials)."
+grade = "fairly sure"
+gap = "Which code reads localizedTextIdContextualPopup (offset 0xc) inside 0x140439fc0 is not re-read; every category 29 row has it 0."
+
+["Tutorial.tutorialCategoryEnum.29"]
+statement = "The 59 Tutorial rows of category 29 are the 'Welcome to <zone>' pop-ups: ids 163, 197 to 240, 262, 263, 293, 302 to 305, 329 to 332, 384, 389 and 407. All have anchor 18, requiredLevel 0 and prerequisiteId 0; all have flags 1 (shown at once) except 293 (flags 0, queued as an alert). Titles include 163 'Welcome to Algoroc', 302 and 303 Blighthaven, 329 Crimson Isle, 330 Levian Bay, 331 Everstar Grove, 332 'Welcome to the Northern Wilds', 389 'Arcterra - Enemies/Dynamic Events'. No client table links a zone to one of them (WorldZone and MapZone have no tutorial column) and none of the client's 53 own TriggerTutorial calls with a constant id names one, so which zone shows which row is the server's choice, matched by the title."
+proof = "`gleam run -m genesis_prime/table_rows -- Tutorial tutorialCategoryEnum=29` (scratch tut29.txt); titles from TutorialPage page 0 localizedTextIdTitle through `client_files.py text` (scratch tut29.titles, tut29.text). `-- WorldZone --columns`, `-- MapZone --columns`. Listing: the 54 'call 0x140437a10' sites; the constant ids loaded into edx before them (0x18b, 0x15f, 0x152, 0x157, 0x160, 0x14f, 0x84, 0xc4, 0x18e, 0x62, 0x92, 0x90, 0x183, 0x121, 0x161, 0xb1, 0x162, 0x52, 0x53, 0x181, 0x4e, 0x3f, 0x176, 0xc2) include no category 29 id."
+grade = "fairly sure"
+gap = "About 25 call sites load the id as a register plus a constant (lea edx, [r9+0x46] and the like) whose register was not resolved; a zero register would give ids such as 0x38, 0x46 and 0x7e, none in category 29, but this is not checked site by site."
+
+["lua.event.ShowTutorial"]
+statement = "The UI event ShowTutorial (nTutorialId, bInstantPopUp, strPopupText, eAnchor, bForce): TutorialPrompts returns unless bForce or the player's Show Tutorials option is on. A no-page alert with an anchor fires Tutorial_RequestUIAnchor only. Otherwise an anchor with popup text fires Tutorial_RequestUIAnchor, then GameLib.GetTutorial; when bInstantPopUp or the first page's layout is 8 it calls GameLib.MarkTutorialViewed(id, true) and draws the page now; else it queues the id in tPendingTutorials and updates the alerts."
+proof = "UI/Tutorial/TutorialPrompts.lua line 108 (RegisterEventHandler 'ShowTutorial' -> OnShowTutorial), lines 182-221 (OnShowTutorial, OnForceTutorial)."
+grade = "fairly sure"
+gap = "Read from the Lua, not run; GameLib.IsTutorialNoPageAlert and GetTutorial are not read."
+
+["0x1403ece32"]
+statement = "HandleWorldMessage's case for message 0x66d (1645) fires tutorial 98 ('Settler Depot', category 9) after handing the message to 0x14042dfd0, when the player exists, the game state's 0x6644 is 30, the message's second word is non-zero and its first word names a known unit. It is the only server message other than 0x179 that shows a tutorial by itself; it is a Settler path message, not part of the training simulation."
+proof = "Listing 0x1403ece32-0x1403ecea8: cmp [rsi+0x78], 0; cmp [rsi+0x6644], 0x1e; cmp [rdi+4], 0; mov edx, [rdi]; call 0x1403d90d0; test rax; call 0x14042dfd0 (game 0x7340, message); lea edx, [rbx+0x62] with ebx 0; call 0x140437a10. Case address from HandleWorldMessage's table (scratch hwm_cases.txt: 0x66d -> 0x1403ece32). `-- Tutorial 98` (category 9, flags 1); TutorialPage 98's title text."
+grade = "fairly sure"
+gap = "Message 0x66d itself (its reader and 0x14042dfd0) is not traced here."
+
+["Creature2.prerequisiteIdVisibility"]
+statement = "Creature2.prerequisiteIdVisibility (column at offset 52) is copied into the client's creature record (word 0xe) when the client fills a creature's base values, but no client code was found that tests it, so the client does not hide a unit by it: a unit the server sends is shown. Hiding the training simulation's arrows and holograms by their visibility prerequisite (73707 Start Arrow 41803, 73619 Hoverboard Spinning Hologram 41795, mount displays 74781 to 74784 prerequisite 19) is the server's work: it sends or removes the unit."
+proof = "Saved C 0x1404852b0 FillCreatureInfoBase line 22: param_2[0xe] = puVar2[0xd] (row word 13 = offset 52, `-- Creature2 --columns`). Searches: the 102 loads of the prerequisite evaluator 0x140c659a0 in the listing and the r8d argument loaded near each (no +0x38 creature-record field among them); the saved C for '+ 0x18) + 0x38)' (the unit keeps its creature record at 0x18, SetUnitCreature line 37): no hit beside a prerequisite call."
+grade = "guess"
+gap = "A search that found nothing settles nothing: a reader through another register path or a function not in the saved C would change this. Reading the xrefs to the creature record's offset 0x38 in Ghidra would settle it."
+
+["Spell.CodeEnumSpellEffectType.7"]
+statement = "Spell4Effects.effectType 7 is 'Activate'. Value 6 is SummonVehicle and 8 Damage."
+proof = "Bytes at 0x140c34140 (the CodeEnumSpellEffectType table, Spell.CodeEnumSpellEffectType): 16-byte entries, name pointer then value; the entry with value 7 points at the wide text 'Activate' (scratch enum_read.py)."
+grade = "sure"
+
+["Creature2.73605"]
+statement = "The training simulation's two Departures Terminals: 73605 (Everstar Grove) and 73606 (The Northern Wilds), CreationTypeEnum 20, flags 4113. Activating one casts its spell4IdActivate00: 34681 (Everstar Grove) or 34680 (Northern Wilds). Each spell is a Client Side Interaction (Spell4Base 20651 / 20650, castMethod 5, clientSideInteractionId 357 / 356; ClientSideInteraction interactionType 4, duration 60000, flags 1, the yes/no question 267451 'Embark for the lush and green Everstar Grove?' / 267450 'Embark for the white and snowy Northern Wilds?') with a single Activate (type 7) effect, targetFlags 2, no data. No Teleport is in either spell: the move to the landing is not in the client's data. TargetGroup 14367 (type 1) is these two creatures, and is the data of 'Bon Voyage' (Quest2.10528) objectives 21327 'Travel to Nexus' (type 23, flags 3), 21328 'Choose the Northern Wilds' and 21329 'Choose Everstar Grove' (type 23, flags 33). The Dominion 'Bon Voyage' (Quest2.10530) uses TargetGroup 14387 (74772, 74773) the same way in objectives 21348 to 21350."
+proof = "`gleam run -m genesis_prime/table_rows -- Creature2 73605 73606`; `-- Spell4 34680 34681`; `-- Spell4Base 20650 20651`; `-- ClientSideInteraction 356 357`; `-- Spell4Effects spellId=34680` (row 68912) and `spellId=34681` (row 68913); `-- TargetGroup 14367 14387`; `-- QuestObjective 21327 21328 21329 21348 21349 21350`; texts through `client_files.py text`."
+grade = "fairly sure"
+gap = "Table reads only, no client code. What the client does on a CSI yes/no (interactionType 4) and which message it sends back is not traced here (spells decoder); objective type 23 is the quests decoder's. Creatures 74772 and 74773 were not read."
+
+["World.3460.tutorial_units"]
+statement = "The training simulation's (World 3460) non-creature units in the server's spawn data, with their Creature2 rows: 70939 'Pre-Tutorial - Objective Ring' (4 spawns, quest checklist indexes 0 to 3, flags 33), 73595 Finish Line (flags 4113), arrows 73707 Start Arrow (prerequisiteIdVisibility 41803), 73665 Beacon Arrow (3 spawns), 75134 [DNT] Arrow and 72051 Hoverboard Race Direction Arrow (29 spawns, checklist 0 to 28, flags 77873), 73610 'Barrier - NPEU - Part 1 - Coralus' (CreationTypeEnum 20, flags 65553), pressure plates 74767 to 74769, circuit switches 73498, 74745, 74746, departures terminals 73605 and 73606 with their screens 74918 and 74919, 73494 Dominion Turret (entity type 13), 73619 Hoverboard Spinning Hologram (prerequisiteIdVisibility 41795), mount displays 74781 to 74784 (prerequisiteIdVisibility 19). By entity type: 302 of type 10, 2 of type 13, 15 of type 32, and 139 creatures (type 0)."
+proof = "`psql -d genesis_play`: spawn rows with world_id 3460 grouped by entity_type and creature_id; their Creature2 rows by `gleam run -m genesis_prime/table_rows -- Creature2 <ids>` (scratch npe_c2.compact)."
+grade = "fairly sure"
+gap = "The spawn rows are the server's data, not the client's (their source is the play database's world data, a retail record); the client says nothing on where rings, arrows and the barrier stand. What makes a ring or the finish line complete an objective (range, objective type) is the quests decoder's; the barrier's removal condition is not in the client's tables read here."
+
+["Quest2.npe_battles"]
+statement = "The training simulation's fights and where the client marks them (QuestObjective worldLocationsIdIndicator, WorldLocation2 rows in World 3460). Exile 10518: kill 5 x 73464 Dominion Battle Beast in 51739 (zone 5967, radius 55); kill 2 x 73494 Dominion Turret at 51671 and 52753 (radius 1); objective type 8 count 3 on TargetGroup 14356 (73492, 73567 Dominion Legionnaires) in 51740 (radius 38). Dominion 10524: kill 5 x 73465 Exile Defense Dagun in 52898 (radius 55); kill 2 x 74862 Exile Turret at 52902 and 52903; type 8 count 3 on TargetGroup 14402 (73473, 73566 Exile Elites) in 53015 (radius 38). Both factions (10520, and 10523 for the Dominion): kill 73499 Eldan Defense Construct (boss, level 3, faction 219) in 51744 (zone 5968, radius 27). The server's spawn data has 73464 and 73465 (27 each) and 73494 (2), but none of 73499, 73492, 73567, 73473, 73566 or 74862: those must be placed by the server, and the marker circle is the only place the client gives."
+proof = "`gleam run -m genesis_prime/table_rows -- Quest2 10518 10520 10523 10524`; `-- QuestObjective` 21286 to 21298, 21307 to 21318, 21340 (scratch battle_obj.txt); `-- TargetGroup 14356 14402 14425`; `-- WorldLocation2 51739 51671 52753 51744 51740 52898 52902 52903 53015`; `-- Creature2` for each creature; `psql -d genesis_play` spawn counts in world 3460."
+grade = "fairly sure"
+gap = "Table reads only, no client code. Objective types 2, 5, 8, 14, 17 and 22 are the quests decoder's. How many of each to place and where in the circle are not in the client. Objective 21315 names creature 73468, which has no Creature2 row."
