@@ -157,6 +157,8 @@ pub type Settings {
     store: Name(factory_supervisor.Message(Job, Nil)),
     /// The hand-off service.
     hand_off: Name(Call(hand_off.Message, hand_off.Answer)),
+    /// How often the tree may restart a child before it gives up.
+    tree_restarts: Restarts,
     /// How long the hand-off has to stop.
     hand_off_shutdown_ms: Int,
     /// The sessions service.
@@ -178,6 +180,12 @@ pub type Settings {
     /// The game server's listener.
     game: Served(game_connection.Settings),
   )
+}
+
+/// How often a supervisor may restart its children before it gives up: more
+/// than `intensity` restarts within `period_s` seconds end it.
+pub type Restarts {
+  Restarts(intensity: Int, period_s: Int)
 }
 
 /// The world subtree's names and settings.
@@ -246,15 +254,19 @@ pub type Served(settings) {
 type Directory =
   fn(Request, Int, fn(Answer) -> Nil) -> Result(Sent, Nil)
 
-/// Starts the tree. A child that fails three times in ten seconds does not
-/// recover by restarting, so the tree gives up, the node stops, and the
-/// host starts it again.
+/// Starts the tree. A child that fails more often than the settings'
+/// `tree_restarts` allow (the server's are three times in ten seconds) does not
+/// recover by restarting, so the tree gives up, the node stops, and the host
+/// starts it again.
 pub fn start(
   settings settings: Settings,
 ) -> actor.StartResult(supervisor.Supervisor) {
   let directory = directory(settings)
   supervisor.new(supervisor.OneForOne)
-  |> supervisor.restart_tolerance(intensity: 3, period: 10)
+  |> supervisor.restart_tolerance(
+    intensity: settings.tree_restarts.intensity,
+    period: settings.tree_restarts.period_s,
+  )
   |> supervisor.add(
     pog.supervised(settings.pool)
     |> supervision.restart(supervision.Permanent),

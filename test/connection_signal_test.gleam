@@ -285,6 +285,25 @@ pub fn a_timer_started_again_with_the_same_id_after_it_fired_fires_again_test() 
   ask_support.stop(server)
 }
 
+pub fn a_rule_that_starts_a_timer_with_a_negative_id_ends_its_connection_since_the_shell_keeps_those_ids_for_its_own_timers_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  ask_support.command(
+    client:,
+    letter: signalling_rule.negative_timer_command,
+    n: 1,
+    wait_ms: 60_000,
+  )
+  event_wait.until("the connection ended", fn() {
+    ask_support.connections(server) == []
+  })
+  assert mug.receive(client, ask_support.event_wait_ms) == Error(mug.Closed)
+    as "the shell closed the socket"
+  ask_support.stop(server)
+}
+
 pub fn a_cancelled_timer_never_fires_test() -> Nil {
   use <- owned_test.run(30_000)
   let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
