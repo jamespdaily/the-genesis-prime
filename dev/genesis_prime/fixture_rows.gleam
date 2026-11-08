@@ -1,4 +1,5 @@
-//// The client's rows as text files, one for each of the server's tables, which
+//// The client's rows as text files, one for each of the server's tables and of
+//// the content load's own tables (`server_table.content_entries`), which
 //// let a test of the server's logic run on the client's own rows where no client
 //// is installed. A file holds the rows the roots name and every row they reach.
 ////
@@ -1130,7 +1131,8 @@ fn context() -> #(
   List(String),
   Dict(String, reference.Table),
 ) {
-  let entries = server_table.entries()
+  let entries =
+    list.append(server_table.entries(), server_table.content_entries())
   let loaded = list.map(entries, fn(entry) { store.schema(entry).table })
   let known =
     list.filter_map(table.entries(), fn(entry) {
@@ -1365,7 +1367,8 @@ pub fn differences(
 /// The names of the tables the server loads, in the order of its entries, with
 /// the file name each is kept under, without its extension.
 pub fn files() -> List(#(String, String)) {
-  list.map(server_table.entries(), fn(entry) {
+  list.append(server_table.entries(), server_table.content_entries())
+  |> list.map(fn(entry) {
     let schema = store.schema(entry)
     #(schema.table, schema.file)
   })

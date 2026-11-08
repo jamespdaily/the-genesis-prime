@@ -1,7 +1,10 @@
 //// The client's own rows, as the server's tables.
 ////
 //// - **`shared()`** is the server's tables read from the rows with the
-////   server's own requirements and derivations, stored for the run.
+////   server's own requirements and derivations, stored for the run. The rows
+////   also hold the tables only the content load reads, which `shared()` and
+////   `load` leave out and `file` hands to that load
+////   (`character_tables.content_over`); an edit reaches only the server's tables.
 //// - **`changed` and `added`** run a body on the shared tables with a row's
 ////   cells changed, or one row added that starts as a copy of a real row. The
 ////   edit is built on the body's heap and gone with it.
@@ -103,8 +106,17 @@ pub fn parse_table(
 }
 
 /// The schema of each table the server loads, in the order of its entries.
-pub fn schemas() -> List(tbl_file.Schema) {
+pub fn server_schemas() -> List(tbl_file.Schema) {
   list.map(server_table.entries(), store.schema)
+}
+
+/// The schema of each table the fixture holds: the server's, then the tables
+/// only the content load reads (`server_table.content_entries`).
+pub fn schemas() -> List(tbl_file.Schema) {
+  list.append(
+    server_schemas(),
+    list.map(server_table.content_entries(), store.schema),
+  )
 }
 
 fn schema_of(table: String) -> Result(tbl_file.Schema, Refusal) {
@@ -320,7 +332,7 @@ fn client_cells(
 /// server's own requirements and derivations. Nothing is stored.
 pub fn read(rows rows: Rows) -> Result(store.Tables, store.LoadError) {
   let files =
-    list.map(schemas(), fn(schema) {
+    list.map(server_schemas(), fn(schema) {
       planted_table.file(schema:, rows: rows_of(rows:, schema:))
     })
   use folder <- planted_table.in_folder(files)
@@ -351,7 +363,7 @@ pub fn edits_to(
   entries entries: List(store.Entry),
 ) -> List(store.Edit) {
   let held = rows()
-  let shared_tables = list.map(schemas(), fn(schema) { schema.table })
+  let shared_tables = list.map(server_schemas(), fn(schema) { schema.table })
   list.flat_map(entries, fn(entry) {
     let schema = store.schema(entry)
     let wanted_rows = rows_of(rows: wanted, schema:)
@@ -417,6 +429,14 @@ fn column_index(
   list.index_map(schema.columns, fn(held, index) { #(held.name, index) })
   |> list.key_find(column)
   |> result.replace_error(NoColumn(table: schema.table, column:))
+}
+
+/// The name of the table's id column, its first.
+fn id_column(schema schema: tbl_file.Schema) -> String {
+  case schema.columns {
+    [first, ..] -> first.name
+    [] -> panic as "a table holds its id column"
+  }
 }
 
 fn id_of(row row: List(Cell)) -> Int {
@@ -507,7 +527,7 @@ pub fn add(
   )
   use new_row <- result.map(
     with_cells(schema:, row:, with: [
-      #("ID", planted_table.Integer(id)),
+      #(id_column(schema:), planted_table.Integer(id)),
       ..changes
     ]),
   )

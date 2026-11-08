@@ -21,19 +21,15 @@
 //// - The rule of the creature's values (the module's doc comment): an override
 ////   of property 7 is Base Health; a difficulty or resist id of 0 needs no row,
 ////   and the difficulty multiplies by 1.0.
-//// Every test loads planted tables, so it runs in CI.
+//// Every test loads the client's committed rows, so it runs in CI.
 
 import character_tables
+import fixture_tables
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/game/hit.{Blow}
 import genesis_prime/game/start_place
-import genesis_prime/table/creature2_difficulty
-import genesis_prime/table/creature2_display_group_entry
-import genesis_prime/table/creature2_outfit_group_entry
-import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
-import genesis_prime/table/instance_portal
-import genesis_prime/table/path_mission
+import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth, NoFaction, NpcLink,
@@ -47,14 +43,13 @@ import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
-import novice_tables
 import owned_test
 import place_support
-import planted_table
+import planted_table.{Float, Integer}
 import rating_support
 import spawn_support
 
-/// The selection of the rows against the planted tables.
+/// The selection of the rows against the client's rows.
 fn selected(rows rows: List(Row)) -> Selection {
   spawn.select(
     rows:,
@@ -64,20 +59,32 @@ fn selected(rows rows: List(Row)) -> Selection {
   )
 }
 
-/// The selection of the rows against the tables of these planted files.
-fn selected_with(
-  files files: List(#(String, BitArray)),
+/// The selection of the rows against the content load over these tables, a
+/// test's edit of the client's rows.
+fn selected_over(
+  tables tables: store.Tables,
   rows rows: List(Row),
 ) -> Selection {
-  use more <- spawn_support.with_content_tables_of(
-    novice_tables.with_creature_attack(files:),
-  )
   spawn.select(
     rows:,
-    tables: more,
+    tables: character_tables.content_over(tables:),
     formulas: rating_support.formulas(),
     kinds: spawn_support.kinds(),
   )
+}
+
+/// The selection of the rows when the client's Creature2 73464, the Virtual
+/// Battle Beast, holds these cells in place of its own.
+fn selected_beast_changed(
+  changes changes: List(#(String, planted_table.Cell)),
+  rows rows: List(Row),
+) -> Selection {
+  use tables <- fixture_tables.changed(
+    table: "Creature2",
+    id: 73_464,
+    with: changes,
+  )
+  selected_over(tables:, rows:)
 }
 
 /// The ids of the spawns that start, in id order.
@@ -286,14 +293,9 @@ pub fn a_static_row_whose_creature_has_no_row_or_is_not_loaded_by_the_client_fai
     as "type 10 would be an invisible unit with no report, 11 and 32 refused by the client: each fails the load"
   list.each([10, 11, 32], fn(entity_type) {
     let selection =
-      selected_with(
-        files: character_tables.files_with_beast_changed(changes: [
-          #("modelScale", planted_table.Float(0.0)),
-        ]),
-        rows: [
-          spawn.Row(..spawn_support.beast_row(number: 1), entity_type:),
-        ],
-      )
+      selected_beast_changed(changes: [#("modelScale", Float(0.0))], rows: [
+        spawn.Row(..spawn_support.beast_row(number: 1), entity_type:),
+      ])
     let assert [Refusal(table: "spawn", row: refusal.RowId(1), rule:)] =
       selection.refusals
       as "a creature the client would not load refuses the static row"
@@ -332,31 +334,23 @@ pub fn a_static_rows_display_must_be_its_creatures_and_have_a_row_and_its_outfit
       ),
     ]
     as "a display outside the creature's group and an outfit with no row each fail the load"
-  let no_display_row =
-    selected_with(
-      files: character_tables.files_replacing(
-        schema: creature2_display_group_entry.schema,
-        rows: [
-          character_tables.group_entry_row(
-            id: 27_192,
-            group: 28_793,
-            display: 26_565,
-          ),
-          character_tables.group_entry_row(
-            id: 1,
-            group: 28_793,
-            display: 99_999,
-          ),
-        ],
-      ),
-      rows: [
-        spawn.Row(
-          ..spawn_support.beast_row(number: 3),
-          entity_type: 11,
-          display_info_id: 99_999,
-        ),
-      ],
+  // The client's rows hold no Creature2DisplayInfo 99999: the beast's display
+  // group, 28793, gets one more entry (a copy of its own, 27192) naming it.
+  let no_display_row = {
+    use tables <- fixture_tables.added(
+      table: "Creature2DisplayGroupEntry",
+      copy_of: 27_192,
+      id: 1,
+      with: [#("creature2DisplayInfoId", Integer(99_999))],
     )
+    selected_over(tables:, rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 3),
+        entity_type: 11,
+        display_info_id: 99_999,
+      ),
+    ])
+  }
   assert no_display_row.refusals
     == [
       Refusal(
@@ -409,11 +403,8 @@ pub fn a_type_10_or_11_object_carries_only_the_stats_its_row_records_test() -> N
   // CreatureLevel has no row 0: such a row loads, with no stat to send. The
   // Battle Beast's row stands in, with minLevel and maxLevel 0.
   let selection =
-    selected_with(
-      files: character_tables.files_with_beast_changed(changes: [
-        #("minLevel", planted_table.Integer(0)),
-        #("maxLevel", planted_table.Integer(0)),
-      ]),
+    selected_beast_changed(
+      changes: [#("minLevel", Integer(0)), #("maxLevel", Integer(0))],
       rows: [
         spawn.Row(..spawn_support.beast_row(number: 1), entity_type: 10),
         spawn.Row(..spawn_support.beast_row(number: 2), entity_type: 11),
@@ -520,20 +511,21 @@ pub fn a_row_whose_creature_has_no_row_or_whose_display_is_not_its_creatures_is_
     as "each refusal names the table, the row and the rule"
 }
 
-/// The planted files with the Virtual Battle Beast's row changed, and the
-/// refusal the selection gives the row of the beast.
+/// The refusal the selection gives the row of the beast when its Creature2 row
+/// holds these cells.
 fn refused_by(changes changes: List(#(String, planted_table.Cell))) -> String {
   let selection =
-    selected_with(
-      files: character_tables.files_with_beast_changed(changes:),
-      rows: [spawn_support.beast_row(number: 1)],
-    )
+    selected_beast_changed(changes:, rows: [spawn_support.beast_row(number: 1)])
   let assert [Refusal(table: "spawn", row: refusal.RowId(1), rule:)] =
     selection.refusals
-    as "a creature row the client would not load refuses the spawn"
+    as {
+      "a creature row the client would not load refuses the spawn: "
+      <> string.inspect(changes)
+    }
   rule
 }
 
+// T3c-1 test 4
 pub fn a_creature_row_the_client_would_not_load_refuses_its_spawns_naming_the_rule_test() -> Nil {
   use <- owned_test.run(60_000)
   // 0x140485790: a row is a creature the client loads only when its modelScale
@@ -572,7 +564,8 @@ pub fn a_creature_row_the_client_would_not_load_refuses_its_spawns_naming_the_ru
         "pathMissionIdSoldier row does not exist",
       ),
       #(
-        [#("instancePortalId", planted_table.Integer(99))],
+        // The client's InstancePortal holds a row 99 and none of 2.
+        [#("instancePortalId", planted_table.Integer(2))],
         "instancePortalId row does not exist",
       ),
       #(
@@ -720,12 +713,9 @@ pub fn a_row_whose_creature_has_an_npc_link_is_left_out_test() -> Nil {
   // Creature2's columns questIdGiven00, trainerClassIdMask and the like: a
   // creature that gives a quest or trains waits for its own system.
   let selection =
-    selected_with(
-      files: character_tables.files_with_beast_changed(changes: [
-        #("questIdGiven00", planted_table.Integer(5)),
-      ]),
-      rows: [spawn_support.beast_row(number: 1)],
-    )
+    selected_beast_changed(changes: [#("questIdGiven00", Integer(5))], rows: [
+      spawn_support.beast_row(number: 1),
+    ])
   assert started(selection) == [] as "a quest giver does not start"
   assert left_out(selection:, reason: NpcLink) == 1
 }
@@ -759,7 +749,7 @@ pub fn a_spawn_with_no_recorded_health_has_the_base_health_of_its_own_level_not_
   use <- owned_test.run(5000)
   // `0x1404585c0`: Base Health is the CreatureLevel row of the level times the
   // difficulty's multiplier. The Battle Beast's row has minLevel 1 (52); a spawn
-  // of stat 10 = 3 has the planted CreatureLevel 3 (the client's row, 342.0863)
+  // of stat 10 = 3 has the client's CreatureLevel 3 (342.0863)
   // times Creature2Difficulty 1's 0.387 = 132.3874, truncated to 132, and one of
   // level 8 (1715.1594) 663.7667, so 663.
   let selection =
@@ -784,7 +774,7 @@ pub fn a_recorded_health_is_the_spawns_health_and_maximum_whatever_the_clients_f
   // (`world_data.spawn_health`): Creature2 11945 at level 3 records 442 where the
   // client's formula gives 274; the 0x262 sends it as stat 0 and property 7, so
   // current and maximum are the one recorded value, whether above or below the
-  // formula's 132 for the planted beast at level 3.
+  // formula's 132 for the Beast at level 3.
   let selection =
     selected(rows: [
       spawn.Row(
@@ -826,7 +816,7 @@ pub fn a_level_outside_its_rows_range_is_kept_and_listed_test() -> Nil {
     as "and is listed for the info line"
 }
 
-pub fn the_planted_beast_has_the_creature_traces_numbers_test() -> Nil {
+pub fn the_beast_has_the_creature_traces_numbers_test() -> Nil {
   use <- owned_test.run(60_000)
   let selection = selected(rows: [spawn_support.beast_row(number: 1)])
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
@@ -838,40 +828,36 @@ pub fn the_planted_beast_has_the_creature_traces_numbers_test() -> Nil {
 
 pub fn a_creatures_override_of_property_7_is_its_base_health_test() -> Nil {
   use <- owned_test.run(60_000)
-  let files =
-    character_tables.files_replacing(
-      schema: creature2_override_properties.schema,
-      rows: [
-        character_tables.override_row(
-          id: 1,
-          creature: 73_464,
-          property: 7,
-          value: 77.9,
-        ),
-        character_tables.override_row(
-          id: 2,
-          creature: 73_464,
-          property: 40,
-          value: 1.0,
-        ),
+  // The client's override rows of property 7 name other creatures (row 2866:
+  // creature 11467, 5000.0); the beast gets that row, a copy of its own override
+  // 25965 under the client's id and value.
+  let selection = {
+    use tables <- fixture_tables.added(
+      table: "Creature2OverrideProperties",
+      copy_of: 25_965,
+      id: 2866,
+      with: [
+        #("creature2Id", Integer(73_464)),
+        #("unitPropertyIndex", Integer(7)),
+        #("unitPropertyValue", Float(5000.0)),
       ],
     )
-  let selection =
-    selected_with(files:, rows: [spawn_support.beast_row(number: 1)])
+    selected_over(tables:, rows: [spawn_support.beast_row(number: 1)])
+  }
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(beast) = dict.get(world.by_id, SpawnId(1))
-  assert beast.health == 77
-    as "the override's 77.9 truncated, in place of the formula's 52"
+  assert beast.health == 5000
+    as "the override's 5000.0, in place of the formula's 52"
 }
 
 pub fn a_difficulty_and_a_resist_of_0_need_no_row_and_the_difficulty_multiplies_by_1_test() -> Nil {
   use <- owned_test.run(60_000)
   let selection =
-    selected_with(
-      files: character_tables.files_with_beast_changed(changes: [
-        #("creature2DifficultyId", planted_table.Integer(0)),
-        #("creature2ResistId", planted_table.Integer(0)),
-      ]),
+    selected_beast_changed(
+      changes: [
+        #("creature2DifficultyId", Integer(0)),
+        #("creature2ResistId", Integer(0)),
+      ],
       rows: [spawn_support.beast_row(number: 1)],
     )
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
@@ -882,32 +868,17 @@ pub fn a_difficulty_and_a_resist_of_0_need_no_row_and_the_difficulty_multiplies_
 
 pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_are_loaded_by_the_client_test() -> Nil {
   use <- owned_test.run(60_000)
-  let id = fn(schema, number) {
-    planted_table.row(schema, [#("ID", planted_table.Integer(number))])
-  }
-  let files =
-    character_tables.files_with_beast_changed(changes: [
-      #("pathMissionIdSoldier", planted_table.Integer(5)),
-      #("instancePortalId", planted_table.Integer(6)),
-      #("creature2OutfitGroupId", planted_table.Integer(7)),
-    ])
-    |> planted_table.replacing(schema: path_mission.schema, rows: [
-      id(path_mission.schema, 5),
-    ])
-    |> planted_table.replacing(schema: instance_portal.schema, rows: [
-      id(instance_portal.schema, 6),
-    ])
-    |> planted_table.replacing(
-      schema: creature2_outfit_group_entry.schema,
-      rows: [
-        planted_table.row(creature2_outfit_group_entry.schema, [
-          #("ID", planted_table.Integer(1)),
-          #("creature2OutfitGroupId", planted_table.Integer(7)),
-        ]),
-      ],
-    )
+  // The client's rows hold PathMission 33, InstancePortal 6 and the outfit
+  // group 8170 (Creature2OutfitGroupEntry 8170), all roots of the fixture.
   let selection =
-    selected_with(files:, rows: [spawn_support.beast_row(number: 1)])
+    selected_beast_changed(
+      changes: [
+        #("pathMissionIdSoldier", Integer(33)),
+        #("instancePortalId", Integer(6)),
+        #("creature2OutfitGroupId", Integer(8170)),
+      ],
+      rows: [spawn_support.beast_row(number: 1)],
+    )
   assert selection.refusals == []
     as "the creature with a mission and a portal that have rows is one the client loads"
 }
@@ -916,8 +887,8 @@ pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_are_lo
 //
 // A creature's own attack as the content load works it out
 // (`genesis_prime/world_map/creature_attack`, `genesis_prime/world_map/spawn`
-// `Attack`), on the planted tables, which hold the client's rows of the Virtual
-// Battle Beast and of Spell4 5649. Expected values come from these places.
+// `Attack`), on the client's committed rows of the Virtual Battle Beast and of Spell4
+// 5649. Expected values come from these places.
 // - `Spell4Effects.184741`: spell 5649's two Physical damage effects, 184741
 //   (Strength 0.55, Assault Power 0.55) for a caster of difficulty at most 6 and
 //   184777 (0.8 each) for difficulty at least 7, each threatMultiplier 1.0; the
@@ -937,36 +908,32 @@ pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_are_lo
 //   x tier 1's 0.85 = 1.275), its strikethrough 0 (CreatureLevel 101's 0.0), each
 //   with no rating (274's damage trace, `0x140453b60`).
 
-/// The Beast of spawn 1 as the planted files select it.
-fn attack_beast_of(files files: List(#(String, BitArray))) -> spawn.Spawn {
-  let selection =
-    beast_selection(files: novice_tables.with_creature_attack(files:))
+/// The Beast of spawn 1 as the content load over these tables selects it.
+fn attack_beast_over(tables tables: store.Tables) -> spawn.Spawn {
+  let selection = beast_selection_over(tables:)
   let assert [] = selection.refusals as "the Beast's row is taken"
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
   beast
 }
 
-/// The selection of the Beast's row, spawn 1, over these files and the content files.
-fn beast_selection(files files: List(#(String, BitArray))) -> spawn.Selection {
-  use more <- spawn_support.with_content_tables_of(files)
-  spawn.select(
-    rows: [spawn_support.beast_row(number: 1)],
-    tables: more,
-    formulas: rating_support.formulas(),
-    kinds: spawn_support.kinds(),
-  )
+/// The selection of the Beast's row, spawn 1, over the content load of these tables.
+fn beast_selection_over(tables tables: store.Tables) -> spawn.Selection {
+  selected_over(tables:, rows: [spawn_support.beast_row(number: 1)])
 }
 
 pub fn an_attack_effect_whose_multiplier_is_not_a_finite_float_refuses_the_spawn_test() -> Nil {
   use <- owned_test.run(60_000)
   // Synthetic: the client's effect 184741 has dataBits00 1.0; 0x7F800000 is the
   // 32-bit float's infinity, which the VM cannot hold.
-  let selection =
-    beast_selection(files: novice_tables.with_creature_attack_multiplier(
-      files: character_tables.files(),
-      multiplier_bits: 0x7F800000,
-    ))
+  let selection = {
+    use tables <- fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 184_741,
+      with: [#("dataBits00", Integer(0x7F800000))],
+    )
+    beast_selection_over(tables:)
+  }
   assert selection.refusals
     == [
       Refusal(
@@ -978,10 +945,11 @@ pub fn an_attack_effect_whose_multiplier_is_not_a_finite_float_refuses_the_spawn
     as "the load names the effect, where a multiplier read as 0 would strike for the stat part alone"
 }
 
+// T3c-1 test 3
 pub fn a_creature_of_difficulty_1_strikes_with_effect_184741_for_12_test() -> Nil {
   use <- owned_test.run(60_000)
   let attack =
-    { attack_beast_of(files: character_tables.files()) }.combat.attack
+    { attack_beast_over(tables: fixture_tables.shared()) }.combat.attack
   assert attack.spell4_id == Spell4Id(5649)
     as "the kind's spell (migration 0010)"
   assert attack.offence.blows
@@ -1013,27 +981,14 @@ pub fn a_creature_of_difficulty_1_strikes_with_effect_184741_for_12_test() -> Ni
 
 pub fn a_creature_of_difficulty_7_strikes_with_effect_184777_for_17_test() -> Nil {
   use <- owned_test.run(60_000)
-  let difficulty_7 =
-    planted_table.row(creature2_difficulty.schema, [
-      #("ID", planted_table.Integer(7)),
-      #("unitPropertyMultiplier000", planted_table.Float(0.699999988079071)),
-      #("unitPropertyMultiplier007", planted_table.Float(1.0)),
-      #("unitPropertyMultiplier035", planted_table.Float(0.699999988079071)),
-      #("unitPropertyMultiplier100", planted_table.Float(1.0)),
-      #("unitPropertyMultiplier101", planted_table.Float(0.3199999928474426)),
-      #("unitPropertyMultiplier102", planted_table.Float(2.0)),
-      #("unitPropertyMultiplier104", planted_table.Float(2.0)),
-      #("unitPropertyMultiplier127", planted_table.Float(1.0)),
+  // Creature2Difficulty 7 is the client's row (whole in the fixture): 0.7 for
+  // Strength and AssaultRating, 2.5 for Base Health.
+  let attack = {
+    use tables <- fixture_tables.changed(table: "Creature2", id: 73_464, with: [
+      #("creature2DifficultyId", Integer(7)),
     ])
-  let files =
-    character_tables.files_with_beast_changed(changes: [
-      #("creature2DifficultyId", planted_table.Integer(7)),
-    ])
-    |> replacing_file(
-      file: creature2_difficulty.schema.file,
-      with: planted_table.file(creature2_difficulty.schema, [difficulty_7]),
-    )
-  let attack = { attack_beast_of(files:) }.combat.attack
+    { attack_beast_over(tables:) }.combat.attack
+  }
   assert attack.offence.blows
     == [
       Blow(
@@ -1045,17 +1000,4 @@ pub fn a_creature_of_difficulty_7_strikes_with_effect_184777_for_17_test() -> Ni
       ),
     ]
     as "difficulty 7 (Creature2Difficulty 7, multipliers 0.7) fails 30526 and passes 30527: effect 184777 alone, 17"
-}
-
-fn replacing_file(
-  files files: List(#(String, BitArray)),
-  file name: String,
-  with replacement: #(String, BitArray),
-) -> List(#(String, BitArray)) {
-  list.map(files, fn(file) {
-    case file.0 == name {
-      True -> replacement
-      False -> file
-    }
-  })
 }

@@ -19,8 +19,8 @@
 ////   (`genesis_prime/world_map/sight`).
 //// - The world's unit ids start at 1 and each player and creature takes the next.
 
-import character_tables
 import connection_rule_support as support
+import fixture_tables
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/step.{CallerId, ConnectionId, WatchId}
 import genesis_prime/table/id.{Creature2Id}
@@ -231,18 +231,18 @@ pub fn a_level_with_no_creature_level_row_is_refused_naming_it_and_starts_nothin
       caller: 50,
       connection: 1,
       creature_id: dagun,
-      level: Some(51),
+      level: Some(102),
     )
   assert support.replies(taken)
     == [
       #(
         CallerId(50),
         map.NotSummoned(
-          map.CreatureRefused(spawn.NoCreatureLevelRow(level: 51)),
+          map.CreatureRefused(spawn.NoCreatureLevelRow(level: 102)),
         ),
       ),
     ]
-    as "the answer is at once, naming the level the tables hold no CreatureLevel row for (the planted tables hold rows 1 to 50 and 101)"
+    as "the answer is at once, naming the level the tables hold no CreatureLevel row for (the client's CreatureLevel holds rows 1 to 101)"
   assert spawns.starts(taken) == [] && spawns.timers(taken) == []
   assert map.run_spawn(state:, spawn: SpawnId(-1)) == Error(Nil)
     as "nothing was kept"
@@ -295,37 +295,35 @@ pub fn a_creature2_id_with_no_row_is_refused_and_starts_nothing_test() -> Nil {
 pub fn a_creature_failing_a_client_check_is_refused_and_starts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   // 0x140485790: the client loads no creature whose modelScale is not above 0.
-  let files =
-    character_tables.files_with_beast_changed(changes: [
+  let taken = {
+    use tables <- fixture_tables.changed(table: "Creature2", id: beast, with: [
       #("modelScale", planted_table.Float(0.0)),
     ])
-  let taken =
-    spawn_support.with_summon_checks_of(files:, then: fn(checks) {
-      let state =
-        map_support.with_summons(
-          incarnation: 1,
-          spawns: [],
-          objects: [],
-          kinds: spawns.default_kinds(),
-          summons: checks,
-        )
-      let #(state, _) =
-        spawns.feed(
-          state:,
-          at_ms: spawns.started_at_ms,
-          event: step.OwnEvent(step.Started),
-        )
-      let #(state, _) = spawns.join(state:, at_ms: 5100, connection: 1, x: 0.0)
-      let #(_, taken) =
-        spawns.summon(
-          state:,
-          at_ms: 6000,
-          caller: 50,
-          connection: 1,
-          creature_id: beast,
-        )
-      taken
-    })
+    let state =
+      map_support.with_summons(
+        incarnation: 1,
+        spawns: [],
+        objects: [],
+        kinds: spawns.default_kinds(),
+        summons: spawn_support.summon_checks_over(tables:),
+      )
+    let #(state, _) =
+      spawns.feed(
+        state:,
+        at_ms: spawns.started_at_ms,
+        event: step.OwnEvent(step.Started),
+      )
+    let #(state, _) = spawns.join(state:, at_ms: 5100, connection: 1, x: 0.0)
+    let #(_, taken) =
+      spawns.summon(
+        state:,
+        at_ms: 6000,
+        caller: 50,
+        connection: 1,
+        creature_id: beast,
+      )
+    taken
+  }
   assert support.replies(taken)
     == [
       #(
