@@ -187,8 +187,8 @@ pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_te
     as "Faction2Relationship is whole"
   assert committed_ids(world.schema) == [22, 51, 426, 870, 990, 1387, 3460]
     as "the Worlds the tests' maps run in"
-  assert committed_ids(creature2_outfit_info.schema) == [7475, 9350, 9351]
-    as "Creature2OutfitInfo holds the rows the outfit group roots 8170, 10355 and 10359 point to, and none for 8181's 7486, which the client lacks"
+  assert committed_ids(creature2_outfit_info.schema) == [7475, 8979, 9350, 9351]
+    as "Creature2OutfitInfo holds the rows the outfit group roots 8170, 10355 and 10359 point to and the one Creature2 11467's group 9675 points to, and none for 8181's 7486, which the client lacks"
   list.each(
     [
       #(creature2.schema, 73_464),

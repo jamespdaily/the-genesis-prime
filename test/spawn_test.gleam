@@ -828,26 +828,23 @@ pub fn the_beast_has_the_creature_traces_numbers_test() -> Nil {
 
 pub fn a_creatures_override_of_property_7_is_its_base_health_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The client's override rows of property 7 name other creatures (row 2866:
-  // creature 11467, 5000.0); the beast gets that row, a copy of its own override
-  // 25965 under the client's id and value.
-  let selection = {
-    use tables <- fixture_tables.added(
-      table: "Creature2OverrideProperties",
-      copy_of: 25_965,
-      id: 2866,
-      with: [
-        #("creature2Id", Integer(73_464)),
-        #("unitPropertyIndex", Integer(7)),
-        #("unitPropertyValue", Float(5000.0)),
-      ],
-    )
-    selected_over(tables:, rows: [spawn_support.beast_row(number: 1)])
-  }
+  // Creature2OverrideProperties row 2866 is the client's: creature 11467,
+  // property 7 (base health), 5000.0. Creature2 11467 has no other override.
+  let selection =
+    selected(rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 1),
+        creature_id: 11_467,
+        display_info_id: 26_051,
+        faction_id: 171,
+        base_faction_id: 171,
+      ),
+    ])
+  assert selection.refusals == [] as "the creature is one the client loads"
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
-  let assert Ok(beast) = dict.get(world.by_id, SpawnId(1))
-  assert beast.health == 5000
-    as "the override's 5000.0, in place of the formula's 52"
+  let assert Ok(creature) = dict.get(world.by_id, SpawnId(1))
+  assert creature.health == 5000
+    as "the override's 5000.0, in place of the formula's"
 }
 
 pub fn a_difficulty_and_a_resist_of_0_need_no_row_and_the_difficulty_multiplies_by_1_test() -> Nil {
