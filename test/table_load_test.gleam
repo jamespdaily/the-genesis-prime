@@ -46,6 +46,8 @@ import genesis_prime/table/localized_text
 import genesis_prime/table/spell4
 import gleam/bit_array
 import gleam/crypto
+import gleam/dynamic
+import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/erlang/reference
 import gleam/int
@@ -232,14 +234,22 @@ pub fn load_planted_tables_for_the_server_and_read_them_again() -> Nil {
     as "the server's tables hold the rows a read of the same files holds"
   assert localized_text.get(first, id.LocalizedTextId(1)) |> result.is_ok
     as "the tables are read from the stored value"
-  let second =
-    process.spawn_unlinked(fn() {
+  let ended =
+    ask_support.ended_running(fn() {
       let assert Ok(_) = load_for_server()
         as "the second load stops this process before it returns"
       Nil
     })
-  assert ask_support.ended(process.monitor(second)) != process.Normal
-    as "a second load under the server's key stops its caller: replacing a held value copies the whole of it into every holder"
+  let held =
+    dynamic.array([
+      atom.to_dynamic(atom.create("load_key_held")),
+      dynamic.array([
+        atom.to_dynamic(atom.create("server_key")),
+        atom.to_dynamic(atom.create("tables_term")),
+      ]),
+    ])
+  assert ask_support.raised(ended) == held
+    as "a second load under the server's key stops its caller with the key held: replacing a held value copies the whole of it into every holder"
 }
 
 pub fn the_servers_tables_are_one_value_held_for_the_life_of_the_vm_test() -> Nil {

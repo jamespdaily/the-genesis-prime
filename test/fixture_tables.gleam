@@ -18,7 +18,6 @@ import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_rows
 import gleam/bool
 import gleam/dict.{type Dict}
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/result
@@ -317,7 +316,7 @@ pub fn read(rows rows: Rows) -> Result(store.Tables, store.LoadError) {
 pub fn shared() -> store.Tables {
   database_support.once("fixture_tables", fn() {
     case read(rows: rows()) {
-      Ok(tables) -> store.store_under(tables:, key: reference.new())
+      Ok(tables) -> store.store_under(tables:)
       Error(error) ->
         panic as {
           "the fixture's tables did not load: " <> store.describe(error)

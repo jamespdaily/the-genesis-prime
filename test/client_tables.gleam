@@ -7,7 +7,6 @@ import envoy
 import genesis_prime/table
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
-import gleam/erlang/reference
 import gleam/list
 import gleam/string
 import simplifile
@@ -72,7 +71,7 @@ pub fn files() -> List(String) {
 pub fn shared() -> store.Tables {
   database_support.once("client_tables", fn() {
     case server_table.read(from: folder()) {
-      Ok(tables) -> store.store_under(tables:, key: reference.new())
+      Ok(tables) -> store.store_under(tables:)
       Error(error) ->
         panic as {
           "the server's tables did not load from the client's files: "
@@ -109,7 +108,7 @@ fn the_other_tables() -> store.Tables {
         derivations: [],
       )
     {
-      Ok(tables) -> store.store_under(tables:, key: reference.new())
+      Ok(tables) -> store.store_under(tables:)
       Error(error) ->
         panic as {
           "the client's 384 tables did not all load: " <> store.describe(error)

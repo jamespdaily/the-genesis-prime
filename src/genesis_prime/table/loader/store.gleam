@@ -233,11 +233,15 @@ pub fn entry(
     put_rows: fn(bytes, tables) {
       tbl_file.read_rows(bytes:, schema:, decode:, id:)
       |> result.map(fn(puts) {
-        let table = case find_table(tables:, name: key.name) {
-          Ok(table) -> tbl_file.patch(table, puts, [])
-          Error(Nil) -> tbl_file.from_rows(puts)
+        let base = case find_table(tables:, name: key.name) {
+          Ok(table) -> table
+          Error(Nil) -> tbl_file.table_of([])
         }
-        put_table(tables:, name: key.name, table:)
+        put_table(
+          tables:,
+          name: key.name,
+          table: tbl_file.patch(base, puts, []),
+        )
       })
     },
     ids: fn(tables) { list.map(rows(tables:, key:), id) },
@@ -383,10 +387,9 @@ fn load_under(
 /// test builds once for the run (a read, a merge or an edit of the loaded
 /// tables) are stored so that every test that gets them holds a handle. The
 /// stored values the tables already read from are still read, after the ones
-/// stored now. A key holds one value, and holds it for the life of the VM; a
-/// second store under it stops the caller.
-pub fn store_under(tables tables: Tables, key key: Reference) -> Tables {
-  store_tables(tables:, load: LoadKey(key))
+/// stored now. The key is new, and holds the value for the life of the VM.
+pub fn store_under(tables tables: Tables) -> Tables {
+  store_tables(tables:, load: new_key())
 }
 
 fn store_tables(tables tables: Tables, load load: Key) -> Tables {

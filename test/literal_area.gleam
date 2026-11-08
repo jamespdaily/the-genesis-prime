@@ -41,12 +41,6 @@ pub fn persistent_term_memory() -> Int
 @external(erlang, "literal_area_ffi", "persistent_term_count")
 pub fn persistent_term_count() -> Int
 
-/// How many bytes the literal allocator holds in blocks now, whether a persistent
-/// term lives in them or not: the terms and the VM's own literals, and what has
-/// been erased and not yet released by the collector.
-@external(erlang, "literal_area_ffi", "allocated_bytes")
-pub fn allocated_bytes() -> Int
-
 /// How many of the tables the first holds the second does not hold as the very
 /// same term, the same words and not an equal copy: 0 when the second shares
 /// every table of the first.
@@ -55,7 +49,7 @@ pub fn tables_not_shared(first: Tables, second: Tables) -> Int
 
 /// How many words the value takes copied whole, as a copy to another heap or an
 /// insert into ETS makes it: a persistent term inside it counts in full.
-@external(erlang, "literal_area_ffi", "flat_size")
+@external(erlang, "erts_debug", "flat_size")
 pub fn flat_size(value: a) -> Int
 
 /// The value inserted into a new ETS table and read back, the copy an insert

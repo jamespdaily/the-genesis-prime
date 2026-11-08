@@ -656,10 +656,6 @@ pub fn patch(
   removes: List(Int),
 ) -> Table(row)
 
-/// A table of exactly these rows, each at its id.
-@external(erlang, "genesis_prime_tbl_file_ffi", "from_puts")
-pub fn from_rows(rows: List(#(Int, row))) -> Table(row)
-
 /// The row of an id, or an error when the id has no row.
 @external(erlang, "genesis_prime_tbl_file_ffi", "row")
 pub fn row(table: Table(row), id: Int) -> Result(row, Nil)
@@ -678,9 +674,10 @@ fn utf16_text(bytes: BitArray) -> Result(String, Nil)
 @external(erlang, "genesis_prime_tbl_file_ffi", "gap")
 fn gap() -> row
 
-/// Puts the rows, and the gaps among them, in one tuple.
+/// Puts the rows, and the gaps among them, in one tuple: a table of these rows
+/// in order, so each row's position is its id.
 @external(erlang, "genesis_prime_tbl_file_ffi", "table_of")
-fn table_of(rows: List(row)) -> Table(row)
+pub fn table_of(rows: List(row)) -> Table(row)
 
 /// A sentence that says why a file is not accepted as its table, for the
 /// message the server stops with.

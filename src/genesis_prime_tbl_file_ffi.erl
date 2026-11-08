@@ -1,5 +1,5 @@
 -module(genesis_prime_tbl_file_ffi).
--export([utf16_text/1, gap/0, table_of/1, row/2, rows/1, patch/3, from_puts/1]).
+-export([utf16_text/1, gap/0, table_of/1, row/2, rows/1, patch/3]).
 
 %% The UTF-8 form of the UTF-16 little-endian text at the start of Bytes, up
 %% to its first zero character. An error when no zero character ends the text
@@ -58,8 +58,3 @@ patch(Table, Puts, Removes) ->
                        error when Id < tuple_size(Table) -> element(Id + 1, Table);
                        error -> nil
                    end || Id <- lists:seq(0, Size - 1)]).
-
-%% A table of these rows and no others, each at its id, with gaps between.
--spec from_puts([{integer(), tuple()}]) -> tuple().
-from_puts(Puts) ->
-    patch({}, Puts, []).

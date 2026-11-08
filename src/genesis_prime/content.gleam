@@ -62,10 +62,10 @@
 ////   (genesis_prime/game/server_proxy), so a row naming a base, a go or a spell those trees
 ////   lack is refused with the plan's reason.
 //// - **Content-only tables.** The faction, outfit and world tables the selection
-////   reads load beside the server's own tables (`server_table.load_content_tables`:
-////   the creature tables are read where they already are, so nothing loads twice),
-////   and the caller unloads them after it: they are not in the server's tables,
-////   whose digest a recording's header holds.
+////   reads are read beside the server's own tables on the caller's heap
+////   (`server_table.load_content_tables`: the creature tables are read where they
+////   already are, so nothing loads twice), and stored nowhere: they are not in the
+////   server's tables, whose digest a recording's header holds.
 ////
 //// What happens at each failure point of the load:
 ////
@@ -129,8 +129,8 @@ pub fn pool_probe(db db: pog.Connection) -> readiness.Probe {
 /// migrations with `migrations`, checks every row against the client's `tables`,
 /// logs every refusal and puts the terms only when there is none. `pool` is the
 /// configuration of the load's own pool, which it makes one connection. `probe`
-/// asks that pool whether the database answers (`pool_probe`). `tables` stay loaded: the caller unloads
-/// them, or keeps them for another load.
+/// asks that pool whether the database answers (`pool_probe`). `tables` are only
+/// read: the load stores none of them.
 pub fn load(
   tables tables: store.Tables,
   migrations migrations: List(Migration),

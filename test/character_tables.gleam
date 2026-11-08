@@ -88,7 +88,6 @@ import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
-import gleam/erlang/reference
 import gleam/list
 import novice_tables
 import place_support
@@ -992,7 +991,7 @@ pub fn content_tables() -> store.Tables {
         from: folder,
       )
       as "the planted files load as the content load's tables"
-    store.store_under(tables:, key: reference.new())
+    store.store_under(tables:)
   })
 }
 
@@ -1009,7 +1008,7 @@ fn read_files(files: List(#(String, BitArray))) -> store.Tables {
 /// tables every variant is an edit of.
 fn plain() -> store.Tables {
   database_support.once("character_tables_plain", fn() {
-    store.store_under(tables: read_files(files()), key: reference.new())
+    store.store_under(tables: read_files(files()))
   })
 }
 
@@ -1019,7 +1018,6 @@ fn shared_stored() -> store.Tables {
   database_support.once("character_tables", fn() {
     store.store_under(
       tables: read_files(novice_tables.with_creature_attack(files: files())),
-      key: reference.new(),
     )
   })
 }

@@ -36,7 +36,6 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/localized_text
 import genesis_prime/table/spell4
 import genesis_prime/table/world
-import gleam/erlang/process
 import gleam/list
 import gleam/result
 import literal_area
@@ -206,13 +205,14 @@ pub fn an_edit_without_derivations_makes_a_derived_value_crash_the_reader_test()
       ],
       derivations: [],
     )
-  let reader =
-    process.spawn_unlinked(fn() {
+  let ended =
+    ask_support.ended_running(fn() {
       let _ids: List(Int) = store.derived(tables: edited, key: ids_key)
       Nil
     })
-  assert ask_support.ended(process.monitor(reader)) != process.Normal
-    as "a derived value the edit did not rebuild is not there: the reader crashes, never reads the base's stale one"
+  assert ask_support.panic_message(ask_support.raised(ended))
+    == "no derived value LocalizedTextIds in the tables"
+    as "a derived value the edit did not rebuild is not there: the reader panics naming it, never reads the base's stale one"
   let rebuilt =
     edit(
       tables:,
