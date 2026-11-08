@@ -1305,9 +1305,80 @@ pub fn news_told_after_the_map_tell(
       ))
         if told == viewer
       -> Ok(news)
-      _ -> Error(Nil)
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
     }
   })
+}
+
+/// The cast starts (0x07FF) among these news, in order.
+pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
+  list.filter_map(news, fn(each) {
+    case each {
+      client_connection.CastStarted(start:) -> Ok(start)
+      client_connection.Appeared(..)
+      | client_connection.CreatureAppeared(..)
+      | client_connection.Moving(..)
+      | client_connection.Removed
+      | client_connection.CastWent(..)
+      | client_connection.CastMissed(..)
+      | client_connection.CastTargetsRemoved(..)
+      | client_connection.CastStackRemoved(..)
+      | client_connection.CastFinished(..)
+      | client_connection.Health(..)
+      | client_connection.Died
+      | client_connection.CameBack
+      | client_connection.DeathLogged
+      | client_connection.CameBackLogged
+      | client_connection.CreatureMoved(..)
+      | client_connection.CreaturePlaced(..)
+      | client_connection.Targeting(..)
+      | client_connection.Threat(..)
+      | client_connection.CombatState(..)
+      | client_connection.Shield(..)
+      | client_connection.InterruptArmor(..)
+      | client_connection.Absorption(..)
+      | client_connection.CrowdControlApplied(..)
+      | client_connection.CrowdControlEnded(..)
+      | client_connection.PropertiesChanged(..)
+      | client_connection.Stealth(..)
+      | client_connection.LookChanged(..) -> Error(Nil)
+    }
+  })
+}
+
+/// Whether the news takes a cast off some units (0x0811).
+pub fn is_cast_removal(news: News) -> Bool {
+  case news {
+    client_connection.CastTargetsRemoved(..) -> True
+    client_connection.Appeared(..)
+    | client_connection.CreatureAppeared(..)
+    | client_connection.Moving(..)
+    | client_connection.Removed
+    | client_connection.CastStarted(..)
+    | client_connection.CastWent(..)
+    | client_connection.CastMissed(..)
+    | client_connection.CastStackRemoved(..)
+    | client_connection.CastFinished(..)
+    | client_connection.Health(..)
+    | client_connection.Died
+    | client_connection.CameBack
+    | client_connection.DeathLogged
+    | client_connection.CameBackLogged
+    | client_connection.CreatureMoved(..)
+    | client_connection.CreaturePlaced(..)
+    | client_connection.Targeting(..)
+    | client_connection.Threat(..)
+    | client_connection.CombatState(..)
+    | client_connection.Shield(..)
+    | client_connection.InterruptArmor(..)
+    | client_connection.Absorption(..)
+    | client_connection.CrowdControlApplied(..)
+    | client_connection.CrowdControlEnded(..)
+    | client_connection.PropertiesChanged(..)
+    | client_connection.Stealth(..)
+    | client_connection.LookChanged(..) -> False
+  }
 }
 
 /// The Medic of these tables in the world, the Beast unit 40 shown before it.

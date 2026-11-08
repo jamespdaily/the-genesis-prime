@@ -1521,7 +1521,7 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
     == ["confirmed k1", ..pulses]
     as "Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631): the accept, then a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250: 0x14053d1f0), each starting its Proxy 80382 (Spell4Effects 173926, phaseFlags -1) with the pulse index as its phase (opcode.0x7f4.phase); 80382's Proxies 212835 (42569, gate Prerequisite 33154: fewer than 2 stacks) start Power Charge on pulses 0 and 1 and 212838 (80383, gate 32921: exactly 2 stacks) starts 80383 on pulse 2, whose Proxy 212837 starts 42568; then the finish"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 24)
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 58832 root 58832 parent 0", ..pulses]
     as "opcode.0x7ff, 0x7f4 and 0x7fe: a player in sight reads the same casts, started by unit 1 with no parent"

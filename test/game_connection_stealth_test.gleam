@@ -102,12 +102,7 @@ fn assert_the_change_comes_before_the_map_tell(
   list.each([2, 3], fn(viewer) {
     assert list.filter(
         support.news_told_after_the_map_tell(taken:, viewer:),
-        fn(news) {
-          case news {
-            Stealth(..) -> True
-            _ -> False
-          }
-        },
+        fn(news) { news == Stealth(True) || news == Stealth(False) },
       )
       == []
       as "no stealth news follows the tell"
@@ -231,10 +226,7 @@ pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_
   list.each([2, 3], fn(viewer) {
     let assert [client_connection.CastTargetsRemoved(..), Stealth(False)] =
       list.filter(support.news_told(taken:, viewer:), fn(news) {
-        case news {
-          client_connection.CastTargetsRemoved(..) | Stealth(..) -> True
-          _ -> False
-        }
+        support.is_cast_removal(news) || news == Stealth(False)
       })
       as "each viewer is told the stealth cast taken off (0x811), then the change (the casts the real rows start in between are other news)"
   })
@@ -297,13 +289,9 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_th
   use <- owned_test.run(60_000)
   let #(state, pressed) = support.stealthed_stalker_kept_on_damage()
   let stealth_cast =
-    list.filter_map(support.news_told(taken: pressed, viewer: 2), fn(news) {
-      case news {
-        client_connection.CastStarted(started) if started.spell4_id == 38_784 ->
-          Ok(started.cast_id)
-        _ -> Error(Nil)
-      }
-    })
+    support.cast_starts(support.news_told(taken: pressed, viewer: 2))
+    |> list.filter(fn(started) { started.spell4_id == 38_784 })
+    |> list.map(fn(started) { started.cast_id })
   assert list.length(stealth_cast) == 1 as "the press starts Stealth 38784 once"
   let frames = support.written(taken: support.killed(state).1)
   let positions = fn(wanted: Int) {

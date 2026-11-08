@@ -17,10 +17,10 @@
 ////   the item formulas and the sheet's power read, with the client's values.
 //// - CreatureLevel rows 1 to 50, the levels a character can have, with their Base
 ////   Health.
-//// - The 18 SpellLevel rows of level 1 with no prerequisite and class 1's rows
-////   921 (level 4) and 928 (level 16, with a prerequisite), and the Spell4 rows
-////   of the 18 level-1 spells, each with its Spell4Base id.
+//// - The spell tables are the committed fixture's rows (`fixture_tables`), the
+////   client's own; no spell row is planted here.
 
+import fixture_tables
 import genesis_prime/table/character_creation
 import genesis_prime/table/class
 import genesis_prime/table/creature_level
@@ -32,6 +32,7 @@ import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
+import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -764,24 +765,42 @@ pub fn with_creature_attack_multiplier(
   files files: List(#(String, BitArray)),
   multiplier_bits multiplier_bits: Int,
 ) -> List(#(String, BitArray)) {
-  let effects =
-    list.flatten([
-      spell4_effects_rows(),
-      creature_attack_effect_rows_of(multiplier_bits:),
-    ])
   list.map(files, fn(file) {
     case file.0 {
       name if name == spell4.schema.file ->
         planted_table.file(
           spell4.schema,
-          list.append(creature_attack_spell4_rows(), spell4_rows())
+          list.append(
+            fixture_rows(spell4.schema),
+            creature_attack_spell4_rows(),
+          )
             |> list.sort(by_id),
         )
       name if name == spell4_effects.schema.file ->
-        planted_table.file(spell4_effects.schema, list.sort(effects, by_id))
+        planted_table.file(
+          spell4_effects.schema,
+          list.append(
+            fixture_rows(spell4_effects.schema),
+            creature_attack_effect_rows_of(multiplier_bits:),
+          )
+            |> list.sort(by_id),
+        )
       _ -> file
     }
   })
+}
+
+/// The committed fixture's rows of a spell table: the client's own rows of the
+/// starting abilities and what they reach.
+fn fixture_rows(schema: tbl_file.Schema) -> List(List(Cell)) {
+  let assert Ok(rows) = fixture_tables.table(schema.table)
+    as "the fixture holds the spell table"
+  rows
+}
+
+/// The planted file of a spell table made of the fixture's rows.
+fn fixture_file(schema: tbl_file.Schema) -> #(String, BitArray) {
+  planted_table.file(schema, fixture_rows(schema))
 }
 
 /// The creature auto-attack the creature kinds name, Spell4 5649 (`Spell4.5649`):
@@ -831,149 +850,6 @@ fn creature_attack_effect_rows_of(
   })
 }
 
-/// The planted SpellLevel rows: id, class, level, prerequisite and Spell4 id.
-pub fn spell_level_rows() -> List(List(Cell)) {
-  [
-    #(631, 4, 1, 0, 58_832),
-    #(647, 3, 1, 0, 32_893),
-    #(766, 3, 1, 0, 32_809),
-    #(780, 5, 1, 0, 38_765),
-    #(807, 5, 1, 0, 38_779),
-    #(808, 5, 1, 0, 38_791),
-    #(919, 1, 1, 0, 32_078),
-    #(920, 1, 1, 0, 58_524),
-    #(921, 1, 4, 0, 32_128),
-    #(925, 1, 1, 0, 58_591),
-    #(928, 1, 16, 24_580, 53_599),
-    #(1011, 7, 1, 0, 43_468),
-    #(1036, 7, 1, 0, 34_718),
-    #(1086, 4, 1, 0, 29_874),
-    #(1089, 4, 1, 0, 42_352),
-    #(1111, 2, 1, 0, 42_276),
-    #(1185, 2, 1, 0, 41_276),
-    #(1188, 2, 1, 0, 41_438),
-    #(1236, 7, 1, 0, 34_355),
-    #(1239, 3, 1, 0, 32_812),
-  ]
-  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
-  |> list.map(fn(row) {
-    planted_table.row(spell_level.schema, [
-      #("ID", Integer(row.0)),
-      #("classId", Integer(row.1)),
-      #("characterLevel", Integer(row.2)),
-      #("prerequisiteId", Integer(row.3)),
-      #("spell4Id", Integer(row.4)),
-    ])
-  })
-}
-
-/// The Spell4 rows of the nine level-1 spells of classes 1, 2 and 4, each with
-/// its Spell4Base id.
-pub fn spell4_ids_and_bases() -> List(#(Int, Int)) {
-  [
-    #(29_874, 16_322),
-    #(32_078, 18_309),
-    #(32_809, 19_019),
-    #(32_812, 19_022),
-    #(32_893, 19_102),
-    #(34_355, 20_325),
-    #(34_718, 20_684),
-    #(38_765, 23_148),
-    #(38_779, 23_161),
-    #(38_791, 23_173),
-    #(41_276, 25_473),
-    #(41_438, 25_635),
-    #(42_276, 26_468),
-    #(42_352, 26_543),
-    #(43_468, 27_638),
-    #(58_524, 37_968),
-    #(58_591, 38_017),
-    #(58_832, 38_201),
-  ]
-}
-
-/// Paralytic Surge's Spell4AoeTargetConstraints row: 173 (`Spell4.42352.area`).
-const paralytic_surge_area = 173
-
-/// The planted Spell4Effects row of Paralytic Surge's damage: the client's row 96125
-/// (Tech damage, aimed at the area, in every phase: 0.0935 Assault Power + 0.0935
-/// Support Power + 8.14 per level, dataBits00 the float 1.0), the one spell the
-/// loadout's tests strike with, so a bot can kill a planted creature.
-pub fn spell4_effects_rows() -> List(List(Cell)) {
-  [
-    spell_tables.damage_effect_row(
-      id: 96_125,
-      spell: 42_352,
-      damage_type: 2,
-      target_flags: 4,
-      delay: 0,
-      multiplier_bits: 1_065_353_216,
-      parameters: [
-        #(12, 0.09350000321865082),
-        #(13, 0.09350000321865082),
-        #(10, 8.140000343322754),
-      ],
-    ),
-  ]
-}
-
-/// The planted Spell4AoeTargetConstraints row 173 (`Spell4.42352.area`): 5 units, 0 to
-/// 15 m, 180 degrees, Closest.
-pub fn spell4_aoe_target_constraints_rows() -> List(List(Cell)) {
-  [
-    spell_tables.aoe_row(
-      id: paralytic_surge_area,
-      angle: 180.0,
-      count: 5,
-      max_range: 15.0,
-    ),
-  ]
-}
-
-/// The planted Spell4ValidTargets row 1: bitmask 0, the alive (`Spell4ValidTargets.targetBitmask`).
-pub fn spell4_valid_targets_rows() -> List(List(Cell)) {
-  [spell_tables.valid_targets_row(bitmask: 0)]
-}
-
-/// The planted Spell4 rows.
-pub fn spell4_rows() -> List(List(Cell)) {
-  list.map(spell4_ids_and_bases(), fn(pair) {
-    planted_table.row(spell4.schema, [
-      #("ID", Integer(pair.0)),
-      #("spell4BaseIdBaseSpell", Integer(pair.1)),
-      #(
-        "spell4AoeTargetConstraintsId",
-        Integer(case pair.0 {
-          42_352 -> paralytic_surge_area
-          _ -> 0
-        }),
-      ),
-      #(
-        "spell4ConditionsIdCaster",
-        Integer(spell_tables.caster_conditions(pair.0)),
-      ),
-    ])
-  })
-}
-
-/// The planted Spell4Base rows of the same spells: the Normal cast method and
-/// nothing else, so each spell is one cast with no cost, no cooldown and no
-/// child.
-pub fn spell4_base_rows() -> List(List(Cell)) {
-  list.map(spell4_ids_and_bases(), fn(pair) {
-    planted_table.row(spell4_base.schema, [
-      #("ID", Integer(pair.1)),
-      #(
-        "spell4ValidTargetId",
-        Integer(case pair.0 {
-          42_352 -> 1
-          _ -> 0
-        }),
-      ),
-    ])
-  })
-}
-
 /// Every planted row holds its ID in its first cell.
 fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
   let assert [Integer(first_id), ..] = first
@@ -983,18 +859,14 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
   int.compare(first_id, second_id)
 }
 
-/// The planted files of the spell tables with the trees of `spell_tables.planted_rows`
-/// (each the client's own row, trimmed to what the plan reads) in place of the plain
-/// Normal casts. Paralytic Surge, 42352, stays one instant Normal cast. A table
-/// keeps a slot for each id up to its highest, so the Spell4Effects file, whose rows
-/// have ids up to 196522, is about 1.5 MB.
-/// Gap: these rows are planted, not the client's (issue 326).
-pub fn spell_tree_files() -> List(#(String, BitArray)) {
-  spell_tree_files_of(rows: spell_tables.planted_rows(), creature_attack: False)
-}
-
-/// The same from these planted rows, with the creature auto-attack's rows too when
-/// `creature_attack`, for the tables the content load reads the creature kinds from.
+/// The planted files of the spell tables with the trees of these planted rows (each
+/// the client's own row, trimmed to what the plan reads), with the creature
+/// auto-attack's rows too when `creature_attack`, for the tables the content load
+/// reads the creature kinds from. A table keeps a slot for each id up to its
+/// highest, so the Spell4Effects file, whose rows have ids up to 196522, is about
+/// 1.5 MB.
+/// Gap: these rows are planted, not the client's; the creature and content tests
+/// that read them are the creature-spawn step of issue 326 (T3c).
 pub fn spell_tree_files_of(
   rows rows: spell_tables.Rows,
   creature_attack creature_attack: Bool,
@@ -1076,27 +948,21 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(item_display_source_entry.schema, source_entry_rows()),
     planted_table.file(item_display.schema, item_display_rows()),
     planted_table.file(creature_level.schema, creature_level_rows()),
-    planted_table.file(spell4.schema, spell4_rows()),
-    planted_table.file(spell4_base.schema, spell4_base_rows()),
-    planted_table.file(
-      spell4_conditions.schema,
-      spell_tables.spell4_conditions_rows(),
-    ),
-    planted_table.file(spell4_effects.schema, spell4_effects_rows()),
-    planted_table.file(spell4_group_list.schema, []),
-    planted_table.file(spell4_stack_group.schema, []),
-    planted_table.file(
-      spell4_aoe_target_constraints.schema,
-      spell4_aoe_target_constraints_rows(),
-    ),
-    planted_table.file(spell4_telegraph.schema, []),
-    planted_table.file(telegraph_damage.schema, []),
-    planted_table.file(spell4_valid_targets.schema, spell4_valid_targets_rows()),
-    planted_table.file(spell4_thresholds.schema, []),
-    planted_table.file(spell_phase.schema, []),
-    planted_table.file(spell_cool_down.schema, []),
+    fixture_file(spell4.schema),
+    fixture_file(spell4_base.schema),
+    fixture_file(spell4_conditions.schema),
+    fixture_file(spell4_effects.schema),
+    fixture_file(spell4_group_list.schema),
+    fixture_file(spell4_stack_group.schema),
+    fixture_file(spell4_aoe_target_constraints.schema),
+    fixture_file(spell4_telegraph.schema),
+    fixture_file(telegraph_damage.schema),
+    fixture_file(spell4_valid_targets.schema),
+    fixture_file(spell4_thresholds.schema),
+    fixture_file(spell_phase.schema),
+    fixture_file(spell_cool_down.schema),
     planted_table.file(class.schema, class_proficiency_rows()),
-    planted_table.file(spell_level.schema, spell_level_rows()),
+    fixture_file(spell_level.schema),
   ]
 }
 
