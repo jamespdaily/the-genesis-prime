@@ -116,6 +116,68 @@ jobs:
             !build/apply_migrations_*
           key: ${{ steps.toolchain.outputs.gleam-cache-key }}
 
+  # The test files a pull request adds or changes, run many times at once (see
+  # dev/repeat_tests.py), so a test that depends on timing fails in the pull request
+  # that brings it. It runs beside check on the same toolchain and build cache,
+  # builds the code itself and saves no cache (check does). A pull request's checkout
+  # is the merge of its head into its base, so the full history is fetched for the
+  # merge base with the base branch. The files are chosen first, and the toolchain,
+  # the build and the repeat run only when there are any. It does not wait for
+  # `tested`, which runs only on a push.
+  repeat:
+    name: repeat
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      GENESIS_NO_CLIENT: "1"
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Choose the added or changed test files
+        id: files
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          files=$(python3.13 -I dev/repeat_tests.py --list "origin/$BASE_BRANCH")
+          echo "$files"
+          if [ -n "$files" ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "no added or changed test file, so nothing to repeat"
+          fi
+      - if: steps.files.outputs.any == 'true'
+        uses: ./.github/actions/toolchain
+      - name: Build the Gleam build
+        if: steps.files.outputs.any == 'true'
+        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" gleam build
+      - name: Repeat the added or changed test files
+        if: steps.files.outputs.any == 'true'
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" python3.13 -I dev/repeat_tests.py "origin/$BASE_BRANCH"
+
   # On a push to main whose check was skipped: the caches a pull request restores
   # are only those saved on main, so this builds and saves what the key says is
   # missing, and does nothing when both are there.
