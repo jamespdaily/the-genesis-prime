@@ -792,12 +792,14 @@ pub fn electrocute_goes_6_times_each_striking_with_the_damage_row_its_text_names
 }
 
 /// The duration tokens whose row the rule's cast cannot be read for, each until the
-/// issue whose planned work closes it. 210998 is a type 11 property modifier aimed at
-/// another unit, which no plan holds (#464); 187681 has no row in the committed tables
-/// because no plan reaches its spell 72652, and 178429 is a periodic Proxy the plan does
-/// not start (`Spell4Effects.effectType.26.periodic`), both ticking effects (#336).
+/// issue whose planned work closes it. 210998 is a row of Spell4 79932 (spellId 79932,
+/// targetFlags 1), the spell the Stalker passive's Proc casts on the caster, so no list of
+/// the ability's own plan holds it (#336). 187681 has no row in the
+/// committed tables because no plan reaches its spell 72652, and 178429 is a periodic
+/// Proxy the plan does not start (`Spell4Effects.effectType.26.periodic`), both ticking
+/// effects (#336).
 const buff_gaps = [
-  Gap(ability: 30_075, token: "eff=210998.durationms", issue: "#464"),
+  Gap(ability: 30_075, token: "eff=210998.durationms", issue: "#336"),
   Gap(ability: 31_213, token: "eff=187681.durationms", issue: "#336"),
   Gap(ability: 38_012, token: "eff=178429.durationms", issue: "#336"),
 ]

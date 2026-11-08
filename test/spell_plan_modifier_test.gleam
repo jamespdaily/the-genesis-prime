@@ -8,8 +8,14 @@
 ////   8000 ms, aimed at the caster) and 67777 (property 134, mode 3, 0.0, 0.0, delay 180,
 ////   duration 400), from `table_rows -- Spell4Effects effectType=11`.
 //// - `Spell4Effects.targetFlags`: bit 1 is the caster, 2 the primary target, 4 the
-////   area; the rows aimed at the caster are read (12,603 of 20,105), and the 7,502
-////   aimed only at others are the next step's, so they are not in the plan.
+////   area; the rows aimed at the caster are read for the caster (12,603 of 20,105), and
+////   the 7,502 aimed only at others (2, 4 or 6) are read for the units a strike hits
+////   (`StruckChange`); a row that includes the caster and others (3, 5, 7: 449 rows)
+////   is read for the caster only. The rows 94370 (spell 41886, flags 2, property 160,
+////   mode 2, dataBits02 0x3f8ccccd = 1.1, 8000 ms), 7711 (spell 671, flags 4, property
+////   100, mode 2, 0x3f000000 = 0.5, delay 1000, 5000 ms, phaseFlags 1) and 184458
+////   (spell 62709, flags 6, property 130, mode 1, 0x40600000 = 3.5, delay 1750,
+////   1500 ms) are the shapes planted, from `table_rows -- Spell4Effects effectType=11`.
 //// - The table columns are signed 32-bit integers (`game_table.column_type`), so a
 ////   float's bits above 0x7FFFFFFF arrive negative: -1.0, 0xBF800000, is -1082130432.
 //// - The load's rules: a property no UnitProperty2 row names, and a coefficient that is
@@ -212,28 +218,112 @@ pub fn a_row_that_names_a_property_with_no_unitproperty2_row_fails_the_load_test
     )
 }
 
-pub fn a_row_aimed_only_at_other_units_is_not_read_test() -> Nil {
+pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The next step reads them: 2 the primary target, 4 the area, 6 both.
-  list.each([2, 4, 6], fn(flags) {
-    assert modifiers_of(
-        row: modifier_row(id: 99_045, target_flags: flags, columns: []),
-      )
-      == []
-      as "a row aimed only at others is left out of the plan"
+  // The shapes of 94370 (2: the primary target), 7711 (4: the area) and 184458 (6: both),
+  // planted under ids no client row holds.
+  let shapes = [
+    #(
+      99_061,
+      2,
+      spell_plan.AimsAtPrimaryTarget,
+      [
+        #("dataBits00", Integer(160)),
+        #("dataBits01", Integer(2)),
+        #("dataBits02", Integer(1_066_192_077)),
+        #("durationTime", Integer(8000)),
+      ],
+      -1,
+      Change(
+        property: UnitProperty2Id(160),
+        mode: 2,
+        multiplier: 1.100000023841858,
+        flat: 0.0,
+        per_level: 0.0,
+      ),
+      LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+    ),
+    #(
+      99_062,
+      4,
+      spell_plan.AimsAtArea,
+      [
+        #("dataBits00", Integer(100)),
+        #("dataBits01", Integer(2)),
+        #("dataBits02", Integer(1_056_964_608)),
+        #("delayTime", Integer(1000)),
+        #("durationTime", Integer(5000)),
+        #("phaseFlags", Integer(1)),
+      ],
+      1,
+      Change(
+        property: UnitProperty2Id(100),
+        mode: 2,
+        multiplier: 0.5,
+        flat: 0.0,
+        per_level: 0.0,
+      ),
+      LastingRow(delay_ms: 1000, duration_ms: 5000, until_removed: False),
+    ),
+    #(
+      99_063,
+      6,
+      spell_plan.AimsAtBoth,
+      [
+        #("dataBits00", Integer(130)),
+        #("dataBits01", Integer(1)),
+        #("dataBits02", Integer(1_080_033_280)),
+        #("delayTime", Integer(1750)),
+        #("durationTime", Integer(1500)),
+      ],
+      -1,
+      Change(
+        property: UnitProperty2Id(130),
+        mode: 1,
+        multiplier: 3.5,
+        flat: 0.0,
+        per_level: 0.0,
+      ),
+      LastingRow(delay_ms: 1750, duration_ms: 1500, until_removed: False),
+    ),
+  ]
+  list.each(shapes, fn(shape) {
+    let #(id, flags, aim, columns, phase_flags, change, row) = shape
+    assert modifiers_of(row: modifier_row(id:, target_flags: flags, columns:))
+      == [
+        spell_plan.PropertyModifier(
+          effect_id: Spell4EffectsId(id),
+          phase_flags:,
+          change: spell_plan.StruckChange(modifier: change, aim:),
+          row:,
+          condition: Always,
+          tag: spend.EqualTo(value: 0),
+          armor: None,
+        ),
+      ]
+      as "a row aimed only at others is planned for the units a strike hits"
   })
 }
 
 pub fn a_row_aimed_at_the_caster_and_others_is_read_for_the_caster_test() -> Nil {
   use <- owned_test.run(60_000)
   // 3, 5 and 7 include the caster (449 rows): the caster's part is read, the rest is
-  // not applied.
+  // not applied (#570 and #569 hold the others).
   list.each([3, 5, 7], fn(flags) {
     let assert [row] =
       modifiers_of(
         row: modifier_row(id: 99_046, target_flags: flags, columns: []),
       )
     assert row.effect_id == Spell4EffectsId(99_046)
+    assert row.change
+      == spell_plan.PropertyChange(Change(
+        property: UnitProperty2Id(102),
+        mode: 3,
+        multiplier: 1.0,
+        flat: 0.0,
+        per_level: 0.0,
+      ))
+      as "a row that includes the caster changes the caster only"
   })
 }
 
@@ -288,18 +378,16 @@ pub fn the_rows_of_a_phase_are_those_whose_phase_flags_name_it_test() -> Nil {
 
 // ---- the effect kind ----
 
-pub fn type_11_is_read_for_the_rows_that_include_the_caster_only_test() -> Nil {
+pub fn type_11_is_read_for_the_rows_aimed_at_the_caster_or_struck_units_test() -> Nil {
   use <- owned_test.run(5000)
   assert effect_kind.kind_of(effect_type: 11) == effect_kind.PropertyModifier
   assert effect_kind.is_read(effect_type: 11)
-  list.each([1, 3, 5, 7], fn(flags) {
+  list.each([1, 2, 3, 4, 5, 6, 7], fn(flags) {
     assert effect_kind.is_row_read(effect_type: 11, target_flags: flags)
-      as "bit 1 of targetFlags is the caster"
+      as "bit 1 of targetFlags is the caster, 2 and 4 the units a strike hits"
   })
-  list.each([2, 4, 6], fn(flags) {
-    assert !effect_kind.is_row_read(effect_type: 11, target_flags: flags)
-      as "a row aimed only at others is the next step's"
-  })
+  assert !effect_kind.is_row_read(effect_type: 11, target_flags: 0)
+    as "a row aimed at nobody is not read"
   assert effect_kind.is_row_read(effect_type: 17, target_flags: 2)
     as "every other type read is read for any aim"
   assert !effect_kind.is_row_read(effect_type: 90, target_flags: 1)

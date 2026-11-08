@@ -740,3 +740,92 @@ pub fn crushs_knockdown_aimed_at_both_selects_the_area_and_strikes_the_primary_t
   assert phase.selects_area && phase.strikes_primary_target
     as "Spell4Effects 95949: targetFlags 6 aims at the cast's target and the area"
 }
+
+// ---- the property modifiers aimed at other units ----
+
+/// A spell of the client's rows that no level-1 ability's tree holds, planned on its own
+/// (`spell_plan.spell_alone`) and set in an area with no row and no damage effect: the
+/// spells the tests below read hold no damage row, and what they ask is only what a phase
+/// of the plan selects.
+fn planned_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
+  let tables = fixture_tables.shared()
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id:,
+      chain: [],
+    )
+    as "the spell plans on its own from the client's rows"
+  spell_area.SpellArea(
+    spell4_id: Spell4Id(spell4_id),
+    row: None,
+    shapes: [],
+    damage: [],
+    spell:,
+  )
+}
+
+pub fn a_modifier_only_child_aimed_at_the_target_strikes_the_primary_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Medic Fissure's child 41886 holds one row, 94370 (`table_rows -- Spell4Effects
+  // 94370`): a UnitPropertyModifier of property 160, targetFlags 2, no damage and no
+  // crowd control. Its base 26081 holds target mechanic 3, a spell cast on a unit
+  // (`Spell4TargetMechanics.targetType`), so the row's unit is the one it is cast on.
+  let fissure = planned_alone(spell4_id: 41_886)
+  let assert Ok(phase) = spell_area.phase(spell: fissure, phase: 0, spent: None)
+  assert list.map(
+      spell_plan.modifiers_in_phase(spell: fissure.spell, phase: 0, spent: None),
+      fn(modifier) { modifier.effect_id },
+    )
+    == [Spell4EffectsId(94_370)]
+    as "Spell4Effects 94370 is the child's one property row"
+  assert phase.strikes_primary_target
+    as "Spell4Effects 94370: targetFlags 2 aims at the cast's target, so the phase strikes the primary target"
+  assert !phase.selects_area as "targetFlags 2 does not aim at the area"
+  assert phase.damage == [] && phase.controls == []
+    as "the child holds no damage and no crowd control, so only the property row asks for the unit"
+}
+
+pub fn a_modifier_only_spell_aimed_at_the_area_selects_the_areas_units_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Warrior Defense Grid - Aura 54475 holds the rows 129039, 183223 and 183224
+  // (`table_rows -- Spell4Effects 129039 183223 183224`): UnitPropertyModifier rows of
+  // properties 159, 160 and 161, targetFlags 4, phaseFlags 1, and no damage or crowd
+  // control row at other units. Its area row is 391 (`table_rows -- Spell4 54475`).
+  let aura = planned_alone(spell4_id: 54_475)
+  let assert Ok(phase) = spell_area.phase(spell: aura, phase: 0, spent: None)
+  assert list.map(
+      spell_plan.modifiers_in_phase(spell: aura.spell, phase: 0, spent: None),
+      fn(modifier) { modifier.effect_id.value },
+    )
+    == [129_039, 183_223, 183_224]
+    as "the three type 11 rows aimed at the area are the aura's property rows"
+  assert phase.selects_area
+    as "targetFlags 4 aims at the area, so the phase selects the area's units"
+  assert !phase.strikes_primary_target
+    as "targetFlags 4 does not aim at the cast's target"
+}
+
+pub fn an_absorb_and_an_armor_row_aimed_at_the_target_strike_nobody_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Esper Phantasmal Armor 76618 holds an Absorption row 198734 and a
+  // ModifyInterruptArmor row 198735, both targetFlags 2, phaseFlags 1, and no damage,
+  // crowd-control or type 11 row (`table_rows -- Spell4Effects spellId=76618`). Only a
+  // type 11 row aimed at other units names creatures to change.
+  let armor = planned_alone(spell4_id: 76_618)
+  let assert Ok(phase) = spell_area.phase(spell: armor, phase: 0, spent: None)
+  assert list.map(
+      spell_plan.modifiers_in_phase(spell: armor.spell, phase: 0, spent: None),
+      fn(modifier) {
+        #(modifier.effect_id.value, spell_plan.modifier_aim(modifier:))
+      },
+    )
+    == [
+      #(198_734, spell_plan.AimsAtPrimaryTarget),
+      #(198_735, spell_plan.AimsAtPrimaryTarget),
+    ]
+    as "the plan holds both rows, aimed at the cast's target"
+  assert !phase.strikes_primary_target && !phase.selects_area
+    as "an absorb or an armor row aimed at the target is no property change of a struck unit, so the phase strikes nobody"
+}

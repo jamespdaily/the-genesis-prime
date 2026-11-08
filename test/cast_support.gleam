@@ -433,6 +433,36 @@ pub fn property_starts(
   })
 }
 
+/// The property modifiers the effects start on creatures or end on them, in order.
+pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      cast.TargetChangeStarts(..) | cast.TargetChangeEnds(..) -> True
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.Log(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
+      | cast.StealthChanged(..) -> False
+    }
+  })
+}
+
+/// The time each step's effects were taken at, with each property modifier they start
+/// on a creature or end on it, in order.
+pub fn target_timeline(
+  fired fired: List(#(Int, List(Effect))),
+) -> List(#(Int, Effect)) {
+  list.flat_map(fired, fn(step) {
+    list.map(target_changes(effects: step.1), fn(change) { #(step.0, change) })
+  })
+}
+
 /// The delay of each timer the effects start, in order.
 pub fn delays_of(effects effects: List(Effect)) -> List(Int) {
   list.map(started_timers(effects:), fn(started) { started.1 })
