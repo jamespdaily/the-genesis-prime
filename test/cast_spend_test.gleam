@@ -17,9 +17,10 @@
 ////   accept for a spell that goes at once (Mind Burst here), so a second press taken
 ////   in the same step is checked against what the first left; a held press is
 ////   checked when it starts.
-//// The bag index 2 is Mind Burst, with the plan of `spell_tables.plans_with_mind_burst_spend`.
+//// The bag index 2 is Mind Burst, with the plan of `spell_tables.fixture_plans`.
 
 import cast_support as support
+import fixture_tables
 import genesis_prime/game/cast.{type GoAsked}
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/lasting
@@ -34,6 +35,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import owned_test
+import planted_table.{Integer}
 import prerequisite_support
 import spell_tables
 
@@ -47,7 +49,7 @@ const first_cast = 2_147_497_984
 fn mind_burst_spell() -> Spell {
   let assert Ok(spell) =
     spell_plan.in_plans(
-      plans: spell_tables.plans_with_mind_burst_spend(),
+      plans: spell_tables.fixture_plans(),
       base: id.Spell4BaseId(19_019),
     )
     as "the planted Esper holds Mind Burst with its spend"
@@ -520,16 +522,16 @@ pub fn a_held_press_chooses_by_the_points_held_when_it_starts_test() -> Nil {
 
 pub fn an_unread_emm_id_is_refused_with_its_costs_result_logged_once_and_pays_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
+  // No client row holds an EMM id of 5 on a cost (the test's own subject): Mind
+  // Burst's Spell4 32809 holds 4.
   let assert Ok(plans) =
-    spell_tables.with_loaded(
-      rows: spell_tables.rows_with_mind_burst_spend(
-        emm_id: 5,
-        cost: #(6, 1),
-        damage: spell_tables.mind_burst_damage,
-      ),
+    fixture_tables.changed(
+      table: "Spell4",
+      id: 32_809,
+      with: [#("innateCostEMMId0", Integer(5))],
       body: fn(tables) { spell_plan.build(tables:) },
     )
-    as "the planted rows with an EMM id of 5 build"
+    as "the client's rows with an EMM id of 5 build"
   let assert Ok(unread) =
     spell_plan.in_plans(plans:, base: id.Spell4BaseId(19_019))
   let take = fn(state, at) {

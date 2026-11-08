@@ -15,7 +15,6 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
 import genesis_prime/step.{ConnectionId, LogWarning}
-import gleam/int
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -430,23 +429,34 @@ pub fn a_held_pulse_blast_goes_in_its_two_phases_and_a_held_discharge_pulses_thr
     key(state: cast.new(), bag_index: support.discharge, held: 1, at: 1000)
   let #(state, _) = key(state:, bag_index: support.discharge, held: 0, at: 1000)
   let #(_, steps) = support.run_timers(state:, effects: down, from_ms: 1000)
-  let pulse = fn(pulse, child) {
-    [
-      "went k1 p" <> int.to_string(pulse),
-      "started " <> child <> " 80382 root 58832 parent 58832",
-      "went " <> child <> " p0",
-      "finished " <> child,
-    ]
-  }
   assert lines(steps: [#(1000, down), ..steps])
-    == list.flatten([
-      ["started k1 58832 root 58832 parent 0"],
-      pulse(0, "k2"),
-      pulse(1, "k3"),
-      pulse(2, "k4"),
-      ["finished k1"],
-    ])
-    as "Spell4.58832, Discharge: a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250), each starting its Proxy 80382 with the pulse index as its phase, then the finish; the release cut nothing short"
+    == [
+      "started k1 58832 root 58832 parent 0",
+      "went k1 p0",
+      "started k2 80382 root 58832 parent 58832",
+      "went k2 p0",
+      "started k3 42569 root 58832 parent 80382",
+      "went k3 p0",
+      "finished k2",
+      "went k1 p1",
+      "started k4 80382 root 58832 parent 58832",
+      "went k4 p0",
+      "started k5 42569 root 58832 parent 80382",
+      "went k5 p0",
+      "finished k4",
+      "went k1 p2",
+      "started k6 80382 root 58832 parent 58832",
+      "went k6 p0",
+      "started k7 80383 root 58832 parent 80382",
+      "went k7 p0",
+      "started k8 42568 root 58832 parent 80383",
+      "went k8 p0",
+      "finished k8",
+      "finished k7",
+      "finished k6",
+      "finished k1",
+    ]
+    as "Spell4.58832, Discharge: a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250), each starting its Proxy 80382 (Spell4Effects 173926); 80382's Proxies 212835 (42569, gate 33154: fewer than 2 stacks) start Power Charge on pulses 0 and 1 and 212838 (80383, gate 32921: exactly 2 stacks) starts 80383 on pulse 2, whose Proxy 212837 starts 42568, as cast_discharge_test shows; the release cut nothing short"
 }
 
 pub fn a_held_press_of_a_method_the_rule_does_not_cast_is_refused_285_and_logged_once_test() -> Nil {

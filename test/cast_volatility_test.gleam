@@ -3,7 +3,7 @@
 //// hidden spell 42148 with the last go of the spell that strikes, and 42148's gain gives
 //// +15 of slot 1 behind prerequisite 903 (the caster is in combat). Expected values
 //// come from these places, each named at its assertion:
-//// - The client's rows the planted tables hold (`spell_tables.rows_with_volatility`):
+//// - The client's rows:
 ////   `Spell4.42148` (95337: +15 of vital 6 behind 903), `Prerequisite.prerequisiteTypeId.28`
 ////   (903: in combat), Pulse Blast 42276 (gos at 0 and 1250 ms, SpellPhase 5390 and
 ////   5391; Proxy 95881 to the damage spell 37302 at its second go), 37302 (gos at 0, 1, 2
@@ -63,7 +63,7 @@ fn pressed_through(
 ) -> #(State, List(#(Int, List(Effect)))) {
   let #(state, raw) =
     support.pressed_raw_in(
-      plans: spell_tables.plans_with_volatility(),
+      plans: spell_tables.plans_with_server_proxies(),
       state: cast.new(),
       caster:,
       bag_index:,
@@ -191,7 +191,7 @@ pub fn a_pulse_blast_cancelled_before_1250_ms_casts_no_42148_and_gives_nothing_t
   let caster = engineer(in_combat: True)
   let #(state, raw) =
     support.pressed_raw_in(
-      plans: spell_tables.plans_with_volatility(),
+      plans: spell_tables.plans_with_server_proxies(),
       state: cast.new(),
       caster:,
       bag_index: support.pulse_blast,
@@ -211,7 +211,7 @@ pub fn a_pulse_blast_cancelled_before_1250_ms_casts_no_42148_and_gives_nothing_t
   let cast_id = support.pressed_id(effects: pressed)
   let assert Ok(#(state, cancelled)) =
     support.cancelled_in(
-      plans: spell_tables.plans_with_volatility(),
+      plans: spell_tables.plans_with_server_proxies(),
       state:,
       cast_id:,
       reason: cast_result.SpellCancelled,
@@ -240,7 +240,7 @@ pub fn electrocute_is_refused_51_at_0_volatility_and_accepted_after_a_pulse_blas
   let empty = engineer(in_combat: True)
   let #(_, refused) =
     support.pressed_raw_in(
-      plans: spell_tables.plans_with_volatility(),
+      plans: spell_tables.plans_with_server_proxies(),
       state: cast.new(),
       caster: empty,
       bag_index: support.electrocute,

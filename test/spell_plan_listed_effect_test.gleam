@@ -66,7 +66,8 @@ fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
   error
 }
 
-/// The lasting row of the planted effect id, which the plan holds or not.
+/// The lasting row of the planted effect id, which the plan holds or not. A planted
+/// row takes an id no client row holds, since it would replace the client's row.
 fn lasting_row(
   spell spell: spell_plan.Spell,
   id id: Int,
@@ -110,7 +111,7 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
   let spell =
     planned(
       row: spell_tables.effect_row_with(
-        id: 109_482,
+        id: 99_071,
         effect_type: 18,
         target_flags: 1,
         columns: [
@@ -121,9 +122,9 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
         ],
       ),
     )
-  assert lasting_row(spell:, id: 109_482)
+  assert lasting_row(spell:, id: 99_071)
     == Ok(spell_plan.Lasting(
-      effect_id: Spell4EffectsId(109_482),
+      effect_id: Spell4EffectsId(99_071),
       phase_flags: -1,
       aim: AimsAtCaster,
       row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
@@ -188,7 +189,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_held_gated_on_the_targ
   let spell =
     planned(
       row: spell_tables.effect_row_with(
-        id: 91_018,
+        id: 99_073,
         effect_type: 81,
         target_flags: 1,
         columns: [
@@ -198,7 +199,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_held_gated_on_the_targ
         ],
       ),
     )
-  let assert Ok(row) = lasting_row(spell:, id: 91_018)
+  let assert Ok(row) = lasting_row(spell:, id: 99_073)
   assert row.condition == GatedOnTarget(prerequisite_id: PrerequisiteId(11_311))
     as "an effect behind a target apply prerequisite is not applied"
 }
@@ -239,7 +240,7 @@ pub fn a_property_conversion_row_is_a_modifier_that_converts_47_into_60_at_a_qua
   let spell =
     planned(
       row: spell_tables.effect_row_with(
-        id: 229_304,
+        id: 99_074,
         effect_type: 145,
         target_flags: 1,
         columns: [
@@ -253,7 +254,7 @@ pub fn a_property_conversion_row_is_a_modifier_that_converts_47_into_60_at_a_qua
     )
   let assert Ok(row) =
     list.find(spell.modifiers, fn(row) {
-      row.effect_id == Spell4EffectsId(229_304)
+      row.effect_id == Spell4EffectsId(99_074)
     })
   assert row.change
     == spell_plan.PropertyChange(unit_properties.Conversion(
@@ -268,7 +269,7 @@ pub fn a_property_conversion_row_is_a_modifier_that_converts_47_into_60_at_a_qua
 
 pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  // UnitProperty2 has no row 197 (the client's 0x93a refuses from id 197).
+  // The client's UnitProperty2 holds ids 0 to 199 and has no row 200.
   assert plan_error(
       row: spell_tables.effect_row_with(
         id: 99_105,
@@ -277,7 +278,7 @@ pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() 
         columns: [
           #("flags", Integer(2)),
           #("dataBits00", Integer(47)),
-          #("dataBits01", Integer(197)),
+          #("dataBits01", Integer(200)),
           #("dataBits02", Integer(a_quarter)),
         ],
       ),
@@ -285,7 +286,7 @@ pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() 
     == spell_plan.ModifierPropertyHasNoRow(
       spell4_id: strike,
       effect_id: 99_105,
-      property: 197,
+      property: 200,
     )
   assert plan_error(
       row: spell_tables.effect_row_with(
@@ -294,7 +295,7 @@ pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() 
         target_flags: 1,
         columns: [
           #("flags", Integer(2)),
-          #("dataBits00", Integer(197)),
+          #("dataBits00", Integer(200)),
           #("dataBits01", Integer(60)),
           #("dataBits02", Integer(a_quarter)),
         ],
@@ -303,7 +304,7 @@ pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() 
     == spell_plan.ModifierPropertyHasNoRow(
       spell4_id: strike,
       effect_id: 99_106,
-      property: 197,
+      property: 200,
     )
   // 0x7FC00000 is a NaN.
   assert plan_error(

@@ -15,7 +15,8 @@
 ////   the probe answers as soon as the node is stopping, so the answer comes
 ////   while the tree is still ending.
 //// - `GivesUp`: the hand-off is killed once more than the tree's restart
-////   intensity allows, so the tree ends with `shutdown` while the node runs.
+////   intensity allows, in a restart period of an hour, so the tree ends with
+////   `shutdown` while the node runs however far apart the kills fall.
 ////
 //// The node records the connections of its STS listener on the wire into the
 //// folder it is given, and in `Serving` mode holds one connection open to it,
@@ -144,6 +145,11 @@ pub fn main() -> Nil {
         ),
       ),
       sessions_shutdown_ms: 3000,
+      tree_restarts: case mode {
+        GivesUp -> gives_up_restarts
+        Serving | UnreachableDatabase | LateDatabase | SlowStop ->
+          base.tree_restarts
+      },
     )
   runtime.show_info_lines()
   let assert Ok(tree) = application.start_server(settings:)
@@ -243,11 +249,13 @@ fn await_recording(folder: String, times: Int) -> Nil {
 /// Kills the hand-off one more time than the tree restarts in its period, each
 /// time it has been restarted, so the tree gives up.
 fn give_up(settings: server.Settings) -> Nil {
-  kill_hand_off(settings, restarts_allowed + 1)
+  kill_hand_off(settings, settings.tree_restarts.intensity + 1)
 }
 
-/// The restarts the server's tree allows in ten seconds.
-const restarts_allowed = 3
+/// The tree's limit in `GivesUp`: the server's three restarts, in a period of
+/// an hour, so the kills count together however far apart the machine spreads
+/// them.
+const gives_up_restarts = server.Restarts(intensity: 3, period_s: 3600)
 
 fn kill_hand_off(settings: server.Settings, times: Int) -> Nil {
   let assert Ok(pid) = process.named(settings.hand_off) as "the hand-off runs"

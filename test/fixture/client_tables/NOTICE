@@ -1,0 +1,2 @@
+These files are rows copied unchanged from the WildStar client's game tables.
+Run `gleam run -m genesis_prime/fixture_rows` to make them again.

@@ -222,9 +222,11 @@ pub fn a_timer_fires_once_and_a_cancelled_timer_never_fires_test() -> Nil {
   let cancelled = awaiting(gate:, key: gate_rule.timer_key_base + 2)
   let fires = awaiting(gate:, key: gate_rule.timer_key_base + 1)
   let last = awaiting(gate:, key: gate_rule.timer_key_base + 3)
-  assert ask_support.call_gate(gate, gate_rule.StartTimerAs(2, 150))
-    == gate_rule.Echoed(2)
-  assert ask_support.call_gate(gate, gate_rule.CancelTimerAs(2))
+  // The timer is due at once and cancelled in the step that starts it, so
+  // whether its firing is sent before or after the cancel, it must be dropped;
+  // no time has to pass for that, and the timers after it are only waited for,
+  // with an upper bound.
+  assert ask_support.call_gate(gate, gate_rule.StartThenCancelTimerAs(2, 0))
     == gate_rule.Echoed(2)
   assert ask_support.call_gate(gate, gate_rule.StartTimerAs(1, 20))
     == gate_rule.Echoed(1)

@@ -207,10 +207,11 @@ pub fn a_process_holding_no_place_waits_while_the_limit_of_places_is_held_test()
   assert owned_key.loads_held() == owned_key.loads_held_limit()
     as "the holders hold the limit"
   let made = process.new_subject()
-  let _waiter =
+  let waiter =
     process.spawn(fn() {
       let key = owned_key.new_key()
       process.send(made, key)
+      process.sleep_forever()
     })
   event_wait.until("the waiter is waiting for room", fn() {
     owned_key.waiting_for_room() == 1
@@ -223,6 +224,8 @@ pub fn a_process_holding_no_place_waits_while_the_limit_of_places_is_held_test()
     as "the waiter gets its key once a holder ends"
   assert owned_key.waiting_for_room() == 0
     as "the waiter no longer waits once it has its key"
+  assert owned_key.waited_ms(of: waiter) > 0
+    as "the time it waited for room stays counted once it has its key"
 }
 
 pub fn a_process_that_holds_a_place_is_not_made_to_wait_for_another_test() -> Nil {
@@ -256,32 +259,37 @@ pub fn a_killed_process_that_waited_for_a_place_is_no_longer_counted_as_waiting_
 }
 
 pub fn a_deadline_leaves_out_the_time_a_body_waited_for_room_test() -> Nil {
-  // The inner body does no work; it waits for a place for longer than its
-  // deadline of 100 ms, so it ends well only if the wait is added to the deadline.
+  // The body waits for a message, never for room: the count of its wait is the
+  // test's. It reports 10 s when the deadline of 100 ms has passed, and the body
+  // is told to end then, so it returns well only if the wait is added to the
+  // deadline. No wait is for a time: the deadline passes with the body alive,
+  // whatever the speed of the machine.
   use <- owned_test.run(30_000)
-  use <- unitest.tag("serial")
-  let holders = holders_up_to_the_limit()
-  let body_pid = process.new_subject()
-  let outcome = process.new_subject()
+  let ended = process.new_subject()
   let _worker =
     process.spawn(fn() {
-      owned_test.run(100, fn() {
-        process.send(body_pid, process.self())
-        let _key = owned_key.new_key()
-        Nil
-      })
-      process.send(outcome, Nil)
+      let body_started = process.new_subject()
+      owned_test.run_counting_waits(
+        100,
+        fn(asked_about) {
+          let assert Ok(#(body, end_body)) = process.receive(body_started, 5000)
+            as "the body started"
+          assert asked_about == body
+            as "the deadline asks about the process that runs the body"
+          process.send(end_body, Nil)
+          10_000
+        },
+        fn() {
+          let end_body = process.new_subject()
+          process.send(body_started, #(process.self(), end_body))
+          let assert Ok(Nil) = process.receive(end_body, 5000)
+            as "the deadline passed and the body was never told to end"
+          Nil
+        },
+      )
+      process.send(ended, Nil)
     })
-  let assert Ok(body) =
-    process.receive(body_pid, within: ask_support.event_wait_ms)
-    as "the body started"
-  event_wait.until("the body has waited twice its deadline", fn() {
-    owned_key.waited_ms(of: body) > 200
-  })
-  let assert [first, ..] = holders
-  process.send(first.messages, Stop)
-  let assert Ok(Nil) =
-    process.receive(outcome, within: ask_support.event_wait_ms)
-    as "the body got its key and returned, though it waited twice its deadline"
+  let assert Ok(Nil) = process.receive(ended, within: ask_support.event_wait_ms)
+    as "the body returned, though its deadline passed while it waited"
   Nil
 }

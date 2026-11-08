@@ -157,6 +157,8 @@ pub type Settings {
     store: Name(factory_supervisor.Message(Job, Nil)),
     /// The hand-off service.
     hand_off: Name(Call(hand_off.Message, hand_off.Answer)),
+    /// How often the tree may restart a child before it gives up.
+    tree_restarts: Restarts,
     /// How long the hand-off has to stop.
     hand_off_shutdown_ms: Int,
     /// The sessions service.
@@ -178,6 +180,12 @@ pub type Settings {
     /// The game server's listener.
     game: Served(game_connection.Settings),
   )
+}
+
+/// How often a supervisor may restart its children before it gives up: more
+/// than `intensity` restarts within `period_s` seconds end it.
+pub type Restarts {
+  Restarts(intensity: Int, period_s: Int)
 }
 
 /// The world subtree's names and settings.
@@ -246,15 +254,19 @@ pub type Served(settings) {
 type Directory =
   fn(Request, Int, fn(Answer) -> Nil) -> Result(Sent, Nil)
 
-/// Starts the tree. A child that fails three times in ten seconds does not
-/// recover by restarting, so the tree gives up, the node stops, and the
-/// host starts it again.
+/// Starts the tree. A child that fails more often than the settings'
+/// `tree_restarts` allow (the server's are three times in ten seconds) does not
+/// recover by restarting, so the tree gives up, the node stops, and the host
+/// starts it again.
 pub fn start(
   settings settings: Settings,
 ) -> actor.StartResult(supervisor.Supervisor) {
   let directory = directory(settings)
   supervisor.new(supervisor.OneForOne)
-  |> supervisor.restart_tolerance(intensity: 3, period: 10)
+  |> supervisor.restart_tolerance(
+    intensity: settings.tree_restarts.intensity,
+    period: settings.tree_restarts.period_s,
+  )
   |> supervisor.add(
     pog.supervised(settings.pool)
     |> supervision.restart(supervision.Permanent),
@@ -269,7 +281,7 @@ pub fn start(
       rule: hand_off.rule(),
       reach: service.watch_only(locate: locate(settings)),
       shutdown_ms: settings.hand_off_shutdown_ms,
-      told_through: None,
+      found_at: None,
     ),
   ))
   |> supervisor.add(service_shell.supervised(
@@ -280,7 +292,7 @@ pub fn start(
         Ok(SentBySessions(message))
       }),
       shutdown_ms: settings.sessions_shutdown_ms,
-      told_through: None,
+      found_at: None,
     ),
   ))
   |> supervisor.add(world(settings))
@@ -728,7 +740,7 @@ pub fn add_world(
           ),
           reach: map_reach(world:, reach:),
           shutdown_ms: world.map_shutdown_ms,
-          told_through: None,
+          found_at: None,
         ))
       },
     ),
@@ -797,7 +809,7 @@ fn map_reach(
 }
 
 /// Starts one creature as the creature supervisor asks: the shell of its rule,
-/// then its address joined in the registry.
+/// which joins the creature's address in the registry as it starts.
 fn start_creature_process(
   world world: World,
   reach reach: Reach(map.Outgoing),
@@ -824,19 +836,16 @@ fn start_creature_process(
         ),
         reach: creature_reach(world:, reach:, to_connection:, start:),
         shutdown_ms: world.creature_shutdown_ms,
-        told_through: Some(creature_registry.scope(world.creatures)),
+        found_at: Some(service_shell.FoundAt(
+          scope: creature_registry.scope(world.creatures),
+          address: step.Creature(
+            map: wanted.map,
+            incarnation: wanted.incarnation,
+            unit_id: wanted.unit_id,
+            life: wanted.life,
+          ),
+        )),
       ))
-      |> result.map(fn(started) {
-        creature_registry.join(
-          world.creatures,
-          map: wanted.map,
-          incarnation: wanted.incarnation,
-          unit_id: wanted.unit_id,
-          life: wanted.life,
-          pid: started.pid,
-        )
-        started
-      })
   }
 }
 

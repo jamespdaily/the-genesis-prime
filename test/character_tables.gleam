@@ -38,6 +38,7 @@
 ////   Proxies' caster apply columns (`spell_tables.proxy_prerequisite_rows`) and
 ////   Rampage's cast prerequisite (`spell_tables.waiver_prerequisite_rows`), which the
 ////   plan loads with the spell.
+//// - Gap: the spell rows are planted, not the client's (issue 326).
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
 ////   and 48 for race 1, sex 0. The planted maps are that many rows of one
 ////   parameter that sets one part, which carry those counts; the real
@@ -123,20 +124,19 @@ pub fn shared_with_spell_trees() -> store.Tables {
   })
 }
 
-/// The same with the Engineer's Volatility rows (`spell_tables.rows_with_volatility`): the
-/// hidden spell 42148 and the damage of Pulse Blast's damage spell 37302. Loaded once under
-/// a key of its own.
+/// The same with the Engineer's Volatility rows: the hidden spell and the damage of
+/// Pulse Blast's damage spell. Loaded once under a key of its own.
 pub fn shared_with_volatility() -> store.Tables {
   database_support.once("character_tables_volatility", fn() {
     let trees =
       novice_tables.spell_tree_files_of(
-        rows: spell_tables.rows_with_volatility(),
+        rows: spell_tables.planted_rows_with_volatility(),
         creature_attack: True,
       )
     let names = list.map(trees, fn(file) { file.0 })
     let prerequisites =
       spell_tables.sorted_by_id(list.append(
-        spell_tables.rows_with_volatility().prerequisites,
+        spell_tables.planted_rows_with_volatility().prerequisites,
         prerequisite_rows(),
       ))
     load_files(list.append(
