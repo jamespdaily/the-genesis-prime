@@ -17,7 +17,6 @@
 //// - A creature that is not a foe or is dead is never selected
 ////   (`Spell4ValidTargets.targetBitmask`, `0x1403ad540`).
 
-import area_tables
 import attacker_support
 import cast_support as support
 import class_resource_support
@@ -869,23 +868,18 @@ pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil
 
 pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(areas) =
-    area_tables.built(
-      kick: area_tables.Kick(..area_tables.kick(), effect_target_flags: 2),
-    )
-    as "the planted Kick builds"
   let chosen =
     strike.select(
       asked: GoAsked(
         cast_id: 5,
         phase: 0,
-        spell4_id: Spell4Id(58_591),
+        spell4_id: Spell4Id(38_781),
         primary_target: 20,
         spent: None,
       ),
       attacker: attacker(),
       picture: picture(),
-      areas:,
+      areas: spell_tables.fixture_areas(),
       now_ms: 0,
     )
   assert chosen.units == [Aimed(unit_id: 20, life: 4)]
