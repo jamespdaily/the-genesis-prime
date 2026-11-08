@@ -47,6 +47,7 @@ pub const loading_modules = [
 
 pub const loading_functions = [
   "load", "read", "load_for_server", "read_more", "load_content_tables",
+  "store_under",
 ]
 
 const real_load_module = "genesis_prime"

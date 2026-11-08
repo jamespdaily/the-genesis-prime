@@ -88,6 +88,7 @@ import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
+import gleam/erlang/reference
 import gleam/list
 import novice_tables
 import place_support
@@ -980,9 +981,8 @@ pub fn prerequisite_rows() -> List(List(Cell)) {
 /// (`shared_with_volatility`): the content load reads the creature tables
 /// where they are, and the spell trees the server's Proxy of migration 0018 is selected
 /// from (Pulse Blast's two goes and the hidden 42148). Stored once and never erased, as `shared` is.
-/// The stored value holds its own copy of the planted tables it was merged over
-/// (a put copies the parts of the value that live in the literal area), which
-/// costs the planted tables' size once per run.
+/// The stored value holds the content tables and the tables `shared_with_volatility`
+/// edits; the other planted tables are read from the value `plain` stores.
 pub fn content_tables() -> store.Tables {
   database_support.once("character_content_tables", fn() {
     use folder <- planted_table.in_folder(content_files())
@@ -992,7 +992,7 @@ pub fn content_tables() -> store.Tables {
         from: folder,
       )
       as "the planted files load as the content load's tables"
-    tables
+    store.store_under(tables:, key: reference.new())
   })
 }
 
@@ -1008,14 +1008,19 @@ fn read_files(files: List(#(String, BitArray))) -> store.Tables {
 /// The plain planted tables (`files`), read once and stored for the run: the
 /// tables every variant is an edit of.
 fn plain() -> store.Tables {
-  database_support.once("character_tables_plain", fn() { read_files(files()) })
+  database_support.once("character_tables_plain", fn() {
+    store.store_under(tables: read_files(files()), key: reference.new())
+  })
 }
 
 /// The planted tables with the creature attack rows (`shared`), read once and
 /// stored for the run.
 fn shared_stored() -> store.Tables {
   database_support.once("character_tables", fn() {
-    read_files(novice_tables.with_creature_attack(files: files()))
+    store.store_under(
+      tables: read_files(novice_tables.with_creature_attack(files: files())),
+      key: reference.new(),
+    )
   })
 }
 

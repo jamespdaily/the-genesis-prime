@@ -1,6 +1,6 @@
 -module(literal_area_ffi).
 -export([record_peak/1, carriers_peak/0, persistent_term_memory/0, persistent_term_count/0,
-         allocated_bytes/0, tables_not_shared/2]).
+         allocated_bytes/0, tables_not_shared/2, flat_size/1, through_ets/1]).
 
 %% Starts a process that writes the literal allocator's highest carriers size
 %% since the VM started to File whenever it grows, as decimal digits and a line
@@ -65,8 +65,26 @@ allocated_bytes() ->
                   {blocks, [{literal_alloc, Sizes}]} <- [lists:keyfind(blocks, 1, Fields)],
                   {size, Size, _, _} <- [lists:keyfind(size, 1, Sizes)]]).
 
-%% How many of the tables First holds Second does not hold as the very same term
-%% (the same words, not an equal copy): 0 when Second shares every table of First. A `Tables` is {tables, {TablesMap, Derived}, Digest, Stored}.
-tables_not_shared({tables, {FirstMap, _}, _, _}, {tables, {SecondMap, _}, _, _}) ->
-    length([Key || {Key, Table} <- maps:to_list(FirstMap),
-                   not erts_debug:same(Table, maps:get(Key, SecondMap, none))]).
+%% How many of the values First reads its tables from Second does not read its
+%% tables from as the very same term (the same words, not an equal copy): the
+%% persistent terms First reads that Second does not, and the tables First holds
+%% in its edits that are not the same words in Second's: 0 when Second shares
+%% every table of First. A `Tables` is {tables, Stored, StoredDerived, {EditedTables,
+%% EditedDerived}, Digest}.
+tables_not_shared({tables, FirstStored, _, {FirstEdits, _}, _},
+                  {tables, SecondStored, _, {SecondEdits, _}, _}) ->
+    length([Key || Key <- FirstStored, not lists:member(Key, SecondStored)]) +
+        length([Name || {Name, Table} <- maps:to_list(FirstEdits),
+                        not erts_debug:same(Table, maps:get(Name, SecondEdits, none))]).
+
+%% The words Value takes when it is copied whole to another heap or into ETS,
+%% where a persistent term in it is copied too.
+flat_size(Value) -> erts_debug:flat_size(Value).
+
+%% Value inserted into a new ETS table and read back: the copy an insert makes.
+through_ets(Value) ->
+    Table = ets:new(through_ets, [set, private]),
+    ets:insert(Table, {held, Value}),
+    [{held, Back}] = ets:lookup(Table, held),
+    ets:delete(Table),
+    Back.

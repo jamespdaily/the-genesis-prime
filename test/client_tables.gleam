@@ -7,6 +7,7 @@ import envoy
 import genesis_prime/table
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
+import gleam/erlang/reference
 import gleam/list
 import gleam/string
 import simplifile
@@ -71,7 +72,7 @@ pub fn files() -> List(String) {
 pub fn shared() -> store.Tables {
   database_support.once("client_tables", fn() {
     case server_table.read(from: folder()) {
-      Ok(tables) -> tables
+      Ok(tables) -> store.store_under(tables:, key: reference.new())
       Error(error) ->
         panic as {
           "the server's tables did not load from the client's files: "
@@ -84,9 +85,9 @@ pub fn shared() -> store.Tables {
 /// Every one of the client's 384 tables, for the tests that read a table no rule
 /// of the server reads, such as the measure of the client's tables: the server's
 /// own (`shared`) and the other 348 tables beside them. The other tables are
-/// stored once, apart from `shared`'s, and each caller adds them to `shared`'s
-/// on its heap (`store.merge`), so no table is held twice in the literal area
-/// (the server's 36 take 306 MiB, and a second copy of them filled the area).
+/// stored once, apart from `shared`'s, and each caller joins the two handles
+/// (`store.merge`, a list of keys, no table copied), so no table is held twice
+/// in the literal area (the server's 36 take 306 MiB, and a second copy of them filled the area).
 /// The first caller reads, every later caller in any test process gets the same
 /// tables. The digest (`store.digest`) is `shared`'s.
 pub fn every_table() -> store.Tables {
@@ -108,7 +109,7 @@ fn the_other_tables() -> store.Tables {
         derivations: [],
       )
     {
-      Ok(tables) -> tables
+      Ok(tables) -> store.store_under(tables:, key: reference.new())
       Error(error) ->
         panic as {
           "the client's 384 tables did not all load: " <> store.describe(error)

@@ -362,6 +362,46 @@ pub fn a_test_edit_leaves_the_literal_area_unchanged_test() -> Nil {
   fresh_node.must_return_function(an_edit_is_built_beside_the_stored_tables)
 }
 
+/// A test edit of the stored tables, copied into ETS and read back, in a node of
+/// its own.
+pub fn an_edit_read_back_from_ets_keeps_its_edit_and_the_stored_rows() -> Nil {
+  use folder <- with_server_files
+  let assert Ok(stored) = server_table.load(folder)
+    as "the planted files load as the server's tables"
+  let planted_class =
+    planted_table.file(schema: class.schema, rows: [
+      planted_table.row(class.schema, [#("ID", Integer(9))]),
+    ])
+  let assert Ok(edited) =
+    store.edit(
+      tables: stored,
+      with: [
+        store.remove_rows(class.entry(), ids: [2]),
+        store.put_rows(class.entry(), planted_class.1),
+      ],
+      requirements: [],
+      derivations: [],
+    )
+    as "the edit gives a value"
+  let back = literal_area.through_ets(edited)
+  assert result.is_ok(class_row(back, 9)) && class_row(back, 2) == Error(Nil)
+    as "the copy from ETS reads the edit: the added row is there and the removed row is not"
+  assert result.is_ok(class_row(back, 1))
+    as "the copy reads a row of the edited table that the edit left"
+  assert creature2.all(back) == creature2.all(stored)
+    as "the copy reads the rows of a table the edit left from the stored value"
+  assert store.digest(back) == store.digest(stored)
+    as "the copy holds the digest of the files the tables were read from"
+  Nil
+}
+
+pub fn an_edit_copied_into_ets_still_reads_its_edit_and_the_stored_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  fresh_node.must_return_function(
+    an_edit_read_back_from_ets_keeps_its_edit_and_the_stored_rows,
+  )
+}
+
 /// The unload of a stored value and of one on a heap, in a node of its own.
 pub fn a_stored_value_is_refused_its_unload() -> Nil {
   use folder <- with_server_files

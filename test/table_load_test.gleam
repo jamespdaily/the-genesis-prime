@@ -35,6 +35,7 @@
 
 import ask_support
 import client_tables
+import fixture_tables
 import fresh_node
 import genesis_prime/table
 import genesis_prime/table/creature2
@@ -42,6 +43,7 @@ import genesis_prime/table/id
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/localized_text
+import genesis_prime/table/spell4
 import gleam/bit_array
 import gleam/crypto
 import gleam/erlang/process
@@ -50,6 +52,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/result
+import literal_area
 import owned_test
 import planted_table.{Integer, Text, TextAt}
 import simplifile
@@ -243,6 +246,36 @@ pub fn the_servers_tables_are_one_value_held_for_the_life_of_the_vm_test() -> Ni
   use <- owned_test.run(60_000)
   fresh_node.must_return_function(
     load_planted_tables_for_the_server_and_read_them_again,
+  )
+}
+
+/// What the test below runs in a fresh node: the tables of the committed
+/// fixture and the tables of a folder with one small table, each loaded under a
+/// key of its own, and the words each takes copied whole.
+pub fn the_words_a_stored_load_takes_copied_whole_do_not_depend_on_its_tables() -> Nil {
+  let committed = fixture_tables.shared()
+  let file = localized_text_file([localized_text_row(1, 7)])
+  use folder <- planted_table.in_folder([#("LocalizedText", file)])
+  let assert Ok(small) =
+    store.load(
+      under: reference.new(),
+      from: folder,
+      entries: [localized_text.entry()],
+      requirements: [],
+      derivations: [],
+    )
+    as "one small table loads"
+  assert list.length(spell4.all(committed))
+    > list.length(localized_text.all(small))
+    as "the fixture holds far more rows than the one small table, so the two sizes below differ only by what the tables hold"
+  assert literal_area.flat_size(committed) == literal_area.flat_size(small)
+    as "a stored load is the key and the digest: a copy of it, to another heap or into ETS, takes the same words whatever the tables hold"
+}
+
+pub fn a_stored_load_copied_whole_takes_the_same_words_whatever_its_tables_hold_test() -> Nil {
+  use <- owned_test.run(60_000)
+  fresh_node.must_return_function(
+    the_words_a_stored_load_takes_copied_whole_do_not_depend_on_its_tables,
   )
 }
 

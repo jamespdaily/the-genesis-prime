@@ -52,3 +52,13 @@ pub fn allocated_bytes() -> Int
 /// every table of the first.
 @external(erlang, "literal_area_ffi", "tables_not_shared")
 pub fn tables_not_shared(first: Tables, second: Tables) -> Int
+
+/// How many words the value takes copied whole, as a copy to another heap or an
+/// insert into ETS makes it: a persistent term inside it counts in full.
+@external(erlang, "literal_area_ffi", "flat_size")
+pub fn flat_size(value: a) -> Int
+
+/// The value inserted into a new ETS table and read back, the copy an insert
+/// makes of it.
+@external(erlang, "literal_area_ffi", "through_ets")
+pub fn through_ets(value: a) -> a
