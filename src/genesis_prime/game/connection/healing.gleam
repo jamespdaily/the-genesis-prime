@@ -29,6 +29,10 @@ pub fn shield_healed(
   amount amount: Int,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   life_effect.life_changed(session:, now:, change: fn(entered) {
-    player_life.shield_healed(life: entered.life, amount:)
+    player_life.shield_healed(
+      life: entered.life,
+      amount:,
+      properties: entered.properties,
+    )
   })
 }

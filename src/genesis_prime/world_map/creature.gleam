@@ -141,6 +141,8 @@
 //// | the creature dies while it holds a modifier | the modifier stays held and no rule reads it; its end still removes it |
 //// | the creature respawns | its properties start again from the bases and every source is cleared; a later `ModifierEnds` for a cleared source changes nothing |
 //// | a viewer arrives while a modifier lasts | its 0x262 carries the current value (`unit_properties.overlay`) |
+//// | a modifier lowers the interrupt armor maximum below the armor the creature wears | not handled: the worn armor is not clamped to the new maximum (no issue holds this yet) |
+//// | a modifier raises the interrupt armor maximum | not handled: the worn armor stays and no 0x938 is sent (no issue holds this yet) |
 
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
@@ -175,9 +177,13 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_fields
+import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/set.{type Set}
 
 /// The rule's name: its module path.
@@ -266,9 +272,9 @@ pub type Outgoing {
 /// named it for, its health, its fight, the crowd-control states it holds, whether
 /// it was told to retire while it lay dead, its properties with the modifiers of
 /// players' spells on them, the watch on each caster's connection whose modifiers it
-/// holds, the caster's connection of each modifier's source, the id its next
-/// watch on a caster's connection takes, and the monotonic time it last stood again
-/// (none in its first life).
+/// holds, the caster's connection of each modifier's source in the order the
+/// modifiers started, the id its next watch on a caster's connection takes, and the
+/// monotonic time it last stood again (none in its first life).
 pub opaque type State {
   State(
     settings: Settings,
@@ -280,7 +286,7 @@ pub opaque type State {
     viewers: Dict(ConnectionId, Stay),
     properties: Properties,
     casters: Dict(ConnectionId, WatchId),
-    held_by: Dict(Source, ConnectionId),
+    held_by: List(#(Source, ConnectionId)),
     next_watch: Int,
     stood_again_ms: Option(Int),
   )
@@ -304,12 +310,7 @@ pub fn rule(
 /// A creature's first state: the players the map started it for are its viewers,
 /// and it stands at full health at its spawn, resting.
 pub fn new(settings: Settings) -> State {
-  let body =
-    Body(
-      max_health: settings.spawn.health,
-      combat: settings.spawn.combat,
-      respawn_ms: settings.kind.respawn_ms,
-    )
+  let body = base_body(settings:)
   State(
     settings:,
     body:,
@@ -318,15 +319,39 @@ pub fn new(settings: Settings) -> State {
     control: creature_control.new(),
     retiring: False,
     viewers: dict.from_list(settings.creature.viewers),
-    properties: unit_properties.of_creature(
-      bases: settings.spawn.bases,
-      level: settings.spawn.level,
-    ),
+    properties: base_properties(settings:),
     casters: dict.new(),
-    held_by: dict.new(),
+    held_by: [],
     next_watch: first_caster_watch,
     stood_again_ms: None,
   )
+}
+
+/// What the creature brings to a fight with no modifier held: the spawn's health and
+/// combat values.
+fn base_body(settings settings: Settings) -> Body {
+  Body(
+    max_health: settings.spawn.health,
+    combat: settings.spawn.combat,
+    respawn_ms: settings.kind.respawn_ms,
+  )
+}
+
+/// The creature's properties with no modifier held: the spawn's bases, and for a spawn
+/// whose health is recorded, Base Health (property 7) at that health, which is the
+/// maximum the client holds for it (`creature_unit`).
+fn base_properties(settings settings: Settings) -> Properties {
+  let spawn = settings.spawn
+  let bases = case spawn.health_source {
+    unit_fields.Recorded ->
+      list.key_set(
+        spawn.bases,
+        unit_properties.base_health,
+        int.to_float(spawn.health),
+      )
+    unit_fields.ClientDefault -> spawn.bases
+  }
+  unit_properties.of_creature(bases:, level: spawn.level)
 }
 
 /// The creature's fight: whether it rests, fights or walks home, for a test.
@@ -437,26 +462,30 @@ pub fn step(
       case
         creature_life.corpse_timer_fired(
           life: state.life,
-          body: state.body,
+          body: base_body(settings: state.settings),
           retiring: state.retiring,
         )
       {
         Ends -> #(state, Effects([Stop]))
         StandsAgain(life:) -> {
-          let state = stood_again(state: State(..state, life:), now_ms:)
+          let #(state, unwatched) =
+            stood_again(state: State(..state, life:), now_ms:)
           let #(state, fought) =
             fought(state:, input: creature_fight.StoodAgain, now_ms:)
           #(
             state,
-            Effects(list.append(
-              list.flat_map(sorted_viewers(state:), fn(viewer) {
-                [
-                  news_to(creature:, viewer:, news: Removed),
-                  appeared(state:, viewer:, now_ms:),
-                ]
-              }),
-              fought,
-            )),
+            Effects(
+              list.flatten([
+                unwatched,
+                list.flat_map(sorted_viewers(state:), fn(viewer) {
+                  [
+                    news_to(creature:, viewer:, news: Removed),
+                    appeared(state:, viewer:, now_ms:),
+                  ]
+                }),
+                fought,
+              ]),
+            ),
           )
         }
       }
@@ -486,11 +515,12 @@ pub fn step(
       source:,
       modifier:,
       struck_at_ms:,
-    ))) -> modifier_started(state:, by:, source:, modifier:, struck_at_ms:)
+    ))) ->
+      modifier_started(state:, by:, source:, modifier:, struck_at_ms:, now_ms:)
     OwnEvent(Told(message: ModifierEnds(source:))) ->
-      modifier_ended(state:, source:)
+      modifier_ended(state:, source:, now_ms:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
-    WatchEnded(watch:) -> caster_gone(state:, watch:)
+    WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
       panic as "a creature is told, and starts no creature"
   }
@@ -503,59 +533,208 @@ pub fn step(
 /// twice is held once. A start struck before the creature last stood again, or one that
 /// reaches it dead, changes nothing.
 fn modifier_started(
-  state _state: State,
-  by _by: ConnectionId,
-  source _source: Source,
-  modifier _modifier: Modifier,
-  struck_at_ms _struck_at_ms: Int,
+  state state: State,
+  by by: ConnectionId,
+  source source: Source,
+  modifier modifier: Modifier,
+  struck_at_ms struck_at_ms: Int,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "shape: creature side applies a modifier on a creature"
-}
-
-/// The creature stands again at `now_ms`: it holds no source from its life before, its
-/// properties start again from the bases, and a start struck before now is dropped.
-fn stood_again(state state: State, now_ms now_ms: Int) -> State {
-  case dict.is_empty(state.held_by) {
-    True -> State(..state, stood_again_ms: Some(now_ms))
+  let struck_before_this_life = case state.stood_again_ms {
+    Some(stood_ms) -> struck_at_ms < stood_ms
+    None -> False
+  }
+  case
+    creature_life.is_dead(life: state.life)
+    || struck_before_this_life
+    || result.is_ok(list.key_find(state.held_by, source))
+  {
+    True -> #(state, Effects([]))
     False -> {
-      let _state =
-        revalued(
-          state:,
-          properties: unit_properties.of_creature(
-            bases: state.settings.spawn.bases,
-            level: state.settings.spawn.level,
-          ),
-        )
-      panic as "shape: creature side clears a respawned creature's modifiers"
+      let #(properties, changed) =
+        unit_properties.apply(properties: state.properties, source:, modifier:)
+      let state =
+        State(..state, held_by: list.append(state.held_by, [#(source, by)]))
+      let #(state, watching) = watching(state:, by:)
+      let news = changed_news(state:, changed:)
+      let #(state, revalued) = revalued(state:, properties:, now_ms:)
+      #(state, Effects(list.flatten([watching, news, revalued])))
     }
   }
 }
 
+/// The creature stands again at `now_ms`: it holds no source from its life before, its
+/// body and properties are the spawn's again, and a start struck before now is
+/// dropped. The effects drop the watch on each caster whose modifiers it cleared. The
+/// viewers are sent the creature as new, whose 0x262 lists none of them.
+fn stood_again(
+  state state: State,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let unwatched =
+    list.unique(list.map(state.held_by, fn(held) { held.1 }))
+    |> list.filter_map(fn(by) {
+      dict.get(state.casters, by)
+      |> result.map(fn(watch) { step.Unwatch(watch:) })
+    })
+  #(
+    State(
+      ..state,
+      body: base_body(settings: state.settings),
+      properties: base_properties(settings: state.settings),
+      casters: dict.new(),
+      held_by: [],
+      stood_again_ms: Some(now_ms),
+    ),
+    unwatched,
+  )
+}
+
 /// The creature's properties are now `properties`: its body's combat values and
-/// maximum health follow them (`spawn.values_of`), and its life and fight take the
-/// new body.
-fn revalued(state state: State, properties properties: Properties) -> State {
-  let _values = spawn.values_of(spawn: state.settings.spawn, properties:)
-  panic as "shape: creature side gives a creature the values its properties set"
+/// maximum health follow them (`spawn.values_of`). A health above the new maximum
+/// falls to it, with a 0x937 for the viewers; a lower maximum that is raised again
+/// adds none. A run speed that changed goes to the fight, which runs on the path it
+/// holds at the new speed. The property news is the caller's.
+fn revalued(
+  state state: State,
+  properties properties: Properties,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let values = spawn.values_of(spawn: state.settings.spawn, properties:)
+  let run_speed_before = state.body.combat.attack.run_speed
+  let health_before = creature_life.health(life: state.life)
+  let body =
+    Body(..state.body, max_health: values.max_health, combat: values.combat)
+  let life =
+    creature_life.clamped(life: state.life, max_health: body.max_health)
+  let state = State(..state, properties:, body:, life:)
+  let health = case
+    creature_life.health(life:) != health_before,
+    creature_life.is_dead(life:)
+  {
+    True, False ->
+      to_viewers(
+        state:,
+        news: client_connection.Health(
+          health: creature_life.health(life:),
+          dead: False,
+        ),
+      )
+    _, _ -> []
+  }
+  let #(state, fought) = case body.combat.attack.run_speed != run_speed_before {
+    True -> fought(state:, input: creature_fight.SpeedChanged, now_ms:)
+    False -> #(state, [])
+  }
+  #(state, list.append(health, fought))
 }
 
 /// The property modifier of `source` ends on the creature: it is removed, the entries
 /// that changed go to every viewer, and the rules take the values back. A source the
-/// creature does not hold changes nothing.
+/// creature does not hold changes nothing. The watch on its caster's connection
+/// ends with the caster's last source.
 fn modifier_ended(
-  state _state: State,
-  source _source: Source,
+  state state: State,
+  source source: Source,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "shape: creature side removes a modifier from a creature"
+  case list.key_pop(state.held_by, source) {
+    Error(Nil) -> #(state, Effects([]))
+    Ok(#(by, held_by)) -> {
+      let state = State(..state, held_by:)
+      let #(properties, changed) =
+        unit_properties.remove(properties: state.properties, source:)
+      let news = changed_news(state:, changed:)
+      let #(state, revalued) = revalued(state:, properties:, now_ms:)
+      let #(state, unwatched) = unwatching_last(state:, by:)
+      #(state, Effects(list.flatten([news, revalued, unwatched])))
+    }
+  }
 }
 
 /// The watch `watch` on a caster's connection ended: every source of that caster is
-/// removed, as `modifier_ended` removes one.
+/// removed in the order they started, each with its own 0x93a as `modifier_ended`
+/// sends it. The watch that fired needs no `Unwatch`. A watch that is no caster's
+/// changes nothing.
 fn caster_gone(
-  state _state: State,
-  watch _watch: WatchId,
+  state state: State,
+  watch watch: WatchId,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "shape: creature side removes a gone caster's modifiers"
+  case
+    list.find(dict.to_list(state.casters), fn(caster) { caster.1 == watch })
+  {
+    Error(Nil) -> #(state, Effects([]))
+    Ok(#(by, _)) -> {
+      let #(gone, kept) =
+        list.partition(state.held_by, fn(held) { held.1 == by })
+      let state =
+        State(..state, held_by: kept, casters: dict.delete(state.casters, by))
+      let #(properties, news) =
+        list.fold(gone, #(state.properties, []), fn(so_far, held) {
+          let #(properties, news) = so_far
+          let #(properties, changed) =
+            unit_properties.remove(properties:, source: held.0)
+          #(properties, list.append(news, changed_news(state:, changed:)))
+        })
+      let #(state, revalued) = revalued(state:, properties:, now_ms:)
+      #(state, Effects(list.append(news, revalued)))
+    }
+  }
+}
+
+/// The watch on the caster's connection `by`, started with its first modifier: none
+/// for a connection already watched.
+fn watching(
+  state state: State,
+  by by: ConnectionId,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  use <- bool.guard(when: dict.has_key(state.casters, by), return: #(state, []))
+  let watch = WatchId(state.next_watch)
+  #(
+    State(
+      ..state,
+      casters: dict.insert(state.casters, by, watch),
+      next_watch: state.next_watch + 1,
+    ),
+    [Watch(watch:, target: Connection(by))],
+  )
+}
+
+/// The end of the watch on the caster's connection `by` when it holds no source
+/// any more.
+fn unwatching_last(
+  state state: State,
+  by by: ConnectionId,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  use <- bool.guard(
+    when: list.any(state.held_by, fn(held) { held.1 == by }),
+    return: #(state, []),
+  )
+  case dict.get(state.casters, by) {
+    Ok(watch) -> #(State(..state, casters: dict.delete(state.casters, by)), [
+      step.Unwatch(watch:),
+    ])
+    Error(Nil) -> #(state, [])
+  }
+}
+
+/// The 0x93a of the entries a modifier's start or end changed, for every viewer;
+/// none when it changed nothing.
+fn changed_news(
+  state state: State,
+  changed changed: List(unit_properties.Changed),
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  case changed {
+    [] -> []
+    _ ->
+      to_viewers(
+        state:,
+        news: client_connection.PropertiesChanged(
+          properties: unit_properties.entries(changed:),
+        ),
+      )
+  }
 }
 
 /// A strike on the creature: refused while it walks home; else the hit rule on its
@@ -904,18 +1083,21 @@ fn appeared(
     creature:,
     viewer:,
     news: CreatureAppeared(
-      unit: creature_unit.create(
-        spawn: Spawn(..state.settings.spawn, place:),
-        unit_id: creature.unit_id,
-        health: creature_life.health(life: state.life),
-        interrupt_armor: creature_control.armor_now(
-          state: state.control,
-          armor: state.body.combat.interrupt_armor,
+      unit: creature_unit.overlaid(
+        unit: creature_unit.create(
+          spawn: Spawn(..state.settings.spawn, place:),
+          unit_id: creature.unit_id,
+          health: creature_life.health(life: state.life),
+          interrupt_armor: creature_control.armor_now(
+            state: state.control,
+            armor: state.body.combat.interrupt_armor,
+          ),
+          server_time_estimate_start: map.server_time(
+            origin_ms: creature.clock_origin_ms,
+            monotonic_ms: now_ms,
+          ),
         ),
-        server_time_estimate_start: map.server_time(
-          origin_ms: creature.clock_origin_ms,
-          monotonic_ms: now_ms,
-        ),
+        properties: state.properties,
       ),
       life: creature.life,
       place:,

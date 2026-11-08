@@ -707,3 +707,142 @@ pub fn the_comparison_with_the_old_rule_fails_on_a_planted_difference_test() -> 
     })
   assert differs as "a blow of 1 gives a share of 0.625: rounded 1, truncated 0"
 }
+
+// Damage taken. Jim's decision of 2026-11-08 on #464 fixes the rule: after mitigation
+// and crit and before the absorbs and the shield, a blow of damage type t (1 to 3) is
+// amount x DamageTakenMultiplier (159 + t - 1) + DamageTakenOffset (150 + t - 1), never
+// below 0; a blow of any other type is untouched (`UnitProperty2.damage_heal_multipliers`
+// names the two property ranges). Every expected value below is worked by hand from
+// that sentence.
+
+/// One strike of one blow of `damage_type` and `damage`, with no crit chance.
+fn typed_strike(
+  damage_type damage_type: Int,
+  damage damage: Int,
+) -> hit.Offence {
+  Offence(..strike_of(damages: [damage]), blows: [
+    Blow(
+      spell4_effects_id: 62_159,
+      damage_type:,
+      damage:,
+      delay_ms: 0,
+      threat_multiplier: 1.0,
+    ),
+  ])
+}
+
+/// The health and the shield the target keeps after one blow, and the description's
+/// absorbed part.
+fn after_blow(
+  defence defence: Defence,
+  damage_type damage_type: Int,
+  damage damage: Int,
+  health health: Int,
+  shield shield: Int,
+) -> #(Int, Int, Int) {
+  let assert Landed(descriptions: [description], health: left, shield: kept, ..) =
+    hit.apply(
+      health:,
+      shield:,
+      absorbs: [],
+      offence: typed_strike(damage_type:, damage:),
+      defence:,
+      rolls: no_luck,
+    )
+  #(left, kept, description.damage.absorbed)
+}
+
+pub fn damage_taken_multiplier_applies_after_mitigation_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Physical 21 against a mitigation of 0.5 is round(10.5) = 11 after armor; times a
+  // taken multiplier of 2.0 is 22. Before armor it would be 21 x 2 x 0.5 = 21.
+  let defence =
+    Defence(
+      ..hit.unprotected,
+      physical_mitigation: 0.5,
+      physical_taken: hit.DamageTaken(multiplier: 2.0, offset: 0.0),
+    )
+  assert after_blow(
+      defence:,
+      damage_type: 1,
+      damage: 21,
+      health: 100,
+      shield: 0,
+    ).0
+    == 78
+    as "armor first (11), then the multiplier (22)"
+  // Each of the three types reads its own pair: 159 + t - 1 is Physical, Tech, Magic.
+  let each =
+    Defence(
+      ..hit.unprotected,
+      physical_taken: hit.DamageTaken(multiplier: 2.0, offset: 0.0),
+      tech_taken: hit.DamageTaken(multiplier: 3.0, offset: 0.0),
+      magic_taken: hit.DamageTaken(multiplier: 0.5, offset: 0.0),
+    )
+  let kept = fn(damage_type) {
+    after_blow(defence: each, damage_type:, damage: 20, health: 100, shield: 0).0
+  }
+  assert kept(1) == 60 as "Physical 20 x 2.0 = 40"
+  assert kept(2) == 40 as "Tech 20 x 3.0 = 60"
+  assert kept(3) == 90 as "Magic 20 x 0.5 = 10"
+}
+
+pub fn damage_taken_offset_applies_before_shield_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Magic 40 with an offset of +10 is 50 before the shield; the shield takes
+  // round(50 x 0.625) = round(31.25) = 31 and the health the other 19. Added after the
+  // shield it would be 25 and 15 + 10.
+  let defence =
+    Defence(
+      ..shielded,
+      magic_taken: hit.DamageTaken(multiplier: 1.0, offset: 10.0),
+    )
+  let #(health, shield, _) =
+    after_blow(defence:, damage_type: 3, damage: 40, health: 100, shield: 100)
+  assert shield == 69 as "the shield took 31 of the 50"
+  assert health == 81 as "the health took 19"
+}
+
+pub fn damage_taken_never_below_zero_test() -> Nil {
+  use <- owned_test.run(5000)
+  let defence =
+    Defence(
+      ..hit.unprotected,
+      tech_taken: hit.DamageTaken(multiplier: 1.0, offset: -50.0),
+      physical_taken: hit.DamageTaken(multiplier: -2.0, offset: 0.0),
+    )
+  let #(tech_health, _, tech_absorbed) =
+    after_blow(defence:, damage_type: 2, damage: 20, health: 100, shield: 0)
+  assert tech_health == 100
+    as "20 - 50 is floored at 0: nothing reaches the health"
+  assert tech_absorbed == 20
+    as "the part the blow lost is absorbed, never a negative number"
+  let #(physical_health, _, physical_absorbed) =
+    after_blow(defence:, damage_type: 1, damage: 20, health: 100, shield: 0)
+  assert physical_health == 100 as "a negative multiplier is floored at 0"
+  assert physical_absorbed == 20
+}
+
+pub fn other_damage_type_untouched_by_taken_multiplier_test() -> Nil {
+  use <- owned_test.run(5000)
+  let defence =
+    Defence(
+      ..hit.unprotected,
+      physical_taken: hit.DamageTaken(multiplier: 3.0, offset: 5.0),
+      tech_taken: hit.DamageTaken(multiplier: 3.0, offset: 5.0),
+      magic_taken: hit.DamageTaken(multiplier: 3.0, offset: 5.0),
+    )
+  // Types 4 to 7 are Heal, HealShields, Fall and Suffocate, and 9 is none the schema
+  // names: each takes 20 as dealt.
+  list.each([4, 5, 6, 7, 9], fn(damage_type) {
+    assert after_blow(
+        defence:,
+        damage_type:,
+        damage: 20,
+        health: 100,
+        shield: 0,
+      ).0
+      == 80
+      as "a type outside 1 to 3 is untouched"
+  })
+}

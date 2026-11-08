@@ -12,19 +12,23 @@
 ////   map started, from the origin the creature was given (`map.server_time`).
 //// - The creature's values are the Virtual Battle Beast's (`spawn_support`).
 
+import cast_support
 import connection_rule_support as support
+import crowd_control_support
 import genesis_prime/client_connection.{
-  type PeerNews, CreatureAppeared, PeerNews, Removed,
+  type PeerNews, CreatureAppeared, PeerNews, PropertiesChanged, Removed,
 }
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
-import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
+import genesis_prime/message/float32
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/step.{
   type ConnectionId, type Event, type ServiceEvent, type ServiceStep, Connection,
   ConnectionId, CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
   StartServiceTimer, Started, Stop, TimerId, Told, WatchEnded, WatchId,
 }
-import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/id.{Spell4Id, UnitProperty2Id}
 import genesis_prime/world_map/creature.{
   type State, Retire, Settings, Unwatched, Watched,
 }
@@ -268,9 +272,18 @@ fn outgoing(
   })
 }
 
-/// A strike of the caster's connection 2 with one blow of `damage` on the Beast
-/// unit 7, with rolls no deflect and no crit.
+/// A strike of the caster's connection 2 with one blow of `damage` of the Magic
+/// type on the Beast unit 7, with rolls no deflect and no crit.
 fn strike_of(damage damage: Int, cast_id cast_id: Int) -> creature.Message {
+  typed_strike(damage:, damage_type: 3, cast_id:)
+}
+
+/// The same strike with a blow of this damage type: 1 Physical, 2 Tech, 3 Magic.
+fn typed_strike(
+  damage damage: Int,
+  damage_type damage_type: Int,
+  cast_id cast_id: Int,
+) -> creature.Message {
   creature.Strike(
     tell: Strike(
       key: Key(cast_id:, phase: 0, unit_id: 7),
@@ -279,7 +292,7 @@ fn strike_of(damage damage: Int, cast_id cast_id: Int) -> creature.Message {
         blows: [
           Blow(
             spell4_effects_id: 1,
-            damage_type: 3,
+            damage_type:,
             damage:,
             delay_ms: 0,
             threat_multiplier: 1.0,
@@ -633,4 +646,616 @@ pub fn a_recorded_creature_comes_back_at_its_recorded_health_with_its_recorded_m
     as "it comes back at the recorded value, not the client's formula"
   assert unit.tail.properties == base_health_442()
     as "and sends it as Base Health again"
+}
+
+// ---- property modifiers of players' spells ----
+//
+// Expected values come from these places: the Beast's base values, which
+// `unit_properties_test` works out from the client's tables (Move Speed
+// Multiplier 100 is 1.0, Base Health 7 is 52.6204948425293, Armor 42 and Interrupt
+// Armor Threshold 44 are 0.0, property 127 is 1.2750000953674316, property 150 is
+// 0.0); a row's change x * multiplier + flat (`Spell4Effects.effectType.11.change`,
+// `UnitProperty2.damage_heal_multipliers`); the module doc of
+// `genesis_prime/world_map/creature` for who is told what and when; the Armor 150
+// mitigation 0.5996959 at level 1 that `player_life_test` pins from GameFormula
+// 1234 (`0x140464240`).
+
+/// The connection of the caster whose spells put modifiers on the creature.
+const caster = ConnectionId(9)
+
+/// A Move Speed Multiplier row: x becomes x * 1.0 + 0.5.
+fn sprint() -> Modifier {
+  Change(
+    property: UnitProperty2Id(100),
+    mode: 3,
+    multiplier: 1.0,
+    flat: 0.5,
+    per_level: 0.0,
+  )
+}
+
+fn sprint_source() -> Source {
+  cast_support.source_of(cast_id: 1, effect_id: 1921)
+}
+
+/// A row that adds 5.0 to property 150.
+fn thorns() -> Modifier {
+  Change(
+    property: UnitProperty2Id(150),
+    mode: 1,
+    multiplier: 1.0,
+    flat: 5.0,
+    per_level: 0.0,
+  )
+}
+
+fn thorns_source() -> Source {
+  cast_support.source_of(cast_id: 2, effect_id: 1922)
+}
+
+/// A row that doubles property 127.
+fn doubling() -> Modifier {
+  Change(
+    property: UnitProperty2Id(127),
+    mode: 1,
+    multiplier: 2.0,
+    flat: 0.0,
+    per_level: 0.0,
+  )
+}
+
+fn doubling_source() -> Source {
+  cast_support.source_of(cast_id: 3, effect_id: 1923)
+}
+
+/// The entry of 0x93a for a property, as its 32-bit float bits.
+fn changed(
+  property property: Int,
+  base base: Float,
+  value value: Float,
+) -> UnitProperty {
+  UnitProperty(
+    property_id: property,
+    base: float32.to_bits(base),
+    value: float32.to_bits(value),
+  )
+}
+
+/// What a start of `sprint` changes: Move Speed Multiplier from 1.0 to 1.5.
+fn speed_up() -> UnitProperty {
+  changed(property: 100, base: 1.0, value: 1.5)
+}
+
+/// What the end of `sprint` changes back.
+fn speed_back() -> UnitProperty {
+  changed(property: 100, base: 1.0, value: 1.0)
+}
+
+fn told(
+  state state: State,
+  at_ms at_ms: Int,
+  message message: creature.Message,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  feed(state:, at_ms:, event: OwnEvent(Told(message)))
+}
+
+fn starting(
+  source source: Source,
+  modifier modifier: Modifier,
+  struck_at_ms struck_at_ms: Int,
+) -> creature.Message {
+  creature.ModifierStarts(by: caster, source:, modifier:, struck_at_ms:)
+}
+
+/// The creature after the caster's start of this modifier, struck as it arrived.
+fn holding(
+  state state: State,
+  source source: Source,
+  modifier modifier: Modifier,
+  at_ms at_ms: Int,
+) -> State {
+  told(
+    state:,
+    at_ms:,
+    message: starting(source:, modifier:, struck_at_ms: at_ms),
+  ).0
+}
+
+/// The properties the step sends to each viewer, as the number of the viewer and the
+/// entries, in order.
+fn property_news(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(Int, List(UnitProperty))) {
+  list.filter_map(sent(taken), fn(one) {
+    case one.1 {
+      PeerNews(news: PropertiesChanged(properties:), ..) ->
+        Ok(#(one.0, properties))
+      PeerNews(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The watches the step drops, in order.
+fn unwatches(taken: ServiceStep(creature.Outgoing)) -> List(step.WatchId) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      step.Unwatch(watch:) -> Ok(watch)
+      OwnEffect(..) | step.Watch(..) | step.Log(..) | Stop -> Error(Nil)
+    }
+  })
+}
+
+/// The health news the step sends, as the number of the viewer, the health and
+/// whether it is dead.
+fn health_news(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(Int, Int, Bool)) {
+  list.filter_map(sent(taken), fn(one) {
+    case one.1 {
+      PeerNews(news: client_connection.Health(health:, dead:), ..) ->
+        Ok(#(one.0, health, dead))
+      PeerNews(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The Interrupt Armor news the step sends, as the number of the viewer and the
+/// armor left.
+fn armor_left(taken: ServiceStep(creature.Outgoing)) -> List(#(Int, Int)) {
+  list.filter_map(sent(taken), fn(one) {
+    case one.1 {
+      PeerNews(news: client_connection.InterruptArmor(armor:), ..) ->
+        Ok(#(one.0, armor))
+      PeerNews(..) -> Error(Nil)
+    }
+  })
+}
+
+pub fn modifier_start_sends_properties_changed_to_viewers_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: starting(
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: 6000,
+      ),
+    )
+  assert sent(taken)
+    == [
+      #(2, PeerNews(unit_id: 7, news: PropertiesChanged([speed_up()]))),
+      #(5, PeerNews(unit_id: 7, news: PropertiesChanged([speed_up()]))),
+    ]
+    as "0x93a of the unit, to each viewer: Move Speed Multiplier 1.0 x 1.0 + 0.5"
+  assert support.watches(taken) == [#(WatchId(2), Connection(caster))]
+    as "the creature watches the caster's connection, under its own id: the run's is 1"
+}
+
+pub fn modifier_end_restores_value_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: sprint_source(),
+      modifier: sprint(),
+      at_ms: 6000,
+    )
+  let #(_, taken) =
+    told(state:, at_ms: 7000, message: creature.ModifierEnds(sprint_source()))
+  assert property_news(taken) == [#(2, [speed_back()]), #(5, [speed_back()])]
+    as "the value goes back to the base, 1.0"
+  assert unwatches(taken) == [WatchId(2)]
+    as "it was the caster's last source: the creature stops watching the connection"
+}
+
+pub fn late_viewer_sees_current_value_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: sprint_source(),
+      modifier: sprint(),
+      at_ms: 6000,
+    )
+  let #(_, taken) =
+    told(
+      state:,
+      at_ms: 7000,
+      message: Watched(by: ConnectionId(8), stay: map_support.stay(count: 8)),
+    )
+  let assert [#(8, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
+    sent(taken)
+    as "one 0x262, to the viewer that arrived"
+  assert unit.tail.properties == [speed_up()]
+    as "its property list carries the current value of the property a modifier changes"
+}
+
+pub fn start_for_another_life_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 60, cast_id: 1),
+    )
+  let #(state, _) =
+    feed(
+      state:,
+      at_ms: 66_000,
+      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
+    )
+  let #(_, late) =
+    told(
+      state:,
+      at_ms: 66_500,
+      message: starting(
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: 65_000,
+      ),
+    )
+  assert support.effects_of(late) == []
+    as "struck at 65000, before the creature stood again at 66000: a start of the life before"
+  let #(_, now) =
+    told(
+      state:,
+      at_ms: 66_500,
+      message: starting(
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: 66_000,
+      ),
+    )
+  assert property_news(now) == [#(2, [speed_up()]), #(5, [speed_up()])]
+    as "struck at the moment it stood again: the new life's"
+}
+
+pub fn end_for_unknown_source_changes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: creature.ModifierEnds(sprint_source()),
+    )
+  assert support.effects_of(taken) == []
+}
+
+pub fn same_source_started_twice_is_held_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: sprint_source(),
+      modifier: sprint(),
+      at_ms: 6000,
+    )
+  let #(state, again) =
+    told(
+      state:,
+      at_ms: 6100,
+      message: starting(
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: 6100,
+      ),
+    )
+  assert support.effects_of(again) == []
+    as "the same source is held once: nothing changes, nothing is sent, no second watch"
+  let #(_, ended) =
+    told(state:, at_ms: 7000, message: creature.ModifierEnds(sprint_source()))
+  assert property_news(ended) == [#(2, [speed_back()]), #(5, [speed_back()])]
+    as "one end restores the value"
+}
+
+pub fn caster_connection_end_removes_its_modifiers_test() -> Nil {
+  use <- owned_test.run(5000)
+  let other = ConnectionId(10)
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: sprint_source(),
+      modifier: sprint(),
+      at_ms: 6000,
+    )
+  let state =
+    holding(state:, source: thorns_source(), modifier: thorns(), at_ms: 6100)
+  let #(state, other_start) =
+    told(
+      state:,
+      at_ms: 6200,
+      message: creature.ModifierStarts(
+        by: other,
+        source: doubling_source(),
+        modifier: doubling(),
+        struck_at_ms: 6200,
+      ),
+    )
+  assert support.watches(other_start) == [#(WatchId(3), Connection(other))]
+    as "a second caster's connection is watched under the next id"
+  let #(state, gone) = feed(state:, at_ms: 7000, event: WatchEnded(WatchId(2)))
+  assert property_news(gone)
+    == [
+      #(2, [speed_back()]),
+      #(5, [speed_back()]),
+      #(2, [changed(property: 150, base: 0.0, value: 0.0)]),
+      #(5, [changed(property: 150, base: 0.0, value: 0.0)]),
+    ]
+    as "each of the connection's sources ends as a ModifierEnds ends it, in the order they started"
+  assert !support.stops(gone) && unwatches(gone) == []
+    as "the creature goes on, and the watch that fired needs no Unwatch"
+  let #(state, late) =
+    told(state:, at_ms: 7100, message: creature.ModifierEnds(sprint_source()))
+  assert support.effects_of(late) == []
+    as "a later end for a source the connection's end removed changes nothing"
+  let #(_, kept) =
+    told(state:, at_ms: 7200, message: creature.ModifierEnds(doubling_source()))
+  assert property_news(kept)
+    == [
+      #(2, [
+        changed(
+          property: 127,
+          base: 1.2750000953674316,
+          value: 1.2750000953674316,
+        ),
+      ]),
+      #(5, [
+        changed(
+          property: 127,
+          base: 1.2750000953674316,
+          value: 1.2750000953674316,
+        ),
+      ]),
+    ]
+    as "the other caster's modifier was held all along"
+}
+
+pub fn run_watch_end_still_stops_creature_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: sprint_source(),
+      modifier: sprint(),
+      at_ms: 6000,
+    )
+  let #(_, run_ended) = feed(state:, at_ms: 7000, event: WatchEnded(WatchId(1)))
+  assert support.stops(run_ended) as "the run's end ends the creature"
+  let #(_, caster_ended) =
+    feed(state:, at_ms: 7000, event: WatchEnded(WatchId(2)))
+  assert !support.stops(caster_ended) as "a caster's connection ending does not"
+}
+
+pub fn dead_creature_holds_modifiers_until_end_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: sprint_source(),
+      modifier: sprint(),
+      at_ms: 6000,
+    )
+  let #(state, _) =
+    told(state:, at_ms: 7000, message: strike_of(damage: 60, cast_id: 1))
+  let #(state, dropped) =
+    told(
+      state:,
+      at_ms: 8000,
+      message: starting(
+        source: thorns_source(),
+        modifier: thorns(),
+        struck_at_ms: 8000,
+      ),
+    )
+  assert support.effects_of(dropped) == []
+    as "a start that reaches the creature while it is dead is dropped"
+  let #(_, ended) =
+    told(state:, at_ms: 9000, message: creature.ModifierEnds(sprint_source()))
+  assert property_news(ended) == [#(2, [speed_back()]), #(5, [speed_back()])]
+    as "the source it held before it died ends as always"
+}
+
+pub fn respawn_clears_modifiers_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: sprint_source(),
+      modifier: sprint(),
+      at_ms: 5500,
+    )
+  let #(state, _) =
+    told(state:, at_ms: 6000, message: strike_of(damage: 60, cast_id: 1))
+  let #(state, stood) =
+    feed(
+      state:,
+      at_ms: 66_000,
+      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
+    )
+  assert unwatches(stood) == [WatchId(2)]
+    as "the creature stops watching a caster whose modifiers it cleared"
+  assert kinds_of(outgoing(stood))
+    == ["removal to 2", "creation to 2", "removal to 5", "creation to 5"]
+  let assert [
+    _,
+    #(
+      2,
+      creature.News(news: PeerNews(news: CreatureAppeared(unit:, ..), ..), ..),
+    ),
+    ..
+  ] = outgoing(stood)
+  assert unit.tail.properties == []
+    as "its properties start again from the bases: the new 0x262 lists none"
+  let #(state, late) =
+    told(state:, at_ms: 66_500, message: creature.ModifierEnds(sprint_source()))
+  assert support.effects_of(late) == []
+    as "an end for a cleared source changes nothing"
+  let #(_, old) =
+    told(
+      state:,
+      at_ms: 66_600,
+      message: starting(
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: 65_000,
+      ),
+    )
+  assert support.effects_of(old) == []
+    as "and a start struck on the life before is dropped"
+}
+
+pub fn base_health_modifier_clamps_health_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Base Health halved: 52.6204948425293 x 0.5 = 26.31024742126465, a maximum of
+  // 26 after truncation, so the creature at 52 is at 26.
+  let halving =
+    Change(
+      property: UnitProperty2Id(7),
+      mode: 1,
+      multiplier: 0.5,
+      flat: 0.0,
+      per_level: 0.0,
+    )
+  let source = cast_support.source_of(cast_id: 1, effect_id: 1924)
+  let half =
+    changed(property: 7, base: 52.6204948425293, value: 26.31024742126465)
+  let #(state, started) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: starting(source:, modifier: halving, struck_at_ms: 6000),
+    )
+  assert sent(started)
+    == [
+      #(2, PeerNews(unit_id: 7, news: PropertiesChanged([half]))),
+      #(5, PeerNews(unit_id: 7, news: PropertiesChanged([half]))),
+      #(2, PeerNews(unit_id: 7, news: client_connection.Health(26, False))),
+      #(5, PeerNews(unit_id: 7, news: client_connection.Health(26, False))),
+    ]
+    as "the property first, then the health the lowered maximum leaves"
+  let #(_, arrived) =
+    told(
+      state:,
+      at_ms: 7000,
+      message: Watched(by: ConnectionId(8), stay: map_support.stay(count: 8)),
+    )
+  let assert [#(8, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
+    sent(arrived)
+  assert creature_unit.health_of(unit:) == 26
+    as "a viewer that arrives after sees the clamped health"
+  let #(_, ended) =
+    told(state:, at_ms: 8000, message: creature.ModifierEnds(source))
+  assert sent(ended)
+    == [
+      #(
+        2,
+        PeerNews(
+          unit_id: 7,
+          news: PropertiesChanged([
+            changed(
+              property: 7,
+              base: 52.6204948425293,
+              value: 52.6204948425293,
+            ),
+          ]),
+        ),
+      ),
+      #(
+        5,
+        PeerNews(
+          unit_id: 7,
+          news: PropertiesChanged([
+            changed(
+              property: 7,
+              base: 52.6204948425293,
+              value: 52.6204948425293,
+            ),
+          ]),
+        ),
+      ),
+    ]
+    as "the end sends the property only: health the clamp took does not come back"
+}
+
+pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Interrupt Armor Threshold 44 is 0.0 on the Beast (no armor): a modifier of 3
+  // points gives it armor 3, which a Stagger stun wears down by its 1 point
+  // (`crowd_control_support.stagger_stun`).
+  let source = cast_support.source_of(cast_id: 1, effect_id: 1925)
+  let #(state, started) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: starting(
+        source:,
+        modifier: unit_properties.interrupt_armor_modifier(points: 3),
+        struck_at_ms: 6000,
+      ),
+    )
+  assert property_news(started)
+    == [
+      #(2, [changed(property: 44, base: 0.0, value: 3.0)]),
+      #(5, [changed(property: 44, base: 0.0, value: 3.0)]),
+    ]
+  let assert creature.Strike(tell: blow) = strike_of(damage: 1, cast_id: 2)
+  let stunning =
+    creature.Strike(
+      tell: Strike(..blow, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(_, taken) = told(state:, at_ms: 7000, message: stunning)
+  let landed =
+    list.flat_map(support.sends(taken), fn(one) {
+      case one.1 {
+        creature.Struck(
+          answered: Answered(outcome: Landed(controls:, ..), ..),
+          ..,
+        ) -> controls
+        creature.Struck(..) | creature.News(..) | creature.FightTold(..) -> []
+      }
+    })
+  assert landed == [] as "the creature has armor now: the stun lands no state"
+  assert armor_left(taken) == [#(2, 2), #(5, 2)]
+    as "the stun destroyed its 1 point of the 3: 0x938 tells the 2 left"
+}
+
+pub fn armor_modifier_changes_creature_mitigation_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Beast has no armor (Creature2 73464's mitigation is 0), so a Physical
+  // strike of 50 leaves 2 of its 52. With Armor 150 at level 1 the mitigation is
+  // 0.5996959, so the strike deals 50 x 0.4003041 = 20.015, which is 20.
+  let #(_, bare) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: typed_strike(damage: 50, damage_type: 1, cast_id: 1),
+    )
+  assert health_news(bare) == [#(2, 2, False), #(5, 2, False)]
+  let armor =
+    Change(
+      property: UnitProperty2Id(42),
+      mode: 1,
+      multiplier: 1.0,
+      flat: 150.0,
+      per_level: 0.0,
+    )
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: cast_support.source_of(cast_id: 1, effect_id: 1926),
+      modifier: armor,
+      at_ms: 5500,
+    )
+  let #(_, armored) =
+    told(
+      state:,
+      at_ms: 6000,
+      message: typed_strike(damage: 50, damage_type: 1, cast_id: 2),
+    )
+  assert health_news(armored) == [#(2, 32, False), #(5, 32, False)]
+    as "Armor 150 mitigates the strike: 50 becomes 20"
 }

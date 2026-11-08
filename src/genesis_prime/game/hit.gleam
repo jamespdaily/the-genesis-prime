@@ -46,7 +46,10 @@
 //// - **Damage taken** changes a blow of damage type 1 to 3 after mitigation and before
 ////   the absorbs: times the target's DamageTakenMultiplier of the type (159 + type - 1)
 ////   plus its DamageTakenOffset (150 + type - 1), never below 0; any other type is
-////   untouched. The order and the floor are the server's choice.
+////   untouched. The order and the floor are the server's choice. What the mitigation
+////   and the damage taken together took off the blow is the description's absorbed
+////   part, never below 0 (a multiplier above 1 adds to the health damage and
+////   absorbs nothing).
 //// - **The absorbs** (genesis_prime/game/player_life keeps them in start order) take a
 ////   blow's damage after mitigation and before the shield: each pool whose damage-type
 ////   mask holds the blow's type (type t is held when bit 2^(t-1) of the mask is set,
@@ -265,7 +268,7 @@ pub fn apply(
                 *. { 1.0 -. mitigation_of(defence:, blow:) },
               )
             let taken = taken_by(defence:, blow:, amount: taken)
-            let mitigated = after_glance - taken
+            let mitigated = int.max(0, after_glance - taken)
             let #(soaked, absorbs_left) =
               soak(
                 absorbs: absorbs_left,
@@ -378,10 +381,10 @@ fn taken_by(
     | damage_type.Suffocate
     | damage_type.Other(..) -> as_dealt
   }
-  case taken == as_dealt {
-    True -> amount
-    False -> panic as "shape: creature side fills damage taken in hit.apply"
-  }
+  int.max(
+    0,
+    float.round(int.to_float(amount) *. taken.multiplier +. taken.offset),
+  )
 }
 
 fn mitigation_of(defence defence: Defence, blow blow: Blow) -> Float {

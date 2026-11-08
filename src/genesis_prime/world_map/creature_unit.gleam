@@ -31,9 +31,11 @@
 ////   (opcode.0x262.unit_fields), the tail as every spawned unit's
 ////   (`unit_fields.spawned_tail`).
 
+import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/unit_create_creature.{
   type UnitCreateCreature, UnitCreateCreature,
 }
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
@@ -72,6 +74,26 @@ pub fn create(
       display_info_id: spawn.display_info_id,
       outfit_info_id: spawn.outfit_info_id,
       server_time_estimate_start:,
+    ),
+  )
+}
+
+/// The creature's 0x262 with the current base and value of each property a live
+/// modifier of `properties` changes in its property list
+/// (`unit_properties.overlay`): the 0x262 a viewer that arrives while a modifier
+/// lasts is sent.
+pub fn overlaid(
+  unit unit: UnitCreateCreature,
+  properties properties: Properties,
+) -> UnitCreateCreature {
+  UnitCreateCreature(
+    ..unit,
+    tail: UnitCreateTail(
+      ..unit.tail,
+      properties: unit_properties.overlay(
+        listed: unit.tail.properties,
+        properties:,
+      ),
     ),
   )
 }

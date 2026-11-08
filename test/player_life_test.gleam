@@ -19,6 +19,7 @@
 ////   client timer, so the server sends it on with the first fighter and off with the
 ////   last (`opcode.0x89a`).
 
+import cast_support
 import character_tables
 import genesis_prime/client_connection
 import genesis_prime/game/hit
@@ -38,7 +39,7 @@ import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/step.{TimerId}
-import genesis_prime/table/id.{ClassId, Spell4EffectsId}
+import genesis_prime/table/id.{ClassId, Spell4EffectsId, UnitProperty2Id}
 import gleam/float
 import gleam/list
 import gleam/option.{None, Some}
@@ -956,4 +957,71 @@ fn writes_armor(effect: player_life.Effect) -> Bool {
     | StartTimer(..)
     | CancelTimer(..) -> False
   }
+}
+
+/// A modifier of `property` that makes x into x * `multiplier` + `flat`.
+fn changing(
+  property property: Int,
+  multiplier multiplier: Float,
+  flat flat: Float,
+) -> unit_properties.Modifier {
+  unit_properties.Change(
+    property: UnitProperty2Id(property),
+    mode: 1,
+    multiplier:,
+    flat:,
+    per_level: 0.0,
+  )
+}
+
+/// UnitProperty2.damage_heal_multipliers: the multipliers default to 1.0 and the
+/// offsets to 0.0, the damage type is the index (Physical 159 and 150, Tech 160 and
+/// 151, Magic 161 and 152). A modifier changes a value as a row says, x * multiplier +
+/// flat (`Spell4Effects.effectType.11.change`), and the defence reads the live value.
+pub fn player_defence_reads_damage_taken_properties_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let assert Ok(loadout) =
+    loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
+    as "a Warrior has a Dominion Novice set"
+  let properties = properties_support.wearing(loadout:)
+  let defence_of = fn(properties) {
+    player_life.defence(
+      properties:,
+      level: 1,
+      formulas: rating.formulas(tables:),
+    )
+  }
+  let plain = defence_of(properties)
+  assert plain.physical_taken == hit.as_dealt
+    && plain.tech_taken == hit.as_dealt
+    && plain.magic_taken == hit.as_dealt
+    as "multipliers 1.0 and offsets 0.0 by default"
+  let modified =
+    list.index_fold(
+      [
+        changing(property: 159, multiplier: 0.5, flat: 0.0),
+        changing(property: 160, multiplier: 2.0, flat: 0.0),
+        changing(property: 151, multiplier: 1.0, flat: 3.0),
+        changing(property: 161, multiplier: 1.25, flat: 0.0),
+        changing(property: 152, multiplier: 1.0, flat: 4.0),
+      ],
+      properties,
+      fn(properties, modifier, index) {
+        properties_support.with_modifier(
+          properties:,
+          source: cast_support.source_of(cast_id: index + 1, effect_id: 1900),
+          modifier:,
+        )
+      },
+    )
+  let defence = defence_of(modified)
+  assert defence.physical_taken == hit.DamageTaken(multiplier: 0.5, offset: 0.0)
+    as "159 halved, 150 untouched"
+  assert defence.tech_taken == hit.DamageTaken(multiplier: 2.0, offset: 3.0)
+    as "160 doubled, 151 plus 3"
+  assert defence.magic_taken == hit.DamageTaken(multiplier: 1.25, offset: 4.0)
+    as "161 x 1.25, 152 plus 4"
+  assert defence.physical_mitigation == plain.physical_mitigation
+    as "armor's mitigation is not a damage-taken property"
 }
