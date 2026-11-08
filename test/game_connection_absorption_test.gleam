@@ -18,20 +18,9 @@
 ////   0.4003041 = 120.09), all of which the pool of 164 takes, leaving 44; the description's
 ////   absorbed is the 180 mitigated and the 120 soaked, 300, and the shield and the health
 ////   are untouched.
-//// - The planted Medic's Armor 200 at level 1 (`loadout_test`: Medic 200) through GameFormula
-////   1234 (f0 50.0, f01 0.008, f02 0.0, f03 7250.0, int01 75, `table_rows -- GameFormula
-////   1234`, the curve of `rating`'s doc): per = 50.0 / 1 x 0.008 = 0.4, knee 0, so p = 0.4 x
-////   200 x cos(pi / 2 x 200 / 7450) = 80 x 0.99911 = 79.93, a fraction of 0.7993, held at
-////   the 75 cap: 0.75. A blow of 300 is 75 after mitigation (300 x 0.25), all of which the
-////   pool takes, leaving 89; the absorbed field is 225 mitigated and 75 soaked, 300.
-//// - **Two worlds run each owner-side test.** The planted one (`character_tables.
-////   shared_with_absorption`) gives the Medic's Paralytic Surge, at bag index 2, Spectral
-////   Form's row as the client holds it, so the tests run in CI; the Medic is test data, no
-////   Esper. The client's tables give the Esper's own Spectral Form, at bag index 3, and are
-////   skipped where they are not on the machine.
+//// - **The Esper's own Spectral Form runs each owner-side test** on the fixture's rows
+////   (`support.settings()`): the innate of the Esper, Spell4 58586, at bag index 3.
 
-import character_tables
-import client_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request, Absorption}
 import genesis_prime/game/connection as game_connection
@@ -44,35 +33,25 @@ import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None}
 import owned_test
-import unitest
 
 /// A player in the world, in a fight, watched by the viewers 2 and 3, and the bag index of
 /// the ability that gives it the pool.
 type World {
-  World(state: game_connection.State, bag_index: Int, esper: Bool)
+  World(state: game_connection.State, bag_index: Int)
 }
 
-/// The planted Medic of faction 166, whose Paralytic Surge, at bag index 2, holds
-/// Spectral Form's Absorption row (`character_tables.shared_with_absorption`).
-fn planted_world() -> World {
-  let state =
-    support.medic_in(tables: character_tables.shared_with_absorption())
-  World(
-    state: in_a_fight(state: support.watched_by(state:, viewers: [2, 3])),
-    bag_index: 2,
-    esper: False,
-  )
-}
-
-/// An Esper on the client's tables, whose Spectral Form is at bag index 3 and asks for a
+/// An Esper on the fixture's rows, whose Spectral Form is at bag index 3 and asks for a
 /// fight (Prerequisite 903, `Spell4.58586`).
 fn esper_world() -> World {
   let #(state, _) =
-    support.entered_on_the_clients_tables(class_id: 3, saved_health: None)
+    support.entered_with(
+      settings: support.settings(),
+      class_id: 3,
+      saved_health: None,
+    )
   World(
     state: in_a_fight(state: support.watched_by(state:, viewers: [2, 3])),
     bag_index: 3,
-    esper: True,
   )
 }
 
@@ -192,20 +171,11 @@ fn a_struck_pool_falls_for_the_player_and_its_viewer(
 }
 
 pub fn an_esper_struck_through_its_absorb_sees_stat_22_fall_and_so_does_its_viewer_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   // 164 less 120 is 44, worked by hand in the module's doc.
   a_struck_pool_falls_for_the_player_and_its_viewer(
     world: esper_world(),
     left_after: 44,
-  )
-}
-
-pub fn a_medic_struck_through_its_planted_absorb_sees_stat_22_fall_and_so_does_its_viewer_test() -> Nil {
-  use <- owned_test.run(60_000)
-  a_struck_pool_falls_for_the_player_and_its_viewer(
-    world: planted_world(),
-    left_after: 89,
   )
 }
 
@@ -221,14 +191,8 @@ fn an_absorb_that_ends_tells_zero(world world: World) -> Nil {
     as "nothing has ended by 5900 ms: the end comes 5000 ms after the go at 1000"
 }
 
-pub fn an_absorb_that_ends_tells_zero_to_the_client_and_viewers_test() -> Nil {
-  use <- owned_test.run(60_000)
-  an_absorb_that_ends_tells_zero(world: planted_world())
-}
-
 pub fn an_esper_whose_absorb_ends_tells_zero_to_the_client_and_viewers_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   an_absorb_that_ends_tells_zero(world: esper_world())
 }
 
@@ -251,14 +215,8 @@ fn a_late_viewer_is_created_with_the_pool(world world: World) -> Nil {
     as "no pool, no stat 22"
 }
 
-pub fn a_viewer_arriving_while_an_absorb_holds_is_created_with_stat_22_test() -> Nil {
-  use <- owned_test.run(60_000)
-  a_late_viewer_is_created_with_the_pool(world: planted_world())
-}
-
 pub fn an_esper_viewer_arriving_while_an_absorb_holds_is_created_with_stat_22_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   a_late_viewer_is_created_with_the_pool(world: esper_world())
 }
 
