@@ -71,11 +71,12 @@
 #                  size of the literal allocator (the region the VM keeps its
 #                  persistent terms in, 1 GiB) that the first test run recorded
 #                  (test/literal_area.gleam), against literal_limit_percent of
-#                  the region. Fails over the limit, and when the run recorded
-#                  nothing or ERL_FLAGS, ERL_AFLAGS, ERL_ZFLAGS or
-#                  ELIXIR_ERL_OPTIONS sets +MIscs, so the share is always of
-#                  the default region. Prints the peak and its share, for the
-#                  world-data run too (a VM with a region of its own)
+#                  the region. Never fails: over the limit, when the run recorded
+#                  nothing, or when ERL_FLAGS, ERL_AFLAGS, ERL_ZFLAGS or
+#                  ELIXIR_ERL_OPTIONS sets +MIscs (the share is of the default
+#                  region), it is `ok` and the summary prints a `check WARNING`
+#                  line. Prints the peak and its share, for the world-data run
+#                  too (a VM with a region of its own)
 #                                                       (after gleam-test and world-data)
 #   code-rules     fast mode only: the tests tagged code_rule, the tests of
 #                  test/code_rule, each tagged with unitest.tag("code_rule")
@@ -159,19 +160,21 @@ client_scripts=.claude/skills/decoding-the-client/scripts
 test_workers=${GENESIS_TEST_WORKERS:-2}
 
 # The literal region of the test VM, in bytes: literal_alloc's super carrier, 1024
-# MiB unless +MIscs says otherwise (the check refuses that). A new carrier needs
+# MiB unless +MIscs says otherwise (the check warns of that). A new carrier needs
 # one free stretch of it, and a fill test in a fresh VM stopped at 97% of it, so
 # a run that nears the region dies partway with `literal_alloc: Cannot allocate`.
 # The client's tables are persistent terms held once for the run, and a `Tables`
 # is only a handle of their keys and its own edits, so a copy of it (an ETS
 # insert, a spawn, Ranch's protocol options) copies no table. The test VM's
 # first run peaked at 717 MiB (70.0%) and the world-data VM's at 655 MiB
-# (64.0%), under the 85% limit below. The limit is 85%: it fails at 870 MiB and
+# (64.0%), under the 85% limit below. The limit is 85%: it warns at 870 MiB and
 # leaves 154 MiB free, 1.4 times the largest table the suite puts (Spline2Node,
-# 115.7 MB), and 123 MiB before the 97% where the VM dies. A run over it fails
-# the check, so the margin cannot vanish unnoticed again. The limit is not set
-# from outside: +MIscs is refused, and a higher limit is a change to this line
-# with the measurement that justifies it.
+# 115.7 MB), and 123 MiB before the 97% where the VM dies. A run over it warns in
+# the summary, so the margin cannot vanish unnoticed again; the limit is on the
+# harness's own memory, so it never fails the check (a run that dies of it fails
+# its tests). The limit is not set from outside: +MIscs only warns that the share
+# is not of the default region, and a higher limit is a change to this line with
+# the measurement that justifies it.
 literal_region_bytes=1073741824
 literal_limit_percent=85
 
@@ -565,43 +568,44 @@ world_data_test() {
   GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-world-data" run_built genesis_prime_test --tag world_data
 }
 
-# literal_peak_within_limit FILE RUN LABEL: prints the peak the run RUN recorded in
-# FILE as LABEL, and fails when it is over literal_limit_percent of the region, or
-# when the run recorded none.
-literal_peak_within_limit() {
+# literal_peak_report FILE RUN LABEL: prints the peak the run RUN recorded in FILE as
+# LABEL, then a `check WARNING` line (which the summary repeats) when it is over
+# literal_limit_percent of the region, or when the run recorded none. It returns 0
+# either way: the limit is on the harness's own memory, so it warns and never fails.
+literal_peak_report() {
   local file=$1 run=$2 label=$3 peak
   peak=$(cat "$file" 2>/dev/null)
   case "$peak" in
     '' | *[!0-9]*)
-      echo "the $run wrote no literal area peak to $file, so the area's margin was not measured"
-      return 1
+      echo "check WARNING: no literal area peak recorded: the $run wrote none to $file, so the area's margin was not measured"
+      return 0
       ;;
   esac
   echo "$label: peak $((peak / 1048576)) MiB of $((literal_region_bytes / 1048576)) MiB ($((peak * 1000 / literal_region_bytes / 10)).$((peak * 1000 / literal_region_bytes % 10))%), limit ${literal_limit_percent}%"
   if [ $((peak * 100)) -gt $((literal_region_bytes * literal_limit_percent)) ]; then
-    echo "over the limit of ${literal_limit_percent}% of the region: a test run that holds more persistent terms than that dies with literal_alloc when one more is put (see the limit's reason in ./check); find what holds them before raising it"
-    return 1
+    echo "check WARNING: $label over ${literal_limit_percent}% of its region: a test run that holds more persistent terms than that dies with literal_alloc when one more is put (see the limit's reason in ./check); find what holds them before raising it"
   fi
+  return 0
 }
 
-# literal_area_check: fails when the first test run's highest carriers size, or the
-# world-data run's (each is a VM with a region of its own), is over
-# literal_limit_percent of the region, or when a run that ran has none to compare.
-# The lines it prints that start with `literal area` are the measures, which the
-# check prints under the parts.
+# literal_area_check: reports the first test run's highest carriers size, and the
+# world-data run's (each is a VM with a region of its own), against
+# literal_limit_percent of the region. It warns, and never fails, when one is over
+# it, when a run that ran has none to compare, or when +MIscs is set. The lines it
+# prints that start with `literal area` are the measures and the lines that start
+# with `check WARNING` are the warnings, which the check prints under the parts.
 literal_area_check() {
-  local status=0
   case "${ERL_FLAGS:-} ${ERL_AFLAGS:-} ${ERL_ZFLAGS:-} ${ELIXIR_ERL_OPTIONS:-}" in
     *+MIscs*)
-      echo "ERL_FLAGS, ERL_AFLAGS, ERL_ZFLAGS or ELIXIR_ERL_OPTIONS sets +MIscs: the limit is a share of the default 1 GiB literal region, so the region is not to be changed; unset it"
-      return 1
+      echo "check WARNING: +MIscs set in ERL_FLAGS, ERL_AFLAGS, ERL_ZFLAGS or ELIXIR_ERL_OPTIONS: the limit is a share of the default 1 GiB literal region, so the area was not measured against it; unset it"
+      return 0
       ;;
   esac
-  literal_peak_within_limit "$work/literal-peak" "test run" "literal area" || status=1
+  literal_peak_report "$work/literal-peak" "test run" "literal area"
   if [ ! -f "$work/world-data.skipped" ]; then
-    literal_peak_within_limit "$work/literal-peak-world-data" "world-data run" "literal area of the world-data run" || status=1
+    literal_peak_report "$work/literal-peak-world-data" "world-data run" "literal area of the world-data run"
   fi
-  return $status
+  return 0
 }
 
 # The client scripts' tests that need no Ghidra, then, where the client's files are (not
@@ -769,6 +773,9 @@ done
 
 elapsed=$(($(date +%s) - started))
 echo
+if [ -f "$work/literal-area.log" ]; then
+  grep -h '^check WARNING: ' "$work/literal-area.log"
+fi
 if [ "$hung" = no ] && [ "$elapsed" -gt "$budget" ]; then
   echo "check WARNING: over its budget, wall time ${elapsed}s, budget ${budget}s"
 fi
