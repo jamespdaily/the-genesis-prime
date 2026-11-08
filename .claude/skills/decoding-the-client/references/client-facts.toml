@@ -10459,8 +10459,8 @@ grade = "fairly sure"
 gap = "The Lua function names that call the senders, the table row 0x486 and the reply (the scanbot spawn) are not read. Reading the spell row 0x486 and the server message that makes a scanbot would settle it."
 
 ["opcode.0x23d"]
-statement = "Message 0x23d (573), client to world server: a UI window was opened (telemetry). Body: 6 bits (always 35), the window id (10 bits), six 64-bit values (the character id, then 1, the time the window was open, then 2, 3, 4), then the window name (wide text). The client does not wait for a reply and nothing the player sees depends on it. The client refuses to send a name longer than the limit in the table row 0x947."
-proof = "Registration in 0x14006c290: id 0x23d, record 0x40, writer 0x1400821d0 (6 bits, 10 bits, six u64, wide text). Sender 0x1403fa810 (SendWindowOpenStatistic), reached through a pointer at 0x140b66900 (a Lua-callable function, name not read). Eldan names it ClientStatisticsWindowOpen (a lead only). 8eb22adb6de47956."
+statement = "Message 0x23d (573), client to world server: a UI window was opened (telemetry). Body: 6 bits (always 35), the window id (10 bits), six 64-bit values (the character id, then 1, the time the window was open, then 2, 3, 4), then the window name (wide text). The client does not wait for a reply and nothing the player sees depends on it. The client refuses to send a name longer than the limit in the table row 0x947, which is GameFormula row 2375, whose dataint02 is 128 (UTF-16 units)."
+proof = "Registration in 0x14006c290: id 0x23d, record 0x40, writer 0x1400821d0 (6 bits, 10 bits, six u64, wide text). Sender 0x1403fa810 (SendWindowOpenStatistic), reached through a pointer at 0x140b66900 (a Lua-callable function, name not read); it reads the limit with FUN_140200220(0x947) before it writes the name. Eldan names it ClientStatisticsWindowOpen (a lead only). 8eb22adb6de47956."
 grade = "fairly sure"
 gap = "The meaning of the constants (1, 2, 3, 4) and of the 6-bit value 35 is not read; the Lua name of the caller is not read. The server can ignore it: nothing reads a reply."
 
