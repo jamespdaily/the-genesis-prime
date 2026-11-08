@@ -54,12 +54,6 @@ const one_as_float_bits = 1_065_353_216
 /// 45.0 as 32 float bits (row 183643's dataBits01).
 const forty_five_as_float_bits = 1_110_704_128
 
-/// Row 93774's parameterValue00 and 01, 0x3e19999a.
-const moxie_power = 0.15000000596046448
-
-/// Row 93774's parameterValue02, 0x419f5c29.
-const moxie_per_level = 19.920000076293945
-
 /// The columns of row 178144 other than its id, spell and aim.
 fn spectral_form_columns() -> List(#(String, Cell)) {
   [
@@ -120,15 +114,17 @@ fn modifier_of(
   )
 }
 
-/// Row 178144 as the client holds it.
-fn spectral_form_row() -> Spell4Effects {
+/// The Spell4Effects row of this id as the client holds it.
+fn client_effect(id id: Int) -> Spell4Effects {
   let assert Ok(row) =
-    spell4_effects.get(
-      tables: fixture_tables.shared(),
-      id: Spell4EffectsId(178_144),
-    )
-    as "the client's rows hold Spectral Form's absorption, row 178144"
+    spell4_effects.get(tables: fixture_tables.shared(), id: Spell4EffectsId(id))
+    as "the client's rows hold the row"
   row
+}
+
+/// Row 178144 as the client holds it: Spectral Form's absorption.
+fn spectral_form_row() -> Spell4Effects {
+  client_effect(id: 178_144)
 }
 
 // ---- the rows of the plan ----
@@ -188,27 +184,7 @@ pub fn an_absorption_rows_data_bits01_is_read_as_a_float_test() -> Nil {
 pub fn an_absorption_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_the_caster_and_fails_the_load_in_a_child_on_each_struck_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // Row 93774 of Esper Moxie's proc 41714 as the client holds it.
-  let row =
-    Spell4Effects(
-      ..spell_tables.blank_effect(
-        id: 93_774,
-        spell: 41_714,
-        effect_type: 29,
-        target_flags: 2,
-      ),
-      damage_type: 3,
-      duration_time: 5000,
-      data_bits00: one_as_float_bits,
-      data_bits04: 7,
-      threat_multiplier: 1.0,
-      parameter_type00: 12,
-      parameter_type01: 13,
-      parameter_type02: 10,
-      parameter_value00: moxie_power,
-      parameter_value01: moxie_power,
-      parameter_value02: moxie_per_level,
-      phase_flags: -1,
-    )
+  let row = client_effect(id: 93_774)
   let assert Ok(read) = modifier_of(spell4_id: 41_714, effect: row)
   let assert spell_plan.AbsorbChange(absorption) = read.change
   assert absorption.aim == AimsAtPrimaryTarget
@@ -359,8 +335,12 @@ pub fn an_absorption_row_whose_amount_is_0_for_every_caster_fails_the_load_test(
     )
     == spell_plan.AbsorptionAmountNotRead(spell4_id: strike, effect_id: id)
   }
-  assert refused(99_070, [#("dataBits01", Integer(forty_five_as_float_bits))])
-    as "row 56356's shape: dataBits00 0 with a dataBits01 of 100.0 and no parameter is 0 x the base"
+  assert modifier_of(spell4_id: 30_724, effect: client_effect(id: 56_356))
+    == Error(spell_plan.AbsorptionAmountNotRead(
+      spell4_id: 30_724,
+      effect_id: 56_356,
+    ))
+    as "row 56356: dataBits00 0 with a dataBits01 of 100.0 and no parameter is 0 x the base"
   assert refused(99_071, [#("dataBits00", Integer(one_as_float_bits))])
     as "dataBits01 0 with no parameter: 1.0 x 0.0"
   assert refused(99_072, [#("dataBits00", Integer(1_084_227_584))])

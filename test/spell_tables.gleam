@@ -2282,11 +2282,14 @@ pub fn planned_strike(
 }
 
 /// The client's rows of the tables the plan reads, which a test may change or add
-/// to before `with_loaded` loads them. The coverage walk's two tables are not server
-/// tables: EldanAugmentation is empty and LevelUpUnlock holds the one row the walk's
-/// gates read.
+/// to before `with_loaded` loads them. The fixture holds only the server's tables,
+/// so the coverage walk's two are not in it: EldanAugmentation is empty, and
+/// LevelUpUnlock holds one planted row, 26, the level the walk's gates read.
+/// Gap: LevelUpUnlock 26 is planted, not the client's row (issue 326).
 pub fn fixture_rows() -> Rows {
-  // LevelUpUnlock row 26 is the client's (level 10): `table_rows -- LevelUpUnlock 26`.
+  // The planted row 26 holds the client's levelUpUnlockSystemEnum 0 and level 10
+  // (`table_rows -- LevelUpUnlock 26`); its other columns read 0, where the client's
+  // row holds levelUpUnlockTypeId 21 and its text and icon.
   let held = fixture_tables.rows()
   let of = fn(schema: tbl_file.Schema) {
     result.unwrap(dict.get(held, schema.table), [])
