@@ -41,15 +41,20 @@ import planted_table.{Integer}
 import spell_tables
 import unitest
 
-/// Kick's area as the client's rows build it.
-fn client_kick() -> spell_area.SpellArea {
+/// The area of a spell of the fixture's rows.
+fn fixture_area(spell4_id spell4_id: Int) -> spell_area.SpellArea {
   let assert Ok(found) =
     spell_area.of_spell(
       areas: spell_tables.fixture_areas(),
-      spell4_id: Spell4Id(58_591),
+      spell4_id: Spell4Id(spell4_id),
     )
-    as "Kick is in the areas"
+    as "the spell is in the fixture's areas"
   found
+}
+
+/// Kick's area as the client's rows build it.
+fn client_kick() -> spell_area.SpellArea {
+  fixture_area(spell4_id: 58_591)
 }
 
 pub fn kick_read_from_the_clients_rows_builds_the_fixtures_area_test() -> Nil {
@@ -205,17 +210,6 @@ pub fn a_spell_with_a_telegraph_is_struck_by_its_hit_shapes_test() -> Nil {
   let kicked = client_kick()
   assert spell_area.inside(spell: kicked) == InsideShapes(kicked.shapes)
     as "Jim's choice: inside the telegraph, Kick is 7 m and 100 degrees (Spell4.58591.area), capped by the row's range"
-}
-
-/// The area of a spell of the fixture's rows.
-fn fixture_area(spell4_id spell4_id: Int) -> spell_area.SpellArea {
-  let assert Ok(found) =
-    spell_area.of_spell(
-      areas: spell_tables.fixture_areas(),
-      spell4_id: Spell4Id(spell4_id),
-    )
-    as "the spell is in the fixture's areas"
-  found
 }
 
 pub fn a_client_spell_with_no_telegraph_row_is_read_by_its_area_row_test() -> Nil {
