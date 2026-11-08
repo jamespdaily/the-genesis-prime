@@ -1148,8 +1148,10 @@ def literal_limit_percent() -> int:
 class LiteralAreaTest(unittest.TestCase):
     """The persistent terms of a test run live in a literal region of 1 GiB, and a
     run that fills it dies partway (`literal_alloc: Cannot allocate`). The full
-    check reads the highest carriers size the run recorded and fails over a share
-    of the region, so the margin cannot vanish unnoticed again.
+    check reads the highest carriers size the run recorded and warns over a share
+    of the region, so the margin cannot vanish unnoticed again. The limit is on the
+    harness's own memory, so the part is `ok` and the check passes whatever the
+    peak, a missing peak file or +MIscs: only a `check WARNING` line differs.
 
     The planted `gleam test` writes PLANT_LITERAL_PEAK bytes into the file it is
     given, as the real test run does."""
@@ -1160,11 +1162,21 @@ class LiteralAreaTest(unittest.TestCase):
     def limit(self) -> int:
         return REGION * literal_limit_percent() // 100
 
+    def assert_part_ok(self, run: Run) -> None:
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.done.stdout, r"(?m)^  literal-area +ok\b")
+        self.assertRegex(run.done.stdout, r"(?m)^check passed\b")
+
+    def warnings(self, run: Run) -> list:
+        """The summary's warning lines, the budget's apart."""
+        return [line for line in run.done.stdout.splitlines()
+                if line.startswith("check WARNING: ") and not WARNING.match(line)]
+
     def test_a_run_whose_peak_is_under_the_limit_passes_and_prints_its_share(self):
         peak = self.limit() // 2
         run = self.at(peak)
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(run.done.stdout, r"(?m)^  literal-area +ok\b")
+        self.assert_part_ok(run)
+        self.assertEqual(self.warnings(run), [])
         tenths = peak * 1000 // REGION
         self.assertRegex(
             run.done.stdout,
@@ -1172,32 +1184,33 @@ class LiteralAreaTest(unittest.TestCase):
             % (peak // 2**20, tenths // 10, tenths % 10, literal_limit_percent()),
         )
 
-    def test_a_run_whose_peak_is_exactly_the_limit_passes(self):
+    def test_a_run_whose_peak_is_exactly_the_limit_passes_without_a_warning(self):
         run = self.at(self.limit())
-        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assert_part_ok(run)
+        self.assertEqual(self.warnings(run), [])
 
-    def test_a_run_whose_peak_is_one_byte_over_the_limit_fails_the_check_naming_the_part(self):
-        run = self.at(self.limit() + 1)
-        self.assertNotEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
-        self.assertIn("over the limit of %d%%" % literal_limit_percent(), run.output)
+    def test_a_run_whose_peak_is_over_the_limit_passes_the_check_with_a_warning_and_still_prints_its_share(self):
+        for peak in (self.limit() + 1, REGION * 99 // 100):
+            with self.subTest(peak=peak):
+                run = self.at(peak)
+                self.assert_part_ok(run)
+                self.assertRegex(run.done.stdout, r"(?m)^  literal area: peak %d MiB of 1024 MiB" % (peak // 2**20))
+                (warning,) = self.warnings(run)
+                self.assertTrue(warning.startswith("check WARNING: literal area over %d%% of its region: " % literal_limit_percent()), warning)
 
-    def test_a_run_that_fills_the_region_fails_the_check_with_the_part_and_the_other_parts_still_pass(self):
-        run = self.at(REGION * 99 // 100)
-        self.assertRegex(failed_line(self, run.output), r"^check FAILED: literal-area$")
-
-    def test_a_run_that_wrote_no_peak_fails_the_check_naming_the_part(self):
+    def test_a_run_that_wrote_no_peak_passes_the_check_with_a_warning(self):
         run = shared_run("literal-no-file", PLANT_LITERAL_PEAK="none")
-        self.assertNotEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
-        self.assertIn("wrote no literal area peak", run.output)
+        self.assert_part_ok(run)
+        (warning,) = self.warnings(run)
+        self.assertTrue(warning.startswith("check WARNING: no literal area peak recorded: the test run wrote none"), warning)
 
-    def test_a_larger_region_set_through_any_erlang_flags_variable_fails_the_check_since_the_limit_is_a_share_of_the_default(self):
+    def test_a_larger_region_set_through_any_erlang_flags_variable_passes_the_check_with_a_warning(self):
         for variable in ("ERL_FLAGS", "ERL_AFLAGS", "ERL_ZFLAGS", "ELIXIR_ERL_OPTIONS"):
             with self.subTest(variable=variable):
                 run = shared_run("literal-miscs-" + variable, **{variable: "+MIscs 4096"})
-                self.assertRegex(failed_line(self, run.output), r"\bliteral-area\b")
-                self.assertIn("+MIscs", run.output)
+                self.assert_part_ok(run)
+                (warning,) = self.warnings(run)
+                self.assertTrue(warning.startswith("check WARNING: +MIscs set in "), warning)
 
     def test_only_the_first_test_run_is_given_the_file(self):
         run = self.at(1)
@@ -1219,19 +1232,23 @@ class LiteralAreaTest(unittest.TestCase):
         self.assertIn("literal area: peak %d MiB of 1024 MiB" % (first // 2**20), run.done.stdout)
         self.assertIn("literal area of the world-data run: peak %d MiB of 1024 MiB" % (world // 2**20), run.done.stdout)
 
-    def test_a_world_data_run_over_the_limit_fails_the_part_though_the_first_run_is_under_it(self):
+    def test_a_world_data_run_over_the_limit_warns_naming_the_run_though_the_first_run_is_under_it(self):
         run = self.world_data_at(self.limit() // 2, self.limit() + 1)
-        self.assertRegex(failed_line(self, run.output), r"^check FAILED: literal-area$")
-        self.assertIn("over the limit of %d%%" % literal_limit_percent(), run.output)
+        self.assert_part_ok(run)
+        (warning,) = self.warnings(run)
+        self.assertTrue(warning.startswith("check WARNING: literal area of the world-data run over %d%% of its region" % literal_limit_percent()), warning)
 
-    def test_a_first_run_over_the_limit_fails_the_part_though_the_world_data_run_is_under_it(self):
+    def test_a_first_run_over_the_limit_warns_though_the_world_data_run_is_under_it(self):
         run = self.world_data_at(self.limit() + 1, self.limit() // 2)
-        self.assertRegex(failed_line(self, run.output), r"^check FAILED: literal-area$")
+        self.assert_part_ok(run)
+        (warning,) = self.warnings(run)
+        self.assertTrue(warning.startswith("check WARNING: literal area over %d%% of its region" % literal_limit_percent()), warning)
 
-    def test_a_world_data_run_that_wrote_no_peak_fails_the_part_naming_the_run(self):
+    def test_a_world_data_run_that_wrote_no_peak_warns_naming_the_run(self):
         run = self.world_data_at(self.limit() // 2, "none")
-        self.assertRegex(failed_line(self, run.output), r"^check FAILED: literal-area$")
-        self.assertIn("the world-data run wrote no literal area peak", run.output)
+        self.assert_part_ok(run)
+        (warning,) = self.warnings(run)
+        self.assertTrue(warning.startswith("check WARNING: no literal area peak recorded: the world-data run wrote none"), warning)
 
     def test_the_first_run_and_the_world_data_run_are_given_the_file_and_the_serial_run_is_not(self):
         run = shared_run("world-data-on", client=True, **WORLD_DATA)
