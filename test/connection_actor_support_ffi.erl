@@ -23,7 +23,8 @@ message_queue_data(Pid) ->
 %% The Running record of an open connection, read from the actor's state as
 %% OTP's sys:get_state gives it.
 running(Pid) ->
-    {connection, _Settings, _Parent, _Timers, _Answers, {open, Running}}
+    {connection, _Settings, _Parent, _Timers, _HeldReads, _Answers,
+     {open, Running}}
         = sys:get_state(Pid),
     Running.
 
