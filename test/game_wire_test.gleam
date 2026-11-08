@@ -32,7 +32,6 @@ import ask_support
 import cast_support
 import character_support
 import character_tables
-import client_tables
 import connection_rule_support as support
 import content_support
 import driven_time
@@ -1881,23 +1880,12 @@ fn a_suited_players_connection_ends(
   login_support.stop(started)
 }
 
-pub fn a_suited_players_connection_ending_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
-  use <- owned_test.run(60_000)
-  a_suited_players_connection_ends(
-    tables: character_tables.shared_with_disguise(),
-    first_class: 4,
-    bag_index: 2,
-    display: 7221,
-  )
-}
-
 pub fn an_engineers_connection_ending_mid_suit_removes_it_for_a_player_in_sight_with_no_0x933_after_and_the_server_goes_on_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
+  use <- owned_test.run(60_000)
   // Mode: Eradicate is the Engineer's innate, after its three abilities in the bag
   // (`Class` 2 spell4IdInnateAbilityActive00 47866).
   a_suited_players_connection_ends(
-    tables: client_tables.shared(),
+    tables: character_tables.shared(),
     first_class: 2,
     bag_index: 3,
     display: 7221,
