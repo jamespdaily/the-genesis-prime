@@ -53,6 +53,9 @@ pub type Refusal {
   RowHeld(table: String, id: Int)
   /// An id that is not a root.
   NotARoot(table: String, id: Int)
+  /// An edit names a table only the content load reads, so the edit would
+  /// reach no load.
+  ContentTable(table: String)
 }
 
 /// What a refusal says, with the fix where there is one.
@@ -79,6 +82,10 @@ pub fn describe(refusal: Refusal) -> String {
       <> " is not a root of the fixture: add a line for it to "
       <> folder
       <> "/roots.tsv and run `gleam run -m genesis_prime/fixture_rows`"
+    ContentTable(table:) ->
+      "the table "
+      <> table
+      <> " is read by the content load from the committed rows, so an edit of it would reach no load"
   }
 }
 
@@ -122,6 +129,16 @@ pub fn schemas() -> List(tbl_file.Schema) {
 fn schema_of(table: String) -> Result(tbl_file.Schema, Refusal) {
   list.find(schemas(), fn(schema) { schema.table == table })
   |> result.replace_error(NoTable(table:))
+}
+
+/// The schema of a table an edit reaches: one the server loads. A table only
+/// the content load reads is refused, since the edit would reach no load.
+fn editable_schema_of(table: String) -> Result(tbl_file.Schema, Refusal) {
+  use schema <- result.try(schema_of(table))
+  case list.any(server_schemas(), fn(held) { held.table == table }) {
+    True -> Ok(schema)
+    False -> Error(ContentTable(table:))
+  }
 }
 
 // ---------------------------------------------------------------- roots
@@ -490,7 +507,7 @@ pub fn change(
   id id: Int,
   with changes: List(#(String, Cell)),
 ) -> Result(Rows, Refusal) {
-  use schema <- result.try(schema_of(table))
+  use schema <- result.try(editable_schema_of(table))
   use row <- result.try(row_of(rows:, schema:, id:))
   use changed_row <- result.try(with_cells(schema:, row:, with: changes))
   let new_id = id_of(row: changed_row)
@@ -519,7 +536,7 @@ pub fn add(
   id id: Int,
   with changes: List(#(String, Cell)),
 ) -> Result(Rows, Refusal) {
-  use schema <- result.try(schema_of(table))
+  use schema <- result.try(editable_schema_of(table))
   use row <- result.try(row_of(rows:, schema:, id: copy_of))
   use <- bool.guard(
     when: result.is_ok(row_of(rows:, schema:, id:)),
@@ -541,7 +558,7 @@ pub fn remove(
   table table: String,
   id id: Int,
 ) -> Result(Rows, Refusal) {
-  use schema <- result.try(schema_of(table))
+  use schema <- result.try(editable_schema_of(table))
   use _ <- result.map(row_of(rows:, schema:, id:))
   dict.insert(
     rows,

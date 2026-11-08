@@ -391,6 +391,30 @@ pub fn an_edit_of_an_unknown_table_row_or_column_is_refused_test() -> Nil {
     == Error(fixture_tables.NoColumn(table: "Spell4", column: "noSuchColumn"))
 }
 
+pub fn an_edit_of_a_content_table_is_refused_naming_the_table_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let rows = fixture_tables.rows()
+  let world = fixture_tables.ContentTable(table: "World")
+  assert fixture_tables.change(rows:, table: "World", id: 22, with: [
+      #("flags", planted_table.Integer(1)),
+    ])
+    == Error(world)
+    as "a change of a content row is refused, not dropped"
+  assert fixture_tables.add(
+      rows:,
+      table: "World",
+      copy_of: 22,
+      id: 2_000_000_004,
+      with: [],
+    )
+    == Error(world)
+    as "an added content row is refused, not dropped"
+  assert fixture_tables.remove(rows:, table: "World", id: 22) == Error(world)
+    as "a removed content row is refused, not dropped"
+  assert string.contains(fixture_tables.describe(world), "World")
+    as "the refusal names the table"
+}
+
 pub fn a_removed_row_is_gone_and_an_unknown_table_or_row_is_refused_test() -> Nil {
   use <- owned_test.run(20_000)
   let rows = fixture_tables.rows()
