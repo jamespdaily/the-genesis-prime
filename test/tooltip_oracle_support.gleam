@@ -325,12 +325,12 @@ pub fn drive_posed(
           rolls: [],
           poses:,
         )
-      let fired =
-        timers_posed(
+      let #(_, fired) =
+        support.run_timers_posed(
           caster:,
           state:,
-          pending: due_after(effects:, now_ms: start_ms),
-          fired: [],
+          effects:,
+          from_ms: start_ms,
           struck_at: strikes,
           poses:,
         )
@@ -346,66 +346,6 @@ pub fn drive_posed(
       )
     }
     results -> Error(results)
-  }
-}
-
-/// The timers the effects start, each due its delay after the time.
-fn due_after(
-  effects effects: List(cast.Effect),
-  now_ms now_ms: Int,
-) -> List(#(Int, step.TimerId)) {
-  list.map(support.started_timers(effects:), fn(started) {
-    #(now_ms + started.1, started.0)
-  })
-}
-
-/// Every timer the rule starts, fired at its time and earliest first, until none is left:
-/// `cast_support.run_timers_asking`, which answers each go with no poses, with the poses
-/// the struck units have in the caster's picture.
-fn timers_posed(
-  caster caster: cast.Caster,
-  state state: cast.State,
-  pending pending: List(#(Int, step.TimerId)),
-  fired fired: List(support.Fired),
-  struck_at struck_at: Strikes,
-  poses poses: dict.Dict(Int, area.Pose),
-) -> List(support.Fired) {
-  case
-    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
-  {
-    [] -> list.reverse(fired)
-    [#(due, timer), ..rest] -> {
-      let #(state, raw) = support.fired_raw_as(caster:, state:, timer:, at: due)
-      let #(state, effects) =
-        support.answered_each(
-          caster:,
-          state:,
-          effects: raw,
-          at: due,
-          struck_of: fn(asked) { struck_at(due, asked) },
-          rolls: [],
-          poses:,
-        )
-      let cancelled = support.cancelled_timers(effects:)
-      timers_posed(
-        caster:,
-        state:,
-        pending: list.append(
-          list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
-          due_after(effects:, now_ms: due),
-        ),
-        fired: [
-          support.Fired(
-            at_ms: due,
-            asked: support.goes_asked(effects: raw),
-            effects:,
-          ),
-          ..fired
-        ],
-        struck_at:,
-        poses:,
-      )
-    }
   }
 }
 
@@ -451,7 +391,8 @@ pub fn drive_released(
           poses: dict.new(),
         )
       let #(state, _) =
-        support.run_timers_until(
+        support.run_timers_until_as(
+          caster:,
           state:,
           effects:,
           from_ms: start_ms,

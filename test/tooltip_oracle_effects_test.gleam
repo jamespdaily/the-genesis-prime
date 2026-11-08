@@ -29,7 +29,7 @@
 //// - Type 73 changes the cooldowns its selector picks by the float of dataBits03: the time
 ////   left times it, no longer than it was (operation 0), times it (1), plus it in
 ////   milliseconds (2) or set to it in milliseconds (3) (`0x1404e07d0`, the effect class at
-////   `0x140b6e0a0`). A `msf` token prints that float as seconds (`0x1404de8d0`).
+////   `0x140b6e0a0`).
 //// - A go of an area spell strikes at most Spell4AoeTargetConstraints.targetCount units of
 ////   those in its range (`Spell4AoeTargetConstraints.targetCount`).
 //// - A cast of a spell of a stack group at the cap takes the group's oldest hold off the
@@ -477,16 +477,17 @@ fn property_outcome(
   let index =
     data_index(field: entry.token.field)
     |> result.replace_error(NoRuleValue(column: -1))
+  let expected = {
+    use index <- result.try(index)
+    use bits <- result.map(column(row:, index:))
+    int.bitwise_and(bits, 0xFFFFFFFF)
+  }
   case oracle.holder_of(root:, effect_id: entry.token.id) {
-    Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
+    Error(Nil) -> unplanned_property(rows:, entry:, expected:, index:)
     Ok(#(_, HeldModifier(..))) ->
       outcome(
         entry:,
-        expected: {
-          use index <- result.try(index)
-          use bits <- result.map(column(row:, index:))
-          int.bitwise_and(bits, 0xFFFFFFFF)
-        },
+        expected:,
         got: result.try(index, started_bits(rows:, entry:, index: _)),
       )
     Ok(#(_, HeldElsewhere(list:))) ->
@@ -499,6 +500,87 @@ fn property_outcome(
   }
 }
 
+/// The Stalker's stealth ability (Spell4Base 30075, Spell4 46073) and its passive (Spell4Base
+/// 29131, Spell4 45057): leaving stealth by the second press fires the passive's Proc 211002,
+/// which casts Spell4 79932 on the caster, whose rows no spell of the ability's own plan holds
+/// (`Spell4Effects` 210998 to 212530 have spellId 79932 and targetFlags 1 or 3).
+const stealth_base = 30_075
+
+const stealth_passive_base = 29_131
+
+/// A property-modifier token of a row no spell of the ability's plan holds: the ability with
+/// its passive held, pressed twice, as a player out of combat, the second press leaving stealth.
+/// The row the token names is then read from the change the second press starts.
+fn unplanned_property(
+  rows rows: Rows,
+  entry entry: Asked,
+  expected expected: Result(Int, Unread),
+  index index: Result(Int, Unread),
+) -> Outcome {
+  case entry.base == stealth_base {
+    True ->
+      outcome(entry:, expected:, got: {
+        use index <- result.try(index)
+        use effects <- result.try(leaving_stealth(rows:))
+        bits_started(effects:, entry:, index:)
+      })
+    False -> Unobserved(asked: entry, why: NotInPlan)
+  }
+}
+
+/// The effects of the passive's start and of the two presses of the stealth ability, as the
+/// client's player makes them (`cast.passive_started`, two 0x9a presses of the ability's
+/// place in the bag), each answered with no unit struck.
+fn leaving_stealth(rows rows: Rows) -> Result(List(cast.Effect), Unread) {
+  let caster =
+    cast.Caster(..oracle.caster_of(base: stealth_base), in_combat: False)
+  let #(state, joined) =
+    cast.passive_started(
+      cast: cast.new(),
+      caster:,
+      plans: rows.plans,
+      base: Spell4BaseId(stealth_passive_base),
+      now: support.at(ms: oracle.start_ms),
+    )
+  let #(state, joined) =
+    support.answered_as(
+      caster:,
+      state:,
+      effects: joined,
+      at: oracle.start_ms,
+      struck: [],
+      rolls: [],
+    )
+  let press = fn(state, ms) {
+    let #(state, raw) =
+      support.pressed_raw_in(
+        plans: rows.plans,
+        state:,
+        caster:,
+        bag_index: 0,
+        target: 0,
+        at: ms,
+      )
+    case support.refusal_results(effects: raw) {
+      [] ->
+        Ok(
+          support.answered_as(
+            caster:,
+            state:,
+            effects: raw,
+            at: ms,
+            struck: [],
+            rolls: [],
+          ),
+        )
+      results -> Error(Refused(results:))
+    }
+  }
+  use #(state, entered) <- result.try(press(state, oracle.start_ms + 1000))
+  use #(_, left) <- result.map(press(state, oracle.start_ms + 2000))
+  list.flatten([joined, entered, left])
+}
+
 /// The bits of column `index` of the one property modifier the drives of the ability start
 /// from the row.
 fn started_bits(
@@ -507,9 +589,20 @@ fn started_bits(
   index index: Int,
 ) -> Result(Int, Unread) {
   use drives <- result.try(whole_drives(rows:, entry:))
-  let started =
+  let effects =
     list.flat_map(drives, fn(driven) { driven.steps })
-    |> list.flat_map(fn(step) { support.property_starts(effects: step.effects) })
+    |> list.flat_map(fn(step) { step.effects })
+  bits_started(effects:, entry:, index:)
+}
+
+/// The bits of column `index` of the one property modifier the effects start from the row.
+fn bits_started(
+  effects effects: List(cast.Effect),
+  entry entry: Asked,
+  index index: Int,
+) -> Result(Int, Unread) {
+  let started =
+    support.property_starts(effects:)
     |> list.filter(fn(start) { { start.0 }.effect_id.value == entry.token.id })
     |> list.map(fn(start) { start.1 })
     |> list.unique
@@ -959,15 +1052,11 @@ const input_gaps = [
 ]
 
 /// The tokens whose row the rule does not read, each until the issue whose planned work
-/// closes it. Rows 210998 and 212530 are cast through Proxy 155006 in spell 62949, which no
-/// plan holds, and carry a property modifier aimed at another unit (#464). Types 3
-/// (ForcedMove), 14 (Proc) and 24 (ForcedAction) are none of the types this oracle reads,
-/// and row 229304 is held by spell 45000, which Proxy 104216 of the unplanned spell 44999
+/// closes it. Types 3 (ForcedMove), 14 (Proc) and 24 (ForcedAction) are none of the types
+/// this oracle reads, and row 229304 is held by spell 45000, which Proxy 104216 of the unplanned spell 44999
 /// casts; #336 names forced moves, crowd control and ticking effects, and no issue names
 /// procs or forced actions, so those rows are put to the coordinator with the hand-back.
 const effect_gaps = [
-  Gap(ability: 30_075, token: "eff=210998.data03pct", issue: "#464"),
-  Gap(ability: 30_075, token: "eff=212530.data02pctadd", issue: "#464"),
   Gap(ability: 20_325, token: "eff=67776.data02int", issue: "#336"),
   Gap(ability: 29_131, token: "eff=146910.data03pct", issue: "#336"),
   Gap(ability: 30_075, token: "eff=146910.data03pct", issue: "#336"),
@@ -1044,8 +1133,8 @@ pub fn every_gain_control_property_and_cooldown_change_token_matches_the_rules_e
       gaps: effect_gaps,
     )
     == Verdict(unlisted: [], stale: [])
-  assert oracle.compared_count(outcomes:) == 15
-  assert oracle.left_out_count(outcomes:) == 7
+  assert oracle.compared_count(outcomes:) == 17
+  assert oracle.left_out_count(outcomes:) == 5
 }
 
 pub fn every_aoetc_token_caps_the_struck_count_with_one_more_unit_in_range_test() -> Nil {
