@@ -61,11 +61,12 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame
 import genesis_prime/connection/script.{
-  type Clock, type Scheduler, type Scripts, Issued, Script,
+  type Clock, type Elapsed, type Scheduler, type Scripts, Issued, Script,
 }
 import genesis_prime/server
-import genesis_prime/step.{TimerId}
+import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/step/runtime
+import genesis_prime/step/timer as timer_book
 import genesis_prime/wire_recording.{
   type Input, type ReadFailure, type Recording, type Side, NoAnswerInTime, Took,
   Wrote,
@@ -77,6 +78,7 @@ import gleam/bit_array
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
+import gleam/erlang/reference.{type Reference}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -539,27 +541,38 @@ fn clock(table: Subject(replay_table.Command), connection: String) -> Clock {
 }
 
 /// A connection's scheduler: a timer it starts is kept in the table until the
-/// replay client reaches its line and fires it.
+/// replay client reaches its line and fires it; the bound of a held read has no
+/// line, so it runs on the operating system's timer.
 fn scheduler(
   table: Subject(replay_table.Command),
   connection: String,
 ) -> Scheduler {
-  fn(subject, timer, reference, _after_ms) {
-    let TimerId(number) = timer
-    replay_table.timer_started(
-      table:,
-      connection:,
-      timer: number,
-      started: replay_table.Started(subject:, reference:),
-    )
-    fn() {
-      replay_table.timer_cancelled(
-        table:,
-        connection:,
-        timer: number,
-        reference:,
-      )
+  fn(subject, timer, reference, after_ms) {
+    case timer == script.held_read_timer {
+      True ->
+        script.operating_system_timer(subject:, timer:, reference:, after_ms:)
+      False -> recorded_timer(table:, connection:, subject:, timer:, reference:)
     }
+  }
+}
+
+/// A timer the replay client fires at its line.
+fn recorded_timer(
+  table table: Subject(replay_table.Command),
+  connection connection: String,
+  subject subject: Subject(Elapsed),
+  timer timer: TimerId,
+  reference reference: Reference,
+) -> timer_book.Cancel {
+  let TimerId(number) = timer
+  replay_table.timer_started(
+    table:,
+    connection:,
+    timer: number,
+    started: replay_table.Started(subject:, reference:),
+  )
+  fn() {
+    replay_table.timer_cancelled(table:, connection:, timer: number, reference:)
   }
 }
 

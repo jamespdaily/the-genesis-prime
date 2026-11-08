@@ -149,6 +149,7 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     pool:,
     store: process.new_name("store"),
     hand_off: process.new_name("hand_off"),
+    tree_restarts: server.Restarts(intensity: 3, period_s: 10),
     hand_off_shutdown_ms: 1500,
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 1500,
@@ -178,10 +179,12 @@ pub fn servers_auth_rate() -> Bucket {
 }
 
 /// Starts the server's tree as `start` does, with the auth listener's rate as
-/// `rate` and its connections recorded on the wire by `recorder`.
+/// `rate` and its connections recorded on the wire by `recorder`, each taking
+/// the time of its inputs and starting its timers from `scripts`.
 pub fn start_recording_auth(
   rate rate: Bucket,
   recorder recorder: WireRecorder,
+  scripts scripts: script.Scripts,
 ) -> Started {
   start_with(change: fn(settings) {
     let auth = settings.login.auth
@@ -193,6 +196,7 @@ pub fn start_recording_auth(
           ..auth,
           settings: auth_connection.Settings(..auth.settings, rate:),
           wire_recorder: Some(recorder),
+          scripts:,
         ),
       ),
     )
