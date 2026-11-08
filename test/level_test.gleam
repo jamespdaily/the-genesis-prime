@@ -16,7 +16,6 @@ import genesis_prime/game/level
 import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
-import gleam/dict
 import gleam/int
 import gleam/list
 import owned_test
@@ -62,21 +61,14 @@ pub fn an_amount_outside_the_first_and_the_highest_record_is_no_level_test() -> 
     as "0x140029875 jg: an amount above the record at the highest level's minXpForLevel (2147483647) gives -3"
 }
 
-/// The client's rows without the rows of `table` whose id `keeps` refuses.
-fn without(
-  table table: String,
-  keeps keeps: fn(Int) -> Bool,
-) -> fixture_tables.Rows {
-  let rows = fixture_tables.rows()
-  let assert Ok(held) = dict.get(rows, table) as "the fixture holds the table"
-  dict.insert(
-    rows,
-    table,
-    list.filter(held, fn(row) {
-      let assert [Integer(id), ..] = row as "a fixture row holds its id first"
-      keeps(id)
-    }),
-  )
+/// The client's rows without the rows of `table` with these ids.
+fn without(table table: String, ids ids: List(Int)) -> fixture_tables.Rows {
+  let assert Ok(rows) =
+    list.try_fold(ids, fixture_tables.rows(), fn(rows, id) {
+      fixture_tables.remove(rows:, table:, id:)
+    })
+    as "the client's table holds each of these rows"
+  rows
 }
 
 /// The load of the level's two tables from these rows, with the level's
@@ -113,7 +105,7 @@ pub fn the_table_load_fails_when_game_formula_row_145_or_a_record_to_the_highest
   use <- owned_test.run(60_000)
   let assert Ok(_) = load(rows: fixture_tables.rows())
     as "row 145 and the records to the highest level load"
-  assert load(rows: without(table: "GameFormula", keeps: fn(id) { id != 145 }))
+  assert load(rows: without(table: "GameFormula", ids: [145]))
     == Error(table_store.RowMissing(
       from_table: "the server's starting level",
       column: "GameFormula id",
@@ -121,7 +113,12 @@ pub fn the_table_load_fails_when_game_formula_row_145_or_a_record_to_the_highest
       id: 145,
     ))
     as "0x140029834: the highest level is read from GameFormula row 145, so a load without it fails (the client would take 1)"
-  assert load(rows: without(table: "XpPerLevel", keeps: fn(id) { id < 51 }))
+  assert load(rows: without(
+      table: "XpPerLevel",
+      ids: int.range(from: 51, to: 202, with: [], run: fn(ids, id) {
+        [id, ..ids]
+      }),
+    ))
     == Error(table_store.RowMissing(
       from_table: "the server's starting level",
       column: "XpPerLevel record number",

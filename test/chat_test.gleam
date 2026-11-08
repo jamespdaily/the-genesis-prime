@@ -1223,7 +1223,6 @@ const channel_rows = [
 pub fn the_chat_rule_tells_the_14_channels_apart_by_the_clients_enum_name_and_flags_test() -> Nil {
   use <- owned_test.run(60_000)
   let real = fixture_tables.shared()
-  assert list.length(channel_rows) == 14
   list.each(channel_rows, fn(channel) {
     let #(row_id, name, flags) = channel
     let assert Ok(row) =

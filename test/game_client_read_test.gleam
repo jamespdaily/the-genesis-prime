@@ -105,3 +105,43 @@ pub fn nothing_more_fails_when_a_read_kept_a_message_the_test_did_not_read_test(
   })
     as "the second message was written and not read"
 }
+
+fn bare(message_id: Int) -> Frame {
+  Frame(message_id, <<>>)
+}
+
+pub fn the_innate_passives_cast_is_dropped_only_after_the_0x61_of_an_entry_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x7FF, 0x7F4 and 0x7FE before 0x61 are not the passive's cast (the entry's
+  // last effect writes it after 0x61, `world_entry.StartPassive`).
+  let frames = [
+    bare(0x00AD),
+    bare(0x07FF),
+    bare(0x07F4),
+    bare(0x0061),
+    bare(0x07FF),
+    bare(0x07F4),
+    bare(0x07FE),
+    bare(0x01DA),
+    bare(0x01BC),
+  ]
+  let kept = [
+    bare(0x00AD),
+    bare(0x07FF),
+    bare(0x07F4),
+    bare(0x0061),
+    bare(0x01DA),
+    bare(0x01BC),
+  ]
+  let game = written_in_one_send(frames, after: <<>>)
+  assert game_client.read_entry(game:) == kept
+    as "the entry read drops the cast after 0x61 and keeps the same ids before it"
+  game_client.close(game:)
+  assert game_client.frames_without_passive_cast(frames:) == kept
+    as "the frames drop the cast after 0x61 alike"
+  assert game_client.without_passive_cast(
+      ids: list.map(frames, fn(frame) { frame.message_id }),
+    )
+    == list.map(kept, fn(frame) { frame.message_id })
+    as "the ids drop the cast after 0x61 alike"
+}

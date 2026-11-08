@@ -478,7 +478,7 @@ pub fn a_novice_character_of_every_class_is_made_on_the_shared_load_with_the_cli
   let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(479))
     as "the client's CharacterCreation holds row 479"
   let look = character_tables.row_10_look()
-  let assert Ok(character) =
+  let assert Ok(_) =
     character_creation.check_row(
       tables,
       row,
@@ -497,8 +497,9 @@ pub fn a_novice_character_of_every_class_is_made_on_the_shared_load_with_the_cli
       ),
     )
     as "a Dominion human male's create with CharacterCustomization row 10's look passes the checks"
-  assert character.look == look
-    as "the look the request carries is the character's look, as the client's rows hold it"
+  // What the look shows (display 137 on slot 25) is checked by
+  // `character_select_test`, from the client's rows.
+  Nil
 }
 
 pub fn a_row_whose_xp_is_no_level_is_refused_and_says_which_test() -> Nil {

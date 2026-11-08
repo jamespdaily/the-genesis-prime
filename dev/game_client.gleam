@@ -992,9 +992,23 @@ pub const world_entry_ids = [
 /// The ids without the messages of the innate passive's cast (0x7FF, 0x7F4 and
 /// 0x7FE): the entry's last effect starts it (`world_entry.StartPassive`), and
 /// which messages its cast writes is the cast flow's, which its own tests
-/// check. The three classes with a passive write them after 0x61.
+/// check. The three classes with a passive write them after 0x61, so the same
+/// ids before it stay.
 pub fn without_passive_cast(ids ids: List(Int)) -> List(Int) {
-  list.filter(ids, fn(id) { id != 0x07FF && id != 0x07F4 && id != 0x07FE })
+  after_entered(ids, fn(id) { id })
+}
+
+/// The items without the passive's cast ids from the first 0x61 on.
+fn after_entered(items: List(a), id_of: fn(a) -> Int) -> List(a) {
+  let #(before, from) =
+    list.split_while(items, fn(item) { id_of(item) != 0x0061 })
+  list.append(
+    before,
+    list.filter(from, fn(item) {
+      let id = id_of(item)
+      id != 0x07FF && id != 0x07F4 && id != 0x07FE
+    }),
+  )
 }
 
 /// The ids of the messages of the Holocrypt's join: the entry's, but with no
@@ -1007,9 +1021,7 @@ pub fn holocrypt_entry_ids() -> List(Int) {
 
 /// The frames without those of the innate passive's cast (`without_passive_cast`).
 pub fn frames_without_passive_cast(frames frames: List(Frame)) -> List(Frame) {
-  list.filter(frames, fn(frame) {
-    without_passive_cast(ids: [frame.message_id]) != []
-  })
+  after_entered(frames, fn(frame) { frame.message_id })
 }
 
 /// The 0x262 among the messages of an entry, decoded: the player the burst
