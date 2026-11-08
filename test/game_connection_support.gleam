@@ -1733,7 +1733,7 @@ pub fn entered_with(
 }
 
 /// The tests' player of this class in the world, its connection reading the
-/// starting abilities' trees (`character_tables.shared_with_spell_trees`), with
+/// starting abilities' own trees (`character_tables.shared`), with
 /// its unit id and the bag index of the ability of this Spell4Base.
 pub fn entered_with_spell_trees(
   class_id class_id: Int,
@@ -1743,7 +1743,7 @@ pub fn entered_with_spell_trees(
     class_id:,
     ability:,
     proxies: server_proxy_support.none(),
-    tables: character_tables.shared_with_spell_trees(),
+    tables: character_tables.shared(),
   )
 }
 
